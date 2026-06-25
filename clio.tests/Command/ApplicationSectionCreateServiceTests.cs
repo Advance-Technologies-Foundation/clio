@@ -811,6 +811,92 @@ public sealed class ApplicationSectionCreateServiceTests {
 	}
 
 	[Test]
+	[Description("Passes the explicit 600 000 ms override (the MCP background path) to the 3-arg ApplicationSection insert so the section commits server-side after the response deadline returns early.")]
+	public void CreateSection_Should_Pass_Explicit_Override_To_Three_Arg_Insert_When_Override_Provided() {
+		// Arrange — no env var, so only the explicit override is in play.
+		Environment.SetEnvironmentVariable(
+			ApplicationSectionCreateService.InsertTimeoutEnvironmentVariable, null);
+		SetUpInsertTimeoutCaptureMocks();
+		// Act
+		Action act = () => _sut.CreateSection("sandbox", CreateReuseEntityRequest(), insertTimeoutMsOverride: 600_000);
+		// Assert
+		act.Should().Throw<ApplicationSectionCreateException>(
+			because: "the rejected insert should surface as a classified failure");
+		_capturedInsertTimeout.Should().Be(600_000,
+			because: "the explicit override is the linchpin that lets the background insert outlive the response deadline, so it must reach the 3-arg ExecutePostRequest verbatim");
+	}
+
+	[Test]
+	[Description("Lets the explicit insert-timeout override win over the CLIO_CREATE_SECTION_TIMEOUT_SECONDS env var so the MCP background path is not capped by an operator's env value.")]
+	public void CreateSection_Should_Prefer_Explicit_Override_Over_EnvVar_When_Both_Set() {
+		// Arrange — env var set to a small value that the explicit override must beat.
+		Environment.SetEnvironmentVariable(
+			ApplicationSectionCreateService.InsertTimeoutEnvironmentVariable, "42");
+		SetUpInsertTimeoutCaptureMocks();
+		// Act
+		Action act = () => _sut.CreateSection("sandbox", CreateReuseEntityRequest(), insertTimeoutMsOverride: 600_000);
+		// Assert
+		act.Should().Throw<ApplicationSectionCreateException>(
+			because: "the rejected insert should surface as a classified failure");
+		_capturedInsertTimeout.Should().Be(600_000,
+			because: "an explicit override must take precedence over the env var, otherwise the background path could be silently capped");
+	}
+
+	[TestCase(0)]
+	[TestCase(-1)]
+	[Description("Ignores a non-positive insert-timeout override and falls through to the env-var/default budget, never passing a zero or negative timeout to the insert.")]
+	public void CreateSection_Should_Ignore_NonPositive_Override_And_Fall_Through(int nonPositiveOverride) {
+		// Arrange — no env var, so the fallthrough must land on the 90 s default.
+		Environment.SetEnvironmentVariable(
+			ApplicationSectionCreateService.InsertTimeoutEnvironmentVariable, null);
+		SetUpInsertTimeoutCaptureMocks();
+		// Act
+		Action act = () => _sut.CreateSection("sandbox", CreateReuseEntityRequest(), insertTimeoutMsOverride: nonPositiveOverride);
+		// Assert
+		act.Should().Throw<ApplicationSectionCreateException>(
+			because: "the rejected insert should surface as a classified failure");
+		_capturedInsertTimeout.Should().Be(90_000,
+			because: "a non-positive override (the 'is > 0' guard) must fall through to the default budget, not disable the insert timeout");
+	}
+
+	[Test]
+	[Description("Bounds each success-path readback HTTP call with the explicit override (the MCP background path) so a readback Creatio accepts but never answers cannot hold a thread + connection after the response deadline returns early (ENG-91316).")]
+	public void CreateSection_Should_Bound_Success_Readback_When_Readback_Override_Provided() {
+		// Arrange
+		SetUpSuccessfulCreateWithReadbackCapture();
+		// Act
+		_ = _sut.CreateSection("sandbox", CreateReuseEntityRequest(), readbackTimeoutMsOverride: 30_000);
+		// Assert
+		_capturedReadbackTimeout.Should().Be(30_000,
+			because: "the background/MCP path must pass a finite per-request readback budget so a wedged readback cannot park a thread-pool worker for the life of the long-lived server process");
+	}
+
+	[Test]
+	[Description("Leaves the success-path readback at Timeout.Infinite on the synchronous CLI path (no override), preserving the patient local-user behavior.")]
+	public void CreateSection_Should_Use_Infinite_Success_Readback_When_No_Readback_Override() {
+		// Arrange
+		SetUpSuccessfulCreateWithReadbackCapture();
+		// Act
+		_ = _sut.CreateSection("sandbox", CreateReuseEntityRequest());
+		// Assert
+		_capturedReadbackTimeout.Should().Be(System.Threading.Timeout.Infinite,
+			because: "the CLI path passes no readback override, so the readback must keep its patient Timeout.Infinite default");
+	}
+
+	[TestCase(0)]
+	[TestCase(-1)]
+	[Description("Ignores a non-positive readback override and keeps Timeout.Infinite, never passing a zero or negative timeout to the readback HTTP calls.")]
+	public void CreateSection_Should_Ignore_NonPositive_Readback_Override_And_Keep_Infinite(int nonPositiveOverride) {
+		// Arrange
+		SetUpSuccessfulCreateWithReadbackCapture();
+		// Act
+		_ = _sut.CreateSection("sandbox", CreateReuseEntityRequest(), readbackTimeoutMsOverride: nonPositiveOverride);
+		// Assert
+		_capturedReadbackTimeout.Should().Be(System.Threading.Timeout.Infinite,
+			because: "a non-positive readback override must fall through to the patient default, not disable or corrupt the readback timeout");
+	}
+
+	[Test]
 	[Description("Classifies a connection-level WebException as a transport failure that never reached Creatio and is safe to retry.")]
 	public void CreateSection_Should_Throw_Transport_Classified_Failure_When_Connect_Fails() {
 		// Arrange
@@ -1209,6 +1295,54 @@ public sealed class ApplicationSectionCreateServiceTests {
 					body.Contains("\"IconBackground\"", StringComparison.Ordinal) &&
 					body.Contains("\"filters\"", StringComparison.Ordinal)),
 				Arg.Any<int>())
+			.Returns("""{"success":true}""");
+	}
+
+	private void SetUpSuccessfulCreateWithReadbackCapture() {
+		_capturedReadbackTimeout = null;
+		ApplicationEntityInfoResult entity = new("entity-uid", "UsrOrders", "Orders", []);
+		ApplicationInfoResult beforeInfo = new(
+			"pkg-uid", "UsrOrdersApp", [entity], [], "app-id", "Orders App", "UsrOrdersApp", "8.3.0");
+		ApplicationInfoResult afterInfo = new(
+			"pkg-uid", "UsrOrdersApp", [entity],
+			[new PageListItem {
+				SchemaName = "UsrOrders_FormPage", UId = "page-new", PackageName = "UsrOrdersApp", ParentSchemaName = "BasePageV2"
+			}],
+			"app-id", "Orders App", "UsrOrdersApp", "8.3.0");
+		_applicationInfoService.GetApplicationInfo("sandbox", null, "UsrOrdersApp")
+			.Returns(beforeInfo, afterInfo);
+		_applicationClient.ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"SysAppIcons\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true,"rows":[{"Id":"11111111-1111-1111-1111-111111111111"}]}""");
+		StubExistingEntitySchema("UsrOrders");
+		// Insert succeeds (reuse-entity payload carries EntitySchemaName, no filters).
+		_applicationClient.ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+				body.Contains("\"columnValues\"", StringComparison.Ordinal) &&
+				body.Contains("\"EntitySchemaName\"", StringComparison.Ordinal) &&
+				!body.Contains("\"filters\"", StringComparison.Ordinal)),
+			Arg.Any<int>())
+			.Returns("""{"success":true}""");
+		// Success-path readback (SectionSchemaUId select) — capture the timeout that reaches it.
+		_applicationClient.ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+				body.Contains("\"SectionSchemaUId\"", StringComparison.Ordinal)),
+			Arg.Any<int>())
+			.Returns(callInfo => {
+				_capturedReadbackTimeout = callInfo.ArgAt<int>(2);
+				return """{"success":true,"rows":[{"Id":"section-id","ApplicationId":"app-id","Caption":"Orders","Code":"UsrOrders","Description":"Order workspace","EntitySchemaName":"UsrOrders","PackageId":"pkg-uid","SectionSchemaUId":"section-schema-uid","LogoId":"icon-id","IconBackground":null,"ClientTypeId":null}]}""";
+			});
+		// Icon-background UpdateQuery runs on the same readback budget, so it must accept any timeout.
+		_applicationClient.ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+				body.Contains("\"columnValues\"", StringComparison.Ordinal) &&
+				body.Contains("\"IconBackground\"", StringComparison.Ordinal) &&
+				body.Contains("\"filters\"", StringComparison.Ordinal)),
+			Arg.Any<int>())
 			.Returns("""{"success":true}""");
 	}
 

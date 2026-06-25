@@ -131,10 +131,10 @@ public sealed class RelatedListGuidanceResource {
 		         column.
 		       - Leave `handlers: []`. The dependency is evaluated on first load and recomputed whenever the master
 		         id changes, so switching the open record re-scopes the child list with no handler.
-		       - The grid `items` binding and the panel/grid `viewConfigDiff` inserts are normal page edits — see
-		         `page-modification` for the `crt.ExpansionPanel` + `crt.DataGrid` insert shape and
-		         `parentName`/`propertyName`/`index` placement, and `get-component-info` for `columns`,
-		         `features`, and toolbar slots.
+		       - The grid `items` binding and the panel/grid `viewConfigDiff` inserts are normal page edits — fetch
+		         the structure with `get-component-info composite="Expanded list"` (the canonical recipe), and see
+		         `page-modification` for `parentName`/`propertyName`/`index` placement and `get-component-info` for
+		         `columns`, `features`, and toolbar slots.
 
 		       Adding records to the detail — inline grid add is the DEFAULT; a header "Add" button needs a resolvable page
 		       - DEFAULT, always safe: enable INLINE add on the inner `crt.DataGrid` (read-only by default). Fetch

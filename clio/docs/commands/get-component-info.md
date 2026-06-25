@@ -39,6 +39,16 @@ A component with no standalone Designer toolbar presence carries
 its composite rather than placed directly. This CLI verb and the MCP tool stay in
 lockstep on composites; both share the same catalog and response builders.
 
+When a positional `component-type` is not a known component it is resolved by
+name and description rather than dead-ending: it first matches components (by
+type, description, synonyms, use-cases); if none match it matches composites by
+caption/description; only when neither matches does it fall back to the
+closest-type shortlist. So passing a composite's caption as the component-type
+(e.g. `clio get-component-info "Expanded list"`) returns a not-found response
+that routes you to `--composite "Expanded list"` for the assembly recipe — an
+agent reaching for the human label still finds the composite instead of
+hand-building it. The closest-type shortlist is capped at 8 entries.
+
 The catalog is loaded through the CDN → file cache → embedded snapshot
 fallback chain (see `component-registry-refresh` for cache control). For
 local payload iteration, point `CLIO_COMPONENT_REGISTRY_LOCAL_FILE` at a
