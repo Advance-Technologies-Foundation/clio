@@ -20,6 +20,35 @@ An AI agent (and clio CLI users) must create, edit and read Creatio business pro
 
 Earlier explorations considered driving the visual designer over CDP (approach 3). That path is brittle (DOM/automation coupling) and cannot run headless/server-side. A durable, server-side, intent-first capability was needed.
 
+## High-level design
+
+```mermaid
+flowchart TB
+  agent["AI agent / clio user — plain-language intent"]
+
+  subgraph clio["clio (Layer 2, outside Creatio)"]
+    verbs["CLI verbs and MCP tools/prompts:<br/>create-business-process, modify-business-process,<br/>describe-process, list-user-tasks"]
+    validator["R1–R17 graph validator<br/>(validate-process-graph)"]
+    validator -. "pre-flight" .-> verbs
+  end
+
+  subgraph pkg["Creatio package: clioprocessbuilder"]
+    svc["ProcessDesignService<br/>(thin WCF transport)"]
+    orch["ProcessDesigner — domain orchestrator<br/>sequencing · CanManageProcessDesign + General gate · errors"]
+    collab["Single-concern collaborators:<br/>graph · schema · parameters · mappings ·<br/>operations · user-task catalog · describe · layout"]
+    svc --> orch --> collab
+  end
+
+  mgr["Platform ProcessSchemaManager<br/>serialize / save / design session"]
+  store[("Schema store:<br/>DB (runtime) · FS (file-design mode)")]
+
+  agent --> verbs
+  verbs -- "POST /rest/ProcessDesignService/&lt;Method&gt; (wrapped body)" --> svc
+  collab --> mgr --> store
+```
+
+_The boundary this ADR governs is the REST edge between **clio** and the **package**; everything to the right of `ProcessDesignService` runs inside Creatio and is the package repo's concern (see "Internal architecture — principle only" below). The platform `ProcessSchemaManager` owns serialization/persistence — on a DB stand a save is immediately runtime-runnable; in file-design mode it is FS-only until an FS→DB load + publish._
+
 ## Decision
 
 Deliver process design as a **backend command-driven "non-visual designer"**, packaged as a **cliogate-style Creatio configuration package `clioprocessbuilder`** (a new sibling to `cliogate`), with a clear two-layer split:
