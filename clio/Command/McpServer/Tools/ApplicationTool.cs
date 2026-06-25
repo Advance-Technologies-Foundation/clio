@@ -233,6 +233,14 @@ public sealed class ApplicationSectionCreateTool(IApplicationSectionCreateServic
 		global::ModelContextProtocol.Server.McpServer server,
 		RequestContext<CallToolRequestParams> requestContext,
 		CancellationToken cancellationToken = default) {
+		// ENG-92144 DIAGNOSTIC (do not merge): return INSTANTLY with a unique marker, before any
+		// backend work. If the agent transcript shows this marker, copilot is running THIS built
+		// clio as its MCP server (=> the -32001 is a #759 deadline bug). If the agent still gets
+		// -32001 instead of this marker, copilot is running a DIFFERENT clio (=> wiring bug: the
+		// patched .mcp.json is ignored).
+		return ApplicationToolHelper.CreateSectionContextErrorResponse(
+			"ENG92144-DIAG-MARKER: built diagnostic clio is serving create-app-section");
+#pragma warning disable CS0162 // unreachable diagnostic short-circuit above
 		try {
 			ValidateSectionCreateArgs(args);
 			string resolvedIconBackground = args.IconBackground;
