@@ -25,15 +25,17 @@ namespace Clio.Tests.Command.McpServer;
 [Property("Module", "McpServer")]
 public sealed class McpGuidanceForcingTests {
 
-	// 2500 chars well below the ~1000-token client-side truncation point.
+	// 1400 chars, far below the ~1000-token client-side truncation point. The invariants and the routing
+	// table now live in the lazily-loaded core-rules / routing guides, so the always-on instructions carry
+	// only the mandatory pointers to those two guides + the telemetry advertisement (~1.2k chars).
 	// Any bump here requires re-evaluating truncation safety — do not raise without checking that the new router
 	// still fits in one untruncated context window on the lowest-tier MCP client.
-	private const int RouterCharCeiling = 2500;
+	private const int RouterCharCeiling = 1400;
 
 	// Guide names referenced by the always-on instructions (routing), the routing map, and/or the touched
 	// tool descriptions. Drift guard: every one must resolve in GuidanceCatalog.
 	private static readonly string[] ReferencedGuideNames = [
-		"routing", "page-modification", "business-rules", "business-rule-filters", "dashboards", "indicator-widget",
+		"core-rules", "routing", "page-modification", "business-rules", "business-rule-filters", "dashboards", "indicator-widget",
 		"app-modeling", "esq", "esq-filters", "data-bindings"
 	];
 
@@ -58,7 +60,7 @@ public sealed class McpGuidanceForcingTests {
 
 		// Assert
 		length.Should().BeLessThanOrEqualTo(RouterCharCeiling,
-			because: "the always-on instructions must stay far below the observed ~1000-token truncation point; the baseline was ~9.4k chars / ~2.2k tokens. The routing table now lives in the lazily-loaded routing guide, so instructions carry only the truncation-surviving invariants + telemetry + the mandatory routing pointer (~2.3k chars), and the ceiling was tightened to match");
+			because: "the always-on instructions must stay far below the observed ~1000-token truncation point; the baseline was ~9.4k chars / ~2.2k tokens. The invariants and the routing table now live in the lazily-loaded core-rules / routing guides, so instructions carry only the mandatory pointers to those two guides + telemetry (~1.2k chars), and the ceiling was tightened to match");
 	}
 
 	[Test]
@@ -78,22 +80,26 @@ public sealed class McpGuidanceForcingTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Keeps the hard invariants in the always-on router so they survive even if the rest is truncated.")]
-	public void Router_ShouldContainHardInvariants_WhenInspected() {
+	[Description("The core-rules guide carries every hard invariant; the always-on instructions now mandate reading it first rather than inlining the rules.")]
+	public void CoreRulesGuide_ShouldContainHardInvariants_WhenInspected() {
 		// Arrange
-		string router = McpServerInstructions.Text;
+		GuidanceGetTool tool = new();
+		// GetGuidance returns an already-completed Task (synchronous lookup), so resolve it inline.
+		GuidanceGetResponse coreRules = tool.GetGuidance(new GuidanceGetArgs("core-rules")).GetAwaiter().GetResult();
+		coreRules.Success.Should().BeTrue(because: "core-rules is a registered guidance name");
+		string rules = coreRules.Article!.Text;
 
 		// Assert
-		router.Should().Contain("compile-creatio is NOT needed",
-			because: "the compile-not-required invariant must survive truncation to stop needless compile/restart");
-		router.Should().Contain("progress notification is NOT a timeout",
-			because: "the long-running invariant must survive truncation to stop cancel/retry of create-app*");
-		router.Should().Contain("get-user-culture",
-			because: "the profile-culture invariant must survive truncation so captions use the right language");
-		router.Should().Contain("Destructive tools",
-			because: "the destructive-confirmation invariant must survive truncation");
-		router.Should().Contain("correlation-id",
-			because: "the error-handling pointer must survive truncation");
+		rules.Should().Contain("compile-creatio is NOT needed",
+			because: "the compile-not-required invariant must be carried by the core-rules guide");
+		rules.Should().Contain("progress notification is NOT a timeout",
+			because: "the long-running invariant must be carried by the core-rules guide");
+		rules.Should().Contain("get-user-culture",
+			because: "the profile-culture invariant must be carried by the core-rules guide");
+		rules.Should().Contain("Destructive tools",
+			because: "the destructive-confirmation invariant must be carried by the core-rules guide");
+		rules.Should().Contain("correlation-id",
+			because: "the error-handling pointer must be carried by the core-rules guide");
 	}
 
 	[Test]
@@ -117,16 +123,18 @@ public sealed class McpGuidanceForcingTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The always-on instructions must mandate loading the routing map first on any operation, so the routing table being lazily loaded does not weaken the forcing function.")]
-	public void Instructions_ShouldMandateReadingRoutingGuideFirst_WhenInspected() {
+	[Description("The always-on instructions must mandate loading the core-rules and routing guides first on any operation, so the lazily-loaded invariants and routing table do not weaken the forcing function.")]
+	public void Instructions_ShouldMandateReadingCoreRulesAndRoutingFirst_WhenInspected() {
 		// Arrange
 		string instructions = McpServerInstructions.Text;
 
 		// Assert
+		instructions.Should().Contain("name=core-rules",
+			because: "the instructions must point at the core-rules guide by its get-guidance name");
 		instructions.Should().Contain("name=routing",
 			because: "the instructions must point at the routing guide by its get-guidance name");
 		instructions.Should().Contain("FIRST",
-			because: "loading the routing map must be framed as a mandatory first step, not optional");
+			because: "loading core-rules and the routing map must be framed as a mandatory first step, not optional");
 	}
 
 	[Test]

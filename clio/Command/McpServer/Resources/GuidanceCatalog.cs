@@ -14,6 +14,10 @@ internal static class GuidanceCatalog {
 
 	private static IReadOnlyDictionary<string, GuidanceCatalogEntry> CreateEntries() {
 		Dictionary<string, GuidanceCatalogEntry> entries = new(StringComparer.OrdinalIgnoreCase) {
+			["core-rules"] = Create(
+				"core-rules",
+				"The non-negotiable clio MCP invariants (compile/restart, long-running await, profile culture, destructive confirmation, correlation-id) that apply to every operation. The server instructions mandate reading this first on any operation.",
+				CoreRulesGuidanceResource.Guide),
 			["routing"] = Create(
 				"routing",
 				"The canonical clio MCP routing map: a two-level, names-only table that maps a task (pages, entities, data, applications) to the get-guidance article(s) to read before acting. The server instructions mandate reading this first on any operation.",
