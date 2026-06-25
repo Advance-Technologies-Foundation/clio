@@ -32,14 +32,20 @@ public sealed class PageSyncToolE2ETests {
 
 	private const string ToolName = PageSyncTool.ToolName;
 	private const string SavePage = "ClioMcp_BlankPageToSave";
+	// The returned object must carry the real schema-section property keys
+	// (viewConfigDiff, viewModelConfigDiff, ...). Without them the body is invalid
+	// JavaScript — `return { [] , {} , ... }` parses `[]` as an empty computed
+	// property key and throws "Unexpected token ']'", so the syntax stage rejects
+	// the body before any env/content check can run. The markers wrap the VALUES,
+	// the keys live outside them (same shape update-page expects).
 	private const string ValidPageBody = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
 		"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
-		"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
-		"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/{}/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
-		"/**SCHEMA_MODEL_CONFIG_DIFF*/{}/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
-		"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
-		"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
-		"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+		"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/{}/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+		"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/{}/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+		"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+		"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+		"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
 
 	[Test]
 	[Description("Advertises sync-pages MCP tool in the server tool list so callers can discover and invoke it.")]
