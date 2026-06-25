@@ -2,7 +2,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
-using System.Threading.Tasks;
 using System.Text.Json;
 using Clio.Command;
 using Clio.Command.McpServer;
@@ -133,10 +132,12 @@ public sealed class McpGuidanceForcingTests {
 	[Test]
 	[Category("Unit")]
 	[Description("The routing map (now the home of the routing table) must only route to guide names that resolve in GuidanceCatalog (no dangling routes after the extraction).")]
-	public async Task RoutingGuide_ShouldOnlyReferenceResolvableGuideNames_WhenParsed() {
+	public void RoutingGuide_ShouldOnlyReferenceResolvableGuideNames_WhenParsed() {
 		// Arrange
 		GuidanceGetTool tool = new();
-		GuidanceGetResponse routing = await tool.GetGuidance(new GuidanceGetArgs("routing"));
+		// GetGuidance returns an already-completed Task (synchronous lookup), so resolve it inline
+		// rather than marking the test async over a non-awaiting call.
+		GuidanceGetResponse routing = tool.GetGuidance(new GuidanceGetArgs("routing")).GetAwaiter().GetResult();
 		routing.Success.Should().BeTrue(because: "routing is a registered guidance name");
 		IEnumerable<string> routedNames = Regex.Matches(routing.Article!.Text, @"name=([a-z0-9-]+)")
 			.Select(match => match.Groups[1].Value)
@@ -156,7 +157,7 @@ public sealed class McpGuidanceForcingTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Analytics routing is centralized in the page-modification GATE (scalable), not hardcoded into the general page tool descriptions; page write/read tools delegate to that checklist.")]
-	public async Task AnalyticsRouting_ShouldLiveInPageModificationGate_NotInGeneralToolDescriptions() {
+	public void AnalyticsRouting_ShouldLiveInPageModificationGate_NotInGeneralToolDescriptions() {
 		// Arrange
 		string[] allPageTools = [
 			ToolDescription<PageCreateTool>(),
@@ -186,7 +187,8 @@ public sealed class McpGuidanceForcingTests {
 
 		// Assert: the page-modification GATE is what routes dashboard/analytics work to the widget guides
 		GuidanceGetTool tool = new();
-		GuidanceGetResponse pageMod = await tool.GetGuidance(new GuidanceGetArgs("page-modification"));
+		// GetGuidance returns an already-completed Task (synchronous lookup), so resolve it inline.
+		GuidanceGetResponse pageMod = tool.GetGuidance(new GuidanceGetArgs("page-modification")).GetAwaiter().GetResult();
 		pageMod.Article!.Text.Should().Contain("dashboards",
 			because: "the page-modification GATE must dispatch dashboard/analytics-widget work to the dashboards guide (which routes onward to indicator-widget + get-component-info)");
 	}
