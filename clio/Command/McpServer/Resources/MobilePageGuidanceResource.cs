@@ -318,37 +318,19 @@ public sealed class MobilePageGuidanceResource {
 		       ─────────────────────────────────────────────────────────────
 		       FIELD GROUPING IN CONTAINERS (mobile layout convention)
 		       ─────────────────────────────────────────────────────────────
-		       On mobile pages, fields MUST be grouped inside crt.GridContainer instances
-		       with the "primary" color. This gives each field group a visually distinct
-		       card-like surface that matches the native mobile design language.
-
-		       Default field container pattern:
-		         {
-		           "operation": "insert",
-		           "name": "<GroupName>Container",
-		           "values": {
-		             "type": "crt.GridContainer",
-		             "columns": "1fr",
-		             "color": "primary",
-		             "borderRadius": "medium",
-		             "padding": { "top": "medium", "right": "medium", "bottom": "medium", "left": "medium" },
-		             "items": []
-		           },
-		           "parentName": "GeneralTabContainer",
-		           "propertyName": "items",
-		           "index": 0
-		         }
+		       On mobile pages, group fields inside crt.GridContainer instances rather than placing them
+		       directly in the Scaffold — each group then renders as a distinct card-like surface that matches
+		       the native mobile design language. For the exact container styling that produces that card
+		       surface (the `color` / `borderRadius` values), fetch `get-component-info crt.GridContainer`
+		       with schema-type mobile.
 
 		       Rules:
-		         - Always set "color": "primary" on field-group containers (not "default").
-		         - If the page bundle already provides containers with "color": "primary"
-		           (visible in the existing viewConfigDiff from `get-page`), reuse them as
-		           field parents instead of inserting new ones.
-		         - Group logically related fields together in one container.
-		         - Use separate containers for distinct field groups (e.g. general info,
-		           communication details, address fields).
-		         - Insert individual field components as children of these containers, NOT
-		           directly into the Scaffold items.
+		         - If the page bundle already provides field-group containers (visible in the existing
+		           viewConfigDiff from `get-page`), reuse them as field parents instead of inserting new ones.
+		         - Group logically related fields together in one container; use separate containers for
+		           distinct field groups (e.g. general info, communication details, address fields).
+		         - Insert individual field components as children of these containers, NOT directly into the
+		           Scaffold items.
 
 		       ─────────────────────────────────────────────────────────────
 		       REQUESTS AVAILABLE ON MOBILE
