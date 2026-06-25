@@ -73,14 +73,14 @@ internal static class McpProgressHeartbeat {
 	internal static readonly TimeSpan DefaultResponseDeadline = ResolveDefaultResponseDeadline();
 
 	private static TimeSpan ResolveDefaultResponseDeadline() {
-		string raw = Environment.GetEnvironmentVariable(ResponseDeadlineOverrideEnvVar);
-		if (!string.IsNullOrWhiteSpace(raw)
-			&& double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out double seconds)
-			&& seconds > 0 && seconds <= 600) {
-			return TimeSpan.FromSeconds(seconds);
-		}
-
-		return TimeSpan.FromSeconds(150);
+		// ENG-92144 DIAGNOSTIC (do not merge): force a 5s response deadline regardless of
+		// env/config so create-app-section ALWAYS hits the deadline path long before any MCP
+		// client could cancel. If the agent then receives the in-progress envelope, the #759
+		// mechanism works and the real issue is the 150s default not being below copilot's
+		// client timeout; if the agent still sees -32001, the in-progress envelope is not
+		// reaching the client (a real #759 bug).
+		Console.Error.WriteLine("[deadline-diag] DefaultResponseDeadline FORCED to 5s (ENG-92144 diagnostic)");
+		return TimeSpan.FromSeconds(5);
 	}
 
 	/// <summary>
@@ -191,6 +191,14 @@ internal static class McpProgressHeartbeat {
 			if (completed == workTask) {
 				return await workTask.ConfigureAwait(false);
 			}
+
+			// ENG-92144 DIAGNOSTIC (do not merge): record which branch the race resolved to.
+			// cancelRequested=false => the deadline elapsed and we return the in-progress
+			// envelope; cancelRequested=true => the client cancelled first (its timeout is
+			// below our deadline) and we throw cancellation -> the agent sees -32001.
+			Console.Error.WriteLine(
+				$"[deadline-diag] {operationName}: race resolved to NON-work after {effectiveDeadline.TotalSeconds}s; " +
+				$"cancelRequested={cancellationToken.IsCancellationRequested}");
 
 			// The wait ended without the work finishing. Observe the abandoned task's eventual
 			// exception so it cannot crash the process, and surface it to stderr for diagnostics.
