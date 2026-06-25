@@ -274,6 +274,6 @@ public sealed class DashboardGuidanceResource {
 	/// dashboard widgets.
 	/// </summary>
 	[McpServerResource(UriTemplate = ResourceUri, Name = "dashboards-guidance")]
-	[Description("Returns canonical MCP guidance for placing, sizing, grouping, and styling Freedom UI analytical widgets (metrics and charts) on dashboards: the 12-column grid, the metric-band-then-chart-grid skeleton, section grouping, per-widget-type default sizes, the plain-white default card style, and the dashboard's auto-generated hidden page data source (DashboardDS) that widgets filter by via a dependencies entry.")]
+	[Description("Returns canonical MCP guidance for laying out, sizing, grouping, and styling Freedom UI analytical widgets (metrics and charts) on dashboards, including the DashboardDS data source widgets filter by.")]
 	public ResourceContents GetGuide() => Guide;
 }
