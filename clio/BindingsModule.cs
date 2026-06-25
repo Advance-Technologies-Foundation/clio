@@ -793,7 +793,12 @@ public class BindingsModule {
 					|| implementedInterface == typeof(IMessageChannelHubConnection)
 					// ReauthExecutor requires a per-adapter Login closure; it is created by
 					// CreatioClientAdapter rather than resolved from DI.
-					|| implementedInterface == typeof(IReauthExecutor)) {
+					|| implementedInterface == typeof(IReauthExecutor)
+					// CreatioVersionChecker depends on ICreatioVersionProvider, whose concrete
+					// implementation is introduced (and wired) together with the checker in a later
+					// increment. Exclude it from the auto-scan until then so DI validation does not fail
+					// on the missing provider registration.
+					|| implementedInterface == typeof(ICreatioVersionChecker)) {
 					continue;
 				}
 				services.AddTransient(implementedInterface, type);
