@@ -188,6 +188,33 @@ public class ExceptionReadableMessageExtensionTestCase
 			because: "the wrapped WebException status must still be reported when nested");
 	}
 
+	[Test]
+	[Description(
+		"An InvalidOperationException whose inner is a WebException must surface the inner WebException "
+		+ "status and HTTP code: the InvalidOperationException arm must no longer shadow the WebException "
+		+ "enrichment, otherwise a login fault rewrapped as IOE would lose the 401-vs-connect signal.")]
+	public void GetReadableMessageException_ShouldSurfaceInnerWebExceptionStatus_WhenInvalidOperationExceptionWrapsWebException() {
+		// Arrange
+		using HttpWebResponse response = CreateHttpWebResponse(HttpStatusCode.Unauthorized);
+		var inner = new WebException(
+			"The remote server returned an error: (401) Unauthorized.",
+			null,
+			WebExceptionStatus.ProtocolError,
+			response);
+		var exception = new InvalidOperationException("Operation failed", inner);
+
+		// Act
+		string result = exception.GetReadableMessageException();
+
+		// Assert
+		result.Should().StartWith("Operation failed",
+			because: "the outer InvalidOperationException message must lead so the operation context is preserved");
+		result.Should().Contain("401",
+			because: "the wrapped WebException HTTP status code must survive the InvalidOperationException arm");
+		result.Should().Contain("ProtocolError",
+			because: "the wrapped WebException status must be reported even when the wrapper is an InvalidOperationException");
+	}
+
 	/// <summary>
 	/// Builds a real <see cref="HttpWebResponse"/> carrying the supplied status code without opening a
 	/// socket. On modern .NET <see cref="HttpWebResponse"/> has no usable public constructor and its

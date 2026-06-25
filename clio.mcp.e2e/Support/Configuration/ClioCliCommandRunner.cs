@@ -104,7 +104,41 @@ internal static class ClioCliCommandRunner {
 		CancellationToken cancellationToken = default) {
 		ClioCliCommandResult result = await RunAsync(settings, arguments, workingDirectory, cancellationToken);
 		result.ExitCode.Should().Be(0,
-			because: $"the arrange step must succeed before MCP behavior can be asserted. command: clio {result.Arguments}. stderr: {result.StandardError}");
+			because: $"the arrange step must succeed before MCP behavior can be asserted. command: clio {RedactSecrets(result.Arguments)}. stderr: {result.StandardError}");
+	}
+
+	// Flags whose following value is a secret and must never reach the CI log. reg-web-app passes the
+	// sandbox login/password verbatim, and the diagnostics blocks echo the full command line on failure.
+	private static readonly string[] SecretArgumentFlags = ["-p", "--password", "-l", "--login"];
+
+	/// <summary>
+	/// Redacts the value that follows a secret flag (<c>-p</c>/<c>--password</c>, <c>-l</c>/<c>--login</c>)
+	/// in a space-joined clio argument string before it is written to <see cref="TestContext.Out"/>.
+	/// Without this the plaintext sandbox password (passed verbatim to <c>reg-web-app</c>) would land in
+	/// the TeamCity build log on the very failure path these diagnostics exist to surface. Handles both
+	/// the space-separated (<c>-p secret</c>) and inline (<c>--password=secret</c>) forms.
+	/// </summary>
+	internal static string RedactSecrets(string arguments) {
+		if (string.IsNullOrEmpty(arguments)) {
+			return arguments;
+		}
+
+		string[] tokens = arguments.Split(' ');
+		for (int i = 0; i < tokens.Length; i++) {
+			int separator = tokens[i].IndexOf('=');
+			string flag = separator >= 0 ? tokens[i][..separator] : tokens[i];
+			if (!SecretArgumentFlags.Contains(flag, StringComparer.OrdinalIgnoreCase)) {
+				continue;
+			}
+
+			if (separator >= 0) {
+				tokens[i] = $"{flag}=***";
+			} else if (i + 1 < tokens.Length) {
+				tokens[i + 1] = "***";
+			}
+		}
+
+		return string.Join(" ", tokens);
 	}
 
 	public static async Task EnsureCliogateInstalledAsync(
@@ -164,7 +198,7 @@ internal static class ClioCliCommandRunner {
 		TestContext.Out.WriteLine(
 			$"[install-gate] exit code: {lastInstallResult!.ExitCode}");
 		TestContext.Out.WriteLine(
-			$"[install-gate] command: clio {lastInstallResult.Arguments}");
+			$"[install-gate] command: clio {RedactSecrets(lastInstallResult.Arguments)}");
 		TestContext.Out.WriteLine(
 			$"[install-gate] full stdout:{System.Environment.NewLine}{lastInstallResult.StandardOutput}");
 		TestContext.Out.WriteLine(
@@ -214,7 +248,7 @@ internal static class ClioCliCommandRunner {
 			TestContext.Out.WriteLine(
 				$"[reg-web-app] exit code: {result.ExitCode}");
 			TestContext.Out.WriteLine(
-				$"[reg-web-app] command: clio {result.Arguments}");
+				$"[reg-web-app] command: clio {RedactSecrets(result.Arguments)}");
 			TestContext.Out.WriteLine(
 				$"[reg-web-app] full stdout:{System.Environment.NewLine}{result.StandardOutput}");
 			TestContext.Out.WriteLine(
@@ -273,7 +307,7 @@ internal static class ClioCliCommandRunner {
 		TestContext.Out.WriteLine(
 			$"[login-readiness] exit code: {lastResult!.ExitCode}");
 		TestContext.Out.WriteLine(
-			$"[login-readiness] command: clio {lastResult.Arguments}");
+			$"[login-readiness] command: clio {RedactSecrets(lastResult.Arguments)}");
 		TestContext.Out.WriteLine(
 			$"[login-readiness] full stdout:{System.Environment.NewLine}{lastResult.StandardOutput}");
 		TestContext.Out.WriteLine(

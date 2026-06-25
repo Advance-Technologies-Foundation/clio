@@ -52,20 +52,21 @@ All 18 are env/infra/stand-gated, none are clio contract regressions:
 | PageUpdate UnAwaitedContext (advisory) | 1 | — |
 | PageSync Report_Invalid_Environment (env-contract) | 1 | to confirm |
 
-A second run [`15639381`](https://teamcity-rnd.bpmonline.com/build/15639381) with `EnvironmentPath` + DataForge toggles validates the ClearRedis hang guard and the DataForge readiness gate; results folded into the residual notes.
+This PR is validated on the **EnvironmentUrl-only** configuration (the proven cliogate root-cause fix). The `EnvironmentPath` + DataForge toggles are deliberately **not** part of this validation — see the hang note below.
 
 ## Residual failures — env/infra/stand-gated, NOT clio code (root cause verified)
 
 These do not move with clio code changes; they are tracked as sub-tasks (see table above).
 Estimated code-side floor ≈ 13 (the 18 minus the 4 ClearRedis + 1 PageUpdate-advisory that are pure environment artifacts, give or take the DataForge gate which the toggle addresses).
 
-### Hang guard (this PR)
+### ClearRedis hang under EnvironmentPath — diagnosed and bounded
 
-Two e2e hardening fixes ensure no single test can freeze the whole suite (it has no per-test hang guard of its own):
-- `SandboxEnvironmentResolver` locates `ConnectionStrings.config` by known path instead of a recursive scan of the entire deployed Creatio root (which took minutes).
-- `ClearRedisToolE2ETests` bounds its Redis arrange/teardown with `Task.WaitAsync(token)`, so an unreachable sandbox Redis fails the test fast (≤2 min) rather than hanging.
+Supplying `McpE2E__Sandbox__EnvironmentPath` (to exercise the ClearRedis x4 tests) froze the suite >15 min on `ClearRedis_Should_Remove_Seeded_Key` across three runs (15638846, 15638941, 15639381). The hanging test was identified deterministically from a completed run's execution order. Three code-side fixes, all under ENG-91829:
+- `SandboxEnvironmentResolver` now locates `ConnectionStrings.config` by known path (`<root>/` for .NET Core, `<root>/Terrasoft.WebApp/` for .NET Framework) instead of a recursive `Directory.GetFiles(..., AllDirectories)` over the entire deployed Creatio root (tens of thousands of files; minutes-long).
+- `ClearRedisToolE2ETests` bounds its Redis arrange/teardown with `Task.WaitAsync(token)`.
+- `RedisSandboxClient` offloads `ConnectionMultiplexer.ConnectAsync` to `Task.Run` — its **synchronous prologue** (DNS/socket setup) runs before the first await, so when the sandbox Redis is unreachable from a CI agent it blocks the test thread where neither the WhenAny/Task.Delay bound nor `WaitAsync(token)` can interrupt it. Offloading lets the timeout bound apply.
 
-The durable, suite-wide guard remains job-side: `dotnet test --blame-hang-timeout 5m` (process-kills a hung test) — see the handoff below; it is **required** before `EnvironmentPath` is enabled in the job.
+**Honest scope:** the ClearRedis tests fundamentally require a sandbox Redis reachable from the runner; CI agents cannot reach it, so these tests fail by design there (they are 4 of the 18). The fixes above stop them *hanging the build*. The durable, suite-wide guard is job-side: `dotnet test --blame-hang-timeout 5m` (process-kills a hung test), which is **required before `EnvironmentPath` is enabled in the job** — see the handoff. This PR therefore validates on EnvironmentUrl-only.
 
 ## Job-config handoff (separate, requires TeamCity admin)
 

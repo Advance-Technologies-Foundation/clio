@@ -18,9 +18,12 @@ internal static class ExceptionReadableMessageExtension
 					+ "Make sure the site is running and accessible.",
 			WebException ex => $"{ex.Message} ({DescribeWebException(ex)})",
 			FileNotFoundException ex => $"{ex.Message}{ex.FileName}",
-			InvalidOperationException ex => ex.InnerException?.Message ?? ex.Message,
+			// Must precede the InvalidOperationException arm: an IOE (or any wrapper) whose inner chain
+			// carries a WebException should still surface the structured "(WebException: <status> …)"
+			// enrichment, otherwise the IOE arm below would shadow it and drop the 401-vs-connect signal.
 			_ when TryGetWebException(exception, out WebException nestedWebException)
 				=> $"{exception.Message} ({DescribeWebException(nestedWebException)})",
+			InvalidOperationException ex => ex.InnerException?.Message ?? ex.Message,
 			_ => exception.Message
 		};
 	}
