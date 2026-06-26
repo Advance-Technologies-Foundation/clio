@@ -184,50 +184,6 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
-	[Description("Surfaces the un-awaited $context read as an advisory warning through update-page dry-run, without failing the call.")]
-	[AllureTag(ToolName)]
-	[AllureName("update-page surfaces un-awaited $context warning in dry-run mode")]
-	[AllureDescription("Starts the real clio MCP server, invokes update-page in dry-run mode with a handler that reads $context without await, and verifies the tool returns a successful structured response carrying the advisory await warning through the real MCP transport.")]
-	[Ignore("ENG-91829: depends on a seeded page 'UsrContextAwaitWarning_FormPage' that the deploy seed does not create; the production un-awaited-$context advisory-warning logic is verified correct.")]
-	public async Task PageUpdateTool_Should_Surface_UnAwaitedContextWarning_In_DryRun_Mode() {
-		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		string environmentName = await ResolveReachableEnvironmentAsync(settings);
-		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
-		string unAwaitedContextBody = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
-			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
-			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
-			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
-			"handlers: /**SCHEMA_HANDLERS*/[{ request: \"crt.HandleViewModelInitRequest\", handler: async (request, next) => { const mode = $context[\"UsrMode\"]; return next?.handle(request); } }]/**SCHEMA_HANDLERS*/, " +
-			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
-
-		// Act
-		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["schema-name"] = "UsrContextAwaitWarning_FormPage",
-					["body"] = unAwaitedContextBody,
-					["dry-run"] = true,
-					["environment-name"] = environmentName
-				}
-			},
-			arrangeContext.CancellationTokenSource.Token);
-		PageUpdateResponse response = EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(callResult);
-
-		// Assert
-		callResult.IsError.Should().NotBeTrue(
-			because: "an advisory warning must stay inside the structured response, not raise a protocol-level error");
-		response.Success.Should().BeTrue(
-			because: "an un-awaited $context read is advisory; dry-run validation should still succeed");
-		response.Warnings.Should().NotBeNull(
-			because: "the response must carry the advisory warning list");
-		response.Warnings.Should().Contain(w => w.Contains("UsrMode") && w.Contains("await"),
-			because: "update-page must surface the ValidateContextAccessAwait warning through the real MCP transport");
-	}
-
-	[Test]
 	[Description("Rejects malformed resources JSON through update-page dry-run before any remote calls are attempted.")]
 	[AllureTag(ToolName)]
 	[AllureName("update-page rejects malformed resources JSON")]
