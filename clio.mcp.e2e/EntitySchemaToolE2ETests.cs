@@ -46,6 +46,23 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 	private const string ReadColumnToolName = GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName;
 	private const string ModifyToolName = ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName;
 
+	// Option A (ENG-92458): one shared workspace+package+push for the whole fixture instead of one per
+	// test. Lazily initialized by the first ArrangeSandboxPackageAsync call (kept lazy rather than in
+	// [OneTimeSetUp] so its Assert.Ignore on a missing destructive opt-in / cliogate only skips the
+	// package tests; the InvalidEnvironment and FindEntitySchema tests need no package and stay green).
+	// The fixture is [NonParallelizable], so the lazy init runs without a race; each package test still
+	// creates its own unique schema inside the shared package, preserving per-test isolation.
+	private string? _sharedEnvironmentName;
+	private string? _sharedPackageName;
+	private string? _sharedRootDirectory;
+
+	[OneTimeTearDown]
+	public void CleanupSharedSandboxPackage() {
+		if (_sharedRootDirectory is not null && Directory.Exists(_sharedRootDirectory)) {
+			Directory.Delete(_sharedRootDirectory, recursive: true);
+		}
+	}
+
 	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Creates a remote entity schema, reads its structured properties, adds, modifies, and removes a column, and verifies the structured readbacks through the real MCP server.")]
@@ -791,7 +808,7 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 	}
 
 	private async Task<EntitySchemaArrangeContext> ArrangeSandboxPackageAsync() {
-		return await AllureApi.Step("Arrange sandbox package and MCP session for entity schema tools", async () => {
+		return await AllureApi.Step("Arrange a unique schema in the shared sandbox package and MCP session for entity schema tools", async () => {
 			McpE2ESettings settings = TestConfiguration.Load();
 			settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 			if (!settings.AllowDestructiveMcpTests) {
@@ -799,55 +816,70 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 			}
 
 			TestConfiguration.EnsureSandboxIsConfigured(settings);
-			string rootDirectory = Path.Combine(Path.GetTempPath(), $"clio-entity-schema-mcp-e2e-{Guid.NewGuid():N}");
-			Directory.CreateDirectory(rootDirectory);
-
-			string workspaceName = $"workspace-{Guid.NewGuid():N}";
-			string workspacePath = Path.Combine(rootDirectory, workspaceName);
-			string packageName = $"Pkg{Guid.NewGuid():N}".Substring(0, 18);
-			string schemaName = $"Usr{Guid.NewGuid():N}";
-			string initialColumnName = "UsrName";
-			string lookupColumnName = "UsrSortOrder";
-			string addedColumnName = "UsrCode";
 			CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(8));
 
-			try {
-				await ClioCliCommandRunner.EnsureCliogateInstalledAsync(
-					settings,
-					settings.Sandbox.EnvironmentName!,
-					cancellationTokenSource.Token);
-			}
-			catch (Exception ex) {
-				Assert.Ignore(
-					$"Skipping destructive entity schema MCP end-to-end test because cliogate could not be installed or verified for '{settings.Sandbox.EnvironmentName}'. {ex.Message}");
-			}
-			await CreateEmptyWorkspaceAsync(settings, rootDirectory, workspaceName, cancellationTokenSource.Token);
-			await AddPackageAsync(settings, workspacePath, packageName, cancellationTokenSource.Token);
-			await PushWorkspaceAsync(
-				settings,
-				workspacePath,
-				settings.Sandbox.EnvironmentName!,
-				packageName,
-				cancellationTokenSource.Token);
-			await EnsureTextSysSettingAsync(
-				settings,
-				settings.Sandbox.EnvironmentName!,
-				TextDefaultSettingCode,
-				"Entity schema MCP E2E default",
-				cancellationTokenSource.Token);
+			(string environmentName, string packageName) =
+				await EnsureSharedSandboxPackageAsync(settings, cancellationTokenSource.Token);
 
+			// Each test gets its own schema inside the shared package so creates never collide; the
+			// column names are constants but live in distinct schemas, so they do not clash either.
+			string schemaName = $"Usr{Guid.NewGuid():N}";
 			McpServerSession session = Session;
 			return new EntitySchemaArrangeContext(
-				rootDirectory,
-				settings.Sandbox.EnvironmentName!,
+				_sharedRootDirectory!,
+				environmentName,
 				packageName,
 				schemaName,
-				initialColumnName,
-				lookupColumnName,
-				addedColumnName,
+				"UsrName",
+				"UsrSortOrder",
+				"UsrCode",
 				session,
 				cancellationTokenSource);
 		});
+	}
+
+	/// <summary>
+	/// Lazily provisions a single sandbox workspace + package (created, pushed and unlocked once) that
+	/// every destructive entity-schema test shares, replacing the former per-test push-workspace round
+	/// trip. Subsequent calls return the cached package. Guarded by Assert.Ignore so only the package
+	/// tests skip when the stand is unavailable; relies on the fixture being [NonParallelizable].
+	/// </summary>
+	private async Task<(string environmentName, string packageName)> EnsureSharedSandboxPackageAsync(
+		McpE2ESettings settings,
+		CancellationToken cancellationToken) {
+		if (_sharedPackageName is not null) {
+			return (_sharedEnvironmentName!, _sharedPackageName);
+		}
+
+		string environmentName = settings.Sandbox.EnvironmentName!;
+		try {
+			await ClioCliCommandRunner.EnsureCliogateInstalledAsync(settings, environmentName, cancellationToken);
+		}
+		catch (Exception ex) {
+			Assert.Ignore(
+				$"Skipping destructive entity schema MCP end-to-end test because cliogate could not be installed or verified for '{environmentName}'. {ex.Message}");
+		}
+
+		string rootDirectory = Path.Combine(Path.GetTempPath(), $"clio-entity-schema-mcp-e2e-{Guid.NewGuid():N}");
+		Directory.CreateDirectory(rootDirectory);
+		string workspaceName = $"workspace-{Guid.NewGuid():N}";
+		string workspacePath = Path.Combine(rootDirectory, workspaceName);
+		string packageName = $"Pkg{Guid.NewGuid():N}".Substring(0, 18);
+
+		await CreateEmptyWorkspaceAsync(settings, rootDirectory, workspaceName, cancellationToken);
+		await AddPackageAsync(settings, workspacePath, packageName, cancellationToken);
+		await PushWorkspaceAsync(settings, workspacePath, environmentName, packageName, cancellationToken);
+		await EnsureTextSysSettingAsync(
+			settings,
+			environmentName,
+			TextDefaultSettingCode,
+			"Entity schema MCP E2E default",
+			cancellationToken);
+
+		_sharedRootDirectory = rootDirectory;
+		_sharedEnvironmentName = environmentName;
+		_sharedPackageName = packageName;
+		return (environmentName, packageName);
 	}
 
 	private async Task<InvalidEnvironmentArrangeContext> ArrangeInvalidEnvironmentAsync() {
@@ -1725,12 +1757,9 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
 		public ValueTask DisposeAsync() {
+			// RootDirectory is the shared fixture workspace (see EnsureSharedSandboxPackageAsync); it is
+			// deleted once in [OneTimeTearDown], so per-test disposal must NOT remove it.
 			CancellationTokenSource.Dispose();
-
-			if (Directory.Exists(RootDirectory)) {
-				Directory.Delete(RootDirectory, recursive: true);
-			}
-
 			return ValueTask.CompletedTask;
 		}
 	}
