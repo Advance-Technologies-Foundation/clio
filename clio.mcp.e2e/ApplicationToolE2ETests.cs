@@ -22,7 +22,7 @@ namespace Clio.Mcp.E2E;
 [TestFixture]
 [AllureNUnit]
 [NonParallelizable]
-public sealed class ApplicationToolE2ETests : McpContractFixtureBase {
+public sealed class ApplicationToolE2ETests {
 	private const string ListToolName = ApplicationGetListTool.ApplicationGetListToolName;
 	private const string InfoToolName = ApplicationGetInfoTool.ApplicationGetInfoToolName;
 	private const string CreateToolName = ApplicationCreateTool.ApplicationCreateToolName;
@@ -756,11 +756,11 @@ public sealed class ApplicationToolE2ETests : McpContractFixtureBase {
 			because: "the failure should explain that the MCP request needs an environment-name or explicit URI");
 	}
 
-	private async Task<ApplicationArrangeContext> ArrangeAsync(McpE2ESettings settings, TimeSpan timeout) {
+	private static async Task<ApplicationArrangeContext> ArrangeAsync(McpE2ESettings settings, TimeSpan timeout) {
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		CancellationTokenSource cancellationTokenSource = new(timeout);
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
-		McpServerSession session = Session;
+		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
 		return new ApplicationArrangeContext(environmentName, session, cancellationTokenSource);
 	}
 
@@ -1162,9 +1162,9 @@ public sealed class ApplicationToolE2ETests : McpContractFixtureBase {
 		string EnvironmentName,
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public ValueTask DisposeAsync() {
+		public async ValueTask DisposeAsync() {
+			await Session.DisposeAsync();
 			CancellationTokenSource.Dispose();
-			return ValueTask.CompletedTask;
 		}
 	}
 
