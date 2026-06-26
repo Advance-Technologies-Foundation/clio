@@ -95,7 +95,8 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		IList<McpClientTool> tools = await context.Session.ListToolsAsync(context.CancellationTokenSource.Token);
 		tools.Select(tool => tool.Name).Should().Contain(ToolName,
 			because: "the create-business-process tool must be advertised before the end-to-end call");
-		return await context.Session.CallToolAsync(ToolName, args, context.CancellationTokenSource.Token);
+		return await context.Session.CallToolAsync(
+			ToolName, new Dictionary<string, object?> { ["args"] = args }, context.CancellationTokenSource.Token);
 	}
 
 	private static async Task<ArrangeContext> ArrangeAsync(bool requireReachableEnvironment) {
