@@ -26,7 +26,7 @@ public sealed class PageModificationGuidanceResource {
 		Text = """
 		       clio MCP page modification guide
 
-		       This is the ENTRY guide for editing a Freedom UI page. It owns the mandatory pre-edit GATE checklist below; the detailed mechanics live in four focused sub-guides you reach with `get-guidance` (each kept small so one response fits the token limit). After running this checklist, read the ONE sub-guide that matches your edit — you should need at most one:
+		       This is the ENTRY guide for editing a Freedom UI page. It owns the mandatory pre-edit GATE checklist below; the detailed mechanics live in four focused sub-guides reachable with `get-guidance` (each small enough that one response fits the token limit). After this checklist, read the ONE sub-guide matching your edit:
 		       | Editing task | get-guidance name |
 		       | --- | --- |
 		       | body save lifecycle: get-page/update-page/sync-pages flow, replacing schema, write modes, conflicts, body formatting | `page-modification-overview` |
@@ -71,11 +71,7 @@ public sealed class PageModificationGuidanceResource {
 
 		       STOP. Adding a related/child list (a "detail"), or making a list show only the records that belong to the current/open record ("filter by page data"), is NOT a single-component insert and NOT an inline `filter` on the list attribute. It is a master-detail composite — fetch its structure with `get-component-info composite="Expanded list"` plus a child `crt.EntityDataSource`, an `isCollection` attribute, and a declarative `modelConfig.dependencies` entry (`attributePath` = child foreign-key column, `relationPath` = master id path such as `PDS.Id`). Read `get-guidance` with name `related-list` before writing the body. Do NOT scope the list with a `crt.HandleViewModelInitRequest` handler, a seeded empty-Guid filter, or a `filterAttributes` entry — the platform applies the dependency filter for you and waits for the master to load.
 
-		       Canonical page modification flow (full detail, with the response shapes, in `page-modification-overview`)
-		       1. `list-pages` — discover the page schema name.
-		       2. `get-page` — read `raw.body` (the editable replacing schema body) and `page` metadata.
-		       3. `get-component-info` — for EVERY component type you will insert, call it for that exact type (and `environment-name`) and build the insert from its response, not from memory — see the COMPONENT-TYPE VERIFICATION step above.
-		       4. Edit `raw.body`, then `update-page` / `sync-pages` to save (optionally `verify: true` to read back). Do NOT resend the full `raw.body` — see `page-modification-overview`.
+		       Canonical flow: `list-pages` -> `get-page` (read raw.body) -> `get-component-info` for EVERY type you insert (verify it exists — see the COMPONENT-TYPE VERIFICATION step above) -> edit raw.body -> `update-page`/`sync-pages` (optionally `verify:true`). Do NOT resend the full raw.body. Full flow + get-page/bundle response shapes: `page-modification-overview`.
 		       """
 	};
 

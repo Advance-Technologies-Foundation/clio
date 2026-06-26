@@ -233,8 +233,9 @@ public sealed class GuidanceGetToolTests {
 			because: "the entry guide must route a data-bound field insert to the focused field-contract sub-guide (ENG-91556 split)");
 		result.Article.Text.Should().Contain("page-modification-overview",
 			because: "the entry guide must point at the save-lifecycle sub-guide so the detailed mechanics stay one get-guidance call away (ENG-91556 split)");
-		new System.Text.UTF8Encoding(false).GetByteCount(result.Article.Text).Should().BeLessThanOrEqualTo(15000,
-			because: "the entry guide must stay <= 15 KB so a single get-guidance response fits the agent token limit (ENG-91556 AC#2)");
+		string entryCrlfWorstCase = result.Article.Text.Replace("\r\n", "\n").Replace("\n", "\r\n");
+		new System.Text.UTF8Encoding(false).GetByteCount(entryCrlfWorstCase).Should().BeLessThanOrEqualTo(15000,
+			because: "the entry guide must stay <= 15 KB (CRLF worst case) so a single get-guidance response fits the agent token limit (ENG-91556 AC#2)");
 	}
 
 	[Test]
@@ -260,6 +261,8 @@ public sealed class GuidanceGetToolTests {
 			because: "the do-not-resend rule moved into the overview sub-guide");
 		result.Article.Text.Should().Contain("External-modification conflicts",
 			because: "the checksum-conflict recovery content moved into the overview sub-guide");
+		result.Article.Text.Should().Contain("mode: \"append\"",
+			because: "the update-page write-mode rules (replace/append) moved into the overview sub-guide and must not be silently dropped");
 	}
 
 	[Test]
@@ -285,6 +288,8 @@ public sealed class GuidanceGetToolTests {
 			because: "the field-contract sub-guide must still inject the shared inserted-field contract summary verbatim so the guidance matches the validator");
 		result.Article.Text.Should().Contain("the attribute must reach `viewModelConfig.attributes`",
 			because: "the viewModelConfigDiff nesting rule moved into the field-contract sub-guide");
+		result.Article.Text.Should().Contain("Static vs diff body forms",
+			because: "the static-vs-diff body-form decision moved into the field-contract sub-guide and must not be silently dropped");
 	}
 
 	[Test]
@@ -308,6 +313,8 @@ public sealed class GuidanceGetToolTests {
 			because: "the container-selection section moved into the containers sub-guide");
 		result.Article.Text.Should().Contain("jq recipes for bundle.json",
 			because: "the bundle.json jq recipes moved into the containers sub-guide");
+		result.Article.Text.Should().Contain("ARRAY of objects",
+			because: "the bundle.json top-level shape (containers is an ARRAY) moved into the containers sub-guide and must not be silently dropped");
 	}
 
 	[Test]
@@ -331,11 +338,13 @@ public sealed class GuidanceGetToolTests {
 			because: "the button+handler section moved into the components sub-guide");
 		result.Article.Text.Should().Contain("whenToUse",
 			because: "the get-component-info selection-metadata guidance (whenToUse/whenNotToUse) moved into the components sub-guide (ENG-91134 / Solution A)");
+		result.Article.Text.Should().Contain("latest-fallback",
+			because: "the get-component-info resolvedFrom interpretation (incl. latest-fallback) moved into the components sub-guide and must not be silently dropped");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Every guide in the page-modification family stays within the 15 KB per-response budget so no single get-guidance call exceeds the agent token limit (ENG-91556 AC#2).")]
+	[Description("Every guide in the page-modification family stays within the 15 KB per-response budget so no single get-guidance call exceeds the agent token limit (ENG-91556 AC#2). Measured against the CRLF-normalized worst case so the guard holds regardless of the checkout's line endings.")]
 	public void GuidanceGet_Should_KeepEveryPageModificationGuideWithin15Kb_AfterSplit() {
 		// Arrange
 		GuidanceGetTool tool = new();
@@ -350,8 +359,12 @@ public sealed class GuidanceGetToolTests {
 			GuidanceGetResponse result = tool.GetGuidance(new GuidanceGetArgs(name)).GetAwaiter().GetResult();
 			result.Success.Should().BeTrue(
 				because: $"{name} must resolve in the catalog after the page-modification split");
-			utf8.GetByteCount(result.Article!.Text).Should().BeLessThanOrEqualTo(15000,
-				because: $"the {name} guide must stay <= 15 KB so a single get-guidance response fits the agent token limit (ENG-91556 AC#2)");
+			// Normalize every line ending to CRLF so the budget reflects the largest the article can be
+			// served at (a CRLF checkout adds one byte per line over an LF checkout); this keeps the guard
+			// independent of git autocrlf and matches the real runtime size observed on Windows.
+			string crlfWorstCase = result.Article!.Text.Replace("\r\n", "\n").Replace("\n", "\r\n");
+			utf8.GetByteCount(crlfWorstCase).Should().BeLessThanOrEqualTo(15000,
+				because: $"the {name} guide must stay <= 15 KB (CRLF worst case) so a single get-guidance response fits the agent token limit (ENG-91556 AC#2)");
 		}
 	}
 
