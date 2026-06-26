@@ -229,8 +229,130 @@ public sealed class GuidanceGetToolTests {
 			because: "Step 0 must make the agent resolve web vs mobile before editing a page");
 		result.Article.Text.Should().Contain("default to web",
 			because: "Step 0 must default to web when the requirement does not name a surface");
+		result.Article.Text.Should().Contain("page-modification-field-contract",
+			because: "the entry guide must route a data-bound field insert to the focused field-contract sub-guide (ENG-91556 split)");
+		result.Article.Text.Should().Contain("page-modification-overview",
+			because: "the entry guide must point at the save-lifecycle sub-guide so the detailed mechanics stay one get-guidance call away (ENG-91556 split)");
+		new System.Text.UTF8Encoding(false).GetByteCount(result.Article.Text).Should().BeLessThanOrEqualTo(15000,
+			because: "the entry guide must stay <= 15 KB so a single get-guidance response fits the agent token limit (ENG-91556 AC#2)");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the page-modification-overview sub-guide carrying the relocated body save-lifecycle content (ENG-91556 split).")]
+	public async Task GuidanceGet_Should_Return_Page_Modification_Overview_Article() {
+		// Arrange
+		GuidanceGetTool tool = new();
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("page-modification-overview"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "page-modification-overview is a registered guidance name after the split");
+		result.Article!.Uri.Should().Be("docs://mcp/guides/page-modification-overview",
+			because: "the overview sub-guide must expose its stable canonical URI");
+		result.Article.Text.Should().Contain("clio MCP page modification overview guide",
+			because: "the overview sub-guide must carry its own header");
+		result.Article.Text.Should().Contain("Replacing-schema concept",
+			because: "the replacing-schema concept moved from the entry guide into the overview sub-guide");
+		result.Article.Text.Should().Contain("do NOT resend the full raw.body",
+			because: "the do-not-resend rule moved into the overview sub-guide");
+		result.Article.Text.Should().Contain("External-modification conflicts",
+			because: "the checksum-conflict recovery content moved into the overview sub-guide");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the page-modification-field-contract sub-guide carrying the relocated inserted-field contract content plus the shared InsertedFieldContractSummary (ENG-91556 split).")]
+	public async Task GuidanceGet_Should_Return_Page_Modification_Field_Contract_Article() {
+		// Arrange
+		GuidanceGetTool tool = new();
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("page-modification-field-contract"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "page-modification-field-contract is a registered guidance name after the split");
+		result.Article!.Uri.Should().Be("docs://mcp/guides/page-modification-field-contract",
+			because: "the field-contract sub-guide must expose its stable canonical URI");
+		result.Article.Text.Should().Contain("clio MCP page modification field-contract guide",
+			because: "the field-contract sub-guide must carry its own header");
+		result.Article.Text.Should().Contain("Inserted-field contract for a new data-bound field control",
+			because: "the inserted-field contract section moved into the field-contract sub-guide");
+		result.Article.Text.Should().Contain(Clio.Command.SchemaValidationService.InsertedFieldContractSummary,
+			because: "the field-contract sub-guide must still inject the shared inserted-field contract summary verbatim so the guidance matches the validator");
+		result.Article.Text.Should().Contain("the attribute must reach `viewModelConfig.attributes`",
+			because: "the viewModelConfigDiff nesting rule moved into the field-contract sub-guide");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the page-modification-containers sub-guide carrying the relocated bundle.json and parentName content (ENG-91556 split).")]
+	public async Task GuidanceGet_Should_Return_Page_Modification_Containers_Article() {
+		// Arrange
+		GuidanceGetTool tool = new();
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("page-modification-containers"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "page-modification-containers is a registered guidance name after the split");
+		result.Article!.Uri.Should().Be("docs://mcp/guides/page-modification-containers",
+			because: "the containers sub-guide must expose its stable canonical URI");
+		result.Article.Text.Should().Contain("clio MCP page modification containers guide",
+			because: "the containers sub-guide must carry its own header");
+		result.Article.Text.Should().Contain("Finding a container for a new component",
+			because: "the container-selection section moved into the containers sub-guide");
+		result.Article.Text.Should().Contain("jq recipes for bundle.json",
+			because: "the bundle.json jq recipes moved into the containers sub-guide");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the page-modification-components sub-guide carrying the relocated viewConfigDiff/handler/get-component-info content including the whenToUse selection metadata (ENG-91556 split).")]
+	public async Task GuidanceGet_Should_Return_Page_Modification_Components_Article() {
+		// Arrange
+		GuidanceGetTool tool = new();
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("page-modification-components"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "page-modification-components is a registered guidance name after the split");
+		result.Article!.Uri.Should().Be("docs://mcp/guides/page-modification-components",
+			because: "the components sub-guide must expose its stable canonical URI");
+		result.Article.Text.Should().Contain("clio MCP page modification components guide",
+			because: "the components sub-guide must carry its own header");
+		result.Article.Text.Should().Contain("Adding a button with a click handler",
+			because: "the button+handler section moved into the components sub-guide");
 		result.Article.Text.Should().Contain("whenToUse",
-			because: "the guide must steer selection between similar components using the producer's whenToUse/whenNotToUse selection-metadata (ENG-91134 / Solution A)");
+			because: "the get-component-info selection-metadata guidance (whenToUse/whenNotToUse) moved into the components sub-guide (ENG-91134 / Solution A)");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Every guide in the page-modification family stays within the 15 KB per-response budget so no single get-guidance call exceeds the agent token limit (ENG-91556 AC#2).")]
+	public void GuidanceGet_Should_KeepEveryPageModificationGuideWithin15Kb_AfterSplit() {
+		// Arrange
+		GuidanceGetTool tool = new();
+		string[] familyNames = [
+			"page-modification", "page-modification-overview", "page-modification-field-contract",
+			"page-modification-containers", "page-modification-components"
+		];
+		System.Text.UTF8Encoding utf8 = new(false);
+
+		// Act / Assert
+		foreach (string name in familyNames) {
+			GuidanceGetResponse result = tool.GetGuidance(new GuidanceGetArgs(name)).GetAwaiter().GetResult();
+			result.Success.Should().BeTrue(
+				because: $"{name} must resolve in the catalog after the page-modification split");
+			utf8.GetByteCount(result.Article!.Text).Should().BeLessThanOrEqualTo(15000,
+				because: $"the {name} guide must stay <= 15 KB so a single get-guidance response fits the agent token limit (ENG-91556 AC#2)");
+		}
 	}
 
 	[Test]
