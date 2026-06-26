@@ -29,8 +29,10 @@ public sealed class DescribeProcessToolE2ETests {
 
 	private const string ToolName = DescribeProcessTool.ToolName;
 
-	// A process expected to exist on the configured sandbox (the Read-data PoC process). Adjust per env.
-	private const string KnownProcessCaption = "AI PoC Read Contact";
+	// A process expected to exist on the configured sandbox. Defaults to the standard
+	// ExpireLicenseNotificationProcess system process (present on every Creatio stand), so the test is
+	// portable and needs no manual seeding; override the code per env if needed.
+	private const string KnownProcessCode = "ExpireLicenseNotificationProcess";
 
 	[Test]
 	[Description("Starts the real clio MCP server and verifies describe-business-process is advertised (hermetic).")]
@@ -59,7 +61,7 @@ public sealed class DescribeProcessToolE2ETests {
 		// Act
 		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
 			["environment-name"] = context.EnvironmentName,
-			["process-caption"] = KnownProcessCaption
+			["process-code"] = KnownProcessCode
 		});
 
 		// Assert
