@@ -331,6 +331,9 @@ public sealed class ApplicationSectionToolE2ETests {
 			captured.Should().BeNull(
 				because: "an unanswered elicitation must not make create-app-section hang to the client ceiling; "
 					+ $"the call must return a structured response. Elapsed: {stopwatch.Elapsed}. Exception: {captured}");
+			if (captured is not null) {
+				Assert.Fail($"create-app-section threw unexpectedly after {stopwatch.Elapsed}: {captured}");
+			}
 			stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(25),
 				because: "icon resolution runs before the backend call and must be bounded well below the ~180s client ceiling");
 			ApplicationSectionContextResponseEnvelope response = ApplicationResultParser.ExtractSectionCreate(callResult);
