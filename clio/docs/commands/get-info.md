@@ -132,10 +132,14 @@ clio get-info -e MyEnvironment --timeout 60000
 
 ## Notes
 
-- This command requires cliogate extension to be installed on Creatio
-- If cliogate is not installed, you will receive an error message with
-installation instructions
-- The command uses GET HTTP method for the API call
+- cliogate is NOT required: without it the command still reports core version,
+  locale/user/workspace metadata, and — with `CanManageSolution` — the database
+  engine and executing framework via `GetSystemEnvironmentInfo`
+- `LicenseInfo` and `ProductName` are reported only when cliogate is installed
+- The base report uses POST (`GetApplicationInfo` and `GetSystemEnvironmentInfo`);
+  the cliogate-only fields use GET (`GetSysInfo`)
+- The optional enrichment sources are best-effort and use a single attempt (no
+  retry) so a missing source never adds retry latency
 - Response is returned as formatted JSON with system details
 
 ## Troubleshooting

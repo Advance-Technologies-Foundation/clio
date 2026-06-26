@@ -69,14 +69,20 @@ namespace Clio.Command
 				TryEnrichWithSystemEnvironmentInfo(report, options);
 
 				// cliogate-only fields (productName, licenseInfo) + db/framework backfill for older Creatio.
-				bool cliogateReported = ClioGateWay is not null
-					&& ClioGateWay.IsCompatibleWith(ClioGateMinVersion)
-					&& TryEnrichWithCliogateSysInfo(report, options);
+				bool cliogateCompatible = ClioGateWay is not null
+					&& ClioGateWay.IsCompatibleWith(ClioGateMinVersion);
+				bool cliogateReported = cliogateCompatible && TryEnrichWithCliogateSysInfo(report, options);
 				if (!cliogateReported){
+					// Distinguish "not installed/incompatible" from "installed but GetSysInfo returned nothing"
+					// (typically the caller lacks CanManageSolution) — claiming "not installed" when it is would
+					// be misleading.
+					string reason = cliogateCompatible
+						? $"cliogate {ClioGateMinVersion}+ is installed but GetSysInfo returned no data "
+							+ "(the caller may lack the CanManageSolution permission)"
+						: $"cliogate {ClioGateMinVersion}+ is not installed";
 					Logger.WriteWarning(
-						$"cliogate {ClioGateMinVersion}+ is not installed - ProductName and LicenseInfo are "
-						+ "unavailable. All other fields (incl. DbEngineType and Runtime when CanManageSolution "
-						+ "is granted) are reported.");
+						$"{reason} - ProductName and LicenseInfo are unavailable. All other fields "
+						+ "(incl. DbEngineType and framework when CanManageSolution is granted) are reported.");
 				}
 
 				Logger.WriteLine(report.ToString());
@@ -102,8 +108,12 @@ namespace Clio.Command
 		private void TryEnrichWithSystemEnvironmentInfo(JObject report, GetCreatioInfoCommandOptions options){
 			try {
 				string url = RootPath + CreatioServicePaths.GetSystemEnvironmentInfo;
+				// Best-effort probe: single attempt, no retry delay. The retry budget exists to ride out
+				// transient blips on a REQUIRED call; here a 404 (operation absent on older Creatio) or 403
+				// (no CanManageSolution) is expected and swallowed, so retrying 3x would only add ~2s of dead
+				// latency to every describe for a result that will not change on retry.
 				string response = ApplicationClient.ExecutePostRequest(
-					url, "{}", options.TimeOut, options.MaxAttempts, options.RetryDelay);
+					url, "{}", options.TimeOut, maxAttempts: 1, delaySec: 0);
 				JObject info = JObject.Parse(response);
 				if (info["success"]?.Value<bool>() != true){
 					return;
@@ -113,8 +123,12 @@ namespace Clio.Command
 						report[field] = value;
 					}
 				}
-			} catch (Exception){
-				// Degrade silently — the ApplicationInfoService base is already reported.
+			} catch (Exception e){
+				// Degrade silently — the ApplicationInfoService base is already reported. Surface the reason
+				// only under --debug so an access/transport failure is diagnosable without polluting normal output.
+				if (Program.IsDebugMode){
+					Logger.WriteWarning($"GetSystemEnvironmentInfo skipped: {e.Message}");
+				}
 			}
 		}
 
@@ -129,8 +143,9 @@ namespace Clio.Command
 		private bool TryEnrichWithCliogateSysInfo(JObject report, GetCreatioInfoCommandOptions options){
 			try {
 				string url = RootPath + CreatioServicePaths.GetSysInfo;
+				// Best-effort probe: single attempt, no retry delay (see TryEnrichWithSystemEnvironmentInfo).
 				string response = ApplicationClient.ExecuteGetRequest(
-					url, options.TimeOut, options.MaxAttempts, options.RetryDelay);
+					url, options.TimeOut, maxAttempts: 1, delaySec: 0);
 				if (JObject.Parse(response)["SysInfo"] is not JObject sysInfo){
 					return false;
 				}
@@ -150,8 +165,12 @@ namespace Clio.Command
 					report["frameworkKind"] = sysInfo["IsNetCore"].Value<bool>() ? "Net" : "NetFramework";
 				}
 				return true;
-			} catch (Exception){
-				// Degrade silently — the base + GetSystemEnvironmentInfo data is already reported.
+			} catch (Exception e){
+				// Degrade silently — the base + GetSystemEnvironmentInfo data is already reported. Surface the
+				// reason only under --debug so an access/transport failure is diagnosable.
+				if (Program.IsDebugMode){
+					Logger.WriteWarning($"cliogate GetSysInfo skipped: {e.Message}");
+				}
 				return false;
 			}
 		}

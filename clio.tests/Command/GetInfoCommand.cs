@@ -4,6 +4,7 @@ using Clio.Common;
 using FluentAssertions;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
+using Newtonsoft.Json.Linq;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command;
@@ -166,6 +167,40 @@ public class GetInfoCommandTests : BaseCommandTests<GetCreatioInfoCommandOptions
 		result.Should().Be(0, because: "cliogate backfill keeps describe successful");
 		logger.Received().WriteLine(Arg.Is<string>(s =>
 			s.Contains("dbEngineType") && s.Contains("MSSql") && s.Contains("frameworkKind") && s.Contains("NetFramework")));
+	}
+
+	[Test]
+	[Description("When both GetSystemEnvironmentInfo and a compatible cliogate report a (conflicting) dbEngineType/framework, the admin-gated GetSystemEnvironmentInfo value wins - the cliogate path backfills ABSENT fields only and never overwrites - and the merged fields sit at the report root.")]
+	public void Execute_PrefersSystemEnvironmentInfo_Over_CliogateBackfill_When_Both_Present()
+	{
+		// Arrange — compatible cliogate AND a working GetSystemEnvironmentInfo, with CONFLICTING db/framework.
+		IClioGateway gateway = Substitute.For<IClioGateway>();
+		gateway.IsCompatibleWith(Arg.Any<string>()).Returns(true);
+		IApplicationClient client = SubstituteClient();
+		StubSystemEnvironmentInfo(client,
+			"""{ "success": true, "dbEngineType": "PostgreSql", "frameworkKind": "Net", "frameworkDescription": ".NET 8.0.11" }""");
+		StubCliogateSysInfo(client,
+			"""{ "SysInfo": { "ProductName": "studio", "LicenseInfo": { "IsDemoMode": true }, "DbEngineType": "MSSql", "Runtime": ".NET Framework 4.8", "IsNetCore": false } }""");
+		string captured = null;
+		ILogger logger = Substitute.For<ILogger>();
+		logger.When(l => l.WriteLine(Arg.Any<string>())).Do(ci => captured = ci.Arg<string>());
+		GetCreatioInfoCommand command = CreateCommand(client, gateway, logger);
+
+		// Act
+		int result = command.Execute(new GetCreatioInfoCommandOptions());
+
+		// Assert
+		result.Should().Be(0,
+			because: "a successful describe with both enrichment sources still returns success");
+		JObject report = JObject.Parse(captured);
+		report["dbEngineType"]?.Value<string>().Should().Be("PostgreSql",
+			because: "GetSystemEnvironmentInfo runs first and the cliogate backfill must only fill ABSENT fields, never overwrite a value the admin-gated source already set");
+		report["frameworkKind"]?.Value<string>().Should().Be("Net",
+			because: "the admin-gated framework value must win over the cliogate-derived IsNetCore mapping");
+		report["productName"]?.Value<string>().Should().Be("studio",
+			because: "cliogate-only fields are still merged from GetSysInfo");
+		report.Should().ContainKey("dbEngineType",
+			because: "enrichment fields are merged at the report root, not nested");
 	}
 
 	[Test]

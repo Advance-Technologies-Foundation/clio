@@ -60,6 +60,8 @@ public sealed class DescribeEnvironmentGuidanceResource {
 		          - productName           Creatio product/edition name (e.g. "studio"). NO core web service
 		                                  exposes this — it is the one field that always needs cliogate.
 		          - licenseInfo           License metadata object: CustomerId, IsDemoMode (and related fields).
+		                                  NOTE: CustomerId is the customer's licensing identifier — treat it as
+		                                  sensitive; do not echo or paste it outside this environment context.
 		          cliogate also BACKFILLS dbEngineType / frameworkKind / frameworkDescription when step 2 did
 		          not provide them (older Creatio without GetSystemEnvironmentInfo), keeping the shape consistent.
 
