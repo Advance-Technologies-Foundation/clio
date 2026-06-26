@@ -387,6 +387,14 @@ This part is small but important because many other tools depend on it.
   Returns `{ success, culture, resolvedFrom, reason }`. Call once per session before creating
   entities and reuse it for all generated names/labels/captions; on `success:false` ask the user
   which language to use instead of silently defaulting.
+- `describe-environment`
+  Describe a Creatio environment as ONE source-independent report (read-only). The field set is the
+  same with or without cliogate: `coreVersion` plus locale/user/workspace/maintainer metadata is
+  ALWAYS reported (`ApplicationInfoService`, session only); `dbEngineType`, `frameworkKind` and
+  `frameworkDescription` are added WITHOUT cliogate via the admin-gated
+  `GetSystemEnvironmentInfo` (needs `CanManageSolution`); `productName` and `licenseInfo` are added
+  only when cliogate `>= 2.0.0.32` is installed. Best-effort: an unavailable source is skipped and
+  the call still succeeds. Read `get-guidance name=describe-environment` for the full field catalogue.
 
 What an external AI can practically do here:
 
@@ -394,6 +402,7 @@ What an external AI can practically do here:
 - inspect what the local machine already knows about environments
 - inspect package inventory before choosing install, page, or schema operations
 - detect the profile language to apply to created entity names/labels/captions
+- read a target environment's version, database engine, framework, product and license
 
 Important note:
 
