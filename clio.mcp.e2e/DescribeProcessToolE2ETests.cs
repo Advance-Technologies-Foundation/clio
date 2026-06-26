@@ -29,11 +29,6 @@ public sealed class DescribeProcessToolE2ETests {
 
 	private const string ToolName = DescribeProcessTool.ToolName;
 
-	// A process expected to exist on the configured sandbox. Defaults to the standard
-	// ExpireLicenseNotificationProcess system process (present on every Creatio stand), so the test is
-	// portable and needs no manual seeding; override the code per env if needed.
-	private const string KnownProcessCode = "ExpireLicenseNotificationProcess";
-
 	[Test]
 	[Description("Starts the real clio MCP server and verifies describe-business-process is advertised (hermetic).")]
 	[AllureTag(ToolName)]
@@ -61,7 +56,7 @@ public sealed class DescribeProcessToolE2ETests {
 		// Act
 		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
 			["environment-name"] = context.EnvironmentName,
-			["process-code"] = KnownProcessCode
+			["process-code"] = context.ProcessCode
 		});
 
 		// Assert
@@ -87,16 +82,18 @@ public sealed class DescribeProcessToolE2ETests {
 		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
 		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
 		string environmentName = settings.Sandbox.EnvironmentName;
-		if (requireReachableEnvironment && string.IsNullOrWhiteSpace(environmentName)) {
-			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName (with the known process) to run describe-business-process MCP E2E.");
+		string processCode = settings.Sandbox.ProcessCode;
+		if (requireReachableEnvironment && (string.IsNullOrWhiteSpace(environmentName) || string.IsNullOrWhiteSpace(processCode))) {
+			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName and McpE2E:Sandbox:ProcessCode (a process that exists on the stand) to run describe-business-process MCP E2E.");
 		}
-		return new ArrangeContext(session, cancellationTokenSource, environmentName);
+		return new ArrangeContext(session, cancellationTokenSource, environmentName, processCode);
 	}
 
 	private sealed record ArrangeContext(
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource,
-		string EnvironmentName) : IAsyncDisposable {
+		string EnvironmentName,
+		string ProcessCode) : IAsyncDisposable {
 		public async ValueTask DisposeAsync() {
 			await Session.DisposeAsync();
 			CancellationTokenSource.Dispose();
