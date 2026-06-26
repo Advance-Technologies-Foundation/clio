@@ -56,14 +56,14 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
 		string processName = $"UsrClioBpModifyE2e{Guid.NewGuid():N}";
 		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
-			["environmentName"] = context.EnvironmentName,
+			["environment-name"] = context.EnvironmentName,
 			["descriptor"] = BuildDescriptor(processName)
 		});
 
 		// Act
 		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
-			["environmentName"] = context.EnvironmentName,
-			["processName"] = processName,
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
 			["operations"] = BuildOperations()
 		});
 
@@ -84,14 +84,14 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
 		string processName = $"UsrClioBpAddParamE2e{Guid.NewGuid():N}";
 		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
-			["environmentName"] = context.EnvironmentName,
+			["environment-name"] = context.EnvironmentName,
 			["descriptor"] = BuildDescriptor(processName)
 		});
 
 		// Act — processName only (processUid omitted) also exercises the optional-identity path
 		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
-			["environmentName"] = context.EnvironmentName,
-			["processName"] = processName,
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
 			["operations"] = BuildAddParameterOperations()
 		});
 

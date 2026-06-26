@@ -82,7 +82,7 @@ public sealed class ServerProcessDescriber(
 			return Error.Failure(DescribeErrorCode, "unexpected server response shape");
 		}
 		if (!result.Success) {
-			return Error.Failure(DescribeErrorCode, result.ErrorMessage ?? "describe-process failed on the server");
+			return Error.Failure(DescribeErrorCode, result.ErrorMessage ?? "describe-business-process failed on the server");
 		}
 		return result;
 	}

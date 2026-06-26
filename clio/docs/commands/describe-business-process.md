@@ -1,4 +1,4 @@
-# describe-process
+# describe-business-process
 
 Read an existing Creatio business process and return a **structured graph** (elements, flows, and
 process parameters) instead of the raw escaped metadata — so an AI agent can explain, in plain
@@ -10,14 +10,14 @@ the real object model (the runtime class plus the specific user-task schema name
 user tasks) and each parameter carries its value source. Requires the `clioprocessbuilder` package on
 the target environment.
 
-**Alias:** `dp`
+**Aliases:** `dp`, `describe-process` (the original verb name, kept for back-compat)
 
 ## Usage
 
 ```bash
-clio describe-process --process-code <code> -e <environment>
-clio describe-process --process-uid <guid> -e <environment>
-clio describe-process --process-caption "<caption>" -e <environment>
+clio describe-business-process --process-code <code> -e <environment>
+clio describe-business-process --process-uid <guid> -e <environment>
+clio describe-business-process --process-caption "<caption>" -e <environment>
 ```
 
 Provide **exactly one** of `--process-code`, `--process-uid`, or `--process-caption`.
@@ -106,7 +106,7 @@ Notes:
 
 ```bash
 # Explain a process by code
-clio describe-process --process-code UsrProcess_493d4c9 -e my-env
+clio describe-business-process --process-code UsrProcess_493d4c9 -e my-env
 
 # By caption, using the alias
 clio dp --process-caption "AI PoC Read Contact" -e my-env

@@ -347,9 +347,10 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="externalLink"></a>
 <a id="link"></a>
 - [`externalLink`](docs/commands/externalLink.md) - Handle external deep links, `link`
-<a id="describe-process"></a>
+<a id="describe-business-process"></a>
 <a id="dp"></a>
-- [`describe-process`](docs/commands/describe-process.md) - Read an existing Creatio process and return its structured graph (elements, flows, parameters), `dp`
+<a id="describe-process"></a>
+- [`describe-business-process`](docs/commands/describe-business-process.md) - Read an existing Creatio process and return its structured graph (elements, flows, parameters), `dp`, `describe-process`
 <a id="create-business-process"></a>
 <a id="create-bp"></a>
 - [`create-business-process`](docs/commands/create-business-process.md) - Build a business process on an environment from a declarative JSON descriptor, `create-bp`

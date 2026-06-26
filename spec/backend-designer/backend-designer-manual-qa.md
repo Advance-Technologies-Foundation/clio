@@ -16,7 +16,7 @@ Each case is an **end-to-end scenario driven through the AI agent**, not a direc
 
 1. **Tester** gives the AI a business task in natural language (the "Business task for AI" field).
 2. **AI** forms and executes calls through clio MCP (`create-business-process`,
-   `modify-business-process`, `describe-process`, `list-user-tasks`,
+   `modify-business-process`, `describe-business-process`, `list-user-tasks`,
    `validate-process-graph`, `get-process-signature`).
 3. **Tester** opens the result **in the visual process designer** in Creatio
    and checks the structure (elements, flows, parameters, trigger).
@@ -233,7 +233,7 @@ runtime check · expected result · must NOT work (known gaps).
 
 # Group C — Read / validate / signature
 
-## TC-C-01 — `describe-process` on a simple process `[Tier1]`
+## TC-C-01 — `describe-business-process` on a simple process `[Tier1]`
 
 - **Capability:** Read back a process · Element type/task/position · Start trigger ·
   Parameter values & bindings · Connection types.
@@ -242,7 +242,7 @@ runtime check · expected result · must NOT work (known gaps).
 - **Check:** all elements returned (id/name/caption/type/position), flows with `kind`,
   trigger (object+event), process parameters and values. Cross-check with the designer.
 
-## TC-C-02 — `describe-process` on a complex existing process `[P4 — semantic blindness]`
+## TC-C-02 — `describe-business-process` on a complex existing process `[P4 — semantic blindness]`
 
 - **Capability:** Read back on a process with gateways / sub-process / conditional flows
   (round-trips as data; semantics not decoded).
@@ -371,8 +371,8 @@ runtime check · expected result · must NOT work (known gaps).
 | TC-B-03 | Atomic rollback (Impl) | P4 |
 | TC-B-04 | Swap Simple⇄Signal (Impl) | P4 |
 | TC-B-05 | Add process parameter (Impl) | P2 |
-| TC-C-01 | describe-process simple (Impl) | Tier1 |
-| TC-C-02 | describe-process complex, semantics (Impl/Partial) | P4 |
+| TC-C-01 | describe-business-process simple (Impl) | Tier1 |
+| TC-C-02 | describe-business-process complex, semantics (Impl/Partial) | P4 |
 | TC-C-03 | **get-process-signature** (Impl, never verified) | P1 |
 | TC-C-04 | list-user-tasks (Impl) | P4 |
 | TC-C-05 | validate-process-graph + fork (Impl/Partial) | P4 |

@@ -51,7 +51,7 @@ EXAMPLES
 
 SEE ALSO
     list-user-tasks - Discover valid userTaskName values for an environment
-    describe-process - Read an existing process and return its structured graph
+    describe-business-process - Read an existing process and return its structured graph
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio

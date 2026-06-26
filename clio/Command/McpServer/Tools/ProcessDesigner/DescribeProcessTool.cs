@@ -8,7 +8,7 @@ using ModelContextProtocol.Server;
 namespace Clio.Command.McpServer.Tools.ProcessDesigner;
 
 /// <summary>
-/// MCP tool surface for the <c>describe-process</c> command — reads an existing process into a
+/// MCP tool surface for the <c>describe-business-process</c> command — reads an existing process into a
 /// structured graph the agent can narrate (the inverse of generation). Read-only, environment-sensitive.
 /// </summary>
 [McpServerToolType]
@@ -20,7 +20,7 @@ public sealed class DescribeProcessTool(
 	: BaseTool<DescribeProcessOptions>(command, logger, commandResolver) {
 
 	/// <summary>Stable MCP tool name.</summary>
-	internal const string ToolName = "describe-process";
+	internal const string ToolName = "describe-business-process";
 
 	/// <summary>
 	/// Reads the identified process and returns its structured graph (elements, flows, parameters).
@@ -28,7 +28,7 @@ public sealed class DescribeProcessTool(
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description("Reads an existing Creatio process and returns a STRUCTURED graph (elements with runtime type, the specific user-task schema name, label and value-bearing parameters; flows with source/target/kind; and process parameters) — not the raw metadata. Element typing comes from the real object model server-side (universal, incl. custom user tasks); parameter values carry their source (Mapping/ConstValue/Script) and expression. Identify the process by exactly one of process-code / process-uid / process-caption. Pair with get-guidance name=process-modeling to explain it. Requires the ProcessDesignService (clioprocessbuilder) package on the target environment.")]
 	public CommandExecutionResult DescribeProcess(
-		[Description("describe-process parameters")]
+		[Description("describe-business-process parameters")]
 		[Required]
 		DescribeProcessArgs args) {
 		DescribeProcessOptions options = new() {
@@ -47,7 +47,7 @@ public sealed class DescribeProcessTool(
 }
 
 /// <summary>
-/// MCP arguments for the <c>describe-process</c> tool. Provide exactly one of
+/// MCP arguments for the <c>describe-business-process</c> tool. Provide exactly one of
 /// <c>process-code</c> / <c>process-uid</c> / <c>process-caption</c>.
 /// </summary>
 public sealed record DescribeProcessArgs(

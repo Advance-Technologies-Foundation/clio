@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
 using Clio.Common;
 using ModelContextProtocol.Server;
 
@@ -27,15 +28,24 @@ public class ListUserTasksTool(
 		 + "palette), including custom ones. Returns each task's name and UId; pass a name as a userTaskName "
 		 + "on a userTask element when building a process with create-business-process.")]
 	public CommandExecutionResult ListUserTasks(
-		[Description("Target Environment name")] [Required] string environmentName
+		[Description("list-user-tasks parameters")] [Required] ListUserTasksArgs args
 	) {
-		if (string.IsNullOrWhiteSpace(environmentName)) {
+		if (string.IsNullOrWhiteSpace(args?.EnvironmentName)) {
 			return CommandExecutionResult.FromError("environment-name is required and cannot be empty.");
 		}
 
 		ListUserTasksOptions options = new() {
-			Environment = environmentName
+			Environment = args.EnvironmentName
 		};
 		return InternalExecute<ListUserTasksCommand>(options);
 	}
 }
+
+/// <summary>
+/// MCP arguments for the <c>list-user-tasks</c> tool (kebab-case wire keys, repo convention).
+/// </summary>
+public sealed record ListUserTasksArgs(
+	[property: JsonPropertyName("environment-name")]
+	[property: Description("Registered clio environment name.")]
+	[property: Required]
+	string EnvironmentName);

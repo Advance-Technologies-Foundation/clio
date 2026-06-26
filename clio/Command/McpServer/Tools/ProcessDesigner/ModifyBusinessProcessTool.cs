@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
 using Clio.Common;
 using ModelContextProtocol.Server;
 
@@ -34,38 +35,55 @@ public class ModifyBusinessProcessTool(
 		 + "direction?, caption?, or referenceSchema for a Lookup to an object e.g. City), addMapping (with a "
 		 + "'mapping': elementId, elementParameter, and exactly one of processParameter | value | expression). "
 		 + "Operations apply in order; any failure aborts the edit (nothing is saved). "
-		 + "Use describe-process to inspect the current elements/ids first. May remove elements — destructive.")]
+		 + "Use describe-business-process to inspect the current elements/ids first. May remove elements — destructive.")]
 	public CommandExecutionResult ModifyBusinessProcess(
-		[Description("Target Environment name")] [Required] string environmentName,
-		[Description("Inline JSON operations array, e.g. [{\"op\":\"removeElement\",\"elementId\":\"StartEvent1\"}]")]
-		[Required] string operations,
-		[Description("Process code (schema Name) to edit; provide exactly one of processName or processUid")]
-		string? processName = null,
-		[Description("Process schema UId to edit; provide exactly one of processName or processUid")]
-		string? processUid = null
+		[Description("modify-business-process parameters")] [Required] ModifyBusinessProcessArgs args
 	) {
-		if (string.IsNullOrWhiteSpace(environmentName)) {
+		if (string.IsNullOrWhiteSpace(args?.EnvironmentName)) {
 			return CommandExecutionResult.FromError("environment-name is required and cannot be empty.");
 		}
 
-		bool hasName = !string.IsNullOrWhiteSpace(processName);
-		bool hasUid = !string.IsNullOrWhiteSpace(processUid);
+		bool hasName = !string.IsNullOrWhiteSpace(args.ProcessName);
+		bool hasUid = !string.IsNullOrWhiteSpace(args.ProcessUid);
 		if (hasName == hasUid) {
 			return CommandExecutionResult.FromError(hasName
-				? "Provide only one of processName or processUid, not both."
-				: "one of processName or processUid is required.");
+				? "Provide only one of process-name or process-uid, not both."
+				: "one of process-name or process-uid is required.");
 		}
 
-		if (string.IsNullOrWhiteSpace(operations)) {
+		if (string.IsNullOrWhiteSpace(args.Operations)) {
 			return CommandExecutionResult.FromError("operations is required and cannot be empty.");
 		}
 
 		ModifyBusinessProcessOptions options = new() {
-			Environment = environmentName,
-			ProcessName = processName ?? string.Empty,
-			ProcessUid = processUid ?? string.Empty,
-			OperationsJson = operations
+			Environment = args.EnvironmentName,
+			ProcessName = args.ProcessName ?? string.Empty,
+			ProcessUid = args.ProcessUid ?? string.Empty,
+			OperationsJson = args.Operations
 		};
 		return InternalExecute<ModifyBusinessProcessCommand>(options);
 	}
 }
+
+/// <summary>
+/// MCP arguments for the <c>modify-business-process</c> tool (kebab-case wire keys, repo convention).
+/// Provide exactly one of <c>process-name</c> / <c>process-uid</c>.
+/// </summary>
+public sealed record ModifyBusinessProcessArgs(
+	[property: JsonPropertyName("environment-name")]
+	[property: Description("Registered clio environment name.")]
+	[property: Required]
+	string EnvironmentName,
+
+	[property: JsonPropertyName("operations")]
+	[property: Description("Inline JSON operations array, e.g. [{\"op\":\"removeElement\",\"elementId\":\"StartEvent1\"}].")]
+	[property: Required]
+	string Operations,
+
+	[property: JsonPropertyName("process-name")]
+	[property: Description("Process code (schema Name) to edit; provide exactly one of process-name or process-uid.")]
+	string ProcessName,
+
+	[property: JsonPropertyName("process-uid")]
+	[property: Description("Process schema UId to edit; provide exactly one of process-name or process-uid.")]
+	string ProcessUid);

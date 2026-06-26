@@ -7,7 +7,7 @@ namespace Clio.Command.McpServer.Resources.ProcessDesigner;
 /// <summary>
 /// Provides canonical AI-facing guidance for designing Creatio business processes (BPMN) through clio MCP:
 /// the element catalog, the connection rules (R1–R17), and the declarative build recipe
-/// (create-business-process / modify-business-process / describe-process / list-user-tasks).
+/// (create-business-process / modify-business-process / describe-business-process / list-user-tasks).
 /// </summary>
 [McpServerResourceType]
 [FeatureToggle("process-designer")]
@@ -20,7 +20,7 @@ public sealed class ProcessModelingGuidanceResource {
 	/// Returns the canonical guidance article for AI-driven Creatio business process modeling.
 	/// </summary>
 	[McpServerResource(UriTemplate = ResourceUri, Name = "process-modeling-guidance")]
-	[Description("Returns canonical MCP guidance for designing Creatio business processes: the declarative build recipe (create-business-process / modify-business-process / list-user-tasks / describe-process), the BPMN element catalog, and connection rules R1-R17.")]
+	[Description("Returns canonical MCP guidance for designing Creatio business processes: the declarative build recipe (create-business-process / modify-business-process / list-user-tasks / describe-business-process), the BPMN element catalog, and connection rules R1-R17.")]
 	public ResourceContents GetGuide() => Guide;
 
 	internal static readonly TextResourceContents Guide = new() {
@@ -40,7 +40,7 @@ public sealed class ProcessModelingGuidanceResource {
 			  * list-user-tasks         — the user-task palette (name + uid); pass a name as `userTaskName`.
 			  * create-business-process — build a NEW process from a JSON descriptor, and save it.
 			  * modify-business-process — edit an EXISTING process by an ordered list of operations.
-			  * describe-process        — read a process back as a structured graph (verify / explain).
+			  * describe-business-process        — read a process back as a structured graph (verify / explain).
 			  * validate-process-graph  — pre-check a planned graph against the connection rules R1-R17.
 
 			== What you can build today (create-business-process) ==
@@ -50,7 +50,7 @@ public sealed class ProcessModelingGuidanceResource {
 			- Sequence flows; process-level parameters; element-parameter mappings.
 			- NOT yet buildable: gateways, conditional/default flows, timer/message start, intermediate events,
 			  sub-process, Read-data filters/column config. Use the catalog below to reason about a solution and to
-			  READ existing processes (`describe-process`); don't expect to build those types in this increment.
+			  READ existing processes (`describe-business-process`); don't expect to build those types in this increment.
 
 			== Descriptor (create-business-process) ==
 			{
@@ -88,7 +88,7 @@ public sealed class ProcessModelingGuidanceResource {
 			2. (recommended) `validate-process-graph(graph)` -> fix every error-severity finding.
 			3. `list-user-tasks` -> pick the exact `userTaskName`(s) for your activities.
 			4. `create-business-process(descriptor)` -> builds + saves in one call (layout is automatic).
-			5. Verify: `describe-process` (element types, user-task names, parameter sources, the signal trigger) /
+			5. Verify: `describe-business-process` (element types, user-task names, parameter sources, the signal trigger) /
 			   `generate-process-model` / `execute-esq` (VwProcessLib by caption).
 			6. Change it later with `modify-business-process` (ops: addElement / removeElement / addFlow / removeFlow /
 			   addParameter / addMapping — same parameter/mapping shapes as a build).

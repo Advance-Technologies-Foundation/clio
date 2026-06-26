@@ -107,10 +107,10 @@ Build into a specific package, overriding the descriptor's packageName
 ## See Also
 
 list-user-tasks - Discover valid userTaskName values for an environment
-describe-process - Read an existing process and return its structured graph
+describe-business-process - Read an existing process and return its structured graph
 
 The descriptor `type` tokens (and their describe `buildType` / `validate-process-graph` equivalents)
-are mapped in [describe-process → Element type vocabulary](describe-process.md#element-type-vocabulary-round-trip-mapping).
+are mapped in [describe-business-process → Element type vocabulary](describe-business-process.md#element-type-vocabulary-round-trip-mapping).
 
 ## Reporting Bugs
 

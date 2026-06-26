@@ -21,7 +21,7 @@ EXAMPLES
 
 SEE ALSO
     create-business-process - Build a business process from a declarative descriptor
-    describe-process - Read an existing process and return its structured graph
+    describe-business-process - Read an existing process and return its structured graph
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio

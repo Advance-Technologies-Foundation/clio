@@ -53,7 +53,7 @@ public sealed class ListUserTasksToolE2ETests {
 
 		// Act
 		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
-			["environmentName"] = context.EnvironmentName
+			["environment-name"] = context.EnvironmentName
 		});
 
 		// Assert

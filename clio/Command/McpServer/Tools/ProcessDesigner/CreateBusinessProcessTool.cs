@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
 using Clio.Common;
 using ModelContextProtocol.Server;
 
@@ -34,24 +35,40 @@ public class CreateBusinessProcessTool(
 		 + "signalStart element with signal:{entity:<EntityName>, on:added|modified|deleted} (one event) instead "
 		 + "of a page save handler. Use list-user-tasks to discover valid userTaskName values.")]
 	public CommandExecutionResult CreateBusinessProcess(
-		[Description("Target Environment name")] [Required] string environmentName,
-		[Description("Inline JSON process descriptor (name, caption, packageName, elements[], flows[], "
-			+ "parameters[], mappings[])")] [Required] string descriptor,
-		[Description("Optional package name that overrides the descriptor's packageName")] string packageName = null
+		[Description("create-business-process parameters")] [Required] CreateBusinessProcessArgs args
 	) {
-		if (string.IsNullOrWhiteSpace(environmentName)) {
+		if (string.IsNullOrWhiteSpace(args?.EnvironmentName)) {
 			return CommandExecutionResult.FromError("environment-name is required and cannot be empty.");
 		}
 
-		if (string.IsNullOrWhiteSpace(descriptor)) {
+		if (string.IsNullOrWhiteSpace(args.Descriptor)) {
 			return CommandExecutionResult.FromError("descriptor is required and cannot be empty.");
 		}
 
 		CreateBusinessProcessOptions options = new() {
-			Environment = environmentName,
-			DescriptorJson = descriptor,
-			PackageName = packageName ?? string.Empty
+			Environment = args.EnvironmentName,
+			DescriptorJson = args.Descriptor,
+			PackageName = args.PackageName ?? string.Empty
 		};
 		return InternalExecute<CreateBusinessProcessCommand>(options);
 	}
 }
+
+/// <summary>
+/// MCP arguments for the <c>create-business-process</c> tool (kebab-case wire keys, repo convention).
+/// </summary>
+public sealed record CreateBusinessProcessArgs(
+	[property: JsonPropertyName("environment-name")]
+	[property: Description("Registered clio environment name.")]
+	[property: Required]
+	string EnvironmentName,
+
+	[property: JsonPropertyName("descriptor")]
+	[property: Description("Inline JSON process descriptor (name, caption, packageName, elements[], flows[], "
+		+ "parameters[], mappings[]).")]
+	[property: Required]
+	string Descriptor,
+
+	[property: JsonPropertyName("package-name")]
+	[property: Description("Optional package name that overrides the descriptor's packageName.")]
+	string PackageName);

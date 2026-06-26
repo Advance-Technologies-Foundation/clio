@@ -17,7 +17,7 @@ public static class ValidateProcessGraphPrompt {
 	/// </summary>
 	/// <param name="goal">The plain-language automation the user described.</param>
 	/// <returns>The prompt text.</returns>
-	[McpServerPrompt(Name = "process-design-guidance")]
+	[McpServerPrompt(Name = "validate-process-graph")]
 	[Description("Returns the canonical validate-then-drive flow for designing a Creatio business process from a plain-language goal.")]
 	public static string ProcessDesignGuidance(
 		[Description("The plain-language automation the user wants (e.g. 'when a contact is added, read it and send an email').")]
@@ -35,6 +35,6 @@ public static class ValidateProcessGraphPrompt {
 		   `error`-severity finding before building; advisory `warning` findings are optional to address.
 		4. Only after a clean validation, build the process with `create-business-process` (or edit an
 		   existing one with `modify-business-process`) — clio builds and saves it server-side in one call.
-		   Then verify with `describe-process`.
+		   Then verify with `describe-business-process`.
 		""";
 }

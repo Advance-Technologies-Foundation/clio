@@ -36,7 +36,7 @@ List the user task palette of the 'production' environment
 ## See Also
 
 create-business-process - Build a business process from a declarative descriptor
-describe-process - Read an existing process and return its structured graph
+describe-business-process - Read an existing process and return its structured graph
 
 ## Reporting Bugs
 

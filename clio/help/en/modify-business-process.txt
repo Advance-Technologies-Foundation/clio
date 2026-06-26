@@ -50,7 +50,7 @@ EXAMPLES
 
 SEE ALSO
     create-business-process - Build a business process from a declarative descriptor
-    describe-process - Read an existing process and return its structured graph (inspect element ids first)
+    describe-business-process - Read an existing process and return its structured graph (inspect element ids first)
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio
