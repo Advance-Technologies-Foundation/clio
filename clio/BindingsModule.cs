@@ -382,6 +382,8 @@ public class BindingsModule {
 		services.AddTransient<PageGetTool>();
 		services.AddTransient<PageUpdateTool>();
 		services.AddTransient<PageCreateTool>();
+		services.AddTransient<CreateDcmTool>();
+		services.AddTransient<CreateBusinessProcessTool>();
 		services.AddTransient<PageTemplatesListTool>();
 		services.AddTransient<SchemaCreateTool>();
 		services.AddTransient<SchemaUpdateTool>();
