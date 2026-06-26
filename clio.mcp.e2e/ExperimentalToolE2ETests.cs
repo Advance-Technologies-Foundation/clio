@@ -1,7 +1,6 @@
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
-using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
@@ -11,10 +10,11 @@ using ModelContextProtocol.Protocol;
 namespace Clio.Mcp.E2E;
 
 [TestFixture]
+[Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature(ExperimentalTool.ToolName)]
 [NonParallelizable]
-public sealed class ExperimentalToolE2ETests {
+public sealed class ExperimentalToolE2ETests : McpContractFixtureBase {
 	private const string ToolName = ExperimentalTool.ToolName;
 
 	[Test]
@@ -23,7 +23,7 @@ public sealed class ExperimentalToolE2ETests {
 	[Description("Starts the real clio MCP server, invokes experimental with no arguments, and verifies the list path returns a success envelope.")]
 	public async Task Tool_ShouldListFeatureFlags_WhenNoArgumentsSupplied() {
 		// Arrange
-		await using ArrangeContext context = await ArrangeAsync();
+		await using var context = Arrange();
 
 		// Act
 		IList<McpClientTool> tools = await context.Session.ListToolsAsync(context.CancellationTokenSource.Token);
@@ -48,7 +48,7 @@ public sealed class ExperimentalToolE2ETests {
 	[Description("Starts the real clio MCP server, enables a feature key and then disables it, verifying both toggles return a success envelope.")]
 	public async Task Tool_ShouldToggleFeatureFlag_WhenNameAndEnableSupplied() {
 		// Arrange
-		await using ArrangeContext context = await ArrangeAsync();
+		await using var context = Arrange();
 		const string featureKey = "e2e-experimental-feature";
 
 		// Act
@@ -75,19 +75,4 @@ public sealed class ExperimentalToolE2ETests {
 			because: "a valid disable toggle should succeed");
 	}
 
-	private static async Task<ArrangeContext> ArrangeAsync() {
-		McpE2ESettings settings = TestConfiguration.Load();
-		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		return new ArrangeContext(session, cancellationTokenSource);
-	}
-
-	private sealed record ArrangeContext(
-		McpServerSession Session,
-		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
-			CancellationTokenSource.Dispose();
-		}
-	}
 }

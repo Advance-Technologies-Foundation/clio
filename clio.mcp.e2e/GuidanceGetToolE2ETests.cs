@@ -4,7 +4,6 @@ using System.Linq;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
-using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
@@ -14,18 +13,17 @@ using ModelContextProtocol.Protocol;
 namespace Clio.Mcp.E2E;
 
 [TestFixture]
+[Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature(GuidanceGetTool.ToolName)]
 [NonParallelizable]
-public sealed class GuidanceGetToolE2ETests {
+public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 	[Test]
 	[AllureTag(GuidanceGetTool.ToolName)]
 	[AllureName("get-guidance tool is advertised by the MCP server")]
 	public async Task GuidanceGet_Should_Be_Listed_By_Mcp_Server() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		IList<McpClientTool> tools = await context.Session.ListToolsAsync(context.CancellationTokenSource.Token);
@@ -40,9 +38,7 @@ public sealed class GuidanceGetToolE2ETests {
 	[AllureName("get-guidance returns the canonical handler guidance article")]
 	public async Task GuidanceGet_Should_Return_Page_Schema_Handlers_Guide() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		GuidanceGetResponse response = await CallAsync(
@@ -70,9 +66,7 @@ public sealed class GuidanceGetToolE2ETests {
 	[AllureName("get-guidance returns the canonical validator guidance article")]
 	public async Task GuidanceGet_Should_Return_Page_Schema_Validators_Guide() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		GuidanceGetResponse response = await CallAsync(
@@ -98,9 +92,7 @@ public sealed class GuidanceGetToolE2ETests {
 	[AllureName("get-guidance returns the canonical sdk common guidance article")]
 	public async Task GuidanceGet_Should_Return_Page_Schema_Sdk_Common_Guide() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		GuidanceGetResponse response = await CallAsync(
@@ -126,9 +118,7 @@ public sealed class GuidanceGetToolE2ETests {
 	[AllureName("get-guidance returns the canonical page localizable string guidance article")]
 	public async Task GuidanceGet_Should_Return_Page_Schema_Resources_Guide() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		GuidanceGetResponse response = await CallAsync(
@@ -154,9 +144,7 @@ public sealed class GuidanceGetToolE2ETests {
 	[AllureName("get-guidance returns the canonical converter guidance article")]
 	public async Task GuidanceGet_Should_Return_Page_Schema_Converters_Guide() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		GuidanceGetResponse response = await CallAsync(
@@ -182,9 +170,7 @@ public sealed class GuidanceGetToolE2ETests {
 	[AllureName("get-guidance returns the canonical indicator widget guidance article")]
 	public async Task GuidanceGet_Should_Return_Indicator_Widget_Guide() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		GuidanceGetResponse response = await CallAsync(
@@ -212,9 +198,7 @@ public sealed class GuidanceGetToolE2ETests {
 	[AllureName("get-guidance returns the canonical related-list guidance article")]
 	public async Task GuidanceGet_Should_Return_Related_List_Guide() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		GuidanceGetResponse response = await CallAsync(
@@ -248,9 +232,7 @@ public sealed class GuidanceGetToolE2ETests {
 	[AllureName("get-guidance returns the canonical configuration web-service guide")]
 	public async Task GuidanceGet_Should_Return_Configuration_WebService_Guide() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		GuidanceGetResponse response = await CallAsync(
@@ -276,9 +258,7 @@ public sealed class GuidanceGetToolE2ETests {
 	[AllureName("get-guidance returns the canonical configuration web-service test guide")]
 	public async Task GuidanceGet_Should_Return_Configuration_WebService_Tests_Guide() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		GuidanceGetResponse response = await CallAsync(
@@ -304,9 +284,7 @@ public sealed class GuidanceGetToolE2ETests {
 	[AllureName("get-guidance returns generated composable-app skill guides")]
 	public async Task GuidanceGet_Should_Return_Generated_Composable_App_Skill_Guides() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		GuidanceGetResponse atfResponse = await CallAsync(
@@ -348,9 +326,7 @@ public sealed class GuidanceGetToolE2ETests {
 	[Description("Verifies that get-guidance returns the mobile-page-modification article with correct URI and text about limited page-level business-rule support plus mobile body constraints.")]
 	public async Task GuidanceGet_Should_Return_Mobile_Page_Modification_Guide() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		GuidanceGetResponse response = await CallAsync(
@@ -387,9 +363,7 @@ public sealed class GuidanceGetToolE2ETests {
 	[Description("Verifies that get-guidance returns the page-modification article and that it mandates verifying a component type via get-component-info and asking the user when no OOTB component matches (ENG-90939).")]
 	public async Task GuidanceGet_Should_Return_Page_Modification_Guide_With_Component_Verification() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		GuidanceGetResponse response = await CallAsync(
@@ -421,9 +395,7 @@ public sealed class GuidanceGetToolE2ETests {
 	[AllureName("get-guidance returns the canonical ESQ guidance article")]
 	public async Task GuidanceGet_Should_Return_Esq_Guide() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		GuidanceGetResponse response = await CallAsync(
@@ -449,9 +421,7 @@ public sealed class GuidanceGetToolE2ETests {
 	[AllureName("get-guidance returns the canonical ESQ filters guidance article")]
 	public async Task GuidanceGet_Should_Return_Esq_Filters_Guide() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		GuidanceGetResponse response = await CallAsync(
@@ -476,9 +446,7 @@ public sealed class GuidanceGetToolE2ETests {
 	[Description("Verifies get-guidance returns the core-rules guide over the real stdio MCP path and that it carries the non-negotiable invariants the always-on instructions now point at instead of inlining.")]
 	public async Task GuidanceGet_Should_Return_Core_Rules_Guide() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		GuidanceGetResponse response = await CallAsync(
@@ -505,9 +473,7 @@ public sealed class GuidanceGetToolE2ETests {
 	[Description("Verifies get-guidance returns the routing guide over the real stdio MCP path and that it carries the domain routing table (the table the always-on instructions now point at instead of inlining).")]
 	public async Task GuidanceGet_Should_Return_Routing_Guide() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		GuidanceGetResponse response = await CallAsync(
@@ -534,9 +500,7 @@ public sealed class GuidanceGetToolE2ETests {
 	[Description("Verifies that get-guidance returns the OAuth client-credentials article for outside callers that need to mint and use bearer tokens.")]
 	public async Task GuidanceGet_Should_Return_Server_To_Server_OAuth_Guide() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		GuidanceGetResponse response = await CallAsync(
@@ -559,12 +523,6 @@ public sealed class GuidanceGetToolE2ETests {
 			because: "the guidance tool should return the no-refresh-token expiry recovery instruction");
 	}
 
-	private static async Task<ArrangeContext> ArrangeAsync(McpE2ESettings settings, TimeSpan timeout) {
-		CancellationTokenSource cancellationTokenSource = new(timeout);
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		return new ArrangeContext(session, cancellationTokenSource);
-	}
-
 	private static async Task<GuidanceGetResponse> CallAsync(
 		McpServerSession session,
 		CancellationToken cancellationToken,
@@ -578,12 +536,4 @@ public sealed class GuidanceGetToolE2ETests {
 		return EntitySchemaStructuredResultParser.Extract<GuidanceGetResponse>(callResult);
 	}
 
-	private sealed record ArrangeContext(
-		McpServerSession Session,
-		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
-			CancellationTokenSource.Dispose();
-		}
-	}
 }

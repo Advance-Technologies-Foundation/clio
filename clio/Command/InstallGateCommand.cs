@@ -98,6 +98,10 @@ public class InstallGateCommand : Command<InstallGateOptions> {
 			}
 			return success ? 0 : 1;
 		} catch (Exception e) {
+			// Log the readable message FIRST (it now carries the WebException status / HTTP code via
+			// GetReadableMessageException) so a failed install surfaces *why* — e.g. an auth 401 vs a
+			// connect/timeout during the package upload — instead of a bare stack with no message.
+			_logger.WriteError(e.GetReadableMessageException());
 			_logger.WriteError(e.StackTrace);
 			return 1;
 		}

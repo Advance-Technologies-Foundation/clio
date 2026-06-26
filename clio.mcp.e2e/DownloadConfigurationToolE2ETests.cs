@@ -16,6 +16,7 @@ namespace Clio.Mcp.E2E;
 /// End-to-end tests for the download-configuration MCP tools.
 /// </summary>
 [TestFixture]
+[Category("McpE2E.NoEnvironment")]
 // [AllureNUnit] is intentionally omitted.
 // NUnit runs each async test on a single thread, and [AllureNUnit] adds
 // per-test bookkeeping that runs on that same thread. In tests with many

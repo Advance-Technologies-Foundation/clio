@@ -17,6 +17,7 @@ namespace Clio.Mcp.E2E;
 /// discovery, safety metadata, the approved argument schemas, and secret-handling guidance.
 /// </summary>
 [TestFixture]
+[Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("deploy-identity")]
 [NonParallelizable]

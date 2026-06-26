@@ -16,6 +16,7 @@ namespace Clio.Mcp.E2E;
 /// End-to-end tests for the install-application MCP tool.
 /// </summary>
 [TestFixture]
+[Category("McpE2E.Sandbox")]
 [AllureNUnit]
 [AllureFeature("install-application")]
 [NonParallelizable]
