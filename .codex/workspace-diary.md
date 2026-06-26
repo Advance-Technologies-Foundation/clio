@@ -4556,7 +4556,6 @@ Discovery: ProgramCreatioVersionGateTests + BaseToolTests build CreatioVersionRe
 Caveat: ProbeFailed message appends strictest.Hint as usual — a command whose Hint literally says "Update Creatio…" would reintroduce that wording into a connectivity failure. Spec-consistent; flagged to architect.
 Files: clio/Common/CreatioVersionResolution.cs (new), CreatioVersionRequirementException.cs, ICreatioVersionProvider.cs, CreatioVersionProvider.cs, ICreatioVersionChecker.cs, CreatioVersionChecker.cs, clio.tests/Common/CreatioVersion{Provider,Checker}Tests.cs
 Impact: Automation can now distinguish unreachable/access-denied from reachable-but-no-version; commit 01d1b95.
-<<<<<<< Updated upstream
 
 ## 2026-06-26 12:00 – ENG-91830 infra-tool MCP InternalError: real root cause = FakeKubernetes.Dispose throws
 Context: ENG-90640 sub-task ENG-91830 (Reopened). assert-infrastructure / show-passing-infrastructure / deploy-creatio / restore-db e2e fixtures failed with `McpProtocolException: InternalError (-32603)` and were [Ignore]d. Prior notes blamed (a) MCP SDK typed-POCO structured-content conversion and (b) "requires reachable Kubernetes" — BOTH WRONG.
@@ -4565,8 +4564,6 @@ Discovery: MCP SDK 1.4.0 runs every tool call in a per-request DI scope and disp
 Fix: `FakeKubernetes.Dispose()` → no-op (clio/FakeKubernetes.cs). All 4 fixtures now pass env-free; un-ignored them and re-tiered Sandbox→NoEnvironment (the "requires reachable k8s" reasons were misdiagnoses; the failure-path Deploy/Restore tests use invalid inputs and never reach real infra). Reverted all diagnostic scaffolding (string-return, filter try/catch, DiagLogger, AddLogging). Added FakeKubernetesTests (Dispose no-throw + idempotent).
 Files: clio/FakeKubernetes.cs, clio.tests/Common/Kubernetes/FakeKubernetesTests.cs, clio.mcp.e2e/{AssertInfrastructure,ShowPassingInfrastructure,DeployCreatio,RestoreDb}ToolE2ETests.cs
 Impact: closes ENG-91830 code-side (4 fixtures green env-free). Verified: 6 infra e2e pass net10.0; clio.tests Category=Unit 2098 passed 0 failed; analyzer build clean (2 pre-existing CLIO005 in BindingsModule, not mine). Lesson reinforced ([[verify-root-cause-before-asserting]]): capture the actual server-side exception via a logger before theorising about SDK serialization — both prior write-ups were wrong because the -32603 hid the real Dispose throw.
-||||||| Stash base
-=======
 
 ## 2026-06-26 13:30 – ENG-91829 cliogate probe-first arrange + umbrella workflow
 Context: ENG-90640 round-2 umbrella branch `feature/ENG-90640_mcp-e2e-stabilization-2` (off master fa29b2f5); sub-task PRs target it, TC plan run against umbrella, then umbrella→master like #768. ENG-91830 PR #774 retargeted onto umbrella.
@@ -4574,7 +4571,6 @@ Decision: per-test cliogate install was the slow-arrange root (EnsureCliogateIns
 Discovery: clio-home is a FIXED per-user path (`<LOCALAPPDATA>/Creatio/clio/appsettings.json`, resolved via `clio info --settings-file`), NOT a per-test temp — so a CI site-prep step running the same clio binary as the test writes the registration the test reads. reg-web-app dev currently happens IN the harness (ClioCliCommandRunner.ReRegisterSandboxEnvironmentAsync, reading Sandbox.EnvironmentUrl=%DeployedUrl%), not via the disabled job Step 5. TeamCity job is server-side (no .teamcity/ in repo); blame-hang-timeout would go in Step 3 args.
 Files: clio.mcp.e2e/Support/Configuration/ClioCliCommandRunner.cs (IsCliogateAlreadyServingAsync + probe-first guard).
 Impact: cuts per-test arrange to a sub-second probe once cliogate is up; pairs with a CI site-prep step (reg-web-app + install-gate once, between Deploy and Run MCP e2e). ENG-91829 ClearRedis remains job-config (EnvironmentPath + --blame-hang-timeout + reachable Redis); seed-content remains stand-gated.
->>>>>>> Stashed changes
 
 ## 2026-06-26 18:10 – ENG-92457 DataForge hang resolved + 90s blame-hang guard
 Context: validating the job-level `--blame-hang-timeout 90s` (Alex set it in TC Step 4 args) using the known ~300s DataForge hang as a live target. Also umbrella round-2 workflow (#774 ENG-91830 + #775 ENG-91829 both merged into feature/ENG-90640_mcp-e2e-stabilization-2).
