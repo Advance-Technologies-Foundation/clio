@@ -145,6 +145,18 @@ internal static class ClioCliCommandRunner {
 		McpE2ESettings settings,
 		string environmentName,
 		CancellationToken cancellationToken = default) {
+		// Probe-first: when cliogate is already serving on the registered environment — e.g. a CI
+		// site-prep step ran reg-web-app + install-gate once before the test run (ENG-91829) — skip the
+		// per-test re-register, login-readiness gate, and install-gate entirely. A single cheap HTTP GET
+		// against a real /rest/CreatioApiGateway/* route replaces tens of seconds of per-test arrange.
+		// Any negative result (env not registered, route 404/warming up, stand unreachable) falls through
+		// to the full self-install path below, which local/manual runs without a prep step still rely on.
+		if (await IsCliogateAlreadyServingAsync(environmentName, cancellationToken)) {
+			TestContext.Out.WriteLine(
+				$"[cliogate] '{environmentName}' is already serving cliogate routes; skipping per-test reg-web-app/install-gate (site prep handled it).");
+			return;
+		}
+
 		// Re-register the sandbox env at the freshly-deployed URL FIRST, before we ping/login it. In CI
 		// the env name ("dev") is registered ahead of time but its stored URL is stale (the build's
 		// real URL is only known at runtime, exposed as the TeamCity param DeployedUrl). Correcting the
@@ -363,6 +375,52 @@ internal static class ClioCliCommandRunner {
 	/// <c>/rest/CreatioApiGateway/*</c> handlers do, so this closes the readiness race that causes
 	/// MCP tools calling cliogate routes to fail with (404) Not Found.
 	/// </summary>
+	/// <summary>
+	/// One-shot, short-budget check of whether cliogate is already serving its HTTP handlers on the
+	/// registered <paramref name="environmentName"/>. Used by <see cref="EnsureCliogateInstalledAsync"/>
+	/// to skip the expensive per-test reg-web-app/login/install path when a CI site-prep step has
+	/// already installed cliogate once (ENG-91829). Returns <c>false</c> on any negative or error
+	/// outcome (env not registered, route still 404/warming up, stand unreachable) so the caller falls
+	/// back to the full self-install path; caller cancellation is propagated.
+	/// </summary>
+	private static async Task<bool> IsCliogateAlreadyServingAsync(
+		string environmentName,
+		CancellationToken cancellationToken) {
+		try {
+			EnvironmentSettings environment = RegisteredClioEnvironmentSettingsResolver.Resolve(environmentName);
+			string probeUrl = new ServiceUrlBuilder(environment).Build(CliogateProbeRoute);
+			using HttpClientHandler handler = new() {
+				// Same read-only, unauthenticated GET rationale as WaitForCliogateHttpHandlersAsync:
+				// dev/CI stands serve over HTTPS with self-signed certs and a not-yet-warm route can
+				// 3xx-redirect, so accept any cert and do not follow redirects.
+				ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator,
+				AllowAutoRedirect = false
+			};
+			using HttpClient httpClient = new(handler) {
+				Timeout = CliogateHttpRequestTimeout
+			};
+			// Single attempt bounded by one request timeout: a serving route returns immediately; a
+			// not-yet-serving or unreachable route throws CliogateReadinessTimeoutException, which we
+			// translate to "not ready" rather than waiting out the full install-readiness budget here.
+			ICliogateHttpReadinessProbe probe = new CliogateHttpReadinessProbe(
+				httpClient,
+				maxAttempts: 1,
+				delayBetweenAttempts: TimeSpan.Zero,
+				overallTimeout: CliogateHttpRequestTimeout);
+			await probe.WaitUntilServingAsync(probeUrl, cancellationToken);
+			return true;
+		}
+		catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) {
+			throw;
+		}
+		catch (Exception exception) {
+			TestContext.Out.WriteLine(
+				$"[cliogate] readiness probe for '{environmentName}' did not confirm a serving route " +
+				$"({exception.GetType().Name}: {exception.Message}); falling back to reg-web-app + install-gate.");
+			return false;
+		}
+	}
+
 	private static async Task WaitForCliogateHttpHandlersAsync(
 		string environmentName,
 		CancellationToken cancellationToken) {
