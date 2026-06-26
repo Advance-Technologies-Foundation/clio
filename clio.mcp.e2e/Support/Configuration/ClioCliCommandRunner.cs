@@ -370,12 +370,6 @@ internal static class ClioCliCommandRunner {
 	}
 
 	/// <summary>
-	/// After <c>list-packages</c> (DataService) reports ready, polls a read-only cliogate HTTP route
-	/// until it stops returning 404. The DataService layer can come up before the
-	/// <c>/rest/CreatioApiGateway/*</c> handlers do, so this closes the readiness race that causes
-	/// MCP tools calling cliogate routes to fail with (404) Not Found.
-	/// </summary>
-	/// <summary>
 	/// One-shot, short-budget check of whether cliogate is already serving its HTTP handlers on the
 	/// registered <paramref name="environmentName"/>. Used by <see cref="EnsureCliogateInstalledAsync"/>
 	/// to skip the expensive per-test reg-web-app/login/install path when a CI site-prep step has
@@ -387,27 +381,15 @@ internal static class ClioCliCommandRunner {
 		string environmentName,
 		CancellationToken cancellationToken) {
 		try {
-			EnvironmentSettings environment = RegisteredClioEnvironmentSettingsResolver.Resolve(environmentName);
-			string probeUrl = new ServiceUrlBuilder(environment).Build(CliogateProbeRoute);
-			using HttpClientHandler handler = new() {
-				// Same read-only, unauthenticated GET rationale as WaitForCliogateHttpHandlersAsync:
-				// dev/CI stands serve over HTTPS with self-signed certs and a not-yet-warm route can
-				// 3xx-redirect, so accept any cert and do not follow redirects.
-				ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator,
-				AllowAutoRedirect = false
-			};
-			using HttpClient httpClient = new(handler) {
-				Timeout = CliogateHttpRequestTimeout
-			};
 			// Single attempt bounded by one request timeout: a serving route returns immediately; a
 			// not-yet-serving or unreachable route throws CliogateReadinessTimeoutException, which we
 			// translate to "not ready" rather than waiting out the full install-readiness budget here.
-			ICliogateHttpReadinessProbe probe = new CliogateHttpReadinessProbe(
-				httpClient,
+			await ProbeCliogateServingAsync(
+				environmentName,
 				maxAttempts: 1,
 				delayBetweenAttempts: TimeSpan.Zero,
-				overallTimeout: CliogateHttpRequestTimeout);
-			await probe.WaitUntilServingAsync(probeUrl, cancellationToken);
+				overallTimeout: CliogateHttpRequestTimeout,
+				cancellationToken: cancellationToken);
 			return true;
 		}
 		catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) {
@@ -421,8 +403,35 @@ internal static class ClioCliCommandRunner {
 		}
 	}
 
-	private static async Task WaitForCliogateHttpHandlersAsync(
+	/// <summary>
+	/// After <c>list-packages</c> (DataService) reports ready, polls a read-only cliogate HTTP route
+	/// until it stops returning 404. The DataService layer can come up before the
+	/// <c>/rest/CreatioApiGateway/*</c> handlers do, so this closes the readiness race that causes
+	/// MCP tools calling cliogate routes to fail with (404) Not Found.
+	/// </summary>
+	private static Task WaitForCliogateHttpHandlersAsync(
 		string environmentName,
+		CancellationToken cancellationToken) =>
+		ProbeCliogateServingAsync(
+			environmentName,
+			CliogateHttpReadinessAttempts,
+			CliogateHttpReadinessDelay,
+			CliogateHttpReadinessOverallTimeout,
+			cancellationToken);
+
+	/// <summary>
+	/// Shared cliogate HTTP-probe setup for both the one-shot skip check
+	/// (<see cref="IsCliogateAlreadyServingAsync"/>) and the post-install readiness poll
+	/// (<see cref="WaitForCliogateHttpHandlersAsync"/>). Resolves the env, composes the probe URL,
+	/// and wires the HttpClient/probe with the cert-accept + no-redirect rationale once, so the two
+	/// call sites differ only in their attempt/delay/timeout budget and the non-obvious TLS/redirect
+	/// rationale cannot drift between them.
+	/// </summary>
+	private static async Task ProbeCliogateServingAsync(
+		string environmentName,
+		int maxAttempts,
+		TimeSpan delayBetweenAttempts,
+		TimeSpan overallTimeout,
 		CancellationToken cancellationToken) {
 		EnvironmentSettings environment = RegisteredClioEnvironmentSettingsResolver.Resolve(environmentName);
 		// Compose the probe URL through ServiceUrlBuilder so the .NET-Framework `0/` alias is applied
@@ -445,9 +454,9 @@ internal static class ClioCliCommandRunner {
 		};
 		ICliogateHttpReadinessProbe probe = new CliogateHttpReadinessProbe(
 			httpClient,
-			CliogateHttpReadinessAttempts,
-			CliogateHttpReadinessDelay,
-			CliogateHttpReadinessOverallTimeout);
+			maxAttempts,
+			delayBetweenAttempts,
+			overallTimeout);
 		await probe.WaitUntilServingAsync(probeUrl, cancellationToken);
 	}
 
