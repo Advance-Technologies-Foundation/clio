@@ -165,9 +165,8 @@ namespace Clio.Tests
         [TestCase(typeof(CreateBusinessProcessOptions))]
         [TestCase(typeof(ModifyBusinessProcessOptions))]
         [TestCase(typeof(DescribeProcessOptions))]
-        [TestCase(typeof(GetProcessSignatureOptions))]
         [Test]
-        [Description("Each process-designer command options class must declare [RequiresPackage(\"clioprocessbuilder\")] with no version (presence-only) so the centralized BaseTool.ResolveCommand gate enforces the requirement uniformly.")]
+        [Description("Each process-designer command options class that actually calls ProcessDesignService must declare [RequiresPackage(\"clioprocessbuilder\")] with no version (presence-only) so the centralized BaseTool.ResolveCommand gate enforces the requirement uniformly. (get-process-signature is excluded — it uses the built-in DataService; see the negative test below.)")]
         public void OptionsType_ShouldDeclarePresenceOnlyProcessBuilderRequirement_WhenProcessDesignerCommand(
             Type optionsType)
         {
@@ -181,6 +180,18 @@ namespace Clio.Tests
                 because: "the process-designer requirement is presence-only (any installed version satisfies it)");
             requirement.Hint.Should().Be(ExpectedProcessBuilderHint,
                 because: "the install hint must be consistent across all process-designer gates");
+        }
+
+        [Test]
+        [Description("get-process-signature must NOT carry [RequiresPackage(\"clioprocessbuilder\")]: it reads the built-in DataService (ProcessSchemaRequest / VwProcessLib), not ProcessDesignService, so gating its public CLI verb on the experimental package was a shipped-capability regression (PR #715).")]
+        public void GetProcessSignatureOptions_ShouldNotDeclareProcessBuilderRequirement_BecauseItUsesTheBuiltInDataService()
+        {
+            // Arrange & Act
+            RequiresPackageAttribute requirement = GetProcessBuilderRequirement(typeof(GetProcessSignatureOptions));
+
+            // Assert
+            requirement.Should().BeNull(
+                because: "get-process-signature works against the built-in DataService on every Creatio; requiring clioprocessbuilder broke the public 'gps' verb on environments without the experimental package");
         }
 
         [Test]

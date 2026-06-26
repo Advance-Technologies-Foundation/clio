@@ -8,6 +8,7 @@ namespace Clio.Command.McpServer.Prompts;
 /// Prompt helpers for listing the user-facing user tasks of a Creatio environment through MCP.
 /// </summary>
 [McpServerPromptType, Description("Prompts to list the user tasks (process designer palette) of an environment")]
+[FeatureToggle("process-designer")]
 public static class ListUserTasksPrompt {
 
 	/// <summary>
