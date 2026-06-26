@@ -60,14 +60,17 @@ public sealed class ComponentInfoTool(
 	/// so clio cannot resolve the owning composite for the agent — the hint instead encodes the
 	/// decision rule: discover composites in list mode, confirm membership by reading each
 	/// candidate's recipe (<c>composite="&lt;caption&gt;"</c>), build the composite when one
-	/// assembles this component, and otherwise fall back to building the component directly.
+	/// assembles this component, and otherwise fall back to building the component directly —
+	/// only when its own applicability (<c>appliesToCustomEntities</c> / <c>entityCouplingNote</c>) allows.
 	/// </summary>
 	internal const string CompositeOnlyHintText =
 		"This component has no standalone Designer toolbar presence. First look for a composite that assembles it: "
 		+ "call get-component-info in list mode, scan the 'composites' array, and fetch each plausible candidate's "
 		+ "recipe with get-component-info composite=\"<caption>\" to confirm it uses this component. "
 		+ "If a composite assembles this component, build that composite and follow its recipe. "
-		+ "If no composite assembles it, build this component directly as a fallback.";
+		+ "If no composite assembles it, build this component directly as a fallback — but only if this "
+		+ "component's own applicability allows it: check appliesToCustomEntities / entityCouplingNote on this "
+		+ "response first, and do not build it standalone on an entity those fields exclude.";
 
 	/// <summary>
 	/// Returns the component catalog list or full metadata for a specific component type.

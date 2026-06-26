@@ -1251,6 +1251,8 @@ public sealed class ComponentInfoToolTests {
 			because: "the hint must encode the primary branch: build the composite when one assembles this component");
 		response.CompositeOnlyHint.Should().Contain("fallback",
 			because: "the hint must encode the fallback branch: build the component directly when no composite assembles it");
+		response.CompositeOnlyHint.Should().Contain("appliesToCustomEntities",
+			because: "the fallback must defer to the component's applicability constraints, not invite an off-spec standalone build on an entity those fields exclude");
 	}
 
 	[Test]
