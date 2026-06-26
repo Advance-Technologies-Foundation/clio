@@ -18,11 +18,13 @@ namespace Clio.Mcp.E2E;
 [AllureNUnit]
 [AllureFeature("dataforge")]
 [NonParallelizable]
-[Ignore("ENG-92457: DataForge similarity index never becomes Ready on the freshly-deployed sandbox " +
-	"(status=Unavailable, data/lookups-readiness=False), so the similarity-search reads (find-tables, " +
-	"find-lookups, get-relations) burn the full DataForgeReadinessGate ceiling (~300s each, ~900s total) " +
-	"and the whole fixture is the slowest in the suite. Temporarily disabled until ENG-92457 makes the gate " +
-	"fail fast and/or seeds the index during arrange.")]
+// ENG-92457 resolved: the DataForge readiness gate no longer hangs on a freshly-deployed sandbox.
+// The data-structure index now becomes Ready (status/context/get-table-columns/initialize/update pass
+// in ~13s each) instead of burning the ~300s gate ceiling — confirmed by run 15643975 (whole fixture
+// ~38s vs the former ~900s). The fixture-level [Ignore] is therefore removed so those reads run.
+// The three similarity-search reads (find-tables, find-lookups, get-relations) stay per-test [Ignore]d
+// under ENG-92147 because the service still returns Success=false for them on the deployed stand —
+// that is a distinct service/stand-data issue, not the gate hang this ticket fixed.
 public sealed class DataForgeToolE2ETests {
 	private const string StatusToolName = DataForgeTool.DataForgeStatusToolName;
 	private const string FindTablesToolName = DataForgeTool.DataForgeFindTablesToolName;
