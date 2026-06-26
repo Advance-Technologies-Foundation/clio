@@ -20,24 +20,28 @@ describe, describe-creatio, instance-info
 
 ## Description
 
-Retrieves comprehensive information about the Creatio instance including
-version, underlying runtime, database type, and product name. The full report
-is collected through the cliogate API gateway.
+Retrieves comprehensive information about the Creatio instance in a single,
+**source-independent report** — the output shape is the same whether or not
+cliogate is installed. The report is assembled from up to three sources:
 
-When cliogate is not installed (or is older than the required version) the
-command degrades gracefully instead of failing: it falls back to the standard
-`ApplicationInfoService` — which needs only an authenticated session — and
-reports the core version plus locale/user/workspace metadata.
+1. **Base (always):** the standard `ApplicationInfoService` (needs only an
+   authenticated session) provides the core version plus locale / user /
+   workspace metadata.
+2. **Database engine + framework (no cliogate):** the report is enriched from
+   the admin-gated `ApplicationInfoService.GetSystemEnvironmentInfo` operation —
+   it adds the **database engine** (`dbEngineType`) and the **executing
+   framework** (`frameworkKind` — .NET Framework vs .NET — and
+   `frameworkDescription`). This operation requires the `CanManageSolution`
+   permission and exists only on newer Creatio.
+3. **cliogate-only fields (when installed):** a compatible cliogate adds
+   `productName` and `licenseInfo` to the same object, and backfills the db
+   engine / framework on Creatio versions that predate `GetSystemEnvironmentInfo`.
 
-In that no-cliogate mode the report is additionally enriched, when possible,
-from the admin-gated `ApplicationInfoService.GetSystemEnvironmentInfo` operation
-(no cliogate required): it adds the **database engine** (`dbEngineType`) and the
-**executing framework** (`frameworkKind` — .NET Framework vs .NET — and
-`frameworkDescription`). That operation requires the `CanManageSolution`
-permission and exists only on newer Creatio, so if the caller lacks the
-permission or the endpoint is absent the enrichment is skipped silently and the
-command still reports the `ApplicationInfoService` data. `LicenseInfo` and
-`ProductName` remain available only through cliogate.
+Every source beyond the base is best-effort: if a source is unavailable
+(cliogate absent, `CanManageSolution` not granted, older Creatio, transport
+error) it is skipped silently and the command still reports what it has and
+exits 0. The only fields that strictly require cliogate are `productName` and
+`licenseInfo`.
 
 The command returns information such as:
 - Creatio version (available with or without cliogate)
@@ -106,24 +110,25 @@ clio get-info -e MyEnvironment --timeout 60000
 
 ## Behavior
 
-1. Checks whether a compatible cliogate (>= 2.0.0.32) is installed
-2. If yes — sends a GET request to `/rest/CreatioApiGateway/GetSysInfo`, parses
-   the JSON `SysInfo` node and displays the full report
-3. If no — falls back to `ApplicationInfoService.GetApplicationInfo` (POST),
-   reports its `sysValues`, and then attempts to enrich it from the admin-gated
-   `ApplicationInfoService.GetSystemEnvironmentInfo` (POST) to add `dbEngineType`,
-   `frameworkKind` and `frameworkDescription` without cliogate
-4. If the enrichment call is denied (`CanManageSolution` missing) or unavailable
-   (older Creatio), it is skipped silently and the `ApplicationInfoService` data
-   is still reported
-5. Displays system information in formatted output (exit code 0 in all
-   fallback variants)
+1. Sends a POST request to `ApplicationInfoService.GetApplicationInfo` and uses
+   its `sysValues` as the base report (always; no cliogate required)
+2. Enriches the report from the admin-gated
+   `ApplicationInfoService.GetSystemEnvironmentInfo` (POST) — adds `dbEngineType`,
+   `frameworkKind` and `frameworkDescription` (requires `CanManageSolution`)
+3. If a compatible cliogate (>= 2.0.0.32) is installed, GETs
+   `/rest/CreatioApiGateway/GetSysInfo` and merges the cliogate-only `productName`
+   and `licenseInfo` into the same object (and backfills db engine / framework if
+   step 2 did not provide them)
+4. Any source in steps 2–3 that is denied, absent, or errors is skipped silently
+   — the report still includes everything that was available
+5. Displays the single combined report as formatted JSON
 
 ## Exit Codes
 
-    0   Successfully retrieved and displayed system information
+    0   Successfully retrieved and displayed system information (regardless of
+        which optional sources were available)
     1   Failed to retrieve information (environment not found, connection error,
-        or cliogate not installed/outdated)
+        or ApplicationInfoService returned an unexpected response)
 
 ## Notes
 
