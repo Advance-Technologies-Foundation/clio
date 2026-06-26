@@ -58,6 +58,22 @@ internal static class ClioCliCommandRunner {
 			string.Join(" ", startInfo.ArgumentList));
 	}
 
+	/// <summary>
+	/// Returns true when the configured sandbox environment is reachable (a successful <c>ping-app</c>).
+	/// Used by the process-designer E2E fixtures to skip (Assert.Ignore) on an unreachable stand instead of
+	/// failing — the same gate the get-process-signature / generate-process-model E2E tests use.
+	/// </summary>
+	public static async Task<bool> IsEnvironmentReachableAsync(
+		McpE2ESettings settings,
+		string environmentName,
+		CancellationToken cancellationToken = default) {
+		ClioCliCommandResult result = await RunAsync(
+			settings,
+			["ping-app", "-e", environmentName],
+			cancellationToken: cancellationToken);
+		return result.ExitCode == 0;
+	}
+
 	public static async Task RunAndAssertSuccessAsync(
 		McpE2ESettings settings,
 		IReadOnlyList<string> arguments,

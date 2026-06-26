@@ -63,7 +63,11 @@ public sealed class DescribeProcessToolE2ETests {
 		callResult.IsError.Should().NotBeTrue(because: "a structured envelope should be returned, not a transport error");
 		string callResultJson = JsonSerializer.Serialize(callResult);
 		callResultJson.Should().Contain("elements",
-			because: "describe-business-process returns the structured element graph (run against an environment that has the process)");
+			because: "describe-business-process returns the structured element graph, not raw metadata");
+		callResultJson.Should().Contain("buildType",
+			because: "each element carries its round-trippable buildType token — proof of real structured typing, not an echo");
+		callResultJson.Should().Contain("flows",
+			because: "the structured graph includes the sequence flows between elements");
 	}
 
 	private static async Task<CallToolResult> CallToolAsync(ArrangeContext context, Dictionary<string, object?> args) {
@@ -79,13 +83,18 @@ public sealed class DescribeProcessToolE2ETests {
 	private static async Task<ArrangeContext> ArrangeAsync(bool requireReachableEnvironment) {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
 		string environmentName = settings.Sandbox.EnvironmentName;
 		string processCode = settings.Sandbox.ProcessCode;
-		if (requireReachableEnvironment && (string.IsNullOrWhiteSpace(environmentName) || string.IsNullOrWhiteSpace(processCode))) {
-			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName and McpE2E:Sandbox:ProcessCode (a process that exists on the stand) to run describe-business-process MCP E2E.");
+		if (requireReachableEnvironment) {
+			if (string.IsNullOrWhiteSpace(environmentName) || string.IsNullOrWhiteSpace(processCode)) {
+				Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName and McpE2E:Sandbox:ProcessCode (a process that exists on the stand) to run describe-business-process MCP E2E.");
+			}
+			if (!await ClioCliCommandRunner.IsEnvironmentReachableAsync(settings, environmentName)) {
+				Assert.Ignore($"describe-business-process MCP E2E requires a reachable configured sandbox environment. '{environmentName}' was not reachable.");
+			}
 		}
+		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
+		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
 		return new ArrangeContext(session, cancellationTokenSource, environmentName, processCode);
 	}
 

@@ -73,6 +73,16 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		string callResultJson = JsonSerializer.Serialize(callResult);
 		callResultJson.Should().Contain(processName,
 			because: "a successful edit reports the edited schema name (run against an environment with the ProcessDesignService package)");
+
+		// Readback: describe the edited process and confirm the signal start really replaced the simple start —
+		// a server that returned success but applied nothing would be caught here, unlike the success echo above.
+		string describeJson = JsonSerializer.Serialize(await CallToolAsync(context, DescribeProcessTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-code"] = processName
+			}));
+		describeJson.Should().Contain("signalstart",
+			because: "the edit added a signalStart element, which must appear in the read-back structured graph");
 	}
 
 	[Test]
@@ -150,12 +160,17 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	private static async Task<ArrangeContext> ArrangeAsync(bool requireReachableEnvironment) {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = settings.Sandbox.EnvironmentName;
+		if (requireReachableEnvironment) {
+			if (string.IsNullOrWhiteSpace(environmentName)) {
+				Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName (with the ProcessDesignService package) to run modify-business-process MCP E2E.");
+			}
+			if (!await ClioCliCommandRunner.IsEnvironmentReachableAsync(settings, environmentName)) {
+				Assert.Ignore($"modify-business-process MCP E2E requires a reachable configured sandbox environment. '{environmentName}' was not reachable.");
+			}
+		}
 		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
 		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		string environmentName = settings.Sandbox.EnvironmentName;
-		if (requireReachableEnvironment && string.IsNullOrWhiteSpace(environmentName)) {
-			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName (with the ProcessDesignService package) to run modify-business-process MCP E2E.");
-		}
 		return new ArrangeContext(session, cancellationTokenSource, environmentName);
 	}
 

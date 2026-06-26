@@ -67,7 +67,27 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		string callResultJson = JsonSerializer.Serialize(callResult);
 		callResultJson.Should().Contain(processName,
 			because: "a successful build reports the created schema name (run against an environment with the ProcessDesignService package and a writable Custom package)");
+
+		// Readback: describe the built process and confirm the structure is really there — a server that
+		// returned success but built nothing would be caught here, unlike the success-echo assertion above.
+		string describeJson = JsonSerializer.Serialize(await DescribeAsync(context, processName));
+		describeJson.Should().Contain("task1",
+			because: "the read-back graph must contain the user-task element that was actually built");
+		describeJson.Should().Contain("buildType",
+			because: "describe returns the structured element graph (buildType tokens), confirming a real build rather than an echo");
 	}
+
+	// Reads the built process back as a structured graph via describe-business-process (for build readback).
+	private static async Task<CallToolResult> DescribeAsync(ArrangeContext context, string processCode) =>
+		await context.Session.CallToolAsync(
+			DescribeProcessTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = context.EnvironmentName,
+					["process-code"] = processCode
+				}
+			},
+			context.CancellationTokenSource.Token);
 
 	private static string BuildDescriptor(string processName) =>
 		$$"""
@@ -102,12 +122,17 @@ public sealed class CreateBusinessProcessToolE2ETests {
 	private static async Task<ArrangeContext> ArrangeAsync(bool requireReachableEnvironment) {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = settings.Sandbox.EnvironmentName;
+		if (requireReachableEnvironment) {
+			if (string.IsNullOrWhiteSpace(environmentName)) {
+				Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName (with the ProcessDesignService package) to run create-business-process MCP E2E.");
+			}
+			if (!await ClioCliCommandRunner.IsEnvironmentReachableAsync(settings, environmentName)) {
+				Assert.Ignore($"create-business-process MCP E2E requires a reachable configured sandbox environment. '{environmentName}' was not reachable.");
+			}
+		}
 		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
 		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		string environmentName = settings.Sandbox.EnvironmentName;
-		if (requireReachableEnvironment && string.IsNullOrWhiteSpace(environmentName)) {
-			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName (with the ProcessDesignService package) to run create-business-process MCP E2E.");
-		}
 		return new ArrangeContext(session, cancellationTokenSource, environmentName);
 	}
 
