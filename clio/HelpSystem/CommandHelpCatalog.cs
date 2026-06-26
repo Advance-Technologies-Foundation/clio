@@ -234,13 +234,13 @@ internal sealed class CommandHelpCatalog {
 
 	private static readonly HashSet<string> IntegrationCommands =
 		[
-			"delete-adac",
+			"delete-toolkit",
 			"env-ui",
 			"install-gate",
-			"install-adac",
+			"install-toolkit",
 			"link-package-store",
 			"mcp-server",
-			"update-adac"
+			"update-toolkit"
 		];
 
 	private static readonly HashSet<string> DevelopmentCommands =
