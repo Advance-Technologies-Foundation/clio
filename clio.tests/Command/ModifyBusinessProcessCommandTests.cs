@@ -1,16 +1,16 @@
 using System;
-using System.IO;
 using Clio.Command;
 using Clio.Common;
 using FluentAssertions;
-using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command;
 
 [TestFixture]
-public sealed class ModifyBusinessProcessCommandTests : BaseCommandTests<ModifyBusinessProcessOptions> {
+[Category("Unit")]
+[Property("Module", "Command")]
+public sealed class ModifyBusinessProcessCommandTests {
 	private const string SampleOperations =
 		"[{\"op\":\"removeElement\",\"elementId\":\"StartEvent1\"}]";
 
@@ -18,22 +18,15 @@ public sealed class ModifyBusinessProcessCommandTests : BaseCommandTests<ModifyB
 	private ILogger _logger;
 	private ModifyBusinessProcessCommand _command;
 
-	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
-		base.AdditionalRegistrations(containerBuilder);
+	[SetUp]
+	public void Setup() {
 		_modifyBusinessProcessService = Substitute.For<IModifyBusinessProcessService>();
 		_logger = Substitute.For<ILogger>();
-		containerBuilder.AddSingleton(_modifyBusinessProcessService);
-		containerBuilder.AddSingleton(_logger);
-	}
-
-	[SetUp]
-	public override void Setup() {
-		base.Setup();
-		_command = Container.GetRequiredService<ModifyBusinessProcessCommand>();
+		_command = new ModifyBusinessProcessCommand(_modifyBusinessProcessService, _logger);
 	}
 
 	[TearDown]
-	public override void TearDown() {
+	public void TearDown() {
 		_modifyBusinessProcessService.ClearReceivedCalls();
 		_logger.ClearReceivedCalls();
 	}
@@ -42,6 +35,7 @@ public sealed class ModifyBusinessProcessCommandTests : BaseCommandTests<ModifyB
 		new("UsrSampleProcess", "5c58c4c4-134b-4744-9c67-96d9c69c9d55", 1);
 
 	[Test]
+	[Category("Unit")]
 	[Description("Forwards the process identity and inline operations to the modify service and logs the result on success.")]
 	public void Execute_ShouldMapInlineOperationsToService_WhenOperationsJsonProvided() {
 		// Arrange
@@ -68,38 +62,7 @@ public sealed class ModifyBusinessProcessCommandTests : BaseCommandTests<ModifyB
 	}
 
 	[Test]
-	[Description("Reads the operations file content and forwards it to the modify service when --operations is provided.")]
-	public void Execute_ShouldReadOperationsFile_WhenOperationsPathProvided() {
-		// Arrange
-		string operationsPath = Path.Combine(Path.GetTempPath(), $"clio-ops-test-{Guid.NewGuid():N}.json");
-		File.WriteAllText(operationsPath, SampleOperations);
-		try {
-			ModifyBusinessProcessOptions options = new() {
-				Environment = "sandbox",
-				ProcessUid = "5c58c4c4-134b-4744-9c67-96d9c69c9d55",
-				OperationsPath = operationsPath
-			};
-			_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
-				.Returns(BuildResult());
-
-			// Act
-			int result = _command.Execute(options);
-
-			// Assert
-			result.Should().Be(0,
-				because: "a successful edit from an operations file should return the standard success exit code");
-			_modifyBusinessProcessService.Received(1).ModifyProcess(
-				"sandbox",
-				Arg.Is<ModifyBusinessProcessRequest>(request =>
-					request.ProcessUid == "5c58c4c4-134b-4744-9c67-96d9c69c9d55" &&
-					request.OperationsJson == SampleOperations));
-		}
-		finally {
-			File.Delete(operationsPath);
-		}
-	}
-
-	[Test]
+	[Category("Unit")]
 	[Description("Returns a failure exit code and logs guidance when neither --name nor --uid is provided.")]
 	public void Execute_ShouldFail_WhenNoIdentityProvided() {
 		// Act
@@ -117,6 +80,7 @@ public sealed class ModifyBusinessProcessCommandTests : BaseCommandTests<ModifyB
 	}
 
 	[Test]
+	[Category("Unit")]
 	[Description("Returns a failure exit code and rejects the edit when both --name and --uid are provided.")]
 	public void Execute_ShouldFail_WhenBothNameAndUidProvided() {
 		// Act
@@ -135,7 +99,8 @@ public sealed class ModifyBusinessProcessCommandTests : BaseCommandTests<ModifyB
 	}
 
 	[Test]
-	[Description("Returns a failure exit code and logs guidance when neither --operations nor --operations-json is provided.")]
+	[Category("Unit")]
+	[Description("Returns a failure exit code and logs guidance when no inline operations array is provided.")]
 	public void Execute_ShouldFail_WhenNoOperationsProvided() {
 		// Act
 		int result = _command.Execute(new ModifyBusinessProcessOptions {
@@ -145,14 +110,15 @@ public sealed class ModifyBusinessProcessCommandTests : BaseCommandTests<ModifyB
 
 		// Assert
 		result.Should().Be(1,
-			because: "the command requires an operations source");
+			because: "the command requires an inline operations array");
 		_modifyBusinessProcessService.DidNotReceiveWithAnyArgs().ModifyProcess(default!, default!);
 		_logger.Received(1).WriteError(Arg.Is<string>(message =>
-			message.Contains("--operations") && message.Contains("--operations-json")));
+			message.Contains("An operations array is required.")));
 	}
 
 	[Test]
-	[Description("Returns a failure exit code and logs a readable error when the CLI call omits environment-name.")]
+	[Category("Unit")]
+	[Description("Returns a failure exit code and logs a readable error when the call omits environment-name.")]
 	public void Execute_ShouldFail_WhenEnvironmentIsMissing() {
 		// Act
 		int result = _command.Execute(new ModifyBusinessProcessOptions {
@@ -168,6 +134,7 @@ public sealed class ModifyBusinessProcessCommandTests : BaseCommandTests<ModifyB
 	}
 
 	[Test]
+	[Category("Unit")]
 	[Description("Returns a failure exit code and logs the service exception message when the modify service throws.")]
 	public void Execute_ShouldFail_WhenServiceThrows() {
 		// Arrange

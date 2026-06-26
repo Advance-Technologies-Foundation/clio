@@ -27,7 +27,7 @@ flowchart TB
   agent["AI agent / clio user — plain-language intent"]
 
   subgraph clio["clio (Layer 2, outside Creatio)"]
-    verbs["CLI verbs and MCP tools/prompts:<br/>create-business-process, modify-business-process,<br/>describe-business-process, list-user-tasks"]
+    verbs["MCP tools / prompts (no public CLI verbs):<br/>create-business-process, modify-business-process,<br/>describe-business-process, list-user-tasks"]
     validator["R1–R17 graph validator<br/>(validate-process-graph)"]
     validator -. "pre-flight" .-> verbs
   end
@@ -54,7 +54,7 @@ _The boundary this ADR governs is the REST edge between **clio** and the **packa
 Deliver process design as a **backend command-driven "non-visual designer"**, packaged as a **cliogate-style Creatio configuration package `clioprocessbuilder`** (a new sibling to `cliogate`), with a clear two-layer split:
 
 - **Package layer (`clioprocessbuilder`, in Creatio)** — owns build/modify/read/serialize via the platform managers. Exposed as a thin WCF service `ProcessDesignService` (`[ServiceContract] : BaseService`) at **`/rest/ProcessDesignService/<Method>`** (wrapped body style; `Build()` prepends `0/` on net472). The service is a transport shell that resolves the domain orchestrator `IProcessDesigner` from a per-request DI scope (`ClioProcessBuilderApp` composition root) and delegates.
-- **clio layer (Layer 2)** — owns intent/MCP/orchestration: `ServiceUrlBuilder.KnownRoute` entries, `Command<TOptions>` verbs (`create-business-process`, `modify-business-process`, `list-user-tasks`, `describe-business-process`), MCP tools/prompts/guidance, and the R1–R17 `IProcessGraphValidator` (common-core) used as pre-flight.
+- **clio layer (Layer 2)** — owns intent/MCP/orchestration: `ServiceUrlBuilder.KnownRoute` entries, `Command<TOptions>` command classes (`create-business-process`, `modify-business-process`, `list-user-tasks`, `describe-business-process`) exposed **only** as MCP tools (no public CLI verbs — see B2), their MCP tools/prompts/guidance, and the R1–R17 `IProcessGraphValidator` (common-core) used as pre-flight.
 
 ### Service surface
 - `BuildProcess({name, caption, packageName, elements[], flows[], parameters[], mappings[]})` — declarative descriptor in; builds the lane, materializes elements, connects flows, adds parameters and mappings, auto-lays-out, saves.
@@ -94,9 +94,36 @@ The package is a thin WCF transport (`ProcessDesignService`) over a domain orche
 - **Test strategy**: the package is unit-tested as a Creatio configuration unit test suite (~93% line / 86% method, 144 tests). Because `Terrasoft.Core.Tests` is **not shipped** to package projects, the platform `ProcessSchemaBaseTestCase` patterns are **copied** (a local `ProcessDesignTestSupport`), not referenced. See [[clioprocessbuilder-unit-test-patterns]] (agent memory) for the substitution techniques.
 - **Genuine E2E boundary**: `ProcessSchemaManager.CreateSchema` / `SaveSchema` / `DesignSchema` and friends are **non-virtual** → unmockable; the create/save/design-session lifecycle is verified at the API E2E layer (against a live stand), exactly as the platform's own tests do.
 - **FSD / persistence caveat**: in file-design mode, `BuildProcess` saves to the file system only (the designer sees it) — the process is **not** in `VwProcessLib` and not runtime-runnable until an FS→DB load + publish. On non-FSD environments `SaveSchema` writes to the DB and the process is immediately runnable.
-- **Round-trip caveat (describe → build)**: describe's `type` is the runtime .NET class name (`ProcessSchemaUserTask`, …), which `build`/`modify` do **not** consume — they take descriptor tokens (`usertask`, `endevent`, …). Ids, flows, parameters, `userTaskName` and `signal` round-trip; for the element kind, describe additionally emits a `buildType` token (the round-trippable counterpart) so the read-back graph can be fed back into build. The full token mapping across the three commands — `create`/`modify` descriptor `type` ↔ describe `buildType` ↔ `validate-process-graph` diagram-js data-id, plus the note that the validator vocabulary is a superset — is published in [`describe-business-process.md` → "Element type vocabulary"](../../clio/docs/commands/describe-business-process.md#element-type-vocabulary-round-trip-mapping). (Per PR #8 review M2.)
+- **Round-trip caveat (describe → build)**: describe's `type` is the runtime .NET class name (`ProcessSchemaUserTask`, …), which `build`/`modify` do **not** consume — they take descriptor tokens (`usertask`, `endevent`, …). Ids, flows, parameters, `userTaskName` and `signal` round-trip; for the element kind, describe additionally emits a `buildType` token (the round-trippable counterpart) so the read-back graph can be fed back into build. The full token mapping across the three commands — `create`/`modify` descriptor `type` ↔ describe `buildType` ↔ `validate-process-graph` diagram-js data-id, plus the note that the validator vocabulary is a superset — is given in the "Element type vocabulary" subsection below. (Per PR #8 review M2.)
+
+### Element type vocabulary
+
+The three process-designer surfaces use **different element-type tokens**, so a value read from one
+must be translated before it is passed to another. This table is the canonical mapping for the
+element kinds the backend designer can **build** today:
+
+| Element kind | `create`/`modify` descriptor `type` (= describe `buildType`) | describe runtime `type` | `validate-process-graph` node `type` (diagram-js data-id) | Role |
+|---|---|---|---|---|
+| Start event | `startevent` | `ProcessSchemaStartEvent` | `startEvent` | Start |
+| Signal start event | `signalstart` | `ProcessSchemaStartEvent` (signal-configured) | `startEventSignal` | Start |
+| End event | `endevent` | `ProcessSchemaTerminateEvent` | `endEvent` | End |
+| User task | `usertask` (+ `userTaskName`) | `ProcessSchemaUserTask` | `userTask` (or `<schema>UserTask`, e.g. `readDataUserTask`) | Activity |
+
+Notes:
+
+- **Casing differs by surface.** `create`/`modify` and describe's `buildType` use the lowercase token
+  (`startevent`); `validate-process-graph` uses the camelCase diagram-js data-id (`startEvent`). They
+  are **not** interchangeable — translate, don't copy.
+- **The validator vocabulary is a superset.** `validate-process-graph` also recognizes gateways
+  (`exclusiveGateway`, `parallelGateway`, `inclusiveGateway`, `eventBasedGateway`), intermediate events
+  (`intermediateCatchEvent…` / `intermediateThrowEvent…`), and other tasks (`scriptTask`, `formulaTask`,
+  `webService`, `callActivity`) so it can pre-flight hand-authored graphs — but those element kinds are
+  **not buildable** yet by `create` / `modify` (see the flows-vs-elements caveat below). Any specific
+  `<schema>UserTask` data-id (suffix `UserTask`) validates as a user-task activity.
+- **`describe.type` is never consumable.** It is the runtime .NET class name; always round-trip through
+  `buildType`, not `type`.
 - **Extensibility caveat (flows vs elements)**: the "new element kind = one handler + one DI line" property holds for **elements**. **Flows are different** — only plain sequence flows are buildable; conditional/default flows and gateways require contract changes (`ProcessFlowDescriptor` already reserves optional `kind`/`condition`, and a non-sequence kind is rejected until implemented) plus branch-aware layout. (Per PR #8 review M3.)
-- **Feature gating (deliberate asymmetry — PR #715 review B2)**: the **MCP** tools are gated behind `[FeatureToggle("process-designer")]` (the AI-facing surface stays hidden until the feature matures), while the **CLI** verbs are intentionally **public** and documented (the supported surface for power users). This is a conscious decision — not the `project-context.md` default of gating *all* surfaces in lock-step — recorded here so the asymmetry is intentional, not an oversight. Revisit (gate the CLI too, or ungate MCP) when the feature ships on by default.
+- **Feature gating (PR #715 review B2)**: the feature is **MCP-only** and gated behind `[FeatureToggle("process-designer")]`. The four CLI verbs (`create/modify/describe-business-process`, `list-user-tasks`) were **removed** as dead surface — nothing invoked them (the MCP tools run the command classes directly via `InternalExecute<TCommand>`, never the `[Verb]`/`Program.cs` dispatch), and the descriptor JSON is an AI-translation target, not a human authoring format. Keeping them (even gated) carried a real doc/help/wiki/test/alias maintenance tail with no consumer (YAGNI). The command classes, services, DI, options classes and MCP surface are retained; only the CLI-verb exposure was dropped. Re-add a CLI verb if a concrete human/CI consumer (e.g. descriptor-as-code provisioning) appears — git history makes that cheap. (This closes B2 the clean way: no CLI↔MCP asymmetry.)
 - **Trade-offs / open items**: package delivery/install wiring (ship `.gz` like `cliogate`) and reusing the R1–R17 validator as BuildProcess pre-flight are still open (tracked on the ticket); Phase-2 modify ops (`setElement`, parameter/mapping edit ops) are TODO; the deploy loop on the dev stand is manual (compile/restart over MCP time out).
 
 ## Notes

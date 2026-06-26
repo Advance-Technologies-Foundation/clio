@@ -1,36 +1,25 @@
 using System;
-using System.IO;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Clio.Common;
 using Clio.UserEnvironment;
-using CommandLine;
 
 namespace Clio.Command;
 
 /// <summary>
-/// CLI options for editing an existing business process via the ProcessDesignService package.
+/// Options for editing an existing business process via the ProcessDesignService package.
+/// Consumed by the MCP <c>modify-business-process</c> tool, which sets these properties directly.
 /// </summary>
-[Verb("modify-business-process", Aliases = ["modify-bp"],
-	HelpText = "Edit an existing business process on a Creatio environment by applying a list of operations")]
 [RequiresPackage("clioprocessbuilder", Hint = "This experimental feature requires the clioprocessbuilder package on the target environment.")]
 public sealed class ModifyBusinessProcessOptions : EnvironmentOptions {
-	[Option("name", Required = false,
-		HelpText = "Process code (schema Name) to edit. Provide exactly one of --name or --uid.")]
+	/// <summary>Process code (schema Name) to edit. Provide exactly one of <see cref="ProcessName"/> or <see cref="ProcessUid"/>.</summary>
 	public string ProcessName { get; set; } = string.Empty;
 
-	[Option("uid", Required = false,
-		HelpText = "Process schema UId to edit. Provide exactly one of --name or --uid.")]
+	/// <summary>Process schema UId to edit. Provide exactly one of <see cref="ProcessName"/> or <see cref="ProcessUid"/>.</summary>
 	public string ProcessUid { get; set; } = string.Empty;
 
-	[Option("operations", Required = false,
-		HelpText = "Path to a JSON file with the operations array "
-			+ "([{op:addElement|removeElement|addFlow|removeFlow, …}]). Provide this or --operations-json.")]
-	public string OperationsPath { get; set; } = string.Empty;
-
-	[Option("operations-json", Required = false,
-		HelpText = "Inline JSON operations array (alternative to --operations).")]
+	/// <summary>Inline JSON operations array ([{op:addElement|removeElement|addFlow|removeFlow, …}]).</summary>
 	public string OperationsJson { get; set; } = string.Empty;
 }
 
@@ -150,7 +139,7 @@ public sealed class ModifyBusinessProcessService(
 }
 
 /// <summary>
-/// Edits an existing business process from an operations descriptor (file or inline JSON) and prints the result.
+/// Edits an existing business process from an inline JSON operations array and prints the result.
 /// </summary>
 public class ModifyBusinessProcessCommand(
 	IModifyBusinessProcessService modifyBusinessProcessService,
@@ -172,10 +161,13 @@ public class ModifyBusinessProcessCommand(
 					: "One of --name or --uid is required.");
 			}
 
-			string operationsJson = ResolveOperationsJson(options);
+			if (string.IsNullOrWhiteSpace(options.OperationsJson)) {
+				throw new InvalidOperationException("An operations array is required.");
+			}
+
 			ModifyBusinessProcessResult result = modifyBusinessProcessService.ModifyProcess(
 				options.Environment,
-				new ModifyBusinessProcessRequest(options.ProcessName, options.ProcessUid, operationsJson));
+				new ModifyBusinessProcessRequest(options.ProcessName, options.ProcessUid, options.OperationsJson));
 			logger.WriteInfo(
 				$"Process '{result.SchemaName}' edited ({result.AppliedOperations} operation(s) applied; UId: {result.SchemaUId}).");
 			return 0;
@@ -183,23 +175,6 @@ public class ModifyBusinessProcessCommand(
 			logger.WriteError(exception.Message);
 			return 1;
 		}
-	}
-
-	/// <summary>Resolves the operations JSON from the inline option or the operations file.</summary>
-	private static string ResolveOperationsJson(ModifyBusinessProcessOptions options) {
-		if (!string.IsNullOrWhiteSpace(options.OperationsJson)) {
-			return options.OperationsJson;
-		}
-
-		if (string.IsNullOrWhiteSpace(options.OperationsPath)) {
-			throw new InvalidOperationException("One of --operations or --operations-json is required.");
-		}
-
-		if (!File.Exists(options.OperationsPath)) {
-			throw new FileNotFoundException($"Operations file was not found: '{options.OperationsPath}'.");
-		}
-
-		return File.ReadAllText(options.OperationsPath);
 	}
 }
 

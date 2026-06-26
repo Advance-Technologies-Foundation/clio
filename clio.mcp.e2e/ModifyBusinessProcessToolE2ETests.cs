@@ -63,7 +63,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		// Act
 		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
 			["environment-name"] = context.EnvironmentName,
-			["process-name"] = processName,
+			["process-code"] = processName,
 			["operations"] = BuildOperations()
 		});
 
@@ -101,7 +101,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		// Act — processName only (processUid omitted) also exercises the optional-identity path
 		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
 			["environment-name"] = context.EnvironmentName,
-			["process-name"] = processName,
+			["process-code"] = processName,
 			["operations"] = BuildAddParameterOperations()
 		});
 

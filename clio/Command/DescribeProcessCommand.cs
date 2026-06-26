@@ -2,7 +2,6 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Command.ProcessModel;
 using Clio.Common;
-using CommandLine;
 using ErrorOr;
 
 namespace Clio.Command;
@@ -13,25 +12,21 @@ namespace Clio.Command;
 
 /// <summary>
 /// Options for reading an existing Creatio process into a structured graph ("read &amp; explain").
+/// Consumed by the MCP <c>describe-business-process</c> tool, which sets these properties directly.
 /// </summary>
-[Verb("describe-business-process", Aliases = ["dp", "describe-process"], HelpText = "Read an existing Creatio process and return its structured graph (elements, flows, parameters).")]
 [RequiresPackage("clioprocessbuilder", Hint = "This experimental feature requires the clioprocessbuilder package on the target environment.")]
 public class DescribeProcessOptions : EnvironmentOptions {
 
 	/// <summary>Process code (schema Name) as it appears in the process designer.</summary>
-	[Option("process-code", Required = false, HelpText = "Process code (schema Name), e.g. UsrProcess_493d4c9.")]
 	public string ProcessCode { get; set; }
 
 	/// <summary>Process UId (GUID).</summary>
-	[Option("process-uid", Required = false, HelpText = "Process UId (GUID).")]
 	public string ProcessUid { get; set; }
 
 	/// <summary>Process caption (display name).</summary>
-	[Option("process-caption", Required = false, HelpText = "Process caption (display name).")]
 	public string ProcessCaption { get; set; }
 
 	/// <summary>Culture used to resolve localized captions.</summary>
-	[Option("culture", Required = false, HelpText = "Culture used to resolve localized captions.", Default = "en-US")]
 	public string Culture { get; set; } = "en-US";
 }
 

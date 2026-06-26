@@ -1,42 +1,33 @@
 using System;
-using System.Collections.Generic;
 using Clio.Command;
 using Clio.Command.ProcessModel;
 using Clio.Common;
 using ErrorOr;
 using FluentAssertions;
-using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Category("Unit")]
 [Property("Module", "Command")]
-public sealed class DescribeProcessCommandTests : BaseCommandTests<DescribeProcessOptions> {
+public sealed class DescribeProcessCommandTests {
 	private IProcessDescriber _describer;
 	private ILogger _logger;
 	private DescribeProcessCommand _command;
 
-	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
-		base.AdditionalRegistrations(containerBuilder);
+	[SetUp]
+	public void Setup() {
 		_describer = Substitute.For<IProcessDescriber>();
 		_logger = Substitute.For<ILogger>();
-		containerBuilder.AddSingleton(_describer);
-		containerBuilder.AddSingleton(_logger);
-	}
-
-	[SetUp]
-	public override void Setup() {
-		base.Setup();
-		_command = Container.GetRequiredService<DescribeProcessCommand>();
+		_command = new DescribeProcessCommand(_describer, _logger);
 	}
 
 	[TearDown]
-	public override void TearDown() {
+	public void TearDown() {
 		_describer.ClearReceivedCalls();
 		_logger.ClearReceivedCalls();
-		base.TearDown();
 	}
 
 	[Test]
