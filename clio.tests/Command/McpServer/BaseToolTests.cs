@@ -1,8 +1,10 @@
 using System;
 using System.Linq;
+using System.Text.Json;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
+using ConsoleTables;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
@@ -261,6 +263,37 @@ public sealed class BaseToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Regression (ENG-92149): a command that prints a ConsoleTable (the experimental list-features path) "
+		+ "must yield a CommandExecutionResult that serializes through System.Text.Json without throwing, with the "
+		+ "table projected to its rendered string — the raw ConsoleTable graph reaches a ReadOnlySpan<byte> ref "
+		+ "struct that System.Text.Json cannot serialize, which the MCP SDK reports as IsError=true.")]
+	public void InternalExecute_ShouldProduceSerializableEnvelope_WhenCommandPrintsConsoleTable() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		ConsoleTable table = new() { Columns = { "Feature", "State" } };
+		table.Rows.Add(["sample-feature", "ENABLED"]);
+		var command = new FakeTablePrintingCommand(ConsoleLogger.Instance, exitCode: 0, table);
+		BaseToolHarness tool = new(command, ConsoleLogger.Instance);
+
+		// Act
+		CommandExecutionResult result = tool.Execute(new BaseToolHarnessOptions("table"));
+		Action serialize = () => JsonSerializer.Serialize(result);
+		LogMessage tableMessage = result.Output.Single(message => message.LogDecoratorType == LogDecoratorType.Table);
+
+		// Assert
+		serialize.Should().NotThrow(
+			because: "the MCP SDK serializes the returned envelope with System.Text.Json; a raw ConsoleTable in LogMessage.Value would throw and surface as IsError=true (ENG-92149)");
+		result.ExitCode.Should().Be(0,
+			because: "listing feature flags via a table is a successful read operation");
+		tableMessage.Value.Should().BeOfType<string>(
+			because: "the non-serializable ConsoleTable must be projected to its rendered string form before entering the MCP envelope");
+		tableMessage.Value!.ToString().Should().Contain("sample-feature",
+			because: "the human-readable table text (table.ToString()) must be preserved in the envelope, matching what the console renders");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("The environment-scoped version gate fails the tool with the distinct version exit code (78), embeds the stable version-too-old ErrorCode in the message, and never runs the command when a [RequiresCreatioVersion] options type's requirement is unmet.")]
 	public void InternalExecuteGeneric_ShouldReturnVersionExitCodeWithErrorCodeAndNotRunCommand_WhenVersionCheckerThrowsVersionTooOld() {
 		// Arrange
@@ -468,6 +501,14 @@ public sealed class BaseToolTests {
 		public override int Execute(UngatedToolHarnessOptions options) {
 			WasExecuted = true;
 			logger.WriteInfo(messageToWrite);
+			return exitCode;
+		}
+	}
+
+	private sealed class FakeTablePrintingCommand(ILogger logger, int exitCode, ConsoleTable table)
+		: Command<BaseToolHarnessOptions> {
+		public override int Execute(BaseToolHarnessOptions options) {
+			logger.PrintTable(table);
 			return exitCode;
 		}
 	}

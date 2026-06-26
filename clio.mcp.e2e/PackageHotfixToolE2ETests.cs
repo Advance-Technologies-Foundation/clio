@@ -16,6 +16,7 @@ namespace Clio.Mcp.E2E;
 /// End-to-end tests for the unlock-for-hotfix and finish-hotfix MCP tools.
 /// </summary>
 [TestFixture]
+[Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("pkg-hotfix")]
 public sealed class PackageHotfixToolE2ETests {

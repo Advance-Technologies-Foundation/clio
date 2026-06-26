@@ -1300,6 +1300,15 @@ internal class Program {
 
 	private static bool ShouldSkipUpdateCheck(string[] args) {
 		if (IsMcpServerMode) return true;
+		// Honor an opt-out env var so harnesses (e.g. the MCP e2e suite) can suppress the
+		// background self-update for every spawned clio process from a single seam, instead of
+		// relying on per-process appsettings.json edits. Any non-empty, non-"false" value enables.
+		string? noUpdate = Environment.GetEnvironmentVariable("CLIO_NO_UPDATE_CHECK");
+		if (!string.IsNullOrWhiteSpace(noUpdate)
+			&& !string.Equals(noUpdate, "false", StringComparison.OrdinalIgnoreCase)
+			&& !string.Equals(noUpdate, "0", StringComparison.Ordinal)) {
+			return true;
+		}
 		if (args == null || args.Length == 0) return true;
 		string first = args[0];
 		if (string.Equals(first, "update-cli", StringComparison.OrdinalIgnoreCase)
