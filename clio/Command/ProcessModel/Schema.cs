@@ -1107,7 +1107,7 @@ public static class ManagerMap{
 			"webservice" => EventType.WebServiceTask,
 			"callactivity" => EventType.SubProcess,
 			"eventsubprocessexpanded" => EventType.EventSubProcess,
-			"usertask" => EventType.UserTask,
+			"usertask" or "performtask" => EventType.UserTask,
 			var i when i.StartsWith("intermediatecatchevent", StringComparison.Ordinal) => EventType.IntermediateCatchSignalEvent,
 			var i when i.StartsWith("intermediatethrowevent", StringComparison.Ordinal) => EventType.IntermediateThrowSignalEvent,
 			// every system/user action element ends with the "usertask" suffix and is an activity.

@@ -120,7 +120,9 @@ public sealed class ManagerMapResolveDataIdTests {
 	[TestCase("signalStart", ManagerMap.EventType.StartSignalEvent)]  // create-business-process descriptor `type`
 	[TestCase("endevent", ManagerMap.EventType.EndEvent)]             // build/describe lowercase token
 	[TestCase("usertask", ManagerMap.EventType.UserTask)]             // build/describe lowercase token
-	[TestCase("StartEvent", ManagerMap.EventType.StartEvent)]         // case-insensitive vs the canvas data-id
+	[TestCase("performtask", ManagerMap.EventType.UserTask)]          // build token the guidance example uses; the server builds it (alias -> Perform task)
+		[TestCase("performTask", ManagerMap.EventType.UserTask)]          // create-business-process descriptor `type`
+		[TestCase("StartEvent", ManagerMap.EventType.StartEvent)]         // case-insensitive vs the canvas data-id
 	[TestCase("ENDEVENT", ManagerMap.EventType.EndEvent)]             // case-insensitive
 	[TestCase("ReadDataUserTask", ManagerMap.EventType.UserTask)]     // *UserTask suffix, mixed case
 	public void ResolveDataId_ShouldAcceptBuildAndDescribeTokensCaseInsensitively_WhenVocabularyOrCaseDrifts(
