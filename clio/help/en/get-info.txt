@@ -11,21 +11,37 @@ ALIASES
     describe, describe-creatio, instance-info
 
 DESCRIPTION
-    Retrieves comprehensive information about the Creatio instance including
-    version, underlying runtime, database type, and product name. This command
-    communicates with the Creatio instance through the cliogate API gateway to
-    collect system details.
-    
+    Retrieves comprehensive information about the Creatio instance as a single,
+    SOURCE-INDEPENDENT report - the output shape is the same with or without
+    cliogate. The report is assembled from up to three sources:
+      1. Base (always): ApplicationInfoService (authenticated session only) -
+         core version and locale/user/workspace metadata.
+      2. DB engine + framework (no cliogate): the admin-gated
+         ApplicationInfoService.GetSystemEnvironmentInfo operation adds
+         dbEngineType, frameworkKind and frameworkDescription. Needs the
+         CanManageSolution permission and a newer Creatio.
+      3. cliogate-only (when installed): adds productName and licenseInfo, and
+         backfills db engine / framework on Creatio versions that predate
+         GetSystemEnvironmentInfo.
+    Every source beyond the base is best-effort: if unavailable it is skipped
+    silently and the command still reports what it has and exits 0. Only
+    productName and licenseInfo strictly require cliogate.
+
     The command returns information such as:
-    - Creatio version
-    - Runtime environment (.NET version)
-    - Database type (MSSQL, PostgreSQL, Oracle)
-    - Product name and configuration
-    - System settings and configuration details
-    
+    - Creatio version (with or without cliogate)
+    - Runtime / executing framework (.NET version) - via cliogate, or without
+      cliogate via GetSystemEnvironmentInfo (needs CanManageSolution)
+    - Database type (MSSQL, PostgreSQL, Oracle) - via cliogate, or without
+      cliogate via GetSystemEnvironmentInfo (needs CanManageSolution)
+    - Product name and configuration - cliogate only
+    - License information - cliogate only
+    - System settings and configuration details - cliogate only
+
     REQUIREMENTS:
-    - cliogate must be installed on the target Creatio instance
-    - Minimum cliogate version: 2.0.0.32
+    - A FULL report (incl. LicenseInfo and ProductName) requires cliogate on the
+      target instance (minimum version 2.0.0.32). Core version, database engine
+      and framework are available without cliogate (the latter two need the
+      CanManageSolution permission).
     - Valid environment configuration with proper credentials
 
 OPTIONS
@@ -72,22 +88,31 @@ EXAMPLES
 
 
 BEHAVIOR
-    1. Validates that cliogate is installed on the target environment
-    2. Checks cliogate version meets minimum requirement (2.0.0.32)
-    3. Sends GET request to /rest/CreatioApiGateway/GetSysInfo endpoint
-    4. Parses the JSON response
-    5. Displays system information in formatted output
+    1. POST ApplicationInfoService.GetApplicationInfo; use its sysValues as the
+       base report (always; no cliogate required)
+    2. Enrich from the admin-gated ApplicationInfoService.GetSystemEnvironmentInfo
+       (POST) - add dbEngineType, frameworkKind, frameworkDescription
+       (requires CanManageSolution)
+    3. If a compatible cliogate (>= 2.0.0.32) is installed, GET
+       /rest/CreatioApiGateway/GetSysInfo and merge productName + licenseInfo into
+       the same object (and backfill db engine / framework if step 2 did not)
+    4. Any source in steps 2-3 that is denied / absent / errors is skipped
+       silently - the report still includes everything that was available
+    5. Display the single combined report as formatted JSON
 
 EXIT CODES
-    0   Successfully retrieved and displayed system information
+    0   Successfully retrieved and displayed system information (regardless of
+        which optional sources were available)
     1   Failed to retrieve information (environment not found, connection error,
-        or cliogate not installed/outdated)
+        or ApplicationInfoService returned an unexpected response)
 
 NOTES
-    - This command requires cliogate extension to be installed on Creatio
-    - If cliogate is not installed, you will receive an error message with
-      installation instructions
-    - The command uses GET HTTP method for the API call
+    - cliogate is NOT required: without it the command still reports core
+      version, locale/user/workspace metadata, and - with CanManageSolution -
+      the database engine and executing framework via GetSystemEnvironmentInfo
+    - LicenseInfo and ProductName are reported only when cliogate is installed
+    - The full-report path uses GET (GetSysInfo); the fallback path uses POST
+      (GetApplicationInfo and GetSystemEnvironmentInfo)
     - Response is returned as formatted JSON with system details
 
 TROUBLESHOOTING

@@ -98,6 +98,10 @@ internal static class GuidanceCatalog {
 				"deploy-lifecycle",
 				"Canonical MCP guidance for the Creatio deploy/provisioning lifecycle: assert-infrastructure -> show-passing-infrastructure -> find-empty-iis-port -> deploy-creatio/deploy-identity, plus build discovery, registration, IdentityService, and cliogate installation.",
 				DeployLifecycleGuidanceResource.Guide),
+			["describe-environment"] = Create(
+				"describe-environment",
+				"Canonical MCP guidance for describe-environment: the single source-independent environment report (coreVersion, db engine, framework, productName, licenseInfo, locale/workspace metadata), which source supplies each field, and the cliogate / CanManageSolution prerequisites.",
+				DescribeEnvironmentGuidanceResource.Guide),
 			["support-mode"] = Create(
 				"support-mode",
 				"Canonical MCP guidance for diagnostic-first execution under support mode: severity routing, confirmation probes, fail-fast evidence, and reporting.",

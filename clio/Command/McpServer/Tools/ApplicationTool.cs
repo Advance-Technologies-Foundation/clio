@@ -236,9 +236,12 @@ public sealed class ApplicationSectionCreateTool(IApplicationSectionCreateServic
 		try {
 			ValidateSectionCreateArgs(args);
 			string resolvedIconBackground = args.IconBackground;
-			if (!string.IsNullOrWhiteSpace(resolvedIconBackground) || server?.ClientCapabilities?.Elicitation is not null) {
+			// Resolve a supplied color with elicitation disabled (server: null): an unknown value fails
+			// fast instead of prompting a client that may advertise elicitation but never answer. A
+			// missing color is left for the service to assign a default.
+			if (!string.IsNullOrWhiteSpace(resolvedIconBackground)) {
 				resolvedIconBackground = await SectionIconPalette.ResolveAsync(
-					server, args.IconBackground, args.Caption, cancellationToken).ConfigureAwait(false);
+					server: null, args.IconBackground, args.Caption, cancellationToken).ConfigureAwait(false);
 			}
 			ApplicationSectionCreateResult result = await McpProgressHeartbeat.RunWithProgressAndDeadlineAsync(
 				server,
@@ -314,9 +317,11 @@ public sealed class ApplicationSectionUpdateTool(IApplicationSectionUpdateServic
 		try {
 			ValidateSectionUpdateArgs(args);
 			string resolvedIconBackground = args.IconBackground;
+			// Resolve a supplied color with elicitation disabled (server: null) so an unknown value
+			// fails fast instead of prompting a client that may never answer.
 			if (!string.IsNullOrWhiteSpace(resolvedIconBackground)) {
 				resolvedIconBackground = await SectionIconPalette.ResolveAsync(
-					server, args.IconBackground, args.Caption ?? args.SectionCode, cancellationToken).ConfigureAwait(false);
+					server: null, args.IconBackground, args.Caption ?? args.SectionCode, cancellationToken).ConfigureAwait(false);
 			}
 			ApplicationSectionUpdateResult result = await McpProgressHeartbeat.RunWithProgressAsync(
 				server,

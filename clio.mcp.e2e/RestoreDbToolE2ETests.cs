@@ -15,6 +15,7 @@ namespace Clio.Mcp.E2E;
 [AllureFeature("restore-db")]
 public sealed class RestoreDbToolE2ETests {
 	[Test]
+	[Category("McpE2E.NoEnvironment")]
 	[Description("Starts the real clio MCP server, discovers the restore-db tools, and verifies that all three restore entrypoints are advertised as destructive operations.")]
 	[AllureTag(RestoreDbTool.RestoreDbByEnvironmentToolName)]
 	[AllureTag(RestoreDbTool.RestoreDbByCredentialsToolName)]
@@ -49,10 +50,12 @@ public sealed class RestoreDbToolE2ETests {
 	}
 
 	[Test]
+	[Category("McpE2E.Sandbox")]
 	[Description("Starts the real clio MCP server, invokes restore-db-to-local-server with invalid inputs, and verifies that the response still includes a database-operation log artifact path.")]
 	[AllureTag(RestoreDbTool.RestoreDbToLocalServerToolName)]
 	[AllureName("Restore-db failures still surface log-file-path")]
 	[AllureDescription("Uses the real clio MCP server to call restore-db-to-local-server with a missing backup path and verifies that the failure remains human-readable while still returning a temp database-operation log artifact path.")]
+	[Ignore("ENG-91830: requires reachable Kubernetes/DB infrastructure not available on CI agents.")]
 	public async Task RestoreDb_Should_Return_Log_File_Path_On_Failure() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();

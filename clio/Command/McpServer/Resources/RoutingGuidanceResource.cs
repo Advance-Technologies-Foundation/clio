@@ -35,6 +35,7 @@ public sealed class RoutingGuidanceResource {
 		       - Data: raw ESQ queries -> name=esq AND name=esq-filters
 		         - lookup seeding / data bindings -> name=data-bindings
 		       - Applications, deploy & ops: deploy & provisioning -> name=deploy-lifecycle
+		         - environment inspection (version / db engine / framework / product / license) -> name=describe-environment
 		         - executing an approved plan -> name=agent-execution
 		         - identity assertion / Identity Service V3 -> name=identity-assertion
 		       """
