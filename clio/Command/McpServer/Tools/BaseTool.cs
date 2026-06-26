@@ -58,6 +58,16 @@ public abstract class BaseTool<T>(
 			return CommandExecutionResult.FromException(e);
 		}
 
+		// Creatio-version gate for environment-bound commands, ordered BEFORE the package gate to mirror
+		// the CLI dispatch order (feature-toggle → creatio-version → package → execute, see
+		// Program.ExecuteCommandWithOption). Like the package gate it runs only in the env-SENSITIVE path,
+		// resolves its checker from the SAME environment-scoped container the command came from, and runs
+		// before the execution lock so a refusal does not hold it.
+		CommandExecutionResult versionRequirementFailure = EnforceCreatioVersionRequirements(options);
+		if (versionRequirementFailure is not null) {
+			return versionRequirementFailure;
+		}
+
 		// Package-requirement gate for environment-bound commands. This runs in the env-SENSITIVE path
 		// only, because [RequiresPackage] is verified against the per-call target environment. The checker
 		// is resolved from the SAME environment-scoped container the command came from (see
@@ -92,6 +102,36 @@ public abstract class BaseTool<T>(
 		catch (Exception ex) {
 			// Unexpected failure while verifying requirements (e.g. an HTTP/GetPackages error) → exit code -1.
 			return CommandExecutionResult.FromError($"Could not verify package requirements: {ex.Message}");
+		}
+	}
+
+	// Returns a failed result (exit code 78) when the per-call environment does not satisfy this options
+	// type's [RequiresCreatioVersion] declaration (too old, or undeterminable → fail-closed), or null when
+	// there is nothing to enforce / the requirement is met. Cheap static pre-check first: options types
+	// without [RequiresCreatioVersion] skip resolution entirely, so non-gated tools stay zero-cost and
+	// never force an environment round-trip — intentionally stricter than the package gate, because the
+	// version check exists solely to add that round-trip. Mirrors the CLI gate
+	// (Program.TryGetCreatioVersionRequirementError): only CreatioVersionRequirementException is mapped to
+	// the version exit code; a malformed [RequiresCreatioVersion] (e.g. on a non-bool property) surfaces as
+	// an InvalidOperationException that flows to the catch-all (exit code -1), NOT into the version-gate
+	// failure — a developer error must stay distinguishable from a version refusal. Nothing escapes here.
+	private CommandExecutionResult EnforceCreatioVersionRequirements(T options) {
+		if (!RequiresCreatioVersionAttribute.IsDefinedOn(typeof(T))) {
+			return null;
+		}
+		try {
+			ICreatioVersionChecker checker = ResolveFromCallContainer<ICreatioVersionChecker>(options);
+			checker.EnsureRequirements(options);
+			return null;
+		}
+		catch (CreatioVersionRequirementException ex) {
+			// Expected, caller-actionable refusal (unmet/undeterminable version) → distinct exit code 78.
+			return CommandExecutionResult.FromCreatioVersionRequirementError(ex);
+		}
+		catch (Exception ex) {
+			// Unexpected failure while verifying the version requirement (a malformed attribute, or a
+			// non-soft-degrading checker error) → exit code -1, never collapsed into the version exit code.
+			return CommandExecutionResult.FromException(ex);
 		}
 	}
 
