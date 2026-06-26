@@ -26,13 +26,13 @@ public sealed class DescribeProcessTool(
 	/// Reads the identified process and returns its structured graph (elements, flows, parameters).
 	/// </summary>
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
-	[Description("Reads an existing Creatio process and returns a STRUCTURED graph (elements with runtime type, the specific user-task schema name, label and value-bearing parameters; flows with source/target/kind; and process parameters) — not the raw metadata. Element typing comes from the real object model server-side (universal, incl. custom user tasks); parameter values carry their source (Mapping/ConstValue/Script) and expression. Identify the process by exactly one of process-code / process-uid / process-caption. Pair with get-guidance name=process-modeling to explain it. Requires the ProcessDesignService (clioprocessbuilder) package on the target environment.")]
+	[Description("Reads an existing Creatio process and returns a STRUCTURED graph (elements with runtime type, the specific user-task schema name, label and value-bearing parameters; flows with source/target/kind; and process parameters) — not the raw metadata. Element typing comes from the real object model server-side (universal, incl. custom user tasks); parameter values carry their source (Mapping/ConstValue/Script) and expression. Identify the process by exactly one of process-name / process-uid / process-caption. Pair with get-guidance name=process-modeling to explain it. Requires the ProcessDesignService (clioprocessbuilder) package on the target environment.")]
 	public CommandExecutionResult DescribeProcess(
 		[Description("describe-business-process parameters")]
 		[Required]
 		DescribeProcessArgs args) {
 		DescribeProcessOptions options = new() {
-			ProcessCode = args.ProcessCode,
+			ProcessName = args.ProcessName,
 			ProcessUid = args.ProcessUid,
 			ProcessCaption = args.ProcessCaption,
 			Culture = args.Culture ?? "en-US",
@@ -48,7 +48,7 @@ public sealed class DescribeProcessTool(
 
 /// <summary>
 /// MCP arguments for the <c>describe-business-process</c> tool. Provide exactly one of
-/// <c>process-code</c> / <c>process-uid</c> / <c>process-caption</c>.
+/// <c>process-name</c> / <c>process-uid</c> / <c>process-caption</c>.
 /// </summary>
 public sealed record DescribeProcessArgs(
 	[property: JsonPropertyName("environment-name")]
@@ -56,9 +56,9 @@ public sealed record DescribeProcessArgs(
 	[property: Required]
 	string EnvironmentName,
 
-	[property: JsonPropertyName("process-code")]
+	[property: JsonPropertyName("process-name")]
 	[property: Description("Process code (schema Name), e.g. UsrProcess_493d4c9. Provide exactly one identity.")]
-	string ProcessCode,
+	string ProcessName,
 
 	[property: JsonPropertyName("process-uid")]
 	[property: Description("Process UId (GUID). Provide exactly one identity.")]

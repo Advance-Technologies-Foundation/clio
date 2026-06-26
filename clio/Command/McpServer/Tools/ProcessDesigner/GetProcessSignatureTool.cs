@@ -13,7 +13,6 @@ namespace Clio.Command.McpServer.Tools.ProcessDesigner;
 /// agent can author a <c>crt.RunBusinessProcessRequest</c> button config with correct parameter codes.
 /// </summary>
 [McpServerToolType]
-[FeatureToggle("process-designer")]
 public sealed class GetProcessSignatureTool(
 	GetProcessSignatureCommand command,
 	ILogger logger,
@@ -32,11 +31,11 @@ public sealed class GetProcessSignatureTool(
 		"recordIdProcessParameterName, otherwise the platform silently drops the value. " +
 		"Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
 	public GetProcessSignatureResponse GetProcessSignature(
-		[Description("Parameters: process-code (required, the process code/schema Name or caption); culture (optional); environment-name preferred; uri/login/password emergency fallback only.")]
+		[Description("Parameters: process-name (required, the process CODE/schema name); culture (optional); environment-name preferred; uri/login/password emergency fallback only.")]
 		[Required]
 		GetProcessSignatureArgs args) {
 		GetProcessSignatureOptions options = new() {
-			ProcessCode = args.ProcessCode,
+			ProcessName = args.ProcessName,
 			Culture = args.Culture ?? "en-US",
 			Environment = args.EnvironmentName,
 			Uri = args.Uri,
@@ -61,12 +60,12 @@ public sealed class GetProcessSignatureTool(
 /// MCP arguments for the <c>get-process-signature</c> tool.
 /// </summary>
 public sealed record GetProcessSignatureArgs(
-	[property: JsonPropertyName("process-code")]
+	[property: JsonPropertyName("process-name")]
 	[property: Description("Process code (schema Name), e.g. 'UsrProcess_e629820', OR the display "
-		+ "caption shown in the process designer, e.g. 'Business process 1'. Accepts code or caption; "
-		+ "pass whatever the user named; the tool resolves both and echoes the resolved processCode.")]
+		+ "caption shown in the process designer, e.g. 'Business process 1'. Pass whatever the user "
+		+ "named; the tool resolves both and echoes the resolved processCode.")]
 	[property: Required]
-	string ProcessCode,
+	string ProcessName,
 
 	[property: JsonPropertyName("culture")]
 	[property: Description("Optional culture used to resolve localized parameter captions (default en-US)")]

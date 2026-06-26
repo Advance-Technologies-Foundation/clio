@@ -84,7 +84,7 @@ public sealed class CreateBusinessProcessToolE2ETests {
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
 					["environment-name"] = context.EnvironmentName,
-					["process-code"] = processCode
+					["process-name"] = processCode
 				}
 			},
 			context.CancellationTokenSource.Token);

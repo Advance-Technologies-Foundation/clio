@@ -63,7 +63,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		// Act
 		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
 			["environment-name"] = context.EnvironmentName,
-			["process-code"] = processName,
+			["process-name"] = processName,
 			["operations"] = BuildOperations()
 		});
 
@@ -79,7 +79,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		string describeJson = JsonSerializer.Serialize(await CallToolAsync(context, DescribeProcessTool.ToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
-				["process-code"] = processName
+				["process-name"] = processName
 			}));
 		describeJson.Should().Contain("signalstart",
 			because: "the edit added a signalStart element, which must appear in the read-back structured graph");
@@ -101,7 +101,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		// Act — processName only (processUid omitted) also exercises the optional-identity path
 		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
 			["environment-name"] = context.EnvironmentName,
-			["process-code"] = processName,
+			["process-name"] = processName,
 			["operations"] = BuildAddParameterOperations()
 		});
 

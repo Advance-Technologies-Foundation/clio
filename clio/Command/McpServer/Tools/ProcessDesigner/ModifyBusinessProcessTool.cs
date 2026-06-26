@@ -47,8 +47,8 @@ public class ModifyBusinessProcessTool(
 		bool hasUid = !string.IsNullOrWhiteSpace(args.ProcessUid);
 		if (hasName == hasUid) {
 			return CommandExecutionResult.FromError(hasName
-				? "Provide only one of process-code or process-uid, not both."
-				: "one of process-code or process-uid is required.");
+				? "Provide only one of process-name or process-uid, not both."
+				: "one of process-name or process-uid is required.");
 		}
 
 		if (string.IsNullOrWhiteSpace(args.Operations)) {
@@ -67,7 +67,7 @@ public class ModifyBusinessProcessTool(
 
 /// <summary>
 /// MCP arguments for the <c>modify-business-process</c> tool (kebab-case wire keys, repo convention).
-/// Provide exactly one of <c>process-code</c> / <c>process-uid</c>.
+/// Provide exactly one of <c>process-name</c> / <c>process-uid</c>.
 /// </summary>
 public sealed record ModifyBusinessProcessArgs(
 	[property: JsonPropertyName("environment-name")]
@@ -80,10 +80,10 @@ public sealed record ModifyBusinessProcessArgs(
 	[property: Required]
 	string Operations,
 
-	[property: JsonPropertyName("process-code")]
-	[property: Description("Process code (schema Name) to edit; provide exactly one of process-code or process-uid.")]
+	[property: JsonPropertyName("process-name")]
+	[property: Description("Process code (schema Name) to edit; provide exactly one of process-name or process-uid.")]
 	string ProcessName,
 
 	[property: JsonPropertyName("process-uid")]
-	[property: Description("Process schema UId to edit; provide exactly one of process-code or process-uid.")]
+	[property: Description("Process schema UId to edit; provide exactly one of process-name or process-uid.")]
 	string ProcessUid);

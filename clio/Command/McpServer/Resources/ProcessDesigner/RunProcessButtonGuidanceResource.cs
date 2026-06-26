@@ -35,7 +35,7 @@ public sealed class RunProcessButtonGuidanceResource {
 			       Do NOT write a custom handler — the `handlers` block stays empty for this button.
 
 			       MANDATORY pre-write step
-			       - Call `get-process-signature process-code=<code-or-caption> environment-name=<env>` FIRST.
+			       - Call `get-process-signature process-name=<code-or-caption> environment-name=<env>` FIRST.
 			       - You may pass the name the user gave (the display caption, e.g. "Business process 1") OR the
 			         schema code (e.g. UsrProcess_e629820). The tool resolves both and echoes the resolved
 			         `processCode` — put THAT code into the button's `processName` (never the caption).

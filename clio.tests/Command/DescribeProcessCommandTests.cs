@@ -44,7 +44,7 @@ public sealed class DescribeProcessCommandTests {
 				Flows = [],
 				Parameters = []
 			});
-		DescribeProcessOptions options = new() { Environment = "dev", ProcessCode = "UsrProcess_493d4c9" };
+		DescribeProcessOptions options = new() { Environment = "dev", ProcessName ="UsrProcess_493d4c9" };
 
 		// Act
 		int result = _command.Execute(options);
@@ -65,7 +65,7 @@ public sealed class DescribeProcessCommandTests {
 		_describer.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>())
 			.Returns(new DescribeProcessResult { Name = "UsrProcess_493d4c9" });
 		DescribeProcessOptions options = new() {
-			Environment = "dev", ProcessCode = "UsrProcess_493d4c9", Culture = "uk-UA"
+			Environment = "dev", ProcessName ="UsrProcess_493d4c9", Culture = "uk-UA"
 		};
 
 		// Act
@@ -83,7 +83,7 @@ public sealed class DescribeProcessCommandTests {
 		// Arrange
 		_describer.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>())
 			.Returns(Error.Failure("ResolveId", "process not found (code 'missing')"));
-		DescribeProcessOptions options = new() { Environment = "dev", ProcessCode = "missing" };
+		DescribeProcessOptions options = new() { Environment = "dev", ProcessName ="missing" };
 
 		// Act
 		int result = _command.Execute(options);
@@ -127,7 +127,7 @@ public sealed class DescribeProcessCommandTests {
 					}
 				]
 			});
-		DescribeProcessOptions options = new() { Environment = "dev", ProcessCode = "UsrTaskProcess" };
+		DescribeProcessOptions options = new() { Environment = "dev", ProcessName ="UsrTaskProcess" };
 		string written = null;
 		_logger.WriteInfo(Arg.Do<string>(value => written = value));
 
@@ -149,7 +149,7 @@ public sealed class DescribeProcessCommandTests {
 	[Description("Requires exactly one identity: with more than one provided it errors before contacting the server.")]
 	public void Execute_ShouldErrorWithoutReading_WhenMultipleIdentitiesProvided() {
 		// Arrange
-		DescribeProcessOptions options = new() { Environment = "dev", ProcessCode = "x", ProcessCaption = "y" };
+		DescribeProcessOptions options = new() { Environment = "dev", ProcessName ="x", ProcessCaption = "y" };
 
 		// Act
 		int result = _command.Execute(options);

@@ -22,19 +22,9 @@ public class GetProcessSignatureOptions : EnvironmentOptions {
 	/// <summary>
 	/// Process code (schema name) as it appears in the Creatio process designer, e.g. <c>UsrProcess_e629820</c>.
 	/// </summary>
-	[Value(0, MetaName = "ProcessCode", Required = true,
-		HelpText = "the process code (schema Name) or caption to resolve")]
-	[Option("process-code", Required = false, HelpText = "the process code (schema Name) or caption to resolve")]
-	public string ProcessCode { get; set; } = string.Empty;
-
-	/// <summary>
-	/// Hidden backward-compatibility alias for <c>--process-code</c> (was <c>--process-name</c>).
-	/// </summary>
-	[Option("process-name", Required = false, Hidden = true, HelpText = "Alias for --process-code")]
-	public string ProcessNameAlias {
-		get => ProcessCode;
-		set { if (!string.IsNullOrWhiteSpace(value)) { ProcessCode = value; } }
-	}
+	[Value(0, MetaName = "ProcessName", Required = true,
+		HelpText = "Process code (schema Name) or display caption as it appears in the process designer")]
+	public string ProcessName { get; set; } = string.Empty;
 
 	/// <summary>
 	/// Culture name used to select localized parameter captions.
@@ -136,13 +126,13 @@ public class GetProcessSignatureCommand(IProcessModelGenerator generator, ILogge
 	/// <returns><c>true</c> when the process was resolved; otherwise <c>false</c>.</returns>
 	public virtual bool TryGetSignature(GetProcessSignatureOptions options,
 		out GetProcessSignatureResponse response) {
-		if (string.IsNullOrWhiteSpace(options.ProcessCode)) {
-			response = new GetProcessSignatureResponse { Success = false, Error = "process-code is required" };
+		if (string.IsNullOrWhiteSpace(options.ProcessName)) {
+			response = new GetProcessSignatureResponse { Success = false, Error = "process-name is required" };
 			return false;
 		}
 
 		GenerateProcessModelCommandOptions generatorOptions = new() {
-			Code = options.ProcessCode,
+			Code = options.ProcessName,
 			Culture = string.IsNullOrWhiteSpace(options.Culture) ? "en-US" : options.Culture
 		};
 

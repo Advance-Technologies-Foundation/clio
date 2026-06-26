@@ -29,7 +29,7 @@ public static class DescribeProcessPrompt {
 		Explain what the existing Creatio process {process ?? "<code/uid/caption>"} does
 		(environment: {environmentName ?? "<environment-name>"}).
 
-		1. Call `describe-business-process` with `environment-name` and exactly one of `process-code` /
+		1. Call `describe-business-process` with `environment-name` and exactly one of `process-name` /
 		   `process-uid` / `process-caption`. It returns a STRUCTURED graph: `elements`
 		   (name, uid, caption, type, buildType, userTaskName, parameters; `signal` for a signal start),
 		   `flows` (source, target, kind), and process `parameters` — not raw metadata.

@@ -46,7 +46,7 @@ public sealed class DescribeProcessToolTests {
 		// Act
 		CommandExecutionResult result = tool.DescribeProcess(new DescribeProcessArgs(
 			EnvironmentName: "dev",
-			ProcessCode: "UsrProcess_493d4c9",
+			ProcessName: "UsrProcess_493d4c9",
 			ProcessUid: null,
 			ProcessCaption: null,
 			Culture: "uk-UA"));
@@ -56,8 +56,8 @@ public sealed class DescribeProcessToolTests {
 			because: "a valid describe-business-process request executes the resolved environment-aware command");
 		commandResolver.Received(1).Resolve<DescribeProcessCommand>(Arg.Is<EnvironmentOptions>(o => o.Environment == "dev"));
 		resolvedCommand.CapturedOptions.Should().NotBeNull(because: "the resolved command receives mapped options");
-		resolvedCommand.CapturedOptions!.ProcessCode.Should().Be("UsrProcess_493d4c9",
-			because: "the process code must be forwarded from MCP arguments");
+		resolvedCommand.CapturedOptions!.ProcessName.Should().Be("UsrProcess_493d4c9",
+			because: "the process name must be forwarded from MCP arguments");
 		resolvedCommand.CapturedOptions.Culture.Should().Be("uk-UA",
 			because: "the requested culture must be forwarded to the command");
 		resolvedCommand.CapturedOptions.Environment.Should().Be("dev",
@@ -93,7 +93,7 @@ public sealed class DescribeProcessToolTests {
 
 		// Assert
 		prompt.Should().Contain(DescribeProcessTool.ToolName, because: "the prompt references the production tool name");
-		prompt.Should().Contain("process-code", because: "the prompt keeps the identity arguments visible");
+		prompt.Should().Contain("process-name", because: "the prompt keeps the identity arguments visible");
 		prompt.Should().Contain("process-modeling", because: "the prompt points callers at the narration guidance");
 	}
 

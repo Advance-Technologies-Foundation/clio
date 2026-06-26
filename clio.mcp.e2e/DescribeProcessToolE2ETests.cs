@@ -56,7 +56,7 @@ public sealed class DescribeProcessToolE2ETests {
 		// Act
 		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
 			["environment-name"] = context.EnvironmentName,
-			["process-code"] = context.ProcessCode
+			["process-name"] = context.ProcessCode
 		});
 
 		// Assert

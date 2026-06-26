@@ -392,7 +392,7 @@ public sealed class PageUpdateTool(
 		signature = null;
 		warning = null;
 		GetProcessSignatureOptions signatureOptions = new() {
-			ProcessCode = processName,
+			ProcessName = processName,
 			Environment = options.Environment,
 			Uri = options.Uri,
 			Login = options.Login,

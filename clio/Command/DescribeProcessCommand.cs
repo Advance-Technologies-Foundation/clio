@@ -18,7 +18,7 @@ namespace Clio.Command;
 public class DescribeProcessOptions : EnvironmentOptions {
 
 	/// <summary>Process code (schema Name) as it appears in the process designer.</summary>
-	public string ProcessCode { get; set; }
+	public string ProcessName { get; set; }
 
 	/// <summary>Process UId (GUID).</summary>
 	public string ProcessUid { get; set; }
@@ -51,16 +51,16 @@ public class DescribeProcessCommand(IProcessDescriber describer, ILogger logger)
 	/// <returns><c>0</c> on success; otherwise <c>1</c>.</returns>
 	public override int Execute(DescribeProcessOptions options) {
 		int identityCount = 0;
-		if (!string.IsNullOrWhiteSpace(options.ProcessCode)) { identityCount++; }
+		if (!string.IsNullOrWhiteSpace(options.ProcessName)) { identityCount++; }
 		if (!string.IsNullOrWhiteSpace(options.ProcessUid)) { identityCount++; }
 		if (!string.IsNullOrWhiteSpace(options.ProcessCaption)) { identityCount++; }
 		if (identityCount != 1) {
-			logger.WriteError("Error: provide exactly one of --process-code, --process-uid, or --process-caption.");
+			logger.WriteError("Error: provide exactly one of --process-name, --process-uid, or --process-caption.");
 			return 1;
 		}
 
 		ErrorOr<DescribeProcessResult> description = describer.Describe(
-			new ProcessIdentity(options.ProcessCode, options.ProcessUid, options.ProcessCaption), options.Culture);
+			new ProcessIdentity(options.ProcessName, options.ProcessUid, options.ProcessCaption), options.Culture);
 		if (description.IsError) {
 			logger.WriteError($"Error: {description.FirstError.Description}.");
 			return 1;
