@@ -135,7 +135,8 @@ public sealed class ProcessModelingGuidanceResource {
 			- Reference syntax when an expression must read another element's output: `[#ElementName.PropertyPath#]`
 			  (e.g. `[#Read data.First item.Id#]`). Formulas are strictly typed (convert with `.ToString()` etc.).
 
-			== Connection rules R1–R17 (pre-checked by validate-process-graph) ==
+			== Connection rules R1–R17 (validate-process-graph enforces the structural subset: R1–R3, R7,
+			   R9–R15, R17; R4–R6, R8 and R16 are semantic or not yet enforced — verify those yourself) ==
 			R1  Start event: no incoming flow; exactly one outgoing.
 			R2  End event: no outgoing flow; one or more incoming.
 			R3  Exactly one top-level start event; every path reaches an end event.

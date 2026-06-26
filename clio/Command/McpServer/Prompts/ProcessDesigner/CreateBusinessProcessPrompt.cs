@@ -26,7 +26,10 @@ public static class CreateBusinessProcessPrompt {
 		 `create-business-process` tool. Supply a JSON descriptor object with these fields:
 		 - `name` (unique schema code), `caption`, `packageName`{(string.IsNullOrWhiteSpace(packageName) ? "" : $" (override: `{packageName}`)")}
 		 - `elements`: array of items with `id`, `type`, `caption`, optional `userTaskName`; `type` is
-		   `startEvent` | `endEvent` | `userTask` (aliases `readData`, `performTask`).
+		   `startEvent` | `signalStart` | `endEvent` | `userTask` (aliases `readData`, `performTask`).
+		   For `signalStart` add a `signal` object with `entity` (the object name) and `on` =
+		   `added` | `modified` | `deleted` — the platform-native "run a process when a record is
+		   saved/added/deleted" trigger.
 		 - `flows`: array of `source`/`target` pairs referencing element ids (start → tasks → end).
 		 - `parameters`: array of `name`/`type`/`direction`/`caption` (process inputs / variables).
 		 - `mappings`: array binding `elementId` + `elementParameter` to one of

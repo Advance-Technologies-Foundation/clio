@@ -78,8 +78,8 @@ public sealed class ProcessGraphValidatorTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("R2: a flow referencing a missing node is an error rather than an exception.")]
-	public void Validate_ShouldReturnR2Error_WhenEdgeReferencesMissingNode() {
+	[Description("R15: a flow referencing a missing node is an error rather than an exception (every flow needs a valid source/target).")]
+	public void Validate_ShouldReturnR15Error_WhenEdgeReferencesMissingNode() {
 		// Arrange
 		List<ProcessGraphNode> nodes = [Node("s", "startEvent"), Node("r", "readDataUserTask"), Node("e", "endEvent")];
 		List<ProcessGraphEdge> edges = [Seq("s", "r"), Seq("r", "e"), Seq("r", "ghost")];
@@ -88,8 +88,8 @@ public sealed class ProcessGraphValidatorTests {
 		ProcessGraphValidationResult result = Validate(nodes, edges);
 
 		// Assert
-		result.Findings.Should().Contain(f => f.RuleId == "R2" && f.Severity == ProcessGraphSeverity.Error,
-			because: "a flow whose endpoint is not a node must be flagged, not crash the validator");
+		result.Findings.Should().Contain(f => f.RuleId == "R15" && f.Severity == ProcessGraphSeverity.Error,
+			because: "a flow whose endpoint is not a node must be flagged (R15: every flow needs a valid source/target), not crash the validator");
 	}
 
 	[Test]

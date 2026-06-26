@@ -42,7 +42,7 @@ Structured JSON:
   "caption": "AI PoC Read Contact",
   "schemaUId": "dd3a473e-736a-4957-bb6d-7315f6404bd6",
   "elements": [
-    { "id": "...", "name": "StartEvent1", "caption": "Start", "type": "ProcessSchemaStartEvent", "buildType": "startevent", "position": "60;185", "parameters": [] },
+    { "id": "StartEvent1", "uid": "8d3e…", "name": "StartEvent1", "caption": "Start", "type": "ProcessSchemaStartEvent", "buildType": "startevent", "position": "60;185", "parameters": [] },
     {
       "id": "...", "name": "task1", "caption": "Do task",
       "type": "ProcessSchemaUserTask", "buildType": "usertask", "userTaskName": "ActivityUserTask", "position": "240;173",
@@ -62,6 +62,8 @@ Structured JSON:
 }
 ```
 
+- `elements[].id` is the element's **local id** (the schema element name) — the value `flows` reference;
+  `elements[].uid` is the element's **UId** (GUID); `elements[].name` is the schema name (equals `id`).
 - `elements[].type` is the element's **runtime class name** (e.g. `ProcessSchemaUserTask`,
   `ProcessSchemaStartEvent`) and is **not** consumable by build. `elements[].buildType` is the
   **descriptor token** to feed back into `create-business-process` / `modify-business-process`

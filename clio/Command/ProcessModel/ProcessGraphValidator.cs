@@ -62,12 +62,12 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 		}
 	}
 
-	// R2 (missing-node) — a flow must reference existing nodes on both ends.
+	// R15 (missing-node) — every flow needs a valid source and target node (guidance R15, not the R2 end-arity rule).
 	private static void CheckMissingNodeFlows(IReadOnlyList<ProcessGraphEdge> edges,
 			IReadOnlyDictionary<string, ProcessGraphNode> nodeById, List<ProcessGraphFinding> findings) {
 		foreach (ProcessGraphEdge edge in edges
 				.Where(e => !nodeById.ContainsKey(e.Source) || !nodeById.ContainsKey(e.Target))) {
-			findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Error, "R2",
+			findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Error, "R15",
 				$"Flow references a missing node (source '{edge.Source}', target '{edge.Target}').", null, edge));
 		}
 	}

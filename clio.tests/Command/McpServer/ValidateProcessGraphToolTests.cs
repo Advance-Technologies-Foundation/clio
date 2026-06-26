@@ -130,7 +130,7 @@ public sealed class ValidateProcessGraphToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("AC-ERR: an edge referencing a missing node returns a finding (R2), not an unhandled exception.")]
+	[Description("AC-ERR: an edge referencing a missing node returns a finding (R15), not an unhandled exception.")]
 	public void Validate_ShouldReturnFinding_WhenEdgeReferencesMissingNode() {
 		// Arrange
 		List<ProcessGraphNodeArg> nodes = [N("s", "startEvent"), N("r", "readDataUserTask"), N("e", "endEvent")];
@@ -141,8 +141,8 @@ public sealed class ValidateProcessGraphToolTests {
 
 		// Assert
 		response.Success.Should().BeTrue(because: "malformed graphs are reported as findings, not exceptions");
-		response.Findings.Should().Contain(f => f.RuleId == "R2" && f.Severity == "error",
-			because: "a flow referencing a missing node must surface as an R2 finding");
+		response.Findings.Should().Contain(f => f.RuleId == "R15" && f.Severity == "error",
+			because: "a flow referencing a missing node must surface as an R15 finding (every flow needs a valid source/target)");
 	}
 
 	[Test]

@@ -5,10 +5,10 @@ namespace Clio.Command.McpServer.Prompts.ProcessDesigner;
 
 /// <summary>
 /// Prompt that orients the agent to design a Creatio business process safely: learn the notation,
-/// validate the planned graph, then drive the designer.
+/// validate the planned graph, then build it with create-business-process.
 /// </summary>
 [McpServerPromptType]
-[Description("Guides the agent to read the process-modeling guidance, validate a planned process graph with validate-process-graph, and only then drive the designer.")]
+[Description("Guides the agent to read the process-modeling guidance, validate a planned process graph with validate-process-graph, and only then build it with create-business-process.")]
 [FeatureToggle("process-designer")]
 public static class ValidateProcessGraphPrompt {
 
@@ -33,7 +33,8 @@ public static class ValidateProcessGraphPrompt {
 		   (e.g. startEvent, readDataUserTask, exclusiveGateway, endEvent).
 		3. Call `validate-process-graph` with your planned `nodes` and `edges`. Resolve every
 		   `error`-severity finding before building; advisory `warning` findings are optional to address.
-		4. Only after a clean validation, drive the designer (e.g. `process-add-element`) — and treat the
-		   live designer's `.djs-validate-outline` marker as the final authority over the static validator.
+		4. Only after a clean validation, build the process with `create-business-process` (or edit an
+		   existing one with `modify-business-process`) — clio builds and saves it server-side in one call.
+		   Then verify with `describe-process`.
 		""";
 }

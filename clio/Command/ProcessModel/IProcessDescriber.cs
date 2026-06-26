@@ -160,9 +160,13 @@ public class DescribeProcessResult {
 
 /// <summary>A process node read back from the schema.</summary>
 public sealed class DescribedElement {
-	/// <summary>Element UId.</summary>
+	/// <summary>Element local id (the schema element <c>Name</c>) — the value flows/mappings reference.</summary>
 	[JsonPropertyName("id")]
 	public string Id { get; set; }
+
+	/// <summary>Element UId (the schema element's unique identifier).</summary>
+	[JsonPropertyName("uid")]
+	public string Uid { get; set; }
 
 	/// <summary>Element schema name.</summary>
 	[JsonPropertyName("name")]

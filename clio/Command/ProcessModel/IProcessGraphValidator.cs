@@ -70,13 +70,15 @@ public sealed record ProcessGraphValidationResult(bool HasErrors, IReadOnlyList<
 
 /// <summary>
 /// Validates a planned process graph against the Creatio BPMN connection rules (R1–R17) in-memory,
-/// so an AI agent gets deterministic pre-build feedback before driving the live Process Designer.
+/// so an AI agent gets deterministic pre-build feedback before building the process with
+/// <c>create-business-process</c> / <c>modify-business-process</c>.
 /// </summary>
 /// <remarks>
 /// Node types are classified through <see cref="ManagerMap.ResolveDataId"/> / <see cref="ManagerMap.ResolveRole"/>
-/// — the single source of truth — rather than a re-derived taxonomy. The live designer remains the final
-/// authority (it flags invalid connections with <c>.djs-validate-outline</c>); this validator is a fast pre-check.
-/// The full rule definitions live in <c>spec/ai-business-process-generation/ai-bp-connection-rules.md</c>.
+/// — the single source of truth — rather than a re-derived taxonomy. This is a fast pre-check; the
+/// authoritative build/save happens server-side in the <c>ProcessDesignService</c> package. The rule
+/// definitions are published in the <c>process-modeling</c> MCP guidance resource
+/// (<see cref="Clio.Command.McpServer.Resources.ProcessDesigner.ProcessModelingGuidanceResource"/>).
 /// </remarks>
 public interface IProcessGraphValidator {
 	/// <summary>
