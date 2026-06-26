@@ -20,8 +20,13 @@ recordIdProcessParameterName, otherwise the platform silently drops the value.
 ## Options
 
 ```bash
-ProcessName (pos. 0)         Process code (schema Name) or display caption as it
-                             appears in the process designer
+ProcessCode (pos. 0)         The process code (schema Name) or caption to resolve, as
+                             it appears in the process designer
+
+--process-code               The process code (schema Name) or caption to resolve
+                             (named form of the positional argument)
+
+--process-name               Hidden backward-compat alias for --process-code
 
 --culture               -x   Culture used to resolve localized parameter captions
 (default: en-US)
@@ -50,6 +55,9 @@ button's processName.
 
 When a caption matches more than one process the command returns a failure listing
 the candidate codes — re-run with the exact code.
+
+The legacy `--process-name` option remains as a hidden backward-compat alias for
+`--process-code`; new usage should prefer `--process-code` (or the positional argument).
 
 ## Examples
 

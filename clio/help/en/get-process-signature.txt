@@ -8,7 +8,7 @@ ALIASES
     gps
 
 SYNOPSIS
-    clio get-process-signature <ProcessName> [OPTIONS]
+    clio get-process-signature <ProcessCode> [OPTIONS]
 
 DESCRIPTION
     Resolves a business process by its code (schema Name) OR its display caption
@@ -25,8 +25,14 @@ DESCRIPTION
     listing the candidate codes - re-run with the exact code.
 
 OPTIONS
-    ProcessName              (pos. 0)  Process code (schema Name) or display caption
-                                       as it appears in the process designer (required)
+    ProcessCode              (pos. 0)  The process code (schema Name) or caption to
+                                       resolve, as it appears in the process designer
+                                       (required)
+
+    --process-code                     The process code (schema Name) or caption to
+                                       resolve (named form of the positional argument)
+
+    --process-name                     Hidden backward-compat alias for --process-code
 
     --culture                -x        Culture used to resolve localized parameter
                                        captions (default: en-US)

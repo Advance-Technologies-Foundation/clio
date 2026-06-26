@@ -5,6 +5,7 @@ using Clio.Command.McpServer.Tools;
 using Clio.Command.McpServer.Tools.ProcessDesigner;
 using Clio.Command.ProcessModel;
 using Clio.Common;
+using CommandLine;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
@@ -36,8 +37,8 @@ public class GetProcessSignatureToolTests {
 		// Assert
 		response.Success.Should().BeTrue(because: "the resolved command returns a successful signature");
 		resolvedCommand.CapturedOptions.Should().NotBeNull(because: "the resolved command should run");
-		resolvedCommand.CapturedOptions.ProcessName.Should().Be("UsrProcess_e629820",
-			because: "the process name argument is mapped onto the options");
+		resolvedCommand.CapturedOptions.ProcessCode.Should().Be("UsrProcess_e629820",
+			because: "the process code argument is mapped onto the options");
 		resolvedCommand.CapturedOptions.Environment.Should().Be("docker_fix2",
 			because: "the environment argument is mapped onto the options");
 		defaultCommand.CapturedOptions.Should().BeNull(
@@ -96,7 +97,7 @@ public class GetProcessSignatureToolTests {
 
 		// Act
 		bool ok = command.TryGetSignature(
-			new GetProcessSignatureOptions { ProcessName = "UsrProcess_e629820" },
+			new GetProcessSignatureOptions { ProcessCode = "UsrProcess_e629820" },
 			out GetProcessSignatureResponse response);
 
 		// Assert
@@ -126,7 +127,7 @@ public class GetProcessSignatureToolTests {
 		GetProcessSignatureCommand command = new(generator, ConsoleLogger.Instance);
 
 		// Act
-		bool ok = command.TryGetSignature(new GetProcessSignatureOptions { ProcessName = "UsrMissing" },
+		bool ok = command.TryGetSignature(new GetProcessSignatureOptions { ProcessCode = "UsrMissing" },
 			out GetProcessSignatureResponse response);
 
 		// Assert
@@ -146,7 +147,7 @@ public class GetProcessSignatureToolTests {
 		GetProcessSignatureCommand command = new(generator, ConsoleLogger.Instance);
 
 		// Act
-		bool ok = command.TryGetSignature(new GetProcessSignatureOptions { ProcessName = "Business process 1" },
+		bool ok = command.TryGetSignature(new GetProcessSignatureOptions { ProcessCode = "Business process 1" },
 			out GetProcessSignatureResponse response);
 
 		// Assert
@@ -166,7 +167,7 @@ public class GetProcessSignatureToolTests {
 		GetProcessSignatureCommand command = new(generator, ConsoleLogger.Instance);
 
 		// Act
-		bool ok = command.TryGetSignature(new GetProcessSignatureOptions { ProcessName = "UsrProcess_e629820" },
+		bool ok = command.TryGetSignature(new GetProcessSignatureOptions { ProcessCode = "UsrProcess_e629820" },
 			out GetProcessSignatureResponse response);
 
 		// Assert
@@ -178,26 +179,46 @@ public class GetProcessSignatureToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Fails fast with a clear message when process-name is blank, without calling the generator.")]
-	public void TryGetSignature_Should_Fail_When_Process_Name_Missing() {
+	[Description("Fails fast with a clear message when process-code is blank, without calling the generator.")]
+	public void TryGetSignature_Should_Fail_When_Process_Code_Missing() {
 		// Arrange
 		IProcessModelGenerator generator = Substitute.For<IProcessModelGenerator>();
 		GetProcessSignatureCommand command = new(generator, ConsoleLogger.Instance);
 
 		// Act
-		bool ok = command.TryGetSignature(new GetProcessSignatureOptions { ProcessName = " " },
+		bool ok = command.TryGetSignature(new GetProcessSignatureOptions { ProcessCode = " " },
 			out GetProcessSignatureResponse response);
 
 		// Assert
-		ok.Should().BeFalse(because: "a blank process name is invalid input");
+		ok.Should().BeFalse(because: "a blank process code is invalid input");
 		response.Success.Should().BeFalse(because: "no lookup is attempted for blank input");
-		response.Error.Should().Contain("process-name", because: "the error should name the missing argument");
+		response.Error.Should().Contain("process-code", because: "the error should name the missing argument");
 	}
 
 	// NOTE: the former GetProcessSignature_Should_Return_RequirementFailure_When_ProcessBuilderPackageMissing test
 	// was removed — get-process-signature no longer carries [RequiresPackage("clioprocessbuilder")] (it reads the
 	// built-in DataService, not ProcessDesignService — PR #715). The "not gated" invariant is locked in by
 	// ProcessDesignerRequiresPackageAttributeTests.GetProcessSignatureOptions_ShouldNotDeclareProcessBuilderRequirement_*.
+
+	[Test]
+	[Category("Unit")]
+	[Description("Legacy hidden --process-name alias still maps onto ProcessCode after the rename to --process-code.")]
+	public void GetProcessSignatureOptions_Should_Map_ProcessNameAlias_To_ProcessCode_When_LegacyOptionUsed() {
+		// Arrange
+		string[] arguments = ["--process-name", "UsrProcess_e629820"];
+
+		// Act
+		ParserResult<GetProcessSignatureOptions> result =
+			Parser.Default.ParseArguments<GetProcessSignatureOptions>(arguments);
+
+		// Assert
+		result.Tag.Should().Be(ParserResultType.Parsed,
+			because: "the hidden --process-name backward-compat alias must still be accepted");
+		GetProcessSignatureOptions options = null;
+		result.WithParsed(parsed => options = parsed);
+		options.ProcessCode.Should().Be("UsrProcess_e629820",
+			because: "the legacy --process-name alias must delegate to the canonical ProcessCode property");
+	}
 
 	private sealed class FakeGetProcessSignatureCommand : GetProcessSignatureCommand {
 		public GetProcessSignatureOptions CapturedOptions { get; private set; }
@@ -209,7 +230,7 @@ public class GetProcessSignatureToolTests {
 		public override bool TryGetSignature(GetProcessSignatureOptions options,
 			out GetProcessSignatureResponse response) {
 			CapturedOptions = options;
-			response = new GetProcessSignatureResponse { Success = true, ProcessCode = options.ProcessName };
+			response = new GetProcessSignatureResponse { Success = true, ProcessCode = options.ProcessCode };
 			return true;
 		}
 	}

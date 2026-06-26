@@ -109,7 +109,7 @@ public sealed class GetProcessSignatureToolE2ETests {
 			ToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
-					["process-name"] = processName,
+					["process-code"] = processName,
 					["environment-name"] = environmentName
 				}
 			},
