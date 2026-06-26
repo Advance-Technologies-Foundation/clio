@@ -5,9 +5,9 @@ namespace Clio.Command.ProcessModel;
 /// <summary>
 /// One node in a planned process graph.
 /// </summary>
-/// <param name="Id">Caller-assigned node identifier (unique within the graph).</param>
+/// <param name="Name">Caller-assigned node handle — the element <c>Name</c> (string code), unique within the graph.</param>
 /// <param name="Type">The Process Designer element <c>data-id</c> (e.g. <c>startEvent</c>, <c>readDataUserTask</c>, <c>exclusiveGateway</c>).</param>
-public sealed record ProcessGraphNode(string Id, string Type);
+public sealed record ProcessGraphNode(string Name, string Type);
 
 /// <summary>
 /// The kind of a sequence connection between two nodes.
@@ -24,8 +24,8 @@ public enum ProcessFlowKind {
 /// <summary>
 /// One directed connection between two nodes in a planned process graph.
 /// </summary>
-/// <param name="Source">The source node id.</param>
-/// <param name="Target">The target node id.</param>
+/// <param name="Source">The source node name.</param>
+/// <param name="Target">The target node name.</param>
 /// <param name="FlowKind">The flow kind.</param>
 public sealed record ProcessGraphEdge(string Source, string Target, ProcessFlowKind FlowKind);
 
@@ -52,13 +52,13 @@ public enum ProcessGraphSeverity {
 /// <param name="Severity">Whether the finding blocks building or is advisory.</param>
 /// <param name="RuleId">The rule identifier (e.g. <c>R1</c>, <c>R14</c>, or <c>UNKNOWN</c> for an unrecognized element type).</param>
 /// <param name="Message">A human-readable explanation.</param>
-/// <param name="NodeId">The offending node id, when the finding is about a node.</param>
+/// <param name="NodeName">The offending node name, when the finding is about a node.</param>
 /// <param name="Edge">The offending edge, when the finding is about a flow.</param>
 public sealed record ProcessGraphFinding(
 	ProcessGraphSeverity Severity,
 	string RuleId,
 	string Message,
-	string NodeId = null,
+	string NodeName = null,
 	ProcessGraphEdge Edge = null);
 
 /// <summary>

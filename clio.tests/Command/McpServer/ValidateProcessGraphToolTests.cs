@@ -37,7 +37,7 @@ public sealed class ValidateProcessGraphToolTests {
 		_tool = new ValidateProcessGraphTool(new ProcessGraphValidator(), _commandResolver);
 	}
 
-	private static ProcessGraphNodeArg N(string id, string type) => new(id, type);
+	private static ProcessGraphNodeArg N(string name, string type) => new(name, type);
 
 	private static ProcessGraphEdgeArg E(string source, string target, string flowKind = "sequence") => new(source, target, flowKind);
 
@@ -75,7 +75,7 @@ public sealed class ValidateProcessGraphToolTests {
 
 		// Assert
 		response.HasErrors.Should().BeTrue(because: "a start event with an incoming flow violates R1");
-		response.Findings.Should().Contain(f => f.RuleId == "R1" && f.Severity == "error" && f.NodeId == "s",
+		response.Findings.Should().Contain(f => f.RuleId == "R1" && f.Severity == "error" && f.NodeName == "s",
 			because: "the R1 violation must be reported against the offending start node");
 	}
 
@@ -124,7 +124,7 @@ public sealed class ValidateProcessGraphToolTests {
 		ValidateProcessGraphResponse response = Validate(nodes, edges);
 
 		// Assert
-		response.Findings.Should().Contain(f => f.RuleId == "R15" && f.Severity == "error" && f.NodeId == "orphan",
+		response.Findings.Should().Contain(f => f.RuleId == "R15" && f.Severity == "error" && f.NodeName == "orphan",
 			because: "an unreachable node violates R15");
 	}
 
@@ -147,8 +147,8 @@ public sealed class ValidateProcessGraphToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("DUP: two nodes sharing an id surface a duplicate-id error finding (and the call still succeeds, not throws).")]
-	public void Validate_ShouldSurfaceDupError_WhenTwoNodesShareAnId() {
+	[Description("DUP: two nodes sharing a name surface a duplicate-name error finding (and the call still succeeds, not throws).")]
+	public void Validate_ShouldSurfaceDupError_WhenTwoNodesShareAName() {
 		// Arrange
 		List<ProcessGraphNodeArg> nodes =
 			[N("s", "startEvent"), N("a", "activityUserTask"), N("a", "readDataUserTask"), N("e", "endEvent")];
@@ -158,9 +158,9 @@ public sealed class ValidateProcessGraphToolTests {
 		ValidateProcessGraphResponse response = Validate(nodes, edges);
 
 		// Assert
-		response.Success.Should().BeTrue(because: "a duplicate id is reported as a finding, not an unhandled exception");
-		response.Findings.Should().Contain(f => f.RuleId == "DUP" && f.Severity == "error" && f.NodeId == "a",
-			because: "the duplicate element id must surface as a DUP error against the offending node");
+		response.Success.Should().BeTrue(because: "a duplicate name is reported as a finding, not an unhandled exception");
+		response.Findings.Should().Contain(f => f.RuleId == "DUP" && f.Severity == "error" && f.NodeName == "a",
+			because: "the duplicate element name must surface as a DUP error against the offending node");
 	}
 
 	[Test]
@@ -176,7 +176,7 @@ public sealed class ValidateProcessGraphToolTests {
 
 		// Assert
 		response.Success.Should().BeTrue(because: "an unknown type is reported as a finding, not an exception");
-		response.Findings.Should().Contain(f => f.RuleId == "UNKNOWN" && f.Severity == "error" && f.NodeId == "x",
+		response.Findings.Should().Contain(f => f.RuleId == "UNKNOWN" && f.Severity == "error" && f.NodeName == "x",
 			because: "an unrecognized element type must surface as an UNKNOWN error against the offending node");
 	}
 

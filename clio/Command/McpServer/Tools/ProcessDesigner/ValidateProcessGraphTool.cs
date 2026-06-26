@@ -47,7 +47,7 @@ public sealed class ValidateProcessGraphTool {
 
 
 			List<ProcessGraphNode> nodes = (args.Nodes ?? [])
-										   .Select(n => new ProcessGraphNode(n.Id, n.Type))
+										   .Select(n => new ProcessGraphNode(n.Name, n.Type))
 										   .ToList();
 			List<ProcessGraphEdge> edges = (args.Edges ?? [])
 										   .Select(e =>
@@ -63,7 +63,7 @@ public sealed class ValidateProcessGraphTool {
 					Severity = f.Severity == ProcessGraphSeverity.Error ? "error" : "warning",
 					RuleId = f.RuleId,
 					Message = f.Message,
-					NodeId = f.NodeId,
+					NodeName = f.NodeName,
 					Source = f.Edge?.Source,
 					Target = f.Edge?.Target
 				}).ToList()
@@ -85,7 +85,7 @@ public sealed class ValidateProcessGraphTool {
 			return new ValidateProcessGraphResponse {
 				Success = false,
 				Error = $"validate-process-graph failed: {ex.Message}. Expected args: " +
-					"{\"nodes\":[{\"id\":\"s\",\"type\":\"startEvent\"}],\"edges\":[{\"source\":\"s\",\"target\":\"r\",\"flow-kind\":\"sequence\"}]}."
+					"{\"nodes\":[{\"name\":\"s\",\"type\":\"startEvent\"}],\"edges\":[{\"source\":\"s\",\"target\":\"r\",\"flow-kind\":\"sequence\"}]}."
 			};
 		}
 	}
@@ -106,7 +106,7 @@ public sealed record ValidateProcessGraphArgs(
 	string EnvironmentName,
 
 	[property: JsonPropertyName("nodes")]
-	[property: Description("The element nodes: [{id, type}] where type is the catalog data-id (e.g. startEvent, readDataUserTask, exclusiveGateway, endEvent).")]
+	[property: Description("The element nodes: [{name, type}] where name is the element handle (the schema element Name/string code) and type is the catalog data-id (e.g. startEvent, readDataUserTask, exclusiveGateway, endEvent).")]
 	List<ProcessGraphNodeArg> Nodes = null,
 
 	[property: JsonPropertyName("edges")]
@@ -116,7 +116,7 @@ public sealed record ValidateProcessGraphArgs(
 
 /// <summary>One node argument.</summary>
 public sealed record ProcessGraphNodeArg(
-	[property: JsonPropertyName("id")] string Id = null,
+	[property: JsonPropertyName("name")] string Name = null,
 	[property: JsonPropertyName("type")] string Type = null);
 
 /// <summary>One edge argument.</summary>
@@ -153,9 +153,9 @@ public sealed class ValidateProcessGraphFinding {
 	[JsonPropertyName("message")]
 	public string Message { get; init; }
 
-	[JsonPropertyName("node-id")]
+	[JsonPropertyName("node-name")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public string NodeId { get; init; }
+	public string NodeName { get; init; }
 
 	[JsonPropertyName("source")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

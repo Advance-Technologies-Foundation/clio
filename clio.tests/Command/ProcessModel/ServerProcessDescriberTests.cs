@@ -38,10 +38,10 @@ public sealed class ServerProcessDescriberTests {
 	[Test]
 	[Description("Posts the process code wrapped under 'request.name' to the DescribeProcess route and returns the parsed graph on success.")]
 	public void Describe_ShouldPostWrappedNameToDescribeRoute_AndReturnResult_OnSuccess() {
-		// Arrange — the element carries both id (= local Name) and uid (= element UId); both must survive.
+		// Arrange — the element carries its name (= local handle/Name) and uid (= element UId); both must survive.
 		IApplicationClient client = ClientReturning(
 			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\",\"schemaUId\":\"5c58c4c4-134b-4744-9c67-96d9c69c9d55\","
-			+ "\"elements\":[{\"id\":\"task1\",\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"task1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"usertask\"}],"
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"task1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"usertask\"}],"
 			+ "\"flows\":[],\"parameters\":[]}}");
 		ServerProcessDescriber describer = CreateDescriber(client);
 
@@ -51,7 +51,7 @@ public sealed class ServerProcessDescriberTests {
 		// Assert
 		result.IsError.Should().BeFalse(because: "a successful describe returns the graph, not an error");
 		result.Value.Name.Should().Be("UsrProc", because: "the process name is read from the server result");
-		result.Value.Elements[0].Id.Should().Be("task1", because: "the element local id (Name) is read back");
+		result.Value.Elements[0].Name.Should().Be("task1", because: "the element local handle (Name) is read back");
 		result.Value.Elements[0].Uid.Should().Be("a1b2c3d4-0000-0000-0000-000000000001",
 			because: "the element UId must be surfaced, not dropped (PR #715 review)");
 		client.Received(1).ExecutePostRequest(DescribeUrl,

@@ -29,13 +29,13 @@ public class ModifyBusinessProcessTool(
 		 OpenWorld = false),
 	 Description("Edit an EXISTING business process on a Creatio environment by applying an ordered JSON array of "
 		 + "operations. Identify the process by name (schema code) or uid. Each operation is an object with an "
-		 + "'op': addElement (with an 'element' descriptor: id, type, caption, userTaskName?, signal?), "
-		 + "removeElement (with 'elementId' = the element's local id or UId), addFlow / removeFlow (with 'source' "
-		 + "and 'target' element ids), addParameter (with a 'parameter': name, type e.g. Text/Integer/Guid, "
-		 + "direction?, caption?, or referenceSchema for a Lookup to an object e.g. City), addMapping (with a "
-		 + "'mapping': elementId, elementParameter, and exactly one of processParameter | value | expression). "
-		 + "Operations apply in order; any failure aborts the edit (nothing is saved). "
-		 + "Use describe-business-process to inspect the current elements/ids first. May remove elements — destructive.")]
+		 + "'op': addElement (with an 'element' descriptor: name (the element handle/local code), type, caption, "
+		 + "userTaskName?, signal?), removeElement (with 'elementName' = the element's local name or UId), addFlow "
+		 + "/ removeFlow (with 'source' and 'target' element names), addParameter (with a 'parameter': name, type "
+		 + "e.g. Text/Integer/Guid, direction?, caption?, or referenceSchema for a Lookup to an object e.g. City), "
+		 + "addMapping (with a 'mapping': elementName, elementParameter, and exactly one of processParameter | "
+		 + "value | expression). Operations apply in order; any failure aborts the edit (nothing is saved). "
+		 + "Use describe-business-process to inspect the current elements/names first. May remove elements — destructive.")]
 	public CommandExecutionResult ModifyBusinessProcess(
 		[Description("modify-business-process parameters")] [Required] ModifyBusinessProcessArgs args
 	) {
@@ -76,7 +76,7 @@ public sealed record ModifyBusinessProcessArgs(
 	string EnvironmentName,
 
 	[property: JsonPropertyName("operations")]
-	[property: Description("Inline JSON operations array, e.g. [{\"op\":\"removeElement\",\"elementId\":\"StartEvent1\"}].")]
+	[property: Description("Inline JSON operations array, e.g. [{\"op\":\"removeElement\",\"elementName\":\"StartEvent1\"}].")]
 	[property: Required]
 	string Operations,
 

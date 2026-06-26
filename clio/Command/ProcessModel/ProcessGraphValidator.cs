@@ -14,21 +14,21 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 		IReadOnlyList<ProcessGraphNode> nodes = graph?.Nodes ?? [];
 		IReadOnlyList<ProcessGraphEdge> edges = graph?.Edges ?? [];
 
-		// Group elements by id once. First occurrence wins for the lookup used downstream; any id that
+		// Group elements by name once. First occurrence wins for the lookup used downstream; any name that
 		// appears more than once is an error — the server doesn't guard duplicates on the build/modify
-		// path, where two same-id nodes break id-based flow/describe round-tripping.
-		List<IGrouping<string, ProcessGraphNode>> nodeGroups = nodes.GroupBy(node => node.Id).ToList();
-		Dictionary<string, ProcessGraphNode> nodeById = nodeGroups.ToDictionary(group => group.Key, group => group.First());
+		// path, where two same-name nodes break name-based flow/describe round-tripping.
+		List<IGrouping<string, ProcessGraphNode>> nodeGroups = nodes.GroupBy(node => node.Name).ToList();
+		Dictionary<string, ProcessGraphNode> nodeByName = nodeGroups.ToDictionary(group => group.Key, group => group.First());
 		findings.AddRange(nodeGroups
 			.Where(group => group.Count() > 1)
 			.Select(group => new ProcessGraphFinding(ProcessGraphSeverity.Error, "DUP",
-				$"Duplicate element id '{group.Key}'. Element ids must be unique within a process.", group.Key)));
+				$"Duplicate element name '{group.Key}'. Element names must be unique within a process.", group.Key)));
 
 		CheckUnknownTypes(nodes, findings);
-		CheckMissingNodeFlows(edges, nodeById, findings);
+		CheckMissingNodeFlows(edges, nodeByName, findings);
 
 		(Dictionary<string, List<ProcessGraphEdge>> outgoing, Dictionary<string, List<ProcessGraphEdge>> incoming) =
-			BuildAdjacency(edges, nodeById);
+			BuildAdjacency(edges, nodeByName);
 
 		List<ProcessGraphNode> startNodes = nodes.Where(n => RoleOf(n) == Role.Start).ToList();
 		CheckStartCount(startNodes, findings);
@@ -36,14 +36,14 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 		foreach (ProcessGraphNode node in nodes) {
 			Role role = RoleOf(node);
 			EventType eventType = TypeOf(node);
-			List<ProcessGraphEdge> outs = outgoing[node.Id];
-			List<ProcessGraphEdge> ins = incoming[node.Id];
+			List<ProcessGraphEdge> outs = outgoing[node.Name];
+			List<ProcessGraphEdge> ins = incoming[node.Name];
 			CheckStartEndArity(node, role, outs, ins, findings);
-			CheckGatewayAndFlowRules(node, eventType, role, outs, nodeById, findings);
-			CheckAddDataChaining(node, outs, nodeById, findings);
+			CheckGatewayAndFlowRules(node, eventType, role, outs, nodeByName, findings);
+			CheckAddDataChaining(node, outs, nodeByName, findings);
 		}
 
-		CheckConditionalFlowOrigins(edges, nodeById, findings);
+		CheckConditionalFlowOrigins(edges, nodeByName, findings);
 		CheckReachability(nodes, startNodes, outgoing, incoming, findings);
 
 		bool hasErrors = findings.Any(f => f.Severity == ProcessGraphSeverity.Error);
@@ -58,29 +58,29 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 	private static void CheckUnknownTypes(IReadOnlyList<ProcessGraphNode> nodes, List<ProcessGraphFinding> findings) {
 		foreach (ProcessGraphNode node in nodes.Where(n => ManagerMap.ResolveDataId(n.Type) == EventType.Unknown)) {
 			findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Error, "UNKNOWN",
-				$"Element '{node.Id}' has an unrecognized type '{node.Type}'.", node.Id));
+				$"Element '{node.Name}' has an unrecognized type '{node.Type}'.", node.Name));
 		}
 	}
 
 	// R15 (missing-node) — every flow needs a valid source and target node (guidance R15, not the R2 end-arity rule).
 	private static void CheckMissingNodeFlows(IReadOnlyList<ProcessGraphEdge> edges,
-			IReadOnlyDictionary<string, ProcessGraphNode> nodeById, List<ProcessGraphFinding> findings) {
+			IReadOnlyDictionary<string, ProcessGraphNode> nodeByName, List<ProcessGraphFinding> findings) {
 		foreach (ProcessGraphEdge edge in edges
-				.Where(e => !nodeById.ContainsKey(e.Source) || !nodeById.ContainsKey(e.Target))) {
+				.Where(e => !nodeByName.ContainsKey(e.Source) || !nodeByName.ContainsKey(e.Target))) {
 			findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Error, "R15",
 				$"Flow references a missing node (source '{edge.Source}', target '{edge.Target}').", null, edge));
 		}
 	}
 
-	// Adjacency over edges with valid endpoints only. Seeded from the de-duplicated node set (nodeById) rather than
-	// the raw node list, so a graph with duplicate ids yields the DUP finding instead of throwing here.
+	// Adjacency over edges with valid endpoints only. Seeded from the de-duplicated node set (nodeByName) rather than
+	// the raw node list, so a graph with duplicate names yields the DUP finding instead of throwing here.
 	private static (Dictionary<string, List<ProcessGraphEdge>> Outgoing, Dictionary<string, List<ProcessGraphEdge>> Incoming)
 			BuildAdjacency(IReadOnlyList<ProcessGraphEdge> edges,
-			IReadOnlyDictionary<string, ProcessGraphNode> nodeById) {
-		Dictionary<string, List<ProcessGraphEdge>> outgoing = nodeById.Keys.ToDictionary(id => id, _ => new List<ProcessGraphEdge>());
-		Dictionary<string, List<ProcessGraphEdge>> incoming = nodeById.Keys.ToDictionary(id => id, _ => new List<ProcessGraphEdge>());
+			IReadOnlyDictionary<string, ProcessGraphNode> nodeByName) {
+		Dictionary<string, List<ProcessGraphEdge>> outgoing = nodeByName.Keys.ToDictionary(name => name, _ => new List<ProcessGraphEdge>());
+		Dictionary<string, List<ProcessGraphEdge>> incoming = nodeByName.Keys.ToDictionary(name => name, _ => new List<ProcessGraphEdge>());
 		foreach (ProcessGraphEdge edge in edges
-				.Where(e => nodeById.ContainsKey(e.Source) && nodeById.ContainsKey(e.Target))) {
+				.Where(e => nodeByName.ContainsKey(e.Source) && nodeByName.ContainsKey(e.Target))) {
 			outgoing[edge.Source].Add(edge);
 			incoming[edge.Target].Add(edge);
 		}
@@ -95,7 +95,7 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 		}
 		findings.AddRange(startNodes.Skip(1).Select(extraStart => new ProcessGraphFinding(
 			ProcessGraphSeverity.Error, "R3",
-			$"Process has more than one start event ('{extraStart.Id}').", extraStart.Id)));
+			$"Process has more than one start event ('{extraStart.Name}').", extraStart.Name)));
 	}
 
 	// R1 — start: no incoming, exactly one outgoing. R2 — end: no outgoing, at least one incoming.
@@ -104,58 +104,58 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 		if (role == Role.Start) {
 			if (ins.Count > 0) {
 				findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Error, "R1",
-					$"Start event '{node.Id}' must not have an incoming flow.", node.Id));
+					$"Start event '{node.Name}' must not have an incoming flow.", node.Name));
 			}
 			if (outs.Count != 1) {
 				findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Error, "R1",
-					$"Start event '{node.Id}' must have exactly one outgoing flow.", node.Id));
+					$"Start event '{node.Name}' must have exactly one outgoing flow.", node.Name));
 			}
 		}
 		if (role == Role.End) {
 			if (outs.Count > 0) {
 				findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Error, "R2",
-					$"End event '{node.Id}' must not have an outgoing flow.", node.Id));
+					$"End event '{node.Name}' must not have an outgoing flow.", node.Name));
 			}
 			if (ins.Count == 0) {
 				findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Error, "R2",
-					$"End event '{node.Id}' must have at least one incoming flow.", node.Id));
+					$"End event '{node.Name}' must have at least one incoming flow.", node.Name));
 			}
 		}
 	}
 
 	// Gateway and flow-kind rules for a single node: R11, R10, R14, R7/R9, R12.
 	private static void CheckGatewayAndFlowRules(ProcessGraphNode node, EventType eventType, Role role,
-			List<ProcessGraphEdge> outs, IReadOnlyDictionary<string, ProcessGraphNode> nodeById,
+			List<ProcessGraphEdge> outs, IReadOnlyDictionary<string, ProcessGraphNode> nodeByName,
 			List<ProcessGraphFinding> findings) {
 		// R11 — parallel / event-based gateways carry sequence flows only.
 		if (eventType is EventType.ParallelGateway or EventType.EventBasedGateway
 			&& outs.Any(o => o.FlowKind != ProcessFlowKind.Sequence)) {
 			findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Error, "R11",
-				$"Gateway '{node.Id}' (parallel/event-based) must use plain sequence flows only.", node.Id));
+				$"Gateway '{node.Name}' (parallel/event-based) must use plain sequence flows only.", node.Name));
 		}
 
-		CheckEventBasedGatewayTargets(node, eventType, outs, nodeById, findings);
+		CheckEventBasedGatewayTargets(node, eventType, outs, nodeByName, findings);
 		CheckDefaultFlowRules(node, eventType, outs, findings);
 
 		// R12 (warning) — multiple outgoing sequence flows from a non-gateway = implicit parallel split.
 		if (role != Role.Gateway && outs.Count(o => o.FlowKind == ProcessFlowKind.Sequence) > 1) {
 			findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Warning, "R12",
-				$"Element '{node.Id}' has multiple outgoing sequence flows (implicit parallel split) — confirm intent.", node.Id));
+				$"Element '{node.Name}' has multiple outgoing sequence flows (implicit parallel split) — confirm intent.", node.Name));
 		}
 	}
 
 	// R10 — event-based gateway: each outgoing must lead directly to an intermediate catch event.
 	private static void CheckEventBasedGatewayTargets(ProcessGraphNode node, EventType eventType,
-			List<ProcessGraphEdge> outs, IReadOnlyDictionary<string, ProcessGraphNode> nodeById,
+			List<ProcessGraphEdge> outs, IReadOnlyDictionary<string, ProcessGraphNode> nodeByName,
 			List<ProcessGraphFinding> findings) {
 		if (eventType != EventType.EventBasedGateway) {
 			return;
 		}
 		foreach (ProcessGraphEdge edge in outs) {
-			if (nodeById.TryGetValue(edge.Target, out ProcessGraphNode target) && RoleOf(target) != Role.Intermediate) {
+			if (nodeByName.TryGetValue(edge.Target, out ProcessGraphNode target) && RoleOf(target) != Role.Intermediate) {
 				findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Error, "R10",
-					$"Event-based gateway '{node.Id}' outgoing must lead to an intermediate catch event; '{edge.Target}' is not.",
-					node.Id, edge));
+					$"Event-based gateway '{node.Name}' outgoing must lead to an intermediate catch event; '{edge.Target}' is not.",
+					node.Name, edge));
 			}
 		}
 	}
@@ -169,28 +169,28 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 		// R14 — a default flow is legal only with at least one sibling conditional flow.
 		if (hasDefault && !hasConditional) {
 			findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Error, "R14",
-				$"Default flow from '{node.Id}' requires at least one sibling conditional flow.", node.Id));
+				$"Default flow from '{node.Name}' requires at least one sibling conditional flow.", node.Name));
 		}
 
 		// R7 / R9 (warning) — diverging exclusive/inclusive gateway should have a default flow.
 		if (eventType is EventType.ExclusiveGateway or EventType.InclusiveGateway && outs.Count > 1 && !hasDefault) {
 			string ruleId = eventType == EventType.ExclusiveGateway ? "R7" : "R9";
 			findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Warning, ruleId,
-				$"Diverging gateway '{node.Id}' should have a default flow so the process never dead-ends.", node.Id));
+				$"Diverging gateway '{node.Name}' should have a default flow so the process never dead-ends.", node.Name));
 		}
 	}
 
 	// R17 (warning) — Add data returns only an Id; chain a Read data before consuming other fields.
 	private static void CheckAddDataChaining(ProcessGraphNode node, List<ProcessGraphEdge> outs,
-			IReadOnlyDictionary<string, ProcessGraphNode> nodeById, List<ProcessGraphFinding> findings) {
+			IReadOnlyDictionary<string, ProcessGraphNode> nodeByName, List<ProcessGraphFinding> findings) {
 		if (node.Type != "addDataUserTask") {
 			return;
 		}
 		foreach (ProcessGraphEdge edge in outs) {
-			if (nodeById.TryGetValue(edge.Target, out ProcessGraphNode target)
+			if (nodeByName.TryGetValue(edge.Target, out ProcessGraphNode target)
 				&& RoleOf(target) == Role.Activity && target.Type != "readDataUserTask") {
 				findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Warning, "R17",
-					$"Add data '{node.Id}' outputs only the new Id; chain a Read data before '{edge.Target}' consumes other fields.",
+					$"Add data '{node.Name}' outputs only the new Id; chain a Read data before '{edge.Target}' consumes other fields.",
 					edge.Target, edge));
 			}
 		}
@@ -198,9 +198,9 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 
 	// R13 — a conditional flow may originate only from a gateway or an activity.
 	private static void CheckConditionalFlowOrigins(IReadOnlyList<ProcessGraphEdge> edges,
-			IReadOnlyDictionary<string, ProcessGraphNode> nodeById, List<ProcessGraphFinding> findings) {
+			IReadOnlyDictionary<string, ProcessGraphNode> nodeByName, List<ProcessGraphFinding> findings) {
 		foreach (ProcessGraphEdge edge in edges) {
-			if (edge.FlowKind == ProcessFlowKind.Conditional && nodeById.TryGetValue(edge.Source, out ProcessGraphNode source)) {
+			if (edge.FlowKind == ProcessFlowKind.Conditional && nodeByName.TryGetValue(edge.Source, out ProcessGraphNode source)) {
 				Role sourceRole = RoleOf(source);
 				if (sourceRole is not (Role.Gateway or Role.Activity)) {
 					findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Error, "R13",
@@ -218,17 +218,17 @@ public sealed class ProcessGraphValidator : IProcessGraphValidator {
 		if (startNodes.Count == 0 || nodes.Count == 0) {
 			return;
 		}
-		HashSet<string> reachableFromStart = TraverseForward(startNodes.Select(n => n.Id), outgoing);
-		List<string> endIds = nodes.Where(n => RoleOf(n) == Role.End).Select(n => n.Id).ToList();
-		HashSet<string> canReachEnd = TraverseBackward(endIds, incoming);
+		HashSet<string> reachableFromStart = TraverseForward(startNodes.Select(n => n.Name), outgoing);
+		List<string> endNames = nodes.Where(n => RoleOf(n) == Role.End).Select(n => n.Name).ToList();
+		HashSet<string> canReachEnd = TraverseBackward(endNames, incoming);
 		foreach (ProcessGraphNode node in nodes) {
 			Role role = RoleOf(node);
-			if (role != Role.Start && !reachableFromStart.Contains(node.Id)) {
+			if (role != Role.Start && !reachableFromStart.Contains(node.Name)) {
 				findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Error, "R15",
-					$"Element '{node.Id}' is not reachable from the start event.", node.Id));
-			} else if (role != Role.End && !canReachEnd.Contains(node.Id)) {
+					$"Element '{node.Name}' is not reachable from the start event.", node.Name));
+			} else if (role != Role.End && !canReachEnd.Contains(node.Name)) {
 				findings.Add(new ProcessGraphFinding(ProcessGraphSeverity.Error, "R15",
-					$"Element '{node.Id}' cannot reach an end event.", node.Id));
+					$"Element '{node.Name}' cannot reach an end event.", node.Name));
 			}
 		}
 	}

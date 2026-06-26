@@ -6,15 +6,15 @@
     { "name": "MyText", "type": "Text", "direction": "In", "caption": "My Text" }
   ],
   "elements": [
-    { "id": "StartEvent1", "type": "startEvent", "caption": "Start" },
-    { "id": "task1", "type": "performTask", "caption": "Do task" },
-    { "id": "EndEvent1", "type": "endEvent", "caption": "End" }
+    { "name": "StartEvent1", "type": "startEvent", "caption": "Start" },
+    { "name": "task1", "type": "performTask", "caption": "Do task" },
+    { "name": "EndEvent1", "type": "endEvent", "caption": "End" }
   ],
   "flows": [
     { "source": "StartEvent1", "target": "task1" },
     { "source": "task1", "target": "EndEvent1" }
   ],
   "mappings": [
-    { "elementId": "task1", "elementParameter": "Recommendation", "processParameter": "MyText" }
+    { "elementName": "task1", "elementParameter": "Recommendation", "processParameter": "MyText" }
   ]
 }

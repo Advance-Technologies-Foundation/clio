@@ -12,7 +12,7 @@ namespace Clio.Tests.Command.McpServer;
 [Property("Module", "McpServer")]
 public class ModifyBusinessProcessToolTests {
 	private const string SampleOperations =
-		"[{\"op\":\"removeElement\",\"elementId\":\"StartEvent1\"}]";
+		"[{\"op\":\"removeElement\",\"elementName\":\"StartEvent1\"}]";
 
 	[Test]
 	[Description("Resolves the modify-business-process MCP tool for the requested environment and forwards the identity and operations into command options.")]

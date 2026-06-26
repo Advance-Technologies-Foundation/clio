@@ -97,16 +97,16 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		  "packageName": "Custom",
 		  "parameters": [ { "name": "MyText", "type": "Text", "direction": "In" } ],
 		  "elements": [
-		    { "id": "StartEvent1", "type": "startEvent" },
-		    { "id": "task1", "type": "performTask" },
-		    { "id": "EndEvent1", "type": "endEvent" }
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "task1", "type": "performTask" },
+		    { "name": "EndEvent1", "type": "endEvent" }
 		  ],
 		  "flows": [
 		    { "source": "StartEvent1", "target": "task1" },
 		    { "source": "task1", "target": "EndEvent1" }
 		  ],
 		  "mappings": [
-		    { "elementId": "task1", "elementParameter": "Recommendation", "processParameter": "MyText" }
+		    { "elementName": "task1", "elementParameter": "Recommendation", "processParameter": "MyText" }
 		  ]
 		}
 		""";

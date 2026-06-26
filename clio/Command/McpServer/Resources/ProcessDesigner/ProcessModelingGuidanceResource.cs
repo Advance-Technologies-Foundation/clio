@@ -56,16 +56,19 @@ public sealed class ProcessModelingGuidanceResource {
 			{
 			  "name": "UsrSchemaCode", "caption": "Title", "packageName": "Custom",
 			  "elements": [
-			    { "id": "Start1", "type": "startEvent" },
-			    { "id": "task1",  "type": "performTask", "caption": "..." },
-			    { "id": "End1",   "type": "endEvent" }
+			    { "name": "Start1", "type": "startEvent" },
+			    { "name": "task1",  "type": "performTask", "caption": "..." },
+			    { "name": "End1",   "type": "endEvent" }
 			  ],
 			  "flows":      [ { "source": "Start1", "target": "task1" }, { "source": "task1", "target": "End1" } ],
 			  "parameters": [ { "name": "MyText", "type": "Text", "direction": "In", "caption": "..." } ],
-			  "mappings":   [ { "elementId": "task1", "elementParameter": "<ParamName>", "processParameter": "MyText" } ]
+			  "mappings":   [ { "elementName": "task1", "elementParameter": "<ParamName>", "processParameter": "MyText" } ]
 			}
-			- `id` is the local element name used by flows/mappings. A `userTask` element auto-carries the task's
-			  parameters; map values into them with `mappings`. For a record trigger use `signalStart` (next section).
+			- `name` is the local element handle (the schema element Name, a string code) used by flows
+			  (`source`/`target`) and mappings (`elementName`). Creatio identifies an element by this Name plus a
+			  UId GUID; the platform reserves "Id" for the GUID, so the handle is `name`, not `id`. A `userTask`
+			  element auto-carries the task's parameters; map values into them with `mappings`. For a record trigger
+			  use `signalStart` (next section).
 
 			== Trigger a process on a record event ("run on save" of a page/record) — READ THIS ==
 			- When the goal is "run a process when a record is saved / added / changed / deleted" (e.g. on a page
@@ -74,7 +77,7 @@ public sealed class ProcessModelingGuidanceResource {
 			  (`crt.SaveRecordRequest` / any page handler) to launch a process on save — that is the wrong tool and
 			  a fragile workaround. The signal start is the platform-native, declarative trigger.
 			- Build it with `create-business-process`. The start element is:
-			    { "id": "Start1", "type": "signalStart", "signal": { "entity": "<EntityName>", "on": "modified" } }
+			    { "name": "Start1", "type": "signalStart", "signal": { "entity": "<EntityName>", "on": "modified" } }
 			  then the activity (e.g. a Perform task / `performTask` that shows a Task), then an `endEvent`,
 			  wired Start1 -> activity -> end. (`entity` is the page's object, e.g. UsrTestRunButton.)
 			- `on` is a SINGLE event: "added" | "modified" | "deleted" (the designer has no combined
@@ -128,7 +131,7 @@ public sealed class ProcessModelingGuidanceResource {
 			  it a Lookup to that object }. A user-task element's own parameters come from the task. The same shape is
 			  used by modify-business-process `addParameter`.
 			- Mappings (`mappings[]`): bind a user-task element's INPUT parameter to a value —
-			  { elementId, elementParameter, and exactly ONE of: processParameter (a process parameter by name) |
+			  { elementName, elementParameter, and exactly ONE of: processParameter (a process parameter by name) |
 			  value (a constant) | expression (a raw formula) }. `processParameter` flows a process input into the
 			  field (the server builds the correct reference); `expression` is a C#-like formula, e.g.
 			  `[#SysVariable.CurrentUserContact#]`, `[#System variable.Current date and time#].AddDays(3)`.

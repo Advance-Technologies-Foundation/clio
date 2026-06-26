@@ -12,7 +12,7 @@ namespace Clio.Tests.Command;
 [Property("Module", "Command")]
 public sealed class ModifyBusinessProcessCommandTests {
 	private const string SampleOperations =
-		"[{\"op\":\"removeElement\",\"elementId\":\"StartEvent1\"}]";
+		"[{\"op\":\"removeElement\",\"elementName\":\"StartEvent1\"}]";
 
 	private IModifyBusinessProcessService _modifyBusinessProcessService;
 	private ILogger _logger;

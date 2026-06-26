@@ -120,9 +120,9 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		  "caption": "Clio BP Modify E2E",
 		  "packageName": "Custom",
 		  "elements": [
-		    { "id": "StartEvent1", "type": "startEvent" },
-		    { "id": "task1", "type": "performTask" },
-		    { "id": "EndEvent1", "type": "endEvent" }
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "task1", "type": "performTask" },
+		    { "name": "EndEvent1", "type": "endEvent" }
 		  ],
 		  "flows": [
 		    { "source": "StartEvent1", "target": "task1" },
@@ -134,8 +134,8 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	private static string BuildOperations() =>
 		"""
 		[
-		  { "op": "removeElement", "elementId": "StartEvent1" },
-		  { "op": "addElement", "element": { "id": "SignalStart1", "type": "signalStart", "signal": { "entity": "UsrTestRunButton", "on": "save" } } },
+		  { "op": "removeElement", "elementName": "StartEvent1" },
+		  { "op": "addElement", "element": { "name": "SignalStart1", "type": "signalStart", "signal": { "entity": "UsrTestRunButton", "on": "save" } } },
 		  { "op": "addFlow", "source": "SignalStart1", "target": "task1" }
 		]
 		""";

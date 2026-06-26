@@ -15,7 +15,7 @@ namespace Clio.Tests.Command.ProcessModel;
 public sealed class ProcessGraphValidatorTests {
 	private readonly IProcessGraphValidator _validator = new ProcessGraphValidator();
 
-	private static ProcessGraphNode Node(string id, string type) => new(id, type);
+	private static ProcessGraphNode Node(string name, string type) => new(name, type);
 
 	private static ProcessGraphEdge Seq(string from, string to) => new(from, to, ProcessFlowKind.Sequence);
 
@@ -56,7 +56,7 @@ public sealed class ProcessGraphValidatorTests {
 		ProcessGraphValidationResult result = Validate(nodes, edges);
 
 		// Assert
-		result.Findings.Should().Contain(f => f.RuleId == "R1" && f.Severity == ProcessGraphSeverity.Error && f.NodeId == "s",
+		result.Findings.Should().Contain(f => f.RuleId == "R1" && f.Severity == ProcessGraphSeverity.Error && f.NodeName == "s",
 			because: "a start event must not have an incoming flow (R1)");
 	}
 
@@ -72,7 +72,7 @@ public sealed class ProcessGraphValidatorTests {
 		ProcessGraphValidationResult result = Validate(nodes, edges);
 
 		// Assert
-		result.Findings.Should().Contain(f => f.RuleId == "R2" && f.Severity == ProcessGraphSeverity.Error && f.NodeId == "e",
+		result.Findings.Should().Contain(f => f.RuleId == "R2" && f.Severity == ProcessGraphSeverity.Error && f.NodeName == "e",
 			because: "an end event must not have an outgoing flow (R2)");
 	}
 
@@ -205,7 +205,7 @@ public sealed class ProcessGraphValidatorTests {
 		ProcessGraphValidationResult result = Validate(nodes, edges);
 
 		// Assert
-		result.Findings.Should().Contain(f => f.RuleId == "R15" && f.Severity == ProcessGraphSeverity.Error && f.NodeId == "orphan",
+		result.Findings.Should().Contain(f => f.RuleId == "R15" && f.Severity == ProcessGraphSeverity.Error && f.NodeName == "orphan",
 			because: "a node unreachable from the start (and unable to reach an end) violates R15");
 	}
 
@@ -280,15 +280,15 @@ public sealed class ProcessGraphValidatorTests {
 		ProcessGraphValidationResult result = Validate(nodes, edges);
 
 		// Assert
-		result.Findings.Should().Contain(f => f.RuleId == "UNKNOWN" && f.Severity == ProcessGraphSeverity.Error && f.NodeId == "x",
+		result.Findings.Should().Contain(f => f.RuleId == "UNKNOWN" && f.Severity == ProcessGraphSeverity.Error && f.NodeName == "x",
 			because: "an unrecognized element type must be surfaced as a finding rather than silently accepted");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("DUP: two elements sharing an id are surfaced as an error (and the validator does not throw).")]
-	public void Validate_ShouldReturnDupError_WhenTwoElementsShareAnId() {
-		// Arrange — the activity id "a" is reused; the server does not guard this on build/modify.
+	[Description("DUP: two elements sharing a name are surfaced as an error (and the validator does not throw).")]
+	public void Validate_ShouldReturnDupError_WhenTwoElementsShareAName() {
+		// Arrange — the activity name "a" is reused; the server does not guard this on build/modify.
 		List<ProcessGraphNode> nodes =
 			[Node("s", "startEvent"), Node("a", "activityUserTask"), Node("a", "readDataUserTask"), Node("e", "endEvent")];
 		List<ProcessGraphEdge> edges = [Seq("s", "a"), Seq("a", "e")];
@@ -297,9 +297,9 @@ public sealed class ProcessGraphValidatorTests {
 		ProcessGraphValidationResult result = Validate(nodes, edges);
 
 		// Assert
-		result.Findings.Should().Contain(f => f.RuleId == "DUP" && f.Severity == ProcessGraphSeverity.Error && f.NodeId == "a",
-			because: "element ids must be unique within a process, and a duplicate must be reported rather than crash the validator");
-		result.HasErrors.Should().BeTrue(because: "a duplicate element id is a structural error");
+		result.Findings.Should().Contain(f => f.RuleId == "DUP" && f.Severity == ProcessGraphSeverity.Error && f.NodeName == "a",
+			because: "element names must be unique within a process, and a duplicate must be reported rather than crash the validator");
+		result.HasErrors.Should().BeTrue(because: "a duplicate element name is a structural error");
 	}
 
 	[Test]

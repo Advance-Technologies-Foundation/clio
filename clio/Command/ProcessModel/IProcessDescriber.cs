@@ -160,17 +160,18 @@ public class DescribeProcessResult {
 
 /// <summary>A process node read back from the schema.</summary>
 public sealed class DescribedElement {
-	/// <summary>Element local id (the schema element <c>Name</c>) — the value flows/mappings reference.</summary>
-	[JsonPropertyName("id")]
-	public string Id { get; set; }
+	/// <summary>
+	/// Element local handle (the schema element <c>Name</c>, a string code) — the value flows
+	/// (<c>source</c>/<c>target</c>) and mappings (<c>elementName</c>) reference. Creatio identifies an
+	/// element by this <c>Name</c> plus the <c>UId</c> GUID; the platform reserves "Id" for the GUID, so
+	/// the handle is <c>name</c>, not <c>id</c>.
+	/// </summary>
+	[JsonPropertyName("name")]
+	public string Name { get; set; }
 
 	/// <summary>Element UId (the schema element's unique identifier).</summary>
 	[JsonPropertyName("uid")]
 	public string Uid { get; set; }
-
-	/// <summary>Element schema name.</summary>
-	[JsonPropertyName("name")]
-	public string Name { get; set; }
 
 	/// <summary>Localized caption.</summary>
 	[JsonPropertyName("caption")]

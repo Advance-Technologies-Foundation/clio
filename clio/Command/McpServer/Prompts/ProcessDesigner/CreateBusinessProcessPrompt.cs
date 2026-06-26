@@ -25,14 +25,15 @@ public static class CreateBusinessProcessPrompt {
 		 Build a business process on Creatio environment `{environmentName}` using the
 		 `create-business-process` tool. Supply a JSON descriptor object with these fields:
 		 - `name` (unique schema code), `caption`, `packageName`{(string.IsNullOrWhiteSpace(packageName) ? "" : $" (override: `{packageName}`)")}
-		 - `elements`: array of items with `id`, `type`, `caption`, optional `userTaskName`; `type` is
-		   `startEvent` | `signalStart` | `endEvent` | `userTask` (aliases `readData`, `performTask`).
+		 - `elements`: array of items with `name` (the element handle/local code), `type`, `caption`,
+		   optional `userTaskName`; `type` is `startEvent` | `signalStart` | `endEvent` | `userTask`
+		   (aliases `readData`, `performTask`).
 		   For `signalStart` add a `signal` object with `entity` (the object name) and `on` =
 		   `added` | `modified` | `deleted` — the platform-native "run a process when a record is
 		   saved/added/deleted" trigger.
-		 - `flows`: array of `source`/`target` pairs referencing element ids (start → tasks → end).
+		 - `flows`: array of `source`/`target` pairs referencing element names (start → tasks → end).
 		 - `parameters`: array of `name`/`type`/`direction`/`caption` (process inputs / variables).
-		 - `mappings`: array binding `elementId` + `elementParameter` to one of
+		 - `mappings`: array binding `elementName` + `elementParameter` to one of
 		   `processParameter` (bind to a process parameter), `value` (constant), or `expression` (formula).
 		 First call `list-user-tasks` for `{environmentName}` to discover valid `userTaskName` values, then
 		 confirm the target package with the user before building.
