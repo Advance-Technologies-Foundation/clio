@@ -252,6 +252,7 @@ public sealed class ApplicationSectionToolE2ETests {
 		}
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[TestCase(null, TestName = "ApplicationSectionCreate_Should_Not_Hang_When_ElicitationCapableClient_Never_Answers(missing icon)")]
 	[TestCase("not-a-color", TestName = "ApplicationSectionCreate_Should_Not_Hang_When_ElicitationCapableClient_Never_Answers(invalid icon)")]
 	[Description("Starts the real clio MCP server with an elicitation-capable client that never answers and verifies create-app-section returns a structured response promptly instead of hanging to the client ceiling. Covers both a missing icon-background (resolution skipped) and an unrecognized one (resolution must reject without eliciting).")]
