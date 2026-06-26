@@ -98,20 +98,57 @@ namespace Clio.Command
 				string url = RootPath + CreatioServicePaths.GetApplicationInfo;
 				string response = ApplicationClient.ExecutePostRequest(
 					url, "{}", options.TimeOut, options.MaxAttempts, options.RetryDelay);
-				JToken sysValues = JObject.Parse(response)["applicationInfo"]?["sysValues"];
-				if (sysValues is null){
+				if (JObject.Parse(response)["applicationInfo"]?["sysValues"] is not JObject sysValues){
 					Logger.WriteError(
 						"cliogate is not installed and ApplicationInfoService returned an unexpected response.");
 					return 1;
 				}
-				Logger.WriteWarning(
-					$"cliogate {ClioGateMinVersion}+ is not installed - reporting limited info from ApplicationInfoService. "
-					+ "Runtime, DbEngineType, LicenseInfo and ProductName require cliogate.");
+				bool enriched = TryEnrichWithSystemEnvironmentInfo(sysValues, options);
+				Logger.WriteWarning(enriched
+					? $"cliogate {ClioGateMinVersion}+ is not installed - core info from ApplicationInfoService, "
+						+ "enriched with DbEngineType and Runtime from GetSystemEnvironmentInfo. "
+						+ "LicenseInfo and ProductName still require cliogate."
+					: $"cliogate {ClioGateMinVersion}+ is not installed - reporting limited info from ApplicationInfoService. "
+						+ "Runtime, DbEngineType, LicenseInfo and ProductName require cliogate.");
 				Logger.WriteLine(sysValues.ToString());
 				return 0;
 			} catch (Exception e){
 				Logger.WriteError(e.GetReadableMessageException(Program.IsDebugMode));
 				return 1;
+			}
+		}
+
+		/// <summary>
+		/// Best-effort enrichment of the no-cliogate report: the admin-gated
+		/// <c>ApplicationInfoService.GetSystemEnvironmentInfo</c> operation (ENG-92465) exposes the
+		/// database engine and executing framework WITHOUT cliogate. Merges <c>dbEngineType</c>,
+		/// <c>frameworkKind</c> and <c>frameworkDescription</c> into <paramref name="sysValues"/> when
+		/// the call succeeds. The operation needs the <c>CanManageSolution</c> permission and exists only
+		/// on newer Creatio, so any failure (access denied, endpoint absent, transport error) degrades
+		/// silently — the command still reports the ApplicationInfoService data. Returns whether the
+		/// enrichment was applied.
+		/// </summary>
+		private bool TryEnrichWithSystemEnvironmentInfo(JObject sysValues, GetCreatioInfoCommandOptions options){
+			try {
+				string url = RootPath + CreatioServicePaths.GetSystemEnvironmentInfo;
+				string response = ApplicationClient.ExecutePostRequest(
+					url, "{}", options.TimeOut, options.MaxAttempts, options.RetryDelay);
+				JObject info = JObject.Parse(response);
+				if (info["success"]?.Value<bool>() != true){
+					return false;
+				}
+				bool applied = false;
+				foreach (string field in new[] { "dbEngineType", "frameworkKind", "frameworkDescription" }){
+					if (info[field] is { } value && value.Type != JTokenType.Null){
+						sysValues[field] = value;
+						applied = true;
+					}
+				}
+				return applied;
+			} catch (Exception){
+				// Gated (no CanManageSolution), absent on older Creatio, or transport error — degrade
+				// silently so describe still works; the ApplicationInfoService data is already reported.
+				return false;
 			}
 		}
 
