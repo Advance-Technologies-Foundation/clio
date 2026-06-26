@@ -12,12 +12,17 @@ namespace Clio.Common.Kubernetes
 	public class KubernetesClient : IKubernetesClient
 	{
 		private readonly IKubernetes _k8s;
-		private readonly KubernetesClientConfiguration _config;
 
 		public KubernetesClient(IKubernetes k8s)
 		{
+			// Do NOT read the kubeconfig here. BuildConfigFromConfigFile() throws when no kubeconfig
+			// exists (developer machines and CI agents without Kubernetes), and the result was never
+			// used. Throwing in the constructor made the whole object graph that depends on this
+			// client (IAssertInfrastructureAggregator -> assert-infrastructure / show-passing-infrastructure
+			// MCP tools) impossible to construct, so the tool call failed with an MCP InternalError
+			// before any code ran — instead of the tools degrading gracefully and reporting the
+			// Kubernetes section as failed. Kubeconfig is loaded on demand by the methods that need it.
 			_k8s = k8s ?? throw new ArgumentNullException(nameof(k8s));
-			_config = KubernetesClientConfiguration.BuildConfigFromConfigFile();
 		}
 
 		public async Task<K8Context> GetCurrentContextAsync()

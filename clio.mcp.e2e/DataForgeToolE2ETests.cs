@@ -14,9 +14,15 @@ using ModelContextProtocol.Protocol;
 namespace Clio.Mcp.E2E;
 
 [TestFixture]
+[Category("McpE2E.Sandbox")]
 [AllureNUnit]
 [AllureFeature("dataforge")]
 [NonParallelizable]
+[Ignore("ENG-92457: DataForge similarity index never becomes Ready on the freshly-deployed sandbox " +
+	"(status=Unavailable, data/lookups-readiness=False), so the similarity-search reads (find-tables, " +
+	"find-lookups, get-relations) burn the full DataForgeReadinessGate ceiling (~300s each, ~900s total) " +
+	"and the whole fixture is the slowest in the suite. Temporarily disabled until ENG-92457 makes the gate " +
+	"fail fast and/or seeds the index during arrange.")]
 public sealed class DataForgeToolE2ETests {
 	private const string StatusToolName = DataForgeTool.DataForgeStatusToolName;
 	private const string FindTablesToolName = DataForgeTool.DataForgeFindTablesToolName;
@@ -113,11 +119,13 @@ public sealed class DataForgeToolE2ETests {
 	[AllureTag(FindTablesToolName)]
 	[AllureName("DataForge find-tables returns table matches for Contact-style terms")]
 	[AllureDescription("Uses the real clio MCP server to call dataforge-find-tables for a Contact-style query against the configured reachable sandbox environment and verifies that the structured response includes at least one named table match.")]
+	[Ignore("ENG-92147: DataForge service returns failures for find/relations ops on the deployed stand even with the readiness gate enabled; environment/service-gated.")]
 	public async Task DataForgeFindTables_Should_Return_Table_Matches() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3), requireReachableEnvironment: true);
+		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(8), requireReachableEnvironment: true);
+		await EnsureSimilarityIndexReadyAsync(settings, arrangeContext);
 
 		// Act
 		CallToolResult callResult = await CallToolAsync(
@@ -143,11 +151,13 @@ public sealed class DataForgeToolE2ETests {
 	[AllureTag(FindLookupsToolName)]
 	[AllureName("DataForge find-lookups returns a structured lookup response")]
 	[AllureDescription("Uses the real clio MCP server to call dataforge-find-lookups against the configured reachable sandbox environment and verifies that the tool returns a structured successful payload instead of an MCP invocation error.")]
+	[Ignore("ENG-92147: DataForge service returns failures for find/relations ops on the deployed stand even with the readiness gate enabled; environment/service-gated.")]
 	public async Task DataForgeFindLookups_Should_Return_Structured_Response() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3), requireReachableEnvironment: true);
+		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(8), requireReachableEnvironment: true);
+		await EnsureSimilarityIndexReadyAsync(settings, arrangeContext);
 
 		// Act
 		CallToolResult callResult = await CallToolAsync(
@@ -173,11 +183,13 @@ public sealed class DataForgeToolE2ETests {
 	[AllureTag(GetRelationsToolName)]
 	[AllureName("DataForge get-relations returns relation paths between Contact and Account")]
 	[AllureDescription("Uses the real clio MCP server to call dataforge-get-relations for Contact and Account against the configured reachable sandbox environment and verifies that the structured response contains at least one relation path.")]
+	[Ignore("ENG-92147: DataForge service returns failures for find/relations ops on the deployed stand even with the readiness gate enabled; environment/service-gated.")]
 	public async Task DataForgeGetRelations_Should_Return_Relation_Paths() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3), requireReachableEnvironment: true);
+		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(8), requireReachableEnvironment: true);
+		await EnsureSimilarityIndexReadyAsync(settings, arrangeContext);
 
 		// Act
 		CallToolResult callResult = await CallToolAsync(
@@ -421,6 +433,26 @@ public sealed class DataForgeToolE2ETests {
 			new Dictionary<string, object?> {
 				["args"] = args
 			},
+			arrangeContext.CancellationTokenSource.Token);
+	}
+
+	/// <summary>
+	/// Shared arrange step for the similarity-search reads (find-tables, find-lookups, get-relations):
+	/// on a freshly-deployed stand the similarity index is not built, so these reads return
+	/// <c>Success=false</c> until <c>dataforge-initialize</c> has run and the index is ready
+	/// (ENG-92147, Step 2A). When <c>McpE2E:DataForge:InitializeAndWait</c> is off this is a no-op,
+	/// keeping non-DataForge runs and already-warm stands unaffected and the destructive initialize opt-in.
+	/// </summary>
+	private static async Task EnsureSimilarityIndexReadyAsync(McpE2ESettings settings, ArrangeContext arrangeContext) {
+		if (!settings.DataForge.InitializeAndWait) {
+			return;
+		}
+
+		arrangeContext.EnvironmentName.Should().NotBeNullOrWhiteSpace(
+			because: "the DataForge readiness arrange needs a reachable sandbox environment to initialize the similarity index against");
+		await DataForgeReadinessGate.EnsureIndexReadyAsync(
+			arrangeContext.Session,
+			arrangeContext.EnvironmentName!,
 			arrangeContext.CancellationTokenSource.Token);
 	}
 

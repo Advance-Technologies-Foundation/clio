@@ -37,7 +37,7 @@ Commands:
   delete-infrastructure                Delete Kubernetes infrastructure for Creatio (removes namespace and all resources), di-delete, remove-infrastructure
   delete-pkg-remote                    Delete a package from Creatio, delete
   delete-schema                        Delete a schema from a workspace package
-  delete-adac                          Uninstall the Creatio AI App Development Toolkit from coding agents
+  delete-toolkit                       Uninstall the Creatio AI App Development Toolkit from coding agents
   deploy-application                   Copy an application package between Creatio environments, deploy-app
   deploy-creatio                       Install Creatio from a distribution package, dc, ic, install-creatio
   deploy-infrastructure                Deploy Kubernetes infrastructure for Creatio (namespace, storage, redis, postgres, pgadmin), di
@@ -66,7 +66,7 @@ Commands:
   install-application                  Install an application package into Creatio, install-app, push-app
   install-gate                         Install or update cliogate in Creatio, gate, installgate, update-gate
   install-nuget-pkg                    Install NuGet package to a web application (website), installng
-  install-adac                         Install the Creatio AI App Development Toolkit for all detected coding agents
+  install-toolkit                      Install the Creatio AI App Development Toolkit for all detected coding agents
   last-compilation-log                 Get last compilation log, lcl
   link-core-src                        Link core source code to environment for development, lcs
   link-from-repository                 Link repository package(s) to environment, l4r, link4repo
@@ -134,7 +134,7 @@ Commands:
   unregister                           Remove clio shell integrations
   update-cli                           Update clio, update
   update-entity-schema                 Apply batch column operations to a remote Creatio entity schema
-  update-adac                          Update the Creatio AI App Development Toolkit for all detected coding agents
+  update-toolkit                       Update the Creatio AI App Development Toolkit for all detected coding agents
   upload-license                       Load license to selected environment, license, load-license, loadlicense
   upload-licenses                      Upload license files to Creatio, lic
   upsert-data-binding-row-db           Upsert a row in a DB-first package data binding

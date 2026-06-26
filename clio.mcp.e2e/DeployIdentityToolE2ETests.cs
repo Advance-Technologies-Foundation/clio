@@ -10,6 +10,7 @@ using System.Text.Json;
 namespace Clio.Mcp.E2E;
 
 [TestFixture]
+[Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("deploy-identity")]
 public sealed class DeployIdentityToolE2ETests

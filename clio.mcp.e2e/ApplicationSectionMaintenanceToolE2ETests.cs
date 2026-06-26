@@ -24,6 +24,7 @@ public sealed class ApplicationSectionMaintenanceToolE2ETests {
 	private const string SectionCreateToolName = ApplicationSectionCreateTool.ApplicationSectionCreateToolName;
 	private const string ApplicationCode = "AutoTestClioMcp";
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Advertises list-app-sections in the MCP tool list so callers can discover the installed-app section discovery tool.")]
 	[AllureFeature(SectionListToolName)]
@@ -46,6 +47,7 @@ public sealed class ApplicationSectionMaintenanceToolE2ETests {
 			because: "list-app-sections must be advertised so MCP callers can discover installed-app section discovery");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes list-app-sections with an invalid environment, and verifies that the failure remains human-readable.")]
 	[AllureFeature(SectionListToolName)]
@@ -82,6 +84,7 @@ public sealed class ApplicationSectionMaintenanceToolE2ETests {
 			because: "the failure should explain that the requested environment is missing");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes list-app-sections without application-code, and verifies that the tool returns a clear validation failure.")]
 	[AllureFeature(SectionListToolName)]
@@ -116,6 +119,7 @@ public sealed class ApplicationSectionMaintenanceToolE2ETests {
 			because: "the failure should explain that application-code is required");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, resolves the seeded installed application AutoTestClioMcp, and verifies that list-app-sections returns a structured section envelope for that application.")]
 	[AllureFeature(SectionListToolName)]
@@ -164,6 +168,7 @@ public sealed class ApplicationSectionMaintenanceToolE2ETests {
 			because: "successful list-app-sections calls should not include an error payload");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Advertises delete-app-section in the MCP tool list so callers can discover the installed-app section deletion tool.")]
 	[AllureFeature(SectionDeleteToolName)]
@@ -186,6 +191,7 @@ public sealed class ApplicationSectionMaintenanceToolE2ETests {
 			because: "delete-app-section must be advertised so MCP callers can discover installed-app section deletion");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes delete-app-section with an invalid environment, and verifies that the failure remains human-readable.")]
 	[AllureFeature(SectionDeleteToolName)]
@@ -223,6 +229,7 @@ public sealed class ApplicationSectionMaintenanceToolE2ETests {
 			because: "the failure should explain that the requested environment is missing");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes delete-app-section without section-code, and verifies that the tool returns a clear validation failure.")]
 	[AllureFeature(SectionDeleteToolName)]
@@ -258,6 +265,7 @@ public sealed class ApplicationSectionMaintenanceToolE2ETests {
 			because: "the failure should explain that section-code is required");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, creates a section in the seeded installed application via create-app-section, lists sections to confirm the new section appears, deletes the section via delete-app-section, and verifies that the deleted section is removed from the section list.")]
 	[AllureFeature(SectionDeleteToolName)]

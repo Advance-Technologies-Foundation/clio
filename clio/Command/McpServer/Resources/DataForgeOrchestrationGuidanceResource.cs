@@ -25,7 +25,7 @@ public sealed class DataForgeOrchestrationGuidanceResource {
 
 			       Architecture split
 			       - clio (passive): DataForge enrichment is built into selected write tools. It runs automatically before the mutation, returns a `dataforge` section alongside the result, and degrades gracefully when DataForge is unavailable. The mutation is never blocked.
-			       - ADAC / AI consumer (active): explicit orchestration — the AI agent calls DataForge tools at the right points in a workflow to gather context it cannot derive from the requirement alone.
+			       - Toolkit / AI consumer (active): explicit orchestration — the AI agent calls DataForge tools at the right points in a workflow to gather context it cannot derive from the requirement alone.
 			       - Do not duplicate passive enrichment: tools that already enrich internally (`create-app`, `sync-schemas`, `create-entity-schema`, `create-lookup`, `update-entity-schema`) run DataForge themselves. Do not add an external pre-flight for these tools.
 
 			       Layer 0 — Health preflight
