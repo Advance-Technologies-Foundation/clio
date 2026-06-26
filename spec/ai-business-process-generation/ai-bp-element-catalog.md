@@ -3,18 +3,40 @@
 > Authoritative element reference for the AI knowledge base (subtask 1). Sources:
 > live Creatio 8.3 designer palette (`data-id`s), Academy 8.x docs, the QA repo
 > `C:\Projects\Cucumber\bpms` (setup-card field codes), and clio `Schema.cs` `ManagerMap`.
-> `data-id` = the diagram-js type used by the designer driver (palette popup / morph menu).
-> Feeds `ProcessModelingGuidanceResource.cs` (MCP guidance) and the connection validator.
+> `data-id` = the diagram-js element type. It is the vocabulary for `validate-process-graph`
+> (the node `type`) and for reasoning about / reading back processes (`describe-business-process`
+> returns the runtime class plus the round-trippable `buildType`). It is **not** a UI action — the
+> shipped flow builds processes declaratively via the backend MCP tools.
+> Feeds `ProcessModelingGuidanceResource.cs` (MCP guidance) and the connection validator
+> (`validate-process-graph`).
 
 ## How the AI should use this
-1. Map the user's plain-language intent → the right element(s) below.
-2. Add them via the designer driver: append from the source's context pad
-   (`add.serviceTask` / `add.userTask`) — which drops a default task — then **morph** to the
-   target `data-id` via `[data-action=setup]` → group (`ServiceTask`/`UserTask`) →
-   `[data-id="<type>"]`. (`add.serviceTask` defaults to `readDataUserTask`.)
-3. Configure the right-panel setup card using the field codes below.
-4. Connect with the `connect` context-pad action; validate the graph (see
-   `ai-bp-connection-rules.md`) before saving.
+
+The shipped flow is **declarative**: you describe the process (elements + flows + parameters +
+mappings) as a JSON descriptor and the backend builds and saves it in one call. You never drive the
+designer, place nodes, or configure setup cards by hand — the server-side `ProcessDesignService`
+owns all metadata serialization and layout is automatic.
+
+1. Map the user's plain-language intent → the right element kind(s) below. Use the `data-id` and the
+   setup-card field codes to reason about which element fits and what configuration it implies.
+2. `validate-process-graph` — pre-flight the planned graph (nodes by `data-id` + flows) against the
+   connection rules R1–R17 (see `ai-bp-connection-rules.md`); fix every error-severity finding before
+   building.
+3. `list-user-tasks` — pick the exact `userTaskName`(s) for the activities you plan to build.
+4. `create-business-process` — pass the JSON descriptor (`{ name, caption, packageName, elements[],
+   flows[], parameters[], mappings[] }`); the process is built **and** saved in one call, with
+   automatic left-to-right layout (do not set positions).
+5. Iterate / verify — `modify-business-process` for ordered edits (addElement / removeElement /
+   addFlow / removeFlow / addParameter / addMapping), `describe-business-process` to read the result
+   back as a structured graph.
+
+> The `data-id` strings in the tables below are the validate/read-back vocabulary. To **build**, map
+> them to the `create-business-process` descriptor `type` token (e.g. events `startEvent` /
+> `signalStart` / `endEvent`; a user/system task → `type:"userTask"` with a `userTaskName` from
+> `list-user-tasks`, e.g. Perform task = `performTask`/`ActivityUserTask`, Read data =
+> `readData`/`ReadDataUserTask`). The full token mapping (build `type` ↔ describe `buildType` ↔
+> validate `data-id`) is published in `clio/docs/commands/describe-business-process.md` →
+> "Element type vocabulary".
 
 ---
 
@@ -74,14 +96,24 @@
 
 ## Flows
 
-| Flow | Designer action | Rule |
-|---|---|---|
-| Sequence flow | context pad `connect` (default) | execution order; **multiple outgoing = implicit parallel split** |
-| Conditional flow | `connect` → `[data-action=setup]` → `conditionalConnection` | only from a **gateway** or an **activity**; activates when condition true |
-| Default flow | `connect` → `[data-action=setup]` → `defaultConnection` | legal only if **≥1 conditional flow** leaves the same element; fallback path |
+These are the conceptual flow kinds you express **declaratively** in the descriptor's `flows[]`
+(each `{ source, target }`), not UI actions. `validate-process-graph` records the kind per edge as
+`flowKind ∈ sequence|conditional|default`.
 
-Invalid connections are flagged live by the designer with `.djs-validate-outline` on the
-connection (per QA `invalidConnectionSelectorTpl`) — the driver should check for it after `connect`.
+| Flow | Flow kind / `data-id` | Rule |
+|---|---|---|
+| Sequence flow | `sequence` (default) | execution order; **multiple outgoing = implicit parallel split** |
+| Conditional flow | `conditionalConnection` | only from a **gateway** or an **activity**; activates when condition true |
+| Default flow | `defaultConnection` | legal only if **≥1 conditional flow** leaves the same element; fallback path |
+
+> Buildability note: only `sequence` flows are buildable in this increment. Conditional and default
+> flows are valid for reasoning / read-back and are recognized by `validate-process-graph`, but
+> `create-business-process` does not build them yet (see the buildability caveat in the guidance
+> resource and the ADR).
+
+Invalid connections are caught **before** the build by `validate-process-graph` (R1–R17): it returns
+structured findings `{ severity, ruleId, message, node/edge }` so the agent fixes the graph up front.
+There is no live designer check — the validator is the pre-flight authority.
 
 ## Parameters / mapping / formulas (summary — full detail in the guidance resource)
 - **Parameters**: process-level (Parameters tab) vs element-level; types Text/Integer/Decimal/
