@@ -77,6 +77,13 @@ public sealed class DataForgeToolE2ETests {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+
+		// Resolve and reachability-probe the environment with a clean process environment FIRST.
+		// The poisoned proxy variables below would otherwise also reach the ping-app readiness probe
+		// (it spawns a normal clio child that honours HTTP(S)_PROXY), so probing after poisoning would
+		// always route through the dead 127.0.0.1:9 proxy and self-skip the test as "not reachable".
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+
 		string? originalHttpProxy = Environment.GetEnvironmentVariable("HTTP_PROXY");
 		string? originalHttpsProxy = Environment.GetEnvironmentVariable("HTTPS_PROXY");
 		string? originalAllProxy = Environment.GetEnvironmentVariable("ALL_PROXY");
@@ -88,14 +95,18 @@ public sealed class DataForgeToolE2ETests {
 		Environment.SetEnvironmentVariable("NO_PROXY", null);
 
 		try {
-			await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3), requireReachableEnvironment: true);
+			// Start the MCP server with the poisoned proxy variables in place — the server is the SUT:
+			// its Data Forge proxy-safe wrapper must still reach the service. Reachability was already
+			// verified above with a clean environment, so do not re-probe here (that probe is not
+			// proxy-safe and would self-skip the test).
+			await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3), requireReachableEnvironment: false);
 
 			// Act
 			CallToolResult callResult = await CallToolAsync(
 				arrangeContext,
 				StatusToolName,
 				new Dictionary<string, object?> {
-					["environment-name"] = arrangeContext.EnvironmentName
+					["environment-name"] = environmentName
 				});
 			DataForgeStatusResponse response = DeserializeStructuredContent<DataForgeStatusResponse>(callResult);
 
