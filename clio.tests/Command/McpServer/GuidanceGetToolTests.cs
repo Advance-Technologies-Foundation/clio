@@ -231,6 +231,14 @@ public sealed class GuidanceGetToolTests {
 			because: "Step 0 must default to web when the requirement does not name a surface");
 		result.Article.Text.Should().Contain("whenToUse",
 			because: "the guide must steer selection between similar components using the producer's whenToUse/whenNotToUse selection-metadata (ENG-91134 / Solution A)");
+		result.Article.Text.Should().Contain("INLINE-ITEMS RULE",
+			because: "the guide must warn that a NEW container's children must be inline inside the same insert to prevent runtime chain-nesting (ENG-91555)");
+		result.Article.Text.Should().Contain("is not a container for other items",
+			because: "the guide must name the exact runtime error caused by separate-insert chain-nesting so the agent recognizes it");
+		result.Article.Text.Should().Contain("only NEWLY-created containers in the same diff exhibit this",
+			because: "the guide must scope the inline-items rule to new containers so existing-container inserts are not mistakenly rewritten");
+		result.Article.Text.Should().Contain("dry-run validates JSON/schema shape ONLY and will NOT catch this",
+			because: "the guide must state the dry-run limitation so the agent does not treat a passing validation as proof the page works (ENG-91555)");
 	}
 
 	[Test]

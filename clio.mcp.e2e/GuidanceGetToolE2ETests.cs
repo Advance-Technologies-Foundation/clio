@@ -388,6 +388,10 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "the verification rule must route the agent to get-component-info as the authoritative component catalog");
 		response.Article.Text.Should().Contain("ASK THE USER",
 			because: "the web page guide must tell the agent to ask the user (existing component vs custom) when no OOTB component matches");
+		response.Article.Text.Should().Contain("INLINE-ITEMS RULE",
+			because: "the web page guide must warn that a NEW container's children must be inline inside the same insert to prevent runtime chain-nesting (ENG-91555)");
+		response.Article.Text.Should().Contain("is not a container for other items",
+			because: "the web page guide must name the exact runtime error caused by separate-insert chain-nesting so the agent recognizes it");
 	}
 
 	[Test]

@@ -177,6 +177,34 @@ public sealed class PageModificationGuidanceResource {
 		       - Fallback: walk `bundle.viewConfig` tree manually when `bundle.containers` is empty (possible for pages built entirely via diffs without a root viewConfig node).
 		       - For how to insert and configure any `crt.*` component — including the child-collection slots a container exposes — `get-component-info` is the authoritative source. Call it for the exact type and build the insert from its response and embedded `documentation`; do not author component shape from this guide or from memory.
 
+		       Inserting a NEW container and its children — INLINE-ITEMS RULE (MANDATORY)
+		       When the SAME diff both creates a NEW container (ANY `crt.*` container type) AND adds the children that belong inside it, every child MUST be supplied INLINE inside the new container's child-collection slot in the very same `insert` operation. Do NOT add the children as separate `insert` operations that target the new container by `parentName`.
+		       - WHY: the diff-apply engine processes a run of sibling `insert`s that all name the just-created container as `parentName` by CHAIN-NESTING them — each child is made the container of the next instead of a sibling — so only the first child lands correctly and the rest collapse into an illegal nesting chain.
+		       - SYMPTOM: dry-run validates JSON/schema shape ONLY and will NOT catch this; `update-page` / `sync-pages` report `success: true`. The failure appears at RUNTIME as `Item "X" is not a container for other items`, and the page renders blank or partial.
+		       - SCOPE: only NEWLY-created containers in the same diff exhibit this. Inserting children into a container that ALREADY exists in the hierarchy (its `name` appears in `bundle.containers`) via separate `parentName` inserts is the normal, supported flow documented above — leave those as-is.
+		       - HOW: emit ONE `insert` for the new container and place every child under the child-collection property the container exposes. Read the exact slot name (usually `items`) and the inline-child shape from `get-component-info` for that container type — clio does not describe per-component child slots; the component registry is the authoritative source. Children declared inline become proper siblings.
+		       - Structural illustration (the container `type` and each child's shape come from `get-component-info`, NOT from this guide):
+
+		       ```
+		       // WRONG — new container + children as separate inserts (chain-nests at runtime):
+		       [
+		           { "operation": "insert", "name": "NewPanel", "parentName": "<existing container>", "propertyName": "items", "values": { "type": "<container type from get-component-info>" } },
+		           { "operation": "insert", "name": "ChildA", "parentName": "NewPanel", "propertyName": "items", "values": { /* ... */ } },
+		           { "operation": "insert", "name": "ChildB", "parentName": "NewPanel", "propertyName": "items", "values": { /* ... */ } }
+		       ]
+
+		       // CORRECT — children inline inside the new container's slot (proper siblings):
+		       [
+		           { "operation": "insert", "name": "NewPanel", "parentName": "<existing container>", "propertyName": "items", "values": {
+		               "type": "<container type from get-component-info>",
+		               "items": [
+		                   { "name": "ChildA", "values": { /* ... */ } },
+		                   { "name": "ChildB", "values": { /* ... */ } }
+		               ]
+		           } }
+		       ]
+		       ```
+
 		       Inserted-field contract for a new data-bound field control
 		       """
 		       + "\n\n" + SchemaValidationService.InsertedFieldContractSummary + "\n\n"
