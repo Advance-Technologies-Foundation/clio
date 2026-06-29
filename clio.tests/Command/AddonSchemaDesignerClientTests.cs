@@ -23,6 +23,8 @@ public sealed class AddonSchemaDesignerClientTests {
 			.Returns("http://local/ServiceModel/AddonSchemaDesignerService.svc");
 		_serviceUrlBuilder.Build("/rest/WorkplaceService/ResetScriptCache")
 			.Returns("http://local/rest/WorkplaceService/ResetScriptCache");
+		_serviceUrlBuilder.Build("ServiceModel/WorkspaceExplorerService.svc/BuildConfiguration")
+			.Returns("http://local/ServiceModel/WorkspaceExplorerService.svc/BuildConfiguration");
 		_client = new AddonSchemaDesignerClient(_applicationClient, new JsonConverter(), _serviceUrlBuilder);
 	}
 
@@ -115,5 +117,42 @@ public sealed class AddonSchemaDesignerClientTests {
 			Arg.Any<int>(),
 			Arg.Any<int>(),
 			Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("Triggers the static-content rebuild and completes when the server reports a successful build.")]
+	public void BuildConfiguration_PostsAndAcceptsSuccessfulRebuild() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns("{\"errorInfo\":null,\"success\":true}");
+
+		// Act
+		Action act = () => _client.BuildConfiguration();
+
+		// Assert
+		act.Should().NotThrow(because: "a successful rebuild response should complete without throwing");
+		_applicationClient.Received(1).ExecutePostRequest(
+			"http://local/ServiceModel/WorkspaceExplorerService.svc/BuildConfiguration",
+			string.Empty,
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("Surfaces a failed static-content rebuild instead of leaving the caller with a saved add-on but stale pages.")]
+	public void BuildConfiguration_ThrowsWhenRebuildReportsFailure() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns("{\"success\":false,\"errorInfo\":{\"message\":\"static build failed\"}}");
+
+		// Act
+		Action act = () => _client.BuildConfiguration();
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>().WithMessage("*static build failed*",
+			because: "a failed rebuild must be surfaced with the server message, not silently swallowed");
 	}
 }

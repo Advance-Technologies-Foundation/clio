@@ -425,6 +425,10 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="page-templates"></a>
 <a id="page-templates-list"></a>
 - [`list-page-templates`](docs/commands/list-page-templates.md) - List Freedom UI page templates available for create-page, `page-templates`, `page-templates-list`
+<a id="create-related-page-addon"></a>
+<a id="related-page-addon"></a>
+<a id="set-related-pages"></a>
+- [`create-related-page-addon`](docs/commands/create-related-page-addon.md) - Bind Freedom UI pages to an object (default/add page, optionally per role and type) via the RelatedPage add-on, `related-page-addon`, `set-related-pages`
 <a id="run"></a>
 <a id="run-scenario"></a>
 <a id="scenario"></a>

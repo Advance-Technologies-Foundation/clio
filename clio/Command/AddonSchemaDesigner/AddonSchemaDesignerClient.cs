@@ -74,9 +74,18 @@ internal sealed class AddonSchemaDesignerClient(
 	/// their next startup via <c>/api/ClientCache/Hashes</c>.
 	/// </summary>
 	public void BuildConfiguration() {
-		applicationClient.ExecutePostRequest(
+		string responseBody = applicationClient.ExecutePostRequest(
 			serviceUrlBuilder.Build("ServiceModel/WorkspaceExplorerService.svc/BuildConfiguration"),
 			string.Empty);
+		// The rebuild reports its own success (verified shape: {"errorInfo":null,"success":true}); surface a
+		// failed static-content rebuild instead of leaving the user with a saved add-on but stale pages in the UI.
+		AddonBuildResponseDto response = Deserialize<AddonBuildResponseDto>(
+			responseBody,
+			"AddonSchemaDesignerService.BuildConfiguration returned an empty response.");
+		if (!response.Success) {
+			throw new InvalidOperationException(
+				response.ErrorInfo?.Message ?? "AddonSchemaDesignerService.BuildConfiguration failed.");
+		}
 	}
 
 	private string BuildDesignerMethodUrl(string methodName) {
