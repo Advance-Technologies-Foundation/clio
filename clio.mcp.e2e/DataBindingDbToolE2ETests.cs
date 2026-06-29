@@ -20,10 +20,11 @@ namespace Clio.Mcp.E2E;
 /// End-to-end tests for the DB-first data-binding MCP tools.
 /// </summary>
 [TestFixture]
+[Category("McpE2E.Sandbox")]
 [AllureNUnit]
 [AllureFeature("data-binding-db")]
 [NonParallelizable]
-public sealed class DataBindingDbToolE2ETests {
+public sealed class DataBindingDbToolE2ETests : McpContractFixtureBase {
 	private const string CreateDbToolName = CreateDataBindingDbTool.CreateDataBindingDbToolName;
 	private const string UpsertRowDbToolName = UpsertDataBindingRowDbTool.UpsertDataBindingRowDbToolName;
 	private const string RemoveRowDbToolName = RemoveDataBindingRowDbTool.RemoveDataBindingRowDbToolName;
@@ -290,7 +291,7 @@ public sealed class DataBindingDbToolE2ETests {
 			"successful Account DB-first binding creation should emit a completion message");
 	}
 
-	private static async Task<DataBindingDbArrangeContext> ArrangeAsync(bool requireEnvironment) {
+	private async Task<DataBindingDbArrangeContext> ArrangeAsync(bool requireEnvironment) {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string? environmentName = requireEnvironment
@@ -326,7 +327,7 @@ public sealed class DataBindingDbToolE2ETests {
 				cancellationToken: cancellationTokenSource.Token);
 		}
 
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		McpServerSession session = Session;
 		return new DataBindingDbArrangeContext(
 			rootDirectory,
 			workspacePath,
@@ -425,12 +426,12 @@ public sealed class DataBindingDbToolE2ETests {
 		string? EnvironmentName,
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource) : System.IAsyncDisposable {
-		public async System.Threading.Tasks.ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
+		public System.Threading.Tasks.ValueTask DisposeAsync() {
 			CancellationTokenSource.Dispose();
 			if (Directory.Exists(RootDirectory)) {
 				Directory.Delete(RootDirectory, recursive: true);
 			}
+			return System.Threading.Tasks.ValueTask.CompletedTask;
 		}
 	}
 

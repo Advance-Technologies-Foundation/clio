@@ -11,11 +11,7 @@ internal static class SandboxEnvironmentResolver {
 		Directory.Exists(environmentPath).Should().BeTrue(
 			because: "the registered clio environment path must exist on disk for end-to-end sandbox verification");
 
-		string connectionStringsPath = Directory
-			.GetFiles(environmentPath, "ConnectionStrings.config", SearchOption.AllDirectories)
-			.FirstOrDefault()
-			?? throw new InvalidOperationException(
-				$"ConnectionStrings.config was not found under '{environmentPath}' for environment '{environmentName}'.");
+		string connectionStringsPath = FindConnectionStringsConfig(environmentPath, environmentName);
 
 		XDocument document = XDocument.Load(connectionStringsPath);
 		string redisConnectionString = GetRequiredConnectionString(document, "redis", connectionStringsPath);
@@ -31,6 +27,41 @@ internal static class SandboxEnvironmentResolver {
 			connectionStringsPath,
 			redisConnectionString,
 			databaseConnectionString);
+	}
+
+	private const string ConnectionStringsConfigFileName = "ConnectionStrings.config";
+
+	/// <summary>
+	/// Locates <c>ConnectionStrings.config</c> inside a deployed Creatio web-app root.
+	/// </summary>
+	/// <remarks>
+	/// The file lives at a fixed, well-known location for both runtimes:
+	/// <list type="bullet">
+	/// <item><description>.NET Core: <c>&lt;root&gt;/ConnectionStrings.config</c></description></item>
+	/// <item><description>.NET Framework: <c>&lt;root&gt;/Terrasoft.WebApp/ConnectionStrings.config</c></description></item>
+	/// </list>
+	/// Those candidates are probed directly. A recursive scan of the whole deployed root is
+	/// deliberately avoided: a real Creatio deploy holds tens of thousands of files (Pkg,
+	/// Resources, node_modules, bin, ...), so a <see cref="SearchOption.AllDirectories"/>
+	/// enumeration takes many minutes and effectively hangs the e2e suite (it had no timeout).
+	/// </remarks>
+	private static string FindConnectionStringsConfig(string environmentPath, string environmentName) {
+		string[] knownRelativePaths = [
+			ConnectionStringsConfigFileName,
+			Path.Combine("Terrasoft.WebApp", ConnectionStringsConfigFileName)
+		];
+
+		foreach (string relativePath in knownRelativePaths) {
+			string candidate = Path.Combine(environmentPath, relativePath);
+			if (File.Exists(candidate)) {
+				return candidate;
+			}
+		}
+
+		throw new InvalidOperationException(
+			$"{ConnectionStringsConfigFileName} was not found under '{environmentPath}' for environment '{environmentName}'. " +
+			$"Probed: {string.Join(", ", knownRelativePaths)}. " +
+			"Verify McpE2E__Sandbox__EnvironmentPath points at the deployed Creatio web-app root.");
 	}
 
 	private static string ResolveEnvironmentPath(McpE2ESettings settings, string environmentName) {

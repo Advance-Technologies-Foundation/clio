@@ -20,6 +20,7 @@ namespace Clio.Mcp.E2E;
 /// CLI calls, marketplace clones) are intentionally not driven here.
 /// </remarks>
 [TestFixture]
+[Category("McpE2E.NoEnvironment")]
 [AllureFeature("multi-agent-skill-management")]
 [NonParallelizable]
 public sealed class SkillManagementToolE2ETests {

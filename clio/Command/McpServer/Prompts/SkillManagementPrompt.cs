@@ -12,7 +12,7 @@ public static class SkillManagementPrompt {
 	/// <summary>
 	/// Builds guidance for installing the toolkit skill through MCP.
 	/// </summary>
-	[McpServerPrompt(Name = "install-adac-guidance"), Description("Prompt to install the Creatio toolkit skill")]
+	[McpServerPrompt(Name = "install-toolkit-guidance"), Description("Prompt to install the Creatio toolkit skill")]
 	public static string InstallSkills(
 		[Description("Optional agent to limit to: claude | codex | cursor | copilot")] string target = null,
 		[Description("Optional source override (marketplace git URL, or path/URL for cursor)")] string repo = null) =>
@@ -27,7 +27,7 @@ public static class SkillManagementPrompt {
 	/// <summary>
 	/// Builds guidance for updating the toolkit skill through MCP.
 	/// </summary>
-	[McpServerPrompt(Name = "update-adac-guidance"), Description("Prompt to update the Creatio toolkit skill")]
+	[McpServerPrompt(Name = "update-toolkit-guidance"), Description("Prompt to update the Creatio toolkit skill")]
 	public static string UpdateSkill(
 		[Description("Optional agent to limit to: claude | codex | cursor | copilot")] string target = null,
 		[Description("Optional source override (marketplace git URL, or path/URL for cursor)")] string repo = null) =>
@@ -41,7 +41,7 @@ public static class SkillManagementPrompt {
 	/// <summary>
 	/// Builds guidance for uninstalling the toolkit skill through MCP.
 	/// </summary>
-	[McpServerPrompt(Name = "delete-adac-guidance"), Description("Prompt to uninstall the Creatio toolkit skill")]
+	[McpServerPrompt(Name = "delete-toolkit-guidance"), Description("Prompt to uninstall the Creatio toolkit skill")]
 	public static string DeleteSkill(
 		[Description("Optional agent to limit to: claude | codex | cursor | copilot")] string target = null) =>
 		$"""

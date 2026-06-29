@@ -2,10 +2,10 @@ COMMAND TYPE
     Skill management commands
 
 NAME
-    install-adac - Install the Creatio AI App Development Toolkit for all detected coding agents (alias: install-skills)
+    install-toolkit - Install the Creatio AI App Development Toolkit for all detected coding agents (alias: install-skills)
 
 DESCRIPTION
-    install-adac installs the Creatio AI App Development Toolkit skill globally
+    install-toolkit installs the Creatio AI App Development Toolkit skill globally
     for every supported coding agent detected on the machine, using each agent's
     native plugin mechanism. No Python runtime is required.
 
@@ -19,7 +19,7 @@ DESCRIPTION
                                           merges mcp.json, writes the orchestrator rule.
         GitHub Copilot CLI  ~/.copilot  - copilot plugin marketplace + plugin install.
 
-    By default install-adac processes all detected agents. Use --target to limit
+    By default install-toolkit processes all detected agents. Use --target to limit
     the operation to a single agent.
 
     The default source is the public toolkit marketplace:
@@ -27,12 +27,12 @@ DESCRIPTION
     Use --repo to override it (a marketplace git URL for claude/codex/copilot;
     a local path or git URL for the cursor file-copy).
 
-    install-adac is idempotent: re-running it refreshes/repairs the install.
+    install-toolkit is idempotent: re-running it refreshes/repairs the install.
     If a detected agent's CLI is not on PATH, that agent is skipped with a warning
     and does not fail the command.
 
 SYNOPSIS
-    clio install-adac [options]
+    clio install-toolkit [options]
 
 OPTIONS
     --target                            Optional agent to limit to:
@@ -45,13 +45,13 @@ OPTIONS
 
 EXAMPLES
     Install for all detected agents:
-        clio install-adac
+        clio install-toolkit
 
     Install only for Codex:
-        clio install-adac --target codex
+        clio install-toolkit --target codex
 
     Install from a local toolkit checkout (useful for Cursor iteration):
-        clio install-adac --target cursor --repo C:\Repos\creatio-ai-app-development-toolkit
+        clio install-toolkit --target cursor --repo C:\Repos\creatio-ai-app-development-toolkit
 
 NOTES
     --scope and --skill have been removed. Skills now install globally for all

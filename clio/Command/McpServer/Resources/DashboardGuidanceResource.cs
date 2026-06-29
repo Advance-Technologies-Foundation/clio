@@ -7,7 +7,8 @@ namespace Clio.Command.McpServer.Resources;
 /// <summary>
 /// Provides canonical AI-facing guidance for placing, sizing, grouping, and styling Freedom UI
 /// analytical widgets (metrics/indicators and charts) on dashboards, so a custom dashboard keeps the
-/// native "plain white" card look and the canonical metric-band-then-chart-grid layout.
+/// native "plain white" card look and the canonical metric-band-then-chart-grid layout, plus the
+/// the dashboard's auto-generated hidden page data source (DashboardDS) that widgets filter by via a dependencies entry.
 /// </summary>
 [McpServerResourceType]
 public sealed class DashboardGuidanceResource {
@@ -35,7 +36,10 @@ public sealed class DashboardGuidanceResource {
 		       `crt.IndicatorWidget` generation contract (aggregate, static filter, intent -> config translation)
 		       and its exact style theme values read the dedicated `indicator-widget` guidance and call
 		       `get-component-info`. For surrounding page structure, fields, containers, and accessibility/contrast
-		       defer to the general Freedom UI page guidance (`page-modification` and the UI guidelines).
+		       defer to the general Freedom UI page guidance (`page-modification`).
+
+		       It also documents one dashboard-specific structural detail found nowhere else: the auto-generated
+		       hidden page data source (`DashboardDS`) that widgets filter by — see the section below.
 
 		       ## Core rules (in priority order)
 
@@ -225,6 +229,30 @@ public sealed class DashboardGuidanceResource {
 		       accessibility/contrast guidance. The exact indicator-widget `theme` / `layout.color` values are
 		       owned by the `indicator-widget` guidance.
 
+		       ## The dashboard's hidden page data source (`DashboardDS`)
+
+		       A dashboard auto-generates a HIDDEN page-level data source at runtime from the schema's
+		       `DashboardsEntitySchemaName` optional property, exposed as `DashboardDS` (scope `page`). It is NOT
+		       written in the schema body, so do NOT conclude "this dashboard has no page record source" from a
+		       static body with no `primaryDataSourceName`. Read `DashboardsEntitySchemaName` from the
+		       `optionalProperties` array in the `bundle.json` that `get-page` writes (it is NOT in the `get-page`
+		       response or `meta.json`).
+
+		       `DashboardDS` exists so a widget can be filtered by the dashboard's page data. A widget opts in by
+		       BINDING to it with a `dependencies` entry (the "Apply filter by page data" toggle) — the same
+		       declarative mechanism as record-page details (see `related-list`), with `DashboardDS` as the master
+		       instead of `PDS`. Add it for EVERY data-bound widget whenever the dashboard declares a
+		       `DashboardsEntitySchemaName`; without it the widget ignores the page data.
+
+		       The binding entry is `{ "attributePath": <col>, "relationPath": "DashboardDS.Id" }`:
+		       - `relationPath` is ALWAYS `"DashboardDS.Id"`.
+		       - `attributePath` is `"Id"` when the widget's entity EQUALS `DashboardsEntitySchemaName` (Id = Id);
+		         otherwise the widget entity's bare FK column pointing at that entity (never the `...Id` form —
+		         resolve via `get-app-info` / `get-entity-schema-properties`).
+
+		       Its placement and exact shape are widget-specific — read each widget's contract via
+		       `get-component-info`.
+
 		       ## Finish checklist
 
 		       - Metric tiles are in a top band, equal width, one row tall, 4 or 6 across (never 5).
@@ -236,6 +264,8 @@ public sealed class DashboardGuidanceResource {
 		       - Each widget type uses its default size (metric short, 1 row; chart ~3 rows tall).
 		       - Multi-topic dashboards are split into labeled sections, each = metric band + chart row.
 		       - Titles and value colors use theme defaults (red only for overdue/negative).
+		       - If the dashboard has a `DashboardsEntitySchemaName`, every data-bound widget has a `dependencies`
+		         entry to `DashboardDS.Id` (`attributePath` = `Id` when the widget entity matches it, else its FK column).
 		       """
 	};
 
@@ -244,6 +274,6 @@ public sealed class DashboardGuidanceResource {
 	/// dashboard widgets.
 	/// </summary>
 	[McpServerResource(UriTemplate = ResourceUri, Name = "dashboards-guidance")]
-	[Description("Returns canonical MCP guidance for placing, sizing, grouping, and styling Freedom UI analytical widgets (metrics and charts) on dashboards: the 12-column grid, the metric-band-then-chart-grid skeleton, section grouping, per-widget-type default sizes, and the plain-white default card style.")]
+	[Description("Returns canonical MCP guidance for laying out, sizing, grouping, and styling Freedom UI analytical widgets (metrics and charts) on dashboards, including the DashboardDS data source widgets filter by.")]
 	public ResourceContents GetGuide() => Guide;
 }

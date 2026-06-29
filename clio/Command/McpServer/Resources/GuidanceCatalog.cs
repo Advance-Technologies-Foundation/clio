@@ -14,6 +14,14 @@ internal static class GuidanceCatalog {
 
 	private static IReadOnlyDictionary<string, GuidanceCatalogEntry> CreateEntries() {
 		Dictionary<string, GuidanceCatalogEntry> entries = new(StringComparer.OrdinalIgnoreCase) {
+			["core-rules"] = Create(
+				"core-rules",
+				"The non-negotiable clio MCP invariants (compile/restart, long-running await, profile culture, destructive confirmation, correlation-id) that apply to every operation. The server instructions mandate reading this first on any operation.",
+				CoreRulesGuidanceResource.Guide),
+			["routing"] = Create(
+				"routing",
+				"The canonical clio MCP routing map: a two-level, names-only table that maps a task (pages, entities, data, applications) to the get-guidance article(s) to read before acting. The server instructions mandate reading this first on any operation.",
+				RoutingGuidanceResource.Guide),
 			["app-modeling"] = Create(
 				"app-modeling",
 				"Canonical MCP guidance for Creatio application modeling, schema design, and page modification workflows.",
@@ -90,6 +98,10 @@ internal static class GuidanceCatalog {
 				"deploy-lifecycle",
 				"Canonical MCP guidance for the Creatio deploy/provisioning lifecycle: assert-infrastructure -> show-passing-infrastructure -> find-empty-iis-port -> deploy-creatio/deploy-identity, plus build discovery, registration, IdentityService, and cliogate installation.",
 				DeployLifecycleGuidanceResource.Guide),
+			["describe-environment"] = Create(
+				"describe-environment",
+				"Canonical MCP guidance for describe-environment: the single source-independent environment report (coreVersion, db engine, framework, productName, licenseInfo, locale/workspace metadata), which source supplies each field, and the cliogate / CanManageSolution prerequisites.",
+				DescribeEnvironmentGuidanceResource.Guide),
 			["support-mode"] = Create(
 				"support-mode",
 				"Canonical MCP guidance for diagnostic-first execution under support mode: severity routing, confirmation probes, fail-fast evidence, and reporting.",

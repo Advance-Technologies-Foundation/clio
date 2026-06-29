@@ -1,28 +1,37 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E.Support.Results;
 
 internal static class McpCommandExecutionParser {
-	private const string RuleNameMessagePrefix = "Rule name:";
+	/// <summary>
+	/// Parses the <see cref="BusinessRuleBatchResponse"/> JSON envelope returned by the
+	/// create-entity/page-business-rules MCP tools. The tools deliver the structured
+	/// <c>created</c>/<c>failed</c>/<c>results[]</c> contract through the MCP content channel
+	/// (there is no legacy "Rule name:" log line), so the batch response is the authoritative
+	/// source for the generated rule name used by add-on readback.
+	/// </summary>
+	public static BusinessRuleBatchResponse ExtractBusinessRuleBatchResponse(CallToolResult callResult) =>
+		EntitySchemaStructuredResultParser.Extract<BusinessRuleBatchResponse>(callResult);
 
 	/// <summary>
-	/// Extracts the generated business-rule name from a create-entity/page-business-rule execution result.
-	/// The create command logs <c>Rule name: BusinessRule_xxxx</c>; the platform persists this <c>name</c>
-	/// on the rule object (the friendly caption is stored as a separate addon resource, not on the rule),
-	/// so the generated name is the reliable discriminator for add-on readback.
+	/// Extracts the generated business-rule name from a create-entity/page-business-rules tool result.
+	/// The platform persists this internal <c>name</c> (for example <c>BusinessRule_xxxx</c>) on the rule
+	/// object (the friendly caption is stored as a separate addon resource, not on the rule), so the
+	/// generated name is the reliable discriminator for add-on readback. It is read from the
+	/// <c>results[].ruleName</c> field of the structured batch response.
 	/// </summary>
-	public static string ExtractBusinessRuleName(CommandExecutionEnvelope execution) {
-		string? ruleName = execution.Output?
-			.Select(message => message.Value)
-			.Where(value => !string.IsNullOrWhiteSpace(value) && value!.StartsWith(RuleNameMessagePrefix, StringComparison.Ordinal))
-			.Select(value => value!.Substring(RuleNameMessagePrefix.Length).Trim())
+	public static string ExtractBusinessRuleName(BusinessRuleBatchResponse response) {
+		string? ruleName = response.Results
+			.Where(result => result.Success)
+			.Select(result => result.RuleName)
 			.FirstOrDefault(name => !string.IsNullOrWhiteSpace(name));
 		if (string.IsNullOrWhiteSpace(ruleName)) {
 			throw new InvalidOperationException(
-				"The business-rule create execution output did not contain a 'Rule name:' message to identify the persisted rule.");
+				"The business-rule batch response did not contain a successful result with a 'ruleName' to identify the persisted rule.");
 		}
 
 		return ruleName!;
