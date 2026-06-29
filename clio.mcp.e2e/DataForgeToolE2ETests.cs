@@ -72,7 +72,7 @@ public sealed class DataForgeToolE2ETests {
 	[Description("Starts the real clio MCP server with poisoned proxy env vars, invokes dataforge-status against the configured sandbox environment, and verifies the Data Forge call still reaches the real service instead of failing with a masked syssetting error.")]
 	[AllureTag(StatusToolName)]
 	[AllureName("DataForge status ignores poisoned proxy env vars")]
-	[AllureDescription("Uses the real clio MCP server to call dataforge-status while HTTP_PROXY, HTTPS_PROXY, and ALL_PROXY point to 127.0.0.1:9, verifying that the Data Forge-specific proxy-safe wrapper still returns the real structured response for a reachable environment.")]
+	[AllureDescription("Uses the real clio MCP server to call dataforge-status while HTTP_PROXY, HTTPS_PROXY, and ALL_PROXY point to 127.0.0.1:9, verifying that clio's MCP-mode proxy neutralization (HttpClient.DefaultProxy) still lets the call return the real structured response for a reachable environment.")]
 	public async Task DataForgeStatus_Should_Ignore_Poisoned_Proxy_Environment_Variables() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -89,16 +89,18 @@ public sealed class DataForgeToolE2ETests {
 		string? originalAllProxy = Environment.GetEnvironmentVariable("ALL_PROXY");
 		string? originalNoProxy = Environment.GetEnvironmentVariable("NO_PROXY");
 
-		Environment.SetEnvironmentVariable("HTTP_PROXY", "http://127.0.0.1:9");
-		Environment.SetEnvironmentVariable("HTTPS_PROXY", "http://127.0.0.1:9");
-		Environment.SetEnvironmentVariable("ALL_PROXY", "http://127.0.0.1:9");
-		Environment.SetEnvironmentVariable("NO_PROXY", null);
-
 		try {
-			// Start the MCP server with the poisoned proxy variables in place — the server is the SUT:
-			// its Data Forge proxy-safe wrapper must still reach the service. Reachability was already
-			// verified above with a clean environment, so do not re-probe here (that probe is not
-			// proxy-safe and would self-skip the test).
+			// Poison the process proxy vars inside the try (after capturing the originals above) so the
+			// finally below always restores them even if a Set were to throw — poison must never leak to
+			// sibling tests. The MCP server is started next with these vars in place: it is the SUT, and
+			// clio's MCP-mode proxy neutralization (Program.cs, HttpClient.DefaultProxy) must still let the
+			// Data Forge call reach the service. Reachability was already verified above with a clean
+			// environment, so do not re-probe here (that probe is not proxy-safe and would self-skip).
+			Environment.SetEnvironmentVariable("HTTP_PROXY", "http://127.0.0.1:9");
+			Environment.SetEnvironmentVariable("HTTPS_PROXY", "http://127.0.0.1:9");
+			Environment.SetEnvironmentVariable("ALL_PROXY", "http://127.0.0.1:9");
+			Environment.SetEnvironmentVariable("NO_PROXY", null);
+
 			await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3), requireReachableEnvironment: false);
 
 			// Act
@@ -112,7 +114,7 @@ public sealed class DataForgeToolE2ETests {
 
 			// Assert
 			callResult.IsError.Should().NotBeTrue(
-				because: "the Data Forge proxy-safe wrapper should bypass poisoned process proxy variables for the real service call");
+				because: "clio's MCP-mode proxy neutralization should bypass poisoned process proxy variables for the real service call");
 			response.Success.Should().BeTrue(
 				because: "the real Data Forge status call should still succeed when proxy env vars are temporarily neutralized");
 			response.Health.Should().NotBeNull(

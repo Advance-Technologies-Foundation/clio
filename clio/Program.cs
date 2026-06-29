@@ -1084,6 +1084,11 @@ internal class Program {
 			|| string.Equals(commandName, "mcp", StringComparison.OrdinalIgnoreCase);
 	}
 
+	private static bool IsTruthyEnvironmentFlag(string variableName) {
+		string? value = Environment.GetEnvironmentVariable(variableName);
+		return string.Equals(value, "true", StringComparison.OrdinalIgnoreCase) || value == "1";
+	}
+
 	/// <summary>
 	/// Main entry point for the application.
 	/// </summary>
@@ -1123,7 +1128,11 @@ internal class Program {
 				// URL that must be reached directly, so an inherited proxy must not break it. An empty
 				// WebProxy bypasses every host. CLI mode is unchanged (a CLI user may legitimately need the
 				// proxy). See DataForgeStatus_Should_Ignore_Poisoned_Proxy_Environment_Variables (ENG-90640).
-				System.Net.Http.HttpClient.DefaultProxy = new System.Net.WebProxy();
+				// Opt out (fail-safe default is to bypass) by setting CLIO_MCP_RESPECT_AMBIENT_PROXY=true|1
+				// — for an org that mandates an inspecting/DLP egress proxy even for the MCP server.
+				if (!IsTruthyEnvironmentFlag("CLIO_MCP_RESPECT_AMBIENT_PROXY")) {
+					System.Net.Http.HttpClient.DefaultProxy = new System.Net.WebProxy();
+				}
 				ConsoleLogger.Instance.PreserveMessages = true;
 			}
 			
