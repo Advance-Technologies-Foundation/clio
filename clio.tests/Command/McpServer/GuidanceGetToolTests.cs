@@ -345,7 +345,7 @@ public sealed class GuidanceGetToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Every guide in the page-modification family stays within the 15 KB per-response budget so no single get-guidance call exceeds the agent token limit (ENG-91556 AC#2). Measured against the CRLF-normalized worst case so the guard holds regardless of the checkout's line endings.")]
-	public void GuidanceGet_Should_KeepEveryPageModificationGuideWithin15Kb_AfterSplit() {
+	public async Task GuidanceGet_Should_KeepEveryPageModificationGuideWithin15Kb_AfterSplit() {
 		// Arrange
 		GuidanceGetTool tool = new();
 		string[] familyNames = [
@@ -356,7 +356,7 @@ public sealed class GuidanceGetToolTests {
 
 		// Act / Assert
 		foreach (string name in familyNames) {
-			GuidanceGetResponse result = tool.GetGuidance(new GuidanceGetArgs(name)).GetAwaiter().GetResult();
+			GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs(name));
 			result.Success.Should().BeTrue(
 				because: $"{name} must resolve in the catalog after the page-modification split");
 			// Normalize every line ending to CRLF so the budget reflects the largest the article can be
