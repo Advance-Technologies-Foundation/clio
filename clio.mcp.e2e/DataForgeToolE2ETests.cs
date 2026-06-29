@@ -22,9 +22,20 @@ namespace Clio.Mcp.E2E;
 // The data-structure index now becomes Ready (status/context/get-table-columns/initialize/update pass
 // in ~13s each) instead of burning the ~300s gate ceiling — confirmed by run 15643975 (whole fixture
 // ~38s vs the former ~900s). The fixture-level [Ignore] is therefore removed so those reads run.
-// The three similarity-search reads (find-tables, find-lookups, get-relations) stay per-test [Ignore]d
-// under ENG-92147 because the service still returns Success=false for them on the deployed stand —
-// that is a distinct service/stand-data issue, not the gate hang this ticket fixed.
+//
+// ENG-92557: the three similarity-search reads (find-tables, find-lookups, get-relations) no longer
+// carry a bare [Ignore] under the now-closed ENG-92147. Reproduced against a stand (d2, CrtDataForge
+// present): the DataForge service is an external OAuth-gated microservice, so the reads only return
+// Success=true on a stand wired to a DataForge tier (DataForgeServiceUrl + IdentityServer* settings,
+// an OAuth client with the use_enrichment scope) AND with a seeded similarity index. Without that
+// wiring the maintenance service reports Unavailable and every read returns a structured
+// Success=false — an environment precondition, NOT a clio defect (the clio-side Success=false
+// contract is covered by unit tests, ENG-92147). Table similarity search additionally returns a
+// service-side 404 even on a fully wired stand (ENG-87092, open). The fixtures therefore (a) attempt
+// a best-effort index warm-up in arrange when McpE2E:DataForge:InitializeAndWait is on, then (b) run
+// SkipUnlessServiceServedRead: assert the happy path where the service actually serves the read, and
+// skip deterministically (with the service's own error) where it cannot — never a bare [Ignore],
+// never a false red.
 public sealed class DataForgeToolE2ETests {
 	private const string StatusToolName = DataForgeTool.DataForgeStatusToolName;
 	private const string FindTablesToolName = DataForgeTool.DataForgeFindTablesToolName;
@@ -134,7 +145,6 @@ public sealed class DataForgeToolE2ETests {
 	[AllureTag(FindTablesToolName)]
 	[AllureName("DataForge find-tables returns table matches for Contact-style terms")]
 	[AllureDescription("Uses the real clio MCP server to call dataforge-find-tables for a Contact-style query against the configured reachable sandbox environment and verifies that the structured response includes at least one named table match.")]
-	[Ignore("ENG-92147: DataForge service returns failures for find/relations ops on the deployed stand even with the readiness gate enabled; environment/service-gated.")]
 	public async Task DataForgeFindTables_Should_Return_Table_Matches() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -154,9 +164,10 @@ public sealed class DataForgeToolE2ETests {
 
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
-			because: "dataforge-find-tables should return a structured success payload for a reachable configured environment");
+			because: "dataforge-find-tables should return a structured payload, not an MCP protocol error, for a reachable configured environment");
+		SkipUnlessServiceServedRead(response.Success, response.Error, FindTablesToolName, arrangeContext.EnvironmentName);
 		response.Success.Should().BeTrue(
-			because: "table similarity searches should succeed for a valid environment and non-empty query");
+			because: "table similarity searches should succeed for a valid environment and non-empty query once the service served the read");
 		response.SimilarTables.Should().Contain(table => !string.IsNullOrWhiteSpace(table.Name),
 			because: "the response should contain at least one named table match for a Contact-style query");
 	}
@@ -166,7 +177,6 @@ public sealed class DataForgeToolE2ETests {
 	[AllureTag(FindLookupsToolName)]
 	[AllureName("DataForge find-lookups returns a structured lookup response")]
 	[AllureDescription("Uses the real clio MCP server to call dataforge-find-lookups against the configured reachable sandbox environment and verifies that the tool returns a structured successful payload instead of an MCP invocation error.")]
-	[Ignore("ENG-92147: DataForge service returns failures for find/relations ops on the deployed stand even with the readiness gate enabled; environment/service-gated.")]
 	public async Task DataForgeFindLookups_Should_Return_Structured_Response() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -186,9 +196,10 @@ public sealed class DataForgeToolE2ETests {
 
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
-			because: "dataforge-find-lookups should return a structured success payload for a reachable configured environment");
+			because: "dataforge-find-lookups should return a structured payload, not an MCP protocol error, for a reachable configured environment");
+		SkipUnlessServiceServedRead(response.Success, response.Error, FindLookupsToolName, arrangeContext.EnvironmentName);
 		response.Success.Should().BeTrue(
-			because: "lookup similarity searches should succeed for a valid environment and non-empty query");
+			because: "lookup similarity searches should succeed for a valid environment and non-empty query once the service served the read");
 		response.SimilarLookups.Should().NotBeNull(
 			because: "the tool should always return a structured lookup collection even when the environment has no matches");
 	}
@@ -198,7 +209,6 @@ public sealed class DataForgeToolE2ETests {
 	[AllureTag(GetRelationsToolName)]
 	[AllureName("DataForge get-relations returns relation paths between Contact and Account")]
 	[AllureDescription("Uses the real clio MCP server to call dataforge-get-relations for Contact and Account against the configured reachable sandbox environment and verifies that the structured response contains at least one relation path.")]
-	[Ignore("ENG-92147: DataForge service returns failures for find/relations ops on the deployed stand even with the readiness gate enabled; environment/service-gated.")]
 	public async Task DataForgeGetRelations_Should_Return_Relation_Paths() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -219,9 +229,10 @@ public sealed class DataForgeToolE2ETests {
 
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
-			because: "dataforge-get-relations should return a structured success payload for a reachable configured environment");
+			because: "dataforge-get-relations should return a structured payload, not an MCP protocol error, for a reachable configured environment");
+		SkipUnlessServiceServedRead(response.Success, response.Error, GetRelationsToolName, arrangeContext.EnvironmentName);
 		response.Success.Should().BeTrue(
-			because: "relation path reads should succeed for a valid environment and known table pair");
+			because: "relation path reads should succeed for a valid environment and known table pair once the service served the read");
 		response.Relations.Should().NotBeEmpty(
 			because: "Contact and Account should expose at least one relation path in the sandbox model");
 	}
@@ -452,11 +463,14 @@ public sealed class DataForgeToolE2ETests {
 	}
 
 	/// <summary>
-	/// Shared arrange step for the similarity-search reads (find-tables, find-lookups, get-relations):
-	/// on a freshly-deployed stand the similarity index is not built, so these reads return
-	/// <c>Success=false</c> until <c>dataforge-initialize</c> has run and the index is ready
+	/// Best-effort arrange warm-up for the similarity-search reads (find-tables, find-lookups,
+	/// get-relations): on a freshly-deployed stand the similarity index is not built, so these reads
+	/// return <c>Success=false</c> until <c>dataforge-initialize</c> has run and the index is ready
 	/// (ENG-92147, Step 2A). When <c>McpE2E:DataForge:InitializeAndWait</c> is off this is a no-op,
-	/// keeping non-DataForge runs and already-warm stands unaffected and the destructive initialize opt-in.
+	/// keeping non-DataForge runs and already-warm stands unaffected and the destructive initialize
+	/// opt-in. The gate is best-effort: it never fails the test on a stand that cannot become ready
+	/// (e.g. one not wired to a DataForge tier). The skip-vs-assert decision is taken after the read
+	/// by <see cref="SkipUnlessServiceServedRead"/> from the service's actual response (ENG-92557).
 	/// </summary>
 	private static async Task EnsureSimilarityIndexReadyAsync(McpE2ESettings settings, ArrangeContext arrangeContext) {
 		if (!settings.DataForge.InitializeAndWait) {
@@ -465,10 +479,49 @@ public sealed class DataForgeToolE2ETests {
 
 		arrangeContext.EnvironmentName.Should().NotBeNullOrWhiteSpace(
 			because: "the DataForge readiness arrange needs a reachable sandbox environment to initialize the similarity index against");
-		await DataForgeReadinessGate.EnsureIndexReadyAsync(
+		bool becameReady = await DataForgeReadinessGate.EnsureIndexReadyAsync(
 			arrangeContext.Session,
 			arrangeContext.EnvironmentName!,
 			arrangeContext.CancellationTokenSource.Token);
+		if (!becameReady) {
+			TestContext.Out.WriteLine(
+				$"[dataforge] similarity index did not warm up to Ready on '{arrangeContext.EnvironmentName}'; " +
+				"the per-read service-state guard will decide skip-vs-assert from the read response.");
+		}
+	}
+
+	/// <summary>
+	/// Deterministic service-state skip-guard for the DataForge similarity-search reads
+	/// (find-tables, find-lookups, get-relations). The DataForge service is an external OAuth-gated
+	/// microservice, so a read only returns <c>Success=true</c> on a stand wired to a DataForge tier
+	/// (<c>DataForgeServiceUrl</c> + <c>IdentityServer*</c> settings, the OAuth client carrying the
+	/// <c>use_enrichment</c> scope) whose similarity index has been seeded. Without that wiring the
+	/// maintenance service reports <c>Unavailable</c> and every read returns a structured
+	/// <c>Success=false</c> — an environment precondition, not a clio defect (the clio-side
+	/// <c>Success=false</c> contract is covered by unit tests under ENG-92147). Table similarity
+	/// search additionally returns a service-side 404 even on a fully wired stand (ENG-87092, open).
+	/// So when the service itself reports it could not serve the read, skip deterministically with the
+	/// service's own error — mirroring the existing reachability guard
+	/// (<see cref="ResolveReachableEnvironmentAsync"/> → <see cref="Assert.Ignore(string)"/>) — rather
+	/// than failing on an environment the test cannot control. A protocol-level error is still a
+	/// failure and is asserted separately by the caller (ENG-92557).
+	/// </summary>
+	/// <param name="success">The <c>success</c> flag from the structured DataForge read response.</param>
+	/// <param name="error">The structured error payload from the read response, when present.</param>
+	/// <param name="toolName">The DataForge tool that produced the response, for the skip diagnostic.</param>
+	/// <param name="environmentName">The sandbox environment the read targeted, for the skip diagnostic.</param>
+	private static void SkipUnlessServiceServedRead(
+		bool success, DataForgeErrorResult? error, string toolName, string? environmentName) {
+		if (success) {
+			return;
+		}
+
+		Assert.Ignore(
+			$"DataForge '{toolName}' could not be served on '{environmentName}': the service returned a structured " +
+			$"Success=false (error: {error?.Code ?? "<none>"} — {error?.Message ?? "<none>"}). The similarity index is " +
+			"not queryable here — this needs a DataForge-wired stand (DataForgeServiceUrl + IdentityServer* settings + " +
+			"use_enrichment scope + a seeded index); table similarity search additionally has an open service-side 404 " +
+			"(ENG-87092). Skipping deterministically rather than asserting against an unavailable service.");
 	}
 
 	private static async Task<ArrangeContext> ArrangeAsync(

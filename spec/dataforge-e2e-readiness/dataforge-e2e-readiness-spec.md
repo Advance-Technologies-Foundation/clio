@@ -2,10 +2,10 @@
 
 ## Status
 
-Stand-gated. Not implementable from a developer workstation. This document is the
-deliverable for the environment/arrange root cause of the 8 failing DataForge MCP E2E
-fixtures; whoever runs the E2E suite against a real stand executes the investigation and
-the chosen remedy below.
+Reproduced against a stand and resolved for the 3 similarity-search fixtures under
+**ENG-92557** — see "ENG-92557 — outcome" at the bottom. The original investigation below
+is retained for context. Stand-gated: the happy-path (Success=true) assertions still require
+a stand wired to a DataForge tier; the fixtures now skip deterministically where it is not.
 
 ## Problem
 
@@ -138,3 +138,53 @@ ADR/decision and must update all three of the above tests in the same change.
 This spec covers only the environment/arrange root that makes the 8 DataForge E2E fixtures
 deterministic. The clio-side structured-error contract for the read ops is verified by
 unit tests under ENG-92147 and is out of scope for this stand-gated work.
+
+## ENG-92557 — outcome (reproduced + implemented)
+
+Narrow follow-up that un-ignored the 3 similarity-search fixtures (`find-tables`,
+`find-lookups`, `get-relations`) which had been left under the now-closed ENG-92147.
+
+### Reproduced against a stand
+
+On `d2` (`studioenu_15626790_0703`, .NET Framework, `CrtDataForge 7.8.0` installed), via the
+real clio MCP server:
+
+- `dataforge-status` → `success=true` but maintenance `status=Unavailable`
+  (`"Empty maintenance status response."`), and all four health flags false. Per
+  `DataForgeMaintenanceClient.GetFullStatus`, `Unavailable` is the `payload is null` mapping —
+  the `DataForgeMaintenanceService/GetServiceStatus` proxy returned nothing parseable.
+- `find-tables` / `find-lookups` / `get-relations` → all `success=false` with error
+  `Value cannot be null. Parameter name: baseUri` — the DataForge **microservice URL is not
+  configured** on the stand.
+- After `dataforge-initialize` + the full 6-min readiness poll, the index never became Ready
+  (status stayed `Unavailable`). So Step 2A (build + await) cannot turn these reads green on a
+  stand that is not wired to a DataForge tier.
+
+### Why a deterministic skip-guard (not an unconditional pass)
+
+Per the authoritative config docs (Confluence *Useful info — DataForge Configuration* and
+*Toolkit and Data Forge testing*), DataForge is an **external OAuth-gated microservice**. A read
+returns `Success=true` only on a stand with `DataForgeServiceUrl` + `IdentityServerUrl` +
+`IdentityServerClientId` + `IdentityServerClientSecret` set, an OAuth client carrying the
+`use_enrichment` scope, and a **seeded** similarity index. A CI fresh-deploy is not wired to a
+tier, so its index can never be Ready. Additionally, **table similarity search returns a
+service-side 404 even on a fully wired stand** — a known, still-open issue (ENG-87092) — so a
+blanket `Success=true` assertion for `find-tables` is unreachable by design.
+
+### Implemented (`clio.mcp.e2e`, no production-code change)
+
+1. The 3 fixtures no longer carry `[Ignore("ENG-92147…")]` (the ticket is closed).
+2. `DataForgeReadinessGate.EnsureIndexReadyAsync` is now **best-effort**: it returns `bool`
+   (became-ready) and never `Assert.Fail`s — on a stand that cannot become ready it logs and
+   returns `false`. The pure `IsIndexReady` / `OverallDeadlineReached` helpers are unchanged
+   (still unit-tested).
+3. Each read runs `SkipUnlessServiceServedRead`: a protocol error is still a failure
+   (`callResult.IsError`), a `Success=true` payload asserts the happy path, and a structured
+   `Success=false` calls `Assert.Ignore` with the service's own error — a deterministic skip
+   keyed on the observed service state, mirroring the existing reachability guard. No bare
+   `[Ignore]`, no false red.
+
+Verified on `d2`: all 3 fixtures **Skip** deterministically (run with
+`McpE2E__DataForge__InitializeAndWait` off; gate-on path is identical, just slower). The
+happy-path `Success=true` branch is exercised only on a DataForge-wired stand (see the worked
+example in the Confluence testing page).
