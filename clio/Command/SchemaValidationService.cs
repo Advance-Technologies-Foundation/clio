@@ -1309,7 +1309,7 @@ public static class SchemaValidationService
 		if (!TryGetInsertedFieldDescriptor(entry, out InsertedFieldDescriptor descriptor)) {
 			return;
 		}
-		AppendBindingDeclarationError(descriptor, declaredAttributes, properlyNestedAttributes, result);
+		AppendBindingDeclarationError(descriptor, declaredAttributes, properlyNestedAttributes, modelPaths, result);
 		AppendLabelResourceError(descriptor, modelPaths, explicitResources, result);
 	}
 
@@ -1349,6 +1349,7 @@ public static class SchemaValidationService
 		InsertedFieldDescriptor descriptor,
 		IReadOnlySet<string> declaredAttributes,
 		IReadOnlySet<string> properlyNestedAttributes,
+		IReadOnlyDictionary<string, string> modelPaths,
 		SchemaValidationResult result) {
 		string attr = descriptor.BindingAttribute;
 		if (properlyNestedAttributes.Contains(attr)) {
@@ -1361,13 +1362,21 @@ public static class SchemaValidationService
 			// The platform save accepts it, but at runtime the attribute ends up at
 			// viewModelConfig.<name> instead of viewModelConfig.attributes.<name>, which the
 			// Freedom UI runtime ignores — controls render but read and write no data.
+			string expectedBindingHint = string.Empty;
+			if (modelPaths.TryGetValue(attr, out string modelPath)
+			    && modelPath.Contains('.', StringComparison.Ordinal)) {
+				string expectedBinding = BuildExpectedBinding(modelPath);
+				if (!string.Equals(expectedBinding, "$" + attr, StringComparison.Ordinal)) {
+					expectedBindingHint = " The expected datasource binding for '" + modelPath + "' is '" + expectedBinding + "'.";
+				}
+			}
 			result.Errors.Add(
 				"inserted field controls: field '" + descriptor.DisplayName + "' (type '" + descriptor.ComponentType + "') binds to '$" + attr + "' " +
 				"which is declared in viewModelConfigDiff without the required nesting. " +
 				"The attribute must be nested under values.attributes with \"path\":[] so the platform places it at " +
 				"viewModelConfig.attributes." + attr + " (required for runtime data binding). " +
 				"The current flat form puts the attribute at viewModelConfig." + attr + " which the runtime ignores — " +
-				"the control will render but read and write no data. " +
+				"the control will render but read and write no data." + expectedBindingHint + " " +
 				"Use: " + canonicalEntry + ".");
 			return;
 		}
@@ -2017,6 +2026,17 @@ public static class SchemaValidationService
 		IReadOnlyDictionary<string, HashSet<string>> validatorContracts = BuildValidatorParameterContracts(jsBody);
 		ValidateValidatorBindingContractsInMarker(jsBody, SchemaViewModelConfig, false, validatorContracts, result);
 		ValidateValidatorBindingContractsInMarker(jsBody, SchemaViewModelConfigDiff, true, validatorContracts, result);
+		if (PageSchemaSectionReader.TryRead(jsBody, out string validatorsSection, SchemaValidatorsMarker)) {
+			foreach ((string validatorType, _) in ExtractCustomValidatorContracts(validatorsSection)) {
+				if (validatorType.Contains("maxlength", StringComparison.OrdinalIgnoreCase)) {
+					result.Errors.Add(
+						$"Custom validator '{validatorType}' re-implements the built-in 'crt.MaxLength'. " +
+						"Replace it with a 'crt.MaxLength' binding in viewModelConfig/viewModelConfigDiff: " +
+						"{\"type\": \"crt.MaxLength\", \"params\": {\"maxLength\": <N>}}. " +
+						"Read docs://mcp/guides/page-schema-validators for the canonical validator shape.");
+				}
+			}
+		}
 		if (result.Errors.Count > 0) {
 			result.IsValid = false;
 		}

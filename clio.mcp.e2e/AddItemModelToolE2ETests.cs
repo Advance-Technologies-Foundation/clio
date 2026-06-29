@@ -22,6 +22,7 @@ namespace Clio.Mcp.E2E;
 public sealed class AddItemModelToolE2ETests {
 	private const string ToolName = AddItemModelTool.AddItemModelToolName;
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes add-item-model against a reachable environment, and verifies that the tool creates the requested folder and generates model files there.")]
 	[AllureTag(ToolName)]
@@ -61,6 +62,7 @@ public sealed class AddItemModelToolE2ETests {
 				because: "model generation should create at least one model class file in addition to the shared helper");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes add-item-model with a relative folder, and verifies that a human-readable validation error is returned without creating files.")]
 	[AllureTag(ToolName)]

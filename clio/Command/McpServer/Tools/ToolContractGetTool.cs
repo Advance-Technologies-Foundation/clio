@@ -4382,7 +4382,7 @@ internal static class ToolContractCatalog {
 				Field("created", NumberType, "Number of rules created."),
 				Field("failed", NumberType, "Number of rules that failed."),
 				Field("results", ArrayType, "Per-rule outcomes in input order; each item has name, success, ruleName, and error."),
-				Field("error", StringType, "Request-level error that prevented the whole batch from running.")
+				Field("error", StringType, "Request-level error that prevented the whole batch from running. Note: when the requested environment cannot be resolved (unknown/unreachable), the tool instead returns the standard command-execution envelope (exit-code 1 with execution-log-messages referencing the environment) rather than this batch shape.")
 			]);
 	}
 

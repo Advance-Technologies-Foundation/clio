@@ -1,6 +1,5 @@
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
-using Clio.Common;
 using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E.Support.Creatio;
 using Clio.Mcp.E2E.Support.Configuration;
@@ -20,9 +19,10 @@ namespace Clio.Mcp.E2E;
 [AllureNUnit]
 [AllureFeature(CreateEntityBusinessRuleTool.BusinessRuleCreateToolName)]
 [NonParallelizable]
-public sealed class EntityBusinessRuleToolE2ETests {
+public sealed class EntityBusinessRuleToolE2ETests : McpContractFixtureBase {
 	private const string ToolName = CreateEntityBusinessRuleTool.BusinessRuleCreateToolName;
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Advertises polymorphic anyOf runtime schema branches for business-rule actions through the real MCP server.")]
 	[AllureTag(ToolName)]
@@ -30,7 +30,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 	[AllureDescription("Starts the real clio MCP server, lists tools, and verifies create-entity-business-rule exposes anyOf action branches for field-state actions and Set values assignments.")]
 	public async Task BusinessRuleCreate_Should_Advertise_Polymorphic_Action_AnyOf_Runtime_Schema() {
 		// Arrange
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(
@@ -91,6 +91,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 				because: "runtime MCP schema should explicitly reject Guid-valued sourceFilterPath paths");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Binds a Set values business-rule payload through the real MCP server and reports an invalid environment failure from command execution.")]
 	[AllureTag(ToolName)]
@@ -98,7 +99,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 	[AllureDescription("Starts the real clio MCP server, calls create-entity-business-rule with Set values constant formula and AttributeValue payloads and an intentionally missing environment, then verifies the request reaches command execution instead of failing MCP payload binding.")]
 	public async Task BusinessRuleCreate_Should_Bind_SetValues_Payload_And_Report_Invalid_Environment() {
 		// Arrange
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 		string invalidEnvironmentName = $"missing-business-rule-env-{Guid.NewGuid():N}";
 
 		// Act
@@ -126,6 +127,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 			because: "the failure should come from resolving the requested environment, not from deserializing the Set values payload");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Binds a multi-rule batch payload through the real MCP server and reports an invalid environment failure for the whole batch.")]
 	[AllureTag(ToolName)]
@@ -133,7 +135,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 	[AllureDescription("Starts the real clio MCP server, calls create-entity-business-rules with two rules in one call and an intentionally missing environment, then verifies the multi-element rules array binds and the structured response references the missing environment instead of failing MCP payload binding.")]
 	public async Task BusinessRuleCreate_Should_Bind_Multiple_Rules_Batch_And_Report_Invalid_Environment() {
 		// Arrange
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 		string invalidEnvironmentName = $"missing-batch-env-{Guid.NewGuid():N}";
 
 		// Act
@@ -157,6 +159,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 			because: "the whole batch fails on the missing environment, so the structured response should reference it");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Binds an apply-filter business-rule payload through the real MCP server and reports an invalid environment failure from command execution.")]
 	[AllureTag(ToolName)]
@@ -164,18 +167,20 @@ public sealed class EntityBusinessRuleToolE2ETests {
 	[AllureDescription("Starts the real clio MCP server, calls create-entity-business-rule with an apply-filter payload and an intentionally missing environment, then verifies the request reaches command execution instead of failing MCP payload binding.")]
 	public async Task BusinessRuleCreate_Should_Bind_ApplyFilter_Payload_And_Report_Invalid_Environment() {
 		// Arrange
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 		string invalidEnvironmentName = $"missing-apply-filter-env-{Guid.NewGuid():N}";
 
 		// Act
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
 			ToolName,
 			new Dictionary<string, object?> {
-				["environmentName"] = invalidEnvironmentName,
-				["packageName"] = "UsrPkg",
-				["entitySchemaName"] = "UsrOrder",
-				["rules"] = new object[] { CreateApplyFilterRule()
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = invalidEnvironmentName,
+					["package-name"] = "UsrPkg",
+					["entity-schema-name"] = "UsrOrder",
+					["rules"] = new object[] { CreateApplyFilterRule()
  }
+				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
 		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
@@ -190,6 +195,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 			because: "the failure should come from resolving the requested environment, not from deserializing the apply-filter payload");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Binds a system-variable condition payload through the real MCP server and reports an invalid environment failure from command execution.")]
 	[AllureTag(ToolName)]
@@ -197,7 +203,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 	[AllureDescription("Starts the real clio MCP server, calls create-entity-business-rule with a SysValue condition payload and an intentionally missing environment, then verifies the request reaches command execution instead of failing MCP payload binding.")]
 	public async Task BusinessRuleCreate_Should_Bind_SysValue_Condition_Payload_And_Report_Invalid_Environment() {
 		// Arrange
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 		string invalidEnvironmentName = $"missing-sys-value-env-{Guid.NewGuid():N}";
 
 		// Act
@@ -225,6 +231,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 			because: "the failure should come from resolving the requested environment, not from deserializing the SysValue payload");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Binds a role-gate condition payload (CurrentUserRoles CONTAIN role on the left) through the real MCP server and reports an invalid environment failure from command execution.")]
 	[AllureTag(ToolName)]
@@ -232,7 +239,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 	[AllureDescription("Starts the real clio MCP server, calls create-entity-business-rule with a CurrentUserRoles CONTAIN role condition and an intentionally missing environment, then verifies the request reaches command execution instead of failing MCP payload binding.")]
 	public async Task BusinessRuleCreate_Should_Bind_RoleGate_Condition_Payload_And_Report_Invalid_Environment() {
 		// Arrange
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 		string invalidEnvironmentName = $"missing-role-gate-env-{Guid.NewGuid():N}";
 
 		// Act
@@ -260,6 +267,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 			because: "the failure should come from resolving the requested environment, not from deserializing the role-gate payload");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Returns readable MCP diagnostics when business-rule action payload deserialization fails before command execution.")]
 	[AllureTag(ToolName)]
@@ -267,7 +275,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 	[AllureDescription("Starts the real clio MCP server, calls create-entity-business-rule with an invalid polymorphic action payload, and verifies the client receives a readable deserialization error instead of a generic invocation failure.")]
 	public async Task BusinessRuleCreate_Should_Surface_Action_Deserialization_Error() {
 		// Arrange
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
@@ -294,6 +302,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 			because: "the caller should see the underlying System.Text.Json action binding error");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Creates an entity business rule for Contact in the Custom package through the real MCP server and Creatio environment.")]
 	[AllureTag(ToolName)]
@@ -308,7 +317,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 		}
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		string packageName = ResolvePackageName(settings);
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(5));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
 		// Intentional destructive fixture: Contact in Custom is the canonical sandbox target.
 		// There is no business-rule delete action yet, so each run writes a uniquely captioned rule and verifies readback.
 		string caption = $"MCP E2E Contact entity {Guid.NewGuid():N}";
@@ -326,29 +335,30 @@ public sealed class EntityBusinessRuleToolE2ETests {
 				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
-		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
+		BusinessRuleBatchResponse batchResponse = McpCommandExecutionParser.ExtractBusinessRuleBatchResponse(callResult);
 
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
-			because: "a valid Contact entity rule should return the standard command execution envelope");
-		execution.ExitCode.Should().Be(0,
-			because: "the Contact rule should be created in the configured Creatio sandbox");
-		execution.Output.Should().Contain(message => message.MessageType == LogDecoratorType.Info,
-			because: "successful command-path MCP calls should include at least one info log message");
-		execution.Output.Should().Contain(message => ContainsText(message.Value, "Rule name:"),
-			because: "successful business-rule creation should report the generated rule name");
+			because: "a valid Contact entity rule should return the structured batch-create response, not an MCP error");
+		batchResponse.Created.Should().Be(1,
+			because: "the single Contact rule should be created in the configured Creatio sandbox");
+		batchResponse.Failed.Should().Be(0,
+			because: "no rule in the batch should fail when the payload is valid");
+		batchResponse.Results.Should().ContainSingle(result => result.Success && !string.IsNullOrWhiteSpace(result.RuleName),
+			because: "the per-rule result should report success and the generated internal rule name");
 		await BusinessRuleAddonReadback.AssertEntityRuleExistsAsync(
 			settings,
 			environmentName,
 			packageName,
 			"Contact",
-			McpCommandExecutionParser.ExtractBusinessRuleName(execution),
+			McpCommandExecutionParser.ExtractBusinessRuleName(batchResponse),
 			"Terrasoft.Core.BusinessRules.Models.Actions.BusinessRuleActionReadonlyElement",
 			["Name"],
 			"Name",
 			arrangeContext.CancellationTokenSource.Token);
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Creates an entity business rule with a system-variable condition for Contact through the real MCP server and verifies the persisted SysValue right expression.")]
 	[AllureTag(ToolName)]
@@ -363,7 +373,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 		}
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		string packageName = ResolvePackageName(settings);
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(5));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
 		string caption = $"MCP E2E Contact sys-value {Guid.NewGuid():N}";
 
 		// Act
@@ -379,21 +389,23 @@ public sealed class EntityBusinessRuleToolE2ETests {
 				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
-		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
+		BusinessRuleBatchResponse batchResponse = McpCommandExecutionParser.ExtractBusinessRuleBatchResponse(callResult);
 
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
-			because: "a valid Contact system-variable rule should return the standard command execution envelope");
-		execution.ExitCode.Should().Be(0,
-			because: "the Contact system-variable rule should be created in the configured Creatio sandbox");
-		execution.Output.Should().Contain(message => ContainsText(message.Value, "Rule name:"),
-			because: "successful business-rule creation should report the generated rule name");
+			because: "a valid Contact system-variable rule should return the structured batch-create response, not an MCP error");
+		batchResponse.Created.Should().Be(1,
+			because: "the single Contact system-variable rule should be created in the configured Creatio sandbox");
+		batchResponse.Failed.Should().Be(0,
+			because: "no rule in the batch should fail when the payload is valid");
+		batchResponse.Results.Should().ContainSingle(result => result.Success && !string.IsNullOrWhiteSpace(result.RuleName),
+			because: "the per-rule result should report success and the generated internal rule name");
 		await BusinessRuleAddonReadback.AssertEntityRuleSysValueConditionExistsAsync(
 			settings,
 			environmentName,
 			packageName,
 			"Contact",
-			McpCommandExecutionParser.ExtractBusinessRuleName(execution),
+			McpCommandExecutionParser.ExtractBusinessRuleName(batchResponse),
 			"Owner",
 			"CurrentUserContact",
 			"Lookup",
@@ -401,6 +413,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 			arrangeContext.CancellationTokenSource.Token);
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Creates a role-gate entity business rule (CurrentUserRoles CONTAIN role) for Contact through the real MCP server and verifies the persisted left SysValue + contain condition.")]
 	[AllureTag(ToolName)]
@@ -415,7 +428,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 		}
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		string packageName = ResolvePackageName(settings);
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(5));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
 		string caption = $"MCP E2E Contact role-gate {Guid.NewGuid():N}";
 
 		// Act
@@ -431,21 +444,23 @@ public sealed class EntityBusinessRuleToolE2ETests {
 				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
-		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
+		BusinessRuleBatchResponse batchResponse = McpCommandExecutionParser.ExtractBusinessRuleBatchResponse(callResult);
 
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
-			because: "a valid Contact role-gate rule should return the standard command execution envelope");
-		execution.ExitCode.Should().Be(0,
-			because: "the Contact role-gate rule should be created in the configured Creatio sandbox");
-		execution.Output.Should().Contain(message => ContainsText(message.Value, "Rule name:"),
-			because: "successful business-rule creation should report the generated rule name");
+			because: "a valid Contact role-gate rule should return the structured batch-create response, not an MCP error");
+		batchResponse.Created.Should().Be(1,
+			because: "the single Contact role-gate rule should be created in the configured Creatio sandbox");
+		batchResponse.Failed.Should().Be(0,
+			because: "no rule in the batch should fail when the payload is valid");
+		batchResponse.Results.Should().ContainSingle(result => result.Success && !string.IsNullOrWhiteSpace(result.RuleName),
+			because: "the per-rule result should report success and the generated internal rule name");
 		await BusinessRuleAddonReadback.AssertEntityRuleRoleGateConditionExistsAsync(
 			settings,
 			environmentName,
 			packageName,
 			"Contact",
-			McpCommandExecutionParser.ExtractBusinessRuleName(execution),
+			McpCommandExecutionParser.ExtractBusinessRuleName(batchResponse),
 			"CurrentUserRoles",
 			11,
 			RoleGateRoleId,
@@ -453,6 +468,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 			arrangeContext.CancellationTokenSource.Token);
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Creates an apply-filter entity business-rule family for Contact in the target package through the real MCP server and verifies persisted parent and child metadata.")]
 	[AllureTag(ToolName)]
@@ -467,7 +483,7 @@ public sealed class EntityBusinessRuleToolE2ETests {
 		}
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		string packageName = ResolvePackageName(settings);
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(5));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
 		string caption = $"MCP E2E Contact apply-filter {Guid.NewGuid():N}";
 
 		// Act
@@ -483,23 +499,23 @@ public sealed class EntityBusinessRuleToolE2ETests {
 				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
-		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
+		BusinessRuleBatchResponse batchResponse = McpCommandExecutionParser.ExtractBusinessRuleBatchResponse(callResult);
 
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
-			because: "a valid Contact apply-filter rule should return the standard command execution envelope");
-		execution.ExitCode.Should().Be(0,
-			because: "the apply-filter rule family should be created in the configured Creatio sandbox");
-		execution.Output.Should().Contain(message => message.MessageType == LogDecoratorType.Info,
-			because: "successful command-path MCP calls should include at least one info log message");
-		execution.Output.Should().Contain(message => ContainsText(message.Value, "Rule name:"),
-			because: "successful apply-filter creation should report the generated parent rule name");
+			because: "a valid Contact apply-filter rule should return the structured batch-create response, not an MCP error");
+		batchResponse.Created.Should().Be(1,
+			because: "the single apply-filter parent rule should be created in the configured Creatio sandbox (clear/populate children are generated server-side and are not separate batch items)");
+		batchResponse.Failed.Should().Be(0,
+			because: "no rule in the batch should fail when the apply-filter payload is valid");
+		batchResponse.Results.Should().ContainSingle(result => result.Success && !string.IsNullOrWhiteSpace(result.RuleName),
+			because: "the per-rule result should report success and the generated parent rule name");
 		await BusinessRuleAddonReadback.AssertEntityApplyFilterRuleFamilyExistsAsync(
 			settings,
 			environmentName,
 			packageName,
 			"Contact",
-			McpCommandExecutionParser.ExtractBusinessRuleName(execution),
+			McpCommandExecutionParser.ExtractBusinessRuleName(batchResponse),
 			"City",
 			"Country",
 			"Country",
@@ -755,20 +771,4 @@ public sealed class EntityBusinessRuleToolE2ETests {
 			["sysValueName"] = sysValueName
 		};
 
-	private static async Task<ArrangeContext> ArrangeAsync(TimeSpan timeout) {
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		CancellationTokenSource cancellationTokenSource = new(timeout);
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		return new ArrangeContext(session, cancellationTokenSource);
-	}
-
-	private sealed record ArrangeContext(
-		McpServerSession Session,
-		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
-			CancellationTokenSource.Dispose();
-		}
-	}
 }

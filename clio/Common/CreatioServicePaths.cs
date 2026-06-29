@@ -13,6 +13,15 @@ public static class CreatioServicePaths {
 	public const string GetApplicationInfo = "/ServiceModel/ApplicationInfoService.svc/GetApplicationInfo";
 
 	/// <summary>
+	/// Admin-gated <c>ApplicationInfoService</c> operation (requires the <c>CanManageSolution</c>
+	/// system operation) that returns sanitized environment info — <c>dbEngineType</c>,
+	/// <c>frameworkKind</c> (.NET Framework vs .NET), <c>frameworkDescription</c> and <c>coreVersion</c>
+	/// — WITHOUT the cliogate package, on both runtimes (ENG-92465). Lets clio surface the database
+	/// engine and executing framework on environments where cliogate is not installed.
+	/// </summary>
+	public const string GetSystemEnvironmentInfo = "/ServiceModel/ApplicationInfoService.svc/GetSystemEnvironmentInfo";
+
+	/// <summary>
 	/// Standard Creatio service that returns the authenticated user's runtime profile details,
 	/// including the message-channel session id used by Designer Presence.
 	/// </summary>

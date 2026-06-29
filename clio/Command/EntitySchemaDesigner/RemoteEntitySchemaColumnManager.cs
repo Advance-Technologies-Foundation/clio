@@ -155,7 +155,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			column.Indexed,
 			column.IsValueCloneable,
 			column.IsTrackChangesInDB,
-			EntitySchemaDesignerSupport.GetFriendlyDefaultValueSource(column.DefValue),
+			EntitySchemaDesignerSupport.CreateDefaultValueConfig(column.DefValue)?.Source,
 			EntitySchemaDesignerSupport.GetFriendlyDefaultValue(column.DefValue),
 			column.ReferenceSchema?.Name,
 			column.List,
@@ -432,8 +432,12 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			CascadeConnection = options.Cascade ?? false,
 			DoNotControlIntegrity = options.DoNotControlIntegrity ?? false
 		};
-		ApplyDefaultValue(column, options, preserveWhenUnspecified: false, options);
-
+		// Resolve the reference schema BEFORE applying the default. A lookup Const default carries a
+		// record GUID that must be validated against the referenced schema (record-existence check in
+		// EntitySchemaDefaultValueSourceResolver.ResolveConst); that validation is skipped when the
+		// reference schema name is unknown, so it has to be set on the column first. (Previously
+		// ApplyDefaultValue ran while column.ReferenceSchema was still null, so an add of a lookup
+		// column with a Const default pointing at a missing record was silently accepted.)
 		if (dataValueType == EntitySchemaDesignerSupport.SupportedDataValueTypes["lookup"]) {
 			ManagerItemDto referenceSchema = ResolveReferenceSchema(package.Descriptor.UId, options.ReferenceSchemaName,
 				options);
@@ -444,6 +448,8 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			column.ReferenceSchema = EntitySchemaDesignerSupport.CreateSysImageReferenceSchema();
 			column.Indexed = true;
 		}
+
+		ApplyDefaultValue(column, options, preserveWhenUnspecified: false, options);
 
 		List<EntitySchemaColumnDto> ownColumns = schema.Columns?.ToList() ?? [];
 		ownColumns.Add(column);
@@ -896,7 +902,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			?? throw new EntitySchemaDesignerException(
 				$"Column '{options.ColumnName}' requires default-value-config.source.");
 		if (defaultValueSource == EntitySchemaColumnDefSource.None) {
-			column.DefValue = null;
+			column.DefValue = new EntitySchemaColumnDefValueDto { ValueSourceType = EntitySchemaColumnDefSource.None };
 			return;
 		}
 		defaultValueConfig = _defaultValueSourceResolver.Resolve(

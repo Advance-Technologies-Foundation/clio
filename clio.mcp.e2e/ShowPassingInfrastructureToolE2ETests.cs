@@ -12,6 +12,13 @@ using ModelContextProtocol.Protocol;
 namespace Clio.Mcp.E2E;
 
 [TestFixture]
+// NoEnvironment tier: show-passing-infrastructure degrades gracefully on a host with no Kubernetes
+// (the discovery service catches per-section failures) and always returns a structured availability
+// payload rather than an MCP protocol error. The opaque InternalError that previously forced this
+// onto the Sandbox tier was the no-Kubernetes fallback IKubernetes client throwing from Dispose
+// during per-request DI-scope teardown — fixed under ENG-91830, so the test is now deterministically
+// green env-free and belongs in the merge-blocking NoEnvironment gate.
+[Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("show-passing-infrastructure")]
 public sealed class ShowPassingInfrastructureToolE2ETests

@@ -16,7 +16,20 @@ internal sealed class McpServerSession : IAsyncDisposable {
 
 	public McpClient Client { get; }
 
-	public static async Task<McpServerSession> StartAsync(McpE2ESettings settings, CancellationToken cancellationToken) {
+	public static async Task<McpServerSession> StartAsync(McpE2ESettings settings, CancellationToken cancellationToken) =>
+		await StartAsync(settings, elicitationHandler: null, cancellationToken);
+
+	/// <summary>
+	/// Starts a clio MCP server session. When <paramref name="elicitationHandler"/> is supplied the
+	/// client advertises the elicitation capability and routes server elicitation requests to that
+	/// handler — letting a test exercise the elicitation path (for example a client that never
+	/// answers, simulating a headless agent). When it is <see langword="null"/> the client behaves as
+	/// before and does not advertise elicitation.
+	/// </summary>
+	public static async Task<McpServerSession> StartAsync(
+		McpE2ESettings settings,
+		Func<ElicitRequestParams?, CancellationToken, ValueTask<ElicitResult>>? elicitationHandler,
+		CancellationToken cancellationToken) {
 		ClioProcessDescriptor process = ClioExecutableResolver.Resolve(settings);
 		StdioClientTransport transport = new(new StdioClientTransportOptions {
 			Command = process.Command,
@@ -27,14 +40,20 @@ internal sealed class McpServerSession : IAsyncDisposable {
 			ShutdownTimeout = TimeSpan.FromSeconds(10)
 		}, NullLoggerFactory.Instance);
 
+		McpClientOptions options = new() {
+			ClientInfo = new Implementation {
+				Name = "clio.mcp.e2e",
+				Version = "1.0.0"
+			}
+		};
+		if (elicitationHandler is not null) {
+			options.Capabilities = new ClientCapabilities { Elicitation = new ElicitationCapability() };
+			options.Handlers = new McpClientHandlers { ElicitationHandler = elicitationHandler };
+		}
+
 		McpClient client = await McpClient.CreateAsync(
 			transport,
-			new McpClientOptions {
-				ClientInfo = new Implementation {
-					Name = "clio.mcp.e2e",
-					Version = "1.0.0"
-				}
-			},
+			options,
 			NullLoggerFactory.Instance,
 			cancellationToken);
 
