@@ -161,6 +161,58 @@ namespace Clio.Command {
 			return (uId, null);
 		}
 
+		/// <summary>
+		/// Resolves a Freedom UI page (client-unit) schema name to its <c>UId</c> via the DataService
+		/// SelectQuery endpoint, filtered to <c>ClientUnitSchemaManager</c>. Used by
+		/// <c>create-related-page-addon</c> to turn page names into the <c>PageSchemaUId</c> values stored
+		/// in the RelatedPage add-on metadata.
+		/// </summary>
+		internal static (string uId, string error) QueryPageSchemaUId(
+			IApplicationClient applicationClient,
+			IServiceUrlBuilder serviceUrlBuilder,
+			string pageSchemaName) {
+			(JToken row, string error) = QuerySysSchemaRow(applicationClient, serviceUrlBuilder, pageSchemaName, ("UId", "UId"));
+			if (row == null) {
+				return (null, error ?? $"Page schema '{pageSchemaName}' not found.");
+			}
+			string uId = row["UId"]?.ToString();
+			if (string.IsNullOrWhiteSpace(uId)) {
+				return (null, $"Page schema '{pageSchemaName}' has no UId in the SysSchema response.");
+			}
+			return (uId, null);
+		}
+
+		/// <summary>
+		/// Resolves a Creatio role (<c>SysAdminUnit</c>) name to its <c>Id</c> via the DataService
+		/// SelectQuery endpoint. Used by <c>create-related-page-addon</c> to scope a related-page set to an
+		/// audience by name (e.g. <c>All employees</c> or the portal role <c>All external users</c>) instead
+		/// of requiring the caller to pass a role GUID.
+		/// </summary>
+		internal static (string uId, string error) QueryRoleUId(
+			IApplicationClient applicationClient,
+			IServiceUrlBuilder serviceUrlBuilder,
+			string roleName) {
+			var query = new JObject {
+				[RootSchemaNameKey] = "SysAdminUnit", [OperationTypeKey] = 0,
+				[FiltersKey] = BuildFilterGroup(("byName", BuildEqFilter("Name", 1, roleName))),
+				[ColumnsKey] = new JObject {
+					[ItemsKey] = new JObject {
+						["Id"] = new JObject { [ExpressionKey] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = "Id" } }
+					}
+				},
+				[RowCountKey] = 1
+			};
+			var (rows, success) = ExecuteSelectQuery(applicationClient, serviceUrlBuilder, query);
+			if (!success)
+				return (null, "Failed to query SysAdminUnit");
+			if (rows.Count == 0)
+				return (null, $"Role '{roleName}' not found.");
+			string id = rows[0]["Id"]?.ToString();
+			if (string.IsNullOrWhiteSpace(id))
+				return (null, $"Role '{roleName}' has no Id in the SysAdminUnit response.");
+			return (id, null);
+		}
+
 		internal static (string uId, string error) QueryEntitySchemaUId(
 			IApplicationClient applicationClient,
 			IServiceUrlBuilder serviceUrlBuilder,
