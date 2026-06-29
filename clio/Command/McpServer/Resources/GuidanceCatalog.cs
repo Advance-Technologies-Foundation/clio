@@ -88,7 +88,7 @@ internal static class GuidanceCatalog {
 				DashboardGuidanceResource.Guide),
 			["related-list"] = Create(
 				"related-list",
-				"Canonical MCP guidance for adding a Freedom UI related/child list (detail) and filtering it by the current page record: the 'Expanded list' composite recipe (via get-component-info composite), the child EntityDataSource, the isCollection attribute, and the declarative modelConfig.dependencies (attributePath/relationPath) that scopes the list by page data — no handler.",
+				"Canonical MCP guidance for adding a Freedom UI related/child list and filtering it by the current page record (master-detail \"filter by page data\"): the declarative, dependencies-based scoping — no handler. Fetch the 'Expanded list' composite structure via get-component-info.",
 				RelatedListGuidanceResource.Guide),
 			["agent-execution"] = Create(
 				"agent-execution",
