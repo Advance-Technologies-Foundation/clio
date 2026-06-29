@@ -16,6 +16,7 @@ namespace Clio.Mcp.E2E;
 /// End-to-end tests for the add-package-dependency MCP tool.
 /// </summary>
 [TestFixture]
+[Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("add-package-dependency")]
 public sealed class AddPackageDependencyToolE2ETests {

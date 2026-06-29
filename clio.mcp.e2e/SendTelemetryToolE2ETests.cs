@@ -13,6 +13,7 @@ namespace Clio.Mcp.E2E;
 /// End-to-end tests for the product telemetry MCP tool.
 /// </summary>
 [TestFixture]
+[Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("send-telemetry")]
 [NonParallelizable]
