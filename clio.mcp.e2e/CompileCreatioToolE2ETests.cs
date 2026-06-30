@@ -17,6 +17,7 @@ namespace Clio.Mcp.E2E;
 /// End-to-end tests for the compile-creatio MCP tool.
 /// </summary>
 [TestFixture]
+[Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("compile-configuration")]
 public sealed class CompileCreatioToolE2ETests

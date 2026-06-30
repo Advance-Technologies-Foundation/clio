@@ -6,7 +6,6 @@ using System.Threading.Tasks;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
-using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
@@ -20,10 +19,11 @@ namespace Clio.Mcp.E2E;
 /// End-to-end tests for the validate-page MCP tool.
 /// </summary>
 [TestFixture]
+[Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature(PageValidateTool.ToolName)]
 [NonParallelizable]
-public sealed class PageValidateToolE2ETests {
+public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 
 	private const string ToolName = PageValidateTool.ToolName;
 
@@ -44,7 +44,7 @@ public sealed class PageValidateToolE2ETests {
 	[AllureDescription("Verifies that validate-page appears in the MCP server tool manifest.")]
 	public async Task PageValidateTool_Should_Be_Listed_By_MCP_Server() {
 		// Arrange
-		await using ArrangeContext context = await ArrangeAsync();
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		IList<McpClientTool> tools = await context.Session.ListToolsAsync(context.CancellationTokenSource.Token);
@@ -61,7 +61,7 @@ public sealed class PageValidateToolE2ETests {
 	[AllureDescription("Sends a valid Freedom UI page body through the real MCP server and verifies that validation passes.")]
 	public async Task PageValidateTool_Should_Accept_Valid_Page_Body() {
 		// Arrange
-		await using ArrangeContext context = await ArrangeAsync();
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		PageValidateResponse response = await CallAsync(
@@ -83,6 +83,34 @@ public sealed class PageValidateToolE2ETests {
 	}
 
 	[Test]
+	[Description("Accepts an explicit version argument and still validates a well-formed body — proves the version arg flows end-to-end through the real MCP transport into the registry-driven chart-widget validation path.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page accepts an explicit version argument")]
+	[AllureDescription("Sends a valid Freedom UI page body with an explicit version through the real MCP server and verifies the call is accepted (not a protocol error) and validation still passes.")]
+	public async Task PageValidateTool_Should_Accept_Explicit_Version_Argument() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["body"] = ValidPageBody,
+					["version"] = "8.3.3"
+				}
+			},
+			context.CancellationTokenSource.Token);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "an explicit version must be accepted and bound by the tool, not rejected as a protocol-level error");
+		PageValidateResponse response = EntitySchemaStructuredResultParser.Extract<PageValidateResponse>(callResult);
+		response.Valid.Should().BeTrue(
+			because: "a well-formed body validates whether the chart-widget catalog is scoped to the version or falls back to latest");
+	}
+
+	[Test]
 	[Description("Returns valid: false with a VendorPrefix error when a converter key in SCHEMA_CONVERTERS is missing the required dot.")]
 	[AllureTag(ToolName)]
 	[AllureName("validate-page rejects converter key without dot")]
@@ -92,7 +120,7 @@ public sealed class PageValidateToolE2ETests {
 		string bodyWithBadConverter = ValidPageBody.Replace(
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
 			"/**SCHEMA_CONVERTERS*/{ \"UsrBadConverter\": function(value) { return value; } }/**SCHEMA_CONVERTERS*/");
-		await using ArrangeContext context = await ArrangeAsync();
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		PageValidateResponse response = await CallAsync(
@@ -125,7 +153,7 @@ public sealed class PageValidateToolE2ETests {
 			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
 			"/**SCHEMA_HANDLERS*/[{ request: \"BadHandlerRequest\", " +
 			"handler: async (request, next) => { await next?.handle(request); } }]/**SCHEMA_HANDLERS*/");
-		await using ArrangeContext context = await ArrangeAsync();
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		PageValidateResponse response = await CallAsync(
@@ -157,7 +185,7 @@ public sealed class PageValidateToolE2ETests {
 		string bodyWithBadValidator = ValidPageBody.Replace(
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
 			"/**SCHEMA_VALIDATORS*/{ \"BadValidator\": { params: [] } }/**SCHEMA_VALIDATORS*/");
-		await using ArrangeContext context = await ArrangeAsync();
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		PageValidateResponse response = await CallAsync(
@@ -190,7 +218,7 @@ public sealed class PageValidateToolE2ETests {
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
 			"/**SCHEMA_VALIDATORS*/{ \"usr.PhoneFormatValidator\": { params: [{ \"name\": \"message\" }], async: false, " +
 			"validate: function(value, config) { return null; } } }/**SCHEMA_VALIDATORS*/");
-		await using ArrangeContext context = await ArrangeAsync();
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		PageValidateResponse response = await CallAsync(
@@ -223,7 +251,7 @@ public sealed class PageValidateToolE2ETests {
 		string bodyWithObjectConverter = ValidPageBody.Replace(
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
 			"/**SCHEMA_CONVERTERS*/{ \"usr.WrongShape\": { transform: \"upper\" } }/**SCHEMA_CONVERTERS*/");
-		await using ArrangeContext context = await ArrangeAsync();
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		PageValidateResponse response = await CallAsync(
@@ -258,7 +286,7 @@ public sealed class PageValidateToolE2ETests {
 				"{\"operation\":\"insert\",\"name\":\"UsrCompleted\",\"values\":{\"type\":\"crt.Checkbox\"," +
 				"\"label\":\"$Resources.Strings.PDS_UsrCompleted\",\"control\":\"$PDS_UsrCompleted\"}}" +
 				"]/**SCHEMA_VIEW_CONFIG_DIFF*/");
-		await using ArrangeContext context = await ArrangeAsync();
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		PageValidateResponse response = await CallAsync(
@@ -300,9 +328,9 @@ public sealed class PageValidateToolE2ETests {
 			.Replace(
 				"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/",
 				"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[" +
-					"{\"operation\":\"merge\",\"values\":{\"PDS_UsrCompleted\":{\"modelConfig\":{\"path\":\"PDS.UsrCompleted\"}}}}" +
+					"{\"operation\":\"merge\",\"path\":[],\"values\":{\"attributes\":{\"PDS_UsrCompleted\":{\"modelConfig\":{\"path\":\"PDS.UsrCompleted\"}}}}}" +
 					"]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/");
-		await using ArrangeContext context = await ArrangeAsync();
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		PageValidateResponse response = await CallAsync(
@@ -334,7 +362,7 @@ public sealed class PageValidateToolE2ETests {
 				"{\"operation\":\"insert\",\"name\":\"EmailField\",\"values\":{\"type\":\"crt.Input\"," +
 				"\"control\":\"$Email\",\"placeholder\":\"name@firm.com\"}}" +
 				"]/**SCHEMA_VIEW_CONFIG_DIFF*/");
-		await using ArrangeContext context = await ArrangeAsync();
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		PageValidateResponse response = await CallAsync(
@@ -363,7 +391,7 @@ public sealed class PageValidateToolE2ETests {
 	[AllureDescription("Sends the canonical incident body (`await request.$context.X = \"value\"`) through validate-page and verifies that the response carries valid=false with a `JavaScript syntax error at line N, column M` message — proving the pre-flight tool now matches the write-path tools' Acornima-based gate.")]
 	public async Task PageValidateTool_Should_Reject_Body_With_JavaScript_Syntax_Error() {
 		// Arrange
-		await using ArrangeContext context = await ArrangeAsync();
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 		string incidentBody =
 			"define(\"Bad_FormPage\", [], function() {\n" +
 			"    return {\n" +
@@ -402,7 +430,7 @@ public sealed class PageValidateToolE2ETests {
 	[AllureDescription("Sends a body whose `converters` section registers a custom converter under the reserved `crt.*` namespace. The regex validators accept the body (their checks explicitly skip `crt.*` keys); verifying the response carries `converter-crt-prefix-reserved` proves the AST lint pass surfaces through the validate-page MCP wire.")]
 	public async Task PageValidateTool_Should_Reject_Custom_Converter_With_Crt_Prefix() {
 		// Arrange
-		await using ArrangeContext context = await ArrangeAsync();
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 		string crtPrefixConverterBody = ValidPageBody.Replace(
 			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/",
 			"converters: /**SCHEMA_CONVERTERS*/{ \"crt.MyConverter\": function(v) { return v; } }/**SCHEMA_CONVERTERS*/");
@@ -447,7 +475,7 @@ public sealed class PageValidateToolE2ETests {
 	[AllureDescription("Verifies that validate-page returns valid=true for a plain-JSON mobile body with no disallowed keys.")]
 	public async Task PageValidateTool_Should_Return_Valid_For_Well_Formed_Mobile_Body() {
 		// Arrange
-		await using ArrangeContext context = await ArrangeAsync();
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 		string mobileBody = """
 			{
 			  "viewConfigDiff": [],
@@ -473,7 +501,7 @@ public sealed class PageValidateToolE2ETests {
 	[AllureDescription("Verifies that validate-page rejects a mobile body that contains the 'validators' key.")]
 	public async Task PageValidateTool_Should_Reject_Mobile_Body_With_Validators() {
 		// Arrange
-		await using ArrangeContext context = await ArrangeAsync();
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 		string mobileBodyWithValidators = """
 			{
 			  "viewConfigDiff": [],
@@ -491,21 +519,4 @@ public sealed class PageValidateToolE2ETests {
 			because: "the 'validators' key is disallowed in mobile page bodies");
 	}
 
-	private static async Task<ArrangeContext> ArrangeAsync() {
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		return new ArrangeContext(session, cancellationTokenSource);
-	}
-
-	private sealed record ArrangeContext(
-		McpServerSession Session,
-		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
-			CancellationTokenSource.Dispose();
-		}
-	}
 }

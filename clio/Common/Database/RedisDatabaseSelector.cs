@@ -67,6 +67,17 @@ public interface IRedisDatabaseSelector
 /// </summary>
 public class RedisDatabaseSelector : IRedisDatabaseSelector
 {
+	/// <summary>
+	/// Hard upper bound applied to the production Redis connect/command path. With
+	/// <see cref="ConfigurationOptions.AbortOnConnectFail"/> set to <c>true</c> an unreachable Redis
+	/// surfaces a descriptive connection error within this window instead of hanging the caller
+	/// indefinitely. Previously the connect used an unbounded retry plus a 500s sync timeout, which
+	/// froze install/assert flows — and the MCP e2e suite — for minutes against an unreachable Redis.
+	/// </summary>
+	internal static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(12);
+
+	private static readonly int ConnectTimeoutMilliseconds = (int)ConnectTimeout.TotalMilliseconds;
+
 	/// <inheritdoc />
 	public RedisDatabaseSelectionResult FindEmptyLocalDatabase()
 	{
@@ -90,21 +101,7 @@ public class RedisDatabaseSelector : IRedisDatabaseSelector
 	{
 		try
 		{
-			ConfigurationOptions configurationOptions = new()
-			{
-				SyncTimeout = 500000,
-				AbortOnConnectFail = false
-			};
-			configurationOptions.EndPoints.Add(hostname, port);
-			if (!string.IsNullOrWhiteSpace(username))
-			{
-				configurationOptions.User = username;
-			}
-			if (!string.IsNullOrWhiteSpace(password))
-			{
-				configurationOptions.Password = password;
-			}
-			
+			ConfigurationOptions configurationOptions = BuildConfigurationOptions(hostname, port, username, password);
 
 			ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(configurationOptions);
 			IServer server = redis.GetServer(hostname, port);
@@ -150,5 +147,44 @@ public class RedisDatabaseSelector : IRedisDatabaseSelector
 				ErrorMessage = errorMessage
 			};
 		}
+	}
+
+	/// <summary>
+	/// Builds the StackExchange.Redis <see cref="ConfigurationOptions"/> for the production connect
+	/// path with a bounded, fail-fast wiring so an unreachable Redis throws a descriptive
+	/// <see cref="RedisConnectionException"/> within <see cref="ConnectTimeout"/> (caught and turned
+	/// into a structured result) instead of hanging. Exposed internally for unit testing of the
+	/// timeout wiring.
+	/// </summary>
+	/// <param name="hostname">Redis hostname.</param>
+	/// <param name="port">Redis port.</param>
+	/// <param name="username">Optional Redis ACL username.</param>
+	/// <param name="password">Optional Redis password.</param>
+	/// <returns>Bounded, fail-fast configuration options for the target endpoint.</returns>
+	internal static ConfigurationOptions BuildConfigurationOptions(string hostname, int port, string username, string password)
+	{
+		// FAIL-FAST contract: an unreachable Redis must surface as a connection error within a few
+		// seconds, never as a multi-minute hang. Enabling AbortOnConnectFail makes Connect throw on a
+		// failed connect rather than returning a multiplexer that keeps retrying forever in the
+		// background, and the bounded connect, sync and async timeouts plus a single connect retry cap
+		// the wait. When Redis IS reachable these bounds are generous enough not to change behavior.
+		ConfigurationOptions configurationOptions = new()
+		{
+			AbortOnConnectFail = true,
+			ConnectTimeout = ConnectTimeoutMilliseconds,
+			SyncTimeout = ConnectTimeoutMilliseconds,
+			AsyncTimeout = ConnectTimeoutMilliseconds,
+			ConnectRetry = 1
+		};
+		configurationOptions.EndPoints.Add(hostname, port);
+		if (!string.IsNullOrWhiteSpace(username))
+		{
+			configurationOptions.User = username;
+		}
+		if (!string.IsNullOrWhiteSpace(password))
+		{
+			configurationOptions.Password = password;
+		}
+		return configurationOptions;
 	}
 }

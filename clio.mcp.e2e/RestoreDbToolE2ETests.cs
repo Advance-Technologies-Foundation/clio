@@ -15,6 +15,7 @@ namespace Clio.Mcp.E2E;
 [AllureFeature("restore-db")]
 public sealed class RestoreDbToolE2ETests {
 	[Test]
+	[Category("McpE2E.NoEnvironment")]
 	[Description("Starts the real clio MCP server, discovers the restore-db tools, and verifies that all three restore entrypoints are advertised as destructive operations.")]
 	[AllureTag(RestoreDbTool.RestoreDbByEnvironmentToolName)]
 	[AllureTag(RestoreDbTool.RestoreDbByCredentialsToolName)]
@@ -49,6 +50,12 @@ public sealed class RestoreDbToolE2ETests {
 	}
 
 	[Test]
+	// NoEnvironment tier: the missing-backup/missing-server inputs fail validation before any
+	// Kubernetes/DB call, so the tool returns a structured failure with a log-file artifact env-free.
+	// It was previously ignored as "requires reachable Kubernetes/DB infrastructure", but the real
+	// blocker was the no-Kubernetes fallback IKubernetes client throwing from Dispose during
+	// per-request DI-scope teardown (opaque InternalError) — fixed under ENG-91830.
+	[Category("McpE2E.NoEnvironment")]
 	[Description("Starts the real clio MCP server, invokes restore-db-to-local-server with invalid inputs, and verifies that the response still includes a database-operation log artifact path.")]
 	[AllureTag(RestoreDbTool.RestoreDbToLocalServerToolName)]
 	[AllureName("Restore-db failures still surface log-file-path")]

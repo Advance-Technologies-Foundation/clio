@@ -160,29 +160,49 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		OAuthConfigAddClient = 48,
 
 		/// <summary>
+		///     Builds a business process from a declarative descriptor via the ProcessDesignService package.
+		/// </summary>
+		BuildProcess = 49,
+
+		/// <summary>
+		///     Lists the available user-facing user tasks (designer palette) via the ProcessDesignService package.
+		/// </summary>
+		ListUserTasks = 50,
+
+		/// <summary>
+		///     Reads an existing process as a structured graph via the ProcessDesignService package.
+		/// </summary>
+		DescribeProcess = 51,
+
+		/// <summary>
+		///     Edits an existing business process (add/remove elements, flows, …) via the ProcessDesignService package.
+		/// </summary>
+		ModifyProcess = 52,
+
+		/// <summary>
 		///     Lists the custom themes available on the environment via the native ThemeService.
 		/// </summary>
-		GetAvailableThemes = 49,
+		GetAvailableThemes = 53,
 
 		/// <summary>
 		///     Refreshes the Creatio theme catalog cache via the native ThemeService.
 		/// </summary>
-		ClearThemesCache = 50,
+		ClearThemesCache = 54,
 
 		/// <summary>
 		///     Creates a custom theme on the environment via the native ThemeService.
 		/// </summary>
-		CreateTheme = 51,
+		CreateTheme = 55,
 
 		/// <summary>
 		///     Updates an existing custom theme via the native ThemeService.
 		/// </summary>
-		UpdateTheme = 52,
+		UpdateTheme = 56,
 
 		/// <summary>
 		///     Deletes a custom theme via the native ThemeService.
 		/// </summary>
-		DeleteTheme = 53
+		DeleteTheme = 57
 
 	}
 
@@ -244,6 +264,10 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.OAuthConfigGetIdentityServerClientSecret, "/rest/OAuthConfigService/GetIdentityServerClientSecret"},
 		{KnownRoute.OAuthConfigCreateTechnicalUser, "/rest/OAuthConfigService/CreateTechnicalUser"},
 		{KnownRoute.OAuthConfigAddClient, "/rest/OAuthConfigService/AddClient"},
+		{KnownRoute.BuildProcess, "/rest/ProcessDesignService/BuildProcess"},
+		{KnownRoute.ListUserTasks, "/rest/ProcessDesignService/ListUserTasks"},
+		{KnownRoute.DescribeProcess, "/rest/ProcessDesignService/DescribeProcess"},
+		{KnownRoute.ModifyProcess, "/rest/ProcessDesignService/ModifyProcess"},
 		{KnownRoute.GetAvailableThemes, "ServiceModel/ThemeService.svc/GetAvailableThemes"},
 		{KnownRoute.ClearThemesCache, "ServiceModel/ThemeService.svc/ClearThemesCache"},
 		{KnownRoute.CreateTheme, "ServiceModel/ThemeService.svc/CreateTheme"},

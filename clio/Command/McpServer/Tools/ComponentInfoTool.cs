@@ -39,13 +39,6 @@ public sealed class ComponentInfoTool(
 	internal const string DocumentationSeparator = ComponentDocumentationLoader.DocumentationSeparator;
 
 	/// <summary>
-	/// Upper bound on the "did you mean" entries returned when a requested <c>component-type</c>
-	/// is unknown. Keeps the not-found envelope a small, actionable shortlist instead of echoing
-	/// the full ~199-item catalog as "suggestions".
-	/// </summary>
-	private const int MaxNotFoundSuggestions = 8;
-
-	/// <summary>
 	/// Canonical contract text returned for every data-source-bound field component type
 	/// (members of <see cref="SchemaValidationService.StandardFieldComponentTypes"/>).
 	/// Surfaced as <c>dataSourceBindingContract</c> in the tool response so agents see the
@@ -82,9 +75,9 @@ public sealed class ComponentInfoTool(
 		"PROACTIVELY list the catalog (omit component-type, or pass 'list') at the start of any page work to discover the full component set " +
 		"— including non-obvious components such as crt.Gallery — instead of authoring types from memory or waiting for the user to ask you to search. " +
 		"Detail responses include selection-metadata when the producer publishes it: whenToUse / whenNotToUse (one-line 'pick this when…' / 'do NOT pick this when…' guidance) plus synonyms / useCases — " +
-		"use whenToUse / whenNotToUse to choose between visually similar components (e.g. crt.Gallery vs crt.DataGrid vs crt.List) instead of guessing. " +
+		"use whenToUse / whenNotToUse to choose between visually similar components instead of guessing. " +
 		"The list response also returns 'composites' — pre-built combinations of several components that have NO componentType of their own " +
-		"(e.g. 'Expanded list', 'Attachments', 'Next steps'). When a user wants one of these, do NOT hand-build it from raw types: pass composite='<caption>' " +
+		"— read the returned 'composites' array for the available captions. When a user wants one of these, do NOT hand-build it from raw types: pass composite='<caption>' " +
 		"to get its assembly recipe. A component flagged compositeOnly:true has no standalone toolbar presence — never insert it directly; build the matching composite instead. " +
 		"IMPORTANT: pass environment-name to scope the catalog to the target environment's actual platform version — " +
 		"otherwise results come from the 'latest' catalog, a SUPERSET of every GA version, and may list components " +
@@ -215,27 +208,13 @@ public sealed class ComponentInfoTool(
 		}
 
 		string requestedType = args.ComponentType.Trim();
-		IReadOnlyList<ComponentRegistryEntry> suggestions =
-			ComponentInfoGrouping.SuggestForUnknown(state.Entries, requestedType, args.Search, MaxNotFoundSuggestions);
-		// Carry composites on the not-found response too, so both mode:"list" shapes
-		// (normal list and component-not-found suggestions) surface composites uniformly.
-		IReadOnlyList<CompositeDefinition> notFoundComposites =
-			ComponentInfoGrouping.FilterComposites(state.Composites, args.Search);
-		IReadOnlyList<CompositeSummary> notFoundCompositeItems =
-			ComponentInfoGrouping.CreateCompositeItems(notFoundComposites);
-		return new ComponentInfoResponse {
-			Success = false,
-			Mode = "list",
-			Error = $"Component type '{requestedType}' was not found. "
-				+ $"Showing the {suggestions.Count} closest known type(s) — pass one of these as 'component-type', "
-				+ "or omit 'component-type' to list the full catalog.",
-			Count = suggestions.Count,
-			Items = ComponentInfoGrouping.CreateItems(suggestions),
-			Composites = notFoundCompositeItems.Count == 0 ? null : notFoundCompositeItems,
-			ResolvedTargetVersion = state.ResolvedVersion,
-			ResolvedFrom = resolvedFrom,
-			ResolvedFromReason = resolvedFromReason
-		};
+		// Name/description-first resolution: when the exact type id misses, the requested label may
+		// be a composite ("Expanded list") the agent reached for as if it were a component. The shared
+		// factory matches components by name/description first, then routes to composite="<caption>"
+		// when the label names a composite. Shared with the CLI verb so both resolve identically.
+		return ComponentInfoResponseFactory.CreateComponentNotFoundResponse(
+			state.Entries, state.Composites, requestedType, args.Search,
+			state.ResolvedVersion, resolvedFrom, resolvedFromReason);
 	}
 
 	/// <summary>

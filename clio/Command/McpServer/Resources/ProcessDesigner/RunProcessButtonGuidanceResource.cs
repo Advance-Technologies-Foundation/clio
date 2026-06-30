@@ -2,13 +2,14 @@ using System.ComponentModel;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
-namespace Clio.Command.McpServer.Resources;
+namespace Clio.Command.McpServer.Resources.ProcessDesigner;
 
 /// <summary>
 /// Canonical AI-facing guidance for adding a Freedom UI button that runs a business process
 /// (<c>crt.RunBusinessProcessRequest</c>) into a page schema via <c>update-page</c>.
 /// </summary>
 [McpServerResourceType]
+[FeatureToggle("process-designer")]
 public sealed class RunProcessButtonGuidanceResource {
 	private const string DocsScheme = "docs";
 	private const string ResourcePath = "mcp/guides/run-process-button";
@@ -62,30 +63,11 @@ public sealed class RunProcessButtonGuidanceResource {
 			       - The `clicked` config is `{ request: 'crt.RunBusinessProcessRequest', params: {...} }`.
 			       - Caption must be a localizable binding — pass the key via the `resources` parameter.
 
-			       define("<PageName>", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ {
-			           return {
-			               viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[
-			                   {
-			                       "operation": "insert",
-			                       "name": "RunBusinessProcessButton",
-			                       "values": {
-			                           "type": "crt.Button",
-			                           "caption": "#ResourceString(RunBusinessProcessButton_caption)#",
-			                           "color": "default",
-			                           "clicked": { /* one of the params blocks below */ }
-			                       },
-			                       "parentName": "ActionButtonsContainer", /* form page default; replace with the real container from bundle.containers — see the parentName rule above */
-			                       "propertyName": "items",
-			                       "index": 0
-			                   }
-			               ]/**SCHEMA_VIEW_CONFIG_DIFF*/,
-			               viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/,
-			               modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/,
-			               handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/,
-			               converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/,
-			               validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/
-			           };
-			       });
+			       Build the button from `get-component-info crt.Button`; wire the run-process request into its
+			       `clicked` binding using one of the variants below. Insert it with `update-page` (mode `append`)
+			       into the chosen `parentName`,
+			       leaving `handlers: []` — no custom handler. See `page-modification` for the body envelope and
+			       the insert op (`operation` / `name` / `parentName` / `propertyName` / `index`).
 
 			       Behavior flags (defaults to emit, change only when the user asks)
 			       By default include both, set to true:

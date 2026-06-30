@@ -15,6 +15,7 @@ namespace Clio.Mcp.E2E;
 /// End-to-end tests for the show-webApp-list MCP tool.
 /// </summary>
 [TestFixture]
+[Category("McpE2E.Sandbox")]
 [AllureNUnit]
 [AllureFeature("list-environments")]
 public sealed class ShowWebAppListToolE2ETests

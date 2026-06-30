@@ -22,6 +22,7 @@ namespace Clio.Mcp.E2E;
 public sealed class GenerateProcessModelToolE2ETests {
 	private const string ToolName = GenerateProcessModelTool.GenerateProcessModelToolName;
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes generate-process-model for a configured sandbox process, and verifies that an explicit destination file path is respected.")]
 	[AllureTag(ToolName)]
@@ -59,6 +60,7 @@ public sealed class GenerateProcessModelToolE2ETests {
 			because: "the generated file should define a class named after the requested process code");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes generate-process-model with an invalid environment name, and verifies that a readable structured failure is returned without creating a file.")]
 	[AllureTag(ToolName)]

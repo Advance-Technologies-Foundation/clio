@@ -167,6 +167,19 @@ from "clio itself failed, retrying the same call won't help" (`-1`). Source of t
 `EnvironmentResolutionException` so it is never conflated with an unexpected `InvalidOperationException`
 from the DI container.
 
+#### Version gate (exit 78)
+
+A command declaring `[RequiresCreatioVersion]` adds one more **expected, caller-actionable** outcome
+on top of the `0`/`1`/`-1` contract: when the target environment runs an older core version than the
+command's floor — or its version is undeterminable (the gate fails closed) — the `BaseTool` path
+returns the distinct `exit-code` `78` (`Program.CreatioVersionRequirementExitCode`) with the stable
+`CreatioVersionRequirementException.ErrorCode` (`version-too-old` / `version-undeterminable`) embedded
+in the message. This refusal path is covered at the **unit** level (the `BaseTool` tests). An
+**end-to-end** refusal test is a deliberate, documented harness gap: it is deferred until a real
+shipping command actually carries `[RequiresCreatioVersion]`, at which point e2e coverage, the docs,
+and the MCP tool contract for that command become mandatory. This mirrors the package-gate posture —
+the gate logic is unit-proven now, and e2e lands with the first command that exercises it.
+
 ### Workspace path rules
 
 Workspace-oriented tools validate local absolute paths and reject network paths.
@@ -377,6 +390,14 @@ This part is small but important because many other tools depend on it.
   Returns `{ success, culture, resolvedFrom, reason }`. Call once per session before creating
   entities and reuse it for all generated names/labels/captions; on `success:false` ask the user
   which language to use instead of silently defaulting.
+- `describe-environment`
+  Describe a Creatio environment as ONE source-independent report (read-only). The field set is the
+  same with or without cliogate: `coreVersion` plus locale/user/workspace/maintainer metadata is
+  ALWAYS reported (`ApplicationInfoService`, session only); `dbEngineType`, `frameworkKind` and
+  `frameworkDescription` are added WITHOUT cliogate via the admin-gated
+  `GetSystemEnvironmentInfo` (needs `CanManageSolution`); `productName` and `licenseInfo` are added
+  only when cliogate `>= 2.0.0.32` is installed. Best-effort: an unavailable source is skipped and
+  the call still succeeds. Read `get-guidance name=describe-environment` for the full field catalogue.
 
 What an external AI can practically do here:
 
@@ -384,6 +405,7 @@ What an external AI can practically do here:
 - inspect what the local machine already knows about environments
 - inspect package inventory before choosing install, page, or schema operations
 - detect the profile language to apply to created entity names/labels/captions
+- read a target environment's version, database engine, framework, product and license
 
 Important note:
 
@@ -474,6 +496,24 @@ Important behavior and safety:
 - Forms-auth environments only (login + password). OAuth-only environments return `success=false` with an error — there is no OAuth token-to-cookie exchange.
 - A Safe-flagged environment in the non-interactive MCP context fails closed with a structured error instead of hanging the stdio server.
 - `open-web-app --authenticated` (Mode A — launches a local desktop browser already signed in via CDP cookie injection) is intentionally **CLI-only and not an MCP tool**: it opens a GUI window on the operator's machine, which is meaningless for a headless/remote MCP server. The agent-facing surface for an authenticated session is `get-browser-session` (returns a `storageState` path); Mode A is a human convenience built on the same session machinery.
+
+### 11. Business Process Modeling
+
+These tools help an external AI design Creatio business processes (BPMN). clio makes no LLM call —
+an MCP prompt/guidance teaches the agent the intent→BPMN translation; deterministic tools execute.
+
+- `validate-process-graph` (`ReadOnly=true`, `Destructive=false`, `Idempotent=true`, `OpenWorld=false`, **environment-sensitive**) — validates a planned process graph (`nodes` by `data-id`, `edges` by `flow-kind` = sequence|conditional|default) against the BPMN connection rules R1–R17. The graph is validated **in-memory**, but the tool first resolves the target environment (named by `environment-name`) and queries its installed packages to require the `clioprocessbuilder` package. Returns structured findings (`severity` error/warning, `rule-id`, `message`, `node-name`/`source`/`target`). The agent calls this before driving the designer; the live designer's `.djs-validate-outline` remains the final authority.
+- `describe-business-process` (alias `describe-process`) (`ReadOnly=true`, `Destructive=false`, `Idempotent=true`, `OpenWorld=false`, **environment-sensitive**) — reads an existing process and returns a STRUCTURED graph (`elements` `[{name,uid,caption,type,buildType,userTaskName,parameters}]`, `flows` `[{source,target,kind}]`, process `parameters`) instead of raw escaped metadata, so the agent can explain what a process does ("read & explain", the inverse of generation). Identify the process by exactly one of `process-name` / `process-uid` / `process-caption` (+ `environment-name`, optional `culture`). Reuses the existing `ProcessSchemaRequest` parsing. v1 does not decode filter/mapping expressions.
+
+What an external AI can practically do here:
+
+- pre-check a planned process graph for invalid connections (start with an incoming flow, default without a sibling conditional, orphan/unreachable nodes, etc.) before building anything
+- pair with the `process-modeling` guidance (`get-guidance name=process-modeling`) for the element catalog + rules
+
+Companion surfaces (see the `process-modeling` guidance):
+
+- `get-guidance name=process-modeling` — the BPMN element catalog, connection rules, and the validate-then-drive recipe.
+- `generate-process-model` — reads an existing process into a C# model (existing tool).
 
 ## Prompt Layer: What The AI Gets Beyond Raw Tools
 
