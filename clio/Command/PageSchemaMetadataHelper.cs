@@ -167,6 +167,16 @@ namespace Clio.Command {
 		/// <c>create-related-page-addon</c> to turn page names into the <c>PageSchemaUId</c> values stored
 		/// in the RelatedPage add-on metadata.
 		/// </summary>
+		/// <remarks>
+		/// Name-to-UId schema resolution intentionally uses the DataService <c>SelectQuery</c> over
+		/// <c>SysSchema</c> rather than a ClioGate endpoint. This is the established, repo-consistent pattern
+		/// for these read-only lookups — the same helper backs <c>create-page-business-rules</c>
+		/// (<c>PageBusinessRuleSchemaProvider</c>) and <c>create-page</c>, and none of them introduce a
+		/// ClioGate dependency. ClioGate is reserved for privileged write/elevated operations. The trade-off:
+		/// the caller must have DataService read access to <c>SysSchema</c> (a full schema-management user);
+		/// a restricted solution-management user without that access would get a SecurityException here. This
+		/// is a pre-existing, repo-wide limitation, accepted for consistency, not introduced by this command.
+		/// </remarks>
 		internal static (string uId, string error) QueryPageSchemaUId(
 			IApplicationClient applicationClient,
 			IServiceUrlBuilder serviceUrlBuilder,
