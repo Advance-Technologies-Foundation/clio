@@ -28,6 +28,14 @@ namespace Clio.Command {
 		private const string SysSchemaName = "SysSchema";
 		private const string ManagerNameColumnPath = "ManagerName";
 		private const string ClientUnitSchemaManagerName = "ClientUnitSchemaManager";
+		private const string SysAdminUnitName = "SysAdminUnit";
+		// SysAdminUnit holds both roles and user accounts; the type discriminator column tells them apart.
+		// A USER row has SysAdminUnitTypeValue 4; roles use other values (0 organizational, 6 functional).
+		private const string SysAdminUnitTypeColumnPath = "SysAdminUnitTypeValue";
+		private const int SysAdminUnitTypeUser = 4;
+		private const int IntegerDataValueType = 4;
+		private const int ComparisonTypeEqual = 3;
+		private const int ComparisonTypeNotEqual = 4;
 
 		private static (JArray rows, bool success) ExecuteSelectQuery(
 			IApplicationClient applicationClient,
@@ -44,13 +52,16 @@ namespace Clio.Command {
 			}
 		}
 
-		private static JObject BuildEqFilter(string columnPath, int dataValueType, JToken value) =>
+		private static JObject BuildComparisonFilter(string columnPath, int comparisonType, int dataValueType, JToken value) =>
 			new JObject {
-				[FilterTypeKey] = 1, ["comparisonType"] = 3, [IsEnabledKey] = true,
+				[FilterTypeKey] = 1, ["comparisonType"] = comparisonType, [IsEnabledKey] = true,
 				["leftExpression"] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = columnPath },
 				["rightExpression"] = new JObject { [ExpressionTypeKey] = 2,
 					["parameter"] = new JObject { ["dataValueType"] = dataValueType, ["value"] = value } }
 			};
+
+		private static JObject BuildEqFilter(string columnPath, int dataValueType, JToken value) =>
+			BuildComparisonFilter(columnPath, ComparisonTypeEqual, dataValueType, value);
 
 		private static JObject BuildFilterGroup(params (string key, JObject filter)[] filters) {
 			var items = new JObject();
@@ -198,25 +209,37 @@ namespace Clio.Command {
 		/// audience by name (e.g. <c>All employees</c> or the portal role <c>All external users</c>) instead
 		/// of requiring the caller to pass a role GUID.
 		/// </summary>
+		/// <remarks>
+		/// The lookup is constrained two ways so it cannot resolve to the wrong unit: it excludes USER rows
+		/// (<c>SysAdminUnitTypeValue == 4</c>) so a role name can never bind to a user account that happens to
+		/// share the name, and it fetches two rows so a name matching more than one role is reported as
+		/// ambiguous rather than silently resolving to whichever role the platform returns first.
+		/// </remarks>
 		internal static (string uId, string error) QueryRoleUId(
 			IApplicationClient applicationClient,
 			IServiceUrlBuilder serviceUrlBuilder,
 			string roleName) {
 			var query = new JObject {
-				[RootSchemaNameKey] = "SysAdminUnit", [OperationTypeKey] = 0,
-				[FiltersKey] = BuildFilterGroup(("byName", BuildEqFilter("Name", 1, roleName))),
+				[RootSchemaNameKey] = SysAdminUnitName, [OperationTypeKey] = 0,
+				[FiltersKey] = BuildFilterGroup(
+					("byName", BuildEqFilter("Name", 1, roleName)),
+					("notUser", BuildComparisonFilter(
+						SysAdminUnitTypeColumnPath, ComparisonTypeNotEqual, IntegerDataValueType, SysAdminUnitTypeUser))),
 				[ColumnsKey] = new JObject {
 					[ItemsKey] = new JObject {
 						["Id"] = new JObject { [ExpressionKey] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = "Id" } }
 					}
 				},
-				[RowCountKey] = 1
+				[RowCountKey] = 2
 			};
 			var (rows, success) = ExecuteSelectQuery(applicationClient, serviceUrlBuilder, query);
 			if (!success)
 				return (null, "Failed to query SysAdminUnit");
 			if (rows.Count == 0)
 				return (null, $"Role '{roleName}' not found.");
+			if (rows.Count > 1)
+				return (null,
+					$"Role name '{roleName}' is ambiguous (it matches more than one role); pass the role UId explicitly via role.");
 			string id = rows[0]["Id"]?.ToString();
 			if (string.IsNullOrWhiteSpace(id))
 				return (null, $"Role '{roleName}' has no Id in the SysAdminUnit response.");

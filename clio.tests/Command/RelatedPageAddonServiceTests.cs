@@ -2,6 +2,7 @@ namespace Clio.Tests.Command;
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json.Nodes;
 using Clio.Command;
 using Clio.Command.AddonSchemaDesigner;
@@ -79,7 +80,7 @@ public sealed class RelatedPageAddonServiceTests {
 
 	[Test]
 	[Description("Saves the RelatedPage add-on for a default+add page set and rebuilds static content so the change is visible.")]
-	public void Create_Saves_RelatedPage_Addon_And_Rebuilds_Configuration() {
+	public void Create_ShouldSaveAddonAndRebuildConfiguration_WhenDefaultAndAddPagesProvided() {
 		// Arrange
 		StubSelectQueue(Rows(PackageUId), Rows(PageAUId), Rows(PageBUId));
 
@@ -104,7 +105,7 @@ public sealed class RelatedPageAddonServiceTests {
 
 	[Test]
 	[Description("Requests the RelatedPage add-on for the resolved object with the EntitySchemaManager target and full hierarchy.")]
-	public void Create_Requests_The_RelatedPage_Addon_For_The_Object() {
+	public void Create_ShouldRequestRelatedPageAddonForResolvedObject_WhenInvoked() {
 		// Arrange
 		StubSelectQueue(Rows(PackageUId), Rows(PageAUId));
 
@@ -123,7 +124,7 @@ public sealed class RelatedPageAddonServiceTests {
 
 	[Test]
 	[Description("Writes the default and add page entries (with the correct IsDefault and Actions.Add flags) into the saved metadata.")]
-	public void Create_Writes_Default_And_Add_Pages_Into_Metadata() {
+	public void Create_ShouldWriteDefaultAndAddPageFlagsIntoMetadata_WhenBothProvided() {
 		// Arrange
 		StubSelectQueue(Rows(PackageUId), Rows(PageAUId), Rows(PageBUId));
 
@@ -154,7 +155,7 @@ public sealed class RelatedPageAddonServiceTests {
 
 	[Test]
 	[Description("Stores an explicit role UId and the top-level type-column UId into the saved metadata.")]
-	public void Create_Stores_Role_And_TypeColumn_When_Provided() {
+	public void Create_ShouldStoreRoleAndTypeColumnIntoMetadata_WhenProvided() {
 		// Arrange
 		const string roleUId = "a29a3ba5-4b0d-de11-9a51-005056c00008";
 		const string typeColumnUId = "dd000000-0000-0000-0000-000000000003";
@@ -175,7 +176,7 @@ public sealed class RelatedPageAddonServiceTests {
 
 	[Test]
 	[Description("Fails before touching the add-on when the package cannot be resolved.")]
-	public void Create_Throws_When_Package_Not_Found_Without_Touching_The_Addon() {
+	public void Create_ShouldThrowWithoutTouchingAddon_WhenPackageNotFound() {
 		// Arrange
 		StubSelectQueue("""{"success": true, "rows": []}""");
 
@@ -191,7 +192,7 @@ public sealed class RelatedPageAddonServiceTests {
 
 	[Test]
 	[Description("Fails before touching the add-on when the entity schema designer reports no such object.")]
-	public void Create_Throws_When_Object_Not_Found_Without_Touching_The_Addon() {
+	public void Create_ShouldThrowWithoutTouchingAddon_WhenObjectNotFound() {
 		// Arrange — package resolves, then the entity schema designer returns no schema.
 		StubSelectQueue(Rows(PackageUId));
 		StubEntitySchema(null);
@@ -208,7 +209,7 @@ public sealed class RelatedPageAddonServiceTests {
 
 	[Test]
 	[Description("Fails without saving when a page schema name cannot be resolved.")]
-	public void Create_Throws_When_Page_Not_Found_Without_Saving() {
+	public void Create_ShouldThrowWithoutSaving_WhenPageNotFound() {
 		// Arrange — package + object resolve, then the page lookup returns no rows.
 		StubSelectQueue(Rows(PackageUId), """{"success": true, "rows": []}""");
 
@@ -225,7 +226,7 @@ public sealed class RelatedPageAddonServiceTests {
 
 	[Test]
 	[Description("Rejects an empty pages list before any remote call.")]
-	public void Create_Throws_When_No_Pages_Provided() {
+	public void Create_ShouldThrow_WhenNoPagesProvided() {
 		// Arrange / Act
 		Action act = () => _service.Create(Request());
 
@@ -237,7 +238,7 @@ public sealed class RelatedPageAddonServiceTests {
 
 	[Test]
 	[Description("Rejects an add-only configuration (no is-default page) before any remote call, because every binding needs a base default record page.")]
-	public void Create_Throws_When_No_Base_Default_Page_Is_Provided() {
+	public void Create_ShouldThrow_WhenNoBaseDefaultPageProvided() {
 		// Arrange / Act
 		Action act = () => _service.Create(Request(
 			new RelatedPageSpec("UsrDeliveryItemAddPage", IsAdd: true)));
@@ -252,7 +253,7 @@ public sealed class RelatedPageAddonServiceTests {
 
 	[Test]
 	[Description("Rejects a typed-only configuration (every is-default page carries a type-column-value) so record types without a dedicated set still have an untyped fallback page.")]
-	public void Create_Throws_When_Only_Typed_Default_Pages_Are_Provided() {
+	public void Create_ShouldThrow_WhenOnlyTypedDefaultPagesProvided() {
 		// Arrange
 		const string typeColumnUId = "af280321-e749-41dd-98e5-383906747e29";
 		const string typeValue = "1b0bc159-150a-e111-a31b-00155d04c01d";
@@ -271,7 +272,7 @@ public sealed class RelatedPageAddonServiceTests {
 
 	[Test]
 	[Description("Rejects a per-page type-column-value when no top-level type-column-uid is provided, since a typed page with no type column can never be matched to a record type.")]
-	public void Create_Throws_When_Type_Column_Value_Has_No_Type_Column_Uid() {
+	public void Create_ShouldThrow_WhenTypeColumnValueHasNoTypeColumnUid() {
 		// Arrange
 		const string typeValue = "1b0bc159-150a-e111-a31b-00155d04c01d";
 
@@ -290,7 +291,7 @@ public sealed class RelatedPageAddonServiceTests {
 
 	[Test]
 	[Description("Resolves a non-system (custom) role name to its SysAdminUnit Id via the by-name query and writes it onto the page entry.")]
-	public void Create_Resolves_Custom_Role_Name_Into_The_Page_Metadata_Role() {
+	public void Create_ShouldResolveCustomRoleNameIntoPageRole_WhenRoleNameProvided() {
 		// Arrange — a non-system role name is resolved via the SysAdminUnit by-name query.
 		// Resolution order: package, role (by name), then the page.
 		const string customRoleUId = "11112222-3333-4444-5555-666677778888";
@@ -309,7 +310,7 @@ public sealed class RelatedPageAddonServiceTests {
 
 	[Test]
 	[Description("Maps a standard platform role name to its fixed seeded Id without issuing a SysAdminUnit lookup.")]
-	public void Create_Maps_Known_System_Role_Name_To_Its_Platform_Id_Without_Querying() {
+	public void Create_ShouldMapKnownSystemRoleNameToPlatformId_WithoutQuerying() {
 		// Arrange — "All external users" is a standard platform role: it resolves to its fixed seeded Id
 		// without a SysAdminUnit lookup, so the only SelectQueries are package and page resolution.
 		const string portalRoleUId = "720b771c-e7a7-4f31-9cfb-52cd21c3739f";
@@ -328,7 +329,7 @@ public sealed class RelatedPageAddonServiceTests {
 
 	[Test]
 	[Description("Flows a replacing/derived object's parent schema UId from the entity designer into the add-on request's TargetParentSchemaUId.")]
-	public void Create_Passes_Parent_Schema_UId_From_The_Entity_Designer() {
+	public void Create_ShouldPassParentSchemaUidFromEntityDesigner_WhenObjectIsDerived() {
 		// Arrange — a replacing/derived object reports the parent schema it extends.
 		const string parentUId = "99990000-0000-0000-0000-00000000000f";
 		StubEntitySchema(new EntityDesignSchemaDto {
@@ -349,7 +350,7 @@ public sealed class RelatedPageAddonServiceTests {
 
 	[Test]
 	[Description("Rejects an explicit role that is not a GUID without saving, rather than persisting a malformed audience.")]
-	public void Create_Rejects_An_Explicit_Role_That_Is_Not_A_Guid_Without_Saving() {
+	public void Create_ShouldRejectWithoutSaving_WhenExplicitRoleIsNotAGuid() {
 		// Arrange
 		StubSelectQueue(Rows(PackageUId), Rows(PageAUId));
 
@@ -365,7 +366,7 @@ public sealed class RelatedPageAddonServiceTests {
 
 	[Test]
 	[Description("Writes the top-level type-column UId and an untyped default plus a typed per-record-type page entry into the metadata.")]
-	public void Create_Writes_TypeColumn_And_Per_Type_Page_Into_Metadata() {
+	public void Create_ShouldWriteTypeColumnAndPerTypePageIntoMetadata_WhenTypedPageProvided() {
 		// Arrange — no role names, so the order is package, then one query per page.
 		const string typeColumnUId = "af280321-e749-41dd-98e5-383906747e29";
 		const string typeValue = "1b0bc159-150a-e111-a31b-00155d04c01d";
@@ -390,7 +391,7 @@ public sealed class RelatedPageAddonServiceTests {
 
 	[Test]
 	[Description("Fails without saving when a custom role name cannot be resolved to a SysAdminUnit.")]
-	public void Create_Throws_When_Role_Name_Not_Found_Without_Saving() {
+	public void Create_ShouldThrowWithoutSaving_WhenRoleNameNotFound() {
 		// Arrange
 		StubSelectQueue(Rows(PackageUId), """{"success": true, "rows": []}""");
 
@@ -409,7 +410,7 @@ public sealed class RelatedPageAddonServiceTests {
 
 	[Test]
 	[Description("Resolves a page-schema name only once even when several entries name the same page (the same page used as both default and add).")]
-	public void Create_Resolves_A_Repeated_Page_Name_Only_Once() {
+	public void Create_ShouldResolveRepeatedPageNameOnlyOnce_WhenSamePageUsedTwice() {
 		// Arrange — one package query and ONE page query must satisfy two entries that share a page name.
 		// If the page were re-queried per entry the queue would be exhausted and Dequeue would throw.
 		StubSelectQueue(Rows(PackageUId), Rows(PageAUId));
@@ -431,7 +432,7 @@ public sealed class RelatedPageAddonServiceTests {
 
 	[Test]
 	[Description("Flows the is-ssp-default flag from the spec into the saved page metadata (true on a marked entry, false by default).")]
-	public void Create_Writes_IsSspDefault_Flag_Into_Metadata() {
+	public void Create_ShouldWriteIsSspDefaultFlagIntoMetadata_WhenMarked() {
 		// Arrange
 		StubSelectQueue(Rows(PackageUId), Rows(PageAUId), Rows(PageBUId));
 
@@ -450,7 +451,7 @@ public sealed class RelatedPageAddonServiceTests {
 
 	[Test]
 	[Description("Replaces the object's existing related-page configuration wholesale rather than merging into the pages fetched by GetSchema.")]
-	public void Create_Replaces_The_Existing_Configuration_Rather_Than_Merging() {
+	public void Create_ShouldReplaceExistingConfiguration_RatherThanMerging() {
 		// Arrange — GetSchema returns a pre-existing config (a stale page and a stale type column).
 		_addonSchemaDesignerClient.GetSchema(Arg.Any<AddonGetRequestDto>())
 			.Returns(new AddonSchemaDto {
@@ -474,7 +475,7 @@ public sealed class RelatedPageAddonServiceTests {
 
 	[Test]
 	[Description("Rejects a non-GUID type-column-uid before any remote call, since the platform can never match a malformed type column.")]
-	public void Create_Throws_When_Type_Column_Uid_Is_Not_A_Guid() {
+	public void Create_ShouldThrow_WhenTypeColumnUidIsNotAGuid() {
 		// Arrange / Act — a valid base default is present, but the type-column-uid is not a GUID.
 		Action act = () => _service.Create(new RelatedPageAddonRequest("Custom", "Case", new[] {
 			new RelatedPageSpec("CaseFormPage", IsDefault: true)
@@ -489,7 +490,7 @@ public sealed class RelatedPageAddonServiceTests {
 
 	[Test]
 	[Description("Rejects a resolved package UId that is not a GUID before resolving the object or touching the add-on.")]
-	public void Create_Throws_When_Resolved_Package_UId_Is_Not_A_Guid() {
+	public void Create_ShouldThrow_WhenResolvedPackageUidIsNotAGuid() {
 		// Arrange — the package query resolves a row whose UId is present but not a GUID.
 		StubSelectQueue(Rows("not-a-guid"));
 
@@ -505,7 +506,7 @@ public sealed class RelatedPageAddonServiceTests {
 
 	[Test]
 	[Description("Rejects a resolved page UId that is present but not a GUID, without saving the add-on.")]
-	public void Create_Throws_When_Resolved_Page_UId_Is_Not_A_Guid() {
+	public void Create_ShouldThrow_WhenResolvedPageUidIsNotAGuid() {
 		// Arrange — package resolves, then the page query resolves a row whose UId is not a GUID.
 		StubSelectQueue(Rows(PackageUId), Rows("not-a-guid"));
 
@@ -522,7 +523,7 @@ public sealed class RelatedPageAddonServiceTests {
 
 	[Test]
 	[Description("Rejects a page entry that sets both an explicit role UId and a role name, so the caller's audience is never silently dropped.")]
-	public void Create_Throws_When_A_Page_Sets_Both_Role_And_Role_Name() {
+	public void Create_ShouldThrow_WhenPageSetsBothRoleAndRoleName() {
 		// Arrange / Act
 		Action act = () => _service.Create(Request(
 			new RelatedPageSpec("UsrDeliveryItemFormPage", IsDefault: true,
@@ -586,5 +587,21 @@ public sealed class RelatedPageAddonServiceTests {
 			because: "the standard portal role UId reverse-resolves to its name");
 		result.Pages[1].IsAdd.Should().BeFalse(
 			because: "the portal entry has Actions.Add false");
+	}
+
+	[Test]
+	[Description("Saves metadata whose only top-level keys are Pages and TypeColumnUId, pinning the verified RelatedPage add-on contract so a full MetaData replace can never silently introduce or drop a sibling field.")]
+	public void Create_ShouldWriteOnlyPagesAndTypeColumnUidKeys_PinningTheAddonContract() {
+		// Arrange
+		StubSelectQueue(Rows(PackageUId), Rows(PageAUId));
+
+		// Act
+		_service.Create(Request(new RelatedPageSpec("UsrDeliveryItemFormPage", IsDefault: true)));
+
+		// Assert
+		System.Text.Json.Nodes.JsonObject metadata = JsonNode.Parse(_savedSchema.MetaData)!.AsObject();
+		metadata.Select(pair => pair.Key).Should().BeEquivalentTo(new[] { "Pages", "TypeColumnUId" },
+			because: "the RelatedPage add-on metadata contract is exactly {Pages, TypeColumnUId}; a full replace must "
+				+ "not introduce or drop sibling fields");
 	}
 }

@@ -29,7 +29,7 @@ namespace Clio.Command {
 	/// <see cref="IRelatedPageAddonService.Get"/>; the service resolves the object and decodes the page set
 	/// from the add-on metadata. Read-only — performs no save.
 	/// </summary>
-	public class GetRelatedPageAddonCommand : Command<GetRelatedPageAddonOptions> {
+	public sealed class GetRelatedPageAddonCommand : Command<GetRelatedPageAddonOptions> {
 		private readonly IRelatedPageAddonService _relatedPageAddonService;
 		private readonly ILogger _logger;
 
@@ -46,7 +46,7 @@ namespace Clio.Command {
 			return success ? 0 : 1;
 		}
 
-		public virtual bool TryGet(GetRelatedPageAddonOptions options, out GetRelatedPageAddonResponse response) {
+		public bool TryGet(GetRelatedPageAddonOptions options, out GetRelatedPageAddonResponse response) {
 			if (options is null) {
 				response = Fail("options is required");
 				return false;

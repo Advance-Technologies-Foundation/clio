@@ -187,6 +187,11 @@ internal sealed class RelatedPageAddonService(
 		};
 
 		AddonSchemaDto schema = addonSchemaDesignerClient.GetSchema(addonRequest);
+		// Replace the add-on metadata wholesale. The RelatedPage add-on's MetaData is exactly
+		// {"Pages":[...],"TypeColumnUId":...} (verified backend contract) — it carries no sibling fields that a
+		// full replace could silently drop — and the Interface Designer likewise rewrites the whole document on
+		// save. RelatedPageAddonServiceTests pins this so a future contract change fails a test instead of silently
+		// dropping data.
 		schema.MetaData = metadata.ToJsonString();
 
 		addonSchemaDesignerClient.SaveSchema(schema);

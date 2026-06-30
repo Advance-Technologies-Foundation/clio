@@ -62,7 +62,7 @@ namespace Clio.Command {
 	/// <see cref="IRelatedPageAddonService"/>; the service performs the resolution and the single
 	/// <c>GetSchema</c>/<c>SaveSchema</c> round-trip against <c>AddonSchemaDesignerService.svc</c>.
 	/// </summary>
-	public class CreateRelatedPageAddonCommand : Command<CreateRelatedPageAddonOptions> {
+	public sealed class CreateRelatedPageAddonCommand : Command<CreateRelatedPageAddonOptions> {
 		private readonly IRelatedPageAddonService _relatedPageAddonService;
 		private readonly ILogger _logger;
 
@@ -79,13 +79,16 @@ namespace Clio.Command {
 			return success ? 0 : 1;
 		}
 
-		public virtual bool TryCreate(CreateRelatedPageAddonOptions options, out CreateRelatedPageAddonResponse response) {
+		public bool TryCreate(CreateRelatedPageAddonOptions options, out CreateRelatedPageAddonResponse response) {
 			if (options is null) {
 				response = Fail("options is required");
 				return false;
 			}
 			try {
-				IReadOnlyList<RelatedPageSpec> pages = ResolvePageSpecs(options);
+				// Building the spec list (incl. the per-audience add-without-default guard) lives in
+				// RelatedPageSpecBuilder so this command stays a thin front-end and the mapping is testable on its own.
+				IReadOnlyList<RelatedPageSpec> pages = RelatedPageSpecBuilder.Build(
+					options.Pages, options.DefaultPage, options.AddPage, options.PortalDefaultPage, options.PortalAddPage);
 				var request = new RelatedPageAddonRequest(
 					options.PackageName,
 					options.EntitySchemaName,
@@ -108,41 +111,6 @@ namespace Clio.Command {
 				response = Fail(ex.Message);
 				_logger.WriteInfo($"  failed: {ex.Message}");
 				return false;
-			}
-		}
-
-		// Standard platform role names. The related-page audience is conveyed by the role on each page entry
-		// (verified against Cases: "All employees" vs "All external users" sets — IsSspDefault stays false).
-		private const string EmployeesRoleName = "All employees";
-		private const string PortalRoleName = "All external users";
-
-		private static IReadOnlyList<RelatedPageSpec> ResolvePageSpecs(CreateRelatedPageAddonOptions options) {
-			if (options.Pages is { Count: > 0 }) {
-				return options.Pages;
-			}
-			bool hasPortal = !string.IsNullOrWhiteSpace(options.PortalDefaultPage)
-				|| !string.IsNullOrWhiteSpace(options.PortalAddPage);
-			// With a portal audience configured the employee pages must be scoped to "All employees" so the two
-			// audiences stay separate sets; without it, the employee pages stay role-less (apply to everyone).
-			string employeeRole = hasPortal ? EmployeesRoleName : null;
-			var built = new List<RelatedPageSpec>();
-			AddAudiencePages(built, options.DefaultPage, options.AddPage, employeeRole);
-			AddAudiencePages(built, options.PortalDefaultPage, options.PortalAddPage, PortalRoleName);
-			return built;
-		}
-
-		/// <summary>
-		/// Adds the default and add page entries for one audience: an empty default/add page is skipped and
-		/// the add page falls back to the default page when omitted (so a single page can serve both).
-		/// </summary>
-		private static void AddAudiencePages(
-			List<RelatedPageSpec> pages, string defaultPage, string addPage, string roleName) {
-			if (!string.IsNullOrWhiteSpace(defaultPage)) {
-				pages.Add(new RelatedPageSpec(defaultPage.Trim(), IsDefault: true, RoleName: roleName));
-			}
-			string effectiveAddPage = string.IsNullOrWhiteSpace(addPage) ? defaultPage : addPage;
-			if (!string.IsNullOrWhiteSpace(effectiveAddPage)) {
-				pages.Add(new RelatedPageSpec(effectiveAddPage.Trim(), IsAdd: true, RoleName: roleName));
 			}
 		}
 
