@@ -1,8 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Clio.Command.McpServer;
 using Clio.Command.McpServer.Tools;
 using FluentAssertions;
 using ModelContextProtocol.Protocol;
@@ -804,5 +806,133 @@ public sealed class ClioRunDispatchTests {
 		// Assert
 		attribute.Name.Should().Be(ClioRunDestructiveTool.ToolName, because: "the tool uses its stable name constant");
 		attribute.Destructive.Should().BeTrue(because: "the destructive surface must flag Destructive=true");
+	}
+
+	// --- Schema guard: the emitted input schema must declare args as "type":"object" -------------------
+	// ENG-92653: without "type":"object" Claude Code (and other clients that rely on the schema for
+	// serialization decisions) drops or stringifies the args payload, making the entire hidden-tool
+	// surface unreachable. This test builds the tool through the SDK (the same path BindingsModule uses)
+	// and inspects the actual emitted schema — a regression guard against future type-widening.
+
+	[Test]
+	[Category("Unit")]
+	[Description("clio-run input schema declares args as type=object so MCP clients serialize the payload correctly (ENG-92653 regression guard).")]
+	public void ClioRunTool_ShouldDeclareArgsAsObjectType_InEmittedInputSchema() {
+		// Arrange — instance method requires a target; pass a stub executor since the schema is derived
+		// from the method signature, not from the runtime instance state.
+		McpServerTool tool = McpServerTool.Create(
+			typeof(ClioRunTool).GetMethod(nameof(ClioRunTool.Run))!,
+			target: new ClioRunTool(Substitute.For<IClioRunExecutor>()),
+			new McpServerToolCreateOptions { SerializerOptions = BindingsModule.CreateMcpSerializerOptions() });
+
+		// Act
+		JsonElement schema = tool.ProtocolTool.InputSchema;
+		JsonElement argsProperty = schema.GetProperty("properties").GetProperty("args");
+
+		// Assert — nullable Dictionary<string, JsonElement>? emits type as ["object","null"] (an array)
+		// or "object" (a string) depending on the SDK version; either shape includes "object".
+		argsProperty.TryGetProperty("type", out JsonElement typeElement).Should().BeTrue(
+			because: "the args property must have an explicit type declaration so MCP clients know to serialize it as a JSON object (ENG-92653)");
+		AssertTypeIncludesObject(typeElement);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("clio-run-destructive input schema declares args as type=object (same fix as clio-run, ENG-92653 regression guard).")]
+	public void ClioRunDestructiveTool_ShouldDeclareArgsAsObjectType_InEmittedInputSchema() {
+		// Arrange
+		McpServerTool tool = McpServerTool.Create(
+			typeof(ClioRunDestructiveTool).GetMethod(nameof(ClioRunDestructiveTool.Run))!,
+			target: new ClioRunDestructiveTool(Substitute.For<IClioRunExecutor>()),
+			new McpServerToolCreateOptions { SerializerOptions = BindingsModule.CreateMcpSerializerOptions() });
+
+		// Act
+		JsonElement schema = tool.ProtocolTool.InputSchema;
+		JsonElement argsProperty = schema.GetProperty("properties").GetProperty("args");
+
+		// Assert
+		argsProperty.TryGetProperty("type", out JsonElement typeElement).Should().BeTrue(
+			because: "the args property must have an explicit type declaration (ENG-92653)");
+		AssertTypeIncludesObject(typeElement);
+	}
+
+	private static void AssertTypeIncludesObject(JsonElement typeElement) {
+		if (typeElement.ValueKind == JsonValueKind.String) {
+			typeElement.GetString().Should().Be("object",
+				because: "args must be declared as type=object for MCP client serialization compatibility");
+		} else if (typeElement.ValueKind == JsonValueKind.Array) {
+			typeElement.EnumerateArray()
+				.Select(item => item.GetString())
+				.Should().Contain("object",
+					because: "args type array must include 'object' so MCP clients serialize the payload correctly (ENG-92653)");
+		} else {
+			typeElement.ValueKind.Should().BeOneOf([JsonValueKind.String, JsonValueKind.Array],
+				because: "JSON Schema type must be a string or an array of strings");
+		}
+	}
+
+	// --- Dictionary→JsonElement conversion at the tool method level ------------------------------------
+	// The tool methods accept Dictionary<string, JsonElement>? (to emit the correct schema) and convert to
+	// JsonElement? before passing to the executor. These tests verify the conversion, covering the path the
+	// delegation tests (null args) do not reach.
+
+	[Test]
+	[Category("Unit")]
+	[Description("ClioRunTool converts a non-null Dictionary args to a JsonElement object and passes it through to the executor.")]
+	public async Task ClioRunTool_ShouldConvertDictionaryArgs_WhenArgsAreProvided() {
+		// Arrange
+		IClioRunExecutor executor = Substitute.For<IClioRunExecutor>();
+		CallToolResult expected = new() { Content = [] };
+		JsonElement? capturedArgs = null;
+		executor.RunAsync(
+			"echo-tool",
+			Arg.Any<JsonElement?>(),
+			false,
+			Arg.Any<RequestContext<CallToolRequestParams>>(),
+			Arg.Any<CancellationToken>())
+			.Returns(call => {
+				capturedArgs = call.ArgAt<JsonElement?>(1);
+				return new ValueTask<CallToolResult>(expected);
+			});
+		ClioRunTool tool = new(executor);
+
+		// Act
+		Dictionary<string, JsonElement> args = new() {
+			["value"] = JsonDocument.Parse("\"hello\"").RootElement
+		};
+		CallToolResult result = await tool.Run(CallContext(), "echo-tool", args);
+
+		// Assert
+		result.Should().BeSameAs(expected,
+			because: "the tool must forward the converted args to the executor and return its result");
+		capturedArgs.Should().NotBeNull(because: "a non-null Dictionary must convert to a non-null JsonElement");
+		capturedArgs!.Value.ValueKind.Should().Be(JsonValueKind.Object,
+			because: "the converted JsonElement must be a JSON object");
+		capturedArgs.Value.GetProperty("value").GetString().Should().Be("hello",
+			because: "the Dictionary entries must survive the conversion intact");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ClioRunTool passes null to executor when Dictionary args is null.")]
+	public async Task ClioRunTool_ShouldPassNullArgs_WhenDictionaryIsNull() {
+		// Arrange
+		IClioRunExecutor executor = Substitute.For<IClioRunExecutor>();
+		CallToolResult expected = new() { Content = [] };
+		executor.RunAsync(
+			"echo-tool",
+			Arg.Is<JsonElement?>(el => !el.HasValue),
+			false,
+			Arg.Any<RequestContext<CallToolRequestParams>>(),
+			Arg.Any<CancellationToken>())
+			.Returns(new ValueTask<CallToolResult>(expected));
+		ClioRunTool tool = new(executor);
+
+		// Act
+		CallToolResult result = await tool.Run(CallContext(), "echo-tool", null);
+
+		// Assert
+		result.Should().BeSameAs(expected,
+			because: "null Dictionary must convert to null JsonElement for the executor");
 	}
 }
