@@ -52,7 +52,7 @@ public sealed class GuidanceGetTool {
 		+ "guides such as atf-repository-dev, feature-toggle, sys-setting, configuration-webservice, "
 		+ "and their test guides. Always read the availableGuides list for the authoritative set.")]
 	public Task<GuidanceGetResponse> GetGuidance(
-		[Description("Parameters: name (required). Use one of the known guidance names returned in availableGuides, for example atf-repository-dev, feature-toggle-tests, sys-setting, configuration-webservice, page-modification, page-schema-handlers, indicator-widget, related-list, esq-filters, or existing-app-maintenance.")]
+		[Description("Parameters: name (required). Use one of the known guidance names returned in availableGuides, for example atf-repository-dev, feature-toggle-tests, sys-setting, configuration-webservice, page-modification, page-schema-handlers, related-list, esq-filters, or existing-app-maintenance.")]
 		[Required] GuidanceGetArgs args,
 		CancellationToken cancellationToken = default) {
 		try {
@@ -106,7 +106,7 @@ public sealed class GuidanceGetTool {
 /// </summary>
 public sealed record GuidanceGetArgs(
 	[property: JsonPropertyName("name")]
-	[property: Description("Stable guidance name. Use one of the names returned in 'availableGuides' when unknown, for example atf-repository-dev, feature-toggle-tests, sys-setting, configuration-webservice, page-modification, page-schema-handlers, indicator-widget, related-list, esq-filters, or existing-app-maintenance.")]
+	[property: Description("Stable guidance name. Use one of the names returned in 'availableGuides' when unknown, for example atf-repository-dev, feature-toggle-tests, sys-setting, configuration-webservice, page-modification, page-schema-handlers, related-list, esq-filters, or existing-app-maintenance.")]
 	string? Name = null
 ) {
 	[JsonExtensionData]
