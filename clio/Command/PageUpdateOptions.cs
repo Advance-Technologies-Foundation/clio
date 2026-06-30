@@ -699,7 +699,7 @@ namespace Clio.Command {
 			if (!SchemaValidationService.TryParseResources(options.Resources, out explicitResources, out _)) {
 				return new PageUpdateResponse {
 					Success = false,
-					Error = "resources must be a valid JSON object string"
+					Error = InvalidResourcesError
 				};
 			}
 			if (!string.IsNullOrWhiteSpace(options.OptionalProperties)) {
@@ -708,8 +708,41 @@ namespace Clio.Command {
 				} catch {
 					return new PageUpdateResponse {
 						Success = false,
-						Error = "optional-properties must be a valid JSON array of {key, value} objects"
+						Error = InvalidOptionalPropertiesError
 					};
+				}
+			}
+			return null;
+		}
+
+		/// <summary>The canonical error for a malformed <c>resources</c> payload.</summary>
+		internal const string InvalidResourcesError = "resources must be a valid JSON object string";
+
+		/// <summary>The canonical error for a malformed <c>optional-properties</c> payload.</summary>
+		internal const string InvalidOptionalPropertiesError =
+			"optional-properties must be a valid JSON array of {key, value} objects";
+
+		/// <summary>
+		/// Validates the <c>resources</c> and <c>optional-properties</c> argument payloads WITHOUT
+		/// parsing the page body or touching the network. Returns the canonical, user-facing error
+		/// string for the first malformed payload, or <c>null</c> when both are well-formed (or absent).
+		/// Used by the MCP <c>update-page</c> tool to surface a specific, actionable argument error over
+		/// the generic whole-body JavaScript syntax error when a body fails to parse but a payload
+		/// argument is also malformed (ENG-90640 shadowing fix). The wording is shared with
+		/// <see cref="ValidateCommonInput"/> so both code paths report identically.
+		/// </summary>
+		/// <param name="resources">The <c>resources</c> JSON object string argument, or <c>null</c>.</param>
+		/// <param name="optionalProperties">The <c>optional-properties</c> JSON array string argument, or <c>null</c>.</param>
+		/// <returns>The canonical error message for the first malformed payload, or <c>null</c> when valid.</returns>
+		public static string ValidateArgumentPayloads(string resources, string optionalProperties) {
+			if (!SchemaValidationService.TryParseResources(resources, out _, out _)) {
+				return InvalidResourcesError;
+			}
+			if (!string.IsNullOrWhiteSpace(optionalProperties)) {
+				try {
+					JArray.Parse(optionalProperties);
+				} catch {
+					return InvalidOptionalPropertiesError;
 				}
 			}
 			return null;

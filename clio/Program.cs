@@ -235,6 +235,16 @@ internal class Program {
 		new(CreateCommandSuggestionsCatalog);
 	private const int CommandSuggestionLimit = 10;
 
+	/// <summary>
+	/// Distinct, stable process exit code returned when a command is refused because the target
+	/// environment does not satisfy its declarative Creatio platform version requirement
+	/// (<see cref="RequiresCreatioVersionAttribute"/>). Deliberately different from the generic
+	/// failure code <c>1</c> so callers and automation can branch on a version-gate refusal
+	/// specifically; the human message additionally carries the stable
+	/// <see cref="CreatioVersionRequirementException.ErrorCode"/>.
+	/// </summary>
+	internal const int CreatioVersionRequirementExitCode = 78;
+
 	internal static bool IsCfgOpenCommand;
 	internal static bool IsMcpServerMode { get; private set; }
 	public static IAppUpdater _appUpdater;
@@ -276,6 +286,20 @@ internal class Program {
 				$"Error: command '{verb}' is part of a disabled experimental feature '{disabledFeatureName}'. "
 				+ $"Enable it with: clio experimental --name {disabledFeatureName} --enable");
 			return 1;
+		}
+		// Creatio-version gate at the same single dispatch chokepoint, ordered BEFORE the package gate
+		// (feature-toggle → creatio-version → package → execute). Zero-cost: the cheap, network-free
+		// IsDefinedOn pre-check runs first, so a command without [RequiresCreatioVersion] never resolves
+		// the checker and never contacts the environment. This is intentionally stricter than the
+		// package gate (which resolves its checker unconditionally) because the version check exists
+		// solely to add an environment round-trip. On a refusal we return a DISTINCT, STABLE exit code
+		// (not the generic 1) and surface the machine-readable ErrorCode in the message.
+		if (RequiresCreatioVersionAttribute.IsDefinedOn(instance.GetType())) {
+			ICreatioVersionChecker creatioVersionChecker = Resolve<ICreatioVersionChecker>(instance);
+			if (TryGetCreatioVersionRequirementError(instance, creatioVersionChecker, out string versionRequirementError)) {
+				ConsoleLogger.Instance.WriteError(versionRequirementError);
+				return CreatioVersionRequirementExitCode;
+			}
 		}
 		// Package-requirement gate at the same single dispatch chokepoint: every path that runs a
 		// command (normal parse, scenario runner, any future caller) flows through here, so a command
@@ -547,6 +571,49 @@ internal class Program {
 			// unreachable so GetPackages() throws an HTTP/connection/auth exception) must not escape as a
 			// raw stack trace. Surface a readable message and refuse dispatch (caller maps true to exit 1).
 			errorMessage = ex.GetReadableMessageException(IsDebugMode);
+			return true;
+		}
+	}
+
+	/// <summary>
+	/// Validates the declarative Creatio platform version requirements
+	/// (<see cref="RequiresCreatioVersionAttribute"/>) of an options instance against the target
+	/// environment at the single dispatch chokepoint.
+	/// </summary>
+	/// <param name="options">The command options instance whose type carries any requirements.</param>
+	/// <param name="checker">The resolved Creatio-version checker.</param>
+	/// <param name="errorMessage">
+	/// The user-facing refusal message when a requirement is unmet. It embeds the stable, machine-readable
+	/// <see cref="CreatioVersionRequirementException.ErrorCode"/> so automation can branch on the failure
+	/// class without parsing the human message.
+	/// </param>
+	/// <returns>
+	/// <c>true</c> when a triggered requirement is not satisfied (dispatch must be refused with
+	/// <see cref="CreatioVersionRequirementExitCode"/>); <c>false</c> when every triggered requirement is
+	/// satisfied.
+	/// </returns>
+	/// <remarks>
+	/// Only <see cref="CreatioVersionRequirementException"/> is caught here — that is the single failure
+	/// class this gate owns. A malformed <c>[RequiresCreatioVersion]</c> declaration surfaces as an
+	/// <see cref="InvalidOperationException"/>: a developer error that must NOT be mapped to the version
+	/// exit code, so it is deliberately left to propagate as a normal error. The provider behind the
+	/// checker swallows transport failures and reports an undeterminable version (fail-closed) rather than
+	/// throwing, so an unreachable environment becomes a
+	/// <see cref="CreatioVersionRequirementException.VersionUndeterminableCode"/> refusal here, not a raw
+	/// stack trace.
+	/// </remarks>
+	internal static bool TryGetCreatioVersionRequirementError(
+		object options, ICreatioVersionChecker checker, out string errorMessage) {
+		errorMessage = null;
+		if (options is null || checker is null) {
+			return false;
+		}
+		try {
+			checker.EnsureRequirements(options);
+			return false;
+		}
+		catch (CreatioVersionRequirementException ex) {
+			errorMessage = $"{ex.Message} [{ex.ErrorCode}]";
 			return true;
 		}
 	}
@@ -1017,6 +1084,11 @@ internal class Program {
 			|| string.Equals(commandName, "mcp", StringComparison.OrdinalIgnoreCase);
 	}
 
+	private static bool IsTruthyEnvironmentFlag(string variableName) {
+		string? value = Environment.GetEnvironmentVariable(variableName);
+		return string.Equals(value, "true", StringComparison.OrdinalIgnoreCase) || value == "1";
+	}
+
 	/// <summary>
 	/// Main entry point for the application.
 	/// </summary>
@@ -1050,6 +1122,17 @@ internal class Program {
 			IsCfgOpenCommand = (args.Length >= 2 && args[0] == "cfg" && args[1] == "open");
 			
 			if (isMcp) {
+				// Neutralize any ambient HTTP(S)/ALL_PROXY for all outbound HttpClient calls when running
+				// as an MCP server. AI-agent sandboxes frequently inject process proxy env vars (sometimes
+				// pointing at a dead/poisoned address); clio always targets an explicitly configured Creatio
+				// URL that must be reached directly, so an inherited proxy must not break it. An empty
+				// WebProxy bypasses every host. CLI mode is unchanged (a CLI user may legitimately need the
+				// proxy). See DataForgeStatus_Should_Ignore_Poisoned_Proxy_Environment_Variables (ENG-90640).
+				// Opt out (fail-safe default is to bypass) by setting CLIO_MCP_RESPECT_AMBIENT_PROXY=true|1
+				// — for an org that mandates an inspecting/DLP egress proxy even for the MCP server.
+				if (!IsTruthyEnvironmentFlag("CLIO_MCP_RESPECT_AMBIENT_PROXY")) {
+					System.Net.Http.HttpClient.DefaultProxy = new System.Net.WebProxy();
+				}
 				ConsoleLogger.Instance.PreserveMessages = true;
 			}
 			
@@ -1233,6 +1316,15 @@ internal class Program {
 
 	private static bool ShouldSkipUpdateCheck(string[] args) {
 		if (IsMcpServerMode) return true;
+		// Honor an opt-out env var so harnesses (e.g. the MCP e2e suite) can suppress the
+		// background self-update for every spawned clio process from a single seam, instead of
+		// relying on per-process appsettings.json edits. Any non-empty, non-"false" value enables.
+		string? noUpdate = Environment.GetEnvironmentVariable("CLIO_NO_UPDATE_CHECK");
+		if (!string.IsNullOrWhiteSpace(noUpdate)
+			&& !string.Equals(noUpdate, "false", StringComparison.OrdinalIgnoreCase)
+			&& !string.Equals(noUpdate, "0", StringComparison.Ordinal)) {
+			return true;
+		}
 		if (args == null || args.Length == 0) return true;
 		string first = args[0];
 		if (string.Equals(first, "update-cli", StringComparison.OrdinalIgnoreCase)

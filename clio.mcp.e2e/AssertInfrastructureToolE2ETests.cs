@@ -15,6 +15,13 @@ namespace Clio.Mcp.E2E;
 /// End-to-end tests for the full infrastructure assert MCP tool.
 /// </summary>
 [TestFixture]
+// NoEnvironment tier: the arrange path is environment-free and the assert-infrastructure tool
+// degrades gracefully on a host with no Kubernetes/Docker/local DB — each section catches its own
+// failure and the tool always returns a structured aggregate result rather than an MCP protocol
+// error. (Before ENG-91830 the no-Kubernetes fallback IKubernetes client threw from Dispose during
+// per-request DI-scope teardown, surfacing as an opaque InternalError; that is fixed, so the test
+// is now deterministically green env-free and belongs in the merge-blocking NoEnvironment gate.)
+[Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("assert")]
 public sealed class AssertInfrastructureToolE2ETests

@@ -14,9 +14,17 @@ using ModelContextProtocol.Protocol;
 namespace Clio.Mcp.E2E;
 
 [TestFixture]
+[Category("McpE2E.Sandbox")]
 [AllureNUnit]
 [AllureFeature("dataforge")]
 [NonParallelizable]
+// ENG-92457 resolved: the DataForge readiness gate no longer hangs on a freshly-deployed sandbox.
+// The data-structure index now becomes Ready (status/context/get-table-columns/initialize/update pass
+// in ~13s each) instead of burning the ~300s gate ceiling — confirmed by run 15643975 (whole fixture
+// ~38s vs the former ~900s). The fixture-level [Ignore] is therefore removed so those reads run.
+// The three similarity-search reads (find-tables, find-lookups, get-relations) stay per-test [Ignore]d
+// under ENG-92147 because the service still returns Success=false for them on the deployed stand —
+// that is a distinct service/stand-data issue, not the gate hang this ticket fixed.
 public sealed class DataForgeToolE2ETests {
 	private const string StatusToolName = DataForgeTool.DataForgeStatusToolName;
 	private const string FindTablesToolName = DataForgeTool.DataForgeFindTablesToolName;
@@ -64,36 +72,49 @@ public sealed class DataForgeToolE2ETests {
 	[Description("Starts the real clio MCP server with poisoned proxy env vars, invokes dataforge-status against the configured sandbox environment, and verifies the Data Forge call still reaches the real service instead of failing with a masked syssetting error.")]
 	[AllureTag(StatusToolName)]
 	[AllureName("DataForge status ignores poisoned proxy env vars")]
-	[AllureDescription("Uses the real clio MCP server to call dataforge-status while HTTP_PROXY, HTTPS_PROXY, and ALL_PROXY point to 127.0.0.1:9, verifying that the Data Forge-specific proxy-safe wrapper still returns the real structured response for a reachable environment.")]
+	[AllureDescription("Uses the real clio MCP server to call dataforge-status while HTTP_PROXY, HTTPS_PROXY, and ALL_PROXY point to 127.0.0.1:9, verifying that clio's MCP-mode proxy neutralization (HttpClient.DefaultProxy) still lets the call return the real structured response for a reachable environment.")]
 	public async Task DataForgeStatus_Should_Ignore_Poisoned_Proxy_Environment_Variables() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+
+		// Resolve and reachability-probe the environment with a clean process environment FIRST.
+		// The poisoned proxy variables below would otherwise also reach the ping-app readiness probe
+		// (it spawns a normal clio child that honours HTTP(S)_PROXY), so probing after poisoning would
+		// always route through the dead 127.0.0.1:9 proxy and self-skip the test as "not reachable".
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+
 		string? originalHttpProxy = Environment.GetEnvironmentVariable("HTTP_PROXY");
 		string? originalHttpsProxy = Environment.GetEnvironmentVariable("HTTPS_PROXY");
 		string? originalAllProxy = Environment.GetEnvironmentVariable("ALL_PROXY");
 		string? originalNoProxy = Environment.GetEnvironmentVariable("NO_PROXY");
 
-		Environment.SetEnvironmentVariable("HTTP_PROXY", "http://127.0.0.1:9");
-		Environment.SetEnvironmentVariable("HTTPS_PROXY", "http://127.0.0.1:9");
-		Environment.SetEnvironmentVariable("ALL_PROXY", "http://127.0.0.1:9");
-		Environment.SetEnvironmentVariable("NO_PROXY", null);
-
 		try {
-			await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3), requireReachableEnvironment: true);
+			// Poison the process proxy vars inside the try (after capturing the originals above) so the
+			// finally below always restores them even if a Set were to throw — poison must never leak to
+			// sibling tests. The MCP server is started next with these vars in place: it is the SUT, and
+			// clio's MCP-mode proxy neutralization (Program.cs, HttpClient.DefaultProxy) must still let the
+			// Data Forge call reach the service. Reachability was already verified above with a clean
+			// environment, so do not re-probe here (that probe is not proxy-safe and would self-skip).
+			Environment.SetEnvironmentVariable("HTTP_PROXY", "http://127.0.0.1:9");
+			Environment.SetEnvironmentVariable("HTTPS_PROXY", "http://127.0.0.1:9");
+			Environment.SetEnvironmentVariable("ALL_PROXY", "http://127.0.0.1:9");
+			Environment.SetEnvironmentVariable("NO_PROXY", null);
+
+			await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3), requireReachableEnvironment: false);
 
 			// Act
 			CallToolResult callResult = await CallToolAsync(
 				arrangeContext,
 				StatusToolName,
 				new Dictionary<string, object?> {
-					["environment-name"] = arrangeContext.EnvironmentName
+					["environment-name"] = environmentName
 				});
 			DataForgeStatusResponse response = DeserializeStructuredContent<DataForgeStatusResponse>(callResult);
 
 			// Assert
 			callResult.IsError.Should().NotBeTrue(
-				because: "the Data Forge proxy-safe wrapper should bypass poisoned process proxy variables for the real service call");
+				because: "clio's MCP-mode proxy neutralization should bypass poisoned process proxy variables for the real service call");
 			response.Success.Should().BeTrue(
 				because: "the real Data Forge status call should still succeed when proxy env vars are temporarily neutralized");
 			response.Health.Should().NotBeNull(
@@ -113,11 +134,13 @@ public sealed class DataForgeToolE2ETests {
 	[AllureTag(FindTablesToolName)]
 	[AllureName("DataForge find-tables returns table matches for Contact-style terms")]
 	[AllureDescription("Uses the real clio MCP server to call dataforge-find-tables for a Contact-style query against the configured reachable sandbox environment and verifies that the structured response includes at least one named table match.")]
+	[Ignore("ENG-92147: DataForge service returns failures for find/relations ops on the deployed stand even with the readiness gate enabled; environment/service-gated.")]
 	public async Task DataForgeFindTables_Should_Return_Table_Matches() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3), requireReachableEnvironment: true);
+		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(8), requireReachableEnvironment: true);
+		await EnsureSimilarityIndexReadyAsync(settings, arrangeContext);
 
 		// Act
 		CallToolResult callResult = await CallToolAsync(
@@ -143,11 +166,13 @@ public sealed class DataForgeToolE2ETests {
 	[AllureTag(FindLookupsToolName)]
 	[AllureName("DataForge find-lookups returns a structured lookup response")]
 	[AllureDescription("Uses the real clio MCP server to call dataforge-find-lookups against the configured reachable sandbox environment and verifies that the tool returns a structured successful payload instead of an MCP invocation error.")]
+	[Ignore("ENG-92147: DataForge service returns failures for find/relations ops on the deployed stand even with the readiness gate enabled; environment/service-gated.")]
 	public async Task DataForgeFindLookups_Should_Return_Structured_Response() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3), requireReachableEnvironment: true);
+		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(8), requireReachableEnvironment: true);
+		await EnsureSimilarityIndexReadyAsync(settings, arrangeContext);
 
 		// Act
 		CallToolResult callResult = await CallToolAsync(
@@ -173,11 +198,13 @@ public sealed class DataForgeToolE2ETests {
 	[AllureTag(GetRelationsToolName)]
 	[AllureName("DataForge get-relations returns relation paths between Contact and Account")]
 	[AllureDescription("Uses the real clio MCP server to call dataforge-get-relations for Contact and Account against the configured reachable sandbox environment and verifies that the structured response contains at least one relation path.")]
+	[Ignore("ENG-92147: DataForge service returns failures for find/relations ops on the deployed stand even with the readiness gate enabled; environment/service-gated.")]
 	public async Task DataForgeGetRelations_Should_Return_Relation_Paths() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3), requireReachableEnvironment: true);
+		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(8), requireReachableEnvironment: true);
+		await EnsureSimilarityIndexReadyAsync(settings, arrangeContext);
 
 		// Act
 		CallToolResult callResult = await CallToolAsync(
@@ -421,6 +448,26 @@ public sealed class DataForgeToolE2ETests {
 			new Dictionary<string, object?> {
 				["args"] = args
 			},
+			arrangeContext.CancellationTokenSource.Token);
+	}
+
+	/// <summary>
+	/// Shared arrange step for the similarity-search reads (find-tables, find-lookups, get-relations):
+	/// on a freshly-deployed stand the similarity index is not built, so these reads return
+	/// <c>Success=false</c> until <c>dataforge-initialize</c> has run and the index is ready
+	/// (ENG-92147, Step 2A). When <c>McpE2E:DataForge:InitializeAndWait</c> is off this is a no-op,
+	/// keeping non-DataForge runs and already-warm stands unaffected and the destructive initialize opt-in.
+	/// </summary>
+	private static async Task EnsureSimilarityIndexReadyAsync(McpE2ESettings settings, ArrangeContext arrangeContext) {
+		if (!settings.DataForge.InitializeAndWait) {
+			return;
+		}
+
+		arrangeContext.EnvironmentName.Should().NotBeNullOrWhiteSpace(
+			because: "the DataForge readiness arrange needs a reachable sandbox environment to initialize the similarity index against");
+		await DataForgeReadinessGate.EnsureIndexReadyAsync(
+			arrangeContext.Session,
+			arrangeContext.EnvironmentName!,
 			arrangeContext.CancellationTokenSource.Token);
 	}
 

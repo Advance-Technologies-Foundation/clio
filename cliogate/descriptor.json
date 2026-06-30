@@ -1,11 +1,11 @@
 {
   "Descriptor": {
     "UId": "e24226f9-c177-458f-af34-9338e2699983",
-    "PackageVersion": "2.0.0.43",
+    "PackageVersion": "2.0.0.44",
     "Name": "cliogate",
     "Type": 0,
     "ProjectPath": "",
-    "ModifiedOnUtc": "/Date(1780041706000)/",
+    "ModifiedOnUtc": "/Date(1782431418000)/",
     "Maintainer": "Advanced Technologies Foundation",
     "DependsOn": []
   }

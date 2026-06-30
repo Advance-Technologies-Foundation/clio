@@ -7,6 +7,15 @@ This suite is intentionally different from `clio.tests` MCP unit tests:
 - unit tests validate MCP argument mapping and command-resolution behavior in-process
 - `clio.mcp.e2e` validates the real server process, stdio transport, MCP discovery, and tool execution end to end
 
+## Infrastructure tiers (`McpE2E.NoEnvironment` / `McpE2E.Sandbox`)
+
+These two `McpE2E.*` categories are an **infrastructure-tier axis orthogonal to** the
+`Unit`/`Integration`/`E2E` test pyramid declared "THREE TIERS ONLY" in `project-context.md`
+— every test here is already `E2E`; the `McpE2E.*` tag only says whether it can run with no
+Creatio (`NoEnvironment`, a fast deterministic gate) or needs a stood-up sandbox (`Sandbox`).
+It is not a fourth pyramid tier and does not violate that rule. See
+`spec/mcp-e2e-tiering/` for the classification signals and the `Skipped == 0` acceptance gate.
+
 ## Default rule
 
 - Every new or updated MCP tool must add or update coverage in this project.

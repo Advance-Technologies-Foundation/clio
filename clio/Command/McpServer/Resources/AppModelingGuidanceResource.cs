@@ -106,7 +106,7 @@ public sealed class AppModelingGuidanceResource {
 			       - Seed rows create data only. A requirement like "defaults to New" still needs an explicit `schema default` or `ui default`.
 			       - To set a lookup column default to a seeded value, the workflow requires two separate calls because the row GUID is only known after creation: (1) create and seed the lookup via sync-schemas; (2) resolve the seeded row GUID via dataforge-find-lookups with schema-name set to the lookup entity and a descriptive query term; (3) apply the default via modify-entity-schema-column or a follow-up sync-schemas update-entity operation with default-value-config source=Const and the resolved GUID as value. Do not skip the GUID resolution step — the default value for a Lookup column must be the row's GUID, not its display name.
 			       - Preserve semantic text field types: use `Email`, `PhoneNumber`, and `WebLink` for email, phone, and URL fields instead of collapsing them to generic `ShortText`. These types affect both data validation and Freedom UI component selection.
-			       - For image/photo fields rendered with the `crt.ImageInput` component, model the backing column as `ImageLookup` ("Image link"), NOT the binary `Image` type. `crt.ImageInput` binds to an image reference and can neither read nor write a binary `Image` column, so a binary column leaves the field unable to upload or display images. `ImageLookup` references the `SysImage` schema automatically — do not pass `reference-schema-name` for it.
+			       - For image/photo fields rendered with the `crt.ImageInput` component, model the backing column as `ImageLookup` ("Image link"), NOT the binary `Image` type. `ImageLookup` references the `SysImage` schema automatically — do not pass `reference-schema-name` for it.
 
 			       Page editing guardrails
 			       - `list-pages` identifies page candidates by `schema-name`.
@@ -118,7 +118,7 @@ public sealed class AppModelingGuidanceResource {
 			       - Pass `resources` as a JSON object string when edited bodies introduce `#ResourceString(key)#` macros.
 			       - For new apps or extended main entities, perform page edits after `sync-schemas` and `get-app-info` refresh so that page bindings reference materialized columns.
 			       - Example: if the app context already contains `Support Case Knowledge Link` / `UsrSupportCaseKbLink`, add the Related Knowledge detail by wiring the page to that existing schema. Do not create `UsrSupportCaseKnowledgeBase`.
-			       - For adding a related/child list (a "detail") to a record page, or for filtering a list by the current page record (master-detail "filter by page data"), call `get-guidance` with `name` set to `related-list`. A detail is a composite — fetch its structure with `get-component-info composite="Expanded list"` — and the page-data filter is declarative: a child `crt.EntityDataSource` + an `isCollection` attribute + a `modelConfig.dependencies` entry linking the child foreign-key column to the master record (`attributePath`/`relationPath`) — no handler. Never scope with an init handler or a seeded filter.
+			       - When a page needs a specific Freedom UI component or composite, fetch its structure (and, for a composite, its assembly recipe) from `get-component-info` instead of hand-assembling or inventing it; see `page-modification` for the editing mechanics and `get-guidance` for any dedicated authoring article.
 			       """
 		};
 }

@@ -34,6 +34,7 @@ public sealed class ApplicationToolE2ETests {
 	private const string ApplicationCode = "AutoTestClioMcp";
 
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes list-apps, and verifies structured installed application items when the environment exposes at least one installed application.")]
 	[AllureFeature(ListToolName)]
@@ -68,6 +69,7 @@ public sealed class ApplicationToolE2ETests {
 			because: "installed application list items should expose a version string in the structured list envelope");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, resolves the seeded installed application AutoTestClioMcp through list-apps, and verifies that get-app-info returns structured metadata for that application.")]
 	[AllureFeature(InfoToolName)]
@@ -116,6 +118,7 @@ public sealed class ApplicationToolE2ETests {
 			because: "get-app-info should return the active SchemaNamePrefix so agents can use the correct prefix for schema names in the session");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes list-apps, and verifies that the structured response remains valid whether the environment has zero installed apps or many.")]
 	[AllureFeature(ListToolName)]
@@ -155,6 +158,7 @@ public sealed class ApplicationToolE2ETests {
 			because: "successful list-apps calls should not include an error payload");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, resolves the seeded installed application AutoTestClioMcp through list-apps, and verifies that its id can be reused with get-app-info.")]
 	[AllureFeature(ListToolName)]
@@ -191,6 +195,7 @@ public sealed class ApplicationToolE2ETests {
 			because: "get-app-info should resolve the same installed application code that list-apps returned");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes get-app-info without identifiers, and verifies that a structured error envelope explains the exactly-one rule.")]
 	[AllureFeature(InfoToolName)]
@@ -218,6 +223,7 @@ public sealed class ApplicationToolE2ETests {
 			because: "the failure should explain the exact-one identifier rule with the canonical selector names");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes get-app-info with both identifiers, and verifies that a structured error envelope explains the exactly-one rule.")]
 	[AllureFeature(InfoToolName)]
@@ -245,6 +251,7 @@ public sealed class ApplicationToolE2ETests {
 			because: "the failure should explain the exact-one identifier rule with the canonical selector names");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes get-app-info with a bad application code, and verifies that a structured error envelope reports the lookup failure.")]
 	[AllureFeature(InfoToolName)]
@@ -274,6 +281,7 @@ public sealed class ApplicationToolE2ETests {
 			because: "the failure should tell a human that the requested application could not be resolved");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes create-app for a configured sandbox environment, and verifies that the created application is returned in the structured metadata envelope.")]
 	[AllureFeature(CreateToolName)]
@@ -341,6 +349,7 @@ public sealed class ApplicationToolE2ETests {
 			because: "successful create calls should not include an error payload");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes create-app with with-mobile-pages=false, and verifies the created application has no main entity mobile pages while keeping its web pages.")]
 	[AllureFeature(CreateToolName)]
@@ -390,6 +399,7 @@ public sealed class ApplicationToolE2ETests {
 			because: "a web-only app should still expose its web form page");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Creates an application, mutates the canonical main entity through sync-schemas, and verifies get-app-info still returns the application display name instead of Base object.")]
 	[AllureFeature(CreateToolName)]
@@ -457,6 +467,7 @@ public sealed class ApplicationToolE2ETests {
 			because: "the canonical main entity should keep the installed application display name instead of degrading to Base object after sync-schemas");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes create-app with an invalid environment, and verifies that a structured error envelope reports the failure.")]
 	[AllureFeature(CreateToolName)]
@@ -490,6 +501,7 @@ public sealed class ApplicationToolE2ETests {
 			because: "the failure should tell a human that the requested environment is not registered");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes create-app with forbidden localization-map fields, and verifies that validation rejects the request before any create side effect is attempted.")]
 	[AllureFeature(CreateToolName)]
@@ -536,6 +548,7 @@ public sealed class ApplicationToolE2ETests {
 			because: "the failure should explain that localization maps are forbidden on create-app");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes create-app with an invalid template payload, and verifies that a structured error envelope reports the failure.")]
 	[AllureFeature(CreateToolName)]
@@ -574,6 +587,7 @@ public sealed class ApplicationToolE2ETests {
 			because: "the failure should include readable diagnostics for the invalid create payload");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes create-app with malformed optional-template-data-json, and verifies that a structured error envelope is returned before any create side effect is attempted.")]
 	[AllureFeature(CreateToolName)]
@@ -608,6 +622,7 @@ public sealed class ApplicationToolE2ETests {
 			because: "the failure should explain that the JSON payload is invalid");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes create-app with icon-id set to auto, and verifies that automatic icon resolution still produces structured metadata.")]
 	[AllureFeature(CreateToolName)]
@@ -647,6 +662,7 @@ public sealed class ApplicationToolE2ETests {
 			because: "the auto-icon create flow should still return structured application metadata");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Advertises delete-app in the MCP tool list so callers can discover the uninstall tool.")]
 	[AllureFeature(DeleteToolName)]
@@ -669,6 +685,7 @@ public sealed class ApplicationToolE2ETests {
 			because: "delete-app must be advertised so MCP callers can discover the uninstall tool");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes delete-app with an unknown environment, and verifies that the failure remains human-readable.")]
 	[AllureFeature(DeleteToolName)]
@@ -705,6 +722,7 @@ public sealed class ApplicationToolE2ETests {
 			because: "the failure should explain that the requested environment is missing");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes delete-app without environment-name or explicit connection args, and verifies that the failure explains the missing target.")]
 	[AllureFeature(DeleteToolName)]

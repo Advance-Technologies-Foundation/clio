@@ -1545,8 +1545,8 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide must show that every inserted container (especially crt.ExpansionPanel) needs its content slot initialized in values");
 		article.Text.Should().Contain("There is no page for new or existing record",
 			because: "the guide must warn that a header CreateRecordRequest Add button on a section-less detail entity throws this exact runtime error on click");
-		article.Text.Should().Contain("features.editable.itemsCreation",
-			because: "the guide must steer callers to inline grid add as the safe default add affordance for a related list");
+		article.Text.Should().Contain("inline add row IS the add affordance",
+			because: "the guide must steer callers to inline grid add (its editable flags fetched from get-component-info crt.DataGrid) as the safe default add affordance for a related list");
 		article.Text.Should().Contain("entityPageName",
 			because: "the guide must offer the explicit-page escape hatch for a header Add button when inline add is not wanted");
 	}

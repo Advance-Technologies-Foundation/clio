@@ -1,4 +1,4 @@
-# install-adac
+# install-toolkit
 
 ## Command Type
 
@@ -6,11 +6,11 @@
 
 ## Name
 
-install-adac - Install the Creatio toolkit skill for all detected coding agents
+install-toolkit - Install the Creatio toolkit skill for all detected coding agents
 
 ## Description
 
-install-adac installs the Creatio AI App Development Toolkit skill globally for
+install-toolkit installs the Creatio AI App Development Toolkit skill globally for
 every supported coding agent detected on the machine, using each agent's native
 plugin mechanism. No Python runtime is required.
 
@@ -23,20 +23,20 @@ An agent is "detected" when its home directory exists:
 | Cursor | `~/.cursor` | copies the plugin into `plugins/local`, merges `mcp.json`, writes the orchestrator rule |
 | GitHub Copilot CLI | `~/.copilot` | `copilot plugin marketplace add` + `plugin install` |
 
-By default install-adac processes all detected agents. Use `--target` to limit to one.
+By default install-toolkit processes all detected agents. Use `--target` to limit to one.
 
 The default source is the public toolkit marketplace
 (`https://github.com/Creatio-Platform/creatio-ai-app-development-toolkit.git`).
 Use `--repo` to override it: a marketplace git URL for claude/codex/copilot, or a
 local path/git URL for the Cursor file-copy.
 
-install-adac is idempotent. A detected agent whose CLI is not on PATH is skipped
+install-toolkit is idempotent. A detected agent whose CLI is not on PATH is skipped
 with a warning and does not fail the command.
 
 ## Synopsis
 
 ```bash
-clio install-adac [options]
+clio install-toolkit [options]
 ```
 
 ## Options
@@ -54,13 +54,13 @@ clio install-adac [options]
 
 ```bash
 # Install for all detected agents
-clio install-adac
+clio install-toolkit
 
 # Install only for Codex
-clio install-adac --target codex
+clio install-toolkit --target codex
 
 # Install for Cursor from a local toolkit checkout
-clio install-adac --target cursor --repo C:\Repos\creatio-ai-app-development-toolkit
+clio install-toolkit --target cursor --repo C:\Repos\creatio-ai-app-development-toolkit
 ```
 
 > **Breaking change:** `--scope` and `--skill` have been removed. Skills now install
@@ -68,4 +68,4 @@ clio install-adac --target cursor --repo C:\Repos\creatio-ai-app-development-too
 > gone because the whole toolkit bundle is installed per agent. The default `--repo`
 > changed from the internal bootstrap repository to the public toolkit marketplace.
 
-- [Clio Command Reference](../../Commands.md#install-adac)
+- [Clio Command Reference](../../Commands.md#install-toolkit)
