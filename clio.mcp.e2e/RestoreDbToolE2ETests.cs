@@ -50,12 +50,16 @@ public sealed class RestoreDbToolE2ETests {
 	}
 
 	[Test]
-	[Category("McpE2E.Sandbox")]
+	// NoEnvironment tier: the missing-backup/missing-server inputs fail validation before any
+	// Kubernetes/DB call, so the tool returns a structured failure with a log-file artifact env-free.
+	// It was previously ignored as "requires reachable Kubernetes/DB infrastructure", but the real
+	// blocker was the no-Kubernetes fallback IKubernetes client throwing from Dispose during
+	// per-request DI-scope teardown (opaque InternalError) — fixed under ENG-91830.
+	[Category("McpE2E.NoEnvironment")]
 	[Description("Starts the real clio MCP server, invokes restore-db-to-local-server with invalid inputs, and verifies that the response still includes a database-operation log artifact path.")]
 	[AllureTag(RestoreDbTool.RestoreDbToLocalServerToolName)]
 	[AllureName("Restore-db failures still surface log-file-path")]
 	[AllureDescription("Uses the real clio MCP server to call restore-db-to-local-server with a missing backup path and verifies that the failure remains human-readable while still returning a temp database-operation log artifact path.")]
-	[Ignore("ENG-91830: requires reachable Kubernetes/DB infrastructure not available on CI agents.")]
 	public async Task RestoreDb_Should_Return_Log_File_Path_On_Failure() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();

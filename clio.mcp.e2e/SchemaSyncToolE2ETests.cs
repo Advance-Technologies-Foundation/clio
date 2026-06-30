@@ -35,6 +35,24 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 	private const string ReadColumnToolName = GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName;
 	private const string CurrentDateTimeSystemValueUId = "d7c295d3-3146-4ee1-ac49-3a7bd0edc45d";
 
+	// ENG-92459: one shared workspace+package+push for the whole fixture instead of one push-workspace
+	// round-trip per environment-bound test. Lazily initialized by the first requireEnvironment arrange so
+	// its Assert.Ignore on a missing destructive opt-in / unreachable environment / cliogate only skips the
+	// environment-bound tests; the non-environment tests need no package and stay green. The fixture is
+	// [NonParallelizable], so the lazy init runs without a race; each environment-bound test still creates
+	// its own unique schemas (entity + lookup) inside the shared package, preserving per-test isolation.
+	private string? _sharedRootDirectory;
+	private string? _sharedWorkspacePath;
+	private string? _sharedEnvironmentName;
+	private string? _sharedPackageName;
+
+	[OneTimeTearDown]
+	public void CleanupSharedSandboxPackage() {
+		if (_sharedRootDirectory is not null && Directory.Exists(_sharedRootDirectory)) {
+			Directory.Delete(_sharedRootDirectory, recursive: true);
+		}
+	}
+
 	[Test]
 	[Description("Advertises sync-schemas MCP tool in the server tool list so callers can discover and invoke it.")]
 	[AllureTag(ToolName)]
@@ -329,55 +347,86 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 			Assert.Ignore("Set McpE2E:AllowDestructiveMcpTests=true to run destructive sync-schemas MCP end-to-end tests.");
 		}
 
-		string? environmentName = requireEnvironment
-			? await ResolveReachableEnvironmentAsync(settings)
-			: null;
-		string rootDirectory = Path.Combine(Path.GetTempPath(), $"clio-sync-schemas-e2e-{Guid.NewGuid():N}");
-		Directory.CreateDirectory(rootDirectory);
-		string workspaceName = $"workspace-{Guid.NewGuid():N}";
-		string workspacePath = Path.Combine(rootDirectory, workspaceName);
 		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(8));
-		await CreateEmptyWorkspaceAsync(settings, rootDirectory, workspaceName, cancellationTokenSource.Token);
+		McpServerSession session = Session;
+		const string lookupColumnName = "UsrStatus";
 
-		string? packageName = null;
-		string? entitySchemaName = null;
-		string? lookupSchemaName = null;
-		string lookupColumnName = "UsrStatus";
-		if (requireEnvironment) {
-			try {
-				await ClioCliCommandRunner.EnsureCliogateInstalledAsync(
-					settings,
-					environmentName!,
-					cancellationTokenSource.Token);
-			}
-			catch (Exception ex) {
-				Assert.Ignore(
-					$"Skipping destructive sync-schemas MCP end-to-end test because cliogate could not be installed or verified for '{environmentName}'. {ex.Message}");
-			}
-
-			packageName = $"Pkg{Guid.NewGuid():N}".Substring(0, 18);
-			entitySchemaName = $"Usr{Guid.NewGuid():N}";
-			lookupSchemaName = $"Usr{Guid.NewGuid():N}";
-			await AddPackageAsync(settings, workspacePath, packageName, cancellationTokenSource.Token);
-			await PushWorkspaceAsync(
-				settings,
-				workspacePath,
-				environmentName!,
-				packageName,
-				cancellationTokenSource.Token);
+		if (!requireEnvironment) {
+			// Non-environment tests only need a live MCP session; they never touch the workspace or a
+			// package, so skip the shared sandbox provisioning entirely and use a throwaway root that is
+			// owned (and deleted) by the per-test context.
+			string throwawayRoot = Path.Combine(Path.GetTempPath(), $"clio-sync-schemas-e2e-{Guid.NewGuid():N}");
+			return new ArrangeContext(
+				throwawayRoot,
+				WorkspacePath: throwawayRoot,
+				EnvironmentName: null,
+				PackageName: null,
+				EntitySchemaName: null,
+				LookupSchemaName: null,
+				lookupColumnName,
+				OwnsRootDirectory: true,
+				session,
+				cancellationTokenSource);
 		}
 
-		McpServerSession session = Session;
+		(string environmentName, string packageName) =
+			await EnsureSharedSandboxPackageAsync(settings, cancellationTokenSource.Token);
+
+		// Each environment-bound test gets its own entity and lookup schemas inside the shared package so
+		// concurrent creates never collide; the schema names are unique guids while the column names are
+		// constants that live in distinct schemas, so they do not clash either.
+		string entitySchemaName = $"Usr{Guid.NewGuid():N}";
+		string lookupSchemaName = $"Usr{Guid.NewGuid():N}";
 		return new ArrangeContext(
-			rootDirectory,
-			workspacePath,
+			_sharedRootDirectory!,
+			_sharedWorkspacePath!,
 			environmentName,
 			packageName,
 			entitySchemaName,
 			lookupSchemaName,
 			lookupColumnName,
+			OwnsRootDirectory: false,
 			session,
 			cancellationTokenSource);
+	}
+
+	/// <summary>
+	/// Lazily provisions a single sandbox workspace + package (created, pushed and unlocked once) that every
+	/// environment-bound sync-schemas test shares, replacing the former per-test push-workspace round trip.
+	/// Subsequent calls return the cached package. Guarded by Assert.Ignore so only the environment-bound
+	/// tests skip when the stand is unavailable; relies on the fixture being [NonParallelizable].
+	/// </summary>
+	private async Task<(string environmentName, string packageName)> EnsureSharedSandboxPackageAsync(
+		McpE2ESettings settings,
+		CancellationToken cancellationToken) {
+		if (_sharedPackageName is not null) {
+			return (_sharedEnvironmentName!, _sharedPackageName);
+		}
+
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		try {
+			await ClioCliCommandRunner.EnsureCliogateInstalledAsync(settings, environmentName, cancellationToken);
+		}
+		catch (Exception ex) {
+			Assert.Ignore(
+				$"Skipping destructive sync-schemas MCP end-to-end test because cliogate could not be installed or verified for '{environmentName}'. {ex.Message}");
+		}
+
+		string rootDirectory = Path.Combine(Path.GetTempPath(), $"clio-sync-schemas-e2e-{Guid.NewGuid():N}");
+		Directory.CreateDirectory(rootDirectory);
+		string workspaceName = $"workspace-{Guid.NewGuid():N}";
+		string workspacePath = Path.Combine(rootDirectory, workspaceName);
+		string packageName = $"Pkg{Guid.NewGuid():N}".Substring(0, 18);
+
+		await CreateEmptyWorkspaceAsync(settings, rootDirectory, workspaceName, cancellationToken);
+		await AddPackageAsync(settings, workspacePath, packageName, cancellationToken);
+		await PushWorkspaceAsync(settings, workspacePath, environmentName, packageName, cancellationToken);
+
+		_sharedRootDirectory = rootDirectory;
+		_sharedWorkspacePath = workspacePath;
+		_sharedEnvironmentName = environmentName;
+		_sharedPackageName = packageName;
+		return (environmentName, packageName);
 	}
 
 	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
@@ -935,12 +984,15 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 		string? EntitySchemaName,
 		string? LookupSchemaName,
 		string LookupColumnName,
+		bool OwnsRootDirectory,
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
 
 		public ValueTask DisposeAsync() {
 			CancellationTokenSource.Dispose();
-			if (Directory.Exists(RootDirectory)) {
+			// Environment-bound contexts reuse the shared fixture workspace (see EnsureSharedSandboxPackageAsync),
+			// which is deleted once in [OneTimeTearDown]; only the per-test throwaway roots are owned here.
+			if (OwnsRootDirectory && Directory.Exists(RootDirectory)) {
 				Directory.Delete(RootDirectory, recursive: true);
 			}
 			return ValueTask.CompletedTask;

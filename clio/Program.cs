@@ -1084,6 +1084,11 @@ internal class Program {
 			|| string.Equals(commandName, "mcp", StringComparison.OrdinalIgnoreCase);
 	}
 
+	private static bool IsTruthyEnvironmentFlag(string variableName) {
+		string? value = Environment.GetEnvironmentVariable(variableName);
+		return string.Equals(value, "true", StringComparison.OrdinalIgnoreCase) || value == "1";
+	}
+
 	/// <summary>
 	/// Main entry point for the application.
 	/// </summary>
@@ -1117,6 +1122,17 @@ internal class Program {
 			IsCfgOpenCommand = (args.Length >= 2 && args[0] == "cfg" && args[1] == "open");
 			
 			if (isMcp) {
+				// Neutralize any ambient HTTP(S)/ALL_PROXY for all outbound HttpClient calls when running
+				// as an MCP server. AI-agent sandboxes frequently inject process proxy env vars (sometimes
+				// pointing at a dead/poisoned address); clio always targets an explicitly configured Creatio
+				// URL that must be reached directly, so an inherited proxy must not break it. An empty
+				// WebProxy bypasses every host. CLI mode is unchanged (a CLI user may legitimately need the
+				// proxy). See DataForgeStatus_Should_Ignore_Poisoned_Proxy_Environment_Variables (ENG-90640).
+				// Opt out (fail-safe default is to bypass) by setting CLIO_MCP_RESPECT_AMBIENT_PROXY=true|1
+				// — for an org that mandates an inspecting/DLP egress proxy even for the MCP server.
+				if (!IsTruthyEnvironmentFlag("CLIO_MCP_RESPECT_AMBIENT_PROXY")) {
+					System.Net.Http.HttpClient.DefaultProxy = new System.Net.WebProxy();
+				}
 				ConsoleLogger.Instance.PreserveMessages = true;
 			}
 			
