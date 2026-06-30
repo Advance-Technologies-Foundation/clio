@@ -48,7 +48,17 @@ public abstract class BaseTool<T>(
 		Action<TCommand> configureCommand = null) where TCommand : Command<T> {
 		TCommand resolvedCommand;
 		try {
+			// ResolveCommand resolves the env-scoped command AND enforces this options type's
+			// [RequiresPackage] declarations against the per-call target environment. The gate lives
+			// inside ResolveCommand so the typed-response path (tools that call it directly from inside
+			// ExecuteWithCleanLog) is package-gated too. An unmet requirement surfaces as a
+			// PackageRequirementException; an environment/argument failure as an
+			// EnvironmentResolutionException; both become a caller-actionable failed result (exit 1)
+			// below, so the command never runs when its preconditions are not satisfied.
 			resolvedCommand = ResolveCommand<TCommand>(options);
+		} catch (PackageRequirementException ex) {
+			// Surface the actionable install hint verbatim, without the exception-chain decoration.
+			return CommandExecutionResult.FromError(ex.Message);
 		} catch (EnvironmentResolutionException e) {
 			// Expected, caller-actionable environment/argument failure → exit code 1.
 			return CommandExecutionResult.FromResolverError(e);
@@ -58,51 +68,57 @@ public abstract class BaseTool<T>(
 			return CommandExecutionResult.FromException(e);
 		}
 
-		// Creatio-version gate for environment-bound commands, ordered BEFORE the package gate to mirror
-		// the CLI dispatch order (feature-toggle → creatio-version → package → execute, see
-		// Program.ExecuteCommandWithOption). Like the package gate it runs only in the env-SENSITIVE path,
-		// resolves its checker from the SAME environment-scoped container the command came from, and runs
-		// before the execution lock so a refusal does not hold it.
+		// Creatio-version gate for environment-bound commands. It runs AFTER ResolveCommand has already
+		// resolved the env-scoped command and enforced the package gate (see ResolveCommand), so the
+		// environment is validated by the time we get here and the version checker never hits an
+		// unknown-env. Like the package gate it runs only in the env-SENSITIVE path, resolves its checker
+		// from the SAME environment-scoped container the command came from, and runs before the execution
+		// lock so a refusal does not hold it. Package is NOT re-enforced here — ResolveCommand already did
+		// it for BOTH execution paths, and adding it again would double-gate.
 		CommandExecutionResult versionRequirementFailure = EnforceCreatioVersionRequirements(options);
 		if (versionRequirementFailure is not null) {
 			return versionRequirementFailure;
-		}
-
-		// Package-requirement gate for environment-bound commands. This runs in the env-SENSITIVE path
-		// only, because [RequiresPackage] is verified against the per-call target environment. The checker
-		// is resolved from the SAME environment-scoped container the command came from (see
-		// ResolveFromCallContainer), so it queries the correct Creatio instance. Run before the execution
-		// lock so a refusal does not hold it.
-		CommandExecutionResult requirementFailure = EnforcePackageRequirements(options);
-		if (requirementFailure is not null) {
-			return requirementFailure;
 		}
 
 		configureCommand?.Invoke(resolvedCommand);
 		return InternalExecute(resolvedCommand, options);
 	}
 
-	// Returns a failed result when the per-call environment does not satisfy this options type's
-	// [RequiresPackage] declarations, or null when there is nothing to enforce / the requirements are met.
-	// Cheap static pre-check first: options types without [RequiresPackage] skip resolution entirely,
-	// so non-gated tools stay zero-cost and never force an environment. Nothing escapes this method.
-	private CommandExecutionResult EnforcePackageRequirements(T options) {
+	/// <summary>
+	/// Resolves an environment-scoped command instance for the current MCP call and enforces the
+	/// options type's package requirements before returning it.
+	/// </summary>
+	/// <remarks>
+	/// Both BaseTool execution paths funnel through here — the <see cref="InternalExecute{TCommand}"/>
+	/// path and the typed-response path that calls this method directly from inside
+	/// <see cref="ExecuteWithCleanLog"/> — so every BaseTool tool is package-gated uniformly,
+	/// regardless of its return shape. The command is resolved FIRST (so an unknown-environment failure
+	/// surfaces as <see cref="EnvironmentResolutionException"/>), THEN the requirement is enforced. A
+	/// <see cref="PackageRequirementException"/> (unmet requirement) and any other verification failure
+	/// both propagate to the caller.
+	/// </remarks>
+	private protected TCommand ResolveCommand<TCommand>(T options) where TCommand : Command<T> {
+		TCommand resolvedCommand = ResolveFromCallContainer<TCommand>(options);
+		EnforcePackageRequirements(options);
+		return resolvedCommand;
+	}
+
+	// Enforces this options type's [RequiresPackage] declarations against the per-call target
+	// environment. This runs for BOTH BaseTool execution paths because it lives in ResolveCommand,
+	// which both the env-SENSITIVE InternalExecute<TCommand> path and the typed-response/
+	// ExecuteWithCleanLog path call. [RequiresPackage] is verified against the per-call target
+	// environment; the checker is resolved from the SAME environment-scoped container the command
+	// came from (see ResolveFromCallContainer), so it queries the correct Creatio instance.
+	// A cheap static pre-check runs first: options types without [RequiresPackage] skip resolution
+	// entirely, so non-gated tools stay zero-cost and never force an environment. On an unmet
+	// requirement this throws PackageRequirementException; any other verification failure
+	// (e.g. GetPackages/HTTP/auth failure, unknown environment) propagates as-is.
+	private void EnforcePackageRequirements(T options) {
 		if (!RequiresPackageAttribute.IsDefinedOn(typeof(T))) {
-			return null;
+			return;
 		}
-		try {
-			IRequiredPackageChecker checker = ResolveFromCallContainer<IRequiredPackageChecker>(options);
-			checker.EnsureRequirements(options);
-			return null;
-		}
-		catch (PackageRequirementException ex) {
-			// Expected, caller-actionable precondition refusal (a required package is absent) → exit code 1.
-			return CommandExecutionResult.FromValidationError(ex.Message);
-		}
-		catch (Exception ex) {
-			// Unexpected failure while verifying requirements (e.g. an HTTP/GetPackages error) → exit code -1.
-			return CommandExecutionResult.FromError($"Could not verify package requirements: {ex.Message}");
-		}
+		IRequiredPackageChecker checker = ResolveFromCallContainer<IRequiredPackageChecker>(options);
+		checker.EnsureRequirements(options);
 	}
 
 	// Returns a failed result (exit code 78) when the per-call environment does not satisfy this options
@@ -134,9 +150,6 @@ public abstract class BaseTool<T>(
 			return CommandExecutionResult.FromException(ex);
 		}
 	}
-
-	private protected TCommand ResolveCommand<TCommand>(T options) where TCommand : Command<T> =>
-		ResolveFromCallContainer<TCommand>(options);
 
 	// Resolves an arbitrary service from the per-call, environment-scoped container using the SAME
 	// switch logic the command itself is resolved with. Sharing this with ResolveCommand guarantees the

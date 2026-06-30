@@ -83,7 +83,7 @@ public sealed class McpGuidanceForcingTests {
 	[Description("The core-rules guide carries every hard invariant; the always-on instructions now mandate reading it first rather than inlining the rules.")]
 	public void CoreRulesGuide_ShouldContainHardInvariants_WhenInspected() {
 		// Arrange
-		GuidanceGetTool tool = new();
+		GuidanceGetTool tool = new(Substitute.For<IFeatureToggleService>());
 		// GetGuidance returns an already-completed Task (synchronous lookup), so resolve it inline.
 		GuidanceGetResponse coreRules = tool.GetGuidance(new GuidanceGetArgs("core-rules")).GetAwaiter().GetResult();
 		coreRules.Success.Should().BeTrue(because: "core-rules is a registered guidance name");
@@ -142,7 +142,7 @@ public sealed class McpGuidanceForcingTests {
 	[Description("The routing map (now the home of the routing table) must only route to guide names that resolve in GuidanceCatalog (no dangling routes after the extraction).")]
 	public void RoutingGuide_ShouldOnlyReferenceResolvableGuideNames_WhenParsed() {
 		// Arrange
-		GuidanceGetTool tool = new();
+		GuidanceGetTool tool = new(Substitute.For<IFeatureToggleService>());
 		// GetGuidance returns an already-completed Task (synchronous lookup), so resolve it inline
 		// rather than marking the test async over a non-awaiting call.
 		GuidanceGetResponse routing = tool.GetGuidance(new GuidanceGetArgs("routing")).GetAwaiter().GetResult();
@@ -194,7 +194,7 @@ public sealed class McpGuidanceForcingTests {
 		}
 
 		// Assert: the page-modification GATE is what routes dashboard/analytics work to the widget guides
-		GuidanceGetTool tool = new();
+		GuidanceGetTool tool = new(Substitute.For<IFeatureToggleService>());
 		// GetGuidance returns an already-completed Task (synchronous lookup), so resolve it inline.
 		GuidanceGetResponse pageMod = tool.GetGuidance(new GuidanceGetArgs("page-modification")).GetAwaiter().GetResult();
 		pageMod.Article!.Text.Should().Contain("dashboards",

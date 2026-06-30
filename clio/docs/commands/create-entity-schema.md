@@ -17,6 +17,12 @@ The command saves the schema, applies the DB structure, and publishes the
 configuration, so the new schema is immediately visible to lookup pickers and
 sys-setting reference schema lists. No separate compile is required.
 
+Publishing also requests an OData entities rebuild, so the schema becomes
+reachable over OData (`/0/odata/<Entity>`) without a manual full compile. That
+rebuild runs in the background — OData access appears within a few minutes, not
+immediately. A 404 from OData right after creation is the expected async gap;
+wait and retry rather than running a full compile.
+
 ## Examples
 
 ```bash
