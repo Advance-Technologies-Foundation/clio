@@ -456,7 +456,8 @@ public sealed class ApplicationToolE2ETests {
 			arrangeContext.Session,
 			arrangeContext.CancellationTokenSource.Token,
 			arrangeContext.EnvironmentName,
-			createdApplicationCode);
+			createdApplicationCode,
+			applicationName);
 		ApplicationEntityEnvelope? canonicalMainEntity = infoResult.Result.Entities?
 			.FirstOrDefault(entity => string.Equals(entity.Name, createdApplicationCode, StringComparison.OrdinalIgnoreCase));
 
@@ -844,14 +845,20 @@ public sealed class ApplicationToolE2ETests {
 		McpServerSession session,
 		CancellationToken cancellationToken,
 		string environmentName,
-		string applicationCode) {
+		string applicationCode,
+		string expectedCaption) {
 		// The canonical main entity schema name equals the installed application code, so the same
 		// value is both the get-app-info lookup code and the expected entity name in the readback.
+		// Gate the poll on the fully-settled state the downstream assertions check: the entity must be
+		// present AND its caption must already be the installed application name. The sync-schemas
+		// recompile that delays entity visibility also delays the caption recompute, so polling on Name
+		// alone can return early on an entity whose caption is still the "Base object" fallback, leaving
+		// the caption assertion flaky. Requiring the caption here closes that race instead of relocating it.
 		for (int attempt = 1; attempt < CanonicalMainEntityReadbackAttempts; attempt++) {
 			try {
 				ApplicationInfoActResult candidate = await ActInfoAsync(
 					session, cancellationToken, environmentName, id: null, code: applicationCode);
-				if (ContainsCanonicalMainEntity(candidate, applicationCode)) {
+				if (ContainsCanonicalMainEntity(candidate, applicationCode, expectedCaption)) {
 					return candidate;
 				}
 			}
@@ -868,9 +875,11 @@ public sealed class ApplicationToolE2ETests {
 		return await ActInfoAsync(session, cancellationToken, environmentName, id: null, code: applicationCode);
 	}
 
-	private static bool ContainsCanonicalMainEntity(ApplicationInfoActResult infoResult, string expectedEntityName) {
+	private static bool ContainsCanonicalMainEntity(
+		ApplicationInfoActResult infoResult, string expectedEntityName, string expectedCaption) {
 		return infoResult.Result.Entities?
-			.Any(entity => string.Equals(entity.Name, expectedEntityName, StringComparison.OrdinalIgnoreCase)) == true;
+			.Any(entity => string.Equals(entity.Name, expectedEntityName, StringComparison.OrdinalIgnoreCase)
+				&& string.Equals(entity.Caption, expectedCaption, StringComparison.Ordinal)) == true;
 	}
 
 	[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
