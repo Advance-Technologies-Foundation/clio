@@ -24,18 +24,7 @@ public class ProcessSchemaResponse{
 			FillParameterCaption(item, jsonString, logger);
 			FillCollectionParameterCaption(item, jsonString, logger);
 			FillFlowElementCaption(item, jsonString, logger);
-			
-			
-			// var forAi = new {
-			// 	processName = item.Schema.Name,
-			// 	processDescription = item.Schema.Description?.GetValueOrDefault("en-US", string.Empty),
-			// 	processCaption = item.Schema.Caption?.GetValueOrDefault("en-US", string.Empty),
-			// 	uId= item.Schema.UId,
-			// 	processParameters = item.Schema.MetaDataSchema.Parameters
-			// 	, flowElements = item.Schema.MetaDataSchema.FlowElements
-			// };
-			// item.ForAi = JsonSerializer.Serialize(forAi, IgnoreNullOptions);
-			
+
 			IEnumerable<Guid> listOfSubProcesses = item.Schema.MetaDataSchema?.FlowElements?
 									  .Where(fe => fe.EventType == ManagerMap.EventType.SubProcess && fe.SchemaUId != Guid.Empty)
 									  .Select(fe => (Guid)fe.SchemaUId)
@@ -1062,6 +1051,93 @@ public static class ManagerMap{
 	public static EventType Resolve(Guid managerItemUId) {
 		return Map.GetValueOrDefault(managerItemUId, EventType.Unknown);
 	}
+
+	/// <summary>
+	/// Coarse role of a process element, as the connection-rule validator needs it.
+	/// </summary>
+	public enum ProcessElementRole {
+		/// <summary>A start event (Simple, Signal, Timer, Message).</summary>
+		Start,
+		/// <summary>An end event (Simple end or Terminate).</summary>
+		End,
+		/// <summary>A task / activity (data operations, formula, script, user tasks, sub-process).</summary>
+		Activity,
+		/// <summary>A gateway (Exclusive, Parallel, Inclusive, Event-based).</summary>
+		Gateway,
+		/// <summary>An intermediate catch/throw event.</summary>
+		Intermediate,
+		/// <summary>Anything else (flows, lanes, annotations, data objects, unknown).</summary>
+		Other
+	}
+
+	/// <summary>
+	/// Maps a Process Designer element <c>data-id</c> (the diagram-js type string emitted by the
+	/// <c>process-modeling</c> guidance and used on the live canvas, e.g. <c>readDataUserTask</c>,
+	/// <c>startEventSignal</c>, <c>exclusiveGateway</c>) to the existing <see cref="EventType"/> taxonomy.
+	/// </summary>
+	/// <remarks>
+	/// This is the single source of truth shared by the graph validator and the model reader, so a
+	/// new element only needs one entry here rather than a re-derived taxonomy. It never throws —
+	/// an unrecognized <paramref name="dataId"/> resolves to <see cref="EventType.Unknown"/> so callers
+	/// can surface a finding instead of crashing. The existing GUID <c>managerItemUId</c> map is untouched.
+	/// </remarks>
+	/// <param name="dataId">The designer element <c>data-id</c> string. <see langword="null"/>/empty is allowed.</param>
+	/// <returns>The matching <see cref="EventType"/>, or <see cref="EventType.Unknown"/> when unrecognized.</returns>
+	public static EventType ResolveDataId(string dataId) {
+		if (string.IsNullOrWhiteSpace(dataId)) {
+			return EventType.Unknown;
+		}
+		// Case-INSENSITIVE, and accepts BOTH the diagram-js data-ids used to plan/validate (e.g. startEventSignal,
+		// readDataUserTask) AND the lowercase build/describe tokens (e.g. signalstart, usertask, endevent). This is
+		// what lets the validate <-> create-business-process <-> describe-business-process loop round-trip regardless
+		// of which spelling a surface emits (build/describe use lowercase tokens; the canvas uses camelCase data-ids).
+		string id = dataId.Trim().ToLowerInvariant();
+		return id switch {
+			"startevent" => EventType.StartEvent,
+			"starteventsignal" or "signalstart" => EventType.StartSignalEvent,
+			"starteventtimer" => EventType.StartTimer,
+			"starteventmessage" => EventType.StartMessageEvent,
+			"endevent" => EventType.EndEvent,
+			"exclusivegateway" => EventType.ExclusiveGateway,
+			"parallelgateway" => EventType.ParallelGateway,
+			"inclusivegateway" => EventType.InclusiveGateway,
+			"eventbasedgateway" => EventType.EventBasedGateway,
+			"formulatask" => EventType.FormulaTask,
+			"scripttask" => EventType.ScriptTask,
+			"webservice" => EventType.WebServiceTask,
+			"callactivity" => EventType.SubProcess,
+			"eventsubprocessexpanded" => EventType.EventSubProcess,
+			"usertask" or "performtask" => EventType.UserTask,
+			var i when i.StartsWith("intermediatecatchevent", StringComparison.Ordinal) => EventType.IntermediateCatchSignalEvent,
+			var i when i.StartsWith("intermediatethrowevent", StringComparison.Ordinal) => EventType.IntermediateThrowSignalEvent,
+			// every system/user action element ends with the "usertask" suffix and is an activity.
+			var u when u.EndsWith("usertask", StringComparison.Ordinal) => EventType.UserTask,
+			_ => EventType.Unknown
+		};
+	}
+
+	/// <summary>
+	/// Collapses an <see cref="EventType"/> into the coarse <see cref="ProcessElementRole"/> the
+	/// connection rules operate on (Start / End / Activity / Gateway / Intermediate / Other).
+	/// </summary>
+	/// <param name="eventType">The element event type to classify.</param>
+	/// <returns>The coarse role.</returns>
+	public static ProcessElementRole ResolveRole(EventType eventType) => eventType switch {
+		EventType.StartEvent or EventType.StartMessageEvent or EventType.StartSignalEvent
+			or EventType.StartTimer or EventType.StartMessageNonInterruptingEvent
+			or EventType.StartSignalNonInterruptingEvent => ProcessElementRole.Start,
+		EventType.EndEvent or EventType.TerminateEvent => ProcessElementRole.End,
+		EventType.ParallelGateway or EventType.InclusiveGateway or EventType.ExclusiveGateway
+			or EventType.EventBasedGateway or EventType.ParallelEventBasedGateway
+			or EventType.ExclusiveEventBasedGateway => ProcessElementRole.Gateway,
+		EventType.IntermediateCatchMessageEvent or EventType.IntermediateCatchMessageNonInterruptingEvent
+			or EventType.IntermediateThrowMessageEvent or EventType.IntermediateThrowSignalEvent
+			or EventType.IntermediateCatchSignalEvent or EventType.IntermediateCatchSignalNonInterruptingEvent
+			or EventType.IntermediateCatchTimerEvent => ProcessElementRole.Intermediate,
+		EventType.UserTask or EventType.ScriptTask or EventType.FormulaTask or EventType.ServiceTask
+			or EventType.WebServiceTask or EventType.SubProcess or EventType.EventSubProcess => ProcessElementRole.Activity,
+		_ => ProcessElementRole.Other
+	};
 }
 
 
