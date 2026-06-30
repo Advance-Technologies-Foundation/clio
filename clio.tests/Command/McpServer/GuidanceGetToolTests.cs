@@ -142,7 +142,7 @@ public sealed class GuidanceGetToolTests {
 	[Description("Returns the canonical chart widget guidance article when the caller requests chart-widget.")]
 	public async Task GuidanceGet_Should_Return_Chart_Widget_Article() {
 		// Arrange
-		GuidanceGetTool tool = new();
+		GuidanceGetTool tool = new(_featureToggleService);
 
 		// Act
 		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("chart-widget"));
