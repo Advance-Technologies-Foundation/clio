@@ -148,6 +148,175 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		]
 		""";
 
+	[Test]
+	[Description("Over the real MCP path: builds a process with a constant-default parameter, then setParameter changes its value, caption and direction in place; describe-business-process reads back the constant value and the new direction.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process sets a parameter value/direction and the read-back reflects it")]
+	public async Task ModifyBusinessProcess_Should_SetParameter_AndReadBackValueAndDirection() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpSetParamE2e{Guid.NewGuid():N}";
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildDescriptorWithParameter(processName)
+		});
+
+		// Act — setParameter updates value, caption and direction in place
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = SetParameterOperations()
+		});
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(because: "setParameter must succeed over the real MCP path");
+		string describeJson = JsonSerializer.Serialize(await CallToolAsync(context, DescribeProcessTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName
+			}));
+		describeJson.Should().Contain("ConstValue",
+			because: "the parameter still carries a constant value source after setParameter");
+		describeJson.Should().Contain("direction",
+			because: "describe now emits the parameter direction (the new read-back field)");
+		describeJson.Should().Contain("Out",
+			because: "setParameter changed the direction to Out, which the read-back must reflect");
+	}
+
+	[Test]
+	[Description("Over the real MCP path: removeParameter is hard-blocked when an element mapping still references the parameter, with an error naming the usage site (mirrors the visual designer).")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process blocks removing a parameter an element mapping still references")]
+	public async Task ModifyBusinessProcess_Should_BlockRemoveParameter_WhenReferenced() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpRemoveParamE2e{Guid.NewGuid():N}";
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildDescriptorWithMappedParameter(processName)
+		});
+
+		// Act — attempt to remove a parameter that the task mapping references
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = """[ { "op": "removeParameter", "parameterName": "Linked" } ]"""
+		});
+
+		// Assert — the dependency block surfaces; the parameter must NOT be silently removed
+		string callResultJson = JsonSerializer.Serialize(callResult);
+		callResultJson.Should().Contain("Cannot remove",
+			because: "removing a referenced parameter is hard-blocked, not applied");
+		callResultJson.Should().Contain("Linked",
+			because: "the block message names the parameter that is still referenced");
+	}
+
+	[Test]
+	[Description("Over the real MCP path: setParameter rejects an actual data-type change with a clear error; the parameter is not migrated.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process rejects a parameter data-type change")]
+	public async Task ModifyBusinessProcess_Should_RejectDataTypeChange() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpTypeChangeE2e{Guid.NewGuid():N}";
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildDescriptorWithParameter(processName)
+		});
+
+		// Act — try to change the Integer 'Amount' to Text
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = """[ { "op": "setParameter", "parameterName": "Amount", "parameterUpdate": { "type": "Text" } } ]"""
+		});
+
+		// Assert
+		string callResultJson = JsonSerializer.Serialize(callResult);
+		callResultJson.Should().Contain("data type",
+			because: "changing a parameter's data type is rejected, not applied");
+		callResultJson.Should().Contain("Amount",
+			because: "the rejection names the parameter whose type change was refused");
+	}
+
+	[Test]
+	[Description("Over the real MCP path: addParameter rejects an unsupported (complex) type — Binary — with a clear error, even though the platform resolves that type name.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process rejects an unsupported parameter type")]
+	public async Task ModifyBusinessProcess_Should_RejectUnsupportedParameterType() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpBadTypeE2e{Guid.NewGuid():N}";
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildDescriptor(processName)
+		});
+
+		// Act — try to add a Binary parameter (a deferred complex type)
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = """[ { "op": "addParameter", "parameter": { "name": "Blob", "type": "Binary" } } ]"""
+		});
+
+		// Assert
+		string callResultJson = JsonSerializer.Serialize(callResult);
+		callResultJson.Should().Contain("not supported",
+			because: "only the supported scalar / lookup types may be created");
+		callResultJson.Should().Contain("Binary",
+			because: "the rejection names the unsupported type");
+	}
+
+	private static string SetParameterOperations() =>
+		"""
+		[ { "op": "setParameter", "parameterName": "Amount", "parameterUpdate": { "value": "7", "caption": "Amount due", "direction": "Out" } } ]
+		""";
+
+	private static string BuildDescriptorWithParameter(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP SetParam E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "task1", "type": "performTask" },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "StartEvent1", "target": "task1" },
+		    { "source": "task1", "target": "EndEvent1" }
+		  ],
+		  "parameters": [
+		    { "name": "Amount", "type": "Integer", "direction": "In", "caption": "Amount", "value": "1" }
+		  ]
+		}
+		""";
+
+	private static string BuildDescriptorWithMappedParameter(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP RemoveParam E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "task1", "type": "performTask" },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "StartEvent1", "target": "task1" },
+		    { "source": "task1", "target": "EndEvent1" }
+		  ],
+		  "parameters": [
+		    { "name": "Linked", "type": "Integer", "direction": "In" }
+		  ],
+		  "mappings": [
+		    { "elementName": "task1", "elementParameter": "Duration", "processParameter": "Linked" }
+		  ]
+		}
+		""";
+
 	private static async Task<CallToolResult> CallToolAsync(ArrangeContext context, string toolName,
 		Dictionary<string, object?> args) {
 		IList<McpClientTool> tools = await context.Session.ListToolsAsync(context.CancellationTokenSource.Token);

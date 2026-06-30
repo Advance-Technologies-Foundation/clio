@@ -30,7 +30,7 @@ public class CreateBusinessProcessTool(
 		 + "descriptor is an object with: name (schema code), caption, packageName, elements[] "
 		 + "({name (the element handle/local code), type:startEvent|signalStart|endEvent|userTask "
 		 + "(aliases readData/performTask), caption, userTaskName?, signal?}), flows[] ({source, target} of "
-		 + "element names), parameters[] ({name, type, direction, caption}), and mappings[] ({elementName, "
+		 + "element names), parameters[] ({name, type, direction, caption, value? (a constant default)}), and mappings[] ({elementName, "
 		 + "elementParameter, and one of processParameter|expression|value}). To run the process when a record "
 		 + "is saved/added/changed, use a "
 		 + "signalStart element with signal:{entity:<EntityName>, on:added|modified|deleted} (one event) instead "

@@ -77,6 +77,47 @@ public sealed class CreateBusinessProcessToolE2ETests {
 			because: "describe returns the structured element graph (buildType tokens), confirming a real build rather than an echo");
 	}
 
+	[Test]
+	[Description("Over the real MCP path: a parameter built with a constant default value reads back with source ConstValue.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process persists a constant default value on a parameter")]
+	public async Task CreateBusinessProcess_Should_PersistConstantDefault_OnParameter() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpDefaultE2e{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildDescriptorWithDefault(processName)
+		});
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(because: "building a process with a constant default must succeed");
+		string describeJson = JsonSerializer.Serialize(await DescribeAsync(context, processName));
+		describeJson.Should().Contain("ConstValue",
+			because: "the parameter's constant default is persisted and reads back as a ConstValue source");
+		describeJson.Should().Contain("Retries",
+			because: "the defaulted parameter is present in the read-back graph");
+	}
+
+	private static string BuildDescriptorWithDefault(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Default E2E",
+		  "packageName": "Custom",
+		  "parameters": [ { "name": "Retries", "type": "Integer", "direction": "In", "value": "3" } ],
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "StartEvent1", "target": "EndEvent1" }
+		  ]
+		}
+		""";
+
 	// Reads the built process back as a structured graph via describe-business-process (for build readback).
 	private static async Task<CallToolResult> DescribeAsync(ArrangeContext context, string processCode) =>
 		await context.Session.CallToolAsync(

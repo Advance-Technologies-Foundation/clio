@@ -259,6 +259,10 @@ public sealed class DescribedParameter {
 	[JsonPropertyName("type")]
 	public string Type { get; set; }
 
+	/// <summary>Parameter direction: <c>In</c>, <c>Out</c>, <c>Variable</c>, or <c>Internal</c>; null when unset.</summary>
+	[JsonPropertyName("direction")]
+	public string Direction { get; set; }
+
 	/// <summary>For a lookup parameter: the referenced object (entity schema) name (for example <c>City</c>); null otherwise.</summary>
 	[JsonPropertyName("referenceSchema")]
 	public string ReferenceSchema { get; set; }

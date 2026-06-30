@@ -32,7 +32,7 @@ public static class CreateBusinessProcessPrompt {
 		   `added` | `modified` | `deleted` — the platform-native "run a process when a record is
 		   saved/added/deleted" trigger.
 		 - `flows`: array of `source`/`target` pairs referencing element names (start → tasks → end).
-		 - `parameters`: array of `name`/`type`/`direction`/`caption` (process inputs / variables).
+		 - `parameters`: array of `name`/`type`/`direction`/`caption` (process inputs / variables), each with an optional `value` (a constant default).
 		 - `mappings`: array binding `elementName` + `elementParameter` to one of
 		   `processParameter` (bind to a process parameter), `value` (constant), or `expression` (formula).
 		 First call `list-user-tasks` for `{environmentName}` to discover valid `userTaskName` values, then
