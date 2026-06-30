@@ -31,6 +31,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 	private Clio.Common.EntitySchema.IRuntimeEntitySchemaReader _runtimeEntitySchemaReader;
 	private ILookupDefaultDisplayValueResolver _lookupDefaultDisplayValueResolver;
 	private IEntitySchemaCaptionCultureResolver _captionCultureResolver;
+	private IEntitySchemaDependencyResolver _dependencyResolver;
 	private ILogger _logger;
 	private RemoteEntitySchemaColumnManager _manager;
 	private EntityDesignSchemaDto _loadedSchema;
@@ -55,6 +56,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 		_captionCultureResolver
 			.ResolveEffectiveCulture(Arg.Any<EnvironmentOptions>(), Arg.Any<string?>())
 			.Returns("en-US");
+		_dependencyResolver = Substitute.For<IEntitySchemaDependencyResolver>();
 		_savedSchema = null;
 		_loadedSchema = null;
 		_packageListProvider.GetPackages().Returns(new[] {
@@ -118,6 +120,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 			_runtimeEntitySchemaReader,
 			_lookupDefaultDisplayValueResolver,
 			_captionCultureResolver,
+			_dependencyResolver,
 			_logger);
 	}
 
@@ -926,7 +929,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 		// Assert
 		result.PackageName.Should().Be("UsrPkg",
 			because: "a package-scoped read must report the requested package, not the merged-all-packages label");
-		_designerClient.ReceivedWithAnyArgs(1).GetSchemaDesignItem(default, default);
+		_designerClient.ReceivedWithAnyArgs(1).TryGetSchemaDesignItem(default, default);
 		_runtimeEntitySchemaReader.DidNotReceiveWithAnyArgs().GetByName(default);
 	}
 
@@ -1688,12 +1691,14 @@ internal class RemoteEntitySchemaColumnManagerTests
 	}
 
 	private void SetupLoadedSchema() {
+		Clio.Command.EntitySchemaDesigner.DesignerResponse<EntityDesignSchemaDto> MakeResponse() =>
+			new() { Success = true, Schema = _savedSchema ?? _loadedSchema };
+		_designerClient.TryGetSchemaDesignItem(Arg.Any<GetSchemaDesignItemRequestDto>(),
+				Arg.Any<Clio.Command.RemoteCommandOptions>())
+			.Returns(_ => MakeResponse());
 		_designerClient.GetSchemaDesignItem(Arg.Any<GetSchemaDesignItemRequestDto>(),
 				Arg.Any<Clio.Command.RemoteCommandOptions>())
-			.Returns(_ => new Clio.Command.EntitySchemaDesigner.DesignerResponse<EntityDesignSchemaDto> {
-				Success = true,
-				Schema = _savedSchema ?? _loadedSchema
-			});
+			.Returns(_ => MakeResponse());
 	}
 
 	private static EntityDesignSchemaDto CreateSchema(IEnumerable<EntitySchemaColumnDto> columns,
