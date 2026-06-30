@@ -75,9 +75,9 @@ public sealed class ComponentInfoTool(
 		"PROACTIVELY list the catalog (omit component-type, or pass 'list') at the start of any page work to discover the full component set " +
 		"— including non-obvious components such as crt.Gallery — instead of authoring types from memory or waiting for the user to ask you to search. " +
 		"Detail responses include selection-metadata when the producer publishes it: whenToUse / whenNotToUse (one-line 'pick this when…' / 'do NOT pick this when…' guidance) plus synonyms / useCases — " +
-		"use whenToUse / whenNotToUse to choose between visually similar components (e.g. crt.Gallery vs crt.DataGrid vs crt.List) instead of guessing. " +
+		"use whenToUse / whenNotToUse to choose between visually similar components instead of guessing. " +
 		"The list response also returns 'composites' — pre-built combinations of several components that have NO componentType of their own " +
-		"(e.g. 'Expanded list', 'Attachments', 'Next steps'). When a user wants one of these, do NOT hand-build it from raw types: pass composite='<caption>' " +
+		"— read the returned 'composites' array for the available captions. When a user wants one of these, do NOT hand-build it from raw types: pass composite='<caption>' " +
 		"to get its assembly recipe. A component flagged compositeOnly:true has no standalone toolbar presence — never insert it directly; build the matching composite instead. " +
 		"IMPORTANT: pass environment-name to scope the catalog to the target environment's actual platform version — " +
 		"otherwise results come from the 'latest' catalog, a SUPERSET of every GA version, and may list components " +

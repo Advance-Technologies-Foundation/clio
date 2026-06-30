@@ -15,12 +15,13 @@ namespace Clio.Mcp.E2E;
 /// End-to-end tests for the full infrastructure assert MCP tool.
 /// </summary>
 [TestFixture]
-// Sandbox tier: the arrange path is environment-free, but the assert-infrastructure tool
-// probes host infrastructure (Kubernetes/Docker/local DB/filesystem) and returns an
-// InternalError when that tooling is absent. Per the ENG-92150 classification rule,
-// host-infra-dependent tests default to the Sandbox tier so the NoEnvironment gate stays
-// deterministically green off the deploy-backed runner.
-[Category("McpE2E.Sandbox")]
+// NoEnvironment tier: the arrange path is environment-free and the assert-infrastructure tool
+// degrades gracefully on a host with no Kubernetes/Docker/local DB — each section catches its own
+// failure and the tool always returns a structured aggregate result rather than an MCP protocol
+// error. (Before ENG-91830 the no-Kubernetes fallback IKubernetes client threw from Dispose during
+// per-request DI-scope teardown, surfacing as an opaque InternalError; that is fixed, so the test
+// is now deterministically green env-free and belongs in the merge-blocking NoEnvironment gate.)
+[Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("assert")]
 public sealed class AssertInfrastructureToolE2ETests
@@ -32,7 +33,6 @@ public sealed class AssertInfrastructureToolE2ETests
 	[AllureTag(ToolName)]
 	[AllureName("Assert Infrastructure tool returns full structured infrastructure result")]
 	[AllureDescription("Uses the real clio MCP server to invoke assert-infrastructure and verifies the aggregate structured payload shape without assuming that every host environment section passes.")]
-	[Ignore("ENG-91830: KubernetesClient ctor fix lets the tool construct on no-k8s hosts, but the MCP SDK still fails converting the typed AssertInfrastructureResult to a CallToolResult (InternalError) despite valid STJ serialization and AIJsonUtilities schema-gen. Needs dedicated MCP SDK investigation.")]
 	public async Task AssertInfrastructure_Should_Return_Full_Structured_Result()
 	{
 		// Arrange

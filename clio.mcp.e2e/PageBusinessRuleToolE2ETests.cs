@@ -273,56 +273,123 @@ public sealed class PageBusinessRuleToolE2ETests : McpContractFixtureBase {
 		McpServerSession session,
 		CancellationToken cancellationToken,
 		string environmentName) {
-		// Try both standard naming conventions across Creatio versions/editions
-		string[] candidatePageSchemaNames = ["Contacts_FormPage", "Contact_FormPage"];
-		foreach (string candidate in candidatePageSchemaNames) {
-			CallToolResult callResult = await session.CallToolAsync(
-				PageGetTool.ToolName,
-				new Dictionary<string, object?> {
-					["args"] = new Dictionary<string, object?> {
-						["schema-name"] = candidate,
-						["environment-name"] = environmentName
-					}
-				},
-				cancellationToken);
-			PageGetResponse response = EntitySchemaStructuredResultParser.Extract<PageGetResponse>(callResult);
-			if (!response.Success || response.Files is null || !File.Exists(response.Files.BundleFile)) {
-				continue;
+		// The rule needs a real Freedom UI form page bound to an entity datasource. A base-Contact page
+		// (Contacts_FormPage) only ships with CRM editions, so a bare Studio sandbox has none. Discover any
+		// seeded custom form page instead (the AutoTest seed installs several) and build the rule on the
+		// first one that exposes a datasource-bound attribute, preferring a Contact-bound page so the test
+		// keeps its original Contact intent where the stand provides one.
+		foreach (string candidate in await ResolveCandidatePageSchemaNamesAsync(session, cancellationToken, environmentName)) {
+			PageRuleTarget? target = await TryResolvePageRuleTargetAsync(session, cancellationToken, environmentName, candidate);
+			if (target is not null) {
+				return target;
 			}
-
-			JsonObject bundle = JsonNode.Parse(await File.ReadAllTextAsync(response.Files.BundleFile, cancellationToken))!.AsObject();
-			string attributeName = ResolveContactAttributeName(bundle);
-			string elementName = ResolvePageElementName(bundle, attributeName);
-			return new PageRuleTarget(candidate, response.Page.RootSchemaUId, attributeName, elementName);
 		}
 
 		Assert.Ignore(
-			$"Neither Contacts_FormPage nor Contact_FormPage was found on environment '{environmentName}'. " +
-			"Ensure cliogate is installed and the Contacts schema is available in the sandbox before running this test.");
+			$"No seeded Freedom UI form page with a datasource-bound attribute was found on environment '{environmentName}'. " +
+			"Ensure cliogate is installed and the AutoTest seed (or a Contact form page) is available in the sandbox before running this test.");
 		return null!;
 	}
 
-	private static string ResolveContactAttributeName(JsonObject bundle) {
-		JsonObject attributes = bundle["viewModelConfig"]?["attributes"] as JsonObject ?? [];
-		JsonObject dataSources = bundle["modelConfig"]?["dataSources"] as JsonObject ?? [];
-		List<PageAttributeCandidate> candidates = [];
-		foreach ((string attributeName, JsonNode? attributeNode) in attributes) {
-			if (attributeNode is not JsonObject attribute
-				|| !TryResolveDatasourcePath(attribute, out string datasourceName, out string columnName)
-				|| !IsContactDatasource(dataSources, datasourceName)) {
-				continue;
+	private static async Task<IReadOnlyList<string>> ResolveCandidatePageSchemaNamesAsync(
+		McpServerSession session,
+		CancellationToken cancellationToken,
+		string environmentName) {
+		// Legacy base-Contact names first (real CRM stands), then any seeded custom form page.
+		List<string> candidates = ["Contacts_FormPage", "Contact_FormPage"];
+
+		CallToolResult listResult = await session.CallToolAsync(
+			PageListTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["search-pattern"] = "Usr",
+					["limit"] = 200,
+					["environment-name"] = environmentName
+				}
+			},
+			cancellationToken);
+		PageListResponse pages = EntitySchemaStructuredResultParser.Extract<PageListResponse>(listResult);
+		if (pages.Success && pages.Pages is not null) {
+			// Prefer Contact-named pages so the rule stays Contact-bound where the seed provides one,
+			// then fall back to any other seeded form page.
+			IEnumerable<string> seededFormPages = pages.Pages
+				.Select(page => page.SchemaName)
+				.Where(name => !string.IsNullOrWhiteSpace(name)
+					&& name.EndsWith("_FormPage", StringComparison.OrdinalIgnoreCase))
+				.OrderByDescending(name => name.Contains("Contact", StringComparison.OrdinalIgnoreCase));
+			foreach (string name in seededFormPages) {
+				if (!candidates.Contains(name, StringComparer.OrdinalIgnoreCase)) {
+					candidates.Add(name);
+				}
 			}
-			candidates.Add(new PageAttributeCandidate(attributeName, columnName));
 		}
 
-		PageAttributeCandidate? preferred = candidates.FirstOrDefault(candidate =>
-			string.Equals(candidate.ColumnName, "Name", StringComparison.OrdinalIgnoreCase));
-		(preferred ?? candidates.FirstOrDefault()).Should().NotBeNull(
-			because: "the Contact form page should expose at least one datasource-bound Contact attribute for page business-rule conditions");
-		return (preferred ?? candidates.First()).AttributeName;
+		return candidates;
 	}
 
-	private static string ResolvePageElementName(JsonObject bundle, string attributeName) {
+	private static async Task<PageRuleTarget?> TryResolvePageRuleTargetAsync(
+		McpServerSession session,
+		CancellationToken cancellationToken,
+		string environmentName,
+		string candidatePageSchemaName) {
+		CallToolResult callResult = await session.CallToolAsync(
+			PageGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = candidatePageSchemaName,
+					["environment-name"] = environmentName
+				}
+			},
+			cancellationToken);
+		PageGetResponse response = EntitySchemaStructuredResultParser.Extract<PageGetResponse>(callResult);
+		if (!response.Success || response.Files is null || !File.Exists(response.Files.BundleFile)) {
+			return null;
+		}
+
+		JsonObject bundle = JsonNode.Parse(await File.ReadAllTextAsync(response.Files.BundleFile, cancellationToken))!.AsObject();
+		PageAttributeCandidate? attribute = TryResolveRuleAttribute(bundle);
+		if (attribute is null) {
+			return null;
+		}
+
+		string? elementName = TryResolvePageElementName(bundle, attribute.AttributeName);
+		if (string.IsNullOrWhiteSpace(elementName)) {
+			return null;
+		}
+
+		return new PageRuleTarget(candidatePageSchemaName, response.Page.RootSchemaUId, attribute.AttributeName, elementName);
+	}
+
+	// Returns a datasource-bound attribute to drive the rule condition, or null when the page exposes none.
+	// Preference: a Contact "Name" attribute (original intent) -> any Contact attribute -> any datasource-bound
+	// attribute on a non-Contact seeded page. Never asserts so the caller can skip to the next candidate page.
+	private static PageAttributeCandidate? TryResolveRuleAttribute(JsonObject bundle) {
+		JsonObject attributes = bundle["viewModelConfig"]?["attributes"] as JsonObject ?? [];
+		JsonObject dataSources = bundle["modelConfig"]?["dataSources"] as JsonObject ?? [];
+		List<PageAttributeCandidate> contactCandidates = [];
+		List<PageAttributeCandidate> anyCandidates = [];
+		foreach ((string attributeName, JsonNode? attributeNode) in attributes) {
+			if (attributeNode is not JsonObject attribute
+				|| !TryResolveDatasourcePath(attribute, out string datasourceName, out string columnName)) {
+				continue;
+			}
+			PageAttributeCandidate candidate = new(attributeName, columnName);
+			anyCandidates.Add(candidate);
+			if (IsContactDatasource(dataSources, datasourceName)) {
+				contactCandidates.Add(candidate);
+			}
+		}
+
+		static PageAttributeCandidate? PreferName(List<PageAttributeCandidate> source) =>
+			source.FirstOrDefault(candidate =>
+				string.Equals(candidate.ColumnName, "Name", StringComparison.OrdinalIgnoreCase))
+			?? source.FirstOrDefault();
+
+		return PreferName(contactCandidates) ?? PreferName(anyCandidates);
+	}
+
+	// Returns the page element to hide, or null when the viewConfig exposes no named element.
+	private static string? TryResolvePageElementName(JsonObject bundle, string attributeName) {
 		string? boundElement = EnumerateObjects(bundle["viewConfig"])
 			.FirstOrDefault(obj => string.Equals(obj["control"]?.GetValue<string>(), $"${attributeName}", StringComparison.Ordinal))
 			?["name"]?.GetValue<string>();
@@ -330,12 +397,9 @@ public sealed class PageBusinessRuleToolE2ETests : McpContractFixtureBase {
 			return boundElement;
 		}
 
-		string? firstNamedElement = EnumerateObjects(bundle["viewConfig"])
+		return EnumerateObjects(bundle["viewConfig"])
 			.Select(obj => obj["name"]?.GetValue<string>())
 			.FirstOrDefault(name => !string.IsNullOrWhiteSpace(name));
-		firstNamedElement.Should().NotBeNullOrWhiteSpace(
-			because: "Contacts_FormPage viewConfig should expose at least one named element for show/hide actions");
-		return firstNamedElement!;
 	}
 
 	private static IEnumerable<JsonObject> EnumerateObjects(JsonNode? node) {

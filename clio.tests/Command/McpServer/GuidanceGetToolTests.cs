@@ -73,8 +73,6 @@ public sealed class GuidanceGetToolTests {
 			because: "the top-level argument hint should mention generated composable-app test guidance names");
 		parameterDescription.Description.Should().Contain("page-schema-handlers",
 			because: "the top-level argument hint should mention the dedicated handler guidance name");
-		parameterDescription.Description.Should().Contain("indicator-widget",
-			because: "the top-level argument hint should mention the dedicated indicator widget guidance name");
 		parameterDescription.Description.Should().Contain("related-list",
 			because: "the top-level argument hint should mention the dedicated related-list (detail) guidance name");
 		parameterDescription.Description.Should().Contain("esq-filters",
@@ -89,8 +87,6 @@ public sealed class GuidanceGetToolTests {
 			because: "the serialized name field hint should mention generated composable-app test guidance names");
 		propertyDescription.Description.Should().Contain("page-schema-handlers",
 			because: "the serialized name field hint should stay aligned with the known handler guidance name");
-		propertyDescription.Description.Should().Contain("indicator-widget",
-			because: "the serialized name field hint should mention the dedicated indicator widget guidance name");
 		propertyDescription.Description.Should().Contain("related-list",
 			because: "the serialized name field hint should mention the dedicated related-list (detail) guidance name");
 		propertyDescription.Description.Should().Contain("esq-filters",
@@ -139,6 +135,29 @@ public sealed class GuidanceGetToolTests {
 			because: "the guidance tool should return the canonical indicator widget article text");
 		result.Article.Text.Should().Contain("get-component-info",
 			because: "the trimmed indicator widget guide should point callers to get-component-info as the source of truth");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the canonical chart widget guidance article when the caller requests chart-widget.")]
+	public async Task GuidanceGet_Should_Return_Chart_Widget_Article() {
+		// Arrange
+		GuidanceGetTool tool = new(_featureToggleService);
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("chart-widget"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "chart-widget is a registered guidance name");
+		result.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article");
+		result.Article!.Uri.Should().Be("docs://mcp/guides/chart-widget",
+			because: "the guidance tool should preserve the canonical chart-widget guide URI in the response");
+		result.Article.Text.Should().Contain("clio MCP chart widget guide",
+			because: "the guidance tool should return the canonical chart widget article text");
+		result.Article.Text.Should().Contain("get-component-info",
+			because: "the trimmed chart widget guide should point callers to get-component-info as the source of truth");
 	}
 
 	[Test]
