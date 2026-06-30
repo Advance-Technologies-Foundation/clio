@@ -97,6 +97,22 @@ internal static class ClioCliCommandRunner {
 			string.Join(" ", startInfo.ArgumentList));
 	}
 
+	/// <summary>
+	/// Returns true when the configured sandbox environment is reachable (a successful <c>ping-app</c>).
+	/// Used by the process-designer E2E fixtures to skip (Assert.Ignore) on an unreachable stand instead of
+	/// failing — the same gate the get-process-signature / generate-process-model E2E tests use.
+	/// </summary>
+	public static async Task<bool> IsEnvironmentReachableAsync(
+		McpE2ESettings settings,
+		string environmentName,
+		CancellationToken cancellationToken = default) {
+		ClioCliCommandResult result = await RunAsync(
+			settings,
+			["ping-app", "-e", environmentName],
+			cancellationToken: cancellationToken);
+		return result.ExitCode == 0;
+	}
+
 	public static async Task RunAndAssertSuccessAsync(
 		McpE2ESettings settings,
 		IReadOnlyList<string> arguments,
@@ -145,6 +161,18 @@ internal static class ClioCliCommandRunner {
 		McpE2ESettings settings,
 		string environmentName,
 		CancellationToken cancellationToken = default) {
+		// Probe-first: when cliogate is already serving on the registered environment — e.g. a CI
+		// site-prep step ran reg-web-app + install-gate once before the test run (ENG-91829) — skip the
+		// per-test re-register, login-readiness gate, and install-gate entirely. A single cheap HTTP GET
+		// against a real /rest/CreatioApiGateway/* route replaces tens of seconds of per-test arrange.
+		// Any negative result (env not registered, route 404/warming up, stand unreachable) falls through
+		// to the full self-install path below, which local/manual runs without a prep step still rely on.
+		if (await IsCliogateAlreadyServingAsync(environmentName, cancellationToken)) {
+			TestContext.Out.WriteLine(
+				$"[cliogate] '{environmentName}' is already serving cliogate routes; skipping per-test reg-web-app/install-gate (site prep handled it).");
+			return;
+		}
+
 		// Re-register the sandbox env at the freshly-deployed URL FIRST, before we ping/login it. In CI
 		// the env name ("dev") is registered ahead of time but its stored URL is stale (the build's
 		// real URL is only known at runtime, exposed as the TeamCity param DeployedUrl). Correcting the
@@ -358,13 +386,68 @@ internal static class ClioCliCommandRunner {
 	}
 
 	/// <summary>
+	/// One-shot, short-budget check of whether cliogate is already serving its HTTP handlers on the
+	/// registered <paramref name="environmentName"/>. Used by <see cref="EnsureCliogateInstalledAsync"/>
+	/// to skip the expensive per-test reg-web-app/login/install path when a CI site-prep step has
+	/// already installed cliogate once (ENG-91829). Returns <c>false</c> on any negative or error
+	/// outcome (env not registered, route still 404/warming up, stand unreachable) so the caller falls
+	/// back to the full self-install path; caller cancellation is propagated.
+	/// </summary>
+	private static async Task<bool> IsCliogateAlreadyServingAsync(
+		string environmentName,
+		CancellationToken cancellationToken) {
+		try {
+			// Single attempt bounded by one request timeout: a serving route returns immediately; a
+			// not-yet-serving or unreachable route throws CliogateReadinessTimeoutException, which we
+			// translate to "not ready" rather than waiting out the full install-readiness budget here.
+			await ProbeCliogateServingAsync(
+				environmentName,
+				maxAttempts: 1,
+				delayBetweenAttempts: TimeSpan.Zero,
+				overallTimeout: CliogateHttpRequestTimeout,
+				cancellationToken: cancellationToken);
+			return true;
+		}
+		catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) {
+			throw;
+		}
+		catch (Exception exception) {
+			TestContext.Out.WriteLine(
+				$"[cliogate] readiness probe for '{environmentName}' did not confirm a serving route " +
+				$"({exception.GetType().Name}: {exception.Message}); falling back to reg-web-app + install-gate.");
+			return false;
+		}
+	}
+
+	/// <summary>
 	/// After <c>list-packages</c> (DataService) reports ready, polls a read-only cliogate HTTP route
 	/// until it stops returning 404. The DataService layer can come up before the
 	/// <c>/rest/CreatioApiGateway/*</c> handlers do, so this closes the readiness race that causes
 	/// MCP tools calling cliogate routes to fail with (404) Not Found.
 	/// </summary>
-	private static async Task WaitForCliogateHttpHandlersAsync(
+	private static Task WaitForCliogateHttpHandlersAsync(
 		string environmentName,
+		CancellationToken cancellationToken) =>
+		ProbeCliogateServingAsync(
+			environmentName,
+			CliogateHttpReadinessAttempts,
+			CliogateHttpReadinessDelay,
+			CliogateHttpReadinessOverallTimeout,
+			cancellationToken);
+
+	/// <summary>
+	/// Shared cliogate HTTP-probe setup for both the one-shot skip check
+	/// (<see cref="IsCliogateAlreadyServingAsync"/>) and the post-install readiness poll
+	/// (<see cref="WaitForCliogateHttpHandlersAsync"/>). Resolves the env, composes the probe URL,
+	/// and wires the HttpClient/probe with the cert-accept + no-redirect rationale once, so the two
+	/// call sites differ only in their attempt/delay/timeout budget and the non-obvious TLS/redirect
+	/// rationale cannot drift between them.
+	/// </summary>
+	private static async Task ProbeCliogateServingAsync(
+		string environmentName,
+		int maxAttempts,
+		TimeSpan delayBetweenAttempts,
+		TimeSpan overallTimeout,
 		CancellationToken cancellationToken) {
 		EnvironmentSettings environment = RegisteredClioEnvironmentSettingsResolver.Resolve(environmentName);
 		// Compose the probe URL through ServiceUrlBuilder so the .NET-Framework `0/` alias is applied
@@ -387,9 +470,9 @@ internal static class ClioCliCommandRunner {
 		};
 		ICliogateHttpReadinessProbe probe = new CliogateHttpReadinessProbe(
 			httpClient,
-			CliogateHttpReadinessAttempts,
-			CliogateHttpReadinessDelay,
-			CliogateHttpReadinessOverallTimeout);
+			maxAttempts,
+			delayBetweenAttempts,
+			overallTimeout);
 		await probe.WaitUntilServingAsync(probeUrl, cancellationToken);
 	}
 

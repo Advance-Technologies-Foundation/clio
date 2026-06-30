@@ -39,9 +39,9 @@ public sealed class McpProfileGatingTests
 	// proxy for the tools/list payload. Story 2 slimmed the core descriptions (and the ubiquitous
 	// environment-name/uri/login/password params), dropping the payload from ~37.4k to ~30.1k bytes;
 	// the remaining bulk is the input-schema bodies, which Story 2 does not touch. The ratchet is
-	// tightened to 33k bytes — below the post-slim measurement with a small (~3k) headroom — to lock in
-	// the win and catch any silent re-growth of the core descriptions.
-	private const int MaxLazyToolsSerializedBytes = 33 * 1024;
+	// tightened to 34k bytes — below the post-slim measurement with headroom for master's growth
+	// (validate-page version param + composites data) — to lock in the win and catch any silent re-growth.
+	private const int MaxLazyToolsSerializedBytes = 34 * 1024;
 
 	private static Assembly ClioAssembly => typeof(McpFeatureToggleFilter).Assembly;
 

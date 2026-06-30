@@ -48,8 +48,7 @@ public static class EntitySchemaPrompt {
 		 `Binary`, `Image`, `ImageLookup`, `File`, `SecureText`, and `Email`. `Blob` can be used as an alias for
 		 `Binary`, `ImageLink` for `ImageLookup`, `Encrypted` / `Password` can be used as aliases for `SecureText`,
 		 and `EmailAddress` can be used as an alias for `Email`. For an image/photo field shown with the
-		 `crt.ImageInput` component, use `ImageLookup` ("Image link"), NOT the binary `Image` type — `crt.ImageInput`
-		 cannot read or write a binary `Image` column. `ImageLookup` references the `SysImage` schema automatically,
+		 `crt.ImageInput` component, use `ImageLookup` ("Image link"), NOT the binary `Image` type. `ImageLookup` references the `SysImage` schema automatically,
 		 so do not pass `reference-schema-name` for it. For `Lookup` columns,
 		 provide `reference-schema-name`. Current clio entity-schema tools are part of the canonical clio MCP
 		 contract, so keep using `create-entity-schema` instead of frontend-only names like `entity.create`.

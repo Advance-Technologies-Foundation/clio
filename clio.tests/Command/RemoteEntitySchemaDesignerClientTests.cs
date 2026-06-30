@@ -153,6 +153,55 @@ internal class RemoteEntitySchemaDesignerClientTests
 	}
 
 	[Test]
+	[Description("Posts to WorkspaceExplorerService.svc/RunODataBuild so a freshly published schema is rebuilt into the OData entities assembly without a manual full compile (ENG-92048).")]
+	public void RunODataBuild_ShouldPostToWorkspaceExplorerWithSingleAttempt_WhenInvoked() {
+		// Arrange
+		_serviceUrlBuilder.Build("ServiceModel/WorkspaceExplorerService.svc")
+			.Returns("http://local/ServiceModel/WorkspaceExplorerService.svc");
+		int capturedMaxAttempts = -1;
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+			Arg.Any<int>())
+			.Returns(callInfo => {
+				capturedMaxAttempts = callInfo.ArgAt<int>(3);
+				return "{\"success\":true}";
+			});
+
+		// Act — seed a non-default MaxAttempts (default is 3) so the assertion below actively distinguishes
+		// the hard-coded literal 1 from a regression that accidentally forwards options.MaxAttempts.
+		BaseResponse response = _client.RunODataBuild(new RemoteCommandOptions { MaxAttempts = 5 });
+
+		// Assert
+		response.Success.Should().BeTrue(because: "a successful RunODataBuild response must surface to the caller");
+		_applicationClient.Received(1).ExecutePostRequest(
+			"http://local/ServiceModel/WorkspaceExplorerService.svc/RunODataBuild",
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+		capturedMaxAttempts.Should().Be(1,
+			because: "triggering the OData build is non-idempotent — it must issue exactly one attempt with no retry so a timed-out trigger does not stack concurrent builds, regardless of the options value (seeded to 5 here)");
+	}
+
+	[Test]
+	[Description("Throws an actionable error when RunODataBuild reports failure so the caller can decide how to react (the creator swallows it as a warning) (ENG-92048).")]
+	public void RunODataBuild_ShouldThrow_WhenServiceReportsFailure() {
+		// Arrange
+		_serviceUrlBuilder.Build("ServiceModel/WorkspaceExplorerService.svc")
+			.Returns("http://local/ServiceModel/WorkspaceExplorerService.svc");
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+			Arg.Any<int>())
+			.Returns("{\"success\":false,\"errorInfo\":{\"message\":\"OData build refused.\"}}");
+
+		// Act
+		Action act = () => _client.RunODataBuild(new RemoteCommandOptions());
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>()
+			.WithMessage("*OData build refused.*",
+				because: "an unsuccessful RunODataBuild response must surface the server error message");
+	}
+
+	[Test]
 	[Description("Loads runtime entity schemas by UId so callers can verify DB-first availability after SaveSchemaDBStructure.")]
 	public void GetRuntimeEntitySchema_PostsRuntimeSchemaRequest() {
 		// Arrange

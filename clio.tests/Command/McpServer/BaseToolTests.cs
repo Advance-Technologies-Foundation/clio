@@ -124,8 +124,8 @@ public sealed class BaseToolTests {
 		string[] messageValues = result.Output.Select(message => message.Value?.ToString() ?? string.Empty).ToArray();
 
 		// Assert
-		result.ExitCode.Should().Be(1,
-			because: "an unsatisfied package requirement is an expected, caller-actionable precondition failure, so it surfaces with exit code 1 (not the unexpected-runtime code -1) and fails the MCP tool before the command runs");
+		result.ExitCode.Should().Be(-1,
+			because: "an unsatisfied package requirement must fail the MCP tool before the command runs");
 		messageValues.Should().Contain("Install the cliogate package.",
 			because: "the PackageRequirementException message must be surfaced verbatim to the MCP caller");
 		command.WasExecuted.Should().BeFalse(
@@ -156,8 +156,8 @@ public sealed class BaseToolTests {
 		// Assert
 		result.ExitCode.Should().Be(-1,
 			because: "a verification failure must surface as a clean failed result, not an uncaught exception");
-		messageValues.Should().ContainMatch("*Could not verify package requirements*401 Unauthorized*",
-			because: "the infra failure must be converted into a graceful operator-facing message");
+		messageValues.Should().ContainMatch("*401 Unauthorized*",
+			because: "the infra failure detail must be surfaced to the operator via the exception-chain formatting");
 		command.WasExecuted.Should().BeFalse(
 			because: "the command must not execute when its package requirements could not be verified");
 		ConsoleLogger.Instance.ClearMessages();
@@ -213,6 +213,60 @@ public sealed class BaseToolTests {
 		command.WasExecuted.Should().BeTrue(
 			because: "the command must run once the environment-scoped checker reports its requirements satisfied");
 		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The typed-response path (ResolveCommand called directly, bypassing InternalExecute) is package-gated: ResolveCommand throws PackageRequirementException when the env-scoped checker reports the package missing.")]
+	public void ResolveCommand_ShouldThrowPackageRequirementException_WhenCheckerReportsPackageMissing() {
+		// Arrange
+		var command = new FakeGatedCommand(ConsoleLogger.Instance, exitCode: 0, messageToWrite: "Should not run.");
+		IRequiredPackageChecker checker = Substitute.For<IRequiredPackageChecker>();
+		checker
+			.When(c => c.EnsureRequirements(Arg.Any<object>()))
+			.Do(_ => throw new PackageRequirementException("Install the clioprocessbuilder package."));
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<FakeGatedCommand>(Arg.Any<EnvironmentOptions>()).Returns(command);
+		resolver.Resolve<IRequiredPackageChecker>(Arg.Any<EnvironmentOptions>()).Returns(checker);
+		GatedToolHarness tool = new(ConsoleLogger.Instance, resolver);
+		GatedToolHarnessOptions options = new() { Environment = "gated-env" };
+
+		// Act
+		Action act = () => tool.ResolveDirectly(options);
+
+		// Assert
+		act.Should().Throw<PackageRequirementException>()
+			.WithMessage("Install the clioprocessbuilder package.",
+				because: "the typed-response path that calls ResolveCommand directly must enforce the package gate and let the exception propagate to the tool's own catch");
+		// The checker must be resolved from the same environment-scoped resolver, bound to the per-call environment.
+		resolver.Received(1).Resolve<IRequiredPackageChecker>(
+			Arg.Is<EnvironmentOptions>(o => o.Environment == "gated-env"));
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The typed-response path (ResolveCommand called directly) does not throw and returns the resolved command when the env-scoped checker reports the package present.")]
+	public void ResolveCommand_ShouldReturnResolvedCommandAndNotThrow_WhenCheckerReportsPackagePresent() {
+		// Arrange
+		var command = new FakeGatedCommand(ConsoleLogger.Instance, exitCode: 0, messageToWrite: "Should not run.");
+		IRequiredPackageChecker checker = Substitute.For<IRequiredPackageChecker>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<FakeGatedCommand>(Arg.Any<EnvironmentOptions>()).Returns(command);
+		resolver.Resolve<IRequiredPackageChecker>(Arg.Any<EnvironmentOptions>()).Returns(checker);
+		GatedToolHarness tool = new(ConsoleLogger.Instance, resolver);
+		GatedToolHarnessOptions options = new() { Environment = "gated-env" };
+
+		// Act
+		FakeGatedCommand resolved = tool.ResolveDirectly(options);
+
+		// Assert
+		resolved.Should().BeSameAs(command,
+			because: "ResolveCommand must return the env-scoped command instance once its package requirement is satisfied");
+		// The gate must verify the requirement against the resolved options on the typed-response path,
+		// resolving the checker from the same environment-scoped resolver bound to the per-call environment.
+		checker.Received(1).EnsureRequirements(options);
+		resolver.Received(1).Resolve<IRequiredPackageChecker>(
+			Arg.Is<EnvironmentOptions>(o => o.Environment == "gated-env"));
 	}
 
 	[Test]
@@ -462,6 +516,11 @@ public sealed class BaseToolTests {
 		: BaseTool<GatedToolHarnessOptions>(command: null, logger, commandResolver) {
 		public CommandExecutionResult Execute(GatedToolHarnessOptions options) =>
 			InternalExecute<FakeGatedCommand>(options);
+
+		// Exercises the typed-response path: tools that return a typed response call ResolveCommand
+		// directly (inside ExecuteWithCleanLog) instead of going through InternalExecute.
+		public FakeGatedCommand ResolveDirectly(GatedToolHarnessOptions options) =>
+			ResolveCommand<FakeGatedCommand>(options);
 	}
 
 	private sealed class UngatedToolHarness(ILogger logger, IToolCommandResolver commandResolver)

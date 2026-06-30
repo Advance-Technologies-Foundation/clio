@@ -9,6 +9,8 @@ using Clio.Common;
 using FluentAssertions;
 using Newtonsoft.Json.Linq;
 using NSubstitute;
+using NSubstitute.Core;
+using Clio.UserEnvironment;
 using McpServerLib = ModelContextProtocol.Server;
 using NUnit.Framework;
 
@@ -84,6 +86,45 @@ public sealed class PageSyncToolTests {
 			because: "the result should reference the requested page");
 		response.Pages[0].BodyLength.Should().BeGreaterThan(0,
 			because: "the saved page should report a non-zero body length");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Scopes the registry-driven chart-widget batch validation to the platform version resolved from the target environment")]
+	public async Task SyncPages_WhenEnvironmentResolvesVersion_ScopesChartCatalogToResolvedVersion() {
+		// Arrange
+		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>())
+			.Returns(updateCommand);
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		// The target environment resolves to platform version 8.2.1 via the resolver factory.
+		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
+		settingsRepository.GetEnvironment(Arg.Any<EnvironmentOptions>()).Returns(new EnvironmentSettings());
+		IPlatformVersionResolver resolver = Substitute.For<IPlatformVersionResolver>();
+		resolver.ResolveAsync(Arg.Any<CancellationToken>())
+			.Returns(new PlatformVersionResolution("8.2.1", VersionResolutionSource.Environment));
+		IPlatformVersionResolverFactory resolverFactory = Substitute.For<IPlatformVersionResolverFactory>();
+		resolverFactory.Create(Arg.Any<EnvironmentSettings>()).Returns(resolver);
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), Substitute.For<IMobileComponentInfoCatalog>(),
+			webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()),
+			resolverFactory, settingsRepository);
+		PageSyncArgs args = new(
+			"dev",
+			[new PageSyncPageInput("UsrTodo_FormPage", ValidPageBody)],
+			Validate: true,
+			SkipSampling: true);
+
+		// Act
+		await tool.SyncPages(args, null);
+
+		// Assert — the merged chart type definitions are resolved once per batch on the async entry,
+		// so the catalog must be loaded against the version resolved from the environment, not 'latest'.
+		string requestedVersion = (string)webCatalog.ReceivedCalls()
+			.Single(c => c.GetMethodInfo().Name == nameof(IComponentInfoCatalog.LoadAsync))
+			.GetArguments()[0];
+		requestedVersion.Should().Be("8.2.1",
+			because: "sync-pages must scope its chart-widget batch validation to the version resolved from the target environment");
 	}
 
 	[Test]

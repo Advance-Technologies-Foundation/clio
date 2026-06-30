@@ -403,14 +403,12 @@ internal class ModelBuilder : IModelBuilder{
 	}
 
 	private void PopulateRuntimeSchemas() {
-		if (Program.IsMcpServerMode) {
-			foreach (KeyValuePair<string, Schema> schema in _schemas) {
-				GetRuntimeEntitySchema(schema);
-			}
-
-			return;
-		}
-
+		// add-item-model fetches one runtime schema per entity, which dominates the command's wall-clock
+		// (ENG-92460: ~60s+ on a Studio deploy). Both the CLI and the MCP server paths run this on the
+		// thread-safe ConsoleLogger (ConcurrentQueue enqueue + locked buffer flush) and a logger-free
+		// IApplicationClient, and each iteration mutates only its own Schema.Value, so the fetch is safe to
+		// parallelize. The former MCP-mode sequential fallback predated the thread-safe logger (added in
+		// #549) and is no longer needed; MCP mode now matches the CLI's bounded parallelism.
 		Parallel.ForEach(_schemas, new ParallelOptions { MaxDegreeOfParallelism = 4 }, GetRuntimeEntitySchema);
 	}
 

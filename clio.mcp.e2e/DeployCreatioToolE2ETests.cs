@@ -53,12 +53,16 @@ public sealed class DeployCreatioToolE2ETests
 	}
 
 	[Test]
-	[Category("McpE2E.Sandbox")]
+	// NoEnvironment tier: the invalid-archive path fails inside the command before any Kubernetes
+	// call, so the tool returns a structured command failure env-free. It was previously ignored as
+	// "requires a reachable Kubernetes cluster", but the real blocker was the no-Kubernetes fallback
+	// IKubernetes client throwing from Dispose during per-request DI-scope teardown (opaque
+	// InternalError) — fixed under ENG-91830.
+	[Category("McpE2E.NoEnvironment")]
 	[Description("Starts the real clio MCP server, invokes deploy-creatio with an invalid archive path, and verifies that the tool reaches the real command path instead of returning the removed scheduled-maintenance stub.")]
 	[AllureTag(ToolName)]
 	[AllureName("Deploy creatio reaches the real command path")]
 	[AllureDescription("Uses the real clio MCP server to call deploy-creatio with an invalid zip path and verifies that the result is a real command failure rather than the removed scheduled-maintenance response.")]
-	[Ignore("ENG-91830: requires a reachable Kubernetes cluster / clio-infrastructure not available on CI agents.")]
 	public async Task DeployCreatio_Should_Not_Return_Scheduled_Maintenance_Response()
 	{
 		// Arrange

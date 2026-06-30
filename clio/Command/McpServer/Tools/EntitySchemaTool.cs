@@ -37,6 +37,9 @@ public sealed class CreateEntitySchemaTool(
 
 				 The tool applies the DB structure and publishes the schema automatically, so the new entity is
 				 immediately usable as a Lookup reference in sys-settings and lookup pickers — no compile needed.
+				 Publishing also requests an OData entities rebuild, so the entity becomes reachable over OData
+				 (/0/odata/<Entity>) without a compile. That rebuild is asynchronous (~1-2 min): a 404 from an
+				 odata-* tool right after creation is the expected async gap — wait briefly and retry, do not compile.
 
 				 Entity business rules (conditional editability/required/values) are separate artifacts — call get-guidance with name business-rules to learn more. For the schema-design workflow call get-guidance with name app-modeling.
 				 """)]
@@ -164,6 +167,9 @@ public sealed class CreateLookupTool : BaseTool<CreateEntitySchemaOptions> {
 
 				 The tool applies the DB structure and publishes the schema automatically, so the new lookup is
 				 immediately usable as a Lookup reference in sys-settings and lookup pickers — no compile needed.
+				 Publishing also requests an OData entities rebuild, so the lookup becomes reachable over OData
+				 (/0/odata/<Entity>) without a compile. That rebuild is asynchronous (~1-2 min): a 404 from an
+				 odata-* tool right after creation is the expected async gap — wait briefly and retry, do not compile.
 				 """)]
 	public async Task<CommandExecutionResult> CreateLookup(
 		[Description("Parameters: environment-name, package-name, schema-name, title-localizations (all required); columns (optional)")] [Required] CreateLookupArgs args

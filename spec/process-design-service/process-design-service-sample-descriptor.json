@@ -1,0 +1,20 @@
+{
+  "name": "UsrClioBpCliTest1",
+  "caption": "Clio CLI BP Test 1",
+  "packageName": "Custom",
+  "parameters": [
+    { "name": "MyText", "type": "Text", "direction": "In", "caption": "My Text" }
+  ],
+  "elements": [
+    { "name": "StartEvent1", "type": "startEvent", "caption": "Start" },
+    { "name": "task1", "type": "performTask", "caption": "Do task" },
+    { "name": "EndEvent1", "type": "endEvent", "caption": "End" }
+  ],
+  "flows": [
+    { "source": "StartEvent1", "target": "task1" },
+    { "source": "task1", "target": "EndEvent1" }
+  ],
+  "mappings": [
+    { "elementName": "task1", "elementParameter": "Recommendation", "processParameter": "MyText" }
+  ]
+}
