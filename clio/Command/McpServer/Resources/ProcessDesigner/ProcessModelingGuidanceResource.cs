@@ -127,9 +127,9 @@ public sealed class ProcessModelingGuidanceResource {
 
 			== Parameters / mapping / formulas ==
 			- Process parameters (`parameters[]`): { name, type (Text/Long text/Integer/Float/Money/Boolean/Date/Date-time/Time/Guid/Lookup),
-			  direction (In/Out/Variable/Internal), caption, or referenceSchema = an object name (e.g. City) to make
+			  direction (In/Out/Variable/Internal), caption, description, or referenceSchema = an object name (e.g. City) to make
 			  it a Lookup to that object }, and an optional value (a constant default). A user-task element's own parameters come from the task. The same shape is
-			  used by modify-business-process `addParameter`. Edit a parameter with `setParameter` (parameterName + parameterUpdate: any of caption/code/direction/referenceSchema/value, applied in place — the UId and its references are preserved; a data-type change is rejected) and remove it with `removeParameter` (parameterName; blocked when another parameter's value or an element mapping still references it). Supported types: Text, Long text, Integer, Float, Money, Boolean, Date, Date-time, Time, Guid, and Lookup — other types (composite / entity / file / ...) are not supported yet.
+			  used by modify-business-process `addParameter`. Edit a parameter with `setParameter` (parameterName + parameterUpdate: any of caption/description/code/direction/referenceSchema/value, applied in place — the UId and its references are preserved; a data-type change is rejected) and remove it with `removeParameter` (parameterName; blocked when another parameter's value or an element mapping still references it). Supported types: Text, Long text, Integer, Float, Money, Boolean, Date, Date-time, Time, Guid, and Lookup — other types (composite / entity / file / ...) are not supported yet.
 			- Mappings (`mappings[]`): bind a user-task element's INPUT parameter to a value —
 			  { elementName, elementParameter, and exactly ONE of: processParameter (a process parameter by name) |
 			  value (a constant) | expression (a raw formula) }. `processParameter` flows a process input into the
