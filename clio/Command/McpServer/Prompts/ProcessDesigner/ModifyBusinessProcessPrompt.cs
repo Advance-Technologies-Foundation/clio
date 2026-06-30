@@ -32,9 +32,11 @@ public static class ModifyBusinessProcessPrompt {
 		 - `addFlow` / `removeFlow` — `source` and `target` element names.
 		 - `addParameter` — `parameter` (a process-level parameter: `name`, `type` e.g. `Text`/`Integer`/`Guid`,
 		   optional `direction` In/Out/Variable/Internal, optional `caption`; or `referenceSchema` = an object name
-		   such as `City` to create a Lookup to that object).
-		 - `addMapping` — `mapping` (`elementName`, `elementParameter`, and exactly one of `processParameter` |
-		   `value` | `expression`) to bind an element's input parameter to a value.
+		   such as `City` to create a Lookup to that object; or `typeFromElement` + `typeFromElementParameter` to copy
+		   an element parameter's exact type).
+		 - `addMapping` — `mapping` — target `elementName` + `elementParameter` or `targetProcessParameter`; source is exactly one of
+		   `sourceElement` + `sourceElementParameter` | `processParameter` |
+		   `value` | `expression`. Parameter-to-parameter mappings require compatible types (same type group).
 		 Operations apply in order; any failure aborts the edit (nothing is saved). Example — switch a process to
 		 start on record save: `removeElement` the start event, `addElement` a `signalStart`, then `addFlow` from it
 		 to the first task. Confirm destructive removals with the user before proceeding.

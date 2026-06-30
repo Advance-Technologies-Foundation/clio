@@ -32,9 +32,14 @@ public static class CreateBusinessProcessPrompt {
 		   `added` | `modified` | `deleted` — the platform-native "run a process when a record is
 		   saved/added/deleted" trigger.
 		 - `flows`: array of `source`/`target` pairs referencing element names (start → tasks → end).
-		 - `parameters`: array of `name`/`type`/`direction`/`caption` (process inputs / variables).
-		 - `mappings`: array binding `elementName` + `elementParameter` to one of
-		   `processParameter` (bind to a process parameter), `value` (constant), or `expression` (formula).
+		 - `parameters`: array of `name`/`type`/`direction`/`caption` (process inputs / variables; or
+		   `typeFromElement` + `typeFromElementParameter` to copy an element parameter's exact type — e.g. to expose a
+		   user-task output for mapping with no conversion).
+		 - `mappings`: array binding a target to a source. Target: `elementName` + `elementParameter` (an element input) or
+		   `targetProcessParameter` (a process parameter, e.g. expose an element output as a process output). Source — exactly one of
+		   `sourceElement` + `sourceElementParameter` (another element's output), `processParameter`, `value`
+		   (constant), or `expression` (formula). Parameter-to-parameter mappings require compatible types
+		   (same type group — for a lookup, the same reference object).
 		 First call `list-user-tasks` for `{environmentName}` to discover valid `userTaskName` values, then
 		 confirm the target package with the user before building.
 		 """;

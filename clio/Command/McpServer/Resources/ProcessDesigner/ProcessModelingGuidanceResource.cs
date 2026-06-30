@@ -129,10 +129,15 @@ public sealed class ProcessModelingGuidanceResource {
 			- Process parameters (`parameters[]`): { name, type (Text/Integer/Boolean/DateTime/Float/Lookup/...),
 			  direction (In/Out/Variable/Internal), caption, or referenceSchema = an object name (e.g. City) to make
 			  it a Lookup to that object }. A user-task element's own parameters come from the task. The same shape is
-			  used by modify-business-process `addParameter`.
-			- Mappings (`mappings[]`): bind a user-task element's INPUT parameter to a value —
-			  { elementName, elementParameter, and exactly ONE of: processParameter (a process parameter by name) |
-			  value (a constant) | expression (a raw formula) }. `processParameter` flows a process input into the
+			  used by modify-business-process `addParameter`. To create a process parameter that mirrors an element parameter's EXACT type (e.g. expose a user-task OUTPUT for mapping with NO conversion), set `typeFromElement` + `typeFromElementParameter` instead of `type`/`referenceSchema` — the data value type (and lookup reference object) is copied verbatim.
+			- Mappings (`mappings[]`): bind a TARGET parameter to a SOURCE.
+			  TARGET — `elementName` + `elementParameter` (an element input) OR `targetProcessParameter`
+			  (a process parameter, e.g. expose an element's OUTPUT as a process output).
+			  SOURCE — exactly ONE of: `sourceElement` + `sourceElementParameter` (another element's OUTPUT parameter) |
+			  processParameter (a process parameter by name) | value (a constant) | expression (a raw formula).
+			  Parameter-to-parameter mappings require COMPATIBLE TYPES: source and target in the same data-value-type
+			  group (text↔text, number↔number, …; for a lookup the same reference object) — exactly what the visual
+			  designer allows; incompatible types are rejected. `processParameter` flows a process input into the
 			  field (the server builds the correct reference); `expression` is a C#-like formula, e.g.
 			  `[#SysVariable.CurrentUserContact#]`, `[#System variable.Current date and time#].AddDays(3)`.
 			- Reference syntax when an expression must read another element's output: `[#ElementName.PropertyPath#]`
