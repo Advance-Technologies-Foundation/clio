@@ -251,6 +251,14 @@ public sealed class DescribedParameter {
 	[JsonPropertyName("name")]
 	public string Name { get; set; }
 
+	/// <summary>Parameter caption (title); null when unset.</summary>
+	[JsonPropertyName("caption")]
+	public string Caption { get; set; }
+
+	/// <summary>Parameter description (free-text annotation); null when unset.</summary>
+	[JsonPropertyName("description")]
+	public string Description { get; set; }
+
 	/// <summary>Parameter UId.</summary>
 	[JsonPropertyName("uid")]
 	public string UId { get; set; }
