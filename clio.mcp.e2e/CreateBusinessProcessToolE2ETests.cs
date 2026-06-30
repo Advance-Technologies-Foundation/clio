@@ -77,6 +77,38 @@ public sealed class CreateBusinessProcessToolE2ETests {
 			because: "describe returns the structured element graph (buildType tokens), confirming a real build rather than an echo");
 	}
 
+	[Test]
+	[Description("Over the real MCP path, create-business-process accepts the ENG-92127 type-mirror (typeFromElement) parameter, and describe-business-process reads the built process back with each parameter's direction surfaced.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process mirrors an element parameter's type and describe surfaces direction")]
+	public async Task CreateBusinessProcess_Should_MirrorElementParameterType_AndSurfaceDirectionOnReadback() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpMapE2e{Guid.NewGuid():N}";
+		string descriptor = BuildTypeMirrorDescriptor(processName);
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = descriptor
+		});
+
+		// Assert — the tool forwards the extended ENG-92127 contract and the server builds the process
+		callResult.IsError.Should().NotBeTrue(
+			because: "a descriptor using the typeFromElement type-mirror must build without a transport error");
+		string callResultJson = JsonSerializer.Serialize(callResult);
+		callResultJson.Should().Contain(processName,
+			because: "a successful build reports the created schema name (run against an environment with the ProcessDesignService package and the ActivityUserTask 'Recommendation' parameter)");
+
+		// Readback: the type-mirror process parameter exists, and describe now surfaces each parameter's direction
+		// (the clio DescribedParameter DTO no longer strips direction/isResult — ENG-92127 describe enhancement).
+		string describeJson = JsonSerializer.Serialize(await DescribeAsync(context, processName));
+		describeJson.Should().Contain("MirroredType",
+			because: "the typeFromElement type-mirror created a process parameter cloning the element parameter's exact type");
+		describeJson.Should().Contain("\"direction\"",
+			because: "describe-business-process now surfaces each parameter's direction over the real MCP path, so a caller can tell an element's outputs from its inputs");
+	}
+
 	// Reads the built process back as a structured graph via describe-business-process (for build readback).
 	private static async Task<CallToolResult> DescribeAsync(ArrangeContext context, string processCode) =>
 		await context.Session.CallToolAsync(
@@ -96,6 +128,34 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		  "caption": "Clio BP E2E",
 		  "packageName": "Custom",
 		  "parameters": [ { "name": "MyText", "type": "Text", "direction": "In" } ],
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "task1", "type": "performTask" },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "StartEvent1", "target": "task1" },
+		    { "source": "task1", "target": "EndEvent1" }
+		  ],
+		  "mappings": [
+		    { "elementName": "task1", "elementParameter": "Recommendation", "processParameter": "MyText" }
+		  ]
+		}
+		""";
+
+	// ENG-92127: a process parameter whose type mirrors task1's "Recommendation" element parameter via
+	// typeFromElement/typeFromElementParameter (the type is copied verbatim, no conversion), alongside a
+	// process-parameter -> element-input mapping. Exercises the extended create-business-process contract.
+	private static string BuildTypeMirrorDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Mapping E2E",
+		  "packageName": "Custom",
+		  "parameters": [
+		    { "name": "MyText", "type": "Text", "direction": "In" },
+		    { "name": "MirroredType", "typeFromElement": "task1", "typeFromElementParameter": "Recommendation", "direction": "Out" }
+		  ],
 		  "elements": [
 		    { "name": "StartEvent1", "type": "startEvent" },
 		    { "name": "task1", "type": "performTask" },
