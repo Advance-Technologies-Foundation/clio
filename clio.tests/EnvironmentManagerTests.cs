@@ -324,7 +324,7 @@ internal class EnvironmentManagerTest : BaseClioModuleTests {
 		environmentManager.SaveManifestToFile(actualManifestFileName, environmentManifest);
 		var expectedFile = FileSystem.File.ReadAllText(expectedManifestFileName);
 		var actualFile = FileSystem.File.ReadAllText(actualManifestFileName);
-		expectedFile.Should().Be(actualFile);
+		expectedFile.NormalizeLineEndings().Should().Be(actualFile.NormalizeLineEndings(), "the saved manifest should match the fixture regardless of line endings");
 	}
 
 	[Test]
@@ -353,7 +353,7 @@ internal class EnvironmentManagerTest : BaseClioModuleTests {
 		environmentManager.SaveManifestToFile(actualManifestFileName, environmentManifest);
 		var expectedFile = FileSystem.File.ReadAllText(expectedManifestFileName);
 		var actualFile = FileSystem.File.ReadAllText(actualManifestFileName);
-		expectedFile.Should().Be(actualFile);
+		expectedFile.NormalizeLineEndings().Should().Be(actualFile.NormalizeLineEndings(), "the saved manifest should match the fixture regardless of line endings");
 	}
 
 	[Test]
