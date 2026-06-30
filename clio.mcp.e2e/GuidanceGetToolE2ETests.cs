@@ -443,7 +443,7 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 	[Test]
 	[AllureTag(GuidanceGetTool.ToolName)]
 	[AllureName("get-guidance hides process-designer guides while the process-designer feature is off")]
-	[Description("Verifies that with the default (process-designer disabled) configuration the always-on get-guidance tool treats process-modeling and run-process-button as unknown guides and omits them from availableGuides, closing the experimental-suite gating leak (ENG-90883).")]
+	[Description("Verifies that with the default (process-designer disabled) configuration the always-on get-guidance tool treats process-modeling and run-process-button as unknown guides and omits them from availableGuides, closing the experimental-suite gating leak.")]
 	public async Task GuidanceGet_Should_Hide_ProcessDesigner_Guides_When_Feature_Disabled() {
 		// Arrange
 		await using var context = Arrange(TimeSpan.FromMinutes(3));
