@@ -89,7 +89,7 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 	[AllureDescription("Sends a valid Freedom UI page body with an explicit version through the real MCP server and verifies the call is accepted (not a protocol error) and validation still passes.")]
 	public async Task PageValidateTool_Should_Accept_Explicit_Version_Argument() {
 		// Arrange
-		await using ArrangeContext context = await ArrangeAsync();
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		CallToolResult callResult = await context.Session.CallToolAsync(
