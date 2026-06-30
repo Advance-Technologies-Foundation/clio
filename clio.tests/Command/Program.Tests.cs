@@ -12,6 +12,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[NonParallelizable] // writes the process-wide static Program.IsMcpServerMode; mirrors CommonProgramTest
 [Property("Module", "Command")]
 public class ProgramTestCase : BaseClioModuleTests
 {
