@@ -221,6 +221,40 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	}
 
 	[Test]
+	[Description("Over the real MCP path: the modify addParameter op carries a caption + description on a newly added parameter; describe-business-process reads them back.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process adds a parameter with a description")]
+	public async Task ModifyBusinessProcess_Should_AddParameterWithDescription_AndReadBack() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpAddDescE2e{Guid.NewGuid():N}";
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildDescriptor(processName)
+		});
+
+		// Act — addParameter carrying a caption + description on the new parameter
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = AddParameterWithDescriptionOperations()
+		});
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "addParameter carrying a description must succeed over the real MCP path");
+		string describeJson = JsonSerializer.Serialize(await CallToolAsync(context, DescribeProcessTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName
+			}));
+		describeJson.Should().Contain("Note added via the addParameter op",
+			because: "the added parameter's description reads back via describe-business-process");
+		describeJson.Should().Contain("Added note",
+			because: "the added parameter's caption reads back via describe-business-process");
+	}
+
+	[Test]
 	[Description("Over the real MCP path: removeParameter is hard-blocked when an element mapping still references the parameter, with an error naming the usage site (mirrors the visual designer).")]
 	[AllureTag(ToolName)]
 	[AllureName("modify-business-process blocks removing a parameter an element mapping still references")]
@@ -312,6 +346,11 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	private static string SetParameterDescriptionOperations() =>
 		"""
 		[ { "op": "setParameter", "parameterName": "Amount", "parameterUpdate": { "description": "How much to charge the customer", "caption": "Amount due" } } ]
+		""";
+
+	private static string AddParameterWithDescriptionOperations() =>
+		"""
+		[ { "op": "addParameter", "parameter": { "name": "AddedNote", "type": "Text", "direction": "In", "caption": "Added note", "description": "Note added via the addParameter op" } } ]
 		""";
 
 	private static string BuildDescriptorWithParameter(string processName) =>
