@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Net.Http;
 using Clio.Command;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
@@ -153,6 +154,73 @@ internal class RemoteEntitySchemaColumnManagerTests
 			because: "the first text column should become primary display when none exists");
 		_designerClient.Received(1).SaveSchemaDbStructure(_savedSchema.UId, Arg.Any<Clio.Command.RemoteCommandOptions>());
 		_designerClient.Received(1).GetRuntimeEntitySchema(_savedSchema.UId, Arg.Any<Clio.Command.RemoteCommandOptions>());
+	}
+
+	[Test]
+	[Description("Publishes the configuration and requests the OData entities rebuild after saving a column, in that order, so the column is reachable over OData.")]
+	public void ModifyColumn_PublishesAndRequestsODataRebuild_AfterSaving() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)], primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg", SchemaName = "UsrVehicle", Action = "add", ColumnName = "Name", Type = "Text", Title = "Vehicle name"
+		};
+
+		// Act
+		_manager.ModifyColumn(options);
+
+		// Assert
+		Received.InOrder(() => {
+			_designerClient.SaveSchemaDbStructure(Arg.Any<Guid>(), Arg.Any<Clio.Command.RemoteCommandOptions>());
+			_designerClient.PublishConfigurationChanges(Arg.Any<Clio.Command.RemoteCommandOptions>());
+			_designerClient.RunODataBuild(Arg.Any<Clio.Command.RemoteCommandOptions>());
+		});
+		// because: a saved column is invisible over OData until the configuration is published and the OData
+		// entities assembly is rebuilt; the rebuild must follow the publish
+	}
+
+	[Test]
+	[Description("Succeeds with a warning when the OData rebuild request fails, because a rebuild-request fault must not fail an already-saved column change.")]
+	public void ModifyColumn_SucceedsWithWarning_WhenODataRebuildRequestFails() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)], primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		_designerClient.RunODataBuild(Arg.Any<Clio.Command.RemoteCommandOptions>())
+			.Returns(_ => throw new HttpRequestException("connection reset"));
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg", SchemaName = "UsrVehicle", Action = "add", ColumnName = "Name", Type = "Text", Title = "Vehicle name"
+		};
+
+		// Act
+		Action act = () => _manager.ModifyColumn(options);
+
+		// Assert
+		act.Should().NotThrow(
+			because: "a rebuild-request failure must not fail a column change that was already saved");
+		_logger.Received().WriteWarning(Arg.Is<string>(message =>
+			message.Contains(EntitySchemaPublishHelper.ODataBuildRequestFailedWarningFragment, StringComparison.Ordinal)));
+		// because: the rebuild-request failure must be surfaced as a warning so it is visible, not silent
+	}
+
+	[Test]
+	[Description("Throws an actionable error when publishing the configuration fails after saving a column.")]
+	public void ModifyColumn_Throws_WhenPublishFails() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)], primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		_designerClient.PublishConfigurationChanges(Arg.Any<Clio.Command.RemoteCommandOptions>())
+			.Returns(_ => throw new InvalidOperationException("Compilation failed."));
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg", SchemaName = "UsrVehicle", Action = "add", ColumnName = "Name", Type = "Text", Title = "Vehicle name"
+		};
+
+		// Act
+		Action act = () => _manager.ModifyColumn(options);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>()
+			.WithMessage("*publishing the configuration failed*Compilation failed.*",
+				because: "a publish failure leaves the column invisible and must surface to the caller");
 	}
 
 	[Test]
