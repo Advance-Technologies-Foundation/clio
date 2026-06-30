@@ -5,7 +5,6 @@ using Clio.Common;
 using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
-using Clio.Mcp.E2E.Support.Redis;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
 using ModelContextProtocol.Client;
@@ -18,13 +17,15 @@ namespace Clio.Mcp.E2E;
 /// End-to-end tests for the clear-redis MCP tool.
 /// </summary>
 /// <remarks>
-/// Split by tier (ENG-91829). The invalid-input tests (unknown environment name, unreachable
-/// URL) never reach a live Redis — the env lookup / TCP connect fails first — so they are
-/// env-free (<c>McpE2E.NoEnvironment</c>) and run everywhere via <see cref="ArrangeWithoutRedisAsync"/>.
-/// The success-path tests seed a key in a real sandbox Redis and assert clear-redis removed it;
-/// that Redis is not reachable from the CI agents, so those two stay <c>[Ignore]</c>d until the
-/// job provides a reachable sandbox Redis or adds <c>dotnet test --blame-hang-timeout</c>. The
-/// Redis connect is hang-guarded (Task.Run + WaitAsync in RedisSandboxClient).
+/// clear-redis is a thin remote command: clio POSTs the Creatio <c>ClearRedisDb</c> route and Creatio
+/// flushes its own Redis — clio never connects to Redis itself. The clio-side contract (the tool
+/// forwards the right options, and the command POSTs the <c>ClearRedisDb</c> route) is covered by unit
+/// tests (<c>ClearRedisToolTests</c>, <c>RedisCommandTests</c>), so no live Redis is needed for it.
+/// These e2e tests cover the env-free failure paths (unknown environment name, unreachable URL), which
+/// fail before any live Redis is touched and run everywhere via <see cref="ArrangeWithoutRedisAsync"/>.
+/// The former seed-then-verify happy path was removed (ENG-91829): its only unique value over the unit
+/// tests was observing Creatio's own Redis flush — a backend behaviour that requires a runner-reachable
+/// sandbox Redis the CI agents cannot reach.
 /// </remarks>
 [TestFixture]
 [AllureNUnit]
@@ -32,29 +33,6 @@ namespace Clio.Mcp.E2E;
 public sealed class ClearRedisToolE2ETests {
 	private const string EnvironmentToolName = ClearRedisTool.ClearRedisByEnvironmentName;
 	private const string CredentialsToolName = ClearRedisTool.ClearRedisByCredentialsToolName;
-	private string? _seedKey;
-	private SandboxEnvironmentContext? _sandboxContext;
-
-	[Test]
-	[Category("McpE2E.Sandbox")]
-	[Ignore("ENG-91829: needs a sandbox Redis reachable from the runner (CI agents cannot reach it); re-enable once the job provides one or adds --blame-hang-timeout.")]
-	[AllureTag(EnvironmentToolName)]
-	[AllureDescription("Starts the real clio MCP server, invokes clear-redis against a configured sandbox environment, and verifies the seeded Redis key is removed.")]
-	[AllureName("Clear Redis Tool removes seeded key from sandbox environment")]
-	public async Task ClearRedis_Should_Remove_Seeded_Key_When_Invoked_Through_Mcp() {
-		// Arrange
-		await using ClearRedisArrangeContext arrangeContext = await ArrangeAsync();
-
-		// Act
-		ClearRedisActResult actResult = await ActAsync(arrangeContext);
-
-		// Assert
-		AssertToolCallSucceeded(actResult);
-		AssertCommandExitCode(actResult);
-		AssertSuccessIncludesInfoMessage(actResult);
-		AssertDatabaseConnectionWasResolved(arrangeContext);
-		await AssertSeededKeyWasDeletedAsync(arrangeContext);
-	}
 
 	[Test]
 	[Category("McpE2E.NoEnvironment")]
@@ -73,26 +51,6 @@ public sealed class ClearRedisToolE2ETests {
 		AssertToolCallFailed(actResult);
 		AssertFailureMessageMentionsInvalidEnvironment(actResult, invalidEnvironmentName);
 		AssertFailureIncludesErrorMessage(actResult);
-	}
-
-	[Test]
-	[Category("McpE2E.Sandbox")]
-	[Ignore("ENG-91829: needs a sandbox Redis reachable from the runner (CI agents cannot reach it); re-enable once the job provides one or adds --blame-hang-timeout.")]
-	[AllureTag(CredentialsToolName)]
-	[AllureDescription("Starts the real clio MCP server, invokes clear-redis-by-credentials with the registered sandbox URL and credentials, and verifies the seeded Redis key is removed.")]
-	[AllureName("Clear Redis Tool removes seeded key by explicit credentials")]
-	public async Task ClearRedisByCredentials_Should_Remove_Seeded_Key_When_Invoked_Through_Mcp() {
-		// Arrange
-		await using ClearRedisArrangeContext arrangeContext = await ArrangeAsync();
-
-		// Act
-		ClearRedisActResult actResult = await ActWithCredentialsAsync(arrangeContext, arrangeContext.SandboxContext.Password, isNetCore: true);
-
-		// Assert
-		AssertToolCallSucceeded(actResult);
-		AssertCommandExitCode(actResult);
-		AssertSuccessIncludesInfoMessage(actResult);
-		await AssertSeededKeyWasDeletedAsync(arrangeContext);
 	}
 
 	[Test]
@@ -118,36 +76,6 @@ public sealed class ClearRedisToolE2ETests {
 		AssertToolCallFailed(actResult);
 		AssertFailureIncludesErrorMessage(actResult);
 		AssertFailureMessageMentionsInvalidUrl(actResult);
-	}
-
-	private async Task<ClearRedisArrangeContext> ArrangeAsync() {
-		return await AllureApi.Step("Arrange clear-redis sandbox state", async () => {
-			McpE2ESettings settings = TestConfiguration.Load();
-			if (!settings.AllowDestructiveMcpTests) {
-				Assert.Ignore("Set McpE2E:AllowDestructiveMcpTests=true to run destructive MCP end-to-end tests.");
-			}
-
-			TestConfiguration.EnsureSandboxIsConfigured(settings);
-			_sandboxContext = SandboxEnvironmentResolver.Resolve(settings);
-			_seedKey = $"{settings.Sandbox.SeedKeyPrefix}:{Guid.NewGuid():N}";
-			CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
-
-			// Guard every Redis arrange step with the wall-clock token via WaitAsync. The sandbox
-			// Redis may accept the TCP connection from a CI agent yet never service commands (wrong
-			// instance, auth handshake stall), and StackExchange.Redis does not always honor its own
-			// timeouts in that state. WaitAsync cancels the AWAIT when the token fires regardless of
-			// whether the underlying client observes cancellation, so a stuck step FAILS the test
-			// fast instead of freezing the whole e2e build (which has no per-test hang guard).
-			RedisSandboxClient redis = await RedisSandboxClient
-				.ConnectAsync(_sandboxContext.RedisConnectionString)
-				.WaitAsync(cancellationTokenSource.Token);
-			await redis.SeedKeyAsync(_seedKey, "seeded-by-clio-mcp-e2e").WaitAsync(cancellationTokenSource.Token);
-			(await redis.KeyExistsAsync(_seedKey).WaitAsync(cancellationTokenSource.Token)).Should().BeTrue(
-				because: "the test must prove clear-redis removes data that was present before the MCP call");
-
-			McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-			return new ClearRedisArrangeContext(_sandboxContext, _seedKey, redis, session, cancellationTokenSource);
-		});
 	}
 
 	// Lightweight arrange for the invalid-input tests: resolves the sandbox context from config and
@@ -176,20 +104,9 @@ public sealed class ClearRedisToolE2ETests {
 				ConnectionStringsPath: string.Empty,
 				RedisConnectionString: string.Empty,
 				DatabaseConnectionString: string.Empty);
-			_sandboxContext = sandboxContext;
 			CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
 			McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-			return new ClearRedisArrangeContext(sandboxContext, SeedKey: null, Redis: null, session, cancellationTokenSource);
-		});
-	}
-
-	private static async Task<ClearRedisActResult> ActAsync(ClearRedisArrangeContext arrangeContext) {
-		return await AllureApi.Step("Act by invoking clear-redis through MCP", async () => {
-			IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-			tools.Select(tool => tool.Name).Should().Contain(EnvironmentToolName,
-				because: "the sandbox test path depends on the environment-name clear-redis tool being advertised by the MCP server");
-
-			return await ActWithEnvironmentNameAsync(arrangeContext, arrangeContext.SandboxContext.EnvironmentName);
+			return new ClearRedisArrangeContext(sandboxContext, session, cancellationTokenSource);
 		});
 	}
 
@@ -233,49 +150,6 @@ public sealed class ClearRedisToolE2ETests {
 				arrangeContext.CancellationTokenSource.Token);
 			CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
 			return new ClearRedisActResult(callResult, execution);
-		});
-	}
-
-	[AllureStep("Assert MCP tool result is successful")]
-	[AllureDescription("Assert that the MCP tool call completed without returning an MCP error result")]
-	private static void AssertToolCallSucceeded(ClearRedisActResult actResult) {
-		actResult.CallResult.IsError.Should().NotBeTrue(
-			because: "a successful clear-redis invocation should return a normal MCP tool result");
-	}
-
-	[AllureStep("Assert clear-redis command exit code")]
-	[AllureDescription("Assert that the underlying clear-redis command completed with exit code 0")]
-	private static void AssertCommandExitCode(ClearRedisActResult actResult) {
-		actResult.Execution.ExitCode.Should().Be(0,
-			because: "the underlying clio clear-redis command should complete successfully for the configured sandbox");
-	}
-
-	[AllureStep("Assert success output contains info message")]
-	[AllureDescription("Assert that successful clear-redis execution includes at least one Info log message in the MCP command output")]
-	private static void AssertSuccessIncludesInfoMessage(ClearRedisActResult actResult) {
-		actResult.Execution.Output.Should().NotBeNullOrEmpty(
-			because: "successful MCP command execution should emit human-readable log messages");
-		actResult.Execution.Output!.Should().Contain(
-			message => message.MessageType == LogDecoratorType.Info,
-			because: "successful clear-redis execution should report progress or completion using info-level log output");
-	}
-
-	[AllureStep("Assert sandbox database connection string was resolved")]
-	[AllureDescription("Assert that the sandbox resolver captured the database connection string from ConnectionStrings.config for later end-to-end scenarios")]
-	private static void AssertDatabaseConnectionWasResolved(ClearRedisArrangeContext arrangeContext) {
-		arrangeContext.SandboxContext.DatabaseConnectionString.Should().NotBeNullOrWhiteSpace(
-			because: "the sandbox resolver must capture the database connection string for later MCP end-to-end scenarios");
-	}
-
-	private static async Task AssertSeededKeyWasDeletedAsync(ClearRedisArrangeContext arrangeContext) {
-		await AllureApi.Step("Assert seeded Redis key was deleted", async () => {
-			// Only the success-path (sandbox) tests call this; their arrange always seeds a real Redis.
-			await arrangeContext.Redis!.WaitUntilKeyDeletedAsync(
-				arrangeContext.SeedKey!,
-				TimeSpan.FromSeconds(10),
-				arrangeContext.CancellationTokenSource.Token);
-			(await arrangeContext.Redis.KeyExistsAsync(arrangeContext.SeedKey!)).Should().BeFalse(
-				because: "clear-redis must remove the key that was seeded before the MCP tool call");
 		});
 	}
 
@@ -327,41 +201,12 @@ public sealed class ClearRedisToolE2ETests {
 			because: "the failure log should help a human understand that the credentials-based request failed because the target URL was invalid");
 	}
 
-	[TearDown]
-	public async Task TearDownAsync() {
-		try {
-			if (!string.IsNullOrWhiteSpace(_seedKey) && _sandboxContext is not null) {
-				// Bound the cleanup the same way as arrange: a teardown that hangs on an unreachable
-				// sandbox Redis would freeze the suite just as surely as a hung test body.
-				using CancellationTokenSource teardownTimeout = new(TimeSpan.FromSeconds(30));
-				await using RedisSandboxClient redis = await RedisSandboxClient
-					.ConnectAsync(_sandboxContext.RedisConnectionString)
-					.WaitAsync(teardownTimeout.Token);
-				await redis.DeleteKeyIfExistsAsync(_seedKey).WaitAsync(teardownTimeout.Token);
-			}
-		}
-		catch (OperationCanceledException) {
-			// Cleanup best-effort: the seeded key has a test prefix and will not affect other tests.
-			TestContext.Out.WriteLine("clear-redis e2e teardown timed out reaching the sandbox Redis; leaving the seeded key for the next deploy to discard.");
-		}
-		finally {
-			_seedKey = null;
-			_sandboxContext = null;
-		}
-	}
-
 	private sealed record ClearRedisArrangeContext(
 		SandboxEnvironmentContext SandboxContext,
-		string? SeedKey,
-		RedisSandboxClient? Redis,
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
 		public async ValueTask DisposeAsync() {
 			await Session.DisposeAsync();
-			// Redis is null for the env-free invalid-input arrange (ArrangeWithoutRedisAsync).
-			if (Redis is not null) {
-				await Redis.DisposeAsync();
-			}
 			CancellationTokenSource.Dispose();
 		}
 	}
