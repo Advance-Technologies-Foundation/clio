@@ -1,9 +1,5 @@
 # ADR: Backend command-driven process designer (clioprocessbuilder)
 
-**Status**: Accepted
-
-**Author**: Architect
-
 **Jira**: [ENG-90883](https://creatio.atlassian.net/browse/ENG-90883) (Approach 1 of [ENG-91447](https://creatio.atlassian.net/browse/ENG-91447); follow-ups [ENG-91842](https://creatio.atlassian.net/browse/ENG-91842))
 
 **Confluence**:
