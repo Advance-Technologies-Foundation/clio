@@ -101,6 +101,48 @@ public sealed class CreateBusinessProcessToolE2ETests {
 			because: "the defaulted parameter is present in the read-back graph");
 	}
 
+	[Test]
+	[Description("Over the real MCP path: a parameter built with a caption and description reads both back via describe.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process persists caption and description on a parameter")]
+	public async Task CreateBusinessProcess_Should_PersistCaptionAndDescription_OnParameter() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpDescE2e{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildDescriptorWithDescription(processName)
+		});
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "building a process with a parameter caption + description must succeed");
+		string describeJson = JsonSerializer.Serialize(await DescribeAsync(context, processName));
+		describeJson.Should().Contain("Customer note",
+			because: "the parameter caption is persisted and read back by describe-business-process");
+		describeJson.Should().Contain("Free-text note about the customer",
+			because: "the parameter description is persisted and read back by describe-business-process");
+	}
+
+	private static string BuildDescriptorWithDescription(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Desc E2E",
+		  "packageName": "Custom",
+		  "parameters": [ { "name": "Note", "type": "Text", "direction": "In", "caption": "Customer note", "description": "Free-text note about the customer" } ],
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "StartEvent1", "target": "EndEvent1" }
+		  ]
+		}
+		""";
+
 	private static string BuildDescriptorWithDefault(string processName) =>
 		$$"""
 		{
