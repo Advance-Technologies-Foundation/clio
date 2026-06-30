@@ -16,6 +16,9 @@ DESCRIPTION
     saves the result, applies the DB structure, and publishes the
     configuration so the new schema is immediately visible to lookup pickers
     and sys-setting reference schema lists. No separate compile is required.
+    Publishing also requests an OData entities rebuild, so the schema becomes
+    reachable over OData (/0/odata/<Entity>) without a manual full compile;
+    that rebuild runs in the background and appears within a few minutes.
 
     Current clio entity-schema commands are part of the canonical clio MCP
     contract. Keep using create-entity-schema / modify-entity-schema-column
@@ -106,6 +109,12 @@ NOTES
     - After save, the configuration is published automatically; if publication
       fails, the schema stays saved but invisible to lookup pickers and
       sys-setting reference lists until the configuration is compiled
+    - After publish, an OData entities rebuild is requested so the schema is
+      reachable over OData without a manual compile; it runs in the background
+      (reachable within a few minutes). A 404 right after creation is the
+      expected async gap — wait and retry rather than running a full compile.
+      If requesting the rebuild fails, it is logged as a warning and schema
+      creation still succeeds
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio
