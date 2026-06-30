@@ -82,6 +82,10 @@ internal static class GuidanceCatalog {
 				"related-list",
 				"Canonical MCP guidance for adding a Freedom UI related/child list (detail) and filtering it by the current page record: the 'Expanded list' composite recipe (via get-component-info composite), the child EntityDataSource, the isCollection attribute, and the declarative modelConfig.dependencies (attributePath/relationPath) that scopes the list by page data — no handler.",
 				RelatedListGuidanceResource.Guide),
+			["related-page-binding"] = Create(
+				"related-page-binding",
+				"Canonical MCP guidance for binding Freedom UI pages to an object via create-related-page-addon: choosing the default record page and the add-record page (optionally per role and type), name discovery, the replace-not-merge semantics, and error handling.",
+				RelatedPageBindingGuidanceResource.Guide),
 			["agent-execution"] = Create(
 				"agent-execution",
 				"Canonical MCP guidance for executing approved plans through clio MCP: transport, execution order, branching, and recovery patterns.",
