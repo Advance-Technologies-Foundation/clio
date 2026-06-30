@@ -146,6 +146,12 @@ public sealed class MobilePageConversionGuideTool {
 		TemplateMappingRule templateRule = ResolveTemplateRule(rules, pageResponse.Page?.ParentSchemaName);
 		IReadOnlyDictionary<string, string> containerNameMap = BuildContainerNameMap(templateRule);
 
+		// Read the source page's web template (its parent schema) so its inherited chrome can be
+		// filtered out of the conversion: the merged page tree carries the template's header/scaffold
+		// containers, which the mobile template already provides. Best-effort — never blocks the guide.
+		IReadOnlySet<string> templateComponentNames = LoadTemplateComponentNames(
+			pageResponse.Page?.ParentSchemaName, args);
+
 		string targetName = string.IsNullOrWhiteSpace(args.TargetSchemaName)
 			? DeriveMobileSchemaName(args.SchemaName)
 			: args.TargetSchemaName.Trim();
@@ -173,7 +179,8 @@ public sealed class MobilePageConversionGuideTool {
 				suggestedTarget: targetName,
 				containerNameMap: containerNameMap,
 				sectionRegistration: sectionRegistration,
-				pageBusinessRulesProbe: pageBusinessRules);
+				pageBusinessRulesProbe: pageBusinessRules,
+				templateComponentNames: templateComponentNames);
 		} catch (Exception ex) {
 			return Fail(args, sourceType, $"Failed to analyze source page '{args.SchemaName}': {ex.Message}");
 		}
@@ -184,6 +191,45 @@ public sealed class MobilePageConversionGuideTool {
 			SourceType = sourceType,
 			Guide = guide
 		};
+	}
+
+	/// <summary>
+	/// Best-effort read of the source page's web template (its parent schema, e.g.
+	/// PageWithTabsFreedomTemplate) so its inherited chrome can be filtered out of the conversion.
+	/// Loads the template's merged bundle the same way the source page is loaded and collects every
+	/// component name in it (the template + its own base templates). Returns an empty set when the
+	/// parent name is missing or the read fails — the guide is then produced without template
+	/// subtraction (current behavior). Never throws.
+	/// </summary>
+	private IReadOnlySet<string> LoadTemplateComponentNames(string parentSchemaName, MobilePageConversionGuideArgs args) {
+		var empty = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		if (string.IsNullOrWhiteSpace(parentSchemaName)) {
+			return empty;
+		}
+		try {
+			PageGetOptions options = new() {
+				SchemaName = parentSchemaName,
+				Environment = args.EnvironmentName,
+				Uri = args.Uri,
+				Login = args.Login,
+				Password = args.Password
+			};
+			PageGetResponse templateResponse;
+			PageGetCommand command = _commandResolver.Resolve<PageGetCommand>(options);
+			lock (McpToolExecutionLock.SyncRoot) {
+				try {
+					command.TryGetPage(options, out templateResponse);
+				} finally {
+					_logger.ClearMessages();
+				}
+			}
+			if (templateResponse?.Success == true && templateResponse.Bundle?.ViewConfig is { } viewConfig) {
+				return WebToMobileAnalysisService.CollectComponentNames(viewConfig);
+			}
+		} catch (Exception) {
+			// Best-effort: a failed template read falls back to no subtraction.
+		}
+		return empty;
 	}
 
 	/// <summary>

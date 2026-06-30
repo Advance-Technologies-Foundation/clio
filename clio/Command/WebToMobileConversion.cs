@@ -61,7 +61,8 @@ public static class WebToMobileAnalysisService {
 		string suggestedTarget,
 		IReadOnlyDictionary<string, string> containerNameMap,
 		SectionRegistrationInfo sectionRegistration = null,
-		PageBusinessRuleProbeResult pageBusinessRulesProbe = null) {
+		PageBusinessRuleProbeResult pageBusinessRulesProbe = null,
+		IReadOnlySet<string> templateComponentNames = null) {
 		ArgumentNullException.ThrowIfNull(bundle);
 		ArgumentNullException.ThrowIfNull(mobileTypes);
 		ArgumentNullException.ThrowIfNull(webTypes);
@@ -70,9 +71,20 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, string> map =
 			containerNameMap ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
+		// 0. Filter out the web template's own components at read time. The merged tree carries the
+		//    chrome the source page inherits from its web template (e.g. PageWithTabsFreedomTemplate:
+		//    MainHeader / TitleContainer / BackButton / PageTitle / …) — the mobile template already
+		//    provides those (Scaffold + header). Only the page's DELTA over its web template is
+		//    converted. Container twins listed in the containerMap are kept (they are merge targets).
+		JArray tree = bundle.ViewConfig is null ? new JArray() : JArray.Parse(bundle.ViewConfig.ToJsonString());
+		bool templatePruned = false;
+		if (templateComponentNames is { Count: > 0 }) {
+			tree = PruneTemplateComponents(tree, map, templateComponentNames);
+			templatePruned = true;
+		}
+
 		// 1. Walk the merged tree into a flat structure (names, types, parents, container flags) and
 		//    record, per web type, the source-component names that carry it.
-		JArray tree = bundle.ViewConfig is null ? new JArray() : JArray.Parse(bundle.ViewConfig.ToJsonString());
 		var structure = new List<SourceComponentInfo>();
 		var namesByType = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
 		WalkStructure(tree, parentName: null, map, webByType, mobileByType, structure, namesByType);
@@ -147,7 +159,7 @@ public static class WebToMobileAnalysisService {
 			PageBusinessRules = pageBusinessRules,
 			RequestConversions = requestConversions,
 			AdaptiveLayout = adaptiveLayout.Count > 0 ? adaptiveLayout : null,
-			Constraints = BuildConstraints(webOnly, modelConfig is not null, viewModelConfig is not null, adaptiveLayout.Count > 0),
+			Constraints = BuildConstraints(webOnly, modelConfig is not null, viewModelConfig is not null, adaptiveLayout.Count > 0, templatePruned),
 			NextSteps = BuildNextSteps(modelConfig is not null || viewModelConfig is not null, adaptiveLayout.Count > 0),
 			GuidanceArticle = GuidanceArticleName,
 			SuggestedTargetSchemaName = suggestedTarget
@@ -293,6 +305,76 @@ public static class WebToMobileAnalysisService {
 		return name is { Length: > 0 }
 			&& (name.EndsWith("Container", StringComparison.OrdinalIgnoreCase)
 				|| name.EndsWith("Panel", StringComparison.OrdinalIgnoreCase));
+	}
+
+	/// <summary>
+	/// Collects the names of every named component in a merged viewConfig tree (System.Text.Json).
+	/// Used to build the web template's component-name baseline so the source page's inherited chrome
+	/// can be filtered out at read time. Case-insensitive.
+	/// </summary>
+	public static HashSet<string> CollectComponentNames(JsonArray viewConfig) {
+		var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		CollectComponentNames(viewConfig, names);
+		return names;
+	}
+
+	private static void CollectComponentNames(JsonArray nodes, HashSet<string> names) {
+		if (nodes is null) {
+			return;
+		}
+		foreach (JsonNode node in nodes) {
+			if (node is not JsonObject obj) {
+				continue;
+			}
+			if (obj.TryGetPropertyValue("name", out JsonNode nameNode) && nameNode is not null) {
+				string name = nameNode.GetValue<string>();
+				if (!string.IsNullOrWhiteSpace(name)) {
+					names.Add(name);
+				}
+			}
+			if (obj.TryGetPropertyValue("items", out JsonNode itemsNode) && itemsNode is JsonArray items) {
+				CollectComponentNames(items, names);
+			}
+		}
+	}
+
+	/// <summary>
+	/// Removes from the merged page tree every component the source page inherits from its web template
+	/// (and the template's base schemas): a node whose name is in <paramref name="baseline"/> is dropped
+	/// unless it is a container twin listed in <paramref name="containerNameMap"/> (kept as a merge target).
+	/// Surviving (non-baseline) descendants of a dropped node are hoisted up to its parent so no
+	/// application-added element is lost. Anonymous wrappers and kept nodes are recursed in place.
+	/// </summary>
+	private static JArray PruneTemplateComponents(
+		JArray nodes,
+		IReadOnlyDictionary<string, string> containerNameMap,
+		IReadOnlySet<string> baseline) {
+		var result = new JArray();
+		foreach (JToken token in nodes) {
+			if (token is not JObject node) {
+				result.Add(token);
+				continue;
+			}
+			string name = node["name"]?.ToString();
+			JArray items = node["items"] as JArray;
+			bool isTemplateOwned = !string.IsNullOrEmpty(name)
+				&& baseline.Contains(name)
+				&& !containerNameMap.ContainsKey(name);
+			if (isTemplateOwned) {
+				// Drop the template node itself; hoist any surviving (application) descendants up.
+				if (items is not null) {
+					foreach (JToken survivor in PruneTemplateComponents(items, containerNameMap, baseline)) {
+						result.Add(survivor);
+					}
+				}
+				continue;
+			}
+			if (items is not null) {
+				node["items"] = PruneTemplateComponents(items, containerNameMap, baseline);
+			}
+			result.Add(node);
+		}
+		return result;
 	}
 
 	/// <summary>
@@ -583,7 +665,7 @@ public static class WebToMobileAnalysisService {
 
 	private static List<string> BuildConstraints(
 		IReadOnlyList<string> webOnlySections,
-		bool hasModelConfig, bool hasViewModelConfig, bool hasAdaptiveLayout) {
+		bool hasModelConfig, bool hasViewModelConfig, bool hasAdaptiveLayout, bool templatePruned = false) {
 		var constraints = new List<string> {
 			"Mobile body is plain JSON with only viewConfigDiff / viewModelConfigDiff / modelConfigDiff — no AMD, no markers, no define() wrapper.",
 			"The mobile template provides the Scaffold root — do NOT add a second Scaffold.",
@@ -603,6 +685,12 @@ public static class WebToMobileAnalysisService {
 				"viewModelConfig is structurally supported on mobile; the provided block already removed attributes " +
 				"used only by unsupported components. Apply it via viewModelConfigDiff and reference only OOTB mobile " +
 				"converters — a definitive mobile converter list is forthcoming; flag any custom converter for manual review.");
+		}
+		if (templatePruned) {
+			constraints.Add(
+				"Components inherited from the source page's web template (and its base templates) are excluded " +
+				"from this guide — the mobile template already provides the equivalent header/scaffold chrome. " +
+				"Only the page's delta over its web template is converted; do NOT re-add the web header containers.");
 		}
 		if (webOnlySections is { Count: > 0 }) {
 			constraints.Add($"The source page carries web-only section(s): {string.Join(", ", webOnlySections)}. They cannot be transferred to a mobile body — re-implement the supported behavior as entity-level business rules.");

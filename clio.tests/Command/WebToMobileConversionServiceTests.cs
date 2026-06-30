@@ -77,14 +77,16 @@ public sealed class WebToMobileConversionServiceTests {
 		IReadOnlyDictionary<string, ComponentRegistryEntry> webByType = null,
 		IReadOnlyDictionary<string, ComponentRegistryEntry> mobileByType = null,
 		TemplateMappingRule templateRule = null,
-		IReadOnlyDictionary<string, string> containerNameMap = null) =>
+		IReadOnlyDictionary<string, string> containerNameMap = null,
+		IReadOnlySet<string> templateComponentNames = null) =>
 		WebToMobileAnalysisService.Analyze(
 			bundle, MobileTypes, WebTypes,
 			webByType ?? new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase),
 			mobileByType,
 			Rules, templateRule,
 			sourcePage: "UsrApp_FormPage", sourceTemplate: "PageWithTabsFreedomTemplate",
-			suggestedTarget: "UsrApp_MobileFormPage", containerNameMap: containerNameMap);
+			suggestedTarget: "UsrApp_MobileFormPage", containerNameMap: containerNameMap,
+			templateComponentNames: templateComponentNames);
 
 	private static ComponentSuggestion ForType(MobilePageConversionGuide guide, string sourceType) =>
 		guide.ComponentSuggestions.Single(s => s.SourceType == sourceType);
@@ -671,6 +673,91 @@ public sealed class WebToMobileConversionServiceTests {
 		failed.ConvertedRules.Should().BeEmpty();
 
 		WebToMobileAnalysisService.ConvertPageBusinessRules(null, new List<ElementMapEntry>()).Should().BeNull();
+	}
+
+	#endregion
+
+	#region Template component pruning (read-time exclusion of inherited web-template chrome)
+
+	private static IReadOnlySet<string> Names(params string[] names) =>
+		new HashSet<string>(names, StringComparer.OrdinalIgnoreCase);
+
+	[Test]
+	[Description("Components inherited from the web template (its full chrome subtree) are excluded from the guide; the page's own delta is kept.")]
+	public void Analyze_TemplateComponents_AreExcludedFromStructureAndElementMap() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+					{ "name": "TitleContainer", "type": "crt.FlexContainer", "items": [
+						{ "name": "BackButton", "type": "crt.Button" },
+						{ "name": "PageTitle", "type": "crt.Label" } ] } ] },
+				{ "name": "ContentContainer", "type": "crt.FlexContainer", "items": [
+					{ "name": "UsrName", "type": "crt.Input" } ] } ] } ]
+			""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Input", false), ("crt.Button", false), ("crt.Label", false));
+		// Everything the web template (and its bases) declares: the page-specific ContentContainer/UsrName are NOT here.
+		IReadOnlySet<string> templateNames = Names("Main", "MainHeader", "TitleContainer", "BackButton", "PageTitle");
+
+		MobilePageConversionGuide guide = Analyze(bundle, webByType: web, templateComponentNames: templateNames);
+
+		foreach (string chrome in new[] { "Main", "MainHeader", "TitleContainer", "BackButton", "PageTitle" }) {
+			guide.SourceStructure.Should().NotContain(s => s.Name == chrome, because: $"{chrome} is provided by the web template");
+			guide.ElementMap.Should().NotContain(e => e.WebName == chrome);
+		}
+		// The page's own field survives (hoisted out of the dropped Main wrapper) and is converted.
+		guide.SourceStructure.Should().Contain(s => s.Name == "UsrName");
+		guide.ElementMap.Should().Contain(e => e.WebName == "UsrName" && e.Operation == "insert");
+		// The advisory constraint announces the exclusion.
+		guide.Constraints.Should().Contain(c => c.Contains("inherited from the source page's web template"));
+	}
+
+	[Test]
+	[Description("A container twin listed in the containerMap is kept even though it is in the template baseline (it is the merge target); its application children survive.")]
+	public void Analyze_TemplateTwinInContainerMap_IsKeptNotPruned() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Tabs", "type": "crt.Tabs", "items": [
+				{ "name": "UsrName", "type": "crt.Input" } ] } ]
+			""");
+		var web = Reg(("crt.Tabs", true), ("crt.Input", false));
+		var containerNameMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["Tabs"] = "Tabs" };
+
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, containerNameMap: containerNameMap,
+			templateComponentNames: Names("Tabs"));
+
+		guide.SourceStructure.Should().Contain(s => s.Name == "Tabs", because: "a containerMap twin is a merge target, not chrome");
+		guide.ElementMap.Should().Contain(e => e.WebName == "Tabs" && e.Operation == "merge");
+		guide.ElementMap.Should().Contain(e => e.WebName == "UsrName");
+	}
+
+	[Test]
+	[Description("With no template baseline the tree is untouched (backward-compatible): a would-be-chrome element is still surfaced.")]
+	public void Analyze_NoTemplateBaseline_LeavesTreeUnchanged() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "MainHeader", "type": "crt.FlexContainer", "items": [
+				{ "name": "UsrName", "type": "crt.Input" } ] } ]
+			""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.Input", false));
+
+		MobilePageConversionGuide guide = Analyze(bundle, webByType: web, templateComponentNames: null);
+
+		guide.SourceStructure.Should().Contain(s => s.Name == "MainHeader");
+		guide.Constraints.Should().NotContain(c => c.Contains("inherited from the source page's web template"));
+	}
+
+	[Test]
+	[Description("CollectComponentNames gathers every named node across the nested tree (case-insensitive set).")]
+	public void CollectComponentNames_GathersAllNestedNames() {
+		JsonArray tree = JsonNode.Parse("""
+			[ { "name": "Root", "items": [
+				{ "name": "Header", "items": [ { "name": "Title" } ] },
+				{ "type": "crt.Anonymous" },
+				{ "name": "Body" } ] } ]
+			""")!.AsArray();
+
+		HashSet<string> names = WebToMobileAnalysisService.CollectComponentNames(tree);
+
+		names.Should().BeEquivalentTo("Root", "Header", "Title", "Body");
 	}
 
 	#endregion
