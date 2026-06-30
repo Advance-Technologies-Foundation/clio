@@ -223,8 +223,8 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "the related-list guide must show the canonical relationPath pointing at the page primary data source id");
 		response.Article.Text.Should().Contain("There is no page for new or existing record",
 			because: "the related-list guide must warn that a header CreateRecordRequest Add button on a section-less detail entity throws this runtime error on click");
-		response.Article.Text.Should().Contain("features.editable.itemsCreation",
-			because: "the related-list guide must steer callers to inline grid add as the safe default add affordance");
+		response.Article.Text.Should().Contain("inline add row IS the add affordance",
+			because: "the related-list guide must steer callers to inline grid add (its editable flags fetched from get-component-info crt.DataGrid) as the safe default add affordance");
 	}
 
 	[Test]
@@ -438,6 +438,45 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "successful guidance lookups should return the resolved article payload");
 		response.Article!.Uri.Should().Be("docs://mcp/guides/esq-filters",
 			because: "the canonical resource URI should still be visible in the tool response");
+	}
+
+	[Test]
+	[AllureTag(GuidanceGetTool.ToolName)]
+	[AllureName("get-guidance hides process-designer guides while the process-designer feature is off")]
+	[Description("Verifies that with the default (process-designer disabled) configuration the always-on get-guidance tool treats process-modeling and run-process-button as unknown guides and omits them from availableGuides, closing the experimental-suite gating leak.")]
+	public async Task GuidanceGet_Should_Hide_ProcessDesigner_Guides_When_Feature_Disabled() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		GuidanceGetResponse processModeling = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["name"] = "process-modeling"
+			});
+		GuidanceGetResponse runProcessButton = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["name"] = "run-process-button"
+			});
+
+		// Assert
+		processModeling.Success.Should().BeFalse(
+			because: "process-modeling is gated behind the disabled process-designer feature and must resolve as unknown");
+		processModeling.Article.Should().BeNull(
+			because: "a disabled gated guide must not return its article over the real MCP transport");
+		processModeling.AvailableGuides.Should().NotContain("process-modeling",
+			because: "the disabled process-modeling guide must not be advertised in availableGuides");
+		processModeling.AvailableGuides.Should().Contain("page-schema-handlers",
+			because: "ungated guides must stay advertised while the process-designer feature is off");
+		runProcessButton.Success.Should().BeFalse(
+			because: "run-process-button is gated behind the disabled process-designer feature and must resolve as unknown");
+		runProcessButton.Article.Should().BeNull(
+			because: "a disabled gated guide must not return its article over the real MCP transport");
+		runProcessButton.AvailableGuides.Should().NotContain("run-process-button",
+			because: "the disabled run-process-button guide must not be advertised in availableGuides");
 	}
 
 	[Test]
