@@ -28,6 +28,43 @@ public sealed record RelatedPageAddonResult(
 	string AddonName);
 
 /// <summary>
+/// Identifies the object whose current <c>RelatedPage</c> configuration should be read.
+/// </summary>
+public sealed record RelatedPageAddonReadRequest(
+	string PackageName,
+	string EntitySchemaName);
+
+/// <summary>
+/// The object's current <c>RelatedPage</c> configuration, decoded from the add-on metadata. Lets a caller
+/// read the existing page set before a (replace-not-merge) <see cref="IRelatedPageAddonService.Create"/>,
+/// so a single page can be added or removed without losing the rest.
+/// </summary>
+public sealed record RelatedPageAddonReadResult(
+	string EntitySchemaName,
+	string EntitySchemaUId,
+	string PackageName,
+	string PackageUId,
+	string AddonName,
+	string TypeColumnUId,
+	int PageCount,
+	IReadOnlyList<RelatedPageEntry> Pages);
+
+/// <summary>
+/// One decoded entry of the <c>RelatedPage</c> add-on's page set. Raw UIds are always returned (for a safe
+/// read-modify-write round-trip); names are the best-effort reverse resolution (page schema name; the
+/// standard platform audience role names) and may be <c>null</c> when not resolvable.
+/// </summary>
+public sealed record RelatedPageEntry(
+	string PageSchemaUId,
+	string PageSchemaName,
+	bool IsDefault,
+	bool IsAdd,
+	bool IsSspDefault,
+	string Role,
+	string RoleName,
+	string TypeColumnValue);
+
+/// <summary>
 /// Configures the <c>RelatedPage</c> add-on attached to an object (entity schema). Public seam over the
 /// internal <see cref="IAddonSchemaDesignerClient"/> so the public command can depend on it.
 /// </summary>
@@ -38,6 +75,14 @@ public interface IRelatedPageAddonService {
 	/// <c>SaveSchema</c>, reset the client script cache, and rebuild static configuration.
 	/// </summary>
 	RelatedPageAddonResult Create(RelatedPageAddonRequest request);
+
+	/// <summary>
+	/// Reads the object's current <c>RelatedPage</c> configuration: resolves the object/package, fetches the
+	/// add-on via <c>GetSchema</c>, and decodes the page set (with best-effort reverse resolution of page and
+	/// role names). Read-only — performs no save/rebuild. Pairs with <see cref="Create"/> so a caller can do a
+	/// safe read-modify-write instead of blindly replacing the configuration.
+	/// </summary>
+	RelatedPageAddonReadResult Get(RelatedPageAddonReadRequest request);
 }
 
 internal sealed class RelatedPageAddonService(
@@ -61,6 +106,11 @@ internal sealed class RelatedPageAddonService(
 			["All employees"] = "a29a3ba5-4b0d-de11-9a51-005056c00008",
 			["All external users"] = "720b771c-e7a7-4f31-9cfb-52cd21c3739f"
 		};
+
+	// Reverse of KnownPlatformRoleIds (UId -> name), used by the read path to surface friendly audience names
+	// for the standard platform roles without a SysAdminUnit lookup.
+	private static readonly IReadOnlyDictionary<string, string> KnownPlatformRoleNamesById =
+		KnownPlatformRoleIds.ToDictionary(pair => pair.Value, pair => pair.Key, StringComparer.OrdinalIgnoreCase);
 
 	public RelatedPageAddonResult Create(RelatedPageAddonRequest request) {
 		ArgumentNullException.ThrowIfNull(request);
@@ -148,6 +198,90 @@ internal sealed class RelatedPageAddonService(
 		return new RelatedPageAddonResult(
 			entitySchema.UId.ToString("D"), packageUId, pages.Count, RelatedPageAddonName);
 	}
+
+	public RelatedPageAddonReadResult Get(RelatedPageAddonReadRequest request) {
+		ArgumentNullException.ThrowIfNull(request);
+		if (string.IsNullOrWhiteSpace(request.EntitySchemaName)) {
+			throw new ArgumentException("entity-schema-name is required.");
+		}
+		if (string.IsNullOrWhiteSpace(request.PackageName)) {
+			throw new ArgumentException("package-name is required.");
+		}
+
+		(string packageUId, string packageError) = PageSchemaMetadataHelper.QueryPackageUId(
+			applicationClient, serviceUrlBuilder, request.PackageName);
+		if (packageError != null) {
+			throw new InvalidOperationException(packageError);
+		}
+		if (!Guid.TryParse(packageUId, out Guid packageId)) {
+			throw new InvalidOperationException(
+				$"Resolved package '{request.PackageName}' UId '{packageUId}' is not a valid GUID.");
+		}
+
+		EntityDesignSchemaDto entitySchema = ResolveEntitySchema(request.EntitySchemaName, packageId, request.PackageName);
+
+		var addonRequest = new AddonGetRequestDto {
+			AddonName = RelatedPageAddonName,
+			TargetSchemaUId = entitySchema.UId,
+			TargetParentSchemaUId = entitySchema.ParentSchema?.UId ?? Guid.Empty,
+			TargetPackageUId = packageId,
+			TargetSchemaManagerName = EntitySchemaManagerName,
+			UseFullHierarchy = true
+		};
+
+		// Read-only: GetSchema returns the (server auto-provisioned) add-on with its current metadata; no save.
+		AddonSchemaDto schema = addonSchemaDesignerClient.GetSchema(addonRequest);
+		IReadOnlyList<RelatedPageEntry> pages = DecodePages(schema.MetaData, out string typeColumnUId);
+
+		return new RelatedPageAddonReadResult(
+			request.EntitySchemaName, entitySchema.UId.ToString("D"), request.PackageName, packageUId,
+			RelatedPageAddonName, typeColumnUId, pages.Count, pages);
+	}
+
+	/// <summary>
+	/// Decodes the add-on's <c>metaData</c> JSON string into the page set, mirroring the shape
+	/// <see cref="BuildPages"/> writes. Raw UIds are preserved; page and role names are best-effort reverse
+	/// resolutions (null when not resolvable). Returns an empty list for a never-configured object.
+	/// </summary>
+	private IReadOnlyList<RelatedPageEntry> DecodePages(string metaData, out string typeColumnUId) {
+		typeColumnUId = null;
+		var entries = new List<RelatedPageEntry>();
+		if (string.IsNullOrWhiteSpace(metaData)) {
+			return entries;
+		}
+		JsonNode root = JsonNode.Parse(metaData);
+		typeColumnUId = root?["TypeColumnUId"]?.GetValue<string>();
+		if (root?["Pages"] is not JsonArray pages) {
+			return entries;
+		}
+		foreach (JsonNode page in pages) {
+			if (page is null) {
+				continue;
+			}
+			string pageSchemaUId = page["PageSchemaUId"]?.GetValue<string>();
+			string role = page["Role"]?.GetValue<string>();
+			entries.Add(new RelatedPageEntry(
+				pageSchemaUId,
+				ResolvePageName(pageSchemaUId),
+				page["IsDefault"]?.GetValue<bool>() ?? false,
+				page["Actions"]?["Add"]?.GetValue<bool>() ?? false,
+				page["IsSspDefault"]?.GetValue<bool>() ?? false,
+				role,
+				ResolveRoleName(role),
+				page["TypeColumnValue"]?.GetValue<string>()));
+		}
+		return entries;
+	}
+
+	/// <summary>Best-effort reverse resolution of a page <c>PageSchemaUId</c> to its schema name; null if absent/unresolvable.</summary>
+	private string ResolvePageName(string pageSchemaUId) =>
+		PageSchemaMetadataHelper.QueryPageSchemaNameByUId(applicationClient, serviceUrlBuilder, pageSchemaUId);
+
+	/// <summary>Reverse resolution of a role UId to the standard platform audience name; null for custom/unknown roles.</summary>
+	private static string ResolveRoleName(string roleUId) =>
+		!string.IsNullOrWhiteSpace(roleUId) && KnownPlatformRoleNamesById.TryGetValue(roleUId, out string name)
+			? name
+			: null;
 
 	/// <summary>
 	/// Resolves the target object (entity schema) through the entity schema designer — the same source the

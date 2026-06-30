@@ -30,11 +30,15 @@ public sealed class RelatedPageBindingGuidanceResource {
 		       related/child list to a page (see `related-list`): this guide is about WHICH page represents a record
 		       of the object, not about a detail shown inside a page.
 
-		       The tool: `create-related-page-addon`
-		       Binds pages to an object by writing the object's `RelatedPage` add-on through
+		       The tools: `create-related-page-addon` (write) and `get-related-page-addon` (read)
+		       `create-related-page-addon` binds pages by writing the object's `RelatedPage` add-on through
 		       `AddonSchemaDesignerService`. One call performs the whole round-trip the Interface Designer does when
 		       you save related pages: read the (server auto-provisioned) add-on, replace its page list, save, reset
 		       the client script cache, and rebuild static content so the change is reflected in the UI.
+		       Because the write FULLY REPLACES the page set, READ FIRST with `get-related-page-addon` whenever the
+		       object may already have a configuration: it returns the current entries (raw UIds + resolved page/role
+		       names + flags + type-column-uid). Then modify that set and send the full set back — read → modify →
+		       write. Skipping the read on an already-configured object silently drops the entries you omit.
 
 		       Inputs
 		       - `entity-schema-name` (required) — the OBJECT (entity schema) the pages belong to, e.g. `UsrDelivery`.

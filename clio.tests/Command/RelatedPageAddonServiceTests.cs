@@ -67,6 +67,13 @@ public sealed class RelatedPageAddonServiceTests {
 	// SysAdminUnit (role) rows expose the primary key as "Id", not "UId".
 	private static string RoleRows(string id) => $$"""{"success": true, "rows": [{"Id": "{{id}}"}]}""";
 
+	// SysSchema rows for the reverse page-UId -> name lookup expose the "Name" column.
+	private static string NameRow(string name) => $$"""{"success": true, "rows": [{"Name": "{{name}}"}]}""";
+
+	private void StubAddonMetadata(string metaData) =>
+		_addonSchemaDesignerClient.GetSchema(Arg.Any<AddonGetRequestDto>())
+			.Returns(new AddonSchemaDto { MetaData = metaData });
+
 	private static RelatedPageAddonRequest Request(params RelatedPageSpec[] pages) =>
 		new("Custom", "UsrDeliveryItem", pages, null);
 
@@ -526,5 +533,58 @@ public sealed class RelatedPageAddonServiceTests {
 			because: "an ambiguous role + role-name pair must be rejected, not resolved by silently dropping role-name");
 		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!);
 		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().SaveSchema(default!);
+	}
+
+	[Test]
+	[Description("Get returns an empty configuration when the object's RelatedPage add-on has no pages.")]
+	public void Get_ShouldReturnEmptyConfiguration_WhenObjectHasNoRelatedPages() {
+		// Arrange — the default GetSchema stub returns an empty Pages array; only the package is queried.
+		StubSelectQueue(Rows(PackageUId));
+
+		// Act
+		RelatedPageAddonReadResult result = _service.Get(new RelatedPageAddonReadRequest("Custom", "UsrDeliveryItem"));
+
+		// Assert
+		result.EntitySchemaUId.Should().Be(EntityUId,
+			because: "the resolved object UId is reported even when there are no pages");
+		result.PageCount.Should().Be(0,
+			because: "an unconfigured object decodes to no related-page entries");
+		result.Pages.Should().BeEmpty(
+			because: "the empty Pages metadata yields no entries");
+	}
+
+	[Test]
+	[Description("Get decodes the page set and reverse-resolves page names and the standard platform role names.")]
+	public void Get_ShouldDecodeAndReverseResolvePages_WhenObjectIsConfigured() {
+		// Arrange — addon has an employee default+add page and a portal default page, plus a type column.
+		StubAddonMetadata(
+			"""
+			{"Pages":[{"UId":"u1","PageSchemaUId":"cc000000-0000-0000-0000-00000000000a","IsDefault":true,"IsSspDefault":false,"Actions":{"Add":true},"Role":"a29a3ba5-4b0d-de11-9a51-005056c00008","TypeColumnValue":null},{"UId":"u2","PageSchemaUId":"cc000000-0000-0000-0000-00000000000b","IsDefault":true,"IsSspDefault":false,"Actions":{"Add":false},"Role":"720b771c-e7a7-4f31-9cfb-52cd21c3739f","TypeColumnValue":null}],"TypeColumnUId":"af280321-e749-41dd-98e5-383906747e29"}
+			""");
+		// Resolution order: package, then one page-name reverse-lookup per entry.
+		StubSelectQueue(Rows(PackageUId), NameRow("UsrDeliveryItemFormPage"), NameRow("UsrDeliveryItemPortalPage"));
+
+		// Act
+		RelatedPageAddonReadResult result = _service.Get(new RelatedPageAddonReadRequest("Custom", "UsrDeliveryItem"));
+
+		// Assert
+		result.TypeColumnUId.Should().Be("af280321-e749-41dd-98e5-383906747e29",
+			because: "the top-level type column UId is decoded from the metadata");
+		result.PageCount.Should().Be(2,
+			because: "both page entries are decoded");
+		result.Pages[0].PageSchemaUId.Should().Be(PageAUId,
+			because: "the raw page UId is preserved for a safe read-modify-write");
+		result.Pages[0].PageSchemaName.Should().Be("UsrDeliveryItemFormPage",
+			because: "the page UId is reverse-resolved to its schema name");
+		result.Pages[0].IsDefault.Should().BeTrue(
+			because: "the employee entry is a default page");
+		result.Pages[0].IsAdd.Should().BeTrue(
+			because: "Actions.Add maps to the is-add flag");
+		result.Pages[0].RoleName.Should().Be("All employees",
+			because: "the standard employee role UId reverse-resolves to its name");
+		result.Pages[1].RoleName.Should().Be("All external users",
+			because: "the standard portal role UId reverse-resolves to its name");
+		result.Pages[1].IsAdd.Should().BeFalse(
+			because: "the portal entry has Actions.Add false");
 	}
 }

@@ -223,6 +223,23 @@ namespace Clio.Command {
 			return (id, null);
 		}
 
+		/// <summary>
+		/// Reverse of <see cref="QueryPageSchemaUId"/>: resolves a page (client-unit) schema <c>UId</c> back to
+		/// its <c>Name</c> via the DataService SelectQuery endpoint. Used by <c>get-related-page-addon</c> to
+		/// surface friendly page names for the UIds stored in the RelatedPage add-on metadata. Returns
+		/// <c>null</c> when the UId is empty or the schema is not found.
+		/// </summary>
+		internal static string QueryPageSchemaNameByUId(
+			IApplicationClient applicationClient,
+			IServiceUrlBuilder serviceUrlBuilder,
+			string pageSchemaUId) {
+			if (string.IsNullOrWhiteSpace(pageSchemaUId)) {
+				return null;
+			}
+			(JToken row, _) = QuerySysSchemaRowByUId(applicationClient, serviceUrlBuilder, pageSchemaUId, ("Name", "Name"));
+			return row?["Name"]?.ToString();
+		}
+
 		internal static (string uId, string error) QueryEntitySchemaUId(
 			IApplicationClient applicationClient,
 			IServiceUrlBuilder serviceUrlBuilder,

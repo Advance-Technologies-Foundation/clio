@@ -297,6 +297,7 @@ public class BindingsModule {
 		services.AddTransient<IPageFileWriter, PageFileWriter>();
 		services.AddTransient<PageCreateCommand>();
 		services.AddTransient<CreateRelatedPageAddonCommand>();
+		services.AddTransient<GetRelatedPageAddonCommand>();
 		services.AddTransient<PageTemplatesListCommand>();
 		services.AddTransient<SourceCodeSchemaCreateCommand>();
 		services.AddTransient<SourceCodeSchemaUpdateCommand>();
@@ -386,6 +387,7 @@ public class BindingsModule {
 		services.AddTransient<PageUpdateTool>();
 		services.AddTransient<PageCreateTool>();
 		services.AddTransient<CreateRelatedPageAddonTool>();
+		services.AddTransient<GetRelatedPageAddonTool>();
 		services.AddTransient<PageTemplatesListTool>();
 		services.AddTransient<SchemaCreateTool>();
 		services.AddTransient<SchemaUpdateTool>();
