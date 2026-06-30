@@ -177,10 +177,13 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			}));
 		describeJson.Should().Contain("ConstValue",
 			because: "the parameter still carries a constant value source after setParameter");
-		describeJson.Should().Contain("direction",
-			because: "describe now emits the parameter direction (the new read-back field)");
-		describeJson.Should().Contain("Out",
-			because: "setParameter changed the direction to Out, which the read-back must reflect");
+		// Assert the direction field/value PAIRING, not a bare "Out" substring (which could match unrelated
+		// tokens such as element names). Normalize away quote-escaping (" / \") and pretty-print spacing first.
+		string normalizedDescribe = describeJson
+			.Replace("\\", string.Empty).Replace("u0022", string.Empty)
+			.Replace("\"", string.Empty).Replace(" ", string.Empty);
+		normalizedDescribe.Should().Contain("direction:Out",
+			because: "setParameter changed the direction to Out and describe reads it back paired with the direction field");
 	}
 
 	[Test]
