@@ -1,7 +1,9 @@
 using System.Threading.Tasks;
+using Clio.Command;
 using Clio.Command.McpServer.Resources;
 using Clio.Command.McpServer.Tools;
 using FluentAssertions;
+using NSubstitute;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command.McpServer;
@@ -16,7 +18,9 @@ public sealed class IdentityAssertionGuidanceTests {
 	[Description("GuidanceGet returns the identity-assertion article with the onboarding sequence and prerequisites so AI callers can drive the token-exchange flow.")]
 	public async Task GuidanceGet_ShouldReturnIdentityAssertionArticle_WhenRequestedByName() {
 		// Arrange
-		GuidanceGetTool tool = new();
+		// A bare substitute returns false for every IsEnabled(...); the identity-assertion guide is not
+		// feature-gated, so it stays visible regardless of toggle state.
+		GuidanceGetTool tool = new(Substitute.For<IFeatureToggleService>());
 
 		// Act
 		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("identity-assertion"));

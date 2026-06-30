@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Clio.Command.McpServer.Resources.ProcessDesigner;
 using ModelContextProtocol.Protocol;
 
 namespace Clio.Command.McpServer.Resources;
@@ -120,19 +121,39 @@ internal static class GuidanceCatalog {
 				MobilePageGuidanceResource.Guide),
 			["sys-settings"] = Create(
 				"sys-settings",
-				"Canonical MCP guidance for the Creatio sys-settings CRU surface: tool order, supported value-type-names and aliases, Lookup resolution, SecureText masking, Date/Time TZ caveat, and Binary exclusion.",
+				"""
+				Canonical MCP guidance for the Creatio sys-settings CRU surface: tool order, supported value-type-names and aliases, 
+				Lookup resolution, SecureText masking, Date/Time TZ caveat, and Binary exclusion.
+				""",
 				SysSettingsGuidanceResource.Guide),
 			["ui-project"] = Create(
 				"ui-project",
-				"Canonical MCP guidance for scaffolding a Freedom UI Angular remote-module project inside an existing clio workspace via new-ui-project: required arguments, naming constraints, file placement, and the create-workspace prerequisite.",
+				"""
+				Canonical MCP guidance for scaffolding a Freedom UI Angular remote-module project inside an 
+				existing clio workspace via new-ui-project: required arguments, naming constraints, file placement, 
+				and the create-workspace prerequisite.
+				""",
 				WorkspaceUiProjectGuidanceResource.Guide),
+			["process-modeling"] = Create(
+				"process-modeling",
+				"""
+				Canonical MCP guidance for designing Creatio business processes (BPMN): 
+				the determinism contract (clio makes no LLM call; the agent owns intent->BPMN translation), 
+				the element catalog (data-id/label/purpose/setup fields), connection rules R1-R17 + can/can't matrix, 
+				the validate-then-drive build recipe, and the supported slice (Simple/Signal/Timer start + Read data).
+				""",
+				ProcessModelingGuidanceResource.Guide,
+				featureGateType: typeof(ProcessModelingGuidanceResource)),
 			["run-process-button"] = Create(
 				"run-process-button",
-				"Canonical MCP guidance for adding a Freedom UI button that runs a business process "
-				+ "(crt.RunBusinessProcessRequest) via update-page: get-process-signature first, parameter "
-				+ "key = CODE not caption (silent-skip warning), and the static-constant / "
-				+ "view-model-attribute-binding / current-record variants.",
-				RunProcessButtonGuidanceResource.Guide),
+				"""
+				Canonical MCP guidance for adding a Freedom UI button that runs a business process
+				(crt.RunBusinessProcessRequest) via update-page: get-process-signature first, parameter
+				key = CODE not caption (silent-skip warning), and the static-constant /
+				view-model-attribute-binding / current-record variants.
+				""",
+				RunProcessButtonGuidanceResource.Guide,
+				featureGateType: typeof(RunProcessButtonGuidanceResource)),
 			["identity-assertion"] = Create(
 				"identity-assertion",
 				"Canonical MCP guidance for the Creatio identity-assertion / Identity Service V3 token-exchange "
@@ -161,17 +182,51 @@ internal static class GuidanceCatalog {
 	internal static IReadOnlyList<string> GetNames() => Entries.Keys.OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToArray();
 
 	/// <summary>
-	/// Tries to resolve one guidance article by its canonical name.
+	/// Returns the stable set of guidance names that are currently visible for the supplied feature-toggle state.
+	/// Entries gated behind a disabled feature flag are omitted.
+	/// </summary>
+	/// <param name="toggles">The feature-toggle service used to evaluate each entry's gate type.</param>
+	internal static IReadOnlyList<string> GetNames(IFeatureToggleService toggles) =>
+		Entries.Values
+			.Where(entry => IsVisible(entry, toggles))
+			.Select(entry => entry.Name)
+			.OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+			.ToArray();
+
+	/// <summary>
+	/// Tries to resolve one guidance article by its canonical name, regardless of feature-toggle state.
 	/// </summary>
 	internal static bool TryGet(string name, out GuidanceCatalogEntry entry) => Entries.TryGetValue(name, out entry);
 
-	private static GuidanceCatalogEntry Create(string name, string description, ResourceContents contents) {
+	/// <summary>
+	/// Tries to resolve one currently-visible guidance article by its canonical name. An entry gated behind a
+	/// disabled feature flag is treated as unknown (returns <c>false</c>).
+	/// </summary>
+	/// <param name="name">The canonical guidance name.</param>
+	/// <param name="toggles">The feature-toggle service used to evaluate the entry's gate type.</param>
+	/// <param name="entry">The resolved entry when visible; otherwise <c>null</c>.</param>
+	internal static bool TryGet(string name, IFeatureToggleService toggles, out GuidanceCatalogEntry entry) {
+		if (Entries.TryGetValue(name, out entry) && IsVisible(entry, toggles)) {
+			return true;
+		}
+		entry = null;
+		return false;
+	}
+
+	/// <summary>
+	/// Determines whether a catalog entry is visible for the supplied feature-toggle state. An ungated entry
+	/// (no <see cref="GuidanceCatalogEntry.FeatureGateType"/>) is always visible and never calls the toggle service.
+	/// </summary>
+	internal static bool IsVisible(GuidanceCatalogEntry entry, IFeatureToggleService toggles) =>
+		entry.FeatureGateType is null || toggles.IsEnabled(entry.FeatureGateType);
+
+	private static GuidanceCatalogEntry Create(string name, string description, ResourceContents contents, Type featureGateType = null) {
 		if (contents is not TextResourceContents article) {
 			throw new InvalidOperationException(
 				$"Guidance '{name}' must return {nameof(TextResourceContents)}.");
 		}
 
-		return new GuidanceCatalogEntry(name, description, article);
+		return new GuidanceCatalogEntry(name, description, article, featureGateType);
 	}
 }
 
@@ -181,5 +236,6 @@ internal static class GuidanceCatalog {
 internal sealed record GuidanceCatalogEntry(
 	string Name,
 	string Description,
-	TextResourceContents Article
+	TextResourceContents Article,
+	Type FeatureGateType = null
 );

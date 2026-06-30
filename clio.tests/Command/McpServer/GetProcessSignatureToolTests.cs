@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
+using Clio.Command.McpServer.Tools.ProcessDesigner;
 using Clio.Command.ProcessModel;
 using Clio.Common;
 using FluentAssertions;
@@ -192,6 +193,11 @@ public class GetProcessSignatureToolTests {
 		response.Success.Should().BeFalse(because: "no lookup is attempted for blank input");
 		response.Error.Should().Contain("process-name", because: "the error should name the missing argument");
 	}
+
+	// NOTE: the former GetProcessSignature_Should_Return_RequirementFailure_When_ProcessBuilderPackageMissing test
+	// was removed — get-process-signature no longer carries [RequiresPackage("clioprocessbuilder")] (it reads the
+	// built-in DataService, not ProcessDesignService — PR #715). The "not gated" invariant is locked in by
+	// ProcessDesignerRequiresPackageAttributeTests.GetProcessSignatureOptions_ShouldNotDeclareProcessBuilderRequirement_*.
 
 	private sealed class FakeGetProcessSignatureCommand : GetProcessSignatureCommand {
 		public GetProcessSignatureOptions CapturedOptions { get; private set; }
