@@ -12,6 +12,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Command.McpServer;
 
 [TestFixture]
+[Property("Module", "McpServer")]
 public sealed class ODataReadToolTests {
 	[Test]
 	[Category("Unit")]
@@ -347,6 +348,116 @@ public sealed class ODataReadToolTests {
 
 		// Assert — no $filter when structured filters produce no conditions
 		urlBuilder.Received(1).Build("odata/Contact?$top=5");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects top=0 with a structured validation failure instead of silently returning the default page.")]
+	public void Read_Should_Reject_Top_When_Zero() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		commandResolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		ODataReadTool tool = new(commandResolver);
+
+		// Act
+		ODataReadResponse response = tool.Read(new ODataReadArgs {
+			EnvironmentName = "dev",
+			Entity = "Contact",
+			Top = 0
+		});
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "top=0 is out of the documented 1-100 range and must not silently return the default page");
+		response.Error.Should().Contain("top must be between 1 and 100",
+			because: "the failure should explain the accepted top range");
+		client.DidNotReceive().ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects a negative top so it can never silently fall through to an unbounded read.")]
+	public void Read_Should_Reject_Top_When_Negative() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		commandResolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		ODataReadTool tool = new(commandResolver);
+
+		// Act
+		ODataReadResponse response = tool.Read(new ODataReadArgs {
+			EnvironmentName = "dev",
+			Entity = "Contact",
+			Top = -5
+		});
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a negative top is invalid and must be rejected, never silently treated as unbounded");
+		response.Error.Should().Contain("-5",
+			because: "the failure should echo the rejected value so the caller can see what was wrong");
+		client.DidNotReceive().ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects a top above the documented maximum instead of issuing an unclamped query.")]
+	public void Read_Should_Reject_Top_When_Above_Maximum() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		commandResolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		ODataReadTool tool = new(commandResolver);
+
+		// Act
+		ODataReadResponse response = tool.Read(new ODataReadArgs {
+			EnvironmentName = "dev",
+			Entity = "Contact",
+			Top = 9999
+		});
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a top above 100 exceeds the documented range and must be rejected rather than sent unclamped");
+		response.Error.Should().Contain("top must be between 1 and 100",
+			because: "the failure should explain the accepted top range");
+		client.DidNotReceive().ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A valid in-range top is honored and forwarded as the OData $top value (regression guard).")]
+	public void Read_Should_Honor_Valid_In_Range_Top() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		commandResolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://host/{call.Arg<string>()}");
+		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"value\":[]}");
+		ODataReadTool tool = new(commandResolver);
+
+		// Act
+		ODataReadResponse response = tool.Read(new ODataReadArgs {
+			EnvironmentName = "dev",
+			Entity = "Contact",
+			Top = 50
+		});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "a top within the 1-100 range is valid and must still produce a query");
+		// A valid in-range top must be forwarded verbatim as the OData $top value.
+		urlBuilder.Received(1).Build("odata/Contact?$top=50");
 	}
 
 	[Test]

@@ -167,24 +167,18 @@ public abstract class BaseTool<T>(
 				$"{GetType().Name} does not support environment-based command resolution.");
 		}
 
-		return options switch {
-									   //Optional environment properties are not used in command resolution for these options, so null is passed explicitly to avoid confusion about which properties are used.
-									   CreateTestProjectOptions envOptions when string.IsNullOrWhiteSpace(envOptions.Environment) && string.IsNullOrWhiteSpace(envOptions.Uri)
-										   => commandResolver.ResolveWithoutEnvironment<TService>(envOptions),
-									   AddPackageOptions envOptions when string.IsNullOrWhiteSpace(envOptions.Environment) && string.IsNullOrWhiteSpace(envOptions.Uri)
-										   => commandResolver.ResolveWithoutEnvironment<TService>(envOptions),
-									   CreateWorkspaceCommandOptions envOptions when envOptions.Empty
-										   && string.IsNullOrWhiteSpace(envOptions.Environment)
-										   && string.IsNullOrWhiteSpace(envOptions.Uri)
-										   => commandResolver.ResolveWithoutEnvironment<TService>(envOptions),
-									   CreateUiProjectOptions envOptions when string.IsNullOrWhiteSpace(envOptions.Environment)
-										   && string.IsNullOrWhiteSpace(envOptions.Uri)
-										   => commandResolver.ResolveWithoutEnvironment<TService>(envOptions),
+		if (options is not EnvironmentOptions environmentOptions) {
+			throw new InvalidOperationException(
+				$"Unsupported options type: {options.GetType().Name}");
+		}
 
-									   EnvironmentOptions envOptions => commandResolver.Resolve<TService>(envOptions),
-									   var _ => throw new InvalidOperationException(
-										   $"Unsupported options type: {options.GetType().Name}")
-								   };
+		// The env-less special-case decision is shared with the generic clio-run executor
+		// (EnvironmentScopedCommandExecutor.UsesEnvironmentlessResolution), so the four current
+		// flat tools and the generic executor resolve identically — no behavioral drift.
+		// Optional environment properties are intentionally not consulted for the env-less types.
+		return EnvironmentScopedCommandExecutor.UsesEnvironmentlessResolution(environmentOptions)
+			? commandResolver.ResolveWithoutEnvironment<TService>(environmentOptions)
+			: commandResolver.Resolve<TService>(environmentOptions);
 	}
 
 

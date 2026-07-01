@@ -105,9 +105,9 @@ public class CreateEntitySchemaToolTests {
 	}
 
 	[Test]
-	[Description("Rejects create-entity-schema column payloads that omit the required title-localizations field.")]
+	[Description("Auto-derives the en-US column caption from the humanized column name when a create-entity-schema column omits title-localizations.")]
 	[Category("Unit")]
-	public async Task CreateEntitySchema_Should_Reject_Columns_Without_Title_Localizations() {
+	public async Task CreateEntitySchema_Should_AutoDefault_Column_EnUs_From_ColumnName_When_Title_Localizations_Omitted() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeCreateEntitySchemaCommand defaultCommand = new();
@@ -124,18 +124,17 @@ public class CreateEntitySchemaToolTests {
 			Localizations("Vehicle"),
 			"docker_fix2",
 			Columns: new[] {
-				new CreateEntitySchemaColumnArgs("Owner", "Lookup", Localizations("Owner"), "Contact") {
-					LegacyTitle = "Owner"
-				}
+				new CreateEntitySchemaColumnArgs("UsrDueDate", "Date")
 			}));
 
 		// Assert
-		result.ExitCode.Should().Be(1, "because MCP create-column payloads must use title-localizations");
-		result.Output.Should().Contain(message =>
-				message.Value != null && message.Value.ToString().Contains("legacy 'title'", StringComparison.Ordinal),
-			"because the validation error should point callers to title-localizations");
-		resolvedCommand.CapturedOptions.Should().BeNull(
-			"because invalid MCP payloads should be rejected before command execution");
+		result.ExitCode.Should().Be(0,
+			because: "a bare {column-name, type} column must not hard-fail purely for a missing localization map");
+		resolvedCommand.CapturedOptions.Should().NotBeNull(
+			because: "the auto-defaulted column should reach command execution");
+		resolvedCommand.CapturedOptions!.Columns.Should().Contain(column =>
+				column.Contains("Due Date", StringComparison.Ordinal),
+			because: "the en-US caption must be the humanized column name (Usr prefix stripped, PascalCase space-split)");
 		ConsoleLogger.Instance.ClearMessages();
 	}
 

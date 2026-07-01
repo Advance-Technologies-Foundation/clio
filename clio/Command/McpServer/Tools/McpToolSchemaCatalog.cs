@@ -25,6 +25,9 @@ internal static class McpToolSchemaCatalog {
 	private static readonly Lazy<IReadOnlyDictionary<string, ToolContractDefinition>> SchemaContracts =
 		new(BuildSchemaContracts);
 
+	private static readonly Lazy<IReadOnlyDictionary<string, string>> RawDescriptions =
+		new(BuildRawDescriptions);
+
 	/// <summary>
 	/// Returns the stable set of every registered MCP tool name discovered by reflection.
 	/// </summary>
@@ -35,6 +38,28 @@ internal static class McpToolSchemaCatalog {
 	/// </summary>
 	internal static bool TryGetSchemaContract(string toolName, out ToolContractDefinition contract) =>
 		SchemaContracts.Value.TryGetValue(toolName, out contract);
+
+	/// <summary>
+	/// Tries to read the tool's RAW reflected description (the <c>[Description]</c> on the MCP tool method)
+	/// WITHOUT the uncurated "Auto-generated … no curated contract yet" note that
+	/// <see cref="TryGetSchemaContract"/> appends. The compact discovery index uses this so a one-line
+	/// purpose reflects only what the tool DOES, never the absence of curation; the full named-contract path
+	/// keeps the note via <see cref="TryGetSchemaContract"/> (unchanged).
+	/// </summary>
+	/// <param name="toolName">The requested MCP tool name.</param>
+	/// <param name="description">
+	/// The raw tool description (possibly empty when the tool declares none) when the tool is registered;
+	/// otherwise empty.
+	/// </param>
+	/// <returns><c>true</c> when a registered tool matched (even with an empty description); otherwise <c>false</c>.</returns>
+	internal static bool TryGetRawDescription(string toolName, out string description) {
+		if (RawDescriptions.Value.TryGetValue(toolName, out string raw)) {
+			description = raw ?? string.Empty;
+			return true;
+		}
+		description = string.Empty;
+		return false;
+	}
 
 	private static IReadOnlyDictionary<string, ToolContractDefinition> BuildSchemaContracts() {
 		Assembly assembly = typeof(McpToolSchemaCatalog).Assembly;
@@ -48,6 +73,20 @@ internal static class McpToolSchemaCatalog {
 			contracts[toolName] = BuildSchemaContract(toolName, method, assembly);
 		}
 		return contracts;
+	}
+
+	private static IReadOnlyDictionary<string, string> BuildRawDescriptions() {
+		Assembly assembly = typeof(McpToolSchemaCatalog).Assembly;
+		Dictionary<string, string> descriptions = new(StringComparer.OrdinalIgnoreCase);
+		foreach (MethodInfo method in EnumerateToolMethods(assembly)) {
+			McpServerToolAttribute toolAttribute = method.GetCustomAttribute<McpServerToolAttribute>();
+			string toolName = toolAttribute?.Name;
+			if (string.IsNullOrWhiteSpace(toolName) || descriptions.ContainsKey(toolName)) {
+				continue;
+			}
+			descriptions[toolName] = method.GetCustomAttribute<DescriptionAttribute>()?.Description ?? string.Empty;
+		}
+		return descriptions;
 	}
 
 	private static IEnumerable<MethodInfo> EnumerateToolMethods(Assembly assembly) {

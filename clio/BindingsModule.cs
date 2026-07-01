@@ -425,6 +425,10 @@ public class BindingsModule {
 		services.AddTransient<IApplicationCreateEnrichmentService, ApplicationCreateEnrichmentService>();
 		services.AddTransient<ISchemaEnrichmentService, SchemaEnrichmentService>();
 		services.AddTransient<IToolCommandResolver, ToolCommandResolver>();
+		services.AddSingleton<IMcpToolInvokerRegistry, McpToolInvokerRegistry>();
+		services.AddTransient<IClioRunExecutor, ClioRunExecutor>();
+		services.AddTransient<ClioRunTool>();
+		services.AddTransient<ClioRunDestructiveTool>();
 		services.AddTransient<IDataForgePlatformVersionGuard, DataForgePlatformVersionGuard>();
 		services.AddTransient<IDataForgeReadClient, DataForgeReadClient>();
 		services.AddTransient<IDataForgeMaintenanceClient, DataForgeMaintenanceClient>();
@@ -701,7 +705,9 @@ public class BindingsModule {
 				.WithRequestFilters(filters => filters.AddCallToolFilter(McpToolErrorFilter.HandleCallToolErrors));
 		// Single registration seam shared with the parity regression test: registers the feature-enabled
 		// tool/resource/prompt types via the IEnumerable<Type> SDK overloads (the Type[] overload-binding
-		// hazard is documented on RegisterEnabledPrimitives).
+		// hazard is documented on RegisterEnabledPrimitives). The tool surface is always the lazy core
+		// profile + clio-run executors + get-tool-contract; the long-tail flat schemas stay reachable via
+		// the executors and discoverable via get-tool-contract.
 		McpFeatureToggleFilter.RegisterEnabledPrimitives(
 			mcpServerBuilder, mcpAssembly, mcpFeatureToggleService.IsEnabled, mcpSerializerOptions);
 		

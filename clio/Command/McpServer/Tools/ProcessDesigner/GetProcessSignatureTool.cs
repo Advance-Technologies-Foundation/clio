@@ -48,7 +48,7 @@ public sealed class GetProcessSignatureTool(
 				resolvedCommand = ResolveCommand<GetProcessSignatureCommand>(options);
 			}
 			catch (Exception ex) {
-				return new GetProcessSignatureResponse { Success = false, Error = ex.Message };
+				return new GetProcessSignatureResponse { Success = false, Error = SensitiveErrorTextRedactor.Redact(ex.Message) };
 			}
 			resolvedCommand.TryGetSignature(options, out GetProcessSignatureResponse response);
 			return response;
@@ -72,7 +72,7 @@ public sealed record GetProcessSignatureArgs(
 	string? Culture,
 
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Registered clio environment name")]
+	[property: Description(McpToolDescriptions.EnvironmentName)]
 	string? EnvironmentName,
 
 	[property: JsonPropertyName("uri")]
@@ -80,10 +80,10 @@ public sealed record GetProcessSignatureArgs(
 	string? Uri,
 
 	[property: JsonPropertyName("login")]
-	[property: Description("Login (emergency fallback only)")]
+	[property: Description(McpToolDescriptions.Login)]
 	string? Login,
 
 	[property: JsonPropertyName("password")]
-	[property: Description("Password (emergency fallback only)")]
+	[property: Description(McpToolDescriptions.Password)]
 	string? Password
 );

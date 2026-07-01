@@ -1,6 +1,6 @@
 # Clio Sprint Status
 # Updated by story-writer agent; revised 2026-06-10 after adversarial review
-# Statuses: ready-for-dev | in-progress | review | done | deferred
+# Statuses: ready-for-dev | in-progress | review | done | deferred | blocked
 #
 # GATES before any story leaves ready-for-dev:
 #   - A-06 security sign-off (plaintext password + bearer cookie at rest) — ACCEPTED 2026-06-10 (Alex), gate CLEARED
@@ -507,4 +507,192 @@ stories:
     fr: [FR-07]
     ac: []
     depends_on: [story-read-column-default-values-6, story-read-column-default-values-7]
+    blocks: []
+
+  # --- mcp-lazy-schema stories (ENG-90312), added 2026-06-19 ---
+  # PIVOT 2026-06-19: OPT-IN lazy mode (feature-key mcp-lazy-tools, default OFF=full/unchanged).
+  #   Goal (reduce CONTEXT token impact) is delivered by the clio-run executor (Stories 3+4, DONE,
+  #   CI-green in PR #743) gated behind an opt-in flag. Core-by-default was dropped → Stories 10
+  #   (aliases) and 11 (×74 migration) DEFERRED (only the budget test survives, folded into Story 1).
+  #   Done so far: 0 (decisions), 3+4 (executor+registry), 9 (inventory). Next: 1 (opt-in gating),
+  #   then 6 (curated contracts), 5/7 (lazy UX), 2 (slimming bonus), 8 (security hardening).
+  # Spike-driven feature, no PRD; source = spec/adr/adr-mcp-lazy-schema.md (Accepted).
+  # BLOCKERS (must clear before any implementation story leaves blocked):
+  #   - Story 0 (decision): #624 supersede-vs-build-on + default-profile + clio-run split + feature-key.
+  #     Stories 1-11 are GATED on Story 0 (status: blocked) and flip to ready-for-dev once Story 0 resolves.
+  #   - Story 9 (consumer/migration inventory): BLOCKER for the default flip (Story 10) and the ×74 migration (Story 11).
+  # Recommended order: 0 -> (1 ∥ 2 ∥ 6 ∥ 9) -> 3 -> 4 -> (5 ∥ 7 ∥ 8) -> 10 -> 11.
+  # Dependency graph is acyclic. MCP e2e is NOT in CI — manual gate on claude/codex/copilot (3 hosts).
+  - id: story-mcp-lazy-schema-0
+    title: "Reconcile PR #624, fix default-profile and clio-run-split decisions"
+    feature: "mcp-lazy-schema"
+    size: S
+    risk: high
+    status: done
+    note: "RESOLVED 2026-06-19 (Alex). #624 = fallback, build independently. Default = core-by-default (aliases+inventory must land with the flip). clio-run = split safe/destructive (never ReadOnly). Feature-key = mcp-full-tool-catalog (OFF by default). ADR Status → Accepted. Stories 1/2/3/6/9 unblocked."
+    file: spec/stories/story-mcp-lazy-schema-0.md
+    adr: spec/adr/adr-mcp-lazy-schema.md
+    depends_on: []
+    blocks:
+      - story-mcp-lazy-schema-1
+      - story-mcp-lazy-schema-2
+      - story-mcp-lazy-schema-3
+      - story-mcp-lazy-schema-4
+      - story-mcp-lazy-schema-5
+      - story-mcp-lazy-schema-6
+      - story-mcp-lazy-schema-7
+      - story-mcp-lazy-schema-8
+      - story-mcp-lazy-schema-9
+      - story-mcp-lazy-schema-10
+      - story-mcp-lazy-schema-11
+
+  - id: story-mcp-lazy-schema-1
+    title: "IFeatureToggleService-gated core/long-tail MCP profile (replace env-var)"
+    feature: "mcp-lazy-schema"
+    size: M
+    risk: medium
+    status: review
+    note: "PIVOTED 2026-06-19 to OPT-IN lazy mode. Feature-key = mcp-lazy-tools, OFF by default ⇒ FULL flat catalog (unchanged, zero regression); ON ⇒ lazy (core per-type + clio-run/-destructive + get-tool-contract). Replaces spike CLIO_MCP_TOOL_TYPES env-var; gates RegisterEnabledPrimitives via IFeatureToggleService. Per-TYPE granularity. Non-breaking keystone that delivers the −97% to opted-in consumers. IMPLEMENTED 2026-06-19: McpCoreToolProfile (18 core types + 3 always-on), McpFeatureToggleFilter.SelectToolTypes gating, BindingsModule wiring via IsFeatureEnabled, experimental command recognizes the standalone key. Lazy tools/list = 27 tools (per-TYPE). Validated: dotnet test --filter \"Category=Unit&(Module=McpServer|Module=Command)\" (2972 passed)."
+    file: spec/stories/story-mcp-lazy-schema-1.md
+    adr: spec/adr/adr-mcp-lazy-schema.md
+    depends_on: [story-mcp-lazy-schema-0]
+    blocks:
+      - story-mcp-lazy-schema-4
+      - story-mcp-lazy-schema-7
+      - story-mcp-lazy-schema-8
+
+  - id: story-mcp-lazy-schema-2
+    title: "Slim core-tool descriptions + dedup environment-name parameter (low-risk first step)"
+    feature: "mcp-lazy-schema"
+    size: M
+    risk: low
+    status: review
+    note: "Implemented + verified locally 2026-06-19 (net10.0). Lazy tools/list 37.4k->30.1k bytes (~9.4k->~7.5k tok); FULL 244.8k->230.6k bytes; ServerInstructions 9.6k->~4.1k chars. Slimmed get-page/update-page/get-component-info/find-app/get-entity-schema-properties/validate-page/create-entity-business-rule + DataForge suffix; deduped environment-name/uri/login/password/resources via McpToolDescriptions consts across ~45 tool files. Moved-guidance list in story Dev Agent Record. 1263 McpServer unit tests green. Not yet pushed."
+    file: spec/stories/story-mcp-lazy-schema-2.md
+    adr: spec/adr/adr-mcp-lazy-schema.md
+    depends_on: [story-mcp-lazy-schema-0]
+    blocks:
+      - story-mcp-lazy-schema-7
+
+  - id: story-mcp-lazy-schema-3
+    title: "command→optionsType registry + generalized container resolution"
+    feature: "mcp-lazy-schema"
+    size: M
+    risk: medium
+    status: review
+    note: "Implemented 2026-06-19, then SUPERSEDED 2026-06-19 by the [Verb]→MCP-tool dispatch pivot. The CLI-[Verb] ICommandOptionsRegistry could not reach the 42 MCP-only tools (no [Verb]), so it was REMOVED along with ClioRunArgBinder and CommandDestructivenessClassifier. clio-run now dispatches by MCP tool name via IMcpToolInvokerRegistry (SDK-built McpServerTool over the full feature-enabled catalog). EnvironmentScopedCommandExecutor reduced to the static UsesEnvironmentlessResolution helper still consumed by BaseTool. Validated: dotnet test --filter Category=Unit&Module=McpServer (net10.0) 1244 pass, 1 skipped."
+    file: spec/stories/story-mcp-lazy-schema-3.md
+    adr: spec/adr/adr-mcp-lazy-schema.md
+    depends_on: [story-mcp-lazy-schema-0]
+    blocks:
+      - story-mcp-lazy-schema-4
+
+  - id: story-mcp-lazy-schema-4
+    title: "clio-run executor — kebab/enum/required-aware arg binding + output contract"
+    feature: "mcp-lazy-schema"
+    size: L
+    risk: high
+    status: review
+    note: "Implemented 2026-06-19, then REWORKED 2026-06-19 to dispatch by MCP TOOL NAME (not CLI [Verb]). ClioRunTool + ClioRunDestructiveTool over IClioRunExecutor now resolve the target McpServerTool by name from IMcpToolInvokerRegistry and invoke it through the SDK (reusing SDK arg-binding + per-call DI), so ANY hidden tool — including the 42 MCP-only tools (sync-schemas, odata-*, execute-esq, …) — is reachable. Destructiveness derives from each tool's [McpServerTool(Destructive)] annotation. Returns the target tool's CallToolResult; unknown tool / non-object args → structured Error. clio-run never ReadOnly; refuses destructive (→ clio-run-destructive) and vice-versa. EMPIRICAL: clio-run sync-schemas no longer returns 'unknown command' — it reaches the real tool. Validated: dotnet test --filter Category=Unit&Module=McpServer (net10.0) 1244 pass, 1 skipped."
+    file: spec/stories/story-mcp-lazy-schema-4.md
+    adr: spec/adr/adr-mcp-lazy-schema.md
+    depends_on: [story-mcp-lazy-schema-0, story-mcp-lazy-schema-1, story-mcp-lazy-schema-3]
+    blocks:
+      - story-mcp-lazy-schema-5
+      - story-mcp-lazy-schema-8
+      - story-mcp-lazy-schema-10
+
+  - id: story-mcp-lazy-schema-5
+    title: "inline-contract-on-error for clio-run (self-correct in one round)"
+    feature: "mcp-lazy-schema"
+    size: M
+    risk: medium
+    status: blocked
+    note: "Primary mitigation for ENG-91134 'passive instructions ignored'. Failed clio-run returns the full curated contract inline. Reuses Story 6 contract source."
+    file: spec/stories/story-mcp-lazy-schema-5.md
+    adr: spec/adr/adr-mcp-lazy-schema.md
+    depends_on: [story-mcp-lazy-schema-0, story-mcp-lazy-schema-4, story-mcp-lazy-schema-6]
+    blocks: []
+
+  - id: story-mcp-lazy-schema-6
+    title: "Curated get-tool-contract coverage for the full long tail (~46 → full)"
+    feature: "mcp-lazy-schema"
+    size: L
+    risk: medium
+    status: review
+    note: "In review 2026-06-19 (Codex review #1 proper fix). get-tool-contract now derives uncurated contracts from the registered McpServerTool.InputSchema clio-run dispatches against (IMcpToolInvokerRegistry); precedence curated > registry-derived > lossy McpToolSchemaCatalog last-resort. stop-creatio / clear-redis-db-by-environment / restart-by-environment-name now expose environmentName (was empty). Full hand-curation + coverage-guard (AC-01/AC-04) deferred."
+    file: spec/stories/story-mcp-lazy-schema-6.md
+    adr: spec/adr/adr-mcp-lazy-schema.md
+    depends_on: [story-mcp-lazy-schema-0]
+    blocks:
+      - story-mcp-lazy-schema-5
+
+  - id: story-mcp-lazy-schema-7
+    title: "Compact command index (list-clio-commands) + migrate anti-patterns/flow-hints"
+    feature: "mcp-lazy-schema"
+    size: M
+    risk: medium
+    status: blocked
+    note: "Consumes Story 2 migration list. Must not lose guidance that lived in heavy descriptions. Reuse get-guidance vs new tool decided in-story."
+    file: spec/stories/story-mcp-lazy-schema-7.md
+    adr: spec/adr/adr-mcp-lazy-schema.md
+    depends_on: [story-mcp-lazy-schema-0, story-mcp-lazy-schema-1, story-mcp-lazy-schema-2]
+    blocks: []
+
+  - id: story-mcp-lazy-schema-8
+    title: "Security — split clio-run safe vs clio-run-destructive"
+    feature: "mcp-lazy-schema"
+    size: M
+    risk: high
+    status: blocked
+    note: "Security gate. Prevents 'always allow clio-run' from auto-approving every destructive command. clio-run never ReadOnly; destructive set derives from existing Destructive=true metadata; unknown destructiveness fails closed."
+    file: spec/stories/story-mcp-lazy-schema-8.md
+    adr: spec/adr/adr-mcp-lazy-schema.md
+    depends_on: [story-mcp-lazy-schema-0, story-mcp-lazy-schema-1, story-mcp-lazy-schema-4]
+    blocks:
+      - story-mcp-lazy-schema-10
+
+  - id: story-mcp-lazy-schema-9
+    title: "Migration + consumer inventory (CAADT / adaclio / e2e)"
+    feature: "mcp-lazy-schema"
+    size: M
+    risk: high
+    status: review
+    note: "DONE 2026-06-19 (documents-only, empty code diff). spec/mcp-lazy-schema/mcp-lazy-schema-migration-inventory.md @ f594e913. Real counts: 126 tools (39 RO / 62 destructive); proposed core=20, long-tail=106 (44 safe→clio-run, 62→clio-run-destructive); 61 curated contracts (47 default CanonicalToolNames), 63 uncovered (Story 6 gap, incl 3 core: find-app/list-environments/list-packages); 76 long-tail names referenced by consumers; 104-row alias list (75 consumer-backed). Story 11 ≈300-400 file edits. BLOCKER for Story 10 flip + Story 11 migration now cleared."
+    file: spec/stories/story-mcp-lazy-schema-9.md
+    adr: spec/adr/adr-mcp-lazy-schema.md
+    depends_on: [story-mcp-lazy-schema-0]
+    blocks:
+      - story-mcp-lazy-schema-10
+      - story-mcp-lazy-schema-11
+
+  - id: story-mcp-lazy-schema-10
+    title: "Deprecation aliases (flat name → clio-run proxy) + default-profile flip"
+    feature: "mcp-lazy-schema"
+    size: L
+    risk: high
+    status: deferred
+    note: "DEFERRED 2026-06-19 (pivot to opt-in lazy mode). No default flip ⇒ no breaking wire change ⇒ aliases not required for release. Only revived if a future decision flips the GLOBAL default to core. Alias map already drafted in Story 9 inventory."
+    file: spec/stories/story-mcp-lazy-schema-10.md
+    adr: spec/adr/adr-mcp-lazy-schema.md
+    depends_on:
+      - story-mcp-lazy-schema-4
+      - story-mcp-lazy-schema-6
+      - story-mcp-lazy-schema-8
+      - story-mcp-lazy-schema-9
+    blocks:
+      - story-mcp-lazy-schema-11
+
+  - id: story-mcp-lazy-schema-11
+    title: "Docs/MCP migration ×74 + tool-budget ratchet test from scratch"
+    feature: "mcp-lazy-schema"
+    size: L
+    risk: medium
+    status: deferred
+    note: "DEFERRED 2026-06-19 (pivot). The ×74 doc/MCP migration is NOT needed — flat tools stay by default, so no per-command doc changes. ONLY the tool-budget ratchet test survives as a small standalone item (asserts lazy-mode tools/list ≤ ~5-8k tokens) — fold into Story 1. Revived fully only if global default flips to core."
+    file: spec/stories/story-mcp-lazy-schema-11.md
+    adr: spec/adr/adr-mcp-lazy-schema.md
+    depends_on:
+      - story-mcp-lazy-schema-9
+      - story-mcp-lazy-schema-10
     blocks: []
