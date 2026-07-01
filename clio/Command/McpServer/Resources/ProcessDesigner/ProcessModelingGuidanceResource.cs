@@ -91,7 +91,8 @@ public sealed class ProcessModelingGuidanceResource {
 			2. (recommended) `validate-process-graph(graph)` -> fix every error-severity finding.
 			3. `list-user-tasks` -> pick the exact `userTaskName`(s) for your activities.
 			4. `create-business-process(descriptor)` -> builds + saves in one call (layout is automatic).
-			5. Verify: `describe-business-process` (element types, user-task names, parameter sources + direction, the signal trigger) /
+			5. Verify: `describe-business-process` (element types, user-task names, parameter sources + direction + isResult
+			   — an output you can map FROM has `isResult:true` or `direction:"Out"`; the signal trigger) /
 			   `generate-process-model` / `execute-esq` (VwProcessLib by caption).
 			6. Change it later with `modify-business-process` (ops: addElement / removeElement / addFlow / removeFlow /
 			   addParameter / addMapping / setParameter / removeParameter — same parameter/mapping shapes as a build).
@@ -135,6 +136,10 @@ public sealed class ProcessModelingGuidanceResource {
 			  (a process parameter, e.g. expose an element's OUTPUT as a process output).
 			  SOURCE — exactly ONE of: `sourceElement` + `sourceElementParameter` (another element's OUTPUT parameter) |
 			  processParameter (a process parameter by name) | value (a constant) | expression (a raw formula).
+			  Identifying an OUTPUT for `sourceElementParameter`: in `describe-business-process` output an element parameter
+			  is usable as a mapping source when `isResult: true` OR `direction: "Out"`. Most user-task outputs come back as
+			  `isResult: true` with `direction: "Variable"` (the platform reports element params as Variable), so detect
+			  outputs by `isResult`, NOT by `direction` alone.
 			  Parameter-to-parameter mappings require COMPATIBLE TYPES: source and target in the same data-value-type
 			  group (text↔text, number↔number, …; for a lookup the same reference object) — exactly what the visual
 			  designer allows; incompatible types are rejected. `processParameter` flows a process input into the
