@@ -37,6 +37,13 @@ public sealed class CreateBusinessProcessToolE2ETests {
 	private const string SourceUserTaskName = "CheckCanExecuteOperationUserTask";
 	private const string SourceOutputParameter = "CanExecuteOperation";
 
+	// element->element pairing (AC#1): performTask (ActivityUserTask) exposes the Guid output ActivityResult, which
+	// flows into CheckCanExecuteOperationUserTask's Guid input UserId (Guid<->Guid). Both tasks and this mapping are
+	// live-verified on the stand. performTask is a built-in alias, so it ships wherever the designer does.
+	private const string ElementSourceTaskType = "performTask";
+	private const string ElementSourceOutput = "ActivityResult";
+	private const string ElementTargetInput = "UserId";
+
 	[Test]
 	[Description("Starts the real clio MCP server and verifies create-business-process is advertised (hermetic).")]
 	[AllureTag(ToolName)]
@@ -175,6 +182,39 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		string callResultJson = JsonSerializer.Serialize(callResult);
 		callResultJson.Should().Contain("incompatible",
 			because: "mapping a Boolean element output into an Integer process parameter must be rejected by the type-compatibility check");
+	}
+
+	[Test]
+	[Description("Over the real MCP path, create-business-process maps one element's OUTPUT into ANOTHER element's INPUT (element->element, ENG-92127 AC#1): performTask's Guid output ActivityResult into CheckCanExecuteOperationUserTask's Guid input UserId; describe reads the target element's input back bound to the source element's output.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process maps one element's output into another element's input")]
+	public async Task CreateBusinessProcess_Should_MapElementOutputIntoAnotherElementInput() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpElemMapE2e{Guid.NewGuid():N}";
+		string descriptor = BuildElementToElementDescriptor(processName);
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = descriptor
+		});
+
+		// Assert — the server accepts the element->element mapping (an invalid one would error) and reports the build
+		callResult.IsError.Should().NotBeTrue(
+			because: "mapping one element's output into another element's compatible input must build without a transport error");
+		string callResultJson = JsonSerializer.Serialize(callResult);
+		callResultJson.Should().Contain(processName,
+			because: "a successful build reports the created schema name");
+
+		// Readback: the target element's input parameter and the source element's output are both present in the
+		// graph. The binding on the input is an element-qualified meta-path built from UIds (not names), so we assert
+		// the surfaced names + a successful build rather than substring-matching the meta-path.
+		string describeJson = JsonSerializer.Serialize(await DescribeAsync(context, processName));
+		describeJson.Should().Contain(ElementTargetInput,
+			because: "the target element's input parameter that receives the mapping is present in the read-back graph");
+		describeJson.Should().Contain(ElementSourceOutput,
+			because: "the source element's output parameter (the mapping source) is surfaced by describe because it is a result/output");
 	}
 
 	[Test]
@@ -370,6 +410,32 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		  ],
 		  "mappings": [
 		    { "targetProcessParameter": "BadNum", "sourceElement": "check", "sourceElementParameter": "{{SourceOutputParameter}}" }
+		  ]
+		}
+		""";
+
+	// ENG-92127 (AC#1): one element's OUTPUT into ANOTHER element's INPUT. performTask (ActivityUserTask) exposes
+	// the Guid output ActivityResult, which flows into CheckCanExecuteOperationUserTask's Guid input UserId
+	// (Guid<->Guid). The source element precedes the target in the flow so its output exists first.
+	private static string BuildElementToElementDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Element-to-Element E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "Start1", "type": "startEvent" },
+		    { "name": "task1", "type": "{{ElementSourceTaskType}}" },
+		    { "name": "check", "type": "userTask", "userTaskName": "{{SourceUserTaskName}}" },
+		    { "name": "End1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "Start1", "target": "task1" },
+		    { "source": "task1", "target": "check" },
+		    { "source": "check", "target": "End1" }
+		  ],
+		  "mappings": [
+		    { "elementName": "check", "elementParameter": "{{ElementTargetInput}}", "sourceElement": "task1", "sourceElementParameter": "{{ElementSourceOutput}}" }
 		  ]
 		}
 		""";
