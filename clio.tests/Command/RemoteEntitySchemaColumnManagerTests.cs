@@ -31,6 +31,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 	private Clio.Common.EntitySchema.IRuntimeEntitySchemaReader _runtimeEntitySchemaReader;
 	private ILookupDefaultDisplayValueResolver _lookupDefaultDisplayValueResolver;
 	private IEntitySchemaCaptionCultureResolver _captionCultureResolver;
+	private IEntitySchemaDependencyResolver _dependencyResolver;
 	private ILogger _logger;
 	private RemoteEntitySchemaColumnManager _manager;
 	private EntityDesignSchemaDto _loadedSchema;
@@ -55,6 +56,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 		_captionCultureResolver
 			.ResolveEffectiveCulture(Arg.Any<EnvironmentOptions>(), Arg.Any<string?>())
 			.Returns("en-US");
+		_dependencyResolver = Substitute.For<IEntitySchemaDependencyResolver>();
 		_savedSchema = null;
 		_loadedSchema = null;
 		_packageListProvider.GetPackages().Returns(new[] {
@@ -118,6 +120,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 			_runtimeEntitySchemaReader,
 			_lookupDefaultDisplayValueResolver,
 			_captionCultureResolver,
+			_dependencyResolver,
 			_logger);
 	}
 
@@ -1720,6 +1723,109 @@ internal class RemoteEntitySchemaColumnManagerTests
 			because: "the merged read must signal that it is not scoped to a single package via the synthetic package label");
 		loggedMessages.Should().Contain("Parent schema: <none>",
 			because: "the parent schema name is not exposed by the by-name runtime endpoint, so the merged read renders the unresolved placeholder");
+	}
+
+	[Test]
+	[Description("Auto-resolves missing package dependencies and retries LoadSchema when the schema is initially unavailable on a write path (ENG-91314).")]
+	public void ModifyColumn_ShouldAutoResolveDependenciesAndRetry_WhenSchemaIsInitiallyUnavailable() {
+		// Arrange — first TryGetSchemaDesignItem returns null schema; after auto-resolve, second call succeeds.
+		int tryGetCallCount = 0;
+		_designerClient.TryGetSchemaDesignItem(Arg.Any<GetSchemaDesignItemRequestDto>(),
+				Arg.Any<RemoteCommandOptions>())
+			.Returns(_ => {
+				tryGetCallCount++;
+				if (tryGetCallCount == 1) {
+					return new Clio.Command.EntitySchemaDesigner.DesignerResponse<EntityDesignSchemaDto> { Success = false, Schema = null };
+				}
+				return new Clio.Command.EntitySchemaDesigner.DesignerResponse<EntityDesignSchemaDto> { Success = true, Schema = _loadedSchema };
+			});
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)], primaryDisplayColumn: null);
+		_dependencyResolver.TryAutoResolve("UsrVehicle", "UsrPkg").Returns(true);
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg", SchemaName = "UsrVehicle",
+			Action = "add", ColumnName = "Name", Type = "Text", Title = "Vehicle name"
+		};
+
+		// Act
+		_manager.ModifyColumn(options);
+
+		// Assert
+		_savedSchema.Should().NotBeNull(
+			because: "auto-resolve succeeded and the retry completed the mutation");
+		_dependencyResolver.Received(1).TryAutoResolve("UsrVehicle", "UsrPkg");
+	}
+
+	[Test]
+	[Description("Falls through to GetSchemaDesignItem (the enriched error path) when auto-resolve finds no candidate and the schema stays unavailable (ENG-91314).")]
+	public void ModifyColumn_ShouldThrowEnrichedError_WhenAutoResolveReturnsFalse() {
+		// Arrange
+		SetupUnavailableSchema();
+		_dependencyResolver.TryAutoResolve("UsrVehicle", "UsrPkg").Returns(false);
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg", SchemaName = "UsrVehicle",
+			Action = "add", ColumnName = "Name", Type = "Text", Title = "Vehicle name"
+		};
+
+		// Act
+		Action act = () => _manager.ModifyColumn(options);
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>(
+			because: "when auto-resolve fails, the enriched error from GetSchemaDesignItem must propagate");
+	}
+
+	[Test]
+	[Description("Falls through to GetSchemaDesignItem when auto-resolve adds a dependency but the schema remains inaccessible on retry (ENG-91314).")]
+	public void ModifyColumn_ShouldThrowEnrichedError_WhenRetryAfterAutoResolveStillFails() {
+		// Arrange — every call returns null schema.
+		SetupUnavailableSchema();
+		_dependencyResolver.TryAutoResolve("UsrVehicle", "UsrPkg").Returns(true);
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg", SchemaName = "UsrVehicle",
+			Action = "add", ColumnName = "Name", Type = "Text", Title = "Vehicle name"
+		};
+
+		// Act
+		Action act = () => _manager.ModifyColumn(options);
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>(
+			because: "even after adding the dependency, a still-inaccessible schema must surface the enriched diagnostic");
+	}
+
+	[Test]
+	[Description("Read-only GetColumnProperties does not trigger dependency auto-resolution because read paths must never mutate package state (ENG-91314).")]
+	public void GetColumnProperties_ShouldNotTriggerDependencyResolution_WhenSchemaIsAvailable() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId), CreateTextColumn("Name", NameColumnUId)]);
+		SetupLoadedSchema();
+
+		// Act
+		_manager.GetColumnProperties(new GetEntitySchemaColumnPropertiesOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			ColumnName = "Name"
+		});
+
+		// Assert
+		_dependencyResolver.DidNotReceive().TryAutoResolve(Arg.Any<string>(), Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("Read-only GetSchemaProperties does not trigger dependency auto-resolution because read paths must never mutate package state (ENG-91314).")]
+	public void GetSchemaProperties_ShouldNotTriggerDependencyResolution_WhenSchemaIsAvailable() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateTextColumn("Name", NameColumnUId)]);
+		SetupLoadedSchema();
+
+		// Act
+		_manager.GetSchemaProperties(new GetEntitySchemaPropertiesOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle"
+		});
+
+		// Assert
+		_dependencyResolver.DidNotReceive().TryAutoResolve(Arg.Any<string>(), Arg.Any<string>());
 	}
 
 	private void SetupLoadedSchema() {

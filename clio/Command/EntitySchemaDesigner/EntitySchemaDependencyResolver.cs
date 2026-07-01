@@ -56,9 +56,15 @@ internal sealed class EntitySchemaDependencyResolver : IEntitySchemaDependencyRe
 			if (candidatePackages.Count == 0) {
 				return false;
 			}
+			if (candidatePackages.Count > 1) {
+				_logger.WriteWarning(
+					$"Schema '{schemaName}' exists in multiple packages ({string.Join(", ", candidatePackages)}). " +
+					$"Auto-resolution refused — add the correct dependency to '{targetPackageName}' manually.");
+				return false;
+			}
 			_logger.WriteInfo(
 				$"Schema '{schemaName}' is not available in package '{targetPackageName}'. " +
-				$"Auto-adding {candidatePackages.Count} dependency(ies): {string.Join(", ", candidatePackages)}");
+				$"Auto-adding dependency: {candidatePackages[0]}");
 			_dependencyManager.AddDependencies(targetPackageName,
 				candidatePackages.Select(name => new PackageDependencySpec(name)).ToList());
 			return true;

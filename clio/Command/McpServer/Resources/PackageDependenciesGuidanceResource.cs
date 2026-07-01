@@ -44,10 +44,14 @@ public sealed class PackageDependenciesGuidanceResource {
 
 		       AUTOMATIC RESOLUTION
 		       clio automatically detects when GetSchemaDesignItem fails because of a missing
-		       dependency: it finds all packages containing the target schema, adds them as
-		       dependencies, and retries the operation — one transparent recovery cycle. This
-		       mirrors the Creatio backend PackageElementDependencyApplier that runs inside
-		       SaveSchema but is absent from the GetSchemaDesignItem code path.
+		       dependency: it finds the package containing the target schema, adds it as a
+		       dependency, and retries the operation — one transparent recovery cycle. This
+		       applies ONLY to WRITE operations (modify-entity-schema-column, update-entity-schema,
+		       create-entity) and ONLY when exactly one candidate package is found.
+		       When multiple candidates exist, clio refuses to auto-resolve (ambiguous) and
+		       instructs the user to add the correct dependency manually.
+		       Read-only operations (get-entity-schema-properties, get-entity-schema-column-properties)
+		       never trigger auto-resolution.
 
 		       MANUAL RECOVERY (when auto-resolution is not available)
 		       1) Identify the owning app/package of the object's upper layer (for Opportunity it is

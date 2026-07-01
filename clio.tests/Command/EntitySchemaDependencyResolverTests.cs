@@ -46,8 +46,29 @@ internal sealed class EntitySchemaDependencyResolverTests
 	}
 
 	[Test]
-	[Description("Adds the missing dependency packages and returns true when the schema exists in packages the target does not depend on (ENG-91314).")]
-	public void TryAutoResolve_ShouldAddDependenciesAndReturnTrue_WhenSchemaExistsInOtherPackages() {
+	[Description("Adds the single candidate dependency and returns true when exactly one other package contains the schema (ENG-91314).")]
+	public void TryAutoResolve_ShouldAddDependencyAndReturnTrue_WhenExactlyOneCandidateExists() {
+		// Arrange
+		_findCommand.FindSchemas(Arg.Any<FindEntitySchemaOptions>())
+			.Returns([
+				new EntitySchemaSearchResult("Opportunity", "CrtLeadOppMgmtApp", "Creatio", "Opportunity"),
+				new EntitySchemaSearchResult("Opportunity", "Custom", "Customer", "Opportunity")
+			]);
+
+		// Act
+		bool resolved = _resolver.TryAutoResolve("Opportunity", "Custom");
+
+		// Assert
+		resolved.Should().BeTrue(
+			because: "exactly one candidate package was found and added as a dependency");
+		_capturedSpecs.Should().ContainSingle(because: "only the single candidate should be added");
+		_capturedSpecs[0].Name.Should().Be("CrtLeadOppMgmtApp",
+			because: "the non-target package should be added as a dependency");
+	}
+
+	[Test]
+	[Description("Refuses auto-resolution and returns false when the schema exists in multiple other packages to avoid unscoped dependency additions (ENG-91314).")]
+	public void TryAutoResolve_ShouldReturnFalse_WhenMultipleCandidatePackagesExist() {
 		// Arrange
 		_findCommand.FindSchemas(Arg.Any<FindEntitySchemaOptions>())
 			.Returns([
@@ -60,15 +81,12 @@ internal sealed class EntitySchemaDependencyResolverTests
 		bool resolved = _resolver.TryAutoResolve("Opportunity", "Custom");
 
 		// Assert
-		resolved.Should().BeTrue(
-			because: "the resolver found packages that contain the schema and are not the target");
-		_capturedSpecs.Should().NotBeNull(because: "AddDependencies must have been called");
-		_capturedSpecs.Should().NotContain(s => s.Name == "Custom",
-			because: "the target package must be excluded to avoid a self-dependency");
-		_capturedSpecs.Select(s => s.Name).Should().Contain("CoreLeadOpportunity",
-				because: "all packages that own the schema must be added as dependencies")
-			.And.Contain("CrtLeadOppMgmtApp",
-				because: "all packages that own the schema must be added as dependencies");
+		resolved.Should().BeFalse(
+			because: "ambiguous resolution with multiple candidates must refuse to add dependencies automatically");
+		_dependencyManager.DidNotReceive()
+			.AddDependencies(Arg.Any<string>(), Arg.Any<IEnumerable<PackageDependencySpec>>());
+		_logger.Received().WriteWarning(Arg.Is<string>(msg =>
+			msg.Contains("multiple packages") && msg.Contains("manually")));
 	}
 
 	[Test]

@@ -116,27 +116,17 @@ public class ModifyEntitySchemaColumnOptions : RemoteCommandOptions
 public class ModifyEntitySchemaColumnCommand : Command<ModifyEntitySchemaColumnOptions>
 {
 	private readonly IRemoteEntitySchemaColumnManager _columnManager;
-	private readonly IEntitySchemaDependencyResolver _dependencyResolver;
 	private readonly ILogger _logger;
 
-	public ModifyEntitySchemaColumnCommand(IRemoteEntitySchemaColumnManager columnManager,
-		IEntitySchemaDependencyResolver dependencyResolver, ILogger logger) {
+	public ModifyEntitySchemaColumnCommand(IRemoteEntitySchemaColumnManager columnManager, ILogger logger) {
 		_columnManager = columnManager;
-		_dependencyResolver = dependencyResolver;
 		_logger = logger;
 	}
 
 	public override int Execute(ModifyEntitySchemaColumnOptions options) {
 		try {
 			ValidateOptions(options);
-			try {
-				_columnManager.ModifyColumn(options);
-			} catch (EntitySchemaDesignerException) when (
-				_dependencyResolver.TryAutoResolve(options.SchemaName, options.Package)) {
-				_logger.WriteInfo(
-					$"Retrying after auto-dependency resolution for '{options.SchemaName}'...");
-				_columnManager.ModifyColumn(options);
-			}
+			_columnManager.ModifyColumn(options);
 			_logger.WriteInfo("Done");
 			return 0;
 		} catch (Exception exception) {

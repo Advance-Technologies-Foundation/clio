@@ -1,11 +1,9 @@
-using System;
 using Clio.Command;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
-using NSubstitute.ExceptionExtensions;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command;
@@ -16,7 +14,6 @@ internal class ModifyEntitySchemaColumnCommandTests : BaseCommandTests<ModifyEnt
 {
 	private ModifyEntitySchemaColumnCommand _command;
 	private IRemoteEntitySchemaColumnManager _columnManager;
-	private IEntitySchemaDependencyResolver _dependencyResolver;
 	private ILogger _logger;
 
 	public override void Setup() {
@@ -27,10 +24,8 @@ internal class ModifyEntitySchemaColumnCommandTests : BaseCommandTests<ModifyEnt
 	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
 		base.AdditionalRegistrations(containerBuilder);
 		_columnManager = Substitute.For<IRemoteEntitySchemaColumnManager>();
-		_dependencyResolver = Substitute.For<IEntitySchemaDependencyResolver>();
 		_logger = Substitute.For<ILogger>();
 		containerBuilder.AddTransient(_ => _columnManager);
-		containerBuilder.AddTransient(_ => _dependencyResolver);
 		containerBuilder.AddTransient(_ => _logger);
 	}
 
@@ -165,72 +160,4 @@ internal class ModifyEntitySchemaColumnCommandTests : BaseCommandTests<ModifyEnt
 		_logger.Received(1).WriteInfo("Done");
 	}
 
-	[Test]
-	[Description("Auto-resolves missing package dependencies and retries when the manager throws EntitySchemaDesignerException on the first attempt (ENG-91314).")]
-	public void Execute_ShouldAutoResolveDependenciesAndRetry_WhenSchemaIsInitiallyUnavailable() {
-		// Arrange — first call throws; auto-resolve succeeds; second call succeeds.
-		int callCount = 0;
-		_columnManager.When(m => m.ModifyColumn(Arg.Any<ModifyEntitySchemaColumnOptions>()))
-			.Do(_ => {
-				callCount++;
-				if (callCount == 1) {
-					throw new EntitySchemaDesignerException("Schema 'UsrVehicle' is not available in package 'UsrPkg'.");
-				}
-			});
-		_dependencyResolver.TryAutoResolve("UsrVehicle", "UsrPkg").Returns(true);
-		var options = new ModifyEntitySchemaColumnOptions {
-			Package = "UsrPkg", SchemaName = "UsrVehicle",
-			Action = "add", ColumnName = "Name", Type = "Text", Title = "Vehicle name"
-		};
-
-		// Act
-		int result = _command.Execute(options);
-
-		// Assert
-		result.Should().Be(0, because: "auto-resolve succeeded and the retry completed the mutation");
-		_dependencyResolver.Received(1).TryAutoResolve("UsrVehicle", "UsrPkg");
-		_columnManager.Received(2).ModifyColumn(options);
-	}
-
-	[Test]
-	[Description("Returns failure with enriched error when auto-resolve finds no candidate dependency (TryAutoResolve returns false) (ENG-91314).")]
-	public void Execute_ShouldReturnFailure_WhenAutoResolveReturnsFalse() {
-		// Arrange
-		_columnManager.When(m => m.ModifyColumn(Arg.Any<ModifyEntitySchemaColumnOptions>()))
-			.Do(_ => throw new EntitySchemaDesignerException("Schema 'UsrVehicle' is not available."));
-		_dependencyResolver.TryAutoResolve("UsrVehicle", "UsrPkg").Returns(false);
-		var options = new ModifyEntitySchemaColumnOptions {
-			Package = "UsrPkg", SchemaName = "UsrVehicle",
-			Action = "add", ColumnName = "Name", Type = "Text", Title = "Vehicle name"
-		};
-
-		// Act
-		int result = _command.Execute(options);
-
-		// Assert
-		result.Should().Be(1, because: "when auto-resolve fails, the original error must propagate");
-		_logger.Received(1).WriteError(Arg.Is<string>(msg => msg.Contains("not available")));
-	}
-
-	[Test]
-	[Description("Returns failure when auto-resolve succeeds but the retried ModifyColumn still throws — the dependency was added but the schema remains inaccessible (ENG-91314).")]
-	public void Execute_ShouldReturnFailure_WhenRetryAfterAutoResolveStillFails() {
-		// Arrange — both calls throw.
-		_columnManager.When(m => m.ModifyColumn(Arg.Any<ModifyEntitySchemaColumnOptions>()))
-			.Do(_ => throw new EntitySchemaDesignerException("Schema 'UsrVehicle' is not available."));
-		_dependencyResolver.TryAutoResolve("UsrVehicle", "UsrPkg").Returns(true);
-		var options = new ModifyEntitySchemaColumnOptions {
-			Package = "UsrPkg", SchemaName = "UsrVehicle",
-			Action = "add", ColumnName = "Name", Type = "Text", Title = "Vehicle name"
-		};
-
-		// Act
-		int result = _command.Execute(options);
-
-		// Assert
-		result.Should().Be(1,
-			because: "even after adding the dependency, a still-inaccessible schema must return a failure exit code");
-		_columnManager.Received(2).ModifyColumn(options);
-		_logger.Received(1).WriteError(Arg.Is<string>(msg => msg.Contains("not available")));
-	}
 }

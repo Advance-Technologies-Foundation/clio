@@ -114,8 +114,7 @@ public sealed class CaptionCultureArgMappingToolTests {
 		public ModifyEntitySchemaColumnOptions? CapturedOptions { get; private set; }
 
 		public CapturingModifyCommand()
-			: base(Substitute.For<IRemoteEntitySchemaColumnManager>(),
-				Substitute.For<IEntitySchemaDependencyResolver>(), ConsoleLogger.Instance) {
+			: base(Substitute.For<IRemoteEntitySchemaColumnManager>(), ConsoleLogger.Instance) {
 		}
 
 		public override int Execute(ModifyEntitySchemaColumnOptions options) {
