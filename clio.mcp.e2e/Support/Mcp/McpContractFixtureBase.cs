@@ -30,10 +30,13 @@ public abstract class McpContractFixtureBase {
 
 	[OneTimeTearDown]
 	public async Task StopSharedMcpServerAsync() {
-		if (_session is not null) {
-			await _session.DisposeAsync();
+		try {
+			if (_session is not null) {
+				await _session.DisposeAsync();
+			}
+		} finally {
+			CleanupFixtureDirectories();
 		}
-		CleanupFixtureDirectories();
 	}
 
 	/// <summary>
@@ -80,8 +83,17 @@ public abstract class McpContractFixtureBase {
 
 	private void CleanupFixtureDirectories() {
 		foreach (string directoryPath in _fixtureDirectories) {
-			if (Directory.Exists(directoryPath)) {
+			if (!Directory.Exists(directoryPath)) {
+				continue;
+			}
+
+			// Best-effort: a child clio process can still hold a handle on the isolated
+			// home's appsettings.json when teardown runs, so a leaked temp dir is harmless
+			// and must not fail an otherwise-green fixture.
+			try {
 				Directory.Delete(directoryPath, recursive: true);
+			} catch (IOException) {
+			} catch (UnauthorizedAccessException) {
 			}
 		}
 		_fixtureDirectories.Clear();

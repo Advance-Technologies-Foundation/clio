@@ -73,22 +73,6 @@ public sealed class AddItemModelToolE2ETests {
 		return new AddItemModelArrangeContext(rootDirectory, outputFolderPath, environmentName, session, cancellationTokenSource);
 	}
 
-	private static async Task<AddItemModelFailureArrangeContext> ArrangeFailureAsync(McpE2ESettings settings) {
-		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
-		ClioProcessDescriptor process = ClioExecutableResolver.Resolve(settings);
-		string rootDirectory = Path.Combine(Path.GetTempPath(), $"clio-add-item-model-invalid-{Guid.NewGuid():N}");
-		Directory.CreateDirectory(rootDirectory);
-		string relativeFolderPath = Path.Combine($"relative-add-item-model-{Guid.NewGuid():N}", "Models");
-		string accidentalOutputFolderPath = Path.Combine(process.WorkingDirectory, relativeFolderPath);
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		return new AddItemModelFailureArrangeContext(
-			rootDirectory,
-			relativeFolderPath,
-			accidentalOutputFolderPath,
-			session,
-			cancellationTokenSource);
-	}
-
 	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
 		string? configuredEnvironmentName = settings.Sandbox.EnvironmentName;
 		if (!string.IsNullOrWhiteSpace(configuredEnvironmentName) &&
@@ -167,21 +151,6 @@ public sealed class AddItemModelToolE2ETests {
 		string RootDirectory,
 		string OutputFolderPath,
 		string EnvironmentName,
-		McpServerSession Session,
-		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
-			CancellationTokenSource.Dispose();
-			if (Directory.Exists(RootDirectory)) {
-				Directory.Delete(RootDirectory, recursive: true);
-			}
-		}
-	}
-
-	private sealed record AddItemModelFailureArrangeContext(
-		string RootDirectory,
-		string RelativeFolderPath,
-		string AccidentalOutputFolderPath,
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
 		public async ValueTask DisposeAsync() {
