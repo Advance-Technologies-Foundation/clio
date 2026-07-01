@@ -174,15 +174,23 @@ blanket `Success=true` assertion for `find-tables` is unreachable by design.
 ### Implemented (`clio.mcp.e2e`, no production-code change)
 
 1. The 3 fixtures no longer carry `[Ignore("ENG-92147…")]` (the ticket is closed).
-2. `DataForgeReadinessGate.EnsureIndexReadyAsync` is now **best-effort**: it returns `bool`
+2. `DataForgeReadinessGate.EnsureIndexReadyAsync` is **best-effort**: it returns `bool`
    (became-ready) and never `Assert.Fail`s — on a stand that cannot become ready it logs and
-   returns `false`. The pure `IsIndexReady` / `OverallDeadlineReached` helpers are unchanged
-   (still unit-tested).
-3. Each read runs `SkipUnlessServiceServedRead`: a protocol error is still a failure
-   (`callResult.IsError`), a `Success=true` payload asserts the happy path, and a structured
-   `Success=false` calls `Assert.Ignore` with the service's own error — a deterministic skip
-   keyed on the observed service state, mirroring the existing reachability guard. No bare
-   `[Ignore]`, no false red.
+   returns `false`. The accept/reject branch is a pure `WasInitializationAccepted` predicate and the
+   `IsIndexReady` / `OverallDeadlineReached` helpers are pure — all three are unit-tested without a
+   stand. The arrange warm-up runs at most once per environment for the whole fixture run, so the
+   worst-case wall-clock is not multiplied across the three reads.
+3. Each read runs `AssertServiceServedReadOrSkipByStateAsync`, whose skip-vs-fail decision is keyed on
+   the **observed service state**, not the read's own `Success` flag — necessary because
+   `DataForgeTool` collapses *any* read-client exception (broken URL, deserialization/auth defect) into
+   the same structured `Success=false`. A protocol error is still a failure (`callResult.IsError`); a
+   `Success=true` payload asserts the happy path; on a `Success=false` the guard re-reads
+   `dataforge-status` and **fails** (`Assert.Fail`) when `IsIndexReady` reports the index is Ready (a
+   clio-side regression), and only **skips** (`Assert.Ignore`) when the service itself reports the index
+   is not queryable — mirroring the existing reachability guard. The clio-side
+   exception→`Success=false` mapping is unit-tested in `DataForgeToolTests.cs`
+   (`FindTables/FindLookups/GetRelations_Should_Return_Structured_Failure_When_ReadClient_Reports_Service_Failure`).
+   No bare `[Ignore]`, no false red, and no masking of a regression on a Ready index.
 
 Verified on `d2`: all 3 fixtures **Skip** deterministically (run with
 `McpE2E__DataForge__InitializeAndWait` off; gate-on path is identical, just slower). The

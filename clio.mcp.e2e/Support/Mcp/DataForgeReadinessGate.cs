@@ -97,7 +97,7 @@ internal static class DataForgeReadinessGate {
 		DataForgeMaintenanceResponse? initializeResponse = initializeResult is null
 			? null
 			: TryDeserialize<DataForgeMaintenanceResponse>(initializeResult);
-		if (initializeResponse is null || !initializeResponse.Success) {
+		if (!WasInitializationAccepted(initializeResponse)) {
 			if (initializeResult is not null) {
 				WriteToolDiagnostics(InitializeToolName, initializeResult);
 			}
@@ -117,7 +117,9 @@ internal static class DataForgeReadinessGate {
 		//    The index build is asynchronous, so a Scheduled initialize is followed by a window in
 		//    which reads still fail. Each poll is per-call-timeout-wrapped and a timed-out/faulted poll
 		//    is treated as "not ready yet" so one slow call cannot kill the gate — only the overall
-		//    deadline (or the incoming token) does. 5 min / 15 s mirrors the spec's recommended budget.
+		//    deadline (or the incoming token) does. The polling budget is ReadinessAttempts(20) x
+		//    ReadinessDelay(15s) ~= 5 min, hard-capped by the OverallDeadline(6 min); both sit under the
+		//    fixtures' 8-min arrange timeout so the gate always ends before the arrange token fires.
 		DataForgeStatusResponse? lastStatus = null;
 		CallToolResult? lastStatusResult = null;
 		for (int attempt = 0; attempt < ReadinessAttempts; attempt++) {
@@ -181,6 +183,19 @@ internal static class DataForgeReadinessGate {
 	/// <returns><c>true</c> when polling must stop because the deadline is reached; otherwise <c>false</c>.</returns>
 	public static bool OverallDeadlineReached(TimeSpan elapsed, TimeSpan overallDeadline) =>
 		elapsed >= overallDeadline;
+
+	/// <summary>
+	/// Pure "was the maintenance work accepted" decision for <c>dataforge-initialize</c>: a warm-up
+	/// can only proceed to the readiness poll when the initialize call returned a structured, successful
+	/// maintenance payload. A <c>null</c> (unreadable / timed-out) or <c>Success=false</c> response means
+	/// initialization was not accepted — typically because the stand is not wired to a DataForge tier and
+	/// the maintenance service is <c>Unavailable</c>. Extracted so the accept/reject branch can be
+	/// unit-tested without an MCP stand (the surrounding poll needs a live session).
+	/// </summary>
+	/// <param name="initializeResponse">The structured <c>dataforge-initialize</c> response, or <c>null</c>.</param>
+	/// <returns><c>true</c> when initialization was accepted and the readiness poll should run; otherwise <c>false</c>.</returns>
+	public static bool WasInitializationAccepted(DataForgeMaintenanceResponse? initializeResponse) =>
+		initializeResponse is not null && initializeResponse.Success;
 
 	/// <summary>
 	/// Invokes a DataForge tool under a per-call timeout linked to <paramref name="cancellationToken"/>.
