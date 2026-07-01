@@ -108,7 +108,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 
 		ModifyEntitySchemaColumnOptions rootOperation = operations[0];
 		PackageInfo package = ResolvePackage(rootOperation.Package);
-		EntityDesignSchemaDto schema = LoadSchema(rootOperation.SchemaName, package.Descriptor.UId, package.Descriptor.Name, rootOperation);
+		EntityDesignSchemaDto schema = LoadSchema(rootOperation.SchemaName, package.Descriptor.UId, package.Descriptor.Name, rootOperation, allowDependencyResolution: true);
 		EnsureBatchTargetsSingleSchema(operations, rootOperation);
 		string effectiveCultureName = ResolveEffectiveCultureName(rootOperation);
 		foreach (ModifyEntitySchemaColumnOptions operation in operations) {
@@ -129,7 +129,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 				$"Schema '{schema.Name}' was saved but is not available in runtime.");
 		}
 
-		EntityDesignSchemaDto reloadedSchema = LoadSchema(schema.Name, package.Descriptor.UId, package.Descriptor.Name, rootOperation);
+		EntityDesignSchemaDto reloadedSchema = LoadSchema(schema.Name, package.Descriptor.UId, package.Descriptor.Name, rootOperation, allowDependencyResolution: true);
 		VerifyColumnMutations(reloadedSchema, operations);
 		foreach (ModifyEntitySchemaColumnOptions operation in operations) {
 			_logger.WriteInfo(
@@ -140,7 +140,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	public EntitySchemaColumnPropertiesInfo GetColumnProperties(GetEntitySchemaColumnPropertiesOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
 		PackageInfo package = ResolvePackage(options.Package);
-		EntityDesignSchemaDto schema = LoadSchema(options.SchemaName, package.Descriptor.UId, package.Descriptor.Name, options);
+		EntityDesignSchemaDto schema = LoadSchema(options.SchemaName, package.Descriptor.UId, package.Descriptor.Name, options, allowDependencyResolution: false);
 		(EntitySchemaColumnDto column, string source) = FindColumnForRead(schema, options.ColumnName);
 		string cultureName = EntitySchemaDesignerSupport.GetCurrentCultureName();
 		EntitySchemaDefaultValueConfig? defaultValueConfig = EntitySchemaDesignerSupport.CreateDefaultValueConfig(
@@ -238,7 +238,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			return GetMergedSchemaProperties(options);
 		}
 		PackageInfo package = ResolvePackage(options.Package);
-		EntityDesignSchemaDto schema = LoadSchema(options.SchemaName, package.Descriptor.UId, package.Descriptor.Name, options);
+		EntityDesignSchemaDto schema = LoadSchema(options.SchemaName, package.Descriptor.UId, package.Descriptor.Name, options, allowDependencyResolution: false);
 		string cultureName = EntitySchemaDesignerSupport.GetCurrentCultureName();
 		List<EntitySchemaColumnDto> ownColumns = schema.Columns?.ToList() ?? [];
 		List<EntitySchemaColumnDto> inheritedColumns = schema.InheritedColumns?.ToList() ?? [];
@@ -803,7 +803,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	}
 
 	private EntityDesignSchemaDto LoadSchema(string schemaName, Guid packageUId, string packageName,
-		RemoteCommandOptions options) {
+		RemoteCommandOptions options, bool allowDependencyResolution) {
 		GetSchemaDesignItemRequestDto request = new() {
 			Name = schemaName,
 			PackageUId = packageUId,
@@ -812,13 +812,20 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		DesignerResponse<EntityDesignSchemaDto>? response =
 			_entitySchemaDesignerClient.TryGetSchemaDesignItem(request, options);
 		bool schemaUnavailable = response == null || response.Schema == null;
-		if (schemaUnavailable && _dependencyResolver.TryAutoResolve(schemaName, packageName)) {
+		// Auto-dependency resolution persists a new package dependency list to the environment — a
+		// mutating side effect. It must run ONLY on the write path (ModifyColumns); read callers
+		// (GetSchemaProperties / GetColumnProperties, reached from the read-only MCP tools) must fall
+		// through to the enriched error message instead, so a schema-discovery call never mutates the
+		// package dependency graph.
+		if (allowDependencyResolution && schemaUnavailable && _dependencyResolver.TryAutoResolve(schemaName, packageName)) {
 			_logger.WriteInfo(
 				$"Retrying GetSchemaDesignItem for '{schemaName}' after auto-dependency resolution...");
 			response = _entitySchemaDesignerClient.TryGetSchemaDesignItem(request, options);
 		}
 		if (response == null) {
-			_entitySchemaDesignerClient.GetSchemaDesignItem(request, options);
+			// GetSchemaDesignItem is expected to throw the enriched diagnostic here; assign its result so
+			// that if it ever returns instead of throwing, `response` is non-null and the `!` below is safe.
+			response = _entitySchemaDesignerClient.GetSchemaDesignItem(request, options);
 		}
 		EntityDesignSchemaDto schema = response!.Schema
 			?? throw new EntitySchemaDesignerException(
