@@ -468,9 +468,12 @@ public sealed class ClioRunTool(IClioRunExecutor executor) {
 	public ValueTask<CallToolResult> Run(
 		RequestContext<CallToolRequestParams> context,
 		[Description("clio MCP tool name (kebab-case), e.g. \"execute-esq\"")] string? command = null,
-		[Description("JSON arguments object the target tool expects")] JsonElement? args = null,
+		[Description("JSON arguments object the target tool expects")] Dictionary<string, JsonElement>? args = null,
 		CancellationToken cancellationToken = default)
-		=> executor.RunAsync(command, args, destructiveSurface: false, context, cancellationToken);
+		=> executor.RunAsync(command, DictionaryToElement(args), destructiveSurface: false, context, cancellationToken);
+
+	internal static JsonElement? DictionaryToElement(Dictionary<string, JsonElement>? dict)
+		=> dict is not null ? JsonSerializer.SerializeToElement(dict) : null;
 }
 
 /// <summary>
@@ -492,7 +495,7 @@ public sealed class ClioRunDestructiveTool(IClioRunExecutor executor) {
 	public ValueTask<CallToolResult> Run(
 		RequestContext<CallToolRequestParams> context,
 		[Description("clio MCP tool name (kebab-case), e.g. \"sync-schemas\"")] string? command = null,
-		[Description("JSON arguments object the target tool expects")] JsonElement? args = null,
+		[Description("JSON arguments object the target tool expects")] Dictionary<string, JsonElement>? args = null,
 		CancellationToken cancellationToken = default)
-		=> executor.RunAsync(command, args, destructiveSurface: true, context, cancellationToken);
+		=> executor.RunAsync(command, ClioRunTool.DictionaryToElement(args), destructiveSurface: true, context, cancellationToken);
 }
