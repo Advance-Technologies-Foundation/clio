@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Net.Http;
@@ -38,15 +39,17 @@ public sealed class EntitySchemaPublishHelperTests
 	[Test]
 	[Description("Publishes the configuration and then requests the OData rebuild, logging the rebuild-requested message.")]
 	public void PublishAndRebuildOData_ShouldPublishThenRequestRebuild_WhenBothSucceed() {
+		// Arrange — capture the order the client is called in.
+		List<string> calls = [];
+		_client.When(c => c.PublishConfigurationChanges(_options)).Do(_ => calls.Add("publish"));
+		_client.When(c => c.RunODataBuild(_options)).Do(_ => calls.Add("rebuild"));
+
 		// Act
 		EntitySchemaPublishHelper.PublishAndRebuildOData(_client, _logger, _options, "UsrVehicle", "was created and saved");
 
 		// Assert
-		Received.InOrder(() => {
-			_client.PublishConfigurationChanges(_options);
-			_client.RunODataBuild(_options);
-		});
-		// because: a saved change is invisible over OData until it is published, then the OData assembly rebuilt
+		calls.Should().Equal(["publish", "rebuild"],
+			because: "a saved change is invisible over OData until it is published, then the OData assembly rebuilt");
 		_logger.Received(1).WriteInfo(Arg.Is<string>(message =>
 			message.Contains("OData entities rebuild requested", StringComparison.Ordinal)
 			&& message.Contains("UsrVehicle", StringComparison.Ordinal)));

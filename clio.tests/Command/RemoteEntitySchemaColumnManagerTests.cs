@@ -159,9 +159,16 @@ internal class RemoteEntitySchemaColumnManagerTests
 	[Test]
 	[Description("Publishes the configuration and requests the OData entities rebuild after saving a column, in that order, so the column is reachable over OData.")]
 	public void ModifyColumn_PublishesAndRequestsODataRebuild_AfterSaving() {
-		// Arrange
+		// Arrange — capture the order the designer client is called in.
 		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)], primaryDisplayColumn: null);
 		SetupLoadedSchema();
+		List<string> calls = [];
+		_designerClient.When(c => c.SaveSchemaDbStructure(Arg.Any<Guid>(), Arg.Any<Clio.Command.RemoteCommandOptions>()))
+			.Do(_ => calls.Add("save-db"));
+		_designerClient.When(c => c.PublishConfigurationChanges(Arg.Any<Clio.Command.RemoteCommandOptions>()))
+			.Do(_ => calls.Add("publish"));
+		_designerClient.When(c => c.RunODataBuild(Arg.Any<Clio.Command.RemoteCommandOptions>()))
+			.Do(_ => calls.Add("rebuild"));
 		var options = new ModifyEntitySchemaColumnOptions {
 			Package = "UsrPkg", SchemaName = "UsrVehicle", Action = "add", ColumnName = "Name", Type = "Text", Title = "Vehicle name"
 		};
@@ -170,13 +177,8 @@ internal class RemoteEntitySchemaColumnManagerTests
 		_manager.ModifyColumn(options);
 
 		// Assert
-		Received.InOrder(() => {
-			_designerClient.SaveSchemaDbStructure(Arg.Any<Guid>(), Arg.Any<Clio.Command.RemoteCommandOptions>());
-			_designerClient.PublishConfigurationChanges(Arg.Any<Clio.Command.RemoteCommandOptions>());
-			_designerClient.RunODataBuild(Arg.Any<Clio.Command.RemoteCommandOptions>());
-		});
-		// because: a saved column is invisible over OData until the configuration is published and the OData
-		// entities assembly is rebuilt; the rebuild must follow the publish
+		calls.Should().Equal(["save-db", "publish", "rebuild"],
+			because: "a saved column is invisible over OData until the configuration is published and the OData entities assembly is rebuilt; the rebuild must follow the publish");
 	}
 
 	[Test]
