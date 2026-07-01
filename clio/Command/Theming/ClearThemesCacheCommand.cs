@@ -1,13 +1,14 @@
 using Clio.Common;
 using CommandLine;
 
-namespace Clio.Command
+namespace Clio.Command.Theming
 {
 	/// <summary>
 	/// Options for the <c>clear-themes-cache</c> command.
 	/// </summary>
 	[Verb("clear-themes-cache", Aliases = ["flush-themes"],
 		HelpText = "Refresh the Creatio theme catalog cache")]
+	[FeatureToggle("theming")]
 	public class ClearThemesCacheOptions : RemoteCommandOptions
 	{
 	}

@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
+using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
@@ -443,15 +445,19 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 	[Test]
 	[AllureTag(GuidanceGetTool.ToolName)]
 	[AllureName("get-guidance returns the canonical theming orchestration guide")]
-	[Description("Verifies get-guidance returns the theming article that delegates theme authoring to @creatio/theming and routes activation to clear-themes-cache.")]
+	[Description("Verifies get-guidance returns the theming article that builds the theme CSS with the native build-theme tool and routes the no-code flow to create-theme-by-environment.")]
 	public async Task GuidanceGet_Should_Return_Theming_Guide() {
 		// Arrange
-		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		FeatureE2EGate.SkipIfFeatureDisabled(settings, "theming");
+		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
+		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
 
 		// Act
 		GuidanceGetResponse response = await CallAsync(
-			context.Session,
-			context.CancellationTokenSource.Token,
+			session,
+			cancellationTokenSource.Token,
 			new Dictionary<string, object?> {
 				["name"] = "theming"
 			});
@@ -463,14 +469,14 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "successful guidance lookups should return the resolved article payload");
 		response.Article!.Uri.Should().Be("docs://mcp/guides/theming",
 			because: "the canonical resource URI should still be visible in the tool response");
-		response.Article.Text.Should().Contain("@creatio/theming",
-			because: "the theming guide must delegate authoring to the npm package");
+		response.Article.Text.Should().NotContain("@creatio/theming",
+			because: "the npm package is retired — theme CSS is built by the native build-theme tool");
 		response.Article.Text.Should().Contain("push-workspace",
 			because: "the theming guide must route deployment through push-workspace");
 		response.Article.Text.Should().Contain("create-theme-by-environment",
 			because: "the theming guide must route the no-code/server flow to the create-theme MCP tool");
-		response.Article.Text.Should().Contain("palette engine",
-			because: "the no-code/server flow's primary path is the deterministic palette engine — the guide must point the agent to @creatio/theming's engine");
+		response.Article.Text.Should().Contain("build-theme",
+			because: "the no-code/server flow's primary path is the native build-theme tool, not hand-computed colors");
 	}
 
 	[Test]

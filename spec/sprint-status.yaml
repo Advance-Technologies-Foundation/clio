@@ -695,3 +695,134 @@ stories:
       - story-theming-server-flow-5
     blocks: []
     note: "Docs-only (use the document-command skill). Create help/en/{create,update,delete}-theme.txt + docs/commands/{create,update,delete}-theme.md; add Commands.md index+section entries + Wiki/WikiAnchors.txt anchors for the three verbs; add the six MCP tool variants ({create,update,delete}-theme-by-{environment,credentials}) with FR-12 safety flags + the create structured-result note + the updated docs://mcp/guides/theming resource to docs/McpCapabilityMap.md. Align flags/defaults/examples with the Story 2/3 source (canonical verb names, no aliases); FR-10 limits, update full-overwrite/no-package, delete not-idempotent, Error:+non-zero error behavior; no new-theme references. If a ReadmeChecker gate forces per-command docs to co-land with the verbs (Stories 2/3), this story reduces to Commands.md/WikiAnchors/McpCapabilityMap + cross-surface review."
+
+  # --- theming-native-build stories (ENG-90636, epic ENG-26797 — Theming with AI, clio dev flow; native-build + bundled-template continuation), added 2026-06-26; template pivoted CDN->bundled 2026-06-30 ---
+  # Consumer + math side of `build-theme = math (clio C#) + bundled template + brand inputs -> theme.css`.
+  # Ports the retired @creatio/theming OKLCH color math into clio/Theming/ (Clio.Theming), adds a build-theme
+  # CLI verb + a FLAT ComponentInfoTool-style MCP tool, sources theme.css.tpl + theme.json.tpl from the BUNDLED
+  # clio/tpl/themes/{version}/ via IThemeTemplateProvider (no CDN), swaps the guidance npm->build-theme, decommissions the scaffold dep.
+  # ADR Accepted after adversarial review; refinements R-01..R-18 are BINDING and supersede the pre-review body
+  # (see the ADR "Post-review refinements"; D5/R-03/R-04/R-05/R-12 revised for the bundled pivot). Test plan: tp-theming-native-build.md.
+  #
+  # GATE (de-risking): Story 1 is the PARITY SPIKE and must be green (or its pre-decided fallback applied:
+  # fdlibm pow/cbrt port OR a documented tolerance, R-08) BEFORE any other math/build story. Math.Pow/Math.Cbrt
+  # are NOT bit-guaranteed V8<->.NET; the broad, adversarially-seeded parity fixture is the load-bearing gate.
+  #
+  # ROLLOUT (R-12, revised 2026-06-30): TOGGLE-ONLY, DARK UNTIL THE SURFACE IS COMPLETE. [FeatureToggle("theming")]
+  # on BOTH the options class AND the MCP tool type. The template is BUNDLED in clio (tpl/themes/{version}/), so
+  # nothing external gates the feature — it is hidden only until the surface (math, provider, command, MCP tool,
+  # guidance, docs) is complete and go-live is approved (Story 8), then the toggle is flipped. No CDN, no producer
+  # dependency, no CLIO_THEME_TEMPLATE_LOCAL_FILE.
+  #
+  # DEFERRED (external-gated): Story 7 (decommission/styling-migration) is GATED on the --crt-* token catalog
+  # rehoming to CDN/Academy + the cross-repo @creatio-devkit/common REMOTE_COMPONENT_STYLING guide repoint (R-01) —
+  # the ONLY remaining external dependency (needs a NAMED OWNER + TARGET DATE before leaving `deferred`).
+  # Story 8 (go-live) is NOT externally gated anymore — it is sequenced after the surface (stories 3-6) is complete.
+  #
+  # Recommended order: 1 -> (2 || 3) -> 4 -> (5 || 6) -> 7/8 (deferred). Dependency graph is acyclic.
+  # Full-suite trigger (smart-regression rule 4): Story 4 (BindingsModule.cs + Program.cs). New `Theming` module
+  # trait added in Story 2 (CLAUDE.md/AGENTS.md: Theming -> clio/Theming/). MCP E2E (stories 4, 5, 8) is NOT in
+  # CI — manual only.
+  - id: story-theming-native-build-1
+    title: "Parity spike (GATE) — ColorSpace + generateScale port + seeded parity-fixture harness"
+    feature: "theming-native-build"
+    size: L
+    status: review
+    status_note: "Implemented + verified locally 2026-06-26 — parity GATE is BIT-EXACT (no fallback): 18/18 Theming tests pass on net8.0 AND net10.0; C# OKLCH math matches the freedom.scss-derived TS golden hex-for-hex across all 56 adversarial fixture entries. Math.Pow/Math.Cbrt did NOT diverge V8<->.NET (R-08 risk cleared). BitExactToleranceUlps=0 pinned. Gate green -> Story 2 unblocked. Not yet in a PR."
+    file: spec/stories/story-theming-native-build-1.md
+    adr: spec/adr/adr-theming-native-build.md
+    test_plan: spec/test-plans/tp-theming-native-build.md
+    depends_on: []
+    blocks:
+      - story-theming-native-build-2
+      - story-theming-native-build-4
+    note: "DE-RISKING GATE (Phase 0) — runs FIRST, blocks every other math/build story. Ports ColorSpace (matrices verbatim; JS Math.round semantics NOT Math.Floor(x+0.5), round-THEN-clamp, R-07; CultureInfo.InvariantCulture + byte.Parse(HexNumber), R-09; Math.Pow for **; >= -0.001 && <= 1.001 gamut test verbatim) + generateScale/deriveSecondary/accentCandidates, and stands up the BROAD, ADVERSARIALLY-SEEDED parity-fixture harness (rounding-boundary, near-gamut-chroma, threshold-boundary inputs — NOT '~200 random hex'; durable creatio-ui/freedom.scss provenance, R-15). DELIVERABLE: prove C# == TS bit-exact at the hex level (TC-U-P01..P02), OR apply + RECORD the pre-decided fallback (fdlibm pow/cbrt port OR a documented tolerance, R-08; TC-U-P03). Math.Pow/Math.Cbrt are NOT bit-guaranteed V8<->.NET — this is the single highest parity risk. Tests [Category(Unit)]+[Property(Module,Theming)]. Do NOT write the rest of the math (Story 2) until this gate is green or its fallback is applied."
+  - id: story-theming-native-build-2
+    title: "Math port complete — ColorNormalizer/PaletteGenerator/ColorMetrics/TextTokenResolver/FontImportBuilder + ThemeCssBuilder + Theming module trait"
+    feature: "theming-native-build"
+    size: L
+    status: review
+    status_note: "Implemented + verified locally 2026-06-26 — full math + ThemeCssBuilder BIT-EXACT with the TS: 52 Theming tests pass + 1 producer-gated skip on net8.0 AND net10.0, 0 new warnings. 5-case builder golden matches buildThemeCss hex-for-hex; all *.spec.ts anchors ported; R-18 uniform 5-palette guard; R-10 regex hazards (count-1/MatchEvaluator/\\z/[\\s\\S]/timeouts) + post-fill guard + 1 MiB advisory + theme.json contract all tested; Theming module trait added to AGENTS.md. DI registration deferred to Story 4 (no BindingsModule/Program wiring -> no full-suite trigger). Not yet in a PR."
+    file: spec/stories/story-theming-native-build-2.md
+    adr: spec/adr/adr-theming-native-build.md
+    test_plan: spec/test-plans/tp-theming-native-build.md
+    depends_on: [story-theming-native-build-1]
+    blocks: [story-theming-native-build-4]
+    note: "Completes the C# port. Normalize (alpha-reject/rgb/hsl/named, hsl(217,100%,42%)->#0052d6, lowercase-ordinal named lookup), full Palette/Metrics (chooseBestAccent via OrderByDescending stable tie-break, suggestAdaptedPrimary500 exact double loop)/TextTokens/Fonts (sorted+deduped weights, ordinal Montserrat default -> no @import). IThemeCssBuilder/ThemeCssBuilder = the ONE DI behavior class (AddSingleton, pure/fieldless — R-06), Build(input, templateCss) takes the template AS AN ARGUMENT (no disk read). Regex fill per R-10: count-1 Regex.Replace, MatchEvaluator for user input, \\z not $, [\\s\\S]/\\n-only comment strip, NO Multiline/ECMAScript, match timeouts on regex steps only; post-fill no-<% / all-steps guard. R-14 1 MiB build-time advisory; embedded theme.json.tpl placeholder contract guard (R-17). UNIFORM five-palette verification (R-18 — generateScale(-500) for primary/secondary/accent/success/error identically, NO secondary special-case, NO 600-900 handling). Fixtures/theme.css.tpl is the ACTUAL creatio-ui freedom.scss template (R-15). New `Theming` module trait added to CLAUDE.md/AGENTS.md (Theming -> clio/Theming/). All ported *.spec.ts anchors as [Category(Unit)]+[Property(Module,Theming)]. No BindingsModule/Program wiring here (Story 4) — not a full-suite trigger."
+  - id: story-theming-native-build-3
+    title: "IThemeTemplateProvider — bundled, version-pinned template sourcing (tpl/themes/{version}/)"
+    feature: "theming-native-build"
+    size: M
+    status: review
+    status_note: "Implemented + unit-tested this session (pre-commit): bundled IThemeTemplateProvider + tpl/themes/10.0/{theme.css.tpl,theme.json.tpl}; ThemeTemplateProviderTests (6 cases: highest-when-empty / highest<=target / too-old->ArgumentException / missing-file->InvalidOperationException / malformed-version / json) all green. Not yet in a PR."
+    file: spec/stories/story-theming-native-build-3.md
+    adr: spec/adr/adr-theming-native-build.md
+    test_plan: spec/test-plans/tp-theming-native-build.md
+    depends_on: []
+    blocks: [story-theming-native-build-4]
+    note: "Independent — can run in parallel with Story 2. BUNDLED IThemeTemplateProvider (interface + ThemeTemplateProvider) in clio/Command/Theming/ (namespace Clio.Command.Theming); reads version-pinned theme.css.tpl + theme.json.tpl from clio/tpl/themes/{version}/ (shipped via the tpl\\** content glob, like tpl/ui) — NO CDN, NO cache, NO SWR, NO CLIO_THEME_TEMPLATE_LOCAL_FILE, NO ComponentRegistryDocsClient refactor (D5/R-04/R-05 superseded). Version pick (ResolveCompatibleVersion): list tpl/themes/<Version>/ dirs, pick highest bundled <= target (LastOrDefault); empty/null target -> highest; below the lowest bundled -> ArgumentException('Themes require Creatio {min} or newer...'); missing file -> InvalidOperationException. Consumed by BuildThemeCommand/BuildThemeTool (Story 4); the version-source flags --version/--environment-name live on the command (R-03). Unit (Module=Command): highest-when-empty, highest<=target, too-old->error, missing-file->error. clio.tests/Command/ThemeTemplateProviderTests.cs."
+  - id: story-theming-native-build-4
+    title: "build-theme surface — CLI verb + flat MCP tool + DI/Program wiring (toggled, dark until go-live)"
+    feature: "theming-native-build"
+    size: L
+    status: review
+    status_note: "Implemented + tested this session (pre-commit): BuildThemeCommand (CLI) + flat BuildThemeTool (MCP, gated, ComponentInfoTool-style) + DI/Program wiring + --version/--environment-name resolution; BuildThemeCommandTests (8) + BuildThemeToolTests (9) + BuildThemeToolE2ETests (2, ran offline against the real mcp-server: toggle-on advertise+build, toggle-off absent) all green. Not yet in a PR; McpCapabilityMap build-theme row is Story 5; full-suite run + commit pending."
+    file: spec/stories/story-theming-native-build-4.md
+    adr: spec/adr/adr-theming-native-build.md
+    test_plan: spec/test-plans/tp-theming-native-build.md
+    depends_on:
+      - story-theming-native-build-2
+      - story-theming-native-build-3
+    blocks:
+      - story-theming-native-build-5
+      - story-theming-native-build-6
+      - story-theming-native-build-8
+    note: "BuildThemeCommand (local Command<BuildThemeOptions> in clio/Command/Theming/, kebab-case flags; stdout mode, workspace-dir mode writes theme.css + theme.json from the bundled theme.json.tpl per OQ-03; --id/--caption for theme.json; version source --version XOR --environment-name -> ISettingsRepository.FindEnvironment -> IPlatformVersionResolverFactory, both->mutually-exclusive error, neither->highest bundled; NO --template-file) + FLAT BuildThemeTool (ComponentInfoTool-style — does NOT derive from BaseTool, ctor-injects IThemeCssBuilder + IThemeTemplateProvider; NO BaseTool.cs edit — R-02) + BuildThemeResult { success, css, descriptor, warnings?, error? }. [FeatureToggle(theming)] on BOTH BuildThemeOptions AND the [McpServerToolType] (R-12 toggle-only, dark until go-live — template bundled, no producer gate). Safety flags ReadOnly=true/Destructive=false/Idempotent=true/OpenWorld=false (env effects — reading the bundled template + the optional --environment-name probe are read-only, R-17); description -> get-guidance theming. DI in BindingsModule + typeof(BuildThemeOptions) in Program.cs CommandOption + dispatch arm. Register MCP via McpFeatureToggleFilter.RegisterEnabledPrimitives (IEnumerable<Type> — never Type[] / *FromAssembly). Too-old/invalid --version -> graceful CLI error / MCP success:false. Unit (flat shape, arg map, flags, toggle gating, output modes, version resolution) + Integration (real theme.css/theme.json from the bundled template) + MANDATORY clio.mcp.e2e (advertise toggle-on + absent toggle-off + valid CSS) — E2E NOT in CI (manual). FULL-SUITE TRIGGER (BindingsModule.cs + Program.cs — rule 4)."
+  - id: story-theming-native-build-5
+    title: "Guidance swap — ThemingGuidanceResource npm -> build-theme + GuidanceCatalog/McpCapabilityMap + test rewrites"
+    feature: "theming-native-build"
+    size: S
+    status: review
+    status_note: "Done this session (pre-commit): ThemingGuidanceResource swapped npm/@creatio/theming -> build-theme (edit-not-rewrite); GuidanceCatalog blurb + McpCapabilityMap theming-resource description updated; GuidanceGetToolTests (24) + GuidanceGetToolE2ETests (theming, ran offline) rewritten and green. The build-theme TOOL row in McpCapabilityMap is intentionally deferred to go-live (Story 8) — gated tools (deploy-identity) are not listed in the map while dark."
+    file: spec/stories/story-theming-native-build-5.md
+    adr: spec/adr/adr-theming-native-build.md
+    test_plan: spec/test-plans/tp-theming-native-build.md
+    depends_on: [story-theming-native-build-4]
+    blocks: []
+    note: "EDIT (not rewrite) ThemingGuidanceResource.Guide (D8): swap ONLY the npm bits (XML summary + [Description], the 'Source of truth — @creatio/theming' block, workspace step 2, no-code step 1) for 'call build-theme'; KEEP 'Which flow', deploy, 'List themes', 'Get/set the default theme', CanCustomizeBranding/CanManageThemes preconditions unchanged; token catalog NOT restated (CM-03). Update GuidanceCatalog blurb (drop @creatio/theming) + docs/McpCapabilityMap.md (build-theme row + updated resource description) TOGETHER. R-16 enumerated GuidanceGetToolTests rewrites in place: remove Contain('@creatio/theming') (:128) -> NotContain; remove Contain('palette engine') (:144) -> Contain('build-theme'); keep Which-flow / No-code-server-flow / NotContain('not yet available') / create-update-delete-theme-by-environment; re-evaluate the --crt count guard (:163-165). Resolution guard (get-guidance theming -> Success=true, URI docs://mcp/guides/theming) stays green. Unit (Module=McpServer) + clio.mcp.e2e get-guidance theming discovery (TC-E2E-02) — E2E NOT in CI (manual)."
+  - id: story-theming-native-build-6
+    title: "Docs — build-theme help / GitHub docs / Commands.md / WikiAnchors"
+    feature: "theming-native-build"
+    size: M
+    status: review
+    status_note: "Done (pre-commit): docs/commands/build-theme.md + Commands.md index + Wiki/WikiAnchors landed in commit 5f922942 (required by the VisibleCommands_ShouldHaveCanonicalArtifacts gate — CommandHelpCatalog is not toggle-aware, so even a gated command needs committed docs); this session added curated help/en/build-theme.txt and switched BuildThemeCommandTests to BaseCommandTests<BuildThemeOptions> (ReadmeChecker green). McpCapabilityMap build-theme TOOL row deferred to go-live (Story 8) per the deploy-identity precedent."
+    file: spec/stories/story-theming-native-build-6.md
+    adr: spec/adr/adr-theming-native-build.md
+    test_plan: spec/test-plans/tp-theming-native-build.md
+    depends_on: [story-theming-native-build-4]
+    blocks: [story-theming-native-build-8]
+    note: "Docs-only (use the document-command skill). Create clio/help/en/build-theme.txt + clio/docs/commands/build-theme.md; add Commands.md index+section + Wiki/WikiAnchors.txt anchor for build-theme. All kebab-case flags (--primary, --secondary/--accent/--success/--error, --css-class-name, --heading-font/--body-font/--font-weights, --id/--caption, --version/--environment-name, --output); both output modes (stdout vs workspace dir + theme.json from the bundled theme.json.tpl); both-flow examples. FEATURE-TOGGLE DOCS-OMISSION INTERACTION (D6): while the toggle is off the verb is omitted from GENERATED public docs (deterministic export baseline) — these committed docs surface PUBLICLY when the toggle flips on at go-live (Story 8). Align flags/defaults/examples with the Story 4 source (canonical verb, no aliases); keep consistent with the Story 5 McpCapabilityMap row. If a ReadmeChecker gate forces per-command docs to co-land with Story 4, this reduces to Commands.md/WikiAnchors + cross-surface review."
+  - id: story-theming-native-build-7
+    title: "Decommission @creatio/theming + styling-migration (R-01) — scaffold dep removal + token-catalog repoint"
+    feature: "theming-native-build"
+    size: M
+    status: deferred
+    file: spec/stories/story-theming-native-build-7.md
+    adr: spec/adr/adr-theming-native-build.md
+    test_plan: spec/test-plans/tp-theming-native-build.md
+    depends_on: [story-theming-native-build-5]
+    blocks: []
+    note: "DEFERRED — producer/external-gated (R-01). Full removal of @creatio/theming, with its component-styling use HANDLED (supersedes the earlier 'keep the dep' resolution / devflow D3 / CAP-04). clio-side is SMALL: remove '@creatio/theming':'^0.1000.0' from clio/tpl/ui-project/package.json:41 (full removal) + repoint the scaffold clio/tpl/ui-project/AGENTS.md --crt-* token-catalog reference to the catalog's rehomed CDN/Academy home (~15-25 lines). NOT a build/SCSS migration — nothing in the scaffold imports the package; --crt-* are platform :root runtime primitives, so npm i still succeeds + components still render. GATE (why deferred): 'styling use handled' requires the --crt-* token catalog to have a surviving online home (CDN/Academy — producer workstream) AND the cross-repo @creatio-devkit/common REMOTE_COMPONENT_STYLING guide repointed (clio cannot edit it). Removing the dep before that leaves an AUTHOR-TIME DOCUMENTATION GAP. Stays deferred until both land (needs named owner + target date). Verify (TC-I-04..06): new-ui-project scaffolds + npm i succeeds without the dep; sample --crt-* component renders (platform :root); scaffold AGENTS.md styling path resolves to the rehomed catalog. Cross-repo devkit repoint flagged external (TC-M-05). npm i checks need Node on the runner — demote to TC-M-05 if absent."
+  - id: story-theming-native-build-8
+    title: "Go-live (Phase 5) — verify parity, flip the toggle on, surface public docs"
+    feature: "theming-native-build"
+    size: M
+    status: deferred
+    file: spec/stories/story-theming-native-build-8.md
+    adr: spec/adr/adr-theming-native-build.md
+    test_plan: spec/test-plans/tp-theming-native-build.md
+    depends_on:
+      - story-theming-native-build-4
+      - story-theming-native-build-6
+    blocks: []
+    note: "DEFERRED — sequenced after the surface (stories 3-6: provider, command, MCP tool, guidance, docs) is COMPLETE + parity verified. NOT externally gated: the template is bundled in clio (tpl/themes/{version}/), so there is no CDN switch, no live-snapshot cross-repo guard, and no creatio-ui producer dependency (R-12 revised). Verify parity against the in-repo template/builder contract guard; then flip [FeatureToggle(theming)] ON (the feature un-darkens, reachable on all four surfaces). PUBLIC DOCS LAND HERE (D6): Commands.md/help/wiki authored in Story 6 enter the generated export baseline only when the toggle is on; add a RELEASE.md note. Manual live-stand runbook TC-M-01/03 (no-code + workspace, bundled template) + TC-E2E-01 toggle-on (manual, NOT in CI)."

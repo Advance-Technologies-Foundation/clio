@@ -2,6 +2,7 @@ using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
 using Clio.Command;
+using Clio.Command.McpServer.Resources;
 using Clio.Command.McpServer.Resources.ProcessDesigner;
 using Clio.Command.McpServer.Tools;
 using FluentAssertions;
@@ -116,9 +117,10 @@ public sealed class GuidanceGetToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Returns the canonical theming guidance article when the caller requests theming: a single entry point that delegates to the @creatio/theming package and routes the agent to the right flow rather than embedding the token catalog.")]
+	[Description("Returns the canonical theming guidance article when the caller requests theming: a single entry point that builds the theme CSS with the native build-theme tool and routes the agent to the right flow rather than embedding the token catalog.")]
 	public async Task GuidanceGet_Should_Return_Theming_Article() {
 		// Arrange
+		_featureToggleService.IsEnabled(typeof(ThemingGuidanceResource)).Returns(true);
 		GuidanceGetTool tool = new(_featureToggleService);
 
 		// Act
@@ -135,10 +137,10 @@ public sealed class GuidanceGetToolTests {
 			because: "the guidance tool should return the canonical theming article text");
 		result.Article.Text.Should().Contain("Which flow",
 			because: "theming is the single entry point — the article must help the agent pick the workspace/dev vs no-code/server flow");
-		result.Article.Text.Should().Contain("@creatio/theming",
-			because: "the Delegate model requires the guide to route theme authoring to the npm package");
-		result.Article.Text.Should().Contain("AI_GUIDES_INDEX.md",
-			because: "the guide must route token lookups to the package catalog (via its index) instead of embedding token names/values");
+		result.Article.Text.Should().NotContain("@creatio/theming",
+			because: "the npm package is retired — theme CSS is built by the native build-theme tool");
+		result.Article.Text.Should().NotContain("AI_GUIDES_INDEX.md",
+			because: "the npm package index is retired; the guide no longer routes through it");
 		result.Article.Text.Should().Contain("push-workspace",
 			because: "the workspace/dev flow must direct deployment through push-workspace");
 		result.Article.Text.Should().Contain("No-code / server flow",
@@ -151,15 +153,16 @@ public sealed class GuidanceGetToolTests {
 			because: "the server flow must route the agent to the update-theme MCP tool");
 		result.Article.Text.Should().Contain("delete-theme-by-environment",
 			because: "the server flow must route the agent to the delete-theme MCP tool");
-		result.Article.Text.Should().Contain("palette engine",
-			because: "the server flow's primary path is the deterministic palette engine — the guide must point the agent to @creatio/theming's engine rather than hand-computing colors");
+		result.Article.Text.Should().Contain("build-theme",
+			because: "the guide must route theme-CSS building to the native build-theme tool rather than hand-computing colors");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Keeps the theming guidance a thin pointer (CM-03): it routes token lookups to the @creatio/theming catalog via AI_GUIDES_INDEX.md and names the --crt-* token namespace at most once, without restating the token catalog.")]
+	[Description("Keeps the theming guidance a thin pointer (CM-03): it points token lookups at the official Creatio theming documentation and names the --crt-* token namespace at most once, without restating the token catalog or exposing clio-internal hosting details.")]
 	public async Task GetGuidance_ShouldNotRestateTokenCatalog_WhenTopicIsTheming() {
 		// Arrange
+		_featureToggleService.IsEnabled(typeof(ThemingGuidanceResource)).Returns(true);
 		GuidanceGetTool tool = new(_featureToggleService);
 
 		// Act
@@ -168,8 +171,10 @@ public sealed class GuidanceGetToolTests {
 		// Assert
 		result.Article.Should().NotBeNull(
 			because: "theming is a registered guidance name that resolves to an article");
-		result.Article!.Text.Should().Contain("AI_GUIDES_INDEX.md",
-			because: "the guide must route token lookups to the @creatio/theming catalog index rather than embedding the catalog");
+		result.Article!.Text.Should().Contain("Creatio theming documentation",
+			because: "the guide points token lookups at the official Creatio theming documentation rather than embedding the catalog");
+		result.Article.Text.Should().NotContain("CDN",
+			because: "agent-facing theming guidance must not expose clio-internal CDN/hosting details");
 		int tokenNamespaceMentions = result.Article.Text.Split("--crt").Length - 1;
 		tokenNamespaceMentions.Should().BeLessThanOrEqualTo(1,
 			because: "the guide may name the --crt-* token namespace once as a pointer, but must not restate the --crt-* token catalog (CM-03 — single source of truth)");

@@ -120,8 +120,9 @@ For theme-cache activation, the prototype's full `ClearRedisDb` is rejected as t
 ### Key interfaces / contracts
 
 ```csharp
-// clio/Command/ClearThemesCacheCommand.cs
+// clio/Command/Theming/ClearThemesCacheCommand.cs
 [Verb("clear-themes-cache", Aliases = ["flush-themes"], HelpText = "Refresh the Creatio theme catalog cache")]
+[FeatureToggle("theming")] // gated with the whole theming surface (adr-theming-native-build.md OQ-02); added post-ship
 public class ClearThemesCacheOptions : RemoteCommandOptions { } // no [RequiresPackage] — native endpoint, runtime auth
 
 public class ClearThemesCacheCommand : RemoteCommand<ClearThemesCacheOptions>

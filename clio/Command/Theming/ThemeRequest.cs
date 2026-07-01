@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace Clio.Command;
+namespace Clio.Command.Theming;
 
 /// <summary>
 /// Common field contract for a Creatio theme write (create/update), serialized to the native

@@ -2,12 +2,13 @@ using System.Text.Json;
 using Clio.Common;
 using CommandLine;
 
-namespace Clio.Command
+namespace Clio.Command.Theming
 {
 	/// <summary>
 	/// Options for the <c>update-theme</c> command.
 	/// </summary>
 	[Verb("update-theme", HelpText = "Overwrite an existing custom Creatio theme on the target environment via the native ThemeService")]
+	[FeatureToggle("theming")]
 	public class UpdateThemeOptions : RemoteCommandOptions
 	{
 		/// <summary>Id of the existing theme to overwrite (required).</summary>

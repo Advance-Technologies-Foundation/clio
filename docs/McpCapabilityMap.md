@@ -547,7 +547,7 @@ The MCP resource surface is still small, but it now has one MCP-native guidance 
 - `docs://mcp/guides/app-modeling`
   Canonical modeling guide for DB-first app creation, lookup behavior, default semantics, and batch-first page/schema workflows
 - `docs://mcp/guides/theming`
-  Canonical MCP guidance for managing custom Creatio themes with @creatio/theming — create, restyle, delete, list, and set the default — and shipping them to a Creatio environment with Clio
+  Canonical MCP guidance for managing custom Creatio themes with clio — create, restyle, delete, list, and set the default — and shipping them to a Creatio environment
 
 How an external AI should interpret resources:
 

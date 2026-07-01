@@ -253,6 +253,7 @@ Before committing any change, run only the tests for affected modules — do not
 | `Query` | `clio/Query/` |
 | `Requests` | `clio/Requests/` |
 | `Validators` | `clio/Validators/` |
+| `Theming` | `clio/Theming/` |
 
 ## Selection rules
 

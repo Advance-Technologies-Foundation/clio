@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 
-namespace Clio.Command;
+namespace Clio.Command.Theming;
 
 /// <summary>
 /// Resolves the theme CSS from the mutually-exclusive <c>--css-content</c> / <c>--css-content-file</c> inputs

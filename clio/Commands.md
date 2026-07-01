@@ -512,6 +512,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="clear-redis-db"></a>
 <a id="flushdb"></a>
 - [`clear-redis-db`](docs/commands/clear-redis-db.md) - Clear redis database, `flushdb`
+<a id="build-theme"></a>
+- [`build-theme`](docs/commands/build-theme.md) - Build the artifacts of a Creatio theme from brand colours and fonts
 <a id="clear-themes-cache"></a>
 <a id="flush-themes"></a>
 - [`clear-themes-cache`](docs/commands/clear-themes-cache.md) - Refresh the Creatio theme cache, `flush-themes`

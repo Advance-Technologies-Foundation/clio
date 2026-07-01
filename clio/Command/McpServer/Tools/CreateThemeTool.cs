@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Serialization;
+using Clio.Command.Theming;
 using Clio.Common;
 using ModelContextProtocol.Server;
 
@@ -12,6 +13,7 @@ namespace Clio.Command.McpServer.Tools;
 /// MCP tool that creates a custom Creatio theme on a target environment via the native <c>ThemeService</c>,
 /// returning a structured result with the theme id.
 /// </summary>
+[FeatureToggle("theming")]
 public class CreateThemeTool(
 	CreateThemeCommand command,
 	ILogger logger,

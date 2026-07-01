@@ -42,7 +42,7 @@ Key file (create): `clio/Command/McpServer/Tools/ClearThemesCacheTool.cs`
 - Tool method = MCP arg mapping + select the env-aware execution path; no duplicated local `InternalExecute`.
 - Safety flags: `ReadOnly=false`, `Destructive=false`, `Idempotent=true`.
 
-Registration: gated MCP types flow through `McpFeatureToggleFilter.RegisterEnabledPrimitives`, which passes `IEnumerable<Type>` to the SDK's `WithTools`. Do NOT pass a `Type[]` (binds to the generic `WithX<T>(T)` overload and registers nothing) and do NOT revert to `*FromAssembly` (project-context.md + AGENTS.md MCP caveat). This feature is **not** behind a `[FeatureToggle]` per the ADR (it ships on), so no toggle attribute is added — but it still registers through the same filter seam.
+Registration: gated MCP types flow through `McpFeatureToggleFilter.RegisterEnabledPrimitives`, which passes `IEnumerable<Type>` to the SDK's `WithTools`. Do NOT pass a `Type[]` (binds to the generic `WithX<T>(T)` overload and registers nothing) and do NOT revert to `*FromAssembly` (project-context.md + AGENTS.md MCP caveat). This feature now carries `[FeatureToggle("theming")]` (added later — native-build consolidation, `adr-theming-native-build.md` OQ-02; originally shipped enabled) — and it still registers through the same filter seam.
 
 Pattern to follow: existing env-aware `BaseTool<TOptions>` tools that call `InternalExecute<TCommand>` (the MCP tools for other remote commands); `clio/Command/McpServer/Tools/BaseTool.cs`.
 

@@ -3,12 +3,13 @@ using System.Text.Json.Serialization;
 using Clio.Common;
 using CommandLine;
 
-namespace Clio.Command
+namespace Clio.Command.Theming
 {
 	/// <summary>
 	/// Options for the <c>delete-theme</c> command.
 	/// </summary>
 	[Verb("delete-theme", HelpText = "Delete a custom Creatio theme from the target environment via the native ThemeService")]
+	[FeatureToggle("theming")]
 	public class DeleteThemeOptions : RemoteCommandOptions
 	{
 		/// <summary>Id of the theme to delete (required).</summary>

@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Diagnostics.CodeAnalysis;
+using Clio.Command.Theming;
 using Clio.Common;
 using ModelContextProtocol.Server;
 
@@ -10,6 +11,7 @@ namespace Clio.Command.McpServer.Tools;
 /// MCP tool that overwrites an existing custom Creatio theme on a target environment via the native
 /// <c>ThemeService</c> (a full overwrite by theme id).
 /// </summary>
+[FeatureToggle("theming")]
 public class UpdateThemeTool(
 	UpdateThemeCommand command,
 	ILogger logger,

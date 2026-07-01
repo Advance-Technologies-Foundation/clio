@@ -4,6 +4,7 @@ using System;
 using System.IO;
 using System.Text;
 using Clio.Command;
+using Clio.Command.Theming;
 using FluentAssertions;
 using NUnit.Framework;
 

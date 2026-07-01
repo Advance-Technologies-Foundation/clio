@@ -21,6 +21,7 @@ using Clio.Command.McpServer.Resources;
 using Clio.Command.PackageCommand;
 using Clio.Command.ProcessModel;
 using Clio.Command.SqlScriptCommand;
+using Clio.Command.Theming;
 using Clio.Command.TIDE;
 using Clio.Command.Update;
 using Clio.Common;
@@ -44,6 +45,7 @@ using Clio.Project.NuGet;
 using Clio.Query;
 using Clio.Requests;
 using Clio.Requests.Validators;
+using Clio.Theming;
 using Clio.Utilities;
 using Clio.Command.McpServer.Tools;
 using Clio.Command.McpServer.Tools.ProcessDesigner;
@@ -249,6 +251,7 @@ public class BindingsModule {
 		services.AddTransient<InstallSkillsCommand>();
 		services.AddTransient<UpdateSkillCommand>();
 		services.AddTransient<DeleteSkillCommand>();
+		services.AddTransient<BuildThemeCommand>();
 		services.AddTransient<PushPackageCommand>();
 		services.AddTransient<InstallApplicationCommand>();
 		services.AddTransient<IApplicationSectionCreateService, ApplicationSectionCreateService>();
@@ -337,6 +340,8 @@ public class BindingsModule {
 		services.AddSingleton<IComponentRegistryDocsClient, ComponentRegistryDocsClient>();
 		services.AddSingleton<IComponentInfoCatalog, ComponentInfoCatalog>();
 		services.AddSingleton<IMobileComponentInfoCatalog, MobileComponentInfoCatalog>();
+		services.AddSingleton<IThemeCssBuilder, ThemeCssBuilder>();
+		services.AddSingleton<IThemeTemplateProvider, ThemeTemplateProvider>();
 		// Only the per-environment IPlatformVersionResolverFactory is registered: both the
 		// get-component-info MCP tool and the CLI verb resolve the platform version from
 		// per-call arguments (environment-name / uri / version), never from an ambient
@@ -408,6 +413,7 @@ public class BindingsModule {
 		services.AddSingleton<IPageBodySamplingService, PageBodySamplingServiceImpl>();
 		services.AddTransient<GuidanceGetTool>();
 		services.AddTransient<ComponentInfoTool>();
+		services.AddTransient<BuildThemeTool>();
 		services.AddTransient<GetUserCultureTool>();
 		services.AddTransient<PackageHotfixTool>();
 		services.AddTransient<AddPackageDependencyTool>();

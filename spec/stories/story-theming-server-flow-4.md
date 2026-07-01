@@ -65,7 +65,7 @@ per-request environment, and read back the created theme id without shelling out
 - [ ] **AC-07** — Given the MCP server starts, when tools are registered, then all three tool types are
   registered via assembly scan through `McpFeatureToggleFilter.RegisterEnabledPrimitives` (the `IEnumerable<Type>`
   seam) — **no** `Type[]` overload and **no** `*FromAssembly` (RR-04 — either silently registers nothing). There
-  is no manual tool list to append to; no `[FeatureToggle]` on any tool class (ships enabled — D1). (FR-14.)
+  is no manual tool list to append to; `[FeatureToggle("theming")]` on each tool class (added later — native-build consolidation, ADR D1 SUPERSEDED; originally shipped enabled). (FR-14.)
 - [ ] **AC-08** — Given the by-credentials variants, when invoked with bad/missing credentials, then create
   validates via inline `CreateThemeResult.Failure(...)` guards (like `ListThemesTool`) and update/delete via
   `CommandExecutionResult.ValidateCredentials`, returning a graceful failure result — not an unhandled exception.
@@ -107,7 +107,7 @@ public CreateThemeResult CreateThemeByName(
 **Registration:** gated MCP types flow through `McpFeatureToggleFilter.RegisterEnabledPrimitives`, which passes
 `IEnumerable<Type>` to the SDK's `WithTools`. Do **NOT** pass a `Type[]` (binds to the generic `WithX<T>(T)`
 overload — registers nothing) and do **NOT** revert to `*FromAssembly` (project-context.md + AGENTS.md MCP
-caveat, RR-04). These ship on (no `[FeatureToggle]`), but they still register through the same filter seam.
+caveat, RR-04). These now carry `[FeatureToggle("theming")]` (added later — ADR D1 SUPERSEDED; originally shipped enabled), and register through the same filter seam.
 
 **No `BaseTool.ResolveFromCallContainer` switch edit** (ADR D5): the switch (ll. 110–127) has dedicated arms only
 for the four local-resolution options (`CreateTestProjectOptions`, `AddPackageOptions`,
@@ -145,7 +145,7 @@ Pattern to follow: `ListThemesTool` (structured-result + inline credential guard
 - [ ] Validation enforced via the command/data method (`ThemeRequestBuilder`), identical 1 MiB cap on MCP + CLI (R-04)
 - [ ] Safety flags per FR-12; `OpenWorld=false` on all three; descriptions route to `get-guidance theming`
 - [ ] Tools resolve through the generic `EnvironmentOptions` arm — **no `BaseTool` switch edit** (verified by a unit test, AC-06)
-- [ ] Tools register via `McpFeatureToggleFilter.RegisterEnabledPrimitives` (`IEnumerable<Type>`) — no `Type[]`, no `*FromAssembly` (RR-04); no `[FeatureToggle]`
+- [ ] Tools register via `McpFeatureToggleFilter.RegisterEnabledPrimitives` (`IEnumerable<Type>`) — no `Type[]`, no `*FromAssembly` (RR-04); `[FeatureToggle("theming")]` added later (ADR D1 SUPERSEDED)
 - [ ] Unit tests added with `[Category("Unit")]` — never `[Category("UnitTests")]`
 - [ ] `clio.mcp.e2e` coverage added for all **six** variants (flag: not in CI — manual)
 - [ ] Targeted tests run: `dotnet test --filter "Category=Unit&Module=McpServer"`

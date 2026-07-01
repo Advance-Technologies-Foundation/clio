@@ -6,13 +6,14 @@ using System.Text.Json.Serialization;
 using Clio.Common;
 using CommandLine;
 
-namespace Clio.Command
+namespace Clio.Command.Theming
 {
 	/// <summary>
 	/// Options for the <c>list-themes</c> command.
 	/// </summary>
 	[Verb("list-themes", Aliases = ["get-themes"],
 		HelpText = "List the custom Creatio themes available on the target environment")]
+	[FeatureToggle("theming")]
 	public class ListThemesOptions : RemoteCommandOptions
 	{
 	}

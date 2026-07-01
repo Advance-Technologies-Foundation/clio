@@ -67,6 +67,7 @@ generate-source-code:generate-source-code,gsc
 get-app-hash:get-app-hash
 get-app-info:get-app-info
 list-apps:list-apps,get-app-list,app-list,apps,apps-list,lia
+build-theme:build-theme
 list-themes:list-themes,get-themes
 create-theme:create-theme
 update-theme:update-theme

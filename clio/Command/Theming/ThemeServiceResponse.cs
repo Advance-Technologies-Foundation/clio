@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace Clio.Command;
+namespace Clio.Command.Theming;
 
 /// <summary>
 /// The <c>BaseResponse</c> shape returned by the native Creatio <c>ThemeService</c> endpoints: a success flag

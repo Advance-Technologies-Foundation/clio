@@ -1,6 +1,7 @@
 namespace Clio.Tests.Command;
 
 using Clio.Command;
+using Clio.Command.Theming;
 using FluentAssertions;
 using NUnit.Framework;
 

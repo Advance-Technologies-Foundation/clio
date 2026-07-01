@@ -2,6 +2,7 @@ namespace Clio.Tests.Command;
 
 using System.Text.RegularExpressions;
 using Clio.Command;
+using Clio.Command.Theming;
 using Clio.Common;
 using FluentAssertions;
 using NSubstitute;

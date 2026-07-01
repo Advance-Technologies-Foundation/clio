@@ -25,7 +25,7 @@
 - Workspace / package scaffolding, `push-workspace`, `push-pkg` — that is Contour A / ENG-90636.
 - Behavior changes to the shipped `list-themes` / `clear-themes-cache` and their MCP tools, and any refactor of their private response parsers (PRD non-goal; their existing tests are pure regression guard — see "Regression Guard").
 - Client-side `cssContent` sanitization (RR-05 — sent verbatim, matching the server).
-- ClioGate method / cliogate bump / `[RequiresPackage]` / `[FeatureToggle]` — none added (D1, FR-17).
+- ClioGate method / cliogate bump / `[RequiresPackage]` — none added (D1, FR-17). (`[FeatureToggle("theming")]` was added later per the native-build consolidation — ADR D1 SUPERSEDED.)
 
 ---
 

@@ -6,17 +6,18 @@ namespace Clio.Command.McpServer.Resources;
 
 /// <summary>
 /// Canonical AI-facing guidance for managing custom Creatio themes through clio MCP: routes between the
-/// workspace/dev and no-code/server delivery flows and delegates the token catalog, theme template,
-/// palette engine, and authoring rules to the <c>@creatio/theming</c> package.
+/// workspace/dev and no-code/server delivery flows and builds the theme CSS with the native
+/// <c>build-theme</c> tool (deterministic palette engine + bundled, version-pinned template).
 /// </summary>
 [McpServerResourceType]
+[FeatureToggle("theming")]
 public sealed class ThemingGuidanceResource {
 	private const string DocsScheme = "docs";
 	private const string ResourcePath = "mcp/guides/theming";
 	private const string ResourceUri = DocsScheme + "://" + ResourcePath;
 
 	[McpServerResource(UriTemplate = ResourceUri, Name = "theming-guidance")]
-	[Description("Returns canonical MCP guidance for managing custom Creatio themes with @creatio/theming — create, restyle, delete, list, and set the default — and shipping them to a Creatio environment with Clio.")]
+	[Description("Returns canonical MCP guidance for managing custom Creatio themes with clio — create, restyle, delete, list, and set the default — and shipping them to a Creatio environment.")]
 	public ResourceContents GetGuide() => Guide;
 
 	internal static readonly TextResourceContents Guide = new() {
@@ -31,11 +32,10 @@ public sealed class ThemingGuidanceResource {
 		       - List existing themes — see "List themes".
 		       - Get or set the default theme — see "Get / set the default theme".
 
-		       Source of truth — @creatio/theming
-		       - Start at `AI_GUIDES_INDEX.md` — it is the authority for which guides and templates exist and their names.
-		       - Follow it to the theme authoring guide, the `--crt-*` design-token catalog, and the theme templates — the only source for token names and descriptor rules; do not infer them.
-		       - It also ships a deterministic palette engine (an importable module) and a palette-algorithm guide describing it — the flows below use the engine FROM CODE to build the theme CSS from brand colors, instead of hand-computing color math.
-		       - Fetch these as reference: run `npm pack @creatio/theming` and read the extracted tarball, or `npm i @creatio/theming` in a Node project (a `new-ui-project` already declares it) and read its `node_modules`.
+		       Building the theme CSS — build-theme
+		       - Build the `theme.css` with the native `build-theme` tool: give it brand colors (and optional fonts) and it returns the full CSS, computed by a deterministic OKLCH palette engine over a bundled, version-pinned template — no hand-computed color math and no external package.
+		       - Required: a primary color and a css-class-name; secondary/accent/success/error and fonts are optional.
+		       - The `--crt-*` design-token catalog and advanced hand-authoring beyond the generated palette are not restated here — consult the official Creatio theming documentation for token names and descriptor rules; do not infer them.
 
 		       Which flow
 		       - Workspace / dev flow — use it when you have a clio workspace/package — see "Workspace / dev flow".
@@ -44,7 +44,7 @@ public sealed class ThemingGuidanceResource {
 		       Workspace / dev flow
 		       Prerequisites: a registered clio environment and the `CanCustomizeBranding` license; confirm the user has it before authoring.
 		       1. Ensure a clio workspace and a package to hold the theme files; if missing, create the workspace with `create-workspace` and add a package with `add-package`.
-		       2. Create, restyle, or delete the theme by editing the package files, following the package's authoring guide and template.
+		       2. Build the theme CSS with `build-theme --output <package>/Files/themes/<cssClassName>/` (writes `theme.css` + `theme.json`); restyle by re-running it, delete by removing that theme folder.
 		       3. Deploy the package with `push-workspace`.
 		       4. Confirm the change with `list-themes-by-environment`.
 		       Note: a push refreshes the theme registry on its own; `clear-themes-cache-by-environment` is only for the rare case of theme files changed on the environment outside a clio install.
@@ -52,7 +52,7 @@ public sealed class ThemingGuidanceResource {
 		       No-code / server flow
 		       Use it when you have only a registered environment and credentials (no clio workspace/package); the theme is created and edited directly on the environment via the native ThemeService — no files and no push.
 		       Prerequisites: the `CanCustomizeBranding` license and the `CanManageThemes` system operation; confirm the user has them before authoring.
-		       1. Produce the theme CSS first — build it with the `@creatio/theming` palette engine (see "Source of truth"). It goes into `create-theme-by-environment` as text in `css-content` (step 2), so external fonts must be referenced via `@import` — local font binaries cannot be uploaded this way.
+		       1. Produce the theme CSS first — call `build-theme` (returns the `theme.css` string; see "Building the theme CSS"). It goes into `create-theme-by-environment` as text in `css-content` (step 2), so external fonts must be referenced via `@import` — local font binaries cannot be uploaded this way.
 		       2. Create with `create-theme-by-environment` (required: css-class-name and inline css-content). `--caption` is optional — derived from css-class-name when omitted; `--id` is optional — omit it to get an auto-generated id back; `--package-name` is optional — omit it to use the environment's CurrentPackageId system setting.
 		       3. Restyle with `update-theme-by-environment` (by id; a full overwrite of caption + css-class-name + css-content; the package cannot be changed).
 		       4. Delete with `delete-theme-by-environment` (by id; deleting an unknown id is an error). If you delete the theme that is currently the default, see "Get / set the default theme".

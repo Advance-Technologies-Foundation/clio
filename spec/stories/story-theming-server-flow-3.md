@@ -67,8 +67,8 @@ an environment with no workspace and no push
 - [ ] **AC-07** — Given the verbs and DI wiring, when `clio --help` / the parser lists verbs, then both
   `update-theme` and `delete-theme` are reachable: `UpdateThemeCommand` / `DeleteThemeCommand` registered in
   `BindingsModule.cs`, `typeof(UpdateThemeOptions)` / `typeof(DeleteThemeOptions)` in the `Program.cs`
-  `CommandOption` list, and matching dispatch arms in `ExecuteCommandWithOption`. No `[FeatureToggle]`, no
-  `[RequiresPackage]`, no ClioGate (FR-14, D1, D7). Neither verb has a `--package-name` flag.
+  `CommandOption` list, and matching dispatch arms in `ExecuteCommandWithOption`. No `[RequiresPackage]`, no
+  ClioGate (FR-14, D1, D7); `[FeatureToggle("theming")]` added later (ADR D1 SUPERSEDED). Neither verb has a `--package-name` flag.
 - [ ] **AC-ERR** — Given any invalid input or server `success:false`, clio prints `Error: {message}` and exits
   non-zero; on success it exits 0. No bare `catch (Exception)`; all option long-names kebab-case
   (`--id`, `--caption`, `--css-class-name`, `--css-content`, `--css-content-file` — FR-19).
@@ -142,7 +142,7 @@ log-envelope idiom that R-07 mirrors); `ListThemesCommand` for the `RemoteComman
 ## Definition of Done
 
 - [ ] Code compiles without Roslyn analyzer warnings (CLIO001-CLIO005)
-- [ ] All new CLI option long-names kebab-case (FR-19); no `[FeatureToggle]`, no `[RequiresPackage]`, no ClioGate (D1)
+- [ ] All new CLI option long-names kebab-case (FR-19); no `[RequiresPackage]`, no ClioGate (D1); `[FeatureToggle("theming")]` added later (ADR D1 SUPERSEDED)
 - [ ] `update-theme` body is `{id,caption,cssClassName,cssContent}` with **no `packageUId`** (full overwrite, no re-home — R-09); CSS resolution + FR-10 validation run before HTTP
 - [ ] `delete-theme` body is `{ id }`, **not idempotent** (server `success:false` → fail, no pre-check — OQ-02)
 - [ ] Both `ProceedResponse` overrides call `Logger.WriteError` on `success:false` (R-07); `success:false` and non-empty non-JSON bodies are failures; only an empty body is tolerated as success (FR-09)

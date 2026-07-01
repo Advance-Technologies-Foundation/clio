@@ -72,7 +72,7 @@ to chain `update-theme` / `delete-theme` / set-default
 - [ ] **AC-09** — Given the verb and DI wiring, when `clio --help` / the parser lists verbs, then `create-theme`
   is reachable: `CreateThemeCommand` registered in `BindingsModule.cs`, `typeof(CreateThemeOptions)` in the
   `Program.cs` `CommandOption` list, and a dispatch arm `CreateThemeOptions opts => Resolve<CreateThemeCommand>(opts).Execute(opts)`.
-  No `[FeatureToggle]`, no `[RequiresPackage]`, no ClioGate (FR-14, D1, D7).
+  No `[RequiresPackage]`, no ClioGate (FR-14, D1, D7); `[FeatureToggle("theming")]` added later (native-build consolidation — ADR D1 SUPERSEDED).
 - [ ] **AC-ERR** — Given any invalid input, package-resolution failure, or server `success:false`, clio prints
   `Error: {message}` and exits non-zero; on success it exits 0 and prints the effective id. No bare
   `catch (Exception)`; all option long-names are kebab-case (`--id`, `--caption`, `--css-class-name`,
@@ -155,7 +155,7 @@ Pattern to follow: `ListThemesCommand` (silent `TryGetAvailableThemes` + logging
 ## Definition of Done
 
 - [ ] Code compiles without Roslyn analyzer warnings (CLIO001-CLIO005)
-- [ ] All new CLI option long-names kebab-case (FR-19); no `[FeatureToggle]`, no `[RequiresPackage]`, no ClioGate (D1)
+- [ ] All new CLI option long-names kebab-case (FR-19); no `[RequiresPackage]`, no ClioGate (D1); `[FeatureToggle("theming")]` added later (ADR D1 SUPERSEDED)
 - [ ] `--id` omitted → auto-UUID generated, re-validated (R-06), sent as body id, and echoed on the CLI (R-02)
 - [ ] `--package-name` resolved via `QueryPackageUId`; omitted → no `packageUId` key in the body; resolution error → fail-fast, no HTTP (R-03)
 - [ ] Request body is a serialized camelCase record (no string interpolation; `cssContent` escaping verified — R-10)

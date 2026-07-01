@@ -1,6 +1,7 @@
 using System.Linq;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
+using Clio.Command.Theming;
 using Clio.Common;
 using FluentAssertions;
 using ModelContextProtocol.Server;

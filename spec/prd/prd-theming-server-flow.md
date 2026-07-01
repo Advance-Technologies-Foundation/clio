@@ -162,7 +162,7 @@ All flags: **kebab-case only** (CLIO001 enforced). No existing flags renamed; no
 
 | # | Question | Owner | Due |
 |---|---------|-------|-----|
-| OQ-01 | Should these three commands ship behind a `[FeatureToggle]` while the server flow stabilizes, or ship enabled like `list-themes` / `clear-themes-cache`? (ENG-90636 siblings shipped enabled.) | PM / Architect | before story creation |
+| OQ-01 | Should these three commands ship behind a `[FeatureToggle]` while the server flow stabilizes, or ship enabled like `list-themes` / `clear-themes-cache`? (ENG-90636 siblings shipped enabled.) **RESOLVED then SUPERSEDED (2026-07-01):** first resolved as ship-enabled (ADR D1); later reversed by the ENG-90636 native-build consolidation — all theme commands (incl. these three) are now gated under one `[FeatureToggle("theming")]` key (`adr-theming-native-build.md` OQ-02). | PM / Architect | before story creation |
 | OQ-02 | Is `delete-theme` meant to be idempotent (treat "not found" as success) at the clio layer, or surface the server error as a failure? Confirms AC-05 and the MCP `Idempotent` flag. | Kuvarzin (UC) | before ADR |
 | OQ-03 | For `update-theme`, is a true full overwrite required (caption + css-class-name + css all mandatory), or should clio support partial updates by reading the existing theme first? Current scope = full overwrite. | Kuvarzin (UC) | before ADR |
 | OQ-04 | Should `create-theme` reject an `--id` that already exists with a clio-friendly message, or rely solely on the server's `InvalidOperationException` ("id already exists")? | Architect | ADR |

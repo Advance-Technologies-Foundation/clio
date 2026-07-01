@@ -31,15 +31,22 @@ Add three CLI verbs — `create-theme`, `update-theme`, `delete-theme` — each 
 calling the native `ServiceModel/ThemeService.svc/{CreateTheme,UpdateTheme,DeleteTheme}` endpoint, three matching
 `KnownRoute` entries (44/45/46), three env-aware `BaseTool<TOptions>` MCP tools (each `-by-environment` /
 `-by-credentials`), one shared CSS-resolution + validation helper, and a guidance edit flipping the "No-code /
-server flow" section in `ThemingGuidanceResource` to *available*. Commands **ship enabled** (no `[FeatureToggle]`),
-mirroring the shipped siblings; real use is gated at runtime by the platform (`CanCustomizeBranding` license +
+server flow" section in `ThemingGuidanceResource` to *available*. Commands ship (SUPERSEDED — see D1: now gated by
+`[FeatureToggle("theming")]`); real use is gated at runtime by the platform (`CanCustomizeBranding` license +
 `CanManageThemes` system operation), not by clio. No ClioGate method, no cliogate bump, no `[RequiresPackage]`.
 
 ---
 
 ## Decisions in detail
 
-### D1 — Ship enabled, no `[FeatureToggle]` (OQ-01)
+### D1 — Ship enabled, no `[FeatureToggle]` (OQ-01) — SUPERSEDED (ENG-90636 native-build consolidation)
+
+> **SUPERSEDED 2026-07-01.** The later ENG-90636 native-build work consolidated the **entire** theming surface
+> under a single `[FeatureToggle("theming")]` key (see `adr-theming-native-build.md` OQ-02). `create-theme`,
+> `update-theme`, `delete-theme` — along with `list-themes` and `clear-themes-cache` and `build-theme` — now carry
+> `[FeatureToggle("theming")]` on **both** their options class and their MCP tool type, and are dark by default until
+> the theming surface goes live. Runtime auth (`CanCustomizeBranding` + `CanManageThemes`) still gates real use; the
+> toggle is an additional build-time gate. The original ship-enabled decision below is retained for history.
 
 The three verbs ship publicly enabled, exactly like `list-themes` / `clear-themes-cache`. Rationale: the siblings
 shipped enabled; the task mandates public docs and a guidance "available" flip; and runtime auth
