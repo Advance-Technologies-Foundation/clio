@@ -69,19 +69,17 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	private readonly ILogger _logger;
 
 	public RemoteEntitySchemaColumnManager(IApplicationPackageListProvider applicationPackageListProvider,
-		IEntitySchemaDefaultValueSourceResolver defaultValueSourceResolver,
+		EntitySchemaColumnResolvers columnResolvers,
 		IRemoteEntitySchemaDesignerClient entitySchemaDesignerClient,
 		IRuntimeEntitySchemaReader runtimeEntitySchemaReader,
-		ILookupDefaultDisplayValueResolver lookupDefaultDisplayValueResolver,
-		IEntitySchemaCaptionCultureResolver captionCultureResolver,
 		IEntitySchemaDependencyResolver dependencyResolver,
 		ILogger logger) {
 		_applicationPackageListProvider = applicationPackageListProvider;
-		_defaultValueSourceResolver = defaultValueSourceResolver;
+		_defaultValueSourceResolver = columnResolvers.DefaultValueSourceResolver;
 		_entitySchemaDesignerClient = entitySchemaDesignerClient;
 		_runtimeEntitySchemaReader = runtimeEntitySchemaReader;
-		_lookupDefaultDisplayValueResolver = lookupDefaultDisplayValueResolver;
-		_captionCultureResolver = captionCultureResolver;
+		_lookupDefaultDisplayValueResolver = columnResolvers.LookupDisplayValueResolver;
+		_captionCultureResolver = columnResolvers.CaptionCultureResolver;
 		_dependencyResolver = dependencyResolver;
 		_logger = logger;
 	}
@@ -1026,6 +1024,14 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		_logger.WriteInfo(message);
 	}
 }
+
+/// <summary>
+/// Groups column-metadata resolution services injected into <see cref="RemoteEntitySchemaColumnManager"/>.
+/// </summary>
+internal sealed record EntitySchemaColumnResolvers(
+	IEntitySchemaDefaultValueSourceResolver DefaultValueSourceResolver,
+	ILookupDefaultDisplayValueResolver LookupDisplayValueResolver,
+	IEntitySchemaCaptionCultureResolver CaptionCultureResolver);
 
 internal enum EntitySchemaColumnAction
 {

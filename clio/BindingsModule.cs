@@ -100,6 +100,10 @@ public class BindingsModule {
 			?? (settings is null ? BindingsModuleRegistrationProfile.Bootstrap : BindingsModuleRegistrationProfile.EnvironmentScoped);
 		IServiceCollection services = new ServiceCollection();
 		RegisterAssemblyInterfaceTypes(services);
+		services.AddTransient(sp => new EntitySchemaColumnResolvers(
+			sp.GetRequiredService<IEntitySchemaDefaultValueSourceResolver>(),
+			sp.GetRequiredService<ILookupDefaultDisplayValueResolver>(),
+			sp.GetRequiredService<IEntitySchemaCaptionCultureResolver>()));
 		services.AddSingleton<IWorkspacePathBuilder, WorkspacePathBuilder>();
 		services.AddTransient<IVsProjectFactory, VsProjectFactory>();
 		services.AddTransient<ICreatioPkgProjectCreator, CreatioPkgProjectCreator>();

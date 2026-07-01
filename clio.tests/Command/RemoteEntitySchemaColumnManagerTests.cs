@@ -115,11 +115,12 @@ internal class RemoteEntitySchemaColumnManagerTests
 					callInfo.ArgAt<string?>(4)));
 		_manager = new RemoteEntitySchemaColumnManager(
 			_packageListProvider,
-			_defaultValueSourceResolver,
+			new EntitySchemaColumnResolvers(
+				_defaultValueSourceResolver,
+				_lookupDefaultDisplayValueResolver,
+				_captionCultureResolver),
 			_designerClient,
 			_runtimeEntitySchemaReader,
-			_lookupDefaultDisplayValueResolver,
-			_captionCultureResolver,
 			_dependencyResolver,
 			_logger);
 	}
