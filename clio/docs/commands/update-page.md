@@ -59,6 +59,11 @@ name instead of trying to edit a non-existent local `insert`.
   `--resources`. Binding expressions (any `$`-prefixed value) and non-string values (e.g.
   `placeholder: false`) are not literals and pass. Call `clio get-guidance --name page-schema-resources`
   for the full rule.
+- **Custom CSS is a last resort.** A body that introduces a custom inline `styles` object on a
+  component (at any nesting depth) is **rejected** unless `--allow-custom-css` is passed. An empty
+  `styles: {}`, `null`, or a non-object value is ignored. Exhaust native component inputs (see
+  `get-component-info`) first, then warn the user about the platform-upgrade-compatibility risk and
+  get explicit confirmation before setting `--allow-custom-css`. `classes` are not gated.
 
 A malformed `VendorPrefix.Name` causes a Creatio runtime error:
 `"Error when register X. Type property should have format VendorPrefix.TypeName"`.
@@ -140,6 +145,11 @@ checksum differs
 
 --force                            Skip the external-modification check and
 deliberately overwrite out-of-band changes
+
+--allow-custom-css                 Confirm applying custom CSS: allow a 'styles'
+object in the body. Without it, a body that introduces custom 'styles' is
+rejected so you must warn the user about upgrade-compatibility risk and
+confirm first
 
 --uri                    -u       Application uri
 

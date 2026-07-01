@@ -2889,6 +2889,110 @@ public sealed class SchemaValidationServiceTests
 			because: "the mobile diagnostic must name the node and the placeholder property");
 	}
 
+	[Test]
+	[Description("A component that introduces a non-empty custom inline 'styles' object is rejected as custom CSS, and the diagnostic names the offending node.")]
+	public void ValidateCustomCssStyles_ShouldReturnInvalid_WhenComponentIntroducesNonEmptyStylesObject() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"RedLabel","values":{"type":"crt.Label","styles":{"color":"red","padding":"8px"}}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateCustomCssStyles(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "a non-empty inline styles object is custom CSS and must be rejected");
+		result.Errors.Should().ContainSingle(error =>
+				error.Contains("RedLabel") &&
+				error.Contains("styles") &&
+				error.Contains("allow-custom-css"),
+			because: "the diagnostic must name the node, the styles property, and point at the allow-custom-css flag");
+	}
+
+	[Test]
+	[Description("An empty custom 'styles' object ({}) is ignored — only a styles object with at least one property is custom CSS.")]
+	public void ValidateCustomCssStyles_ShouldReturnValid_WhenStylesObjectIsEmpty() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"PlainLabel","values":{"type":"crt.Label","styles":{}}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateCustomCssStyles(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "an empty styles object carries no custom CSS and must not be flagged");
+		result.Errors.Should().BeEmpty(because: "no non-empty styles object is present");
+	}
+
+	[Test]
+	[Description("A body with no 'styles' object anywhere in viewConfigDiff passes the custom-CSS check.")]
+	public void ValidateCustomCssStyles_ShouldReturnValid_WhenNoStylesObjectPresent() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"PlainLabel","values":{"type":"crt.Label","caption":"$Resources.Strings.PlainLabel"}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateCustomCssStyles(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "a body without any styles object introduces no custom CSS");
+		result.Errors.Should().BeEmpty(because: "no styles object is present");
+	}
+
+	[Test]
+	[Description("A custom 'styles' object on a nested child component is detected — the scan recurses through the whole values subtree.")]
+	public void ValidateCustomCssStyles_ShouldReturnInvalid_WhenNestedChildComponentHasStyles() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"Toolbar","values":{"type":"crt.Container","items":[{"name":"SaveButton","type":"crt.Button","styles":{"margin":"4px"}}]}}]""",
+			"[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateCustomCssStyles(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "a styles object on a nested child must be caught regardless of nesting depth");
+		result.Errors.Should().ContainSingle(error => error.Contains("SaveButton") && error.Contains("styles"),
+			because: "the diagnostic must attribute the styles object to the nearest named node, not the container");
+	}
+
+	[Test]
+	[Description("The mobile variant reads viewConfigDiff from the plain-JSON root and rejects a non-empty custom 'styles' object the same way the web variant does.")]
+	public void ValidateMobileCustomCssStyles_ShouldReturnInvalid_WhenComponentIntroducesNonEmptyStylesObject() {
+		// Arrange
+		const string body = """{"viewConfigDiff":[{"operation":"insert","name":"RedLabel","values":{"type":"crt.Label","styles":{"color":"red"}}}]}""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileCustomCssStyles(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "the mobile custom-CSS rule mirrors the web rule");
+		result.Errors.Should().ContainSingle(error => error.Contains("RedLabel") && error.Contains("styles"),
+			because: "the mobile diagnostic must name the node and the styles property");
+	}
+
+	[Test]
+	[Description("The mobile custom-CSS variant ignores an empty 'styles' object, matching the web variant.")]
+	public void ValidateMobileCustomCssStyles_ShouldReturnValid_WhenStylesObjectIsEmpty() {
+		// Arrange
+		const string body = """{"viewConfigDiff":[{"operation":"insert","name":"PlainLabel","values":{"type":"crt.Label","styles":{}}}]}""";
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileCustomCssStyles(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "an empty styles object carries no custom CSS on mobile either");
+		result.Errors.Should().BeEmpty(because: "no non-empty styles object is present");
+	}
+
 	private static string BuildDiffBackedPageBody(string viewConfigDiff, string viewModelConfigDiff) {
 		return $$"""
 			define(

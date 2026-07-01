@@ -28,6 +28,7 @@ public static class SchemaValidationService
 	private const string ModelConfigDiffPropertyName = "modelConfigDiff";
 	private const string ViewModelConfigPropertyName = "viewModelConfig";
 	private const string ModelConfigPropertyName = "modelConfig";
+	private const string StylesPropertyName = "styles";
 
 	private static readonly string[] DiffPropertyNames = {
 		ViewConfigDiffPropertyName, ViewModelConfigDiffPropertyName, ModelConfigDiffPropertyName
@@ -189,6 +190,22 @@ public static class SchemaValidationService
 		"register the key with its default-language value through the 'resources' parameter " +
 		"(e.g. resources: '{\"<Key>\": \"<text>\"}'), or use the #ResourceString(<Key>)# macro form for " +
 		"data-grid column captions and validator messages";
+
+	/// <summary>
+	/// Canonical clause describing the custom-CSS rule enforced by
+	/// <see cref="ValidateCustomCssStyles"/> (web) and <see cref="ValidateMobileCustomCssStyles"/> (mobile).
+	/// Authored ONCE here and reused by the per-occurrence diagnostic
+	/// (<see cref="BuildCustomCssStylesError"/>) and surfaced verbatim to MCP agents through the
+	/// update-page / sync-pages tool descriptions and the <c>page-modification</c> guidance, so the rule
+	/// the validator rejects on is stated in identical words everywhere. Kept <c>const</c> so it stays
+	/// usable inside <c>[Description]</c> attributes (compile-time constants only).
+	/// </summary>
+	internal const string CustomCssStylesClause =
+		"a custom inline 'styles' object on a component is custom CSS — a last resort NOT covered by " +
+		"Creatio's platform-upgrade compatibility guarantees that native component inputs have, so it can " +
+		"break or conflict on a future platform upgrade. Exhaust native component inputs (via " +
+		"get-component-info) first; apply custom CSS only after warning the user of the upgrade-compatibility " +
+		"risk and getting explicit confirmation, then resubmit update-page/sync-pages with allow-custom-css=true";
 
 	/// <summary>
 	/// Runs all mobile page validators and returns errors and warnings as separate lists.
@@ -1580,6 +1597,118 @@ public static class SchemaValidationService
 		return $"View node {node} sets user-visible text property '{property}' to the inline literal " +
 			$"\"{shown}\" instead of a localizable string. Rule: {LocalizableTextLiteralClause}. " +
 			"See the page-schema-resources guide.";
+	}
+
+	/// <summary>
+	/// Validates that no component inside a web page body's <c>viewConfigDiff</c> introduces a custom inline
+	/// <c>styles</c> object (custom CSS). Walks every <c>insert</c>/<c>merge</c> entry's <c>values</c> subtree
+	/// (including nested child components) so a <c>styles</c> object set anywhere in the tree is reported
+	/// regardless of nesting depth. Only a <c>styles</c> property whose value is a JSON object with at least
+	/// one property is flagged; an empty object, <c>null</c>, or a non-object value is ignored.
+	/// </summary>
+	/// <param name="jsBody">Raw JavaScript body of a Freedom UI page schema (marker-delimited).</param>
+	/// <returns>
+	/// A <see cref="SchemaValidationResult"/> that is invalid when any component introduces a non-empty
+	/// custom <c>styles</c> object.
+	/// </returns>
+	public static SchemaValidationResult ValidateCustomCssStyles(string jsBody) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrEmpty(jsBody)) {
+			return result;
+		}
+		if (!PageSchemaSectionReader.TryRead(jsBody, out string vcdContent, SchemaViewConfigDiff, SchemaDiffMarker)) {
+			return result;
+		}
+		if (!TryParseJsonDocument(vcdContent, out JsonDocument vcdDoc, out _)) {
+			return result;
+		}
+		using (vcdDoc) {
+			ScanViewConfigDiffForStyles(vcdDoc.RootElement, result);
+		}
+		if (result.Errors.Count > 0) {
+			result.IsValid = false;
+		}
+		return result;
+	}
+
+	/// <summary>
+	/// Mobile counterpart of <see cref="ValidateCustomCssStyles"/>. Reads <c>viewConfigDiff</c> directly from
+	/// the plain-JSON mobile page root instead of a marker-delimited section; the custom-CSS rule is identical.
+	/// </summary>
+	/// <param name="body">Plain-JSON mobile page body.</param>
+	/// <returns>A <see cref="SchemaValidationResult"/> with the same contract as the web variant.</returns>
+	public static SchemaValidationResult ValidateMobileCustomCssStyles(string body) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrWhiteSpace(body)) {
+			return result;
+		}
+		JsonDocument document;
+		try {
+			document = JsonDocument.Parse(body);
+		} catch {
+			return result;
+		}
+		using (document) {
+			JsonElement root = document.RootElement;
+			if (root.ValueKind == JsonValueKind.Object &&
+			    root.TryGetProperty(ViewConfigDiffPropertyName, out JsonElement viewConfigDiff)) {
+				ScanViewConfigDiffForStyles(viewConfigDiff, result);
+			}
+		}
+		if (result.Errors.Count > 0) {
+			result.IsValid = false;
+		}
+		return result;
+	}
+
+	private static void ScanViewConfigDiffForStyles(JsonElement viewConfigDiff, SchemaValidationResult result) {
+		if (viewConfigDiff.ValueKind != JsonValueKind.Array) {
+			return;
+		}
+		foreach (JsonElement entry in viewConfigDiff.EnumerateArray()) {
+			if (entry.ValueKind != JsonValueKind.Object) {
+				continue;
+			}
+			if (!entry.TryGetProperty(ValuesPropertyName, out JsonElement values) ||
+			    values.ValueKind != JsonValueKind.Object) {
+				continue;
+			}
+			string ownerName = TryGetNodeName(entry, out string entryName) ? entryName : string.Empty;
+			ScanNodeForStyles(values, ownerName, result);
+		}
+	}
+
+	private static void ScanNodeForStyles(JsonElement node, string ownerName, SchemaValidationResult result) {
+		switch (node.ValueKind) {
+			case JsonValueKind.Object:
+				string currentName = TryGetNodeName(node, out string nodeName) ? nodeName : ownerName;
+				foreach (JsonProperty property in node.EnumerateObject()) {
+					if (string.Equals(property.Name, StylesPropertyName, StringComparison.Ordinal) &&
+					    property.Value.ValueKind == JsonValueKind.Object &&
+					    HasAtLeastOneProperty(property.Value)) {
+						result.Errors.Add(BuildCustomCssStylesError(currentName));
+						// A recorded 'styles' object is the finding itself — do not recurse into its contents.
+						continue;
+					}
+					ScanNodeForStyles(property.Value, currentName, result);
+				}
+				break;
+			case JsonValueKind.Array:
+				foreach (JsonElement item in node.EnumerateArray()) {
+					ScanNodeForStyles(item, ownerName, result);
+				}
+				break;
+		}
+	}
+
+	private static bool HasAtLeastOneProperty(JsonElement element) =>
+		// MoveNext() advances to the first property and short-circuits — true iff the object is non-empty.
+		element.EnumerateObject().MoveNext();
+
+	private static string BuildCustomCssStylesError(string ownerName) {
+		string node = string.IsNullOrWhiteSpace(ownerName) ? "a view node" : $"'{ownerName}'";
+		return $"View node {node} sets a custom inline 'styles' object (custom CSS). " +
+			$"Rule: {CustomCssStylesClause}.";
 	}
 
 	private static void ValidateInsertedFieldEntry(

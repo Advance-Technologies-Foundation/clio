@@ -47,7 +47,8 @@ public sealed class PageSyncTool(
 	             "if the body changes SCHEMA_HANDLERS call get-guidance with name `page-schema-handlers` first; " +
 	             "if the body changes SCHEMA_VALIDATORS call get-guidance with name `page-schema-validators` first; " +
 	             "if the body changes SCHEMA_CONVERTERS call get-guidance with name `page-schema-converters` first; " +
-	             "if the body adds or edits `@creatio-devkit/common` usage call get-guidance with name `page-schema-creatio-devkit-common` before editing SCHEMA_DEPS or SDK calls.")]
+	             "if the body adds or edits `@creatio-devkit/common` usage call get-guidance with name `page-schema-creatio-devkit-common` before editing SCHEMA_DEPS or SDK calls. " +
+	             "Custom CSS is a last resort: a page whose body introduces a 'styles' object is rejected unless that page carries allow-custom-css=true — first exhaust native component inputs (get-component-info), then warn the user about upgrade-compatibility risk and confirm before setting allow-custom-css.")]
 	public async Task<PageSyncResponse> SyncPages(
 		[Description("Parameters: environment-name (required); pages array (required); validate, verify (optional).")]
 		[Required] PageSyncArgs args,
@@ -630,6 +631,7 @@ public sealed class PageSyncTool(
 			OptionalProperties = page.OptionalProperties,
 			Environment = opOptions.EnvironmentName,
 			Force = page.Force ?? false,
+			AllowCustomCss = page.AllowCustomCss == true,
 			NotifyDesignerPresence = false
 		};
 		(string metaFilePath, bool baselineArmed) =
@@ -983,7 +985,10 @@ public sealed record PageSyncPageInput(
 	string? OptionalProperties = null,
 	[property: JsonPropertyName("force")]
 	[property: Description("Skip the external-modification (checksum) conflict check for THIS page and deliberately overwrite out-of-band changes. Set true ONLY after the user explicitly confirms overwriting changes made outside this session. Default: false")]
-	bool? Force = null
+	bool? Force = null,
+	[property: JsonPropertyName("allow-custom-css")]
+	[property: Description("Confirm applying custom CSS for THIS page. A body that introduces a custom inline 'styles' object is REJECTED unless this is true. Set true ONLY after exhausting native component inputs (get-component-info), warning the user about the upgrade-compatibility risk, and getting explicit confirmation. Default: false")]
+	bool? AllowCustomCss = null
 );
 
 /// <summary>
