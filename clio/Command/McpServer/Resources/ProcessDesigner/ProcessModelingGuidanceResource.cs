@@ -47,7 +47,7 @@ public sealed class ProcessModelingGuidanceResource {
 			- Events: `startEvent` (Simple start), `signalStart` (record signal: add/modify/delete), `endEvent`.
 			- Activities: `userTask` referencing any task from list-user-tasks via `userTaskName`
 			  (aliases `readData`->ReadDataUserTask, `performTask`->ActivityUserTask).
-			- Sequence flows; process-level parameters; element-parameter mappings.
+			- Sequence flows; process-level parameters (with an optional constant default value); element-parameter mappings.
 			- NOT yet buildable: gateways, conditional/default flows, timer/message start, intermediate events,
 			  sub-process, Read-data filters/column config. Use the catalog below to reason about a solution and to
 			  READ existing processes (`describe-business-process`); don't expect to build those types in this increment.
@@ -91,10 +91,10 @@ public sealed class ProcessModelingGuidanceResource {
 			2. (recommended) `validate-process-graph(graph)` -> fix every error-severity finding.
 			3. `list-user-tasks` -> pick the exact `userTaskName`(s) for your activities.
 			4. `create-business-process(descriptor)` -> builds + saves in one call (layout is automatic).
-			5. Verify: `describe-business-process` (element types, user-task names, parameter sources, the signal trigger) /
+			5. Verify: `describe-business-process` (element types, user-task names, parameter sources + direction, the signal trigger) /
 			   `generate-process-model` / `execute-esq` (VwProcessLib by caption).
 			6. Change it later with `modify-business-process` (ops: addElement / removeElement / addFlow / removeFlow /
-			   addParameter / addMapping — same parameter/mapping shapes as a build).
+			   addParameter / addMapping / setParameter / removeParameter — same parameter/mapping shapes as a build).
 			- File-design-mode caveat: on an FSD stand a built process is saved to the file system (the designer
 			  sees it) but is NOT runtime-active until it is loaded FS->DB and published — so a signal won't
 			  physically fire yet.
@@ -126,10 +126,10 @@ public sealed class ProcessModelingGuidanceResource {
 			Flows: sequence (default `connect`), conditional (setup -> conditionalConnection), default (setup -> defaultConnection).
 
 			== Parameters / mapping / formulas ==
-			- Process parameters (`parameters[]`): { name, type (Text/Integer/Boolean/DateTime/Float/Lookup/...),
-			  direction (In/Out/Variable/Internal), caption, or referenceSchema = an object name (e.g. City) to make
-			  it a Lookup to that object }. A user-task element's own parameters come from the task. The same shape is
-			  used by modify-business-process `addParameter`.
+			- Process parameters (`parameters[]`): { name, type (Text/Long text/Integer/Float/Money/Boolean/Date/Date-time/Time/Guid/Lookup),
+			  direction (In/Out/Variable/Internal), caption, description, or referenceSchema = an object name (e.g. City) to make
+			  it a Lookup to that object }, and an optional value (a constant default). A user-task element's own parameters come from the task. The same shape is
+			  used by modify-business-process `addParameter`. Edit a parameter with `setParameter` (parameterName + parameterUpdate: any of caption/description/code/direction/referenceSchema/value, applied in place — the UId and its references are preserved; a data-type change is rejected) and remove it with `removeParameter` (parameterName; blocked when another parameter's value or an element mapping still references it). Supported types: Text, Long text, Integer, Float, Money, Boolean, Date, Date-time, Time, Guid, and Lookup — other types (composite / entity / file / ...) are not supported yet.
 			- Mappings (`mappings[]`): bind a user-task element's INPUT parameter to a value —
 			  { elementName, elementParameter, and exactly ONE of: processParameter (a process parameter by name) |
 			  value (a constant) | expression (a raw formula) }. `processParameter` flows a process input into the
