@@ -97,6 +97,7 @@ public sealed class ServerProcessDescriberTests {
 		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
 
 		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
 		DescribedParameter parameter = result.Value.Elements[0].Parameters[0];
 		parameter.Direction.Should().BeNull(
 			because: "an omitted direction stays null so it serializes away (WhenWritingNull) for older servers");

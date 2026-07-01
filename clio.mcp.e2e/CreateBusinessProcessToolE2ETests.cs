@@ -105,8 +105,11 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		string describeJson = JsonSerializer.Serialize(await DescribeAsync(context, processName));
 		describeJson.Should().Contain("MirroredType",
 			because: "the typeFromElement type-mirror created a process parameter cloning the element parameter's exact type");
-		describeJson.Should().Contain("\"direction\"",
-			because: "describe-business-process now surfaces each parameter's direction over the real MCP path, so a caller can tell an element's outputs from its inputs");
+		// The describe graph is embedded as an escaped JSON string in the tool result, so match a quote-free
+		// substring (like the sibling readbacks Contain("task1")/Contain("buildType")) — a quoted "direction"
+		// would appear as \"direction\" and never match.
+		describeJson.Should().Contain("direction",
+			because: "describe-business-process now surfaces each parameter's direction over the real MCP path (the clio DescribedParameter DTO no longer strips it), so a caller can tell an element's outputs from its inputs");
 	}
 
 	// Reads the built process back as a structured graph via describe-business-process (for build readback).
