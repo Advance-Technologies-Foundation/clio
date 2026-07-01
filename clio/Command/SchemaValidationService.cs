@@ -1701,12 +1701,9 @@ public static class SchemaValidationService
 		}
 	}
 
-	private static bool HasAtLeastOneProperty(JsonElement element) {
-		foreach (JsonProperty _ in element.EnumerateObject()) {
-			return true;
-		}
-		return false;
-	}
+	private static bool HasAtLeastOneProperty(JsonElement element) =>
+		// MoveNext() advances to the first property and short-circuits — true iff the object is non-empty.
+		element.EnumerateObject().MoveNext();
 
 	private static string BuildCustomCssStylesError(string ownerName) {
 		string node = string.IsNullOrWhiteSpace(ownerName) ? "a view node" : $"'{ownerName}'";
