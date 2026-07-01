@@ -33,6 +33,10 @@ public sealed class ApplicationToolE2ETests {
 	private const string ApplicationIconBackground = "#0058EF";
 	private const string ApplicationCode = "AutoTestClioMcp";
 
+	// get-app-info readback after sync-schemas races a server-side schema recompile; poll up to
+	// ~2 minutes (39 attempts × 3s) so the canonical-main-entity assertion tests the settled state.
+	private const int CanonicalMainEntityReadbackAttempts = 40;
+	private static readonly TimeSpan CanonicalMainEntityReadbackPollInterval = TimeSpan.FromSeconds(3);
 
 	[Category("McpE2E.Sandbox")]
 	[Test]
@@ -445,12 +449,15 @@ public sealed class ApplicationToolE2ETests {
 			createdApplicationCode,
 			addedColumnName);
 		JsonElement schemaSyncResponse = ExtractSchemaSyncResponse(schemaSyncCallResult);
-		ApplicationInfoActResult infoResult = await ActInfoAsync(
+		// sync-schemas triggers an asynchronous server-side schema recompile; the canonical main
+		// entity can be momentarily absent from get-app-info until that settles. Poll the readback so
+		// the regression assertions below test the settled state instead of racing the recompile.
+		ApplicationInfoActResult infoResult = await WaitForCanonicalMainEntityAsync(
 			arrangeContext.Session,
 			arrangeContext.CancellationTokenSource.Token,
 			arrangeContext.EnvironmentName,
-			id: null,
-			code: createdApplicationCode);
+			createdApplicationCode,
+			applicationName);
 		ApplicationEntityEnvelope? canonicalMainEntity = infoResult.Result.Entities?
 			.FirstOrDefault(entity => string.Equals(entity.Name, createdApplicationCode, StringComparison.OrdinalIgnoreCase));
 
@@ -832,6 +839,47 @@ public sealed class ApplicationToolE2ETests {
 		callResult.IsError.Should().NotBeTrue(
 			because: $"structured get-app-info failures should be returned in the payload instead of as MCP invocation errors. Actual result: {DescribeCallResult(callResult)}");
 		return ApplicationResultParser.ExtractInfo(callResult);
+	}
+
+	private static async Task<ApplicationInfoActResult> WaitForCanonicalMainEntityAsync(
+		McpServerSession session,
+		CancellationToken cancellationToken,
+		string environmentName,
+		string applicationCode,
+		string expectedCaption) {
+		// The canonical main entity schema name equals the installed application code, so the same
+		// value is both the get-app-info lookup code and the expected entity name in the readback.
+		// Gate the poll on the fully-settled state the downstream assertions check: the entity must be
+		// present AND its caption must already be the installed application name. The sync-schemas
+		// recompile that delays entity visibility also delays the caption recompute, so polling on Name
+		// alone can return early on an entity whose caption is still the "Base object" fallback, leaving
+		// the caption assertion flaky. Requiring the caption here closes that race instead of relocating it.
+		for (int attempt = 1; attempt < CanonicalMainEntityReadbackAttempts; attempt++) {
+			try {
+				ApplicationInfoActResult candidate = await ActInfoAsync(
+					session, cancellationToken, environmentName, id: null, code: applicationCode);
+				if (ContainsCanonicalMainEntity(candidate, applicationCode, expectedCaption)) {
+					return candidate;
+				}
+			}
+			catch (InvalidOperationException) {
+				// get-app-info can transiently fail to read the just-recompiled schema while the
+				// server is still settling after sync-schemas; keep polling within the window.
+			}
+
+			await Task.Delay(CanonicalMainEntityReadbackPollInterval, cancellationToken);
+		}
+
+		// Final attempt outside the retry window: surface whatever get-app-info returns (or throws)
+		// so the assertions report the real readback state instead of a swallowed transient error.
+		return await ActInfoAsync(session, cancellationToken, environmentName, id: null, code: applicationCode);
+	}
+
+	private static bool ContainsCanonicalMainEntity(
+		ApplicationInfoActResult infoResult, string expectedEntityName, string expectedCaption) {
+		return infoResult.Result.Entities?
+			.Any(entity => string.Equals(entity.Name, expectedEntityName, StringComparison.OrdinalIgnoreCase)
+				&& string.Equals(entity.Caption, expectedCaption, StringComparison.Ordinal)) == true;
 	}
 
 	[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
