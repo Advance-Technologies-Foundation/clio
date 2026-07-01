@@ -666,4 +666,45 @@ public sealed class RelatedPageAddonServiceTests {
 		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!);
 		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().SaveSchema(default!);
 	}
+
+	[Test]
+	[Description("Fails with an ambiguity error when a custom role name matches more than one SysAdminUnit role, rather than silently binding whichever row the platform returns first.")]
+	public void Create_ShouldThrow_WhenRoleNameIsAmbiguous() {
+		// Arrange — package resolves, then the SysAdminUnit by-name lookup returns two matching rows.
+		const string firstRoleId = "11112222-3333-4444-5555-666677778888";
+		const string secondRoleId = "99998888-7777-6666-5555-444433332222";
+		StubSelectQueue(Rows(PackageUId),
+			$$"""{"success": true, "rows": [{"Id": "{{firstRoleId}}"}, {"Id": "{{secondRoleId}}"}]}""");
+
+		// Act — a role-less base default plus a role-scoped page whose name is ambiguous.
+		Action act = () => _service.Create(new RelatedPageAddonRequest("Custom", "UsrDeliveryItem", new[] {
+			new RelatedPageSpec("UsrDeliveryItemFormPage", IsDefault: true),
+			new RelatedPageSpec("UsrDeliveryItemPortalPage", IsDefault: true, RoleName: "Ambiguous Role")
+		}, null));
+
+		// Assert — role resolution happens before the add-on round-trip, so nothing is saved.
+		act.Should().Throw<InvalidOperationException>().WithMessage("*ambiguous*",
+			because: "a role name matching more than one role must be rejected, not silently resolved to the first row");
+		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().GetSchema(default!);
+		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().SaveSchema(default!);
+	}
+
+	[Test]
+	[Description("The SysAdminUnit role lookup carries the SysAdminUnitTypeValue exclusion so a role name can never resolve to a user account.")]
+	public void Create_ShouldExcludeUserRowsFromRoleLookup_ViaSysAdminUnitTypeFilter() {
+		// Arrange
+		const string customRoleUId = "11112222-3333-4444-5555-666677778888";
+		StubSelectQueue(Rows(PackageUId), RoleRows(customRoleUId), Rows(PageAUId), Rows(PageBUId));
+
+		// Act — resolving a custom role name issues the SysAdminUnit by-name query.
+		_service.Create(new RelatedPageAddonRequest("Custom", "UsrDeliveryItem", new[] {
+			new RelatedPageSpec("UsrDeliveryItemFormPage", IsDefault: true),
+			new RelatedPageSpec("UsrDeliveryItemPortalPage", IsDefault: true, RoleName: "Sales Managers")
+		}, null));
+
+		// Assert — the (only) SysAdminUnit query carries the user-exclusion predicate on SysAdminUnitTypeValue.
+		_applicationClient.Received(1).ExecutePostRequest(SelectQueryUrl,
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"SysAdminUnit\"")
+				&& body.Contains("SysAdminUnitTypeValue")));
+	}
 }
