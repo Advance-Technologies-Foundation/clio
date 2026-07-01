@@ -96,10 +96,13 @@ internal sealed class RelatedPageAddonService(
 	private const string EntitySchemaManagerName = "EntitySchemaManager";
 
 	/// <summary>
-	/// The standard platform audience roles have fixed, seeded <c>SysAdminUnit</c> Ids that are identical
-	/// across Creatio installs. Mapping them by name here means a user (or any other unit) that happens to
-	/// share the name can never be picked up by the by-name <see cref="PageSchemaMetadataHelper.QueryRoleUId"/>
-	/// lookup, which filters on <c>Name</c> only. Any other (custom) role name still resolves by name.
+	/// The standard platform audience roles are seeded <c>SysAdminUnit</c> records with fixed Ids that are
+	/// identical across Creatio installs — "All employees" (<c>a29a3ba5-…</c>) and the portal "All external
+	/// users" role, which Creatio core references by the seeded constant <c>SysAdminUnitAllPortalUsersId</c>.
+	/// Mapping them by their fixed Ids avoids a lookup for the common audiences and is safe because the Ids are
+	/// invariant. Any other (custom) role name still resolves through
+	/// <see cref="PageSchemaMetadataHelper.QueryRoleUId"/>, which excludes user rows and rejects an ambiguous
+	/// (multi-match) name.
 	/// </summary>
 	private static readonly IReadOnlyDictionary<string, string> KnownPlatformRoleIds =
 		new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {

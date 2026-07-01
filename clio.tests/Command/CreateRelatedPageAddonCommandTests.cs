@@ -186,4 +186,41 @@ public sealed class CreateRelatedPageAddonCommandTests {
 		exitCode.Should().Be(1, because: "a failed create maps to exit code 1 for the shell/CI");
 		_logger.Received().WriteInfo(Arg.Is<string>(message => message.Contains("boom")));
 	}
+
+	[Test]
+	[Description("TryCreate returns false and surfaces the service message in the response — the catch->Fail branch every service-layer error reaches on its way to the CLI user.")]
+	public void TryCreate_ShouldReturnFalseWithError_WhenServiceThrows() {
+		// Arrange
+		_service.Create(Arg.Any<RelatedPageAddonRequest>())
+			.Returns(_ => throw new InvalidOperationException("service boom"));
+		CreateRelatedPageAddonOptions options = new() {
+			EntitySchemaName = "Case",
+			PackageName = "Custom",
+			DefaultPage = "CaseFormPage"
+		};
+
+		// Act
+		bool ok = _command.TryCreate(options, out CreateRelatedPageAddonResponse response);
+
+		// Assert
+		ok.Should().BeFalse(because: "a service failure is reported as a failed response, not surfaced as an exception");
+		response.Success.Should().BeFalse();
+		response.Error.Should().Contain("service boom",
+			because: "the service exception message is carried to the CLI user via response.Error");
+		_logger.Received().WriteInfo(Arg.Is<string>(message => message.Contains("service boom")));
+	}
+
+	[Test]
+	[Description("TryCreate returns false without calling the service when options is null.")]
+	public void TryCreate_ShouldReturnFalseWithoutCallingService_WhenOptionsIsNull() {
+		// Act
+		bool ok = _command.TryCreate(null, out CreateRelatedPageAddonResponse response);
+
+		// Assert
+		ok.Should().BeFalse(because: "a null options object is invalid input");
+		response.Success.Should().BeFalse();
+		response.Error.Should().Contain("options is required",
+			because: "the response should explain that options is required");
+		_service.DidNotReceiveWithAnyArgs().Create(default!);
+	}
 }
