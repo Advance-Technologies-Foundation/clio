@@ -5,7 +5,7 @@ using System.Text.Json.Serialization;
 using Clio.Common;
 using ModelContextProtocol.Server;
 
-namespace Clio.Command.McpServer.Tools;
+namespace Clio.Command.McpServer.Tools.ProcessDesigner;
 
 /// <summary>
 /// MCP tool surface for the <c>get-process-signature</c> command.

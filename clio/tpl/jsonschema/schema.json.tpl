@@ -71,6 +71,21 @@
 				}
 			},
 			"description": "List of configured environments that clio can interact with"
+		},
+		"features": {
+			"type": "object",
+			"description": "Experimental feature toggles, keyed by feature name (matched case-insensitively). Set a key to true to enable the gated command(s) and MCP tool/prompt/resource(s) for that feature; an absent or false key keeps them hidden and unreachable on every surface (CLI parsing, help, generated docs, and MCP registration). All flags are off by default. This 'features' object is a sibling of 'Environments' at the document root, NOT nested inside 'Environments'. Prefer managing flags with 'clio experimental --name <key> --enable' / '--disable' over editing this file by hand.",
+			"patternProperties": {
+				".*": {
+					"type": "boolean",
+					"description": "true enables the feature; false or an absent key disables it"
+				}
+			},
+			"examples": [
+				{
+					"process-designer": true
+				}
+			]
 		}
 	},
 	"description": "Clio environment description file",

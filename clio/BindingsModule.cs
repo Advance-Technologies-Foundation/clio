@@ -46,6 +46,7 @@ using Clio.Requests;
 using Clio.Requests.Validators;
 using Clio.Utilities;
 using Clio.Command.McpServer.Tools;
+using Clio.Command.McpServer.Tools.ProcessDesigner;
 using Clio.Workspace;
 using Clio.Workspaces;
 using Clio.UserEnvironment;
@@ -273,6 +274,12 @@ public class BindingsModule {
 		services.AddTransient<IFeatureToggleService, FeatureToggleService>();
 		services.AddTransient<IApplicationSectionDeleteService, ApplicationSectionDeleteService>();
 		services.AddTransient<DeleteAppSectionCommand>();
+		services.AddTransient<IListUserTasksService, ListUserTasksService>();
+		services.AddTransient<ListUserTasksCommand>();
+		services.AddTransient<ICreateBusinessProcessService, CreateBusinessProcessService>();
+		services.AddTransient<CreateBusinessProcessCommand>();
+		services.AddTransient<IModifyBusinessProcessService, ModifyBusinessProcessService>();
+		services.AddTransient<ModifyBusinessProcessCommand>();
 		services.AddTransient<IApplicationSectionGetListService, ApplicationSectionGetListService>();
 		services.AddTransient<GetAppSectionsCommand>();
 		services.AddTransient<IdentityProviderListCommand>();
@@ -358,6 +365,8 @@ public class BindingsModule {
 		services.AddTransient<ApplicationSectionGetListTool>();
 		services.AddTransient<ApplicationDeleteTool>();
 		services.AddTransient<ToolContractGetTool>();
+		services.AddTransient<ValidateProcessGraphTool>();
+		services.AddTransient<DescribeProcessTool>();
 		// Singleton: the service is effectively stateless (its only shared mutable state is a static
 		// lock), so a single instance is safe and keeps the lifetime consistent with the singleton
 		// flusher that depends on it (no captured-dependency lifetime mismatch).
@@ -620,6 +629,7 @@ public class BindingsModule {
 		services.AddTransient<SetApplicationIconCommand>();
 		services.AddTransient<CustomizeDataProtectionCommand>();
 		services.AddTransient<GenerateProcessModelCommand>();
+		services.AddTransient<DescribeProcessCommand>();
 		services.AddTransient<GetProcessSignatureCommand>();
 		services.AddTransient<AddItemCommand>();
 		services.AddTransient<IZipFile, ZipFileWrapper>();
