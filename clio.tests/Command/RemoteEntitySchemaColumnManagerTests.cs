@@ -182,6 +182,34 @@ internal class RemoteEntitySchemaColumnManagerTests
 	}
 
 	[Test]
+	[Description("Publishes and rebuilds OData exactly once for a multi-operation (add + modify) batch, not once per operation.")]
+	public void ModifyColumns_PublishesAndRebuildsOnce_ForMultiOperationBatch() {
+		// Arrange
+		_loadedSchema = CreateSchema(
+			columns: [CreateGuidColumn("Id", IdColumnUId), CreateTextColumn("Status", CodeColumnUId)],
+			primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		int publishCount = 0, rebuildCount = 0;
+		_designerClient.When(c => c.PublishConfigurationChanges(Arg.Any<Clio.Command.RemoteCommandOptions>()))
+			.Do(_ => publishCount++);
+		_designerClient.When(c => c.RunODataBuild(Arg.Any<Clio.Command.RemoteCommandOptions>()))
+			.Do(_ => rebuildCount++);
+		ModifyEntitySchemaColumnOptions[] batch = [
+			new() { Package = "UsrPkg", SchemaName = "UsrVehicle", Action = "add", ColumnName = "Name", Type = "Text", Title = "Vehicle name" },
+			new() { Package = "UsrPkg", SchemaName = "UsrVehicle", Action = "modify", ColumnName = "Status", Title = "Vehicle status" }
+		];
+
+		// Act
+		_manager.ModifyColumns(batch);
+
+		// Assert
+		publishCount.Should().Be(1,
+			because: "a multi-column batch must publish the configuration exactly once, not once per operation");
+		rebuildCount.Should().Be(1,
+			because: "the OData entities rebuild must be requested once per batch, after publishing");
+	}
+
+	[Test]
 	[Description("Succeeds with a warning when the OData rebuild request fails, because a rebuild-request fault must not fail an already-saved column change.")]
 	public void ModifyColumn_SucceedsWithWarning_WhenODataRebuildRequestFails() {
 		// Arrange

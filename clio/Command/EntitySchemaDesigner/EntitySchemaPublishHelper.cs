@@ -47,6 +47,7 @@ internal static class EntitySchemaPublishHelper
 	// recursively. Allow-list, not a blanket catch, so genuine programming errors still surface.
 	private static bool IsExpectedODataBuildFault(Exception exception) {
 		if (exception is AggregateException aggregate) {
+			// Count > 0: an empty aggregate has no diagnosable fault (All is vacuously true), so let it surface.
 			ReadOnlyCollection<Exception> inner = aggregate.Flatten().InnerExceptions;
 			return inner.Count > 0 && inner.All(IsExpectedODataBuildFault);
 		}
