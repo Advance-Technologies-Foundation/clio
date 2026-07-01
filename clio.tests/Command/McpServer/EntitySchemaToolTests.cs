@@ -963,7 +963,8 @@ public sealed class EntitySchemaToolTests {
 		public ModifyEntitySchemaColumnOptions CapturedOptions { get; private set; }
 
 		public FakeModifyEntitySchemaColumnCommand()
-			: base(Substitute.For<IRemoteEntitySchemaColumnManager>(), Substitute.For<ILogger>()) {
+			: base(Substitute.For<IRemoteEntitySchemaColumnManager>(),
+				Substitute.For<IEntitySchemaDependencyResolver>(), Substitute.For<ILogger>()) {
 		}
 
 		public override int Execute(ModifyEntitySchemaColumnOptions options) {
