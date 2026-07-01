@@ -1772,7 +1772,10 @@ internal class RemoteEntitySchemaColumnManagerTests
 
 		// Assert
 		act.Should().Throw<EntitySchemaDesignerException>(
-			because: "when auto-resolve fails, the enriched error from GetSchemaDesignItem must propagate");
+				because: "when auto-resolve fails, the enriched error from GetSchemaDesignItem must propagate")
+			.WithMessage("*not available in package*",
+				because: "the re-issue must reach GetSchemaDesignItem so the enriched missing-dependency diagnostic surfaces, not the generic 'returned no schema' fallback");
+		_designerClient.ReceivedWithAnyArgs(1).GetSchemaDesignItem(default, default);
 	}
 
 	[Test]
@@ -1791,7 +1794,39 @@ internal class RemoteEntitySchemaColumnManagerTests
 
 		// Assert
 		act.Should().Throw<EntitySchemaDesignerException>(
-			because: "even after adding the dependency, a still-inaccessible schema must surface the enriched diagnostic");
+				because: "even after adding the dependency, a still-inaccessible schema must surface the enriched diagnostic")
+			.WithMessage("*not available in package*",
+				because: "a retry that still yields a null schema must fall through to GetSchemaDesignItem, not emit the generic 'returned no schema' message");
+		_designerClient.ReceivedWithAnyArgs(1).GetSchemaDesignItem(default, default);
+	}
+
+	[Test]
+	[Description("Falls through to the enriched GetSchemaDesignItem re-issue when the server replies Success=true but carries a null schema, so the missing-dependency diagnostic is not lost to the generic fallback (ENG-91314).")]
+	public void GetSchemaProperties_ShouldThrowEnrichedError_WhenResponseIsSuccessfulButSchemaIsNull() {
+		// Arrange — TryGetSchemaDesignItem returns a successful envelope whose Schema is null (a non-HTML "unavailable"
+		// signal); the gate must key off schema availability, not response nullity, and re-issue the enriched call.
+		_designerClient.TryGetSchemaDesignItem(Arg.Any<GetSchemaDesignItemRequestDto>(),
+				Arg.Any<Clio.Command.RemoteCommandOptions>())
+			.Returns(_ => new Clio.Command.EntitySchemaDesigner.DesignerResponse<EntityDesignSchemaDto> {
+				Success = true, Schema = null
+			});
+		_designerClient.GetSchemaDesignItem(Arg.Any<GetSchemaDesignItemRequestDto>(),
+				Arg.Any<Clio.Command.RemoteCommandOptions>())
+			.Returns<Clio.Command.EntitySchemaDesigner.DesignerResponse<EntityDesignSchemaDto>>(_ =>
+				throw new EntitySchemaDesignerException("Schema 'UsrVehicle' is not available in package 'UsrPkg'."));
+
+		// Act
+		Action act = () => _manager.GetSchemaProperties(new GetEntitySchemaPropertiesOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle"
+		});
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>(
+				because: "a Success=true response with a null schema is still 'schema unavailable' and must surface the enriched diagnostic")
+			.WithMessage("*not available in package*",
+				because: "gating the re-issue on schema availability (not response==null) keeps the missing-dependency guidance that is the whole point of the feature");
+		_designerClient.ReceivedWithAnyArgs(1).GetSchemaDesignItem(default, default);
 	}
 
 	[Test]

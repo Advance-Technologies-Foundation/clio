@@ -814,8 +814,9 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			_logger.WriteInfo(
 				$"Retrying GetSchemaDesignItem for '{schemaName}' after auto-dependency resolution...");
 			response = _entitySchemaDesignerClient.TryGetSchemaDesignItem(request, options);
+			schemaUnavailable = response == null || response.Schema == null;
 		}
-		if (response == null) {
+		if (schemaUnavailable) {
 			response = _entitySchemaDesignerClient.GetSchemaDesignItem(request, options);
 		}
 		EntityDesignSchemaDto schema = response!.Schema
