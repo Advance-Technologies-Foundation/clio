@@ -246,7 +246,7 @@ internal class Program {
 	internal const int CreatioVersionRequirementExitCode = 78;
 
 	internal static bool IsCfgOpenCommand;
-	internal static bool IsMcpServerMode { get; private set; }
+	internal static bool IsMcpServerMode { get; set; }
 	public static IAppUpdater _appUpdater;
 
 	private sealed record CommandSuggestionEntry(string CanonicalName, IReadOnlyList<string> SearchTerms);
@@ -1474,7 +1474,11 @@ internal class Program {
 			BindingsModuleRegistrationProfile profile = settings is null
 				? BindingsModuleRegistrationProfile.Bootstrap
 				: BindingsModuleRegistrationProfile.EnvironmentScoped;
-			Container = new BindingsModule().Register(settings, profile: profile);
+			// registerMcpHost is threaded explicitly (never read inside BindingsModule) and is true only
+			// here, the single build from which McpServerCommand is resolved. In a live MCP session this
+			// is the Bootstrap-profile build that backs mcp-server; every other command leaves it false,
+			// and ToolCommandResolver's per-environment builds pass false too, so they skip the MCP host.
+			Container = new BindingsModule().Register(settings, profile: profile, registerMcpHost: IsMcpServerMode);
 		}
 		if (useCreatioLogStreamer) {
 			ConsoleLogger.Instance.SetCreatioLogStreamer(Container.GetRequiredService<ILogStreamer>());
