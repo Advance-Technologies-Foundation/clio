@@ -83,6 +83,7 @@ public sealed class DescribeProcessToolE2ETests {
 	private static async Task<ArrangeContext> ArrangeAsync(bool requireReachableEnvironment) {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		ProcessDesignerE2EGate.SkipIfFeatureDisabled(settings);
 		string environmentName = settings.Sandbox.EnvironmentName;
 		string processCode = settings.Sandbox.ProcessCode;
 		if (requireReachableEnvironment) {
