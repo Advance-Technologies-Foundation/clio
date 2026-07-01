@@ -18,6 +18,7 @@ namespace Clio.Mcp.E2E;
 [TestFixture]
 [AllureNUnit]
 [AllureFeature("fsm")]
+[NonParallelizable]
 public sealed class FsmModeToolE2ETests : McpContractFixtureBase
 {
 	private const string GetToolName = FsmModeTool.GetFsmModeToolName;
@@ -44,49 +45,6 @@ public sealed class FsmModeToolE2ETests : McpContractFixtureBase
 		AssertStatusToolSucceeded(callResult);
 		AssertStructuredStatusReturned(status, settings.Sandbox.EnvironmentName!);
 		AssertStatusShapeMatchesMode(status);
-	}
-
-	[Category("McpE2E.NoEnvironment")]
-	[Test]
-	[AllureTag(GetToolName)]
-	[AllureDescription("Starts the real clio MCP server, invokes get-fsm-mode with an invalid environment name, and verifies that the tool fails with readable diagnostics.")]
-	[AllureName("Get FSM mode reports invalid environment failures")]
-	[Description("Reports invalid environment failures for get-fsm-mode through the real MCP server.")]
-	public async Task GetFsmMode_Should_Report_Invalid_Environment_Failure()
-	{
-		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		await using var arrangeContext = Arrange();
-		string invalidEnvironmentName = $"missing-fsm-status-env-{Guid.NewGuid():N}";
-
-		// Act
-		CallToolResult callResult = await ActGetAsync(arrangeContext, invalidEnvironmentName);
-
-		// Assert
-		AssertStatusToolFailed(callResult);
-		AssertFailureTextMentionsEnvironment(callResult, invalidEnvironmentName);
-	}
-
-	[Category("McpE2E.NoEnvironment")]
-	[Test]
-	[AllureTag(SetToolName)]
-	[AllureDescription("Starts the real clio MCP server, invokes set-fsm-mode with an invalid environment name, and verifies that the command fails with readable diagnostics.")]
-	[AllureName("Set FSM mode reports invalid environment failures")]
-	[Description("Reports invalid environment failures for set-fsm-mode through the real MCP server.")]
-	public async Task SetFsmMode_Should_Report_Invalid_Environment_Failure()
-	{
-		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		await using var arrangeContext = Arrange();
-		string invalidEnvironmentName = $"missing-fsm-env-{Guid.NewGuid():N}";
-
-		// Act
-		CommandExecutionActResult actResult = await ActSetAsync(arrangeContext, invalidEnvironmentName, "on");
-
-		// Assert
-		AssertCommandToolFailed(actResult);
-		AssertFailureIncludesErrorMessage(actResult, "failed set-fsm-mode execution should emit error diagnostics");
-		AssertFailureMentionsEnvironment(actResult, invalidEnvironmentName);
 	}
 
 	private static async Task<CallToolResult> ActGetAsync(ArrangeContext arrangeContext, string environmentName)

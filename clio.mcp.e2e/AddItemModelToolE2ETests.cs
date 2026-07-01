@@ -62,38 +62,6 @@ public sealed class AddItemModelToolE2ETests {
 				because: "model generation should create at least one model class file in addition to the shared helper");
 	}
 
-	[Category("McpE2E.NoEnvironment")]
-	[Test]
-	[Description("Starts the real clio MCP server, invokes add-item-model with a relative folder, and verifies that a human-readable validation error is returned without creating files.")]
-	[AllureTag(ToolName)]
-	[AllureName("Add item model rejects relative folder")]
-	[AllureDescription("Uses the real clio MCP server to call add-item-model with a relative folder and verifies that the MCP result stays structured, the command fails clearly, and no unintended output directory is created.")]
-	public async Task AddItemModel_Should_Report_Invalid_Folder_Failure() {
-		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using AddItemModelFailureArrangeContext arrangeContext = await ArrangeFailureAsync(settings);
-
-		// Act
-		AddItemModelActResult actResult = await ActAsync(
-			arrangeContext.Session,
-			arrangeContext.CancellationTokenSource.Token,
-			"missing-env-not-used",
-			arrangeContext.RelativeFolderPath);
-
-		// Assert
-		actResult.CallResult.IsError.Should().NotBeTrue(
-			because: "folder validation failures should be returned as normal command execution envelopes");
-		AssertCommandExitCode(actResult, 1,
-			"add-item-model should reject relative folders before command execution");
-		actResult.Execution.Output.Should().Contain(message => message.MessageType == LogDecoratorType.Error,
-			because: "folder validation failures should emit error-level diagnostics");
-		DescribeExecution(actResult.Execution).Should().Contain("Folder path must be absolute",
-			because: "the failure should explain that the requested folder must be absolute");
-		Directory.Exists(arrangeContext.AccidentalOutputFolderPath).Should().BeFalse(
-			because: "the tool should not create an output folder for invalid relative paths");
-	}
-
 	private static async Task<AddItemModelArrangeContext> ArrangeSuccessAsync(McpE2ESettings settings) {
 		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(10));
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);

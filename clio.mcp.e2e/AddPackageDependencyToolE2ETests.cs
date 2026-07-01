@@ -3,7 +3,6 @@ using Allure.Net.Commons;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
-using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
@@ -19,7 +18,8 @@ namespace Clio.Mcp.E2E;
 [Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("add-package-dependency")]
-public sealed class AddPackageDependencyToolE2ETests {
+[Parallelizable(ParallelScope.Self)]
+public sealed class AddPackageDependencyToolE2ETests : McpContractFixtureBase {
 
 	private const string ToolName = AddPackageDependencyTool.AddPackageDependencyToolName;
 
@@ -30,8 +30,7 @@ public sealed class AddPackageDependencyToolE2ETests {
 	[Description("Verifies that add-package-dependency appears in the MCP tool advertisement from the real clio mcp-server process.")]
 	public async Task AddPackageDependency_Should_Be_Advertised_By_McpServer() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		await using AddPackageDependencyArrangeContext arrangeContext = await ArrangeAsync(settings);
+		await using var arrangeContext = Arrange();
 
 		// Act
 		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
@@ -47,8 +46,7 @@ public sealed class AddPackageDependencyToolE2ETests {
 	[Description("Reports invalid environment failures for add-package-dependency through the real MCP server.")]
 	public async Task AddPackageDependency_Should_Report_Invalid_Environment_Failure() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		await using AddPackageDependencyArrangeContext arrangeContext = await ArrangeAsync(settings);
+		await using var arrangeContext = Arrange();
 		string invalidEnvironmentName = $"missing-dependency-env-{Guid.NewGuid():N}";
 
 		// Act
@@ -61,16 +59,8 @@ public sealed class AddPackageDependencyToolE2ETests {
 		AssertFailureMentionsEnvironment(actResult, invalidEnvironmentName);
 	}
 
-	private static async Task<AddPackageDependencyArrangeContext> ArrangeAsync(McpE2ESettings settings) {
-		return await AllureApi.Step("Arrange MCP server session", async () => {
-			CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
-			McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-			return new AddPackageDependencyArrangeContext(session, cancellationTokenSource);
-		});
-	}
-
 	private static async Task<CommandExecutionActResult> ActAsync(
-		AddPackageDependencyArrangeContext arrangeContext,
+		ArrangeContext arrangeContext,
 		string packageName,
 		string dependencyName,
 		string environmentName) {
@@ -124,15 +114,6 @@ public sealed class AddPackageDependencyToolE2ETests {
 		combinedOutput.Should().MatchRegex(
 			$"(?is)({Regex.Escape(environmentName)}|environment.*not.*found|not found|error occurred invoking)",
 			because: "the failure log should identify that the requested environment is not registered");
-	}
-
-	private sealed record AddPackageDependencyArrangeContext(
-		McpServerSession Session,
-		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
-			CancellationTokenSource.Dispose();
-		}
 	}
 
 	private sealed record CommandExecutionActResult(
