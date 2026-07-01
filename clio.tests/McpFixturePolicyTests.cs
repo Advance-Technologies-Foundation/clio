@@ -1,11 +1,22 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
+using Clio.Mcp.E2E;
 using FluentAssertions;
+using NUnit.Framework;
 
-namespace Clio.Mcp.E2E;
+namespace Clio.Tests;
 
 /// <summary>
 /// Guard tests for MCP e2e fixture scheduling policy.
 /// </summary>
+/// <remarks>
+/// This guard lives in <c>clio.tests</c> (not <c>clio.mcp.e2e</c>) so it runs in the standard
+/// pre-merge Unit lane (<c>dotnet test clio.tests.csproj --filter "Category!=Integration"</c>).
+/// It reflects over the <c>clio.mcp.e2e</c> assembly via a project reference; the e2e tests
+/// themselves are not executed here.
+/// </remarks>
 [TestFixture]
 [Category("Unit")]
 public sealed class McpFixturePolicyTests {
@@ -46,7 +57,8 @@ public sealed class McpFixturePolicyTests {
 	}
 
 	private static IReadOnlyList<Type> GetFixturesWithCategory(string category) =>
-		typeof(McpFixturePolicyTests).Assembly.GetTypes()
+		// Anchor reflection on a clio.mcp.e2e type so the guard scans the e2e assembly, not clio.tests.
+		typeof(ExperimentalToolE2ETests).Assembly.GetTypes()
 			.Where(type => type.IsClass && FixtureHasCategory(type, category))
 			.OrderBy(type => type.FullName, StringComparer.Ordinal)
 			.ToArray();
