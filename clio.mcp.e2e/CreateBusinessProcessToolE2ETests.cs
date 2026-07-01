@@ -29,6 +29,14 @@ public sealed class CreateBusinessProcessToolE2ETests {
 
 	private const string ToolName = CreateBusinessProcessTool.CreateBusinessProcessToolName;
 
+	// ENG-92127 element-output mapping tests need a user task that (a) ships in CrtBase — always installed on any
+	// stand — and (b) exposes a scalar OUTPUT parameter (a valid mapping source). CheckCanExecuteOperationUserTask
+	// resolves by name via ProcessUserTaskSchemaManager (the builder's full superset, not the palette subset), and
+	// its Boolean output CanExecuteOperation is the source. Swap these two constants if a stand lacks it — e.g. the
+	// palette task ActivityUserTask (alias performTask) with the Guid output ActivityResult.
+	private const string SourceUserTaskName = "CheckCanExecuteOperationUserTask";
+	private const string SourceOutputParameter = "CanExecuteOperation";
+
 	[Test]
 	[Description("Starts the real clio MCP server and verifies create-business-process is advertised (hermetic).")]
 	[AllureTag(ToolName)]
@@ -110,6 +118,63 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		// would appear as \"direction\" and never match.
 		describeJson.Should().Contain("direction",
 			because: "describe-business-process now surfaces each parameter's direction over the real MCP path (the clio DescribedParameter DTO no longer strips it), so a caller can tell an element's outputs from its inputs");
+	}
+
+	[Test]
+	[Description("Over the real MCP path, create-business-process maps a user-task element OUTPUT into a process parameter via a targetProcessParameter mapping (element->process, ENG-92127 AC#2); describe reads the process parameter and the element output back.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process maps an element output into a process parameter")]
+	public async Task CreateBusinessProcess_Should_MapElementOutputIntoProcessParameter() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpOutMapE2e{Guid.NewGuid():N}";
+		string descriptor = BuildElementOutputToProcessDescriptor(processName);
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = descriptor
+		});
+
+		// Assert — the server accepts the element->process mapping (an invalid one would error) and reports the build
+		callResult.IsError.Should().NotBeTrue(
+			because: "mapping a compatible element output into a process parameter must build without a transport error");
+		string callResultJson = JsonSerializer.Serialize(callResult);
+		callResultJson.Should().Contain(processName,
+			because: $"a successful build reports the created schema name (run against an environment with CrtBase's {SourceUserTaskName})");
+
+		// Readback: the target process parameter and the source element output are both present in the graph. The
+		// binding value on the process parameter is an element-qualified meta-path built from UIds (not names), so we
+		// assert the surfaced names + a successful build rather than substring-matching the meta-path.
+		string describeJson = JsonSerializer.Serialize(await DescribeAsync(context, processName));
+		describeJson.Should().Contain("ProcResult",
+			because: "the target process parameter that receives the element output is present in the read-back graph");
+		describeJson.Should().Contain(SourceOutputParameter,
+			because: "the element's output parameter (the mapping source) is surfaced by describe because it is a result/output");
+	}
+
+	[Test]
+	[Description("Over the real MCP path, create-business-process REJECTS an element->process mapping whose types are incompatible (a Boolean element output into an Integer process parameter), enforcing the ENG-92127 type-compatibility rule (AC#3).")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process rejects an incompatible-type mapping")]
+	public async Task CreateBusinessProcess_Should_RejectMapping_WhenTypesAreIncompatible() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpBadTypeE2e{Guid.NewGuid():N}";
+		string descriptor = BuildIncompatibleTypeMappingDescriptor(processName);
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = descriptor
+		});
+
+		// Assert — the type-compatibility gate rejects a Boolean source into an Integer target; the server's rejection
+		// message (authored in ProcessMappingService) is surfaced through the MCP result (verified live on the stand
+		// for the equivalent modify-business-process addMapping: "... incompatible data value types ...").
+		string callResultJson = JsonSerializer.Serialize(callResult);
+		callResultJson.Should().Contain("incompatible",
+			because: "mapping a Boolean element output into an Integer process parameter must be rejected by the type-compatibility check");
 	}
 
 	[Test]
@@ -253,6 +318,58 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		  ],
 		  "mappings": [
 		    { "elementName": "task1", "elementParameter": "Recommendation", "processParameter": "MyText" }
+		  ]
+		}
+		""";
+
+	// ENG-92127 (AC#2): a Boolean process parameter (ProcResult) fed by the user-task element's OUTPUT via a
+	// targetProcessParameter mapping — the element->process shape. Source/target share the Boolean type group.
+	private static string BuildElementOutputToProcessDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Output Mapping E2E",
+		  "packageName": "Custom",
+		  "parameters": [
+		    { "name": "ProcResult", "type": "Boolean", "direction": "Out" }
+		  ],
+		  "elements": [
+		    { "name": "Start1", "type": "startEvent" },
+		    { "name": "check", "type": "userTask", "userTaskName": "{{SourceUserTaskName}}" },
+		    { "name": "End1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "Start1", "target": "check" },
+		    { "source": "check", "target": "End1" }
+		  ],
+		  "mappings": [
+		    { "targetProcessParameter": "ProcResult", "sourceElement": "check", "sourceElementParameter": "{{SourceOutputParameter}}" }
+		  ]
+		}
+		""";
+
+	// ENG-92127 (AC#3): an INCOMPATIBLE element->process mapping — the Boolean element output into an Integer
+	// process parameter — which the type-compatibility gate must reject (Boolean and Number are different kinds).
+	private static string BuildIncompatibleTypeMappingDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Bad-Type Mapping E2E",
+		  "packageName": "Custom",
+		  "parameters": [
+		    { "name": "BadNum", "type": "Integer", "direction": "Out" }
+		  ],
+		  "elements": [
+		    { "name": "Start1", "type": "startEvent" },
+		    { "name": "check", "type": "userTask", "userTaskName": "{{SourceUserTaskName}}" },
+		    { "name": "End1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "Start1", "target": "check" },
+		    { "source": "check", "target": "End1" }
+		  ],
+		  "mappings": [
+		    { "targetProcessParameter": "BadNum", "sourceElement": "check", "sourceElementParameter": "{{SourceOutputParameter}}" }
 		  ]
 		}
 		""";
