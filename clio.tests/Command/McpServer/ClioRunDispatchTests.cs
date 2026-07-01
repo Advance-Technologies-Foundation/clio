@@ -935,4 +935,105 @@ public sealed class ClioRunDispatchTests {
 		result.Should().BeSameAs(expected,
 			because: "null Dictionary must convert to null JsonElement for the executor");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ClioRunTool preserves the wrapped call shape when the Dictionary carries an inner command/args, so the executor's RecoverWrappedCall still sees the original object (ENG-92653).")]
+	public async Task ClioRunTool_ShouldPreserveWrappedShape_WhenDictionaryContainsCommandAndArgs() {
+		// Arrange — the SDK binds the wrapped shape {"args":{"command":"X","args":{...}}} entirely under
+		// the `args` Dictionary with `command` left null. The Dictionary→JsonElement conversion must keep
+		// that object intact so ClioRunExecutor.RecoverWrappedCall can extract the real command/args.
+		IClioRunExecutor executor = Substitute.For<IClioRunExecutor>();
+		CallToolResult expected = new() { Content = [] };
+		JsonElement? capturedArgs = null;
+		executor.RunAsync(
+			null,
+			Arg.Any<JsonElement?>(),
+			false,
+			Arg.Any<RequestContext<CallToolRequestParams>>(),
+			Arg.Any<CancellationToken>())
+			.Returns(call => {
+				capturedArgs = call.ArgAt<JsonElement?>(1);
+				return new ValueTask<CallToolResult>(expected);
+			});
+		ClioRunTool tool = new(executor);
+
+		// Act — command is null (wrapped shape); the real command lives inside the args Dictionary.
+		Dictionary<string, JsonElement> wrapped = new() {
+			["command"] = JsonDocument.Parse("\"echo-tool\"").RootElement,
+			["args"] = JsonDocument.Parse("{\"value\":\"hello\"}").RootElement
+		};
+		CallToolResult result = await tool.Run(CallContext(), null, wrapped);
+
+		// Assert
+		result.Should().BeSameAs(expected,
+			because: "the tool must forward the converted wrapped args to the executor and return its result");
+		capturedArgs.Should().NotBeNull(because: "a non-null wrapped Dictionary must convert to a non-null JsonElement");
+		capturedArgs!.Value.ValueKind.Should().Be(JsonValueKind.Object,
+			because: "the converted wrapped payload must remain a JSON object for RecoverWrappedCall to parse");
+		capturedArgs.Value.GetProperty("command").GetString().Should().Be("echo-tool",
+			because: "the inner command must survive the conversion so the executor can recover the real target tool");
+		capturedArgs.Value.GetProperty("args").GetProperty("value").GetString().Should().Be("hello",
+			because: "the inner target args must survive the conversion intact");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ClioRunDestructiveTool converts a non-null Dictionary args to a JsonElement object and passes it through to the executor on the destructive surface (ENG-92653).")]
+	public async Task ClioRunDestructiveTool_ShouldConvertDictionaryArgs_WhenArgsAreProvided() {
+		// Arrange — the destructive alias runs the same DictionaryToElement conversion; cover its flat path.
+		IClioRunExecutor executor = Substitute.For<IClioRunExecutor>();
+		CallToolResult expected = new() { Content = [] };
+		JsonElement? capturedArgs = null;
+		executor.RunAsync(
+			"sync-schemas",
+			Arg.Any<JsonElement?>(),
+			true,
+			Arg.Any<RequestContext<CallToolRequestParams>>(),
+			Arg.Any<CancellationToken>())
+			.Returns(call => {
+				capturedArgs = call.ArgAt<JsonElement?>(1);
+				return new ValueTask<CallToolResult>(expected);
+			});
+		ClioRunDestructiveTool tool = new(executor);
+
+		// Act
+		Dictionary<string, JsonElement> args = new() {
+			["value"] = JsonDocument.Parse("\"hello\"").RootElement
+		};
+		CallToolResult result = await tool.Run(CallContext(), "sync-schemas", args);
+
+		// Assert
+		result.Should().BeSameAs(expected,
+			because: "the destructive tool must forward the converted args to the executor and return its result");
+		capturedArgs.Should().NotBeNull(because: "a non-null Dictionary must convert to a non-null JsonElement");
+		capturedArgs!.Value.ValueKind.Should().Be(JsonValueKind.Object,
+			because: "the converted JsonElement must be a JSON object");
+		capturedArgs.Value.GetProperty("value").GetString().Should().Be("hello",
+			because: "the Dictionary entries must survive the conversion intact on the destructive surface");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ClioRunDestructiveTool passes null to the executor when the Dictionary args is null (ENG-92653).")]
+	public async Task ClioRunDestructiveTool_ShouldPassNullArgs_WhenDictionaryIsNull() {
+		// Arrange
+		IClioRunExecutor executor = Substitute.For<IClioRunExecutor>();
+		CallToolResult expected = new() { Content = [] };
+		executor.RunAsync(
+			"sync-schemas",
+			Arg.Is<JsonElement?>(el => !el.HasValue),
+			true,
+			Arg.Any<RequestContext<CallToolRequestParams>>(),
+			Arg.Any<CancellationToken>())
+			.Returns(new ValueTask<CallToolResult>(expected));
+		ClioRunDestructiveTool tool = new(executor);
+
+		// Act
+		CallToolResult result = await tool.Run(CallContext(), "sync-schemas", null);
+
+		// Assert
+		result.Should().BeSameAs(expected,
+			because: "null Dictionary must convert to null JsonElement for the executor on the destructive surface");
+	}
 }
