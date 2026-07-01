@@ -8,6 +8,7 @@ using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
 using Clio.Command.McpServer.Tools.ProcessDesigner;
+using Clio.Command.ProcessModel;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using FluentAssertions;
@@ -170,20 +171,16 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 
 		// Assert
 		callResult.IsError.Should().NotBeTrue(because: "setParameter must succeed over the real MCP path");
-		string describeJson = JsonSerializer.Serialize(await CallToolAsync(context, DescribeProcessTool.ToolName,
+		DescribedParameter amount = ParseDescribeResult(await CallToolAsync(context, DescribeProcessTool.ToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
 				["process-name"] = processName
-			}));
-		describeJson.Should().Contain("ConstValue",
+			})).Parameters.Single(p => p.Name == "Amount");
+		amount.Source.Should().Be("ConstValue",
 			because: "the parameter still carries a constant value source after setParameter");
-		// Assert the direction field/value PAIRING, not a bare "Out" substring (which could match unrelated
-		// tokens such as element names). Normalize away quote-escaping (" / \") and pretty-print spacing first.
-		string normalizedDescribe = describeJson
-			.Replace("\\", string.Empty).Replace("u0022", string.Empty)
-			.Replace("\"", string.Empty).Replace(" ", string.Empty);
-		normalizedDescribe.Should().Contain("direction:Out",
-			because: "setParameter changed the direction to Out and describe reads it back paired with the direction field");
+		amount.Value.Should().Be("7", because: "setParameter updated the constant default value to 7");
+		amount.Direction.Should().Be("Out",
+			because: "setParameter changed the direction to Out, which describe reads back on the parameter");
 	}
 
 	[Test]
@@ -397,6 +394,47 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		  ]
 		}
 		""";
+
+	// Extracts the described graph from the MCP tool result and deserializes it into the typed DescribeProcessResult,
+	// so a test can assert a parameter's fields (direction/source/value) directly instead of substring-matching the
+	// serialized envelope. The graph is the Info log-message value inside the clio command envelope.
+	private static DescribeProcessResult ParseDescribeResult(CallToolResult callResult) {
+		JsonSerializerOptions options = new() { PropertyNameCaseInsensitive = true };
+		JsonElement content = JsonSerializer.SerializeToElement(callResult.Content);
+		foreach (JsonElement block in content.EnumerateArray()) {
+			if (!block.TryGetProperty("text", out JsonElement textElement)
+					|| textElement.ValueKind != JsonValueKind.String) {
+				continue;
+			}
+			string envelopeJson = textElement.GetString();
+			if (string.IsNullOrWhiteSpace(envelopeJson) || !envelopeJson.TrimStart().StartsWith("{", StringComparison.Ordinal)) {
+				continue;
+			}
+			using JsonDocument envelope = JsonDocument.Parse(envelopeJson);
+			if (!envelope.RootElement.TryGetProperty("execution-log-messages", out JsonElement messages)
+					|| messages.ValueKind != JsonValueKind.Array) {
+				continue;
+			}
+			foreach (JsonElement message in messages.EnumerateArray()) {
+				if (!message.TryGetProperty("value", out JsonElement value) || value.ValueKind != JsonValueKind.String) {
+					continue;
+				}
+				string graphJson = value.GetString();
+				if (string.IsNullOrWhiteSpace(graphJson) || !graphJson.TrimStart().StartsWith("{", StringComparison.Ordinal)) {
+					continue;
+				}
+				try {
+					DescribeProcessResult graph = JsonSerializer.Deserialize<DescribeProcessResult>(graphJson, options);
+					if (graph is { SchemaUId: not null }) {
+						return graph;
+					}
+				} catch (JsonException) {
+					// Not the structured-graph log message; keep scanning.
+				}
+			}
+		}
+		throw new InvalidOperationException("The describe-business-process MCP result did not contain a structured graph.");
+	}
 
 	private static async Task<CallToolResult> CallToolAsync(ArrangeContext context, string toolName,
 		Dictionary<string, object?> args) {
