@@ -110,6 +110,43 @@ public sealed class CreateRelatedPageAddonToolTests {
 	}
 
 	[Test]
+	[Description("Maps every RelatedPageArg field onto the correct RelatedPageSpec property (and the top-level type-column-uid), so a positional-record field swap (e.g. role <-> role-name) is caught.")]
+	public void CreateRelatedPageAddon_ShouldMapEveryFieldOntoTheCorrectProperty_WhenAllFieldsSet() {
+		// Arrange — one entry with every field set to a distinct, identifiable value.
+		RelatedPageArg arg = new(
+			"UsrMappingPage",                        // page-schema-name
+			true,                                     // is-default
+			false,                                    // is-add (distinct from is-default to catch a swap)
+			true,                                     // is-ssp-default
+			"11111111-1111-1111-1111-111111111111",  // role
+			"TYPE-VALUE-RECORD-ID",                   // type-column-value
+			"All external users");                    // role-name
+		CreateRelatedPageAddonArgs args = new(
+			"UsrDeliveryItem", "UsrDeliveryTracking", new[] { arg },
+			"TYPE-COLUMN-UID", "dev", null, null, null);
+
+		// Act — the resolver captures the mapped options before the command runs, so an invalid role+role-name
+		// combo on the entry does not matter here; this test asserts the field-by-field mapping only.
+		_tool.CreateRelatedPageAddon(args);
+
+		// Assert
+		_resolverOptions.Should().NotBeNull();
+		_resolverOptions.TypeColumnUId.Should().Be("TYPE-COLUMN-UID",
+			because: "the top-level type-column-uid maps onto the command options");
+		RelatedPageSpec spec = _resolverOptions.Pages.Should().ContainSingle().Which;
+		spec.PageSchemaName.Should().Be("UsrMappingPage", because: "page-schema-name maps by position");
+		spec.IsDefault.Should().BeTrue(because: "is-default maps by position");
+		spec.IsAdd.Should().BeFalse(because: "is-add maps by position, not swapped with is-default");
+		spec.IsSspDefault.Should().BeTrue(because: "is-ssp-default maps by position");
+		spec.Role.Should().Be("11111111-1111-1111-1111-111111111111",
+			because: "role maps by position, not swapped with role-name");
+		spec.RoleName.Should().Be("All external users",
+			because: "role-name maps by position, not swapped with role");
+		spec.TypeColumnValue.Should().Be("TYPE-VALUE-RECORD-ID",
+			because: "type-column-value maps by position");
+	}
+
+	[Test]
 	[Description("Rejects a blank entity-schema-name in the structured response without resolving a command.")]
 	public void CreateRelatedPageAddon_ShouldRejectMissingEntitySchemaName_WhenBlank() {
 		// Act

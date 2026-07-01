@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Text.Json.Serialization;
+using Clio.Command.RelatedPages;
 using Clio.Common;
 using ModelContextProtocol.Server;
 
@@ -30,10 +31,10 @@ public sealed class CreateRelatedPageAddonTool(
 		[Description("Parameters: entity-schema-name, package-name, pages (required); type-column-uid optional; environment-name preferred; uri/login/password emergency fallback only.")]
 		[Required] CreateRelatedPageAddonArgs args) {
 		if (string.IsNullOrWhiteSpace(args?.EntitySchemaName)) {
-			return new CreateRelatedPageAddonResponse { Success = false, Error = "entity-schema-name is required" };
+			return new CreateRelatedPageAddonResponse { Success = false, Error = RelatedPageAddonMessages.EntitySchemaNameRequired };
 		}
 		if (string.IsNullOrWhiteSpace(args.PackageName)) {
-			return new CreateRelatedPageAddonResponse { Success = false, Error = "package-name is required" };
+			return new CreateRelatedPageAddonResponse { Success = false, Error = RelatedPageAddonMessages.PackageNameRequired };
 		}
 		if (args.Pages is null || args.Pages.Count == 0) {
 			return new CreateRelatedPageAddonResponse { Success = false, Error = "at least one entry in pages is required" };

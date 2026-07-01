@@ -28,6 +28,21 @@ public sealed class AddonSchemaDesignerClientTests {
 		_client = new AddonSchemaDesignerClient(_applicationClient, new JsonConverter(), _serviceUrlBuilder);
 	}
 
+	private void StubResponse(string json) =>
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns(json);
+
+	private static AddonGetRequestDto SampleGetRequest() =>
+		new() {
+			AddonName = "RelatedPage",
+			TargetSchemaUId = Guid.Parse("11111111-1111-1111-1111-111111111111"),
+			TargetParentSchemaUId = Guid.Empty,
+			TargetPackageUId = Guid.Parse("33333333-3333-3333-3333-333333333333"),
+			TargetSchemaManagerName = "EntitySchemaManager",
+			UseFullHierarchy = true
+		};
+
 	[Test]
 	[Description("Deserializes raw add-on designer responses directly when the service returns valid JSON.")]
 	public void GetSchema_DeserializesRawJsonResponse() {
@@ -154,5 +169,75 @@ public sealed class AddonSchemaDesignerClientTests {
 		// Assert
 		act.Should().Throw<InvalidOperationException>().WithMessage("*static build failed*",
 			because: "a failed rebuild must be surfaced with the server message, not silently swallowed");
+	}
+
+	[Test]
+	[Description("Surfaces the server's rejection message when SaveSchema reports success:false.")]
+	public void SaveSchema_ShouldThrowWithServerMessage_WhenSuccessIsFalse() {
+		// Arrange
+		StubResponse("{\"success\":false,\"errorInfo\":{\"message\":\"save rejected\"}}");
+
+		// Act
+		Action act = () => _client.SaveSchema(new AddonSchemaDto { MetaData = "{}", Resources = [] });
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>().WithMessage("*save rejected*",
+			because: "a rejected save must surface the server message rather than silently succeeding");
+	}
+
+	[Test]
+	[Description("Rejects a SaveSchema response whose value flag is explicitly false, even when success is true.")]
+	public void SaveSchema_ShouldThrow_WhenValueIsFalse() {
+		// Arrange
+		StubResponse("{\"success\":true,\"value\":false}");
+
+		// Act
+		Action act = () => _client.SaveSchema(new AddonSchemaDto { MetaData = "{}", Resources = [] });
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+			because: "value:false is an explicit save-failure signal even when success is true");
+	}
+
+	[Test]
+	[Description("Surfaces the server's message when GetSchema reports success:false.")]
+	public void GetSchema_ShouldThrowWithServerMessage_WhenSuccessIsFalse() {
+		// Arrange
+		StubResponse("{\"success\":false,\"errorInfo\":{\"message\":\"get rejected\"}}");
+
+		// Act
+		Action act = () => _client.GetSchema(SampleGetRequest());
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>().WithMessage("*get rejected*",
+			because: "a failed GetSchema must surface the server message");
+	}
+
+	[Test]
+	[Description("Throws when GetSchema succeeds but carries no schema payload.")]
+	public void GetSchema_ShouldThrow_WhenSchemaPayloadIsMissing() {
+		// Arrange
+		StubResponse("{\"success\":true}");
+
+		// Act
+		Action act = () => _client.GetSchema(SampleGetRequest());
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>().WithMessage("*schema payload*",
+			because: "a success response with no schema is a contract violation, not an empty add-on");
+	}
+
+	[Test]
+	[Description("Throws a clear empty-response error when the designer service returns an empty body.")]
+	public void GetSchema_ShouldThrow_WhenResponseBodyIsEmpty() {
+		// Arrange
+		StubResponse(string.Empty);
+
+		// Act
+		Action act = () => _client.GetSchema(SampleGetRequest());
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>().WithMessage("*empty response*",
+			because: "an empty body must be surfaced as a clear error rather than a null dereference");
 	}
 }

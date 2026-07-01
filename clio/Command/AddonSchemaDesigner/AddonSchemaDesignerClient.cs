@@ -51,6 +51,10 @@ internal sealed class AddonSchemaDesignerClient(
 		AddonSaveResponseDto response = Deserialize<AddonSaveResponseDto>(
 			responseBody,
 			"AddonSchemaDesignerService.SaveSchema returned an empty response.");
+		// `success` is the authoritative flag; `value` is an additional explicit-failure signal, so a save is
+		// rejected when success is false OR value is explicitly false. A missing `value` (null) is not treated as
+		// a failure — it is governed by `success` (matching the verified BuildConfiguration shape
+		// {"errorInfo":null,"success":true}, whose success flag likewise governs).
 		if (!response.Success || response.Value == false) {
 			throw new InvalidOperationException(response.ErrorInfo?.Message ?? "AddonSchemaDesignerService.SaveSchema failed.");
 		}

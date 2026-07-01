@@ -604,4 +604,43 @@ public sealed class RelatedPageAddonServiceTests {
 			because: "the RelatedPage add-on metadata contract is exactly {Pages, TypeColumnUId}; a full replace must "
 				+ "not introduce or drop sibling fields");
 	}
+
+	[Test]
+	[Description("Resolves a custom role name only once even when several pages target the same audience, avoiding a redundant SysAdminUnit query per page.")]
+	public void Create_ShouldResolveCustomRoleNameOnlyOnce_WhenSharedByMultiplePages() {
+		// Arrange — package, ONE role query (deduped), then one query per distinct page. If the role were
+		// re-queried per page the queue would be exhausted and Dequeue would throw.
+		const string customRoleUId = "11112222-3333-4444-5555-666677778888";
+		StubSelectQueue(Rows(PackageUId), RoleRows(customRoleUId), Rows(PageAUId), Rows(PageBUId));
+
+		// Act
+		_service.Create(new RelatedPageAddonRequest("Custom", "UsrDeliveryItem", new[] {
+			new RelatedPageSpec("UsrDeliveryItemFormPage", IsDefault: true, RoleName: "Sales Managers"),
+			new RelatedPageSpec("UsrDeliveryItemAddPage", IsAdd: true, RoleName: "Sales Managers")
+		}, null));
+
+		// Assert — exactly one SysAdminUnit (role by-name) query was issued for the two pages.
+		_applicationClient.Received(1).ExecutePostRequest(SelectQueryUrl,
+			Arg.Is<string>(body => body.Contains("SysAdminUnit")));
+		JsonArray pages = JsonNode.Parse(_savedSchema.MetaData)!["Pages"]!.AsArray();
+		pages[0]!["Role"]!.GetValue<string>().Should().Be(customRoleUId,
+			because: "both pages share the single resolved custom-role Id");
+		pages[1]!["Role"]!.GetValue<string>().Should().Be(customRoleUId,
+			because: "the second page reuses the resolved role without a second query");
+	}
+
+	[Test]
+	[Description("Serializes a role-less default page's Role as JSON null (the set applies to all users) rather than omitting it or writing an empty string.")]
+	public void Create_ShouldSerializeRoleAsNull_WhenDefaultIsRoleLess() {
+		// Arrange
+		StubSelectQueue(Rows(PackageUId), Rows(PageAUId));
+
+		// Act
+		_service.Create(Request(new RelatedPageSpec("UsrDeliveryItemFormPage", IsDefault: true)));
+
+		// Assert
+		JsonArray pages = JsonNode.Parse(_savedSchema.MetaData)!["Pages"]!.AsArray();
+		pages[0]!["Role"].Should().BeNull(
+			because: "a role-less page set applies to all users and is written with a null Role");
+	}
 }

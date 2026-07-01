@@ -112,13 +112,18 @@ internal sealed class RelatedPageAddonService(
 	private static readonly IReadOnlyDictionary<string, string> KnownPlatformRoleNamesById =
 		KnownPlatformRoleIds.ToDictionary(pair => pair.Value, pair => pair.Key, StringComparer.OrdinalIgnoreCase);
 
-	public RelatedPageAddonResult Create(RelatedPageAddonRequest request) {
+	/// <summary>
+	/// Validates the whole request before any remote call: required fields, a mandatory base default page,
+	/// type-column consistency, and audience-role well-formedness (role/role-name are mutually exclusive and an
+	/// explicit role must be a GUID). Centralizing the guard clauses keeps <see cref="Create"/> as orchestration.
+	/// </summary>
+	private static void ValidateRequest(RelatedPageAddonRequest request) {
 		ArgumentNullException.ThrowIfNull(request);
 		if (string.IsNullOrWhiteSpace(request.EntitySchemaName)) {
-			throw new ArgumentException("entity-schema-name is required.");
+			throw new ArgumentException(RelatedPageAddonMessages.EntitySchemaNameRequired);
 		}
 		if (string.IsNullOrWhiteSpace(request.PackageName)) {
-			throw new ArgumentException("package-name is required.");
+			throw new ArgumentException(RelatedPageAddonMessages.PackageNameRequired);
 		}
 		if (request.Pages is null || request.Pages.Count == 0) {
 			throw new ArgumentException("At least one page is required.");
@@ -155,6 +160,18 @@ internal sealed class RelatedPageAddonService(
 				"A page entry sets both role and role-name; provide only one — role-name to resolve a role by name, "
 				+ "or role for an explicit SysAdminUnit UId.");
 		}
+		// An explicit role must be a SysAdminUnit GUID. Validated here — before any remote call — symmetric with
+		// the guards above (it previously fired inside BuildPages, after several round-trips).
+		foreach (RelatedPageSpec page in request.Pages) {
+			if (!string.IsNullOrWhiteSpace(page.Role) && !Guid.TryParse(page.Role.Trim(), out _)) {
+				throw new ArgumentException(
+					$"role '{page.Role}' is not a valid SysAdminUnit GUID; use role-name to resolve a role by name.");
+			}
+		}
+	}
+
+	public RelatedPageAddonResult Create(RelatedPageAddonRequest request) {
+		ValidateRequest(request);
 
 		(string packageUId, string packageError) = PageSchemaMetadataHelper.QueryPackageUId(
 			applicationClient, serviceUrlBuilder, request.PackageName);
@@ -207,10 +224,10 @@ internal sealed class RelatedPageAddonService(
 	public RelatedPageAddonReadResult Get(RelatedPageAddonReadRequest request) {
 		ArgumentNullException.ThrowIfNull(request);
 		if (string.IsNullOrWhiteSpace(request.EntitySchemaName)) {
-			throw new ArgumentException("entity-schema-name is required.");
+			throw new ArgumentException(RelatedPageAddonMessages.EntitySchemaNameRequired);
 		}
 		if (string.IsNullOrWhiteSpace(request.PackageName)) {
-			throw new ArgumentException("package-name is required.");
+			throw new ArgumentException(RelatedPageAddonMessages.PackageNameRequired);
 		}
 
 		(string packageUId, string packageError) = PageSchemaMetadataHelper.QueryPackageUId(
@@ -403,18 +420,13 @@ internal sealed class RelatedPageAddonService(
 	}
 
 	/// <summary>
-	/// Chooses the audience role UId stored on a page entry: an explicit role UId (validated as a GUID) wins,
-	/// otherwise the role resolved from the spec's role name, otherwise none (the set applies to all users).
-	/// An explicit role that is not a GUID is rejected rather than persisted verbatim as a malformed audience.
+	/// Chooses the audience role UId stored on a page entry: an explicit role UId wins (already validated as a
+	/// GUID upfront in <see cref="ValidateRequest"/>), otherwise the role resolved from the spec's role name,
+	/// otherwise none (the set applies to all users).
 	/// </summary>
 	private static string ResolvePageRole(RelatedPageSpec spec, IReadOnlyDictionary<string, string> roleByName) {
 		if (!string.IsNullOrWhiteSpace(spec.Role)) {
-			string explicitRole = spec.Role.Trim();
-			if (!Guid.TryParse(explicitRole, out _)) {
-				throw new ArgumentException(
-					$"role '{spec.Role}' is not a valid SysAdminUnit GUID; use role-name to resolve a role by name.");
-			}
-			return explicitRole;
+			return spec.Role.Trim();
 		}
 		return !string.IsNullOrWhiteSpace(spec.RoleName) ? roleByName[spec.RoleName.Trim()] : null;
 	}
