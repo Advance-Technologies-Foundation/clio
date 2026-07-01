@@ -1800,4 +1800,64 @@ public sealed class McpGuidanceResourceTests {
 		entry.Article.Uri.Should().Be("docs://mcp/guides/server-to-server-oauth",
 			because: "the article URI in the catalog must match the resource URI");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a canonical MCP guidance article for managing package dependencies and the schema-designer HTML-error recovery (ENG-91314).")]
+	public void PackageDependenciesGuidanceResource_Should_Return_Canonical_Recovery_Guide() {
+		// Arrange
+		PackageDependenciesGuidanceResource resource = new();
+
+		// Act
+		ResourceContents result = resource.GetGuide();
+		TextResourceContents article = result.Should().BeOfType<TextResourceContents>(
+			because: "the package-dependencies guide should be returned as a plain-text MCP resource").Subject;
+
+		// Assert
+		article.Uri.Should().Be("docs://mcp/guides/package-dependencies",
+			because: "the resource should expose a stable MCP URI for package-dependency guidance");
+		article.MimeType.Should().Be("text/plain",
+			because: "the guide should be discoverable as plain text");
+		article.Text.Should().Contain("GetSchemaDesignItem returned an HTML error page",
+			because: "the guide must be keyed to the exact symptom an agent sees so it maps the error to this recovery");
+		article.Text.Should().Contain("add-package-dependency",
+			because: "the guide must point at the one-call recovery tool");
+		article.Text.Should().Contain("remove-package-dependency",
+			because: "the guide must document the symmetric cleanup tool");
+		article.Text.Should().Contain("CrtLeadOppMgmtApp",
+			because: "the guide should give the canonical Opportunity-layer example that misdirected agents before");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("GuidanceCatalog exposes package-dependencies so AI callers can retrieve the dependency-recovery guidance by name (ENG-91314).")]
+	public void GuidanceCatalog_Should_Include_Package_Dependencies_Entry() {
+		// Act
+		bool found = GuidanceCatalog.TryGet("package-dependencies", out GuidanceCatalogEntry entry);
+
+		// Assert
+		found.Should().BeTrue(
+			because: "the catalog must expose package-dependencies so get-guidance can return it by name");
+		entry.Name.Should().Be("package-dependencies",
+			because: "the catalog entry name must match the lookup key exactly");
+		entry.Article.Uri.Should().Be("docs://mcp/guides/package-dependencies",
+			because: "the article URI in the catalog must match the resource URI");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The routing map points the package-dependencies symptom at its guide so an agent reaches it from the schema-designer failure (ENG-91314).")]
+	public void RoutingGuidanceResource_Should_Route_Package_Dependencies_Symptom() {
+		// Arrange
+		RoutingGuidanceResource resource = new();
+
+		// Act
+		TextResourceContents article = resource.GetGuide().Should().BeOfType<TextResourceContents>().Subject;
+
+		// Assert
+		article.Text.Should().Contain("name=package-dependencies",
+			because: "the routing map must direct the agent to the package-dependencies guide");
+		article.Text.Should().Contain("GetSchemaDesignItem returned an HTML error page",
+			because: "the routing row must be keyed to the exact symptom so the agent recognizes it");
+	}
 }
