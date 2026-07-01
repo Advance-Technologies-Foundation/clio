@@ -33,6 +33,14 @@ public sealed class ComponentInfoTool(
 	ISettingsRepository settingsRepository) {
 
 	internal const string ToolName = "get-component-info";
+
+	/// <summary>
+	/// Canonical kebab-case name of the component selector parameter — the JSON property bound to
+	/// <see cref="ComponentInfoArgs.ComponentType"/>. Every <see cref="LegacyAliases"/> entry that
+	/// redirects a mis-spelled selector points at this single value, so the alias target lives in
+	/// one place instead of being repeated as a literal per entry.
+	/// </summary>
+	internal const string ComponentTypeParameterName = "component-type";
 	internal const string ResolvedFromEnvironment = ComponentInfoResolution.ResolvedFromEnvironment;
 	internal const string ResolvedFromLatestFallback = ComponentInfoResolution.ResolvedFromLatestFallback;
 	internal const string SchemaTypeMobile = "mobile";
@@ -137,16 +145,16 @@ public sealed class ComponentInfoTool(
 	/// dropping an unbound camelCase value and degrading a detail request to a 199-item list.
 	/// </summary>
 	private static readonly Dictionary<string, string> LegacyAliases = new(StringComparer.Ordinal) {
-		["componentType"] = "component-type",
-		["component_type"] = "component-type",
+		["componentType"] = ComponentTypeParameterName,
+		["component_type"] = ComponentTypeParameterName,
 		// 'component-name' (plus its camelCase/snake_case spellings) is the wrong-WORD mistake an LLM
 		// reaches for when it expects the selector to be named after the component "name" rather than
 		// its "type" (observed in the field). Reject it with the same precise rename hint as the casing
 		// variants above instead of letting it fall through to the generic "Unknown args" message — the
 		// contract advertises the identical aliases (see ToolContractGetTool.BuildComponentInfo).
-		["component-name"] = "component-type",
-		["componentName"] = "component-type",
-		["component_name"] = "component-type",
+		["component-name"] = ComponentTypeParameterName,
+		["componentName"] = ComponentTypeParameterName,
+		["component_name"] = ComponentTypeParameterName,
 		["schemaType"] = "schema-type",
 		["schema_type"] = "schema-type",
 		["environmentName"] = "environment-name",
