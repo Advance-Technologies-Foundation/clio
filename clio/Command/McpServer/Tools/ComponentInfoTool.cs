@@ -86,7 +86,7 @@ public sealed class ComponentInfoTool(
 		"use whenToUse / whenNotToUse to choose between visually similar components instead of guessing. " +
 		"The list response also returns 'composites' — pre-built combinations of several components that have NO componentType of their own " +
 		"— read the returned 'composites' array for the available captions. When a user wants one of these, do NOT hand-build it from raw types: pass composite='<caption>' " +
-		"to get its assembly recipe. A component flagged compositeOnly:true has no standalone toolbar presence — never insert it directly; build the matching composite instead. " +
+		"to get its assembly recipe. A component flagged compositeOnly:true has no standalone toolbar presence — prefer the composite that assembles it and build that; build the component directly only as a fallback when no composite assembles it AND its own applicability (appliesToCustomEntities / entityCouplingNote) allows. " +
 		"IMPORTANT: pass environment-name to scope the catalog to the target environment's actual platform version — " +
 		"otherwise results come from the 'latest' catalog, a SUPERSET of every GA version, and may list components " +
 		"(e.g. a freshly shipped crt.Switch) that do NOT exist in that environment and will fail to render at runtime. " +
