@@ -264,6 +264,35 @@ public sealed class GuidanceGetToolTests {
 			because: "Step 0 must default to web when the requirement does not name a surface");
 		result.Article.Text.Should().Contain("whenToUse",
 			because: "the guide must steer selection between similar components using the producer's whenToUse/whenNotToUse selection-metadata (ENG-91134 / Solution A)");
+		result.Article.Text.Should().Contain("CUSTOM CSS IS A LAST RESORT",
+			because: "the page modification guide must force the agent to exhaust native component inputs before any custom CSS (ENG-92541)");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The page modification guide enforces the native-first / warn-and-confirm CSS rule (ENG-92541).")]
+	public async Task GuidanceGet_Should_ForceNativeFirstAndConfirmBeforeCss_WhenReturningPageModificationArticle() {
+		// Arrange
+		GuidanceGetTool tool = new(_featureToggleService);
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("page-modification"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "page-modification is a registered guidance name");
+		result.Article!.Text.Should().Contain("first try to satisfy it with the component's NATIVE inputs",
+			because: "AC1: the agent must never apply custom CSS without first attempting native component properties");
+		result.Article.Text.Should().Contain("break or conflict during future Creatio platform upgrades",
+			because: "AC4: the warning must explicitly mention the upgrade-compatibility risk of custom CSS");
+		result.Article.Text.Should().Contain("ask for explicit user confirmation to proceed with CSS",
+			because: "AC5: the agent must ask for explicit confirmation before applying any CSS styling");
+		result.Article.Text.Should().Contain("If the user declines, do NOT apply CSS",
+			because: "AC6: if the user declines, the agent must not apply CSS and should offer alternatives");
+		result.Article.Text.Should().Contain("\"DON'T ASK\" ≠ \"DON'T WARN\"",
+			because: "a 'don't ask/just apply' instruction waives the blocking question but never the upgrade-risk warning before allow-custom-css=true (ENG-92541)");
+		result.Article.Text.Should().Contain("NEVER set allow-custom-css=true silently",
+			because: "the agent must not self-set the confirmation flag without emitting the upgrade-risk warning (ENG-92541)");
 	}
 
 	[Test]

@@ -444,6 +444,94 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("Rejects a body that introduces a custom inline 'styles' object (custom CSS) when allow-custom-css is not set, before any remote save is attempted.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page rejects custom CSS styles without allow-custom-css")]
+	[AllureDescription("Starts the real clio MCP server, invokes update-page in dry-run mode with a viewConfigDiff insert carrying a non-empty custom 'styles' object and NO allow-custom-css flag, and verifies the tool returns a structured rejection mentioning custom CSS / styles / the allow-custom-css flag.")]
+	public async Task PageUpdateTool_Should_Reject_Custom_Css_Styles_Without_Flag() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+		string customCssBody = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[" +
+			"{\"operation\":\"insert\",\"name\":\"RedLabel\",\"values\":{\"type\":\"crt.Label\"," +
+			"\"styles\":{\"color\":\"red\"}}}" +
+			"]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = "UsrCustomCss_FormPage",
+					["body"] = customCssBody,
+					["dry-run"] = true,
+					["environment-name"] = environmentName
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		PageUpdateResponse response = EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "the custom-CSS gate should surface as a structured update-page response, not a protocol-level error");
+		response.Success.Should().BeFalse(
+			because: "update-page must reject a body that introduces custom CSS unless the user has confirmed via allow-custom-css");
+		response.Error.Should().Contain("styles")
+			.And.Contain("allow-custom-css",
+				because: "the failure must name the offending 'styles' object and the allow-custom-css flag that authorizes it");
+	}
+
+	[Test]
+	[Description("Passes the custom-CSS gate when allow-custom-css=true is set for a body that introduces a 'styles' object; the response is not rejected on the custom-CSS ground.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page accepts custom CSS styles with allow-custom-css")]
+	[AllureDescription("Starts the real clio MCP server, invokes update-page in dry-run mode with a viewConfigDiff insert carrying a custom 'styles' object AND allow-custom-css=true, and verifies the response is not rejected because of the custom CSS.")]
+	public async Task PageUpdateTool_Should_Not_Reject_Custom_Css_Styles_With_Flag() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+		string customCssBody = "define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[" +
+			"{\"operation\":\"insert\",\"name\":\"RedLabel\",\"values\":{\"type\":\"crt.Label\"," +
+			"\"styles\":{\"color\":\"red\"}}}" +
+			"]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = "UsrCustomCss_FormPage",
+					["body"] = customCssBody,
+					["dry-run"] = true,
+					["allow-custom-css"] = true,
+					["environment-name"] = environmentName
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		PageUpdateResponse response = EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "allow-custom-css must be accepted and bound by the tool, not rejected as a protocol-level error");
+		(response.Error ?? string.Empty).Should().NotContain("allow-custom-css",
+			because: "with allow-custom-css=true the custom-CSS gate must not block the body — any failure must be for another reason");
+	}
+
+	[Test]
 	[Description("Rejects invalid handler section shape through update-page dry-run before any remote calls are attempted.")]
 	[AllureTag(ToolName)]
 	[AllureName("update-page rejects non-array handlers in dry-run mode")]

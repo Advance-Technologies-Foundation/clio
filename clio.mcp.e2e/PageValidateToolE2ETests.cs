@@ -451,6 +451,41 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 			because: "the rule id must be visible in the wire response so the agent can map the failure back to the guidance");
 	}
 
+	[Test]
+	[Description("validate-page reports a body that introduces a custom inline 'styles' object as a WARNING and keeps valid=true — proves the custom-CSS finding surfaces through the real MCP transport without blocking, and independent of any flag.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page warns on custom CSS styles without failing")]
+	[AllureDescription("Sends a page body whose inserted crt.Label carries a non-empty custom 'styles' object and verifies validate-page returns valid=true with a warning that names the node and the styles property.")]
+	public async Task PageValidateTool_Should_Warn_On_Custom_Css_Styles_Without_Failing() {
+		// Arrange
+		string bodyWithStyles = ValidPageBody.Replace(
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/",
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[" +
+				"{\"operation\":\"insert\",\"name\":\"RedLabel\",\"values\":{\"type\":\"crt.Label\"," +
+				"\"styles\":{\"color\":\"red\"}}}" +
+				"]/**SCHEMA_VIEW_CONFIG_DIFF*/");
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		PageValidateResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			bodyWithStyles);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "validate-page must never block a custom-CSS 'styles' object — it only reports it as a warning");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.ContentOk.Should().BeTrue(
+			because: "custom CSS is a warning on validate-page and must not demote content validation");
+		response.Validation.Warnings.Should().NotBeNullOrEmpty(
+			because: "the custom-CSS finding must be surfaced to the agent as a warning");
+		response.Validation.Warnings!.Should().Contain(
+			w => w.Contains("RedLabel") && w.Contains("styles"),
+			because: "the warning must name the node and the offending styles property");
+	}
+
 	private static async Task<PageValidateResponse> CallAsync(
 		McpServerSession session,
 		CancellationToken cancellationToken,

@@ -274,4 +274,32 @@ public sealed class ValidatePageToolTests {
 		requestedVersion.Should().Be("8.1.5",
 			because: "validate-page must scope its chart-widget pre-flight check to the version the agent passed");
 	}
+
+	[Test]
+	[Description("A web body that introduces a custom inline 'styles' object surfaces a warning and does NOT fail validation — validate-page reports custom CSS, never blocks it.")]
+	public async System.Threading.Tasks.Task ValidatePage_WhenBodyIntroducesCustomCssStyles_ReportsWarningWithoutFailing() {
+		// Arrange
+		PageValidateTool tool = CreateTool();
+		string amdBody =
+			"define(\"UsrPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
+			"function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/{ return { " +
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"RedLabel\",\"values\":{\"type\":\"crt.Label\",\"styles\":{\"color\":\"red\"}}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+			"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		PageValidateArgs args = new(amdBody, null);
+
+		// Act
+		PageValidateResponse response = await tool.ValidatePage(args);
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: "validate-page must never block a custom-CSS 'styles' object — it only reports it");
+		response.Validation.ContentOk.Should().BeTrue(
+			because: "custom CSS is a warning on validate-page and must not demote content validation");
+		response.Validation.Warnings.Should().Contain(w => w.Contains("RedLabel") && w.Contains("styles"),
+			because: "the custom-CSS finding must be surfaced as a warning naming the node and the styles property");
+	}
 }

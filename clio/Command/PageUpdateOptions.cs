@@ -92,6 +92,15 @@ namespace Clio.Command {
 		public bool Force { get; set; }
 
 		/// <summary>
+		/// Gets or sets a value indicating whether a body that introduces a custom inline <c>styles</c>
+		/// object (custom CSS) is allowed. When <c>false</c> (default) such a body is rejected so the agent
+		/// must first exhaust native component inputs, warn the user about the upgrade-compatibility risk,
+		/// and confirm before applying custom CSS.
+		/// </summary>
+		[Option("allow-custom-css", Required = false, HelpText = "Confirm applying custom CSS: allow a 'styles' object in the body. Without it, a body that introduces custom 'styles' is rejected so the agent must warn the user about upgrade-compatibility risk and confirm first.")]
+		public bool AllowCustomCss { get; set; }
+
+		/// <summary>
 		/// Gets or sets the editable schema UId recorded in the baseline. MCP-internal: populated
 		/// from <c>.clio-pages/{schema}/meta.json</c> by the MCP layer; not exposed as a CLI option
 		/// because it only makes sense together with the on-disk baseline.
@@ -765,6 +774,15 @@ namespace Clio.Command {
 					Error = "Mobile page validation failed: " + string.Join("; ", mobileResult.Errors)
 				};
 			}
+			if (!options.AllowCustomCss) {
+				SchemaValidationResult stylesResult = SchemaValidationService.ValidateMobileCustomCssStyles(options.Body);
+				if (!stylesResult.IsValid) {
+					return new PageUpdateResponse {
+						Success = false,
+						Error = "Body introduces custom CSS ('styles'): " + string.Join("; ", stylesResult.Errors)
+					};
+				}
+			}
 			return null;
 		}
 
@@ -815,6 +833,15 @@ namespace Clio.Command {
 					Success = false,
 					Error = $"Body contains invalid validator bindings: {string.Join("; ", validatorPlacementResult.Errors)}"
 				};
+			}
+			if (!options.AllowCustomCss) {
+				SchemaValidationResult stylesResult = SchemaValidationService.ValidateCustomCssStyles(options.Body);
+				if (!stylesResult.IsValid) {
+					return new PageUpdateResponse {
+						Success = false,
+						Error = "Body introduces custom CSS ('styles'): " + string.Join("; ", stylesResult.Errors)
+					};
+				}
 			}
 			return null;
 		}

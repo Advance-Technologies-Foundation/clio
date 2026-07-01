@@ -31,6 +31,12 @@ When `validate` is `true` (the default), the body is checked client-side before 
   **rejected**. Bind it via `$Resources.Strings.<Key>` (or `#ResourceString(<Key>)#` for data-grid
   column captions and validator messages) and register the key's default-language value through
   `resources`. Call `clio get-guidance --name page-schema-resources` for the full rule.
+- **Custom CSS is a last resort.** A page whose body introduces a custom inline `styles` object on a
+  component (at any nesting depth) is **rejected** unless that page carries `allow-custom-css: true`.
+  An empty `styles: {}`, `null`, or a non-object value is ignored. This gate is enforced per page
+  regardless of the batch `validate` flag. Exhaust native component inputs (see `get-component-info`)
+  first, then warn the user about the platform-upgrade-compatibility risk and get explicit
+  confirmation before setting `allow-custom-css`. `classes` are not gated.
 
 A malformed `VendorPrefix.Name` in any of these sections causes a Creatio runtime error:
 `"Error when register X. Type property should have format VendorPrefix.TypeName"`.
@@ -54,6 +60,7 @@ Each entry in the `pages` array must have:
 | `body` | Yes | Full JavaScript page body |
 | `resources` | No | JSON object string with resource key-value pairs for `#ResourceString(key)#` macros |
 | `force` | No | Skip the external-modification (checksum) conflict check for this page and deliberately overwrite out-of-band changes. Default `false` |
+| `allow-custom-css` | No | Confirm applying custom CSS for this page: allow a `styles` object in the body. Without it, a body that introduces custom `styles` is rejected. Default `false` |
 
 ## Example
 

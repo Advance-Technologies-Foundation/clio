@@ -388,6 +388,10 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "the verification rule must route the agent to get-component-info as the authoritative component catalog");
 		response.Article.Text.Should().Contain("ASK THE USER",
 			because: "the web page guide must tell the agent to ask the user (existing component vs custom) when no OOTB component matches");
+		response.Article.Text.Should().Contain("CUSTOM CSS IS A LAST RESORT",
+			because: "the web page guide must force native-property-first styling and warn-and-confirm before any custom CSS (ENG-92541)");
+		response.Article.Text.Should().Contain("break or conflict during future Creatio platform upgrades",
+			because: "the CSS warning must explicitly state the upgrade-compatibility risk before the agent asks for confirmation (ENG-92541)");
 	}
 
 	[Test]

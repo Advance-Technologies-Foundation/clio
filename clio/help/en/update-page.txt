@@ -46,6 +46,12 @@ DESCRIPTION
       literal. Bind via $Resources.Strings.<Key> (or #ResourceString(<Key>)#
       for grid column captions / validator messages) and register the key's
       default-language value with --resources. Inline literals are rejected.
+    - Custom CSS is a last resort. A body that introduces a custom inline
+      'styles' object on a component is REJECTED unless --allow-custom-css is
+      passed. Exhaust native component inputs (see get-component-info) first,
+      then warn the user about the platform-upgrade-compatibility risk and get
+      explicit confirmation before setting --allow-custom-css. (classes are not
+      gated.)
     A malformed VendorPrefix.Name causes a Creatio runtime error:
       "Error when register X. Type property should have format VendorPrefix.TypeName"
     - Call `clio get-guidance --name page-schema-converters` for converter details
@@ -101,6 +107,13 @@ OPTIONS
     --force                            Skip the external-modification check
                                        and deliberately overwrite out-of-band
                                        changes
+
+    --allow-custom-css                 Confirm applying custom CSS: allow a
+                                       'styles' object in the body. Without it,
+                                       a body that introduces custom 'styles'
+                                       is rejected so you must warn the user
+                                       about upgrade-compatibility risk and
+                                       confirm first
 
     --uri                    -u       Application uri
 
