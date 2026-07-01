@@ -62,7 +62,7 @@ internal sealed class TemporaryClioSettingsOverride : IDisposable {
 			processEnvironmentVariables);
 	}
 
-	private static string GetClioAppSettingsPath(
+	internal static string GetClioAppSettingsPath(
 		string? clioProcessPath = null,
 		IReadOnlyDictionary<string, string?>? processEnvironmentVariables = null) {
 		if (!string.IsNullOrWhiteSpace(clioProcessPath)) {

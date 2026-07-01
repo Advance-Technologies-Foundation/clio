@@ -251,6 +251,14 @@ public sealed class DescribedParameter {
 	[JsonPropertyName("name")]
 	public string Name { get; set; }
 
+	/// <summary>Parameter caption (title); null when unset.</summary>
+	[JsonPropertyName("caption")]
+	public string Caption { get; set; }
+
+	/// <summary>Parameter description (free-text annotation); null when unset.</summary>
+	[JsonPropertyName("description")]
+	public string Description { get; set; }
+
 	/// <summary>Parameter UId.</summary>
 	[JsonPropertyName("uid")]
 	public string UId { get; set; }
@@ -258,6 +266,10 @@ public sealed class DescribedParameter {
 	/// <summary>Data value type name (for example <c>ShortText</c>, <c>Integer</c>, <c>Lookup</c>); null when unset.</summary>
 	[JsonPropertyName("type")]
 	public string Type { get; set; }
+
+	/// <summary>Parameter direction: <c>In</c>, <c>Out</c>, <c>Variable</c>, or <c>Internal</c>; null when unset.</summary>
+	[JsonPropertyName("direction")]
+	public string Direction { get; set; }
 
 	/// <summary>For a lookup parameter: the referenced object (entity schema) name (for example <c>City</c>); null otherwise.</summary>
 	[JsonPropertyName("referenceSchema")]
