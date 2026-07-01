@@ -62,7 +62,11 @@ internal sealed class EntitySchemaDependencyResolver : IEntitySchemaDependencyRe
 			_dependencyManager.AddDependencies(targetPackageName,
 				candidatePackages.Select(name => new PackageDependencySpec(name)).ToList());
 			return true;
-		} catch (Exception ex) {
+		} catch (Exception ex) when (ex is not OutOfMemoryException) {
+			// Broad catch is intentional: FindSchemas and AddDependencies can fail with
+			// HttpRequestException, JsonException, InvalidOperationException, or ArgumentException
+			// depending on the remote state. None of these should abort the caller — the enriched
+			// error message in LoadSchema takes over when TryAutoResolve returns false.
 			_logger.WriteWarning($"Auto-dependency resolution failed for schema '{schemaName}': {ex.Message}");
 			return false;
 		}

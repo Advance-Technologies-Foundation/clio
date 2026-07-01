@@ -485,6 +485,60 @@ internal class RemoteEntitySchemaColumnManagerTests
 	}
 
 	[Test]
+	[Description("ModifyColumns throws the enriched error when auto-resolve cannot find any dependency to add (TryAutoResolve returns false) — the write path must not silently swallow the missing-schema condition (ENG-91314).")]
+	public void ModifyColumns_ShouldThrowEnrichedError_WhenAutoResolveReturnsFalse() {
+		// Arrange — schema is unavailable AND auto-resolve finds nothing.
+		SetupUnavailableSchema();
+		_dependencyResolver.TryAutoResolve("UsrVehicle", "UsrPkg").Returns(false);
+
+		// Act
+		Action act = () => _manager.ModifyColumn(new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "add",
+			ColumnName = "Name",
+			Type = "Text",
+			Title = "Vehicle name"
+		});
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>(
+			because: "when auto-resolve cannot add any dependency, the write path must surface the enriched diagnostic");
+		_dependencyResolver.Received(1).TryAutoResolve("UsrVehicle", "UsrPkg");
+	}
+
+	[Test]
+	[Description("ModifyColumns throws the enriched error when auto-resolve succeeds but the retried GetSchemaDesignItem still returns a null schema — the dependency was added but the schema remains inaccessible (ENG-91314).")]
+	public void ModifyColumns_ShouldThrowEnrichedError_WhenRetryAfterAutoResolveStillReturnsNullSchema() {
+		// Arrange — TryAutoResolve says it added a dependency, but the retried TryGet still returns null Schema.
+		_designerClient.TryGetSchemaDesignItem(Arg.Any<GetSchemaDesignItemRequestDto>(),
+				Arg.Any<Clio.Command.RemoteCommandOptions>())
+			.Returns(_ => new Clio.Command.EntitySchemaDesigner.DesignerResponse<EntityDesignSchemaDto> {
+				Success = false, Schema = null
+			});
+		_designerClient.GetSchemaDesignItem(Arg.Any<GetSchemaDesignItemRequestDto>(),
+				Arg.Any<Clio.Command.RemoteCommandOptions>())
+			.Returns<Clio.Command.EntitySchemaDesigner.DesignerResponse<EntityDesignSchemaDto>>(_ =>
+				throw new EntitySchemaDesignerException("Schema 'UsrVehicle' is not available in package 'UsrPkg'."));
+		_dependencyResolver.TryAutoResolve("UsrVehicle", "UsrPkg").Returns(true);
+
+		// Act
+		Action act = () => _manager.ModifyColumn(new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "add",
+			ColumnName = "Name",
+			Type = "Text",
+			Title = "Vehicle name"
+		});
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>(
+			because: "even after adding the dependency, an inaccessible schema must produce the enriched diagnostic rather than an NRE");
+		_dependencyResolver.Received(1).TryAutoResolve("UsrVehicle", "UsrPkg");
+	}
+
+	[Test]
 	[Description("Preserves all entity-level caption culture entries when a column mutation is applied, so that multi-language entity titles survive the LoadSchema-SaveSchema round-trip.")]
 	public void ModifyColumn_PreservesAllEntityCultureCaptions_WhenSchemaHasMultiCultureEntityCaption() {
 		// Arrange

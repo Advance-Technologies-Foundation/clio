@@ -65,8 +65,10 @@ internal sealed class EntitySchemaDependencyResolverTests
 		_capturedSpecs.Should().NotBeNull(because: "AddDependencies must have been called");
 		_capturedSpecs.Should().NotContain(s => s.Name == "Custom",
 			because: "the target package must be excluded to avoid a self-dependency");
-		_capturedSpecs.Select(s => s.Name).Should().Contain("CoreLeadOpportunity")
-			.And.Contain("CrtLeadOppMgmtApp");
+		_capturedSpecs.Select(s => s.Name).Should().Contain("CoreLeadOpportunity",
+				because: "all packages that own the schema must be added as dependencies")
+			.And.Contain("CrtLeadOppMgmtApp",
+				because: "all packages that own the schema must be added as dependencies");
 	}
 
 	[Test]
@@ -84,7 +86,8 @@ internal sealed class EntitySchemaDependencyResolverTests
 
 		// Assert
 		_capturedSpecs.Should().ContainSingle(because: "only CrtLeadOppMgmtApp should remain after excluding Custom");
-		_capturedSpecs[0].Name.Should().Be("CrtLeadOppMgmtApp");
+		_capturedSpecs[0].Name.Should().Be("CrtLeadOppMgmtApp",
+			because: "only the non-target package should remain as a dependency candidate");
 	}
 
 	[Test]
