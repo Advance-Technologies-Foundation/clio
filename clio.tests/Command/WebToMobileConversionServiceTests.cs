@@ -78,7 +78,8 @@ public sealed class WebToMobileConversionServiceTests {
 		IReadOnlyDictionary<string, ComponentRegistryEntry> mobileByType = null,
 		TemplateMappingRule templateRule = null,
 		IReadOnlyDictionary<string, string> containerNameMap = null,
-		IReadOnlySet<string> templateComponentNames = null) =>
+		IReadOnlySet<string> templateComponentNames = null,
+		IReadOnlyDictionary<string, ComponentMappingRule> componentNameMap = null) =>
 		WebToMobileAnalysisService.Analyze(
 			bundle, MobileTypes, WebTypes,
 			webByType ?? new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase),
@@ -86,7 +87,8 @@ public sealed class WebToMobileConversionServiceTests {
 			Rules, templateRule,
 			sourcePage: "UsrApp_FormPage", sourceTemplate: "PageWithTabsFreedomTemplate",
 			suggestedTarget: "UsrApp_MobileFormPage", containerNameMap: containerNameMap,
-			templateComponentNames: templateComponentNames);
+			templateComponentNames: templateComponentNames,
+			componentNameMap: componentNameMap);
 
 	private static ComponentSuggestion ForType(MobilePageConversionGuide guide, string sourceType) =>
 		guide.ComponentSuggestions.Single(s => s.SourceType == sourceType);
@@ -758,6 +760,42 @@ public sealed class WebToMobileConversionServiceTests {
 		HashSet<string> names = WebToMobileAnalysisService.CollectComponentNames(tree);
 
 		names.Should().BeEquivalentTo("Root", "Header", "Title", "Body");
+	}
+
+	[Test]
+	[Description("A component mapped in the template's components block (DataTable→List) is KEPT through baseline subtraction and recorded as a merge-by-name twin; no duplicate is inserted. clio adds no component-specific transform — the row how-to is type-driven and surfaced in componentSuggestions.")]
+	public void Analyze_TemplateComponentTwin_IsKeptAndMergedByName_NoHardcodedTransform() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "ListContainer", "type": "crt.FlexContainer", "items": [
+				{ "name": "DataTable", "type": "crt.DataGrid", "columns": [
+					{ "code": "PDS_LeadName", "sticky": true },
+					{ "code": "PDS_Status", "path": "Status", "referenceSchemaName": "LeadStatus" } ] } ] } ]
+			""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.DataGrid", false));
+		var containerNameMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["ListContainer"] = "ListContainer" };
+		var componentNameMap = new Dictionary<string, ComponentMappingRule>(StringComparer.OrdinalIgnoreCase) {
+			["DataTable"] = new ComponentMappingRule { Web = "DataTable", Mobile = "List", Note = "Primary list component." }
+		};
+		// DataTable is provided by the web list template (it is in the baseline). Without the components map it
+		// would be pruned as chrome; the map keeps it so it can be converted.
+		IReadOnlySet<string> templateNames = Names("ListContainer", "DataTable");
+
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, containerNameMap: containerNameMap,
+			templateComponentNames: templateNames, componentNameMap: componentNameMap);
+
+		// Kept (not pruned) and surfaced in the structure.
+		guide.SourceStructure.Should().Contain(s => s.Name == "DataTable");
+		// Recorded as a single merge-by-name twin into the template-provided mobile element.
+		ElementMapEntry twin = guide.ElementMap.Single(e => e.WebName == "DataTable");
+		twin.Operation.Should().Be("merge");
+		twin.MobileName.Should().Be("List");
+		// No component-specific values are prebuilt by clio; the how-to is delegated to componentSuggestions.
+		twin.MobileValues.Should().BeNull();
+		twin.Reason.Should().Contain("Primary list component.").And.Contain("componentSuggestions");
+		// No duplicate insert for the grid; the conversion detail lives in the general components rule.
+		guide.ElementMap.Should().NotContain(e => e.WebName == "DataTable" && e.Operation == "insert");
+		guide.ComponentSuggestions.Should().Contain(s => s.SourceType == "crt.DataGrid");
 	}
 
 	#endregion

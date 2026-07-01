@@ -64,6 +64,27 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			  - constraints + nextSteps — the hard mobile rules and the ordered flow.
 
 			─────────────────────────────────────────────────────────────
+			GATES — MANDATORY HARD STOPS (analysis-first: nothing is written until the developer approves)
+			─────────────────────────────────────────────────────────────
+			This conversion is advisory-first. Running the guide and presenting the plan WRITE NOTHING.
+			Persistence and section registration each require the developer's EXPLICIT approval, given as a
+			separate response AFTER you show a plain-language plan:
+			- Gate M (before ANY write): after running get-mobile-page-conversion-guide, present the
+			  plain-language plan (what transfers / is adapted / is unsupported / needs a decision, plus the
+			  section-registration intent) and STOP. Do NOT call create-page, update-page, validate-page, or
+			  create-page-business-rule until the developer explicitly approves the plan.
+			- Gate S (before ANY section/workplace registration): do NOT call odata-update / odata-create
+			  (SysModule / SysModuleInWorkplace / SysWorkplace) or register-related-page until the developer
+			  SEPARATELY approves the registration. Registering as a section is always the user's decision.
+			- The user's initial request is NOT approval. "convert page X to mobile and register it as a
+			  section" states the request, not approval of the plan. Present the plan, then wait for a
+			  separate explicit go-ahead.
+			- Headless / autonomous mode: never self-approve. Produce the plan, ask for confirmation, and END
+			  THE TURN without writing or registering anything.
+			These gate rules are authoritative on their own — the plan, the approval handshake, and the
+			conversion report are all described in this guide; do not depend on any external document.
+
+			─────────────────────────────────────────────────────────────
 			FLOW
 			─────────────────────────────────────────────────────────────
 			1. Run get-mobile-page-conversion-guide with the source page schema-name.
@@ -73,7 +94,9 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			2. Read the guide. Present its summary to the user: the recommended template, what maps
 			   directly, what has a mobile alternative, what is UNSUPPORTED, and what REQUIRES A MANUAL
 			   DECISION. Resolve the unsupported / requiresManualDecision items WITH THE USER.
-			3. Create the target mobile page from recommendedMobileTemplate (list-page-templates with
+			   — then STOP at Gate M (see GATES above): present the plain-language plan and do NOT proceed to
+			   step 3 until the developer explicitly approves. The user's initial request is not approval.
+			3. Create the target mobile page from recommendedMobileTemplate — ONLY after Gate M — (list-page-templates with
 			   schema-type "mobile" to confirm; create-page). The template provides the Scaffold root —
 			   do NOT add a second Scaffold.
 			4. Build the mobile body (plain JSON: viewConfigDiff / viewModelConfigDiff / modelConfigDiff)

@@ -59,6 +59,17 @@ public sealed class TemplateMappingRule {
 	[JsonPropertyName("containers")]
 	public IReadOnlyList<ContainerMappingRule> Containers { get; init; } = [];
 
+	/// <summary>
+	/// Named CONTENT-component correspondence between the web template and the mobile template
+	/// (analogous to <see cref="Containers"/>, but for components rather than layout containers).
+	/// A web element listed here is NOT removed as inherited template chrome; instead its <c>merge</c>
+	/// is converted to mobile properties on the mapped mobile element (configured by merge-by-name).
+	/// For a grid (e.g. the list template's <c>DataTable</c>), set <see cref="ComponentMappingRule.Row"/>
+	/// so the grid columns build the mobile list row.
+	/// </summary>
+	[JsonPropertyName("components")]
+	public IReadOnlyList<ComponentMappingRule> Components { get; init; } = [];
+
 	[JsonPropertyName("note")]
 	public string Note { get; init; }
 }
@@ -75,6 +86,31 @@ public sealed class ContainerMappingRule {
 	[JsonPropertyName("mobile")]
 	public string Mobile { get; init; }
 
+	[JsonPropertyName("note")]
+	public string Note { get; init; }
+}
+
+/// <summary>
+/// Maps a web component to its mobile counterpart by element NAME within a template pair (any content
+/// component, not just a list). Unlike <see cref="ComponentEquivalenceRule"/> (which maps component TYPES
+/// globally and carries the conversion detail), this is per-template and keyed by the element name the
+/// template provides (e.g. the list template's grid named "DataTable"). A mapped element is kept through
+/// inherited-template-chrome subtraction and configured by merge-by-name; HOW to convert it is type-driven
+/// and comes from the general components rule (surfaced in <c>componentSuggestions</c>) — not from here.
+/// </summary>
+public sealed class ComponentMappingRule {
+	/// <summary>Web element name (e.g. "DataTable").</summary>
+	[JsonPropertyName("web")]
+	public string Web { get; init; }
+
+	/// <summary>
+	/// Mobile element name it corresponds to (e.g. "List"). The mobile template provides this element;
+	/// it is configured by merge-by-name (not inserted as a duplicate).
+	/// </summary>
+	[JsonPropertyName("mobile")]
+	public string Mobile { get; init; }
+
+	/// <summary>Business meaning of the element (e.g. "Primary list component"), not conversion mechanics.</summary>
 	[JsonPropertyName("note")]
 	public string Note { get; init; }
 }

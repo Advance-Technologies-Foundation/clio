@@ -145,6 +145,7 @@ public sealed class MobilePageConversionGuideTool {
 		WebToMobilePageConversionRules rules = await _rulesCatalog.GetRulesAsync(version, cancellationToken).ConfigureAwait(false);
 		TemplateMappingRule templateRule = ResolveTemplateRule(rules, pageResponse.Page?.ParentSchemaName);
 		IReadOnlyDictionary<string, string> containerNameMap = BuildContainerNameMap(templateRule);
+		IReadOnlyDictionary<string, ComponentMappingRule> componentNameMap = BuildComponentNameMap(templateRule);
 
 		// Read the source page's web template (its parent schema) so its inherited chrome can be
 		// filtered out of the conversion: the merged page tree carries the template's header/scaffold
@@ -180,7 +181,8 @@ public sealed class MobilePageConversionGuideTool {
 				containerNameMap: containerNameMap,
 				sectionRegistration: sectionRegistration,
 				pageBusinessRulesProbe: pageBusinessRules,
-				templateComponentNames: templateComponentNames);
+				templateComponentNames: templateComponentNames,
+				componentNameMap: componentNameMap);
 		} catch (Exception ex) {
 			return Fail(args, sourceType, $"Failed to analyze source page '{args.SchemaName}': {ex.Message}");
 		}
@@ -276,6 +278,25 @@ public sealed class MobilePageConversionGuideTool {
 		foreach (ContainerMappingRule c in rule.Containers) {
 			if (!string.IsNullOrWhiteSpace(c?.Web) && !string.IsNullOrWhiteSpace(c.Mobile)) {
 				map[c.Web] = c.Mobile;
+			}
+		}
+		return map.Count > 0 ? map : null;
+	}
+
+	/// <summary>
+	/// Builds a web-element-name → mapping-rule dictionary from the matched template rule's component
+	/// correspondence (analogous to <see cref="BuildContainerNameMap"/>, but for content components such
+	/// as the list template's grid). A mapped element is kept through template-chrome subtraction and
+	/// converted by merge-by-name. Returns null when there is no rule or no component entries.
+	/// </summary>
+	internal static IReadOnlyDictionary<string, ComponentMappingRule> BuildComponentNameMap(TemplateMappingRule rule) {
+		if (rule?.Components is null || rule.Components.Count == 0) {
+			return null;
+		}
+		var map = new Dictionary<string, ComponentMappingRule>(StringComparer.OrdinalIgnoreCase);
+		foreach (ComponentMappingRule c in rule.Components) {
+			if (!string.IsNullOrWhiteSpace(c?.Web) && !string.IsNullOrWhiteSpace(c.Mobile)) {
+				map[c.Web] = c;
 			}
 		}
 		return map.Count > 0 ? map : null;

@@ -62,7 +62,8 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, string> containerNameMap,
 		SectionRegistrationInfo sectionRegistration = null,
 		PageBusinessRuleProbeResult pageBusinessRulesProbe = null,
-		IReadOnlySet<string> templateComponentNames = null) {
+		IReadOnlySet<string> templateComponentNames = null,
+		IReadOnlyDictionary<string, ComponentMappingRule> componentNameMap = null) {
 		ArgumentNullException.ThrowIfNull(bundle);
 		ArgumentNullException.ThrowIfNull(mobileTypes);
 		ArgumentNullException.ThrowIfNull(webTypes);
@@ -70,6 +71,8 @@ public static class WebToMobileAnalysisService {
 
 		IReadOnlyDictionary<string, string> map =
 			containerNameMap ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+		IReadOnlyDictionary<string, ComponentMappingRule> componentMap =
+			componentNameMap ?? new Dictionary<string, ComponentMappingRule>(StringComparer.OrdinalIgnoreCase);
 
 		// 0. Filter out the web template's own components at read time. The merged tree carries the
 		//    chrome the source page inherits from its web template (e.g. PageWithTabsFreedomTemplate:
@@ -79,7 +82,7 @@ public static class WebToMobileAnalysisService {
 		JArray tree = bundle.ViewConfig is null ? new JArray() : JArray.Parse(bundle.ViewConfig.ToJsonString());
 		bool templatePruned = false;
 		if (templateComponentNames is { Count: > 0 }) {
-			tree = PruneTemplateComponents(tree, map, templateComponentNames);
+			tree = PruneTemplateComponents(tree, map, componentMap, templateComponentNames);
 			templatePruned = true;
 		}
 
@@ -115,7 +118,7 @@ public static class WebToMobileAnalysisService {
 		var flaggedRequests = new List<FlaggedRequest>();
 		var sourcePlacements = new Dictionary<string, (int? Col, int? Row)>(StringComparer.OrdinalIgnoreCase);
 		List<ElementMapEntry> elementMap = BuildElementMap(
-			tree, map, mobileTypes, mobileByType, rules, attrToDs, attrToColumn, dataSourceSet, primaryDs, resources,
+			tree, map, componentMap, mobileTypes, mobileByType, rules, attrToDs, attrToColumn, dataSourceSet, primaryDs, resources,
 			requestMap, convertedRequests, droppedRequests, flaggedRequests, sourcePlacements);
 		RequestConversionInfo requestConversions = BuildRequestConversionInfo(convertedRequests, droppedRequests, flaggedRequests);
 
@@ -348,6 +351,7 @@ public static class WebToMobileAnalysisService {
 	private static JArray PruneTemplateComponents(
 		JArray nodes,
 		IReadOnlyDictionary<string, string> containerNameMap,
+		IReadOnlyDictionary<string, ComponentMappingRule> componentMap,
 		IReadOnlySet<string> baseline) {
 		var result = new JArray();
 		foreach (JToken token in nodes) {
@@ -357,20 +361,25 @@ public static class WebToMobileAnalysisService {
 			}
 			string name = node["name"]?.ToString();
 			JArray items = node["items"] as JArray;
+			// Kept despite being in the baseline: a container twin (merge target) or a component twin
+			// (a content element the template maps web→mobile, e.g. the list grid — its merge carries
+			// the page's delta, like grid columns, that the conversion needs).
+			bool isMappedTwin = !string.IsNullOrEmpty(name)
+				&& (containerNameMap.ContainsKey(name) || (componentMap is not null && componentMap.ContainsKey(name)));
 			bool isTemplateOwned = !string.IsNullOrEmpty(name)
 				&& baseline.Contains(name)
-				&& !containerNameMap.ContainsKey(name);
+				&& !isMappedTwin;
 			if (isTemplateOwned) {
 				// Drop the template node itself; hoist any surviving (application) descendants up.
 				if (items is not null) {
-					foreach (JToken survivor in PruneTemplateComponents(items, containerNameMap, baseline)) {
+					foreach (JToken survivor in PruneTemplateComponents(items, containerNameMap, componentMap, baseline)) {
 						result.Add(survivor);
 					}
 				}
 				continue;
 			}
 			if (items is not null) {
-				node["items"] = PruneTemplateComponents(items, containerNameMap, baseline);
+				node["items"] = PruneTemplateComponents(items, containerNameMap, componentMap, baseline);
 			}
 			result.Add(node);
 		}
@@ -733,6 +742,7 @@ public static class WebToMobileAnalysisService {
 	/// <summary>Carries the read-only inputs of the element-map pass so the recursion stays terse.</summary>
 	private sealed record ElementMapContext(
 		IReadOnlyDictionary<string, string> Map,
+		IReadOnlyDictionary<string, ComponentMappingRule> ComponentMap,
 		IReadOnlySet<string> MobileTypes,
 		IReadOnlyDictionary<string, ComponentRegistryEntry> MobileByType,
 		WebToMobilePageConversionRules Rules,
@@ -756,6 +766,7 @@ public static class WebToMobileAnalysisService {
 	private static List<ElementMapEntry> BuildElementMap(
 		JArray tree,
 		IReadOnlyDictionary<string, string> map,
+		IReadOnlyDictionary<string, ComponentMappingRule> componentMap,
 		IReadOnlySet<string> mobileTypes,
 		IReadOnlyDictionary<string, ComponentRegistryEntry> mobileByType,
 		WebToMobilePageConversionRules rules,
@@ -769,7 +780,9 @@ public static class WebToMobileAnalysisService {
 		List<DroppedRequest> droppedRequests,
 		List<FlaggedRequest> flaggedRequests,
 		Dictionary<string, (int? Col, int? Row)> sourcePlacements) {
-		var ctx = new ElementMapContext(map, mobileTypes, mobileByType ?? new Dictionary<string, ComponentRegistryEntry>(),
+		var ctx = new ElementMapContext(map,
+			componentMap ?? new Dictionary<string, ComponentMappingRule>(StringComparer.OrdinalIgnoreCase),
+			mobileTypes, mobileByType ?? new Dictionary<string, ComponentRegistryEntry>(),
 			rules, attrToDs, attrToColumn, dataSources, primaryDs, resources, RelocateTargetFor(map), [],
 			requestMap, convertedRequests, droppedRequests, flaggedRequests, sourcePlacements);
 		WalkElements(ctx, tree, mobileParentName: null, parentIsTabs: false);
@@ -806,6 +819,23 @@ public static class WebToMobileAnalysisService {
 				});
 				if (items is not null) {
 					WalkElements(ctx, items, twinMobileName, string.Equals(twinMobileName, "Tabs", StringComparison.OrdinalIgnoreCase));
+				}
+				continue;
+			}
+
+			// 1b. component twin — a content component the template maps web→mobile by NAME (e.g. the list
+			//     template's grid "DataTable" → mobile "List"). It is NOT template chrome: it is kept and
+			//     configured by merge-by-name. HOW to convert it (e.g. a grid's columns → the list row) is
+			//     type-driven — it lives in the general components rule and is surfaced in
+			//     componentSuggestions[<type>]; clio hardcodes no component-specific transform here.
+			if (ctx.ComponentMap.TryGetValue(name, out ComponentMappingRule compRule)) {
+				ctx.Out.Add(new ElementMapEntry {
+					WebName = name, WebType = Nz(type), Operation = "merge", MobileName = compRule.Mobile,
+					MobileType = ctx.MobileTypes.Contains(type ?? "") ? type : null,
+					Reason = ComponentTwinReason(name, type, compRule)
+				});
+				if (items is not null) {
+					WalkElements(ctx, items, compRule.Mobile, parentIsTabs: false);
 				}
 				continue;
 			}
@@ -874,6 +904,20 @@ public static class WebToMobileAnalysisService {
 				Reason = "field/leaf; mobile-supported"
 			});
 		}
+	}
+
+	/// <summary>
+	/// The reason line for a template-mapped component twin: the rule's business <c>note</c> (what the
+	/// element is) plus a pointer to the type-driven conversion detail in <c>componentSuggestions</c>. clio
+	/// keeps no component-specific transform — the "how" (e.g. a grid's columns → the list row) is defined
+	/// by the general components rule and surfaced there for the model to apply.
+	/// </summary>
+	private static string ComponentTwinReason(string name, string type, ComponentMappingRule rule) {
+		string basis = !string.IsNullOrWhiteSpace(rule.Note) ? rule.Note : $"web '{name}' maps to mobile '{rule.Mobile}'";
+		string detail = string.IsNullOrEmpty(type)
+			? $"template-provided element — configure '{rule.Mobile}' by merge-by-name (do not insert a duplicate)"
+			: $"template-provided element — configure '{rule.Mobile}' by merge-by-name per componentSuggestions[\"{type}\"] (do not insert a duplicate)";
+		return $"{basis} — {detail}";
 	}
 
 	/// <summary>Returns a referenced data source other than the primary one (multi-data-source), or null.</summary>
