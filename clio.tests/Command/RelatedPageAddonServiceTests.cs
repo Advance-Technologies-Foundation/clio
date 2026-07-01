@@ -154,24 +154,28 @@ public sealed class RelatedPageAddonServiceTests {
 	}
 
 	[Test]
-	[Description("Stores an explicit role UId and the top-level type-column UId into the saved metadata.")]
+	[Description("Stores an explicit role UId (on a role-scoped set layered over the role-less base) and the top-level type-column UId into the saved metadata.")]
 	public void Create_ShouldStoreRoleAndTypeColumnIntoMetadata_WhenProvided() {
 		// Arrange
 		const string roleUId = "a29a3ba5-4b0d-de11-9a51-005056c00008";
 		const string typeColumnUId = "dd000000-0000-0000-0000-000000000003";
-		StubSelectQueue(Rows(PackageUId), Rows(PageAUId));
+		StubSelectQueue(Rows(PackageUId), Rows(PageAUId), Rows(PageBUId));
 
-		// Act
+		// Act — a role-less base default plus a role-scoped default layered on top.
 		_service.Create(new RelatedPageAddonRequest("Custom", "UsrDeliveryItem", new[] {
-			new RelatedPageSpec("UsrDeliveryItemFormPage", IsDefault: true, Role: roleUId)
+			new RelatedPageSpec("UsrDeliveryItemFormPage", IsDefault: true),
+			new RelatedPageSpec("UsrDeliveryItemRolePage", IsDefault: true, Role: roleUId)
 		}, typeColumnUId));
 
 		// Assert
 		JsonNode metadata = JsonNode.Parse(_savedSchema.MetaData)!;
 		metadata["TypeColumnUId"]!.GetValue<string>().Should().Be(typeColumnUId,
 			because: "the type column UId is stored at the top of the metadata");
-		metadata["Pages"]!.AsArray()[0]!["Role"]!.GetValue<string>().Should().Be(roleUId,
-			because: "an explicit role UId is written verbatim onto the page entry");
+		JsonArray pages = metadata["Pages"]!.AsArray();
+		pages[0]!["Role"].Should().BeNull(
+			because: "the base default is role-less");
+		pages[1]!["Role"]!.GetValue<string>().Should().Be(roleUId,
+			because: "an explicit role UId is written verbatim onto the role-scoped page entry");
 	}
 
 	[Test]
@@ -293,18 +297,19 @@ public sealed class RelatedPageAddonServiceTests {
 	[Description("Resolves a non-system (custom) role name to its SysAdminUnit Id via the by-name query and writes it onto the page entry.")]
 	public void Create_ShouldResolveCustomRoleNameIntoPageRole_WhenRoleNameProvided() {
 		// Arrange — a non-system role name is resolved via the SysAdminUnit by-name query.
-		// Resolution order: package, role (by name), then the page.
+		// Resolution order: package, role (by name, once), then each page.
 		const string customRoleUId = "11112222-3333-4444-5555-666677778888";
-		StubSelectQueue(Rows(PackageUId), RoleRows(customRoleUId), Rows(PageAUId));
+		StubSelectQueue(Rows(PackageUId), RoleRows(customRoleUId), Rows(PageAUId), Rows(PageBUId));
 
-		// Act
+		// Act — a role-less base default plus a role-scoped set layered on top.
 		_service.Create(new RelatedPageAddonRequest("Custom", "UsrDeliveryItem", new[] {
+			new RelatedPageSpec("UsrDeliveryItemFormPage", IsDefault: true),
 			new RelatedPageSpec("UsrDeliveryItemPortalPage", IsDefault: true, RoleName: "Sales Managers")
 		}, null));
 
 		// Assert
 		JsonArray pages = JsonNode.Parse(_savedSchema.MetaData)!["Pages"]!.AsArray();
-		pages[0]!["Role"]!.GetValue<string>().Should().Be(customRoleUId,
+		pages[1]!["Role"]!.GetValue<string>().Should().Be(customRoleUId,
 			because: "a custom audience role name must be resolved to its SysAdminUnit Id in the saved metadata");
 	}
 
@@ -314,16 +319,17 @@ public sealed class RelatedPageAddonServiceTests {
 		// Arrange — "All external users" is a standard platform role: it resolves to its fixed seeded Id
 		// without a SysAdminUnit lookup, so the only SelectQueries are package and page resolution.
 		const string portalRoleUId = "720b771c-e7a7-4f31-9cfb-52cd21c3739f";
-		StubSelectQueue(Rows(PackageUId), Rows(PageAUId));
+		StubSelectQueue(Rows(PackageUId), Rows(PageAUId), Rows(PageBUId));
 
-		// Act
+		// Act — a role-less base default plus the portal ("All external users") set layered on top.
 		_service.Create(new RelatedPageAddonRequest("Custom", "UsrDeliveryItem", new[] {
+			new RelatedPageSpec("UsrDeliveryItemFormPage", IsDefault: true),
 			new RelatedPageSpec("UsrDeliveryItemPortalPage", IsDefault: true, RoleName: "All external users")
 		}, null));
 
 		// Assert
 		JsonArray pages = JsonNode.Parse(_savedSchema.MetaData)!["Pages"]!.AsArray();
-		pages[0]!["Role"]!.GetValue<string>().Should().Be(portalRoleUId,
+		pages[1]!["Role"]!.GetValue<string>().Should().Be(portalRoleUId,
 			because: "the standard portal role name resolves to its fixed platform Id, not a queried unit with the same name");
 	}
 
@@ -392,11 +398,12 @@ public sealed class RelatedPageAddonServiceTests {
 	[Test]
 	[Description("Fails without saving when a custom role name cannot be resolved to a SysAdminUnit.")]
 	public void Create_ShouldThrowWithoutSaving_WhenRoleNameNotFound() {
-		// Arrange
+		// Arrange — package resolves, then the custom role lookup returns no rows.
 		StubSelectQueue(Rows(PackageUId), """{"success": true, "rows": []}""");
 
-		// Act
+		// Act — a role-less base default keeps the request valid so it reaches role-name resolution.
 		Action act = () => _service.Create(new RelatedPageAddonRequest("Custom", "UsrDeliveryItem", new[] {
+			new RelatedPageSpec("UsrDeliveryItemFormPage", IsDefault: true),
 			new RelatedPageSpec("UsrDeliveryItemPortalPage", IsDefault: true, RoleName: "No Such Role")
 		}, null));
 
@@ -608,25 +615,26 @@ public sealed class RelatedPageAddonServiceTests {
 	[Test]
 	[Description("Resolves a custom role name only once even when several pages target the same audience, avoiding a redundant SysAdminUnit query per page.")]
 	public void Create_ShouldResolveCustomRoleNameOnlyOnce_WhenSharedByMultiplePages() {
-		// Arrange — package, ONE role query (deduped), then one query per distinct page. If the role were
-		// re-queried per page the queue would be exhausted and Dequeue would throw.
+		// Arrange — package, ONE role query (deduped across the two role-scoped pages), then one query per distinct
+		// page. If the role were re-queried per page the queue would be exhausted and Dequeue would throw.
 		const string customRoleUId = "11112222-3333-4444-5555-666677778888";
-		StubSelectQueue(Rows(PackageUId), RoleRows(customRoleUId), Rows(PageAUId), Rows(PageBUId));
+		StubSelectQueue(Rows(PackageUId), RoleRows(customRoleUId), Rows(PageAUId), Rows(PageBUId), Rows(PageBUId));
 
-		// Act
+		// Act — a role-less base default plus a custom-role default+add set layered on top.
 		_service.Create(new RelatedPageAddonRequest("Custom", "UsrDeliveryItem", new[] {
-			new RelatedPageSpec("UsrDeliveryItemFormPage", IsDefault: true, RoleName: "Sales Managers"),
-			new RelatedPageSpec("UsrDeliveryItemAddPage", IsAdd: true, RoleName: "Sales Managers")
+			new RelatedPageSpec("UsrDeliveryItemFormPage", IsDefault: true),
+			new RelatedPageSpec("UsrDeliveryItemPortalPage", IsDefault: true, RoleName: "Sales Managers"),
+			new RelatedPageSpec("UsrDeliveryItemPortalAddPage", IsAdd: true, RoleName: "Sales Managers")
 		}, null));
 
-		// Assert — exactly one SysAdminUnit (role by-name) query was issued for the two pages.
+		// Assert — exactly one SysAdminUnit (role by-name) query was issued for the two role-scoped pages.
 		_applicationClient.Received(1).ExecutePostRequest(SelectQueryUrl,
 			Arg.Is<string>(body => body.Contains("SysAdminUnit")));
 		JsonArray pages = JsonNode.Parse(_savedSchema.MetaData)!["Pages"]!.AsArray();
-		pages[0]!["Role"]!.GetValue<string>().Should().Be(customRoleUId,
-			because: "both pages share the single resolved custom-role Id");
 		pages[1]!["Role"]!.GetValue<string>().Should().Be(customRoleUId,
-			because: "the second page reuses the resolved role without a second query");
+			because: "the role-scoped default uses the single resolved custom-role Id");
+		pages[2]!["Role"]!.GetValue<string>().Should().Be(customRoleUId,
+			because: "the role-scoped add page reuses the resolved role without a second query");
 	}
 
 	[Test]
@@ -642,5 +650,20 @@ public sealed class RelatedPageAddonServiceTests {
 		JsonArray pages = JsonNode.Parse(_savedSchema.MetaData)!["Pages"]!.AsArray();
 		pages[0]!["Role"].Should().BeNull(
 			because: "a role-less page set applies to all users and is written with a null Role");
+	}
+
+	[Test]
+	[Description("Rejects a configuration whose only untyped default is role-scoped (no role-less base default) before any remote call, so every audience keeps a page to open.")]
+	public void Create_ShouldThrow_WhenBaseDefaultIsRoleScoped() {
+		// Arrange / Act — a single default scoped to the portal role, with no role-less base default.
+		Action act = () => _service.Create(new RelatedPageAddonRequest("Custom", "UsrDeliveryItem", new[] {
+			new RelatedPageSpec("UsrDeliveryItemPortalPage", IsDefault: true, RoleName: "All external users")
+		}, null));
+
+		// Assert
+		act.Should().Throw<ArgumentException>().WithMessage("*role-less base default*",
+			because: "an audience-scoped-only default leaves other audiences with no page to open; a role-less base is required");
+		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!);
+		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().SaveSchema(default!);
 	}
 }

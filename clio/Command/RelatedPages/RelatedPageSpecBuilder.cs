@@ -9,9 +9,8 @@ namespace Clio.Command.RelatedPages;
 /// command stays a thin front-end and this mapping is unit-testable on its own.
 /// </summary>
 public static class RelatedPageSpecBuilder {
-	// Standard platform role names. The related-page audience is conveyed by the role on each page entry
-	// (verified against Cases: "All employees" vs "All external users" sets — IsSspDefault stays false).
-	public const string EmployeesRoleName = "All employees";
+	// The portal (self-service) audience role name. A portal page set is layered on top of the role-less base
+	// as an "All external users" override (verified against Cases; IsSspDefault stays false).
 	public const string PortalRoleName = "All external users";
 
 	/// <summary>
@@ -41,13 +40,11 @@ public static class RelatedPageSpecBuilder {
 				"--portal-add-page requires --portal-default-page: the portal audience needs a default page to open a "
 				+ "record, not just an add page.");
 		}
-		bool hasPortal = !string.IsNullOrWhiteSpace(portalDefaultPage)
-			|| !string.IsNullOrWhiteSpace(portalAddPage);
-		// With a portal audience configured the employee pages must be scoped to "All employees" so the two
-		// audiences stay separate sets; without it, the employee pages stay role-less (apply to everyone).
-		string employeeRole = hasPortal ? EmployeesRoleName : null;
 		var built = new List<RelatedPageSpec>();
-		AddAudiencePages(built, defaultPage, addPage, employeeRole);
+		// The base default is always role-less so it applies to EVERY user — a role-less base default is mandatory
+		// (see RelatedPageAddonService.ValidateRequest). A portal page is layered on top as an "All external users"
+		// override: portal users match that more specific set, everyone else falls back to the role-less base.
+		AddAudiencePages(built, defaultPage, addPage, roleName: null);
 		AddAudiencePages(built, portalDefaultPage, portalAddPage, PortalRoleName);
 		return built;
 	}

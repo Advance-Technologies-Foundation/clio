@@ -29,8 +29,8 @@ public sealed class CreateRelatedPageAddonCommandTests {
 	}
 
 	[Test]
-	[Description("Building specs from CLI scalar options with a portal page scopes the employee set to 'All employees' and the portal set to 'All external users'.")]
-	public void TryCreate_ShouldScopeEachAudienceByRoleName_WhenPortalPageProvided() {
+	[Description("Building specs from CLI scalar options with a portal page emits a role-less base set (applies to all users) plus an 'All external users' portal override on top.")]
+	public void TryCreate_ShouldEmitRoleLessBaseAndPortalOverride_WhenPortalPageProvided() {
 		// Arrange
 		CreateRelatedPageAddonOptions options = new() {
 			EntitySchemaName = "Case",
@@ -48,12 +48,12 @@ public sealed class CreateRelatedPageAddonCommandTests {
 			because: "the request resolves successfully when both audiences are supplied");
 		_captured.Should().NotBeNull(
 			because: "the command must forward a built request to the related-page service");
-		_captured.Pages.Should().Contain(page => page.RoleName == "All employees" && page.IsDefault,
-			because: "the internal default page is scoped to All employees once a portal audience is also configured");
-		_captured.Pages.Should().Contain(page => page.RoleName == "All employees" && page.IsAdd,
-			because: "the internal add page is scoped to All employees alongside the internal default page");
+		_captured.Pages.Should().Contain(page => string.IsNullOrEmpty(page.RoleName) && page.IsDefault,
+			because: "the base default is role-less so it applies to every user (a role-less base default is always required)");
+		_captured.Pages.Should().Contain(page => string.IsNullOrEmpty(page.RoleName) && page.IsAdd,
+			because: "the base add page is role-less alongside the base default");
 		_captured.Pages.Should().Contain(page => page.RoleName == "All external users" && page.IsDefault,
-			because: "portal-default-page binds the All external users (portal) audience");
+			because: "portal-default-page is layered on top as an All external users override");
 		_captured.Pages.Should().Contain(page => page.RoleName == "All external users" && page.IsAdd,
 			because: "the portal add page defaults to the portal default page");
 	}

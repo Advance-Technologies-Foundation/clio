@@ -131,15 +131,6 @@ internal sealed class RelatedPageAddonService(
 		if (request.Pages is null || request.Pages.Count == 0) {
 			throw new ArgumentException("At least one page is required.");
 		}
-		// A base default page is mandatory: there must be at least one is-default entry with no
-		// type-column-value — the page opened for a record and the fallback when a record's type has no
-		// dedicated set. The Interface Designer does not enforce this, so an add-only or typed-only
-		// configuration would silently leave records with no page to open. Reject it before any remote call.
-		if (!request.Pages.Any(page => page.IsDefault && string.IsNullOrWhiteSpace(page.TypeColumnValue))) {
-			throw new ArgumentException(
-				"A base default page is required: include one page with is-default=true and no type-column-value "
-				+ "(the page opened for a record and the fallback when a record's type has no dedicated set).");
-		}
 		// A per-page type-column-value is meaningless without the type column it keys on: the platform matches
 		// typed page sets by (TypeColumnUId, TypeColumnValue), so a typed page with no TypeColumnUId can never be
 		// selected for a record type. Reject the inconsistent combination instead of silently saving dead pages.
@@ -170,6 +161,21 @@ internal sealed class RelatedPageAddonService(
 				throw new ArgumentException(
 					$"role '{page.Role}' is not a valid SysAdminUnit GUID; use role-name to resolve a role by name.");
 			}
+		}
+		// A ROLE-LESS base default page is mandatory: at least one is-default entry with no type-column-value AND
+		// no role (neither Role nor RoleName). It is the page opened for EVERY user and the fallback whenever a
+		// record's type — or the user's audience — has no dedicated set; role- and type-specific sets are overrides
+		// layered on top of it. So an add-only, typed-only, or audience-scoped-only configuration (e.g. a lone
+		// portal default) is rejected. The Interface Designer keeps a role-less base in place, but the raw pages
+		// array can omit it — reject it here, after the role guards so an ambiguous/malformed role reports first.
+		if (!request.Pages.Any(page => page.IsDefault
+				&& string.IsNullOrWhiteSpace(page.TypeColumnValue)
+				&& string.IsNullOrWhiteSpace(page.Role)
+				&& string.IsNullOrWhiteSpace(page.RoleName))) {
+			throw new ArgumentException(
+				"A role-less base default page is required: include one page with is-default=true, no type-column-value, "
+				+ "and no role/role-name — the page opened for all users and the fallback for any audience or record "
+				+ "type without a dedicated set. Role- and type-specific pages are additional sets layered on top of it.");
 		}
 	}
 
