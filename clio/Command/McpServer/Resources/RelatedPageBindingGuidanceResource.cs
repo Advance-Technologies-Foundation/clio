@@ -70,9 +70,9 @@ public sealed class RelatedPageBindingGuidanceResource {
 		       - per `pages` entry, set `role-name` to "All external users" (or pass the role UId via `role`);
 		       - on the CLI, use `--portal-default-page` / `--portal-add-page` (the portal add page defaults to the
 		         portal default page). When any portal page is given on the CLI, the `--default-page` / `--add-page`
-		         set stays role-less — it is the mandatory base default that applies to all users, and the portal pages are layered on top as the "All external users" override.
+		         set is scoped to the "All employees" role — the general base default — and the portal pages are layered on top as the "All external users" override.
 		       A role name is resolved to its SysAdminUnit Id; an unknown role fails the call with a clear error.
-		       Omitting the role entirely binds a single set that applies to all users. A role-less base default (is-default, no type-column-value, no role) is REQUIRED in every configuration — the page opened for all users and the fallback for any audience or record type with no dedicated set; role- and type-specific sets are layered on top of it. Binding only role-scoped sets (e.g. only "All external users") is rejected, because it would leave other audiences with no page to open.
+		       Omitting the role entirely binds a single set that applies to all users. A general base default (is-default, no type-column-value, scoped to "All employees" or no role) is REQUIRED in every configuration — the page opened for a record and the fallback for any type or audience with no dedicated set; the default page also serves record creation, so add a separate is-add page only for a DIFFERENT add page. Portal ("All external users") and type-specific sets are layered on top. A portal-only (or other audience-scoped-only) binding is rejected — it would leave the general audience with no page to open.
 
 		       Typed pages — a different page set per record type
 		       A page set can also be scoped to a record TYPE, on top of (or instead of) the audience. Two pieces:

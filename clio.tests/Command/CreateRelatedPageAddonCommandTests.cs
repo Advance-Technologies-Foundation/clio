@@ -29,8 +29,8 @@ public sealed class CreateRelatedPageAddonCommandTests {
 	}
 
 	[Test]
-	[Description("Building specs from CLI scalar options with a portal page emits a role-less base set (applies to all users) plus an 'All external users' portal override on top.")]
-	public void TryCreate_ShouldEmitRoleLessBaseAndPortalOverride_WhenPortalPageProvided() {
+	[Description("Building specs from CLI scalar options with a portal page scopes the base set to 'All employees' and layers an 'All external users' portal set on top; with no add pages, each audience is a single default entry (no auto-add).")]
+	public void TryCreate_ShouldScopeBaseToAllEmployeesAndPortalToExternalUsers_WhenPortalPageProvided() {
 		// Arrange
 		CreateRelatedPageAddonOptions options = new() {
 			EntitySchemaName = "Case",
@@ -48,19 +48,19 @@ public sealed class CreateRelatedPageAddonCommandTests {
 			because: "the request resolves successfully when both audiences are supplied");
 		_captured.Should().NotBeNull(
 			because: "the command must forward a built request to the related-page service");
-		_captured.Pages.Should().Contain(page => string.IsNullOrEmpty(page.RoleName) && page.IsDefault,
-			because: "the base default is role-less so it applies to every user (a role-less base default is always required)");
-		_captured.Pages.Should().Contain(page => string.IsNullOrEmpty(page.RoleName) && page.IsAdd,
-			because: "the base add page is role-less alongside the base default");
-		_captured.Pages.Should().Contain(page => page.RoleName == "All external users" && page.IsDefault,
+		_captured.Pages.Should().HaveCount(2,
+			because: "no add pages are given, so each audience is a single default entry (the default also serves adding)");
+		_captured.Pages.Should().Contain(page => page.RoleName == "All employees" && page.IsDefault && page.PageSchemaName == "CaseFormPage",
+			because: "the base default is scoped to All employees, matching the designer");
+		_captured.Pages.Should().Contain(page => page.RoleName == "All external users" && page.IsDefault && page.PageSchemaName == "CasePortalFormPage",
 			because: "portal-default-page is layered on top as an All external users override");
-		_captured.Pages.Should().Contain(page => page.RoleName == "All external users" && page.IsAdd,
-			because: "the portal add page defaults to the portal default page");
+		_captured.Pages.Should().NotContain(page => page.IsAdd,
+			because: "with no explicit add page, the default page serves adding — no separate add entry is written");
 	}
 
 	[Test]
-	[Description("Building specs from CLI scalar options with no portal page leaves the employee pages role-less so they apply to everyone.")]
-	public void TryCreate_ShouldLeaveEmployeePagesRoleLess_WhenNoPortalPageProvided() {
+	[Description("Building specs from CLI scalar options with only a default page emits a single 'All employees' default entry (no auto-add fallback; the default serves adding too).")]
+	public void TryCreate_ShouldEmitSingleAllEmployeesDefault_WhenOnlyDefaultPageProvided() {
 		// Arrange
 		CreateRelatedPageAddonOptions options = new() {
 			EntitySchemaName = "Case",
@@ -74,8 +74,15 @@ public sealed class CreateRelatedPageAddonCommandTests {
 		// Assert
 		_captured.Should().NotBeNull(
 			because: "the command must forward a built request to the related-page service");
-		_captured.Pages.Should().OnlyContain(page => string.IsNullOrEmpty(page.RoleName),
-			because: "without a portal audience the employee pages stay role-less and apply to everyone");
+		_captured.Pages.Should().HaveCount(1,
+			because: "only a default page is given, so a single entry is built (no auto-add fallback)");
+		RelatedPageSpec spec = _captured.Pages[0];
+		spec.IsDefault.Should().BeTrue();
+		spec.IsAdd.Should().BeFalse(
+			because: "the default page serves adding at runtime; no separate add entry is written");
+		spec.RoleName.Should().Be("All employees",
+			because: "the base set is scoped to All employees, matching the designer (not role-less)");
+		spec.PageSchemaName.Should().Be("CaseFormPage");
 	}
 
 	[Test]

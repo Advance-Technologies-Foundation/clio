@@ -9,8 +9,10 @@ namespace Clio.Command.RelatedPages;
 /// command stays a thin front-end and this mapping is unit-testable on its own.
 /// </summary>
 public static class RelatedPageSpecBuilder {
-	// The portal (self-service) audience role name. A portal page set is layered on top of the role-less base
-	// as an "All external users" override (verified against Cases; IsSspDefault stays false).
+	// Audience role names. The Interface Designer scopes the base (general) page set to "All employees" and
+	// layers the portal (self-service) set on top as "All external users" (verified live against the designer's
+	// own SaveSchema output). IsSspDefault stays false throughout.
+	public const string EmployeesRoleName = "All employees";
 	public const string PortalRoleName = "All external users";
 
 	/// <summary>
@@ -41,26 +43,27 @@ public static class RelatedPageSpecBuilder {
 				+ "record, not just an add page.");
 		}
 		var built = new List<RelatedPageSpec>();
-		// The base default is always role-less so it applies to EVERY user — a role-less base default is mandatory
-		// (see RelatedPageAddonService.ValidateRequest). A portal page is layered on top as an "All external users"
-		// override: portal users match that more specific set, everyone else falls back to the role-less base.
-		AddAudiencePages(built, defaultPage, addPage, roleName: null);
+		// The base (general) set is scoped to "All employees", matching the designer; the portal set is layered on
+		// top as an "All external users" override. Within each audience the default page also serves record
+		// creation, so an add entry is written ONLY when a distinct add page is supplied (see AddAudiencePages).
+		AddAudiencePages(built, defaultPage, addPage, EmployeesRoleName);
 		AddAudiencePages(built, portalDefaultPage, portalAddPage, PortalRoleName);
 		return built;
 	}
 
 	/// <summary>
-	/// Adds the default and add page entries for one audience: an empty default/add page is skipped and
-	/// the add page falls back to the default page when omitted (so a single page can serve both).
+	/// Adds the page entries for one audience: the default page (used for opening AND — implicitly — adding a
+	/// record) and, ONLY when a separate add page is supplied, a distinct add entry. Mirrors the designer, which
+	/// writes a lone default as a single entry (the platform uses it for adding too) and adds a second entry only
+	/// when the add page is set explicitly. Empty pages are skipped.
 	/// </summary>
 	private static void AddAudiencePages(
 		List<RelatedPageSpec> pages, string defaultPage, string addPage, string roleName) {
 		if (!string.IsNullOrWhiteSpace(defaultPage)) {
 			pages.Add(new RelatedPageSpec(defaultPage.Trim(), IsDefault: true, RoleName: roleName));
 		}
-		string effectiveAddPage = string.IsNullOrWhiteSpace(addPage) ? defaultPage : addPage;
-		if (!string.IsNullOrWhiteSpace(effectiveAddPage)) {
-			pages.Add(new RelatedPageSpec(effectiveAddPage.Trim(), IsAdd: true, RoleName: roleName));
+		if (!string.IsNullOrWhiteSpace(addPage)) {
+			pages.Add(new RelatedPageSpec(addPage.Trim(), IsAdd: true, RoleName: roleName));
 		}
 	}
 }

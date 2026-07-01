@@ -653,18 +653,37 @@ public sealed class RelatedPageAddonServiceTests {
 	}
 
 	[Test]
-	[Description("Rejects a configuration whose only untyped default is role-scoped (no role-less base default) before any remote call, so every audience keeps a page to open.")]
-	public void Create_ShouldThrow_WhenBaseDefaultIsRoleScoped() {
-		// Arrange / Act — a single default scoped to the portal role, with no role-less base default.
+	[Description("Rejects a portal-only configuration (the only untyped default is scoped to the portal role, with no general base) before any remote call, so the general audience keeps a page to open.")]
+	public void Create_ShouldThrow_WhenBaseDefaultIsPortalOnly() {
+		// Arrange / Act — a single default scoped to the portal role, with no general (All employees / role-less) base.
 		Action act = () => _service.Create(new RelatedPageAddonRequest("Custom", "UsrDeliveryItem", new[] {
 			new RelatedPageSpec("UsrDeliveryItemPortalPage", IsDefault: true, RoleName: "All external users")
 		}, null));
 
 		// Assert
-		act.Should().Throw<ArgumentException>().WithMessage("*role-less base default*",
-			because: "an audience-scoped-only default leaves other audiences with no page to open; a role-less base is required");
+		act.Should().Throw<ArgumentException>().WithMessage("*base default*",
+			because: "a portal-only default leaves the general audience with no page; a general base default is required");
 		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!);
 		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().SaveSchema(default!);
+	}
+
+	[Test]
+	[Description("Accepts an 'All employees'-scoped base default (the shape the designer writes) as a valid general base.")]
+	public void Create_ShouldAcceptAllEmployeesBaseDefault_AsGeneralBase() {
+		// Arrange — "All employees" is a known platform role → no SysAdminUnit query; only package + page.
+		StubSelectQueue(Rows(PackageUId), Rows(PageAUId));
+
+		// Act
+		RelatedPageAddonResult result = _service.Create(new RelatedPageAddonRequest("Custom", "UsrDeliveryItem", new[] {
+			new RelatedPageSpec("UsrDeliveryItemFormPage", IsDefault: true, RoleName: "All employees")
+		}, null));
+
+		// Assert
+		result.PageCount.Should().Be(1,
+			because: "an All employees base default is a valid general base (the designer's shape) and is saved");
+		JsonArray pages = JsonNode.Parse(_savedSchema.MetaData)!["Pages"]!.AsArray();
+		pages[0]!["Role"]!.GetValue<string>().Should().Be("a29a3ba5-4b0d-de11-9a51-005056c00008",
+			because: "the All employees base is written with its seeded role Id");
 	}
 
 	[Test]

@@ -24,7 +24,7 @@ public sealed class CreateRelatedPageAddonTool(
 		"Per-page role-name 'All external users' binds the PORTAL (self-service) audience and 'All employees' the internal one. " +
 		"Writes the RelatedPage add-on via AddonSchemaDesignerService and rebuilds static content. " +
 		"The pages list fully REPLACES the object's current related-page configuration. " +
-		"A ROLE-LESS base default page is MANDATORY: always include an is-default entry with no type-column-value AND no role/role-name (the page opened for ALL users and the fallback for any audience or record type with no dedicated set) — role-, portal-, and type-specific pages are additional sets layered on top of it; never bind only typed, only add, or only role-scoped pages without it. " +
+		"A GENERAL base default page is MANDATORY: always include an is-default entry with no type-column-value scoped to the general audience — the 'All employees' role (or no role) — as the page opened for a record and the fallback for any type/audience with no dedicated set. The default page also serves record creation, so add a separate is-add page only when you want a DIFFERENT add page. Portal ('All external users') and type-specific pages layer on top; never bind only portal, only typed, or only add pages without the general base. " +
 		"Resolve page-schema-name values with list-pages and the object/package with get-app-info. " +
 		"Call get-guidance with name related-page-binding to learn the full flow. Prefer environment-name; keep direct connection args for emergency fallback only.")]
 	public CreateRelatedPageAddonResponse CreateRelatedPageAddon(
@@ -88,7 +88,7 @@ public sealed record CreateRelatedPageAddonArgs(
 	string PackageName,
 
 	[property: JsonPropertyName("pages")]
-	[property: Description("Related-page entries. Fully replaces the object's current configuration. Mark exactly one entry per role/type bucket with is-default=true (the page opened on a record) and one with is-add=true (the page used to add a record); the same page may serve both. A role-less base default entry is MANDATORY — always include one with is-default=true, no type-column-value, and no role/role-name (the main record page for all users and the fallback for any audience/type with no dedicated set); role- and type-specific pages are layered on top. Never bind only typed, only add, or only role-scoped pages without it.")]
+	[property: Description("Related-page entries. Fully replaces the object's current configuration. Mark exactly one entry per role/type bucket with is-default=true (the page opened on a record) and one with is-add=true (the page used to add a record); the same page may serve both. A general base default entry is MANDATORY — always include one with is-default=true, no type-column-value, and the 'All employees' role (or no role): the main record page and the fallback for any type/audience. The default also serves adding, so add a separate is-add entry only for a DIFFERENT add page. Portal ('All external users') and type-specific pages layer on top; never bind only portal, only typed, or only add pages without the general base.")]
 	[property: Required]
 	IReadOnlyList<RelatedPageArg> Pages,
 

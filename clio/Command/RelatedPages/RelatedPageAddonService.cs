@@ -94,6 +94,7 @@ internal sealed class RelatedPageAddonService(
 
 	private const string RelatedPageAddonName = "RelatedPage";
 	private const string EntitySchemaManagerName = "EntitySchemaManager";
+	private const string EmployeesRoleName = "All employees";
 
 	/// <summary>
 	/// The standard platform audience roles are seeded <c>SysAdminUnit</c> records with fixed Ids that are
@@ -162,22 +163,31 @@ internal sealed class RelatedPageAddonService(
 					$"role '{page.Role}' is not a valid SysAdminUnit GUID; use role-name to resolve a role by name.");
 			}
 		}
-		// A ROLE-LESS base default page is mandatory: at least one is-default entry with no type-column-value AND
-		// no role (neither Role nor RoleName). It is the page opened for EVERY user and the fallback whenever a
-		// record's type — or the user's audience — has no dedicated set; role- and type-specific sets are overrides
-		// layered on top of it. So an add-only, typed-only, or audience-scoped-only configuration (e.g. a lone
-		// portal default) is rejected. The Interface Designer keeps a role-less base in place, but the raw pages
-		// array can omit it — reject it here, after the role guards so an ambiguous/malformed role reports first.
+		// A base default page for the GENERAL audience is mandatory: at least one is-default entry with no
+		// type-column-value whose audience is general — role-less OR the "All employees" role (the shape the
+		// Interface Designer writes for the base set). It is the page opened for a record and the fallback for any
+		// type; portal ("All external users") and other role- or type-specific sets are layered on top. So an
+		// add-only, typed-only, or audience-scoped-only configuration (e.g. a lone portal default) is rejected: the
+		// designer does not guard against it, but it leaves the general audience with no page, so the tool must.
+		// Checked after the role guards so an ambiguous/malformed role reports its own error first.
 		if (!request.Pages.Any(page => page.IsDefault
 				&& string.IsNullOrWhiteSpace(page.TypeColumnValue)
-				&& string.IsNullOrWhiteSpace(page.Role)
-				&& string.IsNullOrWhiteSpace(page.RoleName))) {
+				&& IsGeneralAudience(page))) {
 			throw new ArgumentException(
-				"A role-less base default page is required: include one page with is-default=true, no type-column-value, "
-				+ "and no role/role-name — the page opened for all users and the fallback for any audience or record "
-				+ "type without a dedicated set. Role- and type-specific pages are additional sets layered on top of it.");
+				"A base default page for the general audience is required: include one page with is-default=true, no "
+				+ "type-column-value, and either no role or the 'All employees' role (the page opened for a record and "
+				+ "the fallback for any type or audience without a dedicated set). Portal ('All external users') and "
+				+ "type-specific pages are layered on top; a portal-only or other audience-scoped-only binding is rejected.");
 		}
 	}
+
+	// A page targets the GENERAL audience when it is role-less (applies to everyone) or scoped to the "All
+	// employees" role — the base set the designer writes. Portal ("All external users") and custom roles are not
+	// general, so a configuration whose only untyped default is one of those has no base page for the general audience.
+	private static bool IsGeneralAudience(RelatedPageSpec page) =>
+		(string.IsNullOrWhiteSpace(page.Role) && string.IsNullOrWhiteSpace(page.RoleName))
+		|| string.Equals(page.RoleName?.Trim(), EmployeesRoleName, StringComparison.OrdinalIgnoreCase)
+		|| string.Equals(page.Role?.Trim(), KnownPlatformRoleIds[EmployeesRoleName], StringComparison.OrdinalIgnoreCase);
 
 	public RelatedPageAddonResult Create(RelatedPageAddonRequest request) {
 		ValidateRequest(request);
