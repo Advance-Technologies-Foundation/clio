@@ -60,6 +60,52 @@ public sealed class ServerProcessDescriberTests {
 	}
 
 	[Test]
+	[Description("Deserializes an element parameter's direction and isResult from the server response into the DescribedParameter DTO (so callers can tell an element's outputs, mappable as a source, from its inputs).")]
+	public void Describe_ShouldReadParameterDirectionAndIsResult_WhenServerReportsThem() {
+		// Arrange — a user task whose parameter is an output (isResult true) while its direction is Variable
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"task1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"usertask\","
+			+ "\"parameters\":[{\"name\":\"PResult\",\"uid\":\"p1\",\"type\":\"Guid\",\"direction\":\"Variable\",\"isResult\":true,\"source\":\"None\"}]}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		DescribedParameter parameter = result.Value.Elements[0].Parameters[0];
+		parameter.Direction.Should().Be("Variable",
+			because: "the parameter's direction must be read from the server, not dropped by the clio DTO");
+		parameter.IsResult.Should().BeTrue(
+			because: "isResult marks an element output usable as a mapping source and must be deserialized");
+	}
+
+	[Test]
+	[Description("Leaves direction/isResult unset (null) when an older server omits them, so the absent fields serialize away cleanly.")]
+	public void Describe_ShouldLeaveDirectionAndIsResultNull_WhenServerOmitsThem() {
+		// Arrange — an older clioprocessbuilder that does not report direction/isResult on parameters
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"task1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"usertask\","
+			+ "\"parameters\":[{\"name\":\"PResult\",\"uid\":\"p1\",\"type\":\"Guid\",\"source\":\"None\"}]}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		DescribedParameter parameter = result.Value.Elements[0].Parameters[0];
+		parameter.Direction.Should().BeNull(
+			because: "an omitted direction stays null so it serializes away (WhenWritingNull) for older servers");
+		parameter.IsResult.Should().BeNull(
+			because: "an omitted isResult stays null rather than defaulting to false, avoiding a misleading output");
+	}
+
+	[Test]
 	[Description("Posts the uid (not the name) when the identity is a uid.")]
 	public void Describe_ShouldPostWrappedUid_WhenIdentityIsUid() {
 		IApplicationClient client = ClientReturning(
