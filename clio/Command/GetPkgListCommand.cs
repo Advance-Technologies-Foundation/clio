@@ -28,10 +28,10 @@ namespace Clio.Command
 		}
 
 		[Option('j', "json", Required = false, HelpText = "Returns response in json format")]
-		public bool Json { get; set; }
+		public bool? Json { get; set; }
 
 		[Option("Json", Required = false, Hidden = true, HelpText = "Alias for --json")]
-		public bool JsonAlias {
+		public bool? JsonAlias {
 			get => Json;
 			set { Json = value; }
 		}
@@ -116,7 +116,7 @@ namespace Clio.Command
 		}
 
 		private void PrintPackageList(PkgListOptions options, IEnumerable<PackageInfo> filteredPackages) {
-			if (options.Json) {
+			if (options.Json == true) {
 				// --json defaults to the unified BL-1 envelope; --legacy-form preserves the historical
 				// {value,success,errorInfo} shape for consumers not yet migrated. Both emit exactly one
 				// JSON object to stdout via WriteLine (no [INF] prefix), keeping the stream jq-parseable.
@@ -134,7 +134,7 @@ namespace Clio.Command
 		}
 
 		private void PrintError(PkgListOptions options, Exception e) {
-			if (options.Json) {
+			if (options.Json == true) {
 				if (options.LegacyForm) {
 					// Faithful legacy behavior: the historical --json error path wrote via WriteInfo.
 					_logger.WriteInfo(_jsonResponseFormater.Format(e));

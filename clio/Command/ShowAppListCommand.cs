@@ -68,7 +68,7 @@ public class AppListOptions{
 	[Option("json", Required = false, HelpText =
 		"Emit the unified command envelope {schemaVersion, ok, command, data, error}. Takes precedence " +
 		"over --format; sensitive fields are masked. Without --json the legacy --format paths are unchanged.")]
-	public bool Json { get; set; }
+	public bool? Json { get; set; }
 
 	#endregion
 }
@@ -304,7 +304,7 @@ public class ShowAppListCommand(ISettingsRepository settingsRepository, ILogger 
 
 			// --json emits the unified envelope through ILogger and takes precedence over the legacy
 			// --format paths. Without --json, behavior below is unchanged (byte-for-byte).
-			if (options.Json) {
+			if (options.Json == true) {
 				return ExecuteJson(options);
 			}
 

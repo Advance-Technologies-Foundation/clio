@@ -32,7 +32,7 @@ namespace Clio.Command
 		}
 
 		[Option("json", Required = false, HelpText = "Returns response in json format")]
-		public bool Json { get; set; }
+		public bool? Json { get; set; }
 	}
 
 	#region Class: HealthCheckResult
@@ -147,7 +147,7 @@ namespace Clio.Command
 			RequestTimeout = options.TimeOut;
 			MaxAttempts = options.MaxAttempts;
 			DelaySec = options.RetryDelay;
-			bool jsonMode = options.Json;
+			bool jsonMode = options.Json == true;
 			bool checkWebApp = IsEnabled(options.WebApp);
 			bool checkWebHost = IsEnabled(options.WebHost);
 
