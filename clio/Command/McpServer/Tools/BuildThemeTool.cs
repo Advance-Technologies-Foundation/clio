@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
@@ -28,7 +29,7 @@ public sealed class BuildThemeTool(BuildThemeCommand command) {
 
 	internal const string ToolName = "build-theme";
 
-	private static readonly Regex PackageNamePattern = new("^[A-Za-z0-9_]+$", RegexOptions.Compiled);
+	private static readonly Regex PackageNamePattern = new("^[A-Za-z0-9_]+$", RegexOptions.Compiled, TimeSpan.FromSeconds(1));
 
 	/// <summary>
 	/// Builds the theme from the supplied brand inputs and the bundled template. Returns the CSS + descriptor

@@ -130,7 +130,6 @@ public sealed record ThemeColorAdvisorResult {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string Error { get; init; }
 
-	// ── triage ──────────────────────────────────────────────────────────────
 	/// <summary>Each raw brand colour after triage; present for <c>triage</c>.</summary>
 	[JsonPropertyName("colors")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -151,7 +150,6 @@ public sealed record ThemeColorAdvisorResult {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string HighestContrastHex { get; init; }
 
-	// ── adapt-primary ───────────────────────────────────────────────────────
 	/// <summary><c>compliant</c> / <c>adapted</c> / <c>could-not-adapt</c>; present for <c>adapt-primary</c>.</summary>
 	[JsonPropertyName("adaptationState")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -182,7 +180,6 @@ public sealed record ThemeColorAdvisorResult {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public double? DistanceFromOriginal { get; init; }
 
-	// ── derive-secondary ────────────────────────────────────────────────────
 	/// <summary>The secondary derived from the primary; present for <c>derive-secondary</c>.</summary>
 	[JsonPropertyName("derivedSecondary")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -208,7 +205,6 @@ public sealed record ThemeColorAdvisorResult {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public double? SecondaryContrastOnWhite { get; init; }
 
-	// ── accent ──────────────────────────────────────────────────────────────
 	/// <summary>Stored candidates scored for similarity; present for <c>accent-evaluate-stored</c>.</summary>
 	[JsonPropertyName("evaluatedCandidates")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -234,7 +230,6 @@ public sealed record ThemeColorAdvisorResult {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public bool? PrimaryAsAccentAvailable { get; init; }
 
-	// ── validate-color / accent-validate-manual ─────────────────────────────
 	/// <summary>The normalized colour; present for <c>validate-color</c> / <c>accent-validate-manual</c>.</summary>
 	[JsonPropertyName("normalizedColor")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -250,7 +245,6 @@ public sealed record ThemeColorAdvisorResult {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string Verdict { get; init; }
 
-	// ── preview ─────────────────────────────────────────────────────────────
 	/// <summary>Palette stops per role (role → step → hex); present for <c>preview</c>. Neutral is never emitted.</summary>
 	[JsonPropertyName("palettes")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -316,7 +310,6 @@ public sealed record ThemeColorAdvisorResult {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public IReadOnlyList<string> Warnings { get; init; }
 
-	// ── shared single warning (adapt / secondary override / validate-color) ──
 	/// <summary>The single canonical warning for the operation; omitted when the verdict is a pass.</summary>
 	[JsonPropertyName("warning")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

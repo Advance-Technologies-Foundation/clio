@@ -20,14 +20,12 @@ outside a clio install.
 ## Synopsis
 
 ```bash
-clear-themes-cache [Name] [options]
+clear-themes-cache [options]
 ```
 
 ## Options
 
 ```bash
-Name (pos. 0)	Application name
-
 --uri               -u          Application uri
 
 --Password			-p          User password
@@ -49,7 +47,7 @@ flush-themes
 
 ```bash
 clio clear-themes-cache
-clear the theme cache of the current web application(website)
+clear the theme cache of the default environment
 
 clio clear-themes-cache -e myapp
 clear the theme cache of the environment registered as myapp

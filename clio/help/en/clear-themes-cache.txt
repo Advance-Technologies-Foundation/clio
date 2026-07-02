@@ -13,10 +13,9 @@ DESCRIPTION
     environment outside a clio install.
 
 SYNOPSIS
-    clear-themes-cache [Name] [options]
+    clear-themes-cache [options]
 
 OPTIONS
-    Name (pos. 0)	Application name
 
     --uri               -u          Application uri
 
@@ -33,7 +32,7 @@ ALIASES
 
 EXAMPLE
     clio clear-themes-cache
-        clear the theme cache of the current web application(website)
+        clear the theme cache of the default environment
 
     clio clear-themes-cache -e myapp
         clear the theme cache of the environment registered as myapp

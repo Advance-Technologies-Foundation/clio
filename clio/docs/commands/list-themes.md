@@ -21,14 +21,12 @@ the environment.
 ## Synopsis
 
 ```bash
-list-themes [Name] [options]
+list-themes [options]
 ```
 
 ## Options
 
 ```bash
-Name (pos. 0)	Application name
-
 --uri               -u          Application uri
 
 --Password			-p          User password
@@ -50,7 +48,7 @@ get-themes
 
 ```bash
 clio list-themes
-list the themes of the current web application(website)
+list the themes of the default environment
 
 clio list-themes -e myapp
 list the themes of the environment registered as myapp

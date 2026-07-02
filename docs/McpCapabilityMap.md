@@ -455,18 +455,6 @@ These tools are operational rather than design-oriented.
 - `restart-by-credentials`
 - `clear-redis-db-by-environment`
 - `clear-redis-db-by-credentials`
-- `clear-themes-cache-by-environment`
-- `clear-themes-cache-by-credentials`
-- `list-themes-by-environment`
-- `list-themes-by-credentials`
-- `create-theme-by-environment`
-- `create-theme-by-credentials`
-- `update-theme-by-environment`
-- `update-theme-by-credentials`
-- `delete-theme-by-environment`
-- `delete-theme-by-credentials`
-- `check-theming-access-by-environment`
-- `check-theming-access-by-credentials`
 
 What an external AI can practically do here:
 
@@ -517,6 +505,37 @@ Companion surfaces (see the `process-modeling` guidance):
 
 - `get-guidance name=process-modeling` — the BPMN element catalog, connection rules, and the validate-then-drive recipe.
 - `generate-process-model` — reads an existing process into a C# model (existing tool).
+
+### 12. Theming
+
+These tools brand a Creatio app: build a custom theme from brand colours and fonts, apply it to an environment, and manage the theme catalog. `build-theme` and `theme-color-advisor` run offline; the rest act on a target environment via the native ThemeService and ship in both `-by-environment` and `-by-credentials` variants.
+
+- `build-theme`
+  Render a theme's `theme.css` (and, in workspace mode, `theme.json`) from a primary colour, optional secondary/accent/system colours, and fonts, over a bundled version-pinned template. Writes into a workspace package when given `workspaceDirectory` + `packageName`, otherwise returns the CSS. Never mutates an environment.
+- `theme-color-advisor`
+  Stateless offline advisor that scores brand-colour choices (readability on white, accent similarity) and returns a verdict per operation, so the agent never judges a colour by eye.
+- `create-theme-by-environment` / `create-theme-by-credentials`
+  Create a theme on the environment from inline `cssContent` plus a caption.
+- `update-theme-by-environment` / `update-theme-by-credentials`
+  Full overwrite of an existing theme by id (caption, CSS class name, CSS content).
+- `delete-theme-by-environment` / `delete-theme-by-credentials`
+  Delete a theme by id; deleting an unknown id is an error.
+- `list-themes-by-environment` / `list-themes-by-credentials`
+  List custom themes (id, caption, CSS class name, CSS file path). An empty list means no themes or no `CanCustomizeBranding` license.
+- `clear-themes-cache-by-environment` / `clear-themes-cache-by-credentials`
+  Refresh the theme catalog cache; needed only when theme files change on the environment outside a clio install.
+- `check-theming-access-by-environment` / `check-theming-access-by-credentials`
+  Report whether the caller has the `CanManageThemes` operation and `CanCustomizeBranding` license, to gate authoring on a real permission check.
+
+What an external AI can practically do here:
+
+- build a theme offline (`build-theme`) with `theme-color-advisor` driving the palette, then commit it to a workspace package and push, or apply it directly with `create-theme`
+- restyle, remove, and confirm themes on an environment
+- precheck theming permissions before authoring, and set the default via the `DefaultTheme` system setting (see the theming guidance)
+
+Companion surfaces (see the `theming` guidance):
+
+- `get-guidance name=theming` — the palette conversation, the build step, and the workspace/dev vs no-code/server delivery flows.
 
 ## Prompt Layer: What The AI Gets Beyond Raw Tools
 
