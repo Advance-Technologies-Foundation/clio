@@ -67,6 +67,10 @@ internal static class GuidanceCatalog {
 				"page-schema-validators",
 				"Canonical MCP guidance for creating and editing Freedom UI page validators inside raw page schema bodies.",
 				PageSchemaValidatorsGuidanceResource.Guide),
+			["page-creation"] = Create(
+				"page-creation",
+				"Canonical MCP guidance for creating Freedom UI pages from supported templates via create-page: the list-page-templates -> create-page -> get-page flow, the supported web/mobile template catalog, required and optional inputs, validation/failure modes, and designer-type mapping.",
+				PageCreationGuidanceResource.Guide),
 			["page-modification"] = Create(
 				"page-modification",
 				"Canonical MCP guidance for Freedom UI page modification: replacing-schema concept, bundle.json structure, update-page write modes, multi-app target-package-uid resolution, and container selection.",

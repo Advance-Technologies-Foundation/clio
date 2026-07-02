@@ -268,6 +268,27 @@ public sealed class GuidanceGetToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Returns the canonical page-creation guidance article when the caller requests page-creation.")]
+	public async Task GuidanceGet_Should_Return_Page_Creation_Article() {
+		// Arrange
+		GuidanceGetTool tool = new(_featureToggleService);
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("page-creation"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "page-creation is a registered guidance name that the dashboard-creation guide routes to by name");
+		result.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article");
+		result.Article!.Uri.Should().Be("docs://mcp/guides/page-creation",
+			because: "the guidance tool should preserve the canonical page-creation guide URI in the response");
+		result.Article.Text.Should().Contain("clio MCP page-creation guide",
+			because: "the guidance tool should return the canonical page-creation article text");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Returns the canonical page localizable string guidance article when the caller requests page-schema-resources.")]
 	public async Task GuidanceGet_Should_Return_Page_Schema_Resources_Article() {
 		// Arrange

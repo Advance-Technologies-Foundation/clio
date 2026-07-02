@@ -25,8 +25,9 @@ web pages, 10 for mobile pages).
 
 The platform endpoint returns a curated subset that omits
 `BaseDashboardTemplate` (the parent for a Freedom UI dashboard page), so
-clio always adds it to the web catalog. It appears with `groupName`
-`Dashboard` and is a valid `--template` value for `create-page`.
+clio always adds it to the web catalog. It appears with `title`
+`Dashboard` (its `groupName` is `DashboardPage`) and is a valid
+`--template` value for `create-page`.
 
 ## Synopsis
 
