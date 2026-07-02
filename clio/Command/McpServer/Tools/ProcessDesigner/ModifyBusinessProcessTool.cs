@@ -32,9 +32,15 @@ public class ModifyBusinessProcessTool(
 		 + "'op': addElement (with an 'element' descriptor: name (the element handle/local code), type, caption, "
 		 + "userTaskName?, signal?), removeElement (with 'elementName' = the element's local name or UId), addFlow "
 		 + "/ removeFlow (with 'source' and 'target' element names), addParameter (with a 'parameter': name, type "
-		 + "e.g. Text/Integer/Guid, direction?, caption?, description?, optional value (a constant default), or referenceSchema for a Lookup to an object e.g. City), "
-		 + "addMapping (with a 'mapping': elementName, elementParameter, and exactly one of processParameter | "
-		 + "value | expression), setParameter (with 'parameterName' = the target parameter by name/UId and 'parameterUpdate' = any of caption/description/code/direction/referenceSchema/value, updated in place — a data-type change is rejected), removeParameter (with 'parameterName'; blocked when another parameter or an element mapping still references it). Operations apply in order; any failure aborts the edit (nothing is saved). "
+		 + "e.g. Text/Integer/Guid, direction?, caption?, description?, optional value (a constant default), or "
+		 + "referenceSchema for a Lookup to an object e.g. City, or typeFromElement + typeFromElementParameter to "
+		 + "copy an element parameter's exact type), addMapping (with a 'mapping': target {elementName, "
+		 + "elementParameter} or {targetProcessParameter}, and one source of {sourceElement, sourceElementParameter} "
+		 + "| processParameter | value | expression; parameter-to-parameter mappings require compatible types), "
+		 + "setParameter (with 'parameterName' = the target parameter by name/UId and 'parameterUpdate' = any of "
+		 + "caption/description/code/direction/referenceSchema/value, updated in place — a data-type change is "
+		 + "rejected), removeParameter (with 'parameterName'; blocked when another parameter or an element mapping "
+		 + "still references it). Operations apply in order; any failure aborts the edit (nothing is saved). "
 		 + "Use describe-business-process to inspect the current elements/names first. May remove elements — destructive.")]
 	public CommandExecutionResult ModifyBusinessProcess(
 		[Description("modify-business-process parameters")] [Required] ModifyBusinessProcessArgs args

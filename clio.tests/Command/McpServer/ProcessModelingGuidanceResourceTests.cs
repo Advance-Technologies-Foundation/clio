@@ -113,6 +113,20 @@ public sealed class ProcessModelingGuidanceResourceTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The guidance teaches how to identify a mapping-source output from describe output (isResult true or direction Out) and warns that most user-task outputs report direction Variable.")]
+	public void GetGuide_ShouldTeachOutputDetectionRule_WhenRead() {
+		// Act
+		string text = new ProcessModelingGuidanceResource().GetGuide().Should().BeOfType<TextResourceContents>().Subject.Text;
+
+		// Assert
+		text.Should().Contain("isResult",
+			because: "an element output usable as a mapping source is identified by isResult — the rule was previously only in C# XML docs, invisible to the agent");
+		text.Should().Contain("Variable",
+			because: "the guidance must warn that most user-task outputs report direction Variable, so output detection cannot rely on direction alone");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("GuidanceCatalog exposes process-modeling so get-guidance can return it by canonical name.")]
 	public void GuidanceCatalog_ShouldIncludeProcessModelingEntry_WhenQueried() {
 		// Act

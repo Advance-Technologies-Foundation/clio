@@ -91,7 +91,8 @@ public sealed class ProcessModelingGuidanceResource {
 			2. (recommended) `validate-process-graph(graph)` -> fix every error-severity finding.
 			3. `list-user-tasks` -> pick the exact `userTaskName`(s) for your activities.
 			4. `create-business-process(descriptor)` -> builds + saves in one call (layout is automatic).
-			5. Verify: `describe-business-process` (element types, user-task names, parameter sources + direction, the signal trigger) /
+			5. Verify: `describe-business-process` (element types, user-task names, parameter sources + direction + isResult
+			   — an output you can map FROM has `isResult:true` or `direction:"Out"`; the signal trigger) /
 			   `generate-process-model` / `execute-esq` (VwProcessLib by caption).
 			6. Change it later with `modify-business-process` (ops: addElement / removeElement / addFlow / removeFlow /
 			   addParameter / addMapping / setParameter / removeParameter — same parameter/mapping shapes as a build).
@@ -129,10 +130,19 @@ public sealed class ProcessModelingGuidanceResource {
 			- Process parameters (`parameters[]`): { name, type (Text/Long text/Integer/Float/Money/Boolean/Date/Date-time/Time/Guid/Lookup),
 			  direction (In/Out/Variable/Internal), caption, description, or referenceSchema = an object name (e.g. City) to make
 			  it a Lookup to that object }, and an optional value (a constant default). A user-task element's own parameters come from the task. The same shape is
-			  used by modify-business-process `addParameter`. Edit a parameter with `setParameter` (parameterName + parameterUpdate: any of caption/description/code/direction/referenceSchema/value, applied in place — the UId and its references are preserved; a data-type change is rejected) and remove it with `removeParameter` (parameterName; blocked when another parameter's value or an element mapping still references it). Supported types: Text, Long text, Integer, Float, Money, Boolean, Date, Date-time, Time, Guid, and Lookup — other types (composite / entity / file / ...) are not supported yet.
-			- Mappings (`mappings[]`): bind a user-task element's INPUT parameter to a value —
-			  { elementName, elementParameter, and exactly ONE of: processParameter (a process parameter by name) |
-			  value (a constant) | expression (a raw formula) }. `processParameter` flows a process input into the
+			  used by modify-business-process `addParameter`. To create a process parameter that mirrors an element parameter's EXACT type (e.g. expose a user-task OUTPUT for mapping with NO conversion), set `typeFromElement` + `typeFromElementParameter` instead of `type`/`referenceSchema` — the data value type (and lookup reference object) is copied verbatim. Edit a parameter with `setParameter` (parameterName + parameterUpdate: any of caption/description/code/direction/referenceSchema/value, applied in place — the UId and its references are preserved; a data-type change is rejected) and remove it with `removeParameter` (parameterName; blocked when another parameter's value or an element mapping still references it). Supported types: Text, Long text, Integer, Float, Money, Boolean, Date, Date-time, Time, Guid, and Lookup — other types (composite / entity / file / ...) are not supported yet.
+			- Mappings (`mappings[]`): bind a TARGET parameter to a SOURCE.
+			  TARGET — `elementName` + `elementParameter` (an element input) OR `targetProcessParameter`
+			  (a process parameter, e.g. expose an element's OUTPUT as a process output).
+			  SOURCE — exactly ONE of: `sourceElement` + `sourceElementParameter` (another element's OUTPUT parameter) |
+			  processParameter (a process parameter by name) | value (a constant) | expression (a raw formula).
+			  Identifying an OUTPUT for `sourceElementParameter`: in `describe-business-process` output an element parameter
+			  is usable as a mapping source when `isResult: true` OR `direction: "Out"`. Most user-task outputs come back as
+			  `isResult: true` with `direction: "Variable"` (the platform reports element params as Variable), so detect
+			  outputs by `isResult`, NOT by `direction` alone.
+			  Parameter-to-parameter mappings require COMPATIBLE TYPES: source and target in the same data-value-type
+			  group (text↔text, number↔number, …; for a lookup the same reference object) — exactly what the visual
+			  designer allows; incompatible types are rejected. `processParameter` flows a process input into the
 			  field (the server builds the correct reference); `expression` is a C#-like formula, e.g.
 			  `[#SysVariable.CurrentUserContact#]`, `[#System variable.Current date and time#].AddDays(3)`.
 			- Reference syntax when an expression must read another element's output: `[#ElementName.PropertyPath#]`
