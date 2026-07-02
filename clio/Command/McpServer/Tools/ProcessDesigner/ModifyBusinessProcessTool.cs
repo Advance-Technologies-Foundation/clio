@@ -41,7 +41,9 @@ public class ModifyBusinessProcessTool(
 		 + "caption/description/code/direction/referenceSchema/value, updated in place — a data-type change is "
 		 + "rejected), removeParameter (with 'parameterName'; blocked when another parameter or an element mapping "
 		 + "still references it). Operations apply in order; any failure aborts the edit (nothing is saved). "
-		 + "Use describe-business-process to inspect the current elements/names first. May remove elements — destructive.")]
+		 + "Use describe-business-process to inspect the current elements/names first. May remove elements — destructive. "
+		 + "Removals are NOT structurally validated (a broken graph can still be saved) and every edit re-lays-out the "
+		 + "whole diagram — read the 'Modifying an existing process' rules in get-guidance name=process-modeling first.")]
 	public CommandExecutionResult ModifyBusinessProcess(
 		[Description("modify-business-process parameters")] [Required] ModifyBusinessProcessArgs args
 	) {
