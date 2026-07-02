@@ -17,7 +17,7 @@ public sealed class WebToMobileConversionServiceTests {
 
 	private static readonly IReadOnlySet<string> MobileTypes =
 		new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
-			"crt.Input", "crt.Toggle", "crt.RichTextEditor", "crt.List", "crt.FolderTreeActions"
+			"crt.Input", "crt.Toggle", "crt.RichTextEditor", "crt.List", "crt.FolderTreeActions", "crt.GridContainer"
 		};
 
 	private static readonly IReadOnlySet<string> WebTypes =
@@ -912,79 +912,78 @@ public sealed class WebToMobileConversionServiceTests {
 		Element(guide, fieldName).MobileValues!.AsObject()["layoutConfig"]!.AsObject()["adaptive"]!.AsObject();
 
 	[Test]
-	[Description("A container that groups 2+ fields gets a proposed adaptive layout: small = 1-column stack, medium/large = 2-column flow; child placement is baked into each field's mobileValues.layoutConfig.adaptive.")]
-	public void Analyze_GroupedFields_ProposesStackOnPhoneTwoColumnsOnTablet() {
-		// Main (crt.FlexContainer) is not mobile-supported → relocate-children; its fields land in MainContainer.
+	[Description("A multi-column crt.GridContainer converts ONLY the phone (small) breakpoint to a single column; medium/large keep the web column count and each child's web placement — baked into both the container's and the children's mobileValues.")]
+	public void Analyze_MultiColumnGrid_ConvertsSmallToOneColumn_KeepsWebForTablet() {
 		PageBundleInfo bundle = Bundle("""
-			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
-				{ "name": "FieldA", "type": "crt.Input" },
-				{ "name": "FieldB", "type": "crt.Input" } ] } ]
+			[ { "name": "OverviewFieldsContainer", "type": "crt.GridContainer",
+			    "columns": [ "minmax(32px, 1fr)", "minmax(32px, 1fr)" ], "items": [
+				{ "name": "Name", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 1, "colSpan": 1, "rowSpan": 1 } },
+				{ "name": "CreatedOn", "type": "crt.Input", "layoutConfig": { "column": 2, "row": 1, "colSpan": 1, "rowSpan": 1 } } ] } ]
 			""");
 
-		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true)));
+		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.GridContainer", true), ("crt.Input", false)));
 
-		guide.AdaptiveLayout.Should().NotBeNull();
 		AdaptiveLayoutGroup group = guide.AdaptiveLayout!.Single();
-		group.ContainerName.Should().Be("MainContainer");
-		group.Items.Select(i => i.Name).Should().Equal("FieldA", "FieldB");
-
-		// Container side: 1 / 2 / 2 columns by breakpoint, delivered as a ready-to-apply merge diff.
+		group.ContainerName.Should().Be("OverviewFieldsContainer");
 		group.ColumnsByBreakpoint["small"].Should().Equal("1fr");
 		group.ColumnsByBreakpoint["medium"].Should().Equal("1fr", "1fr");
-		group.ColumnsByBreakpoint["large"].Should().Equal("1fr", "1fr");
-		JsonObject diff = group.AdaptiveDiff!.AsArray().Single()!.AsObject();
-		diff["operation"]!.GetValue<string>().Should().Be("merge");
-		diff["name"]!.GetValue<string>().Should().Be("MainContainer");
-		diff["values"]!["adaptive"]!["medium"]!["columns"]!.AsArray().Should().HaveCount(2);
 
-		// Child side: stack on phone, side-by-side on tablet — baked into mobileValues.
-		JsonObject a = AdaptiveOf(guide, "FieldA");
-		a["small"]!["column"]!.GetValue<int>().Should().Be(1);
-		a["small"]!["row"]!.GetValue<int>().Should().Be(1);
-		a["medium"]!["column"]!.GetValue<int>().Should().Be(1);
-		a["medium"]!["row"]!.GetValue<int>().Should().Be(1);
+		// Container-side adaptive is baked into the container's OWN mobileValues (deterministic).
+		JsonObject container = Element(guide, "OverviewFieldsContainer").MobileValues!.AsObject()["adaptive"]!.AsObject();
+		container["small"]!["columns"]!.AsArray().Should().HaveCount(1);
+		container["medium"]!["columns"]!.AsArray().Should().HaveCount(2);
+		container["large"]!["columns"]!.AsArray().Should().HaveCount(2);
 
-		JsonObject b = AdaptiveOf(guide, "FieldB");
-		b["small"]!["column"]!.GetValue<int>().Should().Be(1);
-		b["small"]!["row"]!.GetValue<int>().Should().Be(2, because: "second field stacks below the first on a phone");
-		b["medium"]!["column"]!.GetValue<int>().Should().Be(2, because: "second field sits in the next column on a tablet");
-		b["medium"]!["row"]!.GetValue<int>().Should().Be(1);
-		b["large"]!["colSpan"]!.GetValue<int>().Should().Be(1, because: "colSpan is serialized as 1 for designer parity");
+		// Child CreatedOn (2nd): phone stacks (col 1, row 2); tablet/desktop keep the web cell (col 2, row 1).
+		JsonObject co = AdaptiveOf(guide, "CreatedOn");
+		co["small"]!["column"]!.GetValue<int>().Should().Be(1);
+		co["small"]!["row"]!.GetValue<int>().Should().Be(2);
+		co["medium"]!["column"]!.GetValue<int>().Should().Be(2);
+		co["medium"]!["row"]!.GetValue<int>().Should().Be(1);
+		co["large"]!["column"]!.GetValue<int>().Should().Be(2);
+		// The child's layoutConfig is the adaptive form ONLY (base placement folded into medium/large).
+		Element(guide, "CreatedOn").MobileValues!.AsObject()["layoutConfig"]!.AsObject()
+			.Select(kv => kv.Key).Should().Equal("adaptive");
 	}
 
 	[Test]
-	[Description("When source fields already carry layoutConfig column/row, that placement is reused as the tablet (medium/large) baseline and the column count follows the widest source column; phone still stacks.")]
-	public void Analyze_GroupedFields_ReusesSourcePlacementForTablet() {
+	[Description("A single-column crt.GridContainer gets NO adaptive (the mobile client renders the plain config); its children keep the carried base layoutConfig, not an adaptive one.")]
+	public void Analyze_SingleColumnGrid_NoAdaptive() {
 		PageBundleInfo bundle = Bundle("""
-			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+			[ { "name": "OneColGrid", "type": "crt.GridContainer", "columns": [ "1fr" ], "items": [
 				{ "name": "FieldA", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 1 } },
-				{ "name": "FieldB", "type": "crt.Input", "layoutConfig": { "column": 3, "row": 2 } } ] } ]
+				{ "name": "FieldB", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 2 } } ] } ]
 			""");
 
-		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true)));
-
-		AdaptiveLayoutGroup group = guide.AdaptiveLayout!.Single();
-		group.ColumnsByBreakpoint["medium"].Should().Equal(new[] { "1fr", "1fr", "1fr" }, "the widest source column is 3");
-
-		JsonObject b = AdaptiveOf(guide, "FieldB");
-		b["medium"]!["column"]!.GetValue<int>().Should().Be(3, because: "source column is reused on tablet");
-		b["medium"]!["row"]!.GetValue<int>().Should().Be(2);
-		b["small"]!["column"]!.GetValue<int>().Should().Be(1, because: "the phone breakpoint always collapses to a single column");
-		b["small"]!["row"]!.GetValue<int>().Should().Be(2);
-	}
-
-	[Test]
-	[Description("A container with a single field gets no adaptive proposal (nothing to reflow) and the field's mobileValues carry no layoutConfig.")]
-	public void Analyze_SingleField_NoAdaptiveProposal() {
-		PageBundleInfo bundle = Bundle("""
-			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
-				{ "name": "OnlyField", "type": "crt.Input" } ] } ]
-			""");
-
-		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true)));
+		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.GridContainer", true), ("crt.Input", false)));
 
 		guide.AdaptiveLayout.Should().BeNull();
-		Element(guide, "OnlyField").MobileValues!.AsObject().ContainsKey("layoutConfig").Should().BeFalse();
+		JsonObject lc = Element(guide, "FieldB").MobileValues!.AsObject()["layoutConfig"]!.AsObject();
+		lc.ContainsKey("adaptive").Should().BeFalse("a 1-column grid needs no adaptive");
+		lc["column"]!.GetValue<int>().Should().Be(1, "the carried base placement is kept as-is");
+		lc["row"]!.GetValue<int>().Should().Be(2);
+	}
+
+	[Test]
+	[Description("layoutConfig is a container-imposed grid-placement property (not in the component registry); it is carried into mobileValues VERBATIM by copy-and-prune, while a genuinely unsupported property is still dropped.")]
+	public void Analyze_LayoutConfig_IsCarriedAsContainerImposedException() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "Widget", "type": "crt.Input",
+				  "layoutConfig": { "column": 2, "row": 1, "colSpan": 1, "rowSpan": 1 },
+				  "someWebOnlyProp": true } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.Input", false)));
+
+		JsonObject values = Element(guide, "Widget").MobileValues!.AsObject();
+		values.Should().ContainKey("layoutConfig");
+		JsonObject lc = values["layoutConfig"]!.AsObject();
+		lc["column"]!.GetValue<int>().Should().Be(2);
+		lc["row"]!.GetValue<int>().Should().Be(1);
+		lc["colSpan"]!.GetValue<int>().Should().Be(1);
+		lc["rowSpan"]!.GetValue<int>().Should().Be(1);
+		values.Should().NotContainKey("someWebOnlyProp", "it is neither in the mobile registry nor container-imposed");
 	}
 
 	#endregion

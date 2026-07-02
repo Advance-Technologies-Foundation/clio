@@ -57,10 +57,11 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			    (see DATA SECTIONS below). This is the supported way to apply the data sections.
 			  - modelConfig / viewModelConfig — the same configs in full-object form, for REFERENCE only.
 			    viewModelConfig is already FILTERED (attributes used only by dropped components removed).
-			  - adaptiveLayout — a PROPOSED per-screen layout for each container that groups 2+ fields
-			    (stack on phone, columns on tablet). Present at the gate so the user can adjust or decline;
-			    the child placement is already baked into elementMap[].mobileValues.layoutConfig.adaptive and
-			    the container side is a ready-to-apply adaptiveDiff per group. Null when nothing groups 2+ fields.
+			  - adaptiveLayout — the responsive layout for each MULTI-column grid container (phone collapses to
+			    1 column and stacks; tablet/desktop keep the web columns). BOTH sides are already baked into
+			    mobileValues (the container's adaptive columns into its own values, each child's placement into
+			    elementMap[].mobileValues.layoutConfig.adaptive) — nothing separate to apply. Present it at the
+			    gate so the user can adjust or decline. Null when there is no multi-column grid container.
 			  - constraints + nextSteps — the hard mobile rules and the ordered flow.
 
 			─────────────────────────────────────────────────────────────
@@ -138,12 +139,14 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			5. Apply the data sections — paste guide.modelConfigDiff and guide.viewModelConfigDiff VERBATIM as
 			   the page's modelConfigDiff / viewModelConfigDiff (see DATA SECTIONS below). Do NOT rebuild them
 			   by hand, and NEVER copy the data-source section from a pre-existing / reference body.
-			5b. Adaptive layout (when guide.adaptiveLayout is present): the per-screen field placement is ALREADY
-			   inside the fields' mobileValues (layoutConfig.adaptive) you pasted in step 4. PRESENT the proposal
-			   to the user in plain language ("fields in <container> stack on the phone, show 2 columns on a
-			   tablet — adjust?"). Once they approve (they may change column counts / placement or decline), apply
-			   each guide.adaptiveLayout[].adaptiveDiff to set the container's per-breakpoint columns (the diff
-			   merges by container name and works for template-twin and inserted grid containers alike).
+			5b. Adaptive layout (when guide.adaptiveLayout is present): for every MULTI-column crt.GridContainer the
+			   guide has ALREADY baked both sides into mobileValues you pasted in step 4 — the container's per-breakpoint
+			   columns (small = 1, medium/large = the web columns) and each child's layoutConfig.adaptive (phone stacks
+			   in one column; tablet/desktop keep the web placement). A single-column grid gets no adaptive (the mobile
+			   client renders the plain layout). Nothing extra to apply — do NOT emit a separate merge for the
+			   container's adaptive (it is already inside the container's inserted mobileValues; a separate merge
+			   would duplicate the operation). Just PRESENT it to the user in plain language ("fields in <container>
+			   stack on the phone, keep <n> columns on a tablet — adjust?"); they may change it or decline.
 			6. Validate the body with validate-page; resolve any findings (e.g. a binding whose attribute
 			   is not declared) before treating the page as done.
 			7. Persist with update-page. Recreate the page-level business rules: for each
@@ -219,12 +222,12 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			  version may also explicitly mark a request unsupported, in which case its binding is stripped.)
 			  guide.requestConversions is the advisory summary (convertedRequests / flaggedRequests / droppedRequests).
 			  Page `handlers` (the web-only AMD section) are NEVER transferred — re-implement that behavior as entity-level business rules.
-			- ADAPTIVE LAYOUT is two-sided and the guide builds both sides for you: child placement (which grid
-			  cell a field occupies per breakpoint) lives in elementMap[].mobileValues.layoutConfig.adaptive, and
-			  the container columns live in guide.adaptiveLayout[].adaptiveDiff. Apply BOTH for a real responsive
-			  layout — applying only one leaves fields pinned to their old cells. The mobile runtime reflows children
-			  by `row` / `column` (one item per cell; `colSpan` / `rowSpan` are serialized as 1 for designer parity
-			  but not honored per-item). adaptiveLayout is a PROPOSAL — let the user adjust or decline it at the gate.
+			- ADAPTIVE LAYOUT (multi-column crt.GridContainer) is two-sided and the guide builds AND bakes both sides
+			  into mobileValues for you: the container's per-breakpoint columns (small = 1, medium/large = the web
+			  columns) and each child's layoutConfig.adaptive (small = single-column stack; medium/large = the web
+			  placement). A single-column grid gets NO adaptive — the mobile client renders the plain config. Just
+			  paste mobileValues verbatim; do not hand-build adaptive. The mobile runtime reflows children by
+			  `row` / `column`. adaptiveLayout is a PROPOSAL — let the user adjust or decline it at the gate.
 			- NEVER drop a property the mobile component supports. The guide already prebuilds each insert's
 			  values (elementMap[].mobileValues) by carrying every source property valid on mobile (per the
 			  registry) — paste it verbatim and add only the value binding. validate-page is the backstop and

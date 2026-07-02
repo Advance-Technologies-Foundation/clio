@@ -146,7 +146,7 @@ public sealed class ElementMapEntry {
 	/// </summary>
 	[JsonPropertyName("mobileValues")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public JsonNode MobileValues { get; init; }
+	public JsonNode MobileValues { get; set; }
 
 	[JsonPropertyName("reason")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -406,13 +406,13 @@ public sealed class MobilePageConversionGuide {
 
 	// ── Adaptive (per-breakpoint) layout proposal ─────────────────────
 	/// <summary>
-	/// A PROPOSED responsive layout for each mobile container that groups two or more fields: how many
-	/// grid columns to show per breakpoint (<c>small</c> phone, <c>medium</c> tablet portrait,
-	/// <c>large</c> tablet landscape) and which cell each field occupies. The child placement is already
-	/// baked into each field's <c>elementMap[].mobileValues.layoutConfig.adaptive</c>; the container side
-	/// is delivered as a ready-to-apply <c>adaptiveDiff</c> per group. This is a PROPOSAL — present it at
-	/// the conversion gate so the user can adjust column counts / placement or decline it. Null when no
-	/// container groups two or more fields.
+	/// The responsive layout applied to each MULTI-column mobile grid container: how many grid columns per
+	/// breakpoint (<c>small</c> phone = 1, <c>medium</c>/<c>large</c> tablet = the web columns) and which
+	/// cell each child occupies. Both sides are ALREADY baked into mobileValues — the container's
+	/// <c>adaptive</c> columns into its own values and each child's placement into
+	/// <c>elementMap[].mobileValues.layoutConfig.adaptive</c> — so there is nothing separate to apply. This
+	/// is an advisory summary / PROPOSAL — present it at the conversion gate so the user can adjust or
+	/// decline it. Null when no multi-column grid container is present (a single-column grid gets no adaptive).
 	/// </summary>
 	[JsonPropertyName("adaptiveLayout")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -576,10 +576,11 @@ public sealed class FlaggedRequest {
 }
 
 /// <summary>
-/// A PROPOSED adaptive (per-breakpoint) layout for one mobile container that groups two or more fields.
-/// The child placement is already written into each field's <c>mobileValues.layoutConfig.adaptive</c>;
-/// <see cref="AdaptiveDiff"/> carries the matching container-side change. Present it at the conversion
-/// gate so the user can adjust or decline.
+/// The adaptive (per-breakpoint) layout applied to one multi-column mobile grid container. Both sides are
+/// ALREADY baked into mobileValues by the tool — the container's <c>adaptive</c> columns into the
+/// container's own values, and each child's placement into its <c>mobileValues.layoutConfig.adaptive</c> —
+/// so there is nothing separate to apply (no duplicate merge). This is an advisory summary; present it at
+/// the conversion gate so the user can adjust or decline.
 /// </summary>
 public sealed class AdaptiveLayoutGroup {
 	/// <summary>The mobile container these fields are grouped into (e.g. "AreaProfileContainer").</summary>
@@ -587,20 +588,12 @@ public sealed class AdaptiveLayoutGroup {
 	public string ContainerName { get; init; }
 
 	/// <summary>
-	/// Advisory overview of the proposed grid columns per breakpoint:
+	/// Advisory overview of the grid columns per breakpoint (already baked into the container's mobileValues):
 	/// keys <c>small</c> / <c>medium</c> / <c>large</c>, each a list of CSS column sizes (e.g. ["1fr","1fr"]).
 	/// </summary>
 	[JsonPropertyName("columnsByBreakpoint")]
 	public IReadOnlyDictionary<string, IReadOnlyList<string>> ColumnsByBreakpoint { get; init; }
 		= new Dictionary<string, IReadOnlyList<string>>();
-
-	/// <summary>
-	/// Ready-to-apply container-side change: a single root <c>merge</c> diff that sets the container's
-	/// <c>adaptive</c> column counts per breakpoint. Apply it after the body is built (works whether the
-	/// container is a template twin or a newly inserted grid container).
-	/// </summary>
-	[JsonPropertyName("adaptiveDiff")]
-	public JsonNode AdaptiveDiff { get; init; }
 
 	/// <summary>The fields placed in this container and the per-breakpoint cell each occupies.</summary>
 	[JsonPropertyName("items")]

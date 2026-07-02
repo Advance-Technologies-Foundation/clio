@@ -116,16 +116,18 @@ public static class WebToMobileAnalysisService {
 		var convertedRequests = new List<ConvertedRequest>();
 		var droppedRequests = new List<DroppedRequest>();
 		var flaggedRequests = new List<FlaggedRequest>();
-		var sourcePlacements = new Dictionary<string, (int? Col, int? Row)>(StringComparer.OrdinalIgnoreCase);
+		var sourceLayouts = new Dictionary<string, JObject>(StringComparer.OrdinalIgnoreCase);
+		var gridContainerColumns = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 		List<ElementMapEntry> elementMap = BuildElementMap(
 			tree, map, componentMap, mobileTypes, mobileByType, rules, attrToDs, attrToColumn, dataSourceSet, primaryDs, resources,
-			requestMap, convertedRequests, droppedRequests, flaggedRequests, sourcePlacements);
+			requestMap, convertedRequests, droppedRequests, flaggedRequests, sourceLayouts, gridContainerColumns);
 		RequestConversionInfo requestConversions = BuildRequestConversionInfo(convertedRequests, droppedRequests, flaggedRequests);
 
-		// Adaptive (per-breakpoint) layout proposal: group fields by mobile container, place them
-		// (stack on phone, 2 columns on tablet — reusing source column/row as the medium/large baseline),
-		// bake child placement into each field's mobileValues, and emit the container-side adaptiveDiff.
-		List<AdaptiveLayoutGroup> adaptiveLayout = BuildAdaptiveLayout(elementMap, sourcePlacements);
+		// Adaptive (per-breakpoint) layout for multi-column crt.GridContainer: on the phone (small) collapse
+		// to a single column and stack; on tablet/desktop (medium/large) keep the web columns and per-child
+		// placement. A 1-column grid gets no adaptive. Both the container columns and each child's
+		// layoutConfig.adaptive are baked into mobileValues deterministically.
+		List<AdaptiveLayoutGroup> adaptiveLayout = BuildAdaptiveLayout(elementMap, sourceLayouts, gridContainerColumns);
 
 		// 6. Data sections applied to the mobile body verbatim/filtered (identical structural support on
 		//    mobile): modelConfig is carried over as-is (preserving attribute types like ForwardReference);
@@ -706,11 +708,11 @@ public static class WebToMobileAnalysisService {
 		}
 		if (hasAdaptiveLayout) {
 			constraints.Add(
-				"adaptiveLayout proposes a per-screen layout for each container that groups 2+ fields (stack on " +
-				"phone, 2 columns on tablet). The child placement is ALREADY baked into each field's " +
-				"mobileValues.layoutConfig.adaptive — paste it verbatim. To complete the responsive layout, also " +
-				"apply each adaptiveLayout[].adaptiveDiff (the container-side column counts). Present this proposal " +
-				"to the user before approving — they may adjust column counts / placement or decline it.");
+				"adaptiveLayout covers every multi-column crt.GridContainer: on the phone (small) it collapses to a " +
+				"single column and stacks the children; on tablet/desktop (medium/large) it keeps the web columns and " +
+				"per-child placement. A single-column grid gets no adaptive. Both sides are ALREADY baked into " +
+				"mobileValues (the container's adaptive columns and each child's layoutConfig.adaptive) — paste " +
+				"mobileValues verbatim. Present the layout to the user; they may adjust or decline it.");
 		}
 		return constraints;
 	}
@@ -726,7 +728,7 @@ public static class WebToMobileAnalysisService {
 			steps.Add("Paste the provided modelConfigDiff and viewModelConfigDiff VERBATIM as the page's modelConfigDiff / viewModelConfigDiff (each is a single root merge carrying the full config). Do NOT rebuild them by hand and never copy the data-source section from an existing body — keep every attribute's type and path.");
 		}
 		if (hasAdaptiveLayout) {
-			steps.Add("Present the adaptiveLayout proposal (per-screen field placement) to the user for review; once approved, apply each adaptiveLayout[].adaptiveDiff for the container columns (the child layoutConfig.adaptive is already inside the fields' mobileValues).");
+			steps.Add("Adaptive layout for multi-column grid containers is already baked into mobileValues (container adaptive columns + each child's layoutConfig.adaptive: phone collapses to 1 column, tablet/desktop keep the web columns). Present guide.adaptiveLayout to the user for review; they may adjust or decline it.");
 		}
 		steps.Add("Validate the body with validate-page; resolve any findings.");
 		steps.Add("Persist with update-page, then open the result in Freedom UI Mobile Designer for final review.");
@@ -757,7 +759,8 @@ public static class WebToMobileAnalysisService {
 		List<ConvertedRequest> ConvertedRequests,
 		List<DroppedRequest> DroppedRequests,
 		List<FlaggedRequest> FlaggedRequests,
-		Dictionary<string, (int? Col, int? Row)> SourcePlacements);
+		Dictionary<string, JObject> SourceLayouts,
+		Dictionary<string, int> GridContainerColumns);
 
 	/// <summary>
 	/// Produces one <see cref="ElementMapEntry"/> per named element of the resolved tree, deciding
@@ -779,12 +782,13 @@ public static class WebToMobileAnalysisService {
 		List<ConvertedRequest> convertedRequests,
 		List<DroppedRequest> droppedRequests,
 		List<FlaggedRequest> flaggedRequests,
-		Dictionary<string, (int? Col, int? Row)> sourcePlacements) {
+		Dictionary<string, JObject> sourceLayouts,
+		Dictionary<string, int> gridContainerColumns) {
 		var ctx = new ElementMapContext(map,
 			componentMap ?? new Dictionary<string, ComponentMappingRule>(StringComparer.OrdinalIgnoreCase),
 			mobileTypes, mobileByType ?? new Dictionary<string, ComponentRegistryEntry>(),
 			rules, attrToDs, attrToColumn, dataSources, primaryDs, resources, RelocateTargetFor(map), [],
-			requestMap, convertedRequests, droppedRequests, flaggedRequests, sourcePlacements);
+			requestMap, convertedRequests, droppedRequests, flaggedRequests, sourceLayouts, gridContainerColumns);
 		WalkElements(ctx, tree, mobileParentName: null, parentIsTabs: false);
 		return ctx.Out;
 	}
@@ -808,6 +812,10 @@ public static class WebToMobileAnalysisService {
 			}
 
 			bool isContainer = (items is { Count: > 0 }) || IsLayoutContainer(type, name, null, ctx.MobileByType);
+
+			// Capture the element's web layoutConfig (grid placement) and, for a grid container, its web
+			// column count — the adaptive pass reads both to build the per-breakpoint mobile layout.
+			CaptureSource(ctx, name, node);
 
 			// 1. merge — element is a template twin (provided by the mobile template). Recurse so its
 			//    children get their own entries (parent = the template element).
@@ -895,7 +903,6 @@ public static class WebToMobileAnalysisService {
 				continue;
 			}
 			CaptionResource leafCaption = ResolveCaptionResource(ctx, node, name);
-			CaptureSourcePlacement(ctx, name, node);
 			ctx.Out.Add(new ElementMapEntry {
 				WebName = name, WebType = Nz(type), Operation = "insert", MobileName = name, MobileType = leafMobileType,
 				ParentName = ResolveParent(ctx, mobileParentName), PropertyName = "items",
@@ -993,6 +1000,17 @@ public static class WebToMobileAnalysisService {
 	};
 
 	/// <summary>
+	/// Source-node properties that are NOT part of a component's own registry contract (so copy-and-prune
+	/// against <c>allowedProperties</c> would drop them) but are imposed by the parent container and must be
+	/// carried over verbatim. <c>layoutConfig</c> is the grid placement (<c>column</c>/<c>row</c>/
+	/// <c>colSpan</c>/<c>rowSpan</c>, and <c>adaptive</c>) a <c>crt.GridContainer</c> assigns to each child;
+	/// without it a converted component loses its cell in the mobile grid.
+	/// </summary>
+	private static readonly HashSet<string> ContainerImposedProps = new(StringComparer.OrdinalIgnoreCase) {
+		"layoutConfig"
+	};
+
+	/// <summary>
 	/// Builds the prebuilt, ready-to-paste mobile <c>values</c> for an inserted component (universal rule:
 	/// never drop a property the mobile component supports). Copy-and-prune: start from the source node,
 	/// keep every property whose name is a valid mobile property/input (per the mobile registry), drop the
@@ -1021,7 +1039,9 @@ public static class WebToMobileAnalysisService {
 			if (IsEventBinding(prop.Value)) {
 				continue;
 			}
-			if (allowed.Contains(prop.Name)) {
+			// Carry a property when the mobile component's registry allows it, OR when it is a
+			// container-imposed layout property (e.g. layoutConfig) that no component registry declares.
+			if (allowed.Contains(prop.Name) || ContainerImposedProps.Contains(prop.Name)) {
 				values[prop.Name] = prop.Value.DeepClone();
 			}
 		}
@@ -1138,107 +1158,122 @@ public static class WebToMobileAnalysisService {
 	private static int? ReadInt(JObject obj, string prop) =>
 		obj[prop] is { Type: JTokenType.Integer } token ? token.Value<int>() : null;
 
-	/// <summary>Records a leaf field's source grid placement (web <c>layoutConfig</c> column/row) for the adaptive pass.</summary>
-	private static void CaptureSourcePlacement(ElementMapContext ctx, string name, JObject node) {
-		if (node["layoutConfig"] is not JObject layout) {
-			return;
+	/// <summary>
+	/// Captures per element the data the adaptive pass needs: its web <c>layoutConfig</c> (grid placement,
+	/// keyed by element name) and, for a grid container (a node carrying <c>columns</c>), its web column
+	/// count (keyed by the container name — the mobile parent its children are placed under).
+	/// </summary>
+	private static void CaptureSource(ElementMapContext ctx, string name, JObject node) {
+		if (node["layoutConfig"] is JObject layout) {
+			ctx.SourceLayouts[name] = (JObject)layout.DeepClone();
 		}
-		int? col = ReadInt(layout, "column");
-		int? row = ReadInt(layout, "row");
-		if (col is not null || row is not null) {
-			ctx.SourcePlacements[name] = (col, row);
+		if (node["columns"] is JArray columns && columns.Count > 0) {
+			ctx.GridContainerColumns[name] = columns.Count;
 		}
 	}
 
 	/// <summary>
-	/// Builds the per-breakpoint layout PROPOSAL: groups inserted FIELD entries by their mobile container,
-	/// and for each container that groups 2+ fields, stacks them on phone (<c>small</c> = 1 column) and
-	/// flows them into columns on tablet (<c>medium</c> / <c>large</c>) — reusing the source column/row as
-	/// the tablet baseline when the source page already placed the field, else a 2-column flow. The child
-	/// placement is written into each field's <c>mobileValues.layoutConfig.adaptive</c> (mutated in place);
-	/// the container columns are returned as a ready-to-apply merge diff per group. Empty when nothing groups
-	/// 2+ fields.
+	/// Builds the per-breakpoint layout for every MULTI-column <c>crt.GridContainer</c>: on the phone
+	/// (<c>small</c>) it collapses to ONE column and stacks the children in tree order; on tablet/desktop
+	/// (<c>medium</c> / <c>large</c>) it keeps the web column count and each child's web placement. A grid
+	/// with a single column gets NO adaptive (the mobile client renders the plain layout). Both sides are
+	/// baked deterministically: the container columns into the container's own mobileValues, and each child's
+	/// <c>layoutConfig.adaptive</c> (replacing the base placement, which is folded into medium/large) into
+	/// the child's mobileValues. Also returns an advisory group per converted container.
 	/// </summary>
 	private static List<AdaptiveLayoutGroup> BuildAdaptiveLayout(
-		List<ElementMapEntry> elementMap, IReadOnlyDictionary<string, (int? Col, int? Row)> placements) {
-		// Group field inserts by their mobile parent container, preserving tree (= elementMap) order.
-		var byParent = new Dictionary<string, List<ElementMapEntry>>(StringComparer.OrdinalIgnoreCase);
+		List<ElementMapEntry> elementMap,
+		IReadOnlyDictionary<string, JObject> sourceLayouts,
+		IReadOnlyDictionary<string, int> gridContainerColumns) {
+		// Children (any type) of a captured grid container, grouped by mobile parent in tree (= elementMap) order.
+		var byContainer = new Dictionary<string, List<ElementMapEntry>>(StringComparer.OrdinalIgnoreCase);
 		var order = new List<string>();
 		foreach (ElementMapEntry e in elementMap) {
 			if (!string.Equals(e.Operation, "insert", StringComparison.Ordinal) ||
 				string.IsNullOrEmpty(e.ParentName) || e.MobileValues is not JsonObject ||
-				!SchemaValidationService.StandardFieldComponentTypes.Contains(e.MobileType ?? "")) {
+				!gridContainerColumns.ContainsKey(e.ParentName)) {
 				continue;
 			}
-			if (!byParent.TryGetValue(e.ParentName, out List<ElementMapEntry> list)) {
+			if (!byContainer.TryGetValue(e.ParentName, out List<ElementMapEntry> list)) {
 				list = [];
-				byParent[e.ParentName] = list;
+				byContainer[e.ParentName] = list;
 				order.Add(e.ParentName);
 			}
 			list.Add(e);
 		}
 
 		var groups = new List<AdaptiveLayoutGroup>();
-		foreach (string parent in order) {
-			List<ElementMapEntry> fields = byParent[parent];
-			if (fields.Count < 2) {
-				continue; // a single field has nothing to reflow
+		foreach (string container in order) {
+			int webCols = gridContainerColumns[container];
+			if (webCols <= 1) {
+				continue; // single-column grid — the mobile client works with the non-adaptive config
 			}
-			// Tablet (medium/large) column count: reuse the source layout's widest column when present, else 2.
-			int sourceMaxCol = 0;
-			foreach (ElementMapEntry f in fields) {
-				if (placements.TryGetValue(f.MobileName, out (int? Col, int? Row) p) && p.Col is int c && c > sourceMaxCol) {
-					sourceMaxCol = c;
-				}
-			}
-			int tabletCols = sourceMaxCol >= 2 ? sourceMaxCol : 2;
+			List<ElementMapEntry> children = byContainer[container];
 
 			var items = new List<AdaptiveLayoutItem>();
-			for (int i = 0; i < fields.Count; i++) {
-				ElementMapEntry f = fields[i];
-				placements.TryGetValue(f.MobileName, out (int? Col, int? Row) src);
-				// small: single-column vertical stack; medium/large: reuse source cell, else flow N-per-row.
-				int tabletCol = src.Col is int sc && sc >= 1 ? sc : (i % tabletCols) + 1;
-				int tabletRow = src.Row is int sr && sr >= 1 ? sr : (i / tabletCols) + 1;
+			for (int i = 0; i < children.Count; i++) {
+				ElementMapEntry child = children[i];
+				(int col, int row, int colSpan, int rowSpan) = WebPlacement(sourceLayouts, child.WebName, i, webCols);
 				var adaptive = new JsonObject {
-					["small"] = Cell(1, i + 1),
-					["medium"] = Cell(tabletCol, tabletRow),
-					["large"] = Cell(tabletCol, tabletRow)
+					["small"] = Cell(1, i + 1, 1, 1),               // phone: single-column stack
+					["medium"] = Cell(col, row, colSpan, rowSpan),  // tablet/desktop: keep the web placement
+					["large"] = Cell(col, row, colSpan, rowSpan)
 				};
-				// Bake the child placement into the already-built mobileValues (mutating the referenced node).
-				((JsonObject)f.MobileValues)["layoutConfig"] = new JsonObject { ["adaptive"] = adaptive.DeepClone() };
-				items.Add(new AdaptiveLayoutItem { Name = f.MobileName, LayoutConfigAdaptive = adaptive });
+				// Replace layoutConfig with the adaptive form (the web placement is folded into medium/large).
+				((JsonObject)child.MobileValues)["layoutConfig"] = new JsonObject { ["adaptive"] = adaptive.DeepClone() };
+				items.Add(new AdaptiveLayoutItem { Name = child.MobileName, LayoutConfigAdaptive = adaptive });
+			}
+
+			// Container columns: small = 1, medium/large = the web column count. Fold INTO the container's own
+			// element-map entry (insert or merge twin) so the result is a SINGLE operation on that element — no
+			// separate merge diff for the model to apply on top (which would duplicate the operation).
+			ElementMapEntry containerEntry = elementMap.FirstOrDefault(e =>
+				(string.Equals(e.Operation, "insert", StringComparison.Ordinal) ||
+				 string.Equals(e.Operation, "merge", StringComparison.Ordinal)) &&
+				string.Equals(e.MobileName, container, StringComparison.OrdinalIgnoreCase));
+			if (containerEntry is not null) {
+				if (containerEntry.MobileValues is not JsonObject containerValues) {
+					containerValues = new JsonObject();
+					containerEntry.MobileValues = containerValues;
+				}
+				containerValues["adaptive"] = new JsonObject {
+					["small"] = new JsonObject { ["columns"] = ColumnsNode(1) },
+					["medium"] = new JsonObject { ["columns"] = ColumnsNode(webCols) },
+					["large"] = new JsonObject { ["columns"] = ColumnsNode(webCols) }
+				};
 			}
 
 			groups.Add(new AdaptiveLayoutGroup {
-				ContainerName = parent,
+				ContainerName = container,
 				ColumnsByBreakpoint = new Dictionary<string, IReadOnlyList<string>> {
-					["small"] = Cols(1), ["medium"] = Cols(tabletCols), ["large"] = Cols(tabletCols)
+					["small"] = Cols(1), ["medium"] = Cols(webCols), ["large"] = Cols(webCols)
 				},
-				AdaptiveDiff = BuildAdaptiveColumnsDiff(parent, tabletCols),
 				Items = items
 			});
 		}
 		return groups;
 
-		static JsonObject Cell(int column, int row) =>
-			new() { ["row"] = row, ["column"] = column, ["colSpan"] = 1, ["rowSpan"] = 1 };
+		static JsonObject Cell(int column, int row, int colSpan, int rowSpan) =>
+			new() { ["row"] = row, ["column"] = column, ["colSpan"] = colSpan, ["rowSpan"] = rowSpan };
 		static IReadOnlyList<string> Cols(int n) => Enumerable.Repeat("1fr", n).ToList();
 	}
 
-	/// <summary>A single root <c>merge</c> diff that sets a container's per-breakpoint adaptive column counts.</summary>
-	private static JsonNode BuildAdaptiveColumnsDiff(string containerName, int tabletCols) =>
-		new JsonArray(new JsonObject {
-			["operation"] = "merge",
-			["name"] = containerName,
-			["values"] = new JsonObject {
-				["adaptive"] = new JsonObject {
-					["small"] = new JsonObject { ["columns"] = ColumnsNode(1) },
-					["medium"] = new JsonObject { ["columns"] = ColumnsNode(tabletCols) },
-					["large"] = new JsonObject { ["columns"] = ColumnsNode(tabletCols) }
-				}
-			}
-		});
+	/// <summary>
+	/// The web grid placement of a child (<c>column</c>/<c>row</c>/<c>colSpan</c>/<c>rowSpan</c> from its web
+	/// <c>layoutConfig</c>). Falls back to a left-to-right flow (<paramref name="cols"/> per row, spans of 1)
+	/// using the child's <paramref name="index"/> when the source declared no placement.
+	/// </summary>
+	private static (int Col, int Row, int ColSpan, int RowSpan) WebPlacement(
+		IReadOnlyDictionary<string, JObject> sourceLayouts, string name, int index, int cols) {
+		if (name is not null && sourceLayouts.TryGetValue(name, out JObject lc)) {
+			return (
+				ReadInt(lc, "column") ?? (index % cols) + 1,
+				ReadInt(lc, "row") ?? (index / cols) + 1,
+				ReadInt(lc, "colSpan") ?? 1,
+				ReadInt(lc, "rowSpan") ?? 1);
+		}
+		return ((index % cols) + 1, (index / cols) + 1, 1, 1);
+	}
 
 	/// <summary>A JSON array of <paramref name="n"/> "1fr" column sizes.</summary>
 	private static JsonArray ColumnsNode(int n) {
