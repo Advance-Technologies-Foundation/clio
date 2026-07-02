@@ -31,6 +31,7 @@ public sealed class RoutingGuidanceResource {
 		         - dashboards / analytics widgets (placement / sizing / styling) -> name=dashboards AND name=indicator-widget
 		         - page business rules (visibility/required/value) -> name=business-rules
 		       - Entities & schemas: create/modify schema, app / schema modeling -> name=app-modeling
+		         - schema designer fails with "GetSchemaDesignItem returned an HTML error page" / package dependencies -> name=package-dependencies
 		         - entity business rules / lookup filtering / dependent fields -> name=business-rules; static filters -> name=business-rule-filters
 		       - Data: raw ESQ queries -> name=esq AND name=esq-filters
 		         - lookup seeding / data bindings -> name=data-bindings
