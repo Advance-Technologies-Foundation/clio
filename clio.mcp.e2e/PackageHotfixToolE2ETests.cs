@@ -3,7 +3,6 @@ using Allure.Net.Commons;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
-using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
@@ -19,7 +18,8 @@ namespace Clio.Mcp.E2E;
 [Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("pkg-hotfix")]
-public sealed class PackageHotfixToolE2ETests {
+[Parallelizable(ParallelScope.Self)]
+public sealed class PackageHotfixToolE2ETests : McpContractFixtureBase {
 
 	private const string UnlockToolName = PackageHotfixTool.UnlockForHotfixToolName;
 	private const string FinishToolName = PackageHotfixTool.FinishHotfixToolName;
@@ -31,8 +31,7 @@ public sealed class PackageHotfixToolE2ETests {
 	[Description("Verifies that unlock-for-hotfix appears in the MCP tool advertisement from the real clio mcp-server process.")]
 	public async Task UnlockForHotfix_Should_Be_Advertised_By_McpServer() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		await using PackageHotfixArrangeContext arrangeContext = await ArrangeAsync(settings);
+		await using var arrangeContext = Arrange();
 
 		// Act
 		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
@@ -48,8 +47,7 @@ public sealed class PackageHotfixToolE2ETests {
 	[Description("Verifies that finish-hotfix appears in the MCP tool advertisement from the real clio mcp-server process.")]
 	public async Task FinishHotfix_Should_Be_Advertised_By_McpServer() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		await using PackageHotfixArrangeContext arrangeContext = await ArrangeAsync(settings);
+		await using var arrangeContext = Arrange();
 
 		// Act
 		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
@@ -65,8 +63,7 @@ public sealed class PackageHotfixToolE2ETests {
 	[Description("Reports invalid environment failures for unlock-for-hotfix through the real MCP server.")]
 	public async Task UnlockForHotfix_Should_Report_Invalid_Environment_Failure() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		await using PackageHotfixArrangeContext arrangeContext = await ArrangeAsync(settings);
+		await using var arrangeContext = Arrange();
 		string invalidEnvironmentName = $"missing-hotfix-env-{Guid.NewGuid():N}";
 
 		// Act
@@ -85,8 +82,7 @@ public sealed class PackageHotfixToolE2ETests {
 	[Description("Reports invalid environment failures for finish-hotfix through the real MCP server.")]
 	public async Task FinishHotfix_Should_Report_Invalid_Environment_Failure() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		await using PackageHotfixArrangeContext arrangeContext = await ArrangeAsync(settings);
+		await using var arrangeContext = Arrange();
 		string invalidEnvironmentName = $"missing-hotfix-env-{Guid.NewGuid():N}";
 
 		// Act
@@ -98,16 +94,8 @@ public sealed class PackageHotfixToolE2ETests {
 		AssertFailureMentionsEnvironment(actResult, invalidEnvironmentName);
 	}
 
-	private static async Task<PackageHotfixArrangeContext> ArrangeAsync(McpE2ESettings settings) {
-		return await AllureApi.Step("Arrange MCP server session", async () => {
-			CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
-			McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-			return new PackageHotfixArrangeContext(session, cancellationTokenSource);
-		});
-	}
-
 	private static async Task<CommandExecutionActResult> ActAsync(
-		PackageHotfixArrangeContext arrangeContext,
+		ArrangeContext arrangeContext,
 		string toolName,
 		string packageName,
 		string environmentName) {
@@ -158,15 +146,6 @@ public sealed class PackageHotfixToolE2ETests {
 		combinedOutput.Should().MatchRegex(
 			$"(?is)({Regex.Escape(environmentName)}|environment.*not.*found|not found|error occurred invoking)",
 			because: "the failure log should identify that the requested environment is not registered");
-	}
-
-	private sealed record PackageHotfixArrangeContext(
-		McpServerSession Session,
-		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
-			CancellationTokenSource.Dispose();
-		}
 	}
 
 	private sealed record CommandExecutionActResult(
