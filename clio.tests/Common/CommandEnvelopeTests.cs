@@ -105,6 +105,34 @@ public class CommandEnvelopeTests {
 	}
 
 	[Test]
+	[Description("Envelope with non-ASCII data must serialize as strict-parseable JSON with no BOM and no raw control chars, and round-trip Unicode — cross-platform (F1/F2) invariant guard")]
+	public void FormatEnvelope_ShouldBeStrictParseableUnicodeSafe_WhenDataHasNonAscii() {
+		// Arrange — Cyrillic + an embedded quote + an embedded tab (control char) in the payload
+		var data = new List<string> { "Пакет-Тест", "with \"quote\"", "таб\tвнутри" };
+
+		// Act
+		string json = _formater.FormatEnvelope("list-packages", data);
+
+		// Assert: strict parse works regardless of platform newline (CRLF/LF are valid JSON whitespace)
+		JObject parsed = JObject.Parse(json);
+		parsed["ok"]!.Value<bool>().Should().BeTrue(because: "the payload serialized successfully");
+		var values = (JArray)parsed["data"]!;
+		values[0]!.Value<string>().Should().Be("Пакет-Тест", because: "Unicode must round-trip byte-for-byte");
+		values[1]!.Value<string>().Should().Be("with \"quote\"", because: "quotes must be escaped, not corrupt the document");
+		values[2]!.Value<string>().Should().Be("таб\tвнутри", because: "control chars must be escaped and round-trip");
+		// No BOM at the start (a leading U+FEFF breaks jq / strict parsers on Windows).
+		json[0].Should().NotBe('﻿', because: "the JSON string must not begin with a byte-order mark");
+		// No RAW (unescaped) control characters below 0x20 except structural whitespace \r \n \t
+		// (this also covers a raw NUL byte).
+		foreach (char c in json) {
+			if (c < 0x20) {
+				(c is '\r' or '\n' or '\t').Should().BeTrue(
+					because: $"only structural whitespace is allowed raw; found control char U+{(int)c:X4}");
+			}
+		}
+	}
+
+	[Test]
 	[Description("The re-exported version codes must match the authoritative taxonomy on CreatioVersionRequirementException")]
 	public void VersionCodes_ShouldMatchAuthoritativeTaxonomy_WhenReExported() {
 		CommandErrorCodes.VersionTooOld.Should().Be(CreatioVersionRequirementException.VersionTooOldCode,

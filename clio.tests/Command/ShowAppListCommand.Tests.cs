@@ -257,6 +257,29 @@ public class ShowAppListCommandTestCase : BaseCommandTests<AppListOptions>{
 
 	[Test]
 	[Category("Unit")]
+	[Description("Should render exact raw field lines with masked password and NO envelope when --format raw (non-JSON) — AC#3 golden for the list-environments legacy path")]
+	public void Execute_ShouldRenderRawFieldsMasked_WhenFormatRawNonJson() {
+		// Arrange
+		AppListOptions options = new() { Name = "prod", Format = "raw" };
+		var environment = new EnvironmentSettings { Uri = "https://prod", Login = "admin", Password = "secret" };
+		_settingsRepository.FindEnvironment("prod").Returns(environment);
+		_settingsRepository.GetActualEnvironmentName("prod").Returns("prod");
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "raw format for a found environment succeeds");
+		Received.InOrder(() => {
+			_loggerMock.WriteLine("Name: prod");
+			_loggerMock.WriteLine("Uri: https://prod");
+		});
+		_loggerMock.Received(1).WriteLine("Password: ****");
+		_jsonResponseFormater.DidNotReceive().FormatEnvelope("list-environments", Arg.Any<ShowWebAppSettingsResult>());
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Should NOT emit the unified envelope when --json is not set — legacy --format behavior is preserved")]
 	public void Execute_ShouldNotEmitEnvelope_WhenJsonNotSet() {
 		// Arrange
