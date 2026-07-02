@@ -451,7 +451,7 @@ public sealed class CreateBusinessProcessToolE2ETests {
 	private static async Task<ArrangeContext> ArrangeAsync(bool requireReachableEnvironment) {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		FeatureE2EGate.SkipIfFeatureDisabled(settings, "process-designer");
+		ProcessDesignerE2EGate.SkipIfFeatureDisabled(settings);
 		string environmentName = settings.Sandbox.EnvironmentName;
 		if (requireReachableEnvironment) {
 			if (string.IsNullOrWhiteSpace(environmentName)) {
