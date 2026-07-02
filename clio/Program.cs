@@ -696,6 +696,13 @@ internal class Program {
 
 	public static bool IsDebugMode { get; set; }
 
+	/// <summary>
+	/// True when a command was invoked with <c>--json</c> (or the <c>-j</c> alias). In this mode the
+	/// <see cref="ConsoleLogger"/> routes decorated diagnostic lines ([INF]/[WAR]/[DBG]) to stderr so
+	/// stdout carries exactly one JSON object — the unified command envelope. Set once during startup.
+	/// </summary>
+	public static bool IsJsonOutputMode { get; set; }
+
 	public static bool IsEnvironmentReported { get; set; }
 
 	public static bool Safe { get; private set; } = true;
@@ -1118,6 +1125,12 @@ internal class Program {
 			IsMcpServerMode = isMcp;
 			IsDebugMode = args.Any(x => x.ToLower() == "--debug");
 			AddTimeStampToOutput = args.Any(x => x.ToLower() == "--ts");
+			// Detect --json / -j early (before the background updater logs) so decorated diagnostics are
+			// routed to stderr and stdout stays a single JSON envelope. Only list-packages uses -j.
+			IsJsonOutputMode = args.Any(x => {
+				string flag = x.ToLower();
+				return flag == "--json" || flag == "-j";
+			});
 			OriginalArgs = args;
 			
 			// Set IsCfgOpenCommand based on input arguments
