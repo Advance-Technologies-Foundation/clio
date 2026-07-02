@@ -191,6 +191,27 @@ public sealed class GuidanceGetToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Pins the get-component-info-first / anti-bundle-reverse-engineering sentence in the page-modification guidance so it cannot be silently reverted (ENG-91953 recurrence guard).")]
+	public async Task GuidanceGet_Should_Pin_AntiBundleReverseEngineering_ForPageModification() {
+		// Arrange
+		GuidanceGetTool tool = new(_featureToggleService);
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("page-modification"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "page-modification is a registered guidance name");
+		result.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article");
+		result.Article!.Text.Should().Contain("reverse-engineering one is NOT a substitute",
+			because: "the anti-bundle-reverse-engineering guidance is a core ENG-91953 deliverable and must be guarded against silent reverts");
+		result.Article.Text.Should().Contain("compiled bundle",
+			because: "the guidance must keep warning that a compiled page bundle hides the catalog-only signals get-component-info carries");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Returns the canonical handler guidance article when the caller requests page-schema-handlers.")]
 	public async Task GuidanceGet_Should_Return_Page_Schema_Handlers_Article() {
 		// Arrange
