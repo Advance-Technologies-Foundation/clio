@@ -181,8 +181,8 @@ public class CreateThemeCommandTestCase : BaseCommandTests<CreateThemeOptions>
 	}
 
 	[Test, Category("Unit")]
-	[Description("Surfaces a css-class-name error (not a misleading caption error) when --css-class-name is empty and --caption is omitted, because the caption is derived from css-class-name.")]
-	public void CreateTheme_FailsWithCssClassNameError_WhenCssClassNameEmptyAndCaptionOmitted() {
+	[Description("Fails before any service call with an 'at least one is required' error when both --css-class-name and --caption are empty.")]
+	public void CreateTheme_FailsWithAtLeastOneRequired_WhenCssClassNameAndCaptionBothEmpty() {
 		// Arrange
 		CreateThemeOptions options = new() {
 			CssClassName = string.Empty,
@@ -193,11 +193,35 @@ public class CreateThemeCommandTestCase : BaseCommandTests<CreateThemeOptions>
 		int exitCode = _command.Execute(options);
 
 		// Assert
-		exitCode.Should().Be(1, because: "an empty css-class-name is invalid and must fail before any service call");
+		exitCode.Should().Be(1, because: "with no css-class-name and no caption there is nothing to name the theme");
 		_applicationClient.DidNotReceive().ExecutePostRequest(
 			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
-		// The error must point at the real cause (the empty css-class-name), not the derived empty caption.
-		_logger.Received(1).WriteError(Arg.Is<string>(m => m.Contains("css-class-name")));
+		_logger.Received(1).WriteError(Arg.Is<string>(m => m.Contains("at least one is required")));
+	}
+
+	[Test, Category("Unit")]
+	[Description("Derives the css-class-name from the caption (slugified) and sends both when --css-class-name is omitted.")]
+	public void CreateTheme_DerivesCssClassNameFromCaption_WhenCssClassNameOmitted() {
+		// Arrange
+		string capturedBody = null;
+		_applicationClient.ExecutePostRequest(
+				Arg.Is<string>(u => u.Contains("CreateTheme")), Arg.Any<string>(),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(ci => { capturedBody = ci.ArgAt<string>(1); return "{\"success\":true}"; });
+		CreateThemeOptions options = new() {
+			Caption = "Ocean Blue",
+			CssContent = ".x{}"
+		};
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "a caption alone is enough — clio derives a valid css-class-name from it");
+		capturedBody.Should().Contain("\"cssClassName\":\"ocean-blue\"",
+			because: "the css class name is the slug of the caption");
+		capturedBody.Should().Contain("\"caption\":\"Ocean Blue\"",
+			because: "the human caption is sent as-is, not replaced by the slug");
 	}
 
 	[Test, Category("Unit")]

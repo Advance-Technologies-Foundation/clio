@@ -64,22 +64,46 @@ catalog and the prose authoring guides do **not** move into clio — they belong
 
 ## Decisions in detail
 
-### D1 — `build-theme` is a pure, read-only compute tool — NOT combined with create
+### D1 — `build-theme` is a compute tool with an optional local-write mode — NOT combined with create
 
-`ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false`. Inputs mirror
-`BuildThemeOptions`; output is the `theme.css` string. It does **not** touch an environment.
+`ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false`. Inputs mirror
+`BuildThemeOptions`. It has **two output modes**:
+- **Compute mode** — returns the `theme.css` string (+ `theme.json` descriptor + warnings). This is the
+  CLI stdout default and the MCP default (no `workspaceDirectory`/`packageName`).
+- **Workspace-write mode** — writes `theme.css` + `theme.json` into a workspace package and returns the
+  written **path** (+ warnings), **without** the CSS payload. The CLI takes a raw `--output` directory; the
+  **MCP tool takes `workspaceDirectory` (absolute) + `packageName`** and resolves
+  `<workspaceDirectory>/packages/<packageName>/Files/themes/<cssClassName>/` itself, so the agent supplies
+  the workspace and package (a stable identity) rather than a physical path — mirroring how
+  `new-ui-project` takes a workspace + package.
 
-Rationale: the math is environment-agnostic and deterministic, so a pure tool composes with **both**
-flows like a pipe — workspace/dev writes the returned CSS into package files; no-code/server passes
-it as `create-theme-by-environment`'s `css-content`. Folding it into a mutating create would force a
-needless environment arg + `by-environment`/`by-credentials` duplication onto a pure function and
-conflate "compute" with "deploy". This mirrors clio's existing split (`get-component-info` is
-read-only compute; `create-theme` mutates); the `clio-run` dispatcher is for *mutating* combos, which
-this is not. (Reading the bundled template is a local read-only file access; the optional
-`--environment-name` version probe is read-only too — `get-component-info` is `ReadOnly=true` under the
-same conditions, so the flag is consistent.)
+It **never touches an environment** in either mode (the optional `--environment-name` only *resolves the
+template version*).
 
-**Ships as CLI verb + MCP tool** (prior art: every theme op has both), sharing one `IThemeCssBuilder`.
+Rationale: the math is environment-agnostic and deterministic, so `build-theme` composes with **both**
+flows like a pipe — workspace/dev writes the artifacts into package files; no-code/server passes the
+returned CSS as `create-theme-by-environment`'s `css-content`. **The MCP tool exposes the workspace-write
+mode (not just the CLI verb) for a concrete reason: token cost.** In compute mode the full `theme.css`
+(tens of KB) round-trips through the model twice — once as the tool response, once as the argument to a
+follow-up file-write — and the second hop is expensive output tokens. Writing the artifacts inside the
+tool and returning only the path keeps the large CSS out of the agent context entirely in the workspace
+flow. This does **not** fold `build-theme` into a mutating *create*: it still does not deploy to an
+environment, so no environment arg + `by-environment`/`by-credentials` duplication is forced onto it —
+that combination stays rejected. The write is a **local filesystem** effect only, which is why
+`ReadOnly = false` (the tool now modifies its local environment) while `Destructive = false` (it writes
+generated build artifacts into a caller-supplied workspace directory, mirroring `new-ui-project`'s
+scaffolding) and `Idempotent = true` (same inputs ⇒ same files). Reading the bundled template and the
+optional version probe remain read-only, but the write mode takes the tool as a whole out of the
+read-only class — the safety flag is per-tool, not per-invocation, so it is reported honestly for the
+write-capable tool. The MCP `workspaceDirectory` must be a **fully-qualified absolute path** and
+`packageName` a simple identifier (`^[A-Za-z0-9_]+$`); the workspace marker (`.clio/workspaceSettings.json`)
+and the package directory are verified before writing — the same validation shape as
+`new-ui-project`. The FS checks and path resolution live in `BuildThemeCommand` (which already owns
+`IFileSystem`), so the flat tool stays thin and the write mode is fully unit-testable with a substituted
+file system (no reliance on the shared, CWD-derived `IWorkspacePathBuilder` singleton).
+
+**Ships as CLI verb + MCP tool** (prior art: every theme op has both), sharing one `IThemeCssBuilder`;
+the MCP tool delegates the write to the command so both surfaces write identically.
 
 ### D2 — `clio/Theming/` namespace; math = `internal static`, builder = DI service
 
@@ -242,7 +266,7 @@ The npm **deprecation/unpublish** is a creatio-ui workstream — out of clio's c
 
 | Option | Pros | Cons | Status |
 |--------|------|------|--------|
-| **Chosen: pure compute `build-theme` (CLI+MCP); math in `clio/Theming/`; template arg; bundled version-pinned template provider; feature-toggled** | Composes with both flows; math I/O-free + bit-exact testable; template ships in-tool (no network, no producer gate); mirrors `tpl/ui` | New `Theming` module trait | **Chosen** |
+| **Chosen: `build-theme` compute tool with an optional local workspace-write mode (CLI+MCP); math in `clio/Theming/`; template arg; bundled version-pinned template provider; feature-toggled** | Composes with both flows; math I/O-free + bit-exact testable; template ships in-tool (no network, no producer gate); mirrors `tpl/ui`; MCP write mode keeps the large CSS out of the agent context (token cost) | New `Theming` module trait; MCP tool is not read-only (writes local files) | **Chosen** |
 | Combine build+create into one mutating tool (`clio-run` dispatcher) | One call for the no-code flow | Forces env arg + by-env/by-cred duplication on a pure function; conflates compute with deploy; doesn't serve the workspace flow | Rejected (D1) |
 | Embed the token catalog + prose guides in clio | Agent always has the catalog locally | Recreates the cross-repo drift the registry retired its in-DLL snapshot to avoid; clio release per token change | Rejected (D8) |
 | Bundle the template but ship **un-toggled** | `build-theme` works day one | The surface (tests, docs, MCP tool) is still being built out; exposing the half-built verb is premature | Rejected in favor of bundled + feature toggle (D5/D6) |
@@ -269,7 +293,7 @@ The npm **deprecation/unpublish** is a creatio-ui workstream — out of clio's c
 | `clio/tpl/themes/{version}/theme.css.tpl`, `theme.json.tpl` | bundled, version-pinned templates (copied by the `tpl\**` content glob; `10.0` is the first bundled version) |
 | `clio/Command/Theming/ThemeTemplateProvider.cs` | `IThemeTemplateProvider` (namespace `Clio.Command.Theming`); reads the version-matched bundled `theme.css.tpl`/`theme.json.tpl`; highest bundled ≤ target; too-old → `ArgumentException`, missing file → `InvalidOperationException` |
 | `clio/Command/Theming/BuildThemeCommand.cs` | `BuildThemeOptions` (`[Verb("build-theme")]`, `[FeatureToggle("theming")]`) + `BuildThemeCommand : Command<BuildThemeOptions>`; local; resolve version (`--version` xor `--environment-name`) → `IThemeTemplateProvider.GetCssTemplate` → `IThemeCssBuilder.Build` → `--output`/stdout; workspace mode also writes `theme.json` |
-| `clio/Command/McpServer/Tools/BuildThemeTool.cs` | `[McpServerToolType]` + `[FeatureToggle("theming")]`; flat `build-theme` tool (`ComponentInfoTool` shape — injects `IThemeCssBuilder` + `IThemeTemplateProvider`); `BuildThemeResult { success, css, descriptor, warnings?, error? }`; `ReadOnly=true/Destructive=false/Idempotent=true/OpenWorld=false`; description → `get-guidance theming` |
+| `clio/Command/McpServer/Tools/BuildThemeTool.cs` | `[McpServerToolType]` + `[FeatureToggle("theming")]`; flat `build-theme` tool (`ComponentInfoTool` shape — injects `BuildThemeCommand`); optional `workspaceDirectory`+`packageName` ⇒ writes `theme.css`+`theme.json` into `<ws>/packages/<pkg>/Files/themes/<cssClassName>/` and returns `path` (no CSS payload — token cost), omitted ⇒ `css`+`descriptor`; `BuildThemeResult { success, css?, descriptor?, path?, warnings?, error? }`; `ReadOnly=false/Destructive=false/Idempotent=true/OpenWorld=false`; description → `get-guidance theming` |
 | `clio/help/en/build-theme.txt`, `clio/docs/commands/build-theme.md` | CLI `-H` help + GitHub docs |
 | `clio.tests/Theming/*` (+ `Fixtures/{theme.css.tpl, color-math-parity.json, theme-css-golden.json}`) | ported spec anchors + `ColorMathParityTests` (frozen TS goldens) + the template/builder contract guard |
 | `clio.tests/Command/ThemeTemplateProviderTests.cs` | version pick: highest ≤ target / highest-when-empty / too-old → error / missing-file → error |
@@ -314,8 +338,8 @@ None in clio (additive + edits). The `@creatio/theming` package itself is deprec
 | Unit (parity) | NUnit | committed TS-generated fixture matches C# exactly | `clio.tests/Theming/ColorMathParityTests.cs` |
 | Unit (parity/contract) | NUnit | frozen TS goldens + freedom.scss `-500` reproduction + template/builder contract | `clio.tests/Theming/ColorMathParityTests.cs` + the contract guard |
 | Unit (template provider) | NUnit | version pick: highest ≤ target / highest-when-empty / too-old → error / missing-file → error | `clio.tests/Command/ThemeTemplateProviderTests.cs` |
-| Unit (surface) | `BaseCommandTests<BuildThemeOptions>` + NSubstitute | command output modes, tool arg mapping, feature-toggle gating, safety flags, description → `get-guidance theming` | `clio.tests/Command/{BuildThemeCommandTests,McpServer/BuildThemeToolTests}.cs` |
-| E2E (MCP) | `clio.mcp.e2e` (NOT in CI — manual) | `build-theme` advertised by real `clio mcp-server`; valid `theme.css` produced over the protocol | `clio.mcp.e2e/BuildThemeToolE2ETests.cs` |
+| Unit (surface) | `BaseCommandTests<BuildThemeOptions>` + NSubstitute | command output modes, tool arg mapping, **tool workspace-write mode (`workspaceDirectory`+`packageName` → writes into `<ws>/packages/<pkg>/Files/themes/<cssClassName>`, returns `path`, no CSS payload; rejects a non-absolute workspaceDirectory / non-workspace / missing package)**, feature-toggle gating, safety flags, description → `get-guidance theming` | `clio.tests/Command/{BuildThemeCommandTests,McpServer/BuildThemeToolTests}.cs` |
+| E2E (MCP) | `clio.mcp.e2e` (NOT in CI — manual) | `build-theme` advertised (`ReadOnly=false`) by real `clio mcp-server`; compute mode produces valid `theme.css`; **workspace-write mode (`workspaceDirectory`+`packageName`) writes `theme.css`+`theme.json` into the package and returns `path`** | `clio.mcp.e2e/BuildThemeToolE2ETests.cs` |
 | Manual (end-to-end) | runbook | no-code: build-theme → create-theme → list → set DefaultTheme; workspace: build-theme --output → push-workspace → list | Manual |
 
 Full-suite trigger (smart-regression rule 4): `BindingsModule.cs` + `Program.cs` change ⇒ run the
@@ -328,8 +352,9 @@ full `Category=Unit` suite in addition to targeted `Module=Theming|McpServer|Com
 - **Positive**
   - Agents stop shelling out to Node; theme CSS is produced in-process, deterministically, bit-exact
     with the retired package; the template ships bundled in clio (no network dependency).
-  - Pure compute tool composes with both the workspace/dev and no-code/server flows unchanged; the
-    theme CRUD + `DefaultTheme` activation are untouched.
+  - Composes with both the workspace/dev and no-code/server flows; the theme CRUD + `DefaultTheme`
+    activation are untouched. The MCP tool's workspace-write mode lets a coding agent persist the
+    artifacts without round-tripping the large `theme.css` back out as expensive output tokens.
   - Retires clio's coupling to the npm package; the `--crt-*` catalog stays single-sourced on the CDN
     (no cross-repo drift).
 - **Trade-offs / risks**
@@ -351,8 +376,10 @@ full `Category=Unit` suite in addition to targeted `Module=Theming|McpServer|Com
    `list-themes`/`clear-themes-cache`) and `ThemingGuidanceResource` — each carrying `[FeatureToggle("theming")]`
    on its options class **and** its MCP tool/resource type. Enable with `clio experimental --name theming --enable`.
    Go-live trigger = surface complete + parity verified.
-3. **OQ-03 — RESOLVED.** `build-theme` emits `theme.json` in CLI workspace-output (dir) mode from the
-   bundled `theme.json.tpl`; the MCP no-code flow does not.
+3. **OQ-03 — RESOLVED.** `build-theme` emits `theme.json` (from the bundled `theme.json.tpl`) in the
+   **workspace-write mode of both the CLI verb (`--output` dir) and the MCP tool (`workspaceDirectory` +
+   `packageName`)**. The **compute** mode (CLI stdout / MCP `css` return, which the no-code flow feeds into
+   `create-theme`'s `css-content`) returns the descriptor as a string but writes no `theme.json` file.
 4. **OQ-04 — RESOLVED.** No shared text-fetch helper is needed — the template is read from the bundled asset (D5).
 
 ## Pre-implementation Checklist
@@ -363,7 +390,7 @@ full `Category=Unit` suite in addition to targeted `Module=Theming|McpServer|Com
 - [ ] template-fill regexes ported verbatim **with a match timeout** (S6444); post-fill no-`<%`/all-steps guard
 - [ ] `IThemeTemplateProvider` reads the bundled `tpl/themes/{version}/`; highest bundled ≤ target; too-old → `ArgumentException` (CLI error / MCP `success:false`)
 - [ ] `[FeatureToggle("theming")]` on BOTH the options class and the `[McpServerToolType]`; MCP via `RegisterEnabledPrimitives` (`IEnumerable<Type>`)
-- [ ] `build-theme` flags: `ReadOnly=true/Destructive=false/Idempotent=true/OpenWorld=false`; description → `get-guidance theming`
+- [ ] `build-theme` flags: `ReadOnly=false/Destructive=false/Idempotent=true/OpenWorld=false` (the MCP tool can write local files in workspace-write mode); description → `get-guidance theming`; MCP write mode takes `workspaceDirectory` (validated absolute + workspace marker via `IWorkspacePathBuilder`) + `packageName` (identifier, package must exist), writes into `<ws>/packages/<pkg>/Files/themes/<cssClassName>`, and returns `path` (no CSS payload)
 - [ ] bit-exact: ported spec anchors + generated parity fixture + freedom.scss reproduction/template-contract guard
 - [ ] `ThemingGuidanceResource` npm text swapped for `build-theme`; token catalog NOT restated; other sections kept
 - [ ] `clio/tpl/ui-project/package.json` `@creatio/theming` dependency removed

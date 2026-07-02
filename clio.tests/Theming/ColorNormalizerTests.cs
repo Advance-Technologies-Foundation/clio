@@ -64,6 +64,42 @@ public sealed class ColorNormalizerTests {
 			because: "hsl() parsing must be culture-invariant");
 	}
 
+	[Test]
+	[Description("TryNormalize reports the normalized hex without throwing and signals no rejection on a valid colour.")]
+	public void TryNormalize_ShouldReturnHex_WhenInputValid() {
+		// Act
+		bool ok = ColorNormalizer.TryNormalize("004FD6", out string hex, out string code);
+
+		// Assert
+		ok.Should().BeTrue(because: "a valid colour normalizes");
+		hex.Should().Be("#004fd6", because: "the normalized lowercase hex is returned");
+		code.Should().BeNull(because: "a successful normalization carries no rejection code");
+	}
+
+	[Test]
+	[Description("TryNormalize reports ALPHA_NOT_SUPPORTED without throwing for an alpha form.")]
+	public void TryNormalize_ShouldReportAlpha_WhenInputHasAlpha() {
+		// Act
+		bool ok = ColorNormalizer.TryNormalize("rgba(0,0,0,0.5)", out string hex, out string code);
+
+		// Assert
+		ok.Should().BeFalse(because: "alpha forms are not supported");
+		hex.Should().BeNull(because: "a rejected input produces no hex");
+		code.Should().Be(ColorNormalizer.AlphaNotSupportedCode, because: "the bare rejection code is reported, not thrown");
+	}
+
+	[Test]
+	[Description("TryNormalize reports INVALID_COLOR without throwing for unrecognized and null input.")]
+	public void TryNormalize_ShouldReportInvalid_WhenInputUnrecognized() {
+		// Act / Assert
+		ColorNormalizer.TryNormalize("not-a-color", out _, out string code).Should().BeFalse(
+			because: "an unrecognized token is not a colour");
+		code.Should().Be(ColorNormalizer.InvalidColorCode, because: "the bare invalid code is reported");
+		ColorNormalizer.TryNormalize(null, out _, out string nullCode).Should().BeFalse(
+			because: "a null input is not a valid colour");
+		nullCode.Should().Be(ColorNormalizer.InvalidColorCode, because: "null maps to the invalid code, not a crash");
+	}
+
 	private static Action Invoking(string input) {
 		return () => ColorNormalizer.Normalize(input);
 	}

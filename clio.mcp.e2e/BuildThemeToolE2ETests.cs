@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -30,8 +31,8 @@ public sealed class BuildThemeToolE2ETests {
 
 	[Test]
 	[AllureTag(ToolName)]
-	[AllureName("build-theme advertises read-only metadata and builds CSS from the bundled template")]
-	[Description("Starts the real clio MCP server, verifies build-theme is advertised as read-only with the guidance pointer, and invokes it to build a theme.css from the bundled template. Skips when the theming feature is disabled.")]
+	[AllureName("build-theme advertises write-capable metadata and builds CSS from the bundled template")]
+	[Description("Starts the real clio MCP server, verifies build-theme is advertised as write-capable (ReadOnly=false, the output mode writes local files) with the guidance pointer, and invokes it in compute mode to build a theme.css from the bundled template. Skips when the theming feature is disabled.")]
 	public async Task BuildTheme_Should_Advertise_And_Build() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -52,10 +53,10 @@ public sealed class BuildThemeToolE2ETests {
 		// Assert
 		tool.ProtocolTool.Annotations.Should().NotBeNull(
 			because: "the MCP server should expose tool annotations for client-side safety policies");
-		tool.ProtocolTool.Annotations!.ReadOnlyHint.Should().BeTrue(
-			because: "build-theme is a pure compute tool that never mutates an environment");
+		tool.ProtocolTool.Annotations!.ReadOnlyHint.Should().BeFalse(
+			because: "build-theme can write theme.css + theme.json to a local directory in its output mode");
 		tool.ProtocolTool.Annotations.DestructiveHint.Should().BeFalse(
-			because: "build-theme only reads the bundled template and returns CSS");
+			because: "build-theme writes generated build artifacts into a caller-supplied directory, never destructive updates");
 		tool.Description.Should().Contain("get-guidance theming",
 			because: "the description routes agents to the theme workflow guidance");
 		callResult.IsError.Should().NotBeTrue(
@@ -68,5 +69,59 @@ public sealed class BuildThemeToolE2ETests {
 			because: "the built CSS carries the generated primary palette");
 		result.Descriptor.Should().Contain("MyTheme",
 			because: "build-theme also returns the theme.json descriptor scoped to the css class name");
+	}
+
+	[Test]
+	[AllureTag(ToolName)]
+	[AllureName("build-theme workspace-write mode writes theme.css + theme.json into the package and returns the path without the CSS payload")]
+	[Description("Starts the real clio MCP server and invokes build-theme with workspaceDirectory + packageName; verifies it writes theme.css + theme.json into <ws>/packages/<pkg>/Files/themes/<cssClassName>/ and returns the path with no CSS payload. Skips when the theming feature is disabled.")]
+	public async Task BuildTheme_Should_WriteIntoPackage_WhenWorkspaceAndPackageProvided() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		FeatureE2EGate.SkipIfFeatureDisabled(settings, "theming");
+		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
+		string workspaceDir = Path.Combine(Path.GetTempPath(), "clio-build-theme-e2e", Guid.NewGuid().ToString("N"));
+		const string packageName = "UsrTheme";
+		const string cssClassName = "MyTheme";
+		string packagePath = Path.Combine(workspaceDir, "packages", packageName);
+		string themeDir = Path.Combine(packagePath, "Files", "themes", cssClassName);
+
+		try {
+			Directory.CreateDirectory(Path.Combine(workspaceDir, ".clio"));
+			File.WriteAllText(Path.Combine(workspaceDir, ".clio", "workspaceSettings.json"), "{}");
+			Directory.CreateDirectory(packagePath);
+			await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+
+			// Act
+			CallToolResult callResult = await session.CallToolAsync(
+				ToolName,
+				new Dictionary<string, object?> {
+					["primary"] = "#004fd6",
+					["cssClassName"] = cssClassName,
+					["workspaceDirectory"] = workspaceDir,
+					["packageName"] = packageName
+				},
+				cancellationTokenSource.Token);
+			BuildThemeResult result = EntitySchemaStructuredResultParser.Extract<BuildThemeResult>(callResult);
+
+			// Assert
+			callResult.IsError.Should().NotBeTrue(
+				because: "build-theme returns a structured result instead of a top-level MCP failure");
+			result.Success.Should().BeTrue(
+				because: "a valid workspace + existing package is a valid workspace-write request");
+			result.Path.Should().Be(themeDir,
+				because: "workspace-write mode returns the resolved <ws>/packages/<pkg>/Files/themes/<cssClassName> directory");
+			result.Css.Should().BeNull(
+				because: "the CSS payload is omitted in workspace-write mode to keep the large string out of the agent context");
+			File.Exists(Path.Combine(themeDir, "theme.css")).Should().BeTrue(
+				because: "workspace-write mode writes theme.css into the package theme directory");
+			File.Exists(Path.Combine(themeDir, "theme.json")).Should().BeTrue(
+				because: "workspace-write mode writes theme.json alongside theme.css");
+		} finally {
+			if (Directory.Exists(workspaceDir)) {
+				Directory.Delete(workspaceDir, recursive: true);
+			}
+		}
 	}
 }

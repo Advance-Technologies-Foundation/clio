@@ -766,7 +766,7 @@ stories:
     feature: "theming-native-build"
     size: L
     status: review
-    status_note: "Implemented + tested this session (pre-commit): BuildThemeCommand (CLI) + flat BuildThemeTool (MCP, gated, ComponentInfoTool-style) + DI/Program wiring + --version/--environment-name resolution; BuildThemeCommandTests (8) + BuildThemeToolTests (9) + BuildThemeToolE2ETests (2, ran offline against the real mcp-server: toggle-on advertise+build, toggle-off absent) all green. Not yet in a PR; McpCapabilityMap build-theme row is Story 5; full-suite run + commit pending."
+    status_note: "Implemented + tested this session (pre-commit): BuildThemeCommand (CLI) + flat BuildThemeTool (MCP, gated, ComponentInfoTool-style, injects BuildThemeCommand) + DI/Program wiring + --version/--environment-name resolution; BuildThemeCommandTests (8) + BuildThemeToolTests (9) + BuildThemeToolE2ETests (2, ran offline against the real mcp-server: toggle-on advertise+build, toggle-off absent) all green. REVISED (D2-A): D1 no longer 'pure read-only' — the MCP tool gains a workspace-write mode taking workspaceDirectory+packageName that writes theme.css+theme.json into <ws>/packages/<pkg>/Files/themes/<cssClassName>/ (resolved via IWorkspacePathBuilder, mirrors new-ui-project) and returns `path` WITHOUT the CSS payload (token cost); flags now ReadOnly=false/Destructive=false/Idempotent=true/OpenWorld=false; BuildThemeResult adds `path`; BuildThemeCommand gains an IWorkspacePathBuilder dep + build+write overloads (write logic shared with CLI --output). ADR D1/OQ-03/consequences/checklist + story-4 + tp revised in place. Targeted unit run green (Module=McpServer|Command|Theming). Not yet in a PR; McpCapabilityMap build-theme row is Story 5; full-suite run + commit pending."
     file: spec/stories/story-theming-native-build-4.md
     adr: spec/adr/adr-theming-native-build.md
     test_plan: spec/test-plans/tp-theming-native-build.md
@@ -826,3 +826,14 @@ stories:
       - story-theming-native-build-6
     blocks: []
     note: "DEFERRED — sequenced after the surface (stories 3-6: provider, command, MCP tool, guidance, docs) is COMPLETE + parity verified. NOT externally gated: the template is bundled in clio (tpl/themes/{version}/), so there is no CDN switch, no live-snapshot cross-repo guard, and no creatio-ui producer dependency (R-12 revised). Verify parity against the in-repo template/builder contract guard; then flip [FeatureToggle(theming)] ON (the feature un-darkens, reachable on all four surfaces). PUBLIC DOCS LAND HERE (D6): Commands.md/help/wiki authored in Story 6 enter the generated export baseline only when the toggle is on; add a RELEASE.md note. Manual live-stand runbook TC-M-01/03 (no-code + workspace, bundled template) + TC-E2E-01 toggle-on (manual, NOT in CI)."
+
+  - id: story-theming-agent-advisor-1
+    title: "theme-color-advisor MCP tool + Clio.Theming engine changes (interactive palette layer)"
+    feature: "theming-agent"
+    size: L
+    status: in-progress
+    file: spec/theming-agent/theme-color-advisor-contract.md
+    adr: spec/adr/adr-theming-agent-advisor.md
+    depends_on: [story-theming-native-build-4]
+    blocks: []
+    note: "Interactive orchestration layer over the shipped native engine (theme-agent gap analysis). adac skill creatio-theme-orchestrator already rewritten to this contract. Build order: (1) Clio.Theming engine changes — ColorNormalizer.TryNormalize; 3-state AdaptedPrimaryResult carrying OriginalContrastOnWhite; MeetsMinContrastOnWhite; accent similarity thresholds (0.10/0.07) + ClassifySimilarityBand; SelectBestValidAccent (NOT ChooseBestAccent — that filters contrast-only + degenerate max-contrast fallback); IThemeTemplateProvider.TryGetPaletteDefault (offline success/error -500) + public offline ResolveCompatibleVersion(string). (2) theme-color-advisor flat ComponentInfoTool-style MCP tool (ReadOnly/Destructive=false/Idempotent/OpenWorld=false, [FeatureToggle theming], operation-dispatched, verdict-returning, stateless, offline) + ThemeColorAdvisorResult DTO + unit tests + mandatory clio.mcp.e2e. (3) rewrite ThemingGuidanceResource palette flow + routing row. Decisions: no metadata persistence v1; no environmentName (offline version only); theme-name length unchanged (soft 50 in guidance, hard 250 in create-theme); verdicts not raw numbers; verdict/warning-code types are tool-owned, not engine. Full contract: spec/theming-agent/theme-color-advisor-contract.md."

@@ -28,9 +28,9 @@ public class CreateThemeTool(
 		"For the theme workflow, read get-guidance theming first.")]
 	public CreateThemeResult CreateThemeByName(
 		[Description("Target Environment name")] [Required] string environmentName,
-		[Description("CSS class applied when the theme is active (^[A-Za-z][A-Za-z0-9_-]*$, max 100)")] [Required] string cssClassName,
 		[Description("Inline theme CSS content (max 1 MiB)")] [Required] string cssContent,
-		[Description("Human-readable theme caption (max 250); derived from cssClassName when omitted")] string caption = null,
+		[Description("CSS class applied when the theme is active (^[A-Za-z][A-Za-z0-9_-]*$, max 100); derived from caption (slugified) when omitted — pass caption and omit this to let clio derive it")] string cssClassName = null,
+		[Description("Human-readable theme name/caption (max 250); clio derives cssClassName from it (slugified) when cssClassName is omitted")] string caption = null,
 		[Description("Theme id (^[A-Za-z0-9_-]+$, max 100); an auto-generated UUID is used and returned when omitted")] string id = null,
 		[Description("Owning package name; the environment's CurrentPackageId system setting is used when omitted")] string packageName = null
 	) {
@@ -43,8 +43,7 @@ public class CreateThemeTool(
 			CssClassName = cssClassName,
 			CssContent = cssContent,
 			Id = id,
-			PackageName = packageName,
-			TimeOut = 30_000
+			PackageName = packageName
 		};
 		return Execute(options);
 	}
@@ -58,9 +57,9 @@ public class CreateThemeTool(
 		[Description("Creatio instance url")] [Required] string url,
 		[Description("Creatio instance Username")] [Required] string userName,
 		[Description("Creatio instance Password")] [Required] string password,
-		[Description("CSS class applied when the theme is active (^[A-Za-z][A-Za-z0-9_-]*$, max 100)")] [Required] string cssClassName,
 		[Description("Inline theme CSS content (max 1 MiB)")] [Required] string cssContent,
-		[Description("Human-readable theme caption (max 250); derived from cssClassName when omitted")] string caption = null,
+		[Description("CSS class applied when the theme is active (^[A-Za-z][A-Za-z0-9_-]*$, max 100); derived from caption (slugified) when omitted — pass caption and omit this to let clio derive it")] string cssClassName = null,
+		[Description("Human-readable theme name/caption (max 250); clio derives cssClassName from it (slugified) when cssClassName is omitted")] string caption = null,
 		[Description("Theme id (^[A-Za-z0-9_-]+$, max 100); an auto-generated UUID is used and returned when omitted")] string id = null,
 		[Description("Owning package name; the environment's CurrentPackageId system setting is used when omitted")] string packageName = null,
 		[DefaultValue(false)][Description("Specifies if creatio runtime is a NET8 or NET472, default: false")] bool isNetCore = false
@@ -83,8 +82,7 @@ public class CreateThemeTool(
 			CssClassName = cssClassName,
 			CssContent = cssContent,
 			Id = id,
-			PackageName = packageName,
-			TimeOut = 30_000
+			PackageName = packageName
 		};
 		return Execute(options);
 	}

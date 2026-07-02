@@ -17,39 +17,71 @@ internal static class ColorNormalizer {
 	private static readonly Regex RgbRegex = new(@"^rgb\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)\z", RegexOptions.Compiled, RegexTimeout);
 	private static readonly Regex HslRegex = new(@"^hsl\(\s*(\d{1,3})\s*,\s*(\d{1,3})%\s*,\s*(\d{1,3})%\s*\)\z", RegexOptions.Compiled, RegexTimeout);
 
+	/// <summary>The rejection code for an input carrying an alpha channel.</summary>
+	internal const string AlphaNotSupportedCode = "ALPHA_NOT_SUPPORTED";
+
+	/// <summary>The rejection code for an unrecognized or out-of-range colour.</summary>
+	internal const string InvalidColorCode = "INVALID_COLOR";
+
 	/// <summary>Normalizes a colour to lowercase <c>#rrggbb</c>.</summary>
 	/// <exception cref="ArgumentException">The input is an alpha form (<c>ALPHA_NOT_SUPPORTED</c>) or an
 	/// unrecognized/out-of-range value (<c>INVALID_COLOR</c>).</exception>
 	internal static string Normalize(string input) {
-		if (input == null) {
-			throw InvalidColor(input);
+		if (!TryNormalize(input, out string normalizedHex, out string rejectionCode)) {
+			throw new ArgumentException($"{rejectionCode}: \"{input}\"", nameof(input));
 		}
-		string value = input.Trim().ToLowerInvariant();
-		GuardAgainstAlpha(value, input);
-		if (CssNamedColors.Map.TryGetValue(value, out string named)) {
-			return named;
-		}
-		if (TryShorthandHex(value, out string fromShorthand)) {
-			return fromShorthand;
-		}
-		if (TryFullHex(value, out string fromHex)) {
-			return fromHex;
-		}
-		if (TryRgb(value, out string fromRgb)) {
-			return fromRgb;
-		}
-		if (TryHsl(value, out string fromHsl)) {
-			return fromHsl;
-		}
-		throw InvalidColor(input);
+		return normalizedHex;
 	}
 
-	private static void GuardAgainstAlpha(string value, string input) {
-		if (Hex8Regex.IsMatch(value)
-			|| value.StartsWith("rgba", StringComparison.Ordinal)
-			|| value.StartsWith("hsla", StringComparison.Ordinal)) {
-			throw new ArgumentException($"ALPHA_NOT_SUPPORTED: \"{input}\"", nameof(input));
+	/// <summary>
+	/// Tries to normalize a colour to lowercase <c>#rrggbb</c> without throwing, reporting the rejection code
+	/// (<see cref="AlphaNotSupportedCode"/> or <see cref="InvalidColorCode"/>) instead — so a batch of user
+	/// inputs can be triaged element by element.
+	/// </summary>
+	/// <param name="input">The raw colour input.</param>
+	/// <param name="normalizedHex">The lowercase <c>#rrggbb</c> on success; otherwise <c>null</c>.</param>
+	/// <param name="rejectionCode">The rejection code on failure; otherwise <c>null</c>.</param>
+	/// <returns><c>true</c> when the input normalized; <c>false</c> when it was rejected.</returns>
+	internal static bool TryNormalize(string input, out string normalizedHex, out string rejectionCode) {
+		normalizedHex = null;
+		rejectionCode = null;
+		if (input == null) {
+			rejectionCode = InvalidColorCode;
+			return false;
 		}
+		string value = input.Trim().ToLowerInvariant();
+		if (IsAlpha(value)) {
+			rejectionCode = AlphaNotSupportedCode;
+			return false;
+		}
+		if (CssNamedColors.Map.TryGetValue(value, out string named)) {
+			normalizedHex = named;
+			return true;
+		}
+		if (TryShorthandHex(value, out string fromShorthand)) {
+			normalizedHex = fromShorthand;
+			return true;
+		}
+		if (TryFullHex(value, out string fromHex)) {
+			normalizedHex = fromHex;
+			return true;
+		}
+		if (TryRgb(value, out string fromRgb)) {
+			normalizedHex = fromRgb;
+			return true;
+		}
+		if (TryHsl(value, out string fromHsl)) {
+			normalizedHex = fromHsl;
+			return true;
+		}
+		rejectionCode = InvalidColorCode;
+		return false;
+	}
+
+	private static bool IsAlpha(string value) {
+		return Hex8Regex.IsMatch(value)
+			|| value.StartsWith("rgba", StringComparison.Ordinal)
+			|| value.StartsWith("hsla", StringComparison.Ordinal);
 	}
 
 	private static bool TryShorthandHex(string value, out string hex) {
@@ -134,9 +166,5 @@ internal static class ColorNormalizer {
 			(r, g, b) = (c, 0, x);
 		}
 		return ColorSpace.RgbToHex((r + m, g + m, b + m));
-	}
-
-	private static ArgumentException InvalidColor(string input) {
-		return new ArgumentException($"INVALID_COLOR: \"{input}\"", nameof(input));
 	}
 }

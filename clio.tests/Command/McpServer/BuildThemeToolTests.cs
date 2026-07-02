@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Reflection;
 using System.Text.Json;
 using System.Threading;
@@ -8,6 +9,7 @@ using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using Clio.Theming;
 using Clio.UserEnvironment;
+using Clio.Workspaces;
 using FluentAssertions;
 using ModelContextProtocol.Server;
 using NSubstitute;
@@ -26,6 +28,8 @@ public sealed class BuildThemeToolTests
 	private IThemeTemplateProvider _themeTemplateProvider;
 	private IPlatformVersionResolverFactory _resolverFactory;
 	private ISettingsRepository _settingsRepository;
+	private IWorkspacePathBuilder _workspacePathBuilder;
+	private IFileSystem _fileSystem;
 	private BuildThemeTool _tool;
 
 	[SetUp]
@@ -34,12 +38,14 @@ public sealed class BuildThemeToolTests
 		_themeTemplateProvider = Substitute.For<IThemeTemplateProvider>();
 		_resolverFactory = Substitute.For<IPlatformVersionResolverFactory>();
 		_settingsRepository = Substitute.For<ISettingsRepository>();
+		_workspacePathBuilder = Substitute.For<IWorkspacePathBuilder>();
+		_fileSystem = Substitute.For<IFileSystem>();
 		_themeTemplateProvider.GetCssTemplate(Arg.Any<string>()).Returns("template-css");
 		_themeTemplateProvider.GetJsonTemplate(Arg.Any<string>())
 			.Returns("{\"id\":\"<%themeId%>\",\"caption\":\"<%themeCaption%>\",\"cssClassName\":\"<%themeCssClass%>\"}");
 		_themeCssBuilder.Build(Arg.Any<string>(), Arg.Any<BuildThemeOptions>()).Returns("built-css");
 		BuildThemeCommand command = new(_themeCssBuilder, _themeTemplateProvider, _resolverFactory, _settingsRepository,
-			Substitute.For<IFileSystem>(), Substitute.For<ILogger>());
+			_workspacePathBuilder, _fileSystem, Substitute.For<ILogger>());
 		_tool = new BuildThemeTool(command);
 	}
 
@@ -104,15 +110,32 @@ public sealed class BuildThemeToolTests
 	}
 
 	[Test]
-	[Description("Returns a graceful failure when the required css-class-name is empty.")]
-	public void BuildTheme_ShouldReturnFailure_WhenCssClassNameEmpty() {
+	[Description("Returns a graceful failure when neither css-class-name nor caption is supplied (at least one is required).")]
+	public void BuildTheme_ShouldReturnFailure_WhenCssClassNameAndCaptionBothEmpty() {
 		// Act
 		BuildThemeResult result = _tool.BuildTheme(primary: "#004fd6", cssClassName: "");
 
 		// Assert
-		result.Success.Should().BeFalse(because: "a missing css-class-name is an invalid request");
-		result.Error.Should().Contain("cssClassName", because: "the error must name the missing required input");
+		result.Success.Should().BeFalse(because: "with no css-class-name and no caption there is nothing to name the theme");
+		result.Error.Should().Contain("at least one is required", because: "the error must say a caption or a css-class-name is required");
 		_themeCssBuilder.DidNotReceive().Build(Arg.Any<string>(), Arg.Any<BuildThemeOptions>());
+	}
+
+	[Test]
+	[Description("Derives the css-class-name from the caption (slugified) when only a caption is supplied — the theme still builds.")]
+	public void BuildTheme_ShouldDeriveCssClassNameFromCaption_WhenOnlyCaptionSupplied() {
+		// Act
+		BuildThemeResult result = _tool.BuildTheme(primary: "#004fd6", caption: "Ocean Blue");
+
+		// Assert
+		result.Success.Should().BeTrue(because: "a caption alone is enough — clio derives the css-class-name");
+		_themeCssBuilder.Received(1).Build(Arg.Any<string>(),
+			Arg.Is<BuildThemeOptions>(o => o.ThemeCssClass == "ocean-blue"));
+		using JsonDocument descriptor = JsonDocument.Parse(result.Descriptor);
+		descriptor.RootElement.GetProperty("cssClassName").GetString().Should().Be("ocean-blue",
+			because: "the derived slug is written to the descriptor");
+		descriptor.RootElement.GetProperty("caption").GetString().Should().Be("Ocean Blue",
+			because: "the human caption is preserved, not replaced by the slug");
 	}
 
 	[Test]
@@ -205,6 +228,95 @@ public sealed class BuildThemeToolTests
 
 		// Assert
 		_themeTemplateProvider.Received(1).GetCssTemplate(null);
+	}
+
+	[Test]
+	[Description("In workspace-write mode (workspaceDirectory + packageName) writes theme.css + theme.json into the package's Files/themes/<cssClassName>/ and returns the path without the CSS payload (token cost).")]
+	public void BuildTheme_ShouldWriteFilesAndReturnPath_WhenWorkspaceAndPackageProvided() {
+		// Arrange
+		string workspaceDir = Path.Combine(Path.GetTempPath(), "clio-theme-ws");
+		string packagePath = Path.Combine(workspaceDir, "packages", "UsrTheme");
+		string themeDir = Path.Combine(packagePath, "Files", "themes", "MyTheme");
+		_workspacePathBuilder.IsWorkspace.Returns(true);
+		_workspacePathBuilder.BuildPackagePath("UsrTheme").Returns(packagePath);
+		_fileSystem.ExistsDirectory(packagePath).Returns(true);
+
+		// Act
+		BuildThemeResult result = _tool.BuildTheme(primary: "#004fd6", cssClassName: "MyTheme",
+			workspaceDirectory: workspaceDir, packageName: "UsrTheme");
+
+		// Assert
+		result.Success.Should().BeTrue(because: "a valid workspace + existing package is a valid workspace-write request");
+		result.Path.Should().Be(themeDir, because: "the tool resolves <ws>/packages/<pkg>/Files/themes/<cssClassName> and returns where it wrote");
+		result.Css.Should().BeNull(because: "the CSS payload is omitted in workspace-write mode to keep the large string out of the agent context");
+		result.Descriptor.Should().BeNull(because: "the descriptor is written to disk, not returned, in workspace-write mode");
+		result.Error.Should().BeNull(because: "a successful write carries no error");
+		_fileSystem.Received(1).WriteAllTextToFile(Path.Combine(themeDir, "theme.css"), "built-css");
+		_fileSystem.Received(1).WriteAllTextToFile(Path.Combine(themeDir, "theme.json"), Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("Returns a graceful failure (no write) when workspaceDirectory is given without packageName; the two must be provided together to write into a package.")]
+	public void BuildTheme_ShouldReturnFailure_WhenWorkspaceProvidedWithoutPackage() {
+		// Act
+		string workspaceDir = Path.Combine(Path.GetTempPath(), "clio-theme-ws");
+		BuildThemeResult result = _tool.BuildTheme(primary: "#004fd6", cssClassName: "MyTheme", workspaceDirectory: workspaceDir);
+
+		// Assert
+		result.Success.Should().BeFalse(because: "writing into a package needs both the workspace and the package name");
+		result.Error.Should().Contain("together", because: "the error must explain the two are provided together");
+		_fileSystem.DidNotReceive().WriteAllTextToFile(Arg.Any<string>(), Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("Returns a graceful failure (no write, no throw) when workspaceDirectory is not a fully-qualified absolute path, because the MCP server working directory differs from the caller's.")]
+	public void BuildTheme_ShouldReturnFailure_WhenWorkspaceDirectoryNotAbsolute() {
+		// Act
+		BuildThemeResult result = _tool.BuildTheme(primary: "#004fd6", cssClassName: "MyTheme",
+			workspaceDirectory: "relative/ws", packageName: "UsrTheme");
+
+		// Assert
+		result.Success.Should().BeFalse(because: "a non-absolute workspace path is ambiguous under the MCP server working directory");
+		result.Error.Should().Contain("absolute", because: "the error must explain that an absolute path is required");
+		_themeCssBuilder.DidNotReceive().Build(Arg.Any<string>(), Arg.Any<BuildThemeOptions>());
+		_fileSystem.DidNotReceive().WriteAllTextToFile(Arg.Any<string>(), Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("Returns a graceful failure (no write) when the workspaceDirectory is not a clio workspace (no .clio/workspaceSettings.json).")]
+	public void BuildTheme_ShouldReturnFailure_WhenNotAWorkspace() {
+		// Arrange
+		string workspaceDir = Path.Combine(Path.GetTempPath(), "clio-theme-notws");
+		_workspacePathBuilder.IsWorkspace.Returns(false);
+
+		// Act
+		BuildThemeResult result = _tool.BuildTheme(primary: "#004fd6", cssClassName: "MyTheme",
+			workspaceDirectory: workspaceDir, packageName: "UsrTheme");
+
+		// Assert
+		result.Success.Should().BeFalse(because: "the theme cannot be written outside a clio workspace");
+		result.Error.Should().Contain("workspace", because: "the error must explain the directory is not a clio workspace");
+		_fileSystem.DidNotReceive().WriteAllTextToFile(Arg.Any<string>(), Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("Returns a graceful failure (no write) when the named package does not exist in the workspace.")]
+	public void BuildTheme_ShouldReturnFailure_WhenPackageMissing() {
+		// Arrange
+		string workspaceDir = Path.Combine(Path.GetTempPath(), "clio-theme-ws");
+		string packagePath = Path.Combine(workspaceDir, "packages", "Ghost");
+		_workspacePathBuilder.IsWorkspace.Returns(true);
+		_workspacePathBuilder.BuildPackagePath("Ghost").Returns(packagePath);
+		_fileSystem.ExistsDirectory(packagePath).Returns(false);
+
+		// Act
+		BuildThemeResult result = _tool.BuildTheme(primary: "#004fd6", cssClassName: "MyTheme",
+			workspaceDirectory: workspaceDir, packageName: "Ghost");
+
+		// Assert
+		result.Success.Should().BeFalse(because: "the theme cannot be written into a package that does not exist");
+		result.Error.Should().Contain("Ghost", because: "the error must name the missing package");
+		_fileSystem.DidNotReceive().WriteAllTextToFile(Arg.Any<string>(), Arg.Any<string>());
 	}
 
 	[Test]

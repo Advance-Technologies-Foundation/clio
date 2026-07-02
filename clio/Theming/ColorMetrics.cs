@@ -15,6 +15,41 @@ internal sealed record AdaptedPrimary(
 	double AdaptedContrastOnWhite,
 	double DistanceFromOriginal);
 
+/// <summary>The three possible outcomes of evaluating a primary colour for readability on white.</summary>
+internal enum AdaptedPrimaryOutcome {
+	/// <summary>The primary already meets the minimum contrast on white; no adaptation needed.</summary>
+	Compliant,
+
+	/// <summary>The primary was below the minimum but a darker compliant variant was found.</summary>
+	Adapted,
+
+	/// <summary>The primary was below the minimum and no darker variant reached the minimum.</summary>
+	CouldNotAdapt
+}
+
+/// <summary>
+/// The full outcome of adapting a primary: which of the three states applies, the original contrast (for the
+/// non-compliant states), and the darker variant when one was found. Distinguishes "already fine" from
+/// "could not fix" — both of which a bare <c>null</c> would otherwise conflate.
+/// </summary>
+internal sealed record AdaptedPrimaryResult(
+	AdaptedPrimaryOutcome Outcome,
+	string Original500,
+	double OriginalContrastOnWhite,
+	AdaptedPrimary Adapted);
+
+/// <summary>The classification of an accent colour's OKLab distance from the primary.</summary>
+internal enum AccentSimilarityBand {
+	/// <summary>Distinct enough to offer plainly (distance ≥ 0.10).</summary>
+	Clean,
+
+	/// <summary>Close but offerable with a caveat (0.07 ≤ distance &lt; 0.10).</summary>
+	Warn,
+
+	/// <summary>Too similar to offer (distance &lt; 0.07).</summary>
+	Strong
+}
+
 /// <summary>
 /// Colour comparison and contrast-driven decisions: WCAG relative luminance and contrast ratio, OKLab
 /// perceptual distance, the best-accent selection, and a darker-primary suggestion when a colour falls
@@ -27,6 +62,12 @@ internal static class ColorMetrics {
 
 	/// <summary>Minimum WCAG contrast against white for a colour to be considered usable.</summary>
 	private const double MinContrastOnWhite = 3.0;
+
+	/// <summary>OKLab distance below which an accent is flagged as too similar to the primary (a caveat).</summary>
+	internal const double AccentSimilarityWarning = 0.10;
+
+	/// <summary>OKLab distance below which an accent is too similar to the primary to offer at all.</summary>
+	internal const double AccentSimilarityStrong = 0.07;
 
 	/// <summary>WCAG relative luminance of a colour.</summary>
 	internal static double RelativeLuminance(string hex) {
@@ -67,11 +108,67 @@ internal static class ColorMetrics {
 			: enriched.OrderByDescending(candidate => candidate.ContrastOnWhite).First();
 	}
 
-	/// <summary>Suggests a darker primary that reaches AA on white, or <c>null</c> when already compliant.</summary>
-	internal static AdaptedPrimary SuggestAdaptedPrimary500(string primaryHex) {
+	/// <summary>Whether a colour meets the minimum WCAG contrast (3:1) on white — the usability gate.</summary>
+	internal static bool MeetsMinContrastOnWhite(string hex) {
+		return ContrastRatio(hex, White) >= MinContrastOnWhite;
+	}
+
+	/// <summary>Classifies an OKLab distance from the primary into the accent-similarity band.</summary>
+	internal static AccentSimilarityBand ClassifySimilarityBand(double distanceFromPrimary) {
+		if (distanceFromPrimary >= AccentSimilarityWarning) {
+			return AccentSimilarityBand.Clean;
+		}
+		return distanceFromPrimary >= AccentSimilarityStrong
+			? AccentSimilarityBand.Warn
+			: AccentSimilarityBand.Strong;
+	}
+
+	/// <summary>Whether an accent is valid: usable on white (≥3:1) AND distinct enough from the primary (≥0.07).</summary>
+	internal static bool IsValidAccent(double contrastOnWhite, double distanceFromPrimary) {
+		return contrastOnWhite >= MinContrastOnWhite && distanceFromPrimary >= AccentSimilarityStrong;
+	}
+
+	/// <summary>
+	/// Scores every accent candidate against the primary and picks the most distinct VALID one. Unlike
+	/// <see cref="ChooseBestAccent"/>, the valid set requires BOTH ≥3:1 contrast AND ≥0.07 OKLab distance, and
+	/// there is no degenerate max-contrast fallback: when nothing is valid the best is <c>null</c>.
+	/// </summary>
+	/// <param name="primaryHex">The primary the candidates are compared against.</param>
+	/// <param name="candidates">The raw accent candidates to score.</param>
+	/// <param name="validCount">The number of candidates that passed both gates.</param>
+	/// <param name="scored">Every candidate, enriched with its contrast and distance (for display).</param>
+	/// <returns>The max-distance valid candidate, or <c>null</c> when none is valid.</returns>
+	internal static ScoredAccentCandidate SelectBestValidAccent(
+		string primaryHex,
+		IReadOnlyList<AccentCandidate> candidates,
+		out int validCount,
+		out IReadOnlyList<ScoredAccentCandidate> scored) {
+		List<ScoredAccentCandidate> enriched = candidates
+			.Select(candidate => new ScoredAccentCandidate(
+				candidate.Hex,
+				candidate.Offset,
+				ContrastRatio(candidate.Hex, White),
+				DistanceOklab(primaryHex, candidate.Hex)))
+			.ToList();
+		scored = enriched;
+		List<ScoredAccentCandidate> valid = enriched
+			.Where(candidate => IsValidAccent(candidate.ContrastOnWhite, candidate.DistanceFromPrimary))
+			.ToList();
+		validCount = valid.Count;
+		return valid
+			.OrderByDescending(candidate => candidate.DistanceFromPrimary)
+			.FirstOrDefault();
+	}
+
+	/// <summary>
+	/// Evaluates a primary for readability on white and returns the three-state outcome: already compliant,
+	/// adapted to a darker compliant variant, or could-not-adapt (below the minimum with no compliant darker
+	/// variant). The original contrast is carried for both non-compliant states.
+	/// </summary>
+	internal static AdaptedPrimaryResult AdaptPrimary500(string primaryHex) {
 		double originalContrast = ContrastRatio(primaryHex, White);
 		if (originalContrast >= MinContrastOnWhite) {
-			return null;
+			return new AdaptedPrimaryResult(AdaptedPrimaryOutcome.Compliant, null, originalContrast, null);
 		}
 		(double l, double c, double h) = ColorSpace.HexToOklch(primaryHex);
 		for (double ls = l; ls >= 0.05; ls -= 0.005) {
@@ -79,14 +176,21 @@ internal static class ColorMetrics {
 			string adaptedHex = ColorSpace.OklchToHex(ls, safeChroma, h);
 			double adaptedContrast = ContrastRatio(adaptedHex, White);
 			if (adaptedContrast >= MinContrastOnWhite) {
-				return new AdaptedPrimary(
+				AdaptedPrimary adapted = new(
 					primaryHex,
 					adaptedHex,
 					originalContrast,
 					adaptedContrast,
 					DistanceOklab(primaryHex, adaptedHex));
+				return new AdaptedPrimaryResult(AdaptedPrimaryOutcome.Adapted, primaryHex, originalContrast, adapted);
 			}
 		}
-		return null;
+		return new AdaptedPrimaryResult(AdaptedPrimaryOutcome.CouldNotAdapt, primaryHex, originalContrast, null);
+	}
+
+	/// <summary>Suggests a darker primary that reaches AA on white, or <c>null</c> when already compliant or unfixable.</summary>
+	internal static AdaptedPrimary SuggestAdaptedPrimary500(string primaryHex) {
+		AdaptedPrimaryResult result = AdaptPrimary500(primaryHex);
+		return result.Outcome == AdaptedPrimaryOutcome.Adapted ? result.Adapted : null;
 	}
 }

@@ -27,8 +27,7 @@ public class ClearThemesCacheTool(
 			return CommandExecutionResult.FromError("environment-name is required and cannot be empty.");
 		}
 		ClearThemesCacheOptions options = new() {
-			Environment = environmentName,
-			TimeOut = 30_000
+			Environment = environmentName
 		};
 		return InternalExecute<ClearThemesCacheCommand>(options);
 	}
@@ -49,8 +48,7 @@ public class ClearThemesCacheTool(
 			Login = userName,
 			Password = password,
 			Uri = url,
-			IsNetCore = isNetCore,
-			TimeOut = 30_000
+			IsNetCore = isNetCore
 		};
 		return InternalExecute<ClearThemesCacheCommand>(options);
 	}

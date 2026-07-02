@@ -52,8 +52,7 @@ public class DeleteThemeToolTests {
 		result.ExitCode.Should().Be(0, because: "the environment-name tool should forward a valid delete-theme payload");
 		commandResolver.Received(1).Resolve<DeleteThemeCommand>(Arg.Is<DeleteThemeOptions>(options =>
 			options.Environment == "docker_fix2" &&
-			options.Id == "ocean-theme" &&
-			options.TimeOut == 30_000));
+			options.Id == "ocean-theme"));
 		resolvedCommand.CapturedOptions.Should().NotBeNull(because: "the resolved command should delete the theme");
 		defaultCommand.CapturedOptions.Should().BeNull(because: "the environment-aware tool path should use the resolved command instance");
 		ConsoleLogger.Instance.ClearMessages();
@@ -100,8 +99,7 @@ public class DeleteThemeToolTests {
 			options.Uri == "http://localhost:5000" &&
 			options.Login == "Supervisor" &&
 			options.IsNetCore == false &&
-			options.Id == "ocean-theme" &&
-			options.TimeOut == 30_000));
+			options.Id == "ocean-theme"));
 		ConsoleLogger.Instance.ClearMessages();
 	}
 

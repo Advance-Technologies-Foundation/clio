@@ -55,8 +55,7 @@ public class UpdateThemeToolTests {
 			options.Id == "ocean-theme" &&
 			options.Caption == "Ocean" &&
 			options.CssClassName == "ocean-theme" &&
-			options.CssContent == ".ocean-theme{}" &&
-			options.TimeOut == 30_000));
+			options.CssContent == ".ocean-theme{}"));
 		resolvedCommand.CapturedOptions.Should().NotBeNull(because: "the resolved command should overwrite the theme");
 		defaultCommand.CapturedOptions.Should().BeNull(because: "the environment-aware tool path should use the resolved command instance");
 		ConsoleLogger.Instance.ClearMessages();
@@ -103,8 +102,7 @@ public class UpdateThemeToolTests {
 			options.Uri == "http://localhost:5000" &&
 			options.Login == "Supervisor" &&
 			options.IsNetCore == false &&
-			options.Id == "ocean-theme" &&
-			options.TimeOut == 30_000));
+			options.Id == "ocean-theme"));
 		ConsoleLogger.Instance.ClearMessages();
 	}
 

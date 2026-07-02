@@ -8,6 +8,7 @@ using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using Clio.Theming;
 using Clio.UserEnvironment;
+using Clio.Workspaces;
 using CommandLine;
 using ThemeBuilderOptions = Clio.Theming.BuildThemeOptions;
 
@@ -39,8 +40,8 @@ public sealed class BuildThemeOptions {
 	[Option("error", Required = false, HelpText = "Error colour; the platform default when omitted")]
 	public string Error { get; set; }
 
-	/// <summary>Required CSS class applied when the theme is active.</summary>
-	[Option("css-class-name", Required = true, HelpText = "CSS class applied when the theme is active (^[A-Za-z][A-Za-z0-9_-]*$, max 100)")]
+	/// <summary>CSS class applied when the theme is active; derived from <see cref="Caption"/> (slugified) when omitted.</summary>
+	[Option("css-class-name", Required = false, HelpText = "CSS class applied when the theme is active (^[A-Za-z][A-Za-z0-9_-]*$, max 100); derived from --caption (or the theme name) when omitted")]
 	public string CssClassName { get; set; }
 
 	/// <summary>Optional heading font family; Montserrat when omitted.</summary>
@@ -82,21 +83,26 @@ public sealed class BuildThemeOptions {
 /// </summary>
 public class BuildThemeCommand : Command<BuildThemeOptions> {
 
+	private const string PackageFilesFolderName = "Files";
+	private const string ThemesFolderName = "themes";
+
 	private readonly IThemeCssBuilder _themeCssBuilder;
 	private readonly IThemeTemplateProvider _themeTemplateProvider;
 	private readonly IPlatformVersionResolverFactory _resolverFactory;
 	private readonly ISettingsRepository _settingsRepository;
+	private readonly IWorkspacePathBuilder _workspacePathBuilder;
 	private readonly IFileSystem _fileSystem;
 	private readonly ILogger _logger;
 
-	/// <summary>Initializes the command with the theme builder, template provider, version resolver, settings repository, file system, and logger.</summary>
+	/// <summary>Initializes the command with the theme builder, template provider, version resolver, settings repository, workspace path builder, file system, and logger.</summary>
 	public BuildThemeCommand(IThemeCssBuilder themeCssBuilder, IThemeTemplateProvider themeTemplateProvider,
 		IPlatformVersionResolverFactory resolverFactory, ISettingsRepository settingsRepository,
-		IFileSystem fileSystem, ILogger logger) {
+		IWorkspacePathBuilder workspacePathBuilder, IFileSystem fileSystem, ILogger logger) {
 		_themeCssBuilder = themeCssBuilder;
 		_themeTemplateProvider = themeTemplateProvider;
 		_resolverFactory = resolverFactory;
 		_settingsRepository = settingsRepository;
+		_workspacePathBuilder = workspacePathBuilder;
 		_fileSystem = fileSystem;
 		_logger = logger;
 	}
@@ -114,11 +120,86 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 			_logger.WriteInfo(css);
 			return 0;
 		}
-		_fileSystem.CreateDirectoryIfNotExists(options.Output);
-		_fileSystem.WriteAllTextToFile(Path.Combine(options.Output, "theme.css"), css);
-		_fileSystem.WriteAllTextToFile(Path.Combine(options.Output, "theme.json"), descriptor);
+		WriteArtifacts(options.Output, css, descriptor);
 		_logger.WriteInfo($"Theme '{options.CssClassName}' written to {options.Output}");
 		return 0;
+	}
+
+	/// <summary>
+	/// Builds the theme and writes its <c>theme.css</c> + <c>theme.json</c> into <paramref name="outputDirectory"/>.
+	/// Shared by the CLI workspace-output mode and the <c>build-theme</c> MCP tool's output mode so both surfaces
+	/// write identically; the tool returns only the written path (not the CSS) to keep the large payload out of
+	/// the agent context.
+	/// </summary>
+	/// <param name="options">The brand inputs and template-version selectors.</param>
+	/// <param name="outputDirectory">The directory to write <c>theme.css</c> and <c>theme.json</c> into.</param>
+	/// <param name="outputPath">The written directory on success; otherwise <c>null</c>.</param>
+	/// <param name="warnings">Non-fatal advisories on success; an empty list when there are none.</param>
+	/// <param name="error">The diagnostic message on failure; otherwise <c>null</c>.</param>
+	/// <returns><c>true</c> when the artifacts were built and written; <c>false</c> when a build or write error is reported in <paramref name="error"/>.</returns>
+	public bool TryBuildTheme(BuildThemeOptions options, string outputDirectory, out string outputPath,
+		out IReadOnlyList<string> warnings, out string error) {
+		outputPath = null;
+		if (!TryBuildTheme(options, out string css, out string descriptor, out warnings, out error)) {
+			return false;
+		}
+		try {
+			WriteArtifacts(outputDirectory, css, descriptor);
+		}
+		catch (IOException ex) {
+			error = $"build-theme: failed to write theme files to '{outputDirectory}': {ex.Message}";
+			return false;
+		}
+		catch (UnauthorizedAccessException ex) {
+			error = $"build-theme: failed to write theme files to '{outputDirectory}': {ex.Message}";
+			return false;
+		}
+		outputPath = outputDirectory;
+		return true;
+	}
+
+	private void WriteArtifacts(string outputDirectory, string css, string descriptor) {
+		_fileSystem.CreateDirectoryIfNotExists(outputDirectory);
+		_fileSystem.WriteAllTextToFile(Path.Combine(outputDirectory, "theme.css"), css);
+		_fileSystem.WriteAllTextToFile(Path.Combine(outputDirectory, "theme.json"), descriptor);
+	}
+
+	/// <summary>
+	/// Builds the theme and writes its <c>theme.css</c> + <c>theme.json</c> into a package of a local clio
+	/// workspace — at <c>&lt;workspaceDirectory&gt;/packages/&lt;packageName&gt;/Files/themes/&lt;cssClassName&gt;/</c> —
+	/// resolving the layout the same way the workspace path builder does so the caller supplies only the workspace
+	/// and package (not a physical path). Used by the <c>build-theme</c> MCP tool's workspace-write mode.
+	/// </summary>
+	/// <param name="options">The brand inputs and template-version selectors (its <c>CssClassName</c> names the theme subfolder).</param>
+	/// <param name="workspaceDirectory">The absolute root of the clio workspace.</param>
+	/// <param name="packageName">The package inside the workspace to write the theme into.</param>
+	/// <param name="outputPath">The written theme directory on success; otherwise <c>null</c>.</param>
+	/// <param name="warnings">Non-fatal advisories on success; an empty list when there are none.</param>
+	/// <param name="error">The diagnostic message on failure; otherwise <c>null</c>.</param>
+	/// <returns><c>true</c> when the artifacts were built and written; <c>false</c> when validation, build, or write fails.</returns>
+	public bool TryBuildTheme(BuildThemeOptions options, string workspaceDirectory, string packageName,
+		out string outputPath, out IReadOnlyList<string> warnings, out string error) {
+		outputPath = null;
+		warnings = [];
+		error = null;
+		if (!ThemeCssClassName.TryResolve(options.CssClassName, options.Caption, out string resolvedClass, out error)) {
+			return false;
+		}
+		options.CssClassName = resolvedClass;
+		_workspacePathBuilder.RootPath = workspaceDirectory;
+		if (!_workspacePathBuilder.IsWorkspace) {
+			error = $"build-theme: '{workspaceDirectory}' is not a clio workspace "
+				+ "(missing .clio/workspaceSettings.json). Create it first with create-workspace.";
+			return false;
+		}
+		string packagePath = _workspacePathBuilder.BuildPackagePath(packageName);
+		if (!_fileSystem.ExistsDirectory(packagePath)) {
+			error = $"build-theme: package '{packageName}' does not exist in the workspace "
+				+ $"(expected at '{packagePath}'). Add it first with add-package.";
+			return false;
+		}
+		string themeDirectory = Path.Combine(packagePath, PackageFilesFolderName, ThemesFolderName, options.CssClassName);
+		return TryBuildTheme(options, themeDirectory, out outputPath, out warnings, out error);
 	}
 
 	/// <summary>
@@ -137,6 +218,10 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 		descriptor = null;
 		warnings = [];
 		error = null;
+		if (!ThemeCssClassName.TryResolve(options.CssClassName, options.Caption, out string resolvedClass, out error)) {
+			return false;
+		}
+		options.CssClassName = resolvedClass;
 		try {
 			PlatformVersionResolution resolution = ResolveVersion(options);
 			string templateVersion = resolution.Source == VersionResolutionSource.LatestFallback ? null : resolution.ResolvedVersion;

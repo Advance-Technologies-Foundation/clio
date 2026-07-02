@@ -55,8 +55,7 @@ public class CreateThemeToolTests {
 			options.Environment == "docker_fix2" &&
 			options.Caption == "Ocean" &&
 			options.CssClassName == "ocean-theme" &&
-			options.CssContent == ".ocean-theme{}" &&
-			options.TimeOut == 30_000));
+			options.CssContent == ".ocean-theme{}"));
 		resolvedCommand.CapturedOptions.Should().NotBeNull(because: "the resolved command instance should create the theme");
 		defaultCommand.CapturedOptions.Should().BeNull(because: "the environment-aware tool path must use the resolved command instance");
 		ConsoleLogger.Instance.ClearMessages();
@@ -129,8 +128,7 @@ public class CreateThemeToolTests {
 			options.Password == "Supervisor" &&
 			options.IsNetCore == false &&
 			options.Id == "explicit-id" &&
-			options.PackageName == "UsrBranding" &&
-			options.TimeOut == 30_000));
+			options.PackageName == "UsrBranding"));
 		ConsoleLogger.Instance.ClearMessages();
 	}
 

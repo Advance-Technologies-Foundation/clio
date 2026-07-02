@@ -17,7 +17,7 @@
 - The **parity gate** (R-08): the seeded, adversarially-seeded parity fixture that proves `Math.Pow`/`Math.Cbrt`-driven OKLab output matches V8 bit-for-bit, plus the pre-decided fallback (port fdlibm `pow`/`cbrt` OR a documented tolerance) if it shows ULP drift.
 - **Uniform five-palette verification** (R-18): `generateScale(-500)` on `primary`/`secondary`/`accent`/`success`/`error` asserted **identically** against TS golden output — no secondary special-case, no separate 600–900 handling.
 - The bundled **`IThemeTemplateProvider`** (D5/R-03): reads version-pinned `clio/tpl/themes/{version}/theme.css.tpl` + `theme.json.tpl` (shipped via the `tpl\**` content glob); picks the **highest bundled version ≤ target** (empty ⇒ highest bundled); too-old target → `ArgumentException`, missing template file → `InvalidOperationException`; optional `--version` XOR `--environment-name` version resolution (neither ⇒ highest bundled).
-- The **`build-theme` CLI verb** (`Command<BuildThemeOptions>`; output modes incl. workspace `theme.css` + `theme.json`) and the **flat `ComponentInfoTool`-style MCP tool** `BuildThemeTool` (R-02 — NOT `BaseTool`), `BuildThemeResult { success, css, descriptor, warnings?, error? }`, safety flags `ReadOnly=true/Destructive=false/Idempotent=true/OpenWorld=false`.
+- The **`build-theme` CLI verb** (`Command<BuildThemeOptions>`; output modes incl. workspace `theme.css` + `theme.json`) and the **flat `ComponentInfoTool`-style MCP tool** `BuildThemeTool` (R-02 — NOT `BaseTool`; delegates to `BuildThemeCommand`), `BuildThemeResult { success, css?, descriptor?, path?, warnings?, error? }`, safety flags `ReadOnly=false/Destructive=false/Idempotent=true/OpenWorld=false`. The MCP tool has the **same two output modes** as the verb: compute (returns `css`) and workspace-write (`workspaceDirectory`+`packageName` ⇒ writes `theme.css`+`theme.json` into `<ws>/packages/<pkg>/Files/themes/<cssClassName>/`, returns `path`, no CSS payload — token cost, D1; resolved via `IWorkspacePathBuilder`).
 - **Feature-toggle gating** (R-12/D6): `[FeatureToggle("theming")]` on **both** `BuildThemeOptions` and the `[McpServerToolType] BuildThemeTool` — dark by default until the surface (tests/docs/MCP tool) is complete and go-live is approved (templates ship in clio; not producer-gated).
 - The **guidance swap** (D8) and the **enumerated breakage** of committed `GuidanceGetToolTests` assertions (R-16).
 - The **decommission / styling-migration verification** (R-01): `new-ui-project` scaffolds + `npm i` succeeds without `@creatio/theming`; `--crt-*` tokens resolve from platform `:root`; scaffold `AGENTS.md` styling path resolves to a token-catalog source.
@@ -266,16 +266,17 @@ MCP E2E (`clio.mcp.e2e/`) is **mandatory per repo policy (AGENTS.md MCP maintena
 #### TC-U-11 — flat `ComponentInfoTool`-style tool shape (R-02)
 - **Level**: Unit · **File**: `clio.tests/Command/McpServer/BuildThemeToolTests.cs` · **Module**: McpServer
 - **Traces**: R-02
-- **Steps / Expected**: `BuildThemeTool` is a `[McpServerToolType]` that **does NOT derive from `BaseTool`** and **constructor-injects** `IThemeCssBuilder` + `IThemeTemplateProvider` (assert via reflection on base type + ctor params); it returns `BuildThemeResult`, with no command/resolver/`BaseTool` machinery and no `BaseTool.cs` edit. Name e.g. `BuildThemeTool_ShouldNotDeriveFromBaseTool_WhenInspected`.
+- **Steps / Expected**: `BuildThemeTool` is a `[McpServerToolType]` that **does NOT derive from `BaseTool`** and **constructor-injects `BuildThemeCommand`** (assert via reflection on base type); it returns `BuildThemeResult`, with no resolver/`BaseTool` machinery and no `BaseTool.cs` edit. Name e.g. `BuildThemeTool_ShouldNotDeriveFromBaseTool_WhenInspected`.
 
-#### TC-U-12 — arg mapping → `IThemeCssBuilder.Build`; safety flags
+#### TC-U-12 — arg mapping → build; safety flags; workspace-write mode
 - **Level**: Unit · **File**: `BuildThemeToolTests.cs` · **Module**: McpServer
 - **Traces**: D1, R-03, R-17
 - **Steps / Expected**:
-  - `primary`, `secondary`, `accent`, `success`, `error`, `css-class-name`, `heading-font`, `body-font`, `font-weights`, optional `version`/`environment-name` map onto the build input; the tool resolves the bundled template via `IThemeTemplateProvider` then calls `Build` and returns `BuildThemeResult { success, css, descriptor, warnings?, error? }`.
-  - `[McpServerTool]` flags via reflection: **`ReadOnly=true, Destructive=false, Idempotent=true, OpenWorld=false`**; `[Description]` routes to `get-guidance theming`.
-  - Document (R-17) that `ReadOnly`/`Idempotent` describe **environment** effects; reading the bundled template and the optional `--environment-name` version probe are read-only and within scope (mirror `get-component-info` wording).
-- Name e.g. `BuildThemeTool_ShouldMapArgsAndReturnCss_WhenInputValid`.
+  - `primary`, `secondary`, `accent`, `success`, `error`, `css-class-name`, `heading-font`, `body-font`, `font-weights`, optional `version`/`environment-name`, **and optional `workspaceDirectory`+`packageName`** map onto the build; the tool delegates to `BuildThemeCommand`. With `workspaceDirectory`+`packageName` omitted it returns `BuildThemeResult { success, css, descriptor, warnings?, error? }`.
+  - With both given (workspaceDirectory a **fully-qualified absolute path**, packageName an existing package) it writes `theme.css`+`theme.json` into `<ws>/packages/<pkg>/Files/themes/<cssClassName>/` (resolved via `IWorkspacePathBuilder`) and returns `BuildThemeResult { success, path, warnings?, error? }` with **no `css`/`descriptor`** (token cost, D1); one-without-the-other, a **non-absolute** workspaceDirectory, a non-workspace directory, or a missing package returns a graceful `success:false` (no write, no throw).
+  - `[McpServerTool]` flags via reflection: **`ReadOnly=false, Destructive=false, Idempotent=true, OpenWorld=false`**; `[Description]` routes to `get-guidance theming`.
+  - Document (R-17) that the tool **never mutates an environment** (the optional `--environment-name` version probe is read-only); `ReadOnly=false` reflects the **local filesystem** write of the workspace-write mode.
+- Name e.g. `BuildThemeTool_ShouldMapArgsAndReturnCss_WhenInputValid`, `BuildThemeTool_ShouldWriteFilesAndReturnPath_WhenWorkspaceAndPackageProvided`, `BuildThemeTool_ShouldReturnFailure_WhenWorkspaceDirectoryNotAbsolute`, `BuildThemeTool_ShouldReturnFailure_WhenPackageMissing`.
 
 #### TC-U-13 — feature-toggle gating on the tool type (D6/R-12)
 - **Level**: Unit · **File**: `BuildThemeToolTests.cs` · **Module**: McpServer
@@ -328,7 +329,7 @@ MCP E2E (`clio.mcp.e2e/`) is **mandatory per repo policy (AGENTS.md MCP maintena
 #### TC-U-31 — workspace-dir output mode writes `theme.css` + `theme.json` (OQ-03)
 - **Level**: Unit (logic) / Integration (real files — see TC-I-01) · **File**: `BuildThemeCommandTests.cs` · **Module**: Command
 - **Traces**: D1, D5, OQ-03
-- **Steps / Expected**: with `--output <dir>` the command writes **both** `theme.css` (built) and `theme.json` (filled from the bundled `theme.json.tpl` — `<%themeId%>`/`<%themeCaption%>`/`<%themeCssClass%>`); the MCP no-code flow never gets `theme.json` (asymmetry per D5/OQ-03). Name e.g. `Execute_ShouldWriteThemeCssAndThemeJson_WhenOutputIsWorkspaceDir`.
+- **Steps / Expected**: with `--output <dir>` the command writes **both** `theme.css` (built) and `theme.json` (filled from the bundled `theme.json.tpl` — `<%themeId%>`/`<%themeCaption%>`/`<%themeCssClass%>`); the MCP **compute** mode (feeding `create-theme`'s `css-content`) never gets `theme.json`, but the MCP workspace-write mode (`workspaceDirectory`+`packageName`) writes it exactly like the CLI (D5/OQ-03; the underlying command write is shared). Name e.g. `Execute_ShouldWriteThemeCssAndThemeJson_WhenOutputIsWorkspaceDir`.
 
 #### TC-U-32 — version resolution (`--version` XOR `--environment-name`) (R-03)
 - **Level**: Unit · **File**: `BuildThemeCommandTests.cs` · **Module**: Command
@@ -385,8 +386,8 @@ MCP E2E (`clio.mcp.e2e/`) is **mandatory per repo policy (AGENTS.md MCP maintena
 - **Tool**: `build-theme`
 - **File**: `clio.mcp.e2e/BuildThemeToolE2ETests.cs`
 - **Traces**: D1, D6, R-02
-- **Steps**: start the real `clio mcp-server` with the toggle enabled (template from the bundled `tpl/themes/{version}/`); list tools; assert `build-theme` is advertised with **`ReadOnly=true, Destructive=false, Idempotent=true, OpenWorld=false`** and a description referencing `get-guidance theming`; invoke it with a valid `primary` + `css-class-name`.
-- **Expected**: tool present with the flags; returns `BuildThemeResult { success:true, css:<valid theme.css> }`. With the toggle **off**, the tool is **absent** from the manifest.
+- **Steps**: start the real `clio mcp-server` with the toggle enabled (template from the bundled `tpl/themes/{version}/`); list tools; assert `build-theme` is advertised with **`ReadOnly=false, Destructive=false, Idempotent=true, OpenWorld=false`** and a description referencing `get-guidance theming`; invoke it (a) with a valid `primary` + `css-class-name` (compute mode) and (b) with `workspaceDirectory`+`packageName` (a real temp workspace with `.clio/workspaceSettings.json` + `packages/<pkg>`).
+- **Expected**: tool present with the flags; compute mode returns `BuildThemeResult { success:true, css:<valid theme.css> }`; workspace-write mode writes `theme.css`+`theme.json` into `<ws>/packages/<pkg>/Files/themes/<cssClassName>/` and returns `BuildThemeResult { success:true, path:<theme dir> }` (no CSS payload). With the toggle **off**, the tool is **absent** from the manifest.
 - **Manual gate**: add to the PR checklist.
 
 #### TC-E2E-02 — `get-guidance theming` discovery against the real server (post-swap)
@@ -478,7 +479,7 @@ Tests that MUST stay green after this feature ships (re-run by the full `Categor
 - [ ] All TC-I-* implemented with `[Category("Integration")]` (real temp files/scaffold; OS-portable); `npm i` checks demoted to TC-M-05 if Node is unavailable on the runner.
 - [ ] Command fixtures use `BaseCommandTests<BuildThemeOptions>`, resolve the SUT from `Container`, register `IThemeCssBuilder`/`IThemeTemplateProvider` doubles in `AdditionalRegistrations`, `ClearReceivedCalls` in teardown; the MCP-tool fixture mirrors `ComponentInfoToolTests` (constructor-injected — NOT `BaseTool`/`IToolCommandResolver`).
 - [ ] `[FeatureToggle("theming")]` asserted on **both** `BuildThemeOptions` (TC-U-33) and the `[McpServerToolType] BuildThemeTool` (TC-U-13); MCP registration via `RegisterEnabledPrimitives` (`IEnumerable<Type>`) — never a `Type[]`/`*FromAssembly`.
-- [ ] `build-theme` flags asserted `ReadOnly=true/Destructive=false/Idempotent=true/OpenWorld=false`; description → `get-guidance theming` (TC-U-12); R-17 read-only-effects note documented (bundled-template read + optional version probe are read-only).
+- [ ] `build-theme` flags asserted `ReadOnly=false/Destructive=false/Idempotent=true/OpenWorld=false`; description → `get-guidance theming` (TC-U-12); MCP workspace-write mode (`workspaceDirectory`+`packageName`) writes files into the package + returns `path` (no CSS) and rejects a non-absolute workspaceDirectory / non-workspace / missing package; R-17 env-effect note documented (never mutates an environment; `ReadOnly=false` = local write).
 - [ ] R-16 guidance-swap assertions enumerated and rewritten in place (TC-U-19..22): `build-theme` present; `@creatio/theming` / `palette engine` removed; token catalog still not restated; `GuidanceCatalog` + `McpCapabilityMap` updated together.
 - [ ] R-01 decommission verified (TC-I-04..06): scaffold + `npm i` without `@creatio/theming`; `--crt-*` renders from platform `:root`; scaffold `AGENTS.md` points at the rehomed catalog. Cross-repo devkit repoint + catalog rehoming flagged as external (TC-M-05).
 - [ ] Regression guard tests (table above) green; **full `Category=Unit` suite** run (BindingsModule/Program touched — rule 4).
@@ -493,7 +494,7 @@ Tests that MUST stay green after this feature ships (re-run by the full `Categor
 
 Because `clio.mcp.e2e` is NOT in CI, the PR must confirm manually:
 
-- [ ] Ran `clio.mcp.e2e/BuildThemeToolE2ETests` against a real `clio mcp-server` (toggle enabled, template from the bundled `tpl/themes/{version}/`) — `build-theme` advertised with `ReadOnly=true/Destructive=false/Idempotent=true/OpenWorld=false`, description → `get-guidance theming`, and a valid `theme.css` produced (TC-E2E-01). Confirmed it is **absent** when the toggle is off.
+- [ ] Ran `clio.mcp.e2e/BuildThemeToolE2ETests` against a real `clio mcp-server` (toggle enabled, template from the bundled `tpl/themes/{version}/`) — `build-theme` advertised with `ReadOnly=false/Destructive=false/Idempotent=true/OpenWorld=false`, description → `get-guidance theming`, a valid `theme.css` produced (compute mode), and the workspace-write mode (`workspaceDirectory`+`packageName`) writes `theme.css`+`theme.json` into the package and returns `path` (TC-E2E-01). Confirmed it is **absent** when the toggle is off.
 - [ ] Ran the post-swap `get-guidance theming` discovery (TC-E2E-02): `build-theme` present, npm/palette-engine gone.
 - [ ] Ran the live-stand no-code (TC-M-01) and workspace (TC-M-03) end-to-end round-trips.
 - [ ] Recorded go-live (TC-M-04) as **deferred until the surface is complete + approved** and the cross-repo styling migration (TC-M-05) as **external** — neither blocks the toggle-off ship.

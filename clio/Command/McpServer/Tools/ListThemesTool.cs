@@ -35,8 +35,7 @@ public class ListThemesTool(
 			return ListThemesResult.Failure("environment-name is required and cannot be empty.");
 		}
 		ListThemesOptions options = new() {
-			Environment = environmentName,
-			TimeOut = 30_000
+			Environment = environmentName
 		};
 		return Execute(options);
 	}
@@ -63,8 +62,7 @@ public class ListThemesTool(
 			Login = userName,
 			Password = password,
 			Uri = url,
-			IsNetCore = isNetCore,
-			TimeOut = 30_000
+			IsNetCore = isNetCore
 		};
 		return Execute(options);
 	}

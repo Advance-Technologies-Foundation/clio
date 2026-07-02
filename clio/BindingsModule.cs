@@ -342,6 +342,7 @@ public class BindingsModule {
 		services.AddSingleton<IMobileComponentInfoCatalog, MobileComponentInfoCatalog>();
 		services.AddSingleton<IThemeCssBuilder, ThemeCssBuilder>();
 		services.AddSingleton<IThemeTemplateProvider, ThemeTemplateProvider>();
+		services.AddSingleton<IThemeColorAdvisor, ThemeColorAdvisor>();
 		// Only the per-environment IPlatformVersionResolverFactory is registered: both the
 		// get-component-info MCP tool and the CLI verb resolve the platform version from
 		// per-call arguments (environment-name / uri / version), never from an ambient
@@ -414,6 +415,7 @@ public class BindingsModule {
 		services.AddTransient<GuidanceGetTool>();
 		services.AddTransient<ComponentInfoTool>();
 		services.AddTransient<BuildThemeTool>();
+		services.AddTransient<ThemeColorAdvisorTool>();
 		services.AddTransient<GetUserCultureTool>();
 		services.AddTransient<PackageHotfixTool>();
 		services.AddTransient<AddPackageDependencyTool>();
@@ -532,6 +534,8 @@ public class BindingsModule {
 		services.AddTransient<CreateThemeCommand>();
 		services.AddTransient<UpdateThemeCommand>();
 		services.AddTransient<DeleteThemeCommand>();
+		services.AddTransient<ICreatioRightsClient, CreatioRightsClient>();
+		services.AddTransient<ICreatioLicenseClient, CreatioLicenseClient>();
 		services.AddTransient<IFsmModeStatusService, FsmModeStatusService>();
 		services.AddTransient<SetFsmConfigCommand>();
 		services.AddTransient<TurnFsmCommand>();

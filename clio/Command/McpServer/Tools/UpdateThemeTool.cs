@@ -41,8 +41,7 @@ public class UpdateThemeTool(
 			Id = id,
 			Caption = caption,
 			CssClassName = cssClassName,
-			CssContent = cssContent,
-			TimeOut = 30_000
+			CssContent = cssContent
 		};
 		return InternalExecute<UpdateThemeCommand>(options);
 	}
@@ -77,8 +76,7 @@ public class UpdateThemeTool(
 			Id = id,
 			Caption = caption,
 			CssClassName = cssClassName,
-			CssContent = cssContent,
-			TimeOut = 30_000
+			CssContent = cssContent
 		};
 		return InternalExecute<UpdateThemeCommand>(options);
 	}

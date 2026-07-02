@@ -30,8 +30,7 @@ public class ClearThemesCacheToolTests {
 		// Assert
 		result.ExitCode.Should().Be(0, because: "the environment-name tool should forward a valid clear-themes-cache command payload");
 		commandResolver.Received(1).Resolve<ClearThemesCacheCommand>(Arg.Is<ClearThemesCacheOptions>(options =>
-			options.Environment == "docker_fix2" &&
-			options.TimeOut == 30_000));
+			options.Environment == "docker_fix2"));
 		defaultCommand.CapturedOptions.Should().BeNull(
 			because: "the environment-aware tool path should use the resolved command instance");
 		resolvedCommand.CapturedOptions.Should().NotBeNull(
@@ -84,8 +83,7 @@ public class ClearThemesCacheToolTests {
 			options.Uri == "http://localhost:5000" &&
 			options.Login == "Supervisor" &&
 			options.Password == "Supervisor" &&
-			options.IsNetCore == false &&
-			options.TimeOut == 30_000));
+			options.IsNetCore == false));
 		resolvedCommand.CapturedOptions.Should().NotBeNull(
 			because: "the resolved command should receive the forwarded credentials payload");
 		resolvedCommand.CapturedOptions!.IsNetCore.Should().BeFalse(
@@ -116,8 +114,7 @@ public class ClearThemesCacheToolTests {
 		result.ExitCode.Should().Be(0, because: "the credentials tool should forward a valid clear-themes-cache command payload when isNetCore is provided");
 		commandResolver.Received(1).Resolve<ClearThemesCacheCommand>(Arg.Is<ClearThemesCacheOptions>(options =>
 			options.Uri == "http://localhost:5000" &&
-			options.IsNetCore == true &&
-			options.TimeOut == 30_000));
+			options.IsNetCore == true));
 		resolvedCommand.CapturedOptions!.IsNetCore.Should().BeTrue(
 			because: "the MCP tool contract should preserve explicit optional argument values");
 		ConsoleLogger.Instance.ClearMessages();

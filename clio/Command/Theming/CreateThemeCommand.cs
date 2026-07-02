@@ -23,9 +23,9 @@ namespace Clio.Command.Theming
 			HelpText = "Human-readable theme caption (max 250). When omitted, it is derived from css-class-name.")]
 		public string Caption { get; set; }
 
-		/// <summary>CSS class applied when the theme is active (required, <c>^[A-Za-z][A-Za-z0-9_-]*$</c>, ≤100).</summary>
-		[Option("css-class-name", Required = true,
-			HelpText = "CSS class applied when the theme is active (^[A-Za-z][A-Za-z0-9_-]*$, max 100)")]
+		/// <summary>CSS class applied when the theme is active (<c>^[A-Za-z][A-Za-z0-9_-]*$</c>, ≤100); derived from <see cref="Caption"/> (slugified) when omitted.</summary>
+		[Option("css-class-name", Required = false,
+			HelpText = "CSS class applied when the theme is active (^[A-Za-z][A-Za-z0-9_-]*$, max 100); derived from --caption (slugified) when omitted")]
 		public string CssClassName { get; set; }
 
 		/// <summary>Inline theme CSS. Mutually exclusive with <c>--css-content-file</c>.</summary>
@@ -87,13 +87,16 @@ namespace Clio.Command.Theming
 					out string cssContent, out errorMessage)) {
 				return false;
 			}
+			if (!ThemeCssClassName.TryResolve(options.CssClassName, options.Caption, out string cssClassName, out errorMessage)) {
+				return false;
+			}
 			string caption = string.IsNullOrWhiteSpace(options.Caption)
-				? ThemeRequestBuilder.DeriveCaptionFromCssClassName(options.CssClassName)
+				? ThemeRequestBuilder.DeriveCaptionFromCssClassName(cssClassName)
 				: options.Caption;
 			CreateThemeRequest request = new() {
 				Id = id,
 				Caption = caption,
-				CssClassName = options.CssClassName,
+				CssClassName = cssClassName,
 				CssContent = cssContent
 			};
 			if (!ThemeRequestBuilder.TryValidateRequest(request, out errorMessage)) {

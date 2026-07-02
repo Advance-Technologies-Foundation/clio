@@ -34,8 +34,7 @@ public class DeleteThemeTool(
 		}
 		DeleteThemeOptions options = new() {
 			Environment = environmentName,
-			Id = id,
-			TimeOut = 30_000
+			Id = id
 		};
 		return InternalExecute<DeleteThemeCommand>(options);
 	}
@@ -62,8 +61,7 @@ public class DeleteThemeTool(
 			Password = password,
 			Uri = url,
 			IsNetCore = isNetCore,
-			Id = id,
-			TimeOut = 30_000
+			Id = id
 		};
 		return InternalExecute<DeleteThemeCommand>(options);
 	}

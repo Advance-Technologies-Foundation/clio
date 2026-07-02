@@ -38,8 +38,7 @@ public class ListThemesToolTests {
 		result.Themes.Should().ContainSingle(because: "the single theme from the resolved command must be surfaced")
 			.Which.Id.Should().Be("ocean-theme", because: "the descriptor fields must be mapped into the structured result");
 		commandResolver.Received(1).Resolve<ListThemesCommand>(Arg.Is<ListThemesOptions>(options =>
-			options.Environment == "docker_fix2" &&
-			options.TimeOut == 30_000));
+			options.Environment == "docker_fix2"));
 		resolvedCommand.CapturedOptions.Should().NotBeNull(
 			because: "the resolved command instance should have been queried for the themes");
 		defaultCommand.CapturedOptions.Should().BeNull(
@@ -114,8 +113,7 @@ public class ListThemesToolTests {
 			options.Uri == "http://localhost:5000" &&
 			options.Login == "Supervisor" &&
 			options.Password == "Supervisor" &&
-			options.IsNetCore == false &&
-			options.TimeOut == 30_000));
+			options.IsNetCore == false));
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
@@ -142,8 +140,7 @@ public class ListThemesToolTests {
 		result.Success.Should().BeTrue(because: "the credentials tool should forward a valid list-themes command payload when isNetCore is provided");
 		commandResolver.Received(1).Resolve<ListThemesCommand>(Arg.Is<ListThemesOptions>(options =>
 			options.Uri == "http://localhost:5000" &&
-			options.IsNetCore == true &&
-			options.TimeOut == 30_000));
+			options.IsNetCore == true));
 		ConsoleLogger.Instance.ClearMessages();
 	}
 

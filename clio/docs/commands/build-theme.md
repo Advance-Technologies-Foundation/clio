@@ -35,7 +35,8 @@ clio build-theme --primary <colour> --css-class-name <name> [OPTIONS]
 Required. Brand primary colour in any CSS form: #rrggbb, #rgb, rgb(), hsl(), or a named colour.
 
 --css-class-name NAME
-Required. CSS class applied when the theme is active (^[A-Za-z][A-Za-z0-9_-]*$, max 100).
+Optional. CSS class applied when the theme is active (^[A-Za-z][A-Za-z0-9_-]*$, max 100). Derived from
+--caption (slugified) when omitted; at least one of --caption or --css-class-name is required.
 
 --secondary COLOUR
 Optional. Secondary colour; derived from the primary when omitted.

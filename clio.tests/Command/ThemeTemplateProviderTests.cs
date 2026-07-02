@@ -138,4 +138,91 @@ public class ThemeTemplateProviderTests : BaseClioModuleTests
 		// Assert
 		result.Should().Be("{json-10}", because: "the descriptor template for the matched version (10.0) must be returned");
 	}
+
+	[Test, Category("Unit")]
+	[Description("ResolveCompatibleVersion returns the highest bundled version (as a string) when the target is empty, without touching the network.")]
+	public void ResolveCompatibleVersion_ShouldReturnHighestBundled_WhenTargetEmpty() {
+		// Arrange
+		StubBundledVersions("9.0", "10.0");
+
+		// Act
+		string resolved = _provider.ResolveCompatibleVersion(string.Empty);
+
+		// Assert
+		resolved.Should().Be("10.0", because: "an empty target resolves offline to the highest bundled version");
+	}
+
+	[Test, Category("Unit")]
+	[Description("ResolveCompatibleVersion picks the highest bundled version not newer than the target.")]
+	public void ResolveCompatibleVersion_ShouldPickHighestNotNewer_WhenTargetBetween() {
+		// Arrange
+		StubBundledVersions("8.0", "10.0");
+
+		// Act
+		string resolved = _provider.ResolveCompatibleVersion("9.0");
+
+		// Assert
+		resolved.Should().Be("8.0", because: "9.0 has no exact bundle, so the highest not-newer version (8.0) is used");
+	}
+
+	[Test, Category("Unit")]
+	[Description("ResolveCompatibleVersion throws ArgumentException when the target is below the lowest bundled version.")]
+	public void ResolveCompatibleVersion_ShouldThrow_WhenTargetBelowLowest() {
+		// Arrange
+		StubBundledVersions("10.0");
+
+		// Act
+		Action act = () => _provider.ResolveCompatibleVersion("9.0");
+
+		// Assert
+		act.Should().Throw<ArgumentException>(
+			because: "a target older than every bundled template is unsupported");
+	}
+
+	[Test, Category("Unit")]
+	[Description("TryGetPaletteDefault reads the success/error -500 literal from the version-matched CSS template.")]
+	public void TryGetPaletteDefault_ShouldReturnHex_WhenRolePresent() {
+		// Arrange
+		StubBundledVersions("10.0");
+		_fileSystem.ExistsFile(TemplatePath("10.0", "theme.css.tpl")).Returns(true);
+		_fileSystem.ReadAllText(TemplatePath("10.0", "theme.css.tpl")).Returns(
+			"--crt-palette-success-500: #0b8500;\n--crt-palette-error-500: #d2310d;\n");
+
+		// Act
+		bool okSuccess = _provider.TryGetPaletteDefault("10.0", "success", out string successHex);
+		bool okError = _provider.TryGetPaletteDefault("10.0", "error", out string errorHex);
+
+		// Assert
+		okSuccess.Should().BeTrue(because: "the success -500 line is present in the template");
+		successHex.Should().Be("#0b8500", because: "the literal success default is read from the template, not hardcoded");
+		okError.Should().BeTrue(because: "the error -500 line is present");
+		errorHex.Should().Be("#d2310d", because: "the literal error default is read from the template");
+	}
+
+	[Test, Category("Unit")]
+	[Description("TryGetPaletteDefault returns false for a role other than success/error, without reading the template.")]
+	public void TryGetPaletteDefault_ShouldReturnFalse_WhenRoleUnknown() {
+		// Act
+		bool result = _provider.TryGetPaletteDefault("10.0", "primary", out string hex);
+
+		// Assert
+		result.Should().BeFalse(because: "only success and error have template-sourced system defaults");
+		hex.Should().BeNull(because: "an unknown role yields no hex");
+	}
+
+	[Test, Category("Unit")]
+	[Description("TryGetPaletteDefault returns false when the requested role line is absent from the template.")]
+	public void TryGetPaletteDefault_ShouldReturnFalse_WhenLineMissing() {
+		// Arrange
+		StubBundledVersions("10.0");
+		_fileSystem.ExistsFile(TemplatePath("10.0", "theme.css.tpl")).Returns(true);
+		_fileSystem.ReadAllText(TemplatePath("10.0", "theme.css.tpl")).Returns("--crt-palette-primary-500: #004fd6;\n");
+
+		// Act
+		bool result = _provider.TryGetPaletteDefault("10.0", "success", out string hex);
+
+		// Assert
+		result.Should().BeFalse(because: "a template without the success line has no default to return");
+		hex.Should().BeNull(because: "a missing line yields no hex");
+	}
 }

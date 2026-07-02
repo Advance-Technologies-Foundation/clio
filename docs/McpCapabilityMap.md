@@ -83,6 +83,7 @@ Typical examples:
 - `clear-themes-cache-by-credentials`
 - `list-themes-by-credentials`
 - `create-theme-by-credentials`
+- `check-theming-access-by-credentials`
 - `restart-by-credentials`
 
 ### 3. Pure local mode
@@ -464,6 +465,8 @@ These tools are operational rather than design-oriented.
 - `update-theme-by-credentials`
 - `delete-theme-by-environment`
 - `delete-theme-by-credentials`
+- `check-theming-access-by-environment`
+- `check-theming-access-by-credentials`
 
 What an external AI can practically do here:
 
@@ -640,6 +643,8 @@ All lifecycle tools now declare explicit safety metadata (`ReadOnly`, `Destructi
 - `update-theme-by-credentials`
 - `delete-theme-by-environment`
 - `delete-theme-by-credentials`
+- `check-theming-access-by-environment`
+- `check-theming-access-by-credentials`
 
 ### 4. Mixed response shapes
 

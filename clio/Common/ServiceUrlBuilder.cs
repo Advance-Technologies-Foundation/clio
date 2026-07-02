@@ -202,7 +202,17 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		/// <summary>
 		///     Deletes a custom theme via the native ThemeService.
 		/// </summary>
-		DeleteTheme = 57
+		DeleteTheme = 57,
+
+		/// <summary>
+		///     Checks whether the current user can execute a named system operation via the native RightsService.
+		/// </summary>
+		RightsGetCanExecuteOperation = 58,
+
+		/// <summary>
+		///     Reads the status of named license operations for the current user via the native LicenseService.
+		/// </summary>
+		LicenseGetLicOperationStatuses = 59
 
 	}
 
@@ -273,6 +283,8 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.CreateTheme, "ServiceModel/ThemeService.svc/CreateTheme"},
 		{KnownRoute.UpdateTheme, "ServiceModel/ThemeService.svc/UpdateTheme"},
 		{KnownRoute.DeleteTheme, "ServiceModel/ThemeService.svc/DeleteTheme"},
+		{KnownRoute.RightsGetCanExecuteOperation, "ServiceModel/RightsService.svc/GetCanExecuteOperation"},
+		{KnownRoute.LicenseGetLicOperationStatuses, "ServiceModel/LicenseService.svc/GetLicOperationStatuses"},
 	};
 
 	private EnvironmentSettings _environmentSettings;
