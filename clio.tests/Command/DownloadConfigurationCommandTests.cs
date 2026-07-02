@@ -19,6 +19,7 @@ using SysIoAbstractions = System.IO.Abstractions;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[NonParallelizable]
 [Description("Tests for DownloadConfigurationCommand and DownloadConfigurationCommandOptionsValidator")]
 [Property("Module", "Command")]
 public class DownloadConfigurationCommandTests : BaseCommandTests<DownloadConfigurationCommandOptions>{
