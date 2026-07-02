@@ -30,14 +30,14 @@ public interface IThemeColorAdvisor {
 	/// <summary>Generates and scores the three accent candidates, marking valid ones and the best (accent path C).</summary>
 	ThemeColorAdvisorResult SuggestAccents(string primary);
 
-	/// <summary>Builds the palette preview stops for the fixed anchors plus the system success/error palettes.</summary>
+	/// <summary>Builds the palette preview for every brand and system role — the base -500 per role by default, or the full 12-stop scale when <paramref name="fullStops"/> is true.</summary>
 	ThemeColorAdvisorResult Preview(string primary, string secondary, string accent, string success, string error, string version, bool fullStops);
 }
 
 /// <summary>Default <see cref="IThemeColorAdvisor"/> over the bundled engine and theme templates.</summary>
 public sealed class ThemeColorAdvisor : IThemeColorAdvisor {
 
-	private static readonly int[] PreviewStops = { 50, 100, 300, 500, 800 };
+	private static readonly int[] PreviewStops = { 500 };
 
 	private static readonly IReadOnlyDictionary<string, string> LowContrastCodeByRole = new Dictionary<string, string> {
 		["primary"] = "PRIMARY_LOW_CONTRAST_ON_WHITE",

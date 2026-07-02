@@ -173,7 +173,7 @@ public sealed class ThemeColorAdvisorToolTests {
 	}
 
 	[Test]
-	[Description("preview builds compact stops for all five roles and sources success/error from the template default when no override is given.")]
+	[Description("preview emits only the base -500 for all five roles and sources success/error from the template default when no override is given.")]
 	public void Advise_ShouldBuildPreview_WhenOperationPreview() {
 		// Arrange
 		_templateProvider.ResolveCompatibleVersion(Arg.Any<string>()).Returns("10.0");
@@ -192,7 +192,7 @@ public sealed class ThemeColorAdvisorToolTests {
 		result.Success.Should().BeTrue(because: "a valid preview with template-sourced system colours completes");
 		result.Palettes.Should().ContainKeys(new[] { "primary", "secondary", "accent", "success", "error" },
 			because: "every brand and system role is previewed; neutral is never emitted");
-		result.Palettes!["primary"].Should().HaveCount(5, because: "the compact preview uses stops [50,100,300,500,800]");
+		result.Palettes!["primary"].Should().ContainKey("500").And.HaveCount(1, because: "the default preview surfaces only the base -500 per role, not the palette stops");
 		result.SuccessSource.Should().Be("template-default", because: "no success override was supplied");
 		result.ResolvedVersion.Should().Be("10.0", because: "the offline resolver reports the version used");
 	}

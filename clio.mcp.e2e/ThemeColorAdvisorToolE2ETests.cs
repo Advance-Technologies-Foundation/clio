@@ -97,4 +97,38 @@ public sealed class ThemeColorAdvisorToolE2ETests {
 		result.HighestContrastHex.Should().Be("#004fd6",
 			because: "#004fd6 has the highest contrast among the accepted inputs");
 	}
+
+	[Test]
+	[AllureTag(ToolName)]
+	[AllureName("theme-color-advisor preview returns only the base -500 per role by default")]
+	[Description("Starts the real clio MCP server and invokes the preview operation without fullStops; verifies each role's palette carries only the base -500 stop, not the full palette ramp. Skips when the theming feature is disabled.")]
+	public async Task ThemeColorAdvisor_Should_Preview_Base500_ByDefault() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
+		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+
+		// Act
+		CallToolResult callResult = await session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["operation"] = "preview",
+				["primary"] = "#004fd6",
+				["secondary"] = "#0d2e4e",
+				["accent"] = "#f94e11"
+			},
+			cancellationTokenSource.Token);
+		ThemeColorAdvisorResult result = EntitySchemaStructuredResultParser.Extract<ThemeColorAdvisorResult>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "preview sources the system defaults offline and returns a structured result");
+		result.Success.Should().BeTrue(
+			because: "a valid preview with template-sourced system colours completes");
+		result.Palettes.Should().ContainKeys(new[] { "primary", "secondary", "accent", "success", "error" },
+			because: "every brand and system role is previewed");
+		result.Palettes!["primary"].Should().ContainKey("500").And.HaveCount(1,
+			because: "the default preview surfaces only the base -500 per role, not the palette stops");
+	}
 }

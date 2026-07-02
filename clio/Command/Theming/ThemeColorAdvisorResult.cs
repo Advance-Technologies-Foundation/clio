@@ -245,7 +245,7 @@ public sealed record ThemeColorAdvisorResult {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string Verdict { get; init; }
 
-	/// <summary>Palette stops per role (role → step → hex); present for <c>preview</c>. Neutral is never emitted.</summary>
+	/// <summary>Palette stops per role (role → step → hex); present for <c>preview</c>. By default only the base -500 per role; the full 12-stop scale when <c>fullStops</c> is true. Neutral is never emitted.</summary>
 	[JsonPropertyName("palettes")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> Palettes { get; init; }

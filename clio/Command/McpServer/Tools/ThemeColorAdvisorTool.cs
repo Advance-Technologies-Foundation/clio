@@ -24,7 +24,7 @@ public sealed class ThemeColorAdvisorTool(IThemeColorAdvisor advisor) {
 		+ "Stateless and offline; re-call it whenever a colour input changes. Select the step via 'operation': "
 		+ "triage (sort raw brand colours, pick the primary), adapt-primary (is the primary readable / offer a darker one), "
 		+ "derive-secondary (auto secondary + validate an override), accent-evaluate-stored / accent-suggest / accent-validate-manual "
-		+ "(the three accent paths), validate-color (check a colour for a role), preview (palette stops + system success/error). "
+		+ "(the three accent paths), validate-color (check a colour for a role), preview (base -500 per role + system success/error). "
 		+ "For the full theme workflow, read get-guidance theming first.")]
 	public ThemeColorAdvisorResult Advise(
 		[Description("Which step to run: triage | adapt-primary | derive-secondary | accent-evaluate-stored | accent-validate-manual | accent-suggest | validate-color | preview")] [Required] string operation,
@@ -38,7 +38,7 @@ public sealed class ThemeColorAdvisorTool(IThemeColorAdvisor advisor) {
 		[Description("preview: system success -500 override; omit to use the template default")] string success = null,
 		[Description("preview: system error -500 override; omit to use the template default")] string error = null,
 		[Description("preview: offline Creatio template version for the system defaults (e.g. 10.0); the newest bundled version is used when omitted")] string version = null,
-		[Description("preview: true returns all 12 stops; false (default) returns the compact set [50,100,300,500,800]")] bool fullStops = false) {
+		[Description("preview: true returns all 12 palette stops per role; false (default) returns only the base -500 per role")] bool fullStops = false) {
 		if (string.IsNullOrWhiteSpace(operation)) {
 			return new ThemeColorAdvisorResult { Success = false, Error = "operation is required and cannot be empty." };
 		}

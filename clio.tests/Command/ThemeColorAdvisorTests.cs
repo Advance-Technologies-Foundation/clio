@@ -237,8 +237,8 @@ public sealed class ThemeColorAdvisorTests {
 	}
 
 	[Test]
-	[Description("Preview builds the five compact stops for every brand and system role and sources success/error from the template default when no override is supplied.")]
-	public void Preview_ShouldBuildCompactStopsAndSourceDefaults_WhenNoOverrides() {
+	[Description("Preview emits only the base -500 stop for every brand and system role and sources success/error from the template default when no override is supplied.")]
+	public void Preview_ShouldBuildBase500AndSourceDefaults_WhenNoOverrides() {
 		// Arrange
 		GivenTemplateDefaults();
 
@@ -249,13 +249,13 @@ public sealed class ThemeColorAdvisorTests {
 		result.Success.Should().BeTrue(because: "a valid preview with template-sourced system colours completes");
 		result.Palettes.Should().ContainKeys(new[] { "primary", "secondary", "accent", "success", "error" },
 			because: "every brand and system role is previewed; neutral is never emitted");
-		result.Palettes!["primary"].Should().HaveCount(5, because: "the compact preview uses the five anchor stops [50,100,300,500,800]");
+		result.Palettes!["primary"].Should().ContainKey("500").And.HaveCount(1, because: "the default preview surfaces only the base -500 per role, not the palette stops");
 		result.SuccessSource.Should().Be("template-default", because: "no success override was supplied");
 		result.ResolvedVersion.Should().Be("10.0", because: "the offline resolver reports the version actually used");
 	}
 
 	[Test]
-	[Description("Preview returns the full palette scale (more than the five compact anchors) when full stops are requested.")]
+	[Description("Preview returns the full 12-stop palette scale (more than the single base -500) when full stops are requested.")]
 	public void Preview_ShouldReturnFullScale_WhenFullStopsRequested() {
 		// Arrange
 		GivenTemplateDefaults();
@@ -265,7 +265,7 @@ public sealed class ThemeColorAdvisorTests {
 
 		// Assert
 		result.Success.Should().BeTrue(because: "a valid full-stops preview completes");
-		result.Palettes!["primary"].Count.Should().BeGreaterThan(5, because: "full stops expose the whole scale, not just the five compact anchors");
+		result.Palettes!["primary"].Count.Should().BeGreaterThan(1, because: "full stops expose the whole scale, not just the base -500");
 	}
 
 	[Test]
