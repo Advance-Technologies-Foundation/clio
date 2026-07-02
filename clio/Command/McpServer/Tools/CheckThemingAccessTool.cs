@@ -29,8 +29,9 @@ public sealed class CheckThemingAccessTool(IToolCommandResolver commandResolver)
 	[McpServerTool(Name = CheckThemingAccessByEnvironmentName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false),
 	 Description("Check whether the caller can manage custom themes on a registered environment. " +
 		"Probes the CanManageThemes system operation and the CanCustomizeBranding license. " +
-		"Returns { success, canManageThemes, canCustomizeBranding, hasThemingAccess }. " +
-		"Run this before the no-code / server theme flow (create/update/delete-theme-by-environment). " +
+		"Returns { success, canManageThemes, canCustomizeBranding }. " +
+		"Advisory only: run it before the no-code / server theme flow (create/update/delete-theme-by-environment), " +
+		"but create-theme-by-environment is the authoritative access test. " +
 		"For the theme workflow, read get-guidance theming first.")]
 	public ThemingAccessResult CheckThemingAccessByName(
 		[Description("Target Environment name")] [Required] string environmentName
@@ -47,7 +48,8 @@ public sealed class CheckThemingAccessTool(IToolCommandResolver commandResolver)
 	[McpServerTool(Name = CheckThemingAccessByCredentialsToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false),
 	 Description("Check whether the caller can manage custom themes using explicit credentials. " +
 		"Probes the CanManageThemes system operation and the CanCustomizeBranding license. " +
-		"Returns { success, canManageThemes, canCustomizeBranding, hasThemingAccess }. For the theme workflow, read get-guidance theming first.")]
+		"Returns { success, canManageThemes, canCustomizeBranding }. Advisory only: create-theme-by-environment " +
+		"is the authoritative access test. For the theme workflow, read get-guidance theming first.")]
 	public ThemingAccessResult CheckThemingAccessByCredentials(
 		[Description("Creatio instance url")] [Required] string url,
 		[Description("Creatio instance Username")] [Required] string userName,
@@ -108,22 +110,16 @@ public sealed record ThemingAccessResult {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public bool? CanCustomizeBranding { get; init; }
 
-	/// <summary>Whether the caller may manage custom themes (both checks granted). Omitted on failure.</summary>
-	[JsonPropertyName("hasThemingAccess")]
-	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public bool? HasThemingAccess { get; init; }
-
 	/// <summary>The failure message; omitted on success.</summary>
 	[JsonPropertyName("error")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string Error { get; init; }
 
-	/// <summary>Creates a success result from the two composed checks.</summary>
+	/// <summary>Creates a success result from the two independent checks.</summary>
 	public static ThemingAccessResult Successful(bool canManageThemes, bool canCustomizeBranding) => new() {
 		Success = true,
 		CanManageThemes = canManageThemes,
-		CanCustomizeBranding = canCustomizeBranding,
-		HasThemingAccess = canManageThemes && canCustomizeBranding
+		CanCustomizeBranding = canCustomizeBranding
 	};
 
 	/// <summary>Creates a failure result carrying the diagnostic message.</summary>

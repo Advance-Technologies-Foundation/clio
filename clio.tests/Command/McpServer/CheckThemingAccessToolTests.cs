@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using FluentAssertions;
+using ModelContextProtocol.Server;
 using NSubstitute;
 using NUnit.Framework;
 
@@ -11,6 +13,25 @@ namespace Clio.Tests.Command.McpServer;
 [TestFixture]
 [Property("Module", "McpServer")]
 public class CheckThemingAccessToolTests {
+
+	[Test]
+	[Category("Unit")]
+	[TestCase(nameof(CheckThemingAccessTool.CheckThemingAccessByName))]
+	[TestCase(nameof(CheckThemingAccessTool.CheckThemingAccessByCredentials))]
+	[Description("Declares the safety flags on both check-theming-access tool methods: a read-only, non-destructive, idempotent, closed-world permission probe.")]
+	public void CheckThemingAccessTool_Should_DeclareCheckSafetyFlags_WhenInspectingMcpServerToolAttribute(string methodName) {
+		// Arrange & Act
+		McpServerToolAttribute attribute = (McpServerToolAttribute)typeof(CheckThemingAccessTool)
+			.GetMethod(methodName)!
+			.GetCustomAttributes(typeof(McpServerToolAttribute), false)
+			.Single();
+
+		// Assert
+		attribute.ReadOnly.Should().BeTrue(because: "the access check only reads rights and license status");
+		attribute.Destructive.Should().BeFalse(because: "a read never destroys state");
+		attribute.Idempotent.Should().BeTrue(because: "repeated checks return the same verdict for unchanged grants");
+		attribute.OpenWorld.Should().BeFalse(because: "the tool only queries the addressed Creatio environment");
+	}
 
 	private static (CheckThemingAccessTool tool, IToolCommandResolver resolver, ICreatioRightsClient rights,
 		ICreatioLicenseClient license) CreateTool() {
@@ -41,16 +62,15 @@ public class CheckThemingAccessToolTests {
 		result.Success.Should().BeTrue(because: "a completed access check must report success");
 		result.CanManageThemes.Should().BeTrue(because: "the operation-right check returned true");
 		result.CanCustomizeBranding.Should().BeTrue(because: "the license check returned true");
-		result.HasThemingAccess.Should().BeTrue(because: "both checks are granted so the caller has theming access");
 		resolver.Received(1).Resolve<ICreatioRightsClient>(Arg.Is<EnvironmentOptions>(options =>
 			options.Environment == "docker_fix2"));
 		rights.Received(1).GetCanExecuteOperation("CanManageThemes", Arg.Any<CreatioRequestOptions>());
 	}
 
 	[Test]
-	[Description("Surfaces hasThemingAccess=false when the operation right is granted but the CanCustomizeBranding license is absent from the status map.")]
+	[Description("Surfaces canCustomizeBranding=false when the operation right is granted but the CanCustomizeBranding license is absent from the status map.")]
 	[Category("Unit")]
-	public void CheckThemingAccessByEnvironment_Should_Report_No_Access_When_License_Missing() {
+	public void CheckThemingAccessByEnvironment_Should_Report_No_License_When_License_Missing() {
 		// Arrange
 		(CheckThemingAccessTool tool, IToolCommandResolver _, ICreatioRightsClient rights,
 			ICreatioLicenseClient license) = CreateTool();
@@ -64,7 +84,7 @@ public class CheckThemingAccessToolTests {
 		// Assert
 		result.Success.Should().BeTrue(because: "a completed check with a missing license is still a successful check");
 		result.CanManageThemes.Should().BeTrue(because: "the operation right was reported as granted");
-		result.HasThemingAccess.Should().BeFalse(because: "a missing license denies theming access even with the operation right");
+		result.CanCustomizeBranding.Should().BeFalse(because: "the CanCustomizeBranding license was absent from the status map");
 	}
 
 	[Test]

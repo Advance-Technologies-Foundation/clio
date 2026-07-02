@@ -22,7 +22,7 @@ public class CreatioRightsClientTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Posts the operation name to the WebApp-prefixed RightsService path and returns true when the result is true.")]
+	[Description("Posts the operation name to the WebApp-prefixed RightsService REST path and returns true when the result is true.")]
 	public void GetCanExecuteOperation_PostsOperationAndReturnsTrue_WhenPermitted() {
 		// Arrange
 		(CreatioRightsClient client, IApplicationClient applicationClient) = CreateClient(isNetCore: false);
@@ -36,7 +36,7 @@ public class CreatioRightsClientTests {
 		// Assert
 		granted.Should().BeTrue(because: "GetCanExecuteOperationResult=true means the operation is permitted");
 		applicationClient.Received(1).ExecutePostRequest(
-			"http://localhost/0/ServiceModel/RightsService.svc/GetCanExecuteOperation",
+			"http://localhost/0/rest/RightsService/GetCanExecuteOperation",
 			"{\"operation\":\"CanManageThemes\"}", 100_000, 3, 1);
 	}
 

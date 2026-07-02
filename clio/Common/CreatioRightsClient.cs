@@ -4,14 +4,14 @@ using System.Text.Json.Serialization;
 namespace Clio.Common
 {
 	/// <summary>
-	/// Client for the native Creatio <c>RightsService.svc</c> that reports whether the current user may execute a
+	/// Client for the native Creatio <c>RightsService</c> that reports whether the current user may execute a
 	/// named system operation. Mirrors the platform <c>RightsService.getCanExecuteOperation</c> contract.
 	/// </summary>
 	public interface ICreatioRightsClient
 	{
 		/// <summary>
 		/// Returns whether the current user can execute the named system operation via
-		/// <c>RightsService.svc/GetCanExecuteOperation</c>.
+		/// <c>rest/RightsService/GetCanExecuteOperation</c>.
 		/// </summary>
 		/// <param name="operationName">The system operation name (for example <c>CanManageThemes</c>).</param>
 		/// <param name="requestOptions">The request timeout and retry settings.</param>

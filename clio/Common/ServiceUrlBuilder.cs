@@ -283,7 +283,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.CreateTheme, "ServiceModel/ThemeService.svc/CreateTheme"},
 		{KnownRoute.UpdateTheme, "ServiceModel/ThemeService.svc/UpdateTheme"},
 		{KnownRoute.DeleteTheme, "ServiceModel/ThemeService.svc/DeleteTheme"},
-		{KnownRoute.RightsGetCanExecuteOperation, "ServiceModel/RightsService.svc/GetCanExecuteOperation"},
+		{KnownRoute.RightsGetCanExecuteOperation, "/rest/RightsService/GetCanExecuteOperation"},
 		{KnownRoute.LicenseGetLicOperationStatuses, "ServiceModel/LicenseService.svc/GetLicOperationStatuses"},
 	};
 
