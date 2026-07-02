@@ -2,10 +2,10 @@
 
 ## Status
 
-Stand-gated. Not implementable from a developer workstation. This document is the
-deliverable for the environment/arrange root cause of the 8 failing DataForge MCP E2E
-fixtures; whoever runs the E2E suite against a real stand executes the investigation and
-the chosen remedy below.
+Reproduced against a stand and resolved for the 3 similarity-search fixtures under
+**ENG-92557** — see "ENG-92557 — outcome" at the bottom. The original investigation below
+is retained for context. Stand-gated: the happy-path (Success=true) assertions still require
+a stand wired to a DataForge tier; the fixtures now skip deterministically where it is not.
 
 ## Problem
 
@@ -138,3 +138,61 @@ ADR/decision and must update all three of the above tests in the same change.
 This spec covers only the environment/arrange root that makes the 8 DataForge E2E fixtures
 deterministic. The clio-side structured-error contract for the read ops is verified by
 unit tests under ENG-92147 and is out of scope for this stand-gated work.
+
+## ENG-92557 — outcome (reproduced + implemented)
+
+Narrow follow-up that un-ignored the 3 similarity-search fixtures (`find-tables`,
+`find-lookups`, `get-relations`) which had been left under the now-closed ENG-92147.
+
+### Reproduced against a stand
+
+On `d2` (`studioenu_15626790_0703`, .NET Framework, `CrtDataForge 7.8.0` installed), via the
+real clio MCP server:
+
+- `dataforge-status` → `success=true` but maintenance `status=Unavailable`
+  (`"Empty maintenance status response."`), and all four health flags false. Per
+  `DataForgeMaintenanceClient.GetFullStatus`, `Unavailable` is the `payload is null` mapping —
+  the `DataForgeMaintenanceService/GetServiceStatus` proxy returned nothing parseable.
+- `find-tables` / `find-lookups` / `get-relations` → all `success=false` with error
+  `Value cannot be null. Parameter name: baseUri` — the DataForge **microservice URL is not
+  configured** on the stand.
+- After `dataforge-initialize` + the full 6-min readiness poll, the index never became Ready
+  (status stayed `Unavailable`). So Step 2A (build + await) cannot turn these reads green on a
+  stand that is not wired to a DataForge tier.
+
+### Why a deterministic skip-guard (not an unconditional pass)
+
+Per the authoritative config docs (Confluence *Useful info — DataForge Configuration* and
+*Toolkit and Data Forge testing*), DataForge is an **external OAuth-gated microservice**. A read
+returns `Success=true` only on a stand with `DataForgeServiceUrl` + `IdentityServerUrl` +
+`IdentityServerClientId` + `IdentityServerClientSecret` set, an OAuth client carrying the
+`use_enrichment` scope, and a **seeded** similarity index. A CI fresh-deploy is not wired to a
+tier, so its index can never be Ready. Additionally, **table similarity search returns a
+service-side 404 even on a fully wired stand** — a known, still-open issue (ENG-87092) — so a
+blanket `Success=true` assertion for `find-tables` is unreachable by design.
+
+### Implemented (`clio.mcp.e2e`, no production-code change)
+
+1. The 3 fixtures no longer carry `[Ignore("ENG-92147…")]` (the ticket is closed).
+2. `DataForgeReadinessGate.EnsureIndexReadyAsync` is **best-effort**: it returns `bool`
+   (became-ready) and never `Assert.Fail`s — on a stand that cannot become ready it logs and
+   returns `false`. The accept/reject branch is a pure `WasInitializationAccepted` predicate and the
+   `IsIndexReady` / `OverallDeadlineReached` helpers are pure — all three are unit-tested without a
+   stand. The arrange warm-up runs at most once per environment for the whole fixture run, so the
+   worst-case wall-clock is not multiplied across the three reads.
+3. Each read runs `AssertServiceServedReadOrSkipByStateAsync`, whose skip-vs-fail decision is keyed on
+   the **observed service state**, not the read's own `Success` flag — necessary because
+   `DataForgeTool` collapses *any* read-client exception (broken URL, deserialization/auth defect) into
+   the same structured `Success=false`. A protocol error is still a failure (`callResult.IsError`); a
+   `Success=true` payload asserts the happy path; on a `Success=false` the guard re-reads
+   `dataforge-status` and **fails** (`Assert.Fail`) when `IsIndexReady` reports the index is Ready (a
+   clio-side regression), and only **skips** (`Assert.Ignore`) when the service itself reports the index
+   is not queryable — mirroring the existing reachability guard. The clio-side
+   exception→`Success=false` mapping is unit-tested in `DataForgeToolTests.cs`
+   (`FindTables/FindLookups/GetRelations_Should_Return_Structured_Failure_When_ReadClient_Reports_Service_Failure`).
+   No bare `[Ignore]`, no false red, and no masking of a regression on a Ready index.
+
+Verified on `d2`: all 3 fixtures **Skip** deterministically (run with
+`McpE2E__DataForge__InitializeAndWait` off; gate-on path is identical, just slower). The
+happy-path `Success=true` branch is exercised only on a DataForge-wired stand (see the worked
+example in the Confluence testing page).

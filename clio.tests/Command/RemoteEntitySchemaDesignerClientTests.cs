@@ -72,6 +72,35 @@ internal class RemoteEntitySchemaDesignerClientTests
 	}
 
 	[Test]
+	[Description("Surfaces the missing-dependency root cause and the add-package-dependency recovery when the server returns an HTML error page, so an agent reaches the one-call fix instead of burning workaround detours (ENG-91314).")]
+	public void GetSchemaDesignItem_ShouldSurfaceDependencyRecovery_WhenServerReturnsHtmlErrorPage() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns("<!DOCTYPE html><html><body>Server Error in '/' Application.</body></html>");
+
+		// Act
+		Action act = () => _client.GetSchemaDesignItem(new GetSchemaDesignItemRequestDto {
+			Name = "Opportunity",
+			PackageUId = Guid.Parse("22222222-2222-2222-2222-222222222222"),
+			UseFullHierarchy = true
+		}, new RemoteCommandOptions());
+
+		// Assert
+		InvalidOperationException exception = act.Should().Throw<InvalidOperationException>(
+				because: "an HTML error page is never a valid designer payload and must fail loudly")
+			.Which;
+		exception.Message.Should().Contain("add-package-dependency",
+			because: "the missing-dependency cause is the most common one and the message must point the caller at the one-call fix");
+		exception.Message.Should().Contain("MISSING A DEPENDENCY",
+			because: "the message must name the missing-dependency root cause that misdirected agents previously missed");
+		exception.Message.Should().Contain("find-entity-schema",
+			because: "the stale-table cause must remain documented as the secondary check");
+		exception.Message.Should().Contain("package-dependencies",
+			because: "the message must actively point MCP agents at the package-dependencies guidance article");
+	}
+
+	[Test]
 	[Description("Posts schema UIds to SchemaDesignerRequest so saved entity schemas can be materialized in the runtime database.")]
 	public void SaveSchemaDbStructure_PostsSchemaDesignerRequest() {
 		// Arrange

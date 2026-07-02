@@ -837,3 +837,63 @@ stories:
     depends_on: [story-theming-native-build-4]
     blocks: []
     note: "Interactive orchestration layer over the shipped native engine (theme-agent gap analysis). adac skill creatio-theme-orchestrator already rewritten to this contract. Build order: (1) Clio.Theming engine changes — ColorNormalizer.TryNormalize; 3-state AdaptedPrimaryResult carrying OriginalContrastOnWhite; MeetsMinContrastOnWhite; accent similarity thresholds (0.10/0.07) + ClassifySimilarityBand; SelectBestValidAccent (NOT ChooseBestAccent — that filters contrast-only + degenerate max-contrast fallback); IThemeTemplateProvider.TryGetPaletteDefault (offline success/error -500) + public offline ResolveCompatibleVersion(string). (2) theme-color-advisor flat ComponentInfoTool-style MCP tool (ReadOnly/Destructive=false/Idempotent/OpenWorld=false, [FeatureToggle theming], operation-dispatched, verdict-returning, stateless, offline) + ThemeColorAdvisorResult DTO + unit tests + mandatory clio.mcp.e2e. (3) rewrite ThemingGuidanceResource palette flow + routing row. Decisions: no metadata persistence v1; no environmentName (offline version only); theme-name length unchanged (soft 50 in guidance, hard 250 in create-theme); verdicts not raw numbers; verdict/warning-code types are tool-owned, not engine. Full contract: spec/theming-agent/theme-color-advisor-contract.md."
+  # --- mcp-e2e-noenvironment-parallelization stories (ENG-92558) ---
+  - id: story-mcp-e2e-noenvironment-parallelization-1
+    title: "Shared fixture foundation and Sandbox guards"
+    feature: "mcp-e2e-noenvironment-parallelization"
+    size: M
+    status: in-progress
+    file: spec/stories/story-mcp-e2e-noenvironment-parallelization-1.md
+    prd: spec/prd/prd-mcp-e2e-noenvironment-parallelization.md
+    adr: spec/adr/adr-mcp-e2e-noenvironment-parallelization.md
+    fr: [FR-01, FR-02, FR-07]
+    ac: [AC-01, AC-04, AC-05, AC-08]
+    depends_on: []
+    blocks:
+      - story-mcp-e2e-noenvironment-parallelization-2
+      - story-mcp-e2e-noenvironment-parallelization-3
+      - story-mcp-e2e-noenvironment-parallelization-4
+
+  - id: story-mcp-e2e-noenvironment-parallelization-2
+    title: "Convert pure NoEnvironment fixtures to shared server"
+    feature: "mcp-e2e-noenvironment-parallelization"
+    size: M
+    status: in-progress
+    file: spec/stories/story-mcp-e2e-noenvironment-parallelization-2.md
+    prd: spec/prd/prd-mcp-e2e-noenvironment-parallelization.md
+    adr: spec/adr/adr-mcp-e2e-noenvironment-parallelization.md
+    fr: [FR-03, FR-04]
+    ac: [AC-02, AC-08, AC-09]
+    depends_on: [story-mcp-e2e-noenvironment-parallelization-1]
+    blocks:
+      - story-mcp-e2e-noenvironment-parallelization-4
+
+  - id: story-mcp-e2e-noenvironment-parallelization-3
+    title: "Split NoEnvironment tests out of mixed Sandbox fixtures"
+    feature: "mcp-e2e-noenvironment-parallelization"
+    size: L
+    status: in-progress
+    file: spec/stories/story-mcp-e2e-noenvironment-parallelization-3.md
+    prd: spec/prd/prd-mcp-e2e-noenvironment-parallelization.md
+    adr: spec/adr/adr-mcp-e2e-noenvironment-parallelization.md
+    fr: [FR-05, FR-06, FR-10]
+    ac: [AC-03, AC-04, AC-09]
+    depends_on: [story-mcp-e2e-noenvironment-parallelization-1]
+    blocks:
+      - story-mcp-e2e-noenvironment-parallelization-4
+
+  - id: story-mcp-e2e-noenvironment-parallelization-4
+    title: "Fail-closed parallel cohort and timing proof"
+    feature: "mcp-e2e-noenvironment-parallelization"
+    size: M
+    status: in-progress
+    file: spec/stories/story-mcp-e2e-noenvironment-parallelization-4.md
+    prd: spec/prd/prd-mcp-e2e-noenvironment-parallelization.md
+    adr: spec/adr/adr-mcp-e2e-noenvironment-parallelization.md
+    fr: [FR-08, FR-09, FR-11]
+    ac: [AC-06, AC-07, AC-10]
+    depends_on:
+      - story-mcp-e2e-noenvironment-parallelization-1
+      - story-mcp-e2e-noenvironment-parallelization-2
+      - story-mcp-e2e-noenvironment-parallelization-3
+    blocks: []

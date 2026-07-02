@@ -174,7 +174,15 @@ internal static class GuidanceCatalog {
 				"Canonical MCP guidance for using Creatio server-to-server OAuth client credentials: "
 				+ "minting client_credentials tokens, handling expiry without refresh tokens, and calling "
 				+ "Creatio APIs with an Authorization: Bearer token.",
-				ServerToServerOAuthGuidanceResource.Guide)
+				ServerToServerOAuthGuidanceResource.Guide),
+			["package-dependencies"] = Create(
+				"package-dependencies",
+				"Canonical MCP guidance for managing Creatio package dependencies: the schema-designer "
+				+ "'GetSchemaDesignItem returned an HTML error page' recovery via add-package-dependency "
+				+ "(missing dependency on the owner of the extended object's upper layer), the symmetric "
+				+ "remove-package-dependency cleanup, and the anti-patterns (no writes into the owning managed "
+				+ "package, no raw SQL/OData/DataService dependency edits).",
+				PackageDependenciesGuidanceResource.Guide)
 		};
 
 		foreach (ComposableAppSkillResourceEntry guide in ComposableAppSkillResourceCatalog.GetGuides()) {

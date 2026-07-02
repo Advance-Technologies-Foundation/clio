@@ -90,7 +90,7 @@ public sealed class DescribeProcessToolE2ETests {
 			if (string.IsNullOrWhiteSpace(environmentName) || string.IsNullOrWhiteSpace(processCode)) {
 				Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName and McpE2E:Sandbox:ProcessCode (a process that exists on the stand) to run describe-business-process MCP E2E.");
 			}
-			if (!await ClioCliCommandRunner.IsEnvironmentReachableAsync(settings, environmentName)) {
+			if (!await ClioCliCommandRunner.IsEnvironmentReachableAsync(settings, environmentName!)) {
 				Assert.Ignore($"describe-business-process MCP E2E requires a reachable configured sandbox environment. '{environmentName}' was not reachable.");
 			}
 		}
@@ -102,8 +102,8 @@ public sealed class DescribeProcessToolE2ETests {
 	private sealed record ArrangeContext(
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource,
-		string EnvironmentName,
-		string ProcessCode) : IAsyncDisposable {
+		string? EnvironmentName,
+		string? ProcessCode) : IAsyncDisposable {
 		public async ValueTask DisposeAsync() {
 			await Session.DisposeAsync();
 			CancellationTokenSource.Dispose();

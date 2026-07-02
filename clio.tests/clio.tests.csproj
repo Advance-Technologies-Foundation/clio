@@ -10,6 +10,10 @@
   </PropertyGroup>
   <ItemGroup Label="References">
     <ProjectReference Include="..\clio\clio.csproj" />
+    <!-- Referenced so the MCP e2e fixture-policy guard (McpFixturePolicyTests) can reflect
+         over clio.mcp.e2e types while running in the standard pre-merge Unit lane. The e2e
+         tests themselves are not executed here (dotnet test only runs clio.tests.dll). -->
+    <ProjectReference Include="..\clio.mcp.e2e\clio.mcp.e2e.csproj" />
     <PackageReference Include="ATF.Repository.Mock" />
     <PackageReference Include="coverlet.collector" >
       <PrivateAssets>all</PrivateAssets>
@@ -19,6 +23,7 @@
     <PackageReference Include="FluentAssertions"  />
     <PackageReference Include="NSubstitute" />
     <PackageReference Include="nunit" />
+    <PackageReference Include="NUnit.Analyzers" />
     <PackageReference Include="NUnit3TestAdapter" />
     <PackageReference Include="System.IO.Abstractions.TestingHelpers" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
