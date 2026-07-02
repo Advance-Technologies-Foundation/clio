@@ -136,7 +136,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		"""
 		[
 		  { "op": "removeElement", "elementName": "StartEvent1" },
-		  { "op": "addElement", "element": { "name": "SignalStart1", "type": "signalStart", "signal": { "entity": "UsrTestRunButton", "on": "save" } } },
+		  { "op": "addElement", "element": { "name": "SignalStart1", "type": "signalStart", "signal": { "entity": "Contact", "on": "save" } } },
 		  { "op": "addFlow", "source": "SignalStart1", "target": "task1" }
 		]
 		""";
