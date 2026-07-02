@@ -23,6 +23,7 @@
     <PackageReference Include="FluentAssertions"  />
     <PackageReference Include="NSubstitute" />
     <PackageReference Include="nunit" />
+    <PackageReference Include="NUnit.Analyzers" />
     <PackageReference Include="NUnit3TestAdapter" />
     <PackageReference Include="System.IO.Abstractions.TestingHelpers" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
