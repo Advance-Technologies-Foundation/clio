@@ -1,0 +1,38 @@
+COMMAND TYPE
+    CI/CD commands
+
+NAME
+    delete-theme - delete a custom Creatio theme from an environment
+
+DESCRIPTION
+    delete-theme removes a custom theme from the target environment via the
+    native ThemeService.svc/DeleteTheme endpoint. The theme is located by --id.
+
+    Requires the CanCustomizeBranding license and the CanManageThemes system
+    operation. Deleting an unknown id is reported as a failure (not idempotent).
+
+    If you delete the theme that is currently the default (the DefaultTheme
+    system setting), the environment falls back to the stock theme.
+
+SYNOPSIS
+    delete-theme [options]
+
+OPTIONS
+    --id                            Id of the theme to delete (required)
+
+    --uri               -u          Application uri
+
+    --Password          -p          User password
+
+    --Login             -l          User login (administrator permission required)
+
+    --Environment       -e          Environment name
+
+    --Maintainer        -m          Maintainer name
+
+EXAMPLE
+    clio delete-theme --id ocean-theme -e myapp
+        delete the theme 'ocean-theme' from the environment registered as myapp
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

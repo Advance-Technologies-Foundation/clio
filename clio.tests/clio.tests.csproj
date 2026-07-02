@@ -104,6 +104,14 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
 
+    <None Include="Theming\Fixtures\**">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+
+    <None Include="..\clio\tpl\themes\10.0\theme.css.tpl" Link="Theming\Fixtures\theme.css.tpl">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+
   </ItemGroup>
   
 </Project>

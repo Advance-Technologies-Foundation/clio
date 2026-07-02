@@ -21,10 +21,10 @@ An external AI sees `clio` MCP not as a generic system shell, but as a curated C
 
 From MCP discovery, the surface currently exposes:
 
-- `63` tools
+- `65` tools
 - `50` prompts
-- `4` resources
-- `56` tools with explicit safety metadata
+- `5` resources
+- `58` tools with explicit safety metadata
 - `7` legacy operational tools without explicit `ReadOnly` / `Destructive` / `Idempotent` flags
 
 Important shape of the surface:
@@ -80,6 +80,10 @@ Typical examples:
 - `update-page`
 - `delete-app`
 - `clear-redis-db-by-credentials`
+- `clear-themes-cache-by-credentials`
+- `list-themes-by-credentials`
+- `create-theme-by-credentials`
+- `check-theming-access-by-credentials`
 - `restart-by-credentials`
 
 ### 3. Pure local mode
@@ -504,6 +508,37 @@ Companion surfaces (see the `process-modeling` guidance):
 - `get-guidance name=process-modeling` — the BPMN element catalog, connection rules, and the validate-then-drive recipe.
 - `generate-process-model` — reads an existing process into a C# model (existing tool).
 
+### 12. Theming
+
+These tools brand a Creatio app: build a custom theme from brand colours and fonts, apply it to an environment, and manage the theme catalog. `build-theme` and `theme-color-advisor` run offline; the rest act on a target environment via the native ThemeService and ship in both `-by-environment` and `-by-credentials` variants.
+
+- `build-theme`
+  Render a theme's `theme.css` (and, in workspace mode, `theme.json`) from a primary colour, optional secondary/accent/system colours, and fonts, over a bundled version-pinned template. Writes into a workspace package when given `workspaceDirectory` + `packageName`, otherwise returns the CSS. Never mutates an environment.
+- `theme-color-advisor`
+  Stateless offline advisor that scores brand-colour choices (readability on white, accent similarity) and returns a verdict per operation, so the agent never judges a colour by eye.
+- `create-theme-by-environment` / `create-theme-by-credentials`
+  Create a theme on the environment from inline `cssContent` plus a caption.
+- `update-theme-by-environment` / `update-theme-by-credentials`
+  Full overwrite of an existing theme by id (caption, CSS class name, CSS content).
+- `delete-theme-by-environment` / `delete-theme-by-credentials`
+  Delete a theme by id; deleting an unknown id is an error.
+- `list-themes-by-environment` / `list-themes-by-credentials`
+  List custom themes (id, caption, CSS class name, CSS file path). An empty list means no themes or no `CanCustomizeBranding` license.
+- `clear-themes-cache-by-environment` / `clear-themes-cache-by-credentials`
+  Refresh the theme catalog cache; needed only when theme files change on the environment outside a clio install.
+- `check-theming-access-by-environment` / `check-theming-access-by-credentials`
+  Report whether the caller has the `CanManageThemes` operation and `CanCustomizeBranding` license, to gate authoring on a real permission check.
+
+What an external AI can practically do here:
+
+- build a theme offline (`build-theme`) with `theme-color-advisor` driving the palette, then commit it to a workspace package and push, or apply it directly with `create-theme`
+- restyle, remove, and confirm themes on an environment
+- precheck theming permissions before authoring, and set the default via the `DefaultTheme` system setting (see the theming guidance)
+
+Companion surfaces (see the `theming` guidance):
+
+- `get-guidance name=theming` — the palette conversation, the build step, and the workspace/dev vs no-code/server delivery flows.
+
 ## Prompt Layer: What The AI Gets Beyond Raw Tools
 
 The `50` prompts do not add new execution power, but they materially change how an external AI can reason about the surface.
@@ -535,6 +570,8 @@ The MCP resource surface is still small, but it now has one MCP-native guidance 
   Dedicated help resource for Redis flush help
 - `docs://mcp/guides/app-modeling`
   Canonical modeling guide for DB-first app creation, lookup behavior, default semantics, and batch-first page/schema workflows
+- `docs://mcp/guides/theming`
+  Canonical MCP guidance for managing custom Creatio themes with clio — create, restyle, delete, list, and set the default — and shipping them to a Creatio environment
 
 How an external AI should interpret resources:
 
@@ -617,6 +654,18 @@ All lifecycle tools now declare explicit safety metadata (`ReadOnly`, `Destructi
 - `restart-by-credentials`
 - `clear-redis-db-by-environment`
 - `clear-redis-db-by-credentials`
+- `clear-themes-cache-by-environment`
+- `clear-themes-cache-by-credentials`
+- `list-themes-by-environment`
+- `list-themes-by-credentials`
+- `create-theme-by-environment`
+- `create-theme-by-credentials`
+- `update-theme-by-environment`
+- `update-theme-by-credentials`
+- `delete-theme-by-environment`
+- `delete-theme-by-credentials`
+- `check-theming-access-by-environment`
+- `check-theming-access-by-credentials`
 
 ### 4. Mixed response shapes
 
