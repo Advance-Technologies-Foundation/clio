@@ -120,7 +120,6 @@ public sealed class GuidanceGetToolTests {
 	[Description("Returns the canonical theming guidance article when the caller requests theming: a single entry point that builds the theme CSS with the native build-theme tool and routes the agent to the right flow rather than embedding the token catalog.")]
 	public async Task GuidanceGet_Should_Return_Theming_Article() {
 		// Arrange
-		_featureToggleService.IsEnabled(typeof(ThemingGuidanceResource)).Returns(true);
 		GuidanceGetTool tool = new(_featureToggleService);
 
 		// Act
@@ -162,7 +161,6 @@ public sealed class GuidanceGetToolTests {
 	[Description("Keeps the theming guidance a thin pointer (CM-03): it points token lookups at the official Creatio theming documentation and names the --crt-* token namespace at most once, without restating the token catalog or exposing clio-internal hosting details.")]
 	public async Task GetGuidance_ShouldNotRestateTokenCatalog_WhenTopicIsTheming() {
 		// Arrange
-		_featureToggleService.IsEnabled(typeof(ThemingGuidanceResource)).Returns(true);
 		GuidanceGetTool tool = new(_featureToggleService);
 
 		// Act

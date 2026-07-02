@@ -4,7 +4,6 @@ using System.Reflection;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using Clio.Theming;
@@ -320,8 +319,8 @@ public sealed class BuildThemeToolTests
 	}
 
 	[Test]
-	[Description("Is a flat, feature-toggled MCP tool named build-theme (ComponentInfoTool shape, not a BaseTool subclass — R-02).")]
-	public void BuildThemeTool_ShouldBeFlatGatedMcpTool_WhenInspected() {
+	[Description("Is a flat MCP tool named build-theme (ComponentInfoTool shape, not a BaseTool subclass — R-02).")]
+	public void BuildThemeTool_ShouldBeFlatMcpTool_WhenInspected() {
 		// Arrange
 		Type toolType = typeof(BuildThemeTool);
 
@@ -330,8 +329,6 @@ public sealed class BuildThemeToolTests
 			because: "the build-theme tool is a flat ComponentInfoTool-style tool, not a BaseTool subclass (R-02)");
 		toolType.GetCustomAttribute<McpServerToolTypeAttribute>().Should().NotBeNull(
 			because: "the tool must be discoverable as an MCP tool type");
-		toolType.GetCustomAttribute<FeatureToggleAttribute>().Should().NotBeNull(
-			because: "the MCP surface is feature-toggled separately from the CLI options class");
 		MethodInfo method = toolType.GetMethod(nameof(BuildThemeTool.BuildTheme));
 		method.Should().NotBeNull(because: "the tool exposes a single build-theme operation");
 		method!.GetCustomAttribute<McpServerToolAttribute>()!.Name.Should().Be("build-theme",

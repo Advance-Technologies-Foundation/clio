@@ -1,5 +1,4 @@
 using System.Reflection;
-using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Command.Theming;
 using Clio.Theming;
@@ -11,7 +10,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Command.McpServer;
 
 /// <summary>
-/// Unit coverage for the <c>theme-color-advisor</c> MCP tool: the flat feature-gated shape and the verdict
+/// Unit coverage for the <c>theme-color-advisor</c> MCP tool: the flat tool shape and the verdict
 /// packet each operation returns (over the real <see cref="ThemeColorAdvisor"/> engine, with a substituted
 /// template provider for the preview system defaults).
 /// </summary>
@@ -30,15 +29,14 @@ public sealed class ThemeColorAdvisorToolTests {
 	}
 
 	[Test]
-	[Description("Is a flat, feature-toggled MCP tool named theme-color-advisor, advertised read-only.")]
-	public void ThemeColorAdvisorTool_ShouldBeFlatGatedReadOnlyTool_WhenInspected() {
+	[Description("Is a flat MCP tool named theme-color-advisor, advertised read-only.")]
+	public void ThemeColorAdvisorTool_ShouldBeFlatReadOnlyTool_WhenInspected() {
 		// Arrange
 		System.Type toolType = typeof(ThemeColorAdvisorTool);
 
 		// Assert
 		toolType.BaseType.Should().Be(typeof(object), because: "the advisor is a flat ComponentInfoTool-style tool, not a BaseTool subclass");
 		toolType.GetCustomAttribute<McpServerToolTypeAttribute>().Should().NotBeNull(because: "it must be discoverable as an MCP tool type");
-		toolType.GetCustomAttribute<FeatureToggleAttribute>().Should().NotBeNull(because: "the theming surface is feature-gated");
 		MethodInfo method = toolType.GetMethod(nameof(ThemeColorAdvisorTool.Advise));
 		McpServerToolAttribute attribute = method!.GetCustomAttribute<McpServerToolAttribute>();
 		attribute!.Name.Should().Be("theme-color-advisor", because: "the advertised tool name is theme-color-advisor");

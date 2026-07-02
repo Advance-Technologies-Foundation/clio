@@ -15,7 +15,6 @@ namespace Clio.Command.McpServer.Tools;
 /// (<see cref="ICreatioLicenseClient"/>). Both clients are resolved for the per-call target environment.
 /// </summary>
 [McpServerToolType]
-[FeatureToggle("theming")]
 public sealed class CheckThemingAccessTool(IToolCommandResolver commandResolver) {
 
 	internal const string CheckThemingAccessByEnvironmentName = "check-theming-access-by-environment";

@@ -10,7 +10,6 @@ namespace Clio.Command.McpServer.Tools;
 /// MCP tool that deletes a custom Creatio theme from a target environment via the native <c>ThemeService</c>.
 /// Destructive and not idempotent: deleting an unknown id is reported as a failure.
 /// </summary>
-[FeatureToggle("theming")]
 public class DeleteThemeTool(
 	DeleteThemeCommand command,
 	ILogger logger,

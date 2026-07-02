@@ -11,7 +11,6 @@ namespace Clio.Command.McpServer.Tools;
 /// MCP tool that overwrites an existing custom Creatio theme on a target environment via the native
 /// <c>ThemeService</c> (a full overwrite by theme id).
 /// </summary>
-[FeatureToggle("theming")]
 public class UpdateThemeTool(
 	UpdateThemeCommand command,
 	ILogger logger,

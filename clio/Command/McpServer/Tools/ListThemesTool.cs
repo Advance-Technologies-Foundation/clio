@@ -14,7 +14,6 @@ namespace Clio.Command.McpServer.Tools;
 /// Read-only MCP tool that lists the custom Creatio themes available on a target environment, returning them
 /// as a structured result.
 /// </summary>
-[FeatureToggle("theming")]
 public class ListThemesTool(
 	ListThemesCommand command,
 	ILogger logger,

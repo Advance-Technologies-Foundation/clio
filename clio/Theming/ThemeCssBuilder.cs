@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Text.RegularExpressions;
 using PaletteSet = System.Collections.Generic.IReadOnlyDictionary<string, System.Collections.Generic.IReadOnlyDictionary<int, string>>;
 
@@ -66,7 +67,7 @@ internal sealed class ThemeCssBuilder : IThemeCssBuilder {
 
 	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
 
-	private static readonly string[] GeneratedPaletteNames = { "primary", "secondary", "accent", "success", "error" };
+	private static readonly string[] GeneratedPaletteNames = { PaletteNames.Primary, PaletteNames.Secondary, PaletteNames.Accent, PaletteNames.Success, PaletteNames.Error };
 
 	private static readonly Regex ThemeCssClassPattern = new(@"^[A-Za-z][A-Za-z0-9_-]*\z", RegexOptions.Compiled, RegexTimeout);
 	private static readonly Regex CommentStripRegex = new(@"/\*(?:(?!\*/)[\s\S])*?Creatio custom theme template(?:(?!\*/)[\s\S])*?\*/\n?", RegexOptions.Compiled, RegexTimeout);
@@ -93,11 +94,11 @@ internal sealed class ThemeCssBuilder : IThemeCssBuilder {
 		string success = ColorNormalizer.Normalize(options.Success ?? DefaultSuccess500);
 		string error = ColorNormalizer.Normalize(options.Error ?? DefaultError500);
 		PaletteSet palettes = new Dictionary<string, IReadOnlyDictionary<int, string>>(StringComparer.Ordinal) {
-			["primary"] = PaletteGenerator.GenerateScale(primary),
-			["secondary"] = PaletteGenerator.GenerateScale(secondary),
-			["accent"] = PaletteGenerator.GenerateScale(accent),
-			["success"] = PaletteGenerator.GenerateScale(success),
-			["error"] = PaletteGenerator.GenerateScale(error),
+			[PaletteNames.Primary] = PaletteGenerator.GenerateScale(primary),
+			[PaletteNames.Secondary] = PaletteGenerator.GenerateScale(secondary),
+			[PaletteNames.Accent] = PaletteGenerator.GenerateScale(accent),
+			[PaletteNames.Success] = PaletteGenerator.GenerateScale(success),
+			[PaletteNames.Error] = PaletteGenerator.GenerateScale(error),
 		};
 		string css = CommentStripRegex.Replace(templateCss, string.Empty, 1);
 		css = css.Replace("<%themeCssClass%>", options.ThemeCssClass);
@@ -173,11 +174,9 @@ internal sealed class ThemeCssBuilder : IThemeCssBuilder {
 	}
 
 	private static Dictionary<string, string> ParseColorDeclarations(string css) {
-		Dictionary<string, string> declarations = new(StringComparer.Ordinal);
-		foreach (Match match in ColorDeclarationRegex.Matches(css)) {
-			declarations[match.Groups[1].Value] = match.Groups[2].Value.Trim();
-		}
-		return declarations;
+		return ColorDeclarationRegex.Matches(css)
+			.GroupBy(match => match.Groups[1].Value, match => match.Groups[2].Value.Trim(), StringComparer.Ordinal)
+			.ToDictionary(group => group.Key, group => group.Last(), StringComparer.Ordinal);
 	}
 
 	private static (string Name, int Step)? ParsePaletteRef(string value) {

@@ -32,7 +32,6 @@ public sealed class ClearThemesCacheToolE2ETests {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		FeatureE2EGate.SkipIfFeatureDisabled(settings, "theming");
 		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
 
 		// Act

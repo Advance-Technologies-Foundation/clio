@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
@@ -23,7 +24,6 @@ namespace Clio.Command.McpServer.Tools;
 /// identically.
 /// </summary>
 [McpServerToolType]
-[FeatureToggle("theming")]
 public sealed class BuildThemeTool(BuildThemeCommand command) {
 
 	internal const string ToolName = "build-theme";
@@ -41,6 +41,8 @@ public sealed class BuildThemeTool(BuildThemeCommand command) {
 		"Without workspaceDirectory+packageName: returns { success, css, descriptor, warnings?, error? } — pipe css into create-theme-by-environment's cssContent. " +
 		"With workspaceDirectory+packageName (workspace/dev flow): writes theme.css + theme.json into <workspaceDirectory>/packages/<packageName>/Files/themes/<cssClassName>/ and returns { success, path, warnings?, error? } WITHOUT the css (avoids round-tripping the large CSS through the agent). " +
 		"Never mutates an environment. For the theme workflow, read get-guidance theming first.")]
+	[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+		Justification = "Tool parameters intentionally mirror the build-theme MCP contract.")]
 	public BuildThemeResult BuildTheme(
 		[Description("Brand primary colour (#rrggbb, #rgb, rgb(), hsl(), or a named colour)")] [Required] string primary,
 		[Description("CSS class applied when the theme is active (^[A-Za-z][A-Za-z0-9_-]*$, max 100); derived from caption (slugified) when omitted — prefer passing caption and letting clio derive this")] string cssClassName = null,

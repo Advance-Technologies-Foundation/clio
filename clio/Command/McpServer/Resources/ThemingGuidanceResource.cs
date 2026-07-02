@@ -11,7 +11,6 @@ namespace Clio.Command.McpServer.Resources;
 /// template), and routes between the workspace/dev and no-code/server delivery flows.
 /// </summary>
 [McpServerResourceType]
-[FeatureToggle("theming")]
 public sealed class ThemingGuidanceResource {
 	private const string DocsScheme = "docs";
 	private const string ResourcePath = "mcp/guides/theming";

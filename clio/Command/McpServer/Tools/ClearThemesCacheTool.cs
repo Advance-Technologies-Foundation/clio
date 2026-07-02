@@ -9,7 +9,6 @@ namespace Clio.Command.McpServer.Tools;
 /// <summary>
 /// MCP tool that refreshes the Creatio theme catalog cache on a target environment via the native <c>ThemeService</c>.
 /// </summary>
-[FeatureToggle("theming")]
 public class ClearThemesCacheTool(
 	ClearThemesCacheCommand command,
 	ILogger logger,

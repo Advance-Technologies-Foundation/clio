@@ -51,34 +51,34 @@ internal static class TextTokenResolver {
 
 	/// <summary>Text-token → palette mapping, in resolution order.</summary>
 	internal static readonly (string Token, string Palette)[] TextTokenPaletteOrdered = {
-		("text-heading", "secondary"),
-		("text-action", "secondary"),
-		("text-action-hover", "primary"),
-		("text-link", "primary"),
-		("text-primary", "primary"),
-		("text-secondary", "secondary"),
-		("text-accent", "accent"),
-		("text-error", "error"),
-		("text-success", "success"),
+		("text-heading", PaletteNames.Secondary),
+		("text-action", PaletteNames.Secondary),
+		("text-action-hover", PaletteNames.Primary),
+		("text-link", PaletteNames.Primary),
+		("text-primary", PaletteNames.Primary),
+		("text-secondary", PaletteNames.Secondary),
+		("text-accent", PaletteNames.Accent),
+		("text-error", PaletteNames.Error),
+		("text-success", PaletteNames.Success),
 	};
 
 	/// <summary>Text-on-colour token → palette mapping, in resolution order.</summary>
 	internal static readonly (string Token, string Palette)[] TextOnColorPaletteOrdered = {
-		("text-on-primary", "primary"),
-		("text-on-primary-subtle", "primary"),
-		("text-on-primary-soft", "primary"),
-		("text-on-secondary", "secondary"),
-		("text-on-secondary-subtle", "secondary"),
-		("text-on-secondary-soft", "secondary"),
-		("text-on-accent", "accent"),
-		("text-on-accent-subtle", "accent"),
-		("text-on-accent-soft", "accent"),
-		("text-on-error", "error"),
-		("text-on-error-subtle", "error"),
-		("text-on-error-soft", "error"),
-		("text-on-success", "success"),
-		("text-on-success-subtle", "success"),
-		("text-on-success-soft", "success"),
+		("text-on-primary", PaletteNames.Primary),
+		("text-on-primary-subtle", PaletteNames.Primary),
+		("text-on-primary-soft", PaletteNames.Primary),
+		("text-on-secondary", PaletteNames.Secondary),
+		("text-on-secondary-subtle", PaletteNames.Secondary),
+		("text-on-secondary-soft", PaletteNames.Secondary),
+		("text-on-accent", PaletteNames.Accent),
+		("text-on-accent-subtle", PaletteNames.Accent),
+		("text-on-accent-soft", PaletteNames.Accent),
+		("text-on-error", PaletteNames.Error),
+		("text-on-error-subtle", PaletteNames.Error),
+		("text-on-error-soft", PaletteNames.Error),
+		("text-on-success", PaletteNames.Success),
+		("text-on-success-subtle", PaletteNames.Success),
+		("text-on-success-soft", PaletteNames.Success),
 	};
 
 	private static readonly int[] AscendingSteps = { 500, 600, 700, 800, 900 };
@@ -95,12 +95,9 @@ internal static class TextTokenResolver {
 		IReadOnlyDictionary<int, string> palette = palettes[paletteName];
 		int startIdx = Array.IndexOf(AscendingSteps, templateStartStep);
 		IEnumerable<int> steps = startIdx >= 0 ? AscendingSteps.Skip(startIdx) : AscendingSteps;
-		foreach (int step in steps) {
-			if (ColorMetrics.ContrastRatio(palette[step], ColorMetrics.White) >= TextContrastMin) {
-				return new TextTokenResolution(paletteName, step);
-			}
-		}
-		return new TextTokenResolution(paletteName, 900);
+		int resolvedStep = steps.FirstOrDefault(
+			step => ColorMetrics.ContrastRatio(palette[step], ColorMetrics.White) >= TextContrastMin, 900);
+		return new TextTokenResolution(paletteName, resolvedStep);
 	}
 
 	/// <summary>Returns the link-hover token one stop darker than the resolved link step (capped at 900).</summary>
@@ -109,7 +106,7 @@ internal static class TextTokenResolver {
 		int next = idx >= 0 && idx < AscendingSteps.Length - 1
 			? AscendingSteps[idx + 1]
 			: 900;
-		return new TextTokenResolution("primary", next);
+		return new TextTokenResolution(PaletteNames.Primary, next);
 	}
 
 	/// <summary>Resolves a <c>text-on-*</c> token to the base light colour or the role palette's 900 stop.</summary>

@@ -18,7 +18,6 @@ namespace Clio.Command.Theming;
 /// Options for the <c>build-theme</c> command.
 /// </summary>
 [Verb("build-theme", HelpText = "Build the artifacts of a Creatio theme from brand colours and fonts")]
-[FeatureToggle("theming")]
 public sealed class BuildThemeOptions {
 	/// <summary>Required brand primary colour (any CSS form: #rrggbb, #rgb, rgb(), hsl(), or a named colour).</summary>
 	[Option("primary", Required = true, HelpText = "Brand primary colour (#rrggbb, #rgb, rgb(), hsl(), or a named colour)")]

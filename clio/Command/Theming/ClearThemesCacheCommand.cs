@@ -8,7 +8,6 @@ namespace Clio.Command.Theming
 	/// </summary>
 	[Verb("clear-themes-cache", Aliases = ["flush-themes"],
 		HelpText = "Refresh the Creatio theme catalog cache")]
-	[FeatureToggle("theming")]
 	public class ClearThemesCacheOptions : RemoteCommandOptions
 	{
 	}

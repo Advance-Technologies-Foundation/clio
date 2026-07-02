@@ -12,7 +12,7 @@ namespace Clio.Mcp.E2E.Support.Configuration;
 /// ships), so a fixture calls <see cref="SkipIfFeatureDisabled"/> to <see cref="Assert.Ignore(string)"/>
 /// rather than fail when the feature is disabled. Enable the feature
 /// (<c>clio experimental --name &lt;key&gt; --enable</c>) on the stand's clio settings to run those fixtures.
-/// Fixtures call <see cref="SkipIfFeatureDisabled"/> with their feature key (for example <c>theming</c> or
+/// Fixtures call <see cref="SkipIfFeatureDisabled"/> with their feature key (for example
 /// <c>process-designer</c>), so the feature-state resolution lives in one place.
 /// </summary>
 internal static class FeatureE2EGate {
@@ -23,7 +23,7 @@ internal static class FeatureE2EGate {
 	/// <c>ClioProcessPath</c> is set).
 	/// </summary>
 	/// <param name="settings">The E2E settings whose clio process + environment locate the appsettings.</param>
-	/// <param name="featureKey">The feature-toggle key to check (for example <c>theming</c>).</param>
+	/// <param name="featureKey">The feature-toggle key to check (for example <c>process-designer</c>).</param>
 	public static void SkipIfFeatureDisabled(McpE2ESettings settings, string featureKey) {
 		if (!IsFeatureEnabled(settings, featureKey)) {
 			Assert.Ignore(

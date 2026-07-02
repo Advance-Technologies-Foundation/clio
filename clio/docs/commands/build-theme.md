@@ -107,13 +107,5 @@ clio build-theme --primary "#004fd6" --css-class-name MyTheme --heading-font "In
 
 ## Notes
 
-This command is experimental and hidden by default behind the `theming` feature (which also gates the
-other theme commands: `create-theme`, `update-theme`, `delete-theme`, `list-themes`, `clear-themes-cache`).
-Enable it before use:
-
-```bash
-clio experimental --name theming --enable
-```
-
 `build-theme` never mutates an environment. A too-old `--version` (older than the lowest
 supported version) and an unregistered `--environment-name` are reported as errors.
