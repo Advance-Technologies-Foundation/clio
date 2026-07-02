@@ -1,4 +1,5 @@
 namespace Clio.Command {
+	using Newtonsoft.Json;
 	using Newtonsoft.Json.Linq;
 
 	/// <summary>
@@ -34,7 +35,7 @@ namespace Clio.Command {
 			try {
 				parsed = JArray.Parse(json);
 				return true;
-			} catch {
+			} catch (JsonReaderException) {
 				error = InvalidOptionalPropertiesError;
 				return false;
 			}

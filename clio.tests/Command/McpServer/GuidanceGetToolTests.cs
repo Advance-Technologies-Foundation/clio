@@ -289,6 +289,44 @@ public sealed class GuidanceGetToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Resolves the dashboard-creation guide through get-guidance to its canonical URI.")]
+	public async Task GuidanceGet_Should_Return_Dashboard_Creation_Article() {
+		// Arrange
+		GuidanceGetTool tool = new(_featureToggleService);
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("dashboard-creation"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "dashboard-creation is a registered guidance name the create-page tool and the dashboards router route to");
+		result.Article.Should().NotBeNull(
+			because: "a successful guidance lookup must return the resolved article");
+		result.Article!.Uri.Should().Be("docs://mcp/guides/dashboard-creation",
+			because: "the tool must resolve the dashboard-creation name to its canonical guide URI");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Resolves the dashboard-design guide through get-guidance to its canonical URI.")]
+	public async Task GuidanceGet_Should_Return_Dashboard_Design_Article() {
+		// Arrange
+		GuidanceGetTool tool = new(_featureToggleService);
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("dashboard-design"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "dashboard-design is a registered guidance name the dashboards router routes to");
+		result.Article.Should().NotBeNull(
+			because: "a successful guidance lookup must return the resolved article");
+		result.Article!.Uri.Should().Be("docs://mcp/guides/dashboard-design",
+			because: "the tool must resolve the dashboard-design name to its canonical guide URI");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Returns the canonical page localizable string guidance article when the caller requests page-schema-resources.")]
 	public async Task GuidanceGet_Should_Return_Page_Schema_Resources_Article() {
 		// Arrange

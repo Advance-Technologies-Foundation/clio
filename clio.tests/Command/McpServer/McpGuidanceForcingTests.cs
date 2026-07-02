@@ -35,7 +35,7 @@ public sealed class McpGuidanceForcingTests {
 	// Guide names referenced by the always-on instructions (routing), the routing map, and/or the touched
 	// tool descriptions. Drift guard: every one must resolve in GuidanceCatalog.
 	private static readonly string[] ReferencedGuideNames = [
-		"core-rules", "routing", "page-modification", "business-rules", "business-rule-filters", "dashboards", "indicator-widget",
+		"core-rules", "routing", "page-modification", "business-rules", "business-rule-filters", "dashboards", "dashboard-creation", "dashboard-design", "indicator-widget",
 		"app-modeling", "esq", "esq-filters", "data-bindings"
 	];
 
