@@ -28,6 +28,7 @@ public sealed class RoutingGuidanceResource {
 		       Pick the domain, then the row (get-guidance name=...; an unknown name returns availableGuides).
 
 		       - Pages (Freedom UI): create/edit -> get-component-info (read resolvedFrom) + name=page-modification
+		         - page-modification is the entry; after its GATE read the ONE matching sub-guide: name=page-modification-overview (save lifecycle), name=page-modification-field-contract (insert a data-bound field), name=page-modification-containers (parentName / bundle.json), name=page-modification-components (button/handler/viewConfigDiff rules)
 		         - dashboards / analytics widgets (placement / sizing / styling) -> name=dashboards AND name=indicator-widget
 		         - page business rules (visibility/required/value) -> name=business-rules
 		       - Entities & schemas: create/modify schema, app / schema modeling -> name=app-modeling
