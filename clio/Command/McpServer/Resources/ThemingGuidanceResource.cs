@@ -46,6 +46,7 @@ public sealed class ThemingGuidanceResource {
 		       Building the theme CSS — build-theme
 		       - Build the `theme.css` with the native `build-theme` tool: give it brand colors (and optional fonts) and it returns the full CSS, computed by a deterministic OKLCH palette engine over a bundled, version-pinned template — no hand-computed color math and no external package.
 		       - Required: a primary colour and a theme name — pass the name as `caption`; `cssClassName` is derived from it (slugified) when omitted, or pass `cssClassName` explicitly. secondary/accent/success/error and fonts are optional. At least one of `caption` or `cssClassName` is required.
+		       - Font weights: build-theme loads a standard set of weights for any custom font by default (see the `fontWeights` parameter). When a custom Google Font is chosen, confirm the family actually ships those weights — a family that offers only one weight will render the heavier ones as the nearest available fallback.
 		       - The `--crt-*` design-token catalog and advanced hand-authoring beyond the generated palette are not restated here — consult the official Creatio theming documentation for token names and descriptor rules; do not infer them.
 
 		       Which flow
