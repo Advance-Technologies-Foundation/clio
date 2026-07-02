@@ -1,0 +1,145 @@
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.ComponentModel.DataAnnotations;
+using System.Linq;
+using System.Text.Json.Serialization;
+using Clio.Command.RelatedPages;
+using Clio.Common;
+using ModelContextProtocol.Server;
+
+namespace Clio.Command.McpServer.Tools;
+
+[McpServerToolType]
+public sealed class CreateRelatedPageAddonTool(
+	CreateRelatedPageAddonCommand command,
+	ILogger logger,
+	IToolCommandResolver commandResolver)
+	: BaseTool<CreateRelatedPageAddonOptions>(command, logger, commandResolver) {
+
+	internal const string ToolName = "create-related-page-addon";
+
+	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
+	[Description("Configure the RelatedPage add-on for an object (entity schema): which Freedom UI pages open by default and for adding records, optionally per audience and per type. " +
+		"Per-page role-name 'All external users' binds the PORTAL (self-service) audience and 'All employees' the internal one. " +
+		"Writes the RelatedPage add-on via AddonSchemaDesignerService and rebuilds static content. " +
+		"The pages list fully REPLACES the object's current related-page configuration. " +
+		"A GENERAL base default page is MANDATORY: always include an is-default entry with no type-column-value scoped to the general audience — the 'All employees' role (or no role) — as the page opened for a record and the fallback for any type/audience with no dedicated set. The default page also serves record creation, so add a separate is-add page only when you want a DIFFERENT add page. Portal ('All external users') and type-specific pages layer on top; never bind only portal, only typed, or only add pages without the general base. " +
+		"Resolve page-schema-name values with list-pages and the object/package with get-app-info. " +
+		"Call get-guidance with name related-page-binding to learn the full flow. Prefer environment-name; keep direct connection args for emergency fallback only.")]
+	public CreateRelatedPageAddonResponse CreateRelatedPageAddon(
+		[Description("Parameters: entity-schema-name, package-name, pages (required); type-column-uid optional; environment-name preferred; uri/login/password emergency fallback only.")]
+		[Required] CreateRelatedPageAddonArgs args) {
+		if (string.IsNullOrWhiteSpace(args?.EntitySchemaName)) {
+			return new CreateRelatedPageAddonResponse { Success = false, Error = RelatedPageAddonMessages.EntitySchemaNameRequired };
+		}
+		if (string.IsNullOrWhiteSpace(args.PackageName)) {
+			return new CreateRelatedPageAddonResponse { Success = false, Error = RelatedPageAddonMessages.PackageNameRequired };
+		}
+		if (args.Pages is null || args.Pages.Count == 0) {
+			return new CreateRelatedPageAddonResponse { Success = false, Error = "at least one entry in pages is required" };
+		}
+		if (args.Pages.Any(page => page is null)) {
+			return new CreateRelatedPageAddonResponse { Success = false, Error = "each entry in pages is required (a null pages entry was provided)" };
+		}
+
+		CreateRelatedPageAddonOptions options = new() {
+			EntitySchemaName = args.EntitySchemaName,
+			PackageName = args.PackageName,
+			TypeColumnUId = args.TypeColumnUId,
+			Pages = args.Pages
+				.Select(p => new RelatedPageSpec(
+					p.PageSchemaName,
+					p.IsDefault ?? false,
+					p.IsAdd ?? false,
+					p.IsSspDefault ?? false,
+					p.Role,
+					p.TypeColumnValue,
+					p.RoleName))
+				.ToList(),
+			Environment = args.EnvironmentName,
+			Uri = args.Uri,
+			Login = args.Login,
+			Password = args.Password
+		};
+
+		return ExecuteWithCleanLog(() => {
+			CreateRelatedPageAddonCommand resolvedCommand;
+			try {
+				resolvedCommand = ResolveCommand<CreateRelatedPageAddonCommand>(options);
+			} catch (Exception ex) {
+				return new CreateRelatedPageAddonResponse { Success = false, Error = ex.Message };
+			}
+			resolvedCommand.TryCreate(options, out CreateRelatedPageAddonResponse response);
+			return response;
+		});
+	}
+}
+
+public sealed record CreateRelatedPageAddonArgs(
+	[property: JsonPropertyName("entity-schema-name")]
+	[property: Description("Object (entity schema) name the related pages belong to, e.g. 'UsrDeliveryItem'.")]
+	[property: Required]
+	string EntitySchemaName,
+
+	[property: JsonPropertyName("package-name")]
+	[property: Description("Package that owns the add-on configuration.")]
+	[property: Required]
+	string PackageName,
+
+	[property: JsonPropertyName("pages")]
+	[property: Description("Related-page entries. Fully replaces the object's current configuration. Mark exactly one entry per role/type bucket with is-default=true (the page opened on a record) and one with is-add=true (the page used to add a record); the same page may serve both. A general base default entry is MANDATORY — always include one with is-default=true, no type-column-value, and the 'All employees' role (or no role): the main record page and the fallback for any type/audience. The default also serves adding, so add a separate is-add entry only for a DIFFERENT add page. Portal ('All external users') and type-specific pages layer on top; never bind only portal, only typed, or only add pages without the general base.")]
+	[property: Required]
+	IReadOnlyList<RelatedPageArg> Pages,
+
+	[property: JsonPropertyName("type-column-uid")]
+	[property: Description("Optional UId of the type column that drives type-specific page sets. Omit for a single page set.")]
+	string? TypeColumnUId,
+
+	[property: JsonPropertyName("environment-name")]
+	[property: Description("Registered clio environment name, e.g. 'local'. Preferred for normal MCP work.")]
+	string? EnvironmentName,
+
+	[property: JsonPropertyName("uri")]
+	[property: Description("Direct Creatio URL. Use only when bootstrap is broken or before the environment can be registered through reg-web-app.")]
+	string? Uri,
+
+	[property: JsonPropertyName("login")]
+	[property: Description("Direct Creatio login paired with `uri`. Emergency fallback only.")]
+	string? Login,
+
+	[property: JsonPropertyName("password")]
+	[property: Description("Direct Creatio password paired with `uri`. Emergency fallback only.")]
+	string? Password
+);
+
+public sealed record RelatedPageArg(
+	[property: JsonPropertyName("page-schema-name")]
+	[property: Description("Freedom UI page schema name, e.g. 'UsrDeliveryItemFormPage'.")]
+	[property: Required]
+	string PageSchemaName,
+
+	[property: JsonPropertyName("is-default")]
+	[property: Description("When true, this page opens by default when a record is opened. Default false.")]
+	bool? IsDefault,
+
+	[property: JsonPropertyName("is-add")]
+	[property: Description("When true, this page is used when adding a new record. Default false.")]
+	bool? IsAdd,
+
+	[property: JsonPropertyName("is-ssp-default")]
+	[property: Description("Low-level RelatedPagesMetadata IsSspDefault flag; leave false. This is NOT how the portal audience is set — to target portal (self-service) users, add a page entry with role-name 'All external users'. Default false.")]
+	bool? IsSspDefault,
+
+	[property: JsonPropertyName("role")]
+	[property: Description("Optional SysAdminUnit role UId for a role/audience-specific page set. Omit for all users. Prefer role-name unless you already have the GUID.")]
+	string? Role,
+
+	[property: JsonPropertyName("type-column-value")]
+	[property: Description("Optional type-column value (used with type-column-uid) for a type-specific page set.")]
+	string? TypeColumnValue,
+
+	[property: JsonPropertyName("role-name")]
+	[property: Description("Optional audience role NAME, resolved to its UId (alternative to role). Use 'All external users' for the portal/self-service audience or 'All employees' for internal users. Omit for all users.")]
+	string? RoleName = null
+);

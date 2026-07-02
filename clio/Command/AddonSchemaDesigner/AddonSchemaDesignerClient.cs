@@ -51,6 +51,10 @@ internal sealed class AddonSchemaDesignerClient(
 		AddonSaveResponseDto response = Deserialize<AddonSaveResponseDto>(
 			responseBody,
 			"AddonSchemaDesignerService.SaveSchema returned an empty response.");
+		// `success` is the authoritative flag; `value` is an additional explicit-failure signal, so a save is
+		// rejected when success is false OR value is explicitly false. A missing `value` (null) is not treated as
+		// a failure — it is governed by `success` (matching the verified BuildConfiguration shape
+		// {"errorInfo":null,"success":true}, whose success flag likewise governs).
 		if (!response.Success || response.Value == false) {
 			throw new InvalidOperationException(response.ErrorInfo?.Message ?? "AddonSchemaDesignerService.SaveSchema failed.");
 		}
@@ -74,9 +78,18 @@ internal sealed class AddonSchemaDesignerClient(
 	/// their next startup via <c>/api/ClientCache/Hashes</c>.
 	/// </summary>
 	public void BuildConfiguration() {
-		applicationClient.ExecutePostRequest(
+		string responseBody = applicationClient.ExecutePostRequest(
 			serviceUrlBuilder.Build("ServiceModel/WorkspaceExplorerService.svc/BuildConfiguration"),
 			string.Empty);
+		// The rebuild reports its own success (verified shape: {"errorInfo":null,"success":true}); surface a
+		// failed static-content rebuild instead of leaving the user with a saved add-on but stale pages in the UI.
+		AddonBuildResponseDto response = Deserialize<AddonBuildResponseDto>(
+			responseBody,
+			"AddonSchemaDesignerService.BuildConfiguration returned an empty response.");
+		if (!response.Success) {
+			throw new InvalidOperationException(
+				response.ErrorInfo?.Message ?? "AddonSchemaDesignerService.BuildConfiguration failed.");
+		}
 	}
 
 	private string BuildDesignerMethodUrl(string methodName) {

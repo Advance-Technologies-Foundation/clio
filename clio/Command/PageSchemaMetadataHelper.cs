@@ -28,6 +28,14 @@ namespace Clio.Command {
 		private const string SysSchemaName = "SysSchema";
 		private const string ManagerNameColumnPath = "ManagerName";
 		private const string ClientUnitSchemaManagerName = "ClientUnitSchemaManager";
+		private const string SysAdminUnitName = "SysAdminUnit";
+		// SysAdminUnit holds both roles and user accounts; the type discriminator column tells them apart.
+		// A USER row has SysAdminUnitTypeValue 4; roles use other values (0 organizational, 6 functional).
+		private const string SysAdminUnitTypeColumnPath = "SysAdminUnitTypeValue";
+		private const int SysAdminUnitTypeUser = 4;
+		private const int IntegerDataValueType = 4;
+		private const int ComparisonTypeEqual = 3;
+		private const int ComparisonTypeNotEqual = 4;
 
 		private static (JArray rows, bool success) ExecuteSelectQuery(
 			IApplicationClient applicationClient,
@@ -44,13 +52,16 @@ namespace Clio.Command {
 			}
 		}
 
-		private static JObject BuildEqFilter(string columnPath, int dataValueType, JToken value) =>
+		private static JObject BuildComparisonFilter(string columnPath, int comparisonType, int dataValueType, JToken value) =>
 			new JObject {
-				[FilterTypeKey] = 1, ["comparisonType"] = 3, [IsEnabledKey] = true,
+				[FilterTypeKey] = 1, ["comparisonType"] = comparisonType, [IsEnabledKey] = true,
 				["leftExpression"] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = columnPath },
 				["rightExpression"] = new JObject { [ExpressionTypeKey] = 2,
 					["parameter"] = new JObject { ["dataValueType"] = dataValueType, ["value"] = value } }
 			};
+
+		private static JObject BuildEqFilter(string columnPath, int dataValueType, JToken value) =>
+			BuildComparisonFilter(columnPath, ComparisonTypeEqual, dataValueType, value);
 
 		private static JObject BuildFilterGroup(params (string key, JObject filter)[] filters) {
 			var items = new JObject();
@@ -159,6 +170,97 @@ namespace Clio.Command {
 			if (string.IsNullOrWhiteSpace(uId))
 				return (null, $"Package '{packageName}' has no UId in the SysPackage response.");
 			return (uId, null);
+		}
+
+		/// <summary>
+		/// Resolves a Freedom UI page (client-unit) schema name to its <c>UId</c> via the DataService
+		/// SelectQuery endpoint, filtered to <c>ClientUnitSchemaManager</c>. Used by
+		/// <c>create-related-page-addon</c> to turn page names into the <c>PageSchemaUId</c> values stored
+		/// in the RelatedPage add-on metadata.
+		/// </summary>
+		/// <remarks>
+		/// Name-to-UId schema resolution intentionally uses the DataService <c>SelectQuery</c> over
+		/// <c>SysSchema</c> rather than a ClioGate endpoint. This is the established, repo-consistent pattern
+		/// for these read-only lookups — the same helper backs <c>create-page-business-rules</c>
+		/// (<c>PageBusinessRuleSchemaProvider</c>) and <c>create-page</c>, and none of them introduce a
+		/// ClioGate dependency. ClioGate is reserved for privileged write/elevated operations. The trade-off:
+		/// the caller must have DataService read access to <c>SysSchema</c> (a full schema-management user);
+		/// a restricted solution-management user without that access would get a SecurityException here. This
+		/// is a pre-existing, repo-wide limitation, accepted for consistency, not introduced by this command.
+		/// </remarks>
+		internal static (string uId, string error) QueryPageSchemaUId(
+			IApplicationClient applicationClient,
+			IServiceUrlBuilder serviceUrlBuilder,
+			string pageSchemaName) {
+			(JToken row, string error) = QuerySysSchemaRow(applicationClient, serviceUrlBuilder, pageSchemaName, ("UId", "UId"));
+			if (row == null) {
+				return (null, error ?? $"Page schema '{pageSchemaName}' not found.");
+			}
+			string uId = row["UId"]?.ToString();
+			if (string.IsNullOrWhiteSpace(uId)) {
+				return (null, $"Page schema '{pageSchemaName}' has no UId in the SysSchema response.");
+			}
+			return (uId, null);
+		}
+
+		/// <summary>
+		/// Resolves a Creatio role (<c>SysAdminUnit</c>) name to its <c>Id</c> via the DataService
+		/// SelectQuery endpoint. Used by <c>create-related-page-addon</c> to scope a related-page set to an
+		/// audience by name (e.g. <c>All employees</c> or the portal role <c>All external users</c>) instead
+		/// of requiring the caller to pass a role GUID.
+		/// </summary>
+		/// <remarks>
+		/// The lookup is constrained two ways so it cannot resolve to the wrong unit: it excludes USER rows
+		/// (<c>SysAdminUnitTypeValue == 4</c>) so a role name can never bind to a user account that happens to
+		/// share the name, and it fetches two rows so a name matching more than one role is reported as
+		/// ambiguous rather than silently resolving to whichever role the platform returns first.
+		/// </remarks>
+		internal static (string uId, string error) QueryRoleUId(
+			IApplicationClient applicationClient,
+			IServiceUrlBuilder serviceUrlBuilder,
+			string roleName) {
+			var query = new JObject {
+				[RootSchemaNameKey] = SysAdminUnitName, [OperationTypeKey] = 0,
+				[FiltersKey] = BuildFilterGroup(
+					("byName", BuildEqFilter("Name", 1, roleName)),
+					("notUser", BuildComparisonFilter(
+						SysAdminUnitTypeColumnPath, ComparisonTypeNotEqual, IntegerDataValueType, SysAdminUnitTypeUser))),
+				[ColumnsKey] = new JObject {
+					[ItemsKey] = new JObject {
+						["Id"] = new JObject { [ExpressionKey] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = "Id" } }
+					}
+				},
+				[RowCountKey] = 2
+			};
+			var (rows, success) = ExecuteSelectQuery(applicationClient, serviceUrlBuilder, query);
+			if (!success)
+				return (null, "Failed to query SysAdminUnit");
+			if (rows.Count == 0)
+				return (null, $"Role '{roleName}' not found.");
+			if (rows.Count > 1)
+				return (null,
+					$"Role name '{roleName}' is ambiguous (it matches more than one role); pass the role UId explicitly via role.");
+			string id = rows[0]["Id"]?.ToString();
+			if (string.IsNullOrWhiteSpace(id))
+				return (null, $"Role '{roleName}' has no Id in the SysAdminUnit response.");
+			return (id, null);
+		}
+
+		/// <summary>
+		/// Reverse of <see cref="QueryPageSchemaUId"/>: resolves a page (client-unit) schema <c>UId</c> back to
+		/// its <c>Name</c> via the DataService SelectQuery endpoint. Used by <c>get-related-page-addon</c> to
+		/// surface friendly page names for the UIds stored in the RelatedPage add-on metadata. Returns
+		/// <c>null</c> when the UId is empty or the schema is not found.
+		/// </summary>
+		internal static string QueryPageSchemaNameByUId(
+			IApplicationClient applicationClient,
+			IServiceUrlBuilder serviceUrlBuilder,
+			string pageSchemaUId) {
+			if (string.IsNullOrWhiteSpace(pageSchemaUId)) {
+				return null;
+			}
+			(JToken row, _) = QuerySysSchemaRowByUId(applicationClient, serviceUrlBuilder, pageSchemaUId, ("Name", "Name"));
+			return row?["Name"]?.ToString();
 		}
 
 		internal static (string uId, string error) QueryEntitySchemaUId(
