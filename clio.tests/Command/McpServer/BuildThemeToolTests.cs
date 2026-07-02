@@ -334,4 +334,19 @@ public sealed class BuildThemeToolTests
 		method!.GetCustomAttribute<McpServerToolAttribute>()!.Name.Should().Be("build-theme",
 			because: "the advertised MCP tool name is build-theme");
 	}
+
+	[Test]
+	[Description("Declares the safety flags on the build-theme tool method: a workspace-write that is non-destructive, idempotent, and closed-world.")]
+	public void BuildThemeTool_Should_DeclareBuildSafetyFlags_WhenInspectingMcpServerToolAttribute() {
+		// Arrange & Act
+		McpServerToolAttribute attribute = typeof(BuildThemeTool)
+			.GetMethod(nameof(BuildThemeTool.BuildTheme))!
+			.GetCustomAttribute<McpServerToolAttribute>();
+
+		// Assert
+		attribute!.ReadOnly.Should().BeFalse(because: "build-theme can write theme.css and theme.json into a workspace package");
+		attribute.Destructive.Should().BeFalse(because: "building writes its own theme artifacts without destroying unrelated state");
+		attribute.Idempotent.Should().BeTrue(because: "re-building with the same inputs yields the same theme artifacts");
+		attribute.OpenWorld.Should().BeFalse(because: "build-theme works offline over a bundled template and never reaches an open set of hosts");
+	}
 }

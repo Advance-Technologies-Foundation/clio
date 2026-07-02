@@ -38,13 +38,13 @@ public sealed class ColorMetricsTests {
 	}
 
 	[Test]
-	[Description("chooseBestAccent prefers the most distinct AA-on-white candidate.")]
+	[Description("chooseBestAccent prefers the most distinct 3:1-on-white candidate.")]
 	public void ChooseBestAccent_ShouldPreferMostDistinctAaCandidate_ForCalibrationAnchor() {
 		// Act
 		ScoredAccentCandidate best = ColorMetrics.ChooseBestAccent("#004fd6", PaletteGenerator.GenerateAccentCandidates("#004fd6"));
 
 		// Assert
-		best.Hex.Should().Be("#f94e11", because: "the +135° candidate is the most distinct AA-on-white accent");
+		best.Hex.Should().Be("#f94e11", because: "the +135° candidate is the most distinct 3:1-on-white accent");
 		best.Offset.Should().Be(135, because: "the chosen candidate carries its originating hue offset");
 	}
 

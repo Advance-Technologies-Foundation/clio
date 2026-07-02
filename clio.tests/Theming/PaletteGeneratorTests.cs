@@ -36,6 +36,27 @@ public sealed class PaletteGeneratorTests {
 	}
 
 	[Test]
+	[Description("generateScale('#ffd700') reproduces the calibrated 12-shade Yellow-mode ramp (a yellow-branch regression fails the aggregate parity test but this pins the exact stop).")]
+	public void GenerateScale_ShouldReproduceCalibratedYellowRamp_ForYellowModeAnchor() {
+		// Act
+		System.Collections.Generic.IReadOnlyDictionary<int, string> scale = PaletteGenerator.GenerateScale("#ffd700");
+
+		// Assert
+		scale[10].Should().Be("#fcfbf5", because: "shade 10 is the calibrated lightest Yellow-mode stop");
+		scale[25].Should().Be("#fdfbee", because: "calibrated Yellow-mode stop 25");
+		scale[50].Should().Be("#fdf9e3", because: "calibrated Yellow-mode stop 50");
+		scale[100].Should().Be("#fdf6d0", because: "calibrated Yellow-mode stop 100");
+		scale[200].Should().Be("#feefab", because: "calibrated Yellow-mode stop 200");
+		scale[300].Should().Be("#fee886", because: "calibrated Yellow-mode stop 300");
+		scale[400].Should().Be("#fee05b", because: "calibrated Yellow-mode stop 400");
+		scale[500].Should().Be("#ffd700", because: "the -500 anchor is echoed verbatim");
+		scale[600].Should().Be("#daa400", because: "calibrated Yellow-mode stop 600");
+		scale[700].Should().Be("#ab7a00", because: "calibrated Yellow-mode stop 700");
+		scale[800].Should().Be("#7b5300", because: "calibrated Yellow-mode stop 800");
+		scale[900].Should().Be("#4d3100", because: "shade 900 is the calibrated darkest Yellow-mode stop");
+	}
+
+	[Test]
 	[Description("deriveSecondary('#004fd6') maps the primary to the calibrated secondary.")]
 	public void DeriveSecondary_ShouldMapToCalibratedSecondary_ForCalibrationAnchor() {
 		// Act / Assert

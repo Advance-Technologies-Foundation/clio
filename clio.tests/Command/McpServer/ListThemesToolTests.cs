@@ -6,6 +6,7 @@ using Clio.Command.McpServer.Tools;
 using Clio.Command.Theming;
 using Clio.Common;
 using FluentAssertions;
+using ModelContextProtocol.Server;
 using NSubstitute;
 using NUnit.Framework;
 
@@ -14,6 +15,25 @@ namespace Clio.Tests.Command.McpServer;
 [TestFixture]
 [Property("Module", "McpServer")]
 public class ListThemesToolTests {
+
+	[Test]
+	[Category("Unit")]
+	[TestCase(nameof(ListThemesTool.ListThemesByName))]
+	[TestCase(nameof(ListThemesTool.ListThemesByCredentials))]
+	[Description("Declares the safety flags on both list-themes tool methods: a read-only, non-destructive, idempotent, closed-world query.")]
+	public void ListThemesTool_Should_DeclareListSafetyFlags_WhenInspectingMcpServerToolAttribute(string methodName) {
+		// Arrange & Act
+		McpServerToolAttribute attribute = (McpServerToolAttribute)typeof(ListThemesTool)
+			.GetMethod(methodName)!
+			.GetCustomAttributes(typeof(McpServerToolAttribute), false)
+			.Single();
+
+		// Assert
+		attribute.ReadOnly.Should().BeTrue(because: "listing themes only reads the environment's theme catalog");
+		attribute.Destructive.Should().BeFalse(because: "a read never destroys state");
+		attribute.Idempotent.Should().BeTrue(because: "repeated listing returns the same catalog for unchanged state");
+		attribute.OpenWorld.Should().BeFalse(because: "the tool only queries the addressed Creatio environment");
+	}
 
 	[Test]
 	[Description("Resolves the environment-name list-themes MCP tool for the requested environment and returns the resolved command's themes as a structured success result.")]

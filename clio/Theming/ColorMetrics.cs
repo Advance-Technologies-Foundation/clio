@@ -91,8 +91,11 @@ internal static class ColorMetrics {
 		return Math.Sqrt(Math.Pow(l1 - l2, 2) + Math.Pow(a1 - a2, 2) + Math.Pow(b1 - b2, 2));
 	}
 
-	/// <summary>Picks the most distinct AA-on-white accent; falls back to the highest-contrast candidate.</summary>
+	/// <summary>Picks the most distinct 3:1-on-white accent; falls back to the highest-contrast candidate.</summary>
 	internal static ScoredAccentCandidate ChooseBestAccent(string primaryHex, IReadOnlyList<AccentCandidate> candidates) {
+		if (candidates is null || candidates.Count == 0) {
+			throw new ArgumentException("At least one accent candidate is required.", nameof(candidates));
+		}
 		List<ScoredAccentCandidate> enriched = candidates
 			.Select(candidate => new ScoredAccentCandidate(
 				candidate.Hex,
@@ -188,7 +191,7 @@ internal static class ColorMetrics {
 		return new AdaptedPrimaryResult(AdaptedPrimaryOutcome.CouldNotAdapt, primaryHex, originalContrast, null);
 	}
 
-	/// <summary>Suggests a darker primary that reaches AA on white, or <c>null</c> when already compliant or unfixable.</summary>
+	/// <summary>Suggests a darker primary that reaches 3:1 on white, or <c>null</c> when already compliant or unfixable.</summary>
 	internal static AdaptedPrimary SuggestAdaptedPrimary500(string primaryHex) {
 		AdaptedPrimaryResult result = AdaptPrimary500(primaryHex);
 		return result.Outcome == AdaptedPrimaryOutcome.Adapted ? result.Adapted : null;

@@ -1,8 +1,10 @@
+using System.Linq;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Command.Theming;
 using Clio.Common;
 using FluentAssertions;
+using ModelContextProtocol.Server;
 using NSubstitute;
 using NUnit.Framework;
 
@@ -11,6 +13,25 @@ namespace Clio.Tests.Command.McpServer;
 [TestFixture]
 [Property("Module", "McpServer")]
 public class ClearThemesCacheToolTests {
+
+	[Test]
+	[Category("Unit")]
+	[TestCase(nameof(ClearThemesCacheTool.ClearThemesCacheByName))]
+	[TestCase(nameof(ClearThemesCacheTool.ClearThemesCacheByCredentials))]
+	[Description("Declares the safety flags on both clear-themes-cache tool methods: a non-read-only cache refresh that is non-destructive, idempotent, and closed-world.")]
+	public void ClearThemesCacheTool_Should_DeclareClearSafetyFlags_WhenInspectingMcpServerToolAttribute(string methodName) {
+		// Arrange & Act
+		McpServerToolAttribute attribute = (McpServerToolAttribute)typeof(ClearThemesCacheTool)
+			.GetMethod(methodName)!
+			.GetCustomAttributes(typeof(McpServerToolAttribute), false)
+			.Single();
+
+		// Assert
+		attribute.ReadOnly.Should().BeFalse(because: "clearing the cache refreshes server-side theme state");
+		attribute.Destructive.Should().BeFalse(because: "a cache refresh rebuilds derived state without destroying themes");
+		attribute.Idempotent.Should().BeTrue(because: "repeated cache clears converge on the same refreshed state");
+		attribute.OpenWorld.Should().BeFalse(because: "the tool only touches the addressed Creatio environment");
+	}
 
 	[Test]
 	[Description("Resolves the environment-name clear-themes-cache MCP tool for the requested environment and forwards the environment key into command options.")]

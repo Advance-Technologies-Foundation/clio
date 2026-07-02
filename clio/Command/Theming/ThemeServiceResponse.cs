@@ -7,7 +7,7 @@ namespace Clio.Command.Theming;
 /// The <c>BaseResponse</c> shape returned by the native Creatio <c>ThemeService</c> endpoints: a success flag
 /// plus an optional error block.
 /// </summary>
-internal sealed record ThemeServiceResponse
+internal record ThemeServiceResponse
 {
 	/// <summary>Whether the operation succeeded. A missing value is treated as success (the contract default).</summary>
 	[JsonPropertyName("success")]
@@ -59,20 +59,35 @@ internal static class ThemeServiceResponseParser
 	/// <c>false</c> for <c>success:true</c> or an empty body.
 	/// </returns>
 	public static bool TryGetFailure(string response, out string errorMessage) {
+		return TryGetFailure<ThemeServiceResponse>(response, out errorMessage, out _);
+	}
+
+	/// <summary>
+	/// Same failure detection as <see cref="TryGetFailure(string, out string)"/>, but deserializes the body into
+	/// <typeparamref name="T"/> so a caller can read payload fields (e.g. a <c>values</c> array) on a non-failure
+	/// JSON response — keeping the success / <c>errorInfo</c> / non-JSON evaluation in one place.
+	/// </summary>
+	/// <typeparam name="T">A <see cref="ThemeServiceResponse"/>, or a subtype that adds payload fields.</typeparam>
+	/// <param name="response">The raw response body returned by the ThemeService endpoint.</param>
+	/// <param name="errorMessage">The failure diagnostic (as in the parameterless overload); otherwise <c>null</c>.</param>
+	/// <param name="payload">The deserialized body on a non-failure JSON response; <c>null</c> for an empty body or a failure.</param>
+	/// <returns><c>true</c> for an explicit <c>success:false</c> or a non-empty non-JSON body; otherwise <c>false</c>.</returns>
+	public static bool TryGetFailure<T>(string response, out string errorMessage, out T payload)
+		where T : ThemeServiceResponse {
 		errorMessage = null;
+		payload = null;
 		if (string.IsNullOrWhiteSpace(response)) {
 			return false;
 		}
-		ThemeServiceResponse parsed;
 		try {
-			parsed = JsonSerializer.Deserialize<ThemeServiceResponse>(response, ResponseJsonOptions);
+			payload = JsonSerializer.Deserialize<T>(response, ResponseJsonOptions);
 		}
 		catch (JsonException) {
 			errorMessage = $"Unexpected response from server: {response}";
 			return true;
 		}
-		if (parsed?.Success == false) {
-			errorMessage = parsed.ErrorInfo?.Message;
+		if (payload?.Success == false) {
+			errorMessage = payload.ErrorInfo?.Message;
 			return true;
 		}
 		return false;

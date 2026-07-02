@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Common;
 using CommandLine;
@@ -24,10 +23,6 @@ namespace Clio.Command.Theming
 	/// </summary>
 	public class ListThemesCommand : RemoteCommand<ListThemesOptions>
 	{
-		private static readonly JsonSerializerOptions ResponseJsonOptions = new() {
-			PropertyNameCaseInsensitive = true
-		};
-
 		private readonly IServiceUrlBuilder _urlBuilder;
 
 		/// <summary>
@@ -96,39 +91,17 @@ namespace Clio.Command.Theming
 		private static bool TryParseThemes(string response, out IReadOnlyList<ThemeDescriptor> themes,
 			out string errorMessage) {
 			themes = Array.Empty<ThemeDescriptor>();
-			errorMessage = null;
-			if (string.IsNullOrWhiteSpace(response)) {
-				return true;
-			}
-			ListThemesResponse parsed;
-			try {
-				parsed = JsonSerializer.Deserialize<ListThemesResponse>(response, ResponseJsonOptions);
-			}
-			catch (JsonException) {
-				errorMessage = $"Unexpected response from server: {response}";
+			if (ThemeServiceResponseParser.TryGetFailure(response, out errorMessage, out ListThemesResponse parsed)) {
 				return false;
 			}
-			if (parsed is null) {
-				return true;
-			}
-			if (parsed.Success == false) {
-				errorMessage = parsed.ErrorInfo?.Message;
-				return false;
-			}
-			themes = (parsed.Values ?? new List<ThemeDescriptor>())
+			themes = (parsed?.Values ?? new List<ThemeDescriptor>())
 				.Where(theme => theme is not null)
 				.ToList();
 			return true;
 		}
 
-		private sealed record ListThemesResponse
+		private sealed record ListThemesResponse : ThemeServiceResponse
 		{
-			[JsonPropertyName("success")]
-			public bool? Success { get; init; }
-
-			[JsonPropertyName("errorInfo")]
-			public ThemeServiceErrorInfo ErrorInfo { get; init; }
-
 			[JsonPropertyName("values")]
 			public List<ThemeDescriptor> Values { get; init; }
 		}

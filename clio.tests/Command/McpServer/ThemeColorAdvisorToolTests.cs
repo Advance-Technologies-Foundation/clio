@@ -29,7 +29,7 @@ public sealed class ThemeColorAdvisorToolTests {
 	}
 
 	[Test]
-	[Description("Is a flat MCP tool named theme-color-advisor, advertised read-only.")]
+	[Description("Is a flat MCP tool named theme-color-advisor with read-only, non-destructive, idempotent, closed-world safety flags.")]
 	public void ThemeColorAdvisorTool_ShouldBeFlatReadOnlyTool_WhenInspected() {
 		// Arrange
 		System.Type toolType = typeof(ThemeColorAdvisorTool);
@@ -42,6 +42,8 @@ public sealed class ThemeColorAdvisorToolTests {
 		attribute!.Name.Should().Be("theme-color-advisor", because: "the advertised tool name is theme-color-advisor");
 		attribute.ReadOnly.Should().BeTrue(because: "the advisor never writes and never touches an environment");
 		attribute.Destructive.Should().BeFalse(because: "the advisor is pure compute");
+		attribute.Idempotent.Should().BeTrue(because: "the advisor is pure compute — the same inputs always yield the same verdict");
+		attribute.OpenWorld.Should().BeFalse(because: "the advisor is offline and never reaches beyond the process");
 	}
 
 	[Test]

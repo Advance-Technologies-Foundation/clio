@@ -45,7 +45,7 @@ internal static class PaletteGenerator {
 				cs = c * (1 - t);
 				hs = h;
 			}
-			palette[step] = ColorSpace.OklchToHex(ls, Math.Min(cs, ColorSpace.MaxChromaInGamut(ls, hs)), hs);
+			palette[step] = ColorSpace.OklchToHex(ls, cs, hs);
 		}
 		double lbot = LightnessBottom;
 		if (mode == PaletteMode.Dark) {
@@ -66,7 +66,7 @@ internal static class PaletteGenerator {
 				cs = ColorSpace.MaxChromaInGamut(ls, hs) * Math.Max(rel, 0.85);
 			} else {
 				hs = h;
-				cs = Math.Min(c, ColorSpace.MaxChromaInGamut(ls, h));
+				cs = c;
 			}
 			palette[step] = ColorSpace.OklchToHex(ls, cs, hs);
 		}
@@ -78,7 +78,7 @@ internal static class PaletteGenerator {
 		(double l, double c, double h) = ColorSpace.HexToOklch(primaryHex);
 		double ls = Math.Min(l * 0.61, 0.3);
 		double hs = (h - 11 + 360) % 360;
-		double d = Math.Min(Math.Min(Math.Abs(hs - 20), Math.Abs(hs - 380)), Math.Abs(hs + 340));
+		double d = Math.Min(Math.Abs(hs - 20), Math.Abs(hs - 380));
 		double dip = Math.Exp(-(d * d) / (2 * 40 * 40));
 		double mult = 0.319 - 0.113 * dip;
 		double cs = Math.Min(Math.Max(c * mult, 0.015), ColorSpace.MaxChromaInGamut(ls, hs));
