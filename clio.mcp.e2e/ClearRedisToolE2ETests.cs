@@ -78,28 +78,22 @@ public sealed class ClearRedisToolE2ETests {
 		AssertFailureMessageMentionsInvalidUrl(actResult);
 	}
 
-	// Lightweight arrange for the invalid-input tests: resolves the sandbox context from config and
-	// starts the MCP server, but does NOT connect to or seed a real Redis. Both negative cases fail
-	// before any live Redis is touched (unknown-environment lookup; deliberately unreachable URL), so
-	// they are env-free (McpE2E.NoEnvironment) and must not depend on a runner-reachable sandbox Redis.
+	// Lightweight arrange for the invalid-input tests: uses synthetic connection details and starts the
+	// MCP server, but does NOT require sandbox configuration or connect to a real Redis. Both negative
+	// cases fail before any live Redis is touched (unknown-environment lookup; deliberately unreachable
+	// URL), so they are env-free (McpE2E.NoEnvironment).
 	// No AllowDestructiveMcpTests gate: rejecting an invalid request mutates nothing.
 	private async Task<ClearRedisArrangeContext> ArrangeWithoutRedisAsync() {
 		return await AllureApi.Step("Arrange clear-redis invalid-input state (no sandbox Redis)", async () => {
 			McpE2ESettings settings = TestConfiguration.Load();
 			settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-			TestConfiguration.EnsureSandboxIsConfigured(settings);
-			// Resolve ONLY the registered clio environment (Uri/Login/Password) from config. The full
-			// SandboxEnvironmentResolver.Resolve also demands EnvironmentPath + ConnectionStrings.config
-			// + live redis/db connection strings — a false prerequisite here, since both invalid-input
-			// tests fail before touching a live Redis (and EnvironmentPath is unset for a remote stand).
-			string environmentName = settings.Sandbox.EnvironmentName!;
-			EnvironmentSettings registeredEnvironment = RegisteredClioEnvironmentSettingsResolver.Resolve(environmentName);
+			const string environmentName = "clear-redis-synthetic-env";
 			SandboxEnvironmentContext sandboxContext = new(
 				environmentName,
-				registeredEnvironment.Uri,
-				registeredEnvironment.Login,
-				registeredEnvironment.Password,
-				registeredEnvironment.IsNetCore,
+				Uri: "http://127.0.0.1:49998",
+				Login: "Supervisor",
+				Password: "Supervisor",
+				IsNetCore: true,
 				EnvironmentPath: string.Empty,
 				ConnectionStringsPath: string.Empty,
 				RedisConnectionString: string.Empty,
