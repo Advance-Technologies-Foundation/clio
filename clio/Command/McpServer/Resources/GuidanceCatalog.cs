@@ -89,8 +89,16 @@ internal static class GuidanceCatalog {
 				ChartWidgetGuidanceResource.Guide),
 			["dashboards"] = Create(
 				"dashboards",
-				"Canonical MCP guidance for placing, sizing, grouping, and styling Freedom UI analytical widgets (metrics and charts) on dashboards: the 12-column grid, the metric-band-then-chart-grid skeleton, section grouping, per-widget-type default sizes, and the plain-white default card style.",
+				"The clio MCP dashboards router: a names-only index that routes dashboard work to dashboard-creation (create the page), dashboard-design (widget layout/sizing/styling), and indicator-widget / chart-widget (per-widget payload).",
 				DashboardGuidanceResource.Guide),
+			["dashboard-creation"] = Create(
+				"dashboard-creation",
+				"Canonical MCP guidance for creating a Freedom UI dashboard page via create-page with BaseDashboardTemplate, and resolving the DashboardsEntitySchemaName / DashboardsElementName / DashboardsClientUnitSchemaUId optional properties (including the root-schema UId rule).",
+				DashboardCreationGuidanceResource.Guide),
+			["dashboard-design"] = Create(
+				"dashboard-design",
+				"Canonical MCP guidance for placing, sizing, grouping, and styling Freedom UI analytical widgets (metrics and charts) on dashboards: the 12-column grid, the metric-band-then-chart-grid skeleton, section grouping, per-widget-type default sizes, the plain-white default card style, and the DashboardDS data source widgets filter by.",
+				DashboardDesignGuidanceResource.Guide),
 			["related-list"] = Create(
 				"related-list",
 				"Canonical MCP guidance for adding a Freedom UI related/child list and filtering it by the current page record (master-detail \"filter by page data\"): the declarative, dependencies-based scoping — no handler. Fetch the 'Expanded list' composite structure via get-component-info.",

@@ -23,6 +23,11 @@ Use this command before calling `create-page` to discover the valid
 template `name`, `uId`, `title`, `groupName`, and `schemaType` (9 for
 web pages, 10 for mobile pages).
 
+The platform endpoint returns a curated subset that omits
+`BaseDashboardTemplate` (the parent for a Freedom UI dashboard page), so
+clio always adds it to the web catalog. It appears with `groupName`
+`Dashboard` and is a valid `--template` value for `create-page`.
+
 ## Synopsis
 
 ```bash
