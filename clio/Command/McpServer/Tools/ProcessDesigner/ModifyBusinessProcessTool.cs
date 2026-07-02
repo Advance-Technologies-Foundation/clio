@@ -32,7 +32,7 @@ public class ModifyBusinessProcessTool(
 		 + "'op': addElement (with an 'element' descriptor: name (the element handle/local code), type, caption, "
 		 + "userTaskName?, signal?), removeElement (with 'elementName' = the element's local name or UId), addFlow "
 		 + "/ removeFlow (with 'source' and 'target' element names), addParameter (with a 'parameter': name, type "
-		 + "e.g. Text/Integer/Guid, direction?, caption?, description?, optional value (a constant default), or "
+		 + "one of Text/Long text/Integer/Float/Money/Boolean/Date/Date-time/Time/Guid (other types are rejected), direction?, caption?, description?, optional value (a literal constant, not a formula), or"
 		 + "referenceSchema for a Lookup to an object e.g. City, or typeFromElement + typeFromElementParameter to "
 		 + "copy an element parameter's exact type), addMapping (with a 'mapping': target {elementName, "
 		 + "elementParameter} or {targetProcessParameter}, and one source of {sourceElement, sourceElementParameter} "

@@ -30,7 +30,7 @@ public class CreateBusinessProcessTool(
 		 + "descriptor is an object with: name (schema code), caption, packageName, elements[] "
 		 + "({name (the element handle/local code), type:startEvent|signalStart|endEvent|userTask "
 		 + "(aliases readData/performTask), caption, userTaskName?, signal?}), flows[] ({source, target} of "
-		 + "element names), parameters[] ({name, type, direction, caption, description?, value? (a constant "
+		 + "element names), parameters[] ({name, type (a supported scalar or Lookup — other types rejected), direction, caption, description?, value? (a literal constant, not a formula;"
 		 + "default)}; or typeFromElement + typeFromElementParameter to copy an element parameter's exact type), "
 		 + "and mappings[] (bind a target to a source — target is {elementName, "
 		 + "elementParameter} (an element input) or {targetProcessParameter} (a process parameter, e.g. expose an "
