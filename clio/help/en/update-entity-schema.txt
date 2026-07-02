@@ -14,7 +14,16 @@ DESCRIPTION
     This command is the clio-native batch mutation contract for entity schemas.
     Each operation uses the same column-level semantics as
     modify-entity-schema-column, but several mutations can be applied in one
-    request. Supported operation types include Binary, Image, ImageLookup,
+    request.
+
+    After saving the batch, the configuration is published and the OData entities
+    are rebuilt (once for the whole batch), so changed columns become visible to
+    lookup pickers and reachable over OData (/0/odata/<Entity>) without a manual
+    compile. The rebuild runs in the background (~1-2 min); a 404 from OData right
+    after the change is the expected async gap, so wait and retry rather than
+    compiling.
+
+    Supported operation types include Binary, Image, ImageLookup,
     File, SecureText, and Email. Blob is accepted as an alias for Binary.
     ImageLink is accepted as an alias for ImageLookup.
     Encrypted and Password are accepted as aliases for SecureText.
