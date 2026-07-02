@@ -406,7 +406,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 					|| textElement.ValueKind != JsonValueKind.String) {
 				continue;
 			}
-			string envelopeJson = textElement.GetString();
+			string? envelopeJson = textElement.GetString();
 			if (string.IsNullOrWhiteSpace(envelopeJson) || !envelopeJson.TrimStart().StartsWith("{", StringComparison.Ordinal)) {
 				continue;
 			}
@@ -419,12 +419,12 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 				if (!message.TryGetProperty("value", out JsonElement value) || value.ValueKind != JsonValueKind.String) {
 					continue;
 				}
-				string graphJson = value.GetString();
+				string? graphJson = value.GetString();
 				if (string.IsNullOrWhiteSpace(graphJson) || !graphJson.TrimStart().StartsWith("{", StringComparison.Ordinal)) {
 					continue;
 				}
 				try {
-					DescribeProcessResult graph = JsonSerializer.Deserialize<DescribeProcessResult>(graphJson, options);
+					DescribeProcessResult? graph = JsonSerializer.Deserialize<DescribeProcessResult>(graphJson, options);
 					if (graph is { SchemaUId: not null }) {
 						return graph;
 					}
@@ -449,12 +449,12 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		ProcessDesignerE2EGate.SkipIfFeatureDisabled(settings);
-		string environmentName = settings.Sandbox.EnvironmentName;
+		string? environmentName = settings.Sandbox.EnvironmentName;
 		if (requireReachableEnvironment) {
 			if (string.IsNullOrWhiteSpace(environmentName)) {
 				Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName (with the ProcessDesignService package) to run modify-business-process MCP E2E.");
 			}
-			if (!await ClioCliCommandRunner.IsEnvironmentReachableAsync(settings, environmentName)) {
+			if (!await ClioCliCommandRunner.IsEnvironmentReachableAsync(settings, environmentName!)) {
 				Assert.Ignore($"modify-business-process MCP E2E requires a reachable configured sandbox environment. '{environmentName}' was not reachable.");
 			}
 		}
@@ -466,7 +466,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	private sealed record ArrangeContext(
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource,
-		string EnvironmentName) : IAsyncDisposable {
+		string? EnvironmentName) : IAsyncDisposable {
 		public async ValueTask DisposeAsync() {
 			await Session.DisposeAsync();
 			CancellationTokenSource.Dispose();

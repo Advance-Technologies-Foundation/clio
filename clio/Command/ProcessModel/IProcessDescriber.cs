@@ -36,7 +36,6 @@ public interface IProcessDescriber {
 
 /// <inheritdoc cref="IProcessDescriber" />
 public sealed class ServerProcessDescriber(
-	ILogger logger,
 	IApplicationClient applicationClient,
 	IDataProvider dataProvider,
 	IServiceUrlBuilder serviceUrlBuilder) : IProcessDescriber {

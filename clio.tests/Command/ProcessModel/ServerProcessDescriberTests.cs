@@ -24,7 +24,7 @@ public sealed class ServerProcessDescriberTests {
 	private static ServerProcessDescriber CreateDescriber(IApplicationClient client) {
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		urlBuilder.Build(ServiceUrlBuilder.KnownRoute.DescribeProcess).Returns(DescribeUrl);
-		return new ServerProcessDescriber(Substitute.For<ILogger>(), client,
+		return new ServerProcessDescriber(client,
 			Substitute.For<IDataProvider>(), urlBuilder);
 	}
 
