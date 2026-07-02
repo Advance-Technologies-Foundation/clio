@@ -176,6 +176,30 @@ public class GetPkgListCommandTests {
 	}
 
 	[Test]
+	[Description("Execute non-JSON with packages should render the table (Name/Version/Maintainer) and the summary line, without any JSON — AC#3/C1 golden for the non-empty table render")]
+	public void Execute_ShouldRenderTableAndSummary_WhenNonJsonWithPackages() {
+		// Arrange
+		var settings = new EnvironmentSettings { Uri = "https://example-host" };
+		var command = new GetPkgListCommand(settings, _packageListProvider, _jsonResponseFormater, _logger);
+		var package = new PackageInfo(
+			new Clio.Package.PackageDescriptor { Name = "FooPkg", PackageVersion = "1.2.3", Maintainer = "Acme" },
+			"path", new System.Collections.Generic.List<string>());
+		_packageListProvider.GetPackages().Returns(new[] { package });
+
+		// Act
+		int result = command.Execute(new PkgListOptions());
+
+		// Assert
+		result.Should().Be(0, because: "listing succeeds");
+		_logger.Received(1).WriteInfo(Arg.Is<string>(s =>
+			s != null && s.Contains("FooPkg") && s.Contains("1.2.3") && s.Contains("Acme")));
+		_logger.Received(1).WriteInfo("Find 1 packages in https://example-host");
+		_logger.DidNotReceive().WriteLine(Arg.Is<string>(s => s != null && s.Contains("schemaVersion")));
+		_jsonResponseFormater.DidNotReceive().FormatEnvelope(Arg.Any<string>(),
+			Arg.Any<System.Collections.Generic.IEnumerable<PackageInfo>>());
+	}
+
+	[Test]
 	[Description("Execute non-JSON should emit the exact 'Find N packages' summary line and no JSON — AC#3/C1 text-output regression guard for the changed json-branch")]
 	public void Execute_ShouldEmitExactSummaryLine_WhenNonJson() {
 		// Arrange
