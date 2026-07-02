@@ -127,6 +127,38 @@ public sealed class ProcessModelingGuidanceResourceTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The guidance carries modify-safety rules: no structural validation on the modify path, the removeElement cascade, and the whole-diagram relayout.")]
+	public void GetGuide_ShouldCarryModifySafetyRules_WhenRead() {
+		// Act
+		string text = new ProcessModelingGuidanceResource().GetGuide().Should().BeOfType<TextResourceContents>().Subject.Text;
+
+		// Assert
+		text.Should().Contain("Modifying an existing process",
+			because: "editing an existing process has its own safety section so the agent does not treat modify as create");
+		text.Should().Contain("NO structural validation",
+			because: "the agent must know the modify path can save an unreachable/dangling graph without error");
+		text.Should().Contain("CASCADES",
+			because: "the agent must know removeElement deletes connected flows and mappings without re-joining the gap");
+		text.Should().Contain("re-applies the automatic layout",
+			because: "the agent must warn the user that any modify flattens a hand-arranged diagram");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The guidance states that a validate-process-graph pass does not imply the graph is buildable and that readData lands unconfigured.")]
+	public void GetGuide_ShouldSeparateValidationFromBuildability_WhenRead() {
+		// Act
+		string text = new ProcessModelingGuidanceResource().GetGuide().Should().BeOfType<TextResourceContents>().Subject.Text;
+
+		// Assert
+		text.Should().Contain("Validation pass ≠ buildable",
+			because: "R1-R17 accept the full catalog (gateways, conditional flows) while the builder supports only the buildable slice");
+		text.Should().Contain("UNCONFIGURED",
+			because: "the agent must not present a placed-but-unconfigurable readData element as a working data operation");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("GuidanceCatalog exposes process-modeling so get-guidance can return it by canonical name.")]
 	public void GuidanceCatalog_ShouldIncludeProcessModelingEntry_WhenQueried() {
 		// Act
