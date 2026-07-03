@@ -1,8 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -25,6 +27,9 @@ public static class McpToolErrorFilter
 		async (context, cancellationToken) => {
 			if (TryCreateArgumentDeserializationError(context, out CallToolResult? argumentErrorResult)) {
 				return argumentErrorResult;
+			}
+			if (TryCreateMissingCompositeArgumentHint(context, out CallToolResult? hintResult)) {
+				return hintResult;
 			}
 			return await next(context, cancellationToken);
 		};
@@ -84,4 +89,83 @@ public static class McpToolErrorFilter
 
 	private static bool IsDeserializationException(Exception exception) =>
 		exception is JsonException or NotSupportedException;
+
+	/// <summary>
+	/// Detects when a caller sends arguments flat (e.g. <c>{"environment-name": "..."}</c>) instead of
+	/// wrapping them in the composite parameter object (e.g. <c>{"args": {"environment-name": "..."}}</c>).
+	/// </summary>
+	internal static bool TryCreateMissingCompositeArgumentHint(
+		RequestContext<CallToolRequestParams> context,
+		out CallToolResult? result) {
+		result = null;
+		if (context.Params?.Arguments is not { Count: > 0 } arguments) {
+			return false;
+		}
+
+		if (context.MatchedPrimitive is not McpServerTool tool
+				|| tool.Metadata.OfType<MethodInfo>().FirstOrDefault() is not { } method) {
+			return false;
+		}
+
+		return TryDetectFlatArgsMismatch(context.Params.Name, method, arguments, out result);
+	}
+
+	/// <summary>
+	/// Core detection: checks whether <paramref name="arguments"/> contains flat keys that belong
+	/// inside a composite method parameter instead of at the top level.
+	/// </summary>
+	internal static bool TryDetectFlatArgsMismatch(
+		string? toolName,
+		MethodInfo method,
+		IDictionary<string, JsonElement> arguments,
+		out CallToolResult? result) {
+		result = null;
+
+		foreach (ParameterInfo parameter in method.GetParameters()) {
+			string argumentName = GetArgumentName(parameter);
+
+			if (arguments.ContainsKey(argumentName)) {
+				continue;
+			}
+
+			if (IsFrameworkParameter(parameter.ParameterType)) {
+				continue;
+			}
+
+			List<string> propertyNames = GetJsonPropertyNames(parameter.ParameterType);
+			if (propertyNames.Count == 0) {
+				continue;
+			}
+
+			List<string> matchedKeys = propertyNames
+				.Where(arguments.ContainsKey)
+				.ToList();
+
+			if (matchedKeys.Count > 0) {
+				result = CreateJsonErrorResult(
+					BuildMissingWrapperMessage(toolName, argumentName, propertyNames, matchedKeys));
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	private static bool IsFrameworkParameter(Type type) =>
+		type == typeof(CancellationToken)
+		|| type.Namespace?.StartsWith("ModelContextProtocol", StringComparison.Ordinal) == true;
+
+	private static List<string> GetJsonPropertyNames(Type type) =>
+		type.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+			.Select(p => p.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? p.Name)
+			.ToList();
+
+	private static string BuildMissingWrapperMessage(
+		string? toolName, string wrapperName, List<string> allProperties, List<string> matchedKeys) {
+		string flatKeysDisplay = string.Join(", ", matchedKeys.Select(k => $"\"{k}\""));
+		string exampleInner = string.Join(", ", allProperties.Select(k => $"\"{k}\": \"...\""));
+		return $"Tool '{toolName ?? "<unknown>"}' expects arguments wrapped inside "
+			+ $"an \"{wrapperName}\" object, but received {flatKeysDisplay} at the top level. "
+			+ $"Correct format: {{\"{wrapperName}\": {{{exampleInner}}}}}";
+	}
 }
