@@ -46,16 +46,40 @@ public sealed class DashboardCreationGuidanceResource {
 		         {"key":"DashboardsElementName","value":"Dashboards"},
 		         {"key":"DashboardsClientUnitSchemaUId","value":"<root-schema-uid>"}]`
 
+		       ## Choosing the host page
+
+		       Decide WHERE the dashboard is displayed before resolving the properties below — the host page is
+		       what supplies all three values. Match the dashboard's data scope to the page:
+
+		       - Analytics about a whole entity (all accounts, all cases) -> the entity LIST page, e.g.
+		         `Accounts_ListPage`, `Cases_ListPage`. List pages almost always already contain a `crt.Dashboards`
+		         element. Set `DashboardsEntitySchemaName` to that entity.
+		       - Analytics about the CURRENT record (e.g. a metric counting the contacts of the account being
+		         viewed) -> the entity FORM page, e.g. `Accounts_FormPage`. Set `DashboardsEntitySchemaName` to the
+		         record's entity.
+		       - General analytics spanning several entities -> the shared home dashboards page `FreedomDashboards`;
+		         leave `DashboardsEntitySchemaName` empty.
+
+		       Freedom UI page schema names use the PLURAL entity name (`Accounts_ListPage`, `Accounts_FormPage`).
+		       These names are conventional heuristics, not guarantees — confirm the page exists AND actually
+		       carries a `crt.Dashboards` element with `get-page` / `list-pages` before relying on it.
+
+		       MANDATORY — filter by page data (applies EQUALLY to list and form hosts). After choosing the host
+		       page you MUST bind EVERY data-bound widget to the hidden `DashboardDS` data source auto-generated
+		       from `DashboardsEntitySchemaName` — the "Apply filter by page data" toggle. A widget left unbound
+		       ignores the host filter entirely. The binding mechanics — and the full rationale — live in
+		       `dashboard-design`; read it and apply the binding per widget.
+
 		       ## The three optional properties and how to retrieve each
 
-		       A dashboard is shown inside a `crt.Dashboards` element on a HOST page (a section, record, or home
-		       page). The three properties tie the new dashboard schema back to that element. Inspect the host page
-		       with `get-page` (read its `bundle.json`) to find the element and its values.
+		       The three properties tie the new dashboard schema back to the `crt.Dashboards` element on the host
+		       page chosen above. Inspect that host page with `get-page` (read its `bundle.json`) to find the
+		       element and its values.
 
 		       - `DashboardsEntitySchemaName` — the `entitySchemaName` of the target `crt.Dashboards` element. It
-		         MAY be empty (a dashboards element is not required to be bound to an entity). When set, it drives a
-		         hidden `DashboardDS` page data source that widgets filter by — see `dashboard-design` for the
-		         widget-binding mechanics; do not add widget bindings here.
+		         MAY be empty (a dashboards element is not required to be bound to an entity). When set, the hidden
+		         `DashboardDS` data source is auto-generated from it and widgets filter by it (see the MANDATORY
+		         note above).
 		       - `DashboardsElementName` — the `name` of the element (its `type` is `crt.Dashboards`) on the host
 		         page where the dashboard is displayed.
 		       - `DashboardsClientUnitSchemaUId` — the UId of the client-unit page schema that contains that

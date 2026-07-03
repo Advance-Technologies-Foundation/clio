@@ -248,8 +248,13 @@ public sealed class DashboardDesignGuidanceResource {
 		       `DashboardDS` exists so a widget can be filtered by the dashboard's page data. A widget opts in by
 		       BINDING to it with a `dependencies` entry (the "Apply filter by page data" toggle) — the same
 		       declarative mechanism as record-page details (see `related-list`), with `DashboardDS` as the master
-		       instead of `PDS`. Add it for EVERY data-bound widget whenever the dashboard declares a
-		       `DashboardsEntitySchemaName`; without it the widget ignores the page data.
+		       instead of `PDS`.
+
+		       MANDATORY: whenever the dashboard declares a `DashboardsEntitySchemaName` you MUST add this binding to
+		       EVERY data-bound widget — on LIST hosts exactly as on FORM hosts (a list host filters widgets by the
+		       list's active filter, a form host by the current record). It is the easiest step to forget: a widget
+		       left unbound silently ignores the host filter and always shows unfiltered data. Treat any unbound
+		       data-bound widget as a defect — the dashboard is NOT done until every one is bound.
 
 		       The binding entry is `{ "attributePath": <col>, "relationPath": "DashboardDS.Id" }`:
 		       - `relationPath` is ALWAYS `"DashboardDS.Id"`.
