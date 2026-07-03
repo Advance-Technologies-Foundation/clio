@@ -221,6 +221,7 @@ internal class Program {
 		typeof(LinkCoreSrcOptions),
 		typeof(AssertOptions),
 		typeof(McpServerCommandOptions),
+		typeof(McpHttpServerCommandOptions),
 		typeof(QuizCommandOptions),
 		typeof(GenerateSourceCodeOptions),
 		typeof(AddPackageDependencyOptions),
@@ -482,6 +483,7 @@ internal class Program {
 			AssertOptions opts => Resolve<AssertCommand>(opts).Execute(opts),
 			LinkPackageStoreOptions opts => Resolve<LinkPackageStoreCommand>(opts).Execute(opts),
 			McpServerCommandOptions opts => Resolve<McpServerCommand>(opts).Execute(opts),
+			McpHttpServerCommandOptions opts => McpHttpServerCommand.Run(opts),
 			PageCreateOptions opts => Resolve<PageCreateCommand>(opts).Execute(opts),
 			SourceCodeSchemaCreateOptions opts => Resolve<SourceCodeSchemaCreateCommand>(opts).Execute(opts),
 			SourceCodeSchemaUpdateOptions opts => Resolve<SourceCodeSchemaUpdateCommand>(opts).Execute(opts),
@@ -1331,7 +1333,8 @@ internal class Program {
 		string first = args[0];
 		if (string.Equals(first, "update-cli", StringComparison.OrdinalIgnoreCase)
 			|| string.Equals(first, "update", StringComparison.OrdinalIgnoreCase)
-			|| string.Equals(first, "autoupdate", StringComparison.OrdinalIgnoreCase)) {
+			|| string.Equals(first, "autoupdate", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(first, "mcp-http", StringComparison.OrdinalIgnoreCase)) {
 			return true;
 		}
 		return args.Any(arg =>

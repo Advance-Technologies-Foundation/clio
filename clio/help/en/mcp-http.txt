@@ -1,0 +1,48 @@
+COMMAND TYPE
+    AI integration commands
+
+NAME
+    mcp-http - start MCP server in HTTP transport mode
+
+DESCRIPTION
+    Starts a Model Context Protocol (MCP) server that communicates over
+    HTTP using the Streamable HTTP transport (JSON-RPC 2.0 over POST).
+    This server exposes the same clio tools available in stdio mode to
+    AI agents and platforms that connect over HTTP.
+
+    The server runs until the process is terminated (Ctrl+C or SIGTERM).
+
+OPTIONS
+    --port <port>
+        Port to listen on.
+        Default: 8005
+
+    --host <host>
+        Host address to bind to.
+        Default: 127.0.0.1
+
+    --path <path>
+        MCP endpoint path.
+        Default: /mcp
+
+EXAMPLES
+    Start with default settings (port 8005, localhost):
+        clio mcp-http
+
+    Start on a custom port:
+        clio mcp-http --port 9000
+
+    Listen on all network interfaces (no authentication — use only on trusted networks):
+        clio mcp-http --host 0.0.0.0
+
+    Custom endpoint path:
+        clio mcp-http --path /api/mcp
+
+ENVIRONMENT VARIABLES
+    CLIO_MCP_RESPECT_AMBIENT_PROXY
+        When set to "true" or "1", the HTTP MCP server does NOT neutralize
+        ambient proxy environment variables. Default behavior (absent or
+        any other value) bypasses all inherited proxies.
+
+SEE ALSO
+    mcp-server    Start MCP server in stdio mode
