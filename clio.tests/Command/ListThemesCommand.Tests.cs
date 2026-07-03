@@ -10,7 +10,7 @@ using NUnit.Framework;
 
 [TestFixture]
 [Property("Module", "Command")]
-public class ListThemesCommandTestCase : BaseCommandTests<ListThemesOptions> {
+public class ListThemesCommandTests : BaseCommandTests<ListThemesOptions> {
 
 	private IApplicationClient _applicationClient;
 	private ILogger _logger;

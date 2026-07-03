@@ -9,7 +9,7 @@ using NUnit.Framework;
 
 [TestFixture]
 [Property("Module", "Command")]
-public class DeleteThemeCommandTestCase : BaseCommandTests<DeleteThemeOptions>
+public class DeleteThemeCommandTests : BaseCommandTests<DeleteThemeOptions>
 {
 	private IApplicationClient _applicationClient;
 	private ILogger _logger;

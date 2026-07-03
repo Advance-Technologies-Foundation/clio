@@ -9,7 +9,7 @@ using NUnit.Framework;
 
 [TestFixture]
 [Property("Module", "Command")]
-public class UpdateThemeCommandTestCase : BaseCommandTests<UpdateThemeOptions>
+public class UpdateThemeCommandTests : BaseCommandTests<UpdateThemeOptions>
 {
 	private IApplicationClient _applicationClient;
 	private ILogger _logger;

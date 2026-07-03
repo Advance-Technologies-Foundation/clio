@@ -9,7 +9,7 @@ using NUnit.Framework;
 
 [TestFixture]
 [Property("Module", "Command")]
-public class ClearThemesCacheCommandTestCase : BaseCommandTests<ClearThemesCacheOptions> {
+public class ClearThemesCacheCommandTests : BaseCommandTests<ClearThemesCacheOptions> {
 
 	private IApplicationClient _applicationClient;
 	private ILogger _logger;
