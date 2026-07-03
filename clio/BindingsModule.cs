@@ -206,38 +206,10 @@ public class BindingsModule {
 		EnvironmentSettings activeSettings = ResolveActiveSettings(settings, registrationProfile, bootstrapResult);
 
 		if (activeSettings is not null) {
-			services.AddSingleton(activeSettings);
-			services.AddTransient<IDataProvider>(_ => new LazyDataProvider(() =>
-				string.IsNullOrEmpty(activeSettings.ClientId)
-					? new RemoteDataProvider(activeSettings.Uri, activeSettings.Login, activeSettings.Password,
-						activeSettings.IsNetCore)
-					: new RemoteDataProvider(activeSettings.Uri, activeSettings.AuthAppUri, activeSettings.ClientId,
-						activeSettings.ClientSecret, activeSettings.IsNetCore)));
-			Lazy<CreatioClient> lazyCreatioClient = new(() => string.IsNullOrEmpty(activeSettings.ClientId)
-				? new CreatioClient(activeSettings.Uri ?? "http://localhost", activeSettings.Login ?? "Supervisor",
-					activeSettings.Password ?? "Supervisor", true, activeSettings.IsNetCore)
-				: CreatioClient.CreateOAuth20Client(activeSettings.Uri, activeSettings.AuthAppUri,
-					activeSettings.ClientId, activeSettings.ClientSecret, activeSettings.IsNetCore));
-			services.AddSingleton<CreatioClient>(_ => lazyCreatioClient.Value);
-			services.AddSingleton<IApplicationClient>(_ =>
-				new CreatioClientAdapter(lazyCreatioClient));
-			services.AddTransient<SysSettingsManager>();
+			RegisterActiveEnvironmentServices(services, activeSettings);
 		}
 
-		services.AddTransient<IKubernetes>(_ => {
-			try {
-				KubernetesClientConfiguration config = KubernetesClientConfiguration.BuildConfigFromConfigFile();
-				Uri.TryCreate(config.Host, UriKind.Absolute, out Uri uriResult);
-				if (uriResult is null || (uriResult.Scheme != Uri.UriSchemeHttp && uriResult.Scheme != Uri.UriSchemeHttps)) {
-					throw new InvalidOperationException("Invalid Kubernetes configuration host.");
-				}
-				k8sDns = uriResult.Host;
-				return new Kubernetes(config);
-			}
-			catch {
-				return new FakeKubernetes();
-			}
-		});
+		services.AddTransient<IKubernetes>(_ => CreateKubernetesClient());
 
 		services.AddTransient<IKubernetesClient, KubernetesClient>();
 		services.AddTransient<K8ContextValidator>();
@@ -755,6 +727,41 @@ public class BindingsModule {
 
 		RegisterFluentValidators(services);
 		return settingsRepository;
+	}
+
+	private static void RegisterActiveEnvironmentServices(
+		IServiceCollection services, EnvironmentSettings activeSettings) {
+		services.AddSingleton(activeSettings);
+		services.AddTransient<IDataProvider>(_ => new LazyDataProvider(() =>
+			string.IsNullOrEmpty(activeSettings.ClientId)
+				? new RemoteDataProvider(activeSettings.Uri, activeSettings.Login, activeSettings.Password,
+					activeSettings.IsNetCore)
+				: new RemoteDataProvider(activeSettings.Uri, activeSettings.AuthAppUri, activeSettings.ClientId,
+					activeSettings.ClientSecret, activeSettings.IsNetCore)));
+		Lazy<CreatioClient> lazyCreatioClient = new(() => string.IsNullOrEmpty(activeSettings.ClientId)
+			? new CreatioClient(activeSettings.Uri ?? "http://localhost", activeSettings.Login ?? "Supervisor",
+				activeSettings.Password ?? "Supervisor", true, activeSettings.IsNetCore)
+			: CreatioClient.CreateOAuth20Client(activeSettings.Uri, activeSettings.AuthAppUri,
+				activeSettings.ClientId, activeSettings.ClientSecret, activeSettings.IsNetCore));
+		services.AddSingleton<CreatioClient>(_ => lazyCreatioClient.Value);
+		services.AddSingleton<IApplicationClient>(_ =>
+			new CreatioClientAdapter(lazyCreatioClient));
+		services.AddTransient<SysSettingsManager>();
+	}
+
+	private IKubernetes CreateKubernetesClient() {
+		try {
+			KubernetesClientConfiguration config = KubernetesClientConfiguration.BuildConfigFromConfigFile();
+			Uri.TryCreate(config.Host, UriKind.Absolute, out Uri uriResult);
+			if (uriResult is null || (uriResult.Scheme != Uri.UriSchemeHttp && uriResult.Scheme != Uri.UriSchemeHttps)) {
+				throw new InvalidOperationException("Invalid Kubernetes configuration host.");
+			}
+			k8sDns = uriResult.Host;
+			return new Kubernetes(config);
+		}
+		catch {
+			return new FakeKubernetes();
+		}
 	}
 
 	/// <summary>
