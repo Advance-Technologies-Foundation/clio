@@ -174,7 +174,7 @@ public sealed class ProcessModelingGuidanceResource {
 			  NOT locale): `dd.MM.yyyy` and 24-hour `HH:mm`.
 			  Date → `[#DateValue.dd.MM.yyyy#]` (e.g. `[#DateValue.03.07.2026#]`);
 			  Date-time → `[#DateTimeValue.dd.MM.yyyy HH:mm#]` (e.g. `[#DateTimeValue.03.07.2026 02:15#]`);
-			  Time → `[#TimeValue.HH:mm#]` (e.g. `[#TimeValue.12:20#]`).
+			  Time → `[#TimeValue.HH:mm#]` (e.g. `[#TimeValue.12:20#]`). A LOOKUP default is the same kind of macro — set via `expression` as `[#Lookup.{referenceObjectSchemaUId}.{recordId}#]` (both are GUIDs: the referenced OBJECT's schema UId, NOT its name, and the chosen RECORD's Id, e.g. `[#Lookup.5ca90b6a-…(City object).1548d3d2-…(a City record)#]`). You cannot guess these ids — copy the token from an existing process (`describe-business-process`) or resolve the object/record ids first; a bare record id as `value` will NOT work.
 			- To read another element's output, PREFER the structured `sourceElement` + `sourceElementParameter` mapping (above) — the server builds the correct reference. Do NOT hand-write an element-output reference —
 			  in the saved metadata it is a server-generated UId meta-path (`[#...[Element:{uid}].[Parameter:{uid}].[EntityColumn:{uid}]#]`), NOT a friendly `Element.Property` path, so you cannot author it — ALWAYS use `sourceElement`. Formulas are strictly typed (convert with `.ToString()` etc.).
 
