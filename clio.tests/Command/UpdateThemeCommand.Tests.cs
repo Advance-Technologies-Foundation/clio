@@ -149,4 +149,20 @@ public class UpdateThemeCommandTestCase : BaseCommandTests<UpdateThemeOptions>
 		exitCode.Should().Be(1, because: "a non-JSON body signals the update did not reach ThemeService and must surface as a failure");
 		_logger.Received(1).WriteError(Arg.Is<string>(m => m.Contains("Unexpected response from server")));
 	}
+
+	[Test, Category("Unit")]
+	[Description("Returns success when the response body is empty — an empty body is the ThemeService contract default for a successful update.")]
+	public void UpdateTheme_ReturnsSuccess_WhenResponseBodyIsEmpty() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(
+				Arg.Is<string>(u => u.Contains("UpdateTheme")), Arg.Any<string>(),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(string.Empty);
+
+		// Act
+		int exitCode = _command.Execute(ValidOptions());
+
+		// Assert
+		exitCode.Should().Be(0, because: "an empty body is the contract default for a successful update");
+	}
 }

@@ -280,4 +280,22 @@ public class CreateThemeCommandTestCase : BaseCommandTests<CreateThemeOptions>
 		capturedBody.Should().Contain("\"caption\":\"Ocean\"",
 			because: "an omitted caption must be derived from css-class-name (ocean-theme -> Ocean)");
 	}
+
+	[Test, Category("Unit")]
+	[Description("Returns success and still reports the client-generated CreatedId when the response body is empty — an empty body is the ThemeService contract default for success.")]
+	public void CreateTheme_ReturnsSuccess_WhenResponseBodyIsEmpty() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(
+				Arg.Is<string>(u => u.Contains("CreateTheme")), Arg.Any<string>(),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(string.Empty);
+
+		// Act
+		int exitCode = _command.Execute(ValidOptions());
+
+		// Assert
+		exitCode.Should().Be(0, because: "an empty body is the contract default for a successful create");
+		_command.CreatedId.Should().NotBeNullOrWhiteSpace(
+			because: "the client-generated id is reported even when the server echoes an empty body");
+	}
 }

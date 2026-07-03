@@ -1,5 +1,5 @@
 COMMAND TYPE
-    CI/CD commands
+    Theming commands
 
 NAME
     clear-themes-cache - refresh only the Creatio theme cache

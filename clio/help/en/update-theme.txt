@@ -1,5 +1,5 @@
 COMMAND TYPE
-    CI/CD commands
+    Theming commands
 
 NAME
     update-theme - overwrite an existing custom Creatio theme on an environment

@@ -1,5 +1,5 @@
 COMMAND TYPE
-    CI/CD commands
+    Theming commands
 
 NAME
     delete-theme - delete a custom Creatio theme from an environment

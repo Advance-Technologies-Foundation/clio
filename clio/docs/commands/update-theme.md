@@ -2,7 +2,7 @@
 
 ## Command Type
 
-    CI/CD commands
+    Theming commands
 
 ## Name
 

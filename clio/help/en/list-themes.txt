@@ -1,5 +1,5 @@
 COMMAND TYPE
-    CI/CD commands
+    Theming commands
 
 NAME
     list-themes - list the custom Creatio themes available on an environment
