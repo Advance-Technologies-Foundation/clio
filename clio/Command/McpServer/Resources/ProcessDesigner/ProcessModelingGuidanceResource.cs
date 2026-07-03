@@ -108,8 +108,9 @@ public sealed class ProcessModelingGuidanceResource {
 			- The modify path runs NO structural validation (only the create path validates the graph):
 			  `removeElement` / `removeFlow` can leave the process unreachable or with dangling paths and the save
 			  still succeeds. `removeElement` also CASCADES — it deletes every flow touching the element and the
-			  mappings that reference it, and does NOT re-join the flow across the gap; add the bridging `addFlow`
-			  in the same operations array.
+			  mappings TARGETING it, but does NOT re-join the flow across the gap, and mappings/values READING the
+			  removed element's outputs may survive as dangling references. Add the bridging `addFlow` in the same
+			  operations array, then re-describe and clean up any leftover references to the removed element.
 			- Before removals, run `validate-process-graph` on the graph AS IT WILL BE after your operations
 			  (describe output + your planned ops applied), and confirm destructive removals with the user.
 			- If describe shows constructs the builder cannot create (gateways, conditional/default flows,
