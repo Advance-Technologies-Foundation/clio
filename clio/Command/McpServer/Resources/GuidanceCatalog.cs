@@ -153,10 +153,12 @@ internal static class GuidanceCatalog {
 			["process-modeling"] = Create(
 				"process-modeling",
 				"""
-				Canonical MCP guidance for designing Creatio business processes (BPMN): 
-				the determinism contract (clio makes no LLM call; the agent owns intent->BPMN translation), 
-				the element catalog (data-id/label/purpose/setup fields), connection rules R1-R17 + can/can't matrix, 
-				the validate-then-drive build recipe, and the supported slice (Simple/Signal/Timer start + Read data).
+				Canonical MCP guidance for designing Creatio business processes (BPMN):
+				the determinism contract (clio makes no LLM call; the agent owns intent->BPMN translation),
+				the element catalog (data-id/label/purpose/setup fields), connection rules R1-R17 + can/can't matrix,
+				the validate-then-drive build recipe, the buildable slice (Simple/Signal start, end, user tasks +
+				sequence flows — gateways/conditional flows/timers not yet), and the modify-safety rules for
+				editing an existing process.
 				""",
 				ProcessModelingGuidanceResource.Guide,
 				featureGateType: typeof(ProcessModelingGuidanceResource)),
@@ -182,7 +184,15 @@ internal static class GuidanceCatalog {
 				"Canonical MCP guidance for using Creatio server-to-server OAuth client credentials: "
 				+ "minting client_credentials tokens, handling expiry without refresh tokens, and calling "
 				+ "Creatio APIs with an Authorization: Bearer token.",
-				ServerToServerOAuthGuidanceResource.Guide)
+				ServerToServerOAuthGuidanceResource.Guide),
+			["package-dependencies"] = Create(
+				"package-dependencies",
+				"Canonical MCP guidance for managing Creatio package dependencies: the schema-designer "
+				+ "'GetSchemaDesignItem returned an HTML error page' recovery via add-package-dependency "
+				+ "(missing dependency on the owner of the extended object's upper layer), the symmetric "
+				+ "remove-package-dependency cleanup, and the anti-patterns (no writes into the owning managed "
+				+ "package, no raw SQL/OData/DataService dependency edits).",
+				PackageDependenciesGuidanceResource.Guide)
 		};
 
 		foreach (ComposableAppSkillResourceEntry guide in ComposableAppSkillResourceCatalog.GetGuides()) {

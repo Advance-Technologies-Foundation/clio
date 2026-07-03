@@ -66,16 +66,23 @@ internal static class DataForgeReadinessGate {
 	}
 
 	/// <summary>
-	/// Invokes <c>dataforge-initialize</c> once, then polls <c>dataforge-status</c> until
-	/// <see cref="IsIndexReady"/> reports the index is built, using bounded retries with a fixed
-	/// inter-attempt delay and a hard overall cap. On timeout it writes the last full status
-	/// payload to <see cref="TestContext.Out"/> (mirroring the arrange diagnostics in
-	/// <c>ClioCliCommandRunner</c>) and fails the test with a descriptive message.
+	/// Best-effort warm-up: invokes <c>dataforge-initialize</c> once, then polls
+	/// <c>dataforge-status</c> until <see cref="IsIndexReady"/> reports the index is built, using
+	/// bounded retries with a fixed inter-attempt delay and a hard overall cap. Returns <c>true</c>
+	/// once the index is ready, and <c>false</c> if it could not be made ready within the budget
+	/// (or initialization was not accepted) — writing the last full status payload to
+	/// <see cref="TestContext.Out"/> for diagnostics. It deliberately does NOT fail the test: on a
+	/// stand that is not wired to a DataForge tier (no <c>DataForgeServiceUrl</c>/IdentityServer
+	/// settings, so the maintenance service reports <c>Unavailable</c>) the index can never become
+	/// ready, and that is an environment precondition — the per-read service-state guard in the
+	/// fixtures decides skip-vs-assert from the actual read response (ENG-92557). Returning a bool
+	/// keeps this a warm-up nudge, not a gate.
 	/// </summary>
 	/// <param name="session">Active MCP server session.</param>
 	/// <param name="environmentName">Registered clio sandbox environment name.</param>
 	/// <param name="cancellationToken">Cancellation token bounding the arrange phase.</param>
-	public static async Task EnsureIndexReadyAsync(
+	/// <returns><c>true</c> when the similarity index became ready within the budget; otherwise <c>false</c>.</returns>
+	public static async Task<bool> EnsureIndexReadyAsync(
 		McpServerSession session,
 		string environmentName,
 		CancellationToken cancellationToken) {
@@ -90,22 +97,29 @@ internal static class DataForgeReadinessGate {
 		DataForgeMaintenanceResponse? initializeResponse = initializeResult is null
 			? null
 			: TryDeserialize<DataForgeMaintenanceResponse>(initializeResult);
-		if (initializeResponse is null || !initializeResponse.Success) {
+		if (!WasInitializationAccepted(initializeResponse)) {
 			if (initializeResult is not null) {
 				WriteToolDiagnostics(InitializeToolName, initializeResult);
 			}
 
-			Assert.Fail(
-				$"DataForge arrange could not schedule initialization on '{environmentName}': " +
+			// Initialization was not accepted — typically because the stand is not wired to a
+			// DataForge tier (the maintenance service is Unavailable). This is an environment
+			// precondition, not a clio failure: report it as not-ready so the per-read guard can
+			// skip deterministically rather than failing the suite here (ENG-92557).
+			TestContext.Out.WriteLine(
+				$"[dataforge-readiness] could not schedule initialization on '{environmentName}': " +
 				$"dataforge-initialize did not return a successful structured payload within {PerCallTimeout.TotalSeconds:0}s. " +
-				$"See test output for the full response.");
+				$"Treating the similarity index as not-ready (see output for the full response).");
+			return false;
 		}
 
 		// 2. Poll dataforge-status until the index-ready signal flips, or the budget is exhausted.
 		//    The index build is asynchronous, so a Scheduled initialize is followed by a window in
 		//    which reads still fail. Each poll is per-call-timeout-wrapped and a timed-out/faulted poll
 		//    is treated as "not ready yet" so one slow call cannot kill the gate — only the overall
-		//    deadline (or the incoming token) does. 5 min / 15 s mirrors the spec's recommended budget.
+		//    deadline (or the incoming token) does. The polling budget is ReadinessAttempts(20) x
+		//    ReadinessDelay(15s) ~= 5 min, hard-capped by the OverallDeadline(6 min); both sit under the
+		//    fixtures' 8-min arrange timeout so the gate always ends before the arrange token fires.
 		DataForgeStatusResponse? lastStatus = null;
 		CallToolResult? lastStatusResult = null;
 		for (int attempt = 0; attempt < ReadinessAttempts; attempt++) {
@@ -120,7 +134,7 @@ internal static class DataForgeReadinessGate {
 				lastStatusResult = statusResult;
 				lastStatus = TryDeserialize<DataForgeStatusResponse>(statusResult);
 				if (IsIndexReady(lastStatus)) {
-					return;
+					return true;
 				}
 			}
 
@@ -138,15 +152,16 @@ internal static class DataForgeReadinessGate {
 
 		int budgetSeconds = (int)System.Math.Min(
 			ReadinessAttempts * ReadinessDelay.TotalSeconds, OverallDeadline.TotalSeconds);
-		Assert.Fail(
-			$"DataForge similarity index on '{environmentName}' did not become Ready within {budgetSeconds}s " +
+		TestContext.Out.WriteLine(
+			$"[dataforge-readiness] similarity index on '{environmentName}' did not become Ready within {budgetSeconds}s " +
 			$"(up to {ReadinessAttempts} dataforge-status polls every {ReadinessDelay.TotalSeconds:0}s after " +
 			$"dataforge-initialize, capped by a {OverallDeadline.TotalSeconds:0}s overall deadline and a " +
 			$"{PerCallTimeout.TotalSeconds:0}s per-call timeout). Last status: success={lastStatus?.Success}, " +
 			$"status={lastStatus?.Status?.Status ?? "<none>"}, " +
 			$"data-structure-readiness={lastStatus?.Health?.DataStructureReadiness}, " +
 			$"lookups-readiness={lastStatus?.Health?.LookupsReadiness}. " +
-			$"See test output for the full status payload.");
+			$"Treating the similarity index as not-ready (see output for the full status payload).");
+		return false;
 	}
 
 	private const int ReadinessAttempts = 20;
@@ -168,6 +183,19 @@ internal static class DataForgeReadinessGate {
 	/// <returns><c>true</c> when polling must stop because the deadline is reached; otherwise <c>false</c>.</returns>
 	public static bool OverallDeadlineReached(TimeSpan elapsed, TimeSpan overallDeadline) =>
 		elapsed >= overallDeadline;
+
+	/// <summary>
+	/// Pure "was the maintenance work accepted" decision for <c>dataforge-initialize</c>: a warm-up
+	/// can only proceed to the readiness poll when the initialize call returned a structured, successful
+	/// maintenance payload. A <c>null</c> (unreadable / timed-out) or <c>Success=false</c> response means
+	/// initialization was not accepted — typically because the stand is not wired to a DataForge tier and
+	/// the maintenance service is <c>Unavailable</c>. Extracted so the accept/reject branch can be
+	/// unit-tested without an MCP stand (the surrounding poll needs a live session).
+	/// </summary>
+	/// <param name="initializeResponse">The structured <c>dataforge-initialize</c> response, or <c>null</c>.</param>
+	/// <returns><c>true</c> when initialization was accepted and the readiness poll should run; otherwise <c>false</c>.</returns>
+	public static bool WasInitializationAccepted(DataForgeMaintenanceResponse? initializeResponse) =>
+		initializeResponse is not null && initializeResponse.Success;
 
 	/// <summary>
 	/// Invokes a DataForge tool under a per-call timeout linked to <paramref name="cancellationToken"/>.

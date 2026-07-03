@@ -140,27 +140,6 @@ public sealed class LinkFromRepositoryToolE2ETests {
 		AssertPackageFolderWasNotCreated(arrangeContext, "MissingPkg");
 	}
 
-	[Category("McpE2E.NoEnvironment")]
-	[Test]
-	[Description("Starts the real clio MCP server, lists tools, and verifies that both link-from-repository MCP endpoints are advertised as destructive.")]
-	[AllureTag(EnvironmentToolName)]
-	[AllureTag(EnvPkgPathToolName)]
-	[AllureName("Link From Repository tools advertise destructive metadata")]
-	[AllureDescription("Uses the real clio MCP server tool discovery response to verify that both link-from-repository MCP tools expose the destructive hint required for client-side safety policies.")]
-	public async Task LinkFromRepository_Tools_Should_Be_Advertised_As_Destructive() {
-		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-
-		// Act
-		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationTokenSource.Token);
-
-		// Assert
-		AssertToolIsAdvertisedAsDestructive(tools, EnvironmentToolName);
-		AssertToolIsAdvertisedAsDestructive(tools, EnvPkgPathToolName);
-	}
-
 	[AllureStep("Arrange link-from-repository MCP sandbox")]
 	[AllureDescription("Arrange by creating temporary repository and Creatio package directories, seeding a package folder, and starting a real clio MCP server session")]
 	private static async Task<LinkFromRepositoryArrangeContext> ArrangeAsync() {

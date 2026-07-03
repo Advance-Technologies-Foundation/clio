@@ -508,3 +508,64 @@ stories:
     ac: []
     depends_on: [story-read-column-default-values-6, story-read-column-default-values-7]
     blocks: []
+
+  # --- mcp-e2e-noenvironment-parallelization stories (ENG-92558) ---
+  - id: story-mcp-e2e-noenvironment-parallelization-1
+    title: "Shared fixture foundation and Sandbox guards"
+    feature: "mcp-e2e-noenvironment-parallelization"
+    size: M
+    status: in-progress
+    file: spec/stories/story-mcp-e2e-noenvironment-parallelization-1.md
+    prd: spec/prd/prd-mcp-e2e-noenvironment-parallelization.md
+    adr: spec/adr/adr-mcp-e2e-noenvironment-parallelization.md
+    fr: [FR-01, FR-02, FR-07]
+    ac: [AC-01, AC-04, AC-05, AC-08]
+    depends_on: []
+    blocks:
+      - story-mcp-e2e-noenvironment-parallelization-2
+      - story-mcp-e2e-noenvironment-parallelization-3
+      - story-mcp-e2e-noenvironment-parallelization-4
+
+  - id: story-mcp-e2e-noenvironment-parallelization-2
+    title: "Convert pure NoEnvironment fixtures to shared server"
+    feature: "mcp-e2e-noenvironment-parallelization"
+    size: M
+    status: in-progress
+    file: spec/stories/story-mcp-e2e-noenvironment-parallelization-2.md
+    prd: spec/prd/prd-mcp-e2e-noenvironment-parallelization.md
+    adr: spec/adr/adr-mcp-e2e-noenvironment-parallelization.md
+    fr: [FR-03, FR-04]
+    ac: [AC-02, AC-08, AC-09]
+    depends_on: [story-mcp-e2e-noenvironment-parallelization-1]
+    blocks:
+      - story-mcp-e2e-noenvironment-parallelization-4
+
+  - id: story-mcp-e2e-noenvironment-parallelization-3
+    title: "Split NoEnvironment tests out of mixed Sandbox fixtures"
+    feature: "mcp-e2e-noenvironment-parallelization"
+    size: L
+    status: in-progress
+    file: spec/stories/story-mcp-e2e-noenvironment-parallelization-3.md
+    prd: spec/prd/prd-mcp-e2e-noenvironment-parallelization.md
+    adr: spec/adr/adr-mcp-e2e-noenvironment-parallelization.md
+    fr: [FR-05, FR-06, FR-10]
+    ac: [AC-03, AC-04, AC-09]
+    depends_on: [story-mcp-e2e-noenvironment-parallelization-1]
+    blocks:
+      - story-mcp-e2e-noenvironment-parallelization-4
+
+  - id: story-mcp-e2e-noenvironment-parallelization-4
+    title: "Fail-closed parallel cohort and timing proof"
+    feature: "mcp-e2e-noenvironment-parallelization"
+    size: M
+    status: in-progress
+    file: spec/stories/story-mcp-e2e-noenvironment-parallelization-4.md
+    prd: spec/prd/prd-mcp-e2e-noenvironment-parallelization.md
+    adr: spec/adr/adr-mcp-e2e-noenvironment-parallelization.md
+    fr: [FR-08, FR-09, FR-11]
+    ac: [AC-06, AC-07, AC-10]
+    depends_on:
+      - story-mcp-e2e-noenvironment-parallelization-1
+      - story-mcp-e2e-noenvironment-parallelization-2
+      - story-mcp-e2e-noenvironment-parallelization-3
+    blocks: []

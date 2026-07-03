@@ -74,11 +74,12 @@ internal sealed class UpdateEntitySchemaCommandBatchExecutionTests : BaseClioMod
 				Success = true,
 				Items = []
 			});
+		Clio.Command.EntitySchemaDesigner.DesignerResponse<EntityDesignSchemaDto> MakeDesignResponse() =>
+			new() { Success = true, Schema = _savedSchema ?? _loadedSchema };
+		_designerClient.TryGetSchemaDesignItem(Arg.Any<Clio.Command.EntitySchemaDesigner.GetSchemaDesignItemRequestDto>(), Arg.Any<RemoteCommandOptions>())
+			.Returns(_ => MakeDesignResponse());
 		_designerClient.GetSchemaDesignItem(Arg.Any<Clio.Command.EntitySchemaDesigner.GetSchemaDesignItemRequestDto>(), Arg.Any<RemoteCommandOptions>())
-			.Returns(_ => new Clio.Command.EntitySchemaDesigner.DesignerResponse<EntityDesignSchemaDto> {
-				Success = true,
-				Schema = _savedSchema ?? _loadedSchema
-			});
+			.Returns(_ => MakeDesignResponse());
 
 		containerBuilder.AddTransient(_ => _packageListProvider);
 		containerBuilder.AddTransient(_ => _designerClient);

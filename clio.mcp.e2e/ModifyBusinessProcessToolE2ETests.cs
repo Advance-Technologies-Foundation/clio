@@ -136,7 +136,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		"""
 		[
 		  { "op": "removeElement", "elementName": "StartEvent1" },
-		  { "op": "addElement", "element": { "name": "SignalStart1", "type": "signalStart", "signal": { "entity": "UsrTestRunButton", "on": "save" } } },
+		  { "op": "addElement", "element": { "name": "SignalStart1", "type": "signalStart", "signal": { "entity": "Contact", "on": "save" } } },
 		  { "op": "addFlow", "source": "SignalStart1", "target": "task1" }
 		]
 		""";
@@ -335,6 +335,34 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			because: "the rejection names the unsupported type");
 	}
 
+	[Test]
+	[Description("Over the real MCP path: setParameter rejects a constant value that cannot convert to the parameter's data type (a non-numeric string for an Integer), using the platform value converter.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process rejects a type-invalid constant parameter value")]
+	public async Task ModifyBusinessProcess_Should_RejectTypeInvalidConstantValue() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpBadValueE2e{Guid.NewGuid():N}";
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildDescriptorWithParameter(processName)
+		});
+
+		// Act — set the Integer 'Amount' default to a non-numeric string
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = """[ { "op": "setParameter", "parameterName": "Amount", "parameterUpdate": { "value": "not-a-number" } } ]"""
+		});
+
+		// Assert
+		string callResultJson = JsonSerializer.Serialize(callResult);
+		callResultJson.Should().Contain("not valid",
+			because: "a constant value that cannot convert to the parameter's type is rejected");
+		callResultJson.Should().Contain("Amount",
+			because: "the rejection names the parameter whose value was invalid");
+	}
+
 	private static string SetParameterOperations() =>
 		"""
 		[ { "op": "setParameter", "parameterName": "Amount", "parameterUpdate": { "value": "7", "caption": "Amount due", "direction": "Out" } } ]
@@ -406,7 +434,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 					|| textElement.ValueKind != JsonValueKind.String) {
 				continue;
 			}
-			string envelopeJson = textElement.GetString();
+			string? envelopeJson = textElement.GetString();
 			if (string.IsNullOrWhiteSpace(envelopeJson) || !envelopeJson.TrimStart().StartsWith("{", StringComparison.Ordinal)) {
 				continue;
 			}
@@ -419,12 +447,12 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 				if (!message.TryGetProperty("value", out JsonElement value) || value.ValueKind != JsonValueKind.String) {
 					continue;
 				}
-				string graphJson = value.GetString();
+				string? graphJson = value.GetString();
 				if (string.IsNullOrWhiteSpace(graphJson) || !graphJson.TrimStart().StartsWith("{", StringComparison.Ordinal)) {
 					continue;
 				}
 				try {
-					DescribeProcessResult graph = JsonSerializer.Deserialize<DescribeProcessResult>(graphJson, options);
+					DescribeProcessResult? graph = JsonSerializer.Deserialize<DescribeProcessResult>(graphJson, options);
 					if (graph is { SchemaUId: not null }) {
 						return graph;
 					}
@@ -449,12 +477,12 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		ProcessDesignerE2EGate.SkipIfFeatureDisabled(settings);
-		string environmentName = settings.Sandbox.EnvironmentName;
+		string? environmentName = settings.Sandbox.EnvironmentName;
 		if (requireReachableEnvironment) {
 			if (string.IsNullOrWhiteSpace(environmentName)) {
 				Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName (with the ProcessDesignService package) to run modify-business-process MCP E2E.");
 			}
-			if (!await ClioCliCommandRunner.IsEnvironmentReachableAsync(settings, environmentName)) {
+			if (!await ClioCliCommandRunner.IsEnvironmentReachableAsync(settings, environmentName!)) {
 				Assert.Ignore($"modify-business-process MCP E2E requires a reachable configured sandbox environment. '{environmentName}' was not reachable.");
 			}
 		}
@@ -466,7 +494,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	private sealed record ArrangeContext(
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource,
-		string EnvironmentName) : IAsyncDisposable {
+		string? EnvironmentName) : IAsyncDisposable {
 		public async ValueTask DisposeAsync() {
 			await Session.DisposeAsync();
 			CancellationTokenSource.Dispose();
