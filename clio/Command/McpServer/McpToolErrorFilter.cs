@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Reflection;
 using System.Text.Json;
@@ -42,8 +43,7 @@ public static class McpToolErrorFilter
 			return false;
 		}
 
-		if (context.MatchedPrimitive is not McpServerTool tool
-				|| tool.Metadata.OfType<MethodInfo>().FirstOrDefault() is not { } method) {
+		if (!TryGetToolMethod(context, out MethodInfo? method)) {
 			return false;
 		}
 
@@ -102,12 +102,23 @@ public static class McpToolErrorFilter
 			return false;
 		}
 
-		if (context.MatchedPrimitive is not McpServerTool tool
-				|| tool.Metadata.OfType<MethodInfo>().FirstOrDefault() is not { } method) {
+		if (!TryGetToolMethod(context, out MethodInfo? method)) {
 			return false;
 		}
 
 		return TryDetectFlatArgsMismatch(context.Params.Name, method, arguments, out result);
+	}
+
+	/// <summary>
+	/// Extracts the tool implementation <see cref="MethodInfo"/> from the matched MCP primitive.
+	/// </summary>
+	private static bool TryGetToolMethod(
+		RequestContext<CallToolRequestParams> context,
+		[NotNullWhen(true)] out MethodInfo? method) {
+		method = context.MatchedPrimitive is McpServerTool tool
+			? tool.Metadata.OfType<MethodInfo>().FirstOrDefault()
+			: null;
+		return method is not null;
 	}
 
 	/// <summary>
@@ -155,10 +166,19 @@ public static class McpToolErrorFilter
 		type == typeof(CancellationToken)
 		|| type.Namespace?.StartsWith("ModelContextProtocol", StringComparison.Ordinal) == true;
 
-	private static List<string> GetJsonPropertyNames(Type type) =>
-		type.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+	private static List<string> GetJsonPropertyNames(Type type) {
+		if (!type.IsClass || type == typeof(string)) {
+			return [];
+		}
+		return type.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+			.Where(IsWireContractProperty)
 			.Select(p => p.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? p.Name)
 			.ToList();
+	}
+
+	private static bool IsWireContractProperty(PropertyInfo property) =>
+		property.GetCustomAttribute<JsonExtensionDataAttribute>() is null
+		&& property.GetCustomAttribute<JsonIgnoreAttribute>()?.Condition != JsonIgnoreCondition.Always;
 
 	private static string BuildMissingWrapperMessage(
 		string? toolName, string wrapperName, List<string> allProperties, List<string> matchedKeys) {

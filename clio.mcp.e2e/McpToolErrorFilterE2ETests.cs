@@ -61,6 +61,38 @@ public sealed class McpToolErrorFilterE2ETests : McpContractFixtureBase
 	}
 
 	[Test]
+	[AllureTag("get-guidance")]
+	[AllureName("Wrapper hint advertises only wire-contract properties, not [JsonExtensionData] buckets")]
+	[Description("Sends a flat get-guidance call and verifies the hint's correct-format example lists real arguments only, excluding the [JsonExtensionData] overflow property.")]
+	public async Task FlatArgs_ShouldExcludeExtensionDataFromHint_WhenArgsTypeHasNonContractProperties()
+	{
+		// Arrange
+		await using ArrangeContext arrangeContext = Arrange();
+		string toolName = GuidanceGetTool.ToolName;
+
+		// Act — send flat args WITHOUT the "args" wrapper
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			toolName,
+			new Dictionary<string, object?> {
+				["name"] = "routing"
+			},
+			arrangeContext.CancellationTokenSource.Token);
+
+		// Assert
+		callResult.IsError.Should().BeTrue(
+			because: "flat arguments should be detected as a caller error");
+
+		string responseText = string.Join("\n",
+			callResult.Content.OfType<TextContentBlock>().Select(b => b.Text));
+
+		responseText.Should().Contain("\"name\"",
+			because: "the hint should advertise the real wire-contract argument");
+
+		responseText.Should().NotContain("ExtensionData",
+			because: "the [JsonExtensionData] overflow bucket is not a real argument and must not be advertised");
+	}
+
+	[Test]
 	[AllureTag("list-apps")]
 	[AllureName("Correctly wrapped arguments are not intercepted by the flat-args filter")]
 	[Description("Sends correctly wrapped arguments to a composite-args tool and verifies the call proceeds past the error filter to normal execution.")]
