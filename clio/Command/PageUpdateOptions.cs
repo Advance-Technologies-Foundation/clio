@@ -570,7 +570,6 @@ namespace Clio.Command {
 			dto["name"] = originalName;
 			dto["isReadOnly"] = false;
 			dto["extendParent"] = true;
-			dto["caption"] = template["caption"]?.DeepClone();
 			dto[LocalizableStringsKey] = template[LocalizableStringsKey]?.DeepClone() ?? new JArray();
 			dto["package"] = new JObject {
 				["uId"] = context.DesignPackageUId,
