@@ -167,6 +167,14 @@ public sealed class ProcessModelingGuidanceResource {
 			  designer allows; incompatible types are rejected. `processParameter` flows a process input into the
 			  field (the server builds the correct reference); `expression` is a raw C#-like formula passed through UNVALIDATED — the backend (unlike the visual designer) does NOT check it, so a wrong token / function / type fails only at RUNTIME. Do NOT invent or guess formulas: formula-authoring guidance (token format + the allowed function set) is not available yet. Prefer `value` / `processParameter` / `sourceElement`; use `expression` ONLY with a formula you already know is correct (user-supplied, or copied verbatim from an existing process via describe-business-process), e.g.
 			  `[#SysVariable.CurrentUserContact#]`, `[#SysVariable.CurrentDateTime#].AddDays(3)`.
+			- Date / Date-time / Time DEFAULT VALUES are the ONE formula you may author (an EXCEPTION to the
+			  "don't invent formulas" rule): the designer stores a date/time constant as a formula macro (a Script
+			  source), NOT a plain `value` (a `ConstValue`). Set it via `expression` — for a process-parameter
+			  default, a mapping with `targetProcessParameter` + `expression`. The inner format is FIXED (NOT ISO,
+			  NOT locale): `dd.MM.yyyy` and 24-hour `HH:mm`.
+			  Date → `[#DateValue.dd.MM.yyyy#]` (e.g. `[#DateValue.03.07.2026#]`);
+			  Date-time → `[#DateTimeValue.dd.MM.yyyy HH:mm#]` (e.g. `[#DateTimeValue.03.07.2026 02:15#]`);
+			  Time → `[#TimeValue.HH:mm#]` (e.g. `[#TimeValue.12:20#]`).
 			- To read another element's output, PREFER the structured `sourceElement` + `sourceElementParameter` mapping (above) — the server builds the correct reference. Do NOT hand-write an element-output reference —
 			  in the saved metadata it is a server-generated UId meta-path (`[#...[Element:{uid}].[Parameter:{uid}].[EntityColumn:{uid}]#]`), NOT a friendly `Element.Property` path, so you cannot author it — ALWAYS use `sourceElement`. Formulas are strictly typed (convert with `.ToString()` etc.).
 
