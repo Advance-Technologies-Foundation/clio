@@ -14,9 +14,9 @@ namespace Clio.Command.McpServer.Tools;
 /// <see cref="IThemeColorAdvisor"/>.
 /// </summary>
 [McpServerToolType]
-public sealed class ThemeColorAdvisorTool(IThemeColorAdvisor advisor) {
+public sealed class AdviseThemePaletteTool(IThemeColorAdvisor advisor) {
 
-	internal const string ToolName = "theme-color-advisor";
+	internal const string ToolName = "advise-theme-palette";
 
 	/// <summary>Runs one colour-advisory operation and returns its verdict packet.</summary>
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]

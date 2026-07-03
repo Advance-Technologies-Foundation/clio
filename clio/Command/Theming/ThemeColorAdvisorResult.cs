@@ -115,7 +115,7 @@ public sealed record SuggestedAccentCandidate {
 }
 
 /// <summary>
-/// The unified structured result of the <c>theme-color-advisor</c> tool. Only the fields relevant to the
+/// The unified structured result of the <c>advise-theme-palette</c> tool. Only the fields relevant to the
 /// requested operation are populated; everything else is omitted (null-omission mirrors <c>BuildThemeResult</c>).
 /// The advisor returns pre-computed verdicts, not raw thresholds — every populated verdict field already
 /// applied the clio-owned thresholds.

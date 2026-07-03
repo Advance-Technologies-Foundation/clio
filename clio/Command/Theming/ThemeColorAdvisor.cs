@@ -7,7 +7,7 @@ namespace Clio.Command.Theming;
 
 /// <summary>
 /// Projects the deterministic <c>Clio.Theming</c> engine into the pre-computed verdict packets the
-/// <c>theme-color-advisor</c> MCP tool returns. Owns the tool-facing concepts the engine has no notion of —
+/// <c>advise-theme-palette</c> MCP tool returns. Owns the tool-facing concepts the engine has no notion of —
 /// verdicts, warning codes, and threshold-free messages — while every threshold (3:1 contrast, 0.10/0.07
 /// similarity) stays in the engine. All colour math is delegated; this type never re-implements it.
 /// </summary>

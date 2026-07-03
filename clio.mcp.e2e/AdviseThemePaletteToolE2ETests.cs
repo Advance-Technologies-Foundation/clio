@@ -17,22 +17,22 @@ using ModelContextProtocol.Protocol;
 namespace Clio.Mcp.E2E;
 
 /// <summary>
-/// End-to-end coverage for the theme-color-advisor MCP tool. The advisor is stateless, offline pure compute,
+/// End-to-end coverage for the advise-theme-palette MCP tool. The advisor is stateless, offline pure compute,
 /// so the real clio MCP server can run its operations without a live Creatio environment. Its tools are
 /// behind the <c>theming</c> feature toggle, so the fixture skip-gates when the feature is disabled (the
 /// default) — like the other theming E2E fixtures.
 /// </summary>
 [TestFixture]
 [AllureNUnit]
-[AllureFeature("theme-color-advisor")]
+[AllureFeature("advise-theme-palette")]
 [NonParallelizable]
-public sealed class ThemeColorAdvisorToolE2ETests {
-	private const string ToolName = ThemeColorAdvisorTool.ToolName;
+public sealed class AdviseThemePaletteToolE2ETests {
+	private const string ToolName = AdviseThemePaletteTool.ToolName;
 
 	[Test]
 	[AllureTag(ToolName)]
-	[AllureName("theme-color-advisor advertises read-only metadata and adapts a low-contrast primary")]
-	[Description("Starts the real clio MCP server, verifies theme-color-advisor is advertised as read-only with the guidance pointer, and invokes the adapt-primary operation on a low-contrast colour. Skips when the theming feature is disabled.")]
+	[AllureName("advise-theme-palette advertises read-only metadata and adapts a low-contrast primary")]
+	[Description("Starts the real clio MCP server, verifies advise-theme-palette is advertised as read-only with the guidance pointer, and invokes the adapt-primary operation on a low-contrast colour. Skips when the theming feature is disabled.")]
 	public async Task ThemeColorAdvisor_Should_Advertise_And_AdaptPrimary() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -68,7 +68,7 @@ public sealed class ThemeColorAdvisorToolE2ETests {
 
 	[Test]
 	[AllureTag(ToolName)]
-	[AllureName("theme-color-advisor triage sorts brand colours and identifies the primary candidate")]
+	[AllureName("advise-theme-palette triage sorts brand colours and identifies the primary candidate")]
 	[Description("Starts the real clio MCP server and invokes the triage operation on a mix of valid and invalid colours; verifies the accepted/passing counts and the highest-contrast candidate. Skips when the theming feature is disabled.")]
 	public async Task ThemeColorAdvisor_Should_Triage_BrandColours() {
 		// Arrange
@@ -100,7 +100,7 @@ public sealed class ThemeColorAdvisorToolE2ETests {
 
 	[Test]
 	[AllureTag(ToolName)]
-	[AllureName("theme-color-advisor preview returns only the base -500 per role by default")]
+	[AllureName("advise-theme-palette preview returns only the base -500 per role by default")]
 	[Description("Starts the real clio MCP server and invokes the preview operation without fullStops; verifies each role's palette carries only the base -500 stop, not the full palette ramp. Skips when the theming feature is disabled.")]
 	public async Task ThemeColorAdvisor_Should_Preview_Base500_ByDefault() {
 		// Arrange

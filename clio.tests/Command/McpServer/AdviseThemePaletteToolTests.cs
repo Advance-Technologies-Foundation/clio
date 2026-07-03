@@ -10,36 +10,36 @@ using NUnit.Framework;
 namespace Clio.Tests.Command.McpServer;
 
 /// <summary>
-/// Unit coverage for the <c>theme-color-advisor</c> MCP tool: the flat tool shape and the verdict
+/// Unit coverage for the <c>advise-theme-palette</c> MCP tool: the flat tool shape and the verdict
 /// packet each operation returns (over the real <see cref="ThemeColorAdvisor"/> engine, with a substituted
 /// template provider for the preview system defaults).
 /// </summary>
 [TestFixture]
 [Category("Unit")]
 [Property("Module", "McpServer")]
-public sealed class ThemeColorAdvisorToolTests {
+public sealed class AdviseThemePaletteToolTests {
 
 	private IThemeTemplateProvider _templateProvider;
-	private ThemeColorAdvisorTool _tool;
+	private AdviseThemePaletteTool _tool;
 
 	[SetUp]
 	public void SetUp() {
 		_templateProvider = Substitute.For<IThemeTemplateProvider>();
-		_tool = new ThemeColorAdvisorTool(new ThemeColorAdvisor(_templateProvider));
+		_tool = new AdviseThemePaletteTool(new ThemeColorAdvisor(_templateProvider));
 	}
 
 	[Test]
-	[Description("Is a flat MCP tool named theme-color-advisor with read-only, non-destructive, idempotent, closed-world safety flags.")]
-	public void ThemeColorAdvisorTool_ShouldBeFlatReadOnlyTool_WhenInspected() {
+	[Description("Is a flat MCP tool named advise-theme-palette with read-only, non-destructive, idempotent, closed-world safety flags.")]
+	public void AdviseThemePaletteTool_ShouldBeFlatReadOnlyTool_WhenInspected() {
 		// Arrange
-		System.Type toolType = typeof(ThemeColorAdvisorTool);
+		System.Type toolType = typeof(AdviseThemePaletteTool);
 
 		// Assert
 		toolType.BaseType.Should().Be(typeof(object), because: "the advisor is a flat ComponentInfoTool-style tool, not a BaseTool subclass");
 		toolType.GetCustomAttribute<McpServerToolTypeAttribute>().Should().NotBeNull(because: "it must be discoverable as an MCP tool type");
-		MethodInfo method = toolType.GetMethod(nameof(ThemeColorAdvisorTool.Advise));
+		MethodInfo method = toolType.GetMethod(nameof(AdviseThemePaletteTool.Advise));
 		McpServerToolAttribute attribute = method!.GetCustomAttribute<McpServerToolAttribute>();
-		attribute!.Name.Should().Be("theme-color-advisor", because: "the advertised tool name is theme-color-advisor");
+		attribute!.Name.Should().Be("advise-theme-palette", because: "the advertised tool name is advise-theme-palette");
 		attribute.ReadOnly.Should().BeTrue(because: "the advisor never writes and never touches an environment");
 		attribute.Destructive.Should().BeFalse(because: "the advisor is pure compute");
 		attribute.Idempotent.Should().BeTrue(because: "the advisor is pure compute — the same inputs always yield the same verdict");

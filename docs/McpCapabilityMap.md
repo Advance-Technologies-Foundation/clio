@@ -510,11 +510,11 @@ Companion surfaces (see the `process-modeling` guidance):
 
 ### 12. Theming
 
-These tools brand a Creatio app: build a custom theme from brand colours and fonts, apply it to an environment, and manage the theme catalog. `build-theme` and `theme-color-advisor` run offline; the rest act on a target environment via the native ThemeService and ship in both `-by-environment` and `-by-credentials` variants.
+These tools brand a Creatio app: build a custom theme from brand colours and fonts, apply it to an environment, and manage the theme catalog. `build-theme` and `advise-theme-palette` run offline; the rest act on a target environment via the native ThemeService and ship in both `-by-environment` and `-by-credentials` variants.
 
 - `build-theme`
   Render a theme's `theme.css` (and, in workspace mode, `theme.json`) from a primary colour, optional secondary/accent/system colours, and fonts, over a bundled version-pinned template. Writes into a workspace package when given `workspaceDirectory` + `packageName`, otherwise returns the CSS. Never mutates an environment.
-- `theme-color-advisor`
+- `advise-theme-palette`
   Stateless offline advisor that scores brand-colour choices (readability on white, accent similarity) and returns a verdict per operation, so the agent never judges a colour by eye.
 - `create-theme-by-environment` / `create-theme-by-credentials`
   Create a theme on the environment from inline `cssContent` plus a caption.
@@ -531,7 +531,7 @@ These tools brand a Creatio app: build a custom theme from brand colours and fon
 
 What an external AI can practically do here:
 
-- build a theme offline (`build-theme`) with `theme-color-advisor` driving the palette, then commit it to a workspace package and push, or apply it directly with `create-theme`
+- build a theme offline (`build-theme`) with `advise-theme-palette` driving the palette, then commit it to a workspace package and push, or apply it directly with `create-theme`
 - restyle, remove, and confirm themes on an environment
 - precheck theming permissions before authoring, and set the default via the `DefaultTheme` system setting (see the theming guidance)
 

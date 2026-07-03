@@ -452,7 +452,7 @@ public class BindingsModule {
 		services.AddTransient<GuidanceGetTool>();
 		services.AddTransient<ComponentInfoTool>();
 		services.AddTransient<BuildThemeTool>();
-		services.AddTransient<ThemeColorAdvisorTool>();
+		services.AddTransient<AdviseThemePaletteTool>();
 		services.AddTransient<GetUserCultureTool>();
 		services.AddTransient<PackageHotfixTool>();
 		services.AddTransient<AddPackageDependencyTool>();
