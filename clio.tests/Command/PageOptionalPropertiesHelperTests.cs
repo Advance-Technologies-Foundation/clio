@@ -44,7 +44,14 @@ public sealed class PageOptionalPropertiesHelperTests
 	[TestCase("{ not-an-array }")]
 	[TestCase("not json at all")]
 	[TestCase("""{"key":"x"}""")]
-	[Description("Rejects a payload that is not a valid JSON array with the canonical error.")]
+	[TestCase("[1,2,3]")]
+	[TestCase("""["DashboardsEntitySchemaName"]""")]
+	[TestCase("""[{"foo":1}]""")]
+	[TestCase("""[{"kye":"DashboardsEntitySchemaName","value":"Contact"}]""")]
+	[TestCase("""[{"key":"","value":"Contact"}]""")]
+	[TestCase("""[{"key":"   ","value":"Contact"}]""")]
+	[TestCase("""[{"key":"DashboardsEntitySchemaName","value":"Contact"}, 42]""")]
+	[Description("Rejects a payload that is not a valid JSON array of objects with a non-blank key, using the canonical error.")]
 	public void TryParse_Returns_Canonical_Error_When_Payload_Is_Malformed(string json) {
 		// Act
 		bool result = PageOptionalPropertiesHelper.TryParse(json, out JArray parsed, out string error);

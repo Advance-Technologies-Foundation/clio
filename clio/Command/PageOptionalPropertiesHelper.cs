@@ -1,4 +1,5 @@
 namespace Clio.Command {
+	using System.Linq;
 	using Newtonsoft.Json;
 	using Newtonsoft.Json.Linq;
 
@@ -19,8 +20,10 @@ namespace Clio.Command {
 		/// Parses the raw <c>optional-properties</c> argument into a <see cref="JArray"/>.
 		/// A null/whitespace payload is treated as "not supplied": returns <c>true</c> with
 		/// <paramref name="parsed"/> set to <c>null</c>. A non-empty payload that is not a valid
-		/// JSON array returns <c>false</c> with <paramref name="error"/> set to
-		/// <see cref="InvalidOptionalPropertiesError"/>.
+		/// JSON array of objects each carrying a non-blank <c>key</c> returns <c>false</c> with
+		/// <paramref name="error"/> set to <see cref="InvalidOptionalPropertiesError"/> —
+		/// element-shape validation is deliberate: a typo'd key would otherwise be written
+		/// verbatim into the schema and silently break the dashboard link-back.
 		/// </summary>
 		/// <param name="json">The raw argument value, or <c>null</c>.</param>
 		/// <param name="parsed">The parsed array, or <c>null</c> when the payload is absent.</param>
@@ -34,11 +37,16 @@ namespace Clio.Command {
 			}
 			try {
 				parsed = JArray.Parse(json);
-				return true;
 			} catch (JsonReaderException) {
 				error = InvalidOptionalPropertiesError;
 				return false;
 			}
+			if (parsed.Any(token => token is not JObject item || string.IsNullOrWhiteSpace(item["key"]?.ToString()))) {
+				parsed = null;
+				error = InvalidOptionalPropertiesError;
+				return false;
+			}
+			return true;
 		}
 	}
 }

@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using System.Threading;
 using Allure.NUnit;
@@ -252,6 +253,19 @@ public sealed class PageCreateToolE2ETests : McpContractFixtureBase {
 		getResponse.Success.Should().BeTrue(because: "the freshly created dashboard must be readable through get-page");
 		getResponse.Page.ParentSchemaName.Should().Be("BaseDashboardTemplate",
 			because: "create-page must wire the dashboard to the BaseDashboardTemplate parent");
+		getResponse.Bundle.Should().NotBeNull(
+			because: "get-page must return the merged bundle for the created dashboard");
+		Dictionary<string, string?> persistedOptionalProperties = getResponse.Bundle.OptionalProperties
+			.OfType<JsonNode>()
+			.ToDictionary(node => node["key"]?.ToString() ?? string.Empty, node => node["value"]?.ToString());
+		persistedOptionalProperties.Should().ContainKey("DashboardsEntitySchemaName",
+			because: "the designer service must persist the seeded entity-schema link-back, not silently drop it");
+		persistedOptionalProperties["DashboardsEntitySchemaName"].Should().Be("Contact",
+			because: "the persisted entity-schema link-back value must match what create-page seeded");
+		persistedOptionalProperties.Should().ContainKey("DashboardsElementName",
+			because: "the designer service must persist the seeded dashboards-element link-back, not silently drop it");
+		persistedOptionalProperties["DashboardsElementName"].Should().Be("Dashboards",
+			because: "the persisted dashboards-element link-back value must match what create-page seeded");
 	}
 
 	[Category("McpE2E.Sandbox")]
