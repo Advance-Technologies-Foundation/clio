@@ -1,0 +1,47 @@
+fullnameOverride: clio-mcp-server
+
+replicaCount: 1
+
+image:
+  repository: docker-rnd.creatio.com/creatio-ai/clio-mcp-server
+  tag: latest
+  pullPolicy: IfNotPresent
+
+imagePullSecrets:
+  - name: docker-rnd-creatio
+
+service:
+  type: ClusterIP
+  port: 8005
+
+mcp:
+  port: 8005
+  path: /mcp
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+probes:
+  liveness:
+    tcpSocket:
+      port: 8005
+    initialDelaySeconds: 15
+    periodSeconds: 30
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readiness:
+    tcpSocket:
+      port: 8005
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
