@@ -72,6 +72,13 @@ public sealed class CompileCreatioTool(
 		int exitCode = -1;
 		lock (CommandExecutionLock)
 		{
+			// CompileCreatioTool builds its result from logger.LogMessages, which ConsoleLogger only
+			// populates while PreserveMessages is true. Set/restore it locally (like BaseTool,
+			// SchemaSyncTool, EntitySchemaTool, AddItemModelTool) so compilation output is captured
+			// regardless of transport: the stdio path sets the flag process-wide, the HTTP transport
+			// does not, so relying on the global flag returns empty output over HTTP.
+			bool previousPreserveMessages = logger.PreserveMessages;
+			logger.PreserveMessages = true;
 			try
 			{
 				exitCode = command.Execute(options);
@@ -86,6 +93,10 @@ public sealed class CompileCreatioTool(
 				CommandExecutionResult result = new(1, logMessages);
 				logger.ClearMessages();
 				return result;
+			}
+			finally
+			{
+				logger.PreserveMessages = previousPreserveMessages;
 			}
 		}
 	}
