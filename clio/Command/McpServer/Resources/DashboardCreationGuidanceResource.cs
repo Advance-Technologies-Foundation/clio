@@ -99,6 +99,8 @@ public sealed class DashboardCreationGuidanceResource {
 
 		       - `create-page` seeds `optionalProperties` at creation, so the dashboard is correctly linked in a
 		         single call.
+		       - On creation the dashboard is granted read access to `All Employees`, so every employee can see it
+		         by default.
 		       - Leave `entity-schema-name` (the create-page page-dependency argument) separate from
 		         `DashboardsEntitySchemaName` (a dashboard link-back property passed via `optional-properties`);
 		         they are different inputs.
