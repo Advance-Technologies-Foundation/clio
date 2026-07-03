@@ -749,7 +749,7 @@ public class BindingsModule {
 		services.AddTransient<SysSettingsManager>();
 	}
 
-	private IKubernetes CreateKubernetesClient() {
+	private static IKubernetes CreateKubernetesClient() {
 		try {
 			KubernetesClientConfiguration config = KubernetesClientConfiguration.BuildConfigFromConfigFile();
 			Uri.TryCreate(config.Host, UriKind.Absolute, out Uri uriResult);
