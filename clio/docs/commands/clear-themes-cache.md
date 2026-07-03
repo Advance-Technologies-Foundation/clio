@@ -55,7 +55,7 @@ clear the theme cache of the environment registered as myapp
 
 ## Notes
 
-- Call `clio get-guidance --name theming` for the theme workflow.
+- Call `get-guidance name=theming` for the theme workflow.
 
 ## Reporting Bugs
 

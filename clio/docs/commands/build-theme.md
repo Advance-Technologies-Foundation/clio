@@ -109,3 +109,5 @@ clio build-theme --primary "#004fd6" --css-class-name MyTheme --heading-font "In
 
 `build-theme` never mutates an environment. A too-old `--version` (older than the lowest
 supported version) and an unregistered `--environment-name` are reported as errors.
+
+- Call `get-guidance name=theming` for the theme workflow.

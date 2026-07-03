@@ -57,7 +57,7 @@ list the themes of the environment registered as myapp
 ## Notes
 
 - A theme deployed by a clio push appears here automatically; run [`clear-themes-cache`](clear-themes-cache.md) only if a theme changed on the environment outside a clio install is missing.
-- Call `clio get-guidance --name theming` for the theme workflow.
+- Call `get-guidance name=theming` for the theme workflow.
 
 ## Reporting Bugs
 

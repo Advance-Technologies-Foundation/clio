@@ -63,7 +63,7 @@ overwrite the theme reading the CSS from a file
 ## Notes
 
 - Find a theme's `id` with [`list-themes`](list-themes.md).
-- Call `clio get-guidance --name theming` for the theme workflow.
+- Call `get-guidance name=theming` for the theme workflow.
 
 ## Reporting Bugs
 

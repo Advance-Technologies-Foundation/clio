@@ -39,7 +39,7 @@ public sealed class BuildThemeTool(BuildThemeCommand command) {
 	/// <returns>A structured result carrying the built CSS (compute mode) or the written path (workspace-write mode), or a failure message.</returns>
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description("Build the artifacts of a Creatio theme from brand colours and fonts. " +
-		"Without workspaceDirectory+packageName: returns { success, css, descriptor, warnings?, error? } — pipe css into create-theme-by-environment's cssContent. " +
+		"Without workspaceDirectory+packageName: returns { success, css, descriptor, warnings?, error? } — pipe css into create-theme-by-environment's css-content. " +
 		"With workspaceDirectory+packageName (workspace/dev flow): writes theme.css + theme.json into <workspaceDirectory>/packages/<packageName>/Files/themes/<cssClassName>/ and returns { success, path, warnings?, error? } WITHOUT the css (avoids round-tripping the large CSS through the agent). " +
 		"Never mutates an environment. For the theme workflow, read get-guidance theming first.")]
 	[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",

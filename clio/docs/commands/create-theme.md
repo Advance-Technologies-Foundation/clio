@@ -67,7 +67,7 @@ create a theme reading the CSS from a file
 
 ## Notes
 
-- Call `clio get-guidance --name theming` for the theme workflow.
+- Call `get-guidance name=theming` for the theme workflow.
 - To make a theme the default for all users, set the `DefaultTheme` system setting to
   the theme id with [`set-syssetting`](set-syssetting.md).
 

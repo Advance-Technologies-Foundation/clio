@@ -51,7 +51,7 @@ delete the theme 'ocean-theme' from the environment registered as myapp
 ## Notes
 
 - Find a theme's `id` with [`list-themes`](list-themes.md).
-- Call `clio get-guidance --name theming` for the theme workflow.
+- Call `get-guidance name=theming` for the theme workflow.
 
 ## Reporting Bugs
 
