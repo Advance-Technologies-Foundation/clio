@@ -224,7 +224,7 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 		response.Article.Text.Should().Contain("There is no page for new or existing record",
 			because: "the related-list guide must warn that a header CreateRecordRequest Add button on a section-less detail entity throws this runtime error on click");
 		response.Article.Text.Should().Contain("inline add row IS the add affordance",
-			because: "the related-list guide must steer callers to inline grid add (its editable flags fetched from get-component-info crt.DataGrid) as the safe default add affordance");
+			because: "the related-list guide must still name the inline add affordance (Mechanism B) for the simple-line-item case, even though page-based add is the primary path");
 	}
 
 	[Test]
