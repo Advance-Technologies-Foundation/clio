@@ -1546,9 +1546,9 @@ public sealed class McpGuidanceResourceTests {
 		article.Text.Should().Contain("There is no page for new or existing record",
 			because: "the guide must warn that a header CreateRecordRequest Add button on a section-less detail entity throws this exact runtime error on click");
 		article.Text.Should().Contain("inline add row IS the add affordance",
-			because: "the guide must steer callers to inline grid add (its editable flags fetched from get-component-info crt.DataGrid) as the safe default add affordance for a related list");
+			because: "the guide must still name the inline add affordance (Mechanism B, its editable flags fetched from get-component-info crt.DataGrid) for the simple-line-item case, even though page-based add is the primary path");
 		article.Text.Should().Contain("entityPageName",
-			because: "the guide must offer the explicit-page escape hatch for a header Add button when inline add is not wanted");
+			because: "the guide must offer the explicit-page option for the page-based header Add button (Mechanism A)");
 	}
 
 	[Test]
