@@ -75,12 +75,13 @@ public sealed class ListUserTasksToolE2ETests {
 	private static async Task<ArrangeContext> ArrangeAsync(bool requireReachableEnvironment) {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		string environmentName = settings.Sandbox.EnvironmentName;
+		ProcessDesignerE2EGate.SkipIfFeatureDisabled(settings);
+		string? environmentName = settings.Sandbox.EnvironmentName;
 		if (requireReachableEnvironment) {
 			if (string.IsNullOrWhiteSpace(environmentName)) {
 				Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName (with the ProcessDesignService package) to run list-user-tasks MCP E2E.");
 			}
-			if (!await ClioCliCommandRunner.IsEnvironmentReachableAsync(settings, environmentName)) {
+			if (!await ClioCliCommandRunner.IsEnvironmentReachableAsync(settings, environmentName!)) {
 				Assert.Ignore($"list-user-tasks MCP E2E requires a reachable configured sandbox environment. '{environmentName}' was not reachable.");
 			}
 		}
@@ -92,7 +93,7 @@ public sealed class ListUserTasksToolE2ETests {
 	private sealed record ArrangeContext(
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource,
-		string EnvironmentName) : IAsyncDisposable {
+		string? EnvironmentName) : IAsyncDisposable {
 		public async ValueTask DisposeAsync() {
 			await Session.DisposeAsync();
 			CancellationTokenSource.Dispose();

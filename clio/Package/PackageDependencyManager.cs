@@ -87,6 +87,40 @@ internal sealed class PackageDependencyManager : BasePackageOperation, IPackageD
 			.ToList();
 	}
 
+	/// <inheritdoc cref="IPackageDependencyManager.RemoveDependencies"/>
+	public IReadOnlyList<string> RemoveDependencies(string packageName,
+		IEnumerable<string> dependencyNames) {
+		packageName.CheckArgumentNullOrWhiteSpace(nameof(packageName));
+		dependencyNames.CheckArgumentNull(nameof(dependencyNames));
+
+		HashSet<string> namesToRemove = dependencyNames
+			.Where(name => !string.IsNullOrWhiteSpace(name))
+			.Select(name => name.Trim())
+			.ToHashSet(StringComparer.OrdinalIgnoreCase);
+		if (namesToRemove.Count == 0) {
+			throw new ArgumentException("At least one dependency must be specified.", nameof(dependencyNames));
+		}
+
+		List<PackageInfo> installedPackages = _applicationPackageListProvider.GetPackages("{}").ToList();
+		PackageInfo targetPackage = FindPackage(installedPackages, packageName)
+			?? throw new InvalidOperationException($"Package with name \"{packageName}\" not found in the environment.");
+
+		WorkspacePackageDto package = LoadPackageProperties(targetPackage.Descriptor.UId, packageName);
+		package.DependsOnPackages ??= [];
+
+		// Match by name only (case-insensitive): the version is irrelevant for wiring, and removing an absent
+		// dependency is a no-op. Only persist when something actually changed so a no-op stays cheap.
+		int removedCount = package.DependsOnPackages
+			.RemoveAll(existing => existing.Name is not null && namesToRemove.Contains(existing.Name));
+		if (removedCount > 0) {
+			SavePackageProperties(package);
+		}
+
+		return package.DependsOnPackages
+			.Select(dependency => dependency.Name ?? dependency.UId.ToString())
+			.ToList();
+	}
+
 	#endregion
 
 	#region Methods: Private
