@@ -156,7 +156,9 @@ public sealed class ProcessModelingGuidanceResource {
 			== Parameters / mapping / formulas ==
 			- Process parameters (`parameters[]`): { name, type (Text/Long text/Integer/Float/Money/Boolean/Date/Date-time/Time/Guid/Lookup),
 			  direction (In/Out/Variable/Internal), caption, description, or referenceSchema = an object name (e.g. City) to make
-			  it a Lookup to that object }, and an optional value (a constant default). A user-task element's own parameters come from the task. The same shape is
+			  it a Lookup to that object }, and an optional value (a constant default; NOT valid for Date / Date-time /
+			  Time / Lookup — those defaults are formula macros, see the date/lookup macro rule below). A user-task
+			  element's own parameters come from the task. The same shape is
 			  used by modify-business-process `addParameter`. Supported types: Text, Long text, Integer, Float, Money,
 			  Boolean, Date, Date-time, Time, Guid, and Lookup — other types (composite / entity / file / ...) are not
 			  supported yet.
