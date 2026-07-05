@@ -17,7 +17,7 @@ namespace Clio.Tests.Command.McpServer;
 public sealed class SkillManagementToolTests {
 	[Test]
 	[Category("Unit")]
-	[Description("Advertises stable MCP tool names for install-adac, update-adac, and delete-adac so callers and tests share the same identifiers.")]
+	[Description("Advertises stable MCP tool names for install-toolkit, update-toolkit, and delete-toolkit so callers and tests share the same identifiers.")]
 	public void SkillManagementTools_ShouldAdvertiseStableToolNames() {
 		// Arrange & Act
 		string installToolName = InstallSkillsTool.ToolName;
@@ -25,14 +25,14 @@ public sealed class SkillManagementToolTests {
 		string deleteToolName = DeleteSkillTool.ToolName;
 
 		// Assert
-		installToolName.Should().Be("install-adac", because: "the install MCP tool name must remain stable");
-		updateToolName.Should().Be("update-adac", because: "the update MCP tool name must remain stable");
-		deleteToolName.Should().Be("delete-adac", because: "the delete MCP tool name must remain stable");
+		installToolName.Should().Be("install-toolkit", because: "the install MCP tool name must remain stable");
+		updateToolName.Should().Be("update-toolkit", because: "the update MCP tool name must remain stable");
+		deleteToolName.Should().Be("delete-toolkit", because: "the delete MCP tool name must remain stable");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Maps install-adac MCP arguments (target, repo) into install-adac command options.")]
+	[Description("Maps install-toolkit MCP arguments (target, repo) into install-toolkit command options.")]
 	public void InstallSkills_ShouldMapTargetAndRepoArguments() {
 		// Arrange
 		FakeInstallSkillsCommand command = new();
@@ -50,7 +50,7 @@ public sealed class SkillManagementToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Maps update-adac MCP arguments (target, repo) into update-adac command options.")]
+	[Description("Maps update-toolkit MCP arguments (target, repo) into update-toolkit command options.")]
 	public void UpdateSkill_ShouldMapTargetAndRepoArguments() {
 		// Arrange
 		FakeUpdateSkillCommand command = new();
@@ -67,7 +67,7 @@ public sealed class SkillManagementToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Maps delete-adac MCP argument (target) into delete-adac command options.")]
+	[Description("Maps delete-toolkit MCP argument (target) into delete-toolkit command options.")]
 	public void DeleteSkill_ShouldMapTargetArgument() {
 		// Arrange
 		FakeDeleteSkillCommand command = new();

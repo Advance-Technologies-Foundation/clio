@@ -11,13 +11,15 @@ using ModelContextProtocol.Protocol;
 namespace Clio.Mcp.E2E;
 
 [TestFixture]
+[Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature(SettingsHealthTool.ToolName)]
 [NonParallelizable]
 public sealed class SettingsHealthToolE2ETests {
 	[Test]
+	[Description("Reports a detected (not auto-repaired) bootstrap status through MCP when ActiveEnvironmentKey is stale, because clio deliberately never auto-selects the active environment (see SettingsBootstrapServiceTests).")]
 	[AllureTag(SettingsHealthTool.ToolName)]
-	[AllureName("check-settings-health reports repaired bootstrap status when ActiveEnvironmentKey is stale")]
+	[AllureName("check-settings-health reports detected bootstrap issue when ActiveEnvironmentKey is stale")]
 	public async Task SettingsHealth_Should_Report_Repaired_Status_When_Active_Environment_Key_Is_Invalid() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -45,16 +47,18 @@ public sealed class SettingsHealthToolE2ETests {
 			because: "check-settings-health should return a normal MCP tool result envelope");
 		result.SettingsFilePath.Should().Be(settingsOverride.AppSettingsPath,
 			because: "the MCP diagnostics tool should report the same appsettings.json path that the E2E fixture overwrote");
-		result.Status.Should().Be("repaired",
-			because: "the stale ActiveEnvironmentKey should be repaired during MCP bootstrap");
+		result.Status.Should().Be("issues-detected",
+			because: "clio deliberately reports a stale ActiveEnvironmentKey as a configuration issue and never auto-selects the active environment (see SettingsBootstrapServiceTests)");
 		result.ActiveEnvironmentKey.Should().Be("wrong-dev",
-			because: "the tool should expose the original configured active environment key");
-		result.ResolvedActiveEnvironmentKey.Should().Be("dev",
-			because: "bootstrap should deterministically select the first configured environment");
-		result.RepairsApplied.Should().Contain(repair => repair.Code == "set-active-environment",
-			because: "the MCP diagnostics payload should explain the applied active-environment repair");
-		result.CanExecuteEnvTools.Should().BeTrue(
-			because: "a repaired bootstrap state should allow named-environment tool execution");
+			because: "the tool should expose the original configured active environment key so the user sees which key is wrong");
+		result.ResolvedActiveEnvironmentKey.Should().BeNull(
+			because: "bootstrap must not auto-select a fallback environment — only the user may set the active environment");
+		result.Issues.Should().Contain(issue => issue.Code == "invalid-active-environment",
+			because: "the MCP diagnostics payload should surface the stale active-environment issue so the caller can fix it");
+		result.RepairsApplied.Should().NotContain(repair => repair.Code == "set-active-environment",
+			because: "no automatic active-environment repair is applied — the user must explicitly call set-active-environment");
+		result.CanExecuteEnvTools.Should().BeFalse(
+			because: "named-environment tool execution requires a valid resolved active environment, which a stale key does not provide");
 	}
 
 	private static async Task<ArrangeContext> ArrangeAsync(

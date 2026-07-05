@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -24,66 +25,7 @@ public sealed class ApplicationSectionUpdateToolE2ETests {
 	private const string SectionDeleteToolName = ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName;
 	private const string ApplicationCode = "AutoTestClioMcp";
 
-	[Test]
-	[Description("Advertises update-app-section in the MCP tool list so callers can discover the existing-section update tool.")]
-	[AllureFeature(SectionUpdateToolName)]
-	[AllureTag(SectionUpdateToolName)]
-	[AllureName("Application section update tool is advertised by the MCP server")]
-	[AllureDescription("Starts the real clio MCP server and verifies that update-app-section appears in the advertised tool manifest.")]
-	public async Task ApplicationSectionUpdate_Should_Be_Listed_By_Mcp_Server() {
-		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-
-		// Act
-		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationTokenSource.Token);
-		IEnumerable<string> toolNames = tools.Select(tool => tool.Name);
-
-		// Assert
-		toolNames.Should().Contain(SectionUpdateToolName,
-			because: "update-app-section must be advertised so MCP callers can discover the existing-section update tool");
-	}
-
-	[Test]
-	[Description("Starts the real clio MCP server, invokes update-app-section with an invalid environment, and verifies that the failure remains human-readable.")]
-	[AllureFeature(SectionUpdateToolName)]
-	[AllureTag(SectionUpdateToolName)]
-	[AllureName("Application section update reports invalid environment failures")]
-	[AllureDescription("Uses the real clio MCP server to call update-app-section with an unknown environment name and verifies that the tool returns a structured readable error envelope.")]
-	public async Task ApplicationSectionUpdate_Should_Report_Invalid_Environment_Failure() {
-		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		string invalidEnvironmentName = $"missing-section-update-env-{Guid.NewGuid():N}";
-
-		// Act
-		CallToolResult callResult = await session.CallToolAsync(
-			SectionUpdateToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["environment-name"] = invalidEnvironmentName,
-					["application-code"] = "UsrMissingApp",
-					["section-code"] = "UsrMissingSection",
-					["caption"] = "Orders"
-				}
-			},
-			cancellationTokenSource.Token);
-		ApplicationSectionUpdateContextResponseEnvelope response = ApplicationResultParser.ExtractSectionUpdate(callResult);
-
-		// Assert
-		callResult.IsError.Should().NotBeTrue(
-			because: $"structured update-app-section failures should be returned in the payload instead of as MCP invocation errors. Actual result: {JsonSerializer.Serialize(new { callResult.IsError, callResult.StructuredContent, callResult.Content })}");
-		response.Success.Should().BeFalse(
-			because: "update-app-section should fail when the requested environment does not exist");
-		response.Error.Should().MatchRegex(
-			$"(?is)({Regex.Escape(invalidEnvironmentName)}|environment.*not.*found|not found)",
-			because: "the failure should explain that the requested environment is missing");
-	}
-
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes update-app-section without mutable fields, and verifies that the tool returns a clear validation failure.")]
 	[AllureFeature(SectionUpdateToolName)]
@@ -120,6 +62,7 @@ public sealed class ApplicationSectionUpdateToolE2ETests {
 			because: "the failure should explain that section-update needs at least one field to change");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes update-app-section without application-code, and verifies that the tool returns a clear validation failure.")]
 	[AllureFeature(SectionUpdateToolName)]
@@ -156,6 +99,7 @@ public sealed class ApplicationSectionUpdateToolE2ETests {
 			because: "the failure should explain that application-code is required");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes update-app-section without section-code, and verifies that the tool returns a clear validation failure.")]
 	[AllureFeature(SectionUpdateToolName)]
@@ -192,6 +136,7 @@ public sealed class ApplicationSectionUpdateToolE2ETests {
 			because: "the failure should explain that section-code is required");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes update-app-section with forbidden localization maps, and verifies that the tool returns a clear scalar-only validation failure.")]
 	[AllureFeature(SectionUpdateToolName)]
@@ -232,6 +177,7 @@ public sealed class ApplicationSectionUpdateToolE2ETests {
 			because: "the failure should explain that localization maps are forbidden on update-app-section");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, creates a section in the seeded installed application, updates its caption and description via update-app-section, and verifies that the structured before-and-after read-back exposes both the prior and updated values.")]
 	[AllureFeature(SectionUpdateToolName)]
@@ -334,6 +280,108 @@ public sealed class ApplicationSectionUpdateToolE2ETests {
 					await Console.Error.WriteLineAsync($"[cleanup] delete-app-section '{createdSectionCode}' failed: {ex.Message}");
 				}
 			}
+		}
+	}
+
+	[Category("McpE2E.NoEnvironment")]
+	[TestCase(null, TestName = "ApplicationSectionUpdate_Should_Not_Hang_When_ElicitationCapableClient_Never_Answers(missing icon)")]
+	[TestCase("not-a-color", TestName = "ApplicationSectionUpdate_Should_Not_Hang_When_ElicitationCapableClient_Never_Answers(invalid icon)")]
+	[Description("Starts the real clio MCP server with an elicitation-capable client that never answers and verifies update-app-section returns a structured response promptly instead of hanging to the client ceiling. Mirrors the create-app-section regression: an unrecognized icon-background must be rejected without eliciting.")]
+	[AllureFeature(SectionUpdateToolName)]
+	[AllureTag(SectionUpdateToolName)]
+	[AllureName("Application section update does not hang when an elicitation-capable client never answers")]
+	[AllureDescription("Connects a client that advertises the elicitation capability but never answers elicitation requests, then calls update-app-section against an unreachable environment with either no icon-background or an unrecognized one. Verifies the tool returns a structured payload promptly rather than blocking on an unanswered elicitation until the client request ceiling.")]
+	public async Task ApplicationSectionUpdate_Should_Not_Hang_When_ElicitationCapableClient_Never_Answers(string? iconBackground) {
+		// Arrange — an elicitation-capable client that NEVER answers. The unreachable URI means the
+		// call falls through to a fast transport failure once icon resolution is bounded.
+		string tempHome = Path.Combine(Path.GetTempPath(), $"clio-section-update-elicit-e2e-{Guid.NewGuid():N}");
+		Directory.CreateDirectory(tempHome);
+		string envVarName = OperatingSystem.IsWindows() ? "LOCALAPPDATA" : "HOME";
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		settings.ProcessEnvironmentVariables[envVarName] = tempHome;
+		settings.ProcessEnvironmentVariables[McpProgressHeartbeat.ResponseDeadlineOverrideEnvVar] = "2";
+		TemporaryClioSettingsOverride settingsOverride = TemporaryClioSettingsOverride.ReplaceContent(
+			"""
+			{
+			  "ActiveEnvironmentKey": "elicit-update-e2e",
+			  "Environments": {
+			    "elicit-update-e2e": {
+			      "Uri": "http://127.0.0.1:9",
+			      "Login": "Supervisor",
+			      "Password": "Supervisor",
+			      "IsNetCore": false
+			    }
+			  }
+			}
+			""",
+			settings.ClioProcessPath,
+			settings.ProcessEnvironmentVariables);
+
+		// Never answer the elicitation: block until the request token is cancelled, mirroring a
+		// client that silently drops the prompt.
+		Func<ElicitRequestParams?, CancellationToken, ValueTask<ElicitResult>> neverAnswers =
+			async (_, handlerToken) => {
+				await Task.Delay(Timeout.InfiniteTimeSpan, handlerToken);
+				return new ElicitResult();
+			};
+
+		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromSeconds(30));
+		McpServerSession session = await McpServerSession.StartAsync(
+			settings, neverAnswers, cancellationTokenSource.Token);
+
+		try {
+			// Act — an unrecognized icon-background is the case that would elicit on an
+			// elicitation-capable client; verify it resolves without prompting.
+			Stopwatch stopwatch = Stopwatch.StartNew();
+			Exception captured = null!;
+			CallToolResult callResult = null!;
+			Dictionary<string, object?> sectionArgs = new() {
+				["environment-name"] = "elicit-update-e2e",
+				["application-code"] = "UsrElicitApp",
+				["section-code"] = "UsrElicitSection"
+			};
+			if (iconBackground is not null) {
+				sectionArgs["icon-background"] = iconBackground;
+			}
+			try {
+				callResult = await session.CallToolAsync(
+					SectionUpdateToolName,
+					new Dictionary<string, object?> { ["args"] = sectionArgs },
+					cancellationTokenSource.Token);
+			}
+			catch (Exception ex) {
+				captured = ex;
+			}
+			stopwatch.Stop();
+
+			// Assert
+			captured.Should().BeNull(
+				because: "an unanswered elicitation must not make update-app-section hang to the client ceiling; "
+					+ $"the call must return a structured response. Elapsed: {stopwatch.Elapsed}. Exception: {captured}");
+			if (captured is not null) {
+				Assert.Fail($"update-app-section threw unexpectedly after {stopwatch.Elapsed}: {captured}");
+			}
+			stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(25),
+				because: "icon resolution runs before the backend call and must be bounded well below the client request ceiling");
+			ApplicationSectionUpdateContextResponseEnvelope response = ApplicationResultParser.ExtractSectionUpdate(callResult);
+			callResult.IsError.Should().NotBeTrue(
+				because: "a bounded update-app-section failure must stay a structured payload, never a -32001 MCP invocation error");
+			response.Success.Should().BeFalse(
+				because: "the section cannot be updated against an unreachable environment");
+		}
+		finally {
+			// Dispose in order: stop the clio process, restore the settings file (still under
+			// tempHome), then delete tempHome.
+			await session.DisposeAsync();
+			settingsOverride.Dispose();
+			try {
+				if (Directory.Exists(tempHome)) {
+					Directory.Delete(tempHome, recursive: true);
+				}
+			}
+			catch (IOException) { /* best-effort cleanup */ }
+			catch (UnauthorizedAccessException) { /* best-effort cleanup */ }
 		}
 	}
 

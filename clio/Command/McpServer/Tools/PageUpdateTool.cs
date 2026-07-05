@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Acornima.Ast;
 using Clio.Common;
+using Clio.UserEnvironment;
 using McpServerLib = ModelContextProtocol.Server;
 using ModelContextProtocol.Server;
 
@@ -21,13 +22,18 @@ public sealed class PageUpdateTool(
 	IMobileComponentInfoCatalog mobileComponentCatalog,
 	IComponentInfoCatalog webComponentCatalog,
 	IPageBodySamplingService samplingService,
-	IPageBaselineGuard pageBaselineGuard)
+	IPageBaselineGuard pageBaselineGuard,
+	IPlatformVersionResolverFactory? resolverFactory = null,
+	ISettingsRepository? settingsRepository = null)
 	: BaseTool<PageUpdateOptions>(command, logger, commandResolver) {
 
 	private readonly IToolCommandResolver _commandResolver = commandResolver;
 	private readonly IPageBodySamplingService _samplingService = samplingService;
 
 	internal const string ToolName = "update-page";
+
+	// Prefix shared by every offline validation-failure response so the wording stays consistent.
+	private const string ValidationFailedPrefix = "Validation failed: ";
 
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[Description("Update Freedom UI page schema body. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows. " +
@@ -108,28 +114,10 @@ public sealed class PageUpdateTool(
 		}
 		PageUpdateResponse syntaxFailure = TryValidateBodySyntax(options, out Script parsedAst);
 		if (syntaxFailure != null) {
-			// A whole-body JS syntax error is frequently a side effect of a more specific,
-			// regex-detectable marker/content problem (broken JSON in a SCHEMA_* marker, a
-			// converter/validator/handler declared with the wrong key shape, etc.). Prefer that
-			// specific, actionable error over the generic "JavaScript syntax error at line X,
-			// column Y" message — but only when the body is still a recognizable page (markers
-			// present and paired). A genuine JS-only syntax error (clean markers + content) leaves
-			// the content chain with no error, so the ENG-89796 fail-fast-on-syntax wording is
-			// preserved. Only the offline content chain (ValidateBody) runs here — the same single
-			// call PageSyncTool.ResolvePrePassSyntaxFailureMessage makes — so a body that cannot
-			// parse triggers no network I/O even in dry-run; the run-process signature check
-			// (which resolves process signatures over HTTP) deliberately stays on the success
-			// path and re-runs once the operator fixes the syntax and resubmits. The structural
-			// run-process check (processName required) already runs inside ValidateBody ->
-			// ValidateWebPageBody.
-			if (SchemaValidationService.ValidateMarkerIntegrity(options.Body).IsValid) {
-				(PageUpdateResponse contentFailure, _) = ValidateBody(options);
-				if (contentFailure != null)
-					return (contentFailure, null, null, null);
-			}
-			return (syntaxFailure, null, null, null);
+			return (ResolveSyntaxFailure(options, syntaxFailure), null, null, null);
 		}
-		(PageUpdateResponse validationFailure, IReadOnlyList<string> validationWarnings) = ValidateBody(options);
+		string? requestedVersion = await ResolvePlatformVersionAsync(options, cancellationToken).ConfigureAwait(false);
+		(PageUpdateResponse validationFailure, IReadOnlyList<string> validationWarnings) = ValidateBody(options, requestedVersion);
 		if (validationFailure != null)
 			return (validationFailure, null, null, null);
 		(PageUpdateResponse runProcessFailure, IReadOnlyList<string> runProcessWarnings) =
@@ -167,6 +155,83 @@ public sealed class PageUpdateTool(
 			Success = false,
 			Error = PageBodySyntaxValidator.FormatError(syntaxResult)
 		};
+	}
+
+	// A whole-body JavaScript syntax error is frequently a SIDE EFFECT of a more specific,
+	// offline-detectable problem the operator can actually act on: a malformed `resources` /
+	// `optional-properties` argument payload, a run-process button missing its required
+	// `processName`, a broken JSON SCHEMA_* marker / wrong-shaped converter-validator-handler, or
+	// simply an unregistered environment name. The generic "JavaScript syntax error at line X,
+	// column Y" message names none of those. Prefer the specific, actionable error when one of the
+	// OFFLINE validators pinpoints it — preserving the ENG-89796 fail-fast-on-pure-syntax wording
+	// when nothing more specific is found (clean payloads + a genuine JS-only typo).
+	//
+	// ENG-92049 constraint (honored here): only OFFLINE validators run on this path. No HTTP
+	// signature resolution (ValidateRunProcessButtons resolves process signatures over the wire and
+	// deliberately stays on the success path); the run-process STRUCTURAL check below is a pure
+	// regex over the body. The environment check resolves the command, which is offline up to the
+	// EnvironmentResolutionException throw (the unknown-environment / missing-settings guard runs
+	// before any network call); the resolved command is discarded, so a body that cannot parse
+	// triggers no Creatio I/O even in dry-run.
+	internal PageUpdateResponse ResolveSyntaxFailure(PageUpdateOptions options, PageUpdateResponse syntaxFailure) {
+		// 1. Argument-payload validation — pure offline, independent of body parsing or markers.
+		string argumentError = PageUpdateCommand.ValidateArgumentPayloads(options.Resources, options.OptionalProperties);
+		if (argumentError != null) {
+			return new PageUpdateResponse { Success = false, Error = argumentError };
+		}
+		// 2. Run-process STRUCTURAL check (processName / processRunType required) — pure offline
+		//    regex. Runs regardless of marker integrity so a run-process button that omits
+		//    processName is surfaced even when the body is otherwise not a recognizable page.
+		SchemaValidationResult runProcessStructure =
+			SchemaValidationService.ValidateRunProcessButtonStructure(options.Body);
+		if (!runProcessStructure.IsValid) {
+			return new PageUpdateResponse {
+				Success = false,
+				Error = ValidationFailedPrefix + string.Join("; ", runProcessStructure.Errors)
+			};
+		}
+		// 3. Offline content chain — only when the body is still a recognizable page (markers present
+		//    and paired). If marker integrity fails the body is not a usable page and the generic JS
+		//    syntax error is the more honest signal (ENG-89796).
+		if (SchemaValidationService.ValidateMarkerIntegrity(options.Body).IsValid) {
+			// Offline syntax-failure path: chart validation is version-scoped, but no environment
+			// probe runs here, so validate against the 'latest' superset (requestedVersion: null).
+			(PageUpdateResponse contentFailure, _) = ValidateBody(options, requestedVersion: null);
+			if (contentFailure != null) {
+				return contentFailure;
+			}
+		}
+		// 4. Environment resolution — offline up to the unknown-environment guard. Surface a missing
+		//    environment over the generic syntax error so the operator fixes the right thing first.
+		PageUpdateResponse environmentFailure = TryResolveEnvironmentFailure(options);
+		if (environmentFailure != null) {
+			return environmentFailure;
+		}
+		// 5. Genuine JS-only syntax error — nothing more specific was found.
+		return syntaxFailure;
+	}
+
+	// Attempts to resolve the update-page command purely to detect an unknown-environment /
+	// broken-settings argument error WITHOUT making any network call (the resolver's environment
+	// guard throws before any HTTP). Returns a structured failure on EnvironmentResolutionException,
+	// or null when the environment resolves (or no resolver / environment was supplied). Any other
+	// exception is swallowed so this offline probe never masks the original syntax error.
+	private PageUpdateResponse TryResolveEnvironmentFailure(PageUpdateOptions options) {
+		bool hasEnvironment = !string.IsNullOrWhiteSpace(options.Environment)
+			|| !string.IsNullOrWhiteSpace(options.Uri);
+		if (!hasEnvironment) {
+			return null;
+		}
+		try {
+			ResolveCommand<PageUpdateCommand>(options);
+			return null;
+		} catch (EnvironmentResolutionException ex) {
+			return new PageUpdateResponse { Success = false, Error = ex.Message };
+		} catch (Exception) {
+			// A DI/bootstrap failure here is unexpected; do not let it mask the syntax error the
+			// caller actually needs to fix. Fall back to the generic syntax message.
+			return null;
+		}
 	}
 
 	// AST lint pass runs on the success path of the regex validators so the
@@ -207,7 +272,41 @@ public sealed class PageUpdateTool(
 		return combined;
 	}
 
-	private (PageUpdateResponse Failure, IReadOnlyList<string> Warnings) ValidateBody(PageUpdateOptions options) {
+	/// <summary>
+	/// Resolves the target environment's platform version so the chart-widget validation catalog is scoped
+	/// to the component set the environment actually ships (mirroring <c>get-component-info</c>'s resolution).
+	/// Returns <see langword="null"/> for mobile bodies (chart validation is web-only — no probe needed) and
+	/// fail-soft on any resolution failure or absent resolver dependencies; <see cref="ChartWidgetValidation"/>
+	/// maps <see langword="null"/> to the safe <c>latest</c> superset so version resolution never blocks a save.
+	/// </summary>
+	private async Task<string?> ResolvePlatformVersionAsync(PageUpdateOptions options, CancellationToken cancellationToken) {
+		if (PageSchemaTypeExtensions.FromBody(options.Body) == PageSchemaType.Mobile
+			|| resolverFactory is null || settingsRepository is null) {
+			return null;
+		}
+		try {
+			EnvironmentSettings settings = settingsRepository.GetEnvironment(new EnvironmentOptions {
+				Environment = options.Environment,
+				Uri = options.Uri,
+				Login = options.Login,
+				Password = options.Password
+			});
+			if (settings is null) {
+				return null;
+			}
+			PlatformVersionResolution resolution = await resolverFactory.Create(settings)
+				.ResolveAsync(cancellationToken).ConfigureAwait(false);
+			return resolution?.ResolvedVersion;
+		} catch (OperationCanceledException) {
+			throw;
+		} catch (Exception) {
+			// Fail-soft: a bad/unreachable environment must not break a save; the catalog stays on 'latest'.
+			return null;
+		}
+	}
+
+	private (PageUpdateResponse Failure, IReadOnlyList<string> Warnings) ValidateBody(
+		PageUpdateOptions options, string? requestedVersion) {
 		if (PageSchemaTypeExtensions.FromBody(options.Body) == PageSchemaType.Mobile) {
 			// Mobile body validation requires async catalogs (CDN+cache) AND the
 			// parsed-resources lookup master added in ENG-89649. PageUpdateTool runs
@@ -221,7 +320,7 @@ public sealed class PageUpdateTool(
 			if (!mobileResult.ContentOk) {
 				return (new PageUpdateResponse {
 					Success = false,
-					Error = "Validation failed: " + string.Join("; ", mobileResult.Errors ?? [])
+					Error = ValidationFailedPrefix + string.Join("; ", mobileResult.Errors ?? [])
 				}, null);
 			}
 			// The web path runs this inside ValidateWebPageBody; mobile validation does not, so run the
@@ -232,7 +331,7 @@ public sealed class PageUpdateTool(
 			if (!mobileRunProcess.IsValid) {
 				return (new PageUpdateResponse {
 					Success = false,
-					Error = "Validation failed: " + string.Join("; ", mobileRunProcess.Errors)
+					Error = ValidationFailedPrefix + string.Join("; ", mobileRunProcess.Errors)
 				}, null);
 			}
 			return (null, mobileResult.Warnings);
@@ -245,6 +344,20 @@ public sealed class PageUpdateTool(
 		(string bodyError, IReadOnlyList<string> webWarnings) = ValidateWebPageBody(options.Body, explicitResources);
 		if (bodyError != null) {
 			return (new PageUpdateResponse { Success = false, Error = bodyError }, null);
+		}
+		// Registry-driven chart-widget validation needs the async, version-scoped component catalog.
+		// Sync-over-async is deadlock-free here under the McpToolExecutionLock (no SynchronizationContext),
+		// the same pattern the mobile branch above uses. Fail-open inside when the registry is unavailable.
+		// requestedVersion scopes the catalog to the target environment's resolved platform version
+		// (probed the same way get-component-info resolves it); null validates against 'latest' (fail-soft).
+		SchemaValidationResult chartResult = ChartWidgetValidation
+			.ValidateAsync(options.Body, webComponentCatalog, requestedVersion, CancellationToken.None)
+			.GetAwaiter().GetResult();
+		if (!chartResult.IsValid) {
+			return (new PageUpdateResponse {
+				Success = false,
+				Error = "Validation failed: " + string.Join("; ", chartResult.Errors)
+			}, null);
 		}
 		return (null, webWarnings);
 	}
@@ -436,7 +549,7 @@ public sealed class PageUpdateTool(
 		var warnings = new List<string>();
 		warnings.AddRange(SchemaValidationService.ValidateSchemaDepsCompleteness(body).Warnings);
 		warnings.AddRange(SchemaValidationService.ValidateContextAccessAwait(body).Warnings);
-		string error = errors.Count > 0 ? "Validation failed: " + string.Join("; ", errors) : null;
+		string error = errors.Count > 0 ? ValidationFailedPrefix + string.Join("; ", errors) : null;
 		return (error, warnings.Count > 0 ? warnings : null);
 	}
 

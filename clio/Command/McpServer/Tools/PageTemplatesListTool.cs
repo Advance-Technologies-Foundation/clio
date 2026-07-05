@@ -29,6 +29,14 @@ public sealed class PageTemplatesListTool(
 			Password = args.Password
 		};
 		return ExecuteWithCleanLog(() => {
+			// Validate the schema-type filter (a pure-input check) BEFORE resolving the environment so a
+			// bad schema-type is reported as a schema-type error instead of being masked by an
+			// environment-resolution failure (ENG-91825 env-validation order).
+			if (!string.IsNullOrWhiteSpace(options.SchemaType) &&
+				!PageTemplatesListCommand.TryParseSchemaType(options.SchemaType, out _, out string schemaTypeError)) {
+				return new PageTemplateListResponse { Success = false, Error = schemaTypeError };
+			}
+
 			PageTemplatesListCommand resolvedCommand;
 			try {
 				resolvedCommand = ResolveCommand<PageTemplatesListCommand>(options);

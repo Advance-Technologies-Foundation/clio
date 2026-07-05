@@ -11,9 +11,11 @@ using System.Text.Json;
 namespace Clio.Mcp.E2E;
 
 [TestFixture]
+[Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("restore-db")]
-public sealed class RestoreDbToolE2ETests {
+[Parallelizable(ParallelScope.Self)]
+public sealed class RestoreDbToolE2ETests : McpContractFixtureBase {
 	[Test]
 	[Description("Starts the real clio MCP server, discovers the restore-db tools, and verifies that all three restore entrypoints are advertised as destructive operations.")]
 	[AllureTag(RestoreDbTool.RestoreDbByEnvironmentToolName)]
@@ -23,12 +25,10 @@ public sealed class RestoreDbToolE2ETests {
 	[AllureDescription("Uses the real clio MCP server tool discovery payload to verify that the environment, credentials, and local-server restore-db tools are all discoverable and marked destructive.")]
 	public async Task RestoreDb_Should_Advertise_All_Tool_Variants() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		await using var arrangeContext = Arrange();
 
 		// Act
-		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationTokenSource.Token);
+		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
 		McpClientTool environmentTool = tools.Single(tool => tool.Name == RestoreDbTool.RestoreDbByEnvironmentToolName);
 		McpClientTool credentialsTool = tools.Single(tool => tool.Name == RestoreDbTool.RestoreDbByCredentialsToolName);
 		McpClientTool localServerTool = tools.Single(tool => tool.Name == RestoreDbTool.RestoreDbToLocalServerToolName);
@@ -49,19 +49,22 @@ public sealed class RestoreDbToolE2ETests {
 	}
 
 	[Test]
+	// NoEnvironment tier: the missing-backup/missing-server inputs fail validation before any
+	// Kubernetes/DB call, so the tool returns a structured failure with a log-file artifact env-free.
+	// It was previously ignored as "requires reachable Kubernetes/DB infrastructure", but the real
+	// blocker was the no-Kubernetes fallback IKubernetes client throwing from Dispose during
+	// per-request DI-scope teardown (opaque InternalError) — fixed under ENG-91830.
 	[Description("Starts the real clio MCP server, invokes restore-db-to-local-server with invalid inputs, and verifies that the response still includes a database-operation log artifact path.")]
 	[AllureTag(RestoreDbTool.RestoreDbToLocalServerToolName)]
 	[AllureName("Restore-db failures still surface log-file-path")]
 	[AllureDescription("Uses the real clio MCP server to call restore-db-to-local-server with a missing backup path and verifies that the failure remains human-readable while still returning a temp database-operation log artifact path.")]
 	public async Task RestoreDb_Should_Return_Log_File_Path_On_Failure() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		await using var arrangeContext = Arrange();
 		string missingBackupPath = Path.Combine(Path.GetTempPath(), $"missing-restore-{Guid.NewGuid():N}.backup");
 
 		// Act
-		var callResult = await session.CallToolAsync(
+		var callResult = await arrangeContext.Session.CallToolAsync(
 			RestoreDbTool.RestoreDbToLocalServerToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
@@ -70,7 +73,7 @@ public sealed class RestoreDbToolE2ETests {
 					["dbName"] = $"db_{Guid.NewGuid():N}"
 				}
 			},
-			cancellationTokenSource.Token);
+			arrangeContext.CancellationTokenSource.Token);
 		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
 		string combinedOutput = string.Join(
 			Environment.NewLine,

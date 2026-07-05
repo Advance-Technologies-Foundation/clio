@@ -70,6 +70,7 @@ public class Link4RepoCommandUnlockedTests : BaseCommandTests<Link4RepoOptions> 
 
 	[TearDown]
 	public override void TearDown() {
+		_logger?.Dispose();
 		base.TearDown();
 	}
 

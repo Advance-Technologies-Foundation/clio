@@ -17,10 +17,11 @@ namespace Clio.Mcp.E2E;
 /// discovery, safety metadata, the approved argument schemas, and secret-handling guidance.
 /// </summary>
 [TestFixture]
+[Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("deploy-identity")]
-[NonParallelizable]
-public sealed class OAuthConfigurationToolsE2ETests
+[Parallelizable(ParallelScope.Self)]
+public sealed class OAuthConfigurationToolsE2ETests : McpContractFixtureBase
 {
 	private static readonly string[] ExpectedToolNames = [
 		GetIdentityServiceConfigTool.GetIdentityServiceConfigToolName,
@@ -38,13 +39,10 @@ public sealed class OAuthConfigurationToolsE2ETests
 	public async Task OAuthConfigTools_Should_Be_Advertised_When_FeatureEnabled()
 	{
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ProcessEnvironmentVariables["CLIO_HOME"] = CreateClioHomeWithFeatureEnabled();
-		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		await using var arrangeContext = Arrange();
 
 		// Act
-		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationTokenSource.Token);
+		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
 
 		// Assert
 		tools.Select(tool => tool.Name).Should().Contain(ExpectedToolNames,
@@ -59,13 +57,10 @@ public sealed class OAuthConfigurationToolsE2ETests
 	public async Task OAuthConfigTools_Should_Advertise_Correct_SafetyMetadata_When_FeatureEnabled()
 	{
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ProcessEnvironmentVariables["CLIO_HOME"] = CreateClioHomeWithFeatureEnabled();
-		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		await using var arrangeContext = Arrange();
 
 		// Act
-		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationTokenSource.Token);
+		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
 
 		// Assert
 		McpClientTool getConfig = tools.Single(tool => tool.Name == GetIdentityServiceConfigTool.GetIdentityServiceConfigToolName);
@@ -103,13 +98,10 @@ public sealed class OAuthConfigurationToolsE2ETests
 	public async Task OAuthConfigTools_Should_Advertise_Approved_ArgumentSchema_When_FeatureEnabled()
 	{
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ProcessEnvironmentVariables["CLIO_HOME"] = CreateClioHomeWithFeatureEnabled();
-		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		await using var arrangeContext = Arrange();
 
 		// Act
-		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationTokenSource.Token);
+		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
 
 		// Assert
 		RequiredArgsOf(tools, GetIdentityServiceConfigTool.GetIdentityServiceConfigToolName)
@@ -133,11 +125,10 @@ public sealed class OAuthConfigurationToolsE2ETests
 		return argsSchema.GetProperty("required").EnumerateArray().Select(item => item.GetString());
 	}
 
-	private static string CreateClioHomeWithFeatureEnabled()
+	/// <inheritdoc />
+	private protected override void ConfigureMcpServerSettings(McpE2ESettings settings)
 	{
-		string clioHome = Path.Combine(Path.GetTempPath(), $"clio-mcp-e2e-{Guid.NewGuid():N}");
-		Directory.CreateDirectory(clioHome);
-		File.WriteAllText(Path.Combine(clioHome, "appsettings.json"),
+		settings.ProcessEnvironmentVariables["CLIO_HOME"] = CreateIsolatedClioHome(
 			"""
 			{
 			  "ActiveEnvironmentKey": "dev",
@@ -154,7 +145,7 @@ public sealed class OAuthConfigurationToolsE2ETests
 			    }
 			  }
 			}
-			""");
-		return clioHome;
+			""",
+			"deploy-identity");
 	}
 }

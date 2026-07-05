@@ -18,6 +18,12 @@ The schema is published automatically after creation, so it can be used right
 away as a Lookup reference in sys-settings and lookup pickers. No separate
 compile is required.
 
+Publishing also requests an OData entities rebuild, so the lookup becomes
+reachable over OData (`/0/odata/<Entity>`) without a manual full compile. That
+rebuild runs in the background — OData access appears within a few minutes, not
+immediately. A 404 from OData right after creation is the expected async gap;
+wait and retry rather than running a full compile.
+
 BaseLookup already provides Name and Description columns. Do not add them
 via --column.
 

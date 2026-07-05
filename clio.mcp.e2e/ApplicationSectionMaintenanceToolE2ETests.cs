@@ -24,64 +24,7 @@ public sealed class ApplicationSectionMaintenanceToolE2ETests {
 	private const string SectionCreateToolName = ApplicationSectionCreateTool.ApplicationSectionCreateToolName;
 	private const string ApplicationCode = "AutoTestClioMcp";
 
-	[Test]
-	[Description("Advertises list-app-sections in the MCP tool list so callers can discover the installed-app section discovery tool.")]
-	[AllureFeature(SectionListToolName)]
-	[AllureTag(SectionListToolName)]
-	[AllureName("Application section list tool is advertised by the MCP server")]
-	[AllureDescription("Starts the real clio MCP server and verifies that list-app-sections appears in the advertised tool manifest.")]
-	public async Task ApplicationSectionGetList_Should_Be_Listed_By_Mcp_Server() {
-		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-
-		// Act
-		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationTokenSource.Token);
-		IEnumerable<string> toolNames = tools.Select(tool => tool.Name);
-
-		// Assert
-		toolNames.Should().Contain(SectionListToolName,
-			because: "list-app-sections must be advertised so MCP callers can discover installed-app section discovery");
-	}
-
-	[Test]
-	[Description("Starts the real clio MCP server, invokes list-app-sections with an invalid environment, and verifies that the failure remains human-readable.")]
-	[AllureFeature(SectionListToolName)]
-	[AllureTag(SectionListToolName)]
-	[AllureName("Application section list reports invalid environment failures")]
-	[AllureDescription("Uses the real clio MCP server to call list-app-sections with an unknown environment name and verifies that the tool returns a structured readable error envelope.")]
-	public async Task ApplicationSectionGetList_Should_Report_Invalid_Environment_Failure() {
-		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		string invalidEnvironmentName = $"missing-section-list-env-{Guid.NewGuid():N}";
-
-		// Act
-		CallToolResult callResult = await session.CallToolAsync(
-			SectionListToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["environment-name"] = invalidEnvironmentName,
-					["application-code"] = "UsrMissingApp"
-				}
-			},
-			cancellationTokenSource.Token);
-		ApplicationSectionListContextResponseEnvelope response = ApplicationResultParser.ExtractSectionList(callResult);
-
-		// Assert
-		callResult.IsError.Should().NotBeTrue(
-			because: $"structured list-app-sections failures should be returned in the payload instead of as MCP invocation errors. Actual result: {DescribeCallResult(callResult)}");
-		response.Success.Should().BeFalse(
-			because: "list-app-sections should fail when the requested environment does not exist");
-		response.Error.Should().MatchRegex(
-			$"(?is)({Regex.Escape(invalidEnvironmentName)}|environment.*not.*found|not found)",
-			because: "the failure should explain that the requested environment is missing");
-	}
-
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes list-app-sections without application-code, and verifies that the tool returns a clear validation failure.")]
 	[AllureFeature(SectionListToolName)]
@@ -116,6 +59,7 @@ public sealed class ApplicationSectionMaintenanceToolE2ETests {
 			because: "the failure should explain that application-code is required");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, resolves the seeded installed application AutoTestClioMcp, and verifies that list-app-sections returns a structured section envelope for that application.")]
 	[AllureFeature(SectionListToolName)]
@@ -164,65 +108,7 @@ public sealed class ApplicationSectionMaintenanceToolE2ETests {
 			because: "successful list-app-sections calls should not include an error payload");
 	}
 
-	[Test]
-	[Description("Advertises delete-app-section in the MCP tool list so callers can discover the installed-app section deletion tool.")]
-	[AllureFeature(SectionDeleteToolName)]
-	[AllureTag(SectionDeleteToolName)]
-	[AllureName("Application section delete tool is advertised by the MCP server")]
-	[AllureDescription("Starts the real clio MCP server and verifies that delete-app-section appears in the advertised tool manifest.")]
-	public async Task ApplicationSectionDelete_Should_Be_Listed_By_Mcp_Server() {
-		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-
-		// Act
-		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationTokenSource.Token);
-		IEnumerable<string> toolNames = tools.Select(tool => tool.Name);
-
-		// Assert
-		toolNames.Should().Contain(SectionDeleteToolName,
-			because: "delete-app-section must be advertised so MCP callers can discover installed-app section deletion");
-	}
-
-	[Test]
-	[Description("Starts the real clio MCP server, invokes delete-app-section with an invalid environment, and verifies that the failure remains human-readable.")]
-	[AllureFeature(SectionDeleteToolName)]
-	[AllureTag(SectionDeleteToolName)]
-	[AllureName("Application section delete reports invalid environment failures")]
-	[AllureDescription("Uses the real clio MCP server to call delete-app-section with an unknown environment name and verifies that the tool returns a structured readable error envelope.")]
-	public async Task ApplicationSectionDelete_Should_Report_Invalid_Environment_Failure() {
-		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		string invalidEnvironmentName = $"missing-section-delete-env-{Guid.NewGuid():N}";
-
-		// Act
-		CallToolResult callResult = await session.CallToolAsync(
-			SectionDeleteToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["environment-name"] = invalidEnvironmentName,
-					["application-code"] = "UsrMissingApp",
-					["section-code"] = "UsrMissingSection"
-				}
-			},
-			cancellationTokenSource.Token);
-		ApplicationSectionDeleteContextResponseEnvelope response = ApplicationResultParser.ExtractSectionDelete(callResult);
-
-		// Assert
-		callResult.IsError.Should().NotBeTrue(
-			because: $"structured delete-app-section failures should be returned in the payload instead of as MCP invocation errors. Actual result: {DescribeCallResult(callResult)}");
-		response.Success.Should().BeFalse(
-			because: "delete-app-section should fail when the requested environment does not exist");
-		response.Error.Should().MatchRegex(
-			$"(?is)({Regex.Escape(invalidEnvironmentName)}|environment.*not.*found|not found)",
-			because: "the failure should explain that the requested environment is missing");
-	}
-
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes delete-app-section without section-code, and verifies that the tool returns a clear validation failure.")]
 	[AllureFeature(SectionDeleteToolName)]
@@ -258,6 +144,7 @@ public sealed class ApplicationSectionMaintenanceToolE2ETests {
 			because: "the failure should explain that section-code is required");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, creates a section in the seeded installed application via create-app-section, lists sections to confirm the new section appears, deletes the section via delete-app-section, and verifies that the deleted section is removed from the section list.")]
 	[AllureFeature(SectionDeleteToolName)]

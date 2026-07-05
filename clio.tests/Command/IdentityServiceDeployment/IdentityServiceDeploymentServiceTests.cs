@@ -24,6 +24,7 @@ public sealed class IdentityServiceDeploymentServiceTests
 {
 	[Test]
 	[Description("Deploy uses the persisted registered environment so EnvironmentPath survives option filling and ConnectionStrings.config can be read.")]
+	[Platform("Win", Reason = "deploy-identity performs Windows-only IIS deployment (DeploymentStrategyFactory throws PlatformNotSupportedException off-Windows); skipped on non-Windows")]
 	public void Deploy_Should_Use_Persisted_Environment_When_Resolving_Identity_Path_And_Db_Connection()
 	{
 		// Arrange
@@ -99,6 +100,7 @@ public sealed class IdentityServiceDeploymentServiceTests
 
 	[Test]
 	[Description("Deploy auto-discovers IdentityService.zip under the registered environment and auto-picks a free IIS port when both optional arguments are omitted.")]
+	[Platform("Win", Reason = "deploy-identity performs Windows-only IIS deployment (DeploymentStrategyFactory throws PlatformNotSupportedException off-Windows); skipped on non-Windows")]
 	public void Deploy_Should_Auto_Discover_Zip_And_Port_When_Optional_Arguments_Are_Omitted()
 	{
 		// Arrange
@@ -168,6 +170,7 @@ public sealed class IdentityServiceDeploymentServiceTests
 
 	[Test]
 	[Description("Deploy creates and grants a new technical user only when create-tech-user is explicitly requested.")]
+	[Platform("Win", Reason = "deploy-identity performs Windows-only IIS deployment (DeploymentStrategyFactory throws PlatformNotSupportedException off-Windows); skipped on non-Windows")]
 	public void Deploy_Should_Create_Technical_User_Only_When_Requested()
 	{
 		// Arrange
@@ -219,6 +222,7 @@ public sealed class IdentityServiceDeploymentServiceTests
 
 	[Test]
 	[Description("Deploy with no-app connects Creatio to IdentityService but skips OAuth app creation, credential verification, and local clio credential persistence.")]
+	[Platform("Win", Reason = "deploy-identity performs Windows-only IIS deployment (DeploymentStrategyFactory throws PlatformNotSupportedException off-Windows); skipped on non-Windows")]
 	public void Deploy_Should_Skip_OAuth_App_When_NoApp_Is_Requested()
 	{
 		// Arrange

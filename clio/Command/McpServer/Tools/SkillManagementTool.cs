@@ -12,7 +12,7 @@ namespace Clio.Command.McpServer.Tools;
 [McpServerToolType]
 public sealed class InstallSkillsTool(InstallSkillsCommand command, ILogger logger)
 	: BaseTool<InstallSkillsOptions>(command, logger) {
-	internal const string ToolName = "install-adac";
+	internal const string ToolName = "install-toolkit";
 
 	/// <summary>
 	/// Installs the Creatio toolkit skill globally for detected coding agents.
@@ -36,7 +36,7 @@ public sealed class InstallSkillsTool(InstallSkillsCommand command, ILogger logg
 [McpServerToolType]
 public sealed class UpdateSkillTool(UpdateSkillCommand command, ILogger logger)
 	: BaseTool<UpdateSkillOptions>(command, logger) {
-	internal const string ToolName = "update-adac";
+	internal const string ToolName = "update-toolkit";
 
 	/// <summary>
 	/// Updates the Creatio toolkit skill for detected coding agents (Claude included).
@@ -60,7 +60,7 @@ public sealed class UpdateSkillTool(UpdateSkillCommand command, ILogger logger)
 [McpServerToolType]
 public sealed class DeleteSkillTool(DeleteSkillCommand command, ILogger logger)
 	: BaseTool<DeleteSkillOptions>(command, logger) {
-	internal const string ToolName = "delete-adac";
+	internal const string ToolName = "delete-toolkit";
 
 	/// <summary>
 	/// Uninstalls the Creatio toolkit skill from detected coding agents (idempotent).

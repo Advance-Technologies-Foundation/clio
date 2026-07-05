@@ -32,10 +32,12 @@ public sealed class RoutingGuidanceResource {
 		         - page business rules (visibility/required/value) -> name=business-rules
 		         - bind which page opens for a record / which page adds a record (related pages) -> name=related-page-binding
 		       - Entities & schemas: create/modify schema, app / schema modeling -> name=app-modeling
+		         - schema designer fails with "GetSchemaDesignItem returned an HTML error page" / package dependencies -> name=package-dependencies
 		         - entity business rules / lookup filtering / dependent fields -> name=business-rules; static filters -> name=business-rule-filters
 		       - Data: raw ESQ queries -> name=esq AND name=esq-filters
 		         - lookup seeding / data bindings -> name=data-bindings
 		       - Applications, deploy & ops: deploy & provisioning -> name=deploy-lifecycle
+		         - environment inspection (version / db engine / framework / product / license) -> name=describe-environment
 		         - executing an approved plan -> name=agent-execution
 		         - identity assertion / Identity Service V3 -> name=identity-assertion
 		       """
