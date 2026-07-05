@@ -19,14 +19,13 @@ public class CreateThemeTool(
 	ILogger logger,
 	IToolCommandResolver commandResolver) : BaseTool<CreateThemeOptions>(command, logger, commandResolver) {
 
-	internal const string CreateThemeByEnvironmentName = "create-theme-by-environment";
-	internal const string CreateThemeByCredentialsToolName = "create-theme-by-credentials";
+	internal const string ToolName = "create-theme";
 
 	// Known mis-spellings an LLM tends to emit instead of the kebab-case argument names. Rejected with
 	// an actionable rename hint so a camelCase 'environmentName' never silently binds to nothing.
-	// The theme fields are shared by both connection modes; each mode adds only its own connection aliases,
-	// so a hint never points at a field the addressed tool does not have.
-	private static readonly Dictionary<string, string> ThemeFieldLegacyAliases = new(StringComparer.Ordinal) {
+	private static readonly Dictionary<string, string> LegacyAliases = new(StringComparer.Ordinal) {
+		["environmentName"] = "environment-name",
+		["environment_name"] = "environment-name",
 		["cssContent"] = "css-content",
 		["css_content"] = "css-content",
 		["cssClassName"] = "css-class-name",
@@ -35,32 +34,17 @@ public class CreateThemeTool(
 		["package_name"] = "package-name"
 	};
 
-	private static readonly Dictionary<string, string> EnvironmentLegacyAliases =
-		new(ThemeFieldLegacyAliases, StringComparer.Ordinal) {
-			["environmentName"] = "environment-name",
-			["environment_name"] = "environment-name"
-		};
-
-	private static readonly Dictionary<string, string> CredentialsLegacyAliases =
-		new(ThemeFieldLegacyAliases, StringComparer.Ordinal) {
-			["url"] = "uri",
-			["userName"] = "login",
-			["user_name"] = "login",
-			["username"] = "login",
-			["isNetCore"] = "is-net-core",
-			["is_net_core"] = "is-net-core"
-		};
-
-	[McpServerTool(Name = CreateThemeByEnvironmentName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false),
+	/// <summary>Creates the theme on the target environment and returns a structured result carrying the effective theme id.</summary>
+	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false),
 	 Description("Create a custom Creatio theme on a registered environment via the native ThemeService. " +
 		"Returns { success, id, error? } where id is the created theme's id, auto-generated when omitted. " +
 		"For the theme workflow, read get-guidance theming first.")]
-	public CreateThemeResult CreateThemeByName(
+	public CreateThemeResult CreateTheme(
 		[Description("Parameters: environment-name (required), css-content (required), " +
 			"css-class-name (optional), caption (optional), id (optional), package-name (optional).")]
-		[Required] CreateThemeByEnvironmentArgs args) {
+		[Required] CreateThemeArgs args) {
 		string? aliasError = McpToolArgumentSupport.BuildLegacyAliasError(
-			args.ExtensionData, EnvironmentLegacyAliases, ".",
+			args.ExtensionData, LegacyAliases, ".",
 			"Valid: environment-name, css-content, css-class-name, caption, id, package-name.");
 		if (!string.IsNullOrWhiteSpace(aliasError)) {
 			return CreateThemeResult.Failure(aliasError);
@@ -73,46 +57,6 @@ public class CreateThemeTool(
 		}
 		CreateThemeOptions options = new() {
 			Environment = args.EnvironmentName,
-			Caption = args.Caption,
-			CssClassName = args.CssClassName,
-			CssContent = args.CssContent,
-			Id = args.Id,
-			PackageName = args.PackageName
-		};
-		return Execute(options);
-	}
-
-	[McpServerTool(Name = CreateThemeByCredentialsToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false),
-	 Description("Create a custom Creatio theme using explicit credentials. Returns { success, id, error? }. " +
-		"For the theme workflow, read get-guidance theming first.")]
-	public CreateThemeResult CreateThemeByCredentials(
-		[Description("Parameters: uri (required), login (required), password (required), css-content (required), " +
-			"css-class-name (optional), caption (optional), id (optional), package-name (optional), " +
-			"is-net-core (optional, default false).")]
-		[Required] CreateThemeByCredentialsArgs args) {
-		string? aliasError = McpToolArgumentSupport.BuildLegacyAliasError(
-			args.ExtensionData, CredentialsLegacyAliases, ".",
-			"Valid: uri, login, password, is-net-core, css-content, css-class-name, caption, id, package-name.");
-		if (!string.IsNullOrWhiteSpace(aliasError)) {
-			return CreateThemeResult.Failure(aliasError);
-		}
-		if (string.IsNullOrWhiteSpace(args.Uri)) {
-			return CreateThemeResult.Failure("uri is required and cannot be empty.");
-		}
-		if (string.IsNullOrWhiteSpace(args.Login)) {
-			return CreateThemeResult.Failure("login is required and cannot be empty.");
-		}
-		if (string.IsNullOrWhiteSpace(args.Password)) {
-			return CreateThemeResult.Failure("password is required and cannot be empty.");
-		}
-		if (string.IsNullOrWhiteSpace(args.CssContent)) {
-			return CreateThemeResult.Failure("css-content is required and cannot be empty.");
-		}
-		CreateThemeOptions options = new() {
-			Login = args.Login,
-			Password = args.Password,
-			Uri = args.Uri,
-			IsNetCore = args.IsNetCore ?? false,
 			Caption = args.Caption,
 			CssClassName = args.CssClassName,
 			CssContent = args.CssContent,
@@ -147,9 +91,9 @@ public class CreateThemeTool(
 }
 
 /// <summary>
-/// MCP arguments for the <c>create-theme-by-environment</c> tool.
+/// MCP arguments for the <c>create-theme</c> tool.
 /// </summary>
-public sealed record CreateThemeByEnvironmentArgs(
+public sealed record CreateThemeArgs(
 	[property: JsonPropertyName("environment-name")]
 	[property: Description("Registered clio environment name.")]
 	[property: Required]
@@ -161,11 +105,11 @@ public sealed record CreateThemeByEnvironmentArgs(
 	string? CssContent = null,
 
 	[property: JsonPropertyName("css-class-name")]
-	[property: Description("CSS class applied when the theme is active (^[A-Za-z][A-Za-z0-9_-]*$, max 100); derived from caption (slugified) when omitted — pass caption and omit this to let clio derive it.")]
+	[property: Description("CSS class applied when the theme is active (^[A-Za-z][A-Za-z0-9_-]*$, max 100); derived from caption (lowercased and hyphenated) when omitted — pass caption and omit this to let clio derive it.")]
 	string? CssClassName = null,
 
 	[property: JsonPropertyName("caption")]
-	[property: Description("Human-readable theme name/caption (max 250); clio derives css-class-name from it (slugified) when css-class-name is omitted.")]
+	[property: Description("Human-readable theme name/caption (max 250); clio derives css-class-name from it (lowercased and hyphenated) when css-class-name is omitted.")]
 	string? Caption = null,
 
 	[property: JsonPropertyName("id")]
@@ -182,56 +126,7 @@ public sealed record CreateThemeByEnvironmentArgs(
 }
 
 /// <summary>
-/// MCP arguments for the <c>create-theme-by-credentials</c> tool.
-/// </summary>
-public sealed record CreateThemeByCredentialsArgs(
-	[property: JsonPropertyName("uri")]
-	[property: Description("Creatio instance url.")]
-	[property: Required]
-	string? Uri = null,
-
-	[property: JsonPropertyName("login")]
-	[property: Description("Creatio instance user name.")]
-	[property: Required]
-	string? Login = null,
-
-	[property: JsonPropertyName("password")]
-	[property: Description("Creatio instance password.")]
-	[property: Required]
-	string? Password = null,
-
-	[property: JsonPropertyName("css-content")]
-	[property: Description("Inline theme CSS content (max 1 MiB).")]
-	[property: Required]
-	string? CssContent = null,
-
-	[property: JsonPropertyName("css-class-name")]
-	[property: Description("CSS class applied when the theme is active (^[A-Za-z][A-Za-z0-9_-]*$, max 100); derived from caption (slugified) when omitted — pass caption and omit this to let clio derive it.")]
-	string? CssClassName = null,
-
-	[property: JsonPropertyName("caption")]
-	[property: Description("Human-readable theme name/caption (max 250); clio derives css-class-name from it (slugified) when css-class-name is omitted.")]
-	string? Caption = null,
-
-	[property: JsonPropertyName("id")]
-	[property: Description("Theme id (^[A-Za-z0-9_-]+$, max 100); an auto-generated UUID is used and returned when omitted.")]
-	string? Id = null,
-
-	[property: JsonPropertyName("package-name")]
-	[property: Description("Owning package name; the environment's CurrentPackageId system setting is used when omitted.")]
-	string? PackageName = null,
-
-	[property: JsonPropertyName("is-net-core")]
-	[property: Description("Specifies if creatio runtime is a NET8 or NET472, default: false.")]
-	bool? IsNetCore = null
-) {
-	/// <summary>Overflow bag for unknown JSON fields; drives the legacy-alias rename hints.</summary>
-	[JsonExtensionData]
-	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
-}
-
-/// <summary>
-/// Structured result of the <c>create-theme</c> MCP tools.
+/// Structured result of the <c>create-theme</c> MCP tool.
 /// </summary>
 public sealed record CreateThemeResult {
 	/// <summary>Whether the theme was created.</summary>

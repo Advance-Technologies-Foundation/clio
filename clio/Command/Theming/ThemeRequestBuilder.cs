@@ -2,28 +2,17 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Text;
-using System.Text.RegularExpressions;
+using Clio.Theming;
 
 namespace Clio.Command.Theming;
 
 /// <summary>
-/// Resolves the theme CSS from the mutually-exclusive <c>--css-content</c> / <c>--css-content-file</c> inputs
-/// and validates the field contract enforced by the native Creatio <c>ThemeService</c> (id, caption,
-/// cssClassName, cssContent).
+/// Resolves the theme CSS from the mutually-exclusive <c>--css-content</c> / <c>--css-content-file</c> inputs,
+/// assembles the native Creatio <c>ThemeService</c> write request, and validates its field contract by
+/// delegating each parameter rule to <see cref="ThemeParameterValidator"/>.
 /// </summary>
 internal static class ThemeRequestBuilder
 {
-	/// <summary>Maximum accepted <c>cssContent</c> size in bytes (1 MiB), matching the server contract.</summary>
-	internal const int MaxCssContentBytes = 1024 * 1024;
-
-	private const int MaxIdLength = 100;
-	private const int MaxCaptionLength = 250;
-	private const int MaxCssClassNameLength = 100;
-
-	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
-	private static readonly Regex IdRegex = new("^[A-Za-z0-9_-]+$", RegexOptions.Compiled, RegexTimeout);
-	private static readonly Regex CssClassNameRegex = new("^[A-Za-z][A-Za-z0-9_-]*$", RegexOptions.Compiled, RegexTimeout);
-
 	/// <summary>
 	/// Resolves the theme CSS from exactly one of the inline (<paramref name="cssContent"/>) or file
 	/// (<paramref name="cssContentFile"/>) inputs. An unsupplied string option is <c>null</c> (absent), while an
@@ -57,7 +46,7 @@ internal static class ThemeRequestBuilder
 			return false;
 		}
 		try {
-			if (new FileInfo(cssContentFile).Length > MaxCssContentBytes) {
+			if (new FileInfo(cssContentFile).Length > ThemeParameterValidator.MaxCssContentBytes) {
 				error = "Theme CSS content must be at most 1 MiB.";
 				return false;
 			}
@@ -75,65 +64,24 @@ internal static class ThemeRequestBuilder
 	}
 
 	/// <summary>
-	/// Validates a theme <c>id</c> against the server contract (<c>^[A-Za-z0-9_-]+$</c>, ≤100 chars).
-	/// </summary>
-	/// <param name="id">The theme id to validate.</param>
-	/// <param name="error">On failure, a user-friendly diagnostic; otherwise <c>null</c>.</param>
-	/// <returns><c>true</c> when the id is valid.</returns>
-	public static bool TryValidateId(string id, out string error) {
-		error = null;
-		if (string.IsNullOrWhiteSpace(id)) {
-			error = "Theme id is required.";
-			return false;
-		}
-		if (id.Length > MaxIdLength) {
-			error = $"Theme id must be at most {MaxIdLength} characters.";
-			return false;
-		}
-		if (!IdRegex.IsMatch(id)) {
-			error = "Theme id must match ^[A-Za-z0-9_-]+$ (letters, digits, underscore, hyphen).";
-			return false;
-		}
-		return true;
-	}
-
-	/// <summary>
 	/// Validates the full create/update field contract carried by <paramref name="request"/>: id, caption,
-	/// cssClassName, and the already-resolved cssContent.
+	/// cssClassName, and the already-resolved cssContent. Each parameter rule is delegated to
+	/// <see cref="ThemeParameterValidator"/>.
 	/// </summary>
 	/// <param name="request">The theme request whose contract fields are validated.</param>
 	/// <param name="error">On failure, a user-friendly diagnostic; otherwise <c>null</c>.</param>
 	/// <returns><c>true</c> when every field satisfies the contract.</returns>
 	public static bool TryValidateRequest(ThemeRequest request, out string error) {
-		if (!TryValidateId(request.Id, out error)) {
+		if (!ThemeParameterValidator.TryValidateId(request.Id, out error)) {
 			return false;
 		}
-		if (string.IsNullOrWhiteSpace(request.CssClassName)) {
-			error = "css-class-name is required.";
+		if (!ThemeParameterValidator.TryValidateCssClassName(request.CssClassName, out error)) {
 			return false;
 		}
-		if (request.CssClassName.Length > MaxCssClassNameLength) {
-			error = $"css-class-name must be at most {MaxCssClassNameLength} characters.";
+		if (!ThemeParameterValidator.TryValidateCaption(request.Caption, out error)) {
 			return false;
 		}
-		if (!CssClassNameRegex.IsMatch(request.CssClassName)) {
-			error = "css-class-name must match ^[A-Za-z][A-Za-z0-9_-]*$ (start with a letter).";
-			return false;
-		}
-		if (string.IsNullOrWhiteSpace(request.Caption)) {
-			error = "Theme caption is required.";
-			return false;
-		}
-		if (request.Caption.Length > MaxCaptionLength) {
-			error = $"Theme caption must be at most {MaxCaptionLength} characters.";
-			return false;
-		}
-		if (request.CssContent is null) {
-			error = "Theme CSS content is required.";
-			return false;
-		}
-		if (Encoding.UTF8.GetByteCount(request.CssContent) > MaxCssContentBytes) {
-			error = "Theme CSS content must be at most 1 MiB.";
+		if (!ThemeParameterValidator.TryValidateCssContent(request.CssContent, out error)) {
 			return false;
 		}
 		error = null;

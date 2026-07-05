@@ -445,7 +445,7 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 	[Test]
 	[AllureTag(GuidanceGetTool.ToolName)]
 	[AllureName("get-guidance returns the canonical theming orchestration guide")]
-	[Description("Verifies get-guidance returns the theming article that builds the theme CSS with the native build-theme tool and routes the no-code flow to create-theme-by-environment.")]
+	[Description("Verifies get-guidance returns the theming article that builds the theme CSS with the native build-theme tool and routes the no-code flow to create-theme.")]
 	public async Task GuidanceGet_Should_Return_Theming_Guide() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -472,8 +472,12 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "the npm package is retired — theme CSS is built by the native build-theme tool");
 		response.Article.Text.Should().Contain("push-workspace",
 			because: "the theming guide must route deployment through push-workspace");
-		response.Article.Text.Should().Contain("create-theme-by-environment",
+		response.Article.Text.Should().Contain("create-theme",
 			because: "the theming guide must route the no-code/server flow to the create-theme MCP tool");
+		response.Article.Text.Should().NotContain("-by-environment",
+			because: "the theming guide must reference the theming tools by their single clean names");
+		response.Article.Text.Should().NotContain("-by-credentials",
+			because: "the theming guide must reference the theming tools by their single clean names");
 		response.Article.Text.Should().Contain("build-theme",
 			because: "the no-code/server flow's primary path is the native build-theme tool, not hand-computed colors");
 	}

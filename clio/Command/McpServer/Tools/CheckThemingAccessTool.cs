@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Common;
 using ModelContextProtocol.Server;
@@ -17,8 +18,7 @@ namespace Clio.Command.McpServer.Tools;
 [McpServerToolType]
 public sealed class CheckThemingAccessTool(IToolCommandResolver commandResolver) {
 
-	internal const string CheckThemingAccessByEnvironmentName = "check-theming-access-by-environment";
-	internal const string CheckThemingAccessByCredentialsToolName = "check-theming-access-by-credentials";
+	internal const string ToolName = "check-theming-access";
 
 	/// <summary>The system operation that grants management of custom themes on an environment.</summary>
 	private const string CanManageThemesOperation = "CanManageThemes";
@@ -26,50 +26,35 @@ public sealed class CheckThemingAccessTool(IToolCommandResolver commandResolver)
 	/// <summary>The license operation that grants branding customization (custom themes).</summary>
 	private const string CanCustomizeBrandingLicense = "CanCustomizeBranding";
 
-	[McpServerTool(Name = CheckThemingAccessByEnvironmentName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false),
+	// Known mis-spellings an LLM tends to emit instead of the kebab-case argument names. Rejected with
+	// an actionable rename hint so a camelCase 'environmentName' never silently binds to nothing.
+	private static readonly Dictionary<string, string> LegacyAliases = new(StringComparer.Ordinal) {
+		["environmentName"] = "environment-name",
+		["environment_name"] = "environment-name"
+	};
+
+	/// <summary>Probes the <c>CanManageThemes</c> operation right and the <c>CanCustomizeBranding</c> license on the target environment and returns both verdicts.</summary>
+	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false),
 	 Description("Check whether the caller can manage custom themes on a registered environment. " +
 		"Probes the CanManageThemes system operation and the CanCustomizeBranding license. " +
 		"Returns { success, canManageThemes, canCustomizeBranding }. " +
-		"Advisory only: run it before the no-code / server theme flow (create/update/delete-theme-by-environment), " +
-		"but create-theme-by-environment is the authoritative access test. " +
+		"Advisory only: run it before the no-code / server theme flow (create/update/delete-theme), " +
+		"but create-theme is the authoritative access test. " +
 		"For the theme workflow, read get-guidance theming first.")]
-	public ThemingAccessResult CheckThemingAccessByName(
-		[Description("Target Environment name")] [Required] string environmentName
-	) {
-		if (string.IsNullOrWhiteSpace(environmentName)) {
+	public ThemingAccessResult CheckThemingAccess(
+		[Description("Parameters: environment-name (required).")]
+		[Required] CheckThemingAccessArgs args) {
+		string? aliasError = McpToolArgumentSupport.BuildLegacyAliasError(
+			args.ExtensionData, LegacyAliases, ".",
+			"Valid: environment-name.");
+		if (!string.IsNullOrWhiteSpace(aliasError)) {
+			return ThemingAccessResult.Failure(aliasError);
+		}
+		if (string.IsNullOrWhiteSpace(args.EnvironmentName)) {
 			return ThemingAccessResult.Failure("environment-name is required and cannot be empty.");
 		}
 		EnvironmentOptions options = new() {
-			Environment = environmentName
-		};
-		return Execute(options);
-	}
-
-	[McpServerTool(Name = CheckThemingAccessByCredentialsToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false),
-	 Description("Check whether the caller can manage custom themes using explicit credentials. " +
-		"Probes the CanManageThemes system operation and the CanCustomizeBranding license. " +
-		"Returns { success, canManageThemes, canCustomizeBranding }. Advisory only: create-theme-by-environment " +
-		"is the authoritative access test. For the theme workflow, read get-guidance theming first.")]
-	public ThemingAccessResult CheckThemingAccessByCredentials(
-		[Description("Creatio instance url")] [Required] string url,
-		[Description("Creatio instance Username")] [Required] string userName,
-		[Description("Creatio instance Password")] [Required] string password,
-		[DefaultValue(false)][Description("Specifies if creatio runtime is a NET8 or NET472, default: false")] bool isNetCore = false
-	) {
-		if (string.IsNullOrWhiteSpace(url)) {
-			return ThemingAccessResult.Failure("url is required and cannot be empty.");
-		}
-		if (string.IsNullOrWhiteSpace(userName)) {
-			return ThemingAccessResult.Failure("userName is required and cannot be empty.");
-		}
-		if (string.IsNullOrWhiteSpace(password)) {
-			return ThemingAccessResult.Failure("password is required and cannot be empty.");
-		}
-		EnvironmentOptions options = new() {
-			Login = userName,
-			Password = password,
-			Uri = url,
-			IsNetCore = isNetCore
+			Environment = args.EnvironmentName
 		};
 		return Execute(options);
 	}
@@ -93,7 +78,21 @@ public sealed class CheckThemingAccessTool(IToolCommandResolver commandResolver)
 }
 
 /// <summary>
-/// Structured result of the <c>check-theming-access</c> MCP tools.
+/// MCP arguments for the <c>check-theming-access</c> tool.
+/// </summary>
+public sealed record CheckThemingAccessArgs(
+	[property: JsonPropertyName("environment-name")]
+	[property: Description("Registered clio environment name.")]
+	[property: Required]
+	string? EnvironmentName = null
+) {
+	/// <summary>Overflow bag for unknown JSON fields; drives the legacy-alias rename hints.</summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
+}
+
+/// <summary>
+/// Structured result of the <c>check-theming-access</c> MCP tool.
 /// </summary>
 public sealed record ThemingAccessResult {
 	/// <summary>Whether the access check completed successfully.</summary>

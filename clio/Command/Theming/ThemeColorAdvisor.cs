@@ -37,14 +37,47 @@ public interface IThemeColorAdvisor {
 /// <summary>Default <see cref="IThemeColorAdvisor"/> over the bundled engine and theme templates.</summary>
 public sealed class ThemeColorAdvisor : IThemeColorAdvisor {
 
+	private enum ThemeRole {
+		Primary,
+		Secondary,
+		Accent,
+		Success,
+		Error
+	}
+
+	private sealed record SystemColorResolution {
+		public bool Success { get; init; }
+		public string Failure { get; init; }
+		public string Hex { get; init; }
+		public string Source { get; init; }
+		public double? Contrast { get; init; }
+		public bool? Verdict { get; init; }
+		public bool? WasConverted { get; init; }
+	}
+
+	private const string RolePrimary = "primary";
+	private const string RoleSecondary = "secondary";
+	private const string RoleAccent = "accent";
+	private const string RoleSuccess = "success";
+	private const string RoleError = "error";
+
+	private const string VerdictPass = "pass";
+	private const string VerdictWarn = "warn";
+	private const string VerdictStrong = "strong";
+	private const string BandClean = "clean";
+	private const string SeverityWarning = "warning";
+
+	private const string UserOverrideSource = "user-override";
+	private const string TemplateDefaultSource = "template-default";
+
 	private static readonly int[] PreviewStops = { 500 };
 
-	private static readonly IReadOnlyDictionary<string, string> LowContrastCodeByRole = new Dictionary<string, string> {
-		["primary"] = "PRIMARY_LOW_CONTRAST_ON_WHITE",
-		["secondary"] = "SECONDARY_LOW_CONTRAST_ON_WHITE",
-		["accent"] = "ACCENT_LOW_CONTRAST_ON_WHITE",
-		["success"] = "SUCCESS_LOW_CONTRAST_ON_WHITE",
-		["error"] = "ERROR_LOW_CONTRAST_ON_WHITE"
+	private static readonly IReadOnlyDictionary<ThemeRole, string> LowContrastCodeByRole = new Dictionary<ThemeRole, string> {
+		[ThemeRole.Primary] = "PRIMARY_LOW_CONTRAST_ON_WHITE",
+		[ThemeRole.Secondary] = "SECONDARY_LOW_CONTRAST_ON_WHITE",
+		[ThemeRole.Accent] = "ACCENT_LOW_CONTRAST_ON_WHITE",
+		[ThemeRole.Success] = "SUCCESS_LOW_CONTRAST_ON_WHITE",
+		[ThemeRole.Error] = "ERROR_LOW_CONTRAST_ON_WHITE"
 	};
 
 	private const string AccentTooSimilarCode = "ACCENT_TOO_SIMILAR_TO_PRIMARY";
@@ -106,13 +139,13 @@ public sealed class ThemeColorAdvisor : IThemeColorAdvisor {
 				OriginalContrastOnWhite = result.OriginalContrastOnWhite,
 				AdaptedContrastOnWhite = result.Adapted.AdaptedContrastOnWhite,
 				DistanceFromOriginal = result.Adapted.DistanceFromOriginal,
-				Warning = LowContrastWarning("primary", result.OriginalContrastOnWhite)
+				Warning = LowContrastWarning(ThemeRole.Primary, result.OriginalContrastOnWhite)
 			},
 			AdaptedPrimaryOutcome.CouldNotAdapt => Success() with {
 				AdaptationState = "could-not-adapt",
 				Original500 = result.Original500,
 				OriginalContrastOnWhite = result.OriginalContrastOnWhite,
-				Warning = LowContrastWarning("primary", result.OriginalContrastOnWhite)
+				Warning = LowContrastWarning(ThemeRole.Primary, result.OriginalContrastOnWhite)
 			},
 			_ => throw new InvalidOperationException($"Unhandled adapted-primary outcome: {result.Outcome}")
 		};
@@ -138,7 +171,7 @@ public sealed class ThemeColorAdvisor : IThemeColorAdvisor {
 			SecondaryWasConverted = WasConverted(secondaryOverride, s),
 			SecondaryReadable = readable,
 			SecondaryContrastOnWhite = contrast,
-			Warning = readable ? null : LowContrastWarning("secondary", contrast)
+			Warning = readable ? null : LowContrastWarning(ThemeRole.Secondary, contrast)
 		};
 	}
 
@@ -159,7 +192,7 @@ public sealed class ThemeColorAdvisor : IThemeColorAdvisor {
 				DistanceFromPrimary = distance,
 				SimilarityBand = BandToWire(band),
 				Recommend = band != AccentSimilarityBand.Strong,
-				Warning = band == AccentSimilarityBand.Warn ? TooSimilarWarning("warning", distance) : null
+				Warning = band == AccentSimilarityBand.Warn ? TooSimilarWarning(SeverityWarning, distance) : null
 			});
 		}
 		return Success() with { EvaluatedCandidates = evaluated };
@@ -167,7 +200,7 @@ public sealed class ThemeColorAdvisor : IThemeColorAdvisor {
 
 	/// <inheritdoc />
 	public ThemeColorAdvisorResult ValidateColor(string role, string color, string primary) {
-		if (role is null || !LowContrastCodeByRole.ContainsKey(role)) {
+		if (role is null || !TryParseRole(role, out ThemeRole parsedRole)) {
 			return Failure("INVALID_ROLE: role must be primary, secondary, accent, success, or error.");
 		}
 		if (!ColorNormalizer.TryNormalize(color, out string c, out string rejectionCode)) {
@@ -177,17 +210,17 @@ public sealed class ThemeColorAdvisor : IThemeColorAdvisor {
 			NormalizedColor = c,
 			WasConverted = WasConverted(color, c)
 		};
-		if (role == "accent") {
+		if (parsedRole == ThemeRole.Accent) {
 			return ValidateAccent(baseResult, c, primary);
 		}
 		double contrast = ColorMetrics.ContrastRatio(c, ColorMetrics.White);
 		if (ColorMetrics.MeetsMinContrastOnWhite(c)) {
-			return baseResult with { Verdict = "pass" };
+			return baseResult with { Verdict = VerdictPass };
 		}
-		string severity = role == "primary" ? "strong" : "warning";
+		string severity = parsedRole == ThemeRole.Primary ? VerdictStrong : SeverityWarning;
 		return baseResult with {
 			Verdict = VerdictOf(severity),
-			Warning = LowContrastWarning(role, contrast)
+			Warning = LowContrastWarning(parsedRole, contrast)
 		};
 	}
 
@@ -233,43 +266,36 @@ public sealed class ThemeColorAdvisor : IThemeColorAdvisor {
 		} catch (ArgumentException) {
 			return Failure($"VERSION_NOT_SUPPORTED: \"{version}\"");
 		}
-		if (!TryResolveSystemColor(version, resolvedVersion, "success", success, out string successHex, out string successSource,
-				out double? successContrast, out bool? successVerdict, out bool? successConverted, out string successFailure)) {
-			return Failure(successFailure);
+		SystemColorResolution successColor = ResolveSystemColor(version, resolvedVersion, ThemeRole.Success, success);
+		if (!successColor.Success) {
+			return Failure(successColor.Failure);
 		}
-		if (!TryResolveSystemColor(version, resolvedVersion, "error", error, out string errorHex, out string errorSource,
-				out double? errorContrast, out bool? errorVerdict, out bool? errorConverted, out string errorFailure)) {
-			return Failure(errorFailure);
+		SystemColorResolution errorColor = ResolveSystemColor(version, resolvedVersion, ThemeRole.Error, error);
+		if (!errorColor.Success) {
+			return Failure(errorColor.Failure);
 		}
 		Dictionary<string, IReadOnlyDictionary<string, string>> palettes = new() {
-			["primary"] = BuildStops(p, fullStops),
-			["secondary"] = BuildStops(s, fullStops),
-			["accent"] = BuildStops(a, fullStops),
-			["success"] = BuildStops(successHex, fullStops),
-			["error"] = BuildStops(errorHex, fullStops)
+			[RolePrimary] = BuildStops(p, fullStops),
+			[RoleSecondary] = BuildStops(s, fullStops),
+			[RoleAccent] = BuildStops(a, fullStops),
+			[RoleSuccess] = BuildStops(successColor.Hex, fullStops),
+			[RoleError] = BuildStops(errorColor.Hex, fullStops)
 		};
 		List<string> warnings = new();
-		if (successVerdict == false) {
-			warnings.Add(LowContrastCodeByRole["success"]);
+		if (successColor.Verdict == false) {
+			warnings.Add(LowContrastCodeByRole[ThemeRole.Success]);
 		}
-		if (errorVerdict == false) {
-			warnings.Add(LowContrastCodeByRole["error"]);
+		if (errorColor.Verdict == false) {
+			warnings.Add(LowContrastCodeByRole[ThemeRole.Error]);
 		}
-		return Success() with {
+		ThemeColorAdvisorResult result = Success() with {
 			Palettes = palettes,
-			SuccessSource = successSource,
-			ErrorSource = errorSource,
+			SuccessSource = successColor.Source,
+			ErrorSource = errorColor.Source,
 			ResolvedVersion = resolvedVersion,
-			NormalizedSuccess = successSource == "user-override" ? successHex : null,
-			SuccessWasConverted = successSource == "user-override" ? successConverted : null,
-			SuccessContrastVerdict = successSource == "user-override" ? successVerdict : null,
-			SuccessContrastOnWhite = successSource == "user-override" ? successContrast : null,
-			NormalizedError = errorSource == "user-override" ? errorHex : null,
-			ErrorWasConverted = errorSource == "user-override" ? errorConverted : null,
-			ErrorContrastVerdict = errorSource == "user-override" ? errorVerdict : null,
-			ErrorContrastOnWhite = errorSource == "user-override" ? errorContrast : null,
 			Warnings = warnings.Count > 0 ? warnings : null
 		};
+		return WithErrorOverride(WithSuccessOverride(result, successColor), errorColor);
 	}
 
 	private ThemeColorAdvisorResult ValidateAccent(ThemeColorAdvisorResult baseResult, string accentHex, string primary) {
@@ -280,53 +306,69 @@ public sealed class ThemeColorAdvisor : IThemeColorAdvisor {
 		AccentSimilarityBand band = ColorMetrics.ClassifySimilarityBand(distance);
 		bool contrastPasses = ColorMetrics.MeetsMinContrastOnWhite(accentHex);
 		if (band == AccentSimilarityBand.Strong) {
-			return baseResult with { Verdict = "strong", Warning = TooSimilarWarning("strong", distance) };
+			return baseResult with { Verdict = VerdictStrong, Warning = TooSimilarWarning(VerdictStrong, distance) };
 		}
 		if (!contrastPasses) {
 			double contrast = ColorMetrics.ContrastRatio(accentHex, ColorMetrics.White);
-			return baseResult with { Verdict = "warn", Warning = LowContrastWarning("accent", contrast) };
+			return baseResult with { Verdict = VerdictWarn, Warning = LowContrastWarning(ThemeRole.Accent, contrast) };
 		}
 		if (band == AccentSimilarityBand.Warn) {
-			return baseResult with { Verdict = "warn", Warning = TooSimilarWarning("warning", distance) };
+			return baseResult with { Verdict = VerdictWarn, Warning = TooSimilarWarning(SeverityWarning, distance) };
 		}
-		return baseResult with { Verdict = "pass" };
+		return baseResult with { Verdict = VerdictPass };
 	}
 
-	private bool TryResolveSystemColor(string version, string resolvedVersion, string role, string overrideValue, out string hex,
-		out string source, out double? contrast, out bool? verdict, out bool? wasConverted, out string failure) {
-		hex = null;
-		source = null;
-		contrast = null;
-		verdict = null;
-		wasConverted = null;
-		failure = null;
+	private SystemColorResolution ResolveSystemColor(string version, string resolvedVersion, ThemeRole role, string overrideValue) {
 		if (!string.IsNullOrWhiteSpace(overrideValue)) {
 			if (!ColorNormalizer.TryNormalize(overrideValue, out string overrideHex, out string rejectionCode)) {
-				failure = $"{rejectionCode}: \"{overrideValue}\"";
-				return false;
+				return new SystemColorResolution { Success = false, Failure = $"{rejectionCode}: \"{overrideValue}\"" };
 			}
-			hex = overrideHex;
-			source = "user-override";
-			contrast = ColorMetrics.ContrastRatio(overrideHex, ColorMetrics.White);
-			verdict = ColorMetrics.MeetsMinContrastOnWhite(overrideHex);
-			wasConverted = WasConverted(overrideValue, overrideHex);
-			return true;
+			return new SystemColorResolution {
+				Success = true,
+				Hex = overrideHex,
+				Source = UserOverrideSource,
+				Contrast = ColorMetrics.ContrastRatio(overrideHex, ColorMetrics.White),
+				Verdict = ColorMetrics.MeetsMinContrastOnWhite(overrideHex),
+				WasConverted = WasConverted(overrideValue, overrideHex)
+			};
 		}
+		string hex = null;
 		bool found;
 		try {
-			found = _templateProvider.TryGetPaletteDefault(version, role, out hex);
+			found = _templateProvider.TryGetPaletteDefault(version, RoleToWire(role), out hex);
 		} catch (ArgumentException) {
-			failure = $"VERSION_NOT_SUPPORTED: \"{version}\"";
-			return false;
+			return new SystemColorResolution { Success = false, Failure = $"VERSION_NOT_SUPPORTED: \"{version}\"" };
 		} catch (InvalidOperationException) {
 			found = false;
 		}
 		if (!found) {
-			failure = $"TEMPLATE_DEFAULT_MISSING: \"{role}@{resolvedVersion}\"";
-			return false;
+			return new SystemColorResolution { Success = false, Failure = $"TEMPLATE_DEFAULT_MISSING: \"{RoleToWire(role)}@{resolvedVersion}\"" };
 		}
-		source = "template-default";
-		return true;
+		return new SystemColorResolution { Success = true, Hex = hex, Source = TemplateDefaultSource };
+	}
+
+	private static ThemeColorAdvisorResult WithSuccessOverride(ThemeColorAdvisorResult result, SystemColorResolution resolution) {
+		if (resolution.Source != UserOverrideSource) {
+			return result;
+		}
+		return result with {
+			NormalizedSuccess = resolution.Hex,
+			SuccessWasConverted = resolution.WasConverted,
+			SuccessContrastVerdict = resolution.Verdict,
+			SuccessContrastOnWhite = resolution.Contrast
+		};
+	}
+
+	private static ThemeColorAdvisorResult WithErrorOverride(ThemeColorAdvisorResult result, SystemColorResolution resolution) {
+		if (resolution.Source != UserOverrideSource) {
+			return result;
+		}
+		return result with {
+			NormalizedError = resolution.Hex,
+			ErrorWasConverted = resolution.WasConverted,
+			ErrorContrastVerdict = resolution.Verdict,
+			ErrorContrastOnWhite = resolution.Contrast
+		};
 	}
 
 	private static IReadOnlyDictionary<string, string> BuildStops(string hex500, bool fullStops) {
@@ -356,24 +398,59 @@ public sealed class ThemeColorAdvisor : IThemeColorAdvisor {
 
 	private static string BandToWire(AccentSimilarityBand band) {
 		return band switch {
-			AccentSimilarityBand.Clean => "clean",
-			AccentSimilarityBand.Warn => "warn",
-			_ => "strong"
+			AccentSimilarityBand.Clean => BandClean,
+			AccentSimilarityBand.Warn => VerdictWarn,
+			_ => VerdictStrong
 		};
 	}
 
 	private static string VerdictOf(string severity) {
-		return severity == "strong" ? "strong" : "warn";
+		return severity == VerdictStrong ? VerdictStrong : VerdictWarn;
 	}
 
-	private static AdvisorWarning LowContrastWarning(string role, double contrastOnWhite) {
-		string severity = role == "primary" ? "strong" : "warning";
+	private static bool TryParseRole(string wire, out ThemeRole role) {
+		switch (wire) {
+			case RolePrimary:
+				role = ThemeRole.Primary;
+				return true;
+			case RoleSecondary:
+				role = ThemeRole.Secondary;
+				return true;
+			case RoleAccent:
+				role = ThemeRole.Accent;
+				return true;
+			case RoleSuccess:
+				role = ThemeRole.Success;
+				return true;
+			case RoleError:
+				role = ThemeRole.Error;
+				return true;
+			default:
+				role = default;
+				return false;
+		}
+	}
+
+	private static string RoleToWire(ThemeRole role) {
+		return role switch {
+			ThemeRole.Primary => RolePrimary,
+			ThemeRole.Secondary => RoleSecondary,
+			ThemeRole.Accent => RoleAccent,
+			ThemeRole.Success => RoleSuccess,
+			ThemeRole.Error => RoleError,
+			_ => throw new InvalidOperationException($"Unhandled theme role: {role}")
+		};
+	}
+
+	private static AdvisorWarning LowContrastWarning(ThemeRole role, double contrastOnWhite) {
+		string severity = role == ThemeRole.Primary ? VerdictStrong : SeverityWarning;
 		string message = role switch {
-			"primary" => "This colour is hard to read on white; a darker variant is recommended.",
-			"secondary" => "This secondary colour is hard to read on white.",
-			"accent" => "This accent colour is hard to read on white.",
-			"success" => "This success colour is hard to read on white.",
-			_ => "This error colour is hard to read on white."
+			ThemeRole.Primary => "This colour is hard to read on white; a darker variant is recommended.",
+			ThemeRole.Secondary => "This secondary colour is hard to read on white.",
+			ThemeRole.Accent => "This accent colour is hard to read on white.",
+			ThemeRole.Success => "This success colour is hard to read on white.",
+			ThemeRole.Error => "This error colour is hard to read on white.",
+			_ => throw new InvalidOperationException($"Unhandled theme role: {role}")
 		};
 		return new AdvisorWarning {
 			Code = LowContrastCodeByRole[role],

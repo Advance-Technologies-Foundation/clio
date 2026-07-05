@@ -1,5 +1,9 @@
+using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Clio.Command.Theming;
 using Clio.Common;
 using ModelContextProtocol.Server;
@@ -15,53 +19,57 @@ public class DeleteThemeTool(
 	ILogger logger,
 	IToolCommandResolver commandResolver) : BaseTool<DeleteThemeOptions>(command, logger, commandResolver) {
 
-	internal const string DeleteThemeByEnvironmentName = "delete-theme-by-environment";
-	internal const string DeleteThemeByCredentialsToolName = "delete-theme-by-credentials";
+	internal const string ToolName = "delete-theme";
 
-	[McpServerTool(Name = DeleteThemeByEnvironmentName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false),
+	// Known mis-spellings an LLM tends to emit instead of the kebab-case argument names. Rejected with
+	// an actionable rename hint so a camelCase 'environmentName' never silently binds to nothing.
+	private static readonly Dictionary<string, string> LegacyAliases = new(StringComparer.Ordinal) {
+		["environmentName"] = "environment-name",
+		["environment_name"] = "environment-name"
+	};
+
+	/// <summary>Deletes the addressed theme from the target environment.</summary>
+	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false),
 	 Description("Delete a custom Creatio theme from a registered environment via the native ThemeService. " +
 		"Deleting an unknown id is an error (not idempotent). For the theme workflow, read get-guidance theming first.")]
-	public CommandExecutionResult DeleteThemeByName(
-		[Description("Target Environment name")] [Required] string environmentName,
-		[Description("Id of the theme to delete")] [Required] string id
-	) {
-		if (string.IsNullOrWhiteSpace(environmentName)) {
-			return CommandExecutionResult.FromError("environment-name is required and cannot be empty.");
+	public CommandExecutionResult DeleteTheme(
+		[Description("Parameters: environment-name (required), id (required).")]
+		[Required] DeleteThemeArgs args) {
+		string? aliasError = McpToolArgumentSupport.BuildLegacyAliasError(
+			args.ExtensionData, LegacyAliases, ".",
+			"Valid: environment-name, id.");
+		if (!string.IsNullOrWhiteSpace(aliasError)) {
+			return CommandExecutionResult.FromValidationError(aliasError);
 		}
-		if (string.IsNullOrWhiteSpace(id)) {
-			return CommandExecutionResult.FromError("id is required and cannot be empty.");
+		if (string.IsNullOrWhiteSpace(args.EnvironmentName)) {
+			return CommandExecutionResult.FromValidationError("environment-name is required and cannot be empty.");
+		}
+		if (string.IsNullOrWhiteSpace(args.Id)) {
+			return CommandExecutionResult.FromValidationError("id is required and cannot be empty.");
 		}
 		DeleteThemeOptions options = new() {
-			Environment = environmentName,
-			Id = id
+			Environment = args.EnvironmentName,
+			Id = args.Id
 		};
 		return InternalExecute<DeleteThemeCommand>(options);
 	}
+}
 
-	[McpServerTool(Name = DeleteThemeByCredentialsToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false),
-	 Description("Delete a custom Creatio theme using explicit credentials. Deleting an unknown id is an error (not idempotent). " +
-		"For the theme workflow, read get-guidance theming first.")]
-	public CommandExecutionResult DeleteThemeByCredentials(
-		[Description("Creatio instance url")] [Required] string url,
-		[Description("Creatio instance Username")] [Required] string userName,
-		[Description("Creatio instance Password")] [Required] string password,
-		[Description("Id of the theme to delete")] [Required] string id,
-		[DefaultValue(false)][Description("Specifies if creatio runtime is a NET8 or NET472, default: false")] bool isNetCore = false
-	) {
-		CommandExecutionResult validationError = CommandExecutionResult.ValidateCredentials(url, userName, password);
-		if (validationError != null) {
-			return validationError;
-		}
-		if (string.IsNullOrWhiteSpace(id)) {
-			return CommandExecutionResult.FromError("id is required and cannot be empty.");
-		}
-		DeleteThemeOptions options = new() {
-			Login = userName,
-			Password = password,
-			Uri = url,
-			IsNetCore = isNetCore,
-			Id = id
-		};
-		return InternalExecute<DeleteThemeCommand>(options);
-	}
+/// <summary>
+/// MCP arguments for the <c>delete-theme</c> tool.
+/// </summary>
+public sealed record DeleteThemeArgs(
+	[property: JsonPropertyName("environment-name")]
+	[property: Description("Registered clio environment name.")]
+	[property: Required]
+	string? EnvironmentName = null,
+
+	[property: JsonPropertyName("id")]
+	[property: Description("Id of the theme to delete.")]
+	[property: Required]
+	string? Id = null
+) {
+	/// <summary>Overflow bag for unknown JSON fields; drives the legacy-alias rename hints.</summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
 }

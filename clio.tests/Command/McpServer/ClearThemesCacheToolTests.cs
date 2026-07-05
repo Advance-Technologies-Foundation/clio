@@ -1,4 +1,7 @@
+using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 using System.Linq;
+using System.Text.Json;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Command.Theming;
@@ -16,17 +19,16 @@ public class ClearThemesCacheToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[TestCase(nameof(ClearThemesCacheTool.ClearThemesCacheByName))]
-	[TestCase(nameof(ClearThemesCacheTool.ClearThemesCacheByCredentials))]
-	[Description("Declares the safety flags on both clear-themes-cache tool methods: a non-read-only cache refresh that is non-destructive, idempotent, and closed-world.")]
-	public void ClearThemesCacheTool_Should_DeclareClearSafetyFlags_WhenInspectingMcpServerToolAttribute(string methodName) {
+	[Description("Declares the safety flags on the clear-themes-cache tool method: a non-read-only cache refresh that is non-destructive, idempotent, and closed-world.")]
+	public void ClearThemesCacheTool_Should_DeclareClearSafetyFlags_WhenInspectingMcpServerToolAttribute() {
 		// Arrange & Act
 		McpServerToolAttribute attribute = (McpServerToolAttribute)typeof(ClearThemesCacheTool)
-			.GetMethod(methodName)!
+			.GetMethod(nameof(ClearThemesCacheTool.ClearThemesCache))!
 			.GetCustomAttributes(typeof(McpServerToolAttribute), false)
 			.Single();
 
 		// Assert
+		attribute.Name.Should().Be(ClearThemesCacheTool.ToolName, because: "the tool must be published under its canonical kebab-case name");
 		attribute.ReadOnly.Should().BeFalse(because: "clearing the cache refreshes server-side theme state");
 		attribute.Destructive.Should().BeFalse(because: "a cache refresh rebuilds derived state without destroying themes");
 		attribute.Idempotent.Should().BeTrue(because: "repeated cache clears converge on the same refreshed state");
@@ -34,9 +36,24 @@ public class ClearThemesCacheToolTests {
 	}
 
 	[Test]
-	[Description("Resolves the environment-name clear-themes-cache MCP tool for the requested environment and forwards the environment key into command options.")]
 	[Category("Unit")]
-	public void ClearThemesCacheByEnvironment_Should_Resolve_Command_For_Requested_Environment() {
+	[Description("Marks the single args wrapper as required at the MCP schema level, so a call that omits args fails with a structured error instead of an opaque binding failure.")]
+	public void ClearThemesCacheTool_Should_RequireArgsWrapper_WhenInspectingMethodSignature() {
+		// Arrange & Act
+		object[] requiredAttributes = typeof(ClearThemesCacheTool)
+			.GetMethod(nameof(ClearThemesCacheTool.ClearThemesCache))!
+			.GetParameters()[0]
+			.GetCustomAttributes(typeof(RequiredAttribute), false);
+
+		// Assert
+		requiredAttributes.Should().NotBeEmpty(
+			because: "the args wrapper must be schema-required so an omitted args object fails with a structured error, not an opaque MCP binding failure");
+	}
+
+	[Test]
+	[Description("Resolves the clear-themes-cache MCP tool for the requested environment and forwards the environment key into command options.")]
+	[Category("Unit")]
+	public void ClearThemesCache_Should_Resolve_Command_For_Requested_Environment() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeClearThemesCacheCommand defaultCommand = new();
@@ -46,10 +63,10 @@ public class ClearThemesCacheToolTests {
 		ClearThemesCacheTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.ClearThemesCacheByName("docker_fix2");
+		CommandExecutionResult result = tool.ClearThemesCache(new ClearThemesCacheArgs(EnvironmentName: "docker_fix2"));
 
 		// Assert
-		result.ExitCode.Should().Be(0, because: "the environment-name tool should forward a valid clear-themes-cache command payload");
+		result.ExitCode.Should().Be(0, because: "the tool should forward a valid clear-themes-cache command payload");
 		commandResolver.Received(1).Resolve<ClearThemesCacheCommand>(Arg.Is<ClearThemesCacheOptions>(options =>
 			options.Environment == "docker_fix2"));
 		defaultCommand.CapturedOptions.Should().BeNull(
@@ -64,7 +81,7 @@ public class ClearThemesCacheToolTests {
 	[Test]
 	[Description("Returns a structured error without resolving a command when the environment name is empty.")]
 	[Category("Unit")]
-	public void ClearThemesCacheByEnvironment_Should_Return_Error_When_Environment_Name_Is_Empty() {
+	public void ClearThemesCache_Should_Return_Error_When_Environment_Name_Is_Empty() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeClearThemesCacheCommand defaultCommand = new();
@@ -72,73 +89,86 @@ public class ClearThemesCacheToolTests {
 		ClearThemesCacheTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.ClearThemesCacheByName("   ");
+		CommandExecutionResult result = tool.ClearThemesCache(new ClearThemesCacheArgs(EnvironmentName: "   "));
 
 		// Assert
-		result.ExitCode.Should().NotBe(0, because: "an empty environment name is an invalid request and must not succeed");
+		result.ExitCode.Should().Be(1, because: "an empty environment name is an expected, caller-actionable validation error");
 		commandResolver.DidNotReceive().Resolve<ClearThemesCacheCommand>(Arg.Any<ClearThemesCacheOptions>());
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
 	[Test]
-	[Description("Resolves the credentials clear-themes-cache MCP tool and preserves the default false value for isNetCore when the argument is omitted.")]
+	[Description("Returns a structured failure naming environment-name when the required environment name is omitted.")]
 	[Category("Unit")]
-	public void ClearThemesCacheByCredentials_Should_Use_Default_IsNetCore_When_Omitted() {
+	public void ClearThemesCache_Should_Return_Failure_When_Environment_Name_Is_Missing() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeClearThemesCacheCommand defaultCommand = new();
-		FakeClearThemesCacheCommand resolvedCommand = new();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		commandResolver.Resolve<ClearThemesCacheCommand>(Arg.Any<ClearThemesCacheOptions>()).Returns(resolvedCommand);
 		ClearThemesCacheTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.ClearThemesCacheByCredentials(
-			"http://localhost:5000",
-			"Supervisor",
-			"Supervisor");
+		CommandExecutionResult result = tool.ClearThemesCache(new ClearThemesCacheArgs());
 
 		// Assert
-		result.ExitCode.Should().Be(0, because: "the credentials tool should forward a valid clear-themes-cache command payload");
-		commandResolver.Received(1).Resolve<ClearThemesCacheCommand>(Arg.Is<ClearThemesCacheOptions>(options =>
-			options.Uri == "http://localhost:5000" &&
-			options.Login == "Supervisor" &&
-			options.Password == "Supervisor" &&
-			options.IsNetCore == false));
-		resolvedCommand.CapturedOptions.Should().NotBeNull(
-			because: "the resolved command should receive the forwarded credentials payload");
-		resolvedCommand.CapturedOptions!.IsNetCore.Should().BeFalse(
-			because: "the MCP tool contract defines false as the default when isNetCore is omitted");
+		result.ExitCode.Should().Be(1, because: "a missing environment name is an expected, caller-actionable validation error");
+		result.Output.Should().ContainSingle(message =>
+			message.GetType() == typeof(ErrorMessage) &&
+			Equals(message.Value, "environment-name is required and cannot be empty."),
+			because: "the failure must name the exact kebab-case field the caller has to add");
+		commandResolver.DidNotReceive().Resolve<ClearThemesCacheCommand>(Arg.Any<ClearThemesCacheOptions>());
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
 	[Test]
-	[Description("Resolves the credentials clear-themes-cache MCP tool and preserves an explicit true value for isNetCore when the argument is provided.")]
+	[Description("Returns an actionable rename hint instead of silently ignoring a camelCase alias of a kebab-case argument.")]
 	[Category("Unit")]
-	public void ClearThemesCacheByCredentials_Should_Preserve_Explicit_IsNetCore_When_Provided() {
+	public void ClearThemesCache_Should_Return_RenameHint_When_CamelCase_Alias_Is_Passed() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeClearThemesCacheCommand defaultCommand = new();
-		FakeClearThemesCacheCommand resolvedCommand = new();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		commandResolver.Resolve<ClearThemesCacheCommand>(Arg.Any<ClearThemesCacheOptions>()).Returns(resolvedCommand);
 		ClearThemesCacheTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+		ClearThemesCacheArgs args = new() {
+			ExtensionData = new Dictionary<string, JsonElement> {
+				["environmentName"] = JsonSerializer.SerializeToElement("docker_fix2")
+			}
+		};
 
 		// Act
-		CommandExecutionResult result = tool.ClearThemesCacheByCredentials(
-			"http://localhost:5000",
-			"Supervisor",
-			"Supervisor",
-			isNetCore: true);
+		CommandExecutionResult result = tool.ClearThemesCache(args);
 
 		// Assert
-		result.ExitCode.Should().Be(0, because: "the credentials tool should forward a valid clear-themes-cache command payload when isNetCore is provided");
-		commandResolver.Received(1).Resolve<ClearThemesCacheCommand>(Arg.Is<ClearThemesCacheOptions>(options =>
-			options.Uri == "http://localhost:5000" &&
-			options.IsNetCore == true));
-		resolvedCommand.CapturedOptions!.IsNetCore.Should().BeTrue(
-			because: "the MCP tool contract should preserve explicit optional argument values");
+		result.ExitCode.Should().Be(1, because: "a rejected alias is an expected, caller-actionable validation error");
+		result.Output.Should().ContainSingle(message =>
+			message.GetType() == typeof(ErrorMessage) &&
+			message.Value.ToString().Contains("'environmentName' -> 'environment-name'"),
+			because: "the failure must tell the caller the exact rename that fixes the call");
+		commandResolver.DidNotReceive().Resolve<ClearThemesCacheCommand>(Arg.Any<ClearThemesCacheOptions>());
 		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Description("Binds the clear-themes-cache argument record from kebab-case JSON using the real MCP serializer options, and routes camelCase spellings into the overflow bag — the exact JSON->record binding the MCP host performs, which direct method calls bypass.")]
+	[Category("Unit")]
+	public void ClearThemesCacheArgs_Should_Bind_KebabCase_And_Route_CamelCase_To_ExtensionData() {
+		// Arrange
+		JsonSerializerOptions options = Clio.BindingsModule.CreateMcpSerializerOptions();
+
+		// Act
+		ClearThemesCacheArgs kebab = JsonSerializer.Deserialize<ClearThemesCacheArgs>(
+			"""{"environment-name":"docker_fix2"}""", options)!;
+		ClearThemesCacheArgs camel = JsonSerializer.Deserialize<ClearThemesCacheArgs>(
+			"""{"environmentName":"docker_fix2"}""", options)!;
+
+		// Assert
+		kebab.EnvironmentName.Should().Be("docker_fix2", because: "the advertised kebab-case environment-name field must bind");
+		(kebab.ExtensionData is null || kebab.ExtensionData.Count == 0).Should().BeTrue(
+			because: "every kebab field binds to a declared parameter, so nothing overflows");
+		camel.EnvironmentName.Should().BeNull(
+			because: "environmentName is not a declared wire name, so it must not bind");
+		camel.ExtensionData.Should().ContainKey("environmentName",
+			because: "the unbound camelCase spelling must land in the overflow bag so the tool can return a rename hint");
 	}
 
 	private sealed class FakeClearThemesCacheCommand : ClearThemesCacheCommand {

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Text.Json;
 using Clio.Command;
@@ -18,17 +19,16 @@ public class CreateThemeToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[TestCase(nameof(CreateThemeTool.CreateThemeByName))]
-	[TestCase(nameof(CreateThemeTool.CreateThemeByCredentials))]
-	[Description("Declares the FR-12 safety flags on both create-theme tool methods: a write that is not destructive, not idempotent, and closed-world.")]
-	public void CreateThemeTool_Should_DeclareCreateSafetyFlags_WhenInspectingMcpServerToolAttribute(string methodName) {
+	[Description("Declares the FR-12 safety flags on the create-theme tool method: a write that is not destructive, not idempotent, and closed-world.")]
+	public void CreateThemeTool_Should_DeclareCreateSafetyFlags_WhenInspectingMcpServerToolAttribute() {
 		// Arrange & Act
 		McpServerToolAttribute attribute = (McpServerToolAttribute)typeof(CreateThemeTool)
-			.GetMethod(methodName)!
+			.GetMethod(nameof(CreateThemeTool.CreateTheme))!
 			.GetCustomAttributes(typeof(McpServerToolAttribute), false)
 			.Single();
 
 		// Assert
+		attribute.Name.Should().Be(CreateThemeTool.ToolName, because: "the tool must be published under its canonical kebab-case name");
 		attribute.ReadOnly.Should().BeFalse(because: "creating a theme writes to the environment");
 		attribute.Destructive.Should().BeFalse(because: "create adds a new theme without destroying existing state");
 		attribute.Idempotent.Should().BeFalse(because: "a repeated create yields a different theme (new auto-id) rather than the same end state");
@@ -36,9 +36,24 @@ public class CreateThemeToolTests {
 	}
 
 	[Test]
+	[Category("Unit")]
+	[Description("Marks the single args wrapper as required at the MCP schema level, so a call that omits args fails with a structured error instead of an opaque binding failure.")]
+	public void CreateThemeTool_Should_RequireArgsWrapper_WhenInspectingMethodSignature() {
+		// Arrange & Act
+		object[] requiredAttributes = typeof(CreateThemeTool)
+			.GetMethod(nameof(CreateThemeTool.CreateTheme))!
+			.GetParameters()[0]
+			.GetCustomAttributes(typeof(RequiredAttribute), false);
+
+		// Assert
+		requiredAttributes.Should().NotBeEmpty(
+			because: "the args wrapper must be schema-required so an omitted args object fails with a structured error, not an opaque MCP binding failure");
+	}
+
+	[Test]
 	[Description("Resolves the environment-name create-theme MCP tool, forwards the theme fields, and returns the created id as a structured success result.")]
 	[Category("Unit")]
-	public void CreateThemeByEnvironment_Should_Resolve_Command_And_Return_CreatedId() {
+	public void CreateTheme_Should_Resolve_Command_And_Return_CreatedId() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeCreateThemeCommand defaultCommand = new();
@@ -48,8 +63,9 @@ public class CreateThemeToolTests {
 		CreateThemeTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CreateThemeResult result = tool.CreateThemeByName(new CreateThemeByEnvironmentArgs(
-			EnvironmentName: "docker_fix2", CssClassName: "ocean-theme", CssContent: ".ocean-theme{}", Caption: "Ocean"));
+		CreateThemeResult result = tool.CreateTheme(new CreateThemeArgs(
+			EnvironmentName: "docker_fix2", CssClassName: "ocean-theme", CssContent: ".ocean-theme{}", Caption: "Ocean",
+			Id: "explicit-id", PackageName: "UsrBranding"));
 
 		// Assert
 		result.Success.Should().BeTrue(because: "a created theme must report success");
@@ -58,7 +74,9 @@ public class CreateThemeToolTests {
 			options.Environment == "docker_fix2" &&
 			options.Caption == "Ocean" &&
 			options.CssClassName == "ocean-theme" &&
-			options.CssContent == ".ocean-theme{}"));
+			options.CssContent == ".ocean-theme{}" &&
+			options.Id == "explicit-id" &&
+			options.PackageName == "UsrBranding"));
 		resolvedCommand.CapturedOptions.Should().NotBeNull(because: "the resolved command instance should create the theme");
 		defaultCommand.CapturedOptions.Should().BeNull(because: "the environment-aware tool path must use the resolved command instance");
 		ConsoleLogger.Instance.ClearMessages();
@@ -67,7 +85,7 @@ public class CreateThemeToolTests {
 	[Test]
 	[Description("Returns a structured failure without resolving a command when the environment name is empty.")]
 	[Category("Unit")]
-	public void CreateThemeByEnvironment_Should_Return_Failure_When_Environment_Name_Is_Empty() {
+	public void CreateTheme_Should_Return_Failure_When_Environment_Name_Is_Empty() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeCreateThemeCommand defaultCommand = new();
@@ -75,12 +93,35 @@ public class CreateThemeToolTests {
 		CreateThemeTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CreateThemeResult result = tool.CreateThemeByName(new CreateThemeByEnvironmentArgs(
+		CreateThemeResult result = tool.CreateTheme(new CreateThemeArgs(
 			EnvironmentName: "   ", CssClassName: "ocean-theme", CssContent: ".ocean-theme{}", Caption: "Ocean"));
 
 		// Assert
 		result.Success.Should().BeFalse(because: "an empty environment name is an invalid request");
-		result.Error.Should().NotBeNullOrWhiteSpace(because: "the failure must carry a diagnostic");
+		result.Error.Should().Contain("environment-name",
+			because: "the failure must name the exact kebab-case field the caller has to fix");
+		commandResolver.DidNotReceive().Resolve<CreateThemeCommand>(Arg.Any<CreateThemeOptions>());
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Description("Returns a structured failure naming environment-name when the required environment name is omitted.")]
+	[Category("Unit")]
+	public void CreateTheme_Should_Return_Failure_When_Environment_Name_Is_Missing() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeCreateThemeCommand defaultCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		CreateThemeTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CreateThemeResult result = tool.CreateTheme(new CreateThemeArgs(
+			CssClassName: "ocean-theme", CssContent: ".ocean-theme{}", Caption: "Ocean"));
+
+		// Assert
+		result.Success.Should().BeFalse(because: "a create request without an environment name is invalid");
+		result.Error.Should().Contain("environment-name",
+			because: "the failure must name the exact kebab-case field the caller has to add");
 		commandResolver.DidNotReceive().Resolve<CreateThemeCommand>(Arg.Any<CreateThemeOptions>());
 		ConsoleLogger.Instance.ClearMessages();
 	}
@@ -88,7 +129,7 @@ public class CreateThemeToolTests {
 	[Test]
 	[Description("Surfaces the command failure message as a structured failure when the resolved command reports failure.")]
 	[Category("Unit")]
-	public void CreateThemeByEnvironment_Should_Return_Failure_When_Command_Reports_Failure() {
+	public void CreateTheme_Should_Return_Failure_When_Command_Reports_Failure() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeCreateThemeCommand defaultCommand = new();
@@ -98,7 +139,7 @@ public class CreateThemeToolTests {
 		CreateThemeTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CreateThemeResult result = tool.CreateThemeByName(new CreateThemeByEnvironmentArgs(
+		CreateThemeResult result = tool.CreateTheme(new CreateThemeArgs(
 			EnvironmentName: "docker_fix2", CssClassName: "ocean-theme", CssContent: ".ocean-theme{}", Caption: "Ocean"));
 
 		// Assert
@@ -108,61 +149,9 @@ public class CreateThemeToolTests {
 	}
 
 	[Test]
-	[Description("Resolves the credentials create-theme MCP tool, forwards the credentials and optional id/package, and preserves the default false isNetCore.")]
-	[Category("Unit")]
-	public void CreateThemeByCredentials_Should_Forward_Payload_And_Default_IsNetCore() {
-		// Arrange
-		ConsoleLogger.Instance.ClearMessages();
-		FakeCreateThemeCommand defaultCommand = new();
-		FakeCreateThemeCommand resolvedCommand = new(createdId: "explicit-id");
-		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		commandResolver.Resolve<CreateThemeCommand>(Arg.Any<CreateThemeOptions>()).Returns(resolvedCommand);
-		CreateThemeTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
-
-		// Act
-		CreateThemeResult result = tool.CreateThemeByCredentials(new CreateThemeByCredentialsArgs(
-			Uri: "http://localhost:5000", Login: "Supervisor", Password: "Supervisor",
-			CssClassName: "ocean-theme", CssContent: ".ocean-theme{}", Caption: "Ocean",
-			Id: "explicit-id", PackageName: "UsrBranding"));
-
-		// Assert
-		result.Success.Should().BeTrue(because: "the credentials tool should forward a valid create-theme payload");
-		commandResolver.Received(1).Resolve<CreateThemeCommand>(Arg.Is<CreateThemeOptions>(options =>
-			options.Uri == "http://localhost:5000" &&
-			options.Login == "Supervisor" &&
-			options.Password == "Supervisor" &&
-			options.IsNetCore == false &&
-			options.Id == "explicit-id" &&
-			options.PackageName == "UsrBranding"));
-		ConsoleLogger.Instance.ClearMessages();
-	}
-
-	[Test]
-	[Description("Returns a structured failure carrying the missing-field message when a required credential argument is empty.")]
-	[Category("Unit")]
-	public void CreateThemeByCredentials_Should_Return_Failure_When_Uri_Is_Empty() {
-		// Arrange
-		ConsoleLogger.Instance.ClearMessages();
-		FakeCreateThemeCommand defaultCommand = new();
-		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		CreateThemeTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
-
-		// Act
-		CreateThemeResult result = tool.CreateThemeByCredentials(new CreateThemeByCredentialsArgs(
-			Uri: "  ", Login: "Supervisor", Password: "Supervisor",
-			CssClassName: "ocean-theme", CssContent: ".ocean-theme{}", Caption: "Ocean"));
-
-		// Assert
-		result.Success.Should().BeFalse(because: "an empty uri is an invalid request and must not resolve a command");
-		result.Error.Should().Contain("uri", because: "the failure must point at the missing field");
-		commandResolver.DidNotReceive().Resolve<CreateThemeCommand>(Arg.Any<CreateThemeOptions>());
-		ConsoleLogger.Instance.ClearMessages();
-	}
-
-	[Test]
 	[Description("Returns a structured failure naming css-content when the required CSS payload is omitted.")]
 	[Category("Unit")]
-	public void CreateThemeByEnvironment_Should_Return_Failure_When_CssContent_Is_Missing() {
+	public void CreateTheme_Should_Return_Failure_When_CssContent_Is_Missing() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeCreateThemeCommand defaultCommand = new();
@@ -170,7 +159,7 @@ public class CreateThemeToolTests {
 		CreateThemeTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CreateThemeResult result = tool.CreateThemeByName(new CreateThemeByEnvironmentArgs(
+		CreateThemeResult result = tool.CreateTheme(new CreateThemeArgs(
 			EnvironmentName: "docker_fix2", Caption: "Ocean"));
 
 		// Assert
@@ -183,20 +172,20 @@ public class CreateThemeToolTests {
 	[Test]
 	[Description("Returns an actionable rename hint instead of silently ignoring a camelCase alias of a kebab-case argument.")]
 	[Category("Unit")]
-	public void CreateThemeByEnvironment_Should_Return_RenameHint_When_CamelCase_Alias_Is_Passed() {
+	public void CreateTheme_Should_Return_RenameHint_When_CamelCase_Alias_Is_Passed() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeCreateThemeCommand defaultCommand = new();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		CreateThemeTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
-		CreateThemeByEnvironmentArgs args = new(CssContent: ".ocean-theme{}") {
+		CreateThemeArgs args = new(CssContent: ".ocean-theme{}") {
 			ExtensionData = new Dictionary<string, JsonElement> {
 				["environmentName"] = JsonSerializer.SerializeToElement("docker_fix2")
 			}
 		};
 
 		// Act
-		CreateThemeResult result = tool.CreateThemeByName(args);
+		CreateThemeResult result = tool.CreateTheme(args);
 
 		// Assert
 		result.Success.Should().BeFalse(because: "a camelCase alias must be rejected, not silently dropped");
@@ -209,7 +198,7 @@ public class CreateThemeToolTests {
 	[Test]
 	[Description("Forwards a null caption when caption is omitted, leaving the command to derive it from cssClassName.")]
 	[Category("Unit")]
-	public void CreateThemeByEnvironment_Should_ForwardNullCaption_WhenCaptionOmitted() {
+	public void CreateTheme_Should_ForwardNullCaption_WhenCaptionOmitted() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeCreateThemeCommand defaultCommand = new();
@@ -219,7 +208,7 @@ public class CreateThemeToolTests {
 		CreateThemeTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CreateThemeResult result = tool.CreateThemeByName(new CreateThemeByEnvironmentArgs(
+		CreateThemeResult result = tool.CreateTheme(new CreateThemeArgs(
 			EnvironmentName: "docker_fix2", CssClassName: "ocean-theme", CssContent: ".ocean-theme{}"));
 
 		// Assert
@@ -227,6 +216,35 @@ public class CreateThemeToolTests {
 		commandResolver.Received(1).Resolve<CreateThemeCommand>(Arg.Is<CreateThemeOptions>(options =>
 			options.Caption == null && options.CssClassName == "ocean-theme"));
 		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Description("Binds the create-theme argument record from kebab-case JSON using the real MCP serializer options, and routes camelCase spellings into the overflow bag — the exact JSON->record binding the MCP host performs, which direct method calls bypass.")]
+	[Category("Unit")]
+	public void CreateThemeArgs_Should_Bind_KebabCase_And_Route_CamelCase_To_ExtensionData() {
+		// Arrange
+		JsonSerializerOptions options = Clio.BindingsModule.CreateMcpSerializerOptions();
+
+		// Act
+		CreateThemeArgs kebab = JsonSerializer.Deserialize<CreateThemeArgs>(
+			"""{"environment-name":"docker_fix2","css-content":".ocean-theme{}","css-class-name":"ocean-theme","caption":"Ocean","id":"ocean","package-name":"UsrBranding"}""",
+			options)!;
+		CreateThemeArgs camel = JsonSerializer.Deserialize<CreateThemeArgs>(
+			"""{"cssContent":".ocean-theme{}"}""", options)!;
+
+		// Assert
+		kebab.EnvironmentName.Should().Be("docker_fix2", because: "the advertised kebab-case environment-name field must bind");
+		kebab.CssContent.Should().Be(".ocean-theme{}", because: "the advertised kebab-case css-content field must bind");
+		kebab.CssClassName.Should().Be("ocean-theme", because: "the advertised kebab-case css-class-name field must bind");
+		kebab.Caption.Should().Be("Ocean", because: "the advertised caption field must bind");
+		kebab.Id.Should().Be("ocean", because: "the advertised id field must bind");
+		kebab.PackageName.Should().Be("UsrBranding", because: "the advertised kebab-case package-name field must bind");
+		(kebab.ExtensionData is null || kebab.ExtensionData.Count == 0).Should().BeTrue(
+			because: "every kebab field binds to a declared parameter, so nothing overflows");
+		camel.CssContent.Should().BeNull(
+			because: "cssContent is not a declared wire name, so it must not bind");
+		camel.ExtensionData.Should().ContainKey("cssContent",
+			because: "the unbound camelCase spelling must land in the overflow bag so the tool can return a rename hint");
 	}
 
 	private sealed class FakeCreateThemeCommand : CreateThemeCommand {

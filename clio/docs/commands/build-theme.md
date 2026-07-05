@@ -36,7 +36,7 @@ Required. Brand primary colour in any CSS form: #rrggbb, #rgb, rgb(), hsl(), or 
 
 --css-class-name NAME
 Optional. CSS class applied when the theme is active (^[A-Za-z][A-Za-z0-9_-]*$, max 100). Derived from
---caption (slugified) when omitted; at least one of --caption or --css-class-name is required.
+--caption (lowercased and hyphenated) when omitted; at least one of --caption or --css-class-name is required.
 
 --secondary COLOUR
 Optional. Secondary colour; derived from the primary when omitted.

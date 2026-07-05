@@ -1,5 +1,8 @@
 using System;
+using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Text.Json;
 using System.Threading;
@@ -52,7 +55,7 @@ public sealed class BuildThemeToolTests
 	[Description("Returns success with the built CSS when given a valid primary and css-class-name.")]
 	public void BuildTheme_ShouldReturnSuccessWithCss_WhenValidInput() {
 		// Act
-		BuildThemeResult result = _tool.BuildTheme(primary: "#004fd6", cssClassName: "MyTheme");
+		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme"));
 
 		// Assert
 		result.Success.Should().BeTrue(because: "valid inputs produce a theme");
@@ -64,11 +67,36 @@ public sealed class BuildThemeToolTests
 	}
 
 	[Test]
-	[Description("Returns a non-fatal warning (but still succeeds) when fontWeights is given without a heading or body font.")]
+	[Description("Forwards every brand colour and font field from the args record to the CSS builder, so no optional input is silently dropped or cross-wired.")]
+	public void BuildTheme_ShouldForwardAllBrandAndFontFields_WhenAllOptionalInputsSupplied() {
+		// Act
+		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(
+			Primary: "#004fd6", CssClassName: "MyTheme", Secondary: "#0d2e4e", Accent: "#f94e11",
+			Success: "#0b8500", Error: "#d2310d", HeadingFont: "Inter", BodyFont: "Roboto",
+			FontWeights: new[] { 400, 700 }));
+
+		// Assert
+		result.Success.Should().BeTrue(because: "a fully-specified build request is valid");
+		_themeCssBuilder.Received(1).Build(Arg.Any<string>(), Arg.Is<BuildThemeOptions>(o =>
+			o.Primary == "#004fd6" &&
+			o.Secondary == "#0d2e4e" &&
+			o.Accent == "#f94e11" &&
+			o.Success == "#0b8500" &&
+			o.Error == "#d2310d" &&
+			o.ThemeCssClass == "MyTheme" &&
+			o.Fonts != null &&
+			o.Fonts.Heading == "Inter" &&
+			o.Fonts.Body == "Roboto" &&
+			o.Fonts.Weights != null &&
+			o.Fonts.Weights.SequenceEqual(new[] { 400, 700 })));
+	}
+
+	[Test]
+	[Description("Returns a non-fatal warning (but still succeeds) when font-weights is given without a heading or body font.")]
 	public void BuildTheme_ShouldReturnWarning_WhenFontWeightsWithoutFamily() {
 		// Act
-		BuildThemeResult result = _tool.BuildTheme(primary: "#004fd6", cssClassName: "MyTheme",
-			fontWeights: new[] { 400, 700 });
+		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme",
+			FontWeights: new[] { 400, 700 }));
 
 		// Assert
 		result.Success.Should().BeTrue(because: "font weights without a family is non-fatal");
@@ -81,8 +109,8 @@ public sealed class BuildThemeToolTests
 	[Description("Returns the theme.json descriptor alongside the CSS, filled with the supplied caption and id (both optional).")]
 	public void BuildTheme_ShouldReturnThemeJsonDescriptor_WithSuppliedCaptionAndId() {
 		// Act
-		BuildThemeResult result = _tool.BuildTheme(primary: "#004fd6", cssClassName: "MyTheme",
-			caption: "My Theme", id: "my-id");
+		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme",
+			Caption: "My Theme", Id: "my-id"));
 
 		// Assert
 		result.Success.Should().BeTrue(because: "valid inputs produce a theme");
@@ -100,7 +128,7 @@ public sealed class BuildThemeToolTests
 	[Description("Returns a graceful failure (no exception) when the required primary is empty.")]
 	public void BuildTheme_ShouldReturnFailure_WhenPrimaryEmpty() {
 		// Act
-		BuildThemeResult result = _tool.BuildTheme(primary: " ", cssClassName: "MyTheme");
+		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: " ", CssClassName: "MyTheme"));
 
 		// Assert
 		result.Success.Should().BeFalse(because: "a missing primary is an invalid request");
@@ -109,10 +137,43 @@ public sealed class BuildThemeToolTests
 	}
 
 	[Test]
+	[Description("Returns a structured failure naming primary when the required field is omitted entirely.")]
+	public void BuildTheme_ShouldReturnFailure_WhenPrimaryOmitted() {
+		// Act
+		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(CssClassName: "MyTheme"));
+
+		// Assert
+		result.Success.Should().BeFalse(because: "a build request without the required primary is invalid");
+		result.Error.Should().Contain("primary is required",
+			because: "the failure must name the exact required field the caller has to add");
+		_themeCssBuilder.DidNotReceive().Build(Arg.Any<string>(), Arg.Any<BuildThemeOptions>());
+	}
+
+	[Test]
+	[Description("Returns an actionable rename hint instead of silently ignoring a camelCase alias of a kebab-case argument.")]
+	public void BuildTheme_ShouldReturnRenameHint_WhenCamelCaseAliasPassed() {
+		// Arrange
+		BuildThemeArgs args = new(Primary: "#004fd6") {
+			ExtensionData = new Dictionary<string, JsonElement> {
+				["cssClassName"] = JsonSerializer.SerializeToElement("MyTheme")
+			}
+		};
+
+		// Act
+		BuildThemeResult result = _tool.BuildTheme(args);
+
+		// Assert
+		result.Success.Should().BeFalse(because: "a camelCase alias must be rejected, not silently dropped");
+		result.Error.Should().Contain("'cssClassName' -> 'css-class-name'",
+			because: "the failure must tell the caller the exact rename that fixes the call");
+		_themeCssBuilder.DidNotReceive().Build(Arg.Any<string>(), Arg.Any<BuildThemeOptions>());
+	}
+
+	[Test]
 	[Description("Returns a graceful failure when neither css-class-name nor caption is supplied (at least one is required).")]
 	public void BuildTheme_ShouldReturnFailure_WhenCssClassNameAndCaptionBothEmpty() {
 		// Act
-		BuildThemeResult result = _tool.BuildTheme(primary: "#004fd6", cssClassName: "");
+		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: ""));
 
 		// Assert
 		result.Success.Should().BeFalse(because: "with no css-class-name and no caption there is nothing to name the theme");
@@ -121,10 +182,10 @@ public sealed class BuildThemeToolTests
 	}
 
 	[Test]
-	[Description("Derives the css-class-name from the caption (slugified) when only a caption is supplied — the theme still builds.")]
+	[Description("Derives the css-class-name from the caption (lowercased and hyphenated) when only a caption is supplied — the theme still builds.")]
 	public void BuildTheme_ShouldDeriveCssClassNameFromCaption_WhenOnlyCaptionSupplied() {
 		// Act
-		BuildThemeResult result = _tool.BuildTheme(primary: "#004fd6", caption: "Ocean Blue");
+		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", Caption: "Ocean Blue"));
 
 		// Assert
 		result.Success.Should().BeTrue(because: "a caption alone is enough — clio derives the css-class-name");
@@ -149,7 +210,7 @@ public sealed class BuildThemeToolTests
 		_resolverFactory.Create(env).Returns(resolver);
 
 		// Act
-		_tool.BuildTheme(primary: "#004fd6", cssClassName: "MyTheme", environmentName: "dev");
+		_tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme", EnvironmentName: "dev"));
 
 		// Assert
 		_themeTemplateProvider.Received(1).GetCssTemplate("10.0.1");
@@ -167,7 +228,8 @@ public sealed class BuildThemeToolTests
 		_resolverFactory.Create(env).Returns(resolver);
 
 		// Act
-		BuildThemeResult result = _tool.BuildTheme(primary: "#004fd6", cssClassName: "MyTheme", environmentName: "dev");
+		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme",
+			EnvironmentName: "dev"));
 
 		// Assert
 		result.Success.Should().BeFalse(because: "an undeterminable environment version must not silently fall back to the highest bundled template");
@@ -176,11 +238,11 @@ public sealed class BuildThemeToolTests
 	}
 
 	[Test]
-	[Description("Fails when both version and environmentName are supplied (mutually exclusive).")]
+	[Description("Fails when both version and environment-name are supplied (mutually exclusive).")]
 	public void BuildTheme_ShouldReturnFailure_WhenBothVersionAndEnvironmentProvided() {
 		// Act
-		BuildThemeResult result = _tool.BuildTheme(primary: "#004fd6", cssClassName: "MyTheme",
-			version: "10.0", environmentName: "dev");
+		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme",
+			Version: "10.0", EnvironmentName: "dev"));
 
 		// Assert
 		result.Success.Should().BeFalse(because: "the version source must be unambiguous");
@@ -195,7 +257,8 @@ public sealed class BuildThemeToolTests
 		_settingsRepository.FindEnvironment("ghost").Returns((EnvironmentSettings)null);
 
 		// Act
-		BuildThemeResult result = _tool.BuildTheme(primary: "#004fd6", cssClassName: "MyTheme", environmentName: "ghost");
+		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme",
+			EnvironmentName: "ghost"));
 
 		// Assert
 		result.Success.Should().BeFalse(because: "an unregistered environment cannot resolve a version");
@@ -211,7 +274,8 @@ public sealed class BuildThemeToolTests
 			.Returns(_ => throw new ArgumentException("Themes require Creatio 10.0 or newer; version 9.0 is not supported."));
 
 		// Act
-		BuildThemeResult result = _tool.BuildTheme(primary: "#004fd6", cssClassName: "MyTheme", version: "9.0");
+		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme",
+			Version: "9.0"));
 
 		// Assert
 		result.Success.Should().BeFalse(because: "an unsupported version must surface as a failure, not a crash");
@@ -223,14 +287,14 @@ public sealed class BuildThemeToolTests
 	[Description("Uses the highest bundled template (null target) when neither version source is supplied.")]
 	public void BuildTheme_ShouldUseHighestBundled_WhenNeitherVersionNorEnvironment() {
 		// Act
-		_tool.BuildTheme(primary: "#004fd6", cssClassName: "MyTheme");
+		_tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme"));
 
 		// Assert
 		_themeTemplateProvider.Received(1).GetCssTemplate(null);
 	}
 
 	[Test]
-	[Description("In workspace-write mode (workspaceDirectory + packageName) writes theme.css + theme.json into the package's Files/themes/<cssClassName>/ and returns the path without the CSS payload (token cost).")]
+	[Description("In workspace-write mode (workspace-directory + package-name) writes theme.css + theme.json into the package's Files/themes/<css-class-name>/ and returns the path without the CSS payload (token cost).")]
 	public void BuildTheme_ShouldWriteFilesAndReturnPath_WhenWorkspaceAndPackageProvided() {
 		// Arrange
 		string workspaceDir = Path.Combine(Path.GetTempPath(), "clio-theme-ws");
@@ -241,12 +305,12 @@ public sealed class BuildThemeToolTests
 		_fileSystem.ExistsDirectory(packagePath).Returns(true);
 
 		// Act
-		BuildThemeResult result = _tool.BuildTheme(primary: "#004fd6", cssClassName: "MyTheme",
-			workspaceDirectory: workspaceDir, packageName: "UsrTheme");
+		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme",
+			WorkspaceDirectory: workspaceDir, PackageName: "UsrTheme"));
 
 		// Assert
 		result.Success.Should().BeTrue(because: "a valid workspace + existing package is a valid workspace-write request");
-		result.Path.Should().Be(themeDir, because: "the tool resolves <ws>/packages/<pkg>/Files/themes/<cssClassName> and returns where it wrote");
+		result.Path.Should().Be(themeDir, because: "the tool resolves <ws>/packages/<pkg>/Files/themes/<css-class-name> and returns where it wrote");
 		result.Css.Should().BeNull(because: "the CSS payload is omitted in workspace-write mode to keep the large string out of the agent context");
 		result.Descriptor.Should().BeNull(because: "the descriptor is written to disk, not returned, in workspace-write mode");
 		result.Error.Should().BeNull(because: "a successful write carries no error");
@@ -255,42 +319,90 @@ public sealed class BuildThemeToolTests
 	}
 
 	[Test]
-	[Description("Returns a graceful failure (no write) when workspaceDirectory is given without packageName; the two must be provided together to write into a package.")]
+	[Description("Returns a graceful failure (no write) when workspace-directory is given without package-name; the two must be provided together to write into a package.")]
 	public void BuildTheme_ShouldReturnFailure_WhenWorkspaceProvidedWithoutPackage() {
 		// Act
 		string workspaceDir = Path.Combine(Path.GetTempPath(), "clio-theme-ws");
-		BuildThemeResult result = _tool.BuildTheme(primary: "#004fd6", cssClassName: "MyTheme", workspaceDirectory: workspaceDir);
+		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme",
+			WorkspaceDirectory: workspaceDir));
 
 		// Assert
 		result.Success.Should().BeFalse(because: "writing into a package needs both the workspace and the package name");
-		result.Error.Should().Contain("together", because: "the error must explain the two are provided together");
+		result.Error.Should().Contain("workspace-directory and package-name must be provided together",
+			because: "the error must name the two kebab-case arguments that are provided together");
 		_fileSystem.DidNotReceive().WriteAllTextToFile(Arg.Any<string>(), Arg.Any<string>());
 	}
 
 	[Test]
-	[Description("Returns a graceful failure (no write, no throw) when workspaceDirectory is not a fully-qualified absolute path, because the MCP server working directory differs from the caller's.")]
+	[Description("Returns a graceful failure (no write) when package-name is given without workspace-directory; the two must be provided together to write into a package.")]
+	public void BuildTheme_ShouldReturnFailure_WhenPackageProvidedWithoutWorkspace() {
+		// Act
+		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme",
+			PackageName: "UsrTheme"));
+
+		// Assert
+		result.Success.Should().BeFalse(because: "a package name alone must not silently fall back to compute mode the caller did not ask for");
+		result.Error.Should().Contain("workspace-directory and package-name must be provided together",
+			because: "the error must name the two kebab-case arguments that are provided together");
+		_fileSystem.DidNotReceive().WriteAllTextToFile(Arg.Any<string>(), Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("Returns a graceful failure (no write, no throw) when workspace-directory is not a fully-qualified absolute path, because the MCP server working directory differs from the caller's.")]
 	public void BuildTheme_ShouldReturnFailure_WhenWorkspaceDirectoryNotAbsolute() {
 		// Act
-		BuildThemeResult result = _tool.BuildTheme(primary: "#004fd6", cssClassName: "MyTheme",
-			workspaceDirectory: "relative/ws", packageName: "UsrTheme");
+		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme",
+			WorkspaceDirectory: "relative/ws", PackageName: "UsrTheme"));
 
 		// Assert
 		result.Success.Should().BeFalse(because: "a non-absolute workspace path is ambiguous under the MCP server working directory");
-		result.Error.Should().Contain("absolute", because: "the error must explain that an absolute path is required");
+		result.Error.Should().Contain("workspace-directory must be a fully-qualified absolute path",
+			because: "the error must name the kebab-case argument and explain that an absolute path is required");
 		_themeCssBuilder.DidNotReceive().Build(Arg.Any<string>(), Arg.Any<BuildThemeOptions>());
 		_fileSystem.DidNotReceive().WriteAllTextToFile(Arg.Any<string>(), Arg.Any<string>());
 	}
 
 	[Test]
-	[Description("Returns a graceful failure (no write) when the workspaceDirectory is not a clio workspace (no .clio/workspaceSettings.json).")]
+	[Description("Returns a graceful failure (no write) when package-name is not a simple identifier, keeping the write inside the workspace.")]
+	public void BuildTheme_ShouldReturnFailure_WhenPackageNameIsNotSimpleIdentifier() {
+		// Act
+		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme",
+			WorkspaceDirectory: Path.GetTempPath(), PackageName: "../UsrTheme"));
+
+		// Assert
+		result.Success.Should().BeFalse(because: "path separators in the package name could escape the workspace");
+		result.Error.Should().Contain("package-name must be a simple identifier",
+			because: "the error must name the kebab-case argument and the identifier constraint");
+		_themeCssBuilder.DidNotReceive().Build(Arg.Any<string>(), Arg.Any<BuildThemeOptions>());
+		_fileSystem.DidNotReceive().WriteAllTextToFile(Arg.Any<string>(), Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("Returns a graceful failure (no build, no write) when an explicit css-class-name could escape the theme directory, because the resolved css-class-name becomes a filesystem path segment.")]
+	public void BuildTheme_ShouldReturnFailure_WhenCssClassNameEscapesWorkspace() {
+		// Act — a valid absolute workspace and simple package name clear the tool's own gates, so the failure
+		// must come from the resolver rejecting the traversal css-class-name before any path is written.
+		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "../evil",
+			WorkspaceDirectory: Path.GetTempPath(), PackageName: "UsrTheme"));
+
+		// Assert
+		result.Success.Should().BeFalse(because: "path separators in the css-class-name could escape the theme directory");
+		result.Error.Should().Contain("css-class-name",
+			because: "the error must name the kebab-case argument the caller has to fix");
+		_themeCssBuilder.DidNotReceive().Build(Arg.Any<string>(), Arg.Any<BuildThemeOptions>());
+		_fileSystem.DidNotReceive().WriteAllTextToFile(Arg.Any<string>(), Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("Returns a graceful failure (no write) when the workspace-directory is not a clio workspace (no .clio/workspaceSettings.json).")]
 	public void BuildTheme_ShouldReturnFailure_WhenNotAWorkspace() {
 		// Arrange
 		string workspaceDir = Path.Combine(Path.GetTempPath(), "clio-theme-notws");
 		_workspacePathBuilder.IsWorkspace.Returns(false);
 
 		// Act
-		BuildThemeResult result = _tool.BuildTheme(primary: "#004fd6", cssClassName: "MyTheme",
-			workspaceDirectory: workspaceDir, packageName: "UsrTheme");
+		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme",
+			WorkspaceDirectory: workspaceDir, PackageName: "UsrTheme"));
 
 		// Assert
 		result.Success.Should().BeFalse(because: "the theme cannot be written outside a clio workspace");
@@ -309,13 +421,44 @@ public sealed class BuildThemeToolTests
 		_fileSystem.ExistsDirectory(packagePath).Returns(false);
 
 		// Act
-		BuildThemeResult result = _tool.BuildTheme(primary: "#004fd6", cssClassName: "MyTheme",
-			workspaceDirectory: workspaceDir, packageName: "Ghost");
+		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme",
+			WorkspaceDirectory: workspaceDir, PackageName: "Ghost"));
 
 		// Assert
 		result.Success.Should().BeFalse(because: "the theme cannot be written into a package that does not exist");
 		result.Error.Should().Contain("Ghost", because: "the error must name the missing package");
 		_fileSystem.DidNotReceive().WriteAllTextToFile(Arg.Any<string>(), Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("Binds the build-theme argument record from kebab-case JSON using the real MCP serializer options, and routes camelCase spellings into the overflow bag — the exact JSON->record binding the MCP host performs, which direct method calls bypass.")]
+	public void BuildThemeArgs_ShouldBindKebabAndRouteCamelToExtensionData_WhenDeserializedFromRawJson() {
+		// Arrange
+		JsonSerializerOptions options = Clio.BindingsModule.CreateMcpSerializerOptions();
+
+		// Act
+		BuildThemeArgs kebab = JsonSerializer.Deserialize<BuildThemeArgs>(
+			"""{"primary":"#004fd6","css-class-name":"MyTheme","heading-font":"Inter","body-font":"Roboto","font-weights":[400,700],"environment-name":"dev","workspace-directory":"C:/ws","package-name":"UsrTheme"}""",
+			options)!;
+		BuildThemeArgs camel = JsonSerializer.Deserialize<BuildThemeArgs>(
+			"""{"fontWeights":[400,700]}""", options)!;
+
+		// Assert
+		kebab.Primary.Should().Be("#004fd6", because: "the advertised primary field must bind");
+		kebab.CssClassName.Should().Be("MyTheme", because: "the advertised kebab-case css-class-name field must bind");
+		kebab.HeadingFont.Should().Be("Inter", because: "the advertised kebab-case heading-font field must bind");
+		kebab.BodyFont.Should().Be("Roboto", because: "the advertised kebab-case body-font field must bind");
+		kebab.FontWeights.Should().BeEquivalentTo(new[] { 400, 700 },
+			because: "the advertised kebab-case font-weights array field must bind");
+		kebab.EnvironmentName.Should().Be("dev", because: "the advertised kebab-case environment-name field must bind");
+		kebab.WorkspaceDirectory.Should().Be("C:/ws", because: "the advertised kebab-case workspace-directory field must bind");
+		kebab.PackageName.Should().Be("UsrTheme", because: "the advertised kebab-case package-name field must bind");
+		(kebab.ExtensionData is null || kebab.ExtensionData.Count == 0).Should().BeTrue(
+			because: "every kebab field binds to a declared parameter, so nothing overflows");
+		camel.FontWeights.Should().BeNull(
+			because: "fontWeights is not a declared wire name, so it must not bind");
+		camel.ExtensionData.Should().ContainKey("fontWeights",
+			because: "the unbound camelCase spelling must land in the overflow bag so the tool can return a rename hint");
 	}
 
 	[Test]
@@ -348,5 +491,19 @@ public sealed class BuildThemeToolTests
 		attribute.Destructive.Should().BeFalse(because: "building writes its own theme artifacts without destroying unrelated state");
 		attribute.Idempotent.Should().BeTrue(because: "re-building with the same inputs yields the same theme artifacts");
 		attribute.OpenWorld.Should().BeFalse(because: "build-theme works offline over a bundled template and never reaches an open set of hosts");
+	}
+
+	[Test]
+	[Description("Marks the single args wrapper as required at the MCP schema level, so a call that omits args fails with a structured error instead of an opaque binding failure.")]
+	public void BuildThemeTool_Should_RequireArgsWrapper_WhenInspectingMethodSignature() {
+		// Arrange & Act
+		object[] requiredAttributes = typeof(BuildThemeTool)
+			.GetMethod(nameof(BuildThemeTool.BuildTheme))!
+			.GetParameters()[0]
+			.GetCustomAttributes(typeof(RequiredAttribute), false);
+
+		// Assert
+		requiredAttributes.Should().NotBeEmpty(
+			because: "the args wrapper must be schema-required so an omitted args object fails with a structured error, not an opaque MCP binding failure");
 	}
 }

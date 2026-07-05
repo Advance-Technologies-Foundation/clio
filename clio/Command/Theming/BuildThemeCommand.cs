@@ -39,7 +39,7 @@ public sealed class BuildThemeOptions {
 	[Option("error", Required = false, HelpText = "Error colour; the platform default when omitted")]
 	public string Error { get; set; }
 
-	/// <summary>CSS class applied when the theme is active; derived from <see cref="Caption"/> (slugified) when omitted.</summary>
+	/// <summary>CSS class applied when the theme is active; derived from <see cref="Caption"/> (lowercased and hyphenated) when omitted.</summary>
 	[Option("css-class-name", Required = false, HelpText = "CSS class applied when the theme is active (^[A-Za-z][A-Za-z0-9_-]*$, max 100); derived from --caption (or the theme name) when omitted")]
 	public string CssClassName { get; set; }
 
@@ -157,12 +157,6 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 		return true;
 	}
 
-	private void WriteArtifacts(string outputDirectory, string css, string descriptor) {
-		_fileSystem.CreateDirectoryIfNotExists(outputDirectory);
-		_fileSystem.WriteAllTextToFile(Path.Combine(outputDirectory, "theme.css"), css);
-		_fileSystem.WriteAllTextToFile(Path.Combine(outputDirectory, "theme.json"), descriptor);
-	}
-
 	/// <summary>
 	/// Builds the theme and writes its <c>theme.css</c> + <c>theme.json</c> into a package of a local clio
 	/// workspace — at <c>&lt;workspaceDirectory&gt;/packages/&lt;packageName&gt;/Files/themes/&lt;cssClassName&gt;/</c> —
@@ -181,7 +175,7 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 		outputPath = null;
 		warnings = [];
 		error = null;
-		if (!ThemeCssClassName.TryResolve(options.CssClassName, options.Caption, out string resolvedClass, out error)) {
+		if (!ThemeParameterValidator.TryResolveCssClassName(options.CssClassName, options.Caption, out string resolvedClass, out error)) {
 			return false;
 		}
 		options.CssClassName = resolvedClass;
@@ -217,7 +211,7 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 		descriptor = null;
 		warnings = [];
 		error = null;
-		if (!ThemeCssClassName.TryResolve(options.CssClassName, options.Caption, out string resolvedClass, out error)) {
+		if (!ThemeParameterValidator.TryResolveCssClassName(options.CssClassName, options.Caption, out string resolvedClass, out error)) {
 			return false;
 		}
 		options.CssClassName = resolvedClass;
@@ -237,6 +231,12 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 			error = ex.Message;
 			return false;
 		}
+	}
+
+	private void WriteArtifacts(string outputDirectory, string css, string descriptor) {
+		_fileSystem.CreateDirectoryIfNotExists(outputDirectory);
+		_fileSystem.WriteAllTextToFile(Path.Combine(outputDirectory, "theme.css"), css);
+		_fileSystem.WriteAllTextToFile(Path.Combine(outputDirectory, "theme.json"), descriptor);
 	}
 
 	private PlatformVersionResolution ResolveVersion(BuildThemeOptions options) {

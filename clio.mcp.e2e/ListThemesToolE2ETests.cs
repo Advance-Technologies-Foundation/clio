@@ -8,16 +8,18 @@ using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
+using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
 using ModelContextProtocol.Client;
+using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E;
 
 /// <summary>
 /// End-to-end coverage for the list-themes MCP tool. Actually listing themes requires a live Creatio
-/// environment with branding licensing, so the hermetic CI-safe assertion is that the real clio MCP
-/// server advertises both connection-mode tool names; the live behavior is exercised manually
-/// (mirrors the clear-themes-cache flow).
+/// environment with branding licensing, so the hermetic CI-safe assertions are that the real clio MCP
+/// server advertises list-themes and binds its args wrapper to a structured validation error; the live
+/// behavior is exercised manually (mirrors the clear-themes-cache flow).
 /// </summary>
 [TestFixture]
 [AllureNUnit]
@@ -25,9 +27,9 @@ namespace Clio.Mcp.E2E;
 [NonParallelizable]
 public sealed class ListThemesToolE2ETests {
 	[Test]
-	[AllureTag(ListThemesTool.ListThemesByEnvironmentName)]
-	[AllureName("list-themes tools are advertised by the MCP server")]
-	[Description("Starts the real clio MCP server and verifies both list-themes connection-mode tools are advertised.")]
+	[AllureTag(ListThemesTool.ToolName)]
+	[AllureName("list-themes tool is advertised by the MCP server")]
+	[Description("Starts the real clio MCP server and verifies list-themes is advertised.")]
 	public async Task ListThemes_Should_Be_Listed_By_Mcp_Server() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -39,10 +41,36 @@ public sealed class ListThemesToolE2ETests {
 		IEnumerable<string> toolNames = tools.Select(tool => tool.Name);
 
 		// Assert
-		toolNames.Should().Contain(ListThemesTool.ListThemesByEnvironmentName,
-			because: "the MCP server should advertise the environment-name list-themes tool for theme discovery");
-		toolNames.Should().Contain(ListThemesTool.ListThemesByCredentialsToolName,
-			because: "the MCP server should advertise the credentials list-themes tool for unregistered environments");
+		toolNames.Should().Contain(ListThemesTool.ToolName,
+			because: "the MCP server should advertise the list-themes tool for theme discovery");
+	}
+
+	[Test]
+	[AllureTag(ListThemesTool.ToolName)]
+	[AllureName("list-themes binds the args wrapper and returns a structured validation failure")]
+	[Description("Calls list-themes through the real clio MCP server with an empty args object and verifies the structured kebab-case validation error names environment-name — proving the args wrapper binds without a live Creatio environment.")]
+	public async Task ListThemes_Should_Return_Structured_Validation_Failure_When_Args_Are_Empty() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ListThemesTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?>()
+			},
+			context.CancellationTokenSource.Token);
+		ListThemesResult result = EntitySchemaStructuredResultParser.Extract<ListThemesResult>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "an argument mistake must surface as a structured in-tool failure, not an MCP protocol error");
+		result.Success.Should().BeFalse(
+			because: "a list request without an environment name is invalid");
+		result.Error.Should().Contain("environment-name",
+			because: "the failure must name the exact kebab-case field the caller has to add");
 	}
 
 	private static async Task<ArrangeContext> ArrangeAsync(McpE2ESettings settings, TimeSpan timeout) {

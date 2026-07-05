@@ -200,7 +200,7 @@ public class CreateThemeCommandTests : BaseCommandTests<CreateThemeOptions>
 	}
 
 	[Test, Category("Unit")]
-	[Description("Derives the css-class-name from the caption (slugified) and sends both when --css-class-name is omitted.")]
+	[Description("Derives the css-class-name from the caption (lowercased and hyphenated) and sends both when --css-class-name is omitted.")]
 	public void CreateTheme_DerivesCssClassNameFromCaption_WhenCssClassNameOmitted() {
 		// Arrange
 		string capturedBody = null;

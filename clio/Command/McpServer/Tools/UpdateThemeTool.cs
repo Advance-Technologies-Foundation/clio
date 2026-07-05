@@ -1,6 +1,9 @@
+using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
-using System.Diagnostics.CodeAnalysis;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Clio.Command.Theming;
 using Clio.Common;
 using ModelContextProtocol.Server;
@@ -16,67 +19,89 @@ public class UpdateThemeTool(
 	ILogger logger,
 	IToolCommandResolver commandResolver) : BaseTool<UpdateThemeOptions>(command, logger, commandResolver) {
 
-	internal const string UpdateThemeByEnvironmentName = "update-theme-by-environment";
-	internal const string UpdateThemeByCredentialsToolName = "update-theme-by-credentials";
+	internal const string ToolName = "update-theme";
 
-	[McpServerTool(Name = UpdateThemeByEnvironmentName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false),
+	// Known mis-spellings an LLM tends to emit instead of the kebab-case argument names. Rejected with
+	// an actionable rename hint so a camelCase 'environmentName' never silently binds to nothing.
+	private static readonly Dictionary<string, string> LegacyAliases = new(StringComparer.Ordinal) {
+		["environmentName"] = "environment-name",
+		["environment_name"] = "environment-name",
+		["cssContent"] = "css-content",
+		["css_content"] = "css-content",
+		["cssClassName"] = "css-class-name",
+		["css_class_name"] = "css-class-name"
+	};
+
+	/// <summary>Overwrites the addressed theme on the target environment with the supplied caption, CSS class name, and CSS content.</summary>
+	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false),
 	 Description("Overwrite an existing custom Creatio theme on a registered environment via the native ThemeService " +
 		"(full overwrite by id; the package cannot be changed). For the theme workflow, read get-guidance theming first.")]
-	public CommandExecutionResult UpdateThemeByName(
-		[Description("Target Environment name")] [Required] string environmentName,
-		[Description("Id of the existing theme to overwrite")] [Required] string id,
-		[Description("Human-readable theme caption (max 250)")] [Required] string caption,
-		[Description("CSS class applied when the theme is active (^[A-Za-z][A-Za-z0-9_-]*$, max 100)")] [Required] string cssClassName,
-		[Description("Inline theme CSS content (max 1 MiB)")] [Required] string cssContent
-	) {
-		if (string.IsNullOrWhiteSpace(environmentName)) {
-			return CommandExecutionResult.FromError("environment-name is required and cannot be empty.");
+	public CommandExecutionResult UpdateTheme(
+		[Description("Parameters: environment-name (required), id (required), caption (required), " +
+			"css-class-name (required), css-content (required).")]
+		[Required] UpdateThemeArgs args) {
+		string? aliasError = McpToolArgumentSupport.BuildLegacyAliasError(
+			args.ExtensionData, LegacyAliases, ".",
+			"Valid: environment-name, id, caption, css-class-name, css-content.");
+		if (!string.IsNullOrWhiteSpace(aliasError)) {
+			return CommandExecutionResult.FromValidationError(aliasError);
 		}
-		if (string.IsNullOrWhiteSpace(id)) {
-			return CommandExecutionResult.FromError("id is required and cannot be empty.");
+		if (string.IsNullOrWhiteSpace(args.EnvironmentName)) {
+			return CommandExecutionResult.FromValidationError("environment-name is required and cannot be empty.");
+		}
+		if (string.IsNullOrWhiteSpace(args.Id)) {
+			return CommandExecutionResult.FromValidationError("id is required and cannot be empty.");
+		}
+		if (string.IsNullOrWhiteSpace(args.Caption)) {
+			return CommandExecutionResult.FromValidationError("caption is required and cannot be empty.");
+		}
+		if (string.IsNullOrWhiteSpace(args.CssClassName)) {
+			return CommandExecutionResult.FromValidationError("css-class-name is required and cannot be empty.");
+		}
+		if (string.IsNullOrWhiteSpace(args.CssContent)) {
+			return CommandExecutionResult.FromValidationError("css-content is required and cannot be empty.");
 		}
 		UpdateThemeOptions options = new() {
-			Environment = environmentName,
-			Id = id,
-			Caption = caption,
-			CssClassName = cssClassName,
-			CssContent = cssContent
+			Environment = args.EnvironmentName,
+			Id = args.Id,
+			Caption = args.Caption,
+			CssClassName = args.CssClassName,
+			CssContent = args.CssContent
 		};
 		return InternalExecute<UpdateThemeCommand>(options);
 	}
+}
 
-	[McpServerTool(Name = UpdateThemeByCredentialsToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false),
-	 Description("Overwrite an existing custom Creatio theme using explicit credentials (full overwrite by id). " +
-		"For the theme workflow, read get-guidance theming first.")]
-	[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
-		Justification = "Tool parameters intentionally mirror the update-theme-by-credentials MCP contract.")]
-	public CommandExecutionResult UpdateThemeByCredentials(
-		[Description("Creatio instance url")] [Required] string url,
-		[Description("Creatio instance Username")] [Required] string userName,
-		[Description("Creatio instance Password")] [Required] string password,
-		[Description("Id of the existing theme to overwrite")] [Required] string id,
-		[Description("Human-readable theme caption (max 250)")] [Required] string caption,
-		[Description("CSS class applied when the theme is active (^[A-Za-z][A-Za-z0-9_-]*$, max 100)")] [Required] string cssClassName,
-		[Description("Inline theme CSS content (max 1 MiB)")] [Required] string cssContent,
-		[DefaultValue(false)][Description("Specifies if creatio runtime is a NET8 or NET472, default: false")] bool isNetCore = false
-	) {
-		CommandExecutionResult validationError = CommandExecutionResult.ValidateCredentials(url, userName, password);
-		if (validationError != null) {
-			return validationError;
-		}
-		if (string.IsNullOrWhiteSpace(id)) {
-			return CommandExecutionResult.FromError("id is required and cannot be empty.");
-		}
-		UpdateThemeOptions options = new() {
-			Login = userName,
-			Password = password,
-			Uri = url,
-			IsNetCore = isNetCore,
-			Id = id,
-			Caption = caption,
-			CssClassName = cssClassName,
-			CssContent = cssContent
-		};
-		return InternalExecute<UpdateThemeCommand>(options);
-	}
+/// <summary>
+/// MCP arguments for the <c>update-theme</c> tool.
+/// </summary>
+public sealed record UpdateThemeArgs(
+	[property: JsonPropertyName("environment-name")]
+	[property: Description("Registered clio environment name.")]
+	[property: Required]
+	string? EnvironmentName = null,
+
+	[property: JsonPropertyName("id")]
+	[property: Description("Id of the existing theme to overwrite.")]
+	[property: Required]
+	string? Id = null,
+
+	[property: JsonPropertyName("caption")]
+	[property: Description("Human-readable theme caption (max 250).")]
+	[property: Required]
+	string? Caption = null,
+
+	[property: JsonPropertyName("css-class-name")]
+	[property: Description("CSS class applied when the theme is active (^[A-Za-z][A-Za-z0-9_-]*$, max 100).")]
+	[property: Required]
+	string? CssClassName = null,
+
+	[property: JsonPropertyName("css-content")]
+	[property: Description("Inline theme CSS content (max 1 MiB).")]
+	[property: Required]
+	string? CssContent = null
+) {
+	/// <summary>Overflow bag for unknown JSON fields; drives the legacy-alias rename hints.</summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
 }

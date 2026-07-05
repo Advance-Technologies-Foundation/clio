@@ -18,9 +18,7 @@ namespace Clio.Mcp.E2E;
 
 /// <summary>
 /// End-to-end coverage for the build-theme MCP tool. build-theme is pure compute over the bundled template,
-/// so the real clio MCP server can build a theme without a live Creatio environment. Its tools are behind the
-/// <c>theming</c> feature toggle, so the fixture skip-gates when the feature is disabled (the default) —
-/// exactly like the other theming and process-designer E2E fixtures.
+/// so the real clio MCP server can build a theme without a live Creatio environment.
 /// </summary>
 [TestFixture]
 [AllureNUnit]
@@ -32,7 +30,7 @@ public sealed class BuildThemeToolE2ETests {
 	[Test]
 	[AllureTag(ToolName)]
 	[AllureName("build-theme advertises write-capable metadata and builds CSS from the bundled template")]
-	[Description("Starts the real clio MCP server, verifies build-theme is advertised as write-capable (ReadOnly=false, the output mode writes local files) with the guidance pointer, and invokes it in compute mode to build a theme.css from the bundled template. Skips when the theming feature is disabled.")]
+	[Description("Starts the real clio MCP server, verifies build-theme is advertised as write-capable (ReadOnly=false, the output mode writes local files) with the guidance pointer, and invokes it in compute mode to build a theme.css from the bundled template.")]
 	public async Task BuildTheme_Should_Advertise_And_Build() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -45,7 +43,12 @@ public sealed class BuildThemeToolE2ETests {
 		McpClientTool tool = tools.Single(t => t.Name == ToolName);
 		CallToolResult callResult = await session.CallToolAsync(
 			ToolName,
-			new Dictionary<string, object?> { ["primary"] = "#004fd6", ["cssClassName"] = "MyTheme" },
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["primary"] = "#004fd6",
+					["css-class-name"] = "MyTheme"
+				}
+			},
 			cancellationTokenSource.Token);
 		BuildThemeResult result = EntitySchemaStructuredResultParser.Extract<BuildThemeResult>(callResult);
 
@@ -73,7 +76,7 @@ public sealed class BuildThemeToolE2ETests {
 	[Test]
 	[AllureTag(ToolName)]
 	[AllureName("build-theme workspace-write mode writes theme.css + theme.json into the package and returns the path without the CSS payload")]
-	[Description("Starts the real clio MCP server and invokes build-theme with workspaceDirectory + packageName; verifies it writes theme.css + theme.json into <ws>/packages/<pkg>/Files/themes/<cssClassName>/ and returns the path with no CSS payload. Skips when the theming feature is disabled.")]
+	[Description("Starts the real clio MCP server and invokes build-theme with workspace-directory + package-name; verifies it writes theme.css + theme.json into <ws>/packages/<pkg>/Files/themes/<css-class-name>/ and returns the path with no CSS payload.")]
 	public async Task BuildTheme_Should_WriteIntoPackage_WhenWorkspaceAndPackageProvided() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -95,10 +98,12 @@ public sealed class BuildThemeToolE2ETests {
 			CallToolResult callResult = await session.CallToolAsync(
 				ToolName,
 				new Dictionary<string, object?> {
-					["primary"] = "#004fd6",
-					["cssClassName"] = cssClassName,
-					["workspaceDirectory"] = workspaceDir,
-					["packageName"] = packageName
+					["args"] = new Dictionary<string, object?> {
+						["primary"] = "#004fd6",
+						["css-class-name"] = cssClassName,
+						["workspace-directory"] = workspaceDir,
+						["package-name"] = packageName
+					}
 				},
 				cancellationTokenSource.Token);
 			BuildThemeResult result = EntitySchemaStructuredResultParser.Extract<BuildThemeResult>(callResult);

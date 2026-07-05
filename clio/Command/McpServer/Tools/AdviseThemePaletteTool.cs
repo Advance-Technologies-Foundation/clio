@@ -1,5 +1,9 @@
+using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Clio.Command;
 using Clio.Command.Theming;
 using ModelContextProtocol.Server;
@@ -18,6 +22,15 @@ public sealed class AdviseThemePaletteTool(IThemeColorAdvisor advisor) {
 
 	internal const string ToolName = "advise-theme-palette";
 
+	// Known mis-spellings an LLM tends to emit instead of the kebab-case argument names. Rejected with
+	// an actionable rename hint so a camelCase 'candidateHexes' never silently binds to nothing.
+	private static readonly Dictionary<string, string> LegacyAliases = new(StringComparer.Ordinal) {
+		["candidateHexes"] = "candidate-hexes",
+		["candidate_hexes"] = "candidate-hexes",
+		["fullStops"] = "full-stops",
+		["full_stops"] = "full-stops"
+	};
+
 	/// <summary>Runs one colour-advisory operation and returns its verdict packet.</summary>
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description("Colour advisor for the theming palette conversation — returns pre-computed verdicts, not raw numbers. "
@@ -27,31 +40,87 @@ public sealed class AdviseThemePaletteTool(IThemeColorAdvisor advisor) {
 		+ "(the three accent paths), validate-color (check a colour for a role), preview (base -500 per role + system success/error). "
 		+ "For the full theme workflow, read get-guidance theming first.")]
 	public ThemeColorAdvisorResult Advise(
-		[Description("Which step to run: triage | adapt-primary | derive-secondary | accent-evaluate-stored | accent-validate-manual | accent-suggest | validate-color | preview")] [Required] string operation,
-		[Description("triage: the raw brand colours the user supplied (any accepted form)")] string[] colors = null,
-		[Description("The resolved primary -500. Required for adapt-primary, derive-secondary, accent-* and for validate-color when role=accent")] string primary = null,
-		[Description("validate-color: the role to validate against — primary | secondary | accent | success | error")] string role = null,
-		[Description("The single raw colour to validate (validate-color, accent-validate-manual)")] string color = null,
-		[Description("derive-secondary: an optional secondary override to validate. preview: the fixed secondary -500 anchor")] string secondary = null,
-		[Description("preview: the fixed accent -500 anchor")] string accent = null,
-		[Description("accent-evaluate-stored: the already-collected candidate hexes to score for similarity to the primary")] string[] candidateHexes = null,
-		[Description("preview: system success -500 override; omit to use the template default")] string success = null,
-		[Description("preview: system error -500 override; omit to use the template default")] string error = null,
-		[Description("preview: offline Creatio template version for the system defaults (e.g. 10.0); the newest bundled version is used when omitted")] string version = null,
-		[Description("preview: true returns all 12 palette stops per role; false (default) returns only the base -500 per role")] bool fullStops = false) {
-		if (string.IsNullOrWhiteSpace(operation)) {
+		[Description("Parameters: operation (required), colors, primary, role, color, secondary, accent, " +
+			"candidate-hexes, success, error, version, full-stops (all optional; see each operation's needs).")]
+		[Required] AdviseThemePaletteArgs args) {
+		string? aliasError = McpToolArgumentSupport.BuildLegacyAliasError(
+			args.ExtensionData, LegacyAliases, ".",
+			"Valid: operation, colors, primary, role, color, secondary, accent, candidate-hexes, success, error, version, full-stops.");
+		if (!string.IsNullOrWhiteSpace(aliasError)) {
+			return new ThemeColorAdvisorResult { Success = false, Error = aliasError };
+		}
+		if (string.IsNullOrWhiteSpace(args.Operation)) {
 			return new ThemeColorAdvisorResult { Success = false, Error = "operation is required and cannot be empty." };
 		}
-		return operation switch {
-			"triage" => advisor.Triage(colors),
-			"adapt-primary" => advisor.AdaptPrimary(primary),
-			"derive-secondary" => advisor.DeriveSecondary(primary, secondary),
-			"accent-evaluate-stored" => advisor.EvaluateStoredAccents(primary, candidateHexes),
-			"accent-validate-manual" => advisor.ValidateColor("accent", color, primary),
-			"accent-suggest" => advisor.SuggestAccents(primary),
-			"validate-color" => advisor.ValidateColor(role, color, primary),
-			"preview" => advisor.Preview(primary, secondary, accent, success, error, version, fullStops),
-			_ => new ThemeColorAdvisorResult { Success = false, Error = $"UNKNOWN_OPERATION: \"{operation}\"" }
+		return args.Operation switch {
+			"triage" => advisor.Triage(args.Colors),
+			"adapt-primary" => advisor.AdaptPrimary(args.Primary),
+			"derive-secondary" => advisor.DeriveSecondary(args.Primary, args.Secondary),
+			"accent-evaluate-stored" => advisor.EvaluateStoredAccents(args.Primary, args.CandidateHexes),
+			"accent-validate-manual" => advisor.ValidateColor("accent", args.Color, args.Primary),
+			"accent-suggest" => advisor.SuggestAccents(args.Primary),
+			"validate-color" => advisor.ValidateColor(args.Role, args.Color, args.Primary),
+			"preview" => advisor.Preview(args.Primary, args.Secondary, args.Accent, args.Success, args.Error,
+				args.Version, args.FullStops ?? false),
+			_ => new ThemeColorAdvisorResult { Success = false, Error = $"UNKNOWN_OPERATION: \"{args.Operation}\"" }
 		};
 	}
+}
+
+/// <summary>
+/// MCP arguments for the <c>advise-theme-palette</c> tool.
+/// </summary>
+public sealed record AdviseThemePaletteArgs(
+	[property: JsonPropertyName("operation")]
+	[property: Description("Which step to run: triage | adapt-primary | derive-secondary | accent-evaluate-stored | accent-validate-manual | accent-suggest | validate-color | preview.")]
+	[property: Required]
+	string? Operation = null,
+
+	[property: JsonPropertyName("colors")]
+	[property: Description("triage: the raw brand colours the user supplied (any accepted form).")]
+	string[]? Colors = null,
+
+	[property: JsonPropertyName("primary")]
+	[property: Description("The resolved primary -500. Required for adapt-primary, derive-secondary, accent-* and for validate-color when role=accent.")]
+	string? Primary = null,
+
+	[property: JsonPropertyName("role")]
+	[property: Description("validate-color: the role to validate against — primary | secondary | accent | success | error.")]
+	string? Role = null,
+
+	[property: JsonPropertyName("color")]
+	[property: Description("The single raw colour to validate (validate-color, accent-validate-manual).")]
+	string? Color = null,
+
+	[property: JsonPropertyName("secondary")]
+	[property: Description("derive-secondary: an optional secondary override to validate. preview: the fixed secondary -500 anchor.")]
+	string? Secondary = null,
+
+	[property: JsonPropertyName("accent")]
+	[property: Description("preview: the fixed accent -500 anchor.")]
+	string? Accent = null,
+
+	[property: JsonPropertyName("candidate-hexes")]
+	[property: Description("accent-evaluate-stored: the already-collected candidate hexes to score for similarity to the primary.")]
+	string[]? CandidateHexes = null,
+
+	[property: JsonPropertyName("success")]
+	[property: Description("preview: system success -500 override; omit to use the template default.")]
+	string? Success = null,
+
+	[property: JsonPropertyName("error")]
+	[property: Description("preview: system error -500 override; omit to use the template default.")]
+	string? Error = null,
+
+	[property: JsonPropertyName("version")]
+	[property: Description("preview: offline Creatio template version for the system defaults (e.g. 10.0); the newest bundled version is used when omitted.")]
+	string? Version = null,
+
+	[property: JsonPropertyName("full-stops")]
+	[property: Description("preview: true returns all 12 palette stops per role; false (default) returns only the base -500 per role.")]
+	bool? FullStops = null
+) {
+	/// <summary>Overflow bag for unknown JSON fields; drives the legacy-alias rename hints.</summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
 }

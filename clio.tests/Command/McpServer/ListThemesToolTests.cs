@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 using System.Linq;
+using System.Text.Json;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Command.Theming;
@@ -18,17 +20,16 @@ public class ListThemesToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[TestCase(nameof(ListThemesTool.ListThemesByName))]
-	[TestCase(nameof(ListThemesTool.ListThemesByCredentials))]
-	[Description("Declares the safety flags on both list-themes tool methods: a read-only, non-destructive, idempotent, closed-world query.")]
-	public void ListThemesTool_Should_DeclareListSafetyFlags_WhenInspectingMcpServerToolAttribute(string methodName) {
+	[Description("Declares the safety flags on the list-themes tool method: a read-only, non-destructive, idempotent, closed-world query.")]
+	public void ListThemesTool_Should_DeclareListSafetyFlags_WhenInspectingMcpServerToolAttribute() {
 		// Arrange & Act
 		McpServerToolAttribute attribute = (McpServerToolAttribute)typeof(ListThemesTool)
-			.GetMethod(methodName)!
+			.GetMethod(nameof(ListThemesTool.ListThemes))!
 			.GetCustomAttributes(typeof(McpServerToolAttribute), false)
 			.Single();
 
 		// Assert
+		attribute.Name.Should().Be(ListThemesTool.ToolName, because: "the tool must be published under its canonical kebab-case name");
 		attribute.ReadOnly.Should().BeTrue(because: "listing themes only reads the environment's theme catalog");
 		attribute.Destructive.Should().BeFalse(because: "a read never destroys state");
 		attribute.Idempotent.Should().BeTrue(because: "repeated listing returns the same catalog for unchanged state");
@@ -36,9 +37,24 @@ public class ListThemesToolTests {
 	}
 
 	[Test]
-	[Description("Resolves the environment-name list-themes MCP tool for the requested environment and returns the resolved command's themes as a structured success result.")]
 	[Category("Unit")]
-	public void ListThemesByEnvironment_Should_Resolve_Command_And_Return_Themes() {
+	[Description("Marks the single args wrapper as required at the MCP schema level, so a call that omits args fails with a structured error instead of an opaque binding failure.")]
+	public void ListThemesTool_Should_RequireArgsWrapper_WhenInspectingMethodSignature() {
+		// Arrange & Act
+		object[] requiredAttributes = typeof(ListThemesTool)
+			.GetMethod(nameof(ListThemesTool.ListThemes))!
+			.GetParameters()[0]
+			.GetCustomAttributes(typeof(RequiredAttribute), false);
+
+		// Assert
+		requiredAttributes.Should().NotBeEmpty(
+			because: "the args wrapper must be schema-required so an omitted args object fails with a structured error, not an opaque MCP binding failure");
+	}
+
+	[Test]
+	[Description("Resolves the list-themes MCP tool for the requested environment and returns the resolved command's themes as a structured success result.")]
+	[Category("Unit")]
+	public void ListThemes_Should_Resolve_Command_And_Return_Themes() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		IReadOnlyList<ThemeDescriptor> themes = new List<ThemeDescriptor> {
@@ -51,7 +67,7 @@ public class ListThemesToolTests {
 		ListThemesTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		ListThemesResult result = tool.ListThemesByName("docker_fix2");
+		ListThemesResult result = tool.ListThemes(new ListThemesArgs(EnvironmentName: "docker_fix2"));
 
 		// Assert
 		result.Success.Should().BeTrue(because: "a successful catalog read must report success");
@@ -69,7 +85,7 @@ public class ListThemesToolTests {
 	[Test]
 	[Description("Returns a structured failure without resolving a command when the environment name is empty.")]
 	[Category("Unit")]
-	public void ListThemesByEnvironment_Should_Return_Failure_When_Environment_Name_Is_Empty() {
+	public void ListThemes_Should_Return_Failure_When_Environment_Name_Is_Empty() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeListThemesCommand defaultCommand = new();
@@ -77,7 +93,7 @@ public class ListThemesToolTests {
 		ListThemesTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		ListThemesResult result = tool.ListThemesByName("   ");
+		ListThemesResult result = tool.ListThemes(new ListThemesArgs(EnvironmentName: "   "));
 
 		// Assert
 		result.Success.Should().BeFalse(because: "an empty environment name is an invalid request and must not succeed");
@@ -87,9 +103,36 @@ public class ListThemesToolTests {
 	}
 
 	[Test]
+	[Description("Maps an empty resolved catalog to a successful result with an empty themes array, per the documented empty-means-no-themes-or-no-license contract.")]
+	[Category("Unit")]
+	public void ListThemes_Should_Return_EmptyThemes_When_Catalog_Is_Empty() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeListThemesCommand defaultCommand = new();
+		FakeListThemesCommand resolvedCommand = new(themes: Array.Empty<ThemeDescriptor>());
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<ListThemesCommand>(Arg.Any<ListThemesOptions>()).Returns(resolvedCommand);
+		ListThemesTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		ListThemesResult result = tool.ListThemes(new ListThemesArgs(EnvironmentName: "docker_fix2"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "an empty catalog is a successful read, not a failure");
+		result.Themes.Should().NotBeNull(
+			because: "a successful read must surface the themes array even when it is empty");
+		result.Themes.Should().BeEmpty(
+			because: "an environment without custom themes (or without the CanCustomizeBranding license) returns an empty catalog");
+		result.Error.Should().BeNull(
+			because: "a successful read carries no failure message");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
 	[Description("Surfaces the ThemeService failure message as a structured failure when the resolved command reports success=false.")]
 	[Category("Unit")]
-	public void ListThemesByEnvironment_Should_Return_Failure_When_Command_Reports_Failure() {
+	public void ListThemes_Should_Return_Failure_When_Command_Reports_Failure() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeListThemesCommand defaultCommand = new();
@@ -99,7 +142,7 @@ public class ListThemesToolTests {
 		ListThemesTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		ListThemesResult result = tool.ListThemesByName("docker_fix2");
+		ListThemesResult result = tool.ListThemes(new ListThemesArgs(EnvironmentName: "docker_fix2"));
 
 		// Assert
 		result.Success.Should().BeFalse(because: "an explicit success=false read must surface as a tool failure");
@@ -109,65 +152,9 @@ public class ListThemesToolTests {
 	}
 
 	[Test]
-	[Description("Resolves the credentials list-themes MCP tool and preserves the default false value for isNetCore when the argument is omitted.")]
+	[Description("Returns a structured failure naming environment-name when the required environment name is omitted.")]
 	[Category("Unit")]
-	public void ListThemesByCredentials_Should_Use_Default_IsNetCore_When_Omitted() {
-		// Arrange
-		ConsoleLogger.Instance.ClearMessages();
-		FakeListThemesCommand defaultCommand = new();
-		FakeListThemesCommand resolvedCommand = new(new List<ThemeDescriptor>());
-		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		commandResolver.Resolve<ListThemesCommand>(Arg.Any<ListThemesOptions>()).Returns(resolvedCommand);
-		ListThemesTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
-
-		// Act
-		ListThemesResult result = tool.ListThemesByCredentials(
-			"http://localhost:5000",
-			"Supervisor",
-			"Supervisor");
-
-		// Assert
-		result.Success.Should().BeTrue(because: "the credentials tool should forward a valid list-themes command payload");
-		result.Themes.Should().BeEmpty(because: "the resolved command returned an empty catalog");
-		commandResolver.Received(1).Resolve<ListThemesCommand>(Arg.Is<ListThemesOptions>(options =>
-			options.Uri == "http://localhost:5000" &&
-			options.Login == "Supervisor" &&
-			options.Password == "Supervisor" &&
-			options.IsNetCore == false));
-		ConsoleLogger.Instance.ClearMessages();
-	}
-
-	[Test]
-	[Description("Resolves the credentials list-themes MCP tool and preserves an explicit true value for isNetCore when the argument is provided.")]
-	[Category("Unit")]
-	public void ListThemesByCredentials_Should_Preserve_Explicit_IsNetCore_When_Provided() {
-		// Arrange
-		ConsoleLogger.Instance.ClearMessages();
-		FakeListThemesCommand defaultCommand = new();
-		FakeListThemesCommand resolvedCommand = new(new List<ThemeDescriptor>());
-		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		commandResolver.Resolve<ListThemesCommand>(Arg.Any<ListThemesOptions>()).Returns(resolvedCommand);
-		ListThemesTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
-
-		// Act
-		ListThemesResult result = tool.ListThemesByCredentials(
-			"http://localhost:5000",
-			"Supervisor",
-			"Supervisor",
-			isNetCore: true);
-
-		// Assert
-		result.Success.Should().BeTrue(because: "the credentials tool should forward a valid list-themes command payload when isNetCore is provided");
-		commandResolver.Received(1).Resolve<ListThemesCommand>(Arg.Is<ListThemesOptions>(options =>
-			options.Uri == "http://localhost:5000" &&
-			options.IsNetCore == true));
-		ConsoleLogger.Instance.ClearMessages();
-	}
-
-	[Test]
-	[Description("Returns a structured failure carrying the missing-field message when a required credential argument is empty.")]
-	[Category("Unit")]
-	public void ListThemesByCredentials_Should_Return_Failure_When_Url_Is_Empty() {
+	public void ListThemes_Should_Return_Failure_When_Environment_Name_Is_Missing() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeListThemesCommand defaultCommand = new();
@@ -175,13 +162,63 @@ public class ListThemesToolTests {
 		ListThemesTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		ListThemesResult result = tool.ListThemesByCredentials("  ", "Supervisor", "Supervisor");
+		ListThemesResult result = tool.ListThemes(new ListThemesArgs());
 
 		// Assert
-		result.Success.Should().BeFalse(because: "an empty url is an invalid request and must not resolve a command");
-		result.Error.Should().Contain("url", because: "the failure must point at the missing field");
+		result.Success.Should().BeFalse(because: "a list request without an environment name is invalid");
+		result.Error.Should().Contain("environment-name",
+			because: "the failure must name the exact kebab-case field the caller has to add");
 		commandResolver.DidNotReceive().Resolve<ListThemesCommand>(Arg.Any<ListThemesOptions>());
 		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Description("Returns an actionable rename hint instead of silently ignoring a camelCase alias of a kebab-case argument.")]
+	[Category("Unit")]
+	public void ListThemes_Should_Return_RenameHint_When_CamelCase_Alias_Is_Passed() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeListThemesCommand defaultCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ListThemesTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+		ListThemesArgs args = new() {
+			ExtensionData = new Dictionary<string, JsonElement> {
+				["environmentName"] = JsonSerializer.SerializeToElement("docker_fix2")
+			}
+		};
+
+		// Act
+		ListThemesResult result = tool.ListThemes(args);
+
+		// Assert
+		result.Success.Should().BeFalse(because: "a camelCase alias must be rejected, not silently dropped");
+		result.Error.Should().Contain("'environmentName' -> 'environment-name'",
+			because: "the failure must tell the caller the exact rename that fixes the call");
+		commandResolver.DidNotReceive().Resolve<ListThemesCommand>(Arg.Any<ListThemesOptions>());
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Description("Binds the list-themes argument record from kebab-case JSON using the real MCP serializer options, and routes camelCase spellings into the overflow bag — the exact JSON->record binding the MCP host performs, which direct method calls bypass.")]
+	[Category("Unit")]
+	public void ListThemesArgs_Should_Bind_KebabCase_And_Route_CamelCase_To_ExtensionData() {
+		// Arrange
+		JsonSerializerOptions options = Clio.BindingsModule.CreateMcpSerializerOptions();
+
+		// Act
+		ListThemesArgs kebab = JsonSerializer.Deserialize<ListThemesArgs>(
+			"""{"environment-name":"docker_fix2"}""", options)!;
+		ListThemesArgs camel = JsonSerializer.Deserialize<ListThemesArgs>(
+			"""{"environmentName":"docker_fix2"}""", options)!;
+
+		// Assert
+		kebab.EnvironmentName.Should().Be("docker_fix2", because: "the advertised kebab-case environment-name field must bind");
+		(kebab.ExtensionData is null || kebab.ExtensionData.Count == 0).Should().BeTrue(
+			because: "every kebab field binds to a declared parameter, so nothing overflows");
+		camel.EnvironmentName.Should().BeNull(
+			because: "environmentName is not a declared wire name, so it must not bind");
+		camel.ExtensionData.Should().ContainKey("environmentName",
+			because: "the unbound camelCase spelling must land in the overflow bag so the tool can return a rename hint");
 	}
 
 	private sealed class FakeListThemesCommand : ListThemesCommand {

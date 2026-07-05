@@ -36,7 +36,7 @@ create-theme [options]
 
 --caption                       Human-readable theme caption, max 250; derived from --css-class-name when omitted
 
---css-class-name                CSS class applied when active (^[A-Za-z][A-Za-z0-9_-]*$, max 100); derived from --caption (slugified) when omitted. At least one of --caption or --css-class-name is required.
+--css-class-name                CSS class applied when active (^[A-Za-z][A-Za-z0-9_-]*$, max 100); derived from --caption (lowercased and hyphenated) when omitted. At least one of --caption or --css-class-name is required.
 
 --css-content                   Inline theme CSS, max 1 MiB (mutually exclusive with --css-content-file)
 

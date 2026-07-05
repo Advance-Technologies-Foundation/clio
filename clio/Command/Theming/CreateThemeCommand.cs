@@ -2,6 +2,7 @@ using System;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Common;
+using Clio.Theming;
 using CommandLine;
 
 namespace Clio.Command.Theming
@@ -22,9 +23,9 @@ namespace Clio.Command.Theming
 			HelpText = "Human-readable theme caption (max 250). When omitted, it is derived from css-class-name.")]
 		public string Caption { get; set; }
 
-		/// <summary>CSS class applied when the theme is active (<c>^[A-Za-z][A-Za-z0-9_-]*$</c>, ≤100); derived from <see cref="Caption"/> (slugified) when omitted.</summary>
+		/// <summary>CSS class applied when the theme is active (<c>^[A-Za-z][A-Za-z0-9_-]*$</c>, ≤100); derived from <see cref="Caption"/> (lowercased and hyphenated) when omitted.</summary>
 		[Option("css-class-name", Required = false,
-			HelpText = "CSS class applied when the theme is active (^[A-Za-z][A-Za-z0-9_-]*$, max 100); derived from --caption (slugified) when omitted")]
+			HelpText = "CSS class applied when the theme is active (^[A-Za-z][A-Za-z0-9_-]*$, max 100); derived from --caption (lowercased and hyphenated) when omitted")]
 		public string CssClassName { get; set; }
 
 		/// <summary>Inline theme CSS. Mutually exclusive with <c>--css-content-file</c>.</summary>
@@ -86,7 +87,7 @@ namespace Clio.Command.Theming
 					out string cssContent, out errorMessage)) {
 				return false;
 			}
-			if (!ThemeCssClassName.TryResolve(options.CssClassName, options.Caption, out string cssClassName, out errorMessage)) {
+			if (!ThemeParameterValidator.TryResolveCssClassName(options.CssClassName, options.Caption, out string cssClassName, out errorMessage)) {
 				return false;
 			}
 			string caption = string.IsNullOrWhiteSpace(options.Caption)

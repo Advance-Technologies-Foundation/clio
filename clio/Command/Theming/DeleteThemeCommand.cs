@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Common;
+using Clio.Theming;
 using CommandLine;
 
 namespace Clio.Command.Theming
@@ -39,7 +40,7 @@ namespace Clio.Command.Theming
 
 		/// <inheritdoc />
 		protected override void ExecuteRemoteCommand(DeleteThemeOptions options) {
-			if (!ThemeRequestBuilder.TryValidateId(options.Id, out string error)) {
+			if (!ThemeParameterValidator.TryValidateId(options.Id, out string error)) {
 				CommandSuccess = false;
 				Logger.WriteError(error);
 				return;

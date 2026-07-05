@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 using System.Linq;
+using System.Text.Json;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using FluentAssertions;
@@ -16,21 +18,35 @@ public class CheckThemingAccessToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[TestCase(nameof(CheckThemingAccessTool.CheckThemingAccessByName))]
-	[TestCase(nameof(CheckThemingAccessTool.CheckThemingAccessByCredentials))]
-	[Description("Declares the safety flags on both check-theming-access tool methods: a read-only, non-destructive, idempotent, closed-world permission probe.")]
-	public void CheckThemingAccessTool_Should_DeclareCheckSafetyFlags_WhenInspectingMcpServerToolAttribute(string methodName) {
+	[Description("Declares the safety flags on the check-theming-access tool method: a read-only, non-destructive, idempotent, closed-world permission probe.")]
+	public void CheckThemingAccessTool_Should_DeclareCheckSafetyFlags_WhenInspectingMcpServerToolAttribute() {
 		// Arrange & Act
 		McpServerToolAttribute attribute = (McpServerToolAttribute)typeof(CheckThemingAccessTool)
-			.GetMethod(methodName)!
+			.GetMethod(nameof(CheckThemingAccessTool.CheckThemingAccess))!
 			.GetCustomAttributes(typeof(McpServerToolAttribute), false)
 			.Single();
 
 		// Assert
+		attribute.Name.Should().Be(CheckThemingAccessTool.ToolName, because: "the tool must be published under its canonical kebab-case name");
 		attribute.ReadOnly.Should().BeTrue(because: "the access check only reads rights and license status");
 		attribute.Destructive.Should().BeFalse(because: "a read never destroys state");
 		attribute.Idempotent.Should().BeTrue(because: "repeated checks return the same verdict for unchanged grants");
 		attribute.OpenWorld.Should().BeFalse(because: "the tool only queries the addressed Creatio environment");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Marks the single args wrapper as required at the MCP schema level, so a call that omits args fails with a structured error instead of an opaque binding failure.")]
+	public void CheckThemingAccessTool_Should_RequireArgsWrapper_WhenInspectingMethodSignature() {
+		// Arrange & Act
+		object[] requiredAttributes = typeof(CheckThemingAccessTool)
+			.GetMethod(nameof(CheckThemingAccessTool.CheckThemingAccess))!
+			.GetParameters()[0]
+			.GetCustomAttributes(typeof(RequiredAttribute), false);
+
+		// Assert
+		requiredAttributes.Should().NotBeEmpty(
+			because: "the args wrapper must be schema-required so an omitted args object fails with a structured error, not an opaque MCP binding failure");
 	}
 
 	private static (CheckThemingAccessTool tool, IToolCommandResolver resolver, ICreatioRightsClient rights,
@@ -47,7 +63,7 @@ public class CheckThemingAccessToolTests {
 	[Test]
 	[Description("Resolves both clients for the requested environment and reports full theming access when the operation right and the license are both granted.")]
 	[Category("Unit")]
-	public void CheckThemingAccessByEnvironment_Should_Report_Access_When_Operation_And_License_Granted() {
+	public void CheckThemingAccess_Should_Report_Access_When_Operation_And_License_Granted() {
 		// Arrange
 		(CheckThemingAccessTool tool, IToolCommandResolver resolver, ICreatioRightsClient rights,
 			ICreatioLicenseClient license) = CreateTool();
@@ -56,7 +72,7 @@ public class CheckThemingAccessToolTests {
 			.Returns(new Dictionary<string, bool> { ["CanCustomizeBranding"] = true });
 
 		// Act
-		ThemingAccessResult result = tool.CheckThemingAccessByName("docker_fix2");
+		ThemingAccessResult result = tool.CheckThemingAccess(new CheckThemingAccessArgs(EnvironmentName: "docker_fix2"));
 
 		// Assert
 		result.Success.Should().BeTrue(because: "a completed access check must report success");
@@ -70,7 +86,7 @@ public class CheckThemingAccessToolTests {
 	[Test]
 	[Description("Surfaces canCustomizeBranding=false when the operation right is granted but the CanCustomizeBranding license is absent from the status map.")]
 	[Category("Unit")]
-	public void CheckThemingAccessByEnvironment_Should_Report_No_License_When_License_Missing() {
+	public void CheckThemingAccess_Should_Report_No_License_When_License_Missing() {
 		// Arrange
 		(CheckThemingAccessTool tool, IToolCommandResolver _, ICreatioRightsClient rights,
 			ICreatioLicenseClient license) = CreateTool();
@@ -79,7 +95,7 @@ public class CheckThemingAccessToolTests {
 			.Returns(new Dictionary<string, bool>());
 
 		// Act
-		ThemingAccessResult result = tool.CheckThemingAccessByName("docker_fix2");
+		ThemingAccessResult result = tool.CheckThemingAccess(new CheckThemingAccessArgs(EnvironmentName: "docker_fix2"));
 
 		// Assert
 		result.Success.Should().BeTrue(because: "a completed check with a missing license is still a successful check");
@@ -90,12 +106,12 @@ public class CheckThemingAccessToolTests {
 	[Test]
 	[Description("Returns a structured failure without resolving any client when the environment name is empty.")]
 	[Category("Unit")]
-	public void CheckThemingAccessByEnvironment_Should_Return_Failure_When_Environment_Name_Is_Empty() {
+	public void CheckThemingAccess_Should_Return_Failure_When_Environment_Name_Is_Empty() {
 		// Arrange
 		(CheckThemingAccessTool tool, IToolCommandResolver resolver, ICreatioRightsClient _, ICreatioLicenseClient __) = CreateTool();
 
 		// Act
-		ThemingAccessResult result = tool.CheckThemingAccessByName("   ");
+		ThemingAccessResult result = tool.CheckThemingAccess(new CheckThemingAccessArgs(EnvironmentName: "   "));
 
 		// Assert
 		result.Success.Should().BeFalse(because: "an empty environment name is an invalid request and must not succeed");
@@ -104,16 +120,55 @@ public class CheckThemingAccessToolTests {
 	}
 
 	[Test]
+	[Description("Returns a structured failure naming environment-name when the required environment name is omitted.")]
+	[Category("Unit")]
+	public void CheckThemingAccess_Should_Return_Failure_When_Environment_Name_Is_Missing() {
+		// Arrange
+		(CheckThemingAccessTool tool, IToolCommandResolver resolver, ICreatioRightsClient _, ICreatioLicenseClient __) = CreateTool();
+
+		// Act
+		ThemingAccessResult result = tool.CheckThemingAccess(new CheckThemingAccessArgs());
+
+		// Assert
+		result.Success.Should().BeFalse(because: "an access check without an environment name is invalid");
+		result.Error.Should().Contain("environment-name",
+			because: "the failure must name the exact kebab-case field the caller has to add");
+		resolver.DidNotReceive().Resolve<ICreatioRightsClient>(Arg.Any<EnvironmentOptions>());
+	}
+
+	[Test]
+	[Description("Returns an actionable rename hint instead of silently ignoring a camelCase alias of a kebab-case argument.")]
+	[Category("Unit")]
+	public void CheckThemingAccess_Should_Return_RenameHint_When_CamelCase_Alias_Is_Passed() {
+		// Arrange
+		(CheckThemingAccessTool tool, IToolCommandResolver resolver, ICreatioRightsClient _, ICreatioLicenseClient __) = CreateTool();
+		CheckThemingAccessArgs args = new() {
+			ExtensionData = new Dictionary<string, JsonElement> {
+				["environmentName"] = JsonSerializer.SerializeToElement("docker_fix2")
+			}
+		};
+
+		// Act
+		ThemingAccessResult result = tool.CheckThemingAccess(args);
+
+		// Assert
+		result.Success.Should().BeFalse(because: "a camelCase alias must be rejected, not silently dropped");
+		result.Error.Should().Contain("'environmentName' -> 'environment-name'",
+			because: "the failure must tell the caller the exact rename that fixes the call");
+		resolver.DidNotReceive().Resolve<ICreatioRightsClient>(Arg.Any<EnvironmentOptions>());
+	}
+
+	[Test]
 	[Description("Surfaces the underlying failure as a structured failure result when a resolved client throws.")]
 	[Category("Unit")]
-	public void CheckThemingAccessByEnvironment_Should_Return_Failure_When_Client_Throws() {
+	public void CheckThemingAccess_Should_Return_Failure_When_Client_Throws() {
 		// Arrange
 		(CheckThemingAccessTool tool, IToolCommandResolver _, ICreatioRightsClient rights, ICreatioLicenseClient __) = CreateTool();
 		rights.GetCanExecuteOperation("CanManageThemes", Arg.Any<CreatioRequestOptions>())
 			.Returns(_ => throw new InvalidOperationException("Unexpected response from RightsService: OK"));
 
 		// Act
-		ThemingAccessResult result = tool.CheckThemingAccessByName("docker_fix2");
+		ThemingAccessResult result = tool.CheckThemingAccess(new CheckThemingAccessArgs(EnvironmentName: "docker_fix2"));
 
 		// Assert
 		result.Success.Should().BeFalse(because: "a thrown transport/parse error must surface as a tool failure");
@@ -121,41 +176,25 @@ public class CheckThemingAccessToolTests {
 	}
 
 	[Test]
-	[Description("Resolves the clients for the credentials request and preserves the default false value for isNetCore when the argument is omitted.")]
+	[Description("Binds the check-theming-access argument record from kebab-case JSON using the real MCP serializer options, and routes camelCase spellings into the overflow bag — the exact JSON->record binding the MCP host performs, which direct method calls bypass.")]
 	[Category("Unit")]
-	public void CheckThemingAccessByCredentials_Should_Use_Default_IsNetCore_When_Omitted() {
+	public void CheckThemingAccessArgs_Should_Bind_KebabCase_And_Route_CamelCase_To_ExtensionData() {
 		// Arrange
-		(CheckThemingAccessTool tool, IToolCommandResolver resolver, ICreatioRightsClient rights,
-			ICreatioLicenseClient license) = CreateTool();
-		rights.GetCanExecuteOperation("CanManageThemes", Arg.Any<CreatioRequestOptions>()).Returns(true);
-		license.GetLicenseOperationStatuses(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CreatioRequestOptions>())
-			.Returns(new Dictionary<string, bool> { ["CanCustomizeBranding"] = true });
+		JsonSerializerOptions options = Clio.BindingsModule.CreateMcpSerializerOptions();
 
 		// Act
-		ThemingAccessResult result = tool.CheckThemingAccessByCredentials("http://localhost:5000", "Supervisor", "Supervisor");
+		CheckThemingAccessArgs kebab = JsonSerializer.Deserialize<CheckThemingAccessArgs>(
+			"""{"environment-name":"docker_fix2"}""", options)!;
+		CheckThemingAccessArgs camel = JsonSerializer.Deserialize<CheckThemingAccessArgs>(
+			"""{"environmentName":"docker_fix2"}""", options)!;
 
 		// Assert
-		result.Success.Should().BeTrue(because: "the credentials tool should resolve and compose the checks");
-		resolver.Received(1).Resolve<ICreatioRightsClient>(Arg.Is<EnvironmentOptions>(options =>
-			options.Uri == "http://localhost:5000" &&
-			options.Login == "Supervisor" &&
-			options.Password == "Supervisor" &&
-			options.IsNetCore == false));
-	}
-
-	[Test]
-	[Description("Returns a structured failure carrying the missing-field message when a required credential argument is empty.")]
-	[Category("Unit")]
-	public void CheckThemingAccessByCredentials_Should_Return_Failure_When_Url_Is_Empty() {
-		// Arrange
-		(CheckThemingAccessTool tool, IToolCommandResolver resolver, ICreatioRightsClient _, ICreatioLicenseClient __) = CreateTool();
-
-		// Act
-		ThemingAccessResult result = tool.CheckThemingAccessByCredentials("  ", "Supervisor", "Supervisor");
-
-		// Assert
-		result.Success.Should().BeFalse(because: "an empty url is an invalid request and must not resolve a client");
-		result.Error.Should().Contain("url", because: "the failure must point at the missing field");
-		resolver.DidNotReceive().Resolve<ICreatioRightsClient>(Arg.Any<EnvironmentOptions>());
+		kebab.EnvironmentName.Should().Be("docker_fix2", because: "the advertised kebab-case environment-name field must bind");
+		(kebab.ExtensionData is null || kebab.ExtensionData.Count == 0).Should().BeTrue(
+			because: "every kebab field binds to a declared parameter, so nothing overflows");
+		camel.EnvironmentName.Should().BeNull(
+			because: "environmentName is not a declared wire name, so it must not bind");
+		camel.ExtensionData.Should().ContainKey("environmentName",
+			because: "the unbound camelCase spelling must land in the overflow bag so the tool can return a rename hint");
 	}
 }

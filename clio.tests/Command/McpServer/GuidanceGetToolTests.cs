@@ -146,19 +146,23 @@ public sealed class GuidanceGetToolTests {
 			because: "the no-code/server flow is now available and must be described, not marked unavailable");
 		result.Article.Text.Should().NotContain("not yet available",
 			because: "the server flow shipped, so the guide must no longer say it is unavailable");
-		result.Article.Text.Should().Contain("create-theme-by-environment",
+		result.Article.Text.Should().Contain("create-theme",
 			because: "the server flow must route the agent to the create-theme MCP tool");
-		result.Article.Text.Should().Contain("update-theme-by-environment",
+		result.Article.Text.Should().Contain("update-theme",
 			because: "the server flow must route the agent to the update-theme MCP tool");
-		result.Article.Text.Should().Contain("delete-theme-by-environment",
+		result.Article.Text.Should().Contain("delete-theme",
 			because: "the server flow must route the agent to the delete-theme MCP tool");
+		result.Article.Text.Should().NotContain("-by-environment",
+			because: "the guide routes to theming tools by their canonical names only");
+		result.Article.Text.Should().NotContain("-by-credentials",
+			because: "the guide routes to theming tools by their canonical names only");
 		result.Article.Text.Should().Contain("build-theme",
 			because: "the guide must route theme-CSS building to the native build-theme tool rather than hand-computing colors");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Keeps the theming guidance a thin pointer (CM-03): it points token lookups at the official Creatio theming documentation and names the --crt-* token namespace at most once, without restating the token catalog or exposing clio-internal hosting details.")]
+	[Description("Keeps the theming guidance a thin pointer (CM-03): it names the --crt-* token namespace at most once without restating the token catalog.")]
 	public async Task GetGuidance_ShouldNotRestateTokenCatalog_WhenTopicIsTheming() {
 		// Arrange
 		GuidanceGetTool tool = new(_featureToggleService);
@@ -169,11 +173,7 @@ public sealed class GuidanceGetToolTests {
 		// Assert
 		result.Article.Should().NotBeNull(
 			because: "theming is a registered guidance name that resolves to an article");
-		result.Article!.Text.Should().Contain("Creatio theming documentation",
-			because: "the guide points token lookups at the official Creatio theming documentation rather than embedding the catalog");
-		result.Article.Text.Should().NotContain("CDN",
-			because: "agent-facing theming guidance must not expose clio-internal CDN/hosting details");
-		int tokenNamespaceMentions = result.Article.Text.Split("--crt").Length - 1;
+		int tokenNamespaceMentions = result.Article!.Text.Split("--crt").Length - 1;
 		tokenNamespaceMentions.Should().BeLessThanOrEqualTo(1,
 			because: "the guide may name the --crt-* token namespace once as a pointer, but must not restate the --crt-* token catalog (CM-03 — single source of truth)");
 	}

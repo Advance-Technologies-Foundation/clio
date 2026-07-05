@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json.Serialization;
 
 namespace Clio.Common
@@ -48,10 +49,8 @@ namespace Clio.Common
 			if (result?.Success != true || result.LicOperationStatuses is null) {
 				return statuses;
 			}
-			foreach (LicOperationStatus status in result.LicOperationStatuses) {
-				if (!string.IsNullOrEmpty(status?.Key)) {
-					statuses[status.Key] = status.Value;
-				}
+			foreach (LicOperationStatus status in result.LicOperationStatuses.Where(status => !string.IsNullOrEmpty(status?.Key))) {
+				statuses[status.Key] = status.Value;
 			}
 			return statuses;
 		}

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Command.Theming;
 using Clio.Common;
@@ -19,49 +20,35 @@ public class ListThemesTool(
 	ILogger logger,
 	IToolCommandResolver commandResolver) : BaseTool<ListThemesOptions>(command, logger, commandResolver) {
 
-	internal const string ListThemesByEnvironmentName = "list-themes-by-environment";
-	internal const string ListThemesByCredentialsToolName = "list-themes-by-credentials";
+	internal const string ToolName = "list-themes";
 
-	[McpServerTool(Name = ListThemesByEnvironmentName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false),
+	// Known mis-spellings an LLM tends to emit instead of the kebab-case argument names. Rejected with
+	// an actionable rename hint so a camelCase 'environmentName' never silently binds to nothing.
+	private static readonly Dictionary<string, string> LegacyAliases = new(StringComparer.Ordinal) {
+		["environmentName"] = "environment-name",
+		["environment_name"] = "environment-name"
+	};
+
+	/// <summary>Lists the custom themes available on the target environment as a structured result.</summary>
+	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false),
 	 Description("List the custom Creatio themes available on a registered environment. " +
 		"Returns { success, themes:[{ id, caption, cssClassName, cssFilePath }] }. " +
 		"An empty themes array means the catalog is empty or the caller lacks the CanCustomizeBranding license. " +
 		"For the theme workflow, read get-guidance theming first.")]
-	public ListThemesResult ListThemesByName(
-		[Description("Target Environment name")] [Required] string environmentName
-	) {
-		if (string.IsNullOrWhiteSpace(environmentName)) {
+	public ListThemesResult ListThemes(
+		[Description("Parameters: environment-name (required).")]
+		[Required] ListThemesArgs args) {
+		string? aliasError = McpToolArgumentSupport.BuildLegacyAliasError(
+			args.ExtensionData, LegacyAliases, ".",
+			"Valid: environment-name.");
+		if (!string.IsNullOrWhiteSpace(aliasError)) {
+			return ListThemesResult.Failure(aliasError);
+		}
+		if (string.IsNullOrWhiteSpace(args.EnvironmentName)) {
 			return ListThemesResult.Failure("environment-name is required and cannot be empty.");
 		}
 		ListThemesOptions options = new() {
-			Environment = environmentName
-		};
-		return Execute(options);
-	}
-
-	[McpServerTool(Name = ListThemesByCredentialsToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false),
-	 Description("List the custom Creatio themes available using explicit credentials. " +
-		"Returns { success, themes:[{ id, caption, cssClassName, cssFilePath }] }. For the theme workflow, read get-guidance theming first.")]
-	public ListThemesResult ListThemesByCredentials(
-		[Description("Creatio instance url")] [Required] string url,
-		[Description("Creatio instance Username")] [Required] string userName,
-		[Description("Creatio instance Password")] [Required] string password,
-		[DefaultValue(false)][Description("Specifies if creatio runtime is a NET8 or NET472, default: false")] bool isNetCore = false
-	) {
-		if (string.IsNullOrWhiteSpace(url)) {
-			return ListThemesResult.Failure("url is required and cannot be empty.");
-		}
-		if (string.IsNullOrWhiteSpace(userName)) {
-			return ListThemesResult.Failure("userName is required and cannot be empty.");
-		}
-		if (string.IsNullOrWhiteSpace(password)) {
-			return ListThemesResult.Failure("password is required and cannot be empty.");
-		}
-		ListThemesOptions options = new() {
-			Login = userName,
-			Password = password,
-			Uri = url,
-			IsNetCore = isNetCore
+			Environment = args.EnvironmentName
 		};
 		return Execute(options);
 	}
@@ -92,7 +79,21 @@ public class ListThemesTool(
 }
 
 /// <summary>
-/// Structured result of the <c>list-themes</c> MCP tools.
+/// MCP arguments for the <c>list-themes</c> tool.
+/// </summary>
+public sealed record ListThemesArgs(
+	[property: JsonPropertyName("environment-name")]
+	[property: Description("Registered clio environment name.")]
+	[property: Required]
+	string? EnvironmentName = null
+) {
+	/// <summary>Overflow bag for unknown JSON fields; drives the legacy-alias rename hints.</summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
+}
+
+/// <summary>
+/// Structured result of the <c>list-themes</c> MCP tool.
 /// </summary>
 public sealed record ListThemesResult {
 	/// <summary>Whether the theme catalog was read successfully.</summary>
@@ -125,7 +126,7 @@ public sealed record ListThemesResult {
 }
 
 /// <summary>
-/// A single theme entry returned by the <c>list-themes</c> MCP tools.
+/// A single theme entry returned by the <c>list-themes</c> MCP tool.
 /// </summary>
 public sealed record ThemeDescriptorResult(
 	[property: JsonPropertyName("id")] string Id,

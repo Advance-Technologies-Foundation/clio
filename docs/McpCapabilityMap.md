@@ -80,10 +80,6 @@ Typical examples:
 - `update-page`
 - `delete-app`
 - `clear-redis-db-by-credentials`
-- `clear-themes-cache-by-credentials`
-- `list-themes-by-credentials`
-- `create-theme-by-credentials`
-- `check-theming-access-by-credentials`
 - `restart-by-credentials`
 
 ### 3. Pure local mode
@@ -510,23 +506,23 @@ Companion surfaces (see the `process-modeling` guidance):
 
 ### 12. Theming
 
-These tools brand a Creatio app: build a custom theme from brand colours and fonts, apply it to an environment, and manage the theme catalog. `build-theme` and `advise-theme-palette` run offline; the rest act on a target environment via the native ThemeService and ship in both `-by-environment` and `-by-credentials` variants.
+These tools brand a Creatio app: build a custom theme from brand colours and fonts, apply it to an environment, and manage the theme catalog. `build-theme` and `advise-theme-palette` run offline; the rest act on a registered environment (`environment-name`) via the native ThemeService. All theming tools take a single `args` object with kebab-case fields.
 
 - `build-theme`
-  Render a theme's `theme.css` (and, in workspace mode, `theme.json`) from a primary colour, optional secondary/accent/system colours, and fonts, over a bundled version-pinned template. Writes into a workspace package when given `workspaceDirectory` + `packageName`, otherwise returns the CSS. Never mutates an environment.
+  Render a theme's `theme.css` (and, in workspace mode, `theme.json`) from a primary colour, optional secondary/accent/system colours, and fonts, over a bundled version-pinned template. Writes into a workspace package when given `workspace-directory` + `package-name`, otherwise returns the CSS. Never mutates an environment.
 - `advise-theme-palette`
   Stateless offline advisor that scores brand-colour choices (readability on white, accent similarity) and returns a verdict per operation, so the agent never judges a colour by eye.
-- `create-theme-by-environment` / `create-theme-by-credentials`
-  Create a theme on the environment from inline `cssContent` plus a caption.
-- `update-theme-by-environment` / `update-theme-by-credentials`
+- `create-theme`
+  Create a theme on the environment from inline `css-content` plus a caption.
+- `update-theme`
   Full overwrite of an existing theme by id (caption, CSS class name, CSS content).
-- `delete-theme-by-environment` / `delete-theme-by-credentials`
+- `delete-theme`
   Delete a theme by id; deleting an unknown id is an error.
-- `list-themes-by-environment` / `list-themes-by-credentials`
+- `list-themes`
   List custom themes (id, caption, CSS class name, CSS file path). An empty list means no themes or no `CanCustomizeBranding` license.
-- `clear-themes-cache-by-environment` / `clear-themes-cache-by-credentials`
+- `clear-themes-cache`
   Refresh the theme catalog cache; needed only when theme files change on the environment outside a clio install.
-- `check-theming-access-by-environment` / `check-theming-access-by-credentials`
+- `check-theming-access`
   Report whether the caller has the `CanManageThemes` operation and `CanCustomizeBranding` license, to gate authoring on a real permission check.
 
 What an external AI can practically do here:
@@ -654,18 +650,12 @@ All lifecycle tools now declare explicit safety metadata (`ReadOnly`, `Destructi
 - `restart-by-credentials`
 - `clear-redis-db-by-environment`
 - `clear-redis-db-by-credentials`
-- `clear-themes-cache-by-environment`
-- `clear-themes-cache-by-credentials`
-- `list-themes-by-environment`
-- `list-themes-by-credentials`
-- `create-theme-by-environment`
-- `create-theme-by-credentials`
-- `update-theme-by-environment`
-- `update-theme-by-credentials`
-- `delete-theme-by-environment`
-- `delete-theme-by-credentials`
-- `check-theming-access-by-environment`
-- `check-theming-access-by-credentials`
+- `clear-themes-cache`
+- `list-themes`
+- `create-theme`
+- `update-theme`
+- `delete-theme`
+- `check-theming-access`
 
 ### 4. Mixed response shapes
 

@@ -1,5 +1,9 @@
+using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Clio.Command.Theming;
 using Clio.Common;
 using ModelContextProtocol.Server;
@@ -14,41 +18,47 @@ public class ClearThemesCacheTool(
 	ILogger logger,
 	IToolCommandResolver commandResolver) : BaseTool<ClearThemesCacheOptions>(command, logger, commandResolver) {
 
-	internal const string ClearThemesCacheByEnvironmentName = "clear-themes-cache-by-environment";
-	internal const string ClearThemesCacheByCredentialsToolName = "clear-themes-cache-by-credentials";
+	internal const string ToolName = "clear-themes-cache";
 
-	[McpServerTool(Name = ClearThemesCacheByEnvironmentName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false),
+	// Known mis-spellings an LLM tends to emit instead of the kebab-case argument names. Rejected with
+	// an actionable rename hint so a camelCase 'environmentName' never silently binds to nothing.
+	private static readonly Dictionary<string, string> LegacyAliases = new(StringComparer.Ordinal) {
+		["environmentName"] = "environment-name",
+		["environment_name"] = "environment-name"
+	};
+
+	/// <summary>Refreshes the theme catalog cache on the target environment.</summary>
+	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false),
 	 Description("Refresh the Creatio theme cache for a registered environment. For the theme workflow, read get-guidance theming first.")]
-	public CommandExecutionResult ClearThemesCacheByName(
-		[Description("Target Environment name")] [Required] string environmentName
-	) {
-		if (string.IsNullOrWhiteSpace(environmentName)) {
-			return CommandExecutionResult.FromError("environment-name is required and cannot be empty.");
+	public CommandExecutionResult ClearThemesCache(
+		[Description("Parameters: environment-name (required).")]
+		[Required] ClearThemesCacheArgs args) {
+		string? aliasError = McpToolArgumentSupport.BuildLegacyAliasError(
+			args.ExtensionData, LegacyAliases, ".",
+			"Valid: environment-name.");
+		if (!string.IsNullOrWhiteSpace(aliasError)) {
+			return CommandExecutionResult.FromValidationError(aliasError);
+		}
+		if (string.IsNullOrWhiteSpace(args.EnvironmentName)) {
+			return CommandExecutionResult.FromValidationError("environment-name is required and cannot be empty.");
 		}
 		ClearThemesCacheOptions options = new() {
-			Environment = environmentName
+			Environment = args.EnvironmentName
 		};
 		return InternalExecute<ClearThemesCacheCommand>(options);
 	}
+}
 
-	[McpServerTool(Name = ClearThemesCacheByCredentialsToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false),
-	 Description("Refresh the Creatio theme cache using explicit credentials. For the theme workflow, read get-guidance theming first.")]
-	public CommandExecutionResult ClearThemesCacheByCredentials(
-		[Description("Creatio instance url")] [Required] string url,
-		[Description("Creatio instance Username")] [Required] string userName,
-		[Description("Creatio instance Password")] [Required] string password,
-		[DefaultValue(false)][Description("Specifies if creatio runtime is a NET8 or NET472, default: false")] bool isNetCore = false
-	) {
-		CommandExecutionResult validationError = CommandExecutionResult.ValidateCredentials(url, userName, password);
-		if (validationError != null) {
-			return validationError;
-		}
-		ClearThemesCacheOptions options = new() {
-			Login = userName,
-			Password = password,
-			Uri = url,
-			IsNetCore = isNetCore
-		};
-		return InternalExecute<ClearThemesCacheCommand>(options);
-	}
+/// <summary>
+/// MCP arguments for the <c>clear-themes-cache</c> tool.
+/// </summary>
+public sealed record ClearThemesCacheArgs(
+	[property: JsonPropertyName("environment-name")]
+	[property: Description("Registered clio environment name.")]
+	[property: Required]
+	string? EnvironmentName = null
+) {
+	/// <summary>Overflow bag for unknown JSON fields; drives the legacy-alias rename hints.</summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
 }

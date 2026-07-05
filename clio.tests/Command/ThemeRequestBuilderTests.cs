@@ -5,6 +5,7 @@ using System.IO;
 using System.Text;
 using Clio.Command;
 using Clio.Command.Theming;
+using Clio.Theming;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -68,38 +69,6 @@ public class ThemeRequestBuilderTests
 
 	[Test]
 	[Category("Unit")]
-	[TestCase("ok-id_1", true, TestName = "TryValidateId accepts a valid id")]
-	[TestCase("bad id", false, TestName = "TryValidateId rejects a space")]
-	[TestCase("bad.id", false, TestName = "TryValidateId rejects a dot")]
-	[TestCase("", false, TestName = "TryValidateId rejects empty")]
-	[Description("Validates the theme id against ^[A-Za-z0-9_-]+$ and the length cap.")]
-	public void TryValidateId_ShouldEnforceContract_WhenGivenId(string id, bool expected) {
-		// Act
-		bool ok = ThemeRequestBuilder.TryValidateId(id, out string error);
-
-		// Assert
-		ok.Should().Be(expected, because: "the id must match the server regex and length contract");
-		if (!expected) {
-			error.Should().NotBeNullOrWhiteSpace(because: "a rejected id must carry a diagnostic");
-		}
-	}
-
-	[Test]
-	[Category("Unit")]
-	[Description("Accepts an auto-generated UUID v4 ('D' format) as a valid id.")]
-	public void TryValidateId_ShouldAccept_WhenGivenGuidDFormat() {
-		// Arrange
-		string id = Guid.NewGuid().ToString("D");
-
-		// Act
-		bool ok = ThemeRequestBuilder.TryValidateId(id, out string _);
-
-		// Assert
-		ok.Should().BeTrue(because: "a UUID in 'D' format contains only hex digits and hyphens, matching ^[A-Za-z0-9_-]+$");
-	}
-
-	[Test]
-	[Category("Unit")]
 	[Description("Passes validation for a well-formed id/caption/cssClassName/cssContent set.")]
 	public void TryValidateRequest_ShouldSucceed_WhenAllFieldsValid() {
 		// Arrange
@@ -152,7 +121,7 @@ public class ThemeRequestBuilderTests
 	[Description("Rejects CSS content larger than the 1 MiB cap before any HTTP call.")]
 	public void TryValidateRequest_ShouldFail_WhenCssContentExceedsOneMebibyte() {
 		// Arrange
-		string oversized = new('a', ThemeRequestBuilder.MaxCssContentBytes + 1);
+		string oversized = new('a', ThemeParameterValidator.MaxCssContentBytes + 1);
 		ThemeRequest request = new() { Id = "id", Caption = "Caption", CssClassName = "css-cls", CssContent = oversized };
 
 		// Act
@@ -247,7 +216,7 @@ public class ThemeRequestBuilderFileTests
 	public void TryResolveCssContent_ShouldFail_WhenFileExceedsOneMebibyte() {
 		// Arrange
 		_tempFile = Path.Combine(Path.GetTempPath(), $"clio-theme-oversized-{Guid.NewGuid():N}.css");
-		File.WriteAllText(_tempFile, new string('a', ThemeRequestBuilder.MaxCssContentBytes + 1), Encoding.UTF8);
+		File.WriteAllText(_tempFile, new string('a', ThemeParameterValidator.MaxCssContentBytes + 1), Encoding.UTF8);
 
 		// Act
 		bool ok = ThemeRequestBuilder.TryResolveCssContent(null, _tempFile, out string resolved, out string error);

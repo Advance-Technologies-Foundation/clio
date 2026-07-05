@@ -59,8 +59,6 @@ public interface IThemeCssBuilder {
 /// </summary>
 internal sealed class ThemeCssBuilder : IThemeCssBuilder {
 
-	private const int ThemeCssClassMaxLength = 100;
-
 	private const string DefaultSuccess500 = "#0b8500";
 	private const string DefaultError500 = "#d2310d";
 	private const string DefaultFontFamily = "Montserrat";
@@ -69,7 +67,6 @@ internal sealed class ThemeCssBuilder : IThemeCssBuilder {
 
 	private static readonly string[] GeneratedPaletteNames = { PaletteNames.Primary, PaletteNames.Secondary, PaletteNames.Accent, PaletteNames.Success, PaletteNames.Error };
 
-	private static readonly Regex ThemeCssClassPattern = new(@"^[A-Za-z][A-Za-z0-9_-]*\z", RegexOptions.Compiled, RegexTimeout);
 	private static readonly Regex CommentStripRegex = new(@"/\*(?:(?!\*/)[\s\S])*?Creatio custom theme template(?:(?!\*/)[\s\S])*?\*/\n?", RegexOptions.Compiled, RegexTimeout);
 	private static readonly Regex PaletteRefRegex = new(@"var\(--crt-palette-([a-z]+)-(\d+)\)", RegexOptions.Compiled, RegexTimeout);
 	private static readonly Regex ColorDeclarationRegex = new(@"(--crt-color-[a-z0-9-]+):\s*([^;]+);", RegexOptions.Compiled, RegexTimeout);
@@ -82,7 +79,7 @@ internal sealed class ThemeCssBuilder : IThemeCssBuilder {
 		if (string.IsNullOrEmpty(options.ThemeCssClass)) {
 			throw new ArgumentException("THEME_CSS_CLASS_REQUIRED: a themeCssClass is required.", nameof(options));
 		}
-		if (options.ThemeCssClass.Length > ThemeCssClassMaxLength || !ThemeCssClassPattern.IsMatch(options.ThemeCssClass)) {
+		if (!ThemeParameterValidator.IsValidCssClassName(options.ThemeCssClass)) {
 			throw new ArgumentException($"INVALID_THEME_CSS_CLASS: \"{options.ThemeCssClass}\"", nameof(options));
 		}
 		if (templateCss == null) {

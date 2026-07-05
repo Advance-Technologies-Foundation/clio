@@ -23,7 +23,7 @@ SYNOPSIS
 OPTIONS
     --primary                       Brand primary colour: #rrggbb, #rgb, rgb(), hsl(), or a named colour (required)
 
-    --css-class-name                CSS class applied when the theme is active (^[A-Za-z][A-Za-z0-9_-]*$, max 100); derived from --caption (slugified) when omitted. At least one of --caption or --css-class-name is required.
+    --css-class-name                CSS class applied when the theme is active (^[A-Za-z][A-Za-z0-9_-]*$, max 100); derived from --caption (lowercased and hyphenated) when omitted. At least one of --caption or --css-class-name is required.
 
     --secondary                     Secondary colour; derived from the primary when omitted
 
