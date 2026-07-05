@@ -52,8 +52,9 @@ public sealed class ProcessModelingGuidanceResource {
 			  when you use it; do not present the result as a working data operation.
 			- Sequence flows; process-level parameters (with an optional constant default value); element-parameter mappings.
 			- NOT yet buildable: gateways, conditional/default flows, timer/message start, intermediate events,
-			  sub-process, Read-data filters/column config. Use the catalog below to reason about a solution and to
-			  READ existing processes (`describe-business-process`); don't expect to build those types in this increment.
+			  sub-process, Read-data filters/column config, signal record FILTERS and tracked-change columns. Use the
+			  catalog below to reason about a solution and to READ existing processes (`describe-business-process`);
+			  don't expect to build those types in this increment.
 
 			== Descriptor (create-business-process) ==
 			{
@@ -85,6 +86,10 @@ public sealed class ProcessModelingGuidanceResource {
 			  wired Start1 -> activity -> end. (`entity` is the page's object, e.g. UsrTestRunButton.)
 			- `on` is a SINGLE event: "added" | "modified" | "deleted" (the designer has no combined
 			  "added or modified"). "On save" of a record edited on a page = "modified"; a brand-new record = "added".
+			- The trigger has NO record filter and NO tracked-column restriction yet: it fires for EVERY record of
+			  the object, and "modified" fires on ANY field change. If the request includes a condition ("only leads
+			  in status New", "only when Amount changes"), tell the user the condition cannot be built yet and
+			  confirm an unfiltered trigger is acceptable BEFORE building.
 			- To convert an EXISTING process to start on a record event, use `modify-business-process`:
 			  removeElement the current start, addElement a `signalStart`, addFlow signalStart -> (first activity).
 
@@ -96,7 +101,7 @@ public sealed class ProcessModelingGuidanceResource {
 			4. `create-business-process(descriptor)` -> builds + saves in one call (layout is automatic).
 			5. Verify: `describe-business-process` (element types, user-task names, parameter sources + direction + isResult
 			   — an output you can map FROM has `isResult:true` or `direction:"Out"`; the signal trigger) /
-			   `generate-process-model` / `execute-esq` (VwProcessLib by caption).
+			   `execute-esq` (VwProcessLib by caption).
 			6. Change it later with `modify-business-process` (ops: addElement / removeElement / addFlow / removeFlow /
 			   addParameter / addMapping / setParameter / removeParameter — same parameter/mapping shapes as a build).
 			- File-design-mode caveat: on an FSD stand a built process is saved to the file system (the designer
@@ -152,7 +157,21 @@ public sealed class ProcessModelingGuidanceResource {
 			- Process parameters (`parameters[]`): { name, type (Text/Long text/Integer/Float/Money/Boolean/Date/Date-time/Time/Guid/Lookup),
 			  direction (In/Out/Variable/Internal), caption, description, or referenceSchema = an object name (e.g. City) to make
 			  it a Lookup to that object }, and an optional value (a constant default). A user-task element's own parameters come from the task. The same shape is
-			  used by modify-business-process `addParameter`. To create a process parameter that mirrors an element parameter's EXACT type (e.g. expose a user-task OUTPUT for mapping with NO conversion), set `typeFromElement` + `typeFromElementParameter` instead of `type`/`referenceSchema` — the data value type (and lookup reference object) is copied verbatim. Edit a parameter with `setParameter` (parameterName + parameterUpdate: any of caption/description/code/direction/referenceSchema/value, applied in place — the UId and its references are preserved; a data-type change is rejected) and remove it with `removeParameter` (parameterName; blocked when another parameter's value or an element mapping still references it). Supported types: Text, Long text, Integer, Float, Money, Boolean, Date, Date-time, Time, Guid, and Lookup — other types (composite / entity / file / ...) are not supported yet.
+			  used by modify-business-process `addParameter`. Supported types: Text, Long text, Integer, Float, Money,
+			  Boolean, Date, Date-time, Time, Guid, and Lookup — other types (composite / entity / file / ...) are not
+			  supported yet.
+			- To create a process parameter that mirrors an element parameter's EXACT type (e.g. expose a user-task
+			  OUTPUT for mapping with NO conversion), set `typeFromElement` + `typeFromElementParameter` instead of
+			  `type`/`referenceSchema` — the data value type (and lookup reference object) is copied verbatim.
+			- Edit a parameter with `setParameter` (parameterName + parameterUpdate: any of caption/description/code/
+			  direction/referenceSchema/value, applied in place — the UId and its references are preserved). A
+			  data-type change is rejected, and referenceSchema can only RE-TARGET a parameter that is already a
+			  Lookup (it cannot convert a scalar to a Lookup). Do NOT set a Date / Date-time / Time / Lookup default
+			  through setParameter `value` — such defaults are formula macros, not plain constants; use the
+			  mapping + `expression` path below (addMapping overwrites, so it edits a default exactly as it
+			  creates one).
+			- Remove a parameter with `removeParameter` (parameterName; blocked when another parameter's value or an
+			  element mapping still references it).
 			- Mappings (`mappings[]`): bind a TARGET parameter to a SOURCE.
 			  TARGET — `elementName` + `elementParameter` (an element input) OR `targetProcessParameter`
 			  (a process parameter, e.g. expose an element's OUTPUT as a process output).
@@ -162,11 +181,27 @@ public sealed class ProcessModelingGuidanceResource {
 			  is usable as a mapping source when `isResult: true` OR `direction: "Out"`. Most user-task outputs come back as
 			  `isResult: true` with `direction: "Variable"` (the platform reports element params as Variable), so detect
 			  outputs by `isResult`, NOT by `direction` alone.
-			  Parameter-to-parameter mappings require COMPATIBLE TYPES: source and target in the same data-value-type
-			  group (text↔text, number↔number, …; for a lookup the same reference object) — exactly what the visual
-			  designer allows; incompatible types are rejected. `processParameter` flows a process input into the
+			  Parameter-to-parameter mappings require COMPATIBLE TYPES (target-driven, mirroring the visual designer);
+			  incompatible pairs are rejected:
+			  * text -> text: any text source into a base-text target; Phone/Email/Web/Rich targets accept only the
+			    SAME extra type or a base-text source (never a different extra type);
+			  * Money <-> Float map to each other; Integer maps ONLY to Integer (NOT to Float or Money);
+			  * date/time is asymmetric via Date-time: a Date-time target accepts Date/Date-time/Time; a Date target
+			    accepts Date/Date-time; a Time target accepts Time/Date-time; Date <-> Time is NOT allowed;
+			  * Lookup: the same reference object on both sides; a Guid source INTO a lookup target IS allowed;
+			  * Boolean only from Boolean; any other type: exact match only. When the target must match a source
+			    exactly, mirror it with `typeFromElement` instead of guessing.
+			  `processParameter` flows a process input into the
 			  field (the server builds the correct reference); `expression` is a raw C#-like formula passed through UNVALIDATED — the backend (unlike the visual designer) does NOT check it, so a wrong token / function / type fails only at RUNTIME. Do NOT invent or guess formulas: formula-authoring guidance (token format + the allowed function set) is not available yet. Prefer `value` / `processParameter` / `sourceElement`; use `expression` ONLY with a formula you already know is correct (user-supplied, or copied verbatim from an existing process via describe-business-process), e.g.
 			  `[#SysVariable.CurrentUserContact#]`, `[#SysVariable.CurrentDateTime#].AddDays(3)`.
+			- UNBOUND element INPUT parameters are NOT listed by `describe-business-process` (it returns only
+			  value-bearing parameters and outputs) — absence from describe does NOT mean the parameter does not
+			  exist. Input parameter names come from the user task's schema (for a custom task, the parameters it
+			  was created with); a wrong `elementParameter` name fails the build with a clear error and nothing is
+			  saved — never invent names silently.
+			- To CHANGE a bound value, send `addMapping` again for the same target — it overwrites the binding in
+			  place (like the designer). There is NO clear/unbind operation (no removeMapping): if asked to
+			  "remove" a value, say clearing is not supported yet and offer to overwrite it instead.
 			- Date / Date-time / Time DEFAULT VALUES are the ONE formula you may author (an EXCEPTION to the
 			  "don't invent formulas" rule): the designer stores a date/time constant as a formula macro (a Script
 			  source), NOT a plain `value` (a `ConstValue`). Set it via `expression` — for a process-parameter
