@@ -9,6 +9,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[NonParallelizable]
 [Property("Module", "Command")]
 public class RestartCommandTestCase : BaseCommandTests<RestartOptions> {
 

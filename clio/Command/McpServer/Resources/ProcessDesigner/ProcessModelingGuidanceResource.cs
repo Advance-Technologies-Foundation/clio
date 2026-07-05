@@ -46,7 +46,10 @@ public sealed class ProcessModelingGuidanceResource {
 			== What you can build today (create-business-process) ==
 			- Events: `startEvent` (Simple start), `signalStart` (record signal: add/modify/delete), `endEvent`.
 			- Activities: `userTask` referencing any task from list-user-tasks via `userTaskName`
-			  (aliases `readData`->ReadDataUserTask, `performTask`->ActivityUserTask).
+			  (aliases `readData`->ReadDataUserTask, `performTask`->ActivityUserTask). CAVEAT: `readData` (and the
+			  other data-operation tasks) PLACES an UNCONFIGURED element — its source object, filters, and columns
+			  cannot be set yet, so the step does nothing useful until a human configures it in the designer. Say so
+			  when you use it; do not present the result as a working data operation.
 			- Sequence flows; process-level parameters (with an optional constant default value); element-parameter mappings.
 			- NOT yet buildable: gateways, conditional/default flows, timer/message start, intermediate events,
 			  sub-process, Read-data filters/column config. Use the catalog below to reason about a solution and to
@@ -100,6 +103,24 @@ public sealed class ProcessModelingGuidanceResource {
 			  sees it) but is NOT runtime-active until it is loaded FS->DB and published — so a signal won't
 			  physically fire yet.
 
+			== Modifying an existing process — safety rules (modify-business-process) ==
+			- ALWAYS `describe-business-process` first, and re-describe after the edit to verify the result.
+			- The modify path runs NO structural validation (only the create path validates the graph):
+			  `removeElement` / `removeFlow` can leave the process unreachable or with dangling paths and the save
+			  still succeeds. `removeElement` also CASCADES — it deletes every flow touching the element and the
+			  mappings TARGETING it, but does NOT re-join the flow across the gap, and mappings/values READING the
+			  removed element's outputs may survive as dangling references. Add the bridging `addFlow` in the same
+			  operations array, then re-describe and clean up any leftover references to the removed element.
+			- Before removals, run `validate-process-graph` on the graph AS IT WILL BE after your operations
+			  (describe output + your planned ops applied), and confirm destructive removals with the user.
+			- If describe shows constructs the builder cannot create (gateways, conditional/default flows,
+			  sub-process, timer/message/intermediate events), they survive a save untouched as data — but you CAN
+			  still remove or rewire them by name and nothing will warn you. Treat such a process as high-risk:
+			  prefer additive edits, do not remove or rewire those elements, and tell the user what you left alone.
+			- Every modify re-applies the automatic layout to the WHOLE diagram: a hand-arranged multi-lane or
+			  branched diagram is flattened into generated left-to-right rows (process data intact, manual layout
+			  lost). Warn the user before editing a process with a curated diagram.
+
 			== Element catalog (data-id -> label -> purpose) ==
 			(The `data-id` strings below are the vocabulary for `validate-process-graph` and for reasoning about /
 			reading processes. To BUILD, map them to the create-business-process `type` + `userTaskName`: events
@@ -108,7 +129,8 @@ public sealed class ProcessModelingGuidanceResource {
 			`readData`/ReadDataUserTask.)
 			System actions (palette group "System actions"):
 			- `readDataUserTask`  Read data    — read first record / aggregate / count / collection of an object.
-			    Setup fields: DataReadMode, EntitySchemaSelect (object), filters, SortByColumn_N, ColumnSelectMode.
+			    Setup fields: DataReadMode, EntitySchemaSelect (object), filters, SortByColumn_N, ColumnSelectMode
+			    (designer-only for now — the builder cannot set them; a built Read data lands unconfigured).
 			- `addDataUserTask`   Add data     — create record(s) in background; one-record mode returns only the Id.
 			- `changeDataUserTask` Modify data — bulk-update matched records (same values to all).
 			- `deleteDataUserTask` Delete data — delete matched records.
@@ -143,13 +165,23 @@ public sealed class ProcessModelingGuidanceResource {
 			  Parameter-to-parameter mappings require COMPATIBLE TYPES: source and target in the same data-value-type
 			  group (text↔text, number↔number, …; for a lookup the same reference object) — exactly what the visual
 			  designer allows; incompatible types are rejected. `processParameter` flows a process input into the
-			  field (the server builds the correct reference); `expression` is a C#-like formula, e.g.
-			  `[#SysVariable.CurrentUserContact#]`, `[#System variable.Current date and time#].AddDays(3)`.
-			- Reference syntax when an expression must read another element's output: `[#ElementName.PropertyPath#]`
-			  (e.g. `[#Read data.First item.Id#]`). Formulas are strictly typed (convert with `.ToString()` etc.).
+			  field (the server builds the correct reference); `expression` is a raw C#-like formula passed through UNVALIDATED — the backend (unlike the visual designer) does NOT check it, so a wrong token / function / type fails only at RUNTIME. Do NOT invent or guess formulas: formula-authoring guidance (token format + the allowed function set) is not available yet. Prefer `value` / `processParameter` / `sourceElement`; use `expression` ONLY with a formula you already know is correct (user-supplied, or copied verbatim from an existing process via describe-business-process), e.g.
+			  `[#SysVariable.CurrentUserContact#]`, `[#SysVariable.CurrentDateTime#].AddDays(3)`.
+			- Date / Date-time / Time DEFAULT VALUES are the ONE formula you may author (an EXCEPTION to the
+			  "don't invent formulas" rule): the designer stores a date/time constant as a formula macro (a Script
+			  source), NOT a plain `value` (a `ConstValue`). Set it via `expression` — for a process-parameter
+			  default, a mapping with `targetProcessParameter` + `expression`. The inner format is FIXED (NOT ISO,
+			  NOT locale): `dd.MM.yyyy` and 24-hour `HH:mm`.
+			  Date → `[#DateValue.dd.MM.yyyy#]` (e.g. `[#DateValue.03.07.2026#]`);
+			  Date-time → `[#DateTimeValue.dd.MM.yyyy HH:mm#]` (e.g. `[#DateTimeValue.03.07.2026 02:15#]`);
+			  Time → `[#TimeValue.HH:mm#]` (e.g. `[#TimeValue.12:20#]`). A LOOKUP default is the same kind of macro — set via `expression` as `[#Lookup.{referenceObjectSchemaUId}.{recordId}#]` (both are GUIDs: the referenced OBJECT's schema UId, NOT its name, and the chosen RECORD's Id, e.g. `[#Lookup.5ca90b6a-…(City object).1548d3d2-…(a City record)#]`). You cannot guess these ids — copy the token from an existing process (`describe-business-process`) or resolve the object/record ids first; a bare record id as `value` will NOT work.
+			- To read another element's output, PREFER the structured `sourceElement` + `sourceElementParameter` mapping (above) — the server builds the correct reference. Do NOT hand-write an element-output reference —
+			  in the saved metadata it is a server-generated UId meta-path (`[#...[Element:{uid}].[Parameter:{uid}].[EntityColumn:{uid}]#]`), NOT a friendly `Element.Property` path, so you cannot author it — ALWAYS use `sourceElement`. Formulas are strictly typed (convert with `.ToString()` etc.).
 
 			== Connection rules R1–R17 (validate-process-graph enforces the structural subset: R1–R3, R7,
-			   R9–R15, R17; R4–R6, R8 and R16 are semantic or not yet enforced — verify those yourself) ==
+			   R9–R15, R17; R4–R6, R8 and R16 are semantic or not yet enforced — verify those yourself.
+			   Validation pass ≠ buildable: the rules cover the FULL catalog incl. gateways and conditional
+			   flows, but only the "What you can build today" slice above can actually be built) ==
 			R1  Start event: no incoming flow; exactly one outgoing.
 			R2  End event: no outgoing flow; one or more incoming.
 			R3  Exactly one top-level start event; every path reaches an end event.

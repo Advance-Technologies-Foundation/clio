@@ -335,6 +335,34 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			because: "the rejection names the unsupported type");
 	}
 
+	[Test]
+	[Description("Over the real MCP path: setParameter rejects a constant value that cannot convert to the parameter's data type (a non-numeric string for an Integer), using the platform value converter.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process rejects a type-invalid constant parameter value")]
+	public async Task ModifyBusinessProcess_Should_RejectTypeInvalidConstantValue() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpBadValueE2e{Guid.NewGuid():N}";
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildDescriptorWithParameter(processName)
+		});
+
+		// Act — set the Integer 'Amount' default to a non-numeric string
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = """[ { "op": "setParameter", "parameterName": "Amount", "parameterUpdate": { "value": "not-a-number" } } ]"""
+		});
+
+		// Assert
+		string callResultJson = JsonSerializer.Serialize(callResult);
+		callResultJson.Should().Contain("not valid",
+			because: "a constant value that cannot convert to the parameter's type is rejected");
+		callResultJson.Should().Contain("Amount",
+			because: "the rejection names the parameter whose value was invalid");
+	}
+
 	private static string SetParameterOperations() =>
 		"""
 		[ { "op": "setParameter", "parameterName": "Amount", "parameterUpdate": { "value": "7", "caption": "Amount due", "direction": "Out" } } ]
