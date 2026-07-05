@@ -48,7 +48,53 @@ public sealed class BuildThemeToolTests
 		_themeCssBuilder.Build(Arg.Any<string>(), Arg.Any<BuildThemeOptions>()).Returns("built-css");
 		BuildThemeCommand command = new(_themeCssBuilder, _themeTemplateProvider, _resolverFactory, _settingsRepository,
 			_workspacePathBuilder, _fileSystem, Substitute.For<ILogger>());
-		_tool = new BuildThemeTool(command);
+		_tool = new BuildThemeTool(command, Substitute.For<ILogger>());
+	}
+
+	[Test]
+	[Description("Derives from BaseTool so execution holds the shared MCP lock (the workspace-write mode mutates the singleton IWorkspacePathBuilder.RootPath), and is advertised as build-theme.")]
+	public void BuildThemeTool_ShouldDeriveFromBaseTool_WhenInspected() {
+		// Arrange
+		Type toolType = typeof(BuildThemeTool);
+
+		// Assert
+		toolType.BaseType.Should().Be(typeof(BaseTool<Clio.Command.Theming.BuildThemeOptions>),
+			because: "BaseTool.ExecuteWithCleanLog serializes the workspace-write mode's mutation of the singleton IWorkspacePathBuilder.RootPath against concurrent MCP tool invocations");
+		toolType.GetCustomAttribute<McpServerToolTypeAttribute>().Should().NotBeNull(
+			because: "the tool must be discoverable as an MCP tool type");
+		MethodInfo method = toolType.GetMethod(nameof(BuildThemeTool.BuildTheme));
+		method.Should().NotBeNull(because: "the tool exposes a single build-theme operation");
+		method!.GetCustomAttribute<McpServerToolAttribute>()!.Name.Should().Be("build-theme",
+			because: "the advertised MCP tool name is build-theme");
+	}
+
+	[Test]
+	[Description("Declares the safety flags on the build-theme tool method: a workspace-write that is non-destructive, idempotent, and closed-world.")]
+	public void BuildThemeTool_Should_DeclareBuildSafetyFlags_WhenInspectingMcpServerToolAttribute() {
+		// Arrange & Act
+		McpServerToolAttribute attribute = typeof(BuildThemeTool)
+			.GetMethod(nameof(BuildThemeTool.BuildTheme))!
+			.GetCustomAttribute<McpServerToolAttribute>();
+
+		// Assert
+		attribute!.ReadOnly.Should().BeFalse(because: "build-theme can write theme.css and theme.json into a workspace package");
+		attribute.Destructive.Should().BeFalse(because: "building writes its own theme artifacts without destroying unrelated state");
+		attribute.Idempotent.Should().BeTrue(because: "re-building with the same inputs yields the same theme artifacts");
+		attribute.OpenWorld.Should().BeFalse(because: "build-theme works offline over a bundled template and never reaches an open set of hosts");
+	}
+
+	[Test]
+	[Description("Marks the single args wrapper as required at the MCP schema level, so a call that omits args fails with a structured error instead of an opaque binding failure.")]
+	public void BuildThemeTool_Should_RequireArgsWrapper_WhenInspectingMethodSignature() {
+		// Arrange & Act
+		object[] requiredAttributes = typeof(BuildThemeTool)
+			.GetMethod(nameof(BuildThemeTool.BuildTheme))!
+			.GetParameters()[0]
+			.GetCustomAttributes(typeof(RequiredAttribute), false);
+
+		// Assert
+		requiredAttributes.Should().NotBeEmpty(
+			because: "the args wrapper must be schema-required so an omitted args object fails with a structured error, not an opaque MCP binding failure");
 	}
 
 	[Test]
@@ -461,49 +507,4 @@ public sealed class BuildThemeToolTests
 			because: "the unbound camelCase spelling must land in the overflow bag so the tool can return a rename hint");
 	}
 
-	[Test]
-	[Description("Is a flat MCP tool named build-theme (ComponentInfoTool shape, not a BaseTool subclass — R-02).")]
-	public void BuildThemeTool_ShouldBeFlatMcpTool_WhenInspected() {
-		// Arrange
-		Type toolType = typeof(BuildThemeTool);
-
-		// Assert
-		toolType.BaseType.Should().Be(typeof(object),
-			because: "the build-theme tool is a flat ComponentInfoTool-style tool, not a BaseTool subclass (R-02)");
-		toolType.GetCustomAttribute<McpServerToolTypeAttribute>().Should().NotBeNull(
-			because: "the tool must be discoverable as an MCP tool type");
-		MethodInfo method = toolType.GetMethod(nameof(BuildThemeTool.BuildTheme));
-		method.Should().NotBeNull(because: "the tool exposes a single build-theme operation");
-		method!.GetCustomAttribute<McpServerToolAttribute>()!.Name.Should().Be("build-theme",
-			because: "the advertised MCP tool name is build-theme");
-	}
-
-	[Test]
-	[Description("Declares the safety flags on the build-theme tool method: a workspace-write that is non-destructive, idempotent, and closed-world.")]
-	public void BuildThemeTool_Should_DeclareBuildSafetyFlags_WhenInspectingMcpServerToolAttribute() {
-		// Arrange & Act
-		McpServerToolAttribute attribute = typeof(BuildThemeTool)
-			.GetMethod(nameof(BuildThemeTool.BuildTheme))!
-			.GetCustomAttribute<McpServerToolAttribute>();
-
-		// Assert
-		attribute!.ReadOnly.Should().BeFalse(because: "build-theme can write theme.css and theme.json into a workspace package");
-		attribute.Destructive.Should().BeFalse(because: "building writes its own theme artifacts without destroying unrelated state");
-		attribute.Idempotent.Should().BeTrue(because: "re-building with the same inputs yields the same theme artifacts");
-		attribute.OpenWorld.Should().BeFalse(because: "build-theme works offline over a bundled template and never reaches an open set of hosts");
-	}
-
-	[Test]
-	[Description("Marks the single args wrapper as required at the MCP schema level, so a call that omits args fails with a structured error instead of an opaque binding failure.")]
-	public void BuildThemeTool_Should_RequireArgsWrapper_WhenInspectingMethodSignature() {
-		// Arrange & Act
-		object[] requiredAttributes = typeof(BuildThemeTool)
-			.GetMethod(nameof(BuildThemeTool.BuildTheme))!
-			.GetParameters()[0]
-			.GetCustomAttributes(typeof(RequiredAttribute), false);
-
-		// Assert
-		requiredAttributes.Should().NotBeEmpty(
-			because: "the args wrapper must be schema-required so an omitted args object fails with a structured error, not an opaque MCP binding failure");
-	}
 }

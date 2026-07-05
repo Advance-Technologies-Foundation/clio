@@ -314,4 +314,12 @@ public sealed record ThemeColorAdvisorResult {
 	[JsonPropertyName("warning")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public AdvisorWarning Warning { get; init; }
+
+	/// <summary>Creates a hard-failure result carrying the diagnostic message.</summary>
+	public static ThemeColorAdvisorResult Failure(string error) {
+		return new ThemeColorAdvisorResult {
+			Success = false,
+			Error = string.IsNullOrWhiteSpace(error) ? "unknown" : error
+		};
+	}
 }

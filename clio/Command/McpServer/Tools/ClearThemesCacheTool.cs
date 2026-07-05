@@ -20,13 +20,6 @@ public class ClearThemesCacheTool(
 
 	internal const string ToolName = "clear-themes-cache";
 
-	// Known mis-spellings an LLM tends to emit instead of the kebab-case argument names. Rejected with
-	// an actionable rename hint so a camelCase 'environmentName' never silently binds to nothing.
-	private static readonly Dictionary<string, string> LegacyAliases = new(StringComparer.Ordinal) {
-		["environmentName"] = "environment-name",
-		["environment_name"] = "environment-name"
-	};
-
 	/// <summary>Refreshes the theme catalog cache on the target environment.</summary>
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false),
 	 Description("Refresh the Creatio theme cache for a registered environment. For the theme workflow, read get-guidance theming first.")]
@@ -34,7 +27,7 @@ public class ClearThemesCacheTool(
 		[Description("Parameters: environment-name (required).")]
 		[Required] ClearThemesCacheArgs args) {
 		string? aliasError = McpToolArgumentSupport.BuildLegacyAliasError(
-			args.ExtensionData, LegacyAliases, ".",
+			args.ExtensionData, McpToolArgumentSupport.EnvironmentNameAliases, ".",
 			"Valid: environment-name.");
 		if (!string.IsNullOrWhiteSpace(aliasError)) {
 			return CommandExecutionResult.FromValidationError(aliasError);

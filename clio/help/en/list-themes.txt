@@ -14,13 +14,13 @@ DESCRIPTION
     change the environment.
 
 SYNOPSIS
-    list-themes [options]
+    clio list-themes [options]
 
 OPTIONS
 
     --uri               -u          Application uri
 
-    --Password			-p          User password
+    --Password          -p          User password
 
     --Login             -l          User login (administrator permission required)
 
@@ -37,6 +37,9 @@ EXAMPLE
 
     clio list-themes -e myapp
         list the themes of the environment registered as myapp
+
+NOTES
+    - A theme deployed by a clio push appears here automatically; run 'clio clear-themes-cache' only when a theme was changed on the environment outside a clio install and is missing here.
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio

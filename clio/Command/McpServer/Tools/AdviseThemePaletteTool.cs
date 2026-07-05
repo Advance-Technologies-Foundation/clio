@@ -38,7 +38,7 @@ public sealed class AdviseThemePaletteTool(IThemeColorAdvisor advisor) {
 		+ "triage (sort raw brand colours, pick the primary), adapt-primary (is the primary readable / offer a darker one), "
 		+ "derive-secondary (auto secondary + validate an override), accent-evaluate-stored / accent-suggest / accent-validate-manual "
 		+ "(the three accent paths), validate-color (check a colour for a role), preview (base -500 per role + system success/error). "
-		+ "For the full theme workflow, read get-guidance theming first.")]
+		+ "For the theme workflow, read get-guidance theming first.")]
 	public ThemeColorAdvisorResult Advise(
 		[Description("Parameters: operation (required), colors, primary, role, color, secondary, accent, " +
 			"candidate-hexes, success, error, version, full-stops (all optional; see each operation's needs).")]
@@ -47,10 +47,10 @@ public sealed class AdviseThemePaletteTool(IThemeColorAdvisor advisor) {
 			args.ExtensionData, LegacyAliases, ".",
 			"Valid: operation, colors, primary, role, color, secondary, accent, candidate-hexes, success, error, version, full-stops.");
 		if (!string.IsNullOrWhiteSpace(aliasError)) {
-			return new ThemeColorAdvisorResult { Success = false, Error = aliasError };
+			return ThemeColorAdvisorResult.Failure(aliasError);
 		}
 		if (string.IsNullOrWhiteSpace(args.Operation)) {
-			return new ThemeColorAdvisorResult { Success = false, Error = "operation is required and cannot be empty." };
+			return ThemeColorAdvisorResult.Failure("operation is required and cannot be empty.");
 		}
 		return args.Operation switch {
 			"triage" => advisor.Triage(args.Colors),
@@ -62,7 +62,7 @@ public sealed class AdviseThemePaletteTool(IThemeColorAdvisor advisor) {
 			"validate-color" => advisor.ValidateColor(args.Role, args.Color, args.Primary),
 			"preview" => advisor.Preview(args.Primary, args.Secondary, args.Accent, args.Success, args.Error,
 				args.Version, args.FullStops ?? false),
-			_ => new ThemeColorAdvisorResult { Success = false, Error = $"UNKNOWN_OPERATION: \"{args.Operation}\"" }
+			_ => ThemeColorAdvisorResult.Failure($"operation \"{args.Operation}\" is not recognized.")
 		};
 	}
 }

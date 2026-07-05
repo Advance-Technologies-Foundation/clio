@@ -21,7 +21,7 @@ public class ListThemesToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Declares the safety flags on the list-themes tool method: a read-only, non-destructive, idempotent, closed-world query.")]
-	public void ListThemesTool_Should_DeclareListSafetyFlags_WhenInspectingMcpServerToolAttribute() {
+	public void ListThemesTool_ShouldDeclareListSafetyFlags_WhenInspectingMcpServerToolAttribute() {
 		// Arrange & Act
 		McpServerToolAttribute attribute = (McpServerToolAttribute)typeof(ListThemesTool)
 			.GetMethod(nameof(ListThemesTool.ListThemes))!
@@ -39,7 +39,7 @@ public class ListThemesToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Marks the single args wrapper as required at the MCP schema level, so a call that omits args fails with a structured error instead of an opaque binding failure.")]
-	public void ListThemesTool_Should_RequireArgsWrapper_WhenInspectingMethodSignature() {
+	public void ListThemesTool_ShouldRequireArgsWrapper_WhenInspectingMethodSignature() {
 		// Arrange & Act
 		object[] requiredAttributes = typeof(ListThemesTool)
 			.GetMethod(nameof(ListThemesTool.ListThemes))!
@@ -54,7 +54,7 @@ public class ListThemesToolTests {
 	[Test]
 	[Description("Resolves the list-themes MCP tool for the requested environment and returns the resolved command's themes as a structured success result.")]
 	[Category("Unit")]
-	public void ListThemes_Should_Resolve_Command_And_Return_Themes() {
+	public void ListThemes_ShouldResolveCommandAndReturnThemes() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		IReadOnlyList<ThemeDescriptor> themes = new List<ThemeDescriptor> {
@@ -85,7 +85,7 @@ public class ListThemesToolTests {
 	[Test]
 	[Description("Returns a structured failure without resolving a command when the environment name is empty.")]
 	[Category("Unit")]
-	public void ListThemes_Should_Return_Failure_When_Environment_Name_Is_Empty() {
+	public void ListThemes_ShouldReturnFailure_WhenEnvironmentNameIsEmpty() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeListThemesCommand defaultCommand = new();
@@ -105,7 +105,7 @@ public class ListThemesToolTests {
 	[Test]
 	[Description("Maps an empty resolved catalog to a successful result with an empty themes array, per the documented empty-means-no-themes-or-no-license contract.")]
 	[Category("Unit")]
-	public void ListThemes_Should_Return_EmptyThemes_When_Catalog_Is_Empty() {
+	public void ListThemes_ShouldReturnEmptyThemes_WhenCatalogIsEmpty() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeListThemesCommand defaultCommand = new();
@@ -132,7 +132,7 @@ public class ListThemesToolTests {
 	[Test]
 	[Description("Surfaces the ThemeService failure message as a structured failure when the resolved command reports success=false.")]
 	[Category("Unit")]
-	public void ListThemes_Should_Return_Failure_When_Command_Reports_Failure() {
+	public void ListThemes_ShouldReturnFailure_WhenCommandReportsFailure() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeListThemesCommand defaultCommand = new();
@@ -154,7 +154,7 @@ public class ListThemesToolTests {
 	[Test]
 	[Description("Returns a structured failure naming environment-name when the required environment name is omitted.")]
 	[Category("Unit")]
-	public void ListThemes_Should_Return_Failure_When_Environment_Name_Is_Missing() {
+	public void ListThemes_ShouldReturnFailure_WhenEnvironmentNameIsMissing() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeListThemesCommand defaultCommand = new();
@@ -175,7 +175,7 @@ public class ListThemesToolTests {
 	[Test]
 	[Description("Returns an actionable rename hint instead of silently ignoring a camelCase alias of a kebab-case argument.")]
 	[Category("Unit")]
-	public void ListThemes_Should_Return_RenameHint_When_CamelCase_Alias_Is_Passed() {
+	public void ListThemes_ShouldReturnRenameHint_WhenCamelCaseAliasIsPassed() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeListThemesCommand defaultCommand = new();
@@ -201,7 +201,7 @@ public class ListThemesToolTests {
 	[Test]
 	[Description("Binds the list-themes argument record from kebab-case JSON using the real MCP serializer options, and routes camelCase spellings into the overflow bag — the exact JSON->record binding the MCP host performs, which direct method calls bypass.")]
 	[Category("Unit")]
-	public void ListThemesArgs_Should_Bind_KebabCase_And_Route_CamelCase_To_ExtensionData() {
+	public void ListThemesArgs_ShouldBindKebabCaseAndRouteCamelCaseToExtensionData() {
 		// Arrange
 		JsonSerializerOptions options = Clio.BindingsModule.CreateMcpSerializerOptions();
 

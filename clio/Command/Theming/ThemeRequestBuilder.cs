@@ -15,12 +15,11 @@ internal static class ThemeRequestBuilder
 {
 	/// <summary>
 	/// Resolves the theme CSS from exactly one of the inline (<paramref name="cssContent"/>) or file
-	/// (<paramref name="cssContentFile"/>) inputs. An unsupplied string option is <c>null</c> (absent), while an
-	/// explicitly empty <c>--css-content ""</c> is <c>""</c> (present, valid empty CSS).
+	/// (<paramref name="cssContentFile"/>) inputs. An unsupplied string option is <c>null</c> (absent).
 	/// </summary>
 	/// <param name="cssContent">Inline CSS value (<c>null</c> when the flag was not supplied).</param>
 	/// <param name="cssContentFile">Path to a UTF-8 CSS file (<c>null</c>/blank when not supplied).</param>
-	/// <param name="resolved">On success, the resolved CSS string (may be empty).</param>
+	/// <param name="resolved">On success, the resolved CSS string.</param>
 	/// <param name="error">On failure, a user-friendly diagnostic; otherwise <c>null</c>.</param>
 	/// <returns><c>true</c> when exactly one input resolved to a CSS string; otherwise <c>false</c>.</returns>
 	public static bool TryResolveCssContent(string cssContent, string cssContentFile,

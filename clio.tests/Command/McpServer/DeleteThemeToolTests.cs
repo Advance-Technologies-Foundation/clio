@@ -20,7 +20,7 @@ public class DeleteThemeToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Declares the FR-12 safety flags on the delete-theme tool method: a destructive, non-idempotent write that is closed-world.")]
-	public void DeleteThemeTool_Should_DeclareDeleteSafetyFlags_WhenInspectingMcpServerToolAttribute() {
+	public void DeleteThemeTool_ShouldDeclareDeleteSafetyFlags_WhenInspectingMcpServerToolAttribute() {
 		// Arrange & Act
 		McpServerToolAttribute attribute = (McpServerToolAttribute)typeof(DeleteThemeTool)
 			.GetMethod(nameof(DeleteThemeTool.DeleteTheme))!
@@ -38,7 +38,7 @@ public class DeleteThemeToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Marks the single args wrapper as required at the MCP schema level, so a call that omits args fails with a structured error instead of an opaque binding failure.")]
-	public void DeleteThemeTool_Should_RequireArgsWrapper_WhenInspectingMethodSignature() {
+	public void DeleteThemeTool_ShouldRequireArgsWrapper_WhenInspectingMethodSignature() {
 		// Arrange & Act
 		object[] requiredAttributes = typeof(DeleteThemeTool)
 			.GetMethod(nameof(DeleteThemeTool.DeleteTheme))!
@@ -53,7 +53,7 @@ public class DeleteThemeToolTests {
 	[Test]
 	[Description("Resolves the delete-theme MCP tool for the requested environment and forwards the id.")]
 	[Category("Unit")]
-	public void DeleteTheme_Should_Resolve_Command_For_Requested_Environment() {
+	public void DeleteTheme_ShouldResolveCommandForRequestedEnvironment() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeDeleteThemeCommand defaultCommand = new();
@@ -79,7 +79,7 @@ public class DeleteThemeToolTests {
 	[Test]
 	[Description("Returns a structured failure naming id without resolving a command when the id is empty.")]
 	[Category("Unit")]
-	public void DeleteTheme_Should_Return_Error_When_Id_Is_Empty() {
+	public void DeleteTheme_ShouldReturnError_WhenIdIsEmpty() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeDeleteThemeCommand defaultCommand = new();
@@ -103,7 +103,7 @@ public class DeleteThemeToolTests {
 	[Test]
 	[Description("Returns a structured failure naming environment-name when the required environment name is omitted.")]
 	[Category("Unit")]
-	public void DeleteTheme_Should_Return_Failure_When_Environment_Name_Is_Missing() {
+	public void DeleteTheme_ShouldReturnFailure_WhenEnvironmentNameIsMissing() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeDeleteThemeCommand defaultCommand = new();
@@ -124,9 +124,33 @@ public class DeleteThemeToolTests {
 	}
 
 	[Test]
+	[Description("Returns a structured failure naming environment-name without resolving a command when the environment name is empty.")]
+	[Category("Unit")]
+	public void DeleteTheme_ShouldReturnFailure_WhenEnvironmentNameIsEmpty() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeDeleteThemeCommand defaultCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		DeleteThemeTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.DeleteTheme(new DeleteThemeArgs(
+			EnvironmentName: "   ", Id: "ocean-theme"));
+
+		// Assert
+		result.ExitCode.Should().Be(1, because: "an empty environment name is an expected, caller-actionable validation error");
+		result.Output.Should().ContainSingle(message =>
+			message.GetType() == typeof(ErrorMessage) &&
+			Equals(message.Value, "environment-name is required and cannot be empty."),
+			because: "the failure must name the exact kebab-case field the caller has to fix");
+		commandResolver.DidNotReceive().Resolve<DeleteThemeCommand>(Arg.Any<DeleteThemeOptions>());
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
 	[Description("Returns an actionable rename hint instead of silently ignoring a camelCase alias of a kebab-case argument.")]
 	[Category("Unit")]
-	public void DeleteTheme_Should_Return_RenameHint_When_CamelCase_Alias_Is_Passed() {
+	public void DeleteTheme_ShouldReturnRenameHint_WhenCamelCaseAliasIsPassed() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeDeleteThemeCommand defaultCommand = new();
@@ -154,7 +178,7 @@ public class DeleteThemeToolTests {
 	[Test]
 	[Description("Binds the delete-theme argument record from kebab-case JSON using the real MCP serializer options, and routes camelCase spellings into the overflow bag — the exact JSON->record binding the MCP host performs, which direct method calls bypass.")]
 	[Category("Unit")]
-	public void DeleteThemeArgs_Should_Bind_KebabCase_And_Route_CamelCase_To_ExtensionData() {
+	public void DeleteThemeArgs_ShouldBindKebabCaseAndRouteCamelCaseToExtensionData() {
 		// Arrange
 		JsonSerializerOptions options = Clio.BindingsModule.CreateMcpSerializerOptions();
 

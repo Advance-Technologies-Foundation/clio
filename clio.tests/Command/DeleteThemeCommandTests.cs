@@ -9,7 +9,7 @@ using NUnit.Framework;
 
 [TestFixture]
 [Property("Module", "Command")]
-public class DeleteThemeCommandTests : BaseCommandTests<DeleteThemeOptions>
+public sealed class DeleteThemeCommandTests : BaseCommandTests<DeleteThemeOptions>
 {
 	private IApplicationClient _applicationClient;
 	private ILogger _logger;
@@ -42,7 +42,7 @@ public class DeleteThemeCommandTests : BaseCommandTests<DeleteThemeOptions>
 
 	[Test, Category("Unit")]
 	[Description("Posts DeleteTheme to the WebApp-prefixed ThemeService path when the environment runs under .NET Framework.")]
-	public void DeleteTheme_FormsCorrectApplicationRequest_WhenApplicationRunsUnderNetFramework() {
+	public void DeleteTheme_ShouldFormCorrectApplicationRequest_WhenApplicationRunsUnderNetFramework() {
 		// Arrange
 		EnvironmentSettings.IsNetCore = false;
 		StubDeleteThemeSuccess();
@@ -58,7 +58,7 @@ public class DeleteThemeCommandTests : BaseCommandTests<DeleteThemeOptions>
 
 	[Test, Category("Unit")]
 	[Description("Posts DeleteTheme without the WebApp prefix when the environment runs under .NET Core, sending only the id.")]
-	public void DeleteTheme_FormsCorrectApplicationRequest_WhenApplicationRunsUnderNetCore() {
+	public void DeleteTheme_ShouldFormCorrectApplicationRequest_WhenApplicationRunsUnderNetCore() {
 		// Arrange
 		EnvironmentSettings.IsNetCore = true;
 		StubDeleteThemeSuccess();
@@ -75,7 +75,7 @@ public class DeleteThemeCommandTests : BaseCommandTests<DeleteThemeOptions>
 
 	[Test, Category("Unit")]
 	[Description("Fails fast without any HTTP call when the id violates the format rule.")]
-	public void DeleteTheme_FailsFastWithoutHttp_WhenIdInvalid() {
+	public void DeleteTheme_ShouldFailFastWithoutHttp_WhenIdInvalid() {
 		// Act
 		int exitCode = _command.Execute(new DeleteThemeOptions { Id = "bad id" });
 
@@ -88,7 +88,7 @@ public class DeleteThemeCommandTests : BaseCommandTests<DeleteThemeOptions>
 
 	[Test, Category("Unit")]
 	[Description("Returns failure and surfaces the error message when the response reports success=false (deleting an unknown id is not idempotent).")]
-	public void DeleteTheme_ReturnsFailureAndLogsErrorInfoMessage_WhenResponseReportsFailure() {
+	public void DeleteTheme_ShouldReturnFailureAndLogErrorInfoMessage_WhenResponseReportsFailure() {
 		// Arrange
 		_applicationClient.ExecutePostRequest(
 				Arg.Is<string>(u => u.Contains("DeleteTheme")), Arg.Any<string>(),
@@ -105,7 +105,7 @@ public class DeleteThemeCommandTests : BaseCommandTests<DeleteThemeOptions>
 
 	[Test, Category("Unit")]
 	[Description("Fails the command when the response body is a non-empty non-JSON payload (e.g. an auth redirect): ThemeService always answers with JSON, so a non-JSON body means the delete never reached the service.")]
-	public void DeleteTheme_ReturnsFailureAndLogsError_WhenResponseBodyIsNotParseableJson() {
+	public void DeleteTheme_ShouldReturnFailureAndLogError_WhenResponseBodyIsNotParseableJson() {
 		// Arrange
 		_applicationClient.ExecutePostRequest(
 				Arg.Is<string>(u => u.Contains("DeleteTheme")), Arg.Any<string>(),
@@ -122,7 +122,7 @@ public class DeleteThemeCommandTests : BaseCommandTests<DeleteThemeOptions>
 
 	[Test, Category("Unit")]
 	[Description("Returns success when the response body is empty — an empty body is the ThemeService contract default for a successful delete.")]
-	public void DeleteTheme_ReturnsSuccess_WhenResponseBodyIsEmpty() {
+	public void DeleteTheme_ShouldReturnSuccess_WhenResponseBodyIsEmpty() {
 		// Arrange
 		_applicationClient.ExecutePostRequest(
 				Arg.Is<string>(u => u.Contains("DeleteTheme")), Arg.Any<string>(),

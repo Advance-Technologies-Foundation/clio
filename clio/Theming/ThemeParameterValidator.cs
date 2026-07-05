@@ -169,16 +169,16 @@ internal static class ThemeParameterValidator {
 	}
 
 	/// <summary>
-	/// Validates the resolved theme CSS content (required, at most <see cref="MaxCssContentBytes"/> when
-	/// UTF-8 encoded).
+	/// Validates the resolved theme CSS content (required, non-empty, at most <see cref="MaxCssContentBytes"/>
+	/// when UTF-8 encoded).
 	/// </summary>
-	/// <param name="cssContent">The resolved CSS content (an explicitly empty string is valid).</param>
+	/// <param name="cssContent">The resolved CSS content.</param>
 	/// <param name="error">On failure, a user-friendly diagnostic; otherwise <c>null</c>.</param>
-	/// <returns><c>true</c> when the content is present and within the size limit.</returns>
+	/// <returns><c>true</c> when the content is present, non-empty, and within the size limit.</returns>
 	internal static bool TryValidateCssContent(string cssContent, out string error) {
 		error = null;
-		if (cssContent is null) {
-			error = "Theme CSS content is required.";
+		if (string.IsNullOrWhiteSpace(cssContent)) {
+			error = "Theme CSS content is required and cannot be empty.";
 			return false;
 		}
 		if (Encoding.UTF8.GetByteCount(cssContent) > MaxCssContentBytes) {

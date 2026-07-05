@@ -26,7 +26,7 @@ Provide the CSS through exactly one of `--css-content` (inline) or `--css-conten
 ## Synopsis
 
 ```bash
-create-theme [options]
+clio create-theme [options]
 ```
 
 ## Options
@@ -67,7 +67,6 @@ create a theme reading the CSS from a file
 
 ## Notes
 
-- Call `get-guidance name=theming` for the theme workflow.
 - To make a theme the default for all users, set the `DefaultTheme` system setting to
   the theme id with [`set-syssetting`](set-syssetting.md).
 

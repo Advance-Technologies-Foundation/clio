@@ -13,6 +13,18 @@ namespace Clio.Command.McpServer.Tools;
 /// </summary>
 internal static class McpToolArgumentSupport {
 	/// <summary>
+	/// The camelCase / snake_case mis-spellings of <c>environment-name</c> an LLM tends to emit, each mapped to
+	/// the canonical kebab-case name so a wrong spelling is rejected with a rename hint instead of silently
+	/// binding to nothing. Shared by every environment-scoped tool so the pair is defined once; a tool with extra
+	/// fields seeds its own map from this and adds them.
+	/// </summary>
+	public static readonly IReadOnlyDictionary<string, string> EnvironmentNameAliases =
+		new Dictionary<string, string>(StringComparer.Ordinal) {
+			["environmentName"] = "environment-name",
+			["environment_name"] = "environment-name"
+		};
+
+	/// <summary>
 	/// Builds a single actionable rename hint from the fields an MCP arg record could not bind
 	/// (captured in its <c>[JsonExtensionData]</c> bag). Known camelCase/snake_case spellings are
 	/// reported as <c>'alias' -&gt; 'canonical'</c> renames; everything else is listed as unknown

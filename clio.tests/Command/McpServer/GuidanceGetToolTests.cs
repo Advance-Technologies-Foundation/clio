@@ -163,7 +163,7 @@ public sealed class GuidanceGetToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Keeps the theming guidance a thin pointer (CM-03): it names the --crt-* token namespace at most once without restating the token catalog.")]
-	public async Task GetGuidance_ShouldNotRestateTokenCatalog_WhenTopicIsTheming() {
+	public async Task GuidanceGet_Should_Not_Restate_Token_Catalog_When_Topic_Is_Theming() {
 		// Arrange
 		GuidanceGetTool tool = new(_featureToggleService);
 

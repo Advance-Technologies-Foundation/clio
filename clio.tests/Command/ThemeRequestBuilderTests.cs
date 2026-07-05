@@ -11,7 +11,7 @@ using NUnit.Framework;
 
 [TestFixture]
 [Property("Module", "Command")]
-public class ThemeRequestBuilderTests
+public sealed class ThemeRequestBuilderTests
 {
 	[Test]
 	[Category("Unit")]
@@ -40,15 +40,15 @@ public class ThemeRequestBuilderTests
 
 	[Test]
 	[Category("Unit")]
-	[Description("Treats an explicitly empty --css-content as valid empty CSS (present, not absent).")]
-	public void TryResolveCssContent_ShouldReturnEmptyCss_WhenInlineContentIsEmptyString() {
+	[Description("Resolves an explicitly empty --css-content as a present input.")]
+	public void TryResolveCssContent_ShouldResolveEmptyString_WhenInlineContentIsEmptyString() {
 		// Act
 		bool ok = ThemeRequestBuilder.TryResolveCssContent(string.Empty, null, out string resolved, out string error);
 
 		// Assert
-		ok.Should().BeTrue(because: "an empty string means the flag was supplied with empty CSS, which is allowed");
+		ok.Should().BeTrue(because: "resolution only distinguishes present from absent inputs");
 		resolved.Should().BeEmpty(because: "the resolved CSS is the supplied empty string");
-		error.Should().BeNull(because: "an explicitly empty inline value is not an error");
+		error.Should().BeNull(because: "resolution reports input-shape errors only");
 	}
 
 	[Test]
@@ -103,8 +103,8 @@ public class ThemeRequestBuilderTests
 
 	[Test]
 	[Category("Unit")]
-	[Description("Allows empty CSS content (empty string is valid; only null is rejected).")]
-	public void TryValidateRequest_ShouldAllowEmptyCssContent_WhenContentIsEmptyString() {
+	[Description("Rejects an explicitly empty CSS content string.")]
+	public void TryValidateRequest_ShouldFail_WhenCssContentIsEmptyString() {
 		// Arrange
 		ThemeRequest request = new() { Id = "id", Caption = "Caption", CssClassName = "css-cls", CssContent = string.Empty };
 
@@ -112,8 +112,8 @@ public class ThemeRequestBuilderTests
 		bool ok = ThemeRequestBuilder.TryValidateRequest(request, out string error);
 
 		// Assert
-		ok.Should().BeTrue(because: "the contract allows empty CSS content (empty string), only null is rejected");
-		error.Should().BeNull(because: "empty CSS is valid");
+		ok.Should().BeFalse(because: "empty CSS content is invalid");
+		error.Should().Contain("cannot be empty", because: "the diagnostic must state that empty CSS is rejected");
 	}
 
 	[Test]

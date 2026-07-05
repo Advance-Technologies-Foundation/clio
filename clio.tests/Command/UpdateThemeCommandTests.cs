@@ -9,7 +9,7 @@ using NUnit.Framework;
 
 [TestFixture]
 [Property("Module", "Command")]
-public class UpdateThemeCommandTests : BaseCommandTests<UpdateThemeOptions>
+public sealed class UpdateThemeCommandTests : BaseCommandTests<UpdateThemeOptions>
 {
 	private IApplicationClient _applicationClient;
 	private ILogger _logger;
@@ -49,7 +49,7 @@ public class UpdateThemeCommandTests : BaseCommandTests<UpdateThemeOptions>
 
 	[Test, Category("Unit")]
 	[Description("Posts UpdateTheme to the WebApp-prefixed ThemeService path when the environment runs under .NET Framework.")]
-	public void UpdateTheme_FormsCorrectApplicationRequest_WhenApplicationRunsUnderNetFramework() {
+	public void UpdateTheme_ShouldFormCorrectApplicationRequest_WhenApplicationRunsUnderNetFramework() {
 		// Arrange
 		EnvironmentSettings.IsNetCore = false;
 		StubUpdateThemeSuccess();
@@ -65,7 +65,7 @@ public class UpdateThemeCommandTests : BaseCommandTests<UpdateThemeOptions>
 
 	[Test, Category("Unit")]
 	[Description("Posts UpdateTheme without the WebApp prefix when the environment runs under .NET Core.")]
-	public void UpdateTheme_FormsCorrectApplicationRequest_WhenApplicationRunsUnderNetCore() {
+	public void UpdateTheme_ShouldFormCorrectApplicationRequest_WhenApplicationRunsUnderNetCore() {
 		// Arrange
 		EnvironmentSettings.IsNetCore = true;
 		StubUpdateThemeSuccess();
@@ -81,7 +81,7 @@ public class UpdateThemeCommandTests : BaseCommandTests<UpdateThemeOptions>
 
 	[Test, Category("Unit")]
 	[Description("Sends a camelCase full-overwrite body and omits the packageUId key (UpdateTheme cannot re-home a theme).")]
-	public void UpdateTheme_SendsBodyWithoutPackageUId_WhenExecuted() {
+	public void UpdateTheme_ShouldSendBodyWithoutPackageUId_WhenExecuted() {
 		// Arrange
 		string capturedBody = null;
 		_applicationClient.ExecutePostRequest(
@@ -101,7 +101,7 @@ public class UpdateThemeCommandTests : BaseCommandTests<UpdateThemeOptions>
 
 	[Test, Category("Unit")]
 	[Description("Fails fast without any HTTP call when css-class-name violates the format rule.")]
-	public void UpdateTheme_FailsFastWithoutHttp_WhenCssClassNameInvalid() {
+	public void UpdateTheme_ShouldFailFastWithoutHttp_WhenCssClassNameInvalid() {
 		// Arrange
 		UpdateThemeOptions options = ValidOptions();
 		options.CssClassName = "1-bad";
@@ -118,7 +118,7 @@ public class UpdateThemeCommandTests : BaseCommandTests<UpdateThemeOptions>
 
 	[Test, Category("Unit")]
 	[Description("Returns failure and surfaces the ThemeService error message when the response reports success=false.")]
-	public void UpdateTheme_ReturnsFailureAndLogsErrorInfoMessage_WhenResponseReportsFailure() {
+	public void UpdateTheme_ShouldReturnFailureAndLogErrorInfoMessage_WhenResponseReportsFailure() {
 		// Arrange
 		_applicationClient.ExecutePostRequest(
 				Arg.Is<string>(u => u.Contains("UpdateTheme")), Arg.Any<string>(),
@@ -135,7 +135,7 @@ public class UpdateThemeCommandTests : BaseCommandTests<UpdateThemeOptions>
 
 	[Test, Category("Unit")]
 	[Description("Fails the command when the response body is a non-empty non-JSON payload (e.g. an auth redirect): ThemeService always answers with JSON, so a non-JSON body means the update never reached the service.")]
-	public void UpdateTheme_ReturnsFailureAndLogsError_WhenResponseBodyIsNotParseableJson() {
+	public void UpdateTheme_ShouldReturnFailureAndLogError_WhenResponseBodyIsNotParseableJson() {
 		// Arrange
 		_applicationClient.ExecutePostRequest(
 				Arg.Is<string>(u => u.Contains("UpdateTheme")), Arg.Any<string>(),
@@ -152,7 +152,7 @@ public class UpdateThemeCommandTests : BaseCommandTests<UpdateThemeOptions>
 
 	[Test, Category("Unit")]
 	[Description("Returns success when the response body is empty — an empty body is the ThemeService contract default for a successful update.")]
-	public void UpdateTheme_ReturnsSuccess_WhenResponseBodyIsEmpty() {
+	public void UpdateTheme_ShouldReturnSuccess_WhenResponseBodyIsEmpty() {
 		// Arrange
 		_applicationClient.ExecutePostRequest(
 				Arg.Is<string>(u => u.Contains("UpdateTheme")), Arg.Any<string>(),

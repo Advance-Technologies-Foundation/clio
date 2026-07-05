@@ -1,13 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading;
 using System.Threading.Tasks;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
 using Clio.Command.Theming;
-using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
@@ -21,10 +19,11 @@ namespace Clio.Mcp.E2E;
 /// so the real clio MCP server can run its operations without a live Creatio environment.
 /// </summary>
 [TestFixture]
+[Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("advise-theme-palette")]
 [NonParallelizable]
-public sealed class AdviseThemePaletteToolE2ETests {
+public sealed class AdviseThemePaletteToolE2ETests : McpContractFixtureBase {
 	private const string ToolName = AdviseThemePaletteTool.ToolName;
 
 	[Test]
@@ -33,15 +32,12 @@ public sealed class AdviseThemePaletteToolE2ETests {
 	[Description("Starts the real clio MCP server, verifies advise-theme-palette is advertised as read-only with the guidance pointer, and invokes the adapt-primary operation on a low-contrast colour.")]
 	public async Task ThemeColorAdvisor_Should_Advertise_And_AdaptPrimary() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
-		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationTokenSource.Token);
+		IList<McpClientTool> tools = await context.Session.ListToolsAsync(context.CancellationTokenSource.Token);
 		McpClientTool tool = tools.Single(t => t.Name == ToolName);
-		CallToolResult callResult = await session.CallToolAsync(
+		CallToolResult callResult = await context.Session.CallToolAsync(
 			ToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
@@ -49,7 +45,7 @@ public sealed class AdviseThemePaletteToolE2ETests {
 					["primary"] = "#cccccc"
 				}
 			},
-			cancellationTokenSource.Token);
+			context.CancellationTokenSource.Token);
 		ThemeColorAdvisorResult result = EntitySchemaStructuredResultParser.Extract<ThemeColorAdvisorResult>(callResult);
 
 		// Assert
@@ -75,13 +71,10 @@ public sealed class AdviseThemePaletteToolE2ETests {
 	[Description("Starts the real clio MCP server and invokes the triage operation on a mix of valid and invalid colours; verifies the accepted/passing counts and the highest-contrast candidate.")]
 	public async Task ThemeColorAdvisor_Should_Triage_BrandColours() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
-		CallToolResult callResult = await session.CallToolAsync(
+		CallToolResult callResult = await context.Session.CallToolAsync(
 			ToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
@@ -89,7 +82,7 @@ public sealed class AdviseThemePaletteToolE2ETests {
 					["colors"] = new object?[] { "#004fd6", "not-a-color", "#cccccc" }
 				}
 			},
-			cancellationTokenSource.Token);
+			context.CancellationTokenSource.Token);
 		ThemeColorAdvisorResult result = EntitySchemaStructuredResultParser.Extract<ThemeColorAdvisorResult>(callResult);
 
 		// Assert
@@ -109,13 +102,10 @@ public sealed class AdviseThemePaletteToolE2ETests {
 	[Description("Starts the real clio MCP server and invokes the preview operation without full-stops; verifies each role's palette carries only the base -500 stop, not the full palette ramp.")]
 	public async Task ThemeColorAdvisor_Should_Preview_Base500_ByDefault() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
-		CallToolResult callResult = await session.CallToolAsync(
+		CallToolResult callResult = await context.Session.CallToolAsync(
 			ToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
@@ -125,7 +115,7 @@ public sealed class AdviseThemePaletteToolE2ETests {
 					["accent"] = "#f94e11"
 				}
 			},
-			cancellationTokenSource.Token);
+			context.CancellationTokenSource.Token);
 		ThemeColorAdvisorResult result = EntitySchemaStructuredResultParser.Extract<ThemeColorAdvisorResult>(callResult);
 
 		// Assert

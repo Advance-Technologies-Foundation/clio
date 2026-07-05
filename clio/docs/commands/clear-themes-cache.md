@@ -20,7 +20,7 @@ outside a clio install.
 ## Synopsis
 
 ```bash
-clear-themes-cache [options]
+clio clear-themes-cache [options]
 ```
 
 ## Options
@@ -28,7 +28,7 @@ clear-themes-cache [options]
 ```bash
 --uri               -u          Application uri
 
---Password			-p          User password
+--Password          -p          User password
 
 --Login             -l          User login (administrator permission required)
 
@@ -52,10 +52,6 @@ clear the theme cache of the default environment
 clio clear-themes-cache -e myapp
 clear the theme cache of the environment registered as myapp
 ```
-
-## Notes
-
-- Call `get-guidance name=theming` for the theme workflow.
 
 ## Reporting Bugs
 

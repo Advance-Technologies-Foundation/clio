@@ -22,24 +22,17 @@ public class ListThemesTool(
 
 	internal const string ToolName = "list-themes";
 
-	// Known mis-spellings an LLM tends to emit instead of the kebab-case argument names. Rejected with
-	// an actionable rename hint so a camelCase 'environmentName' never silently binds to nothing.
-	private static readonly Dictionary<string, string> LegacyAliases = new(StringComparer.Ordinal) {
-		["environmentName"] = "environment-name",
-		["environment_name"] = "environment-name"
-	};
-
 	/// <summary>Lists the custom themes available on the target environment as a structured result.</summary>
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false),
 	 Description("List the custom Creatio themes available on a registered environment. " +
-		"Returns { success, themes:[{ id, caption, cssClassName, cssFilePath }] }. " +
+		"Returns { success, themes:[{ id, caption, cssClassName, cssFilePath }], error? }. " +
 		"An empty themes array means the catalog is empty or the caller lacks the CanCustomizeBranding license. " +
 		"For the theme workflow, read get-guidance theming first.")]
 	public ListThemesResult ListThemes(
 		[Description("Parameters: environment-name (required).")]
 		[Required] ListThemesArgs args) {
 		string? aliasError = McpToolArgumentSupport.BuildLegacyAliasError(
-			args.ExtensionData, LegacyAliases, ".",
+			args.ExtensionData, McpToolArgumentSupport.EnvironmentNameAliases, ".",
 			"Valid: environment-name.");
 		if (!string.IsNullOrWhiteSpace(aliasError)) {
 			return ListThemesResult.Failure(aliasError);
@@ -111,18 +104,22 @@ public sealed record ListThemesResult {
 	public string Error { get; init; }
 
 	/// <summary>Creates a success result carrying the resolved theme catalog.</summary>
-	public static ListThemesResult Successful(IReadOnlyList<ThemeDescriptor> themes) => new() {
-		Success = true,
-		Themes = (themes ?? Array.Empty<ThemeDescriptor>())
-			.Select(theme => new ThemeDescriptorResult(theme.Id, theme.Caption, theme.CssClassName, theme.CssFilePath))
-			.ToList()
-	};
+	public static ListThemesResult Successful(IReadOnlyList<ThemeDescriptor> themes) {
+		return new ListThemesResult {
+			Success = true,
+			Themes = (themes ?? Array.Empty<ThemeDescriptor>())
+				.Select(theme => new ThemeDescriptorResult(theme.Id, theme.Caption, theme.CssClassName, theme.CssFilePath))
+				.ToList()
+		};
+	}
 
 	/// <summary>Creates a failure result carrying the diagnostic message.</summary>
-	public static ListThemesResult Failure(string error) => new() {
-		Success = false,
-		Error = string.IsNullOrWhiteSpace(error) ? "unknown" : error
-	};
+	public static ListThemesResult Failure(string error) {
+		return new ListThemesResult {
+			Success = false,
+			Error = string.IsNullOrWhiteSpace(error) ? "unknown" : error
+		};
+	}
 }
 
 /// <summary>

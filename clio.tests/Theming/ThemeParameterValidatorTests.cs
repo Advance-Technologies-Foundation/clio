@@ -192,18 +192,21 @@ public sealed class ThemeParameterValidatorTests {
 	}
 
 	[Test]
-	[Description("TryValidateCssContent requires the content to be present; a null value is rejected but an explicitly empty string is valid.")]
+	[Description("TryValidateCssContent requires the content to be present and non-empty; null, empty, and whitespace-only values are all rejected.")]
 	public void TryValidateCssContent_ShouldEnforcePresence_WhenGivenContent() {
 		// Act
 		bool nullContent = ThemeParameterValidator.TryValidateCssContent(null, out string nullError);
 		bool emptyContent = ThemeParameterValidator.TryValidateCssContent(string.Empty, out string emptyError);
+		bool whitespaceContent = ThemeParameterValidator.TryValidateCssContent("   ", out string whitespaceError);
 		bool realContent = ThemeParameterValidator.TryValidateCssContent(".ocean-theme{}", out string realError);
 
 		// Assert
 		nullContent.Should().BeFalse(because: "absent CSS content is invalid");
 		nullError.Should().Contain("required", because: "the diagnostic must state the content is required");
-		emptyContent.Should().BeTrue(because: "an explicitly empty string is present, valid, empty CSS");
-		emptyError.Should().BeNull(because: "valid content carries no error");
+		emptyContent.Should().BeFalse(because: "an explicitly empty string carries no CSS");
+		emptyError.Should().Contain("cannot be empty", because: "the diagnostic must state that empty CSS is rejected");
+		whitespaceContent.Should().BeFalse(because: "whitespace-only content is as meaningless as empty content");
+		whitespaceError.Should().Contain("cannot be empty", because: "the diagnostic must state that empty CSS is rejected");
 		realContent.Should().BeTrue(because: "well-formed content within the size limit is valid");
 		realError.Should().BeNull(because: "valid content carries no error");
 	}

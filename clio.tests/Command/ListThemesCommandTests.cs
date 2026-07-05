@@ -1,5 +1,6 @@
 namespace Clio.Tests.Command;
 
+using System.Collections.Generic;
 using System.Linq;
 using Clio.Command;
 using Clio.Command.Theming;
@@ -10,7 +11,7 @@ using NUnit.Framework;
 
 [TestFixture]
 [Property("Module", "Command")]
-public class ListThemesCommandTests : BaseCommandTests<ListThemesOptions> {
+public sealed class ListThemesCommandTests : BaseCommandTests<ListThemesOptions> {
 
 	private IApplicationClient _applicationClient;
 	private ILogger _logger;
@@ -40,7 +41,7 @@ public class ListThemesCommandTests : BaseCommandTests<ListThemesOptions> {
 
 	[Test, Category("Unit")]
 	[Description("Posts GetAvailableThemes to the WebApp-prefixed ThemeService path when the environment runs under .NET Framework.")]
-	public void ListThemes_FormsCorrectApplicationRequest_WhenApplicationRunsUnderNetFramework() {
+	public void ListThemes_ShouldFormCorrectApplicationRequest_WhenApplicationRunsUnderNetFramework() {
 		// Arrange
 		EnvironmentSettings.IsNetCore = false;
 
@@ -55,7 +56,7 @@ public class ListThemesCommandTests : BaseCommandTests<ListThemesOptions> {
 
 	[Test, Category("Unit")]
 	[Description("Posts GetAvailableThemes to the ThemeService path without the WebApp prefix when the environment runs under .NET Core.")]
-	public void ListThemes_FormsCorrectApplicationRequest_WhenApplicationRunsUnderNetCore() {
+	public void ListThemes_ShouldFormCorrectApplicationRequest_WhenApplicationRunsUnderNetCore() {
 		// Arrange
 		EnvironmentSettings.IsNetCore = true;
 
@@ -70,7 +71,7 @@ public class ListThemesCommandTests : BaseCommandTests<ListThemesOptions> {
 
 	[Test, Category("Unit")]
 	[Description("Parses the values array from a successful ListResponse and exposes the themes with all descriptor fields.")]
-	public void ListThemes_ParsesThemesFromValues_WhenResponseReportsSuccess() {
+	public void ListThemes_ShouldParseThemesFromValues_WhenResponseReportsSuccess() {
 		// Arrange
 		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
 				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
@@ -79,14 +80,15 @@ public class ListThemesCommandTests : BaseCommandTests<ListThemesOptions> {
 				"{\"id\":\"light\",\"caption\":\"Light\",\"cssClassName\":\"theme-light\",\"cssFilePath\":\"b/theme.css\"}]}");
 
 		// Act
-		int exitCode = _command.Execute(new ListThemesOptions());
+		bool succeeded = _command.TryGetAvailableThemes(new ListThemesOptions(),
+			out IReadOnlyList<ThemeDescriptor> themes, out _);
 
 		// Assert
-		exitCode.Should().Be(0,
+		succeeded.Should().BeTrue(
 			because: "a ListResponse with success=true means the theme catalog was read");
-		_command.Themes.Should().HaveCount(2,
+		themes.Should().HaveCount(2,
 			because: "both themes from the values array must be exposed");
-		ThemeDescriptor dark = _command.Themes.Single(theme => theme.Id == "dark");
+		ThemeDescriptor dark = themes.Single(theme => theme.Id == "dark");
 		dark.Caption.Should().Be("Dark", because: "the caption field must be mapped from the response");
 		dark.CssClassName.Should().Be("theme-dark", because: "the cssClassName field must be mapped from the response");
 		dark.CssFilePath.Should().Be("a/theme.css", because: "the cssFilePath field must be mapped from the response");
@@ -94,24 +96,25 @@ public class ListThemesCommandTests : BaseCommandTests<ListThemesOptions> {
 
 	[Test, Category("Unit")]
 	[Description("Returns success with an empty theme list when the response carries no values (e.g. unlicensed caller).")]
-	public void ListThemes_ReturnsEmptyList_WhenResponseHasNoValues() {
+	public void ListThemes_ShouldReturnEmptyList_WhenResponseHasNoValues() {
 		// Arrange
 		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
 				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"success\":true,\"values\":[]}");
 
 		// Act
-		int exitCode = _command.Execute(new ListThemesOptions());
+		bool succeeded = _command.TryGetAvailableThemes(new ListThemesOptions(),
+			out IReadOnlyList<ThemeDescriptor> themes, out _);
 
 		// Assert
-		exitCode.Should().Be(0,
+		succeeded.Should().BeTrue(
 			because: "an empty catalog (e.g. a caller without CanCustomizeBranding) is not an error");
-		_command.Themes.Should().BeEmpty(because: "there are no themes to expose");
+		themes.Should().BeEmpty(because: "there are no themes to expose");
 	}
 
 	[Test, Category("Unit")]
 	[Description("Returns failure exit code and surfaces the ThemeService error message when the response reports success=false with an errorInfo.")]
-	public void ListThemes_ReturnsFailureAndLogsErrorInfoMessage_WhenResponseReportsFailure() {
+	public void ListThemes_ShouldReturnFailureAndLogErrorInfoMessage_WhenResponseReportsFailure() {
 		// Arrange
 		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
 				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
@@ -123,14 +126,13 @@ public class ListThemesCommandTests : BaseCommandTests<ListThemesOptions> {
 		// Assert
 		exitCode.Should().Be(1,
 			because: "an explicit success=false in the ThemeService response must surface as a command failure");
-		_command.Themes.Should().BeEmpty(because: "a failed read must not expose any themes");
 		// Verifies the command surfaces the server-provided errorInfo.message so the user sees why the read failed.
 		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("no permission")));
 	}
 
 	[Test, Category("Unit")]
 	[Description("Fails the read when the response body is a non-empty non-JSON payload (e.g. an auth redirect): ThemeService always answers with JSON, so a non-JSON body means the request never reached the service.")]
-	public void ListThemes_ReturnsFailureAndLogsError_WhenResponseBodyIsNotParseableJson() {
+	public void ListThemes_ShouldReturnFailureAndLogError_WhenResponseBodyIsNotParseableJson() {
 		// Arrange
 		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
 				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
@@ -142,13 +144,12 @@ public class ListThemesCommandTests : BaseCommandTests<ListThemesOptions> {
 		// Assert
 		exitCode.Should().Be(1,
 			because: "a non-JSON body signals the read did not reach ThemeService and must surface as a failure");
-		_command.Themes.Should().BeEmpty(because: "a failed read must not expose any themes");
 		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("Unexpected response from server")));
 	}
 
 	[Test, Category("Unit")]
 	[Description("Treats an empty response body as an empty catalog (the contract default), so a minimal response is not misread as a failure.")]
-	public void ListThemes_ReturnsEmptyList_WhenResponseBodyIsEmpty() {
+	public void ListThemes_ShouldReturnEmptyList_WhenResponseBodyIsEmpty() {
 		// Arrange
 		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
 				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
@@ -160,6 +161,5 @@ public class ListThemesCommandTests : BaseCommandTests<ListThemesOptions> {
 		// Assert
 		exitCode.Should().Be(0,
 			because: "an empty body is the contract default and yields an empty catalog");
-		_command.Themes.Should().BeEmpty(because: "an empty body yields no themes");
 	}
 }

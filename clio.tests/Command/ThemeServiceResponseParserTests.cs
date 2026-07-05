@@ -7,7 +7,7 @@ using NUnit.Framework;
 
 [TestFixture]
 [Property("Module", "Command")]
-public class ThemeServiceResponseParserTests
+public sealed class ThemeServiceResponseParserTests
 {
 	[Test]
 	[Category("Unit")]

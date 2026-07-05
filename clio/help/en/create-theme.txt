@@ -20,7 +20,7 @@ DESCRIPTION
     multi-line CSS.
 
 SYNOPSIS
-    create-theme [options]
+    clio create-theme [options]
 
 OPTIONS
     --id                            Theme id (^[A-Za-z0-9_-]+$, max 100); an auto-generated UUID when omitted
@@ -51,6 +51,9 @@ EXAMPLE
 
     clio create-theme --caption "Ocean" --css-class-name ocean-theme --css-content-file ./theme.css -e myapp
         create a theme reading the CSS from a file
+
+NOTES
+    - To make a theme the default for all users, set the DefaultTheme system setting to the theme id with 'clio set-syssetting'.
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio

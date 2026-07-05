@@ -37,24 +37,6 @@ public interface IThemeColorAdvisor {
 /// <summary>Default <see cref="IThemeColorAdvisor"/> over the bundled engine and theme templates.</summary>
 public sealed class ThemeColorAdvisor : IThemeColorAdvisor {
 
-	private enum ThemeRole {
-		Primary,
-		Secondary,
-		Accent,
-		Success,
-		Error
-	}
-
-	private sealed record SystemColorResolution {
-		public bool Success { get; init; }
-		public string Failure { get; init; }
-		public string Hex { get; init; }
-		public string Source { get; init; }
-		public double? Contrast { get; init; }
-		public bool? Verdict { get; init; }
-		public bool? WasConverted { get; init; }
-	}
-
 	private const string RolePrimary = "primary";
 	private const string RoleSecondary = "secondary";
 	private const string RoleAccent = "accent";
@@ -263,7 +245,8 @@ public sealed class ThemeColorAdvisor : IThemeColorAdvisor {
 		string resolvedVersion;
 		try {
 			resolvedVersion = _templateProvider.ResolveCompatibleVersion(version);
-		} catch (ArgumentException) {
+		}
+		catch (ArgumentException) {
 			return Failure($"VERSION_NOT_SUPPORTED: \"{version}\"");
 		}
 		SystemColorResolution successColor = ResolveSystemColor(version, resolvedVersion, ThemeRole.Success, success);
@@ -336,9 +319,11 @@ public sealed class ThemeColorAdvisor : IThemeColorAdvisor {
 		bool found;
 		try {
 			found = _templateProvider.TryGetPaletteDefault(version, RoleToWire(role), out hex);
-		} catch (ArgumentException) {
+		}
+		catch (ArgumentException) {
 			return new SystemColorResolution { Success = false, Failure = $"VERSION_NOT_SUPPORTED: \"{version}\"" };
-		} catch (InvalidOperationException) {
+		}
+		catch (InvalidOperationException) {
 			found = false;
 		}
 		if (!found) {
@@ -475,5 +460,23 @@ public sealed class ThemeColorAdvisor : IThemeColorAdvisor {
 
 	private static ThemeColorAdvisorResult Failure(string error) {
 		return new ThemeColorAdvisorResult { Success = false, Error = error };
+	}
+
+	private enum ThemeRole {
+		Primary,
+		Secondary,
+		Accent,
+		Success,
+		Error
+	}
+
+	private sealed record SystemColorResolution {
+		public bool Success { get; init; }
+		public string Failure { get; init; }
+		public string Hex { get; init; }
+		public string Source { get; init; }
+		public double? Contrast { get; init; }
+		public bool? Verdict { get; init; }
+		public bool? WasConverted { get; init; }
 	}
 }

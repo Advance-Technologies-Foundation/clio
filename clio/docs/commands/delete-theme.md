@@ -16,13 +16,14 @@ delete-theme - delete a custom Creatio theme from an environment
 Requires the `CanCustomizeBranding` license and the `CanManageThemes` system operation.
 Deleting an unknown id is reported as a failure (it is **not idempotent**).
 
-If you delete the theme that is currently the default (the `DefaultTheme` system
-setting), the environment falls back to the stock theme.
+`delete-theme` does not change the `DefaultTheme` system setting. If you delete the
+theme that is currently the default, reset `DefaultTheme` to another theme id yourself
+(or clear it; an empty value falls back to the stock theme).
 
 ## Synopsis
 
 ```bash
-delete-theme [options]
+clio delete-theme --id <id> [options]
 ```
 
 ## Options
@@ -51,7 +52,6 @@ delete the theme 'ocean-theme' from the environment registered as myapp
 ## Notes
 
 - Find a theme's `id` with [`list-themes`](list-themes.md).
-- Call `get-guidance name=theming` for the theme workflow.
 
 ## Reporting Bugs
 

@@ -1,6 +1,6 @@
 namespace Clio.Tests.Command;
 
-using System.Text.RegularExpressions;
+using System;
 using Clio.Command;
 using Clio.Command.Theming;
 using Clio.Common;
@@ -10,7 +10,7 @@ using NUnit.Framework;
 
 [TestFixture]
 [Property("Module", "Command")]
-public class CreateThemeCommandTests : BaseCommandTests<CreateThemeOptions>
+public sealed class CreateThemeCommandTests : BaseCommandTests<CreateThemeOptions>
 {
 	private IApplicationClient _applicationClient;
 	private ILogger _logger;
@@ -49,7 +49,7 @@ public class CreateThemeCommandTests : BaseCommandTests<CreateThemeOptions>
 
 	[Test, Category("Unit")]
 	[Description("Posts CreateTheme to the WebApp-prefixed ThemeService path when the environment runs under .NET Framework.")]
-	public void CreateTheme_FormsCorrectApplicationRequest_WhenApplicationRunsUnderNetFramework() {
+	public void CreateTheme_ShouldFormCorrectApplicationRequest_WhenApplicationRunsUnderNetFramework() {
 		// Arrange
 		EnvironmentSettings.IsNetCore = false;
 		StubCreateThemeSuccess();
@@ -65,7 +65,7 @@ public class CreateThemeCommandTests : BaseCommandTests<CreateThemeOptions>
 
 	[Test, Category("Unit")]
 	[Description("Posts CreateTheme to the ThemeService path without the WebApp prefix when the environment runs under .NET Core.")]
-	public void CreateTheme_FormsCorrectApplicationRequest_WhenApplicationRunsUnderNetCore() {
+	public void CreateTheme_ShouldFormCorrectApplicationRequest_WhenApplicationRunsUnderNetCore() {
 		// Arrange
 		EnvironmentSettings.IsNetCore = true;
 		StubCreateThemeSuccess();
@@ -81,7 +81,7 @@ public class CreateThemeCommandTests : BaseCommandTests<CreateThemeOptions>
 
 	[Test, Category("Unit")]
 	[Description("Sends a camelCase body that omits packageUId when --package-name is omitted, and an auto-generated UUID id when --id is omitted.")]
-	public void CreateTheme_SendsCamelCaseBodyWithoutPackageUIdAndAutoId_WhenIdAndPackageOmitted() {
+	public void CreateTheme_ShouldSendCamelCaseBodyWithoutPackageUIdAndAutoId_WhenIdAndPackageOmitted() {
 		// Arrange
 		string capturedBody = null;
 		_applicationClient.ExecutePostRequest(
@@ -90,22 +90,22 @@ public class CreateThemeCommandTests : BaseCommandTests<CreateThemeOptions>
 			.Returns(ci => { capturedBody = ci.ArgAt<string>(1); return "{\"success\":true}"; });
 
 		// Act
-		int exitCode = _command.Execute(ValidOptions());
+		bool succeeded = _command.TryCreateTheme(ValidOptions(), out string createdId, out _);
 
 		// Assert
-		exitCode.Should().Be(0, because: "a success=true response means the theme was created");
+		succeeded.Should().BeTrue(because: "a success=true response means the theme was created");
 		capturedBody.Should().Contain("\"caption\":\"Ocean\"", because: "the caption must be serialized in camelCase");
 		capturedBody.Should().Contain("\"cssClassName\":\"ocean-theme\"", because: "the css class name key must be camelCase 'cssClassName'");
 		capturedBody.Should().NotContain("packageUId",
 			because: "an omitted --package-name must omit packageUId so the server falls back to CurrentPackageId");
-		_command.CreatedId.Should().MatchRegex("^[A-Za-z0-9-]+$",
-			because: "an omitted --id must yield an auto-generated UUID that satisfies the id contract");
-		_command.CreatedId.Should().NotBeNullOrWhiteSpace(because: "the generated id must be reported back");
+		Guid.TryParse(createdId, out _).Should().BeTrue(
+			because: "an omitted --id must yield an auto-generated UUID v4 that satisfies the id contract");
+		createdId.Should().NotBeNullOrWhiteSpace(because: "the generated id must be reported back");
 	}
 
 	[Test, Category("Unit")]
-	[Description("Preserves an explicitly supplied --id in the request body and the reported CreatedId.")]
-	public void CreateTheme_PreservesExplicitId_WhenIdSupplied() {
+	[Description("Preserves an explicitly supplied --id in the request body and the reported created id.")]
+	public void CreateTheme_ShouldPreserveExplicitId_WhenIdSupplied() {
 		// Arrange
 		string capturedBody = null;
 		_applicationClient.ExecutePostRequest(
@@ -116,16 +116,17 @@ public class CreateThemeCommandTests : BaseCommandTests<CreateThemeOptions>
 		options.Id = "my-explicit-theme";
 
 		// Act
-		_command.Execute(options);
+		bool succeeded = _command.TryCreateTheme(options, out string createdId, out _);
 
 		// Assert
+		succeeded.Should().BeTrue(because: "a valid explicit id is created successfully");
 		capturedBody.Should().Contain("\"id\":\"my-explicit-theme\"", because: "an explicit id must be sent verbatim");
-		_command.CreatedId.Should().Be("my-explicit-theme", because: "the effective id is the supplied one");
+		createdId.Should().Be("my-explicit-theme", because: "the effective id is the supplied one");
 	}
 
 	[Test, Category("Unit")]
 	[Description("Resolves --package-name to its UId via SysPackage and sends that packageUId in the CreateTheme body.")]
-	public void CreateTheme_ResolvesPackageNameToUId_WhenPackageNameSupplied() {
+	public void CreateTheme_ShouldResolvePackageNameToUId_WhenPackageNameSupplied() {
 		// Arrange
 		_applicationClient.ExecutePostRequest(Arg.Is<string>(u => u.Contains("SelectQuery")), Arg.Any<string>())
 			.Returns("{\"success\":true,\"rows\":[{\"UId\":\"11111111-1111-1111-1111-111111111111\"}]}");
@@ -148,7 +149,7 @@ public class CreateThemeCommandTests : BaseCommandTests<CreateThemeOptions>
 
 	[Test, Category("Unit")]
 	[Description("Fails fast without any HTTP call when both --css-content and --css-content-file are supplied.")]
-	public void CreateTheme_FailsFastWithoutHttp_WhenBothCssInputsSupplied() {
+	public void CreateTheme_ShouldFailFastWithoutHttp_WhenBothCssInputsSupplied() {
 		// Arrange
 		CreateThemeOptions options = ValidOptions();
 		options.CssContentFile = "theme.css";
@@ -165,7 +166,7 @@ public class CreateThemeCommandTests : BaseCommandTests<CreateThemeOptions>
 
 	[Test, Category("Unit")]
 	[Description("Fails fast without any HTTP call when css-class-name violates the format rule.")]
-	public void CreateTheme_FailsFastWithoutHttp_WhenCssClassNameInvalid() {
+	public void CreateTheme_ShouldFailFastWithoutHttp_WhenCssClassNameInvalid() {
 		// Arrange
 		CreateThemeOptions options = ValidOptions();
 		options.CssClassName = "1-bad";
@@ -182,7 +183,7 @@ public class CreateThemeCommandTests : BaseCommandTests<CreateThemeOptions>
 
 	[Test, Category("Unit")]
 	[Description("Fails before any service call with an 'at least one is required' error when both --css-class-name and --caption are empty.")]
-	public void CreateTheme_FailsWithAtLeastOneRequired_WhenCssClassNameAndCaptionBothEmpty() {
+	public void CreateTheme_ShouldFailWithAtLeastOneRequired_WhenCssClassNameAndCaptionBothEmpty() {
 		// Arrange
 		CreateThemeOptions options = new() {
 			CssClassName = string.Empty,
@@ -201,7 +202,7 @@ public class CreateThemeCommandTests : BaseCommandTests<CreateThemeOptions>
 
 	[Test, Category("Unit")]
 	[Description("Derives the css-class-name from the caption (lowercased and hyphenated) and sends both when --css-class-name is omitted.")]
-	public void CreateTheme_DerivesCssClassNameFromCaption_WhenCssClassNameOmitted() {
+	public void CreateTheme_ShouldDeriveCssClassNameFromCaption_WhenCssClassNameOmitted() {
 		// Arrange
 		string capturedBody = null;
 		_applicationClient.ExecutePostRequest(
@@ -226,7 +227,7 @@ public class CreateThemeCommandTests : BaseCommandTests<CreateThemeOptions>
 
 	[Test, Category("Unit")]
 	[Description("Returns failure and surfaces the ThemeService error message when the response reports success=false.")]
-	public void CreateTheme_ReturnsFailureAndLogsErrorInfoMessage_WhenResponseReportsFailure() {
+	public void CreateTheme_ShouldReturnFailureAndLogErrorInfoMessage_WhenResponseReportsFailure() {
 		// Arrange
 		_applicationClient.ExecutePostRequest(
 				Arg.Is<string>(u => u.Contains("CreateTheme")), Arg.Any<string>(),
@@ -243,7 +244,7 @@ public class CreateThemeCommandTests : BaseCommandTests<CreateThemeOptions>
 
 	[Test, Category("Unit")]
 	[Description("Fails the command when the response body is a non-empty non-JSON payload (e.g. an auth redirect): ThemeService always answers with JSON, so a non-JSON body means the create never reached the service.")]
-	public void CreateTheme_ReturnsFailureAndLogsError_WhenResponseBodyIsNotParseableJson() {
+	public void CreateTheme_ShouldReturnFailureAndLogError_WhenResponseBodyIsNotParseableJson() {
 		// Arrange
 		_applicationClient.ExecutePostRequest(
 				Arg.Is<string>(u => u.Contains("CreateTheme")), Arg.Any<string>(),
@@ -260,7 +261,7 @@ public class CreateThemeCommandTests : BaseCommandTests<CreateThemeOptions>
 
 	[Test, Category("Unit")]
 	[Description("Derives the caption from css-class-name and sends it in the body when --caption is omitted.")]
-	public void CreateTheme_DerivesCaptionFromCssClassName_WhenCaptionOmitted() {
+	public void CreateTheme_ShouldDeriveCaptionFromCssClassName_WhenCaptionOmitted() {
 		// Arrange
 		string capturedBody = null;
 		_applicationClient.ExecutePostRequest(
@@ -282,8 +283,8 @@ public class CreateThemeCommandTests : BaseCommandTests<CreateThemeOptions>
 	}
 
 	[Test, Category("Unit")]
-	[Description("Returns success and still reports the client-generated CreatedId when the response body is empty — an empty body is the ThemeService contract default for success.")]
-	public void CreateTheme_ReturnsSuccess_WhenResponseBodyIsEmpty() {
+	[Description("Returns success and still reports the client-generated id when the response body is empty — an empty body is the ThemeService contract default for success.")]
+	public void CreateTheme_ShouldReturnSuccess_WhenResponseBodyIsEmpty() {
 		// Arrange
 		_applicationClient.ExecutePostRequest(
 				Arg.Is<string>(u => u.Contains("CreateTheme")), Arg.Any<string>(),
@@ -291,11 +292,11 @@ public class CreateThemeCommandTests : BaseCommandTests<CreateThemeOptions>
 			.Returns(string.Empty);
 
 		// Act
-		int exitCode = _command.Execute(ValidOptions());
+		bool succeeded = _command.TryCreateTheme(ValidOptions(), out string createdId, out _);
 
 		// Assert
-		exitCode.Should().Be(0, because: "an empty body is the contract default for a successful create");
-		_command.CreatedId.Should().NotBeNullOrWhiteSpace(
+		succeeded.Should().BeTrue(because: "an empty body is the contract default for a successful create");
+		createdId.Should().NotBeNullOrWhiteSpace(
 			because: "the client-generated id is reported even when the server echoes an empty body");
 	}
 }

@@ -21,13 +21,6 @@ public class DeleteThemeTool(
 
 	internal const string ToolName = "delete-theme";
 
-	// Known mis-spellings an LLM tends to emit instead of the kebab-case argument names. Rejected with
-	// an actionable rename hint so a camelCase 'environmentName' never silently binds to nothing.
-	private static readonly Dictionary<string, string> LegacyAliases = new(StringComparer.Ordinal) {
-		["environmentName"] = "environment-name",
-		["environment_name"] = "environment-name"
-	};
-
 	/// <summary>Deletes the addressed theme from the target environment.</summary>
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false),
 	 Description("Delete a custom Creatio theme from a registered environment via the native ThemeService. " +
@@ -36,7 +29,7 @@ public class DeleteThemeTool(
 		[Description("Parameters: environment-name (required), id (required).")]
 		[Required] DeleteThemeArgs args) {
 		string? aliasError = McpToolArgumentSupport.BuildLegacyAliasError(
-			args.ExtensionData, LegacyAliases, ".",
+			args.ExtensionData, McpToolArgumentSupport.EnvironmentNameAliases, ".",
 			"Valid: environment-name, id.");
 		if (!string.IsNullOrWhiteSpace(aliasError)) {
 			return CommandExecutionResult.FromValidationError(aliasError);

@@ -21,7 +21,7 @@ the environment.
 ## Synopsis
 
 ```bash
-list-themes [options]
+clio list-themes [options]
 ```
 
 ## Options
@@ -29,7 +29,7 @@ list-themes [options]
 ```bash
 --uri               -u          Application uri
 
---Password			-p          User password
+--Password          -p          User password
 
 --Login             -l          User login (administrator permission required)
 
@@ -56,8 +56,7 @@ list the themes of the environment registered as myapp
 
 ## Notes
 
-- A theme deployed by a clio push appears here automatically; run [`clear-themes-cache`](clear-themes-cache.md) only if a theme changed on the environment outside a clio install is missing.
-- Call `get-guidance name=theming` for the theme workflow.
+- A theme deployed by a clio push appears here automatically; run [`clear-themes-cache`](clear-themes-cache.md) only when a theme was changed on the environment outside a clio install and is missing here.
 
 ## Reporting Bugs
 

@@ -6,7 +6,7 @@ Theming commands
 
 ## Name
 
-build-theme - Build the artifacts of a Creatio theme from brand colours and fonts
+build-theme - build the artifacts of a Creatio theme from brand colours and fonts
 
 ## Description
 
@@ -25,7 +25,7 @@ neither is given.
 ## Synopsis
 
 ```bash
-clio build-theme --primary <colour> --css-class-name <name> [OPTIONS]
+clio build-theme --primary <colour> [options]
 ```
 
 ## Options
@@ -79,7 +79,7 @@ with --version.
 Optional. Output directory; writes theme.css + theme.json. Prints theme.css to stdout when omitted.
 ```
 
-## Examples
+## Example
 
 Print a theme to stdout:
 
@@ -110,4 +110,8 @@ clio build-theme --primary "#004fd6" --css-class-name MyTheme --heading-font "In
 `build-theme` never mutates an environment. A too-old `--version` (older than the lowest
 supported version) and an unregistered `--environment-name` are reported as errors.
 
-- Call `get-guidance name=theming` for the theme workflow.
+## Reporting Bugs
+
+    https://github.com/Advance-Technologies-Foundation/clio
+
+- [Clio Command Reference](../../Commands.md#build-theme)

@@ -12,7 +12,7 @@ using NUnit.Framework;
 [TestFixture]
 [Category("Unit")]
 [Property("Module", "Command")]
-public class ThemeTemplateProviderTests : BaseClioModuleTests
+public sealed class ThemeTemplateProviderTests : BaseClioModuleTests
 {
 	private static readonly string TemplateDir = Path.Combine("X", "tpl");
 	private static readonly string ThemesRoot = Path.Combine(TemplateDir, "themes");

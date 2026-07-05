@@ -59,8 +59,6 @@ public interface IThemeCssBuilder {
 /// </summary>
 internal sealed class ThemeCssBuilder : IThemeCssBuilder {
 
-	private const string DefaultSuccess500 = "#0b8500";
-	private const string DefaultError500 = "#d2310d";
 	private const string DefaultFontFamily = "Montserrat";
 
 	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
@@ -88,8 +86,8 @@ internal sealed class ThemeCssBuilder : IThemeCssBuilder {
 		string primary = ColorNormalizer.Normalize(options.Primary);
 		string secondary = ColorNormalizer.Normalize(options.Secondary ?? PaletteGenerator.DeriveSecondary(primary));
 		string accent = ColorNormalizer.Normalize(options.Accent ?? ColorMetrics.ChooseBestAccent(primary, PaletteGenerator.GenerateAccentCandidates(primary)).Hex);
-		string success = ColorNormalizer.Normalize(options.Success ?? DefaultSuccess500);
-		string error = ColorNormalizer.Normalize(options.Error ?? DefaultError500);
+		string success = ColorNormalizer.Normalize(options.Success ?? ReadTemplateSystemDefault(templateCss, PaletteNames.Success));
+		string error = ColorNormalizer.Normalize(options.Error ?? ReadTemplateSystemDefault(templateCss, PaletteNames.Error));
 		PaletteSet palettes = new Dictionary<string, IReadOnlyDictionary<int, string>>(StringComparer.Ordinal) {
 			[PaletteNames.Primary] = PaletteGenerator.GenerateScale(primary),
 			[PaletteNames.Secondary] = PaletteGenerator.GenerateScale(secondary),
@@ -104,6 +102,16 @@ internal sealed class ThemeCssBuilder : IThemeCssBuilder {
 		css = ApplyFonts(css, options.Fonts);
 		GuardFilledTemplate(css, palettes);
 		return css;
+	}
+
+	private static string ReadTemplateSystemDefault(string templateCss, string role) {
+		Match match = Regex.Match(templateCss, $@"--crt-palette-{role}-500\s*:\s*(#[0-9a-fA-F]{{6}})",
+			RegexOptions.IgnoreCase, RegexTimeout);
+		if (!match.Success) {
+			throw new InvalidOperationException(
+				$"The theme template does not define a default --crt-palette-{role}-500 colour.");
+		}
+		return match.Groups[1].Value;
 	}
 
 	private static string ApplyPalettes(string css, PaletteSet palettes) {

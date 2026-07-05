@@ -20,7 +20,7 @@ public class ClearThemesCacheToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Declares the safety flags on the clear-themes-cache tool method: a non-read-only cache refresh that is non-destructive, idempotent, and closed-world.")]
-	public void ClearThemesCacheTool_Should_DeclareClearSafetyFlags_WhenInspectingMcpServerToolAttribute() {
+	public void ClearThemesCacheTool_ShouldDeclareClearSafetyFlags_WhenInspectingMcpServerToolAttribute() {
 		// Arrange & Act
 		McpServerToolAttribute attribute = (McpServerToolAttribute)typeof(ClearThemesCacheTool)
 			.GetMethod(nameof(ClearThemesCacheTool.ClearThemesCache))!
@@ -38,7 +38,7 @@ public class ClearThemesCacheToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Marks the single args wrapper as required at the MCP schema level, so a call that omits args fails with a structured error instead of an opaque binding failure.")]
-	public void ClearThemesCacheTool_Should_RequireArgsWrapper_WhenInspectingMethodSignature() {
+	public void ClearThemesCacheTool_ShouldRequireArgsWrapper_WhenInspectingMethodSignature() {
 		// Arrange & Act
 		object[] requiredAttributes = typeof(ClearThemesCacheTool)
 			.GetMethod(nameof(ClearThemesCacheTool.ClearThemesCache))!
@@ -53,7 +53,7 @@ public class ClearThemesCacheToolTests {
 	[Test]
 	[Description("Resolves the clear-themes-cache MCP tool for the requested environment and forwards the environment key into command options.")]
 	[Category("Unit")]
-	public void ClearThemesCache_Should_Resolve_Command_For_Requested_Environment() {
+	public void ClearThemesCache_ShouldResolveCommandForRequestedEnvironment() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeClearThemesCacheCommand defaultCommand = new();
@@ -81,7 +81,7 @@ public class ClearThemesCacheToolTests {
 	[Test]
 	[Description("Returns a structured error without resolving a command when the environment name is empty.")]
 	[Category("Unit")]
-	public void ClearThemesCache_Should_Return_Error_When_Environment_Name_Is_Empty() {
+	public void ClearThemesCache_ShouldReturnError_WhenEnvironmentNameIsEmpty() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeClearThemesCacheCommand defaultCommand = new();
@@ -100,7 +100,7 @@ public class ClearThemesCacheToolTests {
 	[Test]
 	[Description("Returns a structured failure naming environment-name when the required environment name is omitted.")]
 	[Category("Unit")]
-	public void ClearThemesCache_Should_Return_Failure_When_Environment_Name_Is_Missing() {
+	public void ClearThemesCache_ShouldReturnFailure_WhenEnvironmentNameIsMissing() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeClearThemesCacheCommand defaultCommand = new();
@@ -123,7 +123,7 @@ public class ClearThemesCacheToolTests {
 	[Test]
 	[Description("Returns an actionable rename hint instead of silently ignoring a camelCase alias of a kebab-case argument.")]
 	[Category("Unit")]
-	public void ClearThemesCache_Should_Return_RenameHint_When_CamelCase_Alias_Is_Passed() {
+	public void ClearThemesCache_ShouldReturnRenameHint_WhenCamelCaseAliasIsPassed() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeClearThemesCacheCommand defaultCommand = new();
@@ -151,7 +151,7 @@ public class ClearThemesCacheToolTests {
 	[Test]
 	[Description("Binds the clear-themes-cache argument record from kebab-case JSON using the real MCP serializer options, and routes camelCase spellings into the overflow bag — the exact JSON->record binding the MCP host performs, which direct method calls bypass.")]
 	[Category("Unit")]
-	public void ClearThemesCacheArgs_Should_Bind_KebabCase_And_Route_CamelCase_To_ExtensionData() {
+	public void ClearThemesCacheArgs_ShouldBindKebabCaseAndRouteCamelCaseToExtensionData() {
 		// Arrange
 		JsonSerializerOptions options = Clio.BindingsModule.CreateMcpSerializerOptions();
 

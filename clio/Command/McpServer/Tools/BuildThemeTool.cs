@@ -8,6 +8,7 @@ using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using Clio.Command;
 using Clio.Command.Theming;
+using Clio.Common;
 using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
@@ -24,8 +25,15 @@ namespace Clio.Command.McpServer.Tools;
 /// <see cref="BuildThemeCommand"/> so this tool and the CLI verb resolve the version, map inputs, and write
 /// identically.
 /// </summary>
-[McpServerToolType]
-public sealed class BuildThemeTool(BuildThemeCommand command) {
+/// <remarks>
+/// Execution goes through <see cref="BaseTool{T}.ExecuteWithCleanLog{TResponse}"/> so it holds the shared
+/// MCP execution lock: the workspace-write mode mutates the singleton <c>IWorkspacePathBuilder.RootPath</c>
+/// inside <see cref="BuildThemeCommand"/>, which must not race with concurrent tool invocations in a
+/// long-lived MCP server.
+/// </remarks>
+public sealed class BuildThemeTool(
+	BuildThemeCommand command,
+	ILogger logger) : BaseTool<BuildThemeOptions>(command, logger) {
 
 	internal const string ToolName = "build-theme";
 
@@ -105,16 +113,18 @@ public sealed class BuildThemeTool(BuildThemeCommand command) {
 			Version = args.Version,
 			EnvironmentName = args.EnvironmentName
 		};
-		if (writeToPackage) {
-			if (!command.TryBuildTheme(options, args.WorkspaceDirectory, args.PackageName, out string writtenPath, out IReadOnlyList<string> writeWarnings, out string writeError)) {
-				return BuildThemeResult.Failure(writeError);
+		return ExecuteWithCleanLog(() => {
+			if (writeToPackage) {
+				if (!command.TryBuildTheme(options, args.WorkspaceDirectory, args.PackageName, out string writtenPath, out IReadOnlyList<string> writeWarnings, out string writeError)) {
+					return BuildThemeResult.Failure(writeError);
+				}
+				return BuildThemeResult.Written(writtenPath, writeWarnings);
 			}
-			return BuildThemeResult.Written(writtenPath, writeWarnings);
-		}
-		if (!command.TryBuildTheme(options, out string css, out string descriptor, out IReadOnlyList<string> warnings, out string buildError)) {
-			return BuildThemeResult.Failure(buildError);
-		}
-		return BuildThemeResult.Successful(css, descriptor, warnings);
+			if (!command.TryBuildTheme(options, out string css, out string descriptor, out IReadOnlyList<string> warnings, out string buildError)) {
+				return BuildThemeResult.Failure(buildError);
+			}
+			return BuildThemeResult.Successful(css, descriptor, warnings);
+		});
 	}
 }
 

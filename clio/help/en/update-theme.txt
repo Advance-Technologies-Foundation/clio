@@ -17,7 +17,7 @@ DESCRIPTION
     --css-content-file (a UTF-8 file).
 
 SYNOPSIS
-    update-theme [options]
+    clio update-theme --id <id> --caption <caption> --css-class-name <name> [options]
 
 OPTIONS
     --id                            Id of the existing theme to overwrite (required)
@@ -46,6 +46,9 @@ EXAMPLE
 
     clio update-theme --id ocean-theme --caption "Ocean" --css-class-name ocean-theme --css-content-file ./theme.css -e myapp
         overwrite the theme reading the CSS from a file
+
+NOTES
+    - Find a theme's id with 'clio list-themes'.
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio

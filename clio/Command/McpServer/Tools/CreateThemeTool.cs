@@ -21,18 +21,15 @@ public class CreateThemeTool(
 
 	internal const string ToolName = "create-theme";
 
-	// Known mis-spellings an LLM tends to emit instead of the kebab-case argument names. Rejected with
-	// an actionable rename hint so a camelCase 'environmentName' never silently binds to nothing.
-	private static readonly Dictionary<string, string> LegacyAliases = new(StringComparer.Ordinal) {
-		["environmentName"] = "environment-name",
-		["environment_name"] = "environment-name",
-		["cssContent"] = "css-content",
-		["css_content"] = "css-content",
-		["cssClassName"] = "css-class-name",
-		["css_class_name"] = "css-class-name",
-		["packageName"] = "package-name",
-		["package_name"] = "package-name"
-	};
+	private static readonly Dictionary<string, string> LegacyAliases =
+		new(McpToolArgumentSupport.EnvironmentNameAliases, StringComparer.Ordinal) {
+			["cssContent"] = "css-content",
+			["css_content"] = "css-content",
+			["cssClassName"] = "css-class-name",
+			["css_class_name"] = "css-class-name",
+			["packageName"] = "package-name",
+			["package_name"] = "package-name"
+		};
 
 	/// <summary>Creates the theme on the target environment and returns a structured result carrying the effective theme id.</summary>
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false),
@@ -100,7 +97,7 @@ public sealed record CreateThemeArgs(
 	string? EnvironmentName = null,
 
 	[property: JsonPropertyName("css-content")]
-	[property: Description("Inline theme CSS content (max 1 MiB).")]
+	[property: Description("Inline theme CSS content (max 1 MiB); must not be empty.")]
 	[property: Required]
 	string? CssContent = null,
 
@@ -144,14 +141,18 @@ public sealed record CreateThemeResult {
 	public string Error { get; init; }
 
 	/// <summary>Creates a success result carrying the effective theme id.</summary>
-	public static CreateThemeResult Successful(string id) => new() {
-		Success = true,
-		Id = id
-	};
+	public static CreateThemeResult Successful(string id) {
+		return new CreateThemeResult {
+			Success = true,
+			Id = id
+		};
+	}
 
 	/// <summary>Creates a failure result carrying the diagnostic message.</summary>
-	public static CreateThemeResult Failure(string error) => new() {
-		Success = false,
-		Error = string.IsNullOrWhiteSpace(error) ? "unknown" : error
-	};
+	public static CreateThemeResult Failure(string error) {
+		return new CreateThemeResult {
+			Success = false,
+			Error = string.IsNullOrWhiteSpace(error) ? "unknown" : error
+		};
+	}
 }

@@ -40,7 +40,7 @@ public sealed class BuildThemeOptions {
 	public string Error { get; set; }
 
 	/// <summary>CSS class applied when the theme is active; derived from <see cref="Caption"/> (lowercased and hyphenated) when omitted.</summary>
-	[Option("css-class-name", Required = false, HelpText = "CSS class applied when the theme is active (^[A-Za-z][A-Za-z0-9_-]*$, max 100); derived from --caption (or the theme name) when omitted")]
+	[Option("css-class-name", Required = false, HelpText = "CSS class applied when the theme is active (^[A-Za-z][A-Za-z0-9_-]*$, max 100); derived from --caption (lowercased and hyphenated) when omitted")]
 	public string CssClassName { get; set; }
 
 	/// <summary>Optional heading font family; Montserrat when omitted.</summary>

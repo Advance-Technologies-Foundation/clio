@@ -63,6 +63,19 @@ internal static class ThemeServiceResponseParser
 	}
 
 	/// <summary>
+	/// Builds the user-facing diagnostic for a failed ThemeService operation: the server-provided message when
+	/// present, otherwise a generic "success=false" hint pointing at the Creatio application logs.
+	/// </summary>
+	/// <param name="operation">The ThemeService operation name (e.g. <c>CreateTheme</c>) used to prefix the message.</param>
+	/// <param name="serverMessage">The server-provided failure message, if any.</param>
+	/// <returns>A single diagnostic line describing the failure.</returns>
+	public static string DescribeFailure(string operation, string serverMessage) {
+		return string.IsNullOrWhiteSpace(serverMessage)
+			? $"{operation} returned success=false. Check the Creatio application logs for details."
+			: $"{operation} failed: {serverMessage}";
+	}
+
+	/// <summary>
 	/// Same failure detection as <see cref="TryGetFailure(string, out string)"/>, but deserializes the body into
 	/// <typeparamref name="T"/> so a caller can read payload fields (e.g. a <c>values</c> array) on a non-failure
 	/// JSON response — keeping the success / <c>errorInfo</c> / non-JSON evaluation in one place.

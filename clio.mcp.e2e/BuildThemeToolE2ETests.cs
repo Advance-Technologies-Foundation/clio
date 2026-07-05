@@ -2,12 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Threading;
 using System.Threading.Tasks;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
-using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
@@ -21,10 +19,11 @@ namespace Clio.Mcp.E2E;
 /// so the real clio MCP server can build a theme without a live Creatio environment.
 /// </summary>
 [TestFixture]
+[Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("build-theme")]
 [NonParallelizable]
-public sealed class BuildThemeToolE2ETests {
+public sealed class BuildThemeToolE2ETests : McpContractFixtureBase {
 	private const string ToolName = BuildThemeTool.ToolName;
 
 	[Test]
@@ -33,15 +32,12 @@ public sealed class BuildThemeToolE2ETests {
 	[Description("Starts the real clio MCP server, verifies build-theme is advertised as write-capable (ReadOnly=false, the output mode writes local files) with the guidance pointer, and invokes it in compute mode to build a theme.css from the bundled template.")]
 	public async Task BuildTheme_Should_Advertise_And_Build() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
-		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationTokenSource.Token);
+		IList<McpClientTool> tools = await context.Session.ListToolsAsync(context.CancellationTokenSource.Token);
 		McpClientTool tool = tools.Single(t => t.Name == ToolName);
-		CallToolResult callResult = await session.CallToolAsync(
+		CallToolResult callResult = await context.Session.CallToolAsync(
 			ToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
@@ -49,7 +45,7 @@ public sealed class BuildThemeToolE2ETests {
 					["css-class-name"] = "MyTheme"
 				}
 			},
-			cancellationTokenSource.Token);
+			context.CancellationTokenSource.Token);
 		BuildThemeResult result = EntitySchemaStructuredResultParser.Extract<BuildThemeResult>(callResult);
 
 		// Assert
@@ -79,52 +75,42 @@ public sealed class BuildThemeToolE2ETests {
 	[Description("Starts the real clio MCP server and invokes build-theme with workspace-directory + package-name; verifies it writes theme.css + theme.json into <ws>/packages/<pkg>/Files/themes/<css-class-name>/ and returns the path with no CSS payload.")]
 	public async Task BuildTheme_Should_WriteIntoPackage_WhenWorkspaceAndPackageProvided() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
-		string workspaceDir = Path.Combine(Path.GetTempPath(), "clio-build-theme-e2e", Guid.NewGuid().ToString("N"));
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
+		string workspaceDir = CreateFixtureDirectory("build-theme-ws");
 		const string packageName = "UsrTheme";
 		const string cssClassName = "MyTheme";
 		string packagePath = Path.Combine(workspaceDir, "packages", packageName);
 		string themeDir = Path.Combine(packagePath, "Files", "themes", cssClassName);
+		Directory.CreateDirectory(Path.Combine(workspaceDir, ".clio"));
+		File.WriteAllText(Path.Combine(workspaceDir, ".clio", "workspaceSettings.json"), "{}");
+		Directory.CreateDirectory(packagePath);
 
-		try {
-			Directory.CreateDirectory(Path.Combine(workspaceDir, ".clio"));
-			File.WriteAllText(Path.Combine(workspaceDir, ".clio", "workspaceSettings.json"), "{}");
-			Directory.CreateDirectory(packagePath);
-			await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["primary"] = "#004fd6",
+					["css-class-name"] = cssClassName,
+					["workspace-directory"] = workspaceDir,
+					["package-name"] = packageName
+				}
+			},
+			context.CancellationTokenSource.Token);
+		BuildThemeResult result = EntitySchemaStructuredResultParser.Extract<BuildThemeResult>(callResult);
 
-			// Act
-			CallToolResult callResult = await session.CallToolAsync(
-				ToolName,
-				new Dictionary<string, object?> {
-					["args"] = new Dictionary<string, object?> {
-						["primary"] = "#004fd6",
-						["css-class-name"] = cssClassName,
-						["workspace-directory"] = workspaceDir,
-						["package-name"] = packageName
-					}
-				},
-				cancellationTokenSource.Token);
-			BuildThemeResult result = EntitySchemaStructuredResultParser.Extract<BuildThemeResult>(callResult);
-
-			// Assert
-			callResult.IsError.Should().NotBeTrue(
-				because: "build-theme returns a structured result instead of a top-level MCP failure");
-			result.Success.Should().BeTrue(
-				because: "a valid workspace + existing package is a valid workspace-write request");
-			result.Path.Should().Be(themeDir,
-				because: "workspace-write mode returns the resolved <ws>/packages/<pkg>/Files/themes/<cssClassName> directory");
-			result.Css.Should().BeNull(
-				because: "the CSS payload is omitted in workspace-write mode to keep the large string out of the agent context");
-			File.Exists(Path.Combine(themeDir, "theme.css")).Should().BeTrue(
-				because: "workspace-write mode writes theme.css into the package theme directory");
-			File.Exists(Path.Combine(themeDir, "theme.json")).Should().BeTrue(
-				because: "workspace-write mode writes theme.json alongside theme.css");
-		} finally {
-			if (Directory.Exists(workspaceDir)) {
-				Directory.Delete(workspaceDir, recursive: true);
-			}
-		}
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "build-theme returns a structured result instead of a top-level MCP failure");
+		result.Success.Should().BeTrue(
+			because: "a valid workspace + existing package is a valid workspace-write request");
+		result.Path.Should().Be(themeDir,
+			because: "workspace-write mode returns the resolved <ws>/packages/<pkg>/Files/themes/<cssClassName> directory");
+		result.Css.Should().BeNull(
+			because: "the CSS payload is omitted in workspace-write mode to keep the large string out of the agent context");
+		File.Exists(Path.Combine(themeDir, "theme.css")).Should().BeTrue(
+			because: "workspace-write mode writes theme.css into the package theme directory");
+		File.Exists(Path.Combine(themeDir, "theme.json")).Should().BeTrue(
+			because: "workspace-write mode writes theme.json alongside theme.css");
 	}
 }

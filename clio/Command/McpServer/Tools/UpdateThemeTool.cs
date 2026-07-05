@@ -21,19 +21,16 @@ public class UpdateThemeTool(
 
 	internal const string ToolName = "update-theme";
 
-	// Known mis-spellings an LLM tends to emit instead of the kebab-case argument names. Rejected with
-	// an actionable rename hint so a camelCase 'environmentName' never silently binds to nothing.
-	private static readonly Dictionary<string, string> LegacyAliases = new(StringComparer.Ordinal) {
-		["environmentName"] = "environment-name",
-		["environment_name"] = "environment-name",
-		["cssContent"] = "css-content",
-		["css_content"] = "css-content",
-		["cssClassName"] = "css-class-name",
-		["css_class_name"] = "css-class-name"
-	};
+	private static readonly Dictionary<string, string> LegacyAliases =
+		new(McpToolArgumentSupport.EnvironmentNameAliases, StringComparer.Ordinal) {
+			["cssContent"] = "css-content",
+			["css_content"] = "css-content",
+			["cssClassName"] = "css-class-name",
+			["css_class_name"] = "css-class-name"
+		};
 
 	/// <summary>Overwrites the addressed theme on the target environment with the supplied caption, CSS class name, and CSS content.</summary>
-	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false),
+	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false),
 	 Description("Overwrite an existing custom Creatio theme on a registered environment via the native ThemeService " +
 		"(full overwrite by id; the package cannot be changed). For the theme workflow, read get-guidance theming first.")]
 	public CommandExecutionResult UpdateTheme(
@@ -97,7 +94,7 @@ public sealed record UpdateThemeArgs(
 	string? CssClassName = null,
 
 	[property: JsonPropertyName("css-content")]
-	[property: Description("Inline theme CSS content (max 1 MiB).")]
+	[property: Description("Inline theme CSS content (max 1 MiB); must not be empty.")]
 	[property: Required]
 	string? CssContent = null
 ) {

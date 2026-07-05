@@ -9,7 +9,7 @@ using NUnit.Framework;
 
 [TestFixture]
 [Property("Module", "Command")]
-public class ClearThemesCacheCommandTests : BaseCommandTests<ClearThemesCacheOptions> {
+public sealed class ClearThemesCacheCommandTests : BaseCommandTests<ClearThemesCacheOptions> {
 
 	private IApplicationClient _applicationClient;
 	private ILogger _logger;
@@ -39,7 +39,7 @@ public class ClearThemesCacheCommandTests : BaseCommandTests<ClearThemesCacheOpt
 
 	[Test, Category("Unit")]
 	[Description("Posts ClearThemesCache to the WebApp-prefixed ThemeService path when the environment runs under .NET Framework.")]
-	public void ClearThemesCache_FormsCorrectApplicationRequest_WhenApplicationRunsUnderNetFramework() {
+	public void ClearThemesCache_ShouldFormCorrectApplicationRequest_WhenApplicationRunsUnderNetFramework() {
 		// Arrange
 		EnvironmentSettings.IsNetCore = false;
 
@@ -54,7 +54,7 @@ public class ClearThemesCacheCommandTests : BaseCommandTests<ClearThemesCacheOpt
 
 	[Test, Category("Unit")]
 	[Description("Posts ClearThemesCache to the ThemeService path without the WebApp prefix when the environment runs under .NET Core.")]
-	public void ClearThemesCache_FormsCorrectApplicationRequest_WhenApplicationRunsUnderNetCore() {
+	public void ClearThemesCache_ShouldFormCorrectApplicationRequest_WhenApplicationRunsUnderNetCore() {
 		// Arrange
 		EnvironmentSettings.IsNetCore = true;
 
@@ -69,7 +69,7 @@ public class ClearThemesCacheCommandTests : BaseCommandTests<ClearThemesCacheOpt
 
 	[Test, Category("Unit")]
 	[Description("Returns success exit code when the ThemeService responds with success=true.")]
-	public void ClearThemesCache_ReturnsSuccess_WhenResponseReportsSuccess() {
+	public void ClearThemesCache_ShouldReturnSuccess_WhenResponseReportsSuccess() {
 		// Arrange
 		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
 				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
@@ -85,7 +85,7 @@ public class ClearThemesCacheCommandTests : BaseCommandTests<ClearThemesCacheOpt
 
 	[Test, Category("Unit")]
 	[Description("Returns failure exit code and surfaces the ThemeService error message when the response reports success=false with an errorInfo.")]
-	public void ClearThemesCache_ReturnsFailureAndLogsErrorInfoMessage_WhenResponseReportsFailure() {
+	public void ClearThemesCache_ShouldReturnFailureAndLogErrorInfoMessage_WhenResponseReportsFailure() {
 		// Arrange
 		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
 				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
@@ -103,7 +103,7 @@ public class ClearThemesCacheCommandTests : BaseCommandTests<ClearThemesCacheOpt
 
 	[Test, Category("Unit")]
 	[Description("Returns failure exit code and logs a generic diagnostic when the response reports success=false without an errorInfo block.")]
-	public void ClearThemesCache_ReturnsFailureAndLogsGenericMessage_WhenResponseReportsFailureWithoutErrorInfo() {
+	public void ClearThemesCache_ShouldReturnFailureAndLogGenericMessage_WhenResponseReportsFailureWithoutErrorInfo() {
 		// Arrange
 		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
 				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
@@ -121,7 +121,7 @@ public class ClearThemesCacheCommandTests : BaseCommandTests<ClearThemesCacheOpt
 
 	[Test, Category("Unit")]
 	[Description("Fails the command when the response body is a non-empty non-JSON payload (e.g. an auth redirect): ThemeService always answers with JSON, so a non-JSON body means the clear never reached the service.")]
-	public void ClearThemesCache_ReturnsFailureAndLogsError_WhenResponseBodyIsNotParseableJson() {
+	public void ClearThemesCache_ShouldReturnFailureAndLogError_WhenResponseBodyIsNotParseableJson() {
 		// Arrange
 		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
 				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
@@ -138,7 +138,7 @@ public class ClearThemesCacheCommandTests : BaseCommandTests<ClearThemesCacheOpt
 
 	[Test, Category("Unit")]
 	[Description("Treats an empty response body as success (the contract default), so a minimal success response is not misread as a failure.")]
-	public void ClearThemesCache_ReturnsSuccess_WhenResponseBodyIsEmpty() {
+	public void ClearThemesCache_ShouldReturnSuccess_WhenResponseBodyIsEmpty() {
 		// Arrange
 		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
 				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())

@@ -51,7 +51,7 @@ public sealed class AdviseThemePaletteToolTests {
 
 	[Test]
 	[Description("Marks the single args wrapper as required at the MCP schema level, so a call that omits args fails with a structured error instead of an opaque binding failure.")]
-	public void AdviseThemePaletteTool_Should_RequireArgsWrapper_WhenInspectingMethodSignature() {
+	public void AdviseThemePaletteTool_ShouldRequireArgsWrapper_WhenInspectingMethodSignature() {
 		// Arrange & Act
 		object[] requiredAttributes = typeof(AdviseThemePaletteTool)
 			.GetMethod(nameof(AdviseThemePaletteTool.Advise))!

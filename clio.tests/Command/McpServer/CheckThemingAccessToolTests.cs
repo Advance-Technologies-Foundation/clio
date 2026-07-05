@@ -19,7 +19,7 @@ public class CheckThemingAccessToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Declares the safety flags on the check-theming-access tool method: a read-only, non-destructive, idempotent, closed-world permission probe.")]
-	public void CheckThemingAccessTool_Should_DeclareCheckSafetyFlags_WhenInspectingMcpServerToolAttribute() {
+	public void CheckThemingAccessTool_ShouldDeclareCheckSafetyFlags_WhenInspectingMcpServerToolAttribute() {
 		// Arrange & Act
 		McpServerToolAttribute attribute = (McpServerToolAttribute)typeof(CheckThemingAccessTool)
 			.GetMethod(nameof(CheckThemingAccessTool.CheckThemingAccess))!
@@ -37,7 +37,7 @@ public class CheckThemingAccessToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Marks the single args wrapper as required at the MCP schema level, so a call that omits args fails with a structured error instead of an opaque binding failure.")]
-	public void CheckThemingAccessTool_Should_RequireArgsWrapper_WhenInspectingMethodSignature() {
+	public void CheckThemingAccessTool_ShouldRequireArgsWrapper_WhenInspectingMethodSignature() {
 		// Arrange & Act
 		object[] requiredAttributes = typeof(CheckThemingAccessTool)
 			.GetMethod(nameof(CheckThemingAccessTool.CheckThemingAccess))!
@@ -49,21 +49,10 @@ public class CheckThemingAccessToolTests {
 			because: "the args wrapper must be schema-required so an omitted args object fails with a structured error, not an opaque MCP binding failure");
 	}
 
-	private static (CheckThemingAccessTool tool, IToolCommandResolver resolver, ICreatioRightsClient rights,
-		ICreatioLicenseClient license) CreateTool() {
-		ICreatioRightsClient rights = Substitute.For<ICreatioRightsClient>();
-		ICreatioLicenseClient license = Substitute.For<ICreatioLicenseClient>();
-		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		resolver.Resolve<ICreatioRightsClient>(Arg.Any<EnvironmentOptions>()).Returns(rights);
-		resolver.Resolve<ICreatioLicenseClient>(Arg.Any<EnvironmentOptions>()).Returns(license);
-		CheckThemingAccessTool tool = new(resolver);
-		return (tool, resolver, rights, license);
-	}
-
 	[Test]
 	[Description("Resolves both clients for the requested environment and reports full theming access when the operation right and the license are both granted.")]
 	[Category("Unit")]
-	public void CheckThemingAccess_Should_Report_Access_When_Operation_And_License_Granted() {
+	public void CheckThemingAccess_ShouldReportAccess_WhenOperationAndLicenseGranted() {
 		// Arrange
 		(CheckThemingAccessTool tool, IToolCommandResolver resolver, ICreatioRightsClient rights,
 			ICreatioLicenseClient license) = CreateTool();
@@ -86,7 +75,7 @@ public class CheckThemingAccessToolTests {
 	[Test]
 	[Description("Surfaces canCustomizeBranding=false when the operation right is granted but the CanCustomizeBranding license is absent from the status map.")]
 	[Category("Unit")]
-	public void CheckThemingAccess_Should_Report_No_License_When_License_Missing() {
+	public void CheckThemingAccess_ShouldReportNoLicense_WhenLicenseMissing() {
 		// Arrange
 		(CheckThemingAccessTool tool, IToolCommandResolver _, ICreatioRightsClient rights,
 			ICreatioLicenseClient license) = CreateTool();
@@ -106,7 +95,7 @@ public class CheckThemingAccessToolTests {
 	[Test]
 	[Description("Returns a structured failure without resolving any client when the environment name is empty.")]
 	[Category("Unit")]
-	public void CheckThemingAccess_Should_Return_Failure_When_Environment_Name_Is_Empty() {
+	public void CheckThemingAccess_ShouldReturnFailure_WhenEnvironmentNameIsEmpty() {
 		// Arrange
 		(CheckThemingAccessTool tool, IToolCommandResolver resolver, ICreatioRightsClient _, ICreatioLicenseClient __) = CreateTool();
 
@@ -122,7 +111,7 @@ public class CheckThemingAccessToolTests {
 	[Test]
 	[Description("Returns a structured failure naming environment-name when the required environment name is omitted.")]
 	[Category("Unit")]
-	public void CheckThemingAccess_Should_Return_Failure_When_Environment_Name_Is_Missing() {
+	public void CheckThemingAccess_ShouldReturnFailure_WhenEnvironmentNameIsMissing() {
 		// Arrange
 		(CheckThemingAccessTool tool, IToolCommandResolver resolver, ICreatioRightsClient _, ICreatioLicenseClient __) = CreateTool();
 
@@ -139,7 +128,7 @@ public class CheckThemingAccessToolTests {
 	[Test]
 	[Description("Returns an actionable rename hint instead of silently ignoring a camelCase alias of a kebab-case argument.")]
 	[Category("Unit")]
-	public void CheckThemingAccess_Should_Return_RenameHint_When_CamelCase_Alias_Is_Passed() {
+	public void CheckThemingAccess_ShouldReturnRenameHint_WhenCamelCaseAliasIsPassed() {
 		// Arrange
 		(CheckThemingAccessTool tool, IToolCommandResolver resolver, ICreatioRightsClient _, ICreatioLicenseClient __) = CreateTool();
 		CheckThemingAccessArgs args = new() {
@@ -161,7 +150,7 @@ public class CheckThemingAccessToolTests {
 	[Test]
 	[Description("Surfaces the underlying failure as a structured failure result when a resolved client throws.")]
 	[Category("Unit")]
-	public void CheckThemingAccess_Should_Return_Failure_When_Client_Throws() {
+	public void CheckThemingAccess_ShouldReturnFailure_WhenClientThrows() {
 		// Arrange
 		(CheckThemingAccessTool tool, IToolCommandResolver _, ICreatioRightsClient rights, ICreatioLicenseClient __) = CreateTool();
 		rights.GetCanExecuteOperation("CanManageThemes", Arg.Any<CreatioRequestOptions>())
@@ -178,7 +167,7 @@ public class CheckThemingAccessToolTests {
 	[Test]
 	[Description("Binds the check-theming-access argument record from kebab-case JSON using the real MCP serializer options, and routes camelCase spellings into the overflow bag — the exact JSON->record binding the MCP host performs, which direct method calls bypass.")]
 	[Category("Unit")]
-	public void CheckThemingAccessArgs_Should_Bind_KebabCase_And_Route_CamelCase_To_ExtensionData() {
+	public void CheckThemingAccessArgs_ShouldBindKebabCaseAndRouteCamelCaseToExtensionData() {
 		// Arrange
 		JsonSerializerOptions options = Clio.BindingsModule.CreateMcpSerializerOptions();
 
@@ -196,5 +185,16 @@ public class CheckThemingAccessToolTests {
 			because: "environmentName is not a declared wire name, so it must not bind");
 		camel.ExtensionData.Should().ContainKey("environmentName",
 			because: "the unbound camelCase spelling must land in the overflow bag so the tool can return a rename hint");
+	}
+
+	private static (CheckThemingAccessTool tool, IToolCommandResolver resolver, ICreatioRightsClient rights,
+		ICreatioLicenseClient license) CreateTool() {
+		ICreatioRightsClient rights = Substitute.For<ICreatioRightsClient>();
+		ICreatioLicenseClient license = Substitute.For<ICreatioLicenseClient>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<ICreatioRightsClient>(Arg.Any<EnvironmentOptions>()).Returns(rights);
+		resolver.Resolve<ICreatioLicenseClient>(Arg.Any<EnvironmentOptions>()).Returns(license);
+		CheckThemingAccessTool tool = new(resolver);
+		return (tool, resolver, rights, license);
 	}
 }

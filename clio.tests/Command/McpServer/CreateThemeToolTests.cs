@@ -20,7 +20,7 @@ public class CreateThemeToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Declares the FR-12 safety flags on the create-theme tool method: a write that is not destructive, not idempotent, and closed-world.")]
-	public void CreateThemeTool_Should_DeclareCreateSafetyFlags_WhenInspectingMcpServerToolAttribute() {
+	public void CreateThemeTool_ShouldDeclareCreateSafetyFlags_WhenInspectingMcpServerToolAttribute() {
 		// Arrange & Act
 		McpServerToolAttribute attribute = (McpServerToolAttribute)typeof(CreateThemeTool)
 			.GetMethod(nameof(CreateThemeTool.CreateTheme))!
@@ -38,7 +38,7 @@ public class CreateThemeToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Marks the single args wrapper as required at the MCP schema level, so a call that omits args fails with a structured error instead of an opaque binding failure.")]
-	public void CreateThemeTool_Should_RequireArgsWrapper_WhenInspectingMethodSignature() {
+	public void CreateThemeTool_ShouldRequireArgsWrapper_WhenInspectingMethodSignature() {
 		// Arrange & Act
 		object[] requiredAttributes = typeof(CreateThemeTool)
 			.GetMethod(nameof(CreateThemeTool.CreateTheme))!
@@ -53,7 +53,7 @@ public class CreateThemeToolTests {
 	[Test]
 	[Description("Resolves the environment-name create-theme MCP tool, forwards the theme fields, and returns the created id as a structured success result.")]
 	[Category("Unit")]
-	public void CreateTheme_Should_Resolve_Command_And_Return_CreatedId() {
+	public void CreateTheme_ShouldResolveCommandAndReturnCreatedId() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeCreateThemeCommand defaultCommand = new();
@@ -85,7 +85,7 @@ public class CreateThemeToolTests {
 	[Test]
 	[Description("Returns a structured failure without resolving a command when the environment name is empty.")]
 	[Category("Unit")]
-	public void CreateTheme_Should_Return_Failure_When_Environment_Name_Is_Empty() {
+	public void CreateTheme_ShouldReturnFailure_WhenEnvironmentNameIsEmpty() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeCreateThemeCommand defaultCommand = new();
@@ -107,7 +107,7 @@ public class CreateThemeToolTests {
 	[Test]
 	[Description("Returns a structured failure naming environment-name when the required environment name is omitted.")]
 	[Category("Unit")]
-	public void CreateTheme_Should_Return_Failure_When_Environment_Name_Is_Missing() {
+	public void CreateTheme_ShouldReturnFailure_WhenEnvironmentNameIsMissing() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeCreateThemeCommand defaultCommand = new();
@@ -129,7 +129,7 @@ public class CreateThemeToolTests {
 	[Test]
 	[Description("Surfaces the command failure message as a structured failure when the resolved command reports failure.")]
 	[Category("Unit")]
-	public void CreateTheme_Should_Return_Failure_When_Command_Reports_Failure() {
+	public void CreateTheme_ShouldReturnFailure_WhenCommandReportsFailure() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeCreateThemeCommand defaultCommand = new();
@@ -151,7 +151,7 @@ public class CreateThemeToolTests {
 	[Test]
 	[Description("Returns a structured failure naming css-content when the required CSS payload is omitted.")]
 	[Category("Unit")]
-	public void CreateTheme_Should_Return_Failure_When_CssContent_Is_Missing() {
+	public void CreateTheme_ShouldReturnFailure_WhenCssContentIsMissing() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeCreateThemeCommand defaultCommand = new();
@@ -170,9 +170,30 @@ public class CreateThemeToolTests {
 	}
 
 	[Test]
+	[Description("Returns a structured failure naming css-content when the CSS payload is explicitly empty.")]
+	[Category("Unit")]
+	public void CreateTheme_ShouldReturnFailure_WhenCssContentIsEmpty() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeCreateThemeCommand defaultCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		CreateThemeTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CreateThemeResult result = tool.CreateTheme(new CreateThemeArgs(
+			EnvironmentName: "docker_fix2", CssClassName: "ocean-theme", CssContent: "", Caption: "Ocean"));
+
+		// Assert
+		result.Success.Should().BeFalse(because: "an explicitly empty css-content is invalid");
+		result.Error.Should().Contain("css-content", because: "the failure must name the exact kebab-case field the caller has to fix");
+		commandResolver.DidNotReceive().Resolve<CreateThemeCommand>(Arg.Any<CreateThemeOptions>());
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
 	[Description("Returns an actionable rename hint instead of silently ignoring a camelCase alias of a kebab-case argument.")]
 	[Category("Unit")]
-	public void CreateTheme_Should_Return_RenameHint_When_CamelCase_Alias_Is_Passed() {
+	public void CreateTheme_ShouldReturnRenameHint_WhenCamelCaseAliasIsPassed() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		FakeCreateThemeCommand defaultCommand = new();
@@ -221,7 +242,7 @@ public class CreateThemeToolTests {
 	[Test]
 	[Description("Binds the create-theme argument record from kebab-case JSON using the real MCP serializer options, and routes camelCase spellings into the overflow bag — the exact JSON->record binding the MCP host performs, which direct method calls bypass.")]
 	[Category("Unit")]
-	public void CreateThemeArgs_Should_Bind_KebabCase_And_Route_CamelCase_To_ExtensionData() {
+	public void CreateThemeArgs_ShouldBindKebabCaseAndRouteCamelCaseToExtensionData() {
 		// Arrange
 		JsonSerializerOptions options = Clio.BindingsModule.CreateMcpSerializerOptions();
 

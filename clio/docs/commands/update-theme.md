@@ -23,7 +23,7 @@ Provide the CSS through exactly one of `--css-content` (inline) or `--css-conten
 ## Synopsis
 
 ```bash
-update-theme [options]
+clio update-theme --id <id> --caption <caption> --css-class-name <name> [options]
 ```
 
 ## Options
@@ -63,7 +63,6 @@ overwrite the theme reading the CSS from a file
 ## Notes
 
 - Find a theme's `id` with [`list-themes`](list-themes.md).
-- Call `get-guidance name=theming` for the theme workflow.
 
 ## Reporting Bugs
 
