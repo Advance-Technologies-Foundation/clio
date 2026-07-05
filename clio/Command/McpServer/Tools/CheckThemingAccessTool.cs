@@ -15,8 +15,11 @@ namespace Clio.Command.McpServer.Tools;
 /// (<see cref="ICreatioRightsClient"/>) and the <c>CanCustomizeBranding</c> license
 /// (<see cref="ICreatioLicenseClient"/>). Both clients are resolved for the per-call target environment.
 /// </summary>
-[McpServerToolType]
-public sealed class CheckThemingAccessTool(IToolCommandResolver commandResolver) {
+public sealed class CheckThemingAccessTool(
+	ILogger logger,
+	IToolCommandResolver commandResolver) : BaseTool<EnvironmentOptions>(null, logger, commandResolver) {
+
+	private readonly IToolCommandResolver _commandResolver = commandResolver;
 
 	internal const string ToolName = "check-theming-access";
 
@@ -53,20 +56,22 @@ public sealed class CheckThemingAccessTool(IToolCommandResolver commandResolver)
 	}
 
 	private ThemingAccessResult Execute(EnvironmentOptions options) {
-		try {
-			ICreatioRightsClient rightsClient = commandResolver.Resolve<ICreatioRightsClient>(options);
-			ICreatioLicenseClient licenseClient = commandResolver.Resolve<ICreatioLicenseClient>(options);
-			CreatioRequestOptions requestOptions = new();
-			bool canManageThemes = rightsClient.GetCanExecuteOperation(CanManageThemesOperation, requestOptions);
-			IReadOnlyDictionary<string, bool> licenseStatuses = licenseClient.GetLicenseOperationStatuses(
-				new[] { CanCustomizeBrandingLicense }, requestOptions);
-			bool canCustomizeBranding = licenseStatuses.TryGetValue(CanCustomizeBrandingLicense, out bool granted)
-				&& granted;
-			return ThemingAccessResult.Successful(canManageThemes, canCustomizeBranding);
-		}
-		catch (Exception ex) {
-			return ThemingAccessResult.Failure(ex.Message);
-		}
+		return ExecuteWithCleanLog(() => {
+			try {
+				ICreatioRightsClient rightsClient = _commandResolver.Resolve<ICreatioRightsClient>(options);
+				ICreatioLicenseClient licenseClient = _commandResolver.Resolve<ICreatioLicenseClient>(options);
+				CreatioRequestOptions requestOptions = new();
+				bool canManageThemes = rightsClient.GetCanExecuteOperation(CanManageThemesOperation, requestOptions);
+				IReadOnlyDictionary<string, bool> licenseStatuses = licenseClient.GetLicenseOperationStatuses(
+					new[] { CanCustomizeBrandingLicense }, requestOptions);
+				bool canCustomizeBranding = licenseStatuses.TryGetValue(CanCustomizeBrandingLicense, out bool granted)
+					&& granted;
+				return ThemingAccessResult.Successful(canManageThemes, canCustomizeBranding);
+			}
+			catch (Exception ex) {
+				return ThemingAccessResult.Failure(ex.Message);
+			}
+		});
 	}
 }
 

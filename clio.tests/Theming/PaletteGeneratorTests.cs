@@ -57,6 +57,20 @@ public sealed class PaletteGeneratorTests {
 	}
 
 	[Test]
+	[Description("generateScale('#000000') keeps every darker stop at pure black — the ramp never inverts toward lighter shades when the base is already at the lightness floor.")]
+	public void GenerateScale_ShouldKeepDarkerStopsFlatBlack_WhenBaseIsPureBlack() {
+		// Act
+		System.Collections.Generic.IReadOnlyDictionary<int, string> scale = PaletteGenerator.GenerateScale("#000000");
+
+		// Assert
+		scale[500].Should().Be("#000000", because: "the -500 anchor is echoed verbatim");
+		scale[600].Should().Be("#000000", because: "a darker stop of pure black cannot get lighter than the base");
+		scale[700].Should().Be("#000000", because: "a darker stop of pure black cannot get lighter than the base");
+		scale[800].Should().Be("#000000", because: "a darker stop of pure black cannot get lighter than the base");
+		scale[900].Should().Be("#000000", because: "the darkest stop must stay the deepest shade of the ramp");
+	}
+
+	[Test]
 	[Description("deriveSecondary('#004fd6') maps the primary to the calibrated secondary.")]
 	public void DeriveSecondary_ShouldMapToCalibratedSecondary_ForCalibrationAnchor() {
 		// Act / Assert

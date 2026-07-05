@@ -23,7 +23,7 @@ public class CreatioRightsClientTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Posts the operation name to the WebApp-prefixed RightsService REST path and returns true when the result is true.")]
-	public void GetCanExecuteOperation_PostsOperationAndReturnsTrue_WhenPermitted() {
+	public void GetCanExecuteOperation_ShouldPostOperationAndReturnTrue_WhenPermitted() {
 		// Arrange
 		(CreatioRightsClient client, IApplicationClient applicationClient) = CreateClient(isNetCore: false);
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
@@ -43,7 +43,7 @@ public class CreatioRightsClientTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Returns false when RightsService reports GetCanExecuteOperationResult=false.")]
-	public void GetCanExecuteOperation_ReturnsFalse_WhenDenied() {
+	public void GetCanExecuteOperation_ShouldReturnFalse_WhenDenied() {
 		// Arrange
 		(CreatioRightsClient client, IApplicationClient applicationClient) = CreateClient();
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
@@ -60,7 +60,7 @@ public class CreatioRightsClientTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Returns false when the response omits the result property (defensive default).")]
-	public void GetCanExecuteOperation_ReturnsFalse_WhenResultMissing() {
+	public void GetCanExecuteOperation_ShouldReturnFalse_WhenResultMissing() {
 		// Arrange
 		(CreatioRightsClient client, IApplicationClient applicationClient) = CreateClient();
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
@@ -76,8 +76,28 @@ public class CreatioRightsClientTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Caps the response-body excerpt echoed into the diagnostic, so a multi-kilobyte HTML error page does not flood the error message.")]
+	public void GetCanExecuteOperation_ShouldTruncateEchoedBody_WhenNonJsonResponseIsLarge() {
+		// Arrange
+		(CreatioRightsClient client, IApplicationClient applicationClient) = CreateClient();
+		string largeBody = new string('x', 5000);
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(largeBody);
+
+		// Act
+		Action act = () => client.GetCanExecuteOperation("CanManageThemes", new CreatioRequestOptions());
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(because: "a non-JSON body is a transport-level failure")
+			.Which.Message.Length.Should().BeLessThan(700,
+				because: "the echoed body excerpt is capped at 500 characters plus the diagnostic prefix");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Throws a diagnostic InvalidOperationException when the RightsService response is a non-JSON body (e.g. an auth redirect).")]
-	public void GetCanExecuteOperation_Throws_WhenResponseBodyIsNotParseableJson() {
+	public void GetCanExecuteOperation_ShouldThrow_WhenResponseBodyIsNotParseableJson() {
 		// Arrange
 		(CreatioRightsClient client, IApplicationClient applicationClient) = CreateClient();
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),

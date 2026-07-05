@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -37,7 +38,7 @@ public sealed class BuildThemeTool(
 
 	internal const string ToolName = "build-theme";
 
-	private static readonly Regex PackageNamePattern = new("^[A-Za-z0-9_]+$", RegexOptions.Compiled, TimeSpan.FromSeconds(1));
+	private static readonly Regex PackageNamePattern = new(@"^[A-Za-z0-9_]+\z", RegexOptions.Compiled, TimeSpan.FromSeconds(1));
 
 	// Known mis-spellings an LLM tends to emit instead of the kebab-case argument names. Rejected with
 	// an actionable rename hint so a camelCase 'cssClassName' never silently binds to nothing.
@@ -68,6 +69,7 @@ public sealed class BuildThemeTool(
 	[Description("Build the artifacts of a Creatio theme from brand colours and fonts. " +
 		"Without workspace-directory+package-name: returns { success, css, descriptor, warnings?, error? } — pipe css into create-theme's css-content. " +
 		"With workspace-directory+package-name (workspace/dev flow): writes theme.css + theme.json into <workspace-directory>/packages/<package-name>/Files/themes/<css-class-name>/ and returns { success, path, warnings?, error? } WITHOUT the css (avoids round-tripping the large CSS through the agent). " +
+		"Re-running with the same css-class-name overwrites the previously written files; when id is omitted, each run generates a fresh descriptor id — pass id to keep reruns byte-identical. " +
 		"Never mutates an environment. For the theme workflow, read get-guidance theming first.")]
 	public BuildThemeResult BuildTheme(
 		[Description("Parameters: primary (required), css-class-name, caption, id, secondary, accent, success, error, " +
@@ -84,19 +86,8 @@ public sealed class BuildThemeTool(
 			return BuildThemeResult.Failure("primary is required and cannot be empty.");
 		}
 		bool writeToPackage = !string.IsNullOrWhiteSpace(args.WorkspaceDirectory) || !string.IsNullOrWhiteSpace(args.PackageName);
-		if (writeToPackage) {
-			if (string.IsNullOrWhiteSpace(args.WorkspaceDirectory) || string.IsNullOrWhiteSpace(args.PackageName)) {
-				return BuildThemeResult.Failure(
-					"workspace-directory and package-name must be provided together to write into a workspace package; omit both to return the css + descriptor strings instead.");
-			}
-			if (!Path.IsPathFullyQualified(args.WorkspaceDirectory)) {
-				return BuildThemeResult.Failure(
-					$"workspace-directory must be a fully-qualified absolute path. Drive-relative ('C:ws') and root-relative ('\\ws') paths are rejected because the MCP server working directory differs from the caller's. Received: '{args.WorkspaceDirectory}'.");
-			}
-			if (!PackageNamePattern.IsMatch(args.PackageName)) {
-				return BuildThemeResult.Failure(
-					$"package-name must be a simple identifier matching '^[A-Za-z0-9_]+$'. Path separators, '..', and absolute paths are rejected to keep the write inside the workspace. Received: '{args.PackageName}'.");
-			}
+		if (writeToPackage && !TryValidateWorkspaceTarget(args, out string? targetError)) {
+			return BuildThemeResult.Failure(targetError);
 		}
 		BuildThemeOptions options = new() {
 			Primary = args.Primary,
@@ -125,6 +116,23 @@ public sealed class BuildThemeTool(
 			}
 			return BuildThemeResult.Successful(css, descriptor, warnings);
 		});
+	}
+
+	private static bool TryValidateWorkspaceTarget(BuildThemeArgs args, [NotNullWhen(false)] out string? error) {
+		error = null;
+		if (string.IsNullOrWhiteSpace(args.WorkspaceDirectory) || string.IsNullOrWhiteSpace(args.PackageName)) {
+			error = "workspace-directory and package-name must be provided together to write into a workspace package; omit both to return the css + descriptor strings instead.";
+			return false;
+		}
+		if (!Path.IsPathFullyQualified(args.WorkspaceDirectory)) {
+			error = $"workspace-directory must be a fully-qualified absolute path. Drive-relative ('C:ws') and root-relative ('\\ws') paths are rejected because the MCP server working directory differs from the caller's. Received: '{args.WorkspaceDirectory}'.";
+			return false;
+		}
+		if (!PackageNamePattern.IsMatch(args.PackageName)) {
+			error = $"package-name must be a simple identifier matching '^[A-Za-z0-9_]+$'. Path separators, '..', and absolute paths are rejected to keep the write inside the workspace. Received: '{args.PackageName}'.";
+			return false;
+		}
+		return true;
 	}
 }
 

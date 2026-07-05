@@ -148,6 +148,27 @@ public sealed class CreateThemeCommandTests : BaseCommandTests<CreateThemeOption
 	}
 
 	[Test, Category("Unit")]
+	[Description("Fails with exit code 1 and never posts CreateTheme when --package-name does not resolve to a SysPackage, so the theme is not silently created in the fallback package.")]
+	public void CreateTheme_ShouldFailWithoutCreateThemePost_WhenPackageNameIsUnknown() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(Arg.Is<string>(u => u.Contains("SelectQuery")), Arg.Any<string>())
+			.Returns("{\"success\":true,\"rows\":[]}");
+		CreateThemeOptions options = ValidOptions();
+		options.PackageName = "NoSuchPackage";
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "an unresolvable --package-name must fail the command");
+		// Verifies the error names the package the user asked for, so the failure is actionable.
+		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("NoSuchPackage")));
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			Arg.Is<string>(u => u.Contains("CreateTheme")), Arg.Any<string>(),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test, Category("Unit")]
 	[Description("Fails fast without any HTTP call when both --css-content and --css-content-file are supplied.")]
 	public void CreateTheme_ShouldFailFastWithoutHttp_WhenBothCssInputsSupplied() {
 		// Arrange

@@ -148,6 +148,24 @@ public sealed class ListThemesCommandTests : BaseCommandTests<ListThemesOptions>
 	}
 
 	[Test, Category("Unit")]
+	[Description("Prints the catalog with exit code 0 when a theme omits descriptor fields (e.g. no cssFilePath yet), instead of crashing on a null table cell.")]
+	public void ListThemes_ShouldPrintCatalog_WhenThemeFieldsAreMissing() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"success\":true,\"values\":[{\"id\":\"bare\"}]}");
+
+		// Act
+		int exitCode = _command.Execute(new ListThemesOptions());
+
+		// Assert
+		exitCode.Should().Be(0,
+			because: "a theme with missing optional descriptor fields is still a readable catalog entry");
+		// Verifies the table was rendered (with empty cells), i.e. the print path survived the null fields.
+		_logger.Received(1).WriteInfo(Arg.Is<string>(message => message.Contains("bare")));
+	}
+
+	[Test, Category("Unit")]
 	[Description("Treats an empty response body as an empty catalog (the contract default), so a minimal response is not misread as a failure.")]
 	public void ListThemes_ShouldReturnEmptyList_WhenResponseBodyIsEmpty() {
 		// Arrange

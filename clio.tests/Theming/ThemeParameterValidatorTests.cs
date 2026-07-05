@@ -135,6 +135,7 @@ public sealed class ThemeParameterValidatorTests {
 	[TestCase("ok-id_1", true, TestName = "TryValidateId accepts a valid id")]
 	[TestCase("bad id", false, TestName = "TryValidateId rejects a space")]
 	[TestCase("bad.id", false, TestName = "TryValidateId rejects a dot")]
+	[TestCase("ok-id\n", false, TestName = "TryValidateId rejects a trailing newline")]
 	[TestCase("", false, TestName = "TryValidateId rejects empty")]
 	[Description("Validates the theme id against ^[A-Za-z0-9_-]+$ and the length cap.")]
 	public void TryValidateId_ShouldEnforceContract_WhenGivenId(string id, bool expected) {

@@ -35,6 +35,7 @@ public class CreateThemeTool(
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false),
 	 Description("Create a custom Creatio theme on a registered environment via the native ThemeService. " +
 		"Returns { success, id, error? } where id is the created theme's id, auto-generated when omitted. " +
+		"Only inline CSS content is accepted; to supply CSS from a file, use the clio CLI (--css-content-file) instead. " +
 		"For the theme workflow, read get-guidance theming first.")]
 	public CreateThemeResult CreateTheme(
 		[Description("Parameters: environment-name (required), css-content (required), " +

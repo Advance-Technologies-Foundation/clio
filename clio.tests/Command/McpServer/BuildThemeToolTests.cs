@@ -424,6 +424,20 @@ public sealed class BuildThemeToolTests
 	}
 
 	[Test]
+	[Description("Returns a graceful failure (no write) when package-name carries a trailing newline, which the identifier rule must not tolerate.")]
+	public void BuildTheme_ShouldReturnFailure_WhenPackageNameHasTrailingNewline() {
+		// Act
+		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme",
+			WorkspaceDirectory: Path.GetTempPath(), PackageName: "UsrTheme\n"));
+
+		// Assert
+		result.Success.Should().BeFalse(because: "a trailing newline is not part of a simple identifier");
+		result.Error.Should().Contain("package-name must be a simple identifier",
+			because: "the error must name the kebab-case argument and the identifier constraint");
+		_fileSystem.DidNotReceive().WriteAllTextToFile(Arg.Any<string>(), Arg.Any<string>());
+	}
+
+	[Test]
 	[Description("Returns a graceful failure (no build, no write) when an explicit css-class-name could escape the theme directory, because the resolved css-class-name becomes a filesystem path segment.")]
 	public void BuildTheme_ShouldReturnFailure_WhenCssClassNameEscapesWorkspace() {
 		// Act — a valid absolute workspace and simple package name clear the tool's own gates, so the failure

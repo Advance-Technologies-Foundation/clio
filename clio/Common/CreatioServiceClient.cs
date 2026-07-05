@@ -49,7 +49,7 @@ namespace Clio.Common
 				return JsonSerializer.Deserialize<TResponse>(response, ResponseJsonOptions);
 			}
 			catch (JsonException) {
-				throw new InvalidOperationException($"Unexpected response from {url}: {response}");
+				throw new InvalidOperationException($"Unexpected response from {url}: {TextUtilities.SanitizeForDisplay(response)}");
 			}
 		}
 	}

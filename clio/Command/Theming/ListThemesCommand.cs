@@ -71,7 +71,12 @@ public class ListThemesCommand : RemoteCommand<ListThemesOptions>
 			new[] { string.Empty, string.Empty, string.Empty, string.Empty }
 		};
 		foreach (ThemeDescriptor theme in themes) {
-			table.Add(new[] { theme.Id, theme.Caption, theme.CssClassName, theme.CssFilePath });
+			table.Add(new[] {
+				theme.Id ?? string.Empty,
+				theme.Caption ?? string.Empty,
+				theme.CssClassName ?? string.Empty,
+				theme.CssFilePath ?? string.Empty
+			});
 		}
 		Logger.WriteLine();
 		Logger.WriteInfo(TextUtilities.ConvertTableToString(table));

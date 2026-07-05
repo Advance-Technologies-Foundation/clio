@@ -27,10 +27,19 @@ internal static class ThemeParameterValidator {
 
 	/// <summary>The css-class-name character rule: starts with a letter; letters, digits, hyphen, underscore only.</summary>
 	private static readonly Regex CssClassNamePattern = new(@"^[A-Za-z][A-Za-z0-9_-]*\z", RegexOptions.Compiled, RegexTimeout);
-	private static readonly Regex IdPattern = new("^[A-Za-z0-9_-]+$", RegexOptions.Compiled, RegexTimeout);
+	private static readonly Regex IdPattern = new(@"^[A-Za-z0-9_-]+\z", RegexOptions.Compiled, RegexTimeout);
 
 	/// <summary>Collapses each run of characters outside <c>[a-z0-9]</c> into a single hyphen.</summary>
 	private static readonly Regex NonSlugRun = new("[^a-z0-9]+", RegexOptions.Compiled, RegexTimeout);
+
+	private static bool IsMatchSafe(Regex regex, string value) {
+		try {
+			return regex.IsMatch(value);
+		}
+		catch (RegexMatchTimeoutException) {
+			return false;
+		}
+	}
 
 	/// <summary>
 	/// Whether <paramref name="value"/> is a fully valid css-class-name: non-empty, at most
@@ -40,7 +49,7 @@ internal static class ThemeParameterValidator {
 	/// <param name="value">The candidate css-class-name.</param>
 	/// <returns><c>true</c> when the value satisfies every part of the contract.</returns>
 	internal static bool IsValidCssClassName(string value) {
-		return !string.IsNullOrEmpty(value) && value.Length <= MaxCssClassNameLength && CssClassNamePattern.IsMatch(value);
+		return !string.IsNullOrEmpty(value) && value.Length <= MaxCssClassNameLength && IsMatchSafe(CssClassNamePattern, value);
 	}
 
 	/// <summary>
@@ -55,7 +64,13 @@ internal static class ThemeParameterValidator {
 		if (string.IsNullOrWhiteSpace(caption)) {
 			return null;
 		}
-		string slug = NonSlugRun.Replace(caption.Trim().ToLowerInvariant(), "-").Trim('-');
+		string slug;
+		try {
+			slug = NonSlugRun.Replace(caption.Trim().ToLowerInvariant(), "-").Trim('-');
+		}
+		catch (RegexMatchTimeoutException) {
+			slug = CssClassNameFallback;
+		}
 		if (slug.Length == 0) {
 			slug = CssClassNameFallback;
 		}
@@ -118,7 +133,7 @@ internal static class ThemeParameterValidator {
 			error = $"Theme id must be at most {MaxIdLength} characters.";
 			return false;
 		}
-		if (!IdPattern.IsMatch(id)) {
+		if (!IsMatchSafe(IdPattern, id)) {
 			error = "Theme id must match ^[A-Za-z0-9_-]+$ (letters, digits, underscore, hyphen).";
 			return false;
 		}

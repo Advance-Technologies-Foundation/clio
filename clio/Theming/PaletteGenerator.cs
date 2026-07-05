@@ -54,6 +54,7 @@ internal static class PaletteGenerator {
 		if (mode == PaletteMode.Light) {
 			lbot = 0.24;
 		}
+		lbot = Math.Min(lbot, l);
 		for (int i = 0; i < darker.Length; i++) {
 			int step = darker[i];
 			double f = (double)(i + 1) / (darker.Length + 1);

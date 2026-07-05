@@ -300,6 +300,25 @@ public class BuildThemeCommandTests : BaseCommandTests<BuildThemeOptions>
 	}
 
 	[Test, Category("Unit")]
+	[Description("Fails with a friendly write diagnostic instead of an unhandled exception when the output directory is not writable.")]
+	public void Execute_ShouldFailGracefully_WhenOutputDirectoryIsNotWritable() {
+		// Arrange
+		_themeTemplateProvider.GetJsonTemplate(Arg.Any<string>())
+			.Returns("{\"id\":\"<%themeId%>\",\"caption\":\"<%themeCaption%>\",\"cssClassName\":\"<%themeCssClass%>\"}");
+		_fileSystem.When(fs => fs.WriteAllTextToFile(Arg.Any<string>(), Arg.Any<string>()))
+			.Do(_ => throw new IOException("disk full"));
+		BuildThemeOptions options = ValidOptions();
+		options.Output = "out-dir";
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "a write failure must surface as a command failure, not an unhandled exception");
+		_logger.Received(1).WriteError(Arg.Is<string>(m => m.Contains("failed to write theme files") && m.Contains("out-dir")));
+	}
+
+	[Test, Category("Unit")]
 	[Description("Surfaces the builder's validation error and returns a non-zero exit code instead of crashing.")]
 	public void Execute_ShouldFailGracefully_WhenBuilderThrowsArgumentException() {
 		// Arrange

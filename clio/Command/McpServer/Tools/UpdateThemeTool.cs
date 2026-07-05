@@ -32,7 +32,8 @@ public class UpdateThemeTool(
 	/// <summary>Overwrites the addressed theme on the target environment with the supplied caption, CSS class name, and CSS content.</summary>
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false),
 	 Description("Overwrite an existing custom Creatio theme on a registered environment via the native ThemeService " +
-		"(full overwrite by id; the package cannot be changed). For the theme workflow, read get-guidance theming first.")]
+		"(full overwrite by id; the package cannot be changed). Only inline CSS content is accepted; to supply CSS " +
+		"from a file, use the clio CLI (--css-content-file) instead. For the theme workflow, read get-guidance theming first.")]
 	public CommandExecutionResult UpdateTheme(
 		[Description("Parameters: environment-name (required), id (required), caption (required), " +
 			"css-class-name (required), css-content (required).")]

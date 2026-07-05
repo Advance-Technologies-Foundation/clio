@@ -250,12 +250,12 @@ public sealed class ThemeColorAdvisor : IThemeColorAdvisor {
 			return Failure($"VERSION_NOT_SUPPORTED: \"{version}\"");
 		}
 		SystemColorResolution successColor = ResolveSystemColor(version, resolvedVersion, ThemeRole.Success, success);
-		if (!successColor.Success) {
-			return Failure(successColor.Failure);
+		if (!successColor.Resolved) {
+			return Failure(successColor.FailureMessage);
 		}
 		SystemColorResolution errorColor = ResolveSystemColor(version, resolvedVersion, ThemeRole.Error, error);
-		if (!errorColor.Success) {
-			return Failure(errorColor.Failure);
+		if (!errorColor.Resolved) {
+			return Failure(errorColor.FailureMessage);
 		}
 		Dictionary<string, IReadOnlyDictionary<string, string>> palettes = new() {
 			[RolePrimary] = BuildStops(p, fullStops),
@@ -304,15 +304,15 @@ public sealed class ThemeColorAdvisor : IThemeColorAdvisor {
 	private SystemColorResolution ResolveSystemColor(string version, string resolvedVersion, ThemeRole role, string overrideValue) {
 		if (!string.IsNullOrWhiteSpace(overrideValue)) {
 			if (!ColorNormalizer.TryNormalize(overrideValue, out string overrideHex, out string rejectionCode)) {
-				return new SystemColorResolution { Success = false, Failure = $"{rejectionCode}: \"{overrideValue}\"" };
+				return new SystemColorResolution { Resolved = false, FailureMessage = $"{rejectionCode}: \"{overrideValue}\"" };
 			}
 			return new SystemColorResolution {
-				Success = true,
+				Resolved = true,
 				Hex = overrideHex,
 				Source = UserOverrideSource,
 				Contrast = ColorMetrics.ContrastRatio(overrideHex, ColorMetrics.White),
 				Verdict = ColorMetrics.MeetsMinContrastOnWhite(overrideHex),
-				WasConverted = WasConverted(overrideValue, overrideHex)
+				Converted = WasConverted(overrideValue, overrideHex)
 			};
 		}
 		string hex = null;
@@ -321,15 +321,15 @@ public sealed class ThemeColorAdvisor : IThemeColorAdvisor {
 			found = _templateProvider.TryGetPaletteDefault(version, RoleToWire(role), out hex);
 		}
 		catch (ArgumentException) {
-			return new SystemColorResolution { Success = false, Failure = $"VERSION_NOT_SUPPORTED: \"{version}\"" };
+			return new SystemColorResolution { Resolved = false, FailureMessage = $"VERSION_NOT_SUPPORTED: \"{version}\"" };
 		}
 		catch (InvalidOperationException) {
 			found = false;
 		}
 		if (!found) {
-			return new SystemColorResolution { Success = false, Failure = $"TEMPLATE_DEFAULT_MISSING: \"{RoleToWire(role)}@{resolvedVersion}\"" };
+			return new SystemColorResolution { Resolved = false, FailureMessage = $"TEMPLATE_DEFAULT_MISSING: \"{RoleToWire(role)}@{resolvedVersion}\"" };
 		}
-		return new SystemColorResolution { Success = true, Hex = hex, Source = TemplateDefaultSource };
+		return new SystemColorResolution { Resolved = true, Hex = hex, Source = TemplateDefaultSource };
 	}
 
 	private static ThemeColorAdvisorResult WithSuccessOverride(ThemeColorAdvisorResult result, SystemColorResolution resolution) {
@@ -338,7 +338,7 @@ public sealed class ThemeColorAdvisor : IThemeColorAdvisor {
 		}
 		return result with {
 			NormalizedSuccess = resolution.Hex,
-			SuccessWasConverted = resolution.WasConverted,
+			SuccessWasConverted = resolution.Converted,
 			SuccessContrastVerdict = resolution.Verdict,
 			SuccessContrastOnWhite = resolution.Contrast
 		};
@@ -350,7 +350,7 @@ public sealed class ThemeColorAdvisor : IThemeColorAdvisor {
 		}
 		return result with {
 			NormalizedError = resolution.Hex,
-			ErrorWasConverted = resolution.WasConverted,
+			ErrorWasConverted = resolution.Converted,
 			ErrorContrastVerdict = resolution.Verdict,
 			ErrorContrastOnWhite = resolution.Contrast
 		};
@@ -471,12 +471,12 @@ public sealed class ThemeColorAdvisor : IThemeColorAdvisor {
 	}
 
 	private sealed record SystemColorResolution {
-		public bool Success { get; init; }
-		public string Failure { get; init; }
+		public bool Resolved { get; init; }
+		public string FailureMessage { get; init; }
 		public string Hex { get; init; }
 		public string Source { get; init; }
 		public double? Contrast { get; init; }
 		public bool? Verdict { get; init; }
-		public bool? WasConverted { get; init; }
+		public bool? Converted { get; init; }
 	}
 }

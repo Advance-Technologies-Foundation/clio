@@ -21,11 +21,10 @@ An external AI sees `clio` MCP not as a generic system shell, but as a curated C
 
 From MCP discovery, the surface currently exposes:
 
-- `65` tools
-- `50` prompts
-- `5` resources
-- `58` tools with explicit safety metadata
-- `7` legacy operational tools without explicit `ReadOnly` / `Destructive` / `Idempotent` flags
+- `137` tools
+- `67` prompts
+- `92` resources
+- `1` resource template
 
 Important shape of the surface:
 

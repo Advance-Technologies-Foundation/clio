@@ -24,7 +24,7 @@ public class CreatioLicenseClientTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Posts the operation code as a single-element licOperationCodes array to the WebApp-prefixed LicenseService path and maps the status to true.")]
-	public void GetLicenseOperationStatuses_PostsCodesAndMapsGranted_WhenLicensed() {
+	public void GetLicenseOperationStatuses_ShouldPostCodesAndMapGranted_WhenLicensed() {
 		// Arrange
 		(CreatioLicenseClient client, IApplicationClient applicationClient) = CreateClient(isNetCore: false);
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
@@ -47,7 +47,7 @@ public class CreatioLicenseClientTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Returns an empty map when the response reports success=false (unlicensed caller).")]
-	public void GetLicenseOperationStatuses_ReturnsEmptyMap_WhenResponseReportsFailure() {
+	public void GetLicenseOperationStatuses_ShouldReturnEmptyMap_WhenResponseReportsFailure() {
 		// Arrange
 		(CreatioLicenseClient client, IApplicationClient applicationClient) = CreateClient();
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
@@ -65,7 +65,7 @@ public class CreatioLicenseClientTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Returns an empty map without calling the service when no operation codes are requested.")]
-	public void GetLicenseOperationStatuses_ReturnsEmptyMapWithoutCall_WhenNoCodesRequested() {
+	public void GetLicenseOperationStatuses_ShouldReturnEmptyMapWithoutCall_WhenNoCodesRequested() {
 		// Arrange
 		(CreatioLicenseClient client, IApplicationClient applicationClient) = CreateClient();
 
@@ -82,7 +82,7 @@ public class CreatioLicenseClientTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Throws a diagnostic InvalidOperationException when the LicenseService response is a non-JSON body (e.g. an auth redirect).")]
-	public void GetLicenseOperationStatuses_Throws_WhenResponseBodyIsNotParseableJson() {
+	public void GetLicenseOperationStatuses_ShouldThrow_WhenResponseBodyIsNotParseableJson() {
 		// Arrange
 		(CreatioLicenseClient client, IApplicationClient applicationClient) = CreateClient();
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),

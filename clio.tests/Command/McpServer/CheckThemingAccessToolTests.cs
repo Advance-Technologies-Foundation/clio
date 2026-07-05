@@ -194,7 +194,7 @@ public class CheckThemingAccessToolTests {
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<ICreatioRightsClient>(Arg.Any<EnvironmentOptions>()).Returns(rights);
 		resolver.Resolve<ICreatioLicenseClient>(Arg.Any<EnvironmentOptions>()).Returns(license);
-		CheckThemingAccessTool tool = new(resolver);
+		CheckThemingAccessTool tool = new(Substitute.For<ILogger>(), resolver);
 		return (tool, resolver, rights, license);
 	}
 }

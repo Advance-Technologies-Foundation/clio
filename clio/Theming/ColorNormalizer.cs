@@ -12,6 +12,7 @@ internal static class ColorNormalizer {
 
 	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
 	private static readonly Regex Hex8Regex = new(@"^#?[0-9a-f]{8}\z", RegexOptions.Compiled, RegexTimeout);
+	private static readonly Regex Hex4Regex = new(@"^#?[0-9a-f]{4}\z", RegexOptions.Compiled, RegexTimeout);
 	private static readonly Regex Hex3Regex = new(@"^#?([0-9a-f])([0-9a-f])([0-9a-f])\z", RegexOptions.Compiled, RegexTimeout);
 	private static readonly Regex Hex6Regex = new(@"^#?([0-9a-f]{6})\z", RegexOptions.Compiled, RegexTimeout);
 	private static readonly Regex RgbRegex = new(@"^rgb\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)\z", RegexOptions.Compiled, RegexTimeout);
@@ -80,6 +81,7 @@ internal static class ColorNormalizer {
 
 	private static bool IsAlpha(string value) {
 		return Hex8Regex.IsMatch(value)
+			|| Hex4Regex.IsMatch(value)
 			|| value.StartsWith("rgba", StringComparison.Ordinal)
 			|| value.StartsWith("hsla", StringComparison.Ordinal);
 	}

@@ -35,6 +35,8 @@ public sealed class ColorNormalizerTests {
 			because: "hsla() carries alpha");
 		Invoking("#004fd680").Should().Throw<ArgumentException>().WithMessage("ALPHA_NOT_SUPPORTED*",
 			because: "an 8-digit hex is #RRGGBBAA — alpha");
+		Invoking("#f00a").Should().Throw<ArgumentException>().WithMessage("ALPHA_NOT_SUPPORTED*",
+			because: "a 4-digit hex is #RGBA — the shorthand alpha form");
 	}
 
 	[Test]

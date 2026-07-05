@@ -78,4 +78,39 @@ public sealed class ThemeServiceResponseParserTests
 		errorMessage.Should().Contain(response,
 			because: "the unexpected body must be surfaced so the caller can see what actually came back");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Strips control characters from an unexpected non-JSON body before echoing it, so a hostile or misbehaving endpoint cannot inject fake output lines or terminal escape sequences into user-facing / MCP output.")]
+	public void TryGetFailure_ShouldStripControlCharactersFromEchoedBody_WhenBodyIsNonJson() {
+		// Arrange
+		const string response = "line1\r\nFAKE SUCCESS\n[31mred[0m";
+
+		// Act
+		bool failed = ThemeServiceResponseParser.TryGetFailure(response, out string errorMessage);
+
+		// Assert
+		failed.Should().BeTrue(because: "a non-JSON body signals the request did not reach ThemeService");
+		errorMessage.Should().NotContain("\n", because: "newlines that would forge extra output lines must be neutralised");
+		errorMessage.Should().NotContain("\r", because: "carriage returns that would forge extra output lines must be neutralised");
+		errorMessage.Should().NotContain("", because: "ANSI escape sequences must be neutralised before reaching a terminal");
+		errorMessage.Should().Contain("line1 ", because: "the visible content of the body must still be surfaced with control characters replaced by spaces");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Caps an oversized non-JSON body so a large payload (e.g. a whole HTML page) cannot flood user-facing / MCP output.")]
+	public void TryGetFailure_ShouldTruncateEchoedBody_WhenBodyExceedsLengthCap() {
+		// Arrange
+		string response = new('a', 5000);
+
+		// Act
+		bool failed = ThemeServiceResponseParser.TryGetFailure(response, out string errorMessage);
+
+		// Assert
+		failed.Should().BeTrue(because: "a non-JSON body signals the request did not reach ThemeService");
+		errorMessage.Should().EndWith("...", because: "a truncated body must be marked as elided");
+		errorMessage.Length.Should().BeLessThan(response.Length,
+			because: "an oversized body must be capped rather than echoed in full");
+	}
 }

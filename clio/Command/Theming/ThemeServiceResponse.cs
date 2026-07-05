@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Clio.Common;
 
 namespace Clio.Command.Theming;
 
@@ -52,7 +53,7 @@ internal static class ThemeServiceResponseParser
 	/// <param name="errorMessage">
 	/// On an explicit <c>success:false</c>, the server-provided <c>errorInfo.message</c> (may be <c>null</c> when
 	/// the server omits the block); on a non-empty, non-JSON body, an "Unexpected response from server"
-	/// diagnostic carrying the raw body; otherwise <c>null</c>.
+	/// diagnostic carrying a control-character-stripped, length-capped excerpt of the body; otherwise <c>null</c>.
 	/// </param>
 	/// <returns>
 	/// <c>true</c> when the body carries an explicit <c>success:false</c> or is a non-empty, non-JSON body;
@@ -60,19 +61,6 @@ internal static class ThemeServiceResponseParser
 	/// </returns>
 	public static bool TryGetFailure(string response, out string errorMessage) {
 		return TryGetFailure<ThemeServiceResponse>(response, out errorMessage, out _);
-	}
-
-	/// <summary>
-	/// Builds the user-facing diagnostic for a failed ThemeService operation: the server-provided message when
-	/// present, otherwise a generic "success=false" hint pointing at the Creatio application logs.
-	/// </summary>
-	/// <param name="operation">The ThemeService operation name (e.g. <c>CreateTheme</c>) used to prefix the message.</param>
-	/// <param name="serverMessage">The server-provided failure message, if any.</param>
-	/// <returns>A single diagnostic line describing the failure.</returns>
-	public static string DescribeFailure(string operation, string serverMessage) {
-		return string.IsNullOrWhiteSpace(serverMessage)
-			? $"{operation} returned success=false. Check the Creatio application logs for details."
-			: $"{operation} failed: {serverMessage}";
 	}
 
 	/// <summary>
@@ -96,7 +84,7 @@ internal static class ThemeServiceResponseParser
 			payload = JsonSerializer.Deserialize<T>(response, ResponseJsonOptions);
 		}
 		catch (JsonException) {
-			errorMessage = $"Unexpected response from server: {response}";
+			errorMessage = $"Unexpected response from server: {TextUtilities.SanitizeForDisplay(response)}";
 			return true;
 		}
 		if (payload?.Success == false) {
@@ -104,5 +92,18 @@ internal static class ThemeServiceResponseParser
 			return true;
 		}
 		return false;
+	}
+
+	/// <summary>
+	/// Builds the user-facing diagnostic for a failed ThemeService operation: the server-provided message when
+	/// present, otherwise a generic "success=false" hint pointing at the Creatio application logs.
+	/// </summary>
+	/// <param name="operation">The ThemeService operation name (e.g. <c>CreateTheme</c>) used to prefix the message.</param>
+	/// <param name="serverMessage">The server-provided failure message, if any.</param>
+	/// <returns>A single diagnostic line describing the failure.</returns>
+	public static string DescribeFailure(string operation, string serverMessage) {
+		return string.IsNullOrWhiteSpace(serverMessage)
+			? $"{operation} returned success=false. Check the Creatio application logs for details."
+			: $"{operation} failed: {serverMessage}";
 	}
 }

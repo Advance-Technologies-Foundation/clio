@@ -108,20 +108,28 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 
 	/// <inheritdoc />
 	public override int Execute(BuildThemeOptions options) {
-		if (!TryBuildTheme(options, out string css, out string descriptor, out IReadOnlyList<string> warnings, out string error)) {
-			_logger.WriteError(error);
-			return 1;
-		}
-		foreach (string warning in warnings) {
-			_logger.WriteWarning(warning);
-		}
 		if (string.IsNullOrEmpty(options.Output)) {
+			if (!TryBuildTheme(options, out string css, out _, out IReadOnlyList<string> warnings, out string error)) {
+				_logger.WriteError(error);
+				return 1;
+			}
+			WriteWarnings(warnings);
 			_logger.WriteInfo(css);
 			return 0;
 		}
-		WriteArtifacts(options.Output, css, descriptor);
+		if (!TryBuildTheme(options, options.Output, out _, out IReadOnlyList<string> writeWarnings, out string writeError)) {
+			_logger.WriteError(writeError);
+			return 1;
+		}
+		WriteWarnings(writeWarnings);
 		_logger.WriteInfo($"Theme '{options.CssClassName}' written to {options.Output}");
 		return 0;
+	}
+
+	private void WriteWarnings(IReadOnlyList<string> warnings) {
+		foreach (string warning in warnings) {
+			_logger.WriteWarning(warning);
+		}
 	}
 
 	/// <summary>
