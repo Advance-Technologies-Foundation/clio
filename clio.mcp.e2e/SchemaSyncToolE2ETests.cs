@@ -784,12 +784,17 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 		];
 	}
 
-	// Binding-layer failures reach the client through two equivalent surfaces on the lazy tool surface:
-	// a native resident call fails with the SDK diagnostics ("An error occurred invoking 'sync-schemas'." /
-	// "Failed to deserialize argument 'args' for MCP tool ..."), while a clio-run-dispatched call surfaces
-	// the executor's wrapped text ("Error: tool 'sync-schemas' failed: ..." / "'args' for tool
-	// 'sync-schemas' must be a JSON object ..."). Both mean the same contract — the failure happened before
-	// sync-schemas executed — so the assert accepts either diagnostic family while pinning the tool name.
+	// Binding-layer failures reach the client through several equivalent surfaces on the lazy tool
+	// surface: a native resident call fails with the SDK diagnostics ("An error occurred invoking
+	// 'sync-schemas'." / "Failed to deserialize argument 'args' for MCP tool 'sync-schemas'"), while a
+	// clio-run-dispatched call can fail at TWO different layers — (a) the executor's own dispatch wraps
+	// a target-side failure and names the target ("Error: tool 'sync-schemas' failed: ..." / "'args' for
+	// tool 'sync-schemas' must be a JSON object ..."), or (b) a payload that clio-run's OWN `args`
+	// parameter (typed `Dictionary<string, JsonElement>`) cannot bind (e.g. a JSON string instead of an
+	// object) fails the SDK's per-parameter deserializer for clio-run itself, BEFORE dispatch ever runs —
+	// that diagnostic names 'clio-run', not the target tool, because the target was never reached. All
+	// four shapes mean the same contract — the failure happened before sync-schemas executed — so the
+	// assert accepts either tool name being identified.
 	private static void AssertInvocationFailure(CallToolResult callResult, string because) {
 		callResult.IsError.Should().BeTrue(
 			because: because);
@@ -798,8 +803,10 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 		string diagnostics = string.Join(
 			Environment.NewLine,
 			(callResult.Content ?? []).Select(content => content.ToString()));
-		diagnostics.Should().Contain(ToolName,
-			because: "the binding-layer failure diagnostic should identify the sync-schemas tool");
+		(diagnostics.Contains(ToolName, StringComparison.Ordinal)
+			|| diagnostics.Contains(ClioRunTool.ToolName, StringComparison.Ordinal))
+			.Should().BeTrue(
+				because: "the binding-layer failure diagnostic should identify either the sync-schemas tool or, when clio-run's own argument binding rejected the payload before dispatch, clio-run itself");
 		diagnostics.Should().MatchRegex(
 			"(An error occurred invoking|Failed to deserialize argument|failed:|must be a JSON object)",
 			because: "the failure should surface a binding-layer diagnostic — either the SDK's native message or the clio-run executor's wrapped equivalent");
