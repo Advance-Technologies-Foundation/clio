@@ -3373,6 +3373,9 @@ internal static class ToolContractCatalog {
 			CommonErrorContract,
 			[
 				Alias(ParameterScope, ComponentTypeFieldName, "componentType", RejectedStatus, "Use 'component-type' instead of 'componentType'."),
+				Alias(ParameterScope, ComponentTypeFieldName, "component-name", RejectedStatus, "Use 'component-type' instead of 'component-name'."),
+				Alias(ParameterScope, ComponentTypeFieldName, "componentName", RejectedStatus, "Use 'component-type' instead of 'componentName'."),
+				Alias(ParameterScope, ComponentTypeFieldName, "component_name", RejectedStatus, "Use 'component-type' instead of 'component_name'."),
 				Alias(ParameterScope, "schema-type", "schemaType", RejectedStatus, "Use 'schema-type' instead of 'schemaType'."),
 				Alias(ParameterScope, EnvironmentNameFieldName, "environmentName", RejectedStatus, "Use 'environment-name' instead of 'environmentName'.")
 			],
