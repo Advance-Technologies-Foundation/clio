@@ -6,9 +6,7 @@ using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
-using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
-using System.Text.Json;
 
 namespace Clio.Mcp.E2E;
 
@@ -24,71 +22,65 @@ public sealed class EntityBusinessRuleToolE2ETests : McpContractFixtureBase {
 
 	[Category("McpE2E.NoEnvironment")]
 	[Test]
-	[Description("Advertises polymorphic anyOf runtime schema branches for business-rule actions through the real MCP server.")]
+	[Description("Exposes the polymorphic business-rule action contract through the get-tool-contract full contract on the lazy MCP surface.")]
 	[AllureTag(ToolName)]
-	[AllureName("Entity business-rule MCP tool advertises polymorphic action schema")]
-	[AllureDescription("Starts the real clio MCP server, lists tools, and verifies create-entity-business-rule exposes anyOf action branches for field-state actions and Set values assignments.")]
+	[AllureName("Entity business-rule MCP tool exposes polymorphic action contract on the lazy surface")]
+	[AllureDescription("Starts the real clio MCP server, fetches the full create-entity-business-rules contract via get-tool-contract, and verifies the supported action subtypes, the Set values item shape, and the apply-filter payload fields are described there — the lazy-surface replacement for the removed tools/list anyOf runtime schema.")]
 	public async Task BusinessRuleCreate_Should_Advertise_Polymorphic_Action_AnyOf_Runtime_Schema() {
 		// Arrange
 		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
-		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(
+		// create-entity-business-rules is not resident in tools/list on the lazy surface, so its
+		// polymorphic action contract is asserted against the full get-tool-contract definition
+		// (validators carry the action-subtype whitelist and per-action payload shapes) instead of
+		// the SDK-generated tools/list anyOf runtime schema.
+		CallToolResult contractResult = await arrangeContext.Session.CallToolAsync(
+			ToolContractGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> { ["tool-names"] = new[] { ToolName } }
+			},
 			arrangeContext.CancellationTokenSource.Token);
+		ToolContractGetResponse contracts =
+			EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(contractResult);
+		ToolContractDefinition contract = contracts.Tools!.Single(tool => tool.Name == ToolName);
 
 		// Assert
-		McpClientTool tool = tools.Single(tool => tool.Name == ToolName);
-		JsonElement inputSchema = JsonSerializer.SerializeToElement(tool.ProtocolTool.InputSchema);
-		JsonElement actionSchema = inputSchema
-			.GetProperty("properties")
-			.GetProperty("args")
-			.GetProperty("properties")
-			.GetProperty("rules").GetProperty("items")
-			.GetProperty("properties")
-			.GetProperty("actions")
-			.GetProperty("items");
-		JsonElement anyOf = actionSchema.GetProperty("anyOf");
-		anyOf.GetArrayLength().Should().Be(7,
-			because: "the real MCP tools/list schema should describe each supported business-rule action subtype");
-		anyOf.EnumerateArray().Select(GetActionType).Should().NotContain(["hide-element", "show-element"],
-			because: "page-only actions should not appear in the entity business-rule runtime schema");
-		anyOf.EnumerateArray().Should().Contain(branch =>
-				branch.GetProperty("properties").GetProperty("type").GetProperty("const").GetString() == "make-required"
-				&& branch.GetProperty("properties").GetProperty("items").GetProperty("items").GetProperty("type").GetString() == "string",
-			because: "field-state action branches should use string-array action items");
-		JsonElement setValuesItemsSchema = anyOf.EnumerateArray()
-			.Single(branch => branch.GetProperty("properties").GetProperty("type").GetProperty("const").GetString() == "set-values")
-			.GetProperty("properties")
-			.GetProperty("items")
-			.GetProperty("items");
-		setValuesItemsSchema.GetProperty("properties").EnumerateObject()
-			.Select(property => property.Name).Should().Contain(["expression", "value"],
-				because: "Set values action items should advertise target and value expression objects");
-		JsonElement applyFilterSchema = anyOf.EnumerateArray()
-			.Single(branch => branch.GetProperty("properties").GetProperty("type").GetProperty("const").GetString() == "apply-filter");
-		applyFilterSchema.GetProperty("properties").EnumerateObject()
-			.Select(property => property.Name).Should().Contain([
-				"type",
-				"target",
-				"targetFilterPath",
-				"source",
-				"sourceFilterPath",
-				"clearValue",
-				"populateValue"
-			],
-			because: "apply-filter should advertise its dedicated lookup-filter payload fields through the runtime schema");
-		applyFilterSchema.GetProperty("properties").GetProperty("targetFilterPath").GetProperty("description").GetString()
-			.Should().Contain("Lookup",
-				because: "runtime MCP schema should describe targetFilterPath as a lookup-valued path");
-		applyFilterSchema.GetProperty("properties").GetProperty("targetFilterPath").GetProperty("description").GetString()
-			.Should().Contain("not Guid",
-				because: "runtime MCP schema should explicitly reject Guid-valued targetFilterPath paths");
-		applyFilterSchema.GetProperty("properties").GetProperty("sourceFilterPath").GetProperty("description").GetString()
-			.Should().Contain("Lookup",
-				because: "runtime MCP schema should describe sourceFilterPath as a lookup-valued path");
-		applyFilterSchema.GetProperty("properties").GetProperty("sourceFilterPath").GetProperty("description").GetString()
-			.Should().Contain("not Guid",
-				because: "runtime MCP schema should explicitly reject Guid-valued sourceFilterPath paths");
+		IReadOnlyList<ToolContractValidator> validators = contract.InputSchema.Validators!;
+		ToolContractValidator actionTypeValidator = validators.Should()
+			.ContainSingle(validator => validator.Code == "unsupported-action",
+				because: "the contract should carry exactly one action-subtype whitelist validator")
+			.Which;
+		string[] supportedActionTypes = [
+			"make-editable", "make-read-only", "make-required", "make-optional",
+			"set-values", "apply-filter", "apply-static-filter"
+		];
+		foreach (string actionType in supportedActionTypes) {
+			actionTypeValidator.Context.Should().Contain(actionType,
+				because: "the contract should describe each supported business-rule action subtype");
+		}
+		actionTypeValidator.Context.Should().NotContainAny(["hide-element", "show-element"],
+			because: "page-only actions should not appear in the entity business-rule contract");
+		ToolContractValidator setValuesValidator = validators.Should()
+			.ContainSingle(validator => validator.Code == "invalid-set-values-item",
+				because: "the contract should describe the Set values action item shape")
+			.Which;
+		setValuesValidator.Context.Should().Contain("expression",
+			because: "Set values action items should advertise the target expression object");
+		setValuesValidator.Context.Should().Contain("value",
+			because: "Set values action items should advertise the value expression object");
+		ToolContractValidator applyFilterValidator = validators.Should()
+			.ContainSingle(validator => validator.Code == "invalid-apply-filter-action",
+				because: "the contract should describe the apply-filter action payload")
+			.Which;
+		foreach (string fieldName in new[] { "target", "targetFilterPath", "source", "sourceFilterPath", "clearValue", "populateValue" }) {
+			applyFilterValidator.Context.Should().Contain(fieldName,
+				because: "apply-filter should advertise its dedicated lookup-filter payload fields through the contract");
+		}
+		applyFilterValidator.Context.Should().Contain("Lookup",
+			because: "the contract should describe filter paths as lookup-valued paths");
+		applyFilterValidator.Context.Should().Contain("not Guid",
+			because: "the contract should explicitly reject Guid-valued filter paths");
 	}
 
 	[Category("McpE2E.NoEnvironment")]
@@ -292,14 +284,19 @@ public sealed class EntityBusinessRuleToolE2ETests : McpContractFixtureBase {
 			arrangeContext.CancellationTokenSource.Token);
 
 		// Assert
+		// Lazy-surface routing: create-entity-business-rules is not resident, so the session dispatches
+		// the call through clio-run. The target's args record still fails binding inside the dispatch,
+		// but the executor wraps the diagnostic as "Error: tool '<name>' failed: …" instead of the
+		// native "Failed to deserialize argument 'args' for MCP tool '<name>'" text — accept either.
 		callResult.IsError.Should().BeTrue(
 			because: "argument binding failures occur before command execution and should be returned as MCP error results");
 		callResult.Content.Should().NotBeNullOrEmpty(
 			because: "the MCP error result should include human-readable diagnostics");
 		callResult.Content!.Select(content => content.ToString()).Should().Contain(message =>
-				message.Contains($"Failed to deserialize argument 'args' for MCP tool '{ToolName}'", StringComparison.Ordinal)
+				(message.Contains($"Failed to deserialize argument 'args' for MCP tool '{ToolName}'", StringComparison.Ordinal)
+					|| message.Contains($"tool '{ToolName}' failed", StringComparison.OrdinalIgnoreCase))
 				&& message.Contains("unsupported-action", StringComparison.Ordinal),
-			because: "the caller should see the underlying System.Text.Json action binding error");
+			because: "the caller should see the underlying System.Text.Json action binding error, natively or wrapped by the clio-run executor");
 	}
 
 	[Category("McpE2E.Sandbox")]
@@ -527,9 +524,6 @@ public sealed class EntityBusinessRuleToolE2ETests : McpContractFixtureBase {
 
 	private static bool ContainsText(string? value, string expectedText) =>
 		value != null && value.Contains(expectedText, StringComparison.OrdinalIgnoreCase);
-
-	private static string? GetActionType(JsonElement branch) =>
-		branch.GetProperty("properties").GetProperty("type").GetProperty("const").GetString();
 
 	private static string ResolvePackageName(McpE2ESettings settings) =>
 		string.IsNullOrWhiteSpace(settings.Sandbox.PackageName)

@@ -36,7 +36,7 @@ public sealed class ClientUnitSchemaCreateTool(
 			try {
 				resolvedCommand = ResolveCommand<ClientUnitSchemaCreateCommand>(options);
 			} catch (Exception ex) {
-				return new ClientUnitSchemaCreateResponse { Success = false, Error = ex.Message };
+				return new ClientUnitSchemaCreateResponse { Success = false, Error = SensitiveErrorTextRedactor.Redact(ex.Message) };
 			}
 			resolvedCommand.TryCreate(options, out ClientUnitSchemaCreateResponse response);
 			return response;

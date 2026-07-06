@@ -75,22 +75,22 @@ public sealed class ApplicationSectionMaintenanceContractToolE2ETests : McpContr
 	}
 
 	[Test]
-	[Description("Advertises delete-app-section in the MCP tool list so callers can discover the installed-app section deletion tool.")]
+	[Description("Exposes delete-app-section via the get-tool-contract compact index so callers can discover the installed-app section deletion tool on the lazy surface.")]
 	[AllureFeature(SectionDeleteToolName)]
 	[AllureTag(SectionDeleteToolName)]
-	[AllureName("Application section delete tool is advertised by the MCP server")]
-	[AllureDescription("Starts the real clio MCP server and verifies that delete-app-section appears in the advertised tool manifest.")]
+	[AllureName("Application section delete tool is discoverable on the lazy surface")]
+	[AllureDescription("Starts the real clio MCP server and verifies that delete-app-section is discoverable via the get-tool-contract compact index.")]
 	public async Task ApplicationSectionDelete_Should_Be_Listed_By_Mcp_Server() {
 		// Arrange
 		await using ArrangeContext arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
-		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		IEnumerable<string> toolNames = tools.Select(tool => tool.Name);
+		IReadOnlyCollection<string> toolNames =
+			await arrangeContext.Session.ListReachableToolNamesAsync(arrangeContext.CancellationTokenSource.Token);
 
 		// Assert
 		toolNames.Should().Contain(SectionDeleteToolName,
-			because: "delete-app-section must be advertised so MCP callers can discover installed-app section deletion");
+			because: $"the {SectionDeleteToolName} MCP tool must be discoverable on the lazy surface (get-tool-contract compact index) even though it is not resident in tools/list, so MCP callers can discover installed-app section deletion");
 	}
 
 	[Test]

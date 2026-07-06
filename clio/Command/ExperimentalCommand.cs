@@ -118,6 +118,15 @@ public class ExperimentalCommand : Command<ExperimentalOptions> {
 			.Select(info => (info.FeatureName, info.Enabled, Orphan: false))
 			.ToList();
 
+		// Standalone feature keys (gating a registration profile, not a single attributed type) are
+		// recognized keys with no attribute carrier, so they are listed explicitly with their current
+		// settings state rather than as orphans. catalogKeys.Add doubles as the filter: it adds the key
+		// and yields it only when it was not already present, so each standalone key is listed at most
+		// once. Where enumerates the source exactly once, preserving the original add-then-act order.
+		foreach (string key in StandaloneFeatureKeys.Where(catalogKeys.Add)) {
+			rows.Add((key, _featureToggleService.IsFeatureEnabled(key), Orphan: false));
+		}
+
 		// Settings keys that no attribute references are surfaced as orphans so a leftover/renamed
 		// flag in appsettings.json is still visible and manageable.
 		foreach (KeyValuePair<string, bool> feature in _settingsRepository.GetFeatures()) {
@@ -144,11 +153,18 @@ public class ExperimentalCommand : Command<ExperimentalOptions> {
 		_logger.PrintTable(table);
 	}
 
+	// Feature keys clio recognizes that are NOT derived from a [FeatureToggle] attribute on an
+	// options/MCP type (registration-filter profiles, etc.), listed so `clio experimental` shows them
+	// and `--enable/--disable` does not warn they are unknown. Compared case-insensitively.
+	// Currently empty: the mcp-lazy-tools profile toggle was removed — lazy is now the only tool surface.
+	internal static readonly string[] StandaloneFeatureKeys = [];
+
 	private static IEnumerable<string> GetKnownFeatureKeys() =>
 		GetGatedTypes()
 			.Select(type => type.GetCustomAttribute<FeatureToggleAttribute>(inherit: false))
 			.Where(attribute => attribute is not null)
 			.Select(attribute => attribute.FeatureName)
+			.Concat(StandaloneFeatureKeys)
 			.Distinct(StringComparer.OrdinalIgnoreCase);
 
 	// Sources every feature-gated type clio knows about: command option types from the CLI verb set

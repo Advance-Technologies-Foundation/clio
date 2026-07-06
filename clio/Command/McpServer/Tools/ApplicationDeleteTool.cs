@@ -56,7 +56,7 @@ public sealed class ApplicationDeleteTool(
 		} catch (Exception ex) {
 			return new ApplicationDeleteResponse {
 				Success = false,
-				Error = ex.Message
+				Error = SensitiveErrorTextRedactor.Redact(ex.Message)
 			};
 		}
 	}
@@ -81,7 +81,7 @@ public sealed class ApplicationDeleteTool(
 /// </summary>
 public sealed record ApplicationDeleteArgs(
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Registered clio environment name, e.g. 'local'. Preferred for normal MCP work.")]
+	[property: Description(McpToolDescriptions.EnvironmentName)]
 	string? EnvironmentName,
 
 	[property: JsonPropertyName("app-name")]
@@ -90,13 +90,13 @@ public sealed record ApplicationDeleteArgs(
 	string AppName,
 
 	[property: JsonPropertyName("uri")]
-	[property: Description("Direct Creatio URL. Use only when bootstrap is broken or before the environment can be registered through reg-web-app.")]
+	[property: Description(McpToolDescriptions.Uri)]
 	string? Uri = null,
 	[property: JsonPropertyName("login")]
-	[property: Description("Direct Creatio login paired with `uri`. Emergency fallback only.")]
+	[property: Description(McpToolDescriptions.Login)]
 	string? Login = null,
 	[property: JsonPropertyName("password")]
-	[property: Description("Direct Creatio password paired with `uri`. Emergency fallback only.")]
+	[property: Description(McpToolDescriptions.Password)]
 	string? Password = null
 );
 

@@ -89,7 +89,7 @@ public sealed class CompileCreatioTool(
 			}
 			catch (Exception exception)
 			{
-				List<LogMessage> logMessages = [.. logger.LogMessages, new ErrorMessage(exception.Message)];
+				List<LogMessage> logMessages = [.. logger.LogMessages, new ErrorMessage(SensitiveErrorTextRedactor.Redact(exception.Message))];
 				CommandExecutionResult result = new(1, logMessages);
 				logger.ClearMessages();
 				return result;
@@ -107,7 +107,7 @@ public sealed class CompileCreatioTool(
 /// </summary>
 public sealed record CompileCreatioArgs(
 	[property: JsonPropertyName("environment-name")]
-	[Description("Registered clio environment name")]
+	[Description(McpToolDescriptions.EnvironmentName)]
 	[Required]
 	string EnvironmentName,
 

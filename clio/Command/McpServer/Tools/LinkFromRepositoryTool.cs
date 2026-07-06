@@ -24,7 +24,7 @@ public class LinkFromRepositoryTool(
 		Idempotent = false, OpenWorld = false)]
 	[Description("Links repository package content into a Creatio environment package directory resolved by registered environment name")]
 	public CommandExecutionResult LinkFromRepositoryByEnvironment(
-		[Description("Registered clio environment name")] [Required] string environmentName,
+		[Description(McpToolDescriptions.EnvironmentName)] [Required] string environmentName,
 		[Description("Path to the package repository folder")] [Required] string repoPath,
 		[Description("Packages to link: `*` for all packages or a comma-separated package list")] [Required] string packages,
 		[Description("Print a summary of what would happen without executing any mutations")] bool? dryRun = null,

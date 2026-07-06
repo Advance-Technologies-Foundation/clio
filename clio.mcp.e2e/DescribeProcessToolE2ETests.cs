@@ -11,7 +11,6 @@ using Clio.Command.McpServer.Tools.ProcessDesigner;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using FluentAssertions;
-using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E;
@@ -30,19 +29,20 @@ public sealed class DescribeProcessToolE2ETests {
 	private const string ToolName = DescribeProcessTool.ToolName;
 
 	[Test]
-	[Description("Starts the real clio MCP server and verifies describe-business-process is advertised (hermetic).")]
+	[Description("Starts the real clio MCP server and verifies describe-business-process is discoverable via the get-tool-contract compact index (hermetic).")]
 	[AllureTag(ToolName)]
-	[AllureName("describe-business-process is advertised by the clio MCP server")]
+	[AllureName("describe-business-process is discoverable on the lazy surface")]
 	public async Task DescribeProcess_Should_Be_Advertised_By_Mcp_Server() {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: false);
 
 		// Act
-		IList<McpClientTool> tools = await context.Session.ListToolsAsync(context.CancellationTokenSource.Token);
+		IReadOnlyCollection<string> toolNames =
+			await context.Session.ListReachableToolNamesAsync(context.CancellationTokenSource.Token);
 
 		// Assert
-		tools.Select(tool => tool.Name).Should().Contain(ToolName,
-			because: "the describe-business-process tool must be discoverable on the real clio MCP server");
+		toolNames.Should().Contain(ToolName,
+			because: $"the {ToolName} MCP tool must be discoverable on the lazy surface (get-tool-contract compact index) even though it is not resident in tools/list");
 	}
 
 	[Test]
@@ -71,9 +71,10 @@ public sealed class DescribeProcessToolE2ETests {
 	}
 
 	private static async Task<CallToolResult> CallToolAsync(ArrangeContext context, Dictionary<string, object?> args) {
-		IList<McpClientTool> tools = await context.Session.ListToolsAsync(context.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(ToolName,
-			because: "the describe-business-process tool must be advertised before the end-to-end call");
+		IReadOnlyCollection<string> toolNames =
+			await context.Session.ListReachableToolNamesAsync(context.CancellationTokenSource.Token);
+		toolNames.Should().Contain(ToolName,
+			because: "the describe-business-process tool must be discoverable via the get-tool-contract compact index before the end-to-end call");
 		return await context.Session.CallToolAsync(
 			ToolName,
 			new Dictionary<string, object?> { ["args"] = args },

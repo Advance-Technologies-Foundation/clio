@@ -9,19 +9,19 @@ public abstract record SchemaGetBaseArgs {
 	public string? OutputFile { get; init; }
 
 	[JsonPropertyName("environment-name")]
-	[Description("Registered clio environment name, e.g. 'dev_5001'. Preferred for normal MCP work.")]
+	[Description(McpToolDescriptions.EnvironmentName)]
 	public string? EnvironmentName { get; init; }
 
 	[JsonPropertyName("uri")]
-	[Description("Direct Creatio URL. Use only when bootstrap is broken or before the environment can be registered through reg-web-app.")]
+	[Description(McpToolDescriptions.Uri)]
 	public string? Uri { get; init; }
 
 	[JsonPropertyName("login")]
-	[Description("Direct Creatio login paired with `uri`. Emergency fallback only.")]
+	[Description(McpToolDescriptions.Login)]
 	public string? Login { get; init; }
 
 	[JsonPropertyName("password")]
-	[Description("Direct Creatio password paired with `uri`. Emergency fallback only.")]
+	[Description(McpToolDescriptions.Password)]
 	public string? Password { get; init; }
 }
 
@@ -35,7 +35,7 @@ public abstract record SchemaCreateBaseArgs {
 	public string? Description { get; init; }
 
 	[JsonPropertyName("environment-name")]
-	[Description("Registered clio environment name, e.g. 'local'. Preferred for normal MCP work.")]
+	[Description(McpToolDescriptions.EnvironmentName)]
 	public string? EnvironmentName { get; init; }
 
 	[JsonPropertyName("uri")]
@@ -43,10 +43,10 @@ public abstract record SchemaCreateBaseArgs {
 	public string? Uri { get; init; }
 
 	[JsonPropertyName("login")]
-	[Description("Direct Creatio login paired with `uri`. Emergency fallback only.")]
+	[Description(McpToolDescriptions.Login)]
 	public string? Login { get; init; }
 
 	[JsonPropertyName("password")]
-	[Description("Direct Creatio password paired with `uri`. Emergency fallback only.")]
+	[Description(McpToolDescriptions.Password)]
 	public string? Password { get; init; }
 }

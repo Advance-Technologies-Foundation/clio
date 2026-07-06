@@ -3,9 +3,9 @@ using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
+using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
-using ModelContextProtocol.Client;
-using System.Text.Json;
+using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E;
 
@@ -18,11 +18,11 @@ public sealed class DeployIdentityToolE2ETests
 	private const string ToolName = DeployIdentityTool.DeployIdentityToolName;
 
 	[Test]
-	[Description("Starts the real clio MCP server, discovers deploy-identity, and verifies destructive metadata, secret guidance, optional defaults, and the approved argument schema.")]
+	[Description("Starts the real clio MCP server with the deploy-identity feature enabled, discovers deploy-identity via the get-tool-contract compact index, and verifies destructive metadata, secret guidance, optional defaults, and the approved argument contract from the full tool contract.")]
 	[AllureTag(ToolName)]
-	[AllureName("Deploy identity advertises destructive metadata and secret guidance")]
-	[AllureDescription("Uses the real clio MCP server tool discovery payload to verify that deploy-identity is destructive, advertises automatic archive/port defaults, and does not expose a secret-return argument.")]
-	public async Task DeployIdentity_Should_Advertise_Metadata_And_Argument_Schema()
+	[AllureName("Deploy identity is discoverable with destructive metadata and secret guidance on the lazy surface")]
+	[AllureDescription("Uses the get-tool-contract compact index and full contract of the real clio MCP server to verify that deploy-identity is destructive, documents automatic archive/port defaults, and does not steer agents into disclosing generated OAuth secrets.")]
+	public async Task DeployIdentity_Should_Expose_Metadata_And_Argument_Contract_On_Lazy_Surface()
 	{
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -30,38 +30,53 @@ public sealed class DeployIdentityToolE2ETests
 		settings.ProcessEnvironmentVariables["CLIO_HOME"] = clioHome;
 		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
 		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		CancellationToken token = cancellationTokenSource.Token;
 
 		// Act
-		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationTokenSource.Token);
-		McpClientTool tool = tools.Single(tool => tool.Name == ToolName);
+		// deploy-identity is feature-gated AND hidden from tools/list on the lazy tool surface, so its
+		// discovery metadata comes from the get-tool-contract compact index (destructive flag) and the
+		// full curated contract (description, argument schema) instead of tools/list annotations.
+		IReadOnlyList<ToolContractIndexEntry> index = await session.GetToolContractIndexAsync(token);
+		CallToolResult contractResult = await session.CallToolAsync(
+			ToolContractGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["tool-names"] = new[] { ToolName }
+				}
+			},
+			token);
+		ToolContractGetResponse contracts =
+			EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(contractResult);
 
 		// Assert
-		tool.ProtocolTool.Annotations.Should().NotBeNull(
-			because: "the MCP server should expose tool annotations for client-side safety policies");
-		tool.ProtocolTool.Annotations!.DestructiveHint.Should().BeTrue(
+		ToolContractIndexEntry indexEntry = index.Should().ContainSingle(item => item.Name == ToolName,
+			because: "deploy-identity must be discoverable via the get-tool-contract compact index when the deploy-identity feature is enabled")
+			.Which;
+		indexEntry.Destructive.Should().BeTrue(
 			because: "deploy-identity mutates IIS, Creatio sys-settings, and local clio settings");
-		tool.Description.Should().Contain("EnvironmentPath",
-			because: "agents should know zipFile can be omitted when IdentityService.zip is under the registered environment");
-		tool.Description.Should().Contain("40001-40100",
-			because: "agents should know identitySitePort can be omitted and auto-selected from the default range");
-		tool.Description.Should().Contain("noApp",
-			because: "agents should know they can deploy and connect IdentityService without creating an OAuth app");
-		tool.Description.Should().Contain("createTechUser",
-			because: "agents should know technical user creation is opt-in");
-		tool.Description.Should().Contain("Secret values are written only to clio settings",
-			because: "the tool description should prevent public disclosure of generated OAuth secrets");
+		indexEntry.ContractAvailable.Should().BeTrue(
+			because: "agents must be able to expand deploy-identity into its full contract before calling it through clio-run");
 
-		JsonElement inputSchema = JsonSerializer.SerializeToElement(tool.ProtocolTool.InputSchema);
-		JsonElement argsSchema = inputSchema.GetProperty("properties").GetProperty("args");
-		argsSchema.GetProperty("properties").EnumerateObject().Select(property => property.Name).Should().BeEquivalentTo(
+		ToolContractDefinition contract = contracts.Tools!.Single(tool => tool.Name == ToolName);
+		contract.Description.Should().Contain("Never echo the generated client secret",
+			because: "the tool contract should prevent public disclosure of generated OAuth secrets");
+		FieldDescription(contract, "zipFile").Should().Contain("EnvironmentPath",
+			because: "agents should know zipFile can be omitted when IdentityService.zip is under the registered environment");
+		FieldDescription(contract, "identitySitePort").Should().Contain("40001-40100",
+			because: "agents should know identitySitePort can be omitted and auto-selected from the default range");
+		FieldDescription(contract, "noApp").Should().Contain("without creating a clio OAuth app",
+			because: "agents should know they can deploy and connect IdentityService without creating an OAuth app");
+		FieldDescription(contract, "createTechUser").Should().Contain("technical user",
+			because: "agents should know technical user creation is opt-in");
+
+		contract.InputSchema.Properties.Select(property => property.Name).Should().BeEquivalentTo(
 			[
-				"environmentName",
+				"environment-name",
 				"zipFile",
 				"identitySitePort",
 				"identityArchivePathInBundle",
 				"identitySiteName",
 				"identityPath",
-				"overwrite",
 				"configurationMode",
 				"clientName",
 				"clientApplicationUrl",
@@ -70,10 +85,15 @@ public sealed class DeployIdentityToolE2ETests
 				"createTechUser",
 				"user"
 			],
-			because: "the real MCP server should advertise only the supported deploy-identity arguments inside the args wrapper");
-		argsSchema.GetProperty("required").EnumerateArray().Select(item => item.GetString()).Should().BeEquivalentTo(
-			["environmentName"],
+			because: "the deploy-identity contract exposed through get-tool-contract should document only the supported arguments");
+		contract.InputSchema.Required.Should().BeEquivalentTo(
+			["environment-name"],
 			because: "deploy-identity should allow zipFile and identitySitePort to default from EnvironmentPath and the IIS port scanner");
+	}
+
+	private static string FieldDescription(ToolContractDefinition contract, string fieldName)
+	{
+		return contract.InputSchema.Properties.Single(property => property.Name == fieldName).Description;
 	}
 
 	private static string CreateClioHomeWithDeployIdentityEnabled()

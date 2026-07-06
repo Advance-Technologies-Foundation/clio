@@ -39,7 +39,7 @@ public sealed class SqlSchemaGetTool(
 				resolvedCommand = ResolveCommand<SqlSchemaGetCommand>(options);
 			}
 			catch (Exception ex) {
-				return new SqlSchemaGetResponse { Success = false, Error = ex.Message };
+				return new SqlSchemaGetResponse { Success = false, Error = SensitiveErrorTextRedactor.Redact(ex.Message) };
 			}
 			resolvedCommand.TryGetSchema(options, out SqlSchemaGetResponse response);
 			return response;

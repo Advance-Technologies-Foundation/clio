@@ -152,11 +152,17 @@ Each seed row must have a `values` key containing column name-value pairs:
 
 ## Localization Contract
 
-- `create-lookup` and `create-entity` require `title-localizations`.
-- `columns` in create operations require `title-localizations`.
+- `create-lookup` and `create-entity` require a schema-level `title-localizations`.
+- `title-localizations` is OPTIONAL for a column add (both the `columns` add-batch and `update-operations`
+  with `action: "add"`). When it is omitted, the mandatory `en-US` caption is auto-derived using the
+  precedence: explicit `title-localizations.en-US` > scalar legacy `title` > scalar legacy `caption` >
+  humanized `column-name` (a `Usr` prefix is stripped and PascalCase is space-split, e.g. `UsrDueDate` →
+  `Due Date`). A bare `{column-name, type}` add therefore never fails for a missing localization map.
 - `update-operations` use `title-localizations` and `description-localizations`.
-- Every localization map must include a non-empty `en-US` value.
-- Legacy scalar `title`, `caption`, and `description` fields are rejected by the MCP contract.
+- When you provide a localization map it must include a non-empty `en-US` value, and the `en-US` value
+  must be English (non-English text such as Cyrillic under `en-US` is rejected).
+- For an add, the legacy scalar `title`/`caption` are accepted only as an en-US fallback — prefer
+  `title-localizations`. The legacy scalar `description` is rejected; use `description-localizations`.
 
 ## Column Vocabulary (read-modify-write round trip)
 
@@ -166,18 +172,19 @@ names are accepted, and the legacy read-shape field names are accepted as aliase
 
 | Concept | Canonical (write) | Read-shape alias (also accepted) |
 |---|---|---|
-| Column identity | `column-name` (in `update-operations`) / `name` (in `columns`) | `name` |
+| Column identity | `column-name` (in `update-operations`) / `name` (in `columns`) | `name` in `update-operations`; `column-name` in `columns` |
 | Column type | `type` | `data-value-type` |
 | Lookup reference | `reference-schema-name` | `reference-schema` |
 | Required flag | `required` | `is-required` |
-| Caption (add only) | `title-localizations` | `caption` (scalar; promoted to the `en-US` localization) |
+| Caption (add only) | `title-localizations` (OPTIONAL — auto-derived when omitted) | `caption`/`title` (scalar; promoted to the `en-US` localization) |
 
 `get-app-info` returns each column with both the canonical (`name`, `type`, `reference-schema-name`,
 `required`) and the legacy (`data-value-type`, `reference-schema`) field names, plus a scalar `caption`.
 To modify or remove a column you read, send the same shape back inside an `update-operations` entry and
 add the `action` verb (`modify` or `remove`). To add columns, drop the read/create-shape objects into
-`columns` (no `action` needed) — the scalar `caption` is promoted to `title-localizations` automatically —
-or send explicit `update-operations` with `action: "add"`.
+`columns` (no `action` needed) — the scalar `caption` is promoted to `title-localizations` automatically,
+and when no caption is present the `en-US` value is derived from the column name — or send explicit
+`update-operations` with `action: "add"`, which follows the same auto-derivation.
 
 ## Masking Behavior
 

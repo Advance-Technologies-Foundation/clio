@@ -358,7 +358,7 @@ public record CreateUserTaskArgs(
 	string Title,
 
 	[property:JsonPropertyName("environment-name")]
-	[Description("Creatio environment name")]
+	[Description(McpToolDescriptions.EnvironmentName)]
 	[Required]
 	string EnvironmentName,
 
@@ -390,7 +390,7 @@ public record ModifyUserTaskParametersArgs(
 	string UserTaskName,
 
 	[property:JsonPropertyName("environment-name")]
-	[Description("Creatio environment name")]
+	[Description(McpToolDescriptions.EnvironmentName)]
 	[Required]
 	string EnvironmentName,
 

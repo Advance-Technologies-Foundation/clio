@@ -65,7 +65,7 @@ public sealed class GetPkgListTool(
 /// </summary>
 public sealed record GetPkgListArgs(
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Registered clio environment name")]
+	[property: Description(McpToolDescriptions.EnvironmentName)]
 	[property: Required]
 	string EnvironmentName,
 
