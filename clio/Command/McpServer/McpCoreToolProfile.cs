@@ -113,8 +113,14 @@ public static class McpCoreToolProfile {
 	}
 
 	private static IReadOnlyCollection<string> BuildResidentToolNames() {
+		// Sonar S3011: BindingFlags.NonPublic is a deliberate, required accessibility bypass — NOT a leak.
+		// This mirrors McpToolInvokerRegistry.EnumerateToolMethods exactly (no DeclaredOnly) so residency
+		// never diverges from what the SDK's own WithTools(types) scan would register for these types; the
+		// reflected members are only filtered for [McpServerTool].Name and no private state is read or mutated.
+#pragma warning disable S3011
 		const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic |
 			BindingFlags.Instance | BindingFlags.Static;
+#pragma warning restore S3011
 		HashSet<Type> residentTypes = new(CoreToolTypes);
 		residentTypes.UnionWith(AlwaysOnLazyToolTypes);
 		return residentTypes
