@@ -243,11 +243,13 @@ internal sealed class RelatedPageAddonService(
 
 	// Normalizes a page to its (audience, type) cell for the uniqueness guard. The general audience (role-less or
 	// "All employees") collapses to one bucket — two untyped general defaults would both match an employee — and
-	// the portal audience to another; the type is the (trimmed, possibly null) TypeColumnValue. Only recognized
-	// audiences reach here (ValidateRequest rejects the rest first).
+	// the portal audience to another. The type key is the trimmed TypeColumnValue LOWER-CASED, so the cell is
+	// case-insensitive (a lookup GUID differing only in letter case is the same type) — consistent with the
+	// case-insensitive audience matching, and it never lets a case-only variant slip past as a distinct cell. Only
+	// recognized audiences reach here (ValidateRequest rejects the rest first).
 	private static (string audience, string type) AudienceTypeCell(RelatedPageSpec page) =>
 		(IsPortalAudience(page) ? PortalRoleName : EmployeesRoleName,
-			string.IsNullOrWhiteSpace(page.TypeColumnValue) ? null : page.TypeColumnValue.Trim());
+			string.IsNullOrWhiteSpace(page.TypeColumnValue) ? null : page.TypeColumnValue.Trim().ToLowerInvariant());
 
 	public RelatedPageAddonResult Create(RelatedPageAddonRequest request) {
 		ValidateRequest(request);

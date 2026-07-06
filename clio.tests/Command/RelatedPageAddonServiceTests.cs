@@ -718,4 +718,47 @@ public sealed class RelatedPageAddonServiceTests {
 		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!);
 		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().SaveSchema(default!);
 	}
+
+	[Test]
+	[Description("Accepts several default pages for the same audience when their type-column-values differ: distinct (audience x type) cells are not duplicates, so the uniqueness guard does not over-reject and all entries are written.")]
+	public void Create_ShouldAcceptSameAudienceDistinctTypes_WhenTypeColumnValuesDiffer() {
+		// Arrange — an untyped general default plus two typed general defaults with DISTINCT type values.
+		const string typeColumnUId = "af280321-e749-41dd-98e5-383906747e29";
+		const string typeIncident = "1b0bc159-150a-e111-a31b-00155d04c01d";
+		const string typeRequest = "2c0bc159-150a-e111-a31b-00155d04c01e";
+		StubSelectQueue(Rows(PackageUId), Rows(PageAUId), Rows(PageBUId), Rows(PageAUId));
+
+		// Act
+		RelatedPageAddonResult result = _service.Create(new RelatedPageAddonRequest("Custom", "Case", new[] {
+			new RelatedPageSpec("CaseFormPage", IsDefault: true),
+			new RelatedPageSpec("CaseIncidentPage", IsDefault: true, TypeColumnValue: typeIncident),
+			new RelatedPageSpec("CaseRequestPage", IsDefault: true, TypeColumnValue: typeRequest)
+		}, typeColumnUId));
+
+		// Assert
+		result.PageCount.Should().Be(3,
+			because: "the untyped default and two distinct-typed defaults are three separate cells, all valid");
+		_addonSchemaDesignerClient.Received(1).SaveSchema(Arg.Any<AddonSchemaDto>());
+		JsonNode.Parse(_savedSchema.MetaData)!["Pages"]!.AsArray().Count.Should().Be(3,
+			because: "distinct type-column-values are distinct cells; none is rejected as a duplicate default");
+	}
+
+	[Test]
+	[Description("Treats the same type-column-value differing only in letter case as one cell: two general defaults for that type value are rejected as a duplicate default (the cell key is case-insensitive, like a lookup GUID).")]
+	public void Create_ShouldThrow_WhenSameTypeValueDiffersOnlyInCase() {
+		// Arrange
+		const string typeColumnUId = "af280321-e749-41dd-98e5-383906747e29";
+
+		// Act — a base default plus two typed defaults whose type value differs ONLY in letter case.
+		Action act = () => _service.Create(new RelatedPageAddonRequest("Custom", "Case", new[] {
+			new RelatedPageSpec("CaseFormPage", IsDefault: true),
+			new RelatedPageSpec("CaseIncidentPage", IsDefault: true, TypeColumnValue: "1B0BC159-150A-E111-A31B-00155D04C01D"),
+			new RelatedPageSpec("CaseOtherPage", IsDefault: true, TypeColumnValue: "1b0bc159-150a-e111-a31b-00155d04c01d")
+		}, typeColumnUId));
+
+		// Assert
+		act.Should().Throw<ArgumentException>().WithMessage("*more than one default page*",
+			because: "a type-column-value is case-insensitive, so the two typed defaults are the same cell — a duplicate");
+		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().SaveSchema(default!);
+	}
 }
