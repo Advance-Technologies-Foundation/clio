@@ -13,9 +13,10 @@ namespace Clio.Mcp.E2E;
 /// End-to-end tests for the OData write MCP tools (create / update / delete).
 /// </summary>
 [TestFixture]
+[Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [NonParallelizable]
-public sealed class ODataWriteToolsE2ETests {
+public sealed class ODataWriteToolsE2ETests : McpContractFixtureBase {
 	[TestCase(ODataCreateTool.ToolName, false, false,
 		TestName = "odata-create MCP tool is advertised non-read-only and non-destructive")]
 	[TestCase(ODataUpdateTool.ToolName, false, true,
@@ -24,7 +25,7 @@ public sealed class ODataWriteToolsE2ETests {
 		TestName = "odata-delete MCP tool is advertised as destructive")]
 	[Description("Verifies that each OData write MCP tool is advertised with the expected read-only and destructive annotations.")]
 	public async Task ODataWriteTool_Should_Be_Advertised(string toolName, bool expectedReadOnly, bool expectedDestructive) {
-		await using McpSessionArrangeContext arrange = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrange = Arrange(TimeSpan.FromMinutes(3));
 		IList<McpClientTool> tools = await arrange.Session.ListToolsAsync(arrange.CancellationTokenSource.Token);
 		McpClientTool tool = tools.Single(t => t.Name == toolName);
 		tool.ProtocolTool.Annotations!.ReadOnlyHint.Should().Be(expectedReadOnly);
@@ -36,7 +37,7 @@ public sealed class ODataWriteToolsE2ETests {
 	[AllureTag(ODataCreateTool.ToolName)]
 	[AllureName("odata-create MCP tool binds arguments")]
 	public async Task ODataCreate_Should_Bind_Arguments_And_Report_Invalid_Environment() {
-		await using McpSessionArrangeContext arrange = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrange = Arrange(TimeSpan.FromMinutes(3));
 		string invalidEnvironmentName = $"missing-odata-env-{Guid.NewGuid():N}";
 
 		CallToolResult callResult = await arrange.Session.CallToolAsync(
@@ -62,7 +63,7 @@ public sealed class ODataWriteToolsE2ETests {
 	[AllureTag(ODataCreateTool.ToolName)]
 	[AllureName("odata-create MCP tool binds a multi-row batch")]
 	public async Task ODataCreate_Should_Bind_Multiple_Rows_Batch_And_Report_Invalid_Environment() {
-		await using McpSessionArrangeContext arrange = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrange = Arrange(TimeSpan.FromMinutes(3));
 		string invalidEnvironmentName = $"missing-odata-batch-env-{Guid.NewGuid():N}";
 
 		CallToolResult callResult = await arrange.Session.CallToolAsync(
@@ -91,7 +92,7 @@ public sealed class ODataWriteToolsE2ETests {
 	[AllureTag(ODataUpdateTool.ToolName)]
 	[AllureName("odata-update MCP tool guards keyless updates")]
 	public async Task ODataUpdate_Should_Reject_NonGuid_Id() {
-		await using McpSessionArrangeContext arrange = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrange = Arrange(TimeSpan.FromMinutes(3));
 
 		CallToolResult callResult = await arrange.Session.CallToolAsync(
 			ODataUpdateTool.ToolName,
@@ -111,7 +112,4 @@ public sealed class ODataWriteToolsE2ETests {
 		response.Success.Should().BeFalse();
 		response.Error.Should().Contain("must be a record GUID");
 	}
-
-	private static Task<McpSessionArrangeContext> ArrangeAsync(TimeSpan timeout) =>
-		McpSessionArrangeContext.ArrangeAsync(timeout);
 }

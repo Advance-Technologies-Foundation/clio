@@ -62,7 +62,7 @@ internal sealed class TemporaryClioSettingsOverride : IDisposable {
 			processEnvironmentVariables);
 	}
 
-	private static string GetClioAppSettingsPath(
+	internal static string GetClioAppSettingsPath(
 		string? clioProcessPath = null,
 		IReadOnlyDictionary<string, string?>? processEnvironmentVariables = null) {
 		if (!string.IsNullOrWhiteSpace(clioProcessPath)) {
@@ -126,12 +126,25 @@ internal sealed class TemporaryClioSettingsOverride : IDisposable {
 	}
 
 	public void Dispose() {
-		if (_fileExisted) {
-			File.WriteAllText(_appSettingsPath, _originalContent!);
+		string? directory = Path.GetDirectoryName(_appSettingsPath);
+		// The test owns the temp clio directory lifecycle and may have already removed it
+		// (e.g. an isolated per-test clio copy under buildTmp) before this override is
+		// disposed. If the owning directory is gone there is nothing to restore or clean up.
+		if (directory is not null && !Directory.Exists(directory)) {
 			return;
 		}
-		if (File.Exists(_appSettingsPath)) {
-			File.Delete(_appSettingsPath);
+		try {
+			if (_fileExisted) {
+				File.WriteAllText(_appSettingsPath, _originalContent!);
+				return;
+			}
+			if (File.Exists(_appSettingsPath)) {
+				File.Delete(_appSettingsPath);
+			}
+		}
+		catch (DirectoryNotFoundException) {
+			// The owning temp directory was removed between the existence check and the
+			// file write; restoring the original settings file is unnecessary in that case.
 		}
 	}
 }

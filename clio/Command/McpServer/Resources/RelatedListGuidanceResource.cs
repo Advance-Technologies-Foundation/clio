@@ -28,11 +28,11 @@ public sealed class RelatedListGuidanceResource {
 		       record. This is the "filter the list by page data" requirement: a child list scoped to the master
 		       record open on the page.
 
-		       Before you author or edit a detail, fetch the structure recipe with
-		       `get-component-info composite="Expanded list"` (the canonical, complete "Expanded list" preset), and
-		       read `page-modification` (body markers, append vs replace, static-vs-diff body forms, container
-		       selection). Those are the source of truth for the component shapes; this guide owns the master-detail
-		       WIRING that scopes the list to the open record — the part AI most often gets wrong.
+		       Before you author or edit a detail, fetch the structure from `get-component-info`: the full
+		       "Expanded list" recipe with `composite="Expanded list"`. Read it in full. Also read `page-modification`
+		       (body markers, append vs replace, static-vs-diff body forms, container selection). Those are the
+		       source of truth for the component/composite shapes; this guide owns the master-detail WIRING that
+		       connects them — the part AI most often gets wrong.
 
 		       The headline rule — scope a detail with `modelConfig.dependencies`, NOT a handler
 		       The platform filters a child list by the open record DECLARATIVELY. You declare the child→master
@@ -43,22 +43,15 @@ public sealed class RelatedListGuidanceResource {
 		       handler, a seeded empty-Guid filter, or a `filterAttributes` entry to scope by the record — those
 		       are not how the platform does it and they break (see Common mistakes).
 
-		       The detail's structure is the "Expanded list" composite — do NOT hand-assemble it
-		       - There is NO single "detail" component type (no `crt.Detail` / `crt.ExpandableList` /
-		         `crt.ExpandedList`), and "Expanded list" is a multi-part
-		         composite (collapsible panel + grid wrapper + grid + a full header toolbar — add / refresh /
-		         import-export menu / search) produced by `crt.CreateExpandedDataGridItemCommand`.
-		       - So do NOT reconstruct it from raw types or from memory. Fetch the canonical recipe with
-		         `get-component-info composite="Expanded list"` and build the structure from THAT — it ships every
-		         insert and the grid data-source wiring. (List composites with `get-component-info` list mode to see
-		         the other captions.)
-		       - Whichever way you emit the structure, EVERY inserted container must initialize its content-slot
-		         array in `values`: `"items": []` on every container PLUS `"tools": []` on the `crt.ExpansionPanel`.
-		         Omitting it is the #1 footgun — the page fails at RUNTIME with `Error: Item "<PanelName>" is not a
-		         container for other items` (the whole record card stops rendering) even though `update-page` returns
-		         `success: true`, so reload and verify the page renders after saving.
-		       - THIS guide owns only what the composite recipe does NOT cover: scoping that list to the open record
-		         (the master-detail wiring below).
+		       There is NO single "detail" component — the "Expanded list" composite (fetched above) is the
+		       structure; do not look for a single "detail" component type or hand-assemble one from raw types.
+		       - Slot-init footgun (the #1 detail break): every container node you INSERT in `viewConfigDiff` MUST
+		         initialize its content-slot array in `values` (e.g. `"items": []`); the recipe and
+		         `page-modification` show the exact slots per container. A slot-less container is not treated as a
+		         container, so the page fails at RUNTIME with `Error: Item "<name>" is not a container for other
+		         items` and the whole record card stops rendering. `update-page` still returns `success: true` —
+		         the break only surfaces in the browser, so always reload and verify the page renders (and the
+		         detail's tab appears) after saving.
 
 		       Filter the list by page data (the master-detail pattern) — three declarative edits
 		       A detail is scoped to the current record by a child entity data source, a collection attribute the
@@ -144,17 +137,17 @@ public sealed class RelatedListGuidanceResource {
 		         `columns`, `features`, and toolbar slots.
 
 		       Adding records to the detail — inline grid add is the DEFAULT; a header "Add" button needs a resolvable page
-		       - DEFAULT, always safe: enable INLINE add on the inner `crt.DataGrid` — it is read-only by default
-		         (`features.editable.enable: false`), so set `features.editable.enable: true` and
-		         `features.editable.itemsCreation: true`. The grid renders a "+ New" row; the new record inherits
-		         the master foreign key from the `dependencies` relationship, so it is scoped to the open record
-		         with NO separate page and NO navigation. This works for ANY child entity —
-		         INCLUDING a standalone detail entity that has no section. Prefer this whenever the requirement is
-		         "add a related item" / "an Add button"; the "+ New" row IS the add affordance the user asked for.
+		       - DEFAULT, always safe: enable INLINE add on the inner `crt.DataGrid` (read-only by default). Fetch
+		         the exact editable flags from `get-component-info crt.DataGrid` (the grid `features` that enable
+		         editing and inline row creation). The grid then renders an add row; the new record inherits the
+		         master foreign key from the `dependencies` relationship, so it is scoped to the open record with
+		         NO separate page and NO navigation. This works for ANY child entity — INCLUDING a standalone
+		         detail entity that has no section. Prefer this whenever the requirement is "add a related item" /
+		         "an Add button"; the inline add row IS the add affordance the user asked for.
 		       - REQUIRED wiring for inline add to SAVE: the child FK column (the `attributePath` reference column,
 		         here `UsrContact.UsrClient`) MUST be one of the grid's columns / collection attributes. The
 		         `dependencies` relationship populates the FK on the new row only when that column is present in the
-		         grid; omit it and the "+ New" row's parent FK stays empty, so the save fails with the runtime error
+		         grid; omit it and the inline add row's parent FK stays empty, so the save fails with the runtime error
 		         "<FK caption> field must be filled in" (a detail FK is normally required). Add the FK column to the
 		         grid — it may be hidden in the UI, but it must be in the collection so inline create inherits the
 		         open master (confirm via OData that the child's `...Id` equals the master Id after save).
@@ -175,7 +168,7 @@ public sealed class RelatedListGuidanceResource {
 		         - give the child entity a real section (`create-app-section`) so its edit page is registered for
 		           navigation.
 		         Either way set `params.defaultValues` to the master FK, e.g.
-		         `[{ "name": "<ChildForeignKeyColumn>", "value": "$Id" }]` (the same column used as the dependency
+		         `[{ "attributeName": "<ChildForeignKeyColumn>", "value": "$Id" }]` (the same column used as the dependency
 		         `attributePath`), so the created record points back at the open record.
 
 		       Reuse, don't duplicate
@@ -210,7 +203,7 @@ public sealed class RelatedListGuidanceResource {
 		       - Satisfying an "Add button" with a header `tools` button wired to `crt.CreateRecordRequest` for a
 		         standalone detail entity that has no registered navigation/edit page. The click throws "There is
 		         no page for new or existing record" even though `update-page` returned `success: true`. Prefer
-		         inline grid add (`features.editable.enable` + `features.editable.itemsCreation`) — the safe
+		         inline grid add (see `get-component-info crt.DataGrid` for the editable flags) — the safe
 		         default — or pass an explicit `entityPageName` (an existing FormPage) / register a section page.
 		         See "Adding records to the detail".
 		       - Using a `...Id` path form for the FK column in `attributePath` — see `esq-filters` column-path
@@ -222,6 +215,6 @@ public sealed class RelatedListGuidanceResource {
 	/// Returns the canonical guidance article for adding and filtering a Freedom UI related/child list (detail).
 	/// </summary>
 	[McpServerResource(UriTemplate = ResourceUri, Name = "related-list-guidance")]
-	[Description("Returns canonical MCP guidance for adding a Freedom UI related/child list (detail) and filtering it by the current page record: the 'Expanded list' composite recipe (via get-component-info composite), the child EntityDataSource, the isCollection attribute, and the declarative modelConfig.dependencies (attributePath/relationPath) master-detail wiring — no handler.")]
+	[Description("Returns canonical MCP guidance for adding a Freedom UI related/child list and filtering it by the current page record (master-detail \"filter by page data\"): the declarative, dependencies-based scoping — no handler. Fetch the 'Expanded list' composite structure via get-component-info.")]
 	public ResourceContents GetGuide() => Guide;
 }

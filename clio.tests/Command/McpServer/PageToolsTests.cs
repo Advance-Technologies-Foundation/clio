@@ -84,6 +84,81 @@ public class PageToolsTests
 	}
 
 	[Test]
+	[Description("list-page-templates rejects an invalid schema-type BEFORE resolving the environment (ENG-91825 validation-ordering invariant), so a bad schema-type is reported as a schema-type error instead of being masked by an environment-resolution failure")]
+	public void ListPageTemplates_ShouldRejectInvalidSchemaTypeBeforeResolvingEnvironment_WhenSchemaTypeIsUnknown() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		PageTemplatesListCommand command = new(Substitute.For<ISchemaTemplateCatalog>(), ConsoleLogger.Instance);
+		PageTemplatesListTool tool = new(command, ConsoleLogger.Instance, commandResolver);
+
+		// Act — invalid schema-type paired with an environment that would also fail to resolve.
+		PageTemplateListResponse response = tool.ListPageTemplates(
+			new PageTemplatesListArgs("not-a-schema-type", "does-not-exist", null, null, null));
+
+		// Assert
+		response.Success.Should().BeFalse(because: "an unknown schema-type is a pure-input failure");
+		response.Error.Should().Contain("Unknown schema-type",
+			because: "the schema-type error must surface instead of an environment-resolution error");
+		commandResolver.DidNotReceive().Resolve<PageTemplatesListCommand>(Arg.Any<EnvironmentOptions>());
+	}
+
+	[Test]
+	[Description("list-page-templates resolves the environment for a valid schema-type, proving the schema-type gate blocks only invalid input and does not short-circuit the normal resolution path")]
+	public void ListPageTemplates_ShouldResolveEnvironment_WhenSchemaTypeIsValid() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageTemplatesListCommand>(Arg.Any<EnvironmentOptions>())
+			.Returns(_ => throw new EnvironmentResolutionException("environment 'does-not-exist' is not registered"));
+		PageTemplatesListCommand command = new(Substitute.For<ISchemaTemplateCatalog>(), ConsoleLogger.Instance);
+		PageTemplatesListTool tool = new(command, ConsoleLogger.Instance, commandResolver);
+
+		// Act — valid schema-type, so the tool proceeds past the gate into environment resolution.
+		PageTemplateListResponse response = tool.ListPageTemplates(
+			new PageTemplatesListArgs("web", "does-not-exist", null, null, null));
+
+		// Assert
+		response.Success.Should().BeFalse(because: "the environment cannot be resolved");
+		commandResolver.Received(1).Resolve<PageTemplatesListCommand>(Arg.Any<EnvironmentOptions>());
+	}
+
+	[Test]
+	[Description("TryParseSchemaType maps every recognized web/mobile alias to its schema type, case- and whitespace-insensitively, so the MCP tool and the command accept the same documented filter values.")]
+	[TestCase("web", PageSchemaType.Web)]
+	[TestCase("freedomuipage", PageSchemaType.Web)]
+	[TestCase("page", PageSchemaType.Web)]
+	[TestCase("9", PageSchemaType.Web)]
+	[TestCase("  WEB  ", PageSchemaType.Web)]
+	[TestCase("mobile", PageSchemaType.Mobile)]
+	[TestCase("mobilepage", PageSchemaType.Mobile)]
+	[TestCase("10", PageSchemaType.Mobile)]
+	[TestCase("MoBiLe", PageSchemaType.Mobile)]
+	public void TryParseSchemaType_ShouldParseRecognizedAlias_WhenValueIsKnown(string value, PageSchemaType expected) {
+		// Act
+		bool parsed = PageTemplatesListCommand.TryParseSchemaType(value, out PageSchemaType schemaType, out string error);
+
+		// Assert
+		parsed.Should().BeTrue(because: "every documented schema-type alias must resolve to a schema type");
+		schemaType.Should().Be(expected, because: "the alias must map to its canonical schema type regardless of case or surrounding whitespace");
+		error.Should().BeNull(because: "a recognized alias produces no parse error");
+	}
+
+	[Test]
+	[Description("TryParseSchemaType is total over its input: null, blank, or unknown values return a clean false with an actionable message instead of throwing, because the method is public and may be called without the IsNullOrWhiteSpace pre-guard.")]
+	[TestCase(null)]
+	[TestCase("")]
+	[TestCase("   ")]
+	[TestCase("desktop")]
+	public void TryParseSchemaType_ShouldReturnFalseWithMessage_WhenValueIsNullBlankOrUnknown(string value) {
+		// Act
+		bool parsed = PageTemplatesListCommand.TryParseSchemaType(value, out PageSchemaType schemaType, out string error);
+
+		// Assert
+		parsed.Should().BeFalse(because: "null, blank, or unrecognized input is not a valid schema-type");
+		schemaType.Should().Be(default(PageSchemaType), because: "an unparsed value must leave the out parameter at its default instead of a partial result");
+		error.Should().Contain("Unknown schema-type", because: "the caller needs an actionable message naming the accepted values");
+	}
+
+	[Test]
 	[Description("Serializes page MCP request arguments using kebab-case field names")]
 	public void PageToolArgs_Should_Serialize_Using_Kebab_Case_Field_Names() {
 		// Arrange
@@ -1906,6 +1981,144 @@ public class PageToolsTests
 			because: "the syntax gate must short-circuit BEFORE any remote call — the entire point of the validator is to keep broken bodies off the wire");
 	}
 
+	// A body in the legacy marker-without-key shape (`{ /**MARKER*/[]/**MARKER*/, ... }`) — an object
+	// literal whose entries have no keys. Acornima rejects it with "Unexpected token ']'" at column 139,
+	// the exact JS-syntax failure the ENG-90640 e2e contracts feed update-page. Marker INTEGRITY still
+	// passes (all required marker pairs present), so the offline content/argument validators can run on
+	// the syntax-failure path.
+	private const string SyntaxBrokenMarkerBody =
+		"define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
+		"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
+		"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+		"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/{}/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+		"/**SCHEMA_MODEL_CONFIG_DIFF*/{}/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+		"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+		"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+		"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+
+	private static PageUpdateTool BuildSyntaxFailureTool(out IApplicationClient applicationClient) {
+		applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
+		return new PageUpdateTool(
+			command, logger, commandResolver,
+			Substitute.For<IMobileComponentInfoCatalog>(),
+			Substitute.For<IComponentInfoCatalog>(),
+			Substitute.For<IPageBodySamplingService>(),
+			new PageBaselineGuard(new MockFileSystem()));
+	}
+
+	[Test]
+	[Description("ENG-90640: a body that fails the JS syntax gate but carries malformed optional-properties surfaces the specific optional-properties argument error over the generic JavaScript-syntax message.")]
+	[Category("Unit")]
+	public void PageUpdateTool_UpdatePage_PrefersOptionalPropertiesError_WhenBodyAlsoHasSyntaxError() {
+		// Arrange
+		PageUpdateTool tool = BuildSyntaxFailureTool(out IApplicationClient applicationClient);
+		PageUpdateArgs args = new(
+			"UsrBadOptionalProps_FormPage", SyntaxBrokenMarkerBody, null, DryRun: true,
+			"local", null, null, null, OptionalProperties: "{not-an-array}");
+
+		// Act
+		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a malformed optional-properties payload must reject the call");
+		response.Error.Should().MatchRegex("(?i)optional-properties",
+			because: "the specific optional-properties argument error must win over the generic JavaScript syntax error so the operator fixes the right thing");
+		response.Error.Should().NotContain("JavaScript syntax error",
+			because: "the actionable argument error must shadow the generic parser message on the syntax-failure path");
+		applicationClient.ReceivedCalls().Should().BeEmpty(
+			because: "argument validation is offline and must precede any remote call");
+	}
+
+	[Test]
+	[Description("ENG-90640: a body that fails the JS syntax gate but carries malformed resources JSON surfaces the canonical resources argument error over the generic JavaScript-syntax message.")]
+	[Category("Unit")]
+	public void PageUpdateTool_UpdatePage_PrefersResourcesError_WhenBodyAlsoHasSyntaxError() {
+		// Arrange
+		PageUpdateTool tool = BuildSyntaxFailureTool(out IApplicationClient applicationClient);
+		PageUpdateArgs args = new(
+			"UsrValidationOnly_FormPage", SyntaxBrokenMarkerBody, Resources: "{\"UsrTitle\":", DryRun: true,
+			"local", null, null, null);
+
+		// Act
+		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a malformed resources payload must reject the call");
+		response.Error.Should().Be("resources must be a valid JSON object string",
+			because: "the canonical resources argument error must win over the generic JavaScript syntax error");
+		applicationClient.ReceivedCalls().Should().BeEmpty(
+			because: "argument validation is offline and must precede any remote call");
+	}
+
+	[Test]
+	[Description("ENG-90640: a run-process button missing processName inside a body that also fails the JS syntax gate surfaces the structural processName error (offline) over the generic JavaScript-syntax message, even though marker integrity fails.")]
+	[Category("Unit")]
+	public void PageUpdateTool_UpdatePage_PrefersRunProcessStructureError_WhenBodyAlsoHasSyntaxError() {
+		// Arrange
+		PageUpdateTool tool = BuildSyntaxFailureTool(out IApplicationClient applicationClient);
+		// Same shape as the e2e contract body: a run-process button with processRunType but no
+		// processName, wrapped in the legacy marker-without-key object literal (fails Acornima).
+		string runProcessBody = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function() { return { "
+			+ "/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"RunBpButton\",\"values\":{"
+			+ "\"type\":\"crt.Button\",\"clicked\":{\"request\":\"crt.RunBusinessProcessRequest\","
+			+ "\"params\":{\"processRunType\":\"RegardlessOfThePage\"}}},\"parentName\":\"MainHeaderTop\","
+			+ "\"propertyName\":\"items\",\"index\":0}]/**SCHEMA_VIEW_CONFIG_DIFF*/, "
+			+ "/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/{}/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, "
+			+ "/**SCHEMA_MODEL_CONFIG_DIFF*/{}/**SCHEMA_MODEL_CONFIG_DIFF*/, "
+			+ "/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, "
+			+ "/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, "
+			+ "/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		PageUpdateArgs args = new(
+			"UsrRunProcessValidation_FormPage", runProcessBody, null, DryRun: true,
+			"local", null, null, null);
+
+		// Act
+		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a run-process button without processName must reject the call before any remote call");
+		response.Error.Should().Contain("processName",
+			because: "the structural run-process error names the missing processName and must win over the generic syntax error");
+		response.Error.Should().Contain("RunBpButton",
+			because: "the structural run-process error names the offending button");
+		applicationClient.ReceivedCalls().Should().BeEmpty(
+			because: "the structural run-process check is offline regex and must precede any remote signature call");
+	}
+
+	[Test]
+	[Description("ENG-89796/ENG-90640: a genuine JS-only syntax error with clean argument payloads and no run-process structural problem still surfaces the generic JavaScript-syntax message — the actionable-error preference does not eat the fail-fast wording.")]
+	[Category("Unit")]
+	public void PageUpdateTool_UpdatePage_PreservesSyntaxError_WhenNoMoreSpecificOfflineErrorExists() {
+		// Arrange
+		PageUpdateTool tool = BuildSyntaxFailureTool(out IApplicationClient applicationClient);
+		// Clean payloads, no run-process button, no environment supplied — nothing more specific than
+		// the JS syntax error can be detected offline.
+		PageUpdateArgs args = new(
+			"UsrPlain_FormPage", SyntaxBrokenMarkerBody, null, DryRun: true,
+			null, null, null, null);
+
+		// Act
+		PageUpdateResponse response = tool.UpdatePage(args, null).Result;
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a body that cannot parse as JavaScript must never be persisted");
+		response.Error.Should().Contain("JavaScript syntax error",
+			because: "with clean payloads and no offline-detectable problem the generic ENG-89796 syntax wording must be preserved");
+		response.Error.Should().Contain("NOT sent to Creatio",
+			because: "the operator must know the broken body did not reach the server");
+		applicationClient.ReceivedCalls().Should().BeEmpty(
+			because: "the syntax gate must short-circuit before any remote call");
+	}
+
 	[Test]
 	[Description("PageUpdateTool.UpdatePage rejects schemas where validator params use $Resources.Strings.X binding syntax before saving to Creatio.")]
 	public void PageUpdateTool_UpdatePage_Rejects_Schema_With_Resources_Strings_In_Validator_Params() {
@@ -3021,6 +3234,77 @@ public class PageToolsTests
 				because: "the designer sends inherited template localizable strings on first save");
 		savedDto["body"].ToString().Should().Be(validBody,
 			because: "the body passed to update-page must be written into the new replacing schema DTO");
+	}
+
+	[Test]
+	[Description("TryUpdatePage materializes the parent schema caption onto a newly created replacing schema so its runtime title is not lost")]
+	public void TryUpdatePage_WhenCreatingReplacing_PreservesParentCaption() {
+		// Arrange
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		var hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		const string originalUId = "f537fd79-9bdc-43ea-a9ce-b068c29d0b22";
+		const string originalPackageUId = "2ecba2bd-b810-47a5-a1b1-08c888529d6c";
+		const string virtualDesignPackageUId = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(ci => "http://test" + ci.ArgAt<string>(0));
+		hierarchyClient.GetDesignPackageUId(originalUId).Returns(virtualDesignPackageUId);
+		hierarchyClient.GetParentSchemas(originalUId, virtualDesignPackageUId).Returns(new List<PageDesignerHierarchySchema> {
+			new() { UId = originalUId, Name = "Accounts_ListPage", PackageUId = originalPackageUId, PackageName = "CrtCustomer360App" }
+		});
+		string validBody = "define(\"Accounts_ListPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		var parentCaption = new JArray {
+			new JObject { ["cultureName"] = "en-US", ["value"] = "Accounts list" },
+			new JObject { ["cultureName"] = "uk-UA", ["value"] = "Список контрагентів" }
+		};
+		var metadataResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray { new JObject { ["UId"] = originalUId } }
+		};
+		var getSchemaResponse = new JObject {
+			["success"] = true,
+			["schema"] = new JObject {
+				["uId"] = originalUId,
+				["name"] = "Accounts_ListPage",
+				["schemaType"] = 9,
+				["schemaVersion"] = 1,
+				["body"] = "original body",
+				["caption"] = parentCaption.DeepClone(),
+				["localizableStrings"] = new JArray(),
+				["package"] = new JObject { ["uId"] = originalPackageUId, ["name"] = "CrtCustomer360App" },
+				["parent"] = new JObject { ["uId"] = "b7b898d0-8c77-4953-c097-23fa6800da02", ["name"] = "ListPageV3Template" },
+				["isReadOnly"] = true,
+				["optionalProperties"] = new JArray()
+			}
+		};
+		var saveResponse = new JObject { ["success"] = true };
+		var noRowsResponse = new JObject { ["success"] = true, ["rows"] = new JArray() };
+		string lastSavePayload = null;
+		int callIndex = 0;
+		applicationClient.ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(ci => {
+				callIndex++;
+				if (callIndex == 1) return metadataResponse.ToString();
+				if (callIndex == 2) return noRowsResponse.ToString();
+				if (callIndex == 3) return getSchemaResponse.ToString();
+				if (callIndex == 4) { lastSavePayload = ci.ArgAt<string>(1); return saveResponse.ToString(); }
+				return new JObject { ["success"] = true }.ToString();
+			});
+
+		// Act
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), hierarchyClient);
+		bool ok = command.TryUpdatePage(new PageUpdateOptions { SchemaName = "Accounts_ListPage", Body = validBody, DryRun = false }, out PageUpdateResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: "the create-replacing save should succeed; error: " + response.Error);
+		var savedDto = JObject.Parse(lastSavePayload);
+		savedDto["extendParent"].Value<bool>().Should().BeTrue(
+			because: "a create-replacing DTO must extend its parent");
+		savedDto["caption"].Should().NotBeNull(
+			because: "the replacing schema must carry a caption so its runtime title (e.g. a dashboard tab) is not lost");
+		JToken.DeepEquals(savedDto["caption"], parentCaption).Should().BeTrue(
+			because: "the parent schema caption must be materialized verbatim onto the replacing schema, mirroring the platform designer and CreateDesignSchema");
 	}
 
 	[Test]

@@ -16,6 +16,7 @@ namespace Clio.Mcp.E2E;
 /// End-to-end tests for the download-configuration MCP tools.
 /// </summary>
 [TestFixture]
+[Category("McpE2E.NoEnvironment")]
 // [AllureNUnit] is intentionally omitted.
 // NUnit runs each async test on a single thread, and [AllureNUnit] adds
 // per-test bookkeeping that runs on that same thread. In tests with many
@@ -23,8 +24,8 @@ namespace Clio.Mcp.E2E;
 // from resuming — the test deadlocks with no timeout or error. Removing the
 // attribute restores normal execution.
 [AllureFeature("download-configuration")]
-[NonParallelizable]
-public sealed class DownloadConfigurationToolE2ETests {
+[Parallelizable(ParallelScope.Self)]
+public sealed class DownloadConfigurationToolE2ETests : McpContractFixtureBase {
 	private const string EnvironmentToolName = DownloadConfigurationTool.DownloadConfigurationByEnvironmentToolName;
 	private const string BuildToolName = DownloadConfigurationTool.DownloadConfigurationByBuildToolName;
 
@@ -68,7 +69,7 @@ public sealed class DownloadConfigurationToolE2ETests {
 	}
 
 	[AllureStep("Arrange download-configuration-by-build MCP session")]
-	private static async Task<DownloadConfigurationArrangeContext> ArrangeBuildAsync() {
+	private Task<DownloadConfigurationArrangeContext> ArrangeBuildAsync() {
 		string rootDirectory = Path.Combine(Path.GetTempPath(), $"clio-dconf-build-e2e-{Guid.NewGuid():N}");
 		string workspacePath = Path.Combine(rootDirectory, "workspace");
 		string buildPath = Path.Combine(rootDirectory, "build");
@@ -77,14 +78,12 @@ public sealed class DownloadConfigurationToolE2ETests {
 		SeedWorkspaceSettings(workspacePath);
 		CreateSyntheticNetCoreBuild(buildPath);
 
-		McpE2ESettings settings = TestConfiguration.Load();
 		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		return new DownloadConfigurationArrangeContext(rootDirectory, workspacePath, buildPath, session, cancellationTokenSource, null);
+		return Task.FromResult(new DownloadConfigurationArrangeContext(rootDirectory, workspacePath, buildPath, Session, cancellationTokenSource, null));
 	}
 
 	[AllureStep("Arrange download-configuration-by-environment MCP session")]
-	private static async Task<DownloadConfigurationArrangeContext> ArrangeEnvironmentFailureAsync() {
+	private Task<DownloadConfigurationArrangeContext> ArrangeEnvironmentFailureAsync() {
 		string rootDirectory = Path.Combine(Path.GetTempPath(), $"clio-dconf-env-e2e-{Guid.NewGuid():N}");
 		string workspacePath = Path.Combine(rootDirectory, "workspace");
 		string environmentName = $"missing-dconf-env-{Guid.NewGuid():N}";
@@ -92,10 +91,8 @@ public sealed class DownloadConfigurationToolE2ETests {
 		CopyDirectory(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "tpl", "workspace"), workspacePath);
 		SeedWorkspaceSettings(workspacePath);
 
-		McpE2ESettings settings = TestConfiguration.Load();
 		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		return new DownloadConfigurationArrangeContext(rootDirectory, workspacePath, null, session, cancellationTokenSource, environmentName);
+		return Task.FromResult(new DownloadConfigurationArrangeContext(rootDirectory, workspacePath, null, Session, cancellationTokenSource, environmentName));
 	}
 
 	[AllureStep("Act by invoking download-configuration-by-build through MCP")]
@@ -261,13 +258,13 @@ public sealed class DownloadConfigurationToolE2ETests {
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource,
 		string? EnvironmentName) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
+		public ValueTask DisposeAsync() {
 			CancellationTokenSource.Dispose();
 
 			if (Directory.Exists(RootDirectory)) {
 				Directory.Delete(RootDirectory, recursive: true);
 			}
+			return ValueTask.CompletedTask;
 		}
 	}
 

@@ -37,8 +37,11 @@ public sealed class CreateEntitySchemaTool(
 
 				 The tool applies the DB structure and publishes the schema automatically, so the new entity is
 				 immediately usable as a Lookup reference in sys-settings and lookup pickers — no compile needed.
+				 Publishing also requests an OData entities rebuild, so the entity becomes reachable over OData
+				 (/0/odata/<Entity>) without a compile. That rebuild is asynchronous (~1-2 min): a 404 from an
+				 odata-* tool right after creation is the expected async gap — wait briefly and retry, do not compile.
 
-				 Entity business rules (conditional editability/required/values) are separate artifacts — call get-guidance with name business-rules to learn more.
+				 Entity business rules (conditional editability/required/values) are separate artifacts — call get-guidance with name business-rules to learn more. For the schema-design workflow call get-guidance with name app-modeling.
 				 """)]
 	public async Task<CommandExecutionResult> CreateEntitySchema(
 		[Description("Parameters: environment-name, package-name, schema-name, title-localizations (all required); columns, parent-schema-name (optional, defaults to BaseEntity unless extend-parent is true), extend-parent (optional, requires parent-schema-name when true)")] [Required] CreateEntitySchemaArgs args
@@ -159,10 +162,13 @@ public sealed class CreateLookupTool : BaseTool<CreateEntitySchemaOptions> {
 
 				 The schema always inherits from BaseLookup. Use this when the caller explicitly requested a lookup
 				 entity instead of a generic entity schema. BaseLookup already provides Name and Description, so do
-				 not send them as custom columns.
+				 not send them as custom columns. Entity business rules are separate — call get-guidance with name business-rules.
 
 				 The tool applies the DB structure and publishes the schema automatically, so the new lookup is
 				 immediately usable as a Lookup reference in sys-settings and lookup pickers — no compile needed.
+				 Publishing also requests an OData entities rebuild, so the lookup becomes reachable over OData
+				 (/0/odata/<Entity>) without a compile. That rebuild is asynchronous (~1-2 min): a 404 from an
+				 odata-* tool right after creation is the expected async gap — wait briefly and retry, do not compile.
 				 """)]
 	public async Task<CommandExecutionResult> CreateLookup(
 		[Description("Parameters: environment-name, package-name, schema-name, title-localizations (all required); columns (optional)")] [Required] CreateLookupArgs args
@@ -242,7 +248,8 @@ public sealed class UpdateEntitySchemaTool(
 	[McpServerTool(Name = UpdateEntitySchemaToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
 	[Description("Applies a batch of add, modify, and remove column operations to a remote Creatio entity schema. " +
-		"Entity business rules (conditional editability/required/values) are separate artifacts — call get-guidance with name business-rules to learn more.")]
+		"The batch is published and the OData entities are rebuilt automatically, so changed columns become reachable over OData (/0/odata/<Entity>) without a compile. That rebuild is asynchronous (~1-2 min): a 404 (or \"The request is invalid\") from an odata-* tool right after a change is the expected async gap — wait briefly and retry, do not compile. " +
+		"Entity business rules (conditional editability/required/values) are separate artifacts — call get-guidance with name business-rules to learn more. For the schema-design workflow call get-guidance with name app-modeling.")]
 	public async Task<CommandExecutionResult> UpdateEntitySchema(
 		[Description("Parameters: environment-name, package-name, schema-name, operations (all required)")] [Required] UpdateEntitySchemaArgs args) {
 		ApplicationDataForgeResult? dataForge = null;
@@ -264,7 +271,10 @@ public sealed class UpdateEntitySchemaTool(
 				Operations = SerializeOperations(args.Operations, args.SchemaName)
 			};
 			CommandExecutionResult result = InternalExecute<UpdateEntitySchemaCommand>(options);
-			return result with { DataForge = dataForge };
+			return result with {
+				DataForge = dataForge,
+				Note = result.ExitCode == 0 ? CommandExecutionResult.CompileNotRequiredNote : result.Note
+			};
 		} catch (Exception exception) {
 			return new CommandExecutionResult(1, [new ErrorMessage(exception.Message)], null, dataForge);
 		}
@@ -471,10 +481,15 @@ public sealed class ModifyEntitySchemaColumnTool(ModifyEntitySchemaColumnCommand
 	[McpServerTool(Name = ModifyEntitySchemaColumnToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
 	[Description("Adds, modifies, or removes a column in a remote Creatio entity schema. "
+		+ "The change is published and the OData entities are rebuilt automatically, so the column becomes reachable "
+		+ "over OData (/0/odata/<Entity>) without a compile. That rebuild is asynchronous (~1-2 min): a 404 (or "
+		+ "\"The request is invalid\") from an odata-* tool right after the change is the expected async gap — wait "
+		+ "briefly and retry, do not compile. Each call publishes once, so to change several columns at once batch "
+		+ "them through update-entity-schema rather than one call per column. "
 		+ "When setting a Const default on a lookup column, the referenced record's existence is validated "
 		+ "before save: a GUID that does not exist in the referenced schema is rejected with a non-zero exit "
 		+ "and the schema is not saved. The check is point-in-time (TOCTOU) and is skipped when the referenced "
-		+ "record cannot be read.")]
+		+ "record cannot be read. Entity business rules are separate — call get-guidance with name business-rules.")]
 	public CommandExecutionResult ModifyEntitySchemaColumn(
 		[Description("Parameters: environment-name, package-name, schema-name, action, column-name (all required); type, title-localizations, description-localizations, reference-schema-name, and many flags (optional)")] [Required] ModifyEntitySchemaColumnArgs args) {
 		try {

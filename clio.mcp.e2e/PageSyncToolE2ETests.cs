@@ -24,21 +24,28 @@ namespace Clio.Mcp.E2E;
 /// End-to-end tests for the sync-pages composite MCP tool.
 /// </summary>
 [TestFixture]
+[Category("McpE2E.Sandbox")]
 [AllureNUnit]
 [AllureFeature("sync-pages")]
 [NonParallelizable]
-public sealed class PageSyncToolE2ETests {
+public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 
 	private const string ToolName = PageSyncTool.ToolName;
 	private const string SavePage = "ClioMcp_BlankPageToSave";
+	// The returned object must carry the real schema-section property keys
+	// (viewConfigDiff, viewModelConfigDiff, ...). Without them the body is invalid
+	// JavaScript — `return { [] , {} , ... }` parses `[]` as an empty computed
+	// property key and throws "Unexpected token ']'", so the syntax stage rejects
+	// the body before any env/content check can run. The markers wrap the VALUES,
+	// the keys live outside them (same shape update-page expects).
 	private const string ValidPageBody = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
 		"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
-		"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
-		"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/{}/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
-		"/**SCHEMA_MODEL_CONFIG_DIFF*/{}/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
-		"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
-		"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
-		"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+		"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/{}/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+		"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/{}/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+		"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+		"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+		"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
 
 	[Test]
 	[Description("Advertises sync-pages MCP tool in the server tool list so callers can discover and invoke it.")]
@@ -1099,7 +1106,7 @@ public sealed class PageSyncToolE2ETests {
 		return result.ExitCode == 0;
 	}
 
-	private static async Task<ArrangeContext> ArrangeAsync() {
+	private async Task<ArrangeContext> ArrangeAsync() {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string rootDirectory = Path.Combine(Path.GetTempPath(), $"clio-sync-pages-e2e-{Guid.NewGuid():N}");
@@ -1111,7 +1118,7 @@ public sealed class PageSyncToolE2ETests {
 			settings,
 			["create-workspace", workspaceName, "--empty", "--directory", rootDirectory],
 			cancellationToken: cancellationTokenSource.Token);
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		McpServerSession session = Session;
 		return new ArrangeContext(rootDirectory, workspacePath, session, cancellationTokenSource);
 	}
 
@@ -1220,18 +1227,18 @@ public sealed class PageSyncToolE2ETests {
 		}
 	}
 
-	private sealed record ArrangeContext(
+	private new sealed record ArrangeContext(
 		string RootDirectory,
 		string WorkspacePath,
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource) : System.IAsyncDisposable {
 
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
+		public ValueTask DisposeAsync() {
 			CancellationTokenSource.Dispose();
 			if (Directory.Exists(RootDirectory)) {
 				Directory.Delete(RootDirectory, recursive: true);
 			}
+			return ValueTask.CompletedTask;
 		}
 	}
 }

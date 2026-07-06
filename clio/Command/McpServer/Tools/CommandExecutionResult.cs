@@ -24,17 +24,32 @@ public record CommandExecutionResult(
 
 	[property: JsonPropertyName("correlation-id")]
 	[property: Description("Unique identifier for tracing this tool execution across logs and diagnostics.")]
-	string CorrelationId = null
+	string CorrelationId = null,
+
+	[property: JsonPropertyName("note")]
+	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	[property: Description("Optional deterministic post-operation hint, e.g. that compile-creatio is not required after this tool.")]
+	string Note = null
 ) {
+
+	public const string CompileNotRequiredNote = "compile-creatio not required";
+
 	// MCP exit-code contract (ENG-91825):
 	//   • exit code  1  → EXPECTED, caller-actionable failure: input/argument validation, a missing
 	//                     environment, or a refused precondition (e.g. a required package is absent).
 	//                     Use FromValidationError(...) or FromResolverError(...).
+	//   • exit code 78  → EXPECTED, caller-actionable refusal of the Creatio platform version gate: the
+	//                     target environment runs an older core version than the command's
+	//                     [RequiresCreatioVersion] floor, or its version is undeterminable (fail-closed).
+	//                     Deliberately distinct from the generic 1 so callers can branch specifically on a
+	//                     version-gate refusal; the message embeds the stable machine-readable ErrorCode.
+	//                     Use FromCreatioVersionRequirementError(...). Mirrors the CLI's
+	//                     Program.CreatioVersionRequirementExitCode.
 	//   • exit code -1  → UNEXPECTED runtime failure: an exception the caller cannot have anticipated
 	//                     (DI/bootstrap/wiring bugs, a failed HTTP/verification call). Use FromError(...)
 	//                     for a message or FromException(...) for the full exception chain.
 	//   • exit code  0  → success.
-	// Keeping the two failure classes on distinct codes lets MCP callers / e2e tell "you passed bad
+	// Keeping the failure classes on distinct codes lets MCP callers / e2e tell "you passed bad
 	// input" apart from "clio itself broke". See docs/McpCapabilityMap.md → "MCP tool exit codes".
 
 	/// <summary>
@@ -52,6 +67,18 @@ public record CommandExecutionResult(
 	/// </summary>
 	public static CommandExecutionResult FromValidationError(string message) =>
 		new(1, [new ErrorMessage(message)]);
+
+	/// <summary>
+	/// Creates a failed <see cref="CommandExecutionResult"/> for a Creatio platform version-gate refusal,
+	/// using the distinct exit code <see cref="Program.CreatioVersionRequirementExitCode"/> (78) and
+	/// embedding the stable, machine-readable <see cref="CreatioVersionRequirementException.ErrorCode"/>
+	/// in the message, exactly as the CLI dispatch gate surfaces it. This is the version-gate sibling of
+	/// <see cref="FromValidationError"/>; it is kept on a distinct code so MCP callers can branch on a
+	/// version-gate refusal specifically rather than collapsing it into the generic validation code 1.
+	/// </summary>
+	/// <param name="exception">The version-requirement exception raised by the version checker.</param>
+	public static CommandExecutionResult FromCreatioVersionRequirementError(CreatioVersionRequirementException exception) =>
+		new(Program.CreatioVersionRequirementExitCode, [new ErrorMessage($"{exception.Message} [{exception.ErrorCode}]")]);
 
 	/// <summary>
 	/// Validates that url, userName and password are non-empty.

@@ -13,17 +13,18 @@ namespace Clio.Mcp.E2E;
 /// End-to-end tests for the OData read MCP tool.
 /// </summary>
 [TestFixture]
+[Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature(ODataReadTool.ToolName)]
 [NonParallelizable]
-public sealed class ODataReadToolE2ETests {
+public sealed class ODataReadToolE2ETests : McpContractFixtureBase {
 	[Test]
 	[Description("Advertises odata-read as a read-only MCP tool through the real MCP server.")]
 	[AllureTag(ODataReadTool.ToolName)]
 	[AllureName("odata-read MCP tool is advertised")]
 	public async Task ODataRead_Should_Be_Advertised() {
 		// Arrange
-		await using McpSessionArrangeContext arrangeContext = await McpSessionArrangeContext.ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(
@@ -43,7 +44,7 @@ public sealed class ODataReadToolE2ETests {
 	[AllureName("odata-read MCP tool binds arguments")]
 	public async Task ODataRead_Should_Bind_Arguments_And_Report_Invalid_Environment() {
 		// Arrange
-		await using McpSessionArrangeContext arrangeContext = await McpSessionArrangeContext.ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 		string invalidEnvironmentName = $"missing-odata-env-{Guid.NewGuid():N}";
 
 		// Act

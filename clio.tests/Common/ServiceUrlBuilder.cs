@@ -31,6 +31,14 @@ internal class ServiceUrlBuilderCommandTests
 			yield return new TestCaseData(true, "http://localhost:81/sub", "somepath1",
 				"http://localhost:81/sub/somepath1");
 
+			// cliogate HTTP readiness probe route (ENG-92146): WaitForCliogateHttpHandlersAsync composes the
+			// probe URL through ServiceUrlBuilder, so the /0 net-framework alias must be applied to this route
+			// the same way as any other — this is what replaces the probe's removed bespoke /0 test.
+			yield return new TestCaseData(false, "https://localhost", "rest/CreatioApiGateway/GetApiVersion",
+				"https://localhost/0/rest/CreatioApiGateway/GetApiVersion");
+			yield return new TestCaseData(true, "https://localhost", "rest/CreatioApiGateway/GetApiVersion",
+				"https://localhost/rest/CreatioApiGateway/GetApiVersion");
+
 			yield return new TestCaseData(false, "https://localhost", "somepath1", "https://localhost/0/somepath1");
 			yield return new TestCaseData(true, "https://localhost", "somepath1", "https://localhost/somepath1");
 

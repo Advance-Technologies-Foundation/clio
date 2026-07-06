@@ -65,21 +65,22 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	private readonly IRuntimeEntitySchemaReader _runtimeEntitySchemaReader;
 	private readonly ILookupDefaultDisplayValueResolver _lookupDefaultDisplayValueResolver;
 	private readonly IEntitySchemaCaptionCultureResolver _captionCultureResolver;
+	private readonly IEntitySchemaDependencyResolver _dependencyResolver;
 	private readonly ILogger _logger;
 
 	public RemoteEntitySchemaColumnManager(IApplicationPackageListProvider applicationPackageListProvider,
-		IEntitySchemaDefaultValueSourceResolver defaultValueSourceResolver,
+		EntitySchemaColumnResolvers columnResolvers,
 		IRemoteEntitySchemaDesignerClient entitySchemaDesignerClient,
 		IRuntimeEntitySchemaReader runtimeEntitySchemaReader,
-		ILookupDefaultDisplayValueResolver lookupDefaultDisplayValueResolver,
-		IEntitySchemaCaptionCultureResolver captionCultureResolver,
+		IEntitySchemaDependencyResolver dependencyResolver,
 		ILogger logger) {
 		_applicationPackageListProvider = applicationPackageListProvider;
-		_defaultValueSourceResolver = defaultValueSourceResolver;
+		_defaultValueSourceResolver = columnResolvers.DefaultValueSourceResolver;
 		_entitySchemaDesignerClient = entitySchemaDesignerClient;
 		_runtimeEntitySchemaReader = runtimeEntitySchemaReader;
-		_lookupDefaultDisplayValueResolver = lookupDefaultDisplayValueResolver;
-		_captionCultureResolver = captionCultureResolver;
+		_lookupDefaultDisplayValueResolver = columnResolvers.LookupDisplayValueResolver;
+		_captionCultureResolver = columnResolvers.CaptionCultureResolver;
+		_dependencyResolver = dependencyResolver;
 		_logger = logger;
 	}
 
@@ -105,7 +106,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 
 		ModifyEntitySchemaColumnOptions rootOperation = operations[0];
 		PackageInfo package = ResolvePackage(rootOperation.Package);
-		EntityDesignSchemaDto schema = LoadSchema(rootOperation.SchemaName, package.Descriptor.UId, rootOperation);
+		EntityDesignSchemaDto schema = LoadSchema(rootOperation.SchemaName, package.Descriptor.UId, package.Descriptor.Name, rootOperation, allowDependencyResolution: true);
 		EnsureBatchTargetsSingleSchema(operations, rootOperation);
 		string effectiveCultureName = ResolveEffectiveCultureName(rootOperation);
 		foreach (ModifyEntitySchemaColumnOptions operation in operations) {
@@ -119,6 +120,8 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 				$"Schema '{schema.Name}' was saved but schema UId is unavailable.");
 		}
 		_entitySchemaDesignerClient.SaveSchemaDbStructure(schemaUId, rootOperation);
+		EntitySchemaPublishHelper.PublishAndRebuildOData(
+			_entitySchemaDesignerClient, _logger, rootOperation, schema.Name, "columns were saved");
 		RuntimeEntitySchemaResponse runtimeResponse = _entitySchemaDesignerClient.GetRuntimeEntitySchema(schemaUId,
 			rootOperation);
 		if (!runtimeResponse.Success || runtimeResponse.Schema == null) {
@@ -126,7 +129,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 				$"Schema '{schema.Name}' was saved but is not available in runtime.");
 		}
 
-		EntityDesignSchemaDto reloadedSchema = LoadSchema(schema.Name, package.Descriptor.UId, rootOperation);
+		EntityDesignSchemaDto reloadedSchema = LoadSchema(schema.Name, package.Descriptor.UId, package.Descriptor.Name, rootOperation, allowDependencyResolution: true);
 		VerifyColumnMutations(reloadedSchema, operations);
 		foreach (ModifyEntitySchemaColumnOptions operation in operations) {
 			_logger.WriteInfo(
@@ -137,7 +140,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	public EntitySchemaColumnPropertiesInfo GetColumnProperties(GetEntitySchemaColumnPropertiesOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
 		PackageInfo package = ResolvePackage(options.Package);
-		EntityDesignSchemaDto schema = LoadSchema(options.SchemaName, package.Descriptor.UId, options);
+		EntityDesignSchemaDto schema = LoadSchema(options.SchemaName, package.Descriptor.UId, package.Descriptor.Name, options, allowDependencyResolution: false);
 		(EntitySchemaColumnDto column, string source) = FindColumnForRead(schema, options.ColumnName);
 		string cultureName = EntitySchemaDesignerSupport.GetCurrentCultureName();
 		EntitySchemaDefaultValueConfig? defaultValueConfig = EntitySchemaDesignerSupport.CreateDefaultValueConfig(
@@ -155,7 +158,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			column.Indexed,
 			column.IsValueCloneable,
 			column.IsTrackChangesInDB,
-			EntitySchemaDesignerSupport.GetFriendlyDefaultValueSource(column.DefValue),
+			EntitySchemaDesignerSupport.CreateDefaultValueConfig(column.DefValue)?.Source,
 			EntitySchemaDesignerSupport.GetFriendlyDefaultValue(column.DefValue),
 			column.ReferenceSchema?.Name,
 			column.List,
@@ -235,7 +238,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			return GetMergedSchemaProperties(options);
 		}
 		PackageInfo package = ResolvePackage(options.Package);
-		EntityDesignSchemaDto schema = LoadSchema(options.SchemaName, package.Descriptor.UId, options);
+		EntityDesignSchemaDto schema = LoadSchema(options.SchemaName, package.Descriptor.UId, package.Descriptor.Name, options, allowDependencyResolution: false);
 		string cultureName = EntitySchemaDesignerSupport.GetCurrentCultureName();
 		List<EntitySchemaColumnDto> ownColumns = schema.Columns?.ToList() ?? [];
 		List<EntitySchemaColumnDto> inheritedColumns = schema.InheritedColumns?.ToList() ?? [];
@@ -432,8 +435,12 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			CascadeConnection = options.Cascade ?? false,
 			DoNotControlIntegrity = options.DoNotControlIntegrity ?? false
 		};
-		ApplyDefaultValue(column, options, preserveWhenUnspecified: false, options);
-
+		// Resolve the reference schema BEFORE applying the default. A lookup Const default carries a
+		// record GUID that must be validated against the referenced schema (record-existence check in
+		// EntitySchemaDefaultValueSourceResolver.ResolveConst); that validation is skipped when the
+		// reference schema name is unknown, so it has to be set on the column first. (Previously
+		// ApplyDefaultValue ran while column.ReferenceSchema was still null, so an add of a lookup
+		// column with a Const default pointing at a missing record was silently accepted.)
 		if (dataValueType == EntitySchemaDesignerSupport.SupportedDataValueTypes["lookup"]) {
 			ManagerItemDto referenceSchema = ResolveReferenceSchema(package.Descriptor.UId, options.ReferenceSchemaName,
 				options);
@@ -444,6 +451,8 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			column.ReferenceSchema = EntitySchemaDesignerSupport.CreateSysImageReferenceSchema();
 			column.Indexed = true;
 		}
+
+		ApplyDefaultValue(column, options, preserveWhenUnspecified: false, options);
 
 		List<EntitySchemaColumnDto> ownColumns = schema.Columns?.ToList() ?? [];
 		ownColumns.Add(column);
@@ -793,15 +802,26 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		}
 	}
 
-	private EntityDesignSchemaDto LoadSchema(string schemaName, Guid packageUId, RemoteCommandOptions options) {
-		DesignerResponse<EntityDesignSchemaDto> response = _entitySchemaDesignerClient.GetSchemaDesignItem(
-			new GetSchemaDesignItemRequestDto {
-				Name = schemaName,
-				PackageUId = packageUId,
-				UseFullHierarchy = false
-			},
-			options);
-		EntityDesignSchemaDto schema = response.Schema
+	private EntityDesignSchemaDto LoadSchema(string schemaName, Guid packageUId, string packageName,
+		RemoteCommandOptions options, bool allowDependencyResolution) {
+		GetSchemaDesignItemRequestDto request = new() {
+			Name = schemaName,
+			PackageUId = packageUId,
+			UseFullHierarchy = false
+		};
+		DesignerResponse<EntityDesignSchemaDto>? response =
+			_entitySchemaDesignerClient.TryGetSchemaDesignItem(request, options);
+		bool schemaUnavailable = response == null || response.Schema == null;
+		if (allowDependencyResolution && schemaUnavailable && _dependencyResolver.TryAutoResolve(schemaName, packageName)) {
+			_logger.WriteInfo(
+				$"Retrying GetSchemaDesignItem for '{schemaName}' after auto-dependency resolution...");
+			response = _entitySchemaDesignerClient.TryGetSchemaDesignItem(request, options);
+			schemaUnavailable = response == null || response.Schema == null;
+		}
+		if (schemaUnavailable) {
+			response = _entitySchemaDesignerClient.GetSchemaDesignItem(request, options);
+		}
+		EntityDesignSchemaDto schema = response!.Schema
 			?? throw new EntitySchemaDesignerException(
 				$"GetSchemaDesignItem returned no schema for '{schemaName}'.");
 		schema.Columns = schema.Columns?.ToList() ?? [];
@@ -896,7 +916,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			?? throw new EntitySchemaDesignerException(
 				$"Column '{options.ColumnName}' requires default-value-config.source.");
 		if (defaultValueSource == EntitySchemaColumnDefSource.None) {
-			column.DefValue = null;
+			column.DefValue = new EntitySchemaColumnDefValueDto { ValueSourceType = EntitySchemaColumnDefSource.None };
 			return;
 		}
 		defaultValueConfig = _defaultValueSourceResolver.Resolve(
@@ -1007,6 +1027,14 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		_logger.WriteInfo(message);
 	}
 }
+
+/// <summary>
+/// Groups column-metadata resolution services injected into <see cref="RemoteEntitySchemaColumnManager"/>.
+/// </summary>
+internal sealed record EntitySchemaColumnResolvers(
+	IEntitySchemaDefaultValueSourceResolver DefaultValueSourceResolver,
+	ILookupDefaultDisplayValueResolver LookupDisplayValueResolver,
+	IEntitySchemaCaptionCultureResolver CaptionCultureResolver);
 
 internal enum EntitySchemaColumnAction
 {

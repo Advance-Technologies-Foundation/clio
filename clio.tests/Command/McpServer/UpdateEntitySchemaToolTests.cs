@@ -13,6 +13,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Command.McpServer;
 
 [TestFixture]
+[Property("Module", "McpServer")]
 public class UpdateEntitySchemaToolTests {
 
 	[Test]
@@ -189,6 +190,56 @@ public class UpdateEntitySchemaToolTests {
 				&& !hints.Contains("Account")));
 	}
 
+	[Test]
+	[Description("Emits the deterministic 'compile-creatio not required' note on a successful update so agents do not run a needless compile.")]
+	[Category("Unit")]
+	public async Task UpdateEntitySchema_Should_EmitCompileNotRequiredNote_WhenUpdateSucceeds() {
+		// Arrange
+		FakeUpdateEntitySchemaCommand command = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<EnvironmentOptions>())
+			.Returns(command);
+		UpdateEntitySchemaTool tool = new(command, ConsoleLogger.Instance, commandResolver);
+		UpdateEntitySchemaArgs args = BuildArgs("UsrOrder", new[] {
+			new UpdateEntitySchemaOperationArgs("add", "UsrStatus", Type: "ShortText",
+				TitleLocalizations: Title("Status"))
+		});
+
+		// Act
+		CommandExecutionResult result = await tool.UpdateEntitySchema(args);
+
+		// Assert
+		result.ExitCode.Should().Be(0,
+			because: "the fake command returns a successful exit code");
+		result.Note.Should().Be(CommandExecutionResult.CompileNotRequiredNote,
+			because: "update-entity-schema applies DDL and refreshes the runtime schema itself, so the deterministic note must steer agents away from a needless compile-creatio");
+	}
+
+	[Test]
+	[Description("Suppresses the deterministic 'compile-creatio not required' note when the update fails, so agents are not misled into skipping a compile that a failed mutation may still require.")]
+	[Category("Unit")]
+	public async Task UpdateEntitySchema_Should_NotEmitCompileNotRequiredNote_WhenUpdateFails() {
+		// Arrange
+		FakeUpdateEntitySchemaCommand command = new(exitCode: 1);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<EnvironmentOptions>())
+			.Returns(command);
+		UpdateEntitySchemaTool tool = new(command, ConsoleLogger.Instance, commandResolver);
+		UpdateEntitySchemaArgs args = BuildArgs("UsrOrder", new[] {
+			new UpdateEntitySchemaOperationArgs("add", "UsrStatus", Type: "ShortText",
+				TitleLocalizations: Title("Status"))
+		});
+
+		// Act
+		CommandExecutionResult result = await tool.UpdateEntitySchema(args);
+
+		// Assert
+		result.ExitCode.Should().NotBe(0,
+			because: "the fake command returns a non-zero exit code");
+		result.Note.Should().BeNull(
+			because: "the deterministic note must only ride a successful update; emitting it on a failed mutation would steer agents into skipping a compile the failure may still require");
+	}
+
 	private static UpdateEntitySchemaArgs BuildArgs(string schemaName, IEnumerable<UpdateEntitySchemaOperationArgs> operations) {
 		return new UpdateEntitySchemaArgs(
 			EnvironmentName: "test-env",
@@ -201,17 +252,20 @@ public class UpdateEntitySchemaToolTests {
 		new() { ["en-US"] = enUs };
 
 	private sealed class FakeUpdateEntitySchemaCommand : UpdateEntitySchemaCommand {
+		private readonly int _exitCode;
+
 		public UpdateEntitySchemaOptions? CapturedOptions { get; private set; }
 
-		public FakeUpdateEntitySchemaCommand()
+		public FakeUpdateEntitySchemaCommand(int exitCode = 0)
 			: base(
 				Substitute.For<Clio.Command.EntitySchemaDesigner.IRemoteEntitySchemaColumnManager>(),
 				Substitute.For<ILogger>()) {
+			_exitCode = exitCode;
 		}
 
 		public override int Execute(UpdateEntitySchemaOptions options) {
 			CapturedOptions = options;
-			return 0;
+			return _exitCode;
 		}
 	}
 }

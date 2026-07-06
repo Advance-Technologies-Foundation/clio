@@ -1,7 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -24,6 +22,9 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 	#region Fields: Private
 
 	private const string TitleLocalizationsArgumentName = "title-localizations";
+
+	internal const string ODataBuildRequestFailedWarningFragment =
+		EntitySchemaPublishHelper.ODataBuildRequestFailedWarningFragment;
 
 	private const string DefaultMaskingPattern = ".*";
 	private const string DefaultMaskingReplacement = "********";
@@ -509,22 +510,10 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 	}
 
 	private void PublishSchema(CreateEntitySchemaOptions options) {
-		// Saving + DDL alone leave the schema invisible to lookup pickers and sys-setting reference
-		// lists: those surfaces read the web app's runtime EntitySchemaManager, which only picks the
-		// schema up after the configuration is built (ENG-90403).
-		Stopwatch stopwatch = Stopwatch.StartNew();
-		try {
-			_entitySchemaDesignerClient.PublishConfigurationChanges(options);
-		} catch (Exception exception) {
-			throw new InvalidOperationException(
-				$"Schema '{options.SchemaName}' was created and saved, but publishing the configuration failed: " +
-				$"{exception.Message} Until the configuration is built (for example via compile-creatio), the schema " +
-				"stays invisible to lookup pickers and sys-setting reference schema lists.",
-				exception);
-		}
-		stopwatch.Stop();
-		_logger.WriteInfo(
-			$"Schema '{options.SchemaName}' published in {stopwatch.Elapsed.TotalSeconds.ToString("0.0", CultureInfo.InvariantCulture)}s.");
+		// Saving + DDL alone leave the schema invisible to lookup pickers, sys-setting reference lists, and
+		// OData until the configuration is built (ENG-90403).
+		EntitySchemaPublishHelper.PublishAndRebuildOData(
+			_entitySchemaDesignerClient, _logger, options, options.SchemaName, "was created and saved");
 	}
 
 	private PackageInfo ResolvePackage(string packageName) {

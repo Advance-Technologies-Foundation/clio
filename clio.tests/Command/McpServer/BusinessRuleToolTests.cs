@@ -69,7 +69,7 @@ public sealed class BusinessRuleToolTests {
 			]);
 
 		// Act
-		BusinessRuleBatchResponse response = tool.BusinessRuleCreate(new CreateEntityBusinessRulesArgs {
+		BusinessRuleBatchResponse response = (BusinessRuleBatchResponse)tool.BusinessRuleCreate(new CreateEntityBusinessRulesArgs {
 			EnvironmentName = "dev",
 			PackageName = "UsrPkg",
 			EntitySchemaName = "UsrOrder",
@@ -115,7 +115,7 @@ public sealed class BusinessRuleToolTests {
 		CreateEntityBusinessRuleTool tool = new(commandResolver, ConsoleLogger.Instance);
 
 		// Act
-		BusinessRuleBatchResponse response = tool.BusinessRuleCreate(new CreateEntityBusinessRulesArgs {
+		BusinessRuleBatchResponse response = (BusinessRuleBatchResponse)tool.BusinessRuleCreate(new CreateEntityBusinessRulesArgs {
 			EnvironmentName = "dev",
 			PackageName = "UsrPkg",
 			EntitySchemaName = "UsrOrder",
@@ -143,7 +143,7 @@ public sealed class BusinessRuleToolTests {
 		CreateEntityBusinessRuleTool tool = new(commandResolver, ConsoleLogger.Instance);
 
 		// Act
-		BusinessRuleBatchResponse response = tool.BusinessRuleCreate(new CreateEntityBusinessRulesArgs {
+		BusinessRuleBatchResponse response = (BusinessRuleBatchResponse)tool.BusinessRuleCreate(new CreateEntityBusinessRulesArgs {
 			EnvironmentName = "dev",
 			PackageName = "UsrPkg",
 			EntitySchemaName = "UsrOrder",
@@ -173,7 +173,7 @@ public sealed class BusinessRuleToolTests {
 		CreateEntityBusinessRuleTool tool = new(commandResolver, ConsoleLogger.Instance);
 
 		// Act
-		BusinessRuleBatchResponse response = tool.BusinessRuleCreate(new CreateEntityBusinessRulesArgs {
+		BusinessRuleBatchResponse response = (BusinessRuleBatchResponse)tool.BusinessRuleCreate(new CreateEntityBusinessRulesArgs {
 			EnvironmentName = "dev",
 			PackageName = "UsrPkg",
 			EntitySchemaName = "UsrOrder",
@@ -204,7 +204,7 @@ public sealed class BusinessRuleToolTests {
 		CreateEntityBusinessRuleTool tool = new(commandResolver, ConsoleLogger.Instance);
 
 		// Act
-		BusinessRuleBatchResponse response = tool.BusinessRuleCreate(new CreateEntityBusinessRulesArgs {
+		BusinessRuleBatchResponse response = (BusinessRuleBatchResponse)tool.BusinessRuleCreate(new CreateEntityBusinessRulesArgs {
 			EnvironmentName = "dev",
 			PackageName = "UsrPkg",
 			EntitySchemaName = "Missing",
@@ -218,6 +218,130 @@ public sealed class BusinessRuleToolTests {
 		response.Failed.Should().Be(1, because: "a request-level failure fails every rule of the call");
 		response.Results.Single().Success.Should().BeFalse();
 		response.Results.Single().Error.Should().Be("entity-schema-name not found.");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the standard command-execution envelope (exit code 1) referencing the requested environment when entity business-rule creation cannot resolve the environment, instead of folding the failure into an implicit-success batch response (ENG-91830 / ENG-91825).")]
+	public void BusinessRuleCreate_Should_Return_Resolver_Envelope_When_Environment_Resolution_Fails_ForEntity() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<IEntityBusinessRuleService>(Arg.Any<EnvironmentOptions>())
+			.Returns(_ => throw new EnvironmentResolutionException("Environment with key 'missing-env' not found."));
+		CreateEntityBusinessRuleTool tool = new(commandResolver, ConsoleLogger.Instance);
+
+		// Act
+		object result = tool.BusinessRuleCreate(new CreateEntityBusinessRulesArgs {
+			EnvironmentName = "missing-env",
+			PackageName = "UsrPkg",
+			EntitySchemaName = "UsrOrder",
+			Rules = [
+				new EntityBusinessRuleMcpContract("Rule A", new BusinessRuleConditionGroup("AND", []),
+					[new EntityMakeReadOnlyBusinessRuleActionMcpContract(["Status"])])
+			]
+		});
+
+		// Assert
+		result.Should().BeOfType<CommandExecutionResult>(
+			because: "an unresolvable environment must surface as the standard command-execution envelope, not a batch response");
+		CommandExecutionResult execution = (CommandExecutionResult)result;
+		execution.ExitCode.Should().Be(1,
+			because: "a missing environment is an expected, caller-actionable failure mapped to exit code 1");
+		execution.Output.Select(message => message.Value?.ToString() ?? string.Empty).Should().Contain(value => value.Contains("missing-env"),
+			because: "the failure must reference the requested environment so the caller can correct it");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the standard command-execution envelope (exit code 1) referencing the requested environment when page business-rule creation cannot resolve the environment, instead of folding the failure into an implicit-success batch response (ENG-91830 / ENG-91825).")]
+	public void BusinessRuleCreate_Should_Return_Resolver_Envelope_When_Environment_Resolution_Fails_ForPage() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<IPageBusinessRuleService>(Arg.Any<EnvironmentOptions>())
+			.Returns(_ => throw new EnvironmentResolutionException("Environment with key 'missing-env' not found."));
+		CreatePageBusinessRuleTool tool = new(commandResolver, ConsoleLogger.Instance);
+
+		// Act
+		object result = tool.BusinessRuleCreate(new CreatePageBusinessRulesArgs {
+			EnvironmentName = "missing-env",
+			PackageName = "UsrPkg",
+			PageSchemaName = "UsrOrderFormPage",
+			Rules = [
+				new PageBusinessRuleMcpContract("Rule A", new BusinessRuleConditionGroup("AND", []),
+					[new PageMakeReadOnlyBusinessRuleActionMcpContract(["Status"])])
+			]
+		});
+
+		// Assert
+		result.Should().BeOfType<CommandExecutionResult>(
+			because: "an unresolvable environment must surface as the standard command-execution envelope, not a batch response");
+		CommandExecutionResult execution = (CommandExecutionResult)result;
+		execution.ExitCode.Should().Be(1,
+			because: "a missing environment is an expected, caller-actionable failure mapped to exit code 1");
+		execution.Output.Select(message => message.Value?.ToString() ?? string.Empty).Should().Contain(value => value.Contains("missing-env"),
+			because: "the failure must reference the requested environment so the caller can correct it");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the unexpected-failure command-execution envelope (exit code -1) when entity business-rule environment resolution throws a NON-environment exception (e.g. a DI/bootstrap failure), instead of letting it escape to the MCP SDK generic error. Pins the deliberate two-class discrimination — EnvironmentResolutionException maps to exit 1, every other resolve failure maps to exit -1 — against future reordering of the catch arms (ENG-91830 / ENG-91825).")]
+	public void BusinessRuleCreate_Should_Return_Unexpected_Failure_Envelope_When_Resolution_Throws_NonEnvironment_ForEntity() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<IEntityBusinessRuleService>(Arg.Any<EnvironmentOptions>())
+			.Returns(_ => throw new System.InvalidOperationException("BindingsModule.Register failed."));
+		CreateEntityBusinessRuleTool tool = new(commandResolver, ConsoleLogger.Instance);
+
+		// Act
+		object result = tool.BusinessRuleCreate(new CreateEntityBusinessRulesArgs {
+			EnvironmentName = "dev",
+			PackageName = "UsrPkg",
+			EntitySchemaName = "UsrOrder",
+			Rules = [
+				new EntityBusinessRuleMcpContract("Rule A", new BusinessRuleConditionGroup("AND", []),
+					[new EntityMakeReadOnlyBusinessRuleActionMcpContract(["Status"])])
+			]
+		});
+
+		// Assert
+		result.Should().BeOfType<CommandExecutionResult>(
+			because: "an unexpected (non-environment) resolve failure must surface as the standard command-execution envelope, not a batch response");
+		CommandExecutionResult execution = (CommandExecutionResult)result;
+		execution.ExitCode.Should().Be(-1,
+			because: "an unexpected DI/bootstrap failure is an internal error mapped to exit code -1, mirroring BaseTool.InternalExecute, not the exit code 1 reserved for a caller-actionable environment error");
+		execution.Output.Select(message => message.Value?.ToString() ?? string.Empty).Should().Contain(value => value.Contains("BindingsModule.Register failed."),
+			because: "the unexpected-failure envelope must carry the underlying exception message for diagnostics");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the unexpected-failure command-execution envelope (exit code -1) when page business-rule environment resolution throws a NON-environment exception (e.g. a DI/bootstrap failure), instead of letting it escape to the MCP SDK generic error. Pins the deliberate two-class discrimination — EnvironmentResolutionException maps to exit 1, every other resolve failure maps to exit -1 — against future reordering of the catch arms (ENG-91830 / ENG-91825).")]
+	public void BusinessRuleCreate_Should_Return_Unexpected_Failure_Envelope_When_Resolution_Throws_NonEnvironment_ForPage() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<IPageBusinessRuleService>(Arg.Any<EnvironmentOptions>())
+			.Returns(_ => throw new System.InvalidOperationException("BindingsModule.Register failed."));
+		CreatePageBusinessRuleTool tool = new(commandResolver, ConsoleLogger.Instance);
+
+		// Act
+		object result = tool.BusinessRuleCreate(new CreatePageBusinessRulesArgs {
+			EnvironmentName = "dev",
+			PackageName = "UsrPkg",
+			PageSchemaName = "UsrOrderFormPage",
+			Rules = [
+				new PageBusinessRuleMcpContract("Rule A", new BusinessRuleConditionGroup("AND", []),
+					[new PageMakeReadOnlyBusinessRuleActionMcpContract(["Status"])])
+			]
+		});
+
+		// Assert
+		result.Should().BeOfType<CommandExecutionResult>(
+			because: "an unexpected (non-environment) resolve failure must surface as the standard command-execution envelope, not a batch response");
+		CommandExecutionResult execution = (CommandExecutionResult)result;
+		execution.ExitCode.Should().Be(-1,
+			because: "an unexpected DI/bootstrap failure is an internal error mapped to exit code -1, mirroring BaseTool.InternalExecute, not the exit code 1 reserved for a caller-actionable environment error");
+		execution.Output.Select(message => message.Value?.ToString() ?? string.Empty).Should().Contain(value => value.Contains("BindingsModule.Register failed."),
+			because: "the unexpected-failure envelope must carry the underlying exception message for diagnostics");
 	}
 
 	[Test]
@@ -498,7 +622,7 @@ public sealed class BusinessRuleToolTests {
 			]);
 
 		// Act
-		BusinessRuleBatchResponse response = tool.BusinessRuleCreate(new CreatePageBusinessRulesArgs {
+		BusinessRuleBatchResponse response = (BusinessRuleBatchResponse)tool.BusinessRuleCreate(new CreatePageBusinessRulesArgs {
 			EnvironmentName = "dev",
 			PackageName = "UsrPkg",
 			PageSchemaName = "UsrCase_FormPage",
@@ -531,7 +655,7 @@ public sealed class BusinessRuleToolTests {
 		CreatePageBusinessRuleTool tool = new(commandResolver, ConsoleLogger.Instance);
 
 		// Act
-		BusinessRuleBatchResponse response = tool.BusinessRuleCreate(new CreatePageBusinessRulesArgs {
+		BusinessRuleBatchResponse response = (BusinessRuleBatchResponse)tool.BusinessRuleCreate(new CreatePageBusinessRulesArgs {
 			EnvironmentName = "dev",
 			PackageName = "UsrPkg",
 			PageSchemaName = "UsrCase_FormPage",
