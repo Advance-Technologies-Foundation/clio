@@ -245,6 +245,11 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		           }
 		         ]/**SCHEMA_HANDLERS*/
 
+		       - NOTE: if the goal is to RUN A BUSINESS PROCESS when the record is saved, do NOT use this save
+		         handler. A record-triggered process is started by a Signal start element INSIDE the process
+		         (build it with `create-business-process`, start element type `signalStart`, `signal.entity` =
+		         the page object, `signal.on` = added|modified|deleted) — not by a page handler. Use the
+		         save-handler pattern below only for in-page logic (setting attributes, reloading data, etc.).
 		       - Save handler that runs custom logic after the base save succeeds:
 		         handlers: /**SCHEMA_HANDLERS*/[
 		           {

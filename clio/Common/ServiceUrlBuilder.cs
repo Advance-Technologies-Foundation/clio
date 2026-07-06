@@ -157,7 +157,27 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		/// <summary>
 		///     Adds an OAuth client through Creatio OAuth configuration service.
 		/// </summary>
-		OAuthConfigAddClient = 48
+		OAuthConfigAddClient = 48,
+
+		/// <summary>
+		///     Builds a business process from a declarative descriptor via the ProcessDesignService package.
+		/// </summary>
+		BuildProcess = 49,
+
+		/// <summary>
+		///     Lists the available user-facing user tasks (designer palette) via the ProcessDesignService package.
+		/// </summary>
+		ListUserTasks = 50,
+
+		/// <summary>
+		///     Reads an existing process as a structured graph via the ProcessDesignService package.
+		/// </summary>
+		DescribeProcess = 51,
+
+		/// <summary>
+		///     Edits an existing business process (add/remove elements, flows, …) via the ProcessDesignService package.
+		/// </summary>
+		ModifyProcess = 52
 
 	}
 
@@ -219,6 +239,10 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.OAuthConfigGetIdentityServerClientSecret, "/rest/OAuthConfigService/GetIdentityServerClientSecret"},
 		{KnownRoute.OAuthConfigCreateTechnicalUser, "/rest/OAuthConfigService/CreateTechnicalUser"},
 		{KnownRoute.OAuthConfigAddClient, "/rest/OAuthConfigService/AddClient"},
+		{KnownRoute.BuildProcess, "/rest/ProcessDesignService/BuildProcess"},
+		{KnownRoute.ListUserTasks, "/rest/ProcessDesignService/ListUserTasks"},
+		{KnownRoute.DescribeProcess, "/rest/ProcessDesignService/DescribeProcess"},
+		{KnownRoute.ModifyProcess, "/rest/ProcessDesignService/ModifyProcess"},
 	};
 
 	private EnvironmentSettings _environmentSettings;

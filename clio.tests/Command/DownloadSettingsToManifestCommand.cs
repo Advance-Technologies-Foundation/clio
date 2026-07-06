@@ -66,8 +66,8 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 		FileSystem.File.Exists(saveSettingsToManifestOptions.ManifestFileName).Should().BeTrue();
 		string expectedContent
 			= TestFileSystem.ReadExamplesFile("deployments-manifest", "expected-saved-manifest.yaml");
-		FileSystem.File.ReadAllText(saveSettingsToManifestOptions.ManifestFileName).Trim().Should()
-			.Be(expectedContent.Trim());
+		FileSystem.File.ReadAllText(saveSettingsToManifestOptions.ManifestFileName).Trim().NormalizeLineEndings().Should()
+			.Be(expectedContent.Trim().NormalizeLineEndings(), "the generated manifest should match the fixture regardless of line endings");
 
 		loggerMock.Received(1).WriteInfo("Done");
 	}
@@ -204,8 +204,8 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 		FileSystem.File.Exists(saveSettingsToManifestOptions.ManifestFileName).Should().BeTrue();
 		string expectedContent
 			= TestFileSystem.ReadExamplesFile("deployments-manifest", "expected-saved-full-manifest-WithoutSchemas.yaml");
-		FileSystem.File.ReadAllText(saveSettingsToManifestOptions.ManifestFileName).Trim().Should()
-			.Be(expectedContent.Trim());
+		FileSystem.File.ReadAllText(saveSettingsToManifestOptions.ManifestFileName).Trim().NormalizeLineEndings().Should()
+			.Be(expectedContent.Trim().NormalizeLineEndings(), "the generated manifest should match the fixture regardless of line endings");
 
 		loggerMock.Received(1).WriteInfo("Done");
 	}
@@ -252,8 +252,8 @@ internal class SaveSettingsToManifestCommandTest : BaseCommandTests<SaveSettings
 		string expectedContent
 			= TestFileSystem.ReadExamplesFile("deployments-manifest", "expected-saved-full-manifest.yaml");
 		string actualContent = FileSystem.File.ReadAllText(saveSettingsToManifestOptions.ManifestFileName).Trim();
-		actualContent.Should()
-			.Be(expectedContent.Trim());
+		actualContent.NormalizeLineEndings().Should()
+			.Be(expectedContent.Trim().NormalizeLineEndings(), "the generated manifest should match the fixture regardless of line endings");
 
 		loggerMock.Received(1).WriteInfo("Done");
 	}

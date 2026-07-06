@@ -95,11 +95,17 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 			"successful schema creation should emit progress output");
 		AssertIncludesPublishMessage(createResult,
 			"create-entity-schema must publish the configuration so the schema becomes visible to lookup pickers and sys-setting reference lists (ENG-90403)");
+		AssertIncludesODataBuildMessage(createResult,
+			"create-entity-schema must request the OData entities rebuild so the schema is reachable over OData without a manual full compile (ENG-92048)");
 		AssertSchemaProperties(schemaProperties, arrangeContext);
 		AssertCommandSucceeded(addResult,
 			"modify-entity-schema-column should succeed when adding a valid own text-like column");
 		AssertIncludesInfoMessage(addResult,
 			"successful add mutation should emit progress output");
+		AssertIncludesPublishMessage(addResult,
+			"adding a column must publish the configuration so the new column compiles into configuration (ENG-90403)");
+		AssertIncludesODataBuildMessage(addResult,
+			"adding a column must request the OData entities rebuild so the new column is reachable over OData without a manual compile (ENG-92048)");
 		AssertSchemaPropertiesAfterAdd(schemaPropertiesAfterAdd, arrangeContext);
 		AssertAddedColumnProperties(addedColumnProperties, arrangeContext);
 		AssertCommandSucceeded(modifyResult,
@@ -142,6 +148,8 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 			"successful lookup creation should emit progress output");
 		AssertIncludesPublishMessage(createResult,
 			"create-lookup must publish the configuration so the lookup becomes usable as a sys-setting Lookup reference (ENG-90403)");
+		AssertIncludesODataBuildMessage(createResult,
+			"create-lookup must request the OData entities rebuild so the lookup is reachable over OData without a manual full compile (ENG-92048)");
 		schemaProperties.Name.Should().Be(arrangeContext.SchemaName,
 			because: "the created lookup should be readable through the structured schema properties tool");
 		schemaProperties.ParentSchemaName.Should().Be("BaseLookup",
@@ -1426,6 +1434,16 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 		execution.Output!.Should().Contain(message => message.MessageType == LogDecoratorType.Info
 				&& message.Value != null
 				&& message.Value.Contains("published", StringComparison.OrdinalIgnoreCase),
+			because: because);
+	}
+
+	[AllureStep("Assert OData entities rebuild progress message")]
+	private static void AssertIncludesODataBuildMessage(CommandExecutionEnvelope execution, string because) {
+		execution.Output.Should().NotBeNullOrEmpty(
+			because: "successful command execution should emit human-readable diagnostics");
+		execution.Output!.Should().Contain(message => message.MessageType == LogDecoratorType.Info
+				&& message.Value != null
+				&& message.Value.Contains("OData entities rebuild requested", StringComparison.OrdinalIgnoreCase),
 			because: because);
 	}
 

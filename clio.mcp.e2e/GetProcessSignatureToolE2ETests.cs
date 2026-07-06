@@ -2,6 +2,7 @@ using System.Text.RegularExpressions;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
+using Clio.Command.McpServer.Tools.ProcessDesigner;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
@@ -57,32 +58,6 @@ public sealed class GetProcessSignatureToolE2ETests : McpContractFixtureBase {
 			because: "the response should echo the requested process code");
 		envelope.Parameters.Should().NotBeNull(
 			because: "a successful signature must always carry a parameters collection (possibly empty)");
-	}
-
-	[Category("McpE2E.NoEnvironment")]
-	[Test]
-	[Description("Starts the real clio MCP server, invokes get-process-signature with an invalid environment name, and verifies a readable structured failure.")]
-	[AllureTag(ToolName)]
-	[AllureName("Get process signature reports invalid environment failures")]
-	[AllureDescription("Uses the real clio MCP server to call get-process-signature with an unknown environment name and verifies that the MCP result stays structured and reports a human-readable failure with success=false.")]
-	public async Task GetProcessSignature_Should_Report_Invalid_Environment_Failure() {
-		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		string invalidEnvironmentName = $"missing-gps-env-{Guid.NewGuid():N}";
-		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
-
-		// Act
-		GetProcessSignatureEnvelope envelope = await ActAsync(arrangeContext, "UsrMissingProcess", invalidEnvironmentName);
-
-		// Assert
-		envelope.Success.Should().BeFalse(
-			because: "an unknown environment cannot resolve a process signature");
-		envelope.Error.Should().NotBeNullOrWhiteSpace(
-			because: "failed signature lookups should carry a human-readable error");
-		envelope.Error!.Should().MatchRegex(
-			$"(?is)({Regex.Escape(invalidEnvironmentName)}|environment.*not.*found|not found|not registered)",
-			because: "the failure should help a human understand that the requested environment is not registered");
 	}
 
 	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) {

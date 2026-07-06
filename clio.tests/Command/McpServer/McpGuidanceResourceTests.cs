@@ -1465,6 +1465,61 @@ public sealed class McpGuidanceResourceTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Returns a canonical MCP guidance article for Freedom UI chart widgets so AI callers can translate Copilot chart intent into runtime widget config.")]
+	public void ChartWidgetGuidanceResource_Should_Return_Canonical_Chart_Widget_Guide() {
+		// Arrange
+		ChartWidgetGuidanceResource resource = new();
+
+		// Act
+		ResourceContents result = resource.GetGuide();
+		TextResourceContents article = result.Should().BeOfType<TextResourceContents>(
+			because: "the chart widget guide should be returned as a plain-text MCP resource").Subject;
+
+		// Assert
+		article.Uri.Should().Be("docs://mcp/guides/chart-widget",
+			because: "the resource should expose a stable MCP URI for chart widget guidance");
+		article.MimeType.Should().Be("text/plain",
+			because: "the chart widget guide should be discoverable as plain text");
+		article.Text.Should().Contain("clio MCP chart widget guide",
+			because: "the article should identify itself as the dedicated chart-widget guide");
+		article.Text.Should().Contain("get-component-info",
+			because: "the trimmed guide should point callers to get-component-info as the single source of truth");
+		article.Text.Should().Contain("data.providing.dependencies",
+			because: "the guide must teach the dependencies wiring that filters a chart by page data on a record page");
+		article.Text.Should().Contain("sectionBindingColumnRecordId",
+			because: "the guide must document the designer-style page-data binding pair instead of claiming it is auto-injected");
+		article.Text.Should().Contain("related-list",
+			because: "the page-data wiring section should cross-link the canonical related-list guidance");
+		article.Text.Should().NotContain("do not author it",
+			because: "the prior wording wrongly told the agent the page-data binding is auto-handled, which left charts unfiltered");
+		article.Text.Should().Contain("Title and header",
+			because: "the guide must tell the agent to always set and register a title so the widget header is not blank");
+		article.Text.Should().Contain("hideTools",
+			because: "the guide must warn against the hidden hideTitle/hideTools flags that strip the title and the full-screen button");
+		article.Text.Should().Contain("Style (theme) by page surface",
+			because: "the guide must set the chart theme by page surface (dashboard→white, desktop→glassmorphism, home→full-fill), mirroring the indicator policy");
+		article.Text.Should().Contain("glassmorphism",
+			because: "Desktop charts must use the glassmorphism theme");
+		article.Text.Should().Contain("ONLY when the user explicitly asks to sort",
+			because: "the guide must tell the agent not to impose a default sort — emit seriesOrder only on explicit request");
+		article.Text.Should().Contain("`config.color` is REQUIRED for a VISIBLE title",
+			because: "the guide must require config.color so the title is not rendered white-on-white (invisible) on without-fill");
+		article.Text.Should().Contain("`layoutConfig.rowSpan` >= 6",
+			because: "the guide must set a grid size floor so charts are not generated unreadably short");
+		article.Text.Should().Contain("`layoutConfig.height` >= 350",
+			because: "the guide must set a flex-container height floor so a chart does not collapse");
+		article.Text.Should().Contain("INDEPENDENT of `config.color`",
+			because: "the guide must separate series color (data marks) from config.color (title) so a series-color change does not recolor the title");
+		article.Text.Should().Contain("aggregation.column.expression",
+			because: "the guide keeps the aggregation column path and enum rules; the structural aggregation.column nesting is now enforced by the registry-driven chart-widget validator");
+		article.Text.Should().Contain("FixedGridSlot_qwe4asds",
+			because: "the guide must steer Desktop chart placement into the exact editable slot FixedGridSlot_qwe4asds (CentralAreaDesktopTemplate), not the Main frame");
+		article.Text.Should().Contain("show values by DEFAULT",
+			because: "the guide must default data labels on (dataLabel.display:true) unless the user explicitly opts out");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Returns a canonical MCP guidance article for adding and filtering a Freedom UI related/child list (detail) so AI callers can scope a list by the current page record.")]
 	public void RelatedListGuidanceResource_Should_Return_Canonical_Related_List_Guide() {
 		// Arrange
@@ -1546,6 +1601,26 @@ public sealed class McpGuidanceResourceTests {
 		entry.Article.Should().NotBeNull(
 			because: "the catalog entry must carry the guidance text article");
 		entry.Article.Uri.Should().Be("docs://mcp/guides/indicator-widget",
+			because: "the article URI in the catalog must match the resource URI");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("GuidanceCatalog exposes chart-widget so AI callers can retrieve chart widget authoring guidance by name.")]
+	public void GuidanceCatalog_Should_Include_Chart_Widget_Entry() {
+		// Act
+		bool found = GuidanceCatalog.TryGet("chart-widget", out GuidanceCatalogEntry entry);
+
+		// Assert
+		found.Should().BeTrue(
+			because: "the catalog must expose chart-widget so get-guidance can return it by name");
+		entry.Name.Should().Be("chart-widget",
+			because: "the catalog entry name must match the lookup key exactly");
+		entry.Description.Should().Contain("chart widgets",
+			because: "the catalog description should identify the subject of the guidance article");
+		entry.Article.Should().NotBeNull(
+			because: "the catalog entry must carry the guidance text article");
+		entry.Article.Uri.Should().Be("docs://mcp/guides/chart-widget",
 			because: "the article URI in the catalog must match the resource URI");
 	}
 
@@ -1738,5 +1813,82 @@ public sealed class McpGuidanceResourceTests {
 			because: "the catalog entry must carry the guidance text article");
 		entry.Article.Uri.Should().Be("docs://mcp/guides/server-to-server-oauth",
 			because: "the article URI in the catalog must match the resource URI");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a canonical MCP guidance article for managing package dependencies and the schema-designer HTML-error recovery (ENG-91314).")]
+	public void PackageDependenciesGuidanceResource_Should_Return_Canonical_Recovery_Guide() {
+		// Arrange
+		PackageDependenciesGuidanceResource resource = new();
+
+		// Act
+		ResourceContents result = resource.GetGuide();
+		TextResourceContents article = result.Should().BeOfType<TextResourceContents>(
+			because: "the package-dependencies guide should be returned as a plain-text MCP resource").Subject;
+
+		// Assert
+		article.Uri.Should().Be("docs://mcp/guides/package-dependencies",
+			because: "the resource should expose a stable MCP URI for package-dependency guidance");
+		article.MimeType.Should().Be("text/plain",
+			because: "the guide should be discoverable as plain text");
+		article.Text.Should().Contain("GetSchemaDesignItem returned an HTML error page",
+			because: "the guide must be keyed to the exact symptom an agent sees so it maps the error to this recovery");
+		article.Text.Should().Contain("add-package-dependency",
+			because: "the guide must point at the one-call recovery tool");
+		article.Text.Should().Contain("remove-package-dependency",
+			because: "the guide must document the symmetric cleanup tool");
+		article.Text.Should().Contain("CrtLeadOppMgmtApp",
+			because: "the guide should give the canonical Opportunity-layer example that misdirected agents before");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("GuidanceCatalog exposes package-dependencies so AI callers can retrieve the dependency-recovery guidance by name (ENG-91314).")]
+	public void GuidanceCatalog_Should_Include_Package_Dependencies_Entry() {
+		// Act
+		bool found = GuidanceCatalog.TryGet("package-dependencies", out GuidanceCatalogEntry entry);
+
+		// Assert
+		found.Should().BeTrue(
+			because: "the catalog must expose package-dependencies so get-guidance can return it by name");
+		entry.Name.Should().Be("package-dependencies",
+			because: "the catalog entry name must match the lookup key exactly");
+		entry.Article.Uri.Should().Be("docs://mcp/guides/package-dependencies",
+			because: "the article URI in the catalog must match the resource URI");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The routing map points the package-dependencies symptom at its guide so an agent reaches it from the schema-designer failure (ENG-91314).")]
+	public void RoutingGuidanceResource_Should_Route_Package_Dependencies_Symptom() {
+		// Arrange
+		RoutingGuidanceResource resource = new();
+
+		// Act
+		TextResourceContents article = resource.GetGuide().Should().BeOfType<TextResourceContents>().Subject;
+
+		// Assert
+		article.Text.Should().Contain("name=package-dependencies",
+			because: "the routing map must direct the agent to the package-dependencies guide");
+		article.Text.Should().Contain("GetSchemaDesignItem returned an HTML error page",
+			because: "the routing row must be keyed to the exact symptom so the agent recognizes it");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The routing map points the run-a-process-button task at the run-process-button guide so an agent reaches the shipped contract from the Pages domain.")]
+	public void RoutingGuidanceResource_Should_Route_RunProcessButton_Task() {
+		// Arrange
+		RoutingGuidanceResource resource = new();
+
+		// Act
+		TextResourceContents article = resource.GetGuide().Should().BeOfType<TextResourceContents>().Subject;
+
+		// Assert
+		article.Text.Should().Contain("name=run-process-button",
+			because: "the routing map must direct the agent to the run-process-button guide");
+		article.Text.Should().Contain("runs a business process",
+			because: "the routing row must be keyed to the task wording so the agent recognizes it");
 	}
 }

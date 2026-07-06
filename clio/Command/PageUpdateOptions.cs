@@ -168,6 +168,10 @@ namespace Clio.Command {
 		public bool TryUpdatePage(PageUpdateOptions options, out PageUpdateResponse response) {
 			try {
 				if (!TryLoadBodyFromFile(options, out response)) return false;
+				// Single chokepoint for update-page, sync-pages, and the CLI: run the registered before-save
+				// page-body preprocessors before validating/saving. Fail-safe; a no-op for bodies no preprocessor
+				// applies to. See PageBodyBeforeSavePreprocessingPipeline.
+				options.Body = PageBodyBeforeSavePreprocessingPipeline.Preprocess(options.Body);
 				PageUpdateResponse earlyError = ValidateRequiredFields(options);
 				if (earlyError != null) { response = earlyError; return false; }
 				PageUpdateResponse commonValidationError = ValidateCommonInput(
@@ -566,7 +570,6 @@ namespace Clio.Command {
 			dto["name"] = originalName;
 			dto["isReadOnly"] = false;
 			dto["extendParent"] = true;
-			dto["caption"] = null;
 			dto[LocalizableStringsKey] = template[LocalizableStringsKey]?.DeepClone() ?? new JArray();
 			dto["package"] = new JObject {
 				["uId"] = context.DesignPackageUId,

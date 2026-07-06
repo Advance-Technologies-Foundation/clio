@@ -288,4 +288,136 @@ public class PackageDependencyManagerTests
 					+ "instead of a bare NullReferenceException from dereferencing ErrorInfo.Message");
 	}
 
+	[Test]
+	[Description("Removes a present dependency by name and persists the package without it (ENG-91314).")]
+	public void RemoveDependencies_ShouldDropDependency_WhenDependencyIsPresent() {
+		// Arrange
+		ArrangeInstalledPackages();
+		ArrangeGetPackageProperties(new WorkspacePackageDto {
+			UId = _targetUId,
+			Name = TargetPackageName,
+			DependsOnPackages = [new WorkspacePackageDto { UId = _dependencyUId, Name = DependencyPackageName }]
+		});
+		ArrangeSavePackageProperties(new SavePackagePropertiesResponse { Success = true });
+
+		// Act
+		IReadOnlyList<string> result = _manager.RemoveDependencies(TargetPackageName, [DependencyPackageName]);
+
+		// Assert
+		result.Should().NotContain(DependencyPackageName,
+			because: "the resulting dependency list must no longer include the removed package");
+		WorkspacePackageDto savedPackage = DeserializeSavedPackage();
+		savedPackage.DependsOnPackages.Should().NotContain(dependency => dependency.UId == _dependencyUId,
+			because: "the saved package must drop the removed dependency from dependsOnPackages");
+	}
+
+	[Test]
+	[Description("Matches the dependency name case-insensitively so casing differences still remove it (ENG-91314).")]
+	public void RemoveDependencies_ShouldMatchNameCaseInsensitively_WhenCasingDiffers() {
+		// Arrange
+		ArrangeInstalledPackages();
+		ArrangeGetPackageProperties(new WorkspacePackageDto {
+			UId = _targetUId,
+			Name = TargetPackageName,
+			DependsOnPackages = [new WorkspacePackageDto { UId = _dependencyUId, Name = DependencyPackageName }]
+		});
+		ArrangeSavePackageProperties(new SavePackagePropertiesResponse { Success = true });
+
+		// Act
+		_manager.RemoveDependencies(TargetPackageName, [DependencyPackageName.ToUpperInvariant()]);
+
+		// Assert
+		WorkspacePackageDto savedPackage = DeserializeSavedPackage();
+		savedPackage.DependsOnPackages.Should().BeEmpty(
+			because: "dependency names must be matched case-insensitively when removing");
+	}
+
+	[Test]
+	[Description("Does not call SavePackageProperties when no dependency matched, and leaves an existing non-targeted dependency intact, so a no-op removal stays cheap and side-effect free (ENG-91314).")]
+	public void RemoveDependencies_ShouldNotSaveAndPreserveExisting_WhenNoDependencyMatched() {
+		// Arrange — package HAS a dependency, but it is not the one being removed, so the no-op path must
+		// neither persist nor drop the surviving dependency.
+		ArrangeInstalledPackages();
+		ArrangeGetPackageProperties(new WorkspacePackageDto {
+			UId = _targetUId,
+			Name = TargetPackageName,
+			DependsOnPackages = [new WorkspacePackageDto { UId = _dependencyUId, Name = DependencyPackageName }]
+		});
+		ArrangeSavePackageProperties(new SavePackagePropertiesResponse { Success = true });
+
+		// Act
+		IReadOnlyList<string> result = _manager.RemoveDependencies(TargetPackageName, ["NotADependency"]);
+
+		// Assert
+		result.Should().ContainSingle().Which.Should().Be(DependencyPackageName,
+			because: "a dependency that was not targeted must survive a no-op removal");
+		_applicationClient.DidNotReceive().ExecutePostRequest<SavePackagePropertiesResponse>(
+			Arg.Any<string>(), Arg.Any<string>());
+		_savedRequestBody.Should().BeNull(
+			because: "removing an absent dependency is a no-op and must not persist the package");
+	}
+
+	[Test]
+	[Description("Removes only the targeted dependency and preserves the others, proving the removal is selective rather than a blanket clear (ENG-91314).")]
+	public void RemoveDependencies_ShouldRemoveOnlyTargetedDependency_WhenPackageHasSeveral() {
+		// Arrange — two dependencies present; remove exactly one and assert the other survives in both the
+		// returned list and the persisted DTO. This pins selectivity: a "clear all when anything matches"
+		// regression would fail here while passing the single-dependency tests.
+		Guid survivorUId = Guid.NewGuid();
+		const string survivorName = "CrtCase";
+		ArrangeInstalledPackages();
+		ArrangeGetPackageProperties(new WorkspacePackageDto {
+			UId = _targetUId,
+			Name = TargetPackageName,
+			DependsOnPackages = [
+				new WorkspacePackageDto { UId = _dependencyUId, Name = DependencyPackageName },
+				new WorkspacePackageDto { UId = survivorUId, Name = survivorName }
+			]
+		});
+		ArrangeSavePackageProperties(new SavePackagePropertiesResponse { Success = true });
+
+		// Act
+		IReadOnlyList<string> result = _manager.RemoveDependencies(TargetPackageName, [DependencyPackageName]);
+
+		// Assert
+		result.Should().ContainSingle().Which.Should().Be(survivorName,
+			because: "only the targeted dependency must be removed; the untargeted one must remain");
+		WorkspacePackageDto savedPackage = DeserializeSavedPackage();
+		savedPackage.DependsOnPackages.Should().ContainSingle(dependency => dependency.UId == survivorUId,
+			because: "the persisted package must keep the untargeted dependency");
+		savedPackage.DependsOnPackages.Should().NotContain(dependency => dependency.UId == _dependencyUId,
+			because: "the persisted package must drop only the targeted dependency");
+	}
+
+	[Test]
+	[Description("Throws a descriptive error when the target package is not installed in the environment (ENG-91314).")]
+	public void RemoveDependencies_ShouldThrow_WhenTargetPackageNotFound() {
+		// Arrange
+		_packageListProvider.GetPackages("{}").Returns([
+			CreatePackageInfo(DependencyPackageName, _dependencyUId, "8.2.1.999")
+		]);
+
+		// Act
+		Action act = () => _manager.RemoveDependencies(TargetPackageName, [DependencyPackageName]);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>()
+			.WithMessage($"*{TargetPackageName}*not found*",
+				because: "a missing target package must produce an actionable error");
+	}
+
+	[Test]
+	[Description("Throws when no dependency name is supplied so an empty removal request fails fast (ENG-91314).")]
+	public void RemoveDependencies_ShouldThrow_WhenNoDependencyNameSupplied() {
+		// Arrange
+		ArrangeInstalledPackages();
+
+		// Act
+		Action act = () => _manager.RemoveDependencies(TargetPackageName, [" "]);
+
+		// Assert
+		act.Should().Throw<ArgumentException>(
+			because: "at least one non-empty dependency name must be specified to remove");
+	}
+
 }

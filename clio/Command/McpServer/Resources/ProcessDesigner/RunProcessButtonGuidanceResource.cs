@@ -2,7 +2,7 @@ using System.ComponentModel;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
-namespace Clio.Command.McpServer.Resources;
+namespace Clio.Command.McpServer.Resources.ProcessDesigner;
 
 /// <summary>
 /// Canonical AI-facing guidance for adding a Freedom UI button that runs a business process

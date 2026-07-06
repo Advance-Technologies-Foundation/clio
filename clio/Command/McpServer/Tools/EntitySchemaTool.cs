@@ -37,6 +37,9 @@ public sealed class CreateEntitySchemaTool(
 
 				 The tool applies the DB structure and publishes the schema automatically, so the new entity is
 				 immediately usable as a Lookup reference in sys-settings and lookup pickers — no compile needed.
+				 Publishing also requests an OData entities rebuild, so the entity becomes reachable over OData
+				 (/0/odata/<Entity>) without a compile. That rebuild is asynchronous (~1-2 min): a 404 from an
+				 odata-* tool right after creation is the expected async gap — wait briefly and retry, do not compile.
 
 				 Entity business rules (conditional editability/required/values) are separate artifacts — call get-guidance with name business-rules to learn more. For the schema-design workflow call get-guidance with name app-modeling.
 				 """)]
@@ -163,6 +166,9 @@ public sealed class CreateLookupTool : BaseTool<CreateEntitySchemaOptions> {
 
 				 The tool applies the DB structure and publishes the schema automatically, so the new lookup is
 				 immediately usable as a Lookup reference in sys-settings and lookup pickers — no compile needed.
+				 Publishing also requests an OData entities rebuild, so the lookup becomes reachable over OData
+				 (/0/odata/<Entity>) without a compile. That rebuild is asynchronous (~1-2 min): a 404 from an
+				 odata-* tool right after creation is the expected async gap — wait briefly and retry, do not compile.
 				 """)]
 	public async Task<CommandExecutionResult> CreateLookup(
 		[Description("Parameters: environment-name, package-name, schema-name, title-localizations (all required); columns (optional)")] [Required] CreateLookupArgs args
@@ -242,6 +248,7 @@ public sealed class UpdateEntitySchemaTool(
 	[McpServerTool(Name = UpdateEntitySchemaToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
 	[Description("Applies a batch of add, modify, and remove column operations to a remote Creatio entity schema. " +
+		"The batch is published and the OData entities are rebuilt automatically, so changed columns become reachable over OData (/0/odata/<Entity>) without a compile. That rebuild is asynchronous (~1-2 min): a 404 (or \"The request is invalid\") from an odata-* tool right after a change is the expected async gap — wait briefly and retry, do not compile. " +
 		"Entity business rules (conditional editability/required/values) are separate artifacts — call get-guidance with name business-rules to learn more. For the schema-design workflow call get-guidance with name app-modeling.")]
 	public async Task<CommandExecutionResult> UpdateEntitySchema(
 		[Description("Parameters: environment-name, package-name, schema-name, operations (all required)")] [Required] UpdateEntitySchemaArgs args) {
@@ -474,6 +481,11 @@ public sealed class ModifyEntitySchemaColumnTool(ModifyEntitySchemaColumnCommand
 	[McpServerTool(Name = ModifyEntitySchemaColumnToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
 	[Description("Adds, modifies, or removes a column in a remote Creatio entity schema. "
+		+ "The change is published and the OData entities are rebuilt automatically, so the column becomes reachable "
+		+ "over OData (/0/odata/<Entity>) without a compile. That rebuild is asynchronous (~1-2 min): a 404 (or "
+		+ "\"The request is invalid\") from an odata-* tool right after the change is the expected async gap — wait "
+		+ "briefly and retry, do not compile. Each call publishes once, so to change several columns at once batch "
+		+ "them through update-entity-schema rather than one call per column. "
 		+ "When setting a Const default on a lookup column, the referenced record's existence is validated "
 		+ "before save: a GUID that does not exist in the referenced schema is rejected with a non-zero exit "
 		+ "and the schema is not saved. The check is point-in-time (TOCTOU) and is skipped when the referenced "

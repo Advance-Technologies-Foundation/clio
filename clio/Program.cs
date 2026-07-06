@@ -224,6 +224,7 @@ internal class Program {
 		typeof(QuizCommandOptions),
 		typeof(GenerateSourceCodeOptions),
 		typeof(AddPackageDependencyOptions),
+		typeof(RemovePackageDependencyOptions),
 		typeof(GetIdentityAssertionOptions),
 		typeof(GetIdentityPublicJwkOptions),
 		typeof(RegenerateIdentitySigningKeyOptions),
@@ -246,7 +247,7 @@ internal class Program {
 	internal const int CreatioVersionRequirementExitCode = 78;
 
 	internal static bool IsCfgOpenCommand;
-	internal static bool IsMcpServerMode { get; private set; }
+	internal static bool IsMcpServerMode { get; set; }
 	public static IAppUpdater _appUpdater;
 
 	private sealed record CommandSuggestionEntry(string CanonicalName, IReadOnlyList<string> SearchTerms);
@@ -499,6 +500,7 @@ internal class Program {
 			QuizCommandOptions opts => Resolve<QuizCommand>().Execute(opts),
 			GenerateSourceCodeOptions opts => Resolve<GenerateSourceCodeCommand>(opts).Execute(opts),
 			AddPackageDependencyOptions opts => Resolve<AddPackageDependencyCommand>(opts).Execute(opts),
+			RemovePackageDependencyOptions opts => Resolve<RemovePackageDependencyCommand>(opts).Execute(opts),
 			GetIdentityAssertionOptions opts => Resolve<GetIdentityAssertionCommand>(opts).Execute(opts),
 			GetIdentityPublicJwkOptions opts => Resolve<GetIdentityPublicJwkCommand>(opts).Execute(opts),
 			RegenerateIdentitySigningKeyOptions opts => Resolve<RegenerateIdentitySigningKeyCommand>(opts).Execute(opts),
@@ -1084,6 +1086,11 @@ internal class Program {
 			|| string.Equals(commandName, "mcp", StringComparison.OrdinalIgnoreCase);
 	}
 
+	private static bool IsTruthyEnvironmentFlag(string variableName) {
+		string? value = Environment.GetEnvironmentVariable(variableName);
+		return string.Equals(value, "true", StringComparison.OrdinalIgnoreCase) || value == "1";
+	}
+
 	/// <summary>
 	/// Main entry point for the application.
 	/// </summary>
@@ -1117,6 +1124,17 @@ internal class Program {
 			IsCfgOpenCommand = (args.Length >= 2 && args[0] == "cfg" && args[1] == "open");
 			
 			if (isMcp) {
+				// Neutralize any ambient HTTP(S)/ALL_PROXY for all outbound HttpClient calls when running
+				// as an MCP server. AI-agent sandboxes frequently inject process proxy env vars (sometimes
+				// pointing at a dead/poisoned address); clio always targets an explicitly configured Creatio
+				// URL that must be reached directly, so an inherited proxy must not break it. An empty
+				// WebProxy bypasses every host. CLI mode is unchanged (a CLI user may legitimately need the
+				// proxy). See DataForgeStatus_Should_Ignore_Poisoned_Proxy_Environment_Variables (ENG-90640).
+				// Opt out (fail-safe default is to bypass) by setting CLIO_MCP_RESPECT_AMBIENT_PROXY=true|1
+				// — for an org that mandates an inspecting/DLP egress proxy even for the MCP server.
+				if (!IsTruthyEnvironmentFlag("CLIO_MCP_RESPECT_AMBIENT_PROXY")) {
+					System.Net.Http.HttpClient.DefaultProxy = new System.Net.WebProxy();
+				}
 				ConsoleLogger.Instance.PreserveMessages = true;
 			}
 			
@@ -1458,7 +1476,11 @@ internal class Program {
 			BindingsModuleRegistrationProfile profile = settings is null
 				? BindingsModuleRegistrationProfile.Bootstrap
 				: BindingsModuleRegistrationProfile.EnvironmentScoped;
-			Container = new BindingsModule().Register(settings, profile: profile);
+			// registerMcpHost is threaded explicitly (never read inside BindingsModule) and is true only
+			// here, the single build from which McpServerCommand is resolved. In a live MCP session this
+			// is the Bootstrap-profile build that backs mcp-server; every other command leaves it false,
+			// and ToolCommandResolver's per-environment builds pass false too, so they skip the MCP host.
+			Container = new BindingsModule().Register(settings, profile: profile, registerMcpHost: IsMcpServerMode);
 		}
 		if (useCreatioLogStreamer) {
 			ConsoleLogger.Instance.SetCreatioLogStreamer(Container.GetRequiredService<ILogStreamer>());
