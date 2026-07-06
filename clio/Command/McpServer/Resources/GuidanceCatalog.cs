@@ -162,8 +162,7 @@ internal static class GuidanceCatalog {
 				key = CODE not caption (silent-skip warning), and the static-constant /
 				view-model-attribute-binding / current-record variants.
 				""",
-				RunProcessButtonGuidanceResource.Guide,
-				featureGateType: typeof(RunProcessButtonGuidanceResource)),
+				RunProcessButtonGuidanceResource.Guide),
 			["identity-assertion"] = Create(
 				"identity-assertion",
 				"Canonical MCP guidance for the Creatio identity-assertion / Identity Service V3 token-exchange "
