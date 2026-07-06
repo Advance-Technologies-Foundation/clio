@@ -4,7 +4,6 @@ using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
-using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E;
@@ -26,7 +25,8 @@ public sealed class ExperimentalToolE2ETests : McpContractFixtureBase {
 		await using var context = Arrange();
 
 		// Act
-		IList<McpClientTool> tools = await context.Session.ListToolsAsync(context.CancellationTokenSource.Token);
+		IReadOnlyCollection<string> toolNames =
+			await context.Session.ListReachableToolNamesAsync(context.CancellationTokenSource.Token);
 		CallToolResult callResult = await context.Session.CallToolAsync(
 			ToolName,
 			new Dictionary<string, object?>(),
@@ -34,8 +34,8 @@ public sealed class ExperimentalToolE2ETests : McpContractFixtureBase {
 		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
 
 		// Assert
-		tools.Select(tool => tool.Name).Should().Contain(ToolName,
-			because: "the experimental MCP tool must be advertised by the real server");
+		toolNames.Should().Contain(ToolName,
+			because: $"the {ToolName} MCP tool must be discoverable on the lazy surface (get-tool-contract compact index) even though it is not resident in tools/list");
 		callResult.IsError.Should().NotBeTrue(
 			because: "listing feature flags is a read operation that should return a normal MCP envelope");
 		execution.ExitCode.Should().Be(0,

@@ -7,7 +7,6 @@ using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
-using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E;
@@ -27,9 +26,9 @@ public sealed class ClearBrowserSessionToolE2ETests : McpContractFixtureBase {
 	private const string ToolName = ClearBrowserSessionTool.ToolName;
 
 	[Test]
-	[Description("Starts the real clio MCP server and verifies clear-browser-session is advertised in the tool list (hermetic — no Creatio environment required).")]
+	[Description("Starts the real clio MCP server and verifies clear-browser-session is discoverable via the get-tool-contract compact index (hermetic — no Creatio environment required).")]
 	[AllureTag(ToolName)]
-	[AllureName("clear-browser-session is advertised by the clio MCP server")]
+	[AllureName("clear-browser-session is discoverable on the lazy surface")]
 	public async Task ClearBrowserSession_Should_Be_Advertised_By_Mcp_Server() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -37,11 +36,12 @@ public sealed class ClearBrowserSessionToolE2ETests : McpContractFixtureBase {
 		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3), requireReachableEnvironment: false);
 
 		// Act
-		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
+		IReadOnlyCollection<string> toolNames =
+			await arrangeContext.Session.ListReachableToolNamesAsync(arrangeContext.CancellationTokenSource.Token);
 
 		// Assert
-		tools.Select(tool => tool.Name).Should().Contain(ToolName,
-			because: "the clear-browser-session tool must be discoverable on the real clio MCP server");
+		toolNames.Should().Contain(ToolName,
+			because: $"the {ToolName} MCP tool must be discoverable on the lazy surface (get-tool-contract compact index) even though it is not resident in tools/list");
 	}
 
 	[Test]
@@ -76,9 +76,10 @@ public sealed class ClearBrowserSessionToolE2ETests : McpContractFixtureBase {
 		ArrangeContext arrangeContext,
 		string toolName,
 		Dictionary<string, object?> args) {
-		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(toolName,
-			because: "the clear-browser-session tool must be advertised before the end-to-end call can be executed");
+		IReadOnlyCollection<string> toolNames =
+			await arrangeContext.Session.ListReachableToolNamesAsync(arrangeContext.CancellationTokenSource.Token);
+		toolNames.Should().Contain(toolName,
+			because: "the clear-browser-session tool must be discoverable via the get-tool-contract compact index before the end-to-end call can be executed");
 		return await arrangeContext.Session.CallToolAsync(
 			toolName,
 			new Dictionary<string, object?> {

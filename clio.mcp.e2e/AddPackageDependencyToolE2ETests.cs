@@ -6,7 +6,6 @@ using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
-using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E;
@@ -25,18 +24,19 @@ public sealed class AddPackageDependencyToolE2ETests : McpContractFixtureBase {
 
 	[Test]
 	[AllureTag(ToolName)]
-	[AllureDescription("Starts the real clio MCP server and verifies that add-package-dependency is advertised in the tool list.")]
-	[AllureName("add-package-dependency tool is advertised by the MCP server")]
-	[Description("Verifies that add-package-dependency appears in the MCP tool advertisement from the real clio mcp-server process.")]
-	public async Task AddPackageDependency_Should_Be_Advertised_By_McpServer() {
+	[AllureDescription("Starts the real clio MCP server and verifies that add-package-dependency is discoverable via the get-tool-contract compact index on the lazy tool surface.")]
+	[AllureName("add-package-dependency tool is discoverable on the lazy surface")]
+	[Description("Verifies that add-package-dependency is discoverable via the get-tool-contract compact index exposed by the real clio mcp-server process.")]
+	public async Task AddPackageDependency_Should_Be_Discoverable_On_Lazy_Surface() {
 		// Arrange
 		await using var arrangeContext = Arrange();
 
 		// Act
-		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
+		IReadOnlyCollection<string> toolNames =
+			await arrangeContext.Session.ListReachableToolNamesAsync(arrangeContext.CancellationTokenSource.Token);
 
 		// Assert
-		AssertToolIsAdvertised(tools, ToolName);
+		AssertToolIsDiscoverable(toolNames, ToolName);
 	}
 
 	[Test]
@@ -82,10 +82,10 @@ public sealed class AddPackageDependencyToolE2ETests : McpContractFixtureBase {
 		});
 	}
 
-	[AllureStep("Assert tool is advertised by MCP server")]
-	private static void AssertToolIsAdvertised(IList<McpClientTool> tools, string toolName) {
-		tools.Select(t => t.Name).Should().Contain(toolName,
-			because: $"the {toolName} MCP tool must be advertised by the clio mcp-server process");
+	[AllureStep("Assert tool is discoverable on the lazy MCP surface")]
+	private static void AssertToolIsDiscoverable(IReadOnlyCollection<string> toolNames, string toolName) {
+		toolNames.Should().Contain(toolName,
+			because: $"the {toolName} MCP tool must be discoverable on the lazy surface (get-tool-contract compact index) even though it is not resident in tools/list");
 	}
 
 	[AllureStep("Assert command-oriented MCP tool failed")]

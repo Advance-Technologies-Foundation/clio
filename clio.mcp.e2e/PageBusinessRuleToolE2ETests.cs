@@ -7,9 +7,7 @@ using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
-using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
-using System.Text.Json;
 using System.Text.Json.Nodes;
 
 namespace Clio.Mcp.E2E;
@@ -26,42 +24,43 @@ public sealed class PageBusinessRuleToolE2ETests : McpContractFixtureBase {
 
 	[Category("McpE2E.NoEnvironment")]
 	[Test]
-	[Description("Advertises polymorphic anyOf runtime schema branches only for page actions through the real MCP server.")]
+	[Description("Exposes a page-only action contract for create-page-business-rules through the full get-tool-contract payload on the lazy tool surface.")]
 	[AllureTag(ToolName)]
-	[AllureName("Page business-rule MCP tool advertises page-only action schema")]
-	[AllureDescription("Starts the real clio MCP server, lists tools, and verifies create-page-business-rule exposes only page action branches.")]
+	[AllureName("Page business-rule MCP tool exposes a page-only action contract")]
+	[AllureDescription("Starts the real clio MCP server, expands the create-page-business-rules contract via get-tool-contract, and verifies the action enum validator lists only page actions.")]
 	public async Task BusinessRuleCreate_Should_Advertise_Page_Only_Action_Runtime_Schema() {
 		// Arrange
 		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
-		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(
+		// The tool is a hidden long-tail tool on the lazy surface, so its raw polymorphic anyOf runtime
+		// schema is no longer advertised through tools/list; the equivalent page-only action guarantee is
+		// carried by the curated contract's action enum validator returned by get-tool-contract.
+		CallToolResult contractResult = await arrangeContext.Session.CallToolAsync(
+			ToolContractGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> { ["tool-names"] = new[] { ToolName } }
+			},
 			arrangeContext.CancellationTokenSource.Token);
+		ToolContractGetResponse contracts =
+			EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(contractResult);
 
 		// Assert
-		McpClientTool tool = tools.Single(tool => tool.Name == ToolName);
-		JsonElement inputSchema = JsonSerializer.SerializeToElement(tool.ProtocolTool.InputSchema);
-		JsonElement anyOf = inputSchema
-			.GetProperty("properties")
-			.GetProperty("args")
-			.GetProperty("properties")
-			.GetProperty("rules").GetProperty("items")
-			.GetProperty("properties")
-			.GetProperty("actions")
-			.GetProperty("items")
-			.GetProperty("anyOf");
-		anyOf.GetArrayLength().Should().Be(7,
-			because: "the page tool should advertise only page action payload branches");
-		anyOf.EnumerateArray().Select(GetActionType).Should().BeEquivalentTo([
-				"hide-element",
-				"show-element",
-				"make-editable",
-				"make-read-only",
-				"make-required",
-				"make-optional",
-				"apply-static-filter"
-			],
-			because: "entity-only actions should not appear in the page business-rule runtime schema");
+		ToolContractDefinition contract = contracts.Tools.Should().ContainSingle(tool => tool.Name == ToolName,
+			because: "get-tool-contract must expand the create-page-business-rules contract on the lazy surface")
+			.Which;
+		ToolContractValidator actionValidator = contract.InputSchema.Validators.Should()
+			.ContainSingle(validator => validator.Code == "unsupported-action",
+				because: "the page business-rule contract must declare the enum validator that gates action types")
+			.Which;
+		actionValidator.Context.Should().Contain("hide-element",
+			because: "page-only visibility actions must be listed as supported page action types");
+		actionValidator.Context.Should().Contain("show-element",
+			because: "page-only visibility actions must be listed as supported page action types");
+		actionValidator.Context.Should().NotContain("set-values",
+			because: "entity-only actions should not appear in the page business-rule action contract");
+		actionValidator.Context.Should().NotContain("apply-filter,",
+			because: "entity-only filter actions should not appear in the page business-rule action contract");
 	}
 
 	[Category("McpE2E.NoEnvironment")]
@@ -228,9 +227,6 @@ public sealed class PageBusinessRuleToolE2ETests : McpContractFixtureBase {
 			target.AttributeName,
 			arrangeContext.CancellationTokenSource.Token);
 	}
-
-	private static string? GetActionType(JsonElement branch) =>
-		branch.GetProperty("properties").GetProperty("type").GetProperty("const").GetString();
 
 	private static bool ContainsText(string? value, string expectedText) =>
 		value != null && value.Contains(expectedText, StringComparison.OrdinalIgnoreCase);

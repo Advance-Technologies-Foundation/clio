@@ -844,10 +844,10 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
-	[Description("Returns a top-level MCP invocation error when get-tool-contract is called without the required args wrapper.")]
+	[Description("Returns the compact discovery index when get-tool-contract is called without any args — the no-args call is the documented lazy-surface discovery entrypoint, not a binding failure.")]
 	[AllureTag(ToolContractGetTool.ToolName)]
-	[AllureName("get-tool-contract rejects calls without the args wrapper")]
-	public async Task ToolContractGet_Should_Return_Invocation_Error_When_Args_Wrapper_Is_Missing() {
+	[AllureName("get-tool-contract returns the compact index when called without args")]
+	public async Task ToolContractGet_Should_Return_Compact_Index_When_Args_Wrapper_Is_Missing() {
 		// Arrange
 		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
@@ -858,8 +858,17 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 			context.CancellationTokenSource.Token);
 
 		// Assert
-		AssertInvocationFailure(callResult,
-			because: "MCP argument binding should reject transport envelopes that omit the required args wrapper");
+		// On the lazy tool surface a no-args get-tool-contract call is the documented compact-index
+		// discovery call (every args field is optional), so omitting the args wrapper must SUCCEED with
+		// the index payload — the historical binding-failure expectation is stale.
+		callResult.IsError.Should().NotBeTrue(
+			because: "a no-args get-tool-contract call is the documented compact-index discovery call and must not fail at the binding layer");
+		ToolContractGetResponse response =
+			EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(callResult);
+		response.Success.Should().BeTrue(
+			because: "the no-args discovery call should report structured success");
+		response.Index.Should().NotBeNullOrEmpty(
+			because: "the no-args discovery call should return the non-empty compact index of all clio MCP tools");
 	}
 
 	[Test]

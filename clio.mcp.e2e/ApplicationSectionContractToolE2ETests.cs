@@ -6,7 +6,6 @@ using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
-using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E;
@@ -23,22 +22,22 @@ public sealed class ApplicationSectionContractToolE2ETests : McpContractFixtureB
 	private const string SectionUpdateToolName = ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName;
 
 	[Test]
-	[Description("Advertises create-app-section in the MCP tool list so callers can discover the existing-app section creation tool.")]
+	[Description("Exposes create-app-section via the get-tool-contract compact index so callers can discover the existing-app section creation tool on the lazy surface.")]
 	[AllureFeature(SectionCreateToolName)]
 	[AllureTag(SectionCreateToolName)]
-	[AllureName("Application section create tool is advertised by the MCP server")]
-	[AllureDescription("Starts the real clio MCP server and verifies that create-app-section appears in the advertised tool manifest.")]
+	[AllureName("Application section create tool is discoverable on the lazy surface")]
+	[AllureDescription("Starts the real clio MCP server and verifies that create-app-section is discoverable via the get-tool-contract compact index.")]
 	public async Task ApplicationSectionCreate_Should_Be_Listed_By_Mcp_Server() {
 		// Arrange
 		await using ArrangeContext arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
-		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		IEnumerable<string> toolNames = tools.Select(tool => tool.Name);
+		IReadOnlyCollection<string> toolNames =
+			await arrangeContext.Session.ListReachableToolNamesAsync(arrangeContext.CancellationTokenSource.Token);
 
 		// Assert
 		toolNames.Should().Contain(SectionCreateToolName,
-			because: "create-app-section must be advertised so MCP callers can discover the existing-app section creation tool");
+			because: $"the {SectionCreateToolName} MCP tool must be discoverable on the lazy surface (get-tool-contract compact index) even though it is not resident in tools/list, so MCP callers can discover the existing-app section creation tool");
 	}
 
 	[Test]
@@ -76,22 +75,22 @@ public sealed class ApplicationSectionContractToolE2ETests : McpContractFixtureB
 	}
 
 	[Test]
-	[Description("Advertises update-app-section in the MCP tool list so callers can discover the existing-section update tool.")]
+	[Description("Exposes update-app-section via the get-tool-contract compact index so callers can discover the existing-section update tool on the lazy surface.")]
 	[AllureFeature(SectionUpdateToolName)]
 	[AllureTag(SectionUpdateToolName)]
-	[AllureName("Application section update tool is advertised by the MCP server")]
-	[AllureDescription("Starts the real clio MCP server and verifies that update-app-section appears in the advertised tool manifest.")]
+	[AllureName("Application section update tool is discoverable on the lazy surface")]
+	[AllureDescription("Starts the real clio MCP server and verifies that update-app-section is discoverable via the get-tool-contract compact index.")]
 	public async Task ApplicationSectionUpdate_Should_Be_Listed_By_Mcp_Server() {
 		// Arrange
 		await using ArrangeContext arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
-		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		IEnumerable<string> toolNames = tools.Select(tool => tool.Name);
+		IReadOnlyCollection<string> toolNames =
+			await arrangeContext.Session.ListReachableToolNamesAsync(arrangeContext.CancellationTokenSource.Token);
 
 		// Assert
 		toolNames.Should().Contain(SectionUpdateToolName,
-			because: "update-app-section must be advertised so MCP callers can discover the existing-section update tool");
+			because: $"the {SectionUpdateToolName} MCP tool must be discoverable on the lazy surface (get-tool-contract compact index) even though it is not resident in tools/list, so MCP callers can discover the existing-section update tool");
 	}
 
 	[Test]
