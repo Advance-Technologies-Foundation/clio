@@ -51,7 +51,7 @@ public sealed class RelatedPageBindingGuidanceResource {
 		         - `is-add` — true marks the page used when ADDING a record (the same page may be both default and add).
 		         - `is-ssp-default` — low-level RelatedPagesMetadata flag; leave false. This is NOT how the portal
 		           audience is set (see "Audiences" below — the portal audience is the role "All external users").
-		         - `role` — optional SysAdminUnit role UId for a role-specific page set (omit for all users).
+		         - `role` — optional audience role UId (or use `role-name`); only "All employees" and the portal "All external users" are supported, any other role is rejected (omit for all users).
 		         - `type-column-value` — optional value (used with `type-column-uid`) for a type-specific page set.
 		       - `type-column-uid` (optional) — UId of the type column that drives type-specific page sets. Omit for a
 		         single page set.
@@ -71,7 +71,7 @@ public sealed class RelatedPageBindingGuidanceResource {
 		       - on the CLI, use `--portal-default-page` / `--portal-add-page` (the portal add page defaults to the
 		         portal default page). When any portal page is given on the CLI, the `--default-page` / `--add-page`
 		         set is scoped to the "All employees" role — the general base default — and the portal pages are layered on top as the "All external users" override.
-		       A role name is resolved to its SysAdminUnit Id; an unknown role fails the call with a clear error.
+		       Only these two audiences are supported: "All employees" and "All external users". A custom role (by name or UId) is REJECTED — the designer offers no other audience, and runtime support for an arbitrary role in a related-page set is unverified, so it is not written. Within each (audience, type) cell there may be at most ONE is-default page and ONE is-add page (the same page may be both).
 		       Omitting the role entirely binds a single set that applies to all users. A general base default (is-default, no type-column-value, scoped to "All employees" or no role) is REQUIRED in every configuration — the page opened for a record and the fallback for any type or audience with no dedicated set; the default page also serves record creation, so add a separate is-add page only for a DIFFERENT add page. Portal ("All external users") and type-specific sets are layered on top. A portal-only (or other audience-scoped-only) binding is rejected — it would leave the general audience with no page to open.
 
 		       Typed pages — a different page set per record type

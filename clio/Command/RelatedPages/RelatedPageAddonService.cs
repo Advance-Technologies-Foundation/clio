@@ -95,15 +95,17 @@ internal sealed class RelatedPageAddonService(
 	private const string RelatedPageAddonName = "RelatedPage";
 	private const string EntitySchemaManagerName = "EntitySchemaManager";
 	private const string EmployeesRoleName = "All employees";
+	private const string PortalRoleName = "All external users";
 
 	/// <summary>
-	/// The standard platform audience roles are seeded <c>SysAdminUnit</c> records with fixed Ids that are
-	/// identical across Creatio installs — "All employees" (<c>a29a3ba5-…</c>) and the portal "All external
-	/// users" role, which Creatio core references by the seeded constant <c>SysAdminUnitAllPortalUsersId</c>.
-	/// Mapping them by their fixed Ids avoids a lookup for the common audiences and is safe because the Ids are
-	/// invariant. Any other (custom) role name still resolves through
-	/// <see cref="PageSchemaMetadataHelper.QueryRoleUId"/>, which excludes user rows and rejects an ambiguous
-	/// (multi-match) name.
+	/// The two audiences a related-page binding supports, mapped to their fixed seeded <c>SysAdminUnit</c> Ids
+	/// (identical across Creatio installs): the general audience "All employees" (<c>a29a3ba5-…</c>) and the
+	/// portal "All external users" role, which Creatio core references by the seeded constant
+	/// <c>SysAdminUnitAllPortalUsersId</c>. Mapping them by their fixed Ids avoids a lookup and is safe because
+	/// the Ids are invariant. These are the ONLY audiences the Interface Designer can produce: a custom role
+	/// (by name or UId) is rejected up front by <see cref="ValidateRequest"/>, because the platform's runtime
+	/// resolution of an arbitrary role in a related-page set has never been verified — writing one would risk a
+	/// silently non-working configuration.
 	/// </summary>
 	private static readonly IReadOnlyDictionary<string, string> KnownPlatformRoleIds =
 		new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
@@ -163,6 +165,20 @@ internal sealed class RelatedPageAddonService(
 					$"role '{page.Role}' is not a valid SysAdminUnit GUID; use role-name to resolve a role by name.");
 			}
 		}
+		// Strict parity with the Interface Designer: a binding supports ONLY the two audiences the designer can
+		// produce — the general audience (no role, or the "All employees" role) and the portal audience (the
+		// "All external users" role). A custom role (by name or by a valid-but-other UId) is rejected: the
+		// designer offers no such column, and the platform's runtime resolution of an arbitrary role in a
+		// related-page set has never been verified, so writing one would risk a config that silently never
+		// resolves. Checked after the GUID guard so a malformed role reports its own error first.
+		foreach (RelatedPageSpec page in request.Pages) {
+			if (!IsRecognizedAudience(page)) {
+				throw new ArgumentException(
+					"A page entry targets an unsupported audience. Related-page bindings support only the general "
+					+ "audience (no role, or the 'All employees' role) and the portal audience (the 'All external "
+					+ "users' role); a custom role is not supported.");
+			}
+		}
 		// A base default page for the GENERAL audience is mandatory: at least one is-default entry with no
 		// type-column-value whose audience is general — role-less OR the "All employees" role (the shape the
 		// Interface Designer writes for the base set). It is the page opened for a record and the fallback for any
@@ -179,6 +195,22 @@ internal sealed class RelatedPageAddonService(
 				+ "the fallback for any type or audience without a dedicated set). Portal ('All external users') and "
 				+ "type-specific pages are layered on top; a portal-only or other audience-scoped-only binding is rejected.");
 		}
+		// At most one default page and one add page per (audience x type) cell — the shape the designer enforces
+		// structurally. Two defaults for the same audience+type is ambiguous (which page opens?), as is two add
+		// pages. The SAME page may still be both the default and the add for a cell (one is-default entry + one
+		// is-add entry) — the designer's own two-entry pattern — so this guards duplicate FLAGS, not duplicate pages.
+		foreach (IGrouping<(string, string), RelatedPageSpec> cell in request.Pages.GroupBy(AudienceTypeCell)) {
+			if (cell.Count(page => page.IsDefault) > 1) {
+				throw new ArgumentException(
+					"More than one default page targets the same audience and type. Each (audience, type) may have "
+					+ "only one is-default page; remove the duplicate default.");
+			}
+			if (cell.Count(page => page.IsAdd) > 1) {
+				throw new ArgumentException(
+					"More than one add page targets the same audience and type. Each (audience, type) may have only "
+					+ "one is-add page; remove the duplicate add page.");
+			}
+		}
 	}
 
 	// A page targets the GENERAL audience when it is role-less (applies to everyone) or scoped to the "All
@@ -188,6 +220,26 @@ internal sealed class RelatedPageAddonService(
 		(string.IsNullOrWhiteSpace(page.Role) && string.IsNullOrWhiteSpace(page.RoleName))
 		|| string.Equals(page.RoleName?.Trim(), EmployeesRoleName, StringComparison.OrdinalIgnoreCase)
 		|| string.Equals(page.Role?.Trim(), KnownPlatformRoleIds[EmployeesRoleName], StringComparison.OrdinalIgnoreCase);
+
+	// A page targets the PORTAL audience when it is scoped to the "All external users" role — by name or by its
+	// seeded UId.
+	private static bool IsPortalAudience(RelatedPageSpec page) =>
+		string.Equals(page.RoleName?.Trim(), PortalRoleName, StringComparison.OrdinalIgnoreCase)
+		|| string.Equals(page.Role?.Trim(), KnownPlatformRoleIds[PortalRoleName], StringComparison.OrdinalIgnoreCase);
+
+	// A page's audience is recognized when it is the general audience (role-less / "All employees") or the portal
+	// audience ("All external users") — the only two the designer produces. Anything else is a custom role, which
+	// is not supported (see ValidateRequest).
+	private static bool IsRecognizedAudience(RelatedPageSpec page) =>
+		IsGeneralAudience(page) || IsPortalAudience(page);
+
+	// Normalizes a page to its (audience, type) cell for the uniqueness guard. The general audience (role-less or
+	// "All employees") collapses to one bucket — two untyped general defaults would both match an employee — and
+	// the portal audience to another; the type is the (trimmed, possibly null) TypeColumnValue. Only recognized
+	// audiences reach here (ValidateRequest rejects the rest first).
+	private static (string audience, string type) AudienceTypeCell(RelatedPageSpec page) =>
+		(IsPortalAudience(page) ? PortalRoleName : EmployeesRoleName,
+			string.IsNullOrWhiteSpace(page.TypeColumnValue) ? null : page.TypeColumnValue.Trim());
 
 	public RelatedPageAddonResult Create(RelatedPageAddonRequest request) {
 		ValidateRequest(request);
@@ -351,12 +403,12 @@ internal sealed class RelatedPageAddonService(
 	}
 
 	/// <summary>
-	/// Resolves every distinct role NAME referenced by the page specs to its <c>SysAdminUnit</c> Id once,
-	/// so a role is queried a single time even when several pages target the same audience. An explicit role
-	/// UId on a spec wins and is not resolved here. The standard platform audiences resolve to their fixed
-	/// seeded Ids; any other role name that cannot be found fails the whole call.
+	/// Resolves every distinct role NAME referenced by the page specs to its <c>SysAdminUnit</c> Id. An explicit
+	/// role UId on a spec wins and is not resolved here. Only the two supported audiences ("All employees" and
+	/// "All external users") map to their fixed seeded Ids — no remote lookup is issued; any other name is
+	/// rejected upstream by <see cref="ValidateRequest"/>, so it never reaches here.
 	/// </summary>
-	private IReadOnlyDictionary<string, string> ResolveRoleNames(IReadOnlyList<RelatedPageSpec> specs) {
+	private static IReadOnlyDictionary<string, string> ResolveRoleNames(IReadOnlyList<RelatedPageSpec> specs) {
 		var resolved = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 		foreach (RelatedPageSpec spec in specs) {
 			if (!string.IsNullOrWhiteSpace(spec.Role)
@@ -371,12 +423,12 @@ internal sealed class RelatedPageAddonService(
 				resolved[roleName] = knownRoleId;
 				continue;
 			}
-			(string roleUId, string roleError) = PageSchemaMetadataHelper.QueryRoleUId(
-				applicationClient, serviceUrlBuilder, roleName);
-			if (roleError != null) {
-				throw new InvalidOperationException(roleError);
-			}
-			resolved[roleName] = roleUId;
+			// Unreachable in the normal flow: ValidateRequest already rejects any audience outside the two known
+			// roles. Kept as a defensive guard so a caller that bypasses validation fails loudly rather than
+			// silently dropping the audience.
+			throw new InvalidOperationException(
+				$"Role name '{roleName}' is not a supported audience; only 'All employees' and 'All external users' "
+				+ "are supported.");
 		}
 		return resolved;
 	}

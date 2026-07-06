@@ -65,9 +65,6 @@ public sealed class RelatedPageAddonServiceTests {
 
 	private static string Rows(string uId) => $$"""{"success": true, "rows": [{"UId": "{{uId}}"}]}""";
 
-	// SysAdminUnit (role) rows expose the primary key as "Id", not "UId".
-	private static string RoleRows(string id) => $$"""{"success": true, "rows": [{"Id": "{{id}}"}]}""";
-
 	// SysSchema rows for the reverse page-UId -> name lookup expose the "Name" column.
 	private static string NameRow(string name) => $$"""{"success": true, "rows": [{"Name": "{{name}}"}]}""";
 
@@ -154,17 +151,17 @@ public sealed class RelatedPageAddonServiceTests {
 	}
 
 	[Test]
-	[Description("Stores an explicit role UId (on a role-scoped set layered over the role-less base) and the top-level type-column UId into the saved metadata.")]
+	[Description("Stores an explicit (known-audience) role UId — the portal role layered over the role-less base — and the top-level type-column UId into the saved metadata.")]
 	public void Create_ShouldStoreRoleAndTypeColumnIntoMetadata_WhenProvided() {
-		// Arrange
-		const string roleUId = "a29a3ba5-4b0d-de11-9a51-005056c00008";
+		// Arrange — the portal role's fixed seeded UId (a supported audience, so no SysAdminUnit lookup is issued).
+		const string portalRoleUId = "720b771c-e7a7-4f31-9cfb-52cd21c3739f";
 		const string typeColumnUId = "dd000000-0000-0000-0000-000000000003";
 		StubSelectQueue(Rows(PackageUId), Rows(PageAUId), Rows(PageBUId));
 
-		// Act — a role-less base default plus a role-scoped default layered on top.
+		// Act — a role-less base default plus a portal-scoped default layered on top (distinct audiences).
 		_service.Create(new RelatedPageAddonRequest("Custom", "UsrDeliveryItem", new[] {
 			new RelatedPageSpec("UsrDeliveryItemFormPage", IsDefault: true),
-			new RelatedPageSpec("UsrDeliveryItemRolePage", IsDefault: true, Role: roleUId)
+			new RelatedPageSpec("UsrDeliveryItemPortalPage", IsDefault: true, Role: portalRoleUId)
 		}, typeColumnUId));
 
 		// Assert
@@ -174,8 +171,8 @@ public sealed class RelatedPageAddonServiceTests {
 		JsonArray pages = metadata["Pages"]!.AsArray();
 		pages[0]!["Role"].Should().BeNull(
 			because: "the base default is role-less");
-		pages[1]!["Role"]!.GetValue<string>().Should().Be(roleUId,
-			because: "an explicit role UId is written verbatim onto the role-scoped page entry");
+		pages[1]!["Role"]!.GetValue<string>().Should().Be(portalRoleUId,
+			because: "an explicit (known-audience) role UId is written verbatim onto the role-scoped page entry");
 	}
 
 	[Test]
@@ -294,23 +291,35 @@ public sealed class RelatedPageAddonServiceTests {
 	}
 
 	[Test]
-	[Description("Resolves a non-system (custom) role name to its SysAdminUnit Id via the by-name query and writes it onto the page entry.")]
-	public void Create_ShouldResolveCustomRoleNameIntoPageRole_WhenRoleNameProvided() {
-		// Arrange — a non-system role name is resolved via the SysAdminUnit by-name query.
-		// Resolution order: package, role (by name, once), then each page.
-		const string customRoleUId = "11112222-3333-4444-5555-666677778888";
-		StubSelectQueue(Rows(PackageUId), RoleRows(customRoleUId), Rows(PageAUId), Rows(PageBUId));
-
-		// Act — a role-less base default plus a role-scoped set layered on top.
-		_service.Create(new RelatedPageAddonRequest("Custom", "UsrDeliveryItem", new[] {
+	[Description("Rejects a custom role NAME (outside the two supported audiences) before any remote call: the designer produces no such audience and runtime support for it is unverified.")]
+	public void Create_ShouldRejectCustomRoleName_WhenNotAKnownAudience() {
+		// Act — a role-less base default keeps the base-default check happy so we reach the audience guard.
+		Action act = () => _service.Create(new RelatedPageAddonRequest("Custom", "UsrDeliveryItem", new[] {
 			new RelatedPageSpec("UsrDeliveryItemFormPage", IsDefault: true),
-			new RelatedPageSpec("UsrDeliveryItemPortalPage", IsDefault: true, RoleName: "Sales Managers")
+			new RelatedPageSpec("UsrDeliveryItemRolePage", IsDefault: true, RoleName: "Sales Managers")
 		}, null));
 
 		// Assert
-		JsonArray pages = JsonNode.Parse(_savedSchema.MetaData)!["Pages"]!.AsArray();
-		pages[1]!["Role"]!.GetValue<string>().Should().Be(customRoleUId,
-			because: "a custom audience role name must be resolved to its SysAdminUnit Id in the saved metadata");
+		act.Should().Throw<ArgumentException>().WithMessage("*unsupported audience*",
+			because: "only the general and portal audiences are supported; a custom role name is rejected");
+		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!);
+		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().SaveSchema(default!);
+	}
+
+	[Test]
+	[Description("Rejects a valid-but-unknown role UId (a custom role's GUID, not one of the two supported audiences) before any remote call.")]
+	public void Create_ShouldRejectUnknownRoleUid_WhenNotAKnownAudience() {
+		// Act — a well-formed GUID that is not the All-employees or All-external-users seeded Id.
+		Action act = () => _service.Create(new RelatedPageAddonRequest("Custom", "UsrDeliveryItem", new[] {
+			new RelatedPageSpec("UsrDeliveryItemFormPage", IsDefault: true),
+			new RelatedPageSpec("UsrDeliveryItemRolePage", IsDefault: true, Role: "11112222-3333-4444-5555-666677778888")
+		}, null));
+
+		// Assert
+		act.Should().Throw<ArgumentException>().WithMessage("*unsupported audience*",
+			because: "a custom role UId is not one of the two supported audiences and must be rejected");
+		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!);
+		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().SaveSchema(default!);
 	}
 
 	[Test]
@@ -393,26 +402,6 @@ public sealed class RelatedPageAddonServiceTests {
 			because: "the first page is the untyped default set (the fallback when a record's type has no set)");
 		pages[1]!["TypeColumnValue"]!.GetValue<string>().Should().Be(typeValue,
 			because: "the typed page entry must carry the type value record Id it applies to");
-	}
-
-	[Test]
-	[Description("Fails without saving when a custom role name cannot be resolved to a SysAdminUnit.")]
-	public void Create_ShouldThrowWithoutSaving_WhenRoleNameNotFound() {
-		// Arrange — package resolves, then the custom role lookup returns no rows.
-		StubSelectQueue(Rows(PackageUId), """{"success": true, "rows": []}""");
-
-		// Act — a role-less base default keeps the request valid so it reaches role-name resolution.
-		Action act = () => _service.Create(new RelatedPageAddonRequest("Custom", "UsrDeliveryItem", new[] {
-			new RelatedPageSpec("UsrDeliveryItemFormPage", IsDefault: true),
-			new RelatedPageSpec("UsrDeliveryItemPortalPage", IsDefault: true, RoleName: "No Such Role")
-		}, null));
-
-		// Assert
-		act.Should().Throw<InvalidOperationException>().WithMessage("*No Such Role*not found*",
-			because: "an unresolved role name must fail with a clear message naming the role");
-		// Role-name resolution happens before the add-on round-trip, so neither GetSchema nor SaveSchema runs.
-		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().GetSchema(default!);
-		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().SaveSchema(default!);
 	}
 
 	[Test]
@@ -613,31 +602,6 @@ public sealed class RelatedPageAddonServiceTests {
 	}
 
 	[Test]
-	[Description("Resolves a custom role name only once even when several pages target the same audience, avoiding a redundant SysAdminUnit query per page.")]
-	public void Create_ShouldResolveCustomRoleNameOnlyOnce_WhenSharedByMultiplePages() {
-		// Arrange — package, ONE role query (deduped across the two role-scoped pages), then one query per distinct
-		// page. If the role were re-queried per page the queue would be exhausted and Dequeue would throw.
-		const string customRoleUId = "11112222-3333-4444-5555-666677778888";
-		StubSelectQueue(Rows(PackageUId), RoleRows(customRoleUId), Rows(PageAUId), Rows(PageBUId), Rows(PageBUId));
-
-		// Act — a role-less base default plus a custom-role default+add set layered on top.
-		_service.Create(new RelatedPageAddonRequest("Custom", "UsrDeliveryItem", new[] {
-			new RelatedPageSpec("UsrDeliveryItemFormPage", IsDefault: true),
-			new RelatedPageSpec("UsrDeliveryItemPortalPage", IsDefault: true, RoleName: "Sales Managers"),
-			new RelatedPageSpec("UsrDeliveryItemPortalAddPage", IsAdd: true, RoleName: "Sales Managers")
-		}, null));
-
-		// Assert — exactly one SysAdminUnit (role by-name) query was issued for the two role-scoped pages.
-		_applicationClient.Received(1).ExecutePostRequest(SelectQueryUrl,
-			Arg.Is<string>(body => body.Contains("SysAdminUnit")));
-		JsonArray pages = JsonNode.Parse(_savedSchema.MetaData)!["Pages"]!.AsArray();
-		pages[1]!["Role"]!.GetValue<string>().Should().Be(customRoleUId,
-			because: "the role-scoped default uses the single resolved custom-role Id");
-		pages[2]!["Role"]!.GetValue<string>().Should().Be(customRoleUId,
-			because: "the role-scoped add page reuses the resolved role without a second query");
-	}
-
-	[Test]
 	[Description("Serializes a role-less default page's Role as JSON null (the set applies to all users) rather than omitting it or writing an empty string.")]
 	public void Create_ShouldSerializeRoleAsNull_WhenDefaultIsRoleLess() {
 		// Arrange
@@ -687,43 +651,48 @@ public sealed class RelatedPageAddonServiceTests {
 	}
 
 	[Test]
-	[Description("Fails with an ambiguity error when a custom role name matches more than one SysAdminUnit role, rather than silently binding whichever row the platform returns first.")]
-	public void Create_ShouldThrow_WhenRoleNameIsAmbiguous() {
-		// Arrange — package resolves, then the SysAdminUnit by-name lookup returns two matching rows.
-		const string firstRoleId = "11112222-3333-4444-5555-666677778888";
-		const string secondRoleId = "99998888-7777-6666-5555-444433332222";
-		StubSelectQueue(Rows(PackageUId),
-			$$"""{"success": true, "rows": [{"Id": "{{firstRoleId}}"}, {"Id": "{{secondRoleId}}"}]}""");
-
-		// Act — a role-less base default plus a role-scoped page whose name is ambiguous.
-		Action act = () => _service.Create(new RelatedPageAddonRequest("Custom", "UsrDeliveryItem", new[] {
+	[Description("Rejects two default pages targeting the same audience and type (ambiguous 'which page opens?') before any remote call.")]
+	public void Create_ShouldThrow_WhenTwoDefaultsForSameAudienceAndType() {
+		// Act — two untyped, role-less (general) defaults: the same (audience, type) cell.
+		Action act = () => _service.Create(Request(
 			new RelatedPageSpec("UsrDeliveryItemFormPage", IsDefault: true),
-			new RelatedPageSpec("UsrDeliveryItemPortalPage", IsDefault: true, RoleName: "Ambiguous Role")
-		}, null));
+			new RelatedPageSpec("UsrDeliveryItemOtherPage", IsDefault: true)));
 
-		// Assert — role resolution happens before the add-on round-trip, so nothing is saved.
-		act.Should().Throw<InvalidOperationException>().WithMessage("*ambiguous*",
-			because: "a role name matching more than one role must be rejected, not silently resolved to the first row");
-		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().GetSchema(default!);
+		// Assert
+		act.Should().Throw<ArgumentException>().WithMessage("*more than one default page*",
+			because: "each (audience, type) cell may have only one default page");
+		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!);
 		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().SaveSchema(default!);
 	}
 
 	[Test]
-	[Description("The SysAdminUnit role lookup carries the SysAdminUnitTypeValue exclusion so a role name can never resolve to a user account.")]
-	public void Create_ShouldExcludeUserRowsFromRoleLookup_ViaSysAdminUnitTypeFilter() {
-		// Arrange
-		const string customRoleUId = "11112222-3333-4444-5555-666677778888";
-		StubSelectQueue(Rows(PackageUId), RoleRows(customRoleUId), Rows(PageAUId), Rows(PageBUId));
-
-		// Act — resolving a custom role name issues the SysAdminUnit by-name query.
-		_service.Create(new RelatedPageAddonRequest("Custom", "UsrDeliveryItem", new[] {
+	[Description("Treats a role-less default and an 'All employees' default as the same general cell, rejecting the pair as duplicate defaults.")]
+	public void Create_ShouldThrow_WhenRoleLessAndAllEmployeesDefaultsCollide() {
+		// Act — role-less applies to everyone and "All employees" to employees; both untyped defaults would both
+		// match an employee, so they normalize to the same general cell.
+		Action act = () => _service.Create(Request(
 			new RelatedPageSpec("UsrDeliveryItemFormPage", IsDefault: true),
-			new RelatedPageSpec("UsrDeliveryItemPortalPage", IsDefault: true, RoleName: "Sales Managers")
-		}, null));
+			new RelatedPageSpec("UsrDeliveryItemOtherPage", IsDefault: true, RoleName: "All employees")));
 
-		// Assert — the (only) SysAdminUnit query carries the user-exclusion predicate on SysAdminUnitTypeValue.
-		_applicationClient.Received(1).ExecutePostRequest(SelectQueryUrl,
-			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"SysAdminUnit\"")
-				&& body.Contains("SysAdminUnitTypeValue")));
+		// Assert
+		act.Should().Throw<ArgumentException>().WithMessage("*more than one default page*",
+			because: "role-less and 'All employees' collapse to one general cell; two defaults there are ambiguous");
+		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().SaveSchema(default!);
+	}
+
+	[Test]
+	[Description("Rejects two add pages targeting the same audience and type before any remote call.")]
+	public void Create_ShouldThrow_WhenTwoAddPagesForSameAudienceAndType() {
+		// Act — a valid base default, then two add pages for the same general cell.
+		Action act = () => _service.Create(Request(
+			new RelatedPageSpec("UsrDeliveryItemFormPage", IsDefault: true),
+			new RelatedPageSpec("UsrDeliveryItemAddPage", IsAdd: true),
+			new RelatedPageSpec("UsrDeliveryItemOtherAddPage", IsAdd: true)));
+
+		// Assert
+		act.Should().Throw<ArgumentException>().WithMessage("*more than one add page*",
+			because: "each (audience, type) cell may have only one add page");
+		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!);
+		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().SaveSchema(default!);
 	}
 }

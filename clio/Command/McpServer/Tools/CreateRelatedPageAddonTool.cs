@@ -132,7 +132,7 @@ public sealed record RelatedPageArg(
 	bool? IsSspDefault,
 
 	[property: JsonPropertyName("role")]
-	[property: Description("Optional SysAdminUnit role UId for a role/audience-specific page set. Omit for all users. Prefer role-name unless you already have the GUID.")]
+	[property: Description("Optional audience role UId. Only two audiences are supported: 'All employees' (a29a3ba5-4b0d-de11-9a51-005056c00008) and the portal 'All external users' (720b771c-e7a7-4f31-9cfb-52cd21c3739f); any other role UId is rejected. Omit for all users (the general audience). Prefer role-name.")]
 	string? Role,
 
 	[property: JsonPropertyName("type-column-value")]
@@ -140,6 +140,6 @@ public sealed record RelatedPageArg(
 	string? TypeColumnValue,
 
 	[property: JsonPropertyName("role-name")]
-	[property: Description("Optional audience role NAME, resolved to its UId (alternative to role). Use 'All external users' for the portal/self-service audience or 'All employees' for internal users. Omit for all users.")]
+	[property: Description("Optional audience role NAME (alternative to role). Only 'All external users' (portal/self-service) and 'All employees' (internal) are supported — any other role name is rejected, because the Interface Designer offers no other audience. Omit for all users (the general audience).")]
 	string? RoleName = null
 );
