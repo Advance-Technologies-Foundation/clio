@@ -13,6 +13,15 @@ clio modify-entity-schema-column [options]
 
 Add, modify, or remove a column in a remote Creatio entity schema.
 
+After saving the column the command publishes the configuration and requests an
+OData entities rebuild, so the changed column becomes visible to lookup pickers
+and reachable over OData (`/0/odata/<Entity>`) without a manual compile. The
+rebuild runs in the background — OData access appears within a few minutes, not
+immediately. A 404 (or "The request is invalid") from OData right after the
+change is the expected async gap; wait and retry rather than running a full
+compile. Each call publishes once, so to change several columns at once batch
+them through `update-entity-schema` instead of one call per column.
+
 ## Examples
 
 ```bash

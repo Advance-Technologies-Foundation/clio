@@ -9,7 +9,6 @@ namespace Clio.Command.McpServer.Resources.ProcessDesigner;
 /// (<c>crt.RunBusinessProcessRequest</c>) into a page schema via <c>update-page</c>.
 /// </summary>
 [McpServerResourceType]
-[FeatureToggle("process-designer")]
 public sealed class RunProcessButtonGuidanceResource {
 	private const string DocsScheme = "docs";
 	private const string ResourcePath = "mcp/guides/run-process-button";
