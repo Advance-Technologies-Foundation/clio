@@ -198,9 +198,7 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 	[AllureName("get-tool-contract returns a compact tool index by default and expands full contracts on detail=full")]
 	public async Task ToolContractGet_Should_Return_Compact_Index_By_Default_And_Full_On_Detail() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		ToolContractGetResponse indexResponse = await CallAsync(
