@@ -575,6 +575,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="link-package-store"></a>
 <a id="lps"></a>
 - [`link-package-store`](docs/commands/link-package-store.md) - Link PackageStore packages into an environment, `lps`
+<a id="mcp-http"></a>
+- [`mcp-http`](docs/commands/mcp-http.md) - Start the MCP server over HTTP
 <a id="mcp-server"></a>
 <a id="mcp"></a>
 - [`mcp-server`](docs/commands/mcp-server.md) - Start the MCP server over stdio, `mcp`
