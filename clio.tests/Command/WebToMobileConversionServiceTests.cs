@@ -17,7 +17,7 @@ public sealed class WebToMobileConversionServiceTests {
 
 	private static readonly IReadOnlySet<string> MobileTypes =
 		new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
-			"crt.Input", "crt.Toggle", "crt.RichTextEditor", "crt.List", "crt.FolderTreeActions", "crt.GridContainer", "crt.Label", "crt.IndicatorWidget"
+			"crt.Input", "crt.Toggle", "crt.RichTextEditor", "crt.List", "crt.FolderTreeActions", "crt.GridContainer", "crt.Label", "crt.IndicatorWidget", "crt.CommunicationOptions"
 		};
 
 	private static readonly IReadOnlySet<string> WebTypes =
@@ -500,6 +500,28 @@ public sealed class WebToMobileConversionServiceTests {
 		attrs.ContainsKey("AttrA").Should().BeFalse(because: "referenced only by the dropped ColorButton");
 		attrs.ContainsKey("AttrB").Should().BeTrue(because: "referenced by the surviving NameField");
 		attrs.ContainsKey("AttrC").Should().BeTrue(because: "no consumer → kept");
+	}
+
+	[Test]
+	[Description("An attribute a SURVIVING element only captions off via $Resources.Strings.<attr> is KEPT even when a dropped element also references it — the resource reference counts as a consumer (better to keep a spare attribute than drop a needed one).")]
+	public void Analyze_ViewModelConfig_KeepsAttributeReferencedBySurvivingCaption() {
+		PageBundleInfo bundle = Bundle(
+			viewConfigJson: """
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "Lookup", "type": "crt.Input", "label": "$Resources.Strings.LookupAttribute_ivqsxmp", "control": "$SomeControl" },
+				{ "name": "Color", "type": "crt.ColorButton", "value": "$LookupAttribute_ivqsxmp" } ] } ]
+			""",
+			viewModelConfigJson: """
+			{ "attributes": {
+				"LookupAttribute_ivqsxmp": { "modelConfig": { "path": "PDS.QualifiedContact" } } } }
+			""");
+
+		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true)));
+
+		Element(guide, "Color").Operation.Should().Be("drop", because: "crt.ColorButton is unsupported on mobile");
+		JsonObject attrs = guide.ViewModelConfig!.AsObject()["attributes"]!.AsObject();
+		attrs.ContainsKey("LookupAttribute_ivqsxmp").Should().BeTrue(
+			because: "the surviving Lookup field auto-captions off it via $Resources.Strings.<attr>, so it is still used");
 	}
 
 	[Test]
@@ -1076,6 +1098,38 @@ public sealed class WebToMobileConversionServiceTests {
 		// tokens stay verbatim in the carried values.
 		Element(guide, "EmailsSentNewMetric").MobileValues!.ToJsonString()
 			.Should().Contain("#ResourceString(EmailsSentNewMetric_title)#");
+	}
+
+	[Test]
+	[Description("`items` as a STRING is a real collection binding and is carried into mobileValues (e.g. crt.CommunicationOptions items: \"$Attr\"); `items` as an ARRAY of child elements is structural and is not carried (the tree walk emits the children).")]
+	public void Analyze_ItemsStringBinding_IsCarried_NotTreatedAsStructuralChildren() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "ContactCommunicationOptions", "type": "crt.CommunicationOptions",
+				  "items": "$CommunicationOptions_f87c6ae", "columnsCount": 1, "masterRecordColumnName": "Contact" } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.CommunicationOptions", false)));
+
+		JsonObject vals = Element(guide, "ContactCommunicationOptions").MobileValues!.AsObject();
+		vals["items"]!.GetValue<string>().Should().Be("$CommunicationOptions_f87c6ae", "a string items binding is a real collection property, not structural children");
+		vals.Should().ContainKey("columnsCount");
+		vals.Should().ContainKey("masterRecordColumnName");
+	}
+
+	[Test]
+	[Description("A field's OWN web label (e.g. $Resources.Strings.<attribute>, which auto-resolves to the bound column caption) is carried verbatim and NOT overwritten with a synthesized column-code key — that overwrite is only a fallback for fields with no label.")]
+	public void Analyze_FieldWithWebLabel_CarriesItVerbatim_NotOverwritten() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "QualifiedContact", "type": "crt.Input",
+				  "label": "$Resources.Strings.Parameter_r8t9n2f", "control": "$Parameter_r8t9n2f" } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.Input", false)));
+
+		Element(guide, "QualifiedContact").MobileValues!.AsObject()["label"]!.GetValue<string>()
+			.Should().Be("$Resources.Strings.Parameter_r8t9n2f", "the field's own web label must survive, not be replaced by a guessed key");
 	}
 
 	#endregion

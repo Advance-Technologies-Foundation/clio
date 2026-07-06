@@ -665,7 +665,7 @@ public static class WebToMobileAnalysisService {
 			}
 			string name = node["name"]?.ToString();
 			if (!string.IsNullOrEmpty(name)) {
-				foreach (string attr in ExtractDollarRefs(node)) {
+				foreach (string attr in ExtractConsumedAttributes(node)) {
 					if (!consumers.TryGetValue(attr, out HashSet<string> set)) {
 						set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 						consumers[attr] = set;
@@ -676,6 +676,28 @@ public static class WebToMobileAnalysisService {
 			if (node["items"] is JArray items) {
 				WalkConsumers(items, consumers);
 			}
+		}
+	}
+
+	private static readonly Regex ResourceStringsRefPattern =
+		new(@"\$Resources\.Strings\.([A-Za-z_][A-Za-z0-9_]*)", RegexOptions.Compiled);
+
+	/// <summary>
+	/// Every viewModelConfig attribute a node references — both plain <c>$Attr</c> bindings AND
+	/// <c>$Resources.Strings.&lt;attr&gt;</c> label/caption references (the platform auto-provides that
+	/// resource from the attribute's bound column, so referencing it USES the attribute). Used to decide
+	/// which attributes survive: an attribute is dropped only when EVERY node that references it (in either
+	/// form) is itself dropped — so an attribute a surviving element captions off is always kept.
+	/// </summary>
+	private static IEnumerable<string> ExtractConsumedAttributes(JObject node) {
+		var clone = (JObject)node.DeepClone();
+		clone.Remove("items");
+		string json = clone.ToString(Newtonsoft.Json.Formatting.None);
+		foreach (Match match in ResourceStringsRefPattern.Matches(json)) {
+			yield return match.Groups[1].Value;
+		}
+		foreach (Match match in Regex.Matches(json, @"\$([A-Za-z_][A-Za-z0-9_]*)")) {
+			yield return match.Groups[1].Value;
 		}
 	}
 
@@ -1050,14 +1072,17 @@ public static class WebToMobileAnalysisService {
 	}
 
 	/// <summary>
-	/// Source-node properties never copied into the prebuilt mobile <c>values</c>: structural keys
-	/// (<c>items</c>/<c>name</c>/<c>type</c>), the web-only data-source router (<c>dataSourceName</c>), and the
-	/// value binding (<c>control</c>/<c>value</c>) — the binding is a type-specific rename (e.g. a mobile
-	/// ComboBox must bind via <c>value</c>; <c>control</c> needs <c>items</c> or it crashes) and is left to the
-	/// caller to add. Everything else the mobile component supports is carried verbatim.
+	/// Source-node properties never copied into the prebuilt mobile <c>values</c>: the element identity/type
+	/// (<c>name</c>/<c>type</c>), the web-only data-source router (<c>dataSourceName</c>), and the value
+	/// binding (<c>control</c>/<c>value</c>) — the binding is a type-specific rename (e.g. a mobile ComboBox
+	/// must bind via <c>value</c>; <c>control</c> needs <c>items</c> or it crashes) and is left to the caller
+	/// to add. NOTE: <c>items</c> is NOT here — it is excluded only when it is an ARRAY of child view elements
+	/// (structural, handled by the tree walk); as a STRING it is a real collection binding (e.g.
+	/// <c>crt.CommunicationOptions</c>/<c>crt.List</c> <c>items: "$Attr"</c>) and is carried like any other
+	/// property. Everything else the mobile component supports is carried verbatim.
 	/// </summary>
 	private static readonly HashSet<string> ExcludedSourceProps = new(StringComparer.OrdinalIgnoreCase) {
-		"items", "name", "type", "dataSourceName", "control", "value"
+		"name", "type", "dataSourceName", "control", "value"
 	};
 
 	/// <summary>
@@ -1078,6 +1103,12 @@ public static class WebToMobileAnalysisService {
 		HashSet<string> webAllowed = AllowedProps(ctx.WebByType, node["type"]?.ToString());
 		var values = new JObject { ["type"] = mobileType };
 		foreach (JProperty prop in node.Properties()) {
+			// `items` as an ARRAY is the child view-element collection — structural, emitted by the tree
+			// walk, not a value. `items` as a STRING is a real collection binding (e.g. "$Attr") and is
+			// carried like any other property below.
+			if (string.Equals(prop.Name, "items", StringComparison.OrdinalIgnoreCase) && prop.Value is JArray) {
+				continue;
+			}
 			if (ExcludedSourceProps.Contains(prop.Name)) {
 				continue;
 			}
@@ -1095,9 +1126,15 @@ public static class WebToMobileAnalysisService {
 			}
 		}
 		ProcessEventBindings(ctx, node, values, mobileName);
-		string label = ResolveFieldLabel(ctx, node, mobileName, mobileType, caption);
-		if (!string.IsNullOrEmpty(label)) {
-			values["label"] = label;
+		// Synthesize a field label ONLY as a fallback — when the source did not carry one. Most fields carry
+		// their own web `label` verbatim above (e.g. "$Resources.Strings.<attribute>", which auto-resolves to
+		// the bound column's caption); overwriting it with a guessed column-code key breaks that resolution.
+		bool hasCarriedLabel = values["label"] is { } lbl && !string.IsNullOrWhiteSpace(lbl.ToString());
+		if (!hasCarriedLabel) {
+			string label = ResolveFieldLabel(ctx, node, mobileName, mobileType, caption);
+			if (!string.IsNullOrEmpty(label)) {
+				values["label"] = label;
+			}
 		}
 		try {
 			return JsonNode.Parse(values.ToString(Newtonsoft.Json.Formatting.None));
