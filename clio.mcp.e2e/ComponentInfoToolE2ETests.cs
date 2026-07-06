@@ -424,7 +424,7 @@ public sealed class ComponentInfoToolE2ETests : McpContractFixtureBase {
 				because: "the composite declares no docs, so documentationUnavailable is omitted rather than signalling a fetch failure");
 		}
 		finally {
-			File.Delete(fixturePath);
+			TryDeleteFixture(fixturePath);
 		}
 	}
 
@@ -474,7 +474,7 @@ public sealed class ComponentInfoToolE2ETests : McpContractFixtureBase {
 				because: "the matched composite is surfaced for the caller to fetch over the wire");
 		}
 		finally {
-			File.Delete(fixturePath);
+			TryDeleteFixture(fixturePath);
 		}
 	}
 
@@ -548,7 +548,7 @@ public sealed class ComponentInfoToolE2ETests : McpContractFixtureBase {
 				because: "the fallback must defer to the component's applicability constraints");
 		}
 		finally {
-			File.Delete(fixturePath);
+			TryDeleteFixture(fixturePath);
 		}
 	}
 
@@ -566,6 +566,19 @@ public sealed class ComponentInfoToolE2ETests : McpContractFixtureBase {
 		callResult.IsError.Should().NotBeTrue(
 			because: "get-component-info should return structured responses instead of top-level MCP failures");
 		return EntitySchemaStructuredResultParser.Extract<ComponentInfoResponse>(callResult);
+	}
+
+	// Best-effort teardown: the spawned clio process releases the fixture handle on its own shutdown,
+	// but on Windows that release can lag briefly — swallow the IOException so it never masks the real
+	// test result. The temp file is Guid-named, so a rare leaked file is harmless.
+	private static void TryDeleteFixture(string fixturePath) {
+		try {
+			if (File.Exists(fixturePath)) {
+				File.Delete(fixturePath);
+			}
+		}
+		catch (IOException) {
+		}
 	}
 
 }
