@@ -131,6 +131,10 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="add-pkg-dependency"></a>
 <a id="add-pkg-dep"></a>
 - [`add-package-dependency`](docs/commands/add-package-dependency.md) - Add one or more package dependencies to a package, `add-pkg-dependency`, `add-pkg-dep`
+<a id="remove-package-dependency"></a>
+<a id="remove-pkg-dependency"></a>
+<a id="remove-pkg-dep"></a>
+- [`remove-package-dependency`](docs/commands/remove-package-dependency.md) - Remove one or more package dependencies from a package, `remove-pkg-dependency`, `remove-pkg-dep`
 <a id="activate-pkg"></a>
 <a id="activate-package"></a>
 <a id="apkg"></a>

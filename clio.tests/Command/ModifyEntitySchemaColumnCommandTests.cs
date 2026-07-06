@@ -159,4 +159,5 @@ internal class ModifyEntitySchemaColumnCommandTests : BaseCommandTests<ModifyEnt
 		_columnManager.Received(1).ModifyColumn(options);
 		_logger.Received(1).WriteInfo("Done");
 	}
+
 }

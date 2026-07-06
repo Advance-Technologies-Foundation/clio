@@ -22,15 +22,15 @@ namespace Clio.Mcp.E2E;
 [TestFixture]
 [Category("McpE2E.NoEnvironment")]
 [AllureFeature("multi-agent-skill-management")]
-[NonParallelizable]
-public sealed class SkillManagementToolE2ETests {
+[Parallelizable(ParallelScope.Self)]
+public sealed class SkillManagementToolE2ETests : McpContractFixtureBase {
 	[Test]
 	[AllureTag(InstallSkillsTool.ToolName)]
 	[Description("The real clio MCP server advertises install-skills, update-skill, and delete-skill.")]
 	[AllureName("Skill management tools are advertised")]
 	public async Task SkillManagementTools_ShouldBeAdvertised() {
 		// Arrange
-		await using SkillManagementArrangeContext context = await ArrangeAsync();
+		await using var context = Arrange();
 
 		// Act
 		IList<McpClientTool> tools = await context.Session.ListToolsAsync(context.CancellationTokenSource.Token);
@@ -48,7 +48,7 @@ public sealed class SkillManagementToolE2ETests {
 	[AllureName("Install Skills tool is a no-op when no agents are detected")]
 	public async Task InstallSkills_ShouldSucceedAsNoOp_WhenNoAgentsDetected() {
 		// Arrange
-		await using SkillManagementArrangeContext context = await ArrangeAsync();
+		await using var context = Arrange();
 
 		// Act
 		SkillManagementActResult actResult = await CallToolAsync(
@@ -65,7 +65,7 @@ public sealed class SkillManagementToolE2ETests {
 	[AllureName("Install Skills tool rejects an unknown target")]
 	public async Task InstallSkills_ShouldFail_WhenTargetIsUnknown() {
 		// Arrange
-		await using SkillManagementArrangeContext context = await ArrangeAsync();
+		await using var context = Arrange();
 
 		// Act
 		SkillManagementActResult actResult = await CallToolAsync(
@@ -83,7 +83,7 @@ public sealed class SkillManagementToolE2ETests {
 	[AllureName("Delete Skill tool is a no-op when no agents are detected")]
 	public async Task DeleteSkill_ShouldSucceedAsNoOp_WhenNoAgentsDetected() {
 		// Arrange
-		await using SkillManagementArrangeContext context = await ArrangeAsync();
+		await using var context = Arrange();
 
 		// Act
 		SkillManagementActResult actResult = await CallToolAsync(
@@ -94,26 +94,17 @@ public sealed class SkillManagementToolE2ETests {
 		AssertCommandExitCode(actResult, 0);
 	}
 
-	[AllureStep("Arrange an isolated HOME and MCP session")]
-	private static async Task<SkillManagementArrangeContext> ArrangeAsync() {
-		string rootDirectory = Path.Combine(Path.GetTempPath(), $"clio-skill-mgmt-e2e-{Guid.NewGuid():N}");
-		string isolatedHome = Path.Combine(rootDirectory, "home");
-		Directory.CreateDirectory(isolatedHome);
-
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+	/// <inheritdoc />
+	private protected override void ConfigureMcpServerSettings(McpE2ESettings settings) {
+		string isolatedHome = CreateFixtureDirectory("skill-management-home");
 		// Redirect the child clio process's user home so no real agent is detected.
 		settings.ProcessEnvironmentVariables["USERPROFILE"] = isolatedHome;
 		settings.ProcessEnvironmentVariables["HOME"] = isolatedHome;
-
-		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		return new SkillManagementArrangeContext(rootDirectory, session, cancellationTokenSource);
 	}
 
 	[AllureStep("Call a skill management tool")]
 	private static async Task<SkillManagementActResult> CallToolAsync(
-		SkillManagementArrangeContext context,
+		ArrangeContext context,
 		string toolName,
 		Dictionary<string, object?> arguments) {
 		IList<McpClientTool> tools = await context.Session.ListToolsAsync(context.CancellationTokenSource.Token);
@@ -153,19 +144,6 @@ public sealed class SkillManagementToolE2ETests {
 		}
 
 		return string.Join(" | ", callResult.Content.Select(content => content?.ToString() ?? "<null>"));
-	}
-
-	private sealed record SkillManagementArrangeContext(
-		string RootDirectory,
-		McpServerSession Session,
-		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
-			CancellationTokenSource.Dispose();
-			if (Directory.Exists(RootDirectory)) {
-				Directory.Delete(RootDirectory, recursive: true);
-			}
-		}
 	}
 
 	private sealed record SkillManagementActResult(

@@ -3237,6 +3237,77 @@ public class PageToolsTests
 	}
 
 	[Test]
+	[Description("TryUpdatePage materializes the parent schema caption onto a newly created replacing schema so its runtime title is not lost")]
+	public void TryUpdatePage_WhenCreatingReplacing_PreservesParentCaption() {
+		// Arrange
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		var hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		const string originalUId = "f537fd79-9bdc-43ea-a9ce-b068c29d0b22";
+		const string originalPackageUId = "2ecba2bd-b810-47a5-a1b1-08c888529d6c";
+		const string virtualDesignPackageUId = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(ci => "http://test" + ci.ArgAt<string>(0));
+		hierarchyClient.GetDesignPackageUId(originalUId).Returns(virtualDesignPackageUId);
+		hierarchyClient.GetParentSchemas(originalUId, virtualDesignPackageUId).Returns(new List<PageDesignerHierarchySchema> {
+			new() { UId = originalUId, Name = "Accounts_ListPage", PackageUId = originalPackageUId, PackageName = "CrtCustomer360App" }
+		});
+		string validBody = "define(\"Accounts_ListPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		var parentCaption = new JArray {
+			new JObject { ["cultureName"] = "en-US", ["value"] = "Accounts list" },
+			new JObject { ["cultureName"] = "uk-UA", ["value"] = "Список контрагентів" }
+		};
+		var metadataResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray { new JObject { ["UId"] = originalUId } }
+		};
+		var getSchemaResponse = new JObject {
+			["success"] = true,
+			["schema"] = new JObject {
+				["uId"] = originalUId,
+				["name"] = "Accounts_ListPage",
+				["schemaType"] = 9,
+				["schemaVersion"] = 1,
+				["body"] = "original body",
+				["caption"] = parentCaption.DeepClone(),
+				["localizableStrings"] = new JArray(),
+				["package"] = new JObject { ["uId"] = originalPackageUId, ["name"] = "CrtCustomer360App" },
+				["parent"] = new JObject { ["uId"] = "b7b898d0-8c77-4953-c097-23fa6800da02", ["name"] = "ListPageV3Template" },
+				["isReadOnly"] = true,
+				["optionalProperties"] = new JArray()
+			}
+		};
+		var saveResponse = new JObject { ["success"] = true };
+		var noRowsResponse = new JObject { ["success"] = true, ["rows"] = new JArray() };
+		string lastSavePayload = null;
+		int callIndex = 0;
+		applicationClient.ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(ci => {
+				callIndex++;
+				if (callIndex == 1) return metadataResponse.ToString();
+				if (callIndex == 2) return noRowsResponse.ToString();
+				if (callIndex == 3) return getSchemaResponse.ToString();
+				if (callIndex == 4) { lastSavePayload = ci.ArgAt<string>(1); return saveResponse.ToString(); }
+				return new JObject { ["success"] = true }.ToString();
+			});
+
+		// Act
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), hierarchyClient);
+		bool ok = command.TryUpdatePage(new PageUpdateOptions { SchemaName = "Accounts_ListPage", Body = validBody, DryRun = false }, out PageUpdateResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: "the create-replacing save should succeed; error: " + response.Error);
+		var savedDto = JObject.Parse(lastSavePayload);
+		savedDto["extendParent"].Value<bool>().Should().BeTrue(
+			because: "a create-replacing DTO must extend its parent");
+		savedDto["caption"].Should().NotBeNull(
+			because: "the replacing schema must carry a caption so its runtime title (e.g. a dashboard tab) is not lost");
+		JToken.DeepEquals(savedDto["caption"], parentCaption).Should().BeTrue(
+			because: "the parent schema caption must be materialized verbatim onto the replacing schema, mirroring the platform designer and CreateDesignSchema");
+	}
+
+	[Test]
 	[Description("TryUpdatePage without hierarchy client falls back to legacy direct-update flow (backward compatibility)")]
 	public void TryUpdatePage_WhenHierarchyClientOmitted_FallsBackToLegacyFlow() {
 		var applicationClient = Substitute.For<IApplicationClient>();
