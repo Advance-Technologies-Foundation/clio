@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using Clio.Command;
+using Clio.Command.McpServer;
 using Clio.Command.McpServer.Tools;
 using FluentAssertions;
 using ModelContextProtocol.Server;
@@ -263,6 +264,94 @@ public sealed class ToolContractGetToolTests {
 		ToolContractIndexEntry executeEsq = result.Index!.Single(entry => entry.Name == ExecuteEsqTool.ToolName);
 		executeEsq.Destructive.Should().BeFalse(
 			because: "execute-esq is a read-only ESQ query tool annotated as non-destructive");
+	}
+
+	// ENG-92761 (F2): the compact index must let an agent tell WHICH tools are called natively (present
+	// in tools/list) vs. reached only through clio-run, without depending on an invoker registry.
+	[Test]
+	[Category("Unit")]
+	[Description("A core tool (list-apps) is marked resident=true in the compact index, matching its membership in McpCoreToolProfile.CoreToolTypes.")]
+	public void ToolContractGet_Should_MarkResident_True_ForCoreToolInIndex() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs());
+
+		// Assert
+		result.Index.Should().NotBeNullOrEmpty(
+			because: "the no-args default must populate the compact index");
+		ToolContractIndexEntry listApps = result.Index!.Single(entry => entry.Name == ApplicationGetListTool.ApplicationGetListToolName);
+		listApps.Resident.Should().BeTrue(
+			because: "list-apps is declared on ApplicationGetListTool, a member of McpCoreToolProfile.CoreToolTypes");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A long-tail tool (sync-schemas) is marked resident=false in the compact index, matching its absence from McpCoreToolProfile.CoreToolTypes and AlwaysOnLazyToolTypes.")]
+	public void ToolContractGet_Should_MarkResident_False_ForLongTailToolInIndex() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs());
+
+		// Assert
+		result.Index.Should().NotBeNullOrEmpty(
+			because: "the no-args default must populate the compact index");
+		ToolContractIndexEntry syncSchemas = result.Index!.Single(entry => entry.Name == SchemaSyncTool.ToolName);
+		syncSchemas.Resident.Should().BeFalse(
+			because: "sync-schemas is hidden from tools/list and reachable only via clio-run/clio-run-destructive");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The always-on lazy-mode executors (clio-run, clio-run-destructive) surface in the compact index as resident=true, matching McpCoreToolProfile.AlwaysOnLazyToolTypes.")]
+	public void ToolContractGet_Should_MarkResident_True_ForAlwaysOnExecutorsInIndex() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs());
+
+		// Assert
+		result.Index.Should().NotBeNullOrEmpty(
+			because: "the no-args default must populate the compact index");
+		result.Index!.Single(entry => entry.Name == ClioRunTool.ToolName).Resident.Should().BeTrue(
+			because: "clio-run is one of the always-on lazy-mode executor types");
+		result.Index!.Single(entry => entry.Name == ClioRunDestructiveTool.ToolName).Resident.Should().BeTrue(
+			because: "clio-run-destructive is one of the always-on lazy-mode executor types");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("get-tool-contract itself is classified resident=true by McpCoreToolProfile even though it is excluded from its own compact index (a tool does not index itself).")]
+	public void McpCoreToolProfile_Should_ClassifyGetToolContract_AsResident() {
+		// Arrange
+
+		// Act
+		bool isResident = McpCoreToolProfile.IsResident(ToolContractGetTool.ToolName);
+
+		// Assert
+		isResident.Should().BeTrue(
+			because: "get-tool-contract is both a core tool and an always-on lazy-mode discovery surface");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Adding the resident flag does not disturb the compact index's ordinal name ordering, which must stay deterministic for prompt-cache prefix stability.")]
+	public void ToolContractGet_Should_KeepIndexOrdering_Stable_AfterAddingResidentFlag() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs());
+
+		// Assert
+		result.Index.Should().NotBeNullOrEmpty(
+			because: "the no-args default must populate the compact index");
+		result.Index!.Select(entry => entry.Name).Should().BeInAscendingOrder(StringComparer.Ordinal,
+			because: "the index must stay ordinally sorted by name so its prefix is stable for prompt caching");
 	}
 
 	[Test]

@@ -229,6 +229,37 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 			because: "detail=full must expand the full contracts of all canonical tools");
 	}
 
+	// ENG-92761 (F2): against the REAL running MCP server, the compact index must carry the resident
+	// flag so an agent can tell a native tools/list tool (list-apps) apart from a hidden long-tail tool
+	// (sync-schemas) reachable only through clio-run.
+	[Test]
+	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("get-tool-contract compact index carries the resident flag for a core tool and a hidden long-tail tool")]
+	public async Task ToolContractGet_Should_PopulateResidentFlag_InCompactIndex() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		ToolContractGetResponse indexResponse = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?>());
+
+		// Assert
+		indexResponse.Success.Should().BeTrue(
+			because: "the no-args default is the cheap compact-discovery entry point");
+		indexResponse.Index.Should().NotBeNullOrEmpty(
+			because: "the no-args default must populate the compact index");
+		ToolContractIndexEntry listApps = indexResponse.Index!.Single(
+			entry => entry.Name == ApplicationGetListTool.ApplicationGetListToolName);
+		listApps.Resident.Should().BeTrue(
+			because: "list-apps is a core tool present in tools/list against the real running MCP server");
+		ToolContractIndexEntry syncSchemas = indexResponse.Index!.Single(
+			entry => entry.Name == SchemaSyncTool.ToolName);
+		syncSchemas.Resident.Should().BeFalse(
+			because: "sync-schemas is a hidden long-tail tool reachable only via clio-run against the real running MCP server");
+	}
+
 	[Test]
 	[AllureTag(ToolContractGetTool.ToolName)]
 	[AllureName("get-tool-contract advertises check-settings-health bootstrap diagnostics contract")]

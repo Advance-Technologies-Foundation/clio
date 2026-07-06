@@ -1,6 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
 using Clio.Command.McpServer.Tools;
+using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer;
 
@@ -83,4 +86,47 @@ public static class McpCoreToolProfile {
 		typeof(ClioRunDestructiveTool),
 		typeof(ToolContractGetTool),
 	};
+
+	/// <summary>
+	/// Every MCP tool NAME declared on a resident type (<see cref="CoreToolTypes"/> ∪
+	/// <see cref="AlwaysOnLazyToolTypes"/>), derived by reflecting each type's <c>[McpServerTool]</c>
+	/// methods for their declared <c>Name</c>. Backs <see cref="IsResident"/>, which the compact index
+	/// (<c>get-tool-contract</c>) uses to populate the <c>resident</c> flag: <c>true</c> for a tool
+	/// called natively because it is present in <c>tools/list</c>, <c>false</c> for a long-tail tool
+	/// reachable only through <c>clio-run</c> / <c>clio-run-destructive</c>.
+	/// </summary>
+	/// <remarks>
+	/// The <see cref="BindingFlags"/> mirror <c>McpToolInvokerRegistry.EnumerateToolMethods</c> exactly
+	/// (public + non-public, instance + static, no <c>DeclaredOnly</c>) so residency never diverges from
+	/// what the SDK's own <c>WithTools(types)</c> scan would register for these types.
+	/// </remarks>
+	public static readonly IReadOnlyCollection<string> ResidentToolNames = BuildResidentToolNames();
+
+	/// <summary>
+	/// True when <paramref name="toolName"/> is declared on a resident tool-type (see
+	/// <see cref="ResidentToolNames"/>); false for a long-tail tool reachable only via <c>clio-run</c> /
+	/// <c>clio-run-destructive</c>.
+	/// </summary>
+	/// <param name="toolName">The MCP tool name to classify.</param>
+	public static bool IsResident(string toolName) {
+		return !string.IsNullOrWhiteSpace(toolName) && ResidentToolNames.Contains(toolName);
+	}
+
+	private static IReadOnlyCollection<string> BuildResidentToolNames() {
+		// Sonar S3011: BindingFlags.NonPublic is a deliberate, required accessibility bypass — NOT a leak.
+		// This mirrors McpToolInvokerRegistry.EnumerateToolMethods exactly (no DeclaredOnly) so residency
+		// never diverges from what the SDK's own WithTools(types) scan would register for these types; the
+		// reflected members are only filtered for [McpServerTool].Name and no private state is read or mutated.
+#pragma warning disable S3011
+		const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic |
+			BindingFlags.Instance | BindingFlags.Static;
+#pragma warning restore S3011
+		HashSet<Type> residentTypes = new(CoreToolTypes);
+		residentTypes.UnionWith(AlwaysOnLazyToolTypes);
+		return residentTypes
+			.SelectMany(type => type.GetMethods(flags))
+			.Select(method => method.GetCustomAttribute<McpServerToolAttribute>()?.Name)
+			.Where(name => !string.IsNullOrWhiteSpace(name))
+			.ToHashSet(StringComparer.OrdinalIgnoreCase);
+	}
 }
