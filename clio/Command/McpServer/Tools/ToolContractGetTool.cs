@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Command.BusinessRules;
+using Clio.Command.McpServer;
 using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
@@ -254,6 +255,12 @@ public sealed record ToolContractGetResponse(
 /// <param name="Name">The stable MCP tool name (kebab-case), matching the full contract's name.</param>
 /// <param name="Purpose">A one-line purpose distilled from the first sentence of the tool's description.</param>
 /// <param name="ContractAvailable">Whether a full curated contract is reachable by naming this tool.</param>
+/// <param name="Resident">
+/// Whether the tool is present in <c>tools/list</c> and therefore called natively (<c>true</c>), or hidden
+/// from <c>tools/list</c> and reachable only through <c>clio-run</c> / <c>clio-run-destructive</c>
+/// (<c>false</c>). Derived from <see cref="McpCoreToolProfile.IsResident"/>, independent of whether an
+/// invoker registry is supplied. Never wrap a resident tool in <c>clio-run</c>.
+/// </param>
 /// <param name="Destructive">
 /// Whether the tool is destructive (modifies/deletes data) when this is cheaply known from the MCP tool
 /// annotation; <c>null</c> when the destructive hint is unavailable (for example when no invoker registry
@@ -263,6 +270,7 @@ public sealed record ToolContractIndexEntry(
 	[property: JsonPropertyName("name")] string Name,
 	[property: JsonPropertyName("purpose")] string Purpose,
 	[property: JsonPropertyName("contract-available")] bool ContractAvailable,
+	[property: JsonPropertyName("resident")] bool Resident,
 	[property: JsonPropertyName("destructive")] bool? Destructive = null
 );
 
@@ -744,6 +752,8 @@ internal static class ToolContractCatalog {
 	/// (without the "no curated contract yet" note the full named contract carries); a missing description
 	/// falls back to the tool name so the purpose is never empty.
 	/// <c>contract-available</c> is true when a curated OR registry OR reflection contract resolves.
+	/// <c>resident</c> is derived from <see cref="McpCoreToolProfile.IsResident"/> and does not depend on
+	/// an invoker registry being supplied.
 	/// </summary>
 	/// <param name="name">The tool name to describe.</param>
 	/// <param name="toolInvokerRegistry">Optional registry used to derive uncurated descriptions and the destructive hint.</param>
@@ -756,6 +766,7 @@ internal static class ToolContractCatalog {
 			name,
 			string.IsNullOrEmpty(purpose) ? name : purpose,
 			ContractAvailable: contractAvailable,
+			Resident: McpCoreToolProfile.IsResident(name),
 			Destructive: ResolveDestructive(toolInvokerRegistry, name));
 	}
 
@@ -863,7 +874,7 @@ internal static class ToolContractCatalog {
 				],
 				Field(SuccessFieldName, BooleanType, "Whether the contract lookup succeeded."),
 				Field("tools", ArrayType, "Full tool contract definitions; populated when tool-names are passed or detail=full."),
-				Field("index", ArrayType, "Compact tool index (name, purpose, contract-available, destructive); populated for a no-names request unless detail=full."),
+				Field("index", ArrayType, "Compact tool index (name, purpose, contract-available, resident, destructive); populated for a no-names request unless detail=full. resident=true tools are present in tools/list and are called natively; resident=false tools are reachable only via clio-run/clio-run-destructive — never wrap a resident tool in clio-run."),
 				Field(ErrorFieldName, ObjectType, "Structured error payload when lookup fails.")
 			),
 			CommonErrorContract,
