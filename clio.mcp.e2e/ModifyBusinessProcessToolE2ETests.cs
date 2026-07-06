@@ -363,6 +363,65 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			because: "the rejection names the parameter whose value was invalid");
 	}
 
+	[Test]
+	[Description("Over the real MCP path: modify-business-process REJECTS an addMapping that maps a process parameter to itself, via the platform's pre-save interpretation validation (circular dependency); the edit is not persisted and the process survives.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process rejects a self-referential (circular) parameter mapping")]
+	public async Task ModifyBusinessProcess_Should_RejectSelfReferentialMapping_WithCircularDependency() {
+		// Arrange — build a valid process carrying a mappable process parameter
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpModCycleE2e{Guid.NewGuid():N}";
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildDescriptorWithSelfMappableParameter(processName)
+		});
+
+		// Act — map the process parameter to itself (a circular dependency), which validates a design-session instance
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = """[ { "op": "addMapping", "mapping": { "targetProcessParameter": "SelfRef", "processParameter": "SelfRef" } } ]"""
+		});
+
+		// Assert — the pre-save gate rejects the edit on the design instance (the build-path E2E covers a freshly built
+		// schema; this covers the modify path's GetDesignInstance state, a different schema state).
+		string callResultJson = JsonSerializer.Serialize(callResult);
+		callResultJson.Should().Contain("Process validation failed",
+			because: "the pre-save gate rejected the edit (clio-authored, culture-independent marker)");
+		callResultJson.Should().Contain("circular dependency",
+			because: "mapping a process parameter to itself is a circular dependency the platform rejects on save (English-culture sandbox)");
+		// The rejected edit is discarded and the design session released — the process itself still exists and reads back.
+		DescribeProcessResult described = ParseDescribeResult(await CallToolAsync(context, DescribeProcessTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName
+			}));
+		// ParseDescribeResult already throws unless the process reads back (proving it survived); assert a DISCRIMINATING
+		// value — the parameter is still unbound (source "None"), so the rejected self-mapping was NOT persisted.
+		DescribedParameter selfRef = described.Parameters.Single(parameter => parameter.Name == "SelfRef");
+		selfRef.Source.Should().Be("None",
+			because: "a rejected modify discards the edit — the process survives and SelfRef stays unbound (the self-mapping was not persisted)");
+	}
+
+	private static string BuildDescriptorWithSelfMappableParameter(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Modify Cycle E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "StartEvent1", "target": "EndEvent1" }
+		  ],
+		  "parameters": [
+		    { "name": "SelfRef", "type": "Text", "direction": "Variable" }
+		  ]
+		}
+		""";
+
 	private static string SetParameterOperations() =>
 		"""
 		[ { "op": "setParameter", "parameterName": "Amount", "parameterUpdate": { "value": "7", "caption": "Amount due", "direction": "Out" } } ]
