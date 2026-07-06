@@ -33,7 +33,8 @@ public class CreateBusinessProcessTool(
 		 + "source object/filters/columns cannot be set yet, tell the user), caption, userTaskName?, signal?}), "
 		 + "flows[] ({source, target} of "
 		 + "element names), parameters[] ({name, type (a supported scalar or Lookup — other types rejected), "
-		 + "direction, caption, description?, value? (a literal constant default — not a formula)}; or "
+		 + "referenceSchema? (object name, e.g. City — makes it a Lookup), direction, caption, description?, "
+		 + "value? (a literal constant default — not a formula)}; or "
 		 + "typeFromElement + typeFromElementParameter to copy an element parameter's exact type), "
 		 + "and mappings[] (bind a target to a source — target is {elementName, "
 		 + "elementParameter} (an element input) or {targetProcessParameter} (a process parameter, e.g. expose an "
@@ -41,8 +42,12 @@ public class CreateBusinessProcessTool(
 		 + "(another element's output), processParameter, value, or expression; parameter-to-parameter mappings "
 		 + "require compatible types). To run the process when a record "
 		 + "is saved/added/changed, use a "
-		 + "signalStart element with signal:{entity:<EntityName>, on:added|modified|deleted} (one event) instead "
-		 + "of a page save handler. Use list-user-tasks to discover valid userTaskName values.")]
+		 + "signalStart element with signal:{entity:<EntityName>, on:added|modified|deleted} (one event, NO record "
+		 + "filter — fires for every record of the object) instead of a page save handler. Use list-user-tasks to "
+		 + "discover valid userTaskName values. Read get-guidance name=process-modeling FIRST — the full descriptor "
+		 + "contract (buildable slice, date/time and Lookup DEFAULT-value macro rules, mapping type-compatibility "
+		 + "groups, formula policy, FSD caveat). Requires the ProcessDesignService (clioprocessbuilder) package on "
+		 + "the target environment.")]
 	public CommandExecutionResult CreateBusinessProcess(
 		[Description("create-business-process parameters")] [Required] CreateBusinessProcessArgs args
 	) {

@@ -95,6 +95,7 @@ internal sealed class CommandHelpCatalog {
 			[GetEntitySchemaProperties] = "Get properties from a remote Creatio entity schema",
 			["info"] = "Show clio, cliogate, and .NET runtime versions",
 			[LockPackage] = "Lock a package in Creatio",
+			["mcp-http"] = "Start the MCP server over HTTP",
 			["mcp-server"] = "Start the MCP server over stdio",
 			["mock-data"] = "Generate mock data for unit tests",
 			["modify-user-task-parameters"] = "Add or remove parameters in a user task schema",
@@ -239,6 +240,7 @@ internal sealed class CommandHelpCatalog {
 			"install-gate",
 			"install-toolkit",
 			"link-package-store",
+			"mcp-http",
 			"mcp-server",
 			"update-toolkit"
 		];

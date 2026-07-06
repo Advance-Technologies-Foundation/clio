@@ -1,7 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -25,9 +23,8 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 
 	private const string TitleLocalizationsArgumentName = "title-localizations";
 
-	// The distinctive fragment of the OData-rebuild-request warning. Shared with the tests so the
-	// production message and its assertions reference one source of truth and cannot drift apart.
-	internal const string ODataBuildRequestFailedWarningFragment = "requesting the OData entities rebuild failed";
+	internal const string ODataBuildRequestFailedWarningFragment =
+		EntitySchemaPublishHelper.ODataBuildRequestFailedWarningFragment;
 
 	private const string DefaultMaskingPattern = ".*";
 	private const string DefaultMaskingReplacement = "********";
@@ -513,62 +510,10 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 	}
 
 	private void PublishSchema(CreateEntitySchemaOptions options) {
-		// Saving + DDL alone leave the schema invisible to lookup pickers and sys-setting reference
-		// lists: those surfaces read the web app's runtime EntitySchemaManager, which only picks the
-		// schema up after the configuration is built (ENG-90403).
-		Stopwatch stopwatch = Stopwatch.StartNew();
-		try {
-			_entitySchemaDesignerClient.PublishConfigurationChanges(options);
-		} catch (Exception exception) {
-			throw new InvalidOperationException(
-				$"Schema '{options.SchemaName}' was created and saved, but publishing the configuration failed: " +
-				$"{exception.Message} Until the configuration is built (for example via compile-creatio), the schema " +
-				"stays invisible to lookup pickers and sys-setting reference schema lists.",
-				exception);
-		}
-		stopwatch.Stop();
-		_logger.WriteInfo(
-			$"Schema '{options.SchemaName}' published in {stopwatch.Elapsed.TotalSeconds.ToString("0.0", CultureInfo.InvariantCulture)}s.");
-		// After publishing, request the OData entities rebuild so the schema is reachable over
-		// OData (/0/odata/<Entity>) without a manual full compile. It runs as a background task, so
-		// access appears within minutes. A failure does not undo the publish, so it is only a warning.
-		try {
-			_entitySchemaDesignerClient.RunODataBuild(options);
-			_logger.WriteInfo($"OData entities rebuild requested for '{options.SchemaName}'.");
-		} catch (Exception odataException) when (IsExpectedODataBuildFault(odataException)) {
-			// A rebuild-request failure (server error or transport/timeout/parse fault) must not undo or fail the
-			// already-published schema; surface it as a warning. Mirrors CheckRecordExists's filtered handling.
-			_logger.WriteWarning(
-				$"Schema '{options.SchemaName}' was published, but {ODataBuildRequestFailedWarningFragment}: " +
-				$"{odataException.Message} The schema is usable; it may not be reachable over OData until an OData build runs.");
-		}
-	}
-
-	// The underlying Creatio HTTP client (Creatio.Client.CreatioClient.ExecutePostRequest) runs the request via
-	// Task.Result, which wraps a transport/timeout fault in an AggregateException, and its retry loop re-throws
-	// that wrapper unchanged — so the realistic faults arrive as AggregateException(HttpRequestException) or
-	// AggregateException(TaskCanceledException). A flat type filter would miss the wrapper and let it escape
-	// PublishSchema, making the caller treat the already-published schema as a failed publish. Unwrap recursively
-	// and treat the fault as an expected rebuild-request failure only when every inner exception is itself an
-	// expected transport/IO/parse fault. The leaf set is intentionally limited to those families (not a blanket
-	// catch) so a genuine programming error — NullReferenceException, ArgumentException, etc. — still surfaces.
-	// SocketException / IOException / OperationCanceledException are included as defense-in-depth for transport
-	// faults a future client change could surface unwrapped (OperationCanceledException also covers the
-	// TaskCanceledException raised on an HttpClient timeout).
-	private static bool IsExpectedODataBuildFault(Exception exception) {
-		if (exception is AggregateException aggregate) {
-			// Guard against an empty aggregate: Enumerable.All is vacuously true on an empty set, and a contentless
-			// AggregateException carries no diagnosable fault — let it surface rather than silently swallow it.
-			System.Collections.ObjectModel.ReadOnlyCollection<Exception> inner = aggregate.Flatten().InnerExceptions;
-			return inner.Count > 0 && inner.All(IsExpectedODataBuildFault);
-		}
-		return exception is InvalidOperationException
-			or System.Net.Http.HttpRequestException
-			or System.Net.WebException
-			or System.Net.Sockets.SocketException
-			or System.IO.IOException
-			or System.OperationCanceledException
-			or Newtonsoft.Json.JsonException;
+		// Saving + DDL alone leave the schema invisible to lookup pickers, sys-setting reference lists, and
+		// OData until the configuration is built (ENG-90403).
+		EntitySchemaPublishHelper.PublishAndRebuildOData(
+			_entitySchemaDesignerClient, _logger, options, options.SchemaName, "was created and saved");
 	}
 
 	private PackageInfo ResolvePackage(string packageName) {

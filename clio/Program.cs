@@ -221,6 +221,7 @@ internal class Program {
 		typeof(LinkCoreSrcOptions),
 		typeof(AssertOptions),
 		typeof(McpServerCommandOptions),
+		typeof(McpHttpServerCommandOptions),
 		typeof(QuizCommandOptions),
 		typeof(GenerateSourceCodeOptions),
 		typeof(AddPackageDependencyOptions),
@@ -256,6 +257,7 @@ internal class Program {
 	internal static IReadOnlyList<Type> GetCommandOptionTypes() => CommandOption;
 
 	private static string[] NormalizeCommandLineArgs(string[] args) {
+		string[] result = args;
 		if (args.Length >= 3 &&
 			string.Equals(args[0], "create-data-binding", StringComparison.OrdinalIgnoreCase)) {
 			string[] normalizedArgs = (string[])args.Clone();
@@ -265,10 +267,58 @@ internal class Program {
 				}
 			}
 
-			return normalizedArgs;
+			result = normalizedArgs;
 		}
 
-		return args;
+		return NormalizeJsonFlagArgs(result);
+	}
+
+	// The --json option is declared as bool? (its established public form is `--json true|false`).
+	// To ALSO accept a bare `--json` additively — without breaking the value form or letting a bare
+	// `--json` swallow a positional argument — inject an explicit `true` after any --json/-j/--Json
+	// token that is not already followed by true|false. This keeps `--json true|false` byte-identical
+	// (strict back-compat) while making bare `--json` work everywhere.
+	internal static string[] NormalizeJsonFlagArgs(string[] args) {
+		if (args is null || args.Length == 0) {
+			return args;
+		}
+		var output = new List<string>(args.Length + 2);
+		for (int index = 0; index < args.Length; index++) {
+			string token = args[index];
+			output.Add(token);
+			if (!IsJsonFlagToken(token)) {
+				continue;
+			}
+			bool nextIsBoolLiteral = index + 1 < args.Length
+				&& (string.Equals(args[index + 1], "true", StringComparison.OrdinalIgnoreCase)
+					|| string.Equals(args[index + 1], "false", StringComparison.OrdinalIgnoreCase));
+			if (!nextIsBoolLiteral) {
+				output.Add("true");
+			}
+		}
+		return output.ToArray();
+	}
+
+	private static bool IsJsonFlagToken(string token) =>
+		string.Equals(token, "--json", StringComparison.OrdinalIgnoreCase)
+		|| string.Equals(token, "-j", StringComparison.OrdinalIgnoreCase)
+		|| string.Equals(token, "--Json", StringComparison.OrdinalIgnoreCase);
+
+	// JSON output is ON only when a --json/-j/--Json flag resolves to the value 'true' (bare flags are
+	// normalized to true by NormalizeJsonFlagArgs; an explicit `--json false` stays off). Used to route
+	// decorated diagnostics to stderr so stdout is exactly one JSON object.
+	internal static bool IsJsonOutputRequested(string[] args) {
+		string[] normalized = NormalizeJsonFlagArgs(args);
+		if (normalized is null) {
+			return false;
+		}
+		for (int index = 0; index + 1 < normalized.Length; index++) {
+			if (IsJsonFlagToken(normalized[index])
+				&& string.Equals(normalized[index + 1], "true", StringComparison.OrdinalIgnoreCase)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	public static Func<object, int> ExecuteCommandWithOption = instance => {
@@ -482,6 +532,7 @@ internal class Program {
 			AssertOptions opts => Resolve<AssertCommand>(opts).Execute(opts),
 			LinkPackageStoreOptions opts => Resolve<LinkPackageStoreCommand>(opts).Execute(opts),
 			McpServerCommandOptions opts => Resolve<McpServerCommand>(opts).Execute(opts),
+			McpHttpServerCommandOptions opts => McpHttpServerCommand.Run(opts),
 			PageCreateOptions opts => Resolve<PageCreateCommand>(opts).Execute(opts),
 			SourceCodeSchemaCreateOptions opts => Resolve<SourceCodeSchemaCreateCommand>(opts).Execute(opts),
 			SourceCodeSchemaUpdateOptions opts => Resolve<SourceCodeSchemaUpdateCommand>(opts).Execute(opts),
@@ -695,6 +746,13 @@ internal class Program {
 }
 
 	public static bool IsDebugMode { get; set; }
+
+	/// <summary>
+	/// True when a command was invoked with <c>--json</c> (or the <c>-j</c> alias). In this mode the
+	/// <see cref="ConsoleLogger"/> routes decorated diagnostic lines ([INF]/[WAR]/[DBG]) to stderr so
+	/// stdout carries exactly one JSON object — the unified command envelope. Set once during startup.
+	/// </summary>
+	public static bool IsJsonOutputMode { get; set; }
 
 	public static bool IsEnvironmentReported { get; set; }
 
@@ -1118,6 +1176,10 @@ internal class Program {
 			IsMcpServerMode = isMcp;
 			IsDebugMode = args.Any(x => x.ToLower() == "--debug");
 			AddTimeStampToOutput = args.Any(x => x.ToLower() == "--ts");
+			// Detect json output early (before the background updater logs) so decorated diagnostics are
+			// routed to stderr and stdout stays a single JSON envelope. Honors --json true|false and a
+			// bare --json (normalized to true); an explicit --json false stays off.
+			IsJsonOutputMode = IsJsonOutputRequested(args);
 			OriginalArgs = args;
 			
 			// Set IsCfgOpenCommand based on input arguments
@@ -1331,7 +1393,8 @@ internal class Program {
 		string first = args[0];
 		if (string.Equals(first, "update-cli", StringComparison.OrdinalIgnoreCase)
 			|| string.Equals(first, "update", StringComparison.OrdinalIgnoreCase)
-			|| string.Equals(first, "autoupdate", StringComparison.OrdinalIgnoreCase)) {
+			|| string.Equals(first, "autoupdate", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(first, "mcp-http", StringComparison.OrdinalIgnoreCase)) {
 			return true;
 		}
 		return args.Any(arg =>

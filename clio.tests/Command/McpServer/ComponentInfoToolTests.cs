@@ -533,6 +533,33 @@ public sealed class ComponentInfoToolTests {
 	}
 
 	[Test]
+	[Description("The wrong-WORD selector spelling 'component-name' (the field an agent reaches for when it expects the parameter to be named after the component's name rather than its type) is rejected with a rename hint to 'component-type', instead of falling through to the generic unknown-args message or silently degrading into list mode.")]
+	[TestCase("component-name")]
+	[TestCase("componentName")]
+	[TestCase("component_name")]
+	public async Task ComponentInfoTool_Should_Reject_ComponentName_Alias(string spelling) {
+		// Arrange — the deserializer routes the unbound 'component-name' field into ExtensionData
+		// (the canonical bound parameter is the kebab-case 'component-type').
+		ComponentInfoTool tool = CreateTool();
+		ComponentInfoArgs args = new() {
+			ExtensionData = new Dictionary<string, JsonElement> {
+				[spelling] = JsonSerializer.SerializeToElement("crt.CommunicationOptions")
+			}
+		};
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a 'component-name' selector must not silently fall through to list mode");
+		response.Error.Should().Contain(spelling,
+			because: "the rename hint must name the offending field");
+		response.Error.Should().Contain("component-type",
+			because: "the rename hint must point at the canonical 'component-type' parameter");
+	}
+
+	[Test]
 	[Description("When the platform version resolver succeeds the response reports resolvedFrom=environment and the resolved version.")]
 	public async Task ComponentInfoTool_Should_Report_Environment_When_Resolver_Succeeds() {
 		// Arrange
@@ -1220,6 +1247,12 @@ public sealed class ComponentInfoToolTests {
 			because: "a composite-only component must tell the agent not to insert it standalone");
 		response.CompositeOnlyHint.Should().Contain("composite=",
 			because: "the hint must steer the agent to the composite lookup that assembles this component");
+		response.CompositeOnlyHint.Should().Contain("If a composite assembles this component",
+			because: "the hint must encode the primary branch: build the composite when one assembles this component");
+		response.CompositeOnlyHint.Should().Contain("fallback",
+			because: "the hint must encode the fallback branch: build the component directly when no composite assembles it");
+		response.CompositeOnlyHint.Should().Contain("appliesToCustomEntities",
+			because: "the fallback must defer to the component's applicability constraints, not invite an off-spec standalone build on an entity those fields exclude");
 	}
 
 	[Test]

@@ -35,9 +35,15 @@ docs all fail to load sets `documentationUnavailable: true` so a transient docs
 fetch failure is distinguishable from a composite that genuinely ships no docs.
 
 A component with no standalone Designer toolbar presence carries
-`compositeOnly: true` (with `compositeOnlyHint` on detail) — it must be built via
-its composite rather than placed directly. This CLI verb and the MCP tool stay in
-lockstep on composites; both share the same catalog and response builders.
+`compositeOnly: true` (with `compositeOnlyHint` on detail). Composites carry no
+machine-readable list of their member components, so the hint encodes a decision
+rule rather than naming the owning composite: discover composites in list mode,
+confirm membership by reading each candidate's recipe (`--composite "<caption>"`),
+build the composite when one assembles this component, and otherwise build the
+component directly as a fallback — only when the component's own applicability
+(`appliesToCustomEntities` / `entityCouplingNote`) allows it. This CLI verb and the
+MCP tool stay in lockstep on composites; both share the same catalog and response
+builders.
 
 When a positional `component-type` is not a known component it is resolved by
 name and description rather than dead-ending: it first matches components (by

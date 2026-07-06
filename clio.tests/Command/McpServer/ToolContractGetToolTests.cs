@@ -2196,4 +2196,31 @@ public sealed class ToolContractGetToolTests {
 				p.Pattern.Contains("synthesize", StringComparison.OrdinalIgnoreCase),
 			because: "the anti-pattern must explicitly warn against synthesizing instead of following the documentation field");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The get-component-info contract advertises 'component-name' (plus its camelCase/snake_case spellings) as a rejected alias of 'component-type', so a contract-driven validator steers an agent that reaches for the wrong-WORD selector to the canonical parameter instead of a generic 'unknown parameter' guess.")]
+	[TestCase("component-name")]
+	[TestCase("componentName")]
+	[TestCase("component_name")]
+	public void ToolContractGet_Should_Advertise_ComponentName_As_Rejected_Alias_Of_ComponentType(string spelling) {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
+			ComponentInfoTool.ToolName
+		]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "get-component-info must be discoverable through get-tool-contract");
+		ToolContractDefinition contract = result.Tools!.Single();
+		contract.Aliases.Should().Contain(alias =>
+				alias.Alias == spelling
+				&& alias.CanonicalName == "component-type"
+				&& alias.Status == "rejected"
+				&& alias.Message.Contains("component-type"),
+			because: "an agent that passes the wrong-WORD selector must be redirected to 'component-type' rather than left to guess");
+	}
 }
