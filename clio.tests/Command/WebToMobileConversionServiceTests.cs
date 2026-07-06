@@ -17,7 +17,7 @@ public sealed class WebToMobileConversionServiceTests {
 
 	private static readonly IReadOnlySet<string> MobileTypes =
 		new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
-			"crt.Input", "crt.Toggle", "crt.RichTextEditor", "crt.List", "crt.FolderTreeActions", "crt.GridContainer"
+			"crt.Input", "crt.Toggle", "crt.RichTextEditor", "crt.List", "crt.FolderTreeActions", "crt.GridContainer", "crt.Label"
 		};
 
 	private static readonly IReadOnlySet<string> WebTypes =
@@ -565,8 +565,16 @@ public sealed class WebToMobileConversionServiceTests {
 		var mobileByType = new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase) {
 			["crt.Input"] = crtInput
 		};
+		// The web registry declares usrWebOnly (and not the mobile one) — that is what makes it droppable.
+		var webByType = new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase) {
+			["crt.FlexContainer"] = new ComponentRegistryEntry { ComponentType = "crt.FlexContainer", Container = true },
+			["crt.Input"] = new ComponentRegistryEntry {
+				ComponentType = "crt.Input",
+				Inputs = new Dictionary<string, JsonElement> { ["usrWebOnly"] = JsonSerializer.SerializeToElement(new { }) }
+			}
+		};
 
-		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true)), mobileByType: mobileByType);
+		MobilePageConversionGuide guide = Analyze(bundle, webByType: webByType, mobileByType: mobileByType);
 
 		JsonObject leadVals = Element(guide, "LeadName").MobileValues!.AsObject();
 		leadVals["type"]!.GetValue<string>().Should().Be("crt.Input");
@@ -575,8 +583,8 @@ public sealed class WebToMobileConversionServiceTests {
 		// Every source property the mobile component supports is carried verbatim …
 		leadVals.ContainsKey("readonly").Should().BeTrue(because: "readonly is a supported mobile input");
 		leadVals.ContainsKey("placeholder").Should().BeTrue(because: "placeholder is a supported mobile input");
-		// … web-only props are pruned, and the value binding is intentionally left out.
-		leadVals.ContainsKey("usrWebOnly").Should().BeFalse(because: "not a mobile property");
+		// … a web-registry-specific prop the mobile component lacks is dropped, and the value binding is left out.
+		leadVals.ContainsKey("usrWebOnly").Should().BeFalse(because: "the web registry declares it and mobile does not");
 		leadVals.ContainsKey("control").Should().BeFalse(because: "the value binding is added by the caller, not prebuilt");
 
 		// No caption but bound to PDS.JobTitle → auto-provided column-code label.
@@ -965,25 +973,80 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("layoutConfig is a container-imposed grid-placement property (not in the component registry); it is carried into mobileValues VERBATIM by copy-and-prune, while a genuinely unsupported property is still dropped.")]
-	public void Analyze_LayoutConfig_IsCarriedAsContainerImposedException() {
+	[Description("A property in NEITHER registry (system/framework prop, e.g. layoutConfig) is carried verbatim; a property the WEB registry declares but the MOBILE registry lacks is dropped; a mobile-supported property is carried.")]
+	public void Analyze_SystemProp_Carried_WebSpecificProp_Dropped() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
 				{ "name": "Widget", "type": "crt.Input",
-				  "layoutConfig": { "column": 2, "row": 1, "colSpan": 1, "rowSpan": 1 },
-				  "someWebOnlyProp": true } ] } ]
+				  "layoutConfig": { "column": 2, "row": 1 },
+				  "webOnlyProp": true,
+				  "readonly": true } ] } ]
 			""");
+		var webByType = new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase) {
+			["crt.FlexContainer"] = new ComponentRegistryEntry { ComponentType = "crt.FlexContainer", Container = true },
+			["crt.Input"] = new ComponentRegistryEntry {
+				ComponentType = "crt.Input",
+				Inputs = new Dictionary<string, JsonElement> {
+					["webOnlyProp"] = JsonSerializer.SerializeToElement(new { }),
+					["readonly"] = JsonSerializer.SerializeToElement(new { })
+				}
+			}
+		};
+		var mobileByType = new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase) {
+			["crt.Input"] = new ComponentRegistryEntry {
+				ComponentType = "crt.Input",
+				Inputs = new Dictionary<string, JsonElement> { ["readonly"] = JsonSerializer.SerializeToElement(new { }) }
+			}
+		};
 
-		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.Input", false)));
+		MobilePageConversionGuide guide = Analyze(bundle, webByType: webByType, mobileByType: mobileByType);
 
 		JsonObject values = Element(guide, "Widget").MobileValues!.AsObject();
-		values.Should().ContainKey("layoutConfig");
-		JsonObject lc = values["layoutConfig"]!.AsObject();
-		lc["column"]!.GetValue<int>().Should().Be(2);
-		lc["row"]!.GetValue<int>().Should().Be(1);
-		lc["colSpan"]!.GetValue<int>().Should().Be(1);
-		lc["rowSpan"]!.GetValue<int>().Should().Be(1);
-		values.Should().NotContainKey("someWebOnlyProp", "it is neither in the mobile registry nor container-imposed");
+		values.Should().ContainKey("layoutConfig", "layoutConfig is declared by neither registry — a system property");
+		values.Should().ContainKey("readonly", "the mobile registry declares it");
+		values.Should().NotContainKey("webOnlyProp", "the web registry declares it and the mobile registry does not");
+	}
+
+	#endregion
+
+	#region Captions (localized resources)
+
+	[Test]
+	[Description("A non-field caption (a resource token in any form) is carried into mobileValues VERBATIM (a system property), and its referenced resource is resolved so the caller can register it: captionResource.key is the token's key, sourceValue its en-US text.")]
+	public void Analyze_NonFieldCaption_CarriedVerbatimAndResourceResolved() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "ContactLabel", "type": "crt.Label",
+				  "caption": "#MacrosTemplateString(#ResourceString(ContactLabel_caption)#)#" } ] } ]
+			""",
+			resourcesJson: """
+			{ "ContactLabel_caption": { "en-US": "Contact person" } }
+			""");
+
+		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.Label", false)));
+
+		ElementMapEntry label = Element(guide, "ContactLabel");
+		// caption carried verbatim (its original web token) — no hardcoded exclusion or normalization.
+		label.MobileValues!.AsObject()["caption"]!.GetValue<string>()
+			.Should().Be("#MacrosTemplateString(#ResourceString(ContactLabel_caption)#)#");
+		// the referenced resource is resolved so the caller registers the SAME key the token uses.
+		label.CaptionResource!.Key.Should().Be("ContactLabel_caption");
+		label.CaptionResource.SourceValue.Should().Be("Contact person");
+	}
+
+	[Test]
+	[Description("A caption that is a data binding ($HeaderCaption) is carried verbatim (a system property) but yields no captionResource — there is no resource to register.")]
+	public void Analyze_DataBindingCaption_CarriedButNotAResource() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "TitleLabel", "type": "crt.Label", "caption": "$HeaderCaption" } ] } ]
+			""");
+
+		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.Label", false)));
+
+		ElementMapEntry label = Element(guide, "TitleLabel");
+		label.CaptionResource.Should().BeNull();
+		label.MobileValues!.AsObject()["caption"]!.GetValue<string>().Should().Be("$HeaderCaption");
 	}
 
 	#endregion

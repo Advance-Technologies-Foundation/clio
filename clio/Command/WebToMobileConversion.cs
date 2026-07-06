@@ -119,7 +119,7 @@ public static class WebToMobileAnalysisService {
 		var sourceLayouts = new Dictionary<string, JObject>(StringComparer.OrdinalIgnoreCase);
 		var gridContainerColumns = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 		List<ElementMapEntry> elementMap = BuildElementMap(
-			tree, map, componentMap, mobileTypes, mobileByType, rules, attrToDs, attrToColumn, dataSourceSet, primaryDs, resources,
+			tree, map, componentMap, mobileTypes, mobileByType, webByType, rules, attrToDs, attrToColumn, dataSourceSet, primaryDs, resources,
 			requestMap, convertedRequests, droppedRequests, flaggedRequests, sourceLayouts, gridContainerColumns);
 		RequestConversionInfo requestConversions = BuildRequestConversionInfo(convertedRequests, droppedRequests, flaggedRequests);
 
@@ -747,6 +747,7 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, ComponentMappingRule> ComponentMap,
 		IReadOnlySet<string> MobileTypes,
 		IReadOnlyDictionary<string, ComponentRegistryEntry> MobileByType,
+		IReadOnlyDictionary<string, ComponentRegistryEntry> WebByType,
 		WebToMobilePageConversionRules Rules,
 		IReadOnlyDictionary<string, string> AttrToDs,
 		IReadOnlyDictionary<string, string> AttrToColumn,
@@ -772,6 +773,7 @@ public static class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, ComponentMappingRule> componentMap,
 		IReadOnlySet<string> mobileTypes,
 		IReadOnlyDictionary<string, ComponentRegistryEntry> mobileByType,
+		IReadOnlyDictionary<string, ComponentRegistryEntry> webByType,
 		WebToMobilePageConversionRules rules,
 		IReadOnlyDictionary<string, string> attrToDs,
 		IReadOnlyDictionary<string, string> attrToColumn,
@@ -787,6 +789,7 @@ public static class WebToMobileAnalysisService {
 		var ctx = new ElementMapContext(map,
 			componentMap ?? new Dictionary<string, ComponentMappingRule>(StringComparer.OrdinalIgnoreCase),
 			mobileTypes, mobileByType ?? new Dictionary<string, ComponentRegistryEntry>(),
+			webByType ?? new Dictionary<string, ComponentRegistryEntry>(),
 			rules, attrToDs, attrToColumn, dataSources, primaryDs, resources, RelocateTargetFor(map), [],
 			requestMap, convertedRequests, droppedRequests, flaggedRequests, sourceLayouts, gridContainerColumns);
 		WalkElements(ctx, tree, mobileParentName: null, parentIsTabs: false);
@@ -956,18 +959,37 @@ public static class WebToMobileAnalysisService {
 		}
 	}
 
+	/// <summary>
+	/// Resolves the resource a source element's caption references, so the caller can register it on the
+	/// mobile page (its raw caption token is carried into mobileValues by the generic copy rule). The web
+	/// caption may be a resource token in any form — <c>$Resources.Strings.KEY</c>, <c>#ResourceString(KEY)#</c>,
+	/// or <c>#MacrosTemplateString(#ResourceString(KEY)#)#</c>; its KEY is extracted (reusing
+	/// <see cref="ResourceStringHelper.ExtractKeys"/>) and looked up in the page's localized strings for its
+	/// en-US text. <see cref="CaptionResource.Key"/> is that referenced KEY (matching the carried token), so
+	/// registering it makes the token resolve. Returns null when the caption references no resource (a plain
+	/// literal — carried as-is — or a data binding such as <c>$HeaderCaption</c>).
+	/// </summary>
 	private static CaptionResource ResolveCaptionResource(ElementMapContext ctx, JObject node, string mobileName) {
 		string caption = node["caption"]?.ToString();
 		if (string.IsNullOrEmpty(caption)) {
 			return null;
 		}
-		const string prefix = "$Resources.Strings.";
-		string sourceValue = caption;
-		if (caption.StartsWith(prefix, StringComparison.Ordinal)) {
-			string key = caption[prefix.Length..];
-			sourceValue = ResolveResourceString(ctx.Resources, key) ?? key;
+		string key = ResourceStringHelper.ExtractKeys(caption).FirstOrDefault();
+		if (string.IsNullOrEmpty(key)) {
+			return null; // literal (carried verbatim) or data binding — no resource to register
 		}
-		return new CaptionResource { Key = mobileName + "_caption", SourceValue = sourceValue };
+		return new CaptionResource { Key = key, SourceValue = ResolveResourceString(ctx.Resources, key) ?? key };
+	}
+
+	/// <summary>Resolves a page resource key into its en-US text (else the first culture) from the bundle's strings.</summary>
+	private static string ResolveResourceString(JObject resources, string key) {
+		if (resources?[key] is not { } value) {
+			return null;
+		}
+		if (value is JObject cultures) {
+			return (cultures["en-US"] ?? cultures.Properties().FirstOrDefault()?.Value)?.ToString();
+		}
+		return value.ToString();
 	}
 
 	/// <summary>
@@ -1000,34 +1022,21 @@ public static class WebToMobileAnalysisService {
 	};
 
 	/// <summary>
-	/// Source-node properties that are NOT part of a component's own registry contract (so copy-and-prune
-	/// against <c>allowedProperties</c> would drop them) but are imposed by the parent container and must be
-	/// carried over verbatim. <c>layoutConfig</c> is the grid placement (<c>column</c>/<c>row</c>/
-	/// <c>colSpan</c>/<c>rowSpan</c>, and <c>adaptive</c>) a <c>crt.GridContainer</c> assigns to each child;
-	/// without it a converted component loses its cell in the mobile grid.
-	/// </summary>
-	private static readonly HashSet<string> ContainerImposedProps = new(StringComparer.OrdinalIgnoreCase) {
-		"layoutConfig"
-	};
-
-	/// <summary>
-	/// Builds the prebuilt, ready-to-paste mobile <c>values</c> for an inserted component (universal rule:
-	/// never drop a property the mobile component supports). Copy-and-prune: start from the source node,
-	/// keep every property whose name is a valid mobile property/input (per the mobile registry), drop the
-	/// rest; set <c>type</c>; for field components synthesize <c>label</c> from the caption / column. The
-	/// value binding is intentionally omitted (see <see cref="ExcludedSourceProps"/>). Returns null for an
-	/// unknown mobile type.
+	/// Builds the prebuilt, ready-to-paste mobile <c>values</c> for an inserted component. Copy rule (no
+	/// hardcoded property list): a source property is carried when the MOBILE registry declares it OR when
+	/// NEITHER the web nor the mobile registry declares it — the latter are framework/system properties
+	/// (e.g. <c>caption</c>, <c>layoutConfig</c>) that no component contract lists but the client resolves
+	/// via a preprocessor, so they must survive. A property is DROPPED only when it is web-registry-specific
+	/// and absent from the mobile registry (a genuine web-only component property). Structural keys and the
+	/// value binding are always excluded (see <see cref="ExcludedSourceProps"/>); <c>type</c> is set and, for
+	/// field components, <c>label</c> is synthesized. Returns null for an unknown mobile type.
 	/// </summary>
 	private static JsonNode BuildMobileValues(ElementMapContext ctx, JObject node, string mobileName, string mobileType, CaptionResource caption) {
 		if (string.IsNullOrEmpty(mobileType)) {
 			return null;
 		}
-		var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-		if (ctx.MobileByType.TryGetValue(mobileType, out ComponentRegistryEntry entry)) {
-			foreach (string prop in BuildAllowedPropertyNames(entry)) {
-				allowed.Add(prop);
-			}
-		}
+		HashSet<string> allowed = AllowedProps(ctx.MobileByType, mobileType);
+		HashSet<string> webAllowed = AllowedProps(ctx.WebByType, node["type"]?.ToString());
 		var values = new JObject { ["type"] = mobileType };
 		foreach (JProperty prop in node.Properties()) {
 			if (ExcludedSourceProps.Contains(prop.Name)) {
@@ -1039,9 +1048,10 @@ public static class WebToMobileAnalysisService {
 			if (IsEventBinding(prop.Value)) {
 				continue;
 			}
-			// Carry a property when the mobile component's registry allows it, OR when it is a
-			// container-imposed layout property (e.g. layoutConfig) that no component registry declares.
-			if (allowed.Contains(prop.Name) || ContainerImposedProps.Contains(prop.Name)) {
+			// Carry when the mobile component supports the property, OR when NEITHER registry declares it
+			// (a system/framework property — e.g. caption, layoutConfig — the client resolves itself).
+			// Drop only a web-registry-specific property the mobile component does not support.
+			if (allowed.Contains(prop.Name) || !webAllowed.Contains(prop.Name)) {
 				values[prop.Name] = prop.Value.DeepClone();
 			}
 		}
@@ -1055,6 +1065,17 @@ public static class WebToMobileAnalysisService {
 		} catch {
 			return null;
 		}
+	}
+
+	/// <summary>The set of property/input names a registry declares for a component type (empty when unknown).</summary>
+	private static HashSet<string> AllowedProps(IReadOnlyDictionary<string, ComponentRegistryEntry> registry, string type) {
+		var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		if (!string.IsNullOrEmpty(type) && registry.TryGetValue(type, out ComponentRegistryEntry entry)) {
+			foreach (string prop in BuildAllowedPropertyNames(entry)) {
+				allowed.Add(prop);
+			}
+		}
+		return allowed;
 	}
 
 	/// <summary>
@@ -1292,16 +1313,6 @@ public static class WebToMobileAnalysisService {
 			}
 		}
 		return null;
-	}
-
-	private static string ResolveResourceString(JObject resources, string key) {
-		if (resources?[key] is not { } value) {
-			return null;
-		}
-		if (value is JObject cultures) {
-			return (cultures["en-US"] ?? cultures.Properties().FirstOrDefault()?.Value)?.ToString();
-		}
-		return value.ToString();
 	}
 
 	private static string ResolveParent(ElementMapContext ctx, string mobileParentName) =>

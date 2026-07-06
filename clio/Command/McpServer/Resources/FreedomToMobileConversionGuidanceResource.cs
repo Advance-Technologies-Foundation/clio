@@ -124,9 +124,12 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			         into the crt.List's itemLayout (title = first column, body = the rest); see the
 			         componentSuggestions note and the mobileContracts example. If the template already provides
 			         the List/ListItem, configure them by merge-by-name instead of inserting (see the merge branch).
-			     If captionResource is present, register key = sourceValue with update-page `resources`
-			     (the key follows "<MobileElementName>_caption"). Consult mobileContracts / get-component-info
-			     (schema-type "mobile") only for those not-prebuilt parts. validate-page is the backstop — it
+			     If captionResource is present, register captionResource.key = captionResource.sourceValue (the
+			     resolved en-US text) with update-page `resources` — do NOT register a #ResourceString(...)# token
+			     as the value. mobileValues already carries the element's `caption` (its original web resource
+			     token, e.g. "#ResourceString(<key>)#") verbatim — that same key is captionResource.key, so the
+			     caption renders once you register it. Consult mobileContracts / get-component-info (schema-type "mobile") only
+			     for those not-prebuilt parts. validate-page is the backstop — it
 			     rejects an insert that drops a required property (e.g. a field caption, or a lookup-path
 			     attribute's type) and update-page refuses to save.
 			   - relocate-children — do NOT recreate this container; its children are placed in parentName

@@ -63,7 +63,8 @@ public sealed class MobilePageConversionGuideTool {
 		"data-source section from a pre-existing body or attribute types like ForwardReference get dropped), " +
 		"modelConfig / viewModelConfig (same data in full-object form, for reference; viewModelConfig already " +
 		"filtered to drop attributes of unsupported components), plus per-element elementMap (each insert carries " +
-		"prebuilt mobileValues — paste them verbatim to keep every mobile-supported property, then add only the value binding), " +
+		"prebuilt mobileValues — paste them verbatim to keep every mobile-supported property, then add only the value binding; " +
+		"a tab/label caption is carried verbatim in mobileValues and its resource is resolved into captionResource (key + en-US sourceValue) — register captionResource.key=sourceValue via update-page resources so the caption renders), " +
 		"plus pageBusinessRules (the source page's PAGE-level business rules converted for mobile — condition kept, only the " +
 		"hide/show/make-* actions whose elements survive; recreate each convertedRules[].rule with create-page-business-rule), " +
 		"plus requestConversions (component event-binding requests/actions converted for mobile — supported requests are already " +

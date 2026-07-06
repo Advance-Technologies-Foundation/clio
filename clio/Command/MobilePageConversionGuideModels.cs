@@ -80,7 +80,7 @@ public sealed class ComponentSuggestion {
 
 /// <summary>
 /// Caption/resource convention for a newly inserted named element. The caller passes
-/// <see cref="Key"/> = <see cref="SourceValue"/> to <c>update-page resources</c> verbatim.
+/// <see cref="Key"/> = <see cref="SourceValue"/> (the resolved en-US text) to <c>update-page resources</c>.
 /// </summary>
 public sealed class CaptionResource {
 	[JsonPropertyName("key")]
