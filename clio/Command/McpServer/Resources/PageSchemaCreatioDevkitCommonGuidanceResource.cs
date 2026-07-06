@@ -273,6 +273,28 @@ public sealed class PageSchemaCreatioDevkitCommonGuidanceResource {
 		         });
 		       - Rule: if a handler is already dispatching requests, do NOT use `DialogService`; use `crt.ShowDialogRequest`. Use `DialogService` only when the task explicitly matches existing SDK-style schema code.
 
+		       - Inner handler/body snippet: canonical `crt.ShowDialogRequest` dispatch from a handler (e.g. a button or `crt.MenuItem` `clicked` request that shows a short confirmation). The payload is a `MessageDialogConfig`: `message` and `actions` MUST be nested under `dialogConfig.data`, NOT at the top level. `actions` is optional - omit it for the default single OK button:
+		         return await sdk.HandlerChainService.instance.process({
+		           type: "crt.ShowDialogRequest",
+		           dialogConfig: {
+		             data: {
+		               message: "Approved.",
+		               actions: [
+		                 {
+		                   key: "ok",
+		                   config: {
+		                     color: "primary",
+		                     caption: "OK"
+		                   }
+		                 }
+		               ]
+		             }
+		           },
+		           $context: request.$context,
+		           scopes: [...request.scopes]
+		         });
+		       - Rule: `crt.ShowDialogRequest.dialogConfig` is a `MessageDialogConfig`; the platform injects `dialogConfig.data` into the dialog component and renders `data.message` / `data.actions`. Note the contrast with `DialogService.open(...)` above, which takes the FLAT `{ message, actions }` config directly - `crt.ShowDialogRequest` wraps that same config one level deeper under `dialogConfig.data`. Putting `message`/`actions` straight on `dialogConfig` leaves `data` undefined, so the dialog opens with an empty body and only the default OK button.
+
 		       - Inner handler/body snippet: canonical HandlerChainService dispatch from page-body handler code (per Creatio Academy SCHEMA_HANDLERS examples):
 		         return await sdk.HandlerChainService.instance.process({
 		           type: "usr.OpenCustomPageRequest",

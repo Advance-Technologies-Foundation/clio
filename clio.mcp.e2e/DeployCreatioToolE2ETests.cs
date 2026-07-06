@@ -11,16 +11,17 @@ using System.Text.Json;
 namespace Clio.Mcp.E2E;
 
 [TestFixture]
+[Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("deploy-creatio")]
-public sealed class DeployCreatioToolE2ETests
+[Parallelizable(ParallelScope.Self)]
+public sealed class DeployCreatioToolE2ETests : McpContractFixtureBase
 {
 	private const string ToolName = InstallerCommandTool.DeployCreatioToolName;
 	private const string ScheduledMaintenanceMessage =
 		"Infrastructure temporarily unavailable due to scheduled maintenance. Please try again later.";
 
 	[Test]
-	[Category("McpE2E.NoEnvironment")]
 	[Description("Starts the real clio MCP server, discovers deploy-creatio, and verifies the tool metadata advertises destructive behavior plus the required preflight guidance.")]
 	[AllureTag(ToolName)]
 	[AllureName("Deploy creatio advertises preflight guidance and destructive metadata")]
@@ -28,12 +29,10 @@ public sealed class DeployCreatioToolE2ETests
 	public async Task DeployCreatio_Should_Advertise_Preflight_Guidance()
 	{
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		await using var arrangeContext = Arrange();
 
 		// Act
-		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationTokenSource.Token);
+		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
 		McpClientTool tool = tools.Single(tool => tool.Name == ToolName);
 
 		// Assert
@@ -58,7 +57,6 @@ public sealed class DeployCreatioToolE2ETests
 	// "requires a reachable Kubernetes cluster", but the real blocker was the no-Kubernetes fallback
 	// IKubernetes client throwing from Dispose during per-request DI-scope teardown (opaque
 	// InternalError) — fixed under ENG-91830.
-	[Category("McpE2E.NoEnvironment")]
 	[Description("Starts the real clio MCP server, invokes deploy-creatio with an invalid archive path, and verifies that the tool reaches the real command path instead of returning the removed scheduled-maintenance stub.")]
 	[AllureTag(ToolName)]
 	[AllureName("Deploy creatio reaches the real command path")]
@@ -66,13 +64,11 @@ public sealed class DeployCreatioToolE2ETests
 	public async Task DeployCreatio_Should_Not_Return_Scheduled_Maintenance_Response()
 	{
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		await using var arrangeContext = Arrange();
 		string missingZipFile = Path.Combine(Path.GetTempPath(), $"missing-creatio-{Guid.NewGuid():N}.zip");
 
 		// Act
-		var callResult = await session.CallToolAsync(
+		var callResult = await arrangeContext.Session.CallToolAsync(
 			ToolName,
 			new Dictionary<string, object?>
 			{
@@ -82,7 +78,7 @@ public sealed class DeployCreatioToolE2ETests
 					["sitePort"] = 5001
 				}
 			},
-			cancellationTokenSource.Token);
+			arrangeContext.CancellationTokenSource.Token);
 		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
 		string combinedOutput = string.Join(
 			Environment.NewLine,

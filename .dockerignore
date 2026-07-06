@@ -1,3 +1,5 @@
-﻿clio/bin
+**/bin
+**/obj
+clio/bin
 clio/obj
 install/Dockerfile

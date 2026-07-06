@@ -141,8 +141,15 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 			context.LookupSchemaName!,
 			context.LookupColumnName,
 			context.CancellationTokenSource.Token);
+		callResult.IsError.Should().NotBeTrue(
+			because: "sync-schemas should return a structured success payload for a valid sandbox package");
 		JsonElement response = ExtractSchemaSyncResponse(callResult);
 		JsonElement[] results = response.GetProperty("results").EnumerateArray().ToArray();
+		string responsePayload = FormatPayload(response);
+		response.GetProperty("success").GetBoolean().Should().BeTrue(
+			because: $"the composite batch should succeed on the reachable sandbox environment. Payload: {responsePayload}");
+		results.Should().HaveCount(4,
+			because: $"create-entity, create-lookup, seed-data, and update-entity should each produce one result. Payload: {responsePayload}");
 		JsonElement createLookupResult = FindResult(results, "create-lookup", context.LookupSchemaName!);
 		JsonElement seedResult = FindResult(results, "seed-data", context.LookupSchemaName!);
 		JsonElement updateResult = FindResult(results, "update-entity", context.EntitySchemaName!);
@@ -168,12 +175,6 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 			context.CancellationTokenSource.Token);
 
 		// Assert
-		callResult.IsError.Should().NotBeTrue(
-			because: "sync-schemas should return a structured success payload for a valid sandbox package");
-		response.GetProperty("success").GetBoolean().Should().BeTrue(
-			because: "the composite batch should succeed on the reachable sandbox environment");
-		results.Should().HaveCount(4,
-			because: "create-entity, create-lookup, seed-data, and update-entity should each produce one result");
 		results.Select(result => result.GetProperty("type").GetString()).Should().OnlyContain(type =>
 				!string.IsNullOrWhiteSpace(type),
 			because: "sync-schemas should expose the canonical type field on every result");
@@ -403,7 +404,7 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 			return (_sharedEnvironmentName!, _sharedPackageName);
 		}
 
-		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		string environmentName = await ResolveReachableEnvironmentAsync(settings, cancellationToken);
 		try {
 			await ClioCliCommandRunner.EnsureCliogateInstalledAsync(settings, environmentName, cancellationToken);
 		}
@@ -429,15 +430,17 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 		return (environmentName, packageName);
 	}
 
-	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
+	private static async Task<string> ResolveReachableEnvironmentAsync(
+		McpE2ESettings settings,
+		CancellationToken cancellationToken) {
 		string? configuredEnvironmentName = settings.Sandbox.EnvironmentName;
 		if (!string.IsNullOrWhiteSpace(configuredEnvironmentName) &&
-			await CanReachEnvironmentAsync(settings, configuredEnvironmentName)) {
+			await CanReachEnvironmentAsync(settings, configuredEnvironmentName, cancellationToken)) {
 			return configuredEnvironmentName;
 		}
 
 		const string fallbackEnvironmentName = "d2";
-		if (await CanReachEnvironmentAsync(settings, fallbackEnvironmentName)) {
+		if (await CanReachEnvironmentAsync(settings, fallbackEnvironmentName, cancellationToken)) {
 			return fallbackEnvironmentName;
 		}
 
@@ -446,10 +449,14 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 		return string.Empty;
 	}
 
-	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) {
+	private static async Task<bool> CanReachEnvironmentAsync(
+		McpE2ESettings settings,
+		string environmentName,
+		CancellationToken cancellationToken) {
 		ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(
 			settings,
-			["ping-app", "-e", environmentName]);
+			["ping-app", "-e", environmentName, "--timeout", "30000"],
+			cancellationToken: cancellationToken);
 		return result.ExitCode == 0;
 	}
 
@@ -752,6 +759,9 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 			string.Equals(result.GetProperty("type").GetString(), operation, StringComparison.Ordinal) &&
 			string.Equals(result.GetProperty("schema-name").GetString(), schemaName, StringComparison.Ordinal));
 	}
+
+	private static string FormatPayload(JsonElement payload) =>
+		JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = false });
 
 	private static string[] GetMessageValues(JsonElement result) {
 		if (!result.TryGetProperty("messages", out JsonElement messagesElement) ||

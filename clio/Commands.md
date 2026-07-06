@@ -131,6 +131,10 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="add-pkg-dependency"></a>
 <a id="add-pkg-dep"></a>
 - [`add-package-dependency`](docs/commands/add-package-dependency.md) - Add one or more package dependencies to a package, `add-pkg-dependency`, `add-pkg-dep`
+<a id="remove-package-dependency"></a>
+<a id="remove-pkg-dependency"></a>
+<a id="remove-pkg-dep"></a>
+- [`remove-package-dependency`](docs/commands/remove-package-dependency.md) - Remove one or more package dependencies from a package, `remove-pkg-dependency`, `remove-pkg-dep`
 <a id="activate-pkg"></a>
 <a id="activate-package"></a>
 <a id="apkg"></a>
@@ -571,6 +575,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="link-package-store"></a>
 <a id="lps"></a>
 - [`link-package-store`](docs/commands/link-package-store.md) - Link PackageStore packages into an environment, `lps`
+<a id="mcp-http"></a>
+- [`mcp-http`](docs/commands/mcp-http.md) - Start the MCP server over HTTP
 <a id="mcp-server"></a>
 <a id="mcp"></a>
 - [`mcp-server`](docs/commands/mcp-server.md) - Start the MCP server over stdio, `mcp`

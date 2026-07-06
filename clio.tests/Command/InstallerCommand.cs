@@ -28,6 +28,11 @@ internal class InstallerCommandTests : BaseCommandTests<PfInstallerOptions>
 		base.Setup();
 	}
 
+	[OneTimeTearDown]
+	public void OneTimeTearDown() {
+		_testKubernetesMock?.Dispose();
+	}
+
 	[Test(Description = "Should return without waiting for user input")]
 	public void Execute_ReturnsWithoutWaitingForInput_WhenSilent(){
 		//Arrange
