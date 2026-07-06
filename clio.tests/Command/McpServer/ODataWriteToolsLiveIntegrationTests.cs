@@ -45,12 +45,14 @@ public sealed class ODataWriteToolsLiveIntegrationTests {
 
 		try {
 			// CREATE
-			ODataWriteResponse created = create.Create(new ODataCreateArgs {
-				EnvironmentName = "live", Entity = "Contact", Data = Obj($"{{\"Name\":\"{name}\"}}")
+			ODataCreateBatchResponse created = create.Create(new ODataCreateArgs {
+				EnvironmentName = "live", Entity = "Contact", Rows = Obj($"[{{\"Name\":\"{name}\"}}]")
 			});
-			created.Success.Should().BeTrue(because: created.Error);
-			created.Id.Should().NotBeNullOrEmpty();
-			id = created.Id;
+			created.Error.Should().BeNull();
+			ODataRowResult createdRow = created.Results[0];
+			createdRow.Success.Should().BeTrue(because: createdRow.Error);
+			createdRow.Id.Should().NotBeNullOrEmpty();
+			id = createdRow.Id;
 
 			// READ created
 			ODataReadResponse afterCreate = read.Read(ReadById(id!));
@@ -77,7 +79,7 @@ public sealed class ODataWriteToolsLiveIntegrationTests {
 			id = null;
 
 			// READ confirms gone
-			ODataReadResponse afterDelete = read.Read(ReadById(created.Id!));
+			ODataReadResponse afterDelete = read.Read(ReadById(createdRow.Id!));
 			afterDelete.Success.Should().BeTrue(because: afterDelete.Error);
 			afterDelete.Count.Should().Be(0);
 		} finally {

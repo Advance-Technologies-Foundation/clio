@@ -22,20 +22,16 @@ public static class CreateBusinessProcessPrompt {
 		[Description("Optional target package name (overrides the descriptor's packageName)")]
 		string packageName = null) =>
 		$"""
-		 Build a business process on Creatio environment `{environmentName}` using the
-		 `create-business-process` tool. Supply a JSON descriptor object with these fields:
-		 - `name` (unique schema code), `caption`, `packageName`{(string.IsNullOrWhiteSpace(packageName) ? "" : $" (override: `{packageName}`)")}
-		 - `elements`: array of items with `id`, `type`, `caption`, optional `userTaskName`; `type` is
-		   `startEvent` | `endEvent` | `userTask` (aliases `readData`, `performTask`).
-		 - `flows`: array of `source`/`target` pairs referencing element ids (start → tasks → end).
-		 - `parameters`: array of `name`/`type`/`direction`/`caption` (process inputs / variables).
-		 - `mappings`: array binding `elementId` + `elementParameter` to one of
-		   `processParameter` (bind to a process parameter), `value` (constant), or `expression` (formula).
-		 - For a record trigger use a `signalStart` element (`signal` = entity + `on`: added|modified|deleted);
-		   restrict it to matching records with a `filter` (object + conditions of column/comparison/value, where
-		   column is the entity column name and may be a lookup dot-path; the server serializes the platform
-		   filter — never hand-write filter JSON).
-		 First call `list-user-tasks` for `{environmentName}` to discover valid `userTaskName` values, then
-		 confirm the target package with the user before building.
+		 Build a business process on Creatio environment `{environmentName}` with the `create-business-process` tool.
+		 Steps: (1) call `list-user-tasks` for `{environmentName}` to discover valid `userTaskName` values;
+		 (2) read `get-guidance name=process-modeling` for the full descriptor contract — element types, flows,
+		 parameters (incl. `typeFromElement` to copy an element parameter's exact type, and a constant `value`
+		 default), the `mappings` target/source contract, signal triggers (and a data source `filter` to restrict
+		 which records fire one), and the type-compatibility rule;
+		 (3) supply a JSON descriptor with `name`
+		 (unique schema code), `caption`, `packageName`{(string.IsNullOrWhiteSpace(packageName) ? "" : $" (override: `{packageName}`)")} and the `elements` / `flows` / `parameters` / `mappings` arrays.
+		 To run the process when a record is added/changed/deleted, use a `signalStart` element (the platform-native
+		 trigger), not a page save handler; add a `filter` to fire only for matching records. Confirm the target
+		 package with the user before building.
 		 """;
 }

@@ -1,33 +1,22 @@
 using System;
-using System.IO;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Clio.Common;
 using Clio.UserEnvironment;
-using CommandLine;
 
 namespace Clio.Command;
 
 /// <summary>
-/// CLI options for building a business process from a declarative descriptor via the ProcessDesignService package.
+/// Options for building a business process from a declarative descriptor via the ProcessDesignService package.
+/// Consumed by the MCP <c>create-business-process</c> tool, which sets these properties directly.
 /// </summary>
-[Verb("create-business-process", Aliases = ["create-bp"],
-	HelpText = "Build a business process on a Creatio environment from a declarative JSON descriptor")]
 [RequiresPackage("clioprocessbuilder", Hint = "This experimental feature requires the clioprocessbuilder package on the target environment.")]
 public sealed class CreateBusinessProcessOptions : EnvironmentOptions {
-	[Option("descriptor", Required = false,
-		HelpText = "Path to a JSON file with the process descriptor "
-			+ "(name, caption, packageName, elements[], flows[], parameters[], mappings[]). "
-			+ "Provide this or --descriptor-json.")]
-	public string DescriptorPath { get; set; } = string.Empty;
-
-	[Option("descriptor-json", Required = false,
-		HelpText = "Inline JSON process descriptor (alternative to --descriptor).")]
+	/// <summary>Inline JSON process descriptor (name, caption, packageName, elements[], flows[], parameters[], mappings[]).</summary>
 	public string DescriptorJson { get; set; } = string.Empty;
 
-	[Option("package-name", Required = false,
-		HelpText = "Overrides the target package from the descriptor (the package the process is created in).")]
+	/// <summary>Overrides the target package from the descriptor (the package the process is created in).</summary>
 	public string PackageName { get; set; } = string.Empty;
 }
 
@@ -134,7 +123,7 @@ public sealed class CreateBusinessProcessService(
 }
 
 /// <summary>
-/// Builds a business process from a descriptor (file or inline JSON) and prints the structured result.
+/// Builds a business process from an inline JSON descriptor and prints the structured result.
 /// </summary>
 public class CreateBusinessProcessCommand(
 	ICreateBusinessProcessService createBusinessProcessService,
@@ -148,35 +137,19 @@ public class CreateBusinessProcessCommand(
 				throw new InvalidOperationException("Environment name is required.");
 			}
 
-			string descriptorJson = ResolveDescriptorJson(options);
+			if (string.IsNullOrWhiteSpace(options.DescriptorJson)) {
+				throw new InvalidOperationException("A process descriptor is required.");
+			}
+
 			CreateBusinessProcessResult result = createBusinessProcessService.BuildProcess(
 				options.Environment,
-				new CreateBusinessProcessRequest(descriptorJson, options.PackageName));
+				new CreateBusinessProcessRequest(options.DescriptorJson, options.PackageName));
 			logger.WriteInfo($"Process '{result.SchemaName}' created (UId: {result.SchemaUId}).");
 			return 0;
 		} catch (Exception exception) {
 			logger.WriteError(exception.Message);
 			return 1;
 		}
-	}
-
-	/// <summary>
-	/// Resolves the descriptor JSON content from the inline option or the descriptor file.
-	/// </summary>
-	private static string ResolveDescriptorJson(CreateBusinessProcessOptions options) {
-		if (!string.IsNullOrWhiteSpace(options.DescriptorJson)) {
-			return options.DescriptorJson;
-		}
-
-		if (string.IsNullOrWhiteSpace(options.DescriptorPath)) {
-			throw new InvalidOperationException("One of --descriptor or --descriptor-json is required.");
-		}
-
-		if (!File.Exists(options.DescriptorPath)) {
-			throw new FileNotFoundException($"Process descriptor file was not found: '{options.DescriptorPath}'.");
-		}
-
-		return File.ReadAllText(options.DescriptorPath);
 	}
 }
 

@@ -15,6 +15,14 @@ internal static class GuidanceCatalog {
 
 	private static IReadOnlyDictionary<string, GuidanceCatalogEntry> CreateEntries() {
 		Dictionary<string, GuidanceCatalogEntry> entries = new(StringComparer.OrdinalIgnoreCase) {
+			["core-rules"] = Create(
+				"core-rules",
+				"The non-negotiable clio MCP invariants (compile/restart, long-running await, profile culture, destructive confirmation, correlation-id) that apply to every operation. The server instructions mandate reading this first on any operation.",
+				CoreRulesGuidanceResource.Guide),
+			["routing"] = Create(
+				"routing",
+				"The canonical clio MCP routing map: a two-level, names-only table that maps a task (pages, entities, data, applications) to the get-guidance article(s) to read before acting. The server instructions mandate reading this first on any operation.",
+				RoutingGuidanceResource.Guide),
 			["app-modeling"] = Create(
 				"app-modeling",
 				"Canonical MCP guidance for Creatio application modeling, schema design, and page modification workflows.",
@@ -75,13 +83,17 @@ internal static class GuidanceCatalog {
 				"indicator-widget",
 				"Canonical MCP guidance for Freedom UI indicator widgets: Copilot-intent to runtime payload translation, aggregate selection, and static filter authoring.",
 				IndicatorWidgetGuidanceResource.Guide),
+			["chart-widget"] = Create(
+				"chart-widget",
+				"Canonical MCP guidance for Freedom UI chart widgets: Copilot-intent to runtime payload translation, chart-type selection (bar/column, doughnut/pie, line/spline), series and aggregation rules, and static filter authoring.",
+				ChartWidgetGuidanceResource.Guide),
 			["dashboards"] = Create(
 				"dashboards",
 				"Canonical MCP guidance for placing, sizing, grouping, and styling Freedom UI analytical widgets (metrics and charts) on dashboards: the 12-column grid, the metric-band-then-chart-grid skeleton, section grouping, per-widget-type default sizes, and the plain-white default card style.",
 				DashboardGuidanceResource.Guide),
 			["related-list"] = Create(
 				"related-list",
-				"Canonical MCP guidance for adding a Freedom UI related/child list (detail) and filtering it by the current page record: the ExpansionPanel + DataGrid composite, the child EntityDataSource, the isCollection attribute, and the declarative modelConfig.dependencies (attributePath/relationPath) that scopes the list by page data — no handler.",
+				"Canonical MCP guidance for adding a Freedom UI related/child list and filtering it by the current page record (master-detail \"filter by page data\"): the declarative, dependencies-based scoping — no handler. Fetch the 'Expanded list' composite structure via get-component-info.",
 				RelatedListGuidanceResource.Guide),
 			["agent-execution"] = Create(
 				"agent-execution",
@@ -89,8 +101,12 @@ internal static class GuidanceCatalog {
 				AgentExecutionGuidanceResource.Guide),
 			["deploy-lifecycle"] = Create(
 				"deploy-lifecycle",
-				"Canonical MCP guidance for the Creatio deploy/provisioning lifecycle: assert-infrastructure -> show-passing-infrastructure -> find-empty-iis-port -> deploy-creatio, plus build discovery, registration, and cliogate installation.",
+				"Canonical MCP guidance for the Creatio deploy/provisioning lifecycle: assert-infrastructure -> show-passing-infrastructure -> find-empty-iis-port -> deploy-creatio/deploy-identity, plus build discovery, registration, IdentityService, and cliogate installation.",
 				DeployLifecycleGuidanceResource.Guide),
+			["describe-environment"] = Create(
+				"describe-environment",
+				"Canonical MCP guidance for describe-environment: the single source-independent environment report (coreVersion, db engine, framework, productName, licenseInfo, locale/workspace metadata), which source supplies each field, and the cliogate / CanManageSolution prerequisites.",
+				DescribeEnvironmentGuidanceResource.Guide),
 			["support-mode"] = Create(
 				"support-mode",
 				"Canonical MCP guidance for diagnostic-first execution under support mode: severity routing, confirmation probes, fail-fast evidence, and reporting.",
@@ -125,10 +141,12 @@ internal static class GuidanceCatalog {
 			["process-modeling"] = Create(
 				"process-modeling",
 				"""
-				Canonical MCP guidance for designing Creatio business processes (BPMN): 
-				the determinism contract (clio makes no LLM call; the agent owns intent->BPMN translation), 
-				the element catalog (data-id/label/purpose/setup fields), connection rules R1-R17 + can/can't matrix, 
-				the validate-then-drive build recipe, and the supported slice (Simple/Signal/Timer start + Read data).
+				Canonical MCP guidance for designing Creatio business processes (BPMN):
+				the determinism contract (clio makes no LLM call; the agent owns intent->BPMN translation),
+				the element catalog (data-id/label/purpose/setup fields), connection rules R1-R17 + can/can't matrix,
+				the validate-then-drive build recipe, the buildable slice (Simple/Signal start, end, user tasks +
+				sequence flows — gateways/conditional flows/timers not yet), and the modify-safety rules for
+				editing an existing process.
 				""",
 				ProcessModelingGuidanceResource.Guide,
 				featureGateType: typeof(ProcessModelingGuidanceResource)),
@@ -137,11 +155,32 @@ internal static class GuidanceCatalog {
 				"""
 				Canonical MCP guidance for adding a Freedom UI button that runs a business process
 				(crt.RunBusinessProcessRequest) via update-page: get-process-signature first, parameter
-				key = CODE not caption (silent-skip warning), and the static-constant / 
+				key = CODE not caption (silent-skip warning), and the static-constant /
 				view-model-attribute-binding / current-record variants.
 				""",
 				RunProcessButtonGuidanceResource.Guide,
-				featureGateType: typeof(RunProcessButtonGuidanceResource))
+				featureGateType: typeof(RunProcessButtonGuidanceResource)),
+			["identity-assertion"] = Create(
+				"identity-assertion",
+				"Canonical MCP guidance for the Creatio identity-assertion / Identity Service V3 token-exchange "
+				+ "flow used by the embedded AI chat: onboarding sequence (regenerate key, export public JWK, "
+				+ "register with V3, issue assertion, exchange), the EnableIdentityAssertionIssuer feature and "
+				+ "CanManageIdentityAssertionIssuer permission prerequisites, the four clio tools, and troubleshooting.",
+				IdentityAssertionGuidanceResource.Guide),
+			["server-to-server-oauth"] = Create(
+				"server-to-server-oauth",
+				"Canonical MCP guidance for using Creatio server-to-server OAuth client credentials: "
+				+ "minting client_credentials tokens, handling expiry without refresh tokens, and calling "
+				+ "Creatio APIs with an Authorization: Bearer token.",
+				ServerToServerOAuthGuidanceResource.Guide),
+			["package-dependencies"] = Create(
+				"package-dependencies",
+				"Canonical MCP guidance for managing Creatio package dependencies: the schema-designer "
+				+ "'GetSchemaDesignItem returned an HTML error page' recovery via add-package-dependency "
+				+ "(missing dependency on the owner of the extended object's upper layer), the symmetric "
+				+ "remove-package-dependency cleanup, and the anti-patterns (no writes into the owning managed "
+				+ "package, no raw SQL/OData/DataService dependency edits).",
+				PackageDependenciesGuidanceResource.Guide)
 		};
 
 		foreach (ComposableAppSkillResourceEntry guide in ComposableAppSkillResourceCatalog.GetGuides()) {

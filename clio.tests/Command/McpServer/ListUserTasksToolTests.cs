@@ -24,7 +24,7 @@ public class ListUserTasksToolTests {
 		ListUserTasksTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.ListUserTasks("docker_fix2");
+		CommandExecutionResult result = tool.ListUserTasks(new ListUserTasksArgs("docker_fix2"));
 
 		// Assert
 		result.ExitCode.Should().Be(0,
@@ -51,7 +51,7 @@ public class ListUserTasksToolTests {
 		ListUserTasksTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.ListUserTasks("   ");
+		CommandExecutionResult result = tool.ListUserTasks(new ListUserTasksArgs("   "));
 
 		// Assert
 		result.ExitCode.Should().Be(-1,

@@ -35,6 +35,18 @@ public sealed class PageCreateTool(
 			Password = args.Password,
 			CaptionCulture = args.CaptionCulture
 		};
+		if (string.IsNullOrWhiteSpace(options.SchemaName)) {
+			return new PageCreateResponse {
+				Success = false,
+				Error = "schema-name is required"
+			};
+		}
+		if (!PageSchemaMetadataHelper.IsValidSchemaName(options.SchemaName)) {
+			return new PageCreateResponse {
+				Success = false,
+				Error = PageSchemaMetadataHelper.SchemaNameFormatError
+			};
+		}
 		return ExecuteWithCleanLog(() => {
 			PageCreateCommand resolvedCommand;
 			try {
@@ -43,6 +55,9 @@ public sealed class PageCreateTool(
 				return new PageCreateResponse { Success = false, Error = ex.Message };
 			}
 			resolvedCommand.TryCreatePage(options, out PageCreateResponse response);
+			if (response is { Success: true }) {
+				response.Note = CommandExecutionResult.CompileNotRequiredNote;
+			}
 			return response;
 		});
 	}

@@ -19,7 +19,7 @@ public sealed record PackageDependencySpec(string Name, string Version = null);
 #region Interface: IPackageDependencyManager
 
 /// <summary>
-/// Adds dependencies to a package via the Creatio <c>PackageService.svc</c> endpoint.
+/// Adds dependencies to or removes dependencies from a package via the Creatio <c>PackageService.svc</c> endpoint.
 /// </summary>
 public interface IPackageDependencyManager
 {
@@ -34,6 +34,16 @@ public interface IPackageDependencyManager
 	/// <param name="dependencies">Dependencies to add.</param>
 	/// <returns>The resulting dependency package names after the merge.</returns>
 	IReadOnlyList<string> AddDependencies(string packageName, IEnumerable<PackageDependencySpec> dependencies);
+
+	/// <summary>
+	/// Removes the requested dependencies from <paramref name="packageName"/> and persists the change.
+	/// Removing a dependency that is not present is a no-op (idempotent). Dependencies are matched by name
+	/// (case-insensitive); the version is ignored.
+	/// </summary>
+	/// <param name="packageName">Target package whose dependency list is trimmed.</param>
+	/// <param name="dependencyNames">Names of the dependency packages to remove.</param>
+	/// <returns>The resulting dependency package names after the removal.</returns>
+	IReadOnlyList<string> RemoveDependencies(string packageName, IEnumerable<string> dependencyNames);
 
 	#endregion
 

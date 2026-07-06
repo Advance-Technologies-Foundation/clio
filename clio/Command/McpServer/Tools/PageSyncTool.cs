@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Acornima.Ast;
 using Clio.Command;
+using Clio.UserEnvironment;
 using McpServerLib = ModelContextProtocol.Server;
 using ModelContextProtocol.Server;
 using IFileSystem = System.IO.Abstractions.IFileSystem;
@@ -25,7 +26,9 @@ public sealed class PageSyncTool(
 	IMobileComponentInfoCatalog mobileComponentCatalog,
 	IComponentInfoCatalog webComponentCatalog,
 	IPageBodySamplingService samplingService,
-	IPageBaselineGuard pageBaselineGuard) {
+	IPageBaselineGuard pageBaselineGuard,
+	IPlatformVersionResolverFactory? resolverFactory = null,
+	ISettingsRepository? settingsRepository = null) {
 
 	internal const string ToolName = "sync-pages";
 
@@ -59,11 +62,52 @@ public sealed class PageSyncTool(
 		PageSyncPrePassResults prePass = BuildPrePassResults(pages);
 		IReadOnlyList<PageSamplingReview?> samplingResults = await RunSamplingPrePassAsync(
 			server, args, pages, prePass, cancellationToken);
-		List<PageSyncPageResult> results = ExecuteSyncBatch(args, pages, prePass, samplingResults);
+		// Registry-driven chart-widget validation needs the async, version-scoped catalog. Scope it to the
+		// target environment's platform version (probed the same way get-component-info resolves it) so the
+		// batch validates against the component set the environment actually ships, not the broader 'latest'.
+		// Resolve the merged type definitions once here on the async entry, then reuse them across the
+		// synchronous per-page deterministic triage in ExecuteSyncBatch. Skip the probe entirely when
+		// validation is disabled — the definitions would never be consumed. Null when validation is off or
+		// the registry/version is unavailable (fail-open).
+		IReadOnlyDictionary<string, System.Text.Json.JsonElement>? chartTypeDefinitions = null;
+		if (args.Validate ?? true) {
+			string? platformVersion = await ResolvePlatformVersionAsync(args.EnvironmentName, cancellationToken).ConfigureAwait(false);
+			chartTypeDefinitions = await ChartWidgetValidation
+				.ResolveTypeDefinitionsAsync(webComponentCatalog, platformVersion, cancellationToken).ConfigureAwait(false);
+		}
+		List<PageSyncPageResult> results = ExecuteSyncBatch(args, pages, prePass, samplingResults, chartTypeDefinitions);
 		return new PageSyncResponse {
 			Success = results.Count > 0 && results.All(r => r.Success),
 			Pages = results
 		};
+	}
+
+	/// <summary>
+	/// Resolves the target environment's platform version so the chart-widget validation catalog is scoped
+	/// to the component set the environment actually ships (mirroring <c>get-component-info</c>'s resolution).
+	/// Fail-soft: a blank environment, absent resolver dependencies (e.g. a unit test that did not supply
+	/// them), or any probe failure yields <see langword="null"/>, which <see cref="ChartWidgetValidation"/>
+	/// maps to the safe <c>latest</c> superset — version resolution must never block a save.
+	/// </summary>
+	private async Task<string?> ResolvePlatformVersionAsync(string environmentName, CancellationToken cancellationToken) {
+		if (resolverFactory is null || settingsRepository is null || string.IsNullOrWhiteSpace(environmentName)) {
+			return null;
+		}
+		try {
+			EnvironmentSettings settings = settingsRepository.GetEnvironment(new EnvironmentOptions { Environment = environmentName });
+			if (settings is null) {
+				return null;
+			}
+			PlatformVersionResolution resolution = await resolverFactory.Create(settings)
+				.ResolveAsync(cancellationToken).ConfigureAwait(false);
+			return resolution?.ResolvedVersion;
+		} catch (OperationCanceledException) {
+			throw;
+		} catch (Exception) {
+			// Fail-soft: a bad/unreachable environment must not break a save. The catalog stays on 'latest'
+			// (ChartWidgetValidation maps null -> latest), matching get-component-info's soft degrade.
+			return null;
+		}
 	}
 
 	// Pre-pass: runs the deterministic syntax + AST-lint gates on every web
@@ -142,7 +186,8 @@ public sealed class PageSyncTool(
 		PageSyncArgs args,
 		IReadOnlyList<PageSyncPageInput> pages,
 		PageSyncPrePassResults prePass,
-		IReadOnlyList<PageSamplingReview?> samplingResults) {
+		IReadOnlyList<PageSamplingReview?> samplingResults,
+		IReadOnlyDictionary<string, System.Text.Json.JsonElement>? chartTypeDefinitions) {
 		var results = new List<PageSyncPageResult>(pages.Count);
 		var pendingIndices = new List<int>();
 		// Step 1: Materialise EVERY deterministic failure (syntax, regex
@@ -167,12 +212,17 @@ public sealed class PageSyncTool(
 			PageSyncPrePassEntry entry = prePass.Entries[i];
 			PageSyncPageInput page = pages[i];
 			if (entry.SyntaxFailureMessage is { } syntaxMsg) {
-				results.Add(BuildPrePassFailureResult(page, syntaxMsg));
+				results.Add(BuildPrePassFailureResult(page, ResolvePrePassSyntaxFailureMessage(page, syntaxMsg, validate)));
 				continue;
 			}
 			PageSyncPageResult deterministicFailure = TryMaterialiseDeterministicFailure(page, entry, validate);
 			if (deterministicFailure != null) {
 				results.Add(deterministicFailure);
+				continue;
+			}
+			PageSyncPageResult chartFailure = TryMaterialiseChartWidgetFailure(page, validate, chartTypeDefinitions);
+			if (chartFailure != null) {
+				results.Add(chartFailure);
 				continue;
 			}
 			results.Add(null);
@@ -257,6 +307,37 @@ public sealed class PageSyncTool(
 	// syntactic failure means we never ran the markers or content validators
 	// for this body, so the envelope must NOT claim those gates passed. Only
 	// JsSyntaxOk has authoritative state at this point.
+	// A whole-body JS syntax error is frequently a side effect of a more specific,
+	// regex-detectable content problem: broken JSON inside a JSON-backed SCHEMA_*
+	// marker (e.g. a stray double comma in SCHEMA_VIEW_CONFIG_DIFF), a converter /
+	// validator declared with the wrong key shape, a proxy field binding, etc. The
+	// generic Acornima message ("JavaScript syntax error at line X, column Y")
+	// cannot name the offending section. The deterministic content chain (ValidateBody)
+	// can — and it is regex-based, so it runs even on a body that does not parse as
+	// JavaScript. When validation is on and that chain pinpoints a concrete problem,
+	// prefer its specific, actionable error over the generic parser message. A genuine
+	// JS-only syntax error (clean markers + content) leaves the chain with no errors,
+	// so the ENG-89796 generic syntax wording is preserved for that case.
+	private static string ResolvePrePassSyntaxFailureMessage(PageSyncPageInput page, string syntaxMessage, bool validate) {
+		if (!validate) {
+			return syntaxMessage;
+		}
+		// Only override the generic syntax error when the body is still a recognizable
+		// page body — markers present and correctly paired. If marker integrity itself
+		// fails (e.g. missing SCHEMA_DEPS / SCHEMA_ARGS), the body is not a usable page
+		// at all and the generic JS syntax error is the more honest, actionable signal
+		// (ENG-89796). This keeps FailFast-on-pure-syntax-error behaviour intact while
+		// still pinpointing a marker/content problem inside an otherwise well-formed page.
+		if (!SchemaValidationService.ValidateMarkerIntegrity(page.Body).IsValid) {
+			return syntaxMessage;
+		}
+		PageSyncValidationResult content = ValidateBody(page.Body, page.Resources);
+		IReadOnlyList<string> contentErrors = content.Errors ?? Array.Empty<string>();
+		return contentErrors.Count == 0
+			? syntaxMessage
+			: "Client-side validation failed: " + string.Join("; ", contentErrors);
+	}
+
 	private static PageSyncPageResult BuildPrePassFailureResult(PageSyncPageInput page, string failureMessage) =>
 		new() {
 			SchemaName = page.SchemaName,
@@ -277,6 +358,36 @@ public sealed class PageSyncTool(
 	// here (they are validated inside the lock by MobilePageValidation).
 	// Precedence on overlap: regex wins over lint — its wording is what
 	// existing tests and operator habits depend on.
+	// Registry-driven chart-widget required-field check, materialised into the same per-page failure
+	// shape as TryMaterialiseDeterministicFailure. Web-only (mobile bodies carry no chart widgets) and
+	// fail-open when the registry was unavailable (chartTypeDefinitions == null). The type definitions
+	// are resolved once on the async entry (SyncPages) so this stays a synchronous per-page check.
+	private static PageSyncPageResult TryMaterialiseChartWidgetFailure(
+		PageSyncPageInput page,
+		bool validate,
+		IReadOnlyDictionary<string, System.Text.Json.JsonElement>? chartTypeDefinitions) {
+		if (!validate || chartTypeDefinitions is null ||
+		    PageSchemaTypeExtensions.FromBody(page.Body) == PageSchemaType.Mobile) {
+			return null;
+		}
+		SchemaValidationResult chartResult =
+			SchemaValidationService.ValidateChartWidgetConfig(page.Body, chartTypeDefinitions);
+		if (chartResult.IsValid) {
+			return null;
+		}
+		return new PageSyncPageResult {
+			SchemaName = page.SchemaName,
+			Success = false,
+			Validation = new PageSyncValidationResult {
+				MarkersOk = true,
+				JsSyntaxOk = true,
+				ContentOk = false,
+				Errors = chartResult.Errors
+			},
+			Error = "Client-side validation failed: " + string.Join("; ", chartResult.Errors)
+		};
+	}
+
 	private static PageSyncPageResult TryMaterialiseDeterministicFailure(
 		PageSyncPageInput page,
 		PageSyncPrePassEntry entry,

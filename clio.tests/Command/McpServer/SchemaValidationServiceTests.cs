@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Text.Json;
 using Clio.Command;
 using FluentAssertions;
 using NUnit.Framework;
@@ -3711,8 +3712,8 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
-	[Description("Custom validators with any logic are allowed — guidance steers AI toward standard validators; runtime validation does not second-guess custom implementations.")]
-	public void ValidateStandardValidatorUsage_CustomMaxLengthStyleValidator_ReturnsValid() {
+	[Description("Custom validator whose name contains 'MaxLength' is rejected in favour of the built-in crt.MaxLength.")]
+	public void ValidateStandardValidatorUsage_CustomMaxLengthStyleValidator_ReturnsInvalid() {
 		// Arrange
 		string viewConfigDiff = """
 			[
@@ -3764,10 +3765,104 @@ public sealed class SchemaValidationServiceTests
 		SchemaValidationResult result = SchemaValidationService.ValidateStandardValidatorUsage(body);
 
 		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "a custom validator whose name contains 'MaxLength' re-implements crt.MaxLength and must be replaced with the built-in");
+		result.Errors.Should().ContainSingle(error =>
+			error.Contains("usr.NameMaxLength") && error.Contains("crt.MaxLength"),
+			because: "the error should identify both the rejected validator and the built-in replacement");
+	}
+
+	[Test]
+	[Description("Control binding to a proxy view-model attribute (flat form, no path:[]) gets an error message that names both the proxy binding and the expected datasource-derived binding.")]
+	public void ValidateInsertedFieldSelfConsistency_ProxyBindingFlatForm_ErrorNamesExpectedDatasourceBinding() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"UsrStatus",
+						"values":
+							{
+								"type":"crt.ComboBox",
+								"label":"$Resources.Strings.PDS_UsrStatus",
+								"control":"$UsrStatus"
+							}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"merge",
+						"values":{"UsrStatus":{"modelConfig":{"path":"PDS.UsrStatus"}}}
+					}
+				]
+			""");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "the attribute is declared in flat form without the required path:[] nesting");
+		result.Errors.Should().Contain(error =>
+			error.Contains("$UsrStatus") && error.Contains("$PDS_UsrStatus"),
+			because: "the error must name both the rejected proxy binding and the expected datasource-derived binding so the agent knows what to replace it with");
+	}
+
+	[Test]
+	[Description("Custom validator whose name does not contain 'MaxLength' is not rejected — only MaxLength re-implementations are flagged.")]
+	public void ValidateStandardValidatorUsage_CustomNonMaxLengthValidator_ReturnsValid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"UsrName",
+						"values":{"type":"crt.Input","control":"$PDS_UsrName"}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"merge",
+						"path":[],
+						"values":{"attributes":{"PDS_UsrName":{"modelConfig":{"path":"PDS.UsrName"}}}}
+					}
+				]
+			""");
+		string body2 = body.Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			"""
+				/**SCHEMA_VALIDATORS*/
+					{
+						"usr.UpperCaseOnly": {
+							"validator":
+								function(config){
+									return function(control){
+										if (control.value && control.value !== control.value.toUpperCase()) {
+											return {"usr.UpperCaseOnly": { message: config.message }};
+										} return null;
+									};
+								},
+							"params":[{"name":"message"}],
+							"async":false
+						}
+					}
+				/**SCHEMA_VALIDATORS*/
+			""");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateStandardValidatorUsage(body2);
+
+		// Assert
 		result.IsValid.Should().BeTrue(
-			because: "runtime validation no longer second-guesses whether a custom validator duplicates a built-in; guidance steers the AI at authoring time");
+			because: "validators without 'MaxLength' in their name are not flagged as built-in reimplementations");
 		result.Errors.Should().BeEmpty(
-			because: "custom validators with .length checks are valid — only structural schema errors are rejected at runtime");
+			because: "only MaxLength-named validators trigger the built-in replacement error");
 	}
 
 	[Test]
@@ -7228,6 +7323,195 @@ public sealed class SchemaValidationServiceTests
 
 		// Assert
 		result.Should().BeEmpty(because: "attributes without a modelConfig.path are not DS-bound and must not be reported");
+	}
+
+	#endregion
+
+	#region ValidateChartWidgetConfig
+
+	// Minimal merged typeDefinitions mirroring the real registry shapes the walk traverses:
+	// ChartWidgetConfig (per-component) -> series -> ChartSeriesConfig -> data
+	// (WidgetDataConfig<WidgetDataProvidingConfig, ...>) -> WidgetDataProvidingConfig -> aggregation.column.
+	// It deliberately keeps the two registry-content quirks the bridges patch: the series item type is the
+	// bare "SeriesConfig" (alias bridge) and 'data' is a raw generic string (generic bridge).
+	private const string ChartTypeDefinitionsJson =
+		"""
+		{
+		  "typeDefinitions": {
+		    "ChartWidgetConfig": { "fields": {
+		      "title": { "type": "string", "required": true },
+		      "series": { "type": "array", "items": { "type": "SeriesConfig" }, "required": true },
+		      "color": { "type": "string" },
+		      "theme": { "type": "string" }
+		    }},
+		    "ChartSeriesConfig": { "fields": {
+		      "type": { "type": "string", "required": true },
+		      "color": { "type": "string", "required": true },
+		      "label": { "type": "string", "required": true },
+		      "legend": { "type": "object", "required": true },
+		      "data": { "type": "WidgetDataConfig<WidgetDataProvidingConfig, NumberFormat | DateTimeFormat | StringFormat>", "required": true },
+		      "dataLabel": { "type": "object" }
+		    }},
+		    "WidgetDataConfig": { "fields": {
+		      "providing": { "type": "TProvidingConfig", "required": true },
+		      "formatting": { "type": "TFormat", "required": true }
+		    }},
+		    "WidgetDataProvidingConfig": { "fields": {
+		      "attribute": { "type": "string", "required": true },
+		      "schemaName": { "type": "string", "required": true },
+		      "aggregation": { "type": "object", "required": true, "shape": {
+		        "column": { "type": "AggregationFunctionColumn", "required": true }
+		      }}
+		    }}
+		  }
+		}
+		""";
+
+	private static IReadOnlyDictionary<string, JsonElement> ChartTypeDefs() {
+		using JsonDocument document = JsonDocument.Parse(ChartTypeDefinitionsJson);
+		var map = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+		foreach (JsonProperty property in document.RootElement.GetProperty("typeDefinitions").EnumerateObject()) {
+			map[property.Name] = property.Value.Clone();
+		}
+		return map;
+	}
+
+	private const string ValidChartProviding =
+		"""{"attribute":"A","schemaName":"Account","aggregation":{"column":{"expression":{}}}}""";
+
+	private static string DoughnutSeries(string providingJson) =>
+		"""{"type":"doughnut","label":"L","legend":{"enabled":false},"data":{"providing":__P__}}"""
+			.Replace("__P__", providingJson);
+
+	private static string ChartPageBody(string seriesArrayJson, string operation = "insert") {
+		string viewConfigDiff =
+			"""[{"operation":"__OP__","name":"TestChart","parentName":"Main","propertyName":"items","index":0,"values":{"type":"crt.ChartWidget","config":{"title":"#ResourceString(TestChart_title)#","series":__SERIES__}}}]"""
+				.Replace("__OP__", operation)
+				.Replace("__SERIES__", seriesArrayJson);
+		return BuildDiffBackedPageBody(viewConfigDiff, "[]");
+	}
+
+	[Test]
+	[Description("Registry-driven: an aggregation present but without its required 'column' fails — this is the empty-chart bug, caught via the registry's aggregation.shape.column required flag.")]
+	public void ValidateChartWidgetConfig_AggregationMissingColumn_ReturnsInvalid() {
+		string providing = """{"attribute":"A","schemaName":"Account","aggregation":{"expression":{}}}""";
+		string body = ChartPageBody("[" + DoughnutSeries(providing) + "]");
+
+		var result = SchemaValidationService.ValidateChartWidgetConfig(body, ChartTypeDefs());
+
+		result.IsValid.Should().BeFalse("because the registry marks aggregation.column required");
+		result.Errors.Should().Contain(e => e.Contains("TestChart") && e.Contains("aggregation") && e.Contains("column"),
+			"because the diagnostic should name the chart and the missing aggregation.column");
+	}
+
+	[Test]
+	[Description("Registry-driven: a well-formed doughnut (no color, no formatting) passes — proves both bridges reach the data and the optionality suppressions hold.")]
+	public void ValidateChartWidgetConfig_WellFormedDoughnut_ReturnsValid() {
+		string body = ChartPageBody("[" + DoughnutSeries(ValidChartProviding) + "]");
+
+		var result = SchemaValidationService.ValidateChartWidgetConfig(body, ChartTypeDefs());
+
+		result.IsValid.Should().BeTrue("because the bridges reach the data and color/formatting are suppressed");
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("Registry-driven: a series with no aggregation at all fails (aggregation is required on the providing type).")]
+	public void ValidateChartWidgetConfig_AggregationMissingEntirely_ReturnsInvalid() {
+		string providing = """{"attribute":"A","schemaName":"Account"}""";
+		string body = ChartPageBody("[" + DoughnutSeries(providing) + "]");
+
+		var result = SchemaValidationService.ValidateChartWidgetConfig(body, ChartTypeDefs());
+
+		result.IsValid.Should().BeFalse();
+		result.Errors.Should().Contain(e => e.Contains("aggregation"));
+	}
+
+	[Test]
+	[Description("Registry-driven: a providing block without schemaName fails.")]
+	public void ValidateChartWidgetConfig_MissingSchemaName_ReturnsInvalid() {
+		string providing = """{"attribute":"A","aggregation":{"column":{"expression":{}}}}""";
+		string body = ChartPageBody("[" + DoughnutSeries(providing) + "]");
+
+		var result = SchemaValidationService.ValidateChartWidgetConfig(body, ChartTypeDefs());
+
+		result.IsValid.Should().BeFalse();
+		result.Errors.Should().Contain(e => e.Contains("schemaName"));
+	}
+
+	[Test]
+	[Description("Scope: fields outside the data block (e.g. title at the chart-config level) are NOT checked — a chart with a well-formed data block but no title passes.")]
+	public void ValidateChartWidgetConfig_MissingTitle_NotFlagged() {
+		string vcd =
+			"""[{"operation":"insert","name":"TestChart","values":{"type":"crt.ChartWidget","config":{"series":__SERIES__}}}]"""
+				.Replace("__SERIES__", "[" + DoughnutSeries(ValidChartProviding) + "]");
+		string body = BuildDiffBackedPageBody(vcd, "[]");
+
+		var result = SchemaValidationService.ValidateChartWidgetConfig(body, ChartTypeDefs());
+
+		result.IsValid.Should().BeTrue("because title sits above the data block and is out of scope");
+		result.Errors.Should().NotContain(e => e.Contains("title"));
+	}
+
+	[Test]
+	[Description("Scope: cosmetic series fields like 'color' are not checked (only the data block is), so a doughnut without color passes.")]
+	public void ValidateChartWidgetConfig_DoughnutWithoutColor_ReturnsValid() {
+		string body = ChartPageBody("[" + DoughnutSeries(ValidChartProviding) + "]");
+
+		var result = SchemaValidationService.ValidateChartWidgetConfig(body, ChartTypeDefs());
+
+		result.IsValid.Should().BeTrue("because cosmetic fields outside the data block are not validated");
+		result.Errors.Should().NotContain(e => e.Contains("color"));
+	}
+
+	[Test]
+	[Description("Scope: cosmetic fields are not checked for ANY series type — a bar without 'color' also passes, as long as its data block is well-formed.")]
+	public void ValidateChartWidgetConfig_BarWithoutColor_ReturnsValid() {
+		string barSeries = """{"type":"bar","label":"L","legend":{"enabled":false},"data":{"providing":__P__}}"""
+			.Replace("__P__", ValidChartProviding);
+		string body = ChartPageBody("[" + barSeries + "]");
+
+		var result = SchemaValidationService.ValidateChartWidgetConfig(body, ChartTypeDefs());
+
+		result.IsValid.Should().BeTrue("because color is a cosmetic field outside the data block and is not validated");
+		result.Errors.Should().NotContain(e => e.Contains("color"));
+	}
+
+	[Test]
+	[Description("Scope: a merge operation is not checked for required fields — a base schema may legitimately supply them.")]
+	public void ValidateChartWidgetConfig_MergeOperation_NotChecked() {
+		string providing = """{"attribute":"A","schemaName":"Account","aggregation":{"expression":{}}}""";
+		string body = ChartPageBody("[" + DoughnutSeries(providing) + "]", operation: "merge");
+
+		var result = SchemaValidationService.ValidateChartWidgetConfig(body, ChartTypeDefs());
+
+		result.IsValid.Should().BeTrue("because a merge legitimately omits fields the base schema provides");
+		result.Errors.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("Fail-open: an empty or null registry yields a passing result so an offline run never blocks a save.")]
+	public void ValidateChartWidgetConfig_RegistryUnavailable_ReturnsValid() {
+		string providing = """{"attribute":"A","schemaName":"Account","aggregation":{"expression":{}}}""";
+		string body = ChartPageBody("[" + DoughnutSeries(providing) + "]");
+
+		SchemaValidationService.ValidateChartWidgetConfig(body, new Dictionary<string, JsonElement>())
+			.IsValid.Should().BeTrue("because an empty registry means 'unavailable', not 'invalid'");
+		SchemaValidationService.ValidateChartWidgetConfig(body, null)
+			.IsValid.Should().BeTrue("because a null registry is fail-open");
+	}
+
+	[Test]
+	[Description("A page with no crt.ChartWidget produces no chart-widget errors.")]
+	public void ValidateChartWidgetConfig_NoChartWidget_ReturnsValid() {
+		string body = BuildDiffBackedPageBody(
+			"""[{"operation":"insert","name":"SomeInput","values":{"type":"crt.Input","control":"$SomeAttr"}}]""",
+			"[]");
+
+		var result = SchemaValidationService.ValidateChartWidgetConfig(body, ChartTypeDefs());
+
+		result.IsValid.Should().BeTrue("because the validator only inspects crt.ChartWidget nodes");
+		result.Errors.Should().BeEmpty();
 	}
 
 	#endregion

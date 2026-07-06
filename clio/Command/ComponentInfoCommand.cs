@@ -19,8 +19,12 @@ public sealed class ComponentInfoCommandOptions : EnvironmentOptions {
 		HelpText = "Freedom UI component type (e.g. crt.TabContainer). Omit or pass 'list' to list the catalog.")]
 	public string ComponentType { get; set; }
 
+	[Option("composite", Required = false,
+		HelpText = "Composite Designer-element caption (e.g. 'Expanded list'). Returns the composite's assembly docs. Mutually exclusive with component-type.")]
+	public string Composite { get; set; }
+
 	[Option("search", Required = false,
-		HelpText = "Keyword filter applied in list mode and in not-found suggestions.")]
+		HelpText = "Keyword filter applied in list mode (components AND composites) and in not-found suggestions.")]
 	public string Search { get; set; }
 
 	[Option("version", Required = false,
@@ -184,16 +188,46 @@ public sealed class ComponentInfoCommand {
 		string? resolvedFromReason = ComponentInfoResolution.GetFallbackReason(resolvedFrom, resolution.Reason);
 
 		string componentType = options.ComponentType?.Trim();
+		string composite = options.Composite?.Trim();
+		bool hasComposite = !string.IsNullOrWhiteSpace(composite);
+		bool hasComponentType = !string.IsNullOrWhiteSpace(componentType)
+			&& !string.Equals(componentType, "list", StringComparison.OrdinalIgnoreCase);
+
+		// Keep the CLI verb and the MCP tool in lockstep on composites (shared catalog +
+		// shared response builders), so `get-component-info` is consistent across surfaces.
+		if (hasComposite && hasComponentType) {
+			return ComponentInfoResponseFactory.CreateMutualExclusivityError(
+				"get-component-info: --composite and component-type are mutually exclusive. "
+					+ "Pass --composite for a composite Designer element, or component-type for a single component.",
+				state.ResolvedVersion, resolvedFrom, resolvedFromReason);
+		}
+		if (hasComposite) {
+			CompositeDefinition? definition = ComponentInfoResponseFactory.FindComposite(state.Composites, composite!);
+			if (definition is null) {
+				return ComponentInfoResponseFactory.CreateCompositeNotFoundResponse(
+					state.Composites, composite!, IsMobile(options.SchemaType), state.ResolvedVersion, resolvedFrom, resolvedFromReason);
+			}
+			string? compositeDocs = await ComponentDocumentationLoader
+				.LoadAsync(_docsClient, definition.Docs, state.ResolvedVersion, cancellationToken)
+				.ConfigureAwait(false);
+			return ComponentInfoResponseFactory.CreateCompositeDetailResponse(
+				definition, compositeDocs, state.ResolvedVersion, resolvedFrom, resolvedFromReason);
+		}
+
 		bool listMode = string.IsNullOrWhiteSpace(componentType)
 			|| string.Equals(componentType, "list", StringComparison.OrdinalIgnoreCase);
 
 		if (listMode) {
 			IReadOnlyList<ComponentRegistryEntry> filtered = ComponentInfoGrouping.FilterEntries(state.Entries, options.Search);
+			IReadOnlyList<CompositeDefinition> filteredComposites =
+				ComponentInfoGrouping.FilterComposites(state.Composites, options.Search);
+			IReadOnlyList<CompositeSummary> compositeItems = ComponentInfoGrouping.CreateCompositeItems(filteredComposites);
 			return new ComponentInfoResponse {
 				Success = true,
 				Mode = "list",
 				Count = filtered.Count,
 				Items = ComponentInfoGrouping.CreateItems(filtered),
+				Composites = compositeItems.Count == 0 ? null : compositeItems,
 				ResolvedTargetVersion = state.ResolvedVersion,
 				ResolvedFrom = resolvedFrom,
 				ResolvedFromReason = resolvedFromReason
@@ -207,17 +241,16 @@ public sealed class ComponentInfoCommand {
 			return BuildDetail(entry, state.ResolvedVersion, resolvedFrom, documentation, state.GlobalReferences, resolvedFromReason);
 		}
 
-		IReadOnlyList<ComponentRegistryEntry> suggestions = ComponentInfoGrouping.FilterEntries(state.Entries, options.Search);
-		return new ComponentInfoResponse {
-			Success = false,
-			Mode = "list",
-			Error = $"Component type '{componentType}' was not found.",
-			Count = suggestions.Count,
-			Items = ComponentInfoGrouping.CreateItems(suggestions),
-			ResolvedTargetVersion = state.ResolvedVersion,
-			ResolvedFrom = resolvedFrom,
-			ResolvedFromReason = resolvedFromReason
-		};
+		// Name/description-first resolution shared with the MCP tool: match components by
+		// name/description first, then route to composite="<caption>" when the requested label
+		// names a composite (e.g. "Expanded list") rather than leaving the agent to hand-build.
+		// Intentional behavioral change from the pre-factory path: the old code used
+		// FilterEntries(entries, options.Search) (substring filter on the --search value). The
+		// factory's fallback uses SuggestForUnknown (edit-distance on the requested component-type
+		// label + --search), which ranks by similarity to what the user typed, not by --search alone.
+		return ComponentInfoResponseFactory.CreateComponentNotFoundResponse(
+			state.Entries, state.Composites, componentType!, options.Search,
+			state.ResolvedVersion, resolvedFrom, resolvedFromReason);
 	}
 
 }

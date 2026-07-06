@@ -2,7 +2,6 @@ using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
-using Clio.Common;
 using Clio.Mcp.E2E.Support.Creatio;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
@@ -22,9 +21,10 @@ namespace Clio.Mcp.E2E;
 [AllureNUnit]
 [AllureFeature(CreatePageBusinessRuleTool.BusinessRuleCreateToolName)]
 [NonParallelizable]
-public sealed class PageBusinessRuleToolE2ETests {
+public sealed class PageBusinessRuleToolE2ETests : McpContractFixtureBase {
 	private const string ToolName = CreatePageBusinessRuleTool.BusinessRuleCreateToolName;
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Advertises polymorphic anyOf runtime schema branches only for page actions through the real MCP server.")]
 	[AllureTag(ToolName)]
@@ -32,7 +32,7 @@ public sealed class PageBusinessRuleToolE2ETests {
 	[AllureDescription("Starts the real clio MCP server, lists tools, and verifies create-page-business-rule exposes only page action branches.")]
 	public async Task BusinessRuleCreate_Should_Advertise_Page_Only_Action_Runtime_Schema() {
 		// Arrange
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(
@@ -45,12 +45,12 @@ public sealed class PageBusinessRuleToolE2ETests {
 			.GetProperty("properties")
 			.GetProperty("args")
 			.GetProperty("properties")
-			.GetProperty("rule")
+			.GetProperty("rules").GetProperty("items")
 			.GetProperty("properties")
 			.GetProperty("actions")
 			.GetProperty("items")
 			.GetProperty("anyOf");
-		anyOf.GetArrayLength().Should().Be(6,
+		anyOf.GetArrayLength().Should().Be(7,
 			because: "the page tool should advertise only page action payload branches");
 		anyOf.EnumerateArray().Select(GetActionType).Should().BeEquivalentTo([
 				"hide-element",
@@ -58,11 +58,13 @@ public sealed class PageBusinessRuleToolE2ETests {
 				"make-editable",
 				"make-read-only",
 				"make-required",
-				"make-optional"
+				"make-optional",
+				"apply-static-filter"
 			],
 			because: "entity-only actions should not appear in the page business-rule runtime schema");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Binds a show-element page business-rule payload through the real MCP server and reports an invalid environment failure from command execution.")]
 	[AllureTag(ToolName)]
@@ -70,7 +72,7 @@ public sealed class PageBusinessRuleToolE2ETests {
 	[AllureDescription("Starts the real clio MCP server, calls create-page-business-rule with a show-element payload and an intentionally missing environment, then verifies the request reaches command execution instead of failing MCP payload binding.")]
 	public async Task BusinessRuleCreate_Should_Bind_ShowElement_Payload_And_Report_Invalid_Environment() {
 		// Arrange
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 		string invalidEnvironmentName = $"missing-page-business-rule-env-{Guid.NewGuid():N}";
 
 		// Act
@@ -81,7 +83,8 @@ public sealed class PageBusinessRuleToolE2ETests {
 					["environment-name"] = invalidEnvironmentName,
 					["package-name"] = "UsrPkg",
 					["page-schema-name"] = "UsrCase_FormPage",
-					["rule"] = CreateShowElementRule()
+					["rules"] = new object[] { CreateShowElementRule()
+ }
 				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
@@ -97,6 +100,7 @@ public sealed class PageBusinessRuleToolE2ETests {
 			because: "the failure should come from resolving the requested environment, not from deserializing the page action payload");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Binds a system-variable page condition payload through the real MCP server and reports an invalid environment failure from command execution.")]
 	[AllureTag(ToolName)]
@@ -104,7 +108,7 @@ public sealed class PageBusinessRuleToolE2ETests {
 	[AllureDescription("Starts the real clio MCP server, calls create-page-business-rule with a SysValue condition payload and an intentionally missing environment, then verifies the request reaches command execution instead of failing MCP payload binding.")]
 	public async Task BusinessRuleCreate_Should_Bind_SysValue_Condition_Payload_And_Report_Invalid_Environment() {
 		// Arrange
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 		string invalidEnvironmentName = $"missing-page-sys-value-env-{Guid.NewGuid():N}";
 
 		// Act
@@ -115,7 +119,8 @@ public sealed class PageBusinessRuleToolE2ETests {
 					["environment-name"] = invalidEnvironmentName,
 					["package-name"] = "UsrPkg",
 					["page-schema-name"] = "UsrCase_FormPage",
-					["rule"] = CreateSysValueConditionRule()
+					["rules"] = new object[] { CreateSysValueConditionRule()
+ }
 				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
@@ -131,6 +136,39 @@ public sealed class PageBusinessRuleToolE2ETests {
 			because: "the failure should come from resolving the requested environment, not from deserializing the SysValue page payload");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
+	[Test]
+	[Description("Binds a multi-rule page batch payload through the real MCP server and reports an invalid environment failure for the whole batch.")]
+	[AllureTag(ToolName)]
+	[AllureName("Page business-rule MCP tool binds a multi-rule batch")]
+	[AllureDescription("Starts the real clio MCP server, calls create-page-business-rules with two rules in one call and an intentionally missing environment, then verifies the multi-element rules array binds and the structured response references the missing environment instead of failing MCP payload binding.")]
+	public async Task BusinessRuleCreate_Should_Bind_Multiple_Rules_Batch_And_Report_Invalid_Environment() {
+		// Arrange
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+		string invalidEnvironmentName = $"missing-page-batch-env-{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = invalidEnvironmentName,
+					["package-name"] = "UsrPkg",
+					["page-schema-name"] = "UsrCase_FormPage",
+					["rules"] = new object[] { CreateShowElementRule(), CreateSysValueConditionRule() }
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a valid two-rule page batch payload should bind and return the structured batch response, not an MCP binding error");
+		callResult.Content!.Select(content => content.ToString()).Should().Contain(message =>
+				ContainsText(message, invalidEnvironmentName),
+			because: "the whole batch fails on the missing environment, so the structured response should reference it");
+	}
+
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Creates a page business rule for Contacts_FormPage in the Custom package through the real MCP server and Creatio environment.")]
 	[AllureTag(ToolName)]
@@ -145,7 +183,8 @@ public sealed class PageBusinessRuleToolE2ETests {
 		}
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		string packageName = ResolvePackageName(settings);
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(5));
+		await ClioCliCommandRunner.EnsureCliogateInstalledAsync(settings, environmentName);
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
 		PageRuleTarget target = await ResolveContactPageRuleTargetAsync(
 			arrangeContext.Session,
 			arrangeContext.CancellationTokenSource.Token,
@@ -162,27 +201,28 @@ public sealed class PageBusinessRuleToolE2ETests {
 					["environment-name"] = environmentName,
 					["package-name"] = packageName,
 					["page-schema-name"] = target.PageSchemaName,
-					["rule"] = CreateContactPageRule(target, caption)
+					["rules"] = new object[] { CreateContactPageRule(target, caption)
+ }
 				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
-		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
+		BusinessRuleBatchResponse batchResponse = McpCommandExecutionParser.ExtractBusinessRuleBatchResponse(callResult);
 
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
-			because: "a valid Contact page show/hide rule should return the standard command execution envelope");
-		execution.ExitCode.Should().Be(0,
-			because: "the Contact page rule should be created in the configured Creatio sandbox");
-		execution.Output.Should().Contain(message => message.MessageType == LogDecoratorType.Info,
-			because: "successful command-path MCP calls should include at least one info log message");
-		execution.Output.Should().Contain(message => ContainsText(message.Value, "Rule name:"),
-			because: "successful business-rule creation should report the generated rule name");
+			because: "a valid Contact page show/hide rule should return the structured batch-create response, not an MCP error");
+		batchResponse.Created.Should().Be(1,
+			because: "the single Contact page rule should be created in the configured Creatio sandbox");
+		batchResponse.Failed.Should().Be(0,
+			because: "no rule in the batch should fail when the payload is valid");
+		batchResponse.Results.Should().ContainSingle(result => result.Success && !string.IsNullOrWhiteSpace(result.RuleName),
+			because: "the per-rule result should report success and the generated internal rule name");
 		await BusinessRuleAddonReadback.AssertPageRuleExistsAsync(
 			settings,
 			environmentName,
 			packageName,
 			target.RootSchemaUId,
-			McpCommandExecutionParser.ExtractBusinessRuleName(execution),
+			McpCommandExecutionParser.ExtractBusinessRuleName(batchResponse),
 			"Terrasoft.Core.BusinessRules.Models.Actions.BusinessRuleActionHideElement",
 			[target.ElementName],
 			target.AttributeName,
@@ -233,51 +273,123 @@ public sealed class PageBusinessRuleToolE2ETests {
 		McpServerSession session,
 		CancellationToken cancellationToken,
 		string environmentName) {
-		const string contactPageSchemaName = "Contacts_FormPage";
+		// The rule needs a real Freedom UI form page bound to an entity datasource. A base-Contact page
+		// (Contacts_FormPage) only ships with CRM editions, so a bare Studio sandbox has none. Discover any
+		// seeded custom form page instead (the AutoTest seed installs several) and build the rule on the
+		// first one that exposes a datasource-bound attribute, preferring a Contact-bound page so the test
+		// keeps its original Contact intent where the stand provides one.
+		foreach (string candidate in await ResolveCandidatePageSchemaNamesAsync(session, cancellationToken, environmentName)) {
+			PageRuleTarget? target = await TryResolvePageRuleTargetAsync(session, cancellationToken, environmentName, candidate);
+			if (target is not null) {
+				return target;
+			}
+		}
+
+		Assert.Ignore(
+			$"No seeded Freedom UI form page with a datasource-bound attribute was found on environment '{environmentName}'. " +
+			"Ensure cliogate is installed and the AutoTest seed (or a Contact form page) is available in the sandbox before running this test.");
+		return null!;
+	}
+
+	private static async Task<IReadOnlyList<string>> ResolveCandidatePageSchemaNamesAsync(
+		McpServerSession session,
+		CancellationToken cancellationToken,
+		string environmentName) {
+		// Legacy base-Contact names first (real CRM stands), then any seeded custom form page.
+		List<string> candidates = ["Contacts_FormPage", "Contact_FormPage"];
+
+		CallToolResult listResult = await session.CallToolAsync(
+			PageListTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["search-pattern"] = "Usr",
+					["limit"] = 200,
+					["environment-name"] = environmentName
+				}
+			},
+			cancellationToken);
+		PageListResponse pages = EntitySchemaStructuredResultParser.Extract<PageListResponse>(listResult);
+		if (pages.Success && pages.Pages is not null) {
+			// Prefer Contact-named pages so the rule stays Contact-bound where the seed provides one,
+			// then fall back to any other seeded form page.
+			IEnumerable<string> seededFormPages = pages.Pages
+				.Select(page => page.SchemaName)
+				.Where(name => !string.IsNullOrWhiteSpace(name)
+					&& name.EndsWith("_FormPage", StringComparison.OrdinalIgnoreCase))
+				.OrderByDescending(name => name.Contains("Contact", StringComparison.OrdinalIgnoreCase));
+			foreach (string name in seededFormPages) {
+				if (!candidates.Contains(name, StringComparer.OrdinalIgnoreCase)) {
+					candidates.Add(name);
+				}
+			}
+		}
+
+		return candidates;
+	}
+
+	private static async Task<PageRuleTarget?> TryResolvePageRuleTargetAsync(
+		McpServerSession session,
+		CancellationToken cancellationToken,
+		string environmentName,
+		string candidatePageSchemaName) {
 		CallToolResult callResult = await session.CallToolAsync(
 			PageGetTool.ToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
-					["schema-name"] = contactPageSchemaName,
+					["schema-name"] = candidatePageSchemaName,
 					["environment-name"] = environmentName
 				}
 			},
 			cancellationToken);
 		PageGetResponse response = EntitySchemaStructuredResultParser.Extract<PageGetResponse>(callResult);
-		response.Success.Should().BeTrue(
-			because: "the sandbox must expose Contacts_FormPage so the destructive page business-rule test can build a valid rule from its bundle");
-		response.Files.Should().NotBeNull(
-			because: "get-page should materialize the Contact page bundle for rule target discovery");
-		File.Exists(response.Files.BundleFile).Should().BeTrue(
-			because: "the Contact page bundle file should exist after get-page succeeds");
-
-		JsonObject bundle = JsonNode.Parse(await File.ReadAllTextAsync(response.Files.BundleFile, cancellationToken))!.AsObject();
-		string attributeName = ResolveContactAttributeName(bundle);
-		string elementName = ResolvePageElementName(bundle, attributeName);
-		return new PageRuleTarget(contactPageSchemaName, response.Page.RootSchemaUId, attributeName, elementName);
-	}
-
-	private static string ResolveContactAttributeName(JsonObject bundle) {
-		JsonObject attributes = bundle["viewModelConfig"]?["attributes"] as JsonObject ?? [];
-		JsonObject dataSources = bundle["modelConfig"]?["dataSources"] as JsonObject ?? [];
-		List<PageAttributeCandidate> candidates = [];
-		foreach ((string attributeName, JsonNode? attributeNode) in attributes) {
-			if (attributeNode is not JsonObject attribute
-				|| !TryResolveDatasourcePath(attribute, out string datasourceName, out string columnName)
-				|| !IsContactDatasource(dataSources, datasourceName)) {
-				continue;
-			}
-			candidates.Add(new PageAttributeCandidate(attributeName, columnName));
+		if (!response.Success || response.Files is null || !File.Exists(response.Files.BundleFile)) {
+			return null;
 		}
 
-		PageAttributeCandidate? preferred = candidates.FirstOrDefault(candidate =>
-			string.Equals(candidate.ColumnName, "Name", StringComparison.OrdinalIgnoreCase));
-		(preferred ?? candidates.FirstOrDefault()).Should().NotBeNull(
-			because: "Contacts_FormPage should expose at least one datasource-bound Contact attribute for page business-rule conditions");
-		return (preferred ?? candidates.First()).AttributeName;
+		JsonObject bundle = JsonNode.Parse(await File.ReadAllTextAsync(response.Files.BundleFile, cancellationToken))!.AsObject();
+		PageAttributeCandidate? attribute = TryResolveRuleAttribute(bundle);
+		if (attribute is null) {
+			return null;
+		}
+
+		string? elementName = TryResolvePageElementName(bundle, attribute.AttributeName);
+		if (string.IsNullOrWhiteSpace(elementName)) {
+			return null;
+		}
+
+		return new PageRuleTarget(candidatePageSchemaName, response.Page.RootSchemaUId, attribute.AttributeName, elementName);
 	}
 
-	private static string ResolvePageElementName(JsonObject bundle, string attributeName) {
+	// Returns a datasource-bound attribute to drive the rule condition, or null when the page exposes none.
+	// Preference: a Contact "Name" attribute (original intent) -> any Contact attribute -> any datasource-bound
+	// attribute on a non-Contact seeded page. Never asserts so the caller can skip to the next candidate page.
+	private static PageAttributeCandidate? TryResolveRuleAttribute(JsonObject bundle) {
+		JsonObject attributes = bundle["viewModelConfig"]?["attributes"] as JsonObject ?? [];
+		JsonObject dataSources = bundle["modelConfig"]?["dataSources"] as JsonObject ?? [];
+		List<PageAttributeCandidate> contactCandidates = [];
+		List<PageAttributeCandidate> anyCandidates = [];
+		foreach ((string attributeName, JsonNode? attributeNode) in attributes) {
+			if (attributeNode is not JsonObject attribute
+				|| !TryResolveDatasourcePath(attribute, out string datasourceName, out string columnName)) {
+				continue;
+			}
+			PageAttributeCandidate candidate = new(attributeName, columnName);
+			anyCandidates.Add(candidate);
+			if (IsContactDatasource(dataSources, datasourceName)) {
+				contactCandidates.Add(candidate);
+			}
+		}
+
+		static PageAttributeCandidate? PreferName(List<PageAttributeCandidate> source) =>
+			source.FirstOrDefault(candidate =>
+				string.Equals(candidate.ColumnName, "Name", StringComparison.OrdinalIgnoreCase))
+			?? source.FirstOrDefault();
+
+		return PreferName(contactCandidates) ?? PreferName(anyCandidates);
+	}
+
+	// Returns the page element to hide, or null when the viewConfig exposes no named element.
+	private static string? TryResolvePageElementName(JsonObject bundle, string attributeName) {
 		string? boundElement = EnumerateObjects(bundle["viewConfig"])
 			.FirstOrDefault(obj => string.Equals(obj["control"]?.GetValue<string>(), $"${attributeName}", StringComparison.Ordinal))
 			?["name"]?.GetValue<string>();
@@ -285,12 +397,9 @@ public sealed class PageBusinessRuleToolE2ETests {
 			return boundElement;
 		}
 
-		string? firstNamedElement = EnumerateObjects(bundle["viewConfig"])
+		return EnumerateObjects(bundle["viewConfig"])
 			.Select(obj => obj["name"]?.GetValue<string>())
 			.FirstOrDefault(name => !string.IsNullOrWhiteSpace(name));
-		firstNamedElement.Should().NotBeNullOrWhiteSpace(
-			because: "Contacts_FormPage viewConfig should expose at least one named element for show/hide actions");
-		return firstNamedElement!;
 	}
 
 	private static IEnumerable<JsonObject> EnumerateObjects(JsonNode? node) {
@@ -409,23 +518,6 @@ public sealed class PageBusinessRuleToolE2ETests {
 			["type"] = "AttributeValue",
 			["path"] = path
 		};
-
-	private static async Task<ArrangeContext> ArrangeAsync(TimeSpan timeout) {
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		CancellationTokenSource cancellationTokenSource = new(timeout);
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		return new ArrangeContext(session, cancellationTokenSource);
-	}
-
-	private sealed record ArrangeContext(
-		McpServerSession Session,
-		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
-			CancellationTokenSource.Dispose();
-		}
-	}
 
 	private sealed record PageAttributeCandidate(string AttributeName, string ColumnName);
 

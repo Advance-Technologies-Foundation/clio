@@ -51,34 +51,23 @@ public sealed class RunProcessButtonGuidanceResource {
 			         (`isLookup=true`) pass a Guid value, not display text.
 
 			       Button skeleton (insert into a container via update-page, mode append)
-			       - Pick `parentName` from `get-page` -> `bundle.containers` (do not guess; e.g. `MainHeaderTop`).
+			       - Pick `parentName` from `get-page` -> `bundle.containers` (NEVER guess a literal name).
+			         Choose by the page's action-button region, not by copying the example below:
+			         * Record form / edit page (FormPage): use `ActionButtonsContainer` — the record action bar
+			           next to Save/Close. This is the default target for a run-process button on a form page.
+			           Do NOT use `MainHeaderTop`: that is the page title header, not the action area.
+			         * List / grid page, or a form with no `ActionButtonsContainer`: pick the relevant action bar
+			           from `bundle.containers` (a `crt.FlexContainer` with `childCount` > 0 in the header region,
+			           commonly `MainHeaderTop` on list pages).
+			         Always confirm the chosen name actually exists in `bundle.containers` before writing.
 			       - The `clicked` config is `{ request: 'crt.RunBusinessProcessRequest', params: {...} }`.
 			       - Caption must be a localizable binding — pass the key via the `resources` parameter.
 
-			       define("<PageName>", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ {
-			           return {
-			               viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[
-			                   {
-			                       "operation": "insert",
-			                       "name": "RunBusinessProcessButton",
-			                       "values": {
-			                           "type": "crt.Button",
-			                           "caption": "#ResourceString(RunBusinessProcessButton_caption)#",
-			                           "color": "default",
-			                           "clicked": { /* one of the params blocks below */ }
-			                       },
-			                       "parentName": "MainHeaderTop",
-			                       "propertyName": "items",
-			                       "index": 0
-			                   }
-			               ]/**SCHEMA_VIEW_CONFIG_DIFF*/,
-			               viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/,
-			               modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/,
-			               handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/,
-			               converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/,
-			               validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/
-			           };
-			       });
+			       Build the button from `get-component-info crt.Button`; wire the run-process request into its
+			       `clicked` binding using one of the variants below. Insert it with `update-page` (mode `append`)
+			       into the chosen `parentName`,
+			       leaving `handlers: []` — no custom handler. See `page-modification` for the body envelope and
+			       the insert op (`operation` / `name` / `parentName` / `propertyName` / `index`).
 
 			       Behavior flags (defaults to emit, change only when the user asks)
 			       By default include both, set to true:

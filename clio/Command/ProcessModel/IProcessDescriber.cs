@@ -36,7 +36,6 @@ public interface IProcessDescriber {
 
 /// <inheritdoc cref="IProcessDescriber" />
 public sealed class ServerProcessDescriber(
-	ILogger logger,
 	IApplicationClient applicationClient,
 	IDataProvider dataProvider,
 	IServiceUrlBuilder serviceUrlBuilder) : IProcessDescriber {
@@ -59,7 +58,7 @@ public sealed class ServerProcessDescriber(
 		}
 
 		string body = new JsonObject { ["request"] = requestObject.Value }.ToJsonString();
-		string url = serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.DescribeProcessSchema);
+		string url = serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.DescribeProcess);
 		string responseBody;
 		try {
 			responseBody = applicationClient.ExecutePostRequest(url, body, 10_000, 3, 1);
@@ -82,7 +81,7 @@ public sealed class ServerProcessDescriber(
 			return Error.Failure(DescribeErrorCode, "unexpected server response shape");
 		}
 		if (!result.Success) {
-			return Error.Failure(DescribeErrorCode, result.ErrorMessage ?? "describe-process failed on the server");
+			return Error.Failure(DescribeErrorCode, result.ErrorMessage ?? "describe-business-process failed on the server");
 		}
 		return result;
 	}
@@ -160,13 +159,18 @@ public class DescribeProcessResult {
 
 /// <summary>A process node read back from the schema.</summary>
 public sealed class DescribedElement {
-	/// <summary>Element UId.</summary>
-	[JsonPropertyName("id")]
-	public string Id { get; set; }
-
-	/// <summary>Element schema name.</summary>
+	/// <summary>
+	/// Element local handle (the schema element <c>Name</c>, a string code) — the value flows
+	/// (<c>source</c>/<c>target</c>) and mappings (<c>elementName</c>) reference. Creatio identifies an
+	/// element by this <c>Name</c> plus the <c>UId</c> GUID; the platform reserves "Id" for the GUID, so
+	/// the handle is <c>name</c>, not <c>id</c>.
+	/// </summary>
 	[JsonPropertyName("name")]
 	public string Name { get; set; }
+
+	/// <summary>Element UId (the schema element's unique identifier).</summary>
+	[JsonPropertyName("uid")]
+	public string Uid { get; set; }
 
 	/// <summary>Localized caption.</summary>
 	[JsonPropertyName("caption")]
@@ -175,6 +179,15 @@ public sealed class DescribedElement {
 	/// <summary>Runtime class name (for example <c>ProcessSchemaUserTask</c>, <c>ProcessSchemaStartEvent</c>).</summary>
 	[JsonPropertyName("type")]
 	public string Type { get; set; }
+
+	/// <summary>
+	/// The descriptor <c>type</c> token to feed back into <c>create-business-process</c> / <c>modify-business-process</c>
+	/// for this element (for example <c>usertask</c>, <c>endevent</c>, <c>signalstart</c>, <c>startevent</c>) — the
+	/// round-trippable counterpart of <see cref="Type"/> (which is the non-consumable .NET class name). For a user
+	/// task this is the generic <c>usertask</c> token; the specific task is in <see cref="UserTaskName"/>.
+	/// </summary>
+	[JsonPropertyName("buildType")]
+	public string BuildType { get; set; }
 
 	/// <summary>For user-task elements: the referenced user-task schema name (for example <c>ReadDataUserTask</c>).</summary>
 	[JsonPropertyName("userTaskName")]
@@ -237,6 +250,14 @@ public sealed class DescribedParameter {
 	[JsonPropertyName("name")]
 	public string Name { get; set; }
 
+	/// <summary>Parameter caption (title); null when unset.</summary>
+	[JsonPropertyName("caption")]
+	public string Caption { get; set; }
+
+	/// <summary>Parameter description (free-text annotation); null when unset.</summary>
+	[JsonPropertyName("description")]
+	public string Description { get; set; }
+
 	/// <summary>Parameter UId.</summary>
 	[JsonPropertyName("uid")]
 	public string UId { get; set; }
@@ -244,6 +265,22 @@ public sealed class DescribedParameter {
 	/// <summary>Data value type name (for example <c>ShortText</c>, <c>Integer</c>, <c>Lookup</c>); null when unset.</summary>
 	[JsonPropertyName("type")]
 	public string Type { get; set; }
+
+	/// <summary>
+	/// Direction: <c>In</c>, <c>Out</c>, <c>Variable</c>, or <c>Internal</c>. Together with <see cref="IsResult"/>
+	/// lets a caller tell an element's output parameters (mappable as a source) from its inputs. Omitted when the
+	/// server (an older <c>clioprocessbuilder</c>) does not report it.
+	/// </summary>
+	[JsonPropertyName("direction")]
+	public string Direction { get; set; }
+
+	/// <summary>
+	/// True when the parameter is a result (output) of its element. A parameter is an output — and therefore usable
+	/// as a mapping source — when <see cref="Direction"/> is <c>Out</c> OR this flag is true. Omitted when the server
+	/// (an older <c>clioprocessbuilder</c>) does not report it.
+	/// </summary>
+	[JsonPropertyName("isResult")]
+	public bool? IsResult { get; set; }
 
 	/// <summary>For a lookup parameter: the referenced object (entity schema) name (for example <c>City</c>); null otherwise.</summary>
 	[JsonPropertyName("referenceSchema")]

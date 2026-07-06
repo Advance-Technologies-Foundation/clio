@@ -8,7 +8,7 @@ namespace Clio.Command.McpServer.Prompts.ProcessDesigner;
 /// shared <c>process-modeling</c> guidance vocabulary.
 /// </summary>
 [McpServerPromptType]
-[Description("Guides the agent to read an existing Creatio process with describe-process, then narrate what it does using the process-modeling guidance.")]
+[Description("Guides the agent to read an existing Creatio process with describe-business-process, then narrate what it does using the process-modeling guidance.")]
 [FeatureToggle("process-designer")]
 public static class DescribeProcessPrompt {
 
@@ -18,7 +18,7 @@ public static class DescribeProcessPrompt {
 	/// <param name="process">The process to explain (code, UId, or caption).</param>
 	/// <param name="environmentName">The registered environment to read from.</param>
 	/// <returns>The prompt text.</returns>
-	[McpServerPrompt(Name = "describe-process-guidance")]
+	[McpServerPrompt(Name = "describe-business-process")]
 	[Description("Returns the read-and-explain flow for an existing Creatio process.")]
 	public static string DescribeProcessGuidance(
 		[Description("The process to explain — its code, UId, or caption.")]
@@ -29,10 +29,10 @@ public static class DescribeProcessPrompt {
 		Explain what the existing Creatio process {process ?? "<code/uid/caption>"} does
 		(environment: {environmentName ?? "<environment-name>"}).
 
-		1. Call `describe-process` with `environment-name` and exactly one of `process-code` /
+		1. Call `describe-business-process` with `environment-name` and exactly one of `process-name` /
 		   `process-uid` / `process-caption`. It returns a STRUCTURED graph: `elements`
-		   (id, dataId, type, label, parameters), `flows` (source, target, kind), and process
-		   `parameters` — not raw metadata.
+		   (name, uid, caption, type, buildType, userTaskName, parameters; `signal` for a signal start),
+		   `flows` (source, target, kind), and process `parameters` — not raw metadata.
 		2. Call `get-guidance` name `process-modeling` for the element catalog + connection-rule vocabulary.
 		3. Narrate, in plain language, the trigger (start event), the ordered steps (follow the flows by
 		   source/target), each activity's purpose, and any branches (gateways / conditional flows).

@@ -1,42 +1,33 @@
 using System;
-using System.Collections.Generic;
 using Clio.Command;
 using Clio.Command.ProcessModel;
 using Clio.Common;
 using ErrorOr;
 using FluentAssertions;
-using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[Category("Unit")]
 [Property("Module", "Command")]
-public sealed class DescribeProcessCommandTests : BaseCommandTests<DescribeProcessOptions> {
+public sealed class DescribeProcessCommandTests {
 	private IProcessDescriber _describer;
 	private ILogger _logger;
 	private DescribeProcessCommand _command;
 
-	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
-		base.AdditionalRegistrations(containerBuilder);
+	[SetUp]
+	public void Setup() {
 		_describer = Substitute.For<IProcessDescriber>();
 		_logger = Substitute.For<ILogger>();
-		containerBuilder.AddSingleton(_describer);
-		containerBuilder.AddSingleton(_logger);
-	}
-
-	[SetUp]
-	public override void Setup() {
-		base.Setup();
-		_command = Container.GetRequiredService<DescribeProcessCommand>();
+		_command = new DescribeProcessCommand(_describer, _logger);
 	}
 
 	[TearDown]
-	public override void TearDown() {
+	public void TearDown() {
 		_describer.ClearReceivedCalls();
 		_logger.ClearReceivedCalls();
-		base.TearDown();
 	}
 
 	[Test]
@@ -53,7 +44,7 @@ public sealed class DescribeProcessCommandTests : BaseCommandTests<DescribeProce
 				Flows = [],
 				Parameters = []
 			});
-		DescribeProcessOptions options = new() { Environment = "dev", ProcessCode = "UsrProcess_493d4c9" };
+		DescribeProcessOptions options = new() { Environment = "dev", ProcessName ="UsrProcess_493d4c9" };
 
 		// Act
 		int result = _command.Execute(options);
@@ -74,7 +65,7 @@ public sealed class DescribeProcessCommandTests : BaseCommandTests<DescribeProce
 		_describer.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>())
 			.Returns(new DescribeProcessResult { Name = "UsrProcess_493d4c9" });
 		DescribeProcessOptions options = new() {
-			Environment = "dev", ProcessCode = "UsrProcess_493d4c9", Culture = "uk-UA"
+			Environment = "dev", ProcessName ="UsrProcess_493d4c9", Culture = "uk-UA"
 		};
 
 		// Act
@@ -92,7 +83,7 @@ public sealed class DescribeProcessCommandTests : BaseCommandTests<DescribeProce
 		// Arrange
 		_describer.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>())
 			.Returns(Error.Failure("ResolveId", "process not found (code 'missing')"));
-		DescribeProcessOptions options = new() { Environment = "dev", ProcessCode = "missing" };
+		DescribeProcessOptions options = new() { Environment = "dev", ProcessName ="missing" };
 
 		// Act
 		int result = _command.Execute(options);
@@ -136,7 +127,7 @@ public sealed class DescribeProcessCommandTests : BaseCommandTests<DescribeProce
 					}
 				]
 			});
-		DescribeProcessOptions options = new() { Environment = "dev", ProcessCode = "UsrTaskProcess" };
+		DescribeProcessOptions options = new() { Environment = "dev", ProcessName ="UsrTaskProcess" };
 		string written = null;
 		_logger.WriteInfo(Arg.Do<string>(value => written = value));
 
@@ -155,10 +146,52 @@ public sealed class DescribeProcessCommandTests : BaseCommandTests<DescribeProce
 
 	[Test]
 	[Category("Unit")]
+	[Description("Writes each element parameter's direction and isResult into the graph JSON (regression: the clio DescribedParameter DTO previously dropped these server fields on re-serialization, so callers could not tell an element's outputs — mappable as a source — from its plain inputs).")]
+	public void Execute_ShouldWriteParameterDirectionAndIsResult_WhenPresent() {
+		// Arrange — a user-task element exposing an output (IsResult true while Direction is Variable) and a plain input
+		_describer.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>())
+			.Returns(new DescribeProcessResult {
+				Name = "UsrTaskProcess",
+				SchemaUId = "uid",
+				Elements = [
+					new DescribedElement {
+						Name = "Task1", Uid = "e1", Type = "ProcessSchemaUserTask", BuildType = "usertask",
+						Parameters = [
+							new DescribedParameter {
+								Name = "PResult", UId = "p1", Type = "Guid",
+								Direction = "Variable", IsResult = true, Source = "None"
+							},
+							new DescribedParameter {
+								Name = "PInput", UId = "p2", Type = "ShortText",
+								Direction = "In", IsResult = false, Source = "None"
+							}
+						]
+					}
+				],
+				Flows = [],
+				Parameters = []
+			});
+		DescribeProcessOptions options = new() { Environment = "dev", ProcessName ="UsrTaskProcess" };
+		string written = null;
+		_logger.WriteInfo(Arg.Do<string>(value => written = value));
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "a found process is described successfully");
+		written.Should().Contain("\"direction\": \"Variable\"",
+			because: "a parameter's direction must survive the clio DTO re-serialization so callers can classify it");
+		written.Should().Contain("\"isResult\": true",
+			because: "an element output (IsResult true) marks a parameter usable as a mapping source even when its direction is Variable, and must not be dropped by the clio DTO");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Requires exactly one identity: with more than one provided it errors before contacting the server.")]
 	public void Execute_ShouldErrorWithoutReading_WhenMultipleIdentitiesProvided() {
 		// Arrange
-		DescribeProcessOptions options = new() { Environment = "dev", ProcessCode = "x", ProcessCaption = "y" };
+		DescribeProcessOptions options = new() { Environment = "dev", ProcessName ="x", ProcessCaption = "y" };
 
 		// Act
 		int result = _command.Execute(options);

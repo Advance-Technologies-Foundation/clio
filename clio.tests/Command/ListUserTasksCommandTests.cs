@@ -3,39 +3,34 @@ using System.Collections.Generic;
 using Clio.Command;
 using Clio.Common;
 using FluentAssertions;
-using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command;
 
 [TestFixture]
-public sealed class ListUserTasksCommandTests : BaseCommandTests<ListUserTasksOptions> {
+[Category("Unit")]
+[Property("Module", "Command")]
+public sealed class ListUserTasksCommandTests {
 	private IListUserTasksService _listUserTasksService;
 	private ILogger _logger;
 	private ListUserTasksCommand _command;
 
-	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
-		base.AdditionalRegistrations(containerBuilder);
+	[SetUp]
+	public void Setup() {
 		_listUserTasksService = Substitute.For<IListUserTasksService>();
 		_logger = Substitute.For<ILogger>();
-		containerBuilder.AddSingleton(_listUserTasksService);
-		containerBuilder.AddSingleton(_logger);
-	}
-
-	[SetUp]
-	public override void Setup() {
-		base.Setup();
-		_command = Container.GetRequiredService<ListUserTasksCommand>();
+		_command = new ListUserTasksCommand(_listUserTasksService, _logger);
 	}
 
 	[TearDown]
-	public override void TearDown() {
+	public void TearDown() {
 		_listUserTasksService.ClearReceivedCalls();
 		_logger.ClearReceivedCalls();
 	}
 
 	[Test]
+	[Category("Unit")]
 	[Description("Requests the user task catalog for the supplied environment and writes each task plus a total to the logger on success.")]
 	public void Execute_ShouldWriteTasksAndReturnZero_WhenServiceReturnsTasks() {
 		// Arrange
@@ -57,7 +52,8 @@ public sealed class ListUserTasksCommandTests : BaseCommandTests<ListUserTasksOp
 	}
 
 	[Test]
-	[Description("Returns a failure exit code and logs a readable error when the CLI call omits environment-name.")]
+	[Category("Unit")]
+	[Description("Returns a failure exit code and logs a readable error when the call omits environment-name.")]
 	public void Execute_ShouldFail_WhenEnvironmentIsMissing() {
 		// Act
 		int result = _command.Execute(new ListUserTasksOptions());
@@ -70,6 +66,7 @@ public sealed class ListUserTasksCommandTests : BaseCommandTests<ListUserTasksOp
 	}
 
 	[Test]
+	[Category("Unit")]
 	[Description("Returns a failure exit code and logs the service exception message when the service throws.")]
 	public void Execute_ShouldFail_WhenServiceThrows() {
 		// Arrange

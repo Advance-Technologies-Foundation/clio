@@ -22,24 +22,17 @@ public static class ModifyBusinessProcessPrompt {
 		[Required] [Description("Process code (schema Name) or UId to edit")]
 		string process) =>
 		$"""
-		 Edit the existing business process `{process}` on Creatio environment `{environmentName}` using the
-		 `modify-business-process` tool. First call `describe-process` to inspect the current elements and their
-		 ids. Then supply a JSON `operations` array; each operation is an object with an `op`:
-		 - `addElement` — `element` descriptor (`id`, `type`, `caption`, optional `userTaskName`, optional `signal`
-		   for a `signalStart`). `type` is `startEvent` | `signalStart` | `endEvent` | `userTask`
-		   (aliases `readData`, `performTask`).
-		 - `removeElement` — `elementId` (the element's local id or UId); its sequence flows are removed too.
-		 - `addFlow` / `removeFlow` — `source` and `target` element ids.
-		 - `addParameter` — `parameter` (a process-level parameter: `name`, `type` e.g. `Text`/`Integer`/`Guid`,
-		   optional `direction` In/Out/Variable/Internal, optional `caption`; or `referenceSchema` = an object name
-		   such as `City` to create a Lookup to that object).
-		 - `addMapping` — `mapping` (`elementId`, `elementParameter`, and exactly one of `processParameter` |
-		   `value` | `expression`) to bind an element's input parameter to a value.
-		 - `setFilter` — `elementId` + a `filter` (object + conditions of column/comparison/value, column may be a
-		   lookup dot-path; the server serializes the platform filter). On a `signalStart` this restricts the record
-		   trigger to matching records. `clearFilter` — `elementId` (removes the element's filter).
-		 Operations apply in order; any failure aborts the edit (nothing is saved). Example — switch a process to
-		 start on record save: `removeElement` the start event, `addElement` a `signalStart`, then `addFlow` from it
-		 to the first task. Confirm destructive removals with the user before proceeding.
+		 Edit the existing business process `{process}` on Creatio environment `{environmentName}` with the
+		 `modify-business-process` tool. Steps: (1) call `describe-business-process` to inspect the current elements
+		 and their names; (2) read `get-guidance name=process-modeling` for the operation and field contract;
+		 (3) supply a JSON `operations` array (applied in order) — each item has an `op`: `addElement`,
+		 `removeElement`, `addFlow`, `removeFlow`, `addParameter`, `addMapping`, `setParameter`, `removeParameter`,
+		 `setFilter`, or `clearFilter`
+		 — plus that op's arguments (the element / parameter / mapping / filter shapes match a build; `setParameter`
+		 updates a parameter in place, `removeParameter` is dependency-checked, and `setFilter`/`clearFilter` set or
+		 remove a `signalStart`'s record filter). Any failed operation aborts the whole edit
+		 (nothing is saved). Example — switch a process to start on record save: `removeElement` the start event,
+		 `addElement` a `signalStart`, then `addFlow` from it to the first task. Confirm destructive removals
+		 (`removeElement` / `removeFlow` / `removeParameter`) with the user before proceeding.
 		 """;
 }

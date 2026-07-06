@@ -5,15 +5,14 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Common;
 using Clio.UserEnvironment;
-using CommandLine;
 
 namespace Clio.Command;
 
 /// <summary>
-/// CLI options for listing the user-facing user tasks (the visual designer palette) available on an environment.
+/// Options for listing the user-facing user tasks (the visual designer palette) available on an environment.
+/// Consumed by the MCP <c>list-user-tasks</c> tool, which sets these properties directly.
 /// </summary>
-[Verb("list-user-tasks", Aliases = ["luts"],
-	HelpText = "List the user-facing user tasks available on a Creatio environment (the process designer palette)")]
+[RequiresPackage("clioprocessbuilder", Hint = "This experimental feature requires the clioprocessbuilder package on the target environment.")]
 public sealed class ListUserTasksOptions : EnvironmentOptions { }
 
 /// <summary>

@@ -1,16 +1,16 @@
 using System;
-using System.IO;
 using Clio.Command;
 using Clio.Common;
 using FluentAssertions;
-using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command;
 
 [TestFixture]
-public sealed class CreateBusinessProcessCommandTests : BaseCommandTests<CreateBusinessProcessOptions> {
+[Category("Unit")]
+[Property("Module", "Command")]
+public sealed class CreateBusinessProcessCommandTests {
 	private const string SampleDescriptor =
 		"{\"name\":\"UsrSampleProcess\",\"packageName\":\"Custom\",\"elements\":[],\"flows\":[]}";
 
@@ -18,22 +18,15 @@ public sealed class CreateBusinessProcessCommandTests : BaseCommandTests<CreateB
 	private ILogger _logger;
 	private CreateBusinessProcessCommand _command;
 
-	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
-		base.AdditionalRegistrations(containerBuilder);
+	[SetUp]
+	public void Setup() {
 		_createBusinessProcessService = Substitute.For<ICreateBusinessProcessService>();
 		_logger = Substitute.For<ILogger>();
-		containerBuilder.AddSingleton(_createBusinessProcessService);
-		containerBuilder.AddSingleton(_logger);
-	}
-
-	[SetUp]
-	public override void Setup() {
-		base.Setup();
-		_command = Container.GetRequiredService<CreateBusinessProcessCommand>();
+		_command = new CreateBusinessProcessCommand(_createBusinessProcessService, _logger);
 	}
 
 	[TearDown]
-	public override void TearDown() {
+	public void TearDown() {
 		_createBusinessProcessService.ClearReceivedCalls();
 		_logger.ClearReceivedCalls();
 	}
@@ -42,6 +35,7 @@ public sealed class CreateBusinessProcessCommandTests : BaseCommandTests<CreateB
 		new("UsrSampleProcess", "5c58c4c4-134b-4744-9c67-96d9c69c9d55");
 
 	[Test]
+	[Category("Unit")]
 	[Description("Forwards the inline descriptor JSON and package override to the build service and logs the created schema on success.")]
 	public void Execute_ShouldMapInlineDescriptorToService_WhenDescriptorJsonProvided() {
 		// Arrange
@@ -68,50 +62,23 @@ public sealed class CreateBusinessProcessCommandTests : BaseCommandTests<CreateB
 	}
 
 	[Test]
-	[Description("Reads the descriptor file content and forwards it to the build service when --descriptor is provided.")]
-	public void Execute_ShouldReadDescriptorFile_WhenDescriptorPathProvided() {
-		// Arrange
-		string descriptorPath = Path.Combine(Path.GetTempPath(), $"clio-bp-test-{Guid.NewGuid():N}.json");
-		File.WriteAllText(descriptorPath, SampleDescriptor);
-		try {
-			CreateBusinessProcessOptions options = new() {
-				Environment = "sandbox",
-				DescriptorPath = descriptorPath
-			};
-			_createBusinessProcessService.BuildProcess("sandbox", Arg.Any<CreateBusinessProcessRequest>())
-				.Returns(BuildResult());
-
-			// Act
-			int result = _command.Execute(options);
-
-			// Assert
-			result.Should().Be(0,
-				because: "a successful build from a descriptor file should return the standard success exit code");
-			_createBusinessProcessService.Received(1).BuildProcess(
-				"sandbox",
-				Arg.Is<CreateBusinessProcessRequest>(request => request.DescriptorJson == SampleDescriptor));
-		}
-		finally {
-			File.Delete(descriptorPath);
-		}
-	}
-
-	[Test]
-	[Description("Returns a failure exit code and logs guidance when neither --descriptor nor --descriptor-json is provided.")]
+	[Category("Unit")]
+	[Description("Returns a failure exit code and logs guidance when no inline descriptor JSON is provided.")]
 	public void Execute_ShouldFail_WhenNoDescriptorProvided() {
 		// Act
 		int result = _command.Execute(new CreateBusinessProcessOptions { Environment = "sandbox" });
 
 		// Assert
 		result.Should().Be(1,
-			because: "the command requires a descriptor source to build a process");
+			because: "the command requires an inline descriptor to build a process");
 		_createBusinessProcessService.DidNotReceiveWithAnyArgs().BuildProcess(default!, default!);
 		_logger.Received(1).WriteError(Arg.Is<string>(message =>
-			message.Contains("--descriptor") && message.Contains("--descriptor-json")));
+			message.Contains("A process descriptor is required.")));
 	}
 
 	[Test]
-	[Description("Returns a failure exit code and logs a readable error when the CLI call omits environment-name.")]
+	[Category("Unit")]
+	[Description("Returns a failure exit code and logs a readable error when the call omits environment-name.")]
 	public void Execute_ShouldFail_WhenEnvironmentIsMissing() {
 		// Act
 		int result = _command.Execute(new CreateBusinessProcessOptions { DescriptorJson = SampleDescriptor });
@@ -124,6 +91,7 @@ public sealed class CreateBusinessProcessCommandTests : BaseCommandTests<CreateB
 	}
 
 	[Test]
+	[Category("Unit")]
 	[Description("Returns a failure exit code and logs the service exception message when the build service throws.")]
 	public void Execute_ShouldFail_WhenServiceThrows() {
 		// Arrange

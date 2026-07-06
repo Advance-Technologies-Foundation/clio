@@ -19,9 +19,10 @@ namespace Clio.Mcp.E2E;
 [AllureNUnit]
 [AllureFeature("get-process-signature")]
 [NonParallelizable]
-public sealed class GetProcessSignatureToolE2ETests {
+public sealed class GetProcessSignatureToolE2ETests : McpContractFixtureBase {
 	private const string ToolName = GetProcessSignatureTool.ToolName;
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes get-process-signature for the configured sandbox process, and verifies a structured signature with parameter codes.")]
 	[AllureTag(ToolName)]
@@ -45,7 +46,7 @@ public sealed class GetProcessSignatureToolE2ETests {
 			Assert.Ignore($"get-process-signature MCP E2E requires a reachable configured sandbox environment. '{environmentName}' was not reachable.");
 		}
 
-		await using GetProcessSignatureArrangeContext arrangeContext = await ArrangeAsync(settings);
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
 
 		// Act
 		GetProcessSignatureEnvelope envelope = await ActAsync(arrangeContext, processCode!, environmentName!);
@@ -59,37 +60,6 @@ public sealed class GetProcessSignatureToolE2ETests {
 			because: "a successful signature must always carry a parameters collection (possibly empty)");
 	}
 
-	[Test]
-	[Description("Starts the real clio MCP server, invokes get-process-signature with an invalid environment name, and verifies a readable structured failure.")]
-	[AllureTag(ToolName)]
-	[AllureName("Get process signature reports invalid environment failures")]
-	[AllureDescription("Uses the real clio MCP server to call get-process-signature with an unknown environment name and verifies that the MCP result stays structured and reports a human-readable failure with success=false.")]
-	public async Task GetProcessSignature_Should_Report_Invalid_Environment_Failure() {
-		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		string invalidEnvironmentName = $"missing-gps-env-{Guid.NewGuid():N}";
-		await using GetProcessSignatureArrangeContext arrangeContext = await ArrangeAsync(settings);
-
-		// Act
-		GetProcessSignatureEnvelope envelope = await ActAsync(arrangeContext, "UsrMissingProcess", invalidEnvironmentName);
-
-		// Assert
-		envelope.Success.Should().BeFalse(
-			because: "an unknown environment cannot resolve a process signature");
-		envelope.Error.Should().NotBeNullOrWhiteSpace(
-			because: "failed signature lookups should carry a human-readable error");
-		envelope.Error!.Should().MatchRegex(
-			$"(?is)({Regex.Escape(invalidEnvironmentName)}|environment.*not.*found|not found|not registered)",
-			because: "the failure should help a human understand that the requested environment is not registered");
-	}
-
-	private static async Task<GetProcessSignatureArrangeContext> ArrangeAsync(McpE2ESettings settings) {
-		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(5));
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		return new GetProcessSignatureArrangeContext(session, cancellationTokenSource);
-	}
-
 	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) {
 		ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(
 			settings,
@@ -98,7 +68,7 @@ public sealed class GetProcessSignatureToolE2ETests {
 	}
 
 	private static async Task<GetProcessSignatureEnvelope> ActAsync(
-		GetProcessSignatureArrangeContext arrangeContext,
+		ArrangeContext arrangeContext,
 		string processName,
 		string environmentName) {
 		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
@@ -118,12 +88,4 @@ public sealed class GetProcessSignatureToolE2ETests {
 		return GetProcessSignatureResultParser.Extract(callResult);
 	}
 
-	private sealed record GetProcessSignatureArrangeContext(
-		McpServerSession Session,
-		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
-			CancellationTokenSource.Dispose();
-		}
-	}
 }

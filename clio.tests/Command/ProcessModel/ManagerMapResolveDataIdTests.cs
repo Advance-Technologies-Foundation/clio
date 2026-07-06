@@ -114,6 +114,29 @@ public sealed class ManagerMapResolveDataIdTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("ResolveDataId is case-insensitive and accepts the lowercase build/describe tokens (signalstart/usertask/endevent/startevent), not just the camelCase canvas data-ids, so the validate <-> create-business-process <-> describe-business-process loop round-trips (PR #715 vocabulary reconciliation). These cases all resolved to Unknown before the fix.")]
+	[TestCase("startevent", ManagerMap.EventType.StartEvent)]          // build/describe lowercase token
+	[TestCase("signalstart", ManagerMap.EventType.StartSignalEvent)]  // build/describe token for the run-on-save start
+	[TestCase("signalStart", ManagerMap.EventType.StartSignalEvent)]  // create-business-process descriptor `type`
+	[TestCase("endevent", ManagerMap.EventType.EndEvent)]             // build/describe lowercase token
+	[TestCase("usertask", ManagerMap.EventType.UserTask)]             // build/describe lowercase token
+	[TestCase("performtask", ManagerMap.EventType.UserTask)]          // build token the guidance example uses; the server builds it (alias -> Perform task)
+		[TestCase("performTask", ManagerMap.EventType.UserTask)]          // create-business-process descriptor `type`
+		[TestCase("StartEvent", ManagerMap.EventType.StartEvent)]         // case-insensitive vs the canvas data-id
+	[TestCase("ENDEVENT", ManagerMap.EventType.EndEvent)]             // case-insensitive
+	[TestCase("ReadDataUserTask", ManagerMap.EventType.UserTask)]     // *UserTask suffix, mixed case
+	public void ResolveDataId_ShouldAcceptBuildAndDescribeTokensCaseInsensitively_WhenVocabularyOrCaseDrifts(
+			string token, ManagerMap.EventType expected) {
+		// Act
+		ManagerMap.EventType actual = ManagerMap.ResolveDataId(token);
+
+		// Assert
+		actual.Should().Be(expected,
+			because: "the validator must accept the build/describe tokens and any casing so the three surfaces share one vocabulary — otherwise a valid graph (or a describe read-back) degrades to all-Unknown");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("ResolveRole collapses each EventType into the coarse role (Start/End/Activity/Gateway/Intermediate/Other) the rules need.")]
 	[TestCase(ManagerMap.EventType.StartSignalEvent, ManagerMap.ProcessElementRole.Start)]
 	[TestCase(ManagerMap.EventType.StartTimer, ManagerMap.ProcessElementRole.Start)]

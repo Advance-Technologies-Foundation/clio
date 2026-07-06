@@ -144,8 +144,8 @@ public sealed class ValidateProcessGraphToolE2ETests {
 		return environmentName!;
 	}
 
-	private static Dictionary<string, object?> Node(string id, string type) =>
-		new() { ["id"] = id, ["type"] = type };
+	private static Dictionary<string, object?> Node(string name, string type) =>
+		new() { ["name"] = name, ["type"] = type };
 
 	private static Dictionary<string, object?> Edge(string source, string target, string flowKind) =>
 		new() { ["source"] = source, ["target"] = target, ["flow-kind"] = flowKind };
@@ -164,6 +164,7 @@ public sealed class ValidateProcessGraphToolE2ETests {
 	private static async Task<ArrangeContext> ArrangeAsync() {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		ProcessDesignerE2EGate.SkipIfFeatureDisabled(settings);
 		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
 		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
 		return new ArrangeContext(session, cancellationTokenSource);

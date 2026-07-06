@@ -14,6 +14,7 @@ using Clio.Command.ApplicationCommand;
 using Clio.Command.BusinessRules;
 using Clio.Command.ChainItems;
 using Clio.Command.CreatioInstallCommand;
+using Clio.Command.IdentityServiceDeployment;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Command.McpServer;
 using Clio.Command.McpServer.Resources;
@@ -27,6 +28,7 @@ using Clio.Common.Assertions;
 using Clio.Common.db;
 using Clio.Common.DeploymentStrategies;
 using Clio.Common.SystemServices;
+using Clio.Common.Telemetry;
 using Clio.Common.K8;
 using Clio.Common.Kubernetes;
 using Clio.Common.Database;
@@ -90,14 +92,51 @@ public class BindingsModule {
 
 	#region Methods: Public
 
+	/// <summary>
+	/// Builds the clio dependency-injection container, validating the whole graph at build time
+	/// (<c>ValidateOnBuild</c> + <c>ValidateScopes</c>).
+	/// </summary>
+	/// <param name="settings">
+	/// The environment settings to bind, or <c>null</c> to resolve them from the bootstrap profile.
+	/// </param>
+	/// <param name="additionalRegistrations">
+	/// An optional hook invoked after the core registrations so tests (and callers) can add or
+	/// override services before the provider is built.
+	/// </param>
+	/// <param name="profile">
+	/// The registration profile. Defaults to <see cref="BindingsModuleRegistrationProfile.Bootstrap"/>
+	/// when <paramref name="settings"/> is <c>null</c>, otherwise
+	/// <see cref="BindingsModuleRegistrationProfile.EnvironmentScoped"/>.
+	/// </param>
+	/// <param name="applyBootstrapRepairs">
+	/// When <c>true</c> the settings bootstrap service may repair/migrate <c>appsettings.json</c>;
+	/// pass <c>false</c> for read-only help/parser builds that must not write settings.
+	/// </param>
+	/// <param name="registerMcpHost">
+	/// When <c>true</c> registers the Model Context Protocol stdio host (<c>AddMcpServer</c> +
+	/// transport + request filters + per-primitive schema generation) and the
+	/// <see cref="Command.McpServer.McpServerCommand"/> that depends on the resulting
+	/// <c>McpServer</c> singleton. Defaults to <c>false</c> (fail-safe): every non-mcp CLI build, the
+	/// bootstrap build, and the per-environment <c>ToolCommandResolver</c> builds never resolve
+	/// <c>McpServer</c>, so they skip the host registration and its eager schema-generation cost. Set
+	/// <c>true</c> ONLY on the single container build from which <see cref="Command.McpServer.McpServerCommand"/>
+	/// is resolved. Do NOT derive this from a process-wide static inside this module — it must be
+	/// threaded explicitly so a live MCP session's per-environment builds stay gated off.
+	/// </param>
+	/// <returns>The built and validated service provider.</returns>
 	public IServiceProvider Register(EnvironmentSettings settings = null,
 		Action<IServiceCollection> additionalRegistrations = null,
 		BindingsModuleRegistrationProfile? profile = null,
-		bool applyBootstrapRepairs = true){
+		bool applyBootstrapRepairs = true,
+		bool registerMcpHost = false){
 		BindingsModuleRegistrationProfile registrationProfile = profile
 			?? (settings is null ? BindingsModuleRegistrationProfile.Bootstrap : BindingsModuleRegistrationProfile.EnvironmentScoped);
 		IServiceCollection services = new ServiceCollection();
 		RegisterAssemblyInterfaceTypes(services);
+		services.AddTransient(sp => new EntitySchemaColumnResolvers(
+			sp.GetRequiredService<IEntitySchemaDefaultValueSourceResolver>(),
+			sp.GetRequiredService<ILookupDefaultDisplayValueResolver>(),
+			sp.GetRequiredService<IEntitySchemaCaptionCultureResolver>()));
 		services.AddSingleton<IWorkspacePathBuilder, WorkspacePathBuilder>();
 		services.AddTransient<IVsProjectFactory, VsProjectFactory>();
 		services.AddTransient<ICreatioPkgProjectCreator, CreatioPkgProjectCreator>();
@@ -123,7 +162,11 @@ public class BindingsModule {
 				UseCookies = false,
 				AllowAutoRedirect = false
 			});
-		
+		// Named HttpClient for background telemetry uploads — same registration-time-only
+		// timeout rule as the component-registry client above.
+		services.AddHttpClient(TelemetryFlushService.HttpClientName)
+			.ConfigureHttpClient(client => client.Timeout = TelemetryFlushService.PostTimeout);
+
 		ISettingsBootstrapService settingsBootstrapService = new SettingsBootstrapService(_fileSystem, applyBootstrapRepairs);
 		SettingsBootstrapResult bootstrapResult = settingsBootstrapService.GetResult();
 		// RealInteractiveConsole fails closed on redirected stdin (MCP stdio / CI), so this single
@@ -188,6 +231,19 @@ public class BindingsModule {
 		services.AddTransient<k8Commands>();
 		services.AddTransient<IInfrastructurePathProvider, InfrastructurePathProvider>();
 		services.AddTransient<InstallerCommand>();
+		services.AddTransient<DeployIdentityCommand>();
+		services.AddTransient<IIdentityServiceArchiveResolver, IdentityServiceArchiveResolver>();
+		services.AddTransient<IIdentityServiceCreatioClient, IdentityServiceCreatioClient>();
+		services.AddTransient<IIdentityServiceRoleGrantService, IdentityServiceRoleGrantService>();
+		services.AddTransient<IIdentityServiceSystemUserResolver, IdentityServiceSystemUserResolver>();
+		services.AddTransient<IIdentityServiceDeploymentService, IdentityServiceDeploymentService>();
+		services.AddSingleton<Command.OAuthAppConfiguration.IIdentityServerUrlResolver, Command.OAuthAppConfiguration.IdentityServerUrlResolver>();
+		services.AddTransient<Command.OAuthAppConfiguration.IIdentityServerProbe, Command.OAuthAppConfiguration.IdentityServerProbe>();
+		services.AddTransient<Command.OAuthAppConfiguration.GetIdentityServiceConfigCommand>();
+		services.AddTransient<Command.OAuthAppConfiguration.ResolveOAuthSystemUserCommand>();
+		services.AddTransient<Command.OAuthAppConfiguration.CreateOAuthTechnicalUserCommand>();
+		services.AddTransient<Command.OAuthAppConfiguration.CreateServerToServerOAuthAppCommand>();
+		services.AddTransient<Command.OAuthAppConfiguration.VerifyOAuthAppCommand>();
 		services.AddTransient<IDockerTemplatePathProvider, DockerTemplatePathProvider>();
 		services.AddTransient<IBuildDockerImageService, BuildDockerImageService>();
 		services.AddHttpClient<ICodeServerArchiveCache, CodeServerArchiveCache>();
@@ -348,6 +404,27 @@ public class BindingsModule {
 		services.AddTransient<ToolContractGetTool>();
 		services.AddTransient<ValidateProcessGraphTool>();
 		services.AddTransient<DescribeProcessTool>();
+		// Singleton: the service is effectively stateless (its only shared mutable state is a static
+		// lock), so a single instance is safe and keeps the lifetime consistent with the singleton
+		// flusher that depends on it (no captured-dependency lifetime mismatch).
+		services.AddSingleton<ITelemetryService>(sp => new TelemetryService(
+			sp.GetRequiredService<IFileSystem>(),
+			timeProvider: sp.GetRequiredService<TimeProvider>(),
+			logger: sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<TelemetryService>>()));
+		services.AddSingleton<ITelemetryFlushOptionsProvider, TelemetryFlushOptionsProvider>();
+		services.AddSingleton<ITelemetryFlushService>(sp => new TelemetryFlushService(
+			sp.GetRequiredService<IFileSystem>(),
+			sp.GetRequiredService<IHttpClientFactory>(),
+			sp.GetRequiredService<ITelemetryService>(),
+			sp.GetRequiredService<ITelemetryFlushOptionsProvider>(),
+			timeProvider: sp.GetRequiredService<TimeProvider>(),
+			logger: sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<TelemetryFlushService>>()));
+		services.AddSingleton<ITelemetryFlushScheduler>(sp => new TelemetryFlushScheduler(
+			sp.GetRequiredService<ITelemetryFlushService>(),
+			sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<TelemetryFlushScheduler>>()));
+		services.AddTransient<GetTelemetryConsentTool>();
+		services.AddTransient<SendTelemetryTool>();
+		services.AddTransient<WithdrawTelemetryConsentTool>();
 		services.AddTransient<PageGetTool>();
 		services.AddTransient<PageUpdateTool>();
 		services.AddTransient<PageCreateTool>();
@@ -371,6 +448,7 @@ public class BindingsModule {
 		services.AddTransient<GetUserCultureTool>();
 		services.AddTransient<PackageHotfixTool>();
 		services.AddTransient<AddPackageDependencyTool>();
+		services.AddTransient<RemovePackageDependencyTool>();
 		services.AddTransient<CreateUiProjectTool>();
 		services.AddTransient<DataForgeTool>();
 		services.AddTransient<SysSettingGetTool>();
@@ -380,6 +458,7 @@ public class BindingsModule {
 		services.AddTransient<InstallGateTool>();
 		services.AddTransient<ExperimentalTool>();
 		services.AddTransient<ListCreatioBuildsTool>();
+		services.AddTransient<GetCreatioInfoTool>();
 		services.AddTransient<IDataForgeEnrichmentBuilder, DataForgeEnrichmentBuilder>();
 		services.AddTransient<IApplicationCreateEnrichmentService, ApplicationCreateEnrichmentService>();
 		services.AddTransient<ISchemaEnrichmentService, SchemaEnrichmentService>();
@@ -566,6 +645,7 @@ public class BindingsModule {
 		services.AddTransient<PackageHotFixCommand>();
 		services.AddTransient<PackageEditableMutator>();
 		services.AddTransient<AddPackageDependencyCommand>();
+		services.AddTransient<RemovePackageDependencyCommand>();
 		services.AddTransient<PackageDependencyManager>();
 		services.AddTransient<SaveSettingsToManifestCommand>();
 		services.AddTransient<ShowDiffEnvironmentsCommand>();
@@ -625,6 +705,10 @@ public class BindingsModule {
 		services.AddTransient<CompileConfigurationCommand>();
 		services.AddTransient<CompileWorkspaceCommand>();
 		services.AddTransient<GenerateSourceCodeCommand>();
+		services.AddTransient<GetIdentityAssertionCommand>();
+		services.AddTransient<GetIdentityPublicJwkCommand>();
+		services.AddTransient<RegenerateIdentitySigningKeyCommand>();
+		services.AddTransient<CheckAuthCodeFlowCommand>();
 		services.AddTransient<IMssql, Mssql>();
 		services.AddTransient<IPostgres, Postgres>();
 		services.AddSingleton<CommandHelpCatalog>();
@@ -635,31 +719,43 @@ public class BindingsModule {
 		services.AddTransient<LocalHelpViewer>();
 		services.AddTransient<WikiHelpViewer>();
 		
-		services.AddTransient<McpServerCommand>();
-		JsonSerializerOptions mcpSerializerOptions = CreateMcpSerializerOptions();
-		// Gate MCP tools/resources/prompts behind the same feature toggle as the CLI: a type marked
-		// [FeatureToggle("key")] whose flag is off must not be registered with the MCP server, so it
-		// is invisible to MCP clients (the *FromAssembly scanners would otherwise register ALL of
-		// them, bypassing the CLI parser gate). The feature rule is delegated to the shared
-		// IFeatureToggleService.IsEnabled so there is one rule, not two; it is constructed here over
-		// the in-scope settingsRepository because the container is still being built and the service
-		// is not yet resolvable. The enumeration replicates the SDK's discovery exactly, so with
-		// nothing gated the registered set is identical to the previous *FromAssembly behaviour.
-		Assembly mcpAssembly = Assembly.GetExecutingAssembly();
-		IFeatureToggleService mcpFeatureToggleService = new FeatureToggleService(settingsRepository);
-		IMcpServerBuilder mcpServerBuilder = services.AddMcpServer(options => {
-					options.Capabilities ??= new();
-					options.Capabilities.Logging = new();
-					options.ServerInstructions = McpServerInstructions.Text;
-				})
-				.WithStdioServerTransport()
-				.WithRequestFilters(filters => filters.AddCallToolFilter(McpToolErrorFilter.HandleCallToolErrors));
-		// Single registration seam shared with the parity regression test: registers the feature-enabled
-		// tool/resource/prompt types via the IEnumerable<Type> SDK overloads (the Type[] overload-binding
-		// hazard is documented on RegisterEnabledPrimitives).
-		McpFeatureToggleFilter.RegisterEnabledPrimitives(
-			mcpServerBuilder, mcpAssembly, mcpFeatureToggleService.IsEnabled, mcpSerializerOptions);
-		
+		// MCP host registration is gated on an EXPLICIT flag (never a process-wide static): the only
+		// consumer of the McpServer singleton is McpServerCommand, resolved solely on the mcp-server
+		// dispatch path. Every non-mcp CLI build, the bootstrap build, and the per-environment
+		// ToolCommandResolver builds (which in a live MCP session still run with the global mcp flag
+		// set) never resolve McpServer, so they skip AddMcpServer + the eager per-tool JSON-schema
+		// generation here. McpServerCommand is registered INSIDE this block too: it depends on the
+		// McpServer singleton, so leaving it registered while the host is gated off would make
+		// ValidateOnBuild fail on every non-mcp build. The MCP tool/resource/prompt TYPE registrations
+		// stay unconditional above — their constructors do not depend on McpServer (the SDK injects it
+		// as a per-call method argument), so ValidateOnBuild is satisfied without the host.
+		if (registerMcpHost) {
+			services.AddTransient<McpServerCommand>();
+			JsonSerializerOptions mcpSerializerOptions = CreateMcpSerializerOptions();
+			// Gate MCP tools/resources/prompts behind the same feature toggle as the CLI: a type marked
+			// [FeatureToggle("key")] whose flag is off must not be registered with the MCP server, so it
+			// is invisible to MCP clients (the *FromAssembly scanners would otherwise register ALL of
+			// them, bypassing the CLI parser gate). The feature rule is delegated to the shared
+			// IFeatureToggleService.IsEnabled so there is one rule, not two; it is constructed here over
+			// the in-scope settingsRepository because the container is still being built and the service
+			// is not yet resolvable. The enumeration replicates the SDK's discovery exactly, so with
+			// nothing gated the registered set is identical to the previous *FromAssembly behaviour.
+			Assembly mcpAssembly = Assembly.GetExecutingAssembly();
+			IFeatureToggleService mcpFeatureToggleService = new FeatureToggleService(settingsRepository);
+			IMcpServerBuilder mcpServerBuilder = services.AddMcpServer(options => {
+						options.Capabilities ??= new();
+						options.Capabilities.Logging = new();
+						options.ServerInstructions = McpServerInstructions.Text;
+					})
+					.WithStdioServerTransport()
+					.WithRequestFilters(filters => filters.AddCallToolFilter(McpToolErrorFilter.HandleCallToolErrors));
+			// Single registration seam shared with the parity regression test: registers the feature-enabled
+			// tool/resource/prompt types via the IEnumerable<Type> SDK overloads (the Type[] overload-binding
+			// hazard is documented on RegisterEnabledPrimitives).
+			McpFeatureToggleFilter.RegisterEnabledPrimitives(
+				mcpServerBuilder, mcpAssembly, mcpFeatureToggleService.IsEnabled, mcpSerializerOptions);
+		}
+
 		services.AddTransient<Func<EnvironmentSettings, ISysSettingsManager>>(_ =>
 			envSettings => {
 				IDataProvider dataProvider = string.IsNullOrEmpty(envSettings.ClientId)
@@ -759,7 +855,11 @@ public class BindingsModule {
 					|| implementedInterface == typeof(IMessageChannelHubConnection)
 					// ReauthExecutor requires a per-adapter Login closure; it is created by
 					// CreatioClientAdapter rather than resolved from DI.
-					|| implementedInterface == typeof(IReauthExecutor)) {
+					|| implementedInterface == typeof(IReauthExecutor)
+					// CliogateHttpReadinessProbe takes runtime-only ctor args (an HttpClient, the
+					// attempt budget, and inter-attempt delays); it is constructed by the e2e
+					// readiness wait, not resolved from DI.
+					|| implementedInterface == typeof(ICliogateHttpReadinessProbe)) {
 					continue;
 				}
 				services.AddTransient(implementedInterface, type);

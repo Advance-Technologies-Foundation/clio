@@ -1,7 +1,6 @@
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
-using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
@@ -14,15 +13,16 @@ namespace Clio.Mcp.E2E;
 /// End-to-end tests for the OData write MCP tools (create / update / delete).
 /// </summary>
 [TestFixture]
+[Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [NonParallelizable]
-public sealed class ODataWriteToolsE2ETests {
+public sealed class ODataWriteToolsE2ETests : McpContractFixtureBase {
 	[Test]
 	[Description("Advertises odata-create as a non-read-only, non-destructive MCP tool.")]
 	[AllureTag(ODataCreateTool.ToolName)]
 	[AllureName("odata-create MCP tool is advertised")]
 	public async Task ODataCreate_Should_Be_Advertised() {
-		await using ArrangeContext arrange = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrange = Arrange(TimeSpan.FromMinutes(3));
 		IList<McpClientTool> tools = await arrange.Session.ListToolsAsync(arrange.CancellationTokenSource.Token);
 		McpClientTool tool = tools.Single(t => t.Name == ODataCreateTool.ToolName);
 		tool.ProtocolTool.Annotations!.ReadOnlyHint.Should().BeFalse();
@@ -34,7 +34,7 @@ public sealed class ODataWriteToolsE2ETests {
 	[AllureTag(ODataUpdateTool.ToolName)]
 	[AllureName("odata-update MCP tool is advertised")]
 	public async Task ODataUpdate_Should_Be_Advertised() {
-		await using ArrangeContext arrange = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrange = Arrange(TimeSpan.FromMinutes(3));
 		IList<McpClientTool> tools = await arrange.Session.ListToolsAsync(arrange.CancellationTokenSource.Token);
 		McpClientTool tool = tools.Single(t => t.Name == ODataUpdateTool.ToolName);
 		tool.ProtocolTool.Annotations!.ReadOnlyHint.Should().BeFalse();
@@ -46,7 +46,7 @@ public sealed class ODataWriteToolsE2ETests {
 	[AllureTag(ODataDeleteTool.ToolName)]
 	[AllureName("odata-delete MCP tool is advertised")]
 	public async Task ODataDelete_Should_Be_Advertised() {
-		await using ArrangeContext arrange = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrange = Arrange(TimeSpan.FromMinutes(3));
 		IList<McpClientTool> tools = await arrange.Session.ListToolsAsync(arrange.CancellationTokenSource.Token);
 		McpClientTool tool = tools.Single(t => t.Name == ODataDeleteTool.ToolName);
 		tool.ProtocolTool.Annotations!.ReadOnlyHint.Should().BeFalse();
@@ -58,7 +58,7 @@ public sealed class ODataWriteToolsE2ETests {
 	[AllureTag(ODataCreateTool.ToolName)]
 	[AllureName("odata-create MCP tool binds arguments")]
 	public async Task ODataCreate_Should_Bind_Arguments_And_Report_Invalid_Environment() {
-		await using ArrangeContext arrange = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrange = Arrange(TimeSpan.FromMinutes(3));
 		string invalidEnvironmentName = $"missing-odata-env-{Guid.NewGuid():N}";
 
 		CallToolResult callResult = await arrange.Session.CallToolAsync(
@@ -67,7 +67,8 @@ public sealed class ODataWriteToolsE2ETests {
 				["args"] = new Dictionary<string, object?> {
 					["environment-name"] = invalidEnvironmentName,
 					["entity"] = "Contact",
-					["data"] = new Dictionary<string, object?> { ["Name"] = "e2e" }
+					["rows"] = new object[] { new Dictionary<string, object?> { ["Name"] = "e2e" }
+ }
 				}
 			},
 			arrange.CancellationTokenSource.Token);
@@ -79,11 +80,40 @@ public sealed class ODataWriteToolsE2ETests {
 	}
 
 	[Test]
+	[Description("Binds a multi-row odata-create batch through the real MCP server and reports a request-level invalid-environment failure.")]
+	[AllureTag(ODataCreateTool.ToolName)]
+	[AllureName("odata-create MCP tool binds a multi-row batch")]
+	public async Task ODataCreate_Should_Bind_Multiple_Rows_Batch_And_Report_Invalid_Environment() {
+		await using var arrange = Arrange(TimeSpan.FromMinutes(3));
+		string invalidEnvironmentName = $"missing-odata-batch-env-{Guid.NewGuid():N}";
+
+		CallToolResult callResult = await arrange.Session.CallToolAsync(
+			ODataCreateTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = invalidEnvironmentName,
+					["entity"] = "Contact",
+					["rows"] = new object[] {
+						new Dictionary<string, object?> { ["Name"] = "e2e batch 1" },
+						new Dictionary<string, object?> { ["Name"] = "e2e batch 2" }
+					}
+				}
+			},
+			arrange.CancellationTokenSource.Token);
+		ODataCreateBatchResponse response = EntitySchemaStructuredResultParser.Extract<ODataCreateBatchResponse>(callResult);
+
+		callResult.IsError.Should().NotBeTrue(
+			because: "a valid two-row batch payload should bind and return the structured batch response");
+		response.Error.Should().Contain(invalidEnvironmentName,
+			because: "the missing environment fails the whole batch before any row is attempted");
+	}
+
+	[Test]
 	[Description("odata-update rejects a non-GUID id through the real MCP server without touching an environment.")]
 	[AllureTag(ODataUpdateTool.ToolName)]
 	[AllureName("odata-update MCP tool guards keyless updates")]
 	public async Task ODataUpdate_Should_Reject_NonGuid_Id() {
-		await using ArrangeContext arrange = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrange = Arrange(TimeSpan.FromMinutes(3));
 
 		CallToolResult callResult = await arrange.Session.CallToolAsync(
 			ODataUpdateTool.ToolName,
@@ -92,7 +122,8 @@ public sealed class ODataWriteToolsE2ETests {
 					["environment-name"] = $"missing-{Guid.NewGuid():N}",
 					["entity"] = "Contact",
 					["id"] = "all",
-					["data"] = new Dictionary<string, object?> { ["Name"] = "e2e" }
+					["rows"] = new object[] { new Dictionary<string, object?> { ["Name"] = "e2e" }
+ }
 				}
 			},
 			arrange.CancellationTokenSource.Token);
@@ -103,20 +134,4 @@ public sealed class ODataWriteToolsE2ETests {
 		response.Error.Should().Contain("must be a record GUID");
 	}
 
-	private static async Task<ArrangeContext> ArrangeAsync(TimeSpan timeout) {
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		CancellationTokenSource cancellationTokenSource = new(timeout);
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		return new ArrangeContext(session, cancellationTokenSource);
-	}
-
-	private sealed record ArrangeContext(
-		McpServerSession Session,
-		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
-			CancellationTokenSource.Dispose();
-		}
-	}
 }

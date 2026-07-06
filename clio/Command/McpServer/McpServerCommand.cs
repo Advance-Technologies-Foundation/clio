@@ -1,6 +1,8 @@
-﻿using System;
+using System;
 using System.Threading;
+using System.Threading.Tasks;
 using Clio.Command.McpServer.Tools;
+using Clio.Common.Telemetry;
 using CommandLine;
 
 namespace Clio.Command.McpServer;
@@ -11,7 +13,8 @@ public class McpServerCommandOptions : BaseCommandOptions
 { }
 
 
-public class McpServerCommand(ModelContextProtocol.Server.McpServer server) : Command<McpServerCommandOptions>{
+public class McpServerCommand(ModelContextProtocol.Server.McpServer server,
+	ITelemetryFlushScheduler flushScheduler) : Command<McpServerCommandOptions>{
 	public override int Execute(McpServerCommandOptions options) {
 		McpLogNotifier.Initialize(server);
 		// The using-scoped source is disposed at the END of Execute — strictly after the finally
@@ -33,6 +36,9 @@ public class McpServerCommand(ModelContextProtocol.Server.McpServer server) : Co
 
 		Console.CancelKeyPress += onCancelKeyPress;
 		AppDomain.CurrentDomain.ProcessExit += onProcessExit;
+		// Drain the telemetry spool left over from previous sessions; fire-and-forget,
+		// the server starts serving immediately.
+		flushScheduler.TryScheduleFlush();
 		try {
 			server.RunAsync(cts.Token).GetAwaiter().GetResult();
 		} catch (OperationCanceledException) {
@@ -48,11 +54,14 @@ public class McpServerCommand(ModelContextProtocol.Server.McpServer server) : Co
 			// stuck drain stays interruptible.
 			Console.CancelKeyPress -= onCancelKeyPress;
 			AppDomain.CurrentDomain.ProcessExit -= onProcessExit;
-			// Flush any in-flight background CDN refreshes before the process
-			// exits. Without this, the fire-and-forget Task.Run tasks are killed
-			// by the runtime as soon as the main (foreground) thread exits,
-			// leaving the on-disk cache stale indefinitely.
-			ComponentRegistryClient.DrainAsync(TimeSpan.FromSeconds(10))
+			// Flush any in-flight background work (CDN refreshes, telemetry uploads) before the
+			// process exits. Without this, the fire-and-forget Task.Run tasks are killed by the
+			// runtime as soon as the main (foreground) thread exits, leaving the on-disk cache
+			// stale indefinitely. The two drains run concurrently so shutdown stays bounded at
+			// ~10 seconds.
+			Task.WhenAll(
+					ComponentRegistryClient.DrainAsync(TimeSpan.FromSeconds(10)),
+					flushScheduler.DrainAsync(TimeSpan.FromSeconds(10)))
 				.GetAwaiter().GetResult();
 			McpLogNotifier.Reset();
 		}

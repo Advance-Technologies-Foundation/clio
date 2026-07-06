@@ -24,18 +24,7 @@ public class ProcessSchemaResponse{
 			FillParameterCaption(item, jsonString, logger);
 			FillCollectionParameterCaption(item, jsonString, logger);
 			FillFlowElementCaption(item, jsonString, logger);
-			
-			
-			// var forAi = new {
-			// 	processName = item.Schema.Name,
-			// 	processDescription = item.Schema.Description?.GetValueOrDefault("en-US", string.Empty),
-			// 	processCaption = item.Schema.Caption?.GetValueOrDefault("en-US", string.Empty),
-			// 	uId= item.Schema.UId,
-			// 	processParameters = item.Schema.MetaDataSchema.Parameters
-			// 	, flowElements = item.Schema.MetaDataSchema.FlowElements
-			// };
-			// item.ForAi = JsonSerializer.Serialize(forAi, IgnoreNullOptions);
-			
+
 			IEnumerable<Guid> listOfSubProcesses = item.Schema.MetaDataSchema?.FlowElements?
 									  .Where(fe => fe.EventType == ManagerMap.EventType.SubProcess && fe.SchemaUId != Guid.Empty)
 									  .Select(fe => (Guid)fe.SchemaUId)
@@ -1094,29 +1083,38 @@ public static class ManagerMap{
 	/// </remarks>
 	/// <param name="dataId">The designer element <c>data-id</c> string. <see langword="null"/>/empty is allowed.</param>
 	/// <returns>The matching <see cref="EventType"/>, or <see cref="EventType.Unknown"/> when unrecognized.</returns>
-	public static EventType ResolveDataId(string dataId) => dataId switch {
-		null or "" => EventType.Unknown,
-		"startEvent" => EventType.StartEvent,
-		"startEventSignal" => EventType.StartSignalEvent,
-		"startEventTimer" => EventType.StartTimer,
-		"startEventMessage" => EventType.StartMessageEvent,
-		"endEvent" => EventType.EndEvent,
-		"exclusiveGateway" => EventType.ExclusiveGateway,
-		"parallelGateway" => EventType.ParallelGateway,
-		"inclusiveGateway" => EventType.InclusiveGateway,
-		"eventBasedGateway" => EventType.EventBasedGateway,
-		"formulaTask" => EventType.FormulaTask,
-		"scriptTask" => EventType.ScriptTask,
-		"webService" => EventType.WebServiceTask,
-		"callActivity" => EventType.SubProcess,
-		"eventSubProcessExpanded" => EventType.EventSubProcess,
-		"userTask" => EventType.UserTask,
-		var i when i.StartsWith("intermediateCatchEvent", StringComparison.Ordinal) => EventType.IntermediateCatchSignalEvent,
-		var i when i.StartsWith("intermediateThrowEvent", StringComparison.Ordinal) => EventType.IntermediateThrowSignalEvent,
-		// All system/user action elements end with the "UserTask" suffix and are activities.
-		var u when u.EndsWith("UserTask", StringComparison.Ordinal) => EventType.UserTask,
-		_ => EventType.Unknown
-	};
+	public static EventType ResolveDataId(string dataId) {
+		if (string.IsNullOrWhiteSpace(dataId)) {
+			return EventType.Unknown;
+		}
+		// Case-INSENSITIVE, and accepts BOTH the diagram-js data-ids used to plan/validate (e.g. startEventSignal,
+		// readDataUserTask) AND the lowercase build/describe tokens (e.g. signalstart, usertask, endevent). This is
+		// what lets the validate <-> create-business-process <-> describe-business-process loop round-trip regardless
+		// of which spelling a surface emits (build/describe use lowercase tokens; the canvas uses camelCase data-ids).
+		string id = dataId.Trim().ToLowerInvariant();
+		return id switch {
+			"startevent" => EventType.StartEvent,
+			"starteventsignal" or "signalstart" => EventType.StartSignalEvent,
+			"starteventtimer" => EventType.StartTimer,
+			"starteventmessage" => EventType.StartMessageEvent,
+			"endevent" => EventType.EndEvent,
+			"exclusivegateway" => EventType.ExclusiveGateway,
+			"parallelgateway" => EventType.ParallelGateway,
+			"inclusivegateway" => EventType.InclusiveGateway,
+			"eventbasedgateway" => EventType.EventBasedGateway,
+			"formulatask" => EventType.FormulaTask,
+			"scripttask" => EventType.ScriptTask,
+			"webservice" => EventType.WebServiceTask,
+			"callactivity" => EventType.SubProcess,
+			"eventsubprocessexpanded" => EventType.EventSubProcess,
+			"usertask" or "performtask" => EventType.UserTask,
+			var i when i.StartsWith("intermediatecatchevent", StringComparison.Ordinal) => EventType.IntermediateCatchSignalEvent,
+			var i when i.StartsWith("intermediatethrowevent", StringComparison.Ordinal) => EventType.IntermediateThrowSignalEvent,
+			// every system/user action element ends with the "usertask" suffix and is an activity.
+			var u when u.EndsWith("usertask", StringComparison.Ordinal) => EventType.UserTask,
+			_ => EventType.Unknown
+		};
+	}
 
 	/// <summary>
 	/// Collapses an <see cref="EventType"/> into the coarse <see cref="ProcessElementRole"/> the

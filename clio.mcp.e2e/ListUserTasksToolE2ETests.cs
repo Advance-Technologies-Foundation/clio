@@ -53,7 +53,7 @@ public sealed class ListUserTasksToolE2ETests {
 
 		// Act
 		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
-			["environmentName"] = context.EnvironmentName
+			["environment-name"] = context.EnvironmentName
 		});
 
 		// Assert
@@ -68,25 +68,32 @@ public sealed class ListUserTasksToolE2ETests {
 		IList<McpClientTool> tools = await context.Session.ListToolsAsync(context.CancellationTokenSource.Token);
 		tools.Select(tool => tool.Name).Should().Contain(ToolName,
 			because: "the list-user-tasks tool must be advertised before the end-to-end call");
-		return await context.Session.CallToolAsync(ToolName, args, context.CancellationTokenSource.Token);
+		return await context.Session.CallToolAsync(
+			ToolName, new Dictionary<string, object?> { ["args"] = args }, context.CancellationTokenSource.Token);
 	}
 
 	private static async Task<ArrangeContext> ArrangeAsync(bool requireReachableEnvironment) {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		ProcessDesignerE2EGate.SkipIfFeatureDisabled(settings);
+		string? environmentName = settings.Sandbox.EnvironmentName;
+		if (requireReachableEnvironment) {
+			if (string.IsNullOrWhiteSpace(environmentName)) {
+				Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName (with the ProcessDesignService package) to run list-user-tasks MCP E2E.");
+			}
+			if (!await ClioCliCommandRunner.IsEnvironmentReachableAsync(settings, environmentName!)) {
+				Assert.Ignore($"list-user-tasks MCP E2E requires a reachable configured sandbox environment. '{environmentName}' was not reachable.");
+			}
+		}
 		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
 		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		string environmentName = settings.Sandbox.EnvironmentName ?? string.Empty;
-		if (requireReachableEnvironment && string.IsNullOrWhiteSpace(environmentName)) {
-			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName (with the ProcessDesignService package) to run list-user-tasks MCP E2E.");
-		}
 		return new ArrangeContext(session, cancellationTokenSource, environmentName);
 	}
 
 	private sealed record ArrangeContext(
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource,
-		string EnvironmentName) : IAsyncDisposable {
+		string? EnvironmentName) : IAsyncDisposable {
 		public async ValueTask DisposeAsync() {
 			await Session.DisposeAsync();
 			CancellationTokenSource.Dispose();

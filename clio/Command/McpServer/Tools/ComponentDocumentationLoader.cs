@@ -16,12 +16,25 @@ namespace Clio.Command.McpServer.Tools;
 internal static class ComponentDocumentationLoader {
 	internal const string DocumentationSeparator = "\n\n---\n\n";
 
-	internal static async Task<string?> LoadAsync(
+	internal static Task<string?> LoadAsync(
 		IComponentRegistryDocsClient docsClient,
 		ComponentRegistryEntry entry,
 		string resolvedVersion,
+		CancellationToken cancellationToken) =>
+		LoadAsync(docsClient, entry.References?.Docs, resolvedVersion, cancellationToken);
+
+	/// <summary>
+	/// Overload over a raw list of doc paths, used for composite Designer elements
+	/// (<see cref="CompositeDefinition.Docs"/>) which carry their docs directly rather
+	/// than under a <c>references.docs</c> block. Same fetch → concatenate → graceful
+	/// degradation contract as the entry overload: <see langword="null"/> when the list
+	/// is empty or every fetch fails.
+	/// </summary>
+	internal static async Task<string?> LoadAsync(
+		IComponentRegistryDocsClient docsClient,
+		IReadOnlyList<string>? docs,
+		string resolvedVersion,
 		CancellationToken cancellationToken) {
-		IReadOnlyList<string>? docs = entry.References?.Docs;
 		if (docs is null || docs.Count == 0) {
 			return null;
 		}

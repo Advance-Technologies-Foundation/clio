@@ -84,6 +84,11 @@ public sealed class ComponentInfoToolTests {
 	    "componentType": "crt.Gallery",
 	    "category": "interactive",
 	    "description": "Gallery with bulk actions.",
+	    "synonyms": ["carousel", "photo grid"],
+	    "useCases": ["Browse an image collection as cards"],
+	    "whenToUse": "Use for an image or photo gallery.",
+	    "whenNotToUse": "Avoid for spreadsheet rows and columns (use crt.DataGrid).",
+	    "appliesToCustomEntities": true,
 	    "container": false,
 	    "parentTypes": ["crt.GridContainer"],
 	    "properties": {
@@ -339,6 +344,83 @@ public sealed class ComponentInfoToolTests {
 	}
 
 	[Test]
+	[Description("Detail mode surfaces the Solution A selection-metadata (synonyms/useCases/whenToUse/whenNotToUse/appliesToCustomEntities) the producer publishes on a component, so the agent can choose between visually similar components instead of guessing.")]
+	public async Task ComponentInfoTool_Should_Surface_Selection_Metadata_In_Detail() {
+		// Arrange
+		ComponentInfoTool tool = CreateTool();
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("crt.Gallery"));
+
+		// Assert
+		response.Mode.Should().Be("detail",
+			because: "a known component type resolves to a detail response");
+		response.WhenToUse.Should().Be("Use for an image or photo gallery.",
+			because: "the @whenToUse selection guidance must reach the AI consumer (Solution A, ENG-91571)");
+		response.WhenNotToUse.Should().Be("Avoid for spreadsheet rows and columns (use crt.DataGrid).",
+			because: "the @whenNotToUse anti-pattern guidance must surface so the agent avoids the wrong component");
+		response.Synonyms.Should().BeEquivalentTo(new[] { "carousel", "photo grid" },
+			because: "published @synonym tags must round-trip onto the detail response");
+		response.UseCases.Should().ContainSingle()
+			.Which.Should().Be("Browse an image collection as cards",
+				because: "published @useCase tags must round-trip onto the detail response");
+		response.AppliesToCustomEntities.Should().BeTrue(
+			because: "the applicability flag must round-trip so the agent knows the component is custom-entity-safe");
+	}
+
+	[Test]
+	[Description("List-mode keyword search matches a component by its published @synonym so an informal prompt term (e.g. 'carousel') discovers crt.Gallery even though neither the type name nor the description contains the word.")]
+	public async Task ComponentInfoTool_Should_Match_List_Search_By_Synonym() {
+		// Arrange
+		ComponentInfoTool tool = CreateTool();
+
+		// Act
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(Search: "carousel"));
+
+		// Assert
+		response.Mode.Should().Be("list",
+			because: "a search-only request stays in list mode");
+		response.Items.Should().ContainSingle(
+			because: "'carousel' is a synonym only crt.Gallery publishes")
+			.Which.ComponentType.Should().Be("crt.Gallery",
+				because: "synonym search must surface the component whose @synonym matched");
+	}
+
+	[Test]
+	[Description("List-mode keyword search matches a component by its published @useCase, isolated from the synonym fold: 'cards' appears only inside crt.Gallery.useCases ('Browse an image collection as cards'), so a hit proves the useCases branch — not just the synonym branch — is folded into search.")]
+	public async Task ComponentInfoTool_Should_Match_List_Search_By_UseCase() {
+		// Arrange
+		ComponentInfoTool tool = CreateTool();
+
+		// Act — "cards" appears ONLY inside crt.Gallery.useCases, isolating the useCases search fold
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(Search: "cards"));
+
+		// Assert
+		response.Mode.Should().Be("list",
+			because: "a search-only request stays in list mode");
+		response.Items.Should().ContainSingle(
+			because: "'cards' is published only in crt.Gallery.useCases")
+			.Which.ComponentType.Should().Be("crt.Gallery",
+				because: "useCase search must surface the component whose @useCase matched");
+	}
+
+	[Test]
+	[Description("List-mode search must NOT match a component by its whenNotToUse anti-guidance: a term that appears only in 'do NOT use this when…' must not surface the very component the guidance steers away from (the list response does not even carry whenNotToUse, so such a hit would be misleading).")]
+	public async Task ComponentInfoTool_Should_Not_Match_List_Search_By_WhenNotToUse() {
+		// Arrange
+		ComponentInfoTool tool = CreateTool();
+
+		// Act — "spreadsheet" appears ONLY inside crt.Gallery.whenNotToUse ("Avoid for spreadsheet rows…")
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(Search: "spreadsheet"));
+
+		// Assert
+		response.Mode.Should().Be("list",
+			because: "a search-only request stays in list mode");
+		(response.Items ?? []).Select(item => item.ComponentType).Should().NotContain("crt.Gallery",
+			because: "whenNotToUse is anti-guidance — matching it would surface the component its own metadata steers away from");
+	}
+
+	[Test]
 	[Description("Returns nested menu component details so action collections can be expanded safely.")]
 	public async Task ComponentInfoTool_Should_Return_Detail_For_Nested_Menu_Component() {
 		// Arrange
@@ -419,8 +501,8 @@ public sealed class ComponentInfoToolTests {
 			because: "the failure should identify the missing component type");
 		response.Count.Should().BeGreaterThan(0,
 			because: "a not-found response should still offer the closest known types for discovery");
-		response.Count.Should().BeLessThan(12,
-			because: "suggestions must be a bounded shortlist, never the entire 12-entry catalog (acceptance #2)");
+		response.Count.Should().BeLessThanOrEqualTo(8,
+			because: "suggestions are capped at MaxNotFoundSuggestions (8), never the entire 12-entry catalog — pins the cap after the constant moved to ComponentInfoResponseFactory (acceptance #2)");
 		response.Items.Should().NotBeNull();
 		response.Items!.Count.Should().Be(response.Count,
 			because: "the item list and the reported count must agree");
@@ -715,6 +797,41 @@ public sealed class ComponentInfoToolTests {
 	}
 
 	[Test]
+	[Description("The pretty renderer emits every one of the six selection-metadata lines (whenToUse / whenNotToUse / synonyms with ', ' join / useCases with '; ' join / appliesToCustomEntities 'no' arm / entityCouplingNote) when the producer published them, so the human --pretty detail view reaches full parity with the MCP JSON, not just the whenToUse line.")]
+	public void ComponentInfoPrettyRenderer_Should_Render_All_Selection_Metadata_Lines() {
+		// Arrange
+		ComponentInfoResponse response = new() {
+			Success = true,
+			Mode = "detail",
+			ComponentType = "crt.Gallery",
+			Description = "Gallery with bulk actions.",
+			WhenToUse = "Use for an image or photo gallery.",
+			WhenNotToUse = "Avoid for spreadsheet rows and columns (use crt.DataGrid).",
+			Synonyms = ["carousel", "photo grid"],
+			UseCases = ["Browse an image collection as cards", "Showcase a product catalog"],
+			AppliesToCustomEntities = false,
+			EntityCouplingNote = "Bind to a list collection, not a single record."
+		};
+
+		// Act
+		string rendered = ComponentInfoPrettyRenderer.Render(response);
+
+		// Assert
+		rendered.Should().Contain("whenToUse:        Use for an image or photo gallery.",
+			because: "the @whenToUse guidance must reach the human --pretty surface");
+		rendered.Should().Contain("whenNotToUse:     Avoid for spreadsheet rows and columns (use crt.DataGrid).",
+			because: "the @whenNotToUse anti-guidance must render so a human reader sees the same caveat AI gets");
+		rendered.Should().Contain("synonyms:         carousel, photo grid",
+			because: "synonyms must render as a ', '-joined list");
+		rendered.Should().Contain("useCases:         Browse an image collection as cards; Showcase a product catalog",
+			because: "useCases must render as a '; '-joined list — a different separator from synonyms");
+		rendered.Should().Contain("appliesToCustomEntities: no",
+			because: "the restrictive appliesToCustomEntities=false value (the whole point of the flag) must render its 'no' arm");
+		rendered.Should().Contain("entityCouplingNote: Bind to a list collection, not a single record.",
+			because: "the entityCouplingNote must surface on the human --pretty view like the JSON response carries it");
+	}
+
+	[Test]
 	[Description("Passing environment-name routes version resolution through the cliogate probe for that environment (factory + settings repository), mirroring the CLI verb, instead of an ambient server-bound resolver.")]
 	public async Task ComponentInfoTool_Should_Resolve_Version_From_Passed_Environment() {
 		// Arrange
@@ -812,6 +929,502 @@ public sealed class ComponentInfoToolTests {
 		response.Error.Should().NotBeNull();
 		response.Error.Should().Contain("CLIO_COMPONENT_REGISTRY_LOCAL_FILE",
 			because: "the error must point operators at the documented offline override");
+	}
+
+	/// <summary>
+	/// Wrapped registry with a composite-only component (<c>crt.NextSteps</c>), a normal
+	/// component (<c>crt.ExpansionPanel</c>), and a top-level <c>composites</c> array.
+	/// Backs the composites/compositeOnly tool-surface tests.
+	/// </summary>
+	private const string CompositeRegistryJson = """
+	{
+	  "components": [
+	    {
+	      "componentType": "crt.ExpansionPanel",
+	      "category": "containers",
+	      "description": "Collapsible panel.",
+	      "container": true,
+	      "properties": {}
+	    },
+	    {
+	      "componentType": "crt.NextSteps",
+	      "category": "interactive",
+	      "description": "Next steps widget.",
+	      "compositeOnly": true,
+	      "container": false,
+	      "properties": {}
+	    }
+	  ],
+	  "composites": [
+	    {
+	      "caption": "Next steps",
+	      "description": "Expansion panel wrapping a crt.NextSteps list.",
+	      "docs": ["docs/expansion-panel-next-steps.component.md"]
+	    },
+	    {
+	      "caption": "Expanded list",
+	      "description": "Expansion panel pre-filled with a crt.DataGrid and a toolbar.",
+	      "docs": ["docs/expansion-panel-expanded-list.component.md"]
+	    }
+	  ]
+	}
+	""";
+
+	[Test]
+	[Description("List mode surfaces the top-level composites (sorted by caption) alongside components, and flags composite-only components with compositeOnly on their list item.")]
+	public async Task ComponentInfoTool_List_Should_Surface_Composites_And_CompositeOnly() {
+		ComponentInfoTool tool = BuildTool(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(CompositeRegistryJson)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson));
+
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs());
+
+		response.Success.Should().BeTrue(because: "a list request against a well-formed registry succeeds");
+		response.Composites.Should().NotBeNull(because: "the registry declares a top-level composites array");
+		// Composites are surfaced sorted by caption.
+		response.Composites!.Select(c => c.Caption).Should().BeEquivalentTo(
+			new[] { "Expanded list", "Next steps" },
+			options => options.WithStrictOrdering(),
+			because: "composites are emitted sorted by caption, so 'Expanded list' precedes 'Next steps'");
+		ComponentInfoListItem nextSteps = response.Items!.Single(i => i.ComponentType == "crt.NextSteps");
+		nextSteps.CompositeOnly.Should().BeTrue(because: "crt.NextSteps has no standalone toolbar presence");
+		response.Items!.Single(i => i.ComponentType == "crt.ExpansionPanel").CompositeOnly.Should().BeNull(
+			because: "a normal standalone component must not carry the flag");
+	}
+
+	[Test]
+	[Description("composite='<caption>' returns a mode:composite detail with the composite's concatenated assembly docs.")]
+	public async Task ComponentInfoTool_Composite_Detail_Should_Return_Docs() {
+		FakeDocsClient docs = new FakeDocsClient()
+			.Seed("latest", "docs/expansion-panel-next-steps.component.md", "# Next steps\n\nAssemble the panel.");
+		ComponentInfoTool tool = BuildTool(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(CompositeRegistryJson)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson),
+			docs);
+
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(Composite: "Next steps"));
+
+		response.Success.Should().BeTrue(because: "the composite caption resolves to a known composite");
+		response.Mode.Should().Be("composite", because: "a composite lookup returns the dedicated composite mode");
+		response.Caption.Should().Be("Next steps", because: "the response echoes the matched composite caption");
+		response.Description.Should().Be("Expansion panel wrapping a crt.NextSteps list.",
+			because: "the composite's registry description is surfaced verbatim");
+		response.Documentation.Should().Be("# Next steps\n\nAssemble the panel.",
+			because: "the composite's declared docs are fetched and concatenated into documentation");
+	}
+
+	[Test]
+	[Description("composite lookup is case-insensitive against the caption.")]
+	public async Task ComponentInfoTool_Composite_Detail_Lookup_Should_Be_Case_Insensitive() {
+		FakeDocsClient docs = new FakeDocsClient()
+			.Seed("latest", "docs/expansion-panel-expanded-list.component.md", "# Expanded list");
+		ComponentInfoTool tool = BuildTool(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(CompositeRegistryJson)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson),
+			docs);
+
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(Composite: "expanded LIST"));
+
+		response.Success.Should().BeTrue(because: "composite lookup is case-insensitive, so 'expanded LIST' matches");
+		response.Caption.Should().Be("Expanded list",
+			because: "the response echoes the canonical caption, not the caller's casing");
+	}
+
+	[Test]
+	[Description("An unknown composite caption returns a failure that lists the known captions and points back to list mode.")]
+	public async Task ComponentInfoTool_Composite_Detail_Should_Fail_With_Known_Captions_When_Unknown() {
+		ComponentInfoTool tool = BuildTool(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(CompositeRegistryJson)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson));
+
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(Composite: "Does Not Exist"));
+
+		response.Success.Should().BeFalse(because: "an unknown composite caption is a lookup failure");
+		response.Mode.Should().Be("composite", because: "the failure stays in composite mode so callers branch on one shape");
+		response.Error.Should().Contain("Next steps").And.Contain("Expanded list",
+			because: "the not-found error must list the known composite captions");
+	}
+
+	[Test]
+	[Description("Name-first resolution: an unknown component-type whose value names a COMPOSITE caption (the human label the agent reaches for, e.g. 'Expanded list') is not a dead end — the not-found response routes to composite=\"<caption>\" and surfaces the matched composite, so the agent fetches the recipe instead of hand-building. Systemic: works for any composite, not a hard-coded set.")]
+	public async Task ComponentInfoTool_Unknown_ComponentType_Matching_Composite_Caption_Routes_To_Composite() {
+		ComponentInfoTool tool = BuildTool(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(CompositeRegistryJson)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson));
+
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("Expanded list"));
+
+		response.Success.Should().BeFalse(because: "'Expanded list' is not a component type");
+		response.Error.Should().Contain("Expanded list",
+			because: "the routing message must name the matched composite");
+		response.Error.Should().Contain("composite=",
+			because: "the agent must be routed to the composite-discovery path, not left to hand-build the detail");
+		response.Error.Should().Contain("REQUIRED",
+			because: "the routing directive must be a hard stop, not a soft suggestion an agent can bypass");
+		response.Error.Should().Contain("Do NOT synthesize",
+			because: "the message must explicitly forbid synthesizing the composite structure from memory or docs");
+		response.Composites.Should().NotBeNull();
+		response.Composites!.Select(c => c.Caption).Should().Contain("Expanded list",
+			because: "the matched composite is surfaced so the agent can fetch its assembly recipe");
+	}
+
+	[Test]
+	[Description("Name-first resolution keeps the closest-type fallback: an unknown component-type matching NO composite still returns the bounded closest-known-types shortlist and does NOT fabricate a composite route.")]
+	public async Task ComponentInfoTool_Unknown_ComponentType_With_No_Composite_Match_Falls_Back_To_Suggestions() {
+		ComponentInfoTool tool = BuildTool(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(CompositeRegistryJson)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson));
+
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("crt.TotallyMadeUp"));
+
+		response.Success.Should().BeFalse();
+		response.Error.Should().Contain("crt.TotallyMadeUp", because: "the failure should identify the missing type");
+		response.Error.Should().NotContain("composite=",
+			because: "no composite matches this label, so the response must not invent a composite route");
+		response.Items.Should().NotBeNull(because: "closest known types are still offered for discovery");
+	}
+
+	[Test]
+	[Description("Name-first resolution, branch 1 (hasComponentMatch): a query that substring-matches a component's name/description — but is NOT an exact type and matches NO composite — surfaces those components with the 'by name/description' message, NOT the composite route nor the distance-fallback shortlist.")]
+	public async Task ComponentInfoTool_Unknown_ComponentType_Matching_Component_By_Description_Surfaces_Name_Matches() {
+		ComponentInfoTool tool = BuildTool(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(CompositeRegistryJson)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson));
+
+		// "widget" substring-matches crt.NextSteps ("Next steps widget.") but is not an exact type and
+		// matches no composite caption/description.
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("widget"));
+
+		response.Success.Should().BeFalse();
+		response.Error.Should().Contain("widget", because: "the error echoes the requested query");
+		response.Error.Should().Contain("by name/description",
+			because: "the name-match branch must use its own wording, distinct from the routing and distance branches");
+		response.Error.Should().NotContain("composite=",
+			because: "'widget' matches no composite, so no composite route");
+		response.Error.Should().NotContain("closest known type",
+			because: "a name/description match must not degrade to the distance-fallback wording");
+		response.Items!.Select(item => item.ComponentType).Should().Contain("crt.NextSteps",
+			because: "the component whose description contains the query is surfaced");
+		response.Count.Should().BeLessThanOrEqualTo(8, because: "the name-match shortlist honors the same cap");
+	}
+
+	[Test]
+	[Description("RC-3 regression: a query that is an EXACT composite caption AND also substring-matches a component's description ('Next steps' matches both the composite and crt.NextSteps's description) must still ROUTE to the composite — the exact-caption match wins over the fuzzy component match, so composite routing is not suppressed.")]
+	public async Task ComponentInfoTool_ExactCompositeCaption_Routes_Even_When_A_Component_Description_Also_Matches() {
+		ComponentInfoTool tool = BuildTool(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(CompositeRegistryJson)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson));
+
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("Next steps"));
+
+		response.Success.Should().BeFalse(because: "'Next steps' is a composite caption, not a component type");
+		response.Error.Should().Contain("composite=",
+			because: "an exact composite-caption match must route to the composite even though crt.NextSteps matches by description");
+		response.Error.Should().Contain("Next steps", because: "the routing directive names the composite");
+		response.Composites!.Select(c => c.Caption).Should().Contain("Next steps",
+			because: "the matched composite is surfaced on the routing branch");
+		response.Items.Should().BeNullOrEmpty(
+			because: "the routing branch surfaces only the composite, not component suggestions the directive tells the agent to ignore");
+	}
+
+	[Test]
+	[Description("RC-C5 regression: when a query matches MULTIPLE composites by description (but no exact caption), the routing response surfaces all matched composites and Items is empty. Pins the multi-match branch so a future refactor cannot silently drop the full composite list or skip the directive.")]
+	public async Task ComponentInfoTool_Unknown_ComponentType_Matching_Multiple_Composites_Routes_With_All_Captions() {
+		ComponentInfoTool tool = BuildTool(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(CompositeRegistryJson)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson));
+
+		// "Expansion panel" substring-matches BOTH composites by description but no exact caption and
+		// no component by name/description:
+		//   "Next steps"    → description "Expansion panel wrapping a crt.NextSteps list."
+		//   "Expanded list" → description "Expansion panel pre-filled with a crt.DataGrid and a toolbar."
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("Expansion panel"));
+
+		response.Success.Should().BeFalse(because: "'Expansion panel' is not a component type");
+		response.Error.Should().Contain("composite=",
+			because: "the query matches composites, so a routing directive is emitted");
+		response.Error.Should().Contain("'Next steps'",
+			because: "every matched composite caption must appear in the error");
+		response.Error.Should().Contain("'Expanded list'",
+			because: "every matched composite caption must appear in the error");
+		response.Composites.Should().NotBeNull();
+		response.Composites!.Count.Should().Be(2,
+			because: "both matched composites are surfaced on the routing branch");
+		response.Items.Should().BeNullOrEmpty(
+			because: "the routing branch surfaces only composite(s), not component suggestions the directive tells the agent to ignore");
+	}
+
+	[Test]
+	[Description("CreateComponentNotFoundResponse tolerates a null composites list (the parameter is nullable): FilterComposites guards null internally, so there is no NullReferenceException. Locks the contract — returns a not-found envelope with no composite routing and no Composites section.")]
+	public void ComponentInfoTool_CreateComponentNotFoundResponse_Tolerates_Null_Composites() {
+		ComponentRegistryEntry[] entries = [
+			new() { ComponentType = "crt.TabContainer", Description = "Tab body." }
+		];
+
+		System.Func<ComponentInfoResponse> act = () => ComponentInfoResponseFactory.CreateComponentNotFoundResponse(
+			entries,
+			composites: null,
+			requestedType: "crt.DoesNotExist",
+			search: null,
+			resolvedTargetVersion: "latest",
+			resolvedFrom: "latest-fallback",
+			resolvedFromReason: null);
+
+		ComponentInfoResponse response = act.Should().NotThrow(
+			because: "FilterComposites guards a null list, so a null composites argument must not throw").Subject;
+		response.Success.Should().BeFalse(because: "an unknown component type is a lookup failure");
+		response.Error.Should().Contain("crt.DoesNotExist");
+		response.Error.Should().NotContain("composite=",
+			because: "a null composites list cannot match, so no composite route is fabricated");
+		response.Composites.Should().BeNull(because: "there are no composites to surface when the list is null");
+	}
+
+	[TestCase(true, "composites are a web-only Designer feature",
+		TestName = "CompositeNotFound: mobile empty catalog → web-only hint")]
+	[TestCase(false, "this catalog declares no composites",
+		TestName = "CompositeNotFound: web empty catalog → no-composites message")]
+	[Description("CreateCompositeNotFoundResponse emits flavor-correct empty-catalog guidance: the mobile path gets the web-only hint, the web path gets the no-composites message. Pins each branch of the flattened web/mobile/empty selector so a future refactor can't silently swap or drop one.")]
+	public void ComponentInfoTool_CompositeNotFound_EmptyCatalog_Message_Matches_Flavor(bool isMobile, string expectedFragment) {
+		ComponentInfoResponse response = ComponentInfoResponseFactory.CreateCompositeNotFoundResponse(
+			composites: [],
+			caption: "Anything",
+			isMobile: isMobile,
+			resolvedTargetVersion: "latest",
+			resolvedFrom: "latest-fallback",
+			resolvedFromReason: null);
+
+		response.Success.Should().BeFalse(because: "an unknown composite caption is a lookup failure");
+		response.Mode.Should().Be("composite", because: "the not-found response stays in composite mode");
+		response.Error.Should().Contain(expectedFragment,
+			because: $"an empty catalog with isMobile={isMobile} must emit the matching guidance");
+	}
+
+	[Test]
+	[Description("Detail of a composite-only component surfaces compositeOnly:true plus the actionable hint steering to the composite. Calls CreateDetailResponse directly (like the snapshot test) so the assertion targets the projection, not the version-resolution pipeline.")]
+	public void ComponentInfoTool_Detail_Should_Surface_CompositeOnly_And_Hint() {
+		ComponentRegistryEntry entry = new() {
+			ComponentType = "crt.NextSteps",
+			Description = "Next steps widget.",
+			CompositeOnly = true
+		};
+
+		ComponentInfoResponse response = ComponentInfoTool.CreateDetailResponse(
+			entry,
+			resolvedTargetVersion: "latest",
+			resolvedFrom: "latest-fallback",
+			documentation: null,
+			globalReferences: null);
+
+		response.CompositeOnly.Should().BeTrue(because: "crt.NextSteps is declared compositeOnly in the registry");
+		response.CompositeOnlyHint.Should().NotBeNullOrEmpty(
+			because: "a composite-only component must tell the agent not to insert it standalone");
+		response.CompositeOnlyHint.Should().Contain("composite=",
+			because: "the hint must steer the agent to the composite lookup that assembles this component");
+	}
+
+	[Test]
+	[Description("CreateDetailResponse omits compositeOnly/compositeOnlyHint for a normal standalone component.")]
+	public void ComponentInfoTool_Detail_Should_Omit_CompositeOnly_For_Standalone_Component() {
+		ComponentRegistryEntry entry = new() {
+			ComponentType = "crt.ExpansionPanel",
+			Description = "Collapsible panel."
+		};
+
+		ComponentInfoResponse response = ComponentInfoTool.CreateDetailResponse(
+			entry,
+			resolvedTargetVersion: "latest",
+			resolvedFrom: "latest-fallback",
+			documentation: null,
+			globalReferences: null);
+
+		response.CompositeOnly.Should().BeNull(because: "a normal standalone component must not carry the compositeOnly flag");
+		response.CompositeOnlyHint.Should().BeNull(because: "no hint is emitted when the component is not composite-only");
+	}
+
+	[Test]
+	[Description("Passing both composite and component-type is rejected as mutually exclusive.")]
+	public async Task ComponentInfoTool_Should_Reject_Both_Composite_And_ComponentType() {
+		ComponentInfoTool tool = BuildTool(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(CompositeRegistryJson)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson));
+
+		ComponentInfoResponse response = await tool.GetComponentInfo(
+			new ComponentInfoArgs("crt.NextSteps", Composite: "Next steps"));
+
+		response.Success.Should().BeFalse(because: "composite and component-type cannot be combined");
+		response.Error.Should().Contain("mutually exclusive",
+			because: "the guard must name the conflict so the caller knows to pass only one");
+	}
+
+	[Test]
+	[Description("The registry envelope deserialises composites and compositeOnly without leaving any field on an UnmappedExtensions bucket (snapshot-safety for the new producer fields).")]
+	public void ComponentRegistry_Should_Map_Composites_And_CompositeOnly_With_No_Unmapped_Fields() {
+		using MemoryStream stream = new(Encoding.UTF8.GetBytes(CompositeRegistryJson));
+		ComponentCatalogState state = ComponentInfoCatalog.LoadFromStream(stream);
+
+		state.Composites.Should().NotBeNull(because: "the envelope declares a top-level composites array");
+		state.Composites!.Select(c => c.Caption).Should().BeEquivalentTo(
+			new[] { "Expanded list", "Next steps" },
+			options => options.WithStrictOrdering(),
+			because: "BuildState orders composites by caption");
+		state.Composites!.Single(c => c.Caption == "Next steps").Docs.Should()
+			.ContainSingle(because: "the 'Next steps' composite declares exactly one doc")
+			.Which.Should().Be("docs/expansion-panel-next-steps.component.md");
+		state.Lookup["crt.NextSteps"].CompositeOnly.Should().BeTrue(
+			because: "crt.NextSteps carries compositeOnly:true in the registry");
+		state.Lookup["crt.ExpansionPanel"].CompositeOnly.Should().BeNull(
+			because: "a standalone component must not carry the flag");
+		foreach (ComponentRegistryEntry entry in state.Entries) {
+			(entry.UnmappedExtensions is null || entry.UnmappedExtensions.Count == 0).Should().BeTrue(
+				because: $"entry '{entry.ComponentType}' must not leave fields unmapped");
+		}
+		foreach (CompositeDefinition composite in state.Composites!) {
+			(composite.UnmappedExtensions is null || composite.UnmappedExtensions.Count == 0).Should().BeTrue(
+				because: $"composite '{composite.Caption}' must not leave fields unmapped");
+		}
+	}
+
+	[Test]
+	[Description("List-mode search filters composites: a non-matching composite is excluded while matching components are still returned.")]
+	public async Task ComponentInfoTool_List_Search_Should_Exclude_NonMatching_Composites() {
+		ComponentInfoTool tool = BuildTool(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(CompositeRegistryJson)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson));
+
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(Search: "next steps"));
+
+		response.Success.Should().BeTrue(because: "a filtered list request still succeeds");
+		response.Composites.Should().NotBeNull(because: "at least one composite matches the search term");
+		response.Composites!.Select(c => c.Caption).Should().Contain("Next steps")
+			.And.NotContain("Expanded list", because: "the search term matches only the 'Next steps' composite");
+		response.Items!.Select(i => i.ComponentType).Should().Contain("crt.NextSteps",
+			because: "matching components must still surface alongside the filtered composites");
+	}
+
+	[Test]
+	[Description("A composite that declares docs which all fail to load yields documentationUnavailable:true — a fetch failure must be distinguishable from a genuine no-docs composite.")]
+	public async Task ComponentInfoTool_Composite_Detail_Should_Flag_DocumentationUnavailable_When_Docs_Fail() {
+		// The FakeDocsClient is left unseeded, so every doc fetch returns null (all-failed).
+		ComponentInfoTool tool = BuildTool(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(CompositeRegistryJson)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson),
+			new FakeDocsClient());
+
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(Composite: "Next steps"));
+
+		response.Success.Should().BeTrue(because: "a docs fetch failure does not fail the composite lookup itself");
+		response.Mode.Should().Be("composite", because: "the response stays in composite mode");
+		response.Documentation.Should().BeNull(because: "no doc loaded, so there is no concatenated documentation");
+		response.DocumentationUnavailable.Should().BeTrue(
+			because: "the composite declares docs but none loaded — the agent must see a fetch failure, not a no-docs composite");
+	}
+
+	[Test]
+	[Description("Two composites with the same caption fail the catalog build loudly, mirroring the duplicate-componentType guard, instead of silently shadowing one via the caption lookup.")]
+	public void ComponentRegistry_Should_Reject_Duplicate_Composite_Captions() {
+		const string json = """
+		{
+		  "components": [ { "componentType": "crt.X", "properties": {} } ],
+		  "composites": [
+		    { "caption": "Dup", "docs": ["docs/a.md"] },
+		    { "caption": "Dup", "docs": ["docs/b.md"] }
+		  ]
+		}
+		""";
+		using MemoryStream stream = new(Encoding.UTF8.GetBytes(json));
+		Action act = () => ComponentInfoCatalog.LoadFromStream(stream);
+		act.Should().Throw<InvalidOperationException>(
+				because: "a duplicate caption would silently shadow one composite, so the build must fail loudly")
+			.WithMessage("*duplicate composite captions*Dup*");
+	}
+
+	[Test]
+	[Description("A composite with a blank caption fails the catalog build loudly — a blank caption has no lookup key, so it must not be silently dropped.")]
+	public void ComponentRegistry_Should_Reject_Blank_Composite_Caption() {
+		const string json = """
+		{
+		  "components": [ { "componentType": "crt.X", "properties": {} } ],
+		  "composites": [
+		    { "caption": "  ", "docs": ["docs/a.md"] }
+		  ]
+		}
+		""";
+		using MemoryStream stream = new(Encoding.UTF8.GetBytes(json));
+		Action act = () => ComponentInfoCatalog.LoadFromStream(stream);
+		act.Should().Throw<InvalidOperationException>(
+				because: "a blank composite caption has no usable lookup key and must surface as a build failure")
+			.WithMessage("*blank caption*");
+	}
+
+	[Test]
+	[Description("compositeOnly and compositeOnlyHint are reachable through the PUBLIC GetComponentInfo detail path, not only via a direct CreateDetailResponse call.")]
+	public async Task ComponentInfoTool_GetComponentInfo_Detail_Should_Surface_CompositeOnly() {
+		ComponentInfoTool tool = BuildTool(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(CompositeRegistryJson)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson));
+
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs("crt.NextSteps"));
+
+		response.Success.Should().BeTrue(because: "a detail lookup of a known component succeeds");
+		response.Mode.Should().Be("detail", because: "a component-type lookup returns detail mode");
+		response.CompositeOnly.Should().BeTrue(because: "crt.NextSteps is composite-only and the public path must surface it");
+		response.CompositeOnlyHint.Should().NotBeNullOrEmpty(because: "the actionable hint must reach the public GetComponentInfo path");
+	}
+
+	[Test]
+	[Description("A composite that declares NO docs yields Documentation null AND documentationUnavailable omitted — the no-docs case must be distinguishable from the docs-declared-but-failed case (documentationUnavailable:true).")]
+	public async Task ComponentInfoTool_Composite_Detail_With_No_Docs_Should_Omit_DocumentationUnavailable() {
+		const string json = """
+		{
+		  "components": [ { "componentType": "crt.X", "properties": {} } ],
+		  "composites": [
+		    { "caption": "No docs", "description": "A composite that ships no docs." }
+		  ]
+		}
+		""";
+		ComponentInfoTool tool = BuildTool(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(json)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson),
+			new FakeDocsClient());
+
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(Composite: "No docs"));
+
+		response.Success.Should().BeTrue(because: "a composite with no docs is still a valid composite");
+		response.Mode.Should().Be("composite", because: "the lookup resolved to a known composite");
+		response.Documentation.Should().BeNull(because: "the composite declares no docs, so there is nothing to concatenate");
+		response.DocumentationUnavailable.Should().BeNull(
+			because: "documentationUnavailable flags only a fetch failure on declared docs, not a genuine no-docs composite");
+	}
+
+	[Test]
+	[Description("A composite that declares multiple docs concatenates every successfully-fetched block with the canonical separator, same as component documentation.")]
+	public async Task ComponentInfoTool_Composite_Detail_With_Multiple_Docs_Should_Concatenate() {
+		const string json = """
+		{
+		  "components": [ { "componentType": "crt.X", "properties": {} } ],
+		  "composites": [
+		    { "caption": "Multi", "description": "Multi-doc composite.", "docs": ["docs/multi.a.md", "docs/multi.b.md"] }
+		  ]
+		}
+		""";
+		FakeDocsClient docs = new FakeDocsClient()
+			.Seed("latest", "docs/multi.a.md", "# Part A")
+			.Seed("latest", "docs/multi.b.md", "# Part B");
+		ComponentInfoTool tool = BuildTool(
+			new ComponentInfoCatalog(new InMemoryRegistryClient(json)),
+			new InMemoryMobileCatalog(TestMobileRegistryJson),
+			docs);
+
+		ComponentInfoResponse response = await tool.GetComponentInfo(new ComponentInfoArgs(Composite: "Multi"));
+
+		response.Success.Should().BeTrue(because: "both declared docs resolve");
+		response.Documentation.Should().NotBeNullOrEmpty(because: "a multi-doc composite surfaces concatenated documentation");
+		response.Documentation!.Should().Contain("# Part A").And.Contain("# Part B",
+			because: "every successfully-fetched doc block must appear in the concatenation");
+		response.Documentation.Should().Contain("\n\n---\n\n",
+			because: "multiple doc blocks are joined with the canonical separator, same as component docs");
+		response.DocumentationUnavailable.Should().BeNull(
+			because: "all declared docs loaded, so no fetch-failure flag is emitted");
 	}
 
 	private static ComponentInfoTool CreateTool(IComponentRegistryDocsClient? docsClient = null) {

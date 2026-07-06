@@ -38,7 +38,7 @@ public sealed class ValidateProcessGraphTool {
 	/// <param name="args">The planned graph (nodes by <c>data-id</c>, edges by flow kind).</param>
 	/// <returns>The validation response (success flag, has-errors, findings).</returns>
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
-	[Description("Validates a planned Creatio business-process graph (nodes by data-id, e.g. startEvent/readDataUserTask/exclusiveGateway/endEvent; edges by flow-kind sequence|conditional|default) against the BPMN connection rules R1-R17. The graph is validated in-memory, but the tool requires the 'clioprocessbuilder' package to be installed on the target environment (named by environment-name). Returns structured findings (error/warning + ruleId). Call this BEFORE driving the designer.")]
+	[Description("Validates a planned Creatio business-process graph (nodes by data-id, e.g. startEvent/readDataUserTask/exclusiveGateway/endEvent; edges by flow-kind sequence|conditional|default) against the BPMN connection rules R1-R17. The graph is validated in-memory, but the tool requires the 'clioprocessbuilder' package to be installed on the target environment (named by environment-name). Returns structured findings (error/warning + ruleId). Call this BEFORE driving the designer. IMPORTANT: a passing graph is NOT necessarily buildable — the rules cover the full BPMN catalog (gateways, conditional/default flows, timers, sub-processes), while create-business-process / modify-business-process build only startEvent/signalStart/endEvent/userTask elements joined by plain sequence flows; check the buildable slice in get-guidance name=process-modeling before promising a build.")]
 	public ValidateProcessGraphResponse Validate([Required] ValidateProcessGraphArgs args) {
 		try {
 			IRequiredPackageChecker checker = _commandResolver.Resolve<IRequiredPackageChecker>(
@@ -47,7 +47,7 @@ public sealed class ValidateProcessGraphTool {
 
 
 			List<ProcessGraphNode> nodes = (args.Nodes ?? [])
-										   .Select(n => new ProcessGraphNode(n.Id, n.Type))
+										   .Select(n => new ProcessGraphNode(n.Name, n.Type))
 										   .ToList();
 			List<ProcessGraphEdge> edges = (args.Edges ?? [])
 										   .Select(e =>
@@ -63,7 +63,7 @@ public sealed class ValidateProcessGraphTool {
 					Severity = f.Severity == ProcessGraphSeverity.Error ? "error" : "warning",
 					RuleId = f.RuleId,
 					Message = f.Message,
-					NodeId = f.NodeId,
+					NodeName = f.NodeName,
 					Source = f.Edge?.Source,
 					Target = f.Edge?.Target
 				}).ToList()
@@ -85,7 +85,7 @@ public sealed class ValidateProcessGraphTool {
 			return new ValidateProcessGraphResponse {
 				Success = false,
 				Error = $"validate-process-graph failed: {ex.Message}. Expected args: " +
-					"{\"nodes\":[{\"id\":\"s\",\"type\":\"startEvent\"}],\"edges\":[{\"source\":\"s\",\"target\":\"r\",\"flow-kind\":\"sequence\"}]}."
+					"{\"nodes\":[{\"name\":\"s\",\"type\":\"startEvent\"}],\"edges\":[{\"source\":\"s\",\"target\":\"r\",\"flow-kind\":\"sequence\"}]}."
 			};
 		}
 	}
@@ -106,7 +106,7 @@ public sealed record ValidateProcessGraphArgs(
 	string EnvironmentName,
 
 	[property: JsonPropertyName("nodes")]
-	[property: Description("The element nodes: [{id, type}] where type is the catalog data-id (e.g. startEvent, readDataUserTask, exclusiveGateway, endEvent).")]
+	[property: Description("The element nodes: [{name, type}] where name is the element handle (the schema element Name/string code) and type is the catalog data-id (e.g. startEvent, readDataUserTask, exclusiveGateway, endEvent).")]
 	List<ProcessGraphNodeArg> Nodes = null,
 
 	[property: JsonPropertyName("edges")]
@@ -116,7 +116,7 @@ public sealed record ValidateProcessGraphArgs(
 
 /// <summary>One node argument.</summary>
 public sealed record ProcessGraphNodeArg(
-	[property: JsonPropertyName("id")] string Id = null,
+	[property: JsonPropertyName("name")] string Name = null,
 	[property: JsonPropertyName("type")] string Type = null);
 
 /// <summary>One edge argument.</summary>
@@ -153,9 +153,9 @@ public sealed class ValidateProcessGraphFinding {
 	[JsonPropertyName("message")]
 	public string Message { get; init; }
 
-	[JsonPropertyName("node-id")]
+	[JsonPropertyName("node-name")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	public string NodeId { get; init; }
+	public string NodeName { get; init; }
 
 	[JsonPropertyName("source")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

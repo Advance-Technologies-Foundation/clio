@@ -131,6 +131,10 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="add-pkg-dependency"></a>
 <a id="add-pkg-dep"></a>
 - [`add-package-dependency`](docs/commands/add-package-dependency.md) - Add one or more package dependencies to a package, `add-pkg-dependency`, `add-pkg-dep`
+<a id="remove-package-dependency"></a>
+<a id="remove-pkg-dependency"></a>
+<a id="remove-pkg-dep"></a>
+- [`remove-package-dependency`](docs/commands/remove-package-dependency.md) - Remove one or more package dependencies from a package, `remove-pkg-dependency`, `remove-pkg-dep`
 <a id="activate-pkg"></a>
 <a id="activate-package"></a>
 <a id="apkg"></a>
@@ -347,18 +351,6 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="externalLink"></a>
 <a id="link"></a>
 - [`externalLink`](docs/commands/externalLink.md) - Handle external deep links, `link`
-<a id="describe-process"></a>
-<a id="dp"></a>
-- [`describe-process`](docs/commands/describe-process.md) - Read an existing Creatio process and return its structured graph (elements, flows, parameters), `dp`
-<a id="create-business-process"></a>
-<a id="create-bp"></a>
-- [`create-business-process`](docs/commands/create-business-process.md) - Build a business process on an environment from a declarative JSON descriptor, `create-bp`
-<a id="modify-business-process"></a>
-<a id="modify-bp"></a>
-- [`modify-business-process`](docs/commands/modify-business-process.md) - Edit an existing business process by applying a list of operations, `modify-bp`
-<a id="list-user-tasks"></a>
-<a id="luts"></a>
-- [`list-user-tasks`](docs/commands/list-user-tasks.md) - List the user-facing user tasks (process designer palette) of an environment, `luts`
 <a id="generate-process-model"></a>
 <a id="gpm"></a>
 - [`generate-process-model`](docs/commands/generate-process-model.md) - Generate process model for ATF.Repository, `gpm`
@@ -487,6 +479,18 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="ic"></a>
 <a id="install-creatio"></a>
 - [`deploy-creatio`](docs/commands/deploy-creatio.md) - Install Creatio from a distribution package, `dc`, `ic`, `install-creatio`
+<a id="deploy-identity"></a>
+- [`deploy-identity`](docs/commands/deploy-identity.md) - Deploy IdentityService to IIS and connect it to a Creatio environment
+<a id="get-identity-service-config"></a>
+- [`get-identity-service-config`](docs/commands/get-identity-service-config.md) - Read (or derive) the OAuth IdentityService configuration of a Creatio environment over REST
+<a id="resolve-oauth-system-user"></a>
+- [`resolve-oauth-system-user`](docs/commands/resolve-oauth-system-user.md) - Resolve a Creatio system user (SysAdminUnit) by name or id over DataService REST
+<a id="create-oauth-technical-user"></a>
+- [`create-oauth-technical-user`](docs/commands/create-oauth-technical-user.md) - Create a Creatio technical user for a server-to-server OAuth app via OAuthConfigService REST
+<a id="create-server-to-server-oauth-app"></a>
+- [`create-server-to-server-oauth-app`](docs/commands/create-server-to-server-oauth-app.md) - Create a server-to-server (client_credentials) OAuth app in Creatio via OAuthConfigService REST
+<a id="verify-oauth-app"></a>
+- [`verify-oauth-app`](docs/commands/verify-oauth-app.md) - Verify a server-to-server OAuth app: acquire a client_credentials token and run a bearer DataService smoke test
 <a id="deploy-infrastructure"></a>
 <a id="di"></a>
 - [`deploy-infrastructure`](docs/commands/deploy-infrastructure.md) - Deploy Kubernetes infrastructure for Creatio (namespace, storage, redis, postgres, pgadmin), `di`
@@ -555,8 +559,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 
 ## Integrations & Tools
 
-<a id="delete-adac"></a>
-- [`delete-adac`](docs/commands/delete-adac.md) - Uninstall the Creatio AI App Development Toolkit from coding agents (alias: delete-skill)
+<a id="delete-toolkit"></a>
+- [`delete-toolkit`](docs/commands/delete-toolkit.md) - Uninstall the Creatio AI App Development Toolkit from coding agents (alias: delete-skill)
 <a id="env-ui"></a>
 <a id="far"></a>
 <a id="gui"></a>
@@ -566,16 +570,31 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="installgate"></a>
 <a id="update-gate"></a>
 - [`install-gate`](docs/commands/install-gate.md) - Install or update cliogate in Creatio, `gate`, `installgate`, `update-gate`
-<a id="install-adac"></a>
-- [`install-adac`](docs/commands/install-adac.md) - Install the Creatio AI App Development Toolkit for all detected coding agents (alias: install-skills)
+<a id="install-toolkit"></a>
+- [`install-toolkit`](docs/commands/install-toolkit.md) - Install the Creatio AI App Development Toolkit for all detected coding agents (alias: install-skills)
 <a id="link-package-store"></a>
 <a id="lps"></a>
 - [`link-package-store`](docs/commands/link-package-store.md) - Link PackageStore packages into an environment, `lps`
 <a id="mcp-server"></a>
 <a id="mcp"></a>
 - [`mcp-server`](docs/commands/mcp-server.md) - Start the MCP server over stdio, `mcp`
-<a id="update-adac"></a>
-- [`update-adac`](docs/commands/update-adac.md) - Update the Creatio AI App Development Toolkit for all detected coding agents (alias: update-skill)
+<a id="update-toolkit"></a>
+- [`update-toolkit`](docs/commands/update-toolkit.md) - Update the Creatio AI App Development Toolkit for all detected coding agents (alias: update-skill)
+
+## Identity & Authentication
+
+<a id="get-identity-assertion"></a>
+<a id="identity-assertion"></a>
+- [`get-identity-assertion`](docs/commands/get-identity-assertion.md) - Issue a short-lived signed identity assertion (JWT) for the current user, `identity-assertion`
+<a id="get-identity-public-jwk"></a>
+<a id="identity-public-jwk"></a>
+- [`get-identity-public-jwk`](docs/commands/get-identity-public-jwk.md) - Get the instance public key (JWK) for Identity Service V3, `identity-public-jwk`
+<a id="regenerate-identity-signing-key"></a>
+<a id="identity-regenerate-key"></a>
+- [`regenerate-identity-signing-key`](docs/commands/regenerate-identity-signing-key.md) - Regenerate the instance identity-assertion signing key pair, `identity-regenerate-key`
+<a id="check-auth-code-flow"></a>
+<a id="auth-code-flow"></a>
+- [`check-auth-code-flow`](docs/commands/check-auth-code-flow.md) - Check whether the environment can use the OAuth authorization code flow, `auth-code-flow`
 
 ## General
 

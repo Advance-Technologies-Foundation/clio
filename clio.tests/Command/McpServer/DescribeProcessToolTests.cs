@@ -19,23 +19,23 @@ public sealed class DescribeProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("describe-process is a read-only, non-destructive, idempotent, closed-world MCP tool.")]
+	[Description("describe-business-process is a read-only, non-destructive, idempotent, closed-world MCP tool.")]
 	public void DescribeProcess_ShouldCarryReadOnlySafetyFlags_WhenInspected() {
 		// Arrange
 		MethodInfo method = typeof(DescribeProcessTool).GetMethod(nameof(DescribeProcessTool.DescribeProcess));
 		McpServerToolAttribute attribute = method!.GetCustomAttribute<McpServerToolAttribute>();
 
 		// Assert
-		attribute.Should().NotBeNull(because: "describe-process must be exposed as an MCP tool");
-		attribute!.ReadOnly.Should().BeTrue(because: "describe-process only reads a process");
-		attribute.Destructive.Should().BeFalse(because: "describe-process changes nothing");
+		attribute.Should().NotBeNull(because: "describe-business-process must be exposed as an MCP tool");
+		attribute!.ReadOnly.Should().BeTrue(because: "describe-business-process only reads a process");
+		attribute.Destructive.Should().BeFalse(because: "describe-business-process changes nothing");
 		attribute.Idempotent.Should().BeTrue(because: "reading the same process yields the same description");
 		attribute.OpenWorld.Should().BeFalse(because: "it reads a known environment, not an open world");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Resolves the environment-aware describe-process command and maps MCP arguments into command options.")]
+	[Description("Resolves the environment-aware describe-business-process command and maps MCP arguments into command options.")]
 	public void DescribeProcess_ShouldResolveCommandAndMapArguments_WhenInvoked() {
 		// Arrange
 		FakeDescribeProcessCommand resolvedCommand = new();
@@ -46,18 +46,18 @@ public sealed class DescribeProcessToolTests {
 		// Act
 		CommandExecutionResult result = tool.DescribeProcess(new DescribeProcessArgs(
 			EnvironmentName: "dev",
-			ProcessCode: "UsrProcess_493d4c9",
+			ProcessName: "UsrProcess_493d4c9",
 			ProcessUid: null,
 			ProcessCaption: null,
 			Culture: "uk-UA"));
 
 		// Assert
 		result.ExitCode.Should().Be(0,
-			because: "a valid describe-process request executes the resolved environment-aware command");
+			because: "a valid describe-business-process request executes the resolved environment-aware command");
 		commandResolver.Received(1).Resolve<DescribeProcessCommand>(Arg.Is<EnvironmentOptions>(o => o.Environment == "dev"));
 		resolvedCommand.CapturedOptions.Should().NotBeNull(because: "the resolved command receives mapped options");
-		resolvedCommand.CapturedOptions!.ProcessCode.Should().Be("UsrProcess_493d4c9",
-			because: "the process code must be forwarded from MCP arguments");
+		resolvedCommand.CapturedOptions!.ProcessName.Should().Be("UsrProcess_493d4c9",
+			because: "the process name must be forwarded from MCP arguments");
 		resolvedCommand.CapturedOptions.Culture.Should().Be("uk-UA",
 			because: "the requested culture must be forwarded to the command");
 		resolvedCommand.CapturedOptions.Environment.Should().Be("dev",
@@ -93,7 +93,7 @@ public sealed class DescribeProcessToolTests {
 
 		// Assert
 		prompt.Should().Contain(DescribeProcessTool.ToolName, because: "the prompt references the production tool name");
-		prompt.Should().Contain("process-code", because: "the prompt keeps the identity arguments visible");
+		prompt.Should().Contain("process-name", because: "the prompt keeps the identity arguments visible");
 		prompt.Should().Contain("process-modeling", because: "the prompt points callers at the narration guidance");
 	}
 

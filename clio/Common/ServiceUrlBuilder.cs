@@ -124,24 +124,60 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		GenerateRequiredSchemasSources = 41,
 
 		/// <summary>
+		///     Issues a short-lived signed identity assertion (JWT) for the current authorized user,
+		///     used as input for the Identity Service V3 token exchange flow.
+		/// </summary>
+		IdentityAssertionCurrentUser = 42,
+
+		/// <summary>
+		///     Returns the instance public key as a JWK for registration with Identity Service V3.
+		/// </summary>
+		IdentityAssertionPublicJwk = 43,
+
+		/// <summary>
+		///     Regenerates the instance identity-assertion signing key pair (the private key never leaves Creatio).
+		/// </summary>
+		IdentityAssertionRegenerateSigningKey = 44,
+
+		/// <summary>
+		///     Reports whether the environment can use the OAuth authorization code flow.
+		/// </summary>
+		IdentityServiceInfoCanUseAuthorizationCodeFlow = 45,
+
+		/// <summary>
+		///     Reads the designer IdentityService client secret from Creatio.
+		/// </summary>
+		OAuthConfigGetIdentityServerClientSecret = 46,
+
+		/// <summary>
+		///     Creates a technical user for an OAuth client.
+		/// </summary>
+		OAuthConfigCreateTechnicalUser = 47,
+
+		/// <summary>
+		///     Adds an OAuth client through Creatio OAuth configuration service.
+		/// </summary>
+		OAuthConfigAddClient = 48,
+
+		/// <summary>
 		///     Builds a business process from a declarative descriptor via the ProcessDesignService package.
 		/// </summary>
-		BuildProcess = 42,
+		BuildProcess = 49,
 
 		/// <summary>
 		///     Lists the available user-facing user tasks (designer palette) via the ProcessDesignService package.
 		/// </summary>
-		ListUserTasks = 43,
+		ListUserTasks = 50,
 
 		/// <summary>
 		///     Reads an existing process as a structured graph via the ProcessDesignService package.
 		/// </summary>
-		DescribeProcessSchema = 44,
+		DescribeProcess = 51,
 
 		/// <summary>
 		///     Edits an existing business process (add/remove elements, flows, …) via the ProcessDesignService package.
 		/// </summary>
-		ModifyProcess = 45
+		ModifyProcess = 52
 
 	}
 
@@ -196,9 +232,16 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.GenerateModifiedSchemasSources, "ServiceModel/WorkspaceExplorerService.svc/GenerateModifiedSchemasSources"},
 		{KnownRoute.GenerateAllSchemasSourcesInBackground, "ServiceModel/WorkspaceExplorerService.svc/GenerateAllSchemasSourcesInBackground"},
 		{KnownRoute.GenerateRequiredSchemasSources, "ServiceModel/WorkspaceExplorerService.svc/GenerateRequiredSchemasSources"},
+		{KnownRoute.IdentityAssertionCurrentUser, "identityAssertion/currentUser"},
+		{KnownRoute.IdentityAssertionPublicJwk, "identityAssertion/publicJwk"},
+		{KnownRoute.IdentityAssertionRegenerateSigningKey, "identityAssertion/regenerateSigningKey"},
+		{KnownRoute.IdentityServiceInfoCanUseAuthorizationCodeFlow, "identityServiceInfo/canUseAuthorizationCodeFlow"},
+		{KnownRoute.OAuthConfigGetIdentityServerClientSecret, "/rest/OAuthConfigService/GetIdentityServerClientSecret"},
+		{KnownRoute.OAuthConfigCreateTechnicalUser, "/rest/OAuthConfigService/CreateTechnicalUser"},
+		{KnownRoute.OAuthConfigAddClient, "/rest/OAuthConfigService/AddClient"},
 		{KnownRoute.BuildProcess, "/rest/ProcessDesignService/BuildProcess"},
 		{KnownRoute.ListUserTasks, "/rest/ProcessDesignService/ListUserTasks"},
-		{KnownRoute.DescribeProcessSchema, "/rest/ProcessDesignService/DescribeProcess"},
+		{KnownRoute.DescribeProcess, "/rest/ProcessDesignService/DescribeProcess"},
 		{KnownRoute.ModifyProcess, "/rest/ProcessDesignService/ModifyProcess"},
 	};
 

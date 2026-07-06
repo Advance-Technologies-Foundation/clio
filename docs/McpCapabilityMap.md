@@ -146,6 +146,37 @@ Implication for external AI:
 - newer design surfaces are easier to automate semantically
 - older execution surfaces require log parsing and success/failure inference from generic output
 
+### MCP tool exit codes
+
+The `exit-code` on a `CommandExecutionResult` envelope follows one contract across every
+environment-aware tool (the shared `BaseTool` execution path):
+
+| `exit-code` | Meaning | Examples |
+|---|---|---|
+| `0` | Success | the command ran and reported success |
+| `1` | **Expected, caller-actionable failure** — bad input or an unmet precondition the caller can fix | unknown environment name, missing URI, empty required argument, a required package (e.g. `cliogate`) not installed |
+| `-1` | **Unexpected runtime failure** — an exception the caller could not have anticipated | DI/bootstrap/wiring errors, a failed HTTP/verification call, an exception thrown inside the command |
+
+The split lets an external AI distinguish "I sent something wrong, let me correct and retry" (`1`)
+from "clio itself failed, retrying the same call won't help" (`-1`). Source of truth:
+`CommandExecutionResult.FromValidationError` / `FromResolverError` (code `1`) versus
+`FromError` / `FromException` (code `-1`); a deliberate environment failure is raised as
+`EnvironmentResolutionException` so it is never conflated with an unexpected `InvalidOperationException`
+from the DI container.
+
+#### Version gate (exit 78)
+
+A command declaring `[RequiresCreatioVersion]` adds one more **expected, caller-actionable** outcome
+on top of the `0`/`1`/`-1` contract: when the target environment runs an older core version than the
+command's floor — or its version is undeterminable (the gate fails closed) — the `BaseTool` path
+returns the distinct `exit-code` `78` (`Program.CreatioVersionRequirementExitCode`) with the stable
+`CreatioVersionRequirementException.ErrorCode` (`version-too-old` / `version-undeterminable`) embedded
+in the message. This refusal path is covered at the **unit** level (the `BaseTool` tests). An
+**end-to-end** refusal test is a deliberate, documented harness gap: it is deferred until a real
+shipping command actually carries `[RequiresCreatioVersion]`, at which point e2e coverage, the docs,
+and the MCP tool contract for that command become mandatory. This mirrors the package-gate posture —
+the gate logic is unit-proven now, and e2e lands with the first command that exercises it.
+
 ### Workspace path rules
 
 Workspace-oriented tools validate local absolute paths and reject network paths.
@@ -211,7 +242,9 @@ This area gives the AI a clean application-level view of the platform.
 - `install-application`
   Install an application package into a target environment.
 - `add-package-dependency`
-  Add one or more package dependencies to a package via `PackageService.svc`. This is the recovery path when the schema designer or compiler fails for a package that extends objects owned by an app/package missing from its dependency list (classic symptom: `GetSchemaDesignItem returned an HTML error page` on a layered object). Idempotent — re-adding an existing dependency is a no-op.
+  Add one or more package dependencies to a package via `PackageService.svc`. This is the recovery path when the schema designer or compiler fails for a package that extends objects owned by an app/package missing from its dependency list (classic symptom: `GetSchemaDesignItem returned an HTML error page` on a layered object). Idempotent — re-adding an existing dependency is a no-op. See `get-guidance name=package-dependencies`.
+- `remove-package-dependency`
+  Remove one or more package dependencies from a package via `PackageService.svc` — the symmetric counterpart of `add-package-dependency`, used to roll back a dependency added only to unblock the schema designer. Matched by name (case-insensitive); idempotent — removing an absent dependency is a no-op.
 
 What an external AI can practically do here:
 
@@ -356,6 +389,14 @@ This part is small but important because many other tools depend on it.
   Returns `{ success, culture, resolvedFrom, reason }`. Call once per session before creating
   entities and reuse it for all generated names/labels/captions; on `success:false` ask the user
   which language to use instead of silently defaulting.
+- `describe-environment`
+  Describe a Creatio environment as ONE source-independent report (read-only). The field set is the
+  same with or without cliogate: `coreVersion` plus locale/user/workspace/maintainer metadata is
+  ALWAYS reported (`ApplicationInfoService`, session only); `dbEngineType`, `frameworkKind` and
+  `frameworkDescription` are added WITHOUT cliogate via the admin-gated
+  `GetSystemEnvironmentInfo` (needs `CanManageSolution`); `productName` and `licenseInfo` are added
+  only when cliogate `>= 2.0.0.32` is installed. Best-effort: an unavailable source is skipped and
+  the call still succeeds. Read `get-guidance name=describe-environment` for the full field catalogue.
 
 What an external AI can practically do here:
 
@@ -363,6 +404,7 @@ What an external AI can practically do here:
 - inspect what the local machine already knows about environments
 - inspect package inventory before choosing install, page, or schema operations
 - detect the profile language to apply to created entity names/labels/captions
+- read a target environment's version, database engine, framework, product and license
 
 Important note:
 
@@ -449,8 +491,8 @@ Important behavior and safety:
 These tools help an external AI design Creatio business processes (BPMN). clio makes no LLM call —
 an MCP prompt/guidance teaches the agent the intent→BPMN translation; deterministic tools execute.
 
-- `validate-process-graph` (`ReadOnly=true`, `Destructive=false`, `Idempotent=true`, `OpenWorld=false`, **environment-sensitive**) — validates a planned process graph (`nodes` by `data-id`, `edges` by `flow-kind` = sequence|conditional|default) against the BPMN connection rules R1–R17. The graph is validated **in-memory**, but the tool first resolves the target environment (named by `environment-name`) and queries its installed packages to require the `clioprocessbuilder` package. Returns structured findings (`severity` error/warning, `rule-id`, `message`, `node-id`/`source`/`target`). The agent calls this before driving the designer; the live designer's `.djs-validate-outline` remains the final authority.
-- `describe-process` (`ReadOnly=true`, `Destructive=false`, `Idempotent=true`, `OpenWorld=false`, **environment-sensitive**) — reads an existing process and returns a STRUCTURED graph (`elements` `[{id,dataId,type,label,parameters}]`, `flows` `[{source,target,kind}]`, process `parameters`) instead of raw escaped metadata, so the agent can explain what a process does ("read & explain", the inverse of generation). Identify the process by exactly one of `process-code` / `process-uid` / `process-caption` (+ `environment-name`, optional `culture`). Reuses the existing `ProcessSchemaRequest` parsing. v1 does not decode filter/mapping expressions.
+- `validate-process-graph` (`ReadOnly=true`, `Destructive=false`, `Idempotent=true`, `OpenWorld=false`, **environment-sensitive**) — validates a planned process graph (`nodes` by `data-id`, `edges` by `flow-kind` = sequence|conditional|default) against the BPMN connection rules R1–R17. The graph is validated **in-memory**, but the tool first resolves the target environment (named by `environment-name`) and queries its installed packages to require the `clioprocessbuilder` package. Returns structured findings (`severity` error/warning, `rule-id`, `message`, `node-name`/`source`/`target`). The agent calls this before driving the designer; the live designer's `.djs-validate-outline` remains the final authority.
+- `describe-business-process` (alias `describe-process`) (`ReadOnly=true`, `Destructive=false`, `Idempotent=true`, `OpenWorld=false`, **environment-sensitive**) — reads an existing process and returns a STRUCTURED graph (`elements` `[{name,uid,caption,type,buildType,userTaskName,parameters}]`, `flows` `[{source,target,kind}]`, process `parameters`) instead of raw escaped metadata, so the agent can explain what a process does ("read & explain", the inverse of generation). Identify the process by exactly one of `process-name` / `process-uid` / `process-caption` (+ `environment-name`, optional `culture`). Reuses the existing `ProcessSchemaRequest` parsing. v1 does not decode filter/mapping expressions.
 
 What an external AI can practically do here:
 

@@ -1,11 +1,12 @@
 # Process connection rules & validator spec
 
 > The "how you can / cannot connect elements" ruleset for AI process design (subtask 1).
-> Sourced from BPMN 2.0 (OMG) + Creatio Academy 8.x + the QA repo's invalid-connection
-> detection. This is the spec for `ProcessGraphValidator` (clio C#) and the guidance the agent
-> reads before driving the designer. The live designer is the **final** authority (it flags
-> bad connections with `.djs-validate-outline`); this validator gives the agent fast feedback
-> BEFORE it builds, so it doesn't draw invalid graphs.
+> Sourced from BPMN 2.0 (OMG) + Creatio Academy 8.x. This is the spec for the
+> `validate-process-graph` MCP tool (clio C# `ProcessGraphValidator`) and the guidance the agent
+> reads before building a process. `validate-process-graph` is the **pre-flight authority**: the
+> agent validates the planned graph and fixes every error-severity finding BEFORE calling
+> `create-business-process`, so it never builds an invalid graph. The build itself is declarative
+> (the backend `ProcessDesignService` serializes the metadata) — there is no live designer to drive.
 
 ## Element roles (for the rules below)
 - **Start events**: `startEvent`, `startEventSignal`, `startEventTimer`, `startEventMessage`
@@ -69,11 +70,15 @@ Emit structured findings `{severity (error|warning), ruleId, message, node/edge}
   `readDataUserTask` when non-Id fields are referenced (R17); multiple outgoing sequence flows
   (implicit parallel — confirm intent, R12).
 
-Expose as MCP tool `validate-process-graph` (BaseTool, ReadOnly) so the agent pre-checks its
-plan; also called internally by the design driver before `process-save`.
+Exposed as MCP tool `validate-process-graph` (BaseTool, ReadOnly) so the agent pre-checks its
+plan before calling `create-business-process`.
 
-## Live cross-check (designer = source of truth)
-The diagram-js designer enforces its own `Rules` (canConnect/canCreate/canDrop) and flags invalid
-connections with `.djs-validate-outline` on the connection element. The driver should, after each
-`connect`, assert that selector is **absent**; if present, the connection is invalid → revert and
-report. This catches version-specific rules our static validator may not encode.
+## Pre-flight is the authority (validate before build)
+There is no live designer in the shipped flow. `validate-process-graph` runs these R1–R17 rules
+in-memory over the planned nodes/edges and returns structured findings
+`{ severity (error|warning), ruleId, message, node/edge }`. The agent must run it first and resolve
+every error-severity finding before calling `create-business-process`; the build (server-side
+`ProcessDesignService`) then serializes the metadata declaratively. Note the validate-vs-build fork:
+`validate-process-graph` accepts element kinds (gateways, conditional/default flows) the builder
+cannot yet build, so `create-business-process` will reject those even after a clean validation — this
+is a known divergence, documented in the manual QA checklist.

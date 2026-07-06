@@ -13,7 +13,6 @@ namespace Clio.Command.McpServer.Tools.ProcessDesigner;
 /// agent can author a <c>crt.RunBusinessProcessRequest</c> button config with correct parameter codes.
 /// </summary>
 [McpServerToolType]
-[FeatureToggle("process-designer")]
 public sealed class GetProcessSignatureTool(
 	GetProcessSignatureCommand command,
 	ILogger logger,

@@ -15,7 +15,7 @@ namespace Clio.Tests.Command.ProcessModel;
 public sealed class ProcessGraphValidatorTests {
 	private readonly IProcessGraphValidator _validator = new ProcessGraphValidator();
 
-	private static ProcessGraphNode Node(string id, string type) => new(id, type);
+	private static ProcessGraphNode Node(string name, string type) => new(name, type);
 
 	private static ProcessGraphEdge Seq(string from, string to) => new(from, to, ProcessFlowKind.Sequence);
 
@@ -56,7 +56,7 @@ public sealed class ProcessGraphValidatorTests {
 		ProcessGraphValidationResult result = Validate(nodes, edges);
 
 		// Assert
-		result.Findings.Should().Contain(f => f.RuleId == "R1" && f.Severity == ProcessGraphSeverity.Error && f.NodeId == "s",
+		result.Findings.Should().Contain(f => f.RuleId == "R1" && f.Severity == ProcessGraphSeverity.Error && f.NodeName == "s",
 			because: "a start event must not have an incoming flow (R1)");
 	}
 
@@ -72,14 +72,14 @@ public sealed class ProcessGraphValidatorTests {
 		ProcessGraphValidationResult result = Validate(nodes, edges);
 
 		// Assert
-		result.Findings.Should().Contain(f => f.RuleId == "R2" && f.Severity == ProcessGraphSeverity.Error && f.NodeId == "e",
+		result.Findings.Should().Contain(f => f.RuleId == "R2" && f.Severity == ProcessGraphSeverity.Error && f.NodeName == "e",
 			because: "an end event must not have an outgoing flow (R2)");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("R2: a flow referencing a missing node is an error rather than an exception.")]
-	public void Validate_ShouldReturnR2Error_WhenEdgeReferencesMissingNode() {
+	[Description("R15: a flow referencing a missing node is an error rather than an exception (every flow needs a valid source/target).")]
+	public void Validate_ShouldReturnR15Error_WhenEdgeReferencesMissingNode() {
 		// Arrange
 		List<ProcessGraphNode> nodes = [Node("s", "startEvent"), Node("r", "readDataUserTask"), Node("e", "endEvent")];
 		List<ProcessGraphEdge> edges = [Seq("s", "r"), Seq("r", "e"), Seq("r", "ghost")];
@@ -88,8 +88,8 @@ public sealed class ProcessGraphValidatorTests {
 		ProcessGraphValidationResult result = Validate(nodes, edges);
 
 		// Assert
-		result.Findings.Should().Contain(f => f.RuleId == "R2" && f.Severity == ProcessGraphSeverity.Error,
-			because: "a flow whose endpoint is not a node must be flagged, not crash the validator");
+		result.Findings.Should().Contain(f => f.RuleId == "R15" && f.Severity == ProcessGraphSeverity.Error,
+			because: "a flow whose endpoint is not a node must be flagged (R15: every flow needs a valid source/target), not crash the validator");
 	}
 
 	[Test]
@@ -205,7 +205,7 @@ public sealed class ProcessGraphValidatorTests {
 		ProcessGraphValidationResult result = Validate(nodes, edges);
 
 		// Assert
-		result.Findings.Should().Contain(f => f.RuleId == "R15" && f.Severity == ProcessGraphSeverity.Error && f.NodeId == "orphan",
+		result.Findings.Should().Contain(f => f.RuleId == "R15" && f.Severity == ProcessGraphSeverity.Error && f.NodeName == "orphan",
 			because: "a node unreachable from the start (and unable to reach an end) violates R15");
 	}
 
@@ -280,8 +280,26 @@ public sealed class ProcessGraphValidatorTests {
 		ProcessGraphValidationResult result = Validate(nodes, edges);
 
 		// Assert
-		result.Findings.Should().Contain(f => f.RuleId == "UNKNOWN" && f.Severity == ProcessGraphSeverity.Error && f.NodeId == "x",
+		result.Findings.Should().Contain(f => f.RuleId == "UNKNOWN" && f.Severity == ProcessGraphSeverity.Error && f.NodeName == "x",
 			because: "an unrecognized element type must be surfaced as a finding rather than silently accepted");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("DUP: two elements sharing a name are surfaced as an error (and the validator does not throw).")]
+	public void Validate_ShouldReturnDupError_WhenTwoElementsShareAName() {
+		// Arrange — the activity name "a" is reused; the server does not guard this on build/modify.
+		List<ProcessGraphNode> nodes =
+			[Node("s", "startEvent"), Node("a", "activityUserTask"), Node("a", "readDataUserTask"), Node("e", "endEvent")];
+		List<ProcessGraphEdge> edges = [Seq("s", "a"), Seq("a", "e")];
+
+		// Act
+		ProcessGraphValidationResult result = Validate(nodes, edges);
+
+		// Assert
+		result.Findings.Should().Contain(f => f.RuleId == "DUP" && f.Severity == ProcessGraphSeverity.Error && f.NodeName == "a",
+			because: "element names must be unique within a process, and a duplicate must be reported rather than crash the validator");
+		result.HasErrors.Should().BeTrue(because: "a duplicate element name is a structural error");
 	}
 
 	[Test]

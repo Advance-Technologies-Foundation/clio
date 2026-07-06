@@ -16,6 +16,7 @@ namespace Clio.Mcp.E2E;
 /// End-to-end tests for the install-application MCP tool.
 /// </summary>
 [TestFixture]
+[Category("McpE2E.Sandbox")]
 [AllureNUnit]
 [AllureFeature("install-application")]
 [NonParallelizable]
@@ -79,8 +80,8 @@ public sealed class InstallApplicationToolE2ETests {
 		// Assert
 		actResult.CallResult.IsError.Should().NotBeTrue(
 			because: "invalid environment failures should be returned as normal command execution envelopes");
-		actResult.Execution.ExitCode.Should().Be(-1,
-			because: $"unknown environment names fail via exception in BaseTool, which returns ExitCode=-1. Actual execution: {DescribeExecution(actResult.Execution)}");
+		actResult.Execution.ExitCode.Should().Be(1,
+			because: $"install-application routes through the shared BaseTool resolver catch, which now returns FromResolverError (ExitCode=1) for expected environment-resolution failures, not the unexpected-exception code -1. Actual execution: {DescribeExecution(actResult.Execution)}");
 		actResult.Execution.Output.Should().Contain(message => message.MessageType == LogDecoratorType.Error,
 			because: "failed install-application execution should emit error diagnostics");
 		string combinedOutput = string.Join(
@@ -95,9 +96,13 @@ public sealed class InstallApplicationToolE2ETests {
 
 	private static async Task<InstallApplicationArrangeContext> ArrangeSuccessAsync(McpE2ESettings settings) {
 		string? environmentName = settings.Sandbox.EnvironmentName;
-		string? applicationPackagePath = settings.Sandbox.ApplicationPackagePath;
-		if (string.IsNullOrWhiteSpace(environmentName) || string.IsNullOrWhiteSpace(applicationPackagePath)) {
-			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName and McpE2E:Sandbox:ApplicationPackagePath to run install-application success E2E.");
+		// Fall back to the bundled minimal package fixture so the success path is self-contained on a
+		// reachable sandbox without requiring McpE2E:Sandbox:ApplicationPackagePath to be configured.
+		string? applicationPackagePath = string.IsNullOrWhiteSpace(settings.Sandbox.ApplicationPackagePath)
+			? ResolveBundledFixturePackagePath()
+			: settings.Sandbox.ApplicationPackagePath;
+		if (string.IsNullOrWhiteSpace(environmentName)) {
+			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to run install-application success E2E.");
 		}
 
 		if (!File.Exists(applicationPackagePath)) {
@@ -138,6 +143,10 @@ public sealed class InstallApplicationToolE2ETests {
 			session,
 			cancellationTokenSource);
 	}
+
+	// Path to the minimal package fixture copied next to the test assembly (see clio.mcp.e2e.csproj).
+	private static string ResolveBundledFixturePackagePath() =>
+		Path.Combine(AppContext.BaseDirectory, "Assets", "ClioMcpE2EFixture.gz");
 
 	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) {
 		ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(

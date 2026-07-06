@@ -28,6 +28,7 @@ public sealed class LinkFromRepositoryToolE2ETests {
 	private const string EnvironmentToolName = LinkFromRepositoryTool.LinkFromRepositoryByEnvironmentToolName;
 	private const string EnvPkgPathToolName = LinkFromRepositoryTool.LinkFromRepositoryByEnvPackagePathToolName;
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes the direct-path link-from-repository tool against a temporary repository and Creatio package folder, and verifies the package directory becomes a symbolic link.")]
 	[AllureTag(EnvPkgPathToolName)]
@@ -49,6 +50,7 @@ public sealed class LinkFromRepositoryToolE2ETests {
 		AssertSymbolicLinkTargetsRepositoryPackage(arrangeContext, "PkgA");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes the direct-path link-from-repository tool with a comma-separated package list, and verifies that each requested package directory becomes a symbolic link.")]
 	[AllureTag(EnvPkgPathToolName)]
@@ -72,6 +74,7 @@ public sealed class LinkFromRepositoryToolE2ETests {
 		AssertSymbolicLinkTargetsRepositoryPackage(arrangeContext, "PkgB");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes the direct-path link-from-repository tool with the wildcard selector, and verifies that all repository packages are linked into the target package directory.")]
 	[AllureTag(EnvPkgPathToolName)]
@@ -95,6 +98,7 @@ public sealed class LinkFromRepositoryToolE2ETests {
 		AssertSymbolicLinkTargetsRepositoryPackage(arrangeContext, "PkgB");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes the environment-name link-from-repository tool with an invalid environment key, and verifies that the result reports failure with human-readable diagnostics.")]
 	[AllureTag(EnvironmentToolName)]
@@ -116,6 +120,7 @@ public sealed class LinkFromRepositoryToolE2ETests {
 		AssertEnvironmentFailureMentionsPlatformOrMissingEnvironment(actResult);
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes the direct-path link-from-repository tool with a package name that does not exist in the temporary repository, and verifies that the result reports failure without creating a link.")]
 	[AllureTag(EnvPkgPathToolName)]
@@ -133,26 +138,6 @@ public sealed class LinkFromRepositoryToolE2ETests {
 		AssertFailureIncludesErrorMessage(actResult);
 		AssertMissingPackageFailureMentionsPackageName(actResult, "MissingPkg");
 		AssertPackageFolderWasNotCreated(arrangeContext, "MissingPkg");
-	}
-
-	[Test]
-	[Description("Starts the real clio MCP server, lists tools, and verifies that both link-from-repository MCP endpoints are advertised as destructive.")]
-	[AllureTag(EnvironmentToolName)]
-	[AllureTag(EnvPkgPathToolName)]
-	[AllureName("Link From Repository tools advertise destructive metadata")]
-	[AllureDescription("Uses the real clio MCP server tool discovery response to verify that both link-from-repository MCP tools expose the destructive hint required for client-side safety policies.")]
-	public async Task LinkFromRepository_Tools_Should_Be_Advertised_As_Destructive() {
-		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-
-		// Act
-		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationTokenSource.Token);
-
-		// Assert
-		AssertToolIsAdvertisedAsDestructive(tools, EnvironmentToolName);
-		AssertToolIsAdvertisedAsDestructive(tools, EnvPkgPathToolName);
 	}
 
 	[AllureStep("Arrange link-from-repository MCP sandbox")]

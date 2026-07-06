@@ -28,7 +28,8 @@ public class CreateBusinessProcessToolTests {
 		CreateBusinessProcessTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.CreateBusinessProcess("docker_fix2", SampleDescriptor, "MyApp");
+		CommandExecutionResult result = tool.CreateBusinessProcess(
+			new CreateBusinessProcessArgs("docker_fix2", SampleDescriptor, "MyApp"));
 
 		// Assert
 		result.ExitCode.Should().Be(0,
@@ -57,7 +58,8 @@ public class CreateBusinessProcessToolTests {
 		CreateBusinessProcessTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.CreateBusinessProcess("   ", SampleDescriptor);
+		CommandExecutionResult result = tool.CreateBusinessProcess(
+			new CreateBusinessProcessArgs("   ", SampleDescriptor, null));
 
 		// Assert
 		result.ExitCode.Should().Be(-1,
@@ -77,7 +79,8 @@ public class CreateBusinessProcessToolTests {
 		CreateBusinessProcessTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
-		CommandExecutionResult result = tool.CreateBusinessProcess("docker_fix2", "   ");
+		CommandExecutionResult result = tool.CreateBusinessProcess(
+			new CreateBusinessProcessArgs("docker_fix2", "   ", null));
 
 		// Assert
 		result.ExitCode.Should().Be(-1,
