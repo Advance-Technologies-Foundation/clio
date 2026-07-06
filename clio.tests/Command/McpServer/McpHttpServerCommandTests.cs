@@ -54,4 +54,65 @@ public class McpHttpServerCommandTests {
 		opts.Path.Should().Be("/api/mcp",
 			because: "the --path value should override the default");
 	}
+
+	[Test]
+	[Description("Loopback bind allows the bound host plus its loopback aliases")]
+	public void BuildAllowedHosts_ShouldIncludeLoopbackAliases_WhenBoundToLoopback() {
+		// Arrange & Act
+		System.Collections.Generic.List<string> allowed =
+			McpHttpServerCommand.BuildAllowedHosts("127.0.0.1");
+
+		// Assert
+		allowed.Should().Contain("127.0.0.1",
+			because: "the bound loopback host must be allowed");
+		allowed.Should().Contain("localhost",
+			because: "localhost resolves to the loopback bind and must be allowed");
+		allowed.Should().NotContain("*",
+			because: "a loopback bind must not allow arbitrary hosts");
+	}
+
+	[Test]
+	[Description("Wildcard bind cannot restrict the Host header to a single value")]
+	public void BuildAllowedHosts_ShouldAllowAnyHost_WhenBoundToWildcard() {
+		// Arrange & Act
+		System.Collections.Generic.List<string> allowed =
+			McpHttpServerCommand.BuildAllowedHosts("0.0.0.0");
+
+		// Assert
+		allowed.Should().ContainSingle().Which.Should().Be("*",
+			because: "a 0.0.0.0 bind has no single legitimate Host value to restrict to");
+	}
+
+	[Test]
+	[Description("A cross-origin browser request (DNS rebinding) is rejected on a loopback bind")]
+	public void IsAllowedOrigin_ShouldReject_WhenOriginIsForeignHost() {
+		// Arrange & Act
+		bool allowed = McpHttpServerCommand.IsAllowedOrigin("http://evil.com", "127.0.0.1");
+
+		// Assert
+		allowed.Should().BeFalse(
+			because: "a foreign Origin re-resolving to loopback is the DNS-rebinding attack the check blocks");
+	}
+
+	[Test]
+	[Description("A loopback Origin is accepted on a loopback bind")]
+	public void IsAllowedOrigin_ShouldAllow_WhenOriginIsLoopback() {
+		// Arrange & Act
+		bool allowed = McpHttpServerCommand.IsAllowedOrigin("http://localhost:8005", "127.0.0.1");
+
+		// Assert
+		allowed.Should().BeTrue(
+			because: "a same-machine loopback origin is a legitimate caller");
+	}
+
+	[Test]
+	[Description("A malformed Origin header is rejected rather than trusted")]
+	public void IsAllowedOrigin_ShouldReject_WhenOriginIsNotAbsoluteUri() {
+		// Arrange & Act
+		bool allowed = McpHttpServerCommand.IsAllowedOrigin("not-a-uri", "127.0.0.1");
+
+		// Assert
+		allowed.Should().BeFalse(
+			because: "an unparseable Origin cannot be validated and must fail closed");
+	}
 }

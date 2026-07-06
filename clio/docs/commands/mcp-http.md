@@ -17,6 +17,30 @@ This server exposes the same clio tools available in stdio mode
 
 The server runs until the process is terminated (Ctrl+C or SIGTERM).
 
+## Prerequisites
+
+`clio mcp-http` hosts the MCP endpoint on ASP.NET Core, so clio requires the
+**ASP.NET Core shared runtime** (`Microsoft.AspNetCore.App`) in addition to the base
+.NET runtime. The .NET SDK bundles it — SDK installs need nothing extra. Runtime-only
+installs that ship only `Microsoft.NETCore.App` are not supported (see the Installation
+section of the main README).
+
+## Security
+
+The HTTP transport exposes the same tools as stdio mode — each acting with the operator's
+stored credentials for every registered environment — so the server validates incoming
+requests to prevent DNS-rebinding and cross-origin abuse (the MCP spec makes this the
+host's responsibility):
+
+- **Host header** is restricted to the bound host (`--host`, plus loopback aliases when
+  bound to loopback); unexpected `Host` values are rejected (HTTP 400).
+- **Origin header**, when present, is restricted to the bound host / loopback; requests
+  from any other origin are rejected (HTTP 403). Native MCP clients send no `Origin`
+  header and are unaffected.
+
+There is **no built-in authentication**. `--host 0.0.0.0` still exposes the endpoint to
+every host that can reach the machine on the LAN — use it only on trusted networks.
+
 ## Options
 
 | Option | Default | Description |
