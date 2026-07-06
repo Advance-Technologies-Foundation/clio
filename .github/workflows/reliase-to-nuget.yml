@@ -117,7 +117,40 @@ jobs:
             Remove-Item $toolPath -Recurse -Force
           }
 
-          dotnet tool install clio --tool-path $toolPath --version $version --add-source (Join-Path $PWD "output")
+          # The repo nuget.config enables <packageSourceMapping>, and newer NuGet SDKs hard-reject
+          # `--add-source` when source mapping is active ("The --add-source option cannot be combined
+          # with package source mapping"). Instead of --add-source, write a dedicated smoke config that
+          # maps the freshly packed `clio` to the local ./output source and routes everything else the
+          # same way the repo config does, then install with --configfile. This keeps the smoke test
+          # working regardless of the runner's NuGet source-mapping enforcement.
+          $outputSource = Join-Path $PWD "output"
+          $smokeConfig = Join-Path $PWD "tool-smoke-nuget.config"
+          @"
+          <?xml version="1.0" encoding="utf-8"?>
+          <configuration>
+            <packageSources>
+              <clear />
+              <add key="local-output" value="$outputSource" />
+              <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+              <add key="Terrasoft" value="https://ts1-infr-nexus.bpmonline.com/repository/nuget-v3/index.json" />
+            </packageSources>
+            <packageSourceMapping>
+              <packageSource key="local-output">
+                <package pattern="clio" />
+              </packageSource>
+              <packageSource key="nuget.org">
+                <package pattern="*" />
+                <package pattern="creatio.client" />
+              </packageSource>
+              <packageSource key="Terrasoft">
+                <package pattern="Terrasoft.*" />
+                <package pattern="Creatio.*" />
+              </packageSource>
+            </packageSourceMapping>
+          </configuration>
+          "@ | Set-Content -Path $smokeConfig -Encoding UTF8
+
+          dotnet tool install clio --tool-path $toolPath --version $version --configfile $smokeConfig
           if ($LASTEXITCODE -ne 0) {
             throw "dotnet tool install failed with exit code $LASTEXITCODE"
           }
