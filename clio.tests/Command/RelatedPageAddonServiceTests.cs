@@ -244,6 +244,23 @@ public sealed class RelatedPageAddonServiceTests {
 	}
 
 	[Test]
+	[Description("A reset-to-inline (empty pages) drops any supplied type-column-uid — even a malformed one — instead of persisting an unvalidated value; an empty configuration has no typed page sets.")]
+	public void Create_ShouldDropTypeColumnUId_WhenPagesEmpty() {
+		// Arrange — only the package is resolved for an empty set.
+		StubSelectQueue(Rows(PackageUId));
+
+		// Act — empty pages with a malformed type-column-uid (the empty-clear path skips the GUID guard, so the
+		// value must be dropped here rather than written into the metadata).
+		_service.Create(new RelatedPageAddonRequest("Custom", "UsrDeliveryItem",
+			Array.Empty<RelatedPageSpec>(), "not-a-guid"));
+
+		// Assert
+		JsonNode metadata = JsonNode.Parse(_savedSchema.MetaData)!;
+		metadata["TypeColumnUId"].Should().BeNull(
+			because: "a reset-to-inline has no typed sets, so a supplied (even malformed) type-column-uid is dropped, not persisted");
+	}
+
+	[Test]
 	[Description("Rejects an add-only configuration (no is-default page) before any remote call, because every binding needs a base default record page.")]
 	public void Create_ShouldThrow_WhenNoBaseDefaultPageProvided() {
 		// Arrange / Act

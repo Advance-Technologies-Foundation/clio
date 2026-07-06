@@ -268,7 +268,12 @@ internal sealed class RelatedPageAddonService(
 		JsonArray pages = BuildPages(request.Pages, roleByName);
 		var metadata = new JsonObject {
 			["Pages"] = pages,
-			["TypeColumnUId"] = string.IsNullOrWhiteSpace(request.TypeColumnUId) ? null : request.TypeColumnUId.Trim()
+			// A reset-to-inline (empty page set) carries no typed page sets, and the empty-clear path early-returns
+			// from ValidateRequest before the TypeColumnUId GUID guard — so drop any TypeColumnUId here instead of
+			// persisting an unvalidated value that could never apply to an empty configuration.
+			["TypeColumnUId"] = request.Pages.Count == 0 || string.IsNullOrWhiteSpace(request.TypeColumnUId)
+				? null
+				: request.TypeColumnUId.Trim()
 		};
 
 		var addonRequest = new AddonGetRequestDto {

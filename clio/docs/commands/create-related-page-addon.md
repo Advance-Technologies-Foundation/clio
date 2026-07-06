@@ -62,3 +62,9 @@ clio create-related-page-addon -e dev --entity-schema-name UsrRequest --package-
 - The richer per-role and per-type page matrix is available through the `create-related-page-addon` MCP
   tool's `pages` array. For the full binding flow (audiences, typed page sets, name discovery) read the
   `related-page-binding` guidance article (`get-guidance name=related-page-binding`).
+- Only the two audiences the Interface Designer produces are supported: internal `All employees` and portal
+  `All external users`. A custom role (via the MCP `pages` array's `role` / `role-name`) is rejected — the
+  platform's runtime resolution of an arbitrary role in a related-page set is unverified.
+- Sending an **empty** `pages` array through the MCP tool clears all bindings (reset to inline) — the
+  effective delete, since the platform has no add-on delete. The scalar CLI cannot express this: a
+  no-option invocation is rejected rather than silently wiping the configuration.

@@ -186,20 +186,21 @@ public sealed class CreateRelatedPageAddonToolE2ETests {
 	}
 
 	[Test]
-	[Description("Rejects an empty pages array via create-related-page-addon before any remote calls.")]
+	[Description("Accepts an empty pages array (reset to inline / clear all bindings) via create-related-page-addon: the empty payload binds and the call fails only on the unresolved environment, not on a pages rejection.")]
 	[AllureTag(ToolName)]
-	[AllureName("create-related-page-addon MCP tool rejects an empty pages array")]
-	[AllureDescription("Starts the real clio MCP server, calls create-related-page-addon with an empty pages array, and verifies the structured response reports the missing pages without an MCP binding error.")]
-	public async Task CreateRelatedPageAddon_Should_Reject_Empty_Pages_Array() {
+	[AllureName("create-related-page-addon MCP tool accepts an empty pages array as reset-to-inline")]
+	[AllureDescription("Starts the real clio MCP server, calls create-related-page-addon with an empty pages array (the reset-to-inline / clear-all-bindings operation) and an intentionally missing environment, then verifies the empty payload binds and the structured response reports the unresolved environment instead of rejecting the empty pages set.")]
+	public async Task CreateRelatedPageAddon_Should_Accept_Empty_Pages_AsResetToInline() {
 		// Arrange
 		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		string invalidEnvironmentName = $"missing-empty-reset-env-{Guid.NewGuid():N}";
 
 		// Act
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
 			ToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
-					["environment-name"] = $"noop-{Guid.NewGuid():N}",
+					["environment-name"] = invalidEnvironmentName,
 					["package-name"] = "Custom",
 					["entity-schema-name"] = "UsrOrder",
 					["pages"] = Array.Empty<object>()
@@ -211,10 +212,13 @@ public sealed class CreateRelatedPageAddonToolE2ETests {
 
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
-			because: "input validation should stay inside the structured tool response, not surface as an MCP binding error");
-		response.Success.Should().BeFalse();
-		response.Error.Should().Contain("pages",
-			because: "the structured response should explain that at least one entry in pages is required");
+			because: "an empty pages array (reset to inline) should bind and stay inside the structured tool response");
+		response.Success.Should().BeFalse(
+			because: "the intentionally missing environment should fail before the add-on round-trip");
+		response.Error.Should().MatchRegex(
+			$"(?is)({Regex.Escape(invalidEnvironmentName)}|environment.*not.*found|not found)",
+			because: "an empty pages array is accepted as reset-to-inline, so the failure must come from resolving the "
+				+ "environment — NOT from rejecting the empty pages set");
 	}
 
 	[Test]
