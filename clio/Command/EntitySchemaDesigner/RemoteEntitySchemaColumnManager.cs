@@ -120,6 +120,8 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 				$"Schema '{schema.Name}' was saved but schema UId is unavailable.");
 		}
 		_entitySchemaDesignerClient.SaveSchemaDbStructure(schemaUId, rootOperation);
+		EntitySchemaPublishHelper.PublishAndRebuildOData(
+			_entitySchemaDesignerClient, _logger, rootOperation, schema.Name, "columns were saved");
 		RuntimeEntitySchemaResponse runtimeResponse = _entitySchemaDesignerClient.GetRuntimeEntitySchema(schemaUId,
 			rootOperation);
 		if (!runtimeResponse.Success || runtimeResponse.Schema == null) {
