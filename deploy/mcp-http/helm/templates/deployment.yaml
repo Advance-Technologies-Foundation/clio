@@ -29,13 +29,31 @@ spec:
         - name: clio-mcp-server
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - --host
+            - "0.0.0.0"
+            - --port
+            - "{{ .Values.mcp.port }}"
+            - --path
+            - "{{ .Values.mcp.path }}"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
           ports:
             - name: mcp
               containerPort: {{ .Values.mcp.port }}
               protocol: TCP
           livenessProbe:
+            tcpSocket:
+              port: {{ .Values.mcp.port }}
             {{- toYaml .Values.probes.liveness | nindent 12 }}
           readinessProbe:
+            tcpSocket:
+              port: {{ .Values.mcp.port }}
             {{- toYaml .Values.probes.readiness | nindent 12 }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}

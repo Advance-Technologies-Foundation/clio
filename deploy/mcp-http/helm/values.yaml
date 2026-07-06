@@ -4,8 +4,11 @@ replicaCount: 1
 
 image:
   repository: docker-rnd.creatio.com/creatio-ai/clio-mcp-server
+  # `latest` is a convenience alias; the Jenkinsfile also publishes an immutable
+  # `<git-describe>-<build>` tag. Override `image.tag` with that pinned tag for
+  # reproducible rollbacks. With `latest`, `pullPolicy: Always` avoids stale pods.
   tag: latest
-  pullPolicy: IfNotPresent
+  pullPolicy: Always
 
 imagePullSecrets:
   - name: docker-rnd-creatio
@@ -26,21 +29,33 @@ resources:
     cpu: 500m
     memory: 512Mi
 
+# Probe port is templated from `mcp.port` in the deployment so it always tracks
+# the process listen port. Only timing/threshold knobs live here.
 probes:
   liveness:
-    tcpSocket:
-      port: 8005
     initialDelaySeconds: 15
     periodSeconds: 30
     timeoutSeconds: 5
     failureThreshold: 3
   readiness:
-    tcpSocket:
-      port: 8005
     initialDelaySeconds: 5
     periodSeconds: 10
     timeoutSeconds: 5
     failureThreshold: 3
+
+# The MCP surface is unauthenticated and exposes privileged tools. When enabled,
+# this ships an ingress NetworkPolicy; list the client selectors allowed to reach
+# the server. With `enabled: true` and an empty `allowedClients`, ALL ingress is
+# denied (fail-closed).
+networkPolicy:
+  enabled: false
+  allowedClients: []
+    # - podSelector:
+    #     matchLabels:
+    #       app.kubernetes.io/name: my-mcp-client
+    # - namespaceSelector:
+    #     matchLabels:
+    #       kubernetes.io/metadata.name: trusted-namespace
 
 nodeSelector: {}
 tolerations: []

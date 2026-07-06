@@ -26,4 +26,7 @@ USER $APP_UID
 
 EXPOSE 8005
 
-ENTRYPOINT ["dotnet", "/app/clio-app.dll", "mcp-http", "--host", "0.0.0.0", "--port", "8005"]
+# Fixed entrypoint; connection args live in CMD so the Helm chart can override
+# host/port/path via the container `args` (keeping process and K8s plumbing in sync).
+ENTRYPOINT ["dotnet", "/app/clio-app.dll", "mcp-http"]
+CMD ["--host", "0.0.0.0", "--port", "8005", "--path", "/mcp"]
