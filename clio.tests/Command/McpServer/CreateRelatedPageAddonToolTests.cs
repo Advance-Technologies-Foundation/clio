@@ -175,17 +175,19 @@ public sealed class CreateRelatedPageAddonToolTests {
 	}
 
 	[Test]
-	[Description("Rejects an empty pages array in the structured response without resolving a command.")]
-	public void CreateRelatedPageAddon_ShouldRejectEmptyPages_WhenNoEntries() {
+	[Description("Accepts an empty pages array as a reset-to-inline: forwards the empty set through the resolved command to the service (clear all bindings) rather than rejecting at the tool layer.")]
+	public void CreateRelatedPageAddon_ShouldForwardEmptyPages_AsResetToInline() {
 		// Act
 		CreateRelatedPageAddonResponse response = _tool.CreateRelatedPageAddon(Args(pages: Array.Empty<RelatedPageArg>()));
 
 		// Assert
-		response.Success.Should().BeFalse(
-			because: "at least one page entry is required");
-		response.Error.Should().Contain("pages",
-			because: "the error should explain that pages is empty");
-		_commandResolver.DidNotReceiveWithAnyArgs().Resolve<CreateRelatedPageAddonCommand>(default!);
+		response.Success.Should().BeTrue(
+			because: "an empty pages list is a valid reset-to-inline, not a rejected request");
+		_commandResolver.Received(1).Resolve<CreateRelatedPageAddonCommand>(Arg.Any<CreateRelatedPageAddonOptions>());
+		_resolverOptions.Pages.Should().BeEmpty(
+			because: "the empty set is forwarded to the command to clear all bindings");
+		_captured.Pages.Should().BeEmpty(
+			because: "the command forwards the empty set to the service (the effective delete)");
 	}
 
 	[Test]

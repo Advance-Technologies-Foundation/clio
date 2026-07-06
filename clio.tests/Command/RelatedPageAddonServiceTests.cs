@@ -226,15 +226,21 @@ public sealed class RelatedPageAddonServiceTests {
 	}
 
 	[Test]
-	[Description("Rejects an empty pages list before any remote call.")]
-	public void Create_ShouldThrow_WhenNoPagesProvided() {
-		// Arrange / Act
-		Action act = () => _service.Create(Request());
+	[Description("Accepts an explicitly empty pages set as a reset-to-inline: writes an empty Pages configuration (the effective delete) and saves, with no base-default error.")]
+	public void Create_ShouldWriteEmptyConfiguration_WhenPagesEmpty() {
+		// Arrange — only the package is resolved; an empty set triggers no page or role lookups.
+		StubSelectQueue(Rows(PackageUId));
+
+		// Act
+		RelatedPageAddonResult result = _service.Create(Request());
 
 		// Assert
-		act.Should().Throw<ArgumentException>().WithMessage("*At least one page*",
-			because: "at least one page entry is required");
-		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!);
+		result.PageCount.Should().Be(0,
+			because: "an explicitly empty page set clears all bindings (reset to inline)");
+		_addonSchemaDesignerClient.Received(1).SaveSchema(Arg.Any<AddonSchemaDto>());
+		JsonArray pages = JsonNode.Parse(_savedSchema.MetaData)!["Pages"]!.AsArray();
+		pages.Count.Should().Be(0,
+			because: "reset-to-inline writes an empty Pages array — the effective delete");
 	}
 
 	[Test]

@@ -17,11 +17,14 @@ public static class RelatedPageSpecBuilder {
 
 	/// <summary>
 	/// Returns <paramref name="explicitPages"/> verbatim when supplied (the MCP tool passes the full page
-	/// set); otherwise builds the page set from the scalar CLI options. An add page given without its matching
+	/// set) — including an EMPTY list, which is a deliberate "reset to inline" that clears every binding.
+	/// Otherwise builds the page set from the scalar CLI options. An add page given without its matching
 	/// default page is rejected: that audience would get a page to ADD a record but none to OPEN one. The
 	/// service's base-default check only guarantees ONE audience has an untyped default, so this per-audience
 	/// guard is enforced here — otherwise <c>--add-page</c> (or <c>--portal-add-page</c>) alongside the OTHER
-	/// audience's default would silently bind an add-only set.
+	/// audience's default would silently bind an add-only set. The scalar CLI path never yields an empty set
+	/// (clearing is an explicit MCP-only operation), so a no-option CLI invocation is rejected rather than
+	/// silently wiping the configuration.
 	/// </summary>
 	public static IReadOnlyList<RelatedPageSpec> Build(
 		IReadOnlyList<RelatedPageSpec> explicitPages,
@@ -29,7 +32,9 @@ public static class RelatedPageSpecBuilder {
 		string addPage,
 		string portalDefaultPage,
 		string portalAddPage) {
-		if (explicitPages is { Count: > 0 }) {
+		if (explicitPages is not null) {
+			// The MCP tool passes the full set verbatim. An empty list is a deliberate reset-to-inline
+			// (clear all bindings) — the effective delete, since the platform has no add-on delete.
 			return explicitPages;
 		}
 		if (!string.IsNullOrWhiteSpace(addPage) && string.IsNullOrWhiteSpace(defaultPage)) {
@@ -48,6 +53,12 @@ public static class RelatedPageSpecBuilder {
 		// creation, so an add entry is written ONLY when a distinct add page is supplied (see AddAudiencePages).
 		AddAudiencePages(built, defaultPage, addPage, EmployeesRoleName);
 		AddAudiencePages(built, portalDefaultPage, portalAddPage, PortalRoleName);
+		if (built.Count == 0) {
+			throw new ArgumentException(
+				"No pages specified. Provide --default-page (optionally with --add-page, --portal-default-page, "
+				+ "or --portal-add-page). To clear all bindings (reset to inline), call the MCP tool with an empty "
+				+ "pages list.");
+		}
 		return built;
 	}
 

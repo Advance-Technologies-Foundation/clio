@@ -111,7 +111,7 @@ public sealed class RelatedPageBindingGuidanceResource {
 		         same whether or not related pages were configured before — no separate "create addon" step is needed.
 		       - Because `pages` REPLACES the configuration, to add one page to an object that already has role- or
 		         type-specific sets you must include the existing entries too. For a fresh object a single default
-		         (and usually add) page is enough.
+		         (and usually add) page is enough. To reset the object to inline editing (dedicated pages no longer wanted), send an EMPTY pages list: it clears every entry and is the effective delete (the platform has no add-on delete; an unconfigured object likewise reports an empty set).
 		       - Existing page and object schemas are NOT modified; only the object's related-page add-on metadata is
 		         written, so other configurations are unaffected.
 		       """

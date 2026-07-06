@@ -86,6 +86,27 @@ public sealed class CreateRelatedPageAddonCommandTests {
 	}
 
 	[Test]
+	[Description("A CLI invocation with no page options is rejected rather than silently wiping the configuration; clearing (reset to inline) is an explicit MCP-only operation via an empty pages list.")]
+	public void TryCreate_ShouldFail_WhenNoPageOptionsProvided() {
+		// Arrange — no scalar page options and no explicit Pages, so the CLI scalar path yields an empty set.
+		CreateRelatedPageAddonOptions options = new() {
+			EntitySchemaName = "Case",
+			PackageName = "Custom"
+		};
+
+		// Act
+		bool ok = _command.TryCreate(options, out CreateRelatedPageAddonResponse response);
+
+		// Assert
+		ok.Should().BeFalse(
+			because: "a no-option CLI call must not silently clear the configuration");
+		response.Success.Should().BeFalse();
+		response.Error.Should().Contain("No pages specified",
+			because: "the CLI rejects an empty scalar build; clearing is an explicit MCP-only operation");
+		_service.DidNotReceiveWithAnyArgs().Create(default!);
+	}
+
+	[Test]
 	[Description("Maps a distinct --add-page to its own is-add entry instead of falling back to the default page.")]
 	public void TryCreate_ShouldMapDistinctAddPageAsSeparateEntry_WhenAddPageDiffersFromDefault() {
 		// Arrange

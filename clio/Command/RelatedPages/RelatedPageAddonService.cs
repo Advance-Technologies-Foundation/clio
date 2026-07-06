@@ -131,8 +131,16 @@ internal sealed class RelatedPageAddonService(
 		if (string.IsNullOrWhiteSpace(request.PackageName)) {
 			throw new ArgumentException(RelatedPageAddonMessages.PackageNameRequired);
 		}
-		if (request.Pages is null || request.Pages.Count == 0) {
-			throw new ArgumentException("At least one page is required.");
+		if (request.Pages is null) {
+			throw new ArgumentException(
+				"pages is required (send an empty list to clear all bindings / reset to inline).");
+		}
+		if (request.Pages.Count == 0) {
+			// An explicitly empty page set is a deliberate reset-to-inline: it clears every related-page binding.
+			// This is the effective delete — the platform has no add-on delete, and an unconfigured object also
+			// reports an empty Pages set — so there is nothing further to validate. The per-page, base-default,
+			// and uniqueness guards below apply only to a non-empty configuration.
+			return;
 		}
 		// A per-page type-column-value is meaningless without the type column it keys on: the platform matches
 		// typed page sets by (TypeColumnUId, TypeColumnValue), so a typed page with no TypeColumnUId can never be
