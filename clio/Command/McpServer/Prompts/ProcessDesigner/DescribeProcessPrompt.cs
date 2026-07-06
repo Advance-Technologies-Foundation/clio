@@ -36,7 +36,8 @@ public static class DescribeProcessPrompt {
 		2. Call `get-guidance` name `process-modeling` for the element catalog + connection-rule vocabulary.
 		3. Narrate, in plain language, the trigger (start event), the ordered steps (follow the flows by
 		   source/target), each activity's purpose, and any branches (gateways / conditional flows).
-		Note: v1 does not decode filter / mapping expressions — describe structure, types, and flow, and say
-		so where a step's detailed condition is not available.
+		Note: expressions (mapping formulas, filters) are returned RAW, not decoded into semantics — narrate
+		structure, types, flow, and parameter sources; where a condition/filter is not decodable, say so
+		explicitly instead of guessing.
 		""";
 }

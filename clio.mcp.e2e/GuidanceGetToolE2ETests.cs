@@ -229,6 +229,32 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 
 	[Test]
 	[AllureTag(GuidanceGetTool.ToolName)]
+	[AllureName("get-guidance page-modification pins the anti-bundle-reverse-engineering rule")]
+	public async Task GuidanceGet_Should_Pin_AntiBundleReverseEngineering_ForPageModification() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		GuidanceGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["name"] = "page-modification"
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "page-modification is a registered guidance name");
+		response.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article payload");
+		response.Article!.Uri.Should().Be("docs://mcp/guides/page-modification",
+			because: "the canonical page-modification resource URI should still be visible in the tool response");
+		response.Article.Text.Should().Contain("reverse-engineering one is NOT a substitute",
+			because: "the anti-bundle-reverse-engineering guidance is a core ENG-91953 deliverable and must survive over the real MCP wire");
+	}
+
+	[Test]
+	[AllureTag(GuidanceGetTool.ToolName)]
 	[AllureName("get-guidance returns the canonical configuration web-service guide")]
 	public async Task GuidanceGet_Should_Return_Configuration_WebService_Guide() {
 		// Arrange
@@ -388,6 +414,10 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "the verification rule must route the agent to get-component-info as the authoritative component catalog");
 		response.Article.Text.Should().Contain("ASK THE USER",
 			because: "the web page guide must tell the agent to ask the user (existing component vs custom) when no OOTB component matches");
+		response.Article.Text.Should().Contain("showing a user-facing message/confirmation/info/success/error popup",
+			because: "the gate table must route a 'show a confirmation message' requirement into page-schema-handlers so the agent uses crt.ShowDialogRequest (ENG-91748)");
+		response.Article.Text.Should().Contain("NEVER use `alert(...)`, `window.alert(...)`, `confirm(...)`, or `prompt(...)`",
+			because: "the web page guide must forbid raw browser dialog primitives in page-body handlers so the agent stops emitting alert() (ENG-91748)");
 	}
 
 	[Test]
@@ -442,9 +472,9 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 
 	[Test]
 	[AllureTag(GuidanceGetTool.ToolName)]
-	[AllureName("get-guidance hides process-designer guides while the process-designer feature is off")]
-	[Description("Verifies that with the default (process-designer disabled) configuration the always-on get-guidance tool treats process-modeling and run-process-button as unknown guides and omits them from availableGuides, closing the experimental-suite gating leak.")]
-	public async Task GuidanceGet_Should_Hide_ProcessDesigner_Guides_When_Feature_Disabled() {
+	[AllureName("get-guidance hides process-modeling while the process-designer feature is off, but still serves run-process-button")]
+	[Description("Verifies that with the default (process-designer disabled) configuration the always-on get-guidance tool treats process-modeling as an unknown guide and omits it from availableGuides, while the deliberately ungated run-process-button guide (the shipped run-process scenario consumed by update-page and the page guides) still resolves.")]
+	public async Task GuidanceGet_Should_Hide_ProcessModeling_But_Serve_RunProcessButton_When_Feature_Disabled() {
 		// Arrange
 		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
@@ -471,12 +501,14 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "the disabled process-modeling guide must not be advertised in availableGuides");
 		processModeling.AvailableGuides.Should().Contain("page-schema-handlers",
 			because: "ungated guides must stay advertised while the process-designer feature is off");
-		runProcessButton.Success.Should().BeFalse(
-			because: "run-process-button is gated behind the disabled process-designer feature and must resolve as unknown");
-		runProcessButton.Article.Should().BeNull(
-			because: "a disabled gated guide must not return its article over the real MCP transport");
-		runProcessButton.AvailableGuides.Should().NotContain("run-process-button",
-			because: "the disabled run-process-button guide must not be advertised in availableGuides");
+		processModeling.AvailableGuides.Should().Contain("run-process-button",
+			because: "run-process-button is deliberately ungated and must stay advertised while the feature is off");
+		runProcessButton.Success.Should().BeTrue(
+			because: "run-process-button documents the shipped run-process scenario and must resolve while the process-designer feature is off");
+		runProcessButton.Article.Should().NotBeNull(
+			because: "the ungated guide must return its article over the real MCP transport");
+		runProcessButton.Article!.Uri.Should().Be("docs://mcp/guides/run-process-button",
+			because: "the canonical run-process-button article URI must be stable");
 	}
 
 	[Test]

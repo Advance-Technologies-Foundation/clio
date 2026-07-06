@@ -1,6 +1,5 @@
 using System.Threading.Tasks;
 using Clio.Command;
-using Clio.Command.McpServer.Resources.ProcessDesigner;
 using Clio.Command.McpServer.Tools;
 using FluentAssertions;
 using NSubstitute;
@@ -15,20 +14,19 @@ public sealed class RunProcessButtonGuidanceTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Returns the run-process-button article when the process-designer feature gate is enabled.")]
+	[Description("Returns the run-process-button article; the guide documents the shipped run-process scenario and is not feature-gated.")]
 	public async Task GuidanceGet_Should_Return_RunProcessButton_Article() {
 		// Arrange
 		IFeatureToggleService featureToggleService = Substitute.For<IFeatureToggleService>();
-		featureToggleService.IsEnabled(typeof(RunProcessButtonGuidanceResource)).Returns(true);
 		GuidanceGetTool tool = new(featureToggleService);
 
 		// Act
 		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("run-process-button"));
 
 		// Assert
-		result.Success.Should().BeTrue(because: "run-process-button resolves when its process-designer gate is enabled");
+		result.Success.Should().BeTrue(because: "run-process-button is ungated and must resolve with a bare toggle substitute");
 		result.Article.Should().NotBeNull(
-			because: "an enabled gated guide must return the resolved article");
+			because: "the ungated guide must return the resolved article");
 		result.Article!.Uri.Should().Be("docs://mcp/guides/run-process-button",
 			because: "the guidance tool should preserve the canonical run-process-button guide URI");
 		result.Article.Text.Should().Contain("clio MCP run-process-button guide",
