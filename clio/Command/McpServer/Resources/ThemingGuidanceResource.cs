@@ -33,6 +33,9 @@ public sealed class ThemingGuidanceResource {
 		       - List existing themes — see "List themes".
 		       - Get or set the default theme — see "Get / set the default theme".
 
+		       Constraints
+		       - Do not change the per-role `--crt-<role>-font-size` or `--crt-<role>-line-height` declarations (for example `--crt-body-1-font-size`, `--crt-headline-1-line-height`). Only the `--crt-font-family-*` tokens are meant to change. The interface is not yet adapted to altered typography metrics, so overriding these degrades or breaks the layout. When the user wants to change them, tell them this and keep the template's values. If the user keeps insisting, change them only when the user explicitly tells you to ignore this guide. Hand-authored `css-content` must not override them unless that explicit override was given.
+
 		       Calling the tools
 		       - Wrap tool arguments under the top-level `args` JSON object exactly as advertised by the tool schema (for example `{"args": {"environment-name": "...", "css-content": "..."}}`). Do not flatten or rename canonical fields.
 
@@ -56,8 +59,14 @@ public sealed class ThemingGuidanceResource {
 		       - Workspace / dev flow — use it when you have a clio workspace/package — see "Workspace / dev flow".
 		       - No-code / server flow — use it when you have only a registered environment (no workspace/package) — see "No-code / server flow".
 
+		       Checking access
+		       Check access up front with `check-theming-access` — it returns `{ success, canManageThemes, canCustomizeBranding }`. The write tools enforce the same rights and return an explicit access error, so never retry past a failed check.
+		       - `canCustomizeBranding` false means the environment has no branding license and no custom theme will apply at all — stop, do not build or create anything, and tell the user something like: "Custom branding is not available for the Growth plan. Upgrade your subscription to Enterprise or Unlimited."
+		       - `canManageThemes` false blocks the no-code `create-theme` / `update-theme` / `delete-theme` operations, so the operation the user asked for will be rejected — stop and tell the user they lack the right for this operation and to contact their system administrator. This right does not affect the workspace / dev flow, which ships theme files through a package push.
+		       - Never try to grant the license or the system operation yourself, or to work around missing access — that is the administrator's job. Report the gap and stop.
+
 		       Workspace / dev flow
-		       Prerequisites: a registered clio environment and the `CanCustomizeBranding` license; confirm the user has it before authoring.
+		       Prerequisites: a registered clio environment and the `CanCustomizeBranding` license — see "Checking access".
 		       1. Ensure a clio workspace and a package to hold the theme files; if missing, create the workspace with `create-workspace` and add a package with `add-package`.
 		       2. Build the theme with `build-theme`, passing `workspace-directory` (the workspace root, absolute) and `package-name`: it writes `theme.css` + `theme.json` into `<workspace-directory>/packages/<package-name>/Files/themes/<css-class-name>/` and returns the path (the CSS is not echoed back). Restyle by re-running it, delete by removing that theme folder.
 		       3. Deploy the package with `push-workspace`.
@@ -66,7 +75,7 @@ public sealed class ThemingGuidanceResource {
 
 		       No-code / server flow
 		       Use it when you have only a registered environment (no clio workspace/package); the theme is created and edited directly on the environment via the native ThemeService — no files and no push.
-		       Prerequisites: the `CanCustomizeBranding` license and the `CanManageThemes` system operation. Check both in one call with `check-theming-access` — it returns `{ success, canManageThemes, canCustomizeBranding }`. When either is false, tell the user which one is missing; the check is advisory — `create-theme` is the authoritative test and returns an explicit access error when a right is genuinely absent.
+		       Prerequisites: the `CanCustomizeBranding` license and the `CanManageThemes` system operation — see "Checking access".
 		       1. Produce the theme CSS first — call `build-theme` (returns the `theme.css` string; see "Building the theme CSS"). It goes into `create-theme` as text in `css-content` (step 2), so external fonts must be referenced via `@import` — local font binaries cannot be uploaded this way.
 		       2. Create with `create-theme`: pass the theme name as `caption` and the CSS as inline `css-content`. `css-class-name` is optional (derived from the caption when omitted — see "Building the theme CSS"). `id` is optional — omit it to get an auto-generated id back; `package-name` is optional — omit it to use the environment's CurrentPackageId system setting.
 		       3. Restyle with `update-theme` (by id; a full overwrite of caption + css-class-name + css-content; the package cannot be changed).

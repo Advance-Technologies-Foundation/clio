@@ -267,6 +267,8 @@
 	/* =====================================================================
 	 * TYPOGRAPHY — change the font families to rebrand. Roles reference the
 	 * platform font-size / line-height / weight primitives on :root.
+	 * Do not change the font-size or line-height values: the UI is not yet
+	 * adapted to altered typography metrics and overriding them breaks the layout.
 	 * ===================================================================== */
 
 	--crt-font-family-heading: 'Montserrat', sans-serif;
