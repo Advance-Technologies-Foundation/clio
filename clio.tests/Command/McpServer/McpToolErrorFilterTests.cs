@@ -71,7 +71,7 @@ public sealed class McpToolErrorFilterTests
 
 		// Assert
 		detected.Should().BeTrue(because: "flat arguments matching composite type properties should be detected");
-		result.Should().NotBeNull();
+		result.Should().NotBeNull(because: "a detected flat-args mismatch must produce a corrective hint result");
 		result!.IsError.Should().BeTrue(because: "the result should be an error guiding the caller");
 	}
 
@@ -91,7 +91,7 @@ public sealed class McpToolErrorFilterTests
 
 		// Assert
 		detected.Should().BeFalse(because: "correctly wrapped arguments should not trigger the hint");
-		result.Should().BeNull();
+		result.Should().BeNull(because: "a fully-wrapped args payload must not produce a corrective hint");
 	}
 
 	[Test]
@@ -110,7 +110,7 @@ public sealed class McpToolErrorFilterTests
 
 		// Assert
 		detected.Should().BeFalse(because: "unrelated flat keys should not trigger a false positive");
-		result.Should().BeNull();
+		result.Should().BeNull(because: "no hint should be produced when nothing matches the composite contract");
 	}
 
 	[Test]
@@ -172,7 +172,7 @@ public sealed class McpToolErrorFilterTests
 		// Assert
 		detected.Should().BeTrue(
 			because: "CancellationToken should be skipped and the composite args param should still be detected");
-		result.Should().NotBeNull();
+		result.Should().NotBeNull(because: "a detected composite mismatch must produce a corrective hint result");
 	}
 
 	[Test]
@@ -218,7 +218,7 @@ public sealed class McpToolErrorFilterTests
 		// Assert
 		detected.Should().BeFalse(
 			because: "phantom members of primitive/string parameters like Length must not trigger the hint");
-		result.Should().BeNull();
+		result.Should().BeNull(because: "no hint should be produced for a non-class parameter type");
 	}
 
 	[Test]
@@ -235,7 +235,7 @@ public sealed class McpToolErrorFilterTests
 
 		// Assert
 		detected.Should().BeFalse(because: "a request without Params carries nothing to diagnose");
-		result.Should().BeNull();
+		result.Should().BeNull(because: "no hint can be produced without request parameters");
 	}
 
 	[Test]
@@ -253,7 +253,7 @@ public sealed class McpToolErrorFilterTests
 
 		// Assert
 		detected.Should().BeFalse(because: "an empty argument set cannot be a flat-args mistake");
-		result.Should().BeNull();
+		result.Should().BeNull(because: "no hint should be produced for an empty argument set");
 	}
 
 	[Test]
@@ -273,7 +273,7 @@ public sealed class McpToolErrorFilterTests
 
 		// Assert
 		detected.Should().BeFalse(because: "without a matched tool there is no parameter contract to compare against");
-		result.Should().BeNull();
+		result.Should().BeNull(because: "no hint should be produced when no MCP tool matched the request");
 	}
 
 	[Test]
@@ -293,7 +293,7 @@ public sealed class McpToolErrorFilterTests
 
 		// Assert
 		detected.Should().BeFalse(because: "without MethodInfo metadata the parameter contract is unknown");
-		result.Should().BeNull();
+		result.Should().BeNull(because: "no hint should be produced when the tool exposes no MethodInfo metadata");
 	}
 
 	[Test]
