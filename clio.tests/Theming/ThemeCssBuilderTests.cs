@@ -40,7 +40,7 @@ public sealed class ThemeCssBuilderTests {
 
 		// Act
 		foreach (GoldenCase golden in cases) {
-			string actual = Builder().Build(template, golden.Input.ToBuildThemeOptions());
+			string actual = Builder().Build(template, golden.Input.ToBuildThemeInput());
 			if (actual != golden.Css) {
 				mismatches.Add($"case '{golden.Name}': output differs from the golden (lengths {actual.Length} vs {golden.Css.Length})");
 			}
@@ -55,7 +55,7 @@ public sealed class ThemeCssBuilderTests {
 	[Description("Build applies the theme class, generated palette stops, finalized text tokens, and omits the @import for the default font.")]
 	public void Build_ShouldApplyClassPalettesAndTokens_ForDefaultInput() {
 		// Act
-		string css = Builder().Build(Template(), new BuildThemeOptions { Primary = "#004fd6", ThemeCssClass = "MyTheme" });
+		string css = Builder().Build(Template(), new BuildThemeInput { Primary = "#004fd6", ThemeCssClass = "MyTheme" });
 
 		// Assert
 		css.Should().Contain(".MyTheme {", because: "the theme class fills the selector");
@@ -74,7 +74,7 @@ public sealed class ThemeCssBuilderTests {
 		// Act
 		string css = Builder().Build(
 			Template(),
-			new BuildThemeOptions {
+			new BuildThemeInput {
 				Primary = "#004fd6",
 				ThemeCssClass = "T",
 				Fonts = new FontsInput("Inter", "Inter", new[] { 400, 600 }),
@@ -91,15 +91,15 @@ public sealed class ThemeCssBuilderTests {
 	[Description("Build throws the documented validation errors for missing/invalid primary, class, and font family.")]
 	public void Build_ShouldThrow_ForTheDocumentedInvalidInputs() {
 		// Act / Assert
-		Build(new BuildThemeOptions()).Should().Throw<ArgumentException>().WithMessage("PRIMARY_REQUIRED*",
+		Build(new BuildThemeInput()).Should().Throw<ArgumentException>().WithMessage("PRIMARY_REQUIRED*",
 			because: "a primary colour is required");
-		Build(new BuildThemeOptions { Primary = "#004fd6" }).Should().Throw<ArgumentException>().WithMessage("THEME_CSS_CLASS_REQUIRED*",
+		Build(new BuildThemeInput { Primary = "#004fd6" }).Should().Throw<ArgumentException>().WithMessage("THEME_CSS_CLASS_REQUIRED*",
 			because: "a themeCssClass is required");
-		Build(new BuildThemeOptions { Primary = "#004fd6", ThemeCssClass = "T {} body" }).Should().Throw<ArgumentException>().WithMessage("INVALID_THEME_CSS_CLASS*",
+		Build(new BuildThemeInput { Primary = "#004fd6", ThemeCssClass = "T {} body" }).Should().Throw<ArgumentException>().WithMessage("INVALID_THEME_CSS_CLASS*",
 			because: "a class with spaces/braces would break the selector");
-		Build(new BuildThemeOptions { Primary = "#004fd6", ThemeCssClass = "1Theme" }).Should().Throw<ArgumentException>().WithMessage("INVALID_THEME_CSS_CLASS*",
+		Build(new BuildThemeInput { Primary = "#004fd6", ThemeCssClass = "1Theme" }).Should().Throw<ArgumentException>().WithMessage("INVALID_THEME_CSS_CLASS*",
 			because: "a class must not start with a digit");
-		Build(new BuildThemeOptions { Primary = "#004fd6", ThemeCssClass = "T", Fonts = new FontsInput("Evil'; }", "Evil'; }") })
+		Build(new BuildThemeInput { Primary = "#004fd6", ThemeCssClass = "T", Fonts = new FontsInput("Evil'; }", "Evil'; }") })
 			.Should().Throw<ArgumentException>().WithMessage("INVALID_FONT_FAMILY*",
 				because: "a family with quotes/braces is rejected");
 	}
@@ -108,7 +108,7 @@ public sealed class ThemeCssBuilderTests {
 	[Description("Build rejects a themeCssClass with a trailing newline (the class pattern is anchored to the absolute end of the string).")]
 	public void Build_ShouldRejectTrailingNewlineClass_BecausePatternUsesEndOfStringAnchor() {
 		// Act / Assert
-		Build(new BuildThemeOptions { Primary = "#004fd6", ThemeCssClass = "Foo\n" })
+		Build(new BuildThemeInput { Primary = "#004fd6", ThemeCssClass = "Foo\n" })
 			.Should().Throw<ArgumentException>().WithMessage("INVALID_THEME_CSS_CLASS*",
 				because: "the class pattern is anchored to the absolute end of the string, so a trailing newline is rejected");
 	}
@@ -122,7 +122,7 @@ public sealed class ThemeCssBuilderTests {
 			"--crt-palette-primary-500: #004fd6;\r\n\t--crt-palette-primary-500: #004fd6;");
 
 		// Act
-		string css = Builder().Build(duplicated, new BuildThemeOptions { Primary = "#e91e63", ThemeCssClass = "Dup" });
+		string css = Builder().Build(duplicated, new BuildThemeInput { Primary = "#e91e63", ThemeCssClass = "Dup" });
 
 		// Assert
 		css.Should().Contain("--crt-palette-primary-500: #e91e63;",
@@ -138,7 +138,7 @@ public sealed class ThemeCssBuilderTests {
 		string drifted = Template() + "\r\n.extra { content: '<%foo%>'; }\r\n";
 
 		// Act / Assert
-		Build(new BuildThemeOptions { Primary = "#004fd6", ThemeCssClass = "T" }, drifted)
+		Build(new BuildThemeInput { Primary = "#004fd6", ThemeCssClass = "T" }, drifted)
 			.Should().Throw<InvalidOperationException>().WithMessage("*placeholder*",
 				because: "an unresolved <%…%> means the template drifted from the contract");
 	}
@@ -150,7 +150,7 @@ public sealed class ThemeCssBuilderTests {
 		string drifted = Template().Replace("--crt-palette-primary-500: #004fd6;", string.Empty);
 
 		// Act / Assert
-		Build(new BuildThemeOptions { Primary = "#004fd6", ThemeCssClass = "T" }, drifted)
+		Build(new BuildThemeInput { Primary = "#004fd6", ThemeCssClass = "T" }, drifted)
 			.Should().Throw<InvalidOperationException>().WithMessage("*primary-500*",
 				because: "a missing palette declaration means the producer template no longer matches the builder contract");
 	}
@@ -172,7 +172,7 @@ public sealed class ThemeCssBuilderTests {
 		}
 	}
 
-	private static Action Build(BuildThemeOptions options, string template = null) {
+	private static Action Build(BuildThemeInput options, string template = null) {
 		return () => new ThemeCssBuilder().Build(template ?? Template(), options);
 	}
 
@@ -199,7 +199,7 @@ public sealed class ThemeCssBuilderTests {
 		[JsonPropertyName("themeCssClass")] public string ThemeCssClass { get; init; }
 		[JsonPropertyName("fonts")] public GoldenFonts Fonts { get; init; }
 
-		internal BuildThemeOptions ToBuildThemeOptions() {
+		internal BuildThemeInput ToBuildThemeInput() {
 			return new() {
 				Primary = Primary,
 				Secondary = Secondary,

@@ -43,14 +43,16 @@ public class UpdateThemeOptions : RemoteCommandOptions
 public class UpdateThemeCommand : RemoteCommand<UpdateThemeOptions>
 {
 	private readonly IServiceUrlBuilder _urlBuilder;
+	private readonly IFileSystem _fileSystem;
 
 	/// <summary>
 	/// Initializes a new instance of the <see cref="UpdateThemeCommand"/> class.
 	/// </summary>
 	public UpdateThemeCommand(IApplicationClient applicationClient, EnvironmentSettings settings,
-		IServiceUrlBuilder urlBuilder)
+		IServiceUrlBuilder urlBuilder, IFileSystem fileSystem)
 		: base(applicationClient, settings) {
 		_urlBuilder = urlBuilder;
+		_fileSystem = fileSystem;
 	}
 
 	/// <inheritdoc />
@@ -58,7 +60,7 @@ public class UpdateThemeCommand : RemoteCommand<UpdateThemeOptions>
 
 	/// <inheritdoc />
 	protected override void ExecuteRemoteCommand(UpdateThemeOptions options) {
-		if (!ThemeRequestBuilder.TryResolveCssContent(options.CssContent, options.CssContentFile,
+		if (!ThemeRequestBuilder.TryResolveCssContent(_fileSystem, options.CssContent, options.CssContentFile,
 				out string cssContent, out string error)) {
 			CommandSuccess = false;
 			Logger.WriteError(error);

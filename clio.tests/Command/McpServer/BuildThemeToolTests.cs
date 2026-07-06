@@ -45,7 +45,7 @@ public sealed class BuildThemeToolTests
 		_themeTemplateProvider.GetCssTemplate(Arg.Any<string>()).Returns("template-css");
 		_themeTemplateProvider.GetJsonTemplate(Arg.Any<string>())
 			.Returns("{\"id\":\"<%themeId%>\",\"caption\":\"<%themeCaption%>\",\"cssClassName\":\"<%themeCssClass%>\"}");
-		_themeCssBuilder.Build(Arg.Any<string>(), Arg.Any<BuildThemeOptions>()).Returns("built-css");
+		_themeCssBuilder.Build(Arg.Any<string>(), Arg.Any<BuildThemeInput>()).Returns("built-css");
 		BuildThemeCommand command = new(_themeCssBuilder, _themeTemplateProvider, _resolverFactory, _settingsRepository,
 			_workspacePathBuilder, _fileSystem, Substitute.For<ILogger>());
 		_tool = new BuildThemeTool(command, Substitute.For<ILogger>());
@@ -109,7 +109,7 @@ public sealed class BuildThemeToolTests
 		result.Descriptor.Should().NotBeNull(because: "the tool also returns the theme.json descriptor artifact");
 		result.Error.Should().BeNull(because: "a successful build carries no error");
 		_themeCssBuilder.Received(1).Build(Arg.Any<string>(),
-			Arg.Is<BuildThemeOptions>(o => o.Primary == "#004fd6" && o.ThemeCssClass == "MyTheme"));
+			Arg.Is<BuildThemeInput>(o => o.Primary == "#004fd6" && o.ThemeCssClass == "MyTheme"));
 	}
 
 	[Test]
@@ -123,7 +123,7 @@ public sealed class BuildThemeToolTests
 
 		// Assert
 		result.Success.Should().BeTrue(because: "a fully-specified build request is valid");
-		_themeCssBuilder.Received(1).Build(Arg.Any<string>(), Arg.Is<BuildThemeOptions>(o =>
+		_themeCssBuilder.Received(1).Build(Arg.Any<string>(), Arg.Is<BuildThemeInput>(o =>
 			o.Primary == "#004fd6" &&
 			o.Secondary == "#0d2e4e" &&
 			o.Accent == "#f94e11" &&
@@ -179,7 +179,7 @@ public sealed class BuildThemeToolTests
 		// Assert
 		result.Success.Should().BeFalse(because: "a missing primary is an invalid request");
 		result.Error.Should().Contain("primary", because: "the error must name the missing required input");
-		_themeCssBuilder.DidNotReceive().Build(Arg.Any<string>(), Arg.Any<BuildThemeOptions>());
+		_themeCssBuilder.DidNotReceive().Build(Arg.Any<string>(), Arg.Any<BuildThemeInput>());
 	}
 
 	[Test]
@@ -192,7 +192,7 @@ public sealed class BuildThemeToolTests
 		result.Success.Should().BeFalse(because: "a build request without the required primary is invalid");
 		result.Error.Should().Contain("primary is required",
 			because: "the failure must name the exact required field the caller has to add");
-		_themeCssBuilder.DidNotReceive().Build(Arg.Any<string>(), Arg.Any<BuildThemeOptions>());
+		_themeCssBuilder.DidNotReceive().Build(Arg.Any<string>(), Arg.Any<BuildThemeInput>());
 	}
 
 	[Test]
@@ -212,7 +212,7 @@ public sealed class BuildThemeToolTests
 		result.Success.Should().BeFalse(because: "a camelCase alias must be rejected, not silently dropped");
 		result.Error.Should().Contain("'cssClassName' -> 'css-class-name'",
 			because: "the failure must tell the caller the exact rename that fixes the call");
-		_themeCssBuilder.DidNotReceive().Build(Arg.Any<string>(), Arg.Any<BuildThemeOptions>());
+		_themeCssBuilder.DidNotReceive().Build(Arg.Any<string>(), Arg.Any<BuildThemeInput>());
 	}
 
 	[Test]
@@ -224,7 +224,7 @@ public sealed class BuildThemeToolTests
 		// Assert
 		result.Success.Should().BeFalse(because: "with no css-class-name and no caption there is nothing to name the theme");
 		result.Error.Should().Contain("at least one is required", because: "the error must say a caption or a css-class-name is required");
-		_themeCssBuilder.DidNotReceive().Build(Arg.Any<string>(), Arg.Any<BuildThemeOptions>());
+		_themeCssBuilder.DidNotReceive().Build(Arg.Any<string>(), Arg.Any<BuildThemeInput>());
 	}
 
 	[Test]
@@ -236,7 +236,7 @@ public sealed class BuildThemeToolTests
 		// Assert
 		result.Success.Should().BeTrue(because: "a caption alone is enough — clio derives the css-class-name");
 		_themeCssBuilder.Received(1).Build(Arg.Any<string>(),
-			Arg.Is<BuildThemeOptions>(o => o.ThemeCssClass == "ocean-blue"));
+			Arg.Is<BuildThemeInput>(o => o.ThemeCssClass == "ocean-blue"));
 		using JsonDocument descriptor = JsonDocument.Parse(result.Descriptor);
 		descriptor.RootElement.GetProperty("cssClassName").GetString().Should().Be("ocean-blue",
 			because: "the derived slug is written to the descriptor");
@@ -404,7 +404,7 @@ public sealed class BuildThemeToolTests
 		result.Success.Should().BeFalse(because: "a non-absolute workspace path is ambiguous under the MCP server working directory");
 		result.Error.Should().Contain("workspace-directory must be a fully-qualified absolute path",
 			because: "the error must name the kebab-case argument and explain that an absolute path is required");
-		_themeCssBuilder.DidNotReceive().Build(Arg.Any<string>(), Arg.Any<BuildThemeOptions>());
+		_themeCssBuilder.DidNotReceive().Build(Arg.Any<string>(), Arg.Any<BuildThemeInput>());
 		_fileSystem.DidNotReceive().WriteAllTextToFile(Arg.Any<string>(), Arg.Any<string>());
 	}
 
@@ -419,7 +419,7 @@ public sealed class BuildThemeToolTests
 		result.Success.Should().BeFalse(because: "path separators in the package name could escape the workspace");
 		result.Error.Should().Contain("package-name must be a simple identifier",
 			because: "the error must name the kebab-case argument and the identifier constraint");
-		_themeCssBuilder.DidNotReceive().Build(Arg.Any<string>(), Arg.Any<BuildThemeOptions>());
+		_themeCssBuilder.DidNotReceive().Build(Arg.Any<string>(), Arg.Any<BuildThemeInput>());
 		_fileSystem.DidNotReceive().WriteAllTextToFile(Arg.Any<string>(), Arg.Any<string>());
 	}
 
@@ -449,7 +449,7 @@ public sealed class BuildThemeToolTests
 		result.Success.Should().BeFalse(because: "path separators in the css-class-name could escape the theme directory");
 		result.Error.Should().Contain("css-class-name",
 			because: "the error must name the kebab-case argument the caller has to fix");
-		_themeCssBuilder.DidNotReceive().Build(Arg.Any<string>(), Arg.Any<BuildThemeOptions>());
+		_themeCssBuilder.DidNotReceive().Build(Arg.Any<string>(), Arg.Any<BuildThemeInput>());
 		_fileSystem.DidNotReceive().WriteAllTextToFile(Arg.Any<string>(), Arg.Any<string>());
 	}
 

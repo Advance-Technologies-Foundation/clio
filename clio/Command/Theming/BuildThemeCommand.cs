@@ -10,7 +10,6 @@ using Clio.Theming;
 using Clio.UserEnvironment;
 using Clio.Workspaces;
 using CommandLine;
-using ThemeBuilderOptions = Clio.Theming.BuildThemeOptions;
 
 namespace Clio.Command.Theming;
 
@@ -150,15 +149,7 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 		if (!TryBuildTheme(options, out string css, out string descriptor, out warnings, out error)) {
 			return false;
 		}
-		try {
-			WriteArtifacts(outputDirectory, css, descriptor);
-		}
-		catch (IOException ex) {
-			error = $"build-theme: failed to write theme files to '{outputDirectory}': {ex.Message}";
-			return false;
-		}
-		catch (UnauthorizedAccessException ex) {
-			error = $"build-theme: failed to write theme files to '{outputDirectory}': {ex.Message}";
+		if (!TryWriteArtifacts(outputDirectory, css, descriptor, out error)) {
 			return false;
 		}
 		outputPath = outputDirectory;
@@ -186,7 +177,6 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 		if (!ThemeParameterValidator.TryResolveCssClassName(options.CssClassName, options.Caption, out string resolvedClass, out error)) {
 			return false;
 		}
-		options.CssClassName = resolvedClass;
 		_workspacePathBuilder.RootPath = workspaceDirectory;
 		if (!_workspacePathBuilder.IsWorkspace) {
 			error = $"build-theme: '{workspaceDirectory}' is not a clio workspace "
@@ -199,7 +189,7 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 				+ $"(expected at '{packagePath}'). Add it first with add-package.";
 			return false;
 		}
-		string themeDirectory = Path.Combine(packagePath, PackageFilesFolderName, ThemesFolderName, options.CssClassName);
+		string themeDirectory = Path.Combine(packagePath, PackageFilesFolderName, ThemesFolderName, resolvedClass);
 		return TryBuildTheme(options, themeDirectory, out outputPath, out warnings, out error);
 	}
 
@@ -218,7 +208,6 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 		css = null;
 		descriptor = null;
 		warnings = [];
-		error = null;
 		if (!ThemeParameterValidator.TryResolveCssClassName(options.CssClassName, options.Caption, out string resolvedClass, out error)) {
 			return false;
 		}
@@ -241,10 +230,26 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 		}
 	}
 
-	private void WriteArtifacts(string outputDirectory, string css, string descriptor) {
-		_fileSystem.CreateDirectoryIfNotExists(outputDirectory);
-		_fileSystem.WriteAllTextToFile(Path.Combine(outputDirectory, "theme.css"), css);
-		_fileSystem.WriteAllTextToFile(Path.Combine(outputDirectory, "theme.json"), descriptor);
+	private bool TryWriteArtifacts(string outputDirectory, string css, string descriptor, out string error) {
+		error = null;
+		try {
+			_fileSystem.CreateDirectoryIfNotExists(outputDirectory);
+			_fileSystem.WriteAllTextToFile(Path.Combine(outputDirectory, "theme.css"), css);
+			_fileSystem.WriteAllTextToFile(Path.Combine(outputDirectory, "theme.json"), descriptor);
+			return true;
+		}
+		catch (IOException ex) {
+			error = DescribeWriteFailure(outputDirectory, ex);
+			return false;
+		}
+		catch (UnauthorizedAccessException ex) {
+			error = DescribeWriteFailure(outputDirectory, ex);
+			return false;
+		}
+	}
+
+	private static string DescribeWriteFailure(string outputDirectory, Exception ex) {
+		return $"build-theme: failed to write theme files to '{outputDirectory}': {ex.Message}";
 	}
 
 	private PlatformVersionResolution ResolveVersion(BuildThemeOptions options) {
@@ -271,11 +276,11 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 		return new PlatformVersionResolution(null, VersionResolutionSource.LatestFallback);
 	}
 
-	private static ThemeBuilderOptions ToBuilderOptions(BuildThemeOptions options) {
+	private static BuildThemeInput ToBuilderOptions(BuildThemeOptions options) {
 		List<int> weights = options.FontWeights?.ToList();
 		bool hasCustomFont = !string.IsNullOrEmpty(options.HeadingFont) || !string.IsNullOrEmpty(options.BodyFont)
 			|| weights is { Count: > 0 };
-		return new ThemeBuilderOptions {
+		return new BuildThemeInput {
 			Primary = options.Primary,
 			Secondary = options.Secondary,
 			Accent = options.Accent,

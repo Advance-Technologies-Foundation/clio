@@ -11,7 +11,7 @@ namespace Clio.Theming;
 public sealed record FontsInput(string Heading = null, string Body = null, IReadOnlyList<int> Weights = null);
 
 /// <summary>Brand inputs for building a theme's CSS.</summary>
-public sealed record BuildThemeOptions {
+public sealed record BuildThemeInput {
 	/// <summary>Required primary colour (any form accepted by <see cref="ColorNormalizer.Normalize"/>).</summary>
 	public string Primary { get; init; }
 
@@ -42,13 +42,13 @@ public interface IThemeCssBuilder {
 	/// <paramref name="options"/>, returning the completed <c>theme.css</c>.
 	/// </summary>
 	/// <param name="templateCss">The theme template to fill.</param>
-	/// <param name="options">The brand inputs; <see cref="BuildThemeOptions.Primary"/> and
-	/// <see cref="BuildThemeOptions.ThemeCssClass"/> are required.</param>
+	/// <param name="options">The brand inputs; <see cref="BuildThemeInput.Primary"/> and
+	/// <see cref="BuildThemeInput.ThemeCssClass"/> are required.</param>
 	/// <exception cref="ArgumentException">A required input is missing, or a colour, theme class, or font
 	/// family is invalid.</exception>
 	/// <exception cref="InvalidOperationException">The template does not match the expected contract — an
 	/// unresolved <c>&lt;%…%&gt;</c> placeholder remained, or a palette stop was not substituted.</exception>
-	string Build(string templateCss, BuildThemeOptions options);
+	string Build(string templateCss, BuildThemeInput options);
 }
 
 /// <summary>
@@ -70,7 +70,7 @@ internal sealed class ThemeCssBuilder : IThemeCssBuilder {
 	private static readonly Regex ColorDeclarationRegex = new(@"(--crt-color-[a-z0-9-]+):\s*([^;]+);", RegexOptions.Compiled, RegexTimeout);
 
 	/// <inheritdoc />
-	public string Build(string templateCss, BuildThemeOptions options) {
+	public string Build(string templateCss, BuildThemeInput options) {
 		if (string.IsNullOrEmpty(options?.Primary)) {
 			throw new ArgumentException("PRIMARY_REQUIRED: a primary color is required.", nameof(options));
 		}
@@ -105,13 +105,11 @@ internal sealed class ThemeCssBuilder : IThemeCssBuilder {
 	}
 
 	private static string ReadTemplateSystemDefault(string templateCss, string role) {
-		Match match = Regex.Match(templateCss, $@"--crt-palette-{role}-500\s*:\s*(#[0-9a-fA-F]{{6}})",
-			RegexOptions.IgnoreCase, RegexTimeout);
-		if (!match.Success) {
+		if (!ThemeTemplateDefaults.TryGetPaletteBase(templateCss, role, out string hex)) {
 			throw new InvalidOperationException(
 				$"The theme template does not define a default --crt-palette-{role}-500 colour.");
 		}
-		return match.Groups[1].Value;
+		return hex;
 	}
 
 	private static string ApplyPalettes(string css, PaletteSet palettes) {

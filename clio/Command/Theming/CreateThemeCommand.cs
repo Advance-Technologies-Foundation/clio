@@ -52,14 +52,16 @@ public class CreateThemeOptions : RemoteCommandOptions
 public class CreateThemeCommand : RemoteCommand<CreateThemeOptions>
 {
 	private readonly IServiceUrlBuilder _urlBuilder;
+	private readonly IFileSystem _fileSystem;
 
 	/// <summary>
 	/// Initializes a new instance of the <see cref="CreateThemeCommand"/> class.
 	/// </summary>
 	public CreateThemeCommand(IApplicationClient applicationClient, EnvironmentSettings settings,
-		IServiceUrlBuilder urlBuilder)
+		IServiceUrlBuilder urlBuilder, IFileSystem fileSystem)
 		: base(applicationClient, settings) {
 		_urlBuilder = urlBuilder;
+		_fileSystem = fileSystem;
 	}
 
 	/// <inheritdoc />
@@ -77,7 +79,7 @@ public class CreateThemeCommand : RemoteCommand<CreateThemeOptions>
 		createdId = null;
 		errorMessage = null;
 		string id = string.IsNullOrWhiteSpace(options.Id) ? Guid.NewGuid().ToString("D") : options.Id;
-		if (!ThemeRequestBuilder.TryResolveCssContent(options.CssContent, options.CssContentFile,
+		if (!ThemeRequestBuilder.TryResolveCssContent(_fileSystem, options.CssContent, options.CssContentFile,
 				out string cssContent, out errorMessage)) {
 			return false;
 		}

@@ -279,7 +279,8 @@ public class CreateThemeToolTests {
 			: base(
 				Substitute.For<IApplicationClient>(),
 				new EnvironmentSettings(),
-				Substitute.For<IServiceUrlBuilder>()) {
+				Substitute.For<IServiceUrlBuilder>(),
+				Substitute.For<IFileSystem>()) {
 			_createdId = createdId;
 			_success = success;
 			_error = error;

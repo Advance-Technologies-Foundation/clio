@@ -8,13 +8,12 @@ using System.Threading.Tasks;
 using Clio.Command.McpServer.Tools;
 using Clio.Command.Theming;
 using Clio.Common;
+using Clio.Theming;
 using Clio.UserEnvironment;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using NUnit.Framework;
-using IThemeCssBuilder = Clio.Theming.IThemeCssBuilder;
-using ThemeBuilderOptions = Clio.Theming.BuildThemeOptions;
 
 [TestFixture]
 [Category("Unit")]
@@ -33,7 +32,7 @@ public class BuildThemeCommandTests : BaseCommandTests<BuildThemeOptions>
 		base.Setup();
 		_command = Container.GetRequiredService<BuildThemeCommand>();
 		_themeTemplateProvider.GetCssTemplate(Arg.Any<string>()).Returns("template-css");
-		_themeCssBuilder.Build(Arg.Any<string>(), Arg.Any<ThemeBuilderOptions>()).Returns("built-css");
+		_themeCssBuilder.Build(Arg.Any<string>(), Arg.Any<BuildThemeInput>()).Returns("built-css");
 	}
 
 	public override void TearDown() {
@@ -79,7 +78,7 @@ public class BuildThemeCommandTests : BaseCommandTests<BuildThemeOptions>
 		// Assert
 		exitCode.Should().Be(0, because: "a successful build returns 0");
 		_themeCssBuilder.Received(1).Build(Arg.Any<string>(),
-			Arg.Is<ThemeBuilderOptions>(o => o.Primary == "#004fd6" && o.ThemeCssClass == "MyTheme"));
+			Arg.Is<BuildThemeInput>(o => o.Primary == "#004fd6" && o.ThemeCssClass == "MyTheme"));
 		_logger.Received(1).WriteInfo("built-css");
 		_fileSystem.DidNotReceive().WriteAllTextToFile(Arg.Any<string>(), Arg.Any<string>());
 	}
@@ -170,7 +169,7 @@ public class BuildThemeCommandTests : BaseCommandTests<BuildThemeOptions>
 
 		// Assert
 		_themeCssBuilder.Received(1).Build(Arg.Any<string>(),
-			Arg.Is<ThemeBuilderOptions>(o => o.Fonts != null
+			Arg.Is<BuildThemeInput>(o => o.Fonts != null
 				&& o.Fonts.Heading == "Inter"
 				&& o.Fonts.Body == "Roboto"
 				&& o.Fonts.Weights.Count == 2
@@ -191,7 +190,7 @@ public class BuildThemeCommandTests : BaseCommandTests<BuildThemeOptions>
 		// Assert
 		exitCode.Should().Be(0, because: "font weights without a family is a non-fatal advisory, not an error");
 		_logger.Received(1).WriteWarning(Arg.Is<string>(m => m.Contains("font weights")));
-		_themeCssBuilder.Received(1).Build(Arg.Any<string>(), Arg.Any<ThemeBuilderOptions>());
+		_themeCssBuilder.Received(1).Build(Arg.Any<string>(), Arg.Any<BuildThemeInput>());
 	}
 
 	[Test, Category("Unit")]
@@ -322,7 +321,7 @@ public class BuildThemeCommandTests : BaseCommandTests<BuildThemeOptions>
 	[Description("Surfaces the builder's validation error and returns a non-zero exit code instead of crashing.")]
 	public void Execute_ShouldFailGracefully_WhenBuilderThrowsArgumentException() {
 		// Arrange
-		_themeCssBuilder.Build(Arg.Any<string>(), Arg.Any<ThemeBuilderOptions>())
+		_themeCssBuilder.Build(Arg.Any<string>(), Arg.Any<BuildThemeInput>())
 			.Returns(_ => throw new ArgumentException("PRIMARY_REQUIRED: a primary color is required."));
 		BuildThemeOptions options = ValidOptions();
 

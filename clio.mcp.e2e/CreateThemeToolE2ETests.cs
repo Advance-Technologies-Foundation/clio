@@ -73,7 +73,7 @@ public sealed class CreateThemeToolE2ETests : McpContractFixtureBase {
 	[Test]
 	[AllureTag(CreateThemeTool.ToolName)]
 	[AllureName("create-theme binds the args wrapper and returns a structured validation failure")]
-	[Description("Calls create-theme through the real clio MCP server with an empty args object and verifies the structured exit-code-1 error names environment-name — proving the args wrapper binds without a live Creatio environment.")]
+	[Description("Calls create-theme through the real clio MCP server with an empty args object and verifies the structured { success=false, error } result names environment-name — proving the args wrapper binds without a live Creatio environment.")]
 	public async Task CreateTheme_Should_Return_Structured_Validation_Failure_When_Args_Are_Empty() {
 		// Arrange
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
@@ -85,15 +85,14 @@ public sealed class CreateThemeToolE2ETests : McpContractFixtureBase {
 				["args"] = new Dictionary<string, object?>()
 			},
 			context.CancellationTokenSource.Token);
-		CommandExecutionEnvelope response = McpCommandExecutionParser.Extract(callResult);
+		CreateThemeResult result = EntitySchemaStructuredResultParser.Extract<CreateThemeResult>(callResult);
 
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
 			because: "an argument mistake must surface as a structured in-tool failure, not an MCP protocol error");
-		response.ExitCode.Should().Be(1,
+		result.Success.Should().BeFalse(
 			because: "a missing environment name is an expected, caller-actionable validation error");
-		response.Output.Should().Contain(message =>
-			message.Value != null && message.Value.Contains("environment-name is required"),
+		result.Error.Should().Contain("environment-name is required",
 			because: "the failure must name the exact kebab-case field the caller has to add");
 	}
 }

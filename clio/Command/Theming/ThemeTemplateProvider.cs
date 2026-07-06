@@ -1,8 +1,8 @@
 using System;
 using System.IO;
 using System.Linq;
-using System.Text.RegularExpressions;
 using Clio.Common;
+using Clio.Theming;
 
 namespace Clio.Command.Theming;
 
@@ -81,17 +81,7 @@ public sealed class ThemeTemplateProvider : IThemeTemplateProvider {
 		if (role is not ("success" or "error")) {
 			return false;
 		}
-		string css = GetCssTemplate(creatioVersion);
-		Match match = Regex.Match(
-			css,
-			$@"--crt-palette-{role}-500\s*:\s*(#[0-9a-fA-F]{{6}})",
-			RegexOptions.IgnoreCase,
-			TimeSpan.FromSeconds(1));
-		if (!match.Success) {
-			return false;
-		}
-		hex = match.Groups[1].Value.ToLowerInvariant();
-		return true;
+		return ThemeTemplateDefaults.TryGetPaletteBase(GetCssTemplate(creatioVersion), role, out hex);
 	}
 
 	private string ReadTemplate(string fileName, string creatioVersion) {

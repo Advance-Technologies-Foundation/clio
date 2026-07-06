@@ -1,12 +1,12 @@
 namespace Clio.Tests.Command;
 
-using System;
 using System.IO;
-using System.Text;
 using Clio.Command;
 using Clio.Command.Theming;
+using Clio.Common;
 using Clio.Theming;
 using FluentAssertions;
+using NSubstitute;
 using NUnit.Framework;
 
 [TestFixture]
@@ -18,7 +18,8 @@ public sealed class ThemeRequestBuilderTests
 	[Description("Returns a failure when neither --css-content nor --css-content-file is supplied, without touching the filesystem.")]
 	public void TryResolveCssContent_ShouldFail_WhenNoCssInputSupplied() {
 		// Act
-		bool ok = ThemeRequestBuilder.TryResolveCssContent(null, null, out string resolved, out string error);
+		bool ok = ThemeRequestBuilder.TryResolveCssContent(Substitute.For<IFileSystem>(), null, null,
+			out string resolved, out string error);
 
 		// Assert
 		ok.Should().BeFalse(because: "a theme requires CSS from exactly one of the two inputs");
@@ -31,7 +32,8 @@ public sealed class ThemeRequestBuilderTests
 	[Description("Returns a failure when both --css-content and --css-content-file are supplied (mutually exclusive).")]
 	public void TryResolveCssContent_ShouldFail_WhenBothCssInputsSupplied() {
 		// Act
-		bool ok = ThemeRequestBuilder.TryResolveCssContent(".x{}", "theme.css", out string _, out string error);
+		bool ok = ThemeRequestBuilder.TryResolveCssContent(Substitute.For<IFileSystem>(), ".x{}", "theme.css",
+			out string _, out string error);
 
 		// Assert
 		ok.Should().BeFalse(because: "the inline and file inputs are mutually exclusive");
@@ -43,7 +45,8 @@ public sealed class ThemeRequestBuilderTests
 	[Description("Resolves an explicitly empty --css-content as a present input.")]
 	public void TryResolveCssContent_ShouldResolveEmptyString_WhenInlineContentIsEmptyString() {
 		// Act
-		bool ok = ThemeRequestBuilder.TryResolveCssContent(string.Empty, null, out string resolved, out string error);
+		bool ok = ThemeRequestBuilder.TryResolveCssContent(Substitute.For<IFileSystem>(), string.Empty, null,
+			out string resolved, out string error);
 
 		// Assert
 		ok.Should().BeTrue(because: "resolution only distinguishes present from absent inputs");
@@ -59,7 +62,8 @@ public sealed class ThemeRequestBuilderTests
 		const string css = ".freedom-theme{--crt-x:1}";
 
 		// Act
-		bool ok = ThemeRequestBuilder.TryResolveCssContent(css, null, out string resolved, out string error);
+		bool ok = ThemeRequestBuilder.TryResolveCssContent(Substitute.For<IFileSystem>(), css, null,
+			out string resolved, out string error);
 
 		// Assert
 		ok.Should().BeTrue(because: "a single inline input resolves cleanly");
@@ -166,64 +170,85 @@ public sealed class ThemeRequestBuilderTests
 [Property("Module", "Command")]
 public class ThemeRequestBuilderFileTests
 {
-	private string _tempFile;
-
-	[TearDown]
-	public void TearDown() {
-		if (_tempFile is not null && File.Exists(_tempFile)) {
-			File.Delete(_tempFile);
-		}
-		_tempFile = null;
-	}
+	private const string CssFilePath = "themes/custom.css";
 
 	[Test]
-	[Category("Integration")]
-	[Description("Reads CSS from a UTF-8 file when only --css-content-file is supplied.")]
+	[Category("Unit")]
+	[Description("Reads CSS from the file system when only --css-content-file is supplied.")]
 	public void TryResolveCssContent_ShouldReadFile_WhenOnlyFileSupplied() {
 		// Arrange
 		const string css = ".freedom-theme{--crt-font-family:'Montserrat'}";
-		_tempFile = Path.Combine(Path.GetTempPath(), $"clio-theme-{Guid.NewGuid():N}.css");
-		File.WriteAllText(_tempFile, css, Encoding.UTF8);
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		fileSystem.ExistsFile(CssFilePath).Returns(true);
+		fileSystem.GetFileSize(CssFilePath).Returns(css.Length);
+		fileSystem.ReadAllText(CssFilePath).Returns(css);
 
 		// Act
-		bool ok = ThemeRequestBuilder.TryResolveCssContent(null, _tempFile, out string resolved, out string error);
+		bool ok = ThemeRequestBuilder.TryResolveCssContent(fileSystem, null, CssFilePath,
+			out string resolved, out string error);
 
 		// Assert
-		ok.Should().BeTrue(because: "an existing UTF-8 CSS file resolves cleanly");
-		resolved.Should().Be(css, because: "the file content must be read verbatim as UTF-8");
+		ok.Should().BeTrue(because: "an existing CSS file within the size cap resolves cleanly");
+		resolved.Should().Be(css, because: "the file content must be read verbatim");
 		error.Should().BeNull(because: "a successful read carries no error");
 	}
 
 	[Test]
-	[Category("Integration")]
+	[Category("Unit")]
 	[Description("Fails fast when --css-content-file points at a non-existent path, without resolving any content.")]
 	public void TryResolveCssContent_ShouldFail_WhenFileDoesNotExist() {
 		// Arrange
-		string missing = Path.Combine(Path.GetTempPath(), $"clio-theme-missing-{Guid.NewGuid():N}.css");
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		fileSystem.ExistsFile(CssFilePath).Returns(false);
 
 		// Act
-		bool ok = ThemeRequestBuilder.TryResolveCssContent(null, missing, out string resolved, out string error);
+		bool ok = ThemeRequestBuilder.TryResolveCssContent(fileSystem, null, CssFilePath,
+			out string resolved, out string error);
 
 		// Assert
 		ok.Should().BeFalse(because: "a missing file cannot supply CSS");
 		resolved.Should().BeNull(because: "nothing could be read");
 		error.Should().Contain("not found", because: "the diagnostic must explain the file is missing");
+		fileSystem.DidNotReceive().ReadAllText(Arg.Any<string>());
 	}
 
 	[Test]
-	[Category("Integration")]
-	[Description("Fails fast when --css-content-file is larger than the 1 MiB cap, without reading the whole file into memory.")]
+	[Category("Unit")]
+	[Description("Fails fast when --css-content-file is larger than the 1 MiB cap, without reading the file into memory.")]
 	public void TryResolveCssContent_ShouldFail_WhenFileExceedsOneMebibyte() {
 		// Arrange
-		_tempFile = Path.Combine(Path.GetTempPath(), $"clio-theme-oversized-{Guid.NewGuid():N}.css");
-		File.WriteAllText(_tempFile, new string('a', ThemeParameterValidator.MaxCssContentBytes + 1), Encoding.UTF8);
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		fileSystem.ExistsFile(CssFilePath).Returns(true);
+		fileSystem.GetFileSize(CssFilePath).Returns(ThemeParameterValidator.MaxCssContentBytes + 1);
 
 		// Act
-		bool ok = ThemeRequestBuilder.TryResolveCssContent(null, _tempFile, out string resolved, out string error);
+		bool ok = ThemeRequestBuilder.TryResolveCssContent(fileSystem, null, CssFilePath,
+			out string resolved, out string error);
 
 		// Assert
 		ok.Should().BeFalse(because: "a CSS file above 1 MiB must be rejected before it is loaded into memory");
 		resolved.Should().BeNull(because: "an oversized file must not be read");
 		error.Should().Contain("1 MiB", because: "the diagnostic must name the size limit");
+		fileSystem.DidNotReceive().ReadAllText(Arg.Any<string>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Fails with a friendly diagnostic when reading the CSS file throws an I/O error (e.g. the file is locked).")]
+	public void TryResolveCssContent_ShouldFail_WhenFileReadThrowsIoError() {
+		// Arrange
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		fileSystem.ExistsFile(CssFilePath).Returns(true);
+		fileSystem.GetFileSize(CssFilePath).Returns(10);
+		fileSystem.ReadAllText(CssFilePath).Returns(_ => throw new IOException("locked"));
+
+		// Act
+		bool ok = ThemeRequestBuilder.TryResolveCssContent(fileSystem, null, CssFilePath,
+			out string resolved, out string error);
+
+		// Assert
+		ok.Should().BeFalse(because: "an unreadable file cannot supply CSS");
+		resolved.Should().BeNull(because: "nothing could be read");
+		error.Should().Contain("Could not read", because: "the diagnostic must explain the read failure instead of crashing");
 	}
 }

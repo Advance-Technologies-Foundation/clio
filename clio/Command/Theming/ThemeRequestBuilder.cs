@@ -1,7 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
-using System.Text;
+using Clio.Common;
 using Clio.Theming;
 
 namespace Clio.Command.Theming;
@@ -17,12 +17,13 @@ internal static class ThemeRequestBuilder
 	/// Resolves the theme CSS from exactly one of the inline (<paramref name="cssContent"/>) or file
 	/// (<paramref name="cssContentFile"/>) inputs. An unsupplied string option is <c>null</c> (absent).
 	/// </summary>
+	/// <param name="fileSystem">The file system used to read <paramref name="cssContentFile"/>.</param>
 	/// <param name="cssContent">Inline CSS value (<c>null</c> when the flag was not supplied).</param>
 	/// <param name="cssContentFile">Path to a UTF-8 CSS file (<c>null</c>/blank when not supplied).</param>
 	/// <param name="resolved">On success, the resolved CSS string.</param>
 	/// <param name="error">On failure, a user-friendly diagnostic; otherwise <c>null</c>.</param>
 	/// <returns><c>true</c> when exactly one input resolved to a CSS string; otherwise <c>false</c>.</returns>
-	public static bool TryResolveCssContent(string cssContent, string cssContentFile,
+	public static bool TryResolveCssContent(IFileSystem fileSystem, string cssContent, string cssContentFile,
 		out string resolved, out string error) {
 		resolved = null;
 		error = null;
@@ -40,16 +41,16 @@ internal static class ThemeRequestBuilder
 			resolved = cssContent;
 			return true;
 		}
-		if (!File.Exists(cssContentFile)) {
+		if (!fileSystem.ExistsFile(cssContentFile)) {
 			error = $"CSS file not found: '{cssContentFile}'.";
 			return false;
 		}
 		try {
-			if (new FileInfo(cssContentFile).Length > ThemeParameterValidator.MaxCssContentBytes) {
+			if (fileSystem.GetFileSize(cssContentFile) > ThemeParameterValidator.MaxCssContentBytes) {
 				error = "Theme CSS content must be at most 1 MiB.";
 				return false;
 			}
-			resolved = File.ReadAllText(cssContentFile, Encoding.UTF8);
+			resolved = fileSystem.ReadAllText(cssContentFile);
 		}
 		catch (IOException ex) {
 			error = $"Could not read CSS file '{cssContentFile}': {ex.Message}";
