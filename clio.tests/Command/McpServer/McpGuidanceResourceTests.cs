@@ -1860,4 +1860,21 @@ public sealed class McpGuidanceResourceTests {
 		article.Text.Should().Contain("GetSchemaDesignItem returned an HTML error page",
 			because: "the routing row must be keyed to the exact symptom so the agent recognizes it");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The routing map points the run-a-process-button task at the run-process-button guide so an agent reaches the shipped contract from the Pages domain.")]
+	public void RoutingGuidanceResource_Should_Route_RunProcessButton_Task() {
+		// Arrange
+		RoutingGuidanceResource resource = new();
+
+		// Act
+		TextResourceContents article = resource.GetGuide().Should().BeOfType<TextResourceContents>().Subject;
+
+		// Assert
+		article.Text.Should().Contain("name=run-process-button",
+			because: "the routing map must direct the agent to the run-process-button guide");
+		article.Text.Should().Contain("runs a business process",
+			because: "the routing row must be keyed to the task wording so the agent recognizes it");
+	}
 }

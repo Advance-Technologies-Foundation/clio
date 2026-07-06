@@ -141,10 +141,12 @@ internal static class GuidanceCatalog {
 			["process-modeling"] = Create(
 				"process-modeling",
 				"""
-				Canonical MCP guidance for designing Creatio business processes (BPMN): 
-				the determinism contract (clio makes no LLM call; the agent owns intent->BPMN translation), 
-				the element catalog (data-id/label/purpose/setup fields), connection rules R1-R17 + can/can't matrix, 
-				the validate-then-drive build recipe, and the supported slice (Simple/Signal/Timer start + Read data).
+				Canonical MCP guidance for designing Creatio business processes (BPMN):
+				the determinism contract (clio makes no LLM call; the agent owns intent->BPMN translation),
+				the element catalog (data-id/label/purpose/setup fields), connection rules R1-R17 + can/can't matrix,
+				the validate-then-drive build recipe, the buildable slice (Simple/Signal start, end, user tasks +
+				sequence flows — gateways/conditional flows/timers not yet), and the modify-safety rules for
+				editing an existing process.
 				""",
 				ProcessModelingGuidanceResource.Guide,
 				featureGateType: typeof(ProcessModelingGuidanceResource)),
@@ -156,8 +158,7 @@ internal static class GuidanceCatalog {
 				key = CODE not caption (silent-skip warning), and the static-constant /
 				view-model-attribute-binding / current-record variants.
 				""",
-				RunProcessButtonGuidanceResource.Guide,
-				featureGateType: typeof(RunProcessButtonGuidanceResource)),
+				RunProcessButtonGuidanceResource.Guide),
 			["identity-assertion"] = Create(
 				"identity-assertion",
 				"Canonical MCP guidance for the Creatio identity-assertion / Identity Service V3 token-exchange "

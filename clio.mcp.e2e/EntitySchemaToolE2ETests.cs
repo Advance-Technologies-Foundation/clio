@@ -102,6 +102,10 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 			"modify-entity-schema-column should succeed when adding a valid own text-like column");
 		AssertIncludesInfoMessage(addResult,
 			"successful add mutation should emit progress output");
+		AssertIncludesPublishMessage(addResult,
+			"adding a column must publish the configuration so the new column compiles into configuration (ENG-90403)");
+		AssertIncludesODataBuildMessage(addResult,
+			"adding a column must request the OData entities rebuild so the new column is reachable over OData without a manual compile (ENG-92048)");
 		AssertSchemaPropertiesAfterAdd(schemaPropertiesAfterAdd, arrangeContext);
 		AssertAddedColumnProperties(addedColumnProperties, arrangeContext);
 		AssertCommandSucceeded(modifyResult,
