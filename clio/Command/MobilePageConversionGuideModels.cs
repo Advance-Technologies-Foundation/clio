@@ -418,6 +418,17 @@ public sealed class MobilePageConversionGuide {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public IReadOnlyList<AdaptiveLayoutGroup> AdaptiveLayout { get; init; }
 
+	/// <summary>
+	/// Every localized string the converted body references, keyed by resource name and resolved to its
+	/// en-US text (e.g. <c>{ "EmailsSentNewMetric_title": "Emails sent" }</c>). The converted mobileValues
+	/// carry the <c>#ResourceString(key)#</c> tokens verbatim (top-level captions AND nested ones like
+	/// <c>config.title</c>); register this whole map on the mobile page via <c>update-page resources</c> so
+	/// every token resolves. Null when the page references no resolvable localized strings.
+	/// </summary>
+	[JsonPropertyName("resourceStrings")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyDictionary<string, string> ResourceStrings { get; init; }
+
 	// ── Guidance ──────────────────────────────────────────────────────
 	[JsonPropertyName("constraints")]
 	public IReadOnlyList<string> Constraints { get; init; } = [];

@@ -17,7 +17,7 @@ public sealed class WebToMobileConversionServiceTests {
 
 	private static readonly IReadOnlySet<string> MobileTypes =
 		new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
-			"crt.Input", "crt.Toggle", "crt.RichTextEditor", "crt.List", "crt.FolderTreeActions", "crt.GridContainer", "crt.Label"
+			"crt.Input", "crt.Toggle", "crt.RichTextEditor", "crt.List", "crt.FolderTreeActions", "crt.GridContainer", "crt.Label", "crt.IndicatorWidget"
 		};
 
 	private static readonly IReadOnlySet<string> WebTypes =
@@ -1047,6 +1047,35 @@ public sealed class WebToMobileConversionServiceTests {
 		ElementMapEntry label = Element(guide, "TitleLabel");
 		label.CaptionResource.Should().BeNull();
 		label.MobileValues!.AsObject()["caption"]!.GetValue<string>().Should().Be("$HeaderCaption");
+	}
+
+	[Test]
+	[Description("Localized strings referenced ANYWHERE in an element's carried values — including NESTED ones (config.title, text.template) — are collected and resolved into guide.resourceStrings for registration, and the tokens stay verbatim in mobileValues.")]
+	public void Analyze_NestedResourceStrings_CollectedIntoResourceStrings() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "EmailsSentNewMetric", "type": "crt.IndicatorWidget",
+				  "caption": "#ResourceString(EmailsSentNewMetric_caption)#",
+				  "config": { "title": "#ResourceString(EmailsSentNewMetric_title)#",
+				              "text": { "template": "#ResourceString(EmailsSentNewMetric_template)#" } } } ] } ]
+			""",
+			resourcesJson: """
+			{
+			  "EmailsSentNewMetric_caption": { "en-US": "Emails sent metric" },
+			  "EmailsSentNewMetric_title": { "en-US": "Emails sent" },
+			  "EmailsSentNewMetric_template": { "en-US": "{0} sent" }
+			}
+			""");
+
+		MobilePageConversionGuide guide = Analyze(bundle, webByType: Reg(("crt.FlexContainer", true), ("crt.IndicatorWidget", false)));
+
+		guide.ResourceStrings.Should().NotBeNull();
+		guide.ResourceStrings!["EmailsSentNewMetric_title"].Should().Be("Emails sent", "a NESTED config.title token must be collected");
+		guide.ResourceStrings["EmailsSentNewMetric_template"].Should().Be("{0} sent", "a deeply nested text.template token must be collected");
+		guide.ResourceStrings["EmailsSentNewMetric_caption"].Should().Be("Emails sent metric");
+		// tokens stay verbatim in the carried values.
+		Element(guide, "EmailsSentNewMetric").MobileValues!.ToJsonString()
+			.Should().Contain("#ResourceString(EmailsSentNewMetric_title)#");
 	}
 
 	#endregion

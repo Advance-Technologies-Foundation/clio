@@ -64,7 +64,7 @@ public sealed class MobilePageConversionGuideTool {
 		"modelConfig / viewModelConfig (same data in full-object form, for reference; viewModelConfig already " +
 		"filtered to drop attributes of unsupported components), plus per-element elementMap (each insert carries " +
 		"prebuilt mobileValues — paste them verbatim to keep every mobile-supported property, then add only the value binding; " +
-		"a tab/label caption is carried verbatim in mobileValues and its resource is resolved into captionResource (key + en-US sourceValue) — register captionResource.key=sourceValue via update-page resources so the caption renders), " +
+		"localized strings (captions AND nested ones like config.title/text.template) are carried verbatim in mobileValues as #ResourceString tokens and collected+resolved into guide.resourceStrings ({key: en-US text}) — register that whole map via update-page resources so every token renders), " +
 		"plus pageBusinessRules (the source page's PAGE-level business rules converted for mobile — condition kept, only the " +
 		"hide/show/make-* actions whose elements survive; recreate each convertedRules[].rule with create-page-business-rule), " +
 		"plus requestConversions (component event-binding requests/actions converted for mobile — supported requests are already " +

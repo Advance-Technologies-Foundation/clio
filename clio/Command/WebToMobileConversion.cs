@@ -143,6 +143,10 @@ public static class WebToMobileAnalysisService {
 		//    survive on mobile; drop a rule whose every action drops (object-level rules are untouched).
 		PageBusinessRuleConversionInfo pageBusinessRules = ConvertPageBusinessRules(pageBusinessRulesProbe, elementMap);
 
+		// 8. Every localized string the converted body references (top-level captions AND nested tokens such
+		//    as config.title / text.template), resolved to its text — so the caller registers them all.
+		IReadOnlyDictionary<string, string> resourceStrings = CollectResourceStrings(elementMap, modelConfig, viewModelConfig, resources);
+
 		return new MobilePageConversionGuide {
 			SourcePage = sourcePage,
 			SourceType = SourceTypeFreedomWeb,
@@ -164,6 +168,7 @@ public static class WebToMobileAnalysisService {
 			PageBusinessRules = pageBusinessRules,
 			RequestConversions = requestConversions,
 			AdaptiveLayout = adaptiveLayout.Count > 0 ? adaptiveLayout : null,
+			ResourceStrings = resourceStrings.Count > 0 ? resourceStrings : null,
 			Constraints = BuildConstraints(webOnly, modelConfig is not null, viewModelConfig is not null, adaptiveLayout.Count > 0, templatePruned),
 			NextSteps = BuildNextSteps(modelConfig is not null || viewModelConfig is not null, adaptiveLayout.Count > 0),
 			GuidanceArticle = GuidanceArticleName,
@@ -990,6 +995,40 @@ public static class WebToMobileAnalysisService {
 			return (cultures["en-US"] ?? cultures.Properties().FirstOrDefault()?.Value)?.ToString();
 		}
 		return value.ToString();
+	}
+
+	/// <summary>
+	/// Collects every localized-string resource the converted body references — the <c>#ResourceString(key)#</c>
+	/// / <c>$Resources.Strings.key</c> tokens carried verbatim in the element mobileValues (top-level AND nested,
+	/// e.g. <c>config.title</c>) and in the data-section configs — and resolves each to its en-US text from the
+	/// source page's strings. Keys that do not resolve are skipped (the platform auto-provides some). The caller
+	/// registers this map on the mobile page so every carried token renders.
+	/// </summary>
+	private static IReadOnlyDictionary<string, string> CollectResourceStrings(
+		List<ElementMapEntry> elementMap, JsonNode modelConfig, JsonNode viewModelConfig, JObject resources) {
+		var result = new Dictionary<string, string>(StringComparer.Ordinal);
+		void Scan(string json) {
+			if (string.IsNullOrEmpty(json)) {
+				return;
+			}
+			foreach (string key in ResourceStringHelper.ExtractKeys(json)) {
+				if (result.ContainsKey(key)) {
+					continue;
+				}
+				string text = ResolveResourceString(resources, key);
+				if (!string.IsNullOrEmpty(text)) {
+					result[key] = text;
+				}
+			}
+		}
+		foreach (ElementMapEntry entry in elementMap) {
+			if (entry.MobileValues is not null) {
+				Scan(entry.MobileValues.ToJsonString());
+			}
+		}
+		Scan(modelConfig?.ToJsonString());
+		Scan(viewModelConfig?.ToJsonString());
+		return result;
 	}
 
 	/// <summary>

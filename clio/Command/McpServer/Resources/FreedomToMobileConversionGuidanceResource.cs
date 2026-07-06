@@ -62,6 +62,9 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			    mobileValues (the container's adaptive columns into its own values, each child's placement into
 			    elementMap[].mobileValues.layoutConfig.adaptive) — nothing separate to apply. Present it at the
 			    gate so the user can adjust or decline. Null when there is no multi-column grid container.
+			  - resourceStrings — every localized string the converted body references (top-level captions AND
+			    nested tokens like config.title / text.template), keyed by resource name and resolved to its
+			    en-US text. Register this whole map via update-page `resources` so every #ResourceString token renders.
 			  - constraints + nextSteps — the hard mobile rules and the ordered flow.
 
 			─────────────────────────────────────────────────────────────
@@ -124,11 +127,12 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			         into the crt.List's itemLayout (title = first column, body = the rest); see the
 			         componentSuggestions note and the mobileContracts example. If the template already provides
 			         the List/ListItem, configure them by merge-by-name instead of inserting (see the merge branch).
-			     If captionResource is present, register captionResource.key = captionResource.sourceValue (the
-			     resolved en-US text) with update-page `resources` — do NOT register a #ResourceString(...)# token
-			     as the value. mobileValues already carries the element's `caption` (its original web resource
-			     token, e.g. "#ResourceString(<key>)#") verbatim — that same key is captionResource.key, so the
-			     caption renders once you register it. Consult mobileContracts / get-component-info (schema-type "mobile") only
+			     The mobileValues carry every localized string verbatim as #ResourceString(key)# tokens — both a
+			     top-level caption AND nested ones (e.g. config.title, text.template). Register them ALL: pass
+			     guide.resourceStrings (a { key: en-US text } map covering the whole converted body) to update-page
+			     `resources` in one call — do NOT register a #ResourceString(...)# token as the value, and do not
+			     hand-pick individual keys. A token whose key is not registered renders blank. Consult
+			     mobileContracts / get-component-info (schema-type "mobile") only
 			     for those not-prebuilt parts. validate-page is the backstop — it
 			     rejects an insert that drops a required property (e.g. a field caption, or a lookup-path
 			     attribute's type) and update-page refuses to save.
