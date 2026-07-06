@@ -44,6 +44,7 @@ public class UnregAppCommandTests : BaseCommandTests<UnregAppOptions>
 	public override void TearDown() {
 		Console.SetIn(_originalConsoleIn);
 		Console.SetOut(_originalConsoleOut);
+		_consoleOutput?.Dispose();
 		_settingsRepository.ClearReceivedCalls();
 		_logger.ClearReceivedCalls();
 		base.TearDown();

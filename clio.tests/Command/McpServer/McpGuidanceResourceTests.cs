@@ -498,12 +498,16 @@ public sealed class McpGuidanceResourceTests {
 			because: "handler guidance should optimize sidebar contracts into a compact AI-readable table");
 		article.Text.Should().Contain("| User-visible name | Source reality | Params | Notes |",
 			because: "handler guidance should isolate user-visible and source-runtime mismatches in a dedicated AI-readable table");
-		article.Text.Should().Contain("| `crt.ShowDialog` | source request is `crt.ShowDialogRequest`, handled by `crt.ShowDialogHandler` | `dialogConfig` with `message`, `actions`, optional `title` | in code author `type: \"crt.ShowDialogRequest\"`; `crt.ShowDialog` is the user-visible catalog label |",
+		article.Text.Should().Contain("| `crt.ShowDialog` | source request is `crt.ShowDialogRequest`, handled by `crt.ShowDialogHandler` | `dialogConfig.data` with `message`, `actions`, optional `title` | in code author `type: \"crt.ShowDialogRequest\"`; `crt.ShowDialog` is the user-visible catalog label |",
 			because: "handler guidance should disambiguate the user-visible dialog label from the source request type with an explicit authoring rule");
-		article.Text.Should().Contain("Minimal `dialogConfig` shape:",
-			because: "handler guidance should show a concrete minimal dialog payload instead of only naming the config field");
+		article.Text.Should().Contain("`message`, `actions`, and `title` go under `dialogConfig.data`, NOT directly on `dialogConfig`",
+			because: "handler guidance must steer authors to nest the dialog payload under dialogConfig.data so the message renders (ENG-91748)");
 		article.Text.Should().Contain("type: \"crt.ShowDialogRequest\"",
 			because: "handler guidance should show the actual request type inside the minimal dialog example");
+		article.Text.Should().MatchRegex(@"dialogConfig:\s*\{\s*data:\s*\{",
+			because: "the minimal dialog example must nest the payload under dialogConfig.data, not flat on dialogConfig (ENG-91748)");
+		article.Text.Should().NotMatchRegex(@"dialogConfig:\s*\{\s*(message|title|actions):",
+			because: "the handler guide must never reintroduce the flat dialogConfig payload shape that caused the empty-dialog bug (ENG-91748)");
 		article.Text.Should().Contain("Anti-patterns",
 			because: "handler guidance should call out incorrect handler shapes and request usage explicitly");
 		article.Text.Should().Contain("Preserve the exact `/**SCHEMA_HANDLERS*/` comment markers around the handlers array;",
@@ -516,6 +520,10 @@ public sealed class McpGuidanceResourceTests {
 			because: "handler guidance should stop AI from inventing placeholder subscription services in schema code");
 		article.Text.Should().Contain("Do NOT write `type: \"crt.ShowDialog\"` in imperative request code; use `type: \"crt.ShowDialogRequest\"`.",
 			because: "handler guidance should explicitly forbid the user-visible show-dialog label in imperative request code");
+		article.Text.Should().Contain("\"just show a short confirmation message\" is a `crt.ShowDialogRequest`, NOT a browser dialog",
+			because: "handler guidance must route a short confirmation message to crt.ShowDialogRequest so the agent does not fall back to alert() (ENG-91748)");
+		article.Text.Should().Contain("Do NOT use `alert(...)`, `window.alert(...)`, `confirm(...)`, or `prompt(...)` to show a message from a handler",
+			because: "handler guidance must forbid raw browser dialog primitives in deployed page-body handlers (ENG-91748)");
 		article.Text.Should().Contain("BEFORE SAVE CHECKLIST",
 			because: "handler guidance should give AI callers a compact verification gate before sync-pages");
 		article.Text.Should().Contain("Are the exact `/**SCHEMA_HANDLERS*/` markers still present around the handlers array?",
@@ -705,6 +713,12 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should make the dialog stop-rule explicit for request-dispatching handlers");
 		article.Text.Should().Contain("return await sdk.HandlerChainService.instance.process({",
 			because: "the guide should provide a copyable HandlerChainService example for SDK-oriented code");
+		article.Text.Should().MatchRegex(@"dialogConfig:\s*\{\s*data:\s*\{\s*message:",
+			because: "the crt.ShowDialogRequest example must nest message/actions under dialogConfig.data, locking the ENG-91748 fix against a flat-shape regression");
+		article.Text.Should().Contain("wraps that same config one level deeper under `dialogConfig.data`",
+			because: "the guide must keep the MessageDialogConfig contrast rule distinguishing crt.ShowDialogRequest (data-wrapped) from the flat DialogService.open shape (ENG-91748)");
+		article.Text.Should().NotMatchRegex(@"dialogConfig:\s*\{\s*(message|title|actions):",
+			because: "the guide must never reintroduce the flat dialogConfig payload shape that caused the empty-dialog bug (ENG-91748)");
 		article.Text.Should().Contain("Inner handler/body snippet only: ProcessEngineService with model query helpers:",
 			because: "fragment-only sdk snippets should say they are not standalone schema modules");
 		article.Text.Should().Contain("Inner handler/body snippet only: DialogService from SDK code:",
@@ -1799,5 +1813,82 @@ public sealed class McpGuidanceResourceTests {
 			because: "the catalog entry must carry the guidance text article");
 		entry.Article.Uri.Should().Be("docs://mcp/guides/server-to-server-oauth",
 			because: "the article URI in the catalog must match the resource URI");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a canonical MCP guidance article for managing package dependencies and the schema-designer HTML-error recovery (ENG-91314).")]
+	public void PackageDependenciesGuidanceResource_Should_Return_Canonical_Recovery_Guide() {
+		// Arrange
+		PackageDependenciesGuidanceResource resource = new();
+
+		// Act
+		ResourceContents result = resource.GetGuide();
+		TextResourceContents article = result.Should().BeOfType<TextResourceContents>(
+			because: "the package-dependencies guide should be returned as a plain-text MCP resource").Subject;
+
+		// Assert
+		article.Uri.Should().Be("docs://mcp/guides/package-dependencies",
+			because: "the resource should expose a stable MCP URI for package-dependency guidance");
+		article.MimeType.Should().Be("text/plain",
+			because: "the guide should be discoverable as plain text");
+		article.Text.Should().Contain("GetSchemaDesignItem returned an HTML error page",
+			because: "the guide must be keyed to the exact symptom an agent sees so it maps the error to this recovery");
+		article.Text.Should().Contain("add-package-dependency",
+			because: "the guide must point at the one-call recovery tool");
+		article.Text.Should().Contain("remove-package-dependency",
+			because: "the guide must document the symmetric cleanup tool");
+		article.Text.Should().Contain("CrtLeadOppMgmtApp",
+			because: "the guide should give the canonical Opportunity-layer example that misdirected agents before");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("GuidanceCatalog exposes package-dependencies so AI callers can retrieve the dependency-recovery guidance by name (ENG-91314).")]
+	public void GuidanceCatalog_Should_Include_Package_Dependencies_Entry() {
+		// Act
+		bool found = GuidanceCatalog.TryGet("package-dependencies", out GuidanceCatalogEntry entry);
+
+		// Assert
+		found.Should().BeTrue(
+			because: "the catalog must expose package-dependencies so get-guidance can return it by name");
+		entry.Name.Should().Be("package-dependencies",
+			because: "the catalog entry name must match the lookup key exactly");
+		entry.Article.Uri.Should().Be("docs://mcp/guides/package-dependencies",
+			because: "the article URI in the catalog must match the resource URI");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The routing map points the package-dependencies symptom at its guide so an agent reaches it from the schema-designer failure (ENG-91314).")]
+	public void RoutingGuidanceResource_Should_Route_Package_Dependencies_Symptom() {
+		// Arrange
+		RoutingGuidanceResource resource = new();
+
+		// Act
+		TextResourceContents article = resource.GetGuide().Should().BeOfType<TextResourceContents>().Subject;
+
+		// Assert
+		article.Text.Should().Contain("name=package-dependencies",
+			because: "the routing map must direct the agent to the package-dependencies guide");
+		article.Text.Should().Contain("GetSchemaDesignItem returned an HTML error page",
+			because: "the routing row must be keyed to the exact symptom so the agent recognizes it");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The routing map points the run-a-process-button task at the run-process-button guide so an agent reaches the shipped contract from the Pages domain.")]
+	public void RoutingGuidanceResource_Should_Route_RunProcessButton_Task() {
+		// Arrange
+		RoutingGuidanceResource resource = new();
+
+		// Act
+		TextResourceContents article = resource.GetGuide().Should().BeOfType<TextResourceContents>().Subject;
+
+		// Assert
+		article.Text.Should().Contain("name=run-process-button",
+			because: "the routing map must direct the agent to the run-process-button guide");
+		article.Text.Should().Contain("runs a business process",
+			because: "the routing row must be keyed to the task wording so the agent recognizes it");
 	}
 }

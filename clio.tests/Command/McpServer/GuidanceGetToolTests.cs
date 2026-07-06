@@ -285,6 +285,10 @@ public sealed class GuidanceGetToolTests {
 			because: "Step 0 must default to web when the requirement does not name a surface");
 		result.Article.Text.Should().Contain("whenToUse",
 			because: "the guide must steer selection between similar components using the producer's whenToUse/whenNotToUse selection-metadata (ENG-91134 / Solution A)");
+		result.Article.Text.Should().Contain("showing a user-facing message/confirmation/info/success/error popup",
+			because: "the gate table must route a 'show a confirmation message' requirement into page-schema-handlers so the agent uses crt.ShowDialogRequest (ENG-91748)");
+		result.Article.Text.Should().Contain("NEVER use `alert(...)`, `window.alert(...)`, `confirm(...)`, or `prompt(...)`",
+			because: "the page modification guide must forbid raw browser dialog primitives in page-body handlers so the agent stops emitting alert() (ENG-91748)");
 	}
 
 	[Test]
@@ -629,8 +633,8 @@ public sealed class GuidanceGetToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Hides process-modeling and run-process-button from availableGuides when the process-designer feature gate is disabled.")]
-	public void GuidanceGet_Should_Hide_ProcessDesigner_Guides_From_AvailableGuides_When_Gate_Disabled() {
+	[Description("Hides process-modeling from availableGuides when the process-designer feature gate is disabled, while the ungated run-process-button guide stays listed.")]
+	public void GuidanceGet_Should_Hide_ProcessModeling_From_AvailableGuides_When_Gate_Disabled() {
 		// Arrange
 		// _featureToggleService is a bare substitute: IsEnabled(...) returns false, so the gated guides are disabled.
 		GuidanceGetTool tool = new(_featureToggleService);
@@ -643,8 +647,8 @@ public sealed class GuidanceGetToolTests {
 			because: "an unknown guidance name must not resolve");
 		result.AvailableGuides.Should().NotContain("process-modeling",
 			because: "process-modeling is gated behind a disabled process-designer flag and must not leak through get-guidance");
-		result.AvailableGuides.Should().NotContain("run-process-button",
-			because: "run-process-button is gated behind a disabled process-designer flag and must not leak through get-guidance");
+		result.AvailableGuides.Should().Contain("run-process-button",
+			because: "run-process-button documents the shipped run-process scenario (get-process-signature + update-page) and is deliberately ungated, like the gps tool itself");
 		result.AvailableGuides.Should().Contain("app-modeling",
 			because: "ungated guidance entries must stay listed regardless of feature-toggle state");
 	}
@@ -670,8 +674,8 @@ public sealed class GuidanceGetToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Treats run-process-button as an unknown guide when the process-designer feature gate is disabled.")]
-	public void GuidanceGet_Should_Reject_RunProcessButton_As_Unknown_When_Gate_Disabled() {
+	[Description("Resolves run-process-button while the process-designer feature gate is disabled: the guide documents the shipped run-process scenario and is not gated.")]
+	public void GuidanceGet_Should_Resolve_RunProcessButton_When_Gate_Disabled() {
 		// Arrange
 		GuidanceGetTool tool = new(_featureToggleService);
 
@@ -679,21 +683,20 @@ public sealed class GuidanceGetToolTests {
 		GuidanceGetResponse result = tool.GetGuidance(new GuidanceGetArgs("run-process-button")).Result;
 
 		// Assert
-		result.Success.Should().BeFalse(
-			because: "a gated guide must resolve as unknown while its feature flag is off");
-		result.Article.Should().BeNull(
-			because: "a disabled gated guide must not return its article");
-		result.Error.Should().Contain("Unknown guidance 'run-process-button'",
-			because: "the failure must name the rejected guide so the disabled gate is indistinguishable from a non-existent guide");
+		result.Success.Should().BeTrue(
+			because: "run-process-button is ungated — its consumers (update-page, page-modification, page-schema-handlers, mobile-page guides) are public and must never hit a dead pointer");
+		result.Article.Should().NotBeNull(
+			because: "the ungated guide must return its article regardless of the process-designer flag");
+		result.Article!.Uri.Should().Be("docs://mcp/guides/run-process-button",
+			because: "the canonical run-process-button article URI must be stable");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Lists and resolves process-modeling and run-process-button when the process-designer feature gate is enabled.")]
+	[Description("Lists and resolves process-modeling when the process-designer feature gate is enabled; the ungated run-process-button resolves alongside it.")]
 	public async Task GuidanceGet_Should_List_And_Resolve_ProcessDesigner_Guides_When_Gate_Enabled() {
 		// Arrange
 		_featureToggleService.IsEnabled(typeof(ProcessModelingGuidanceResource)).Returns(true);
-		_featureToggleService.IsEnabled(typeof(RunProcessButtonGuidanceResource)).Returns(true);
 		GuidanceGetTool tool = new(_featureToggleService);
 
 		// Act
@@ -705,13 +708,13 @@ public sealed class GuidanceGetToolTests {
 		listing.AvailableGuides.Should().Contain("process-modeling",
 			because: "process-modeling must be listed when the process-designer gate is enabled");
 		listing.AvailableGuides.Should().Contain("run-process-button",
-			because: "run-process-button must be listed when the process-designer gate is enabled");
+			because: "run-process-button is ungated and must always be listed");
 		processModeling.Success.Should().BeTrue(
 			because: "process-modeling must resolve when the process-designer gate is enabled");
 		processModeling.Article!.Uri.Should().Be("docs://mcp/guides/process-modeling",
 			because: "the enabled process-modeling guide must return its canonical article URI");
 		runProcessButton.Success.Should().BeTrue(
-			because: "run-process-button must resolve when the process-designer gate is enabled");
+			because: "run-process-button is ungated and must resolve regardless of the gate");
 		runProcessButton.Article!.Uri.Should().Be("docs://mcp/guides/run-process-button",
 			because: "the enabled run-process-button guide must return its canonical article URI");
 	}

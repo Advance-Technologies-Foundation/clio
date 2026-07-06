@@ -36,7 +36,6 @@ public interface IProcessDescriber {
 
 /// <inheritdoc cref="IProcessDescriber" />
 public sealed class ServerProcessDescriber(
-	ILogger logger,
 	IApplicationClient applicationClient,
 	IDataProvider dataProvider,
 	IServiceUrlBuilder serviceUrlBuilder) : IProcessDescriber {
@@ -251,6 +250,14 @@ public sealed class DescribedParameter {
 	[JsonPropertyName("name")]
 	public string Name { get; set; }
 
+	/// <summary>Parameter caption (title); null when unset.</summary>
+	[JsonPropertyName("caption")]
+	public string Caption { get; set; }
+
+	/// <summary>Parameter description (free-text annotation); null when unset.</summary>
+	[JsonPropertyName("description")]
+	public string Description { get; set; }
+
 	/// <summary>Parameter UId.</summary>
 	[JsonPropertyName("uid")]
 	public string UId { get; set; }
@@ -258,6 +265,22 @@ public sealed class DescribedParameter {
 	/// <summary>Data value type name (for example <c>ShortText</c>, <c>Integer</c>, <c>Lookup</c>); null when unset.</summary>
 	[JsonPropertyName("type")]
 	public string Type { get; set; }
+
+	/// <summary>
+	/// Direction: <c>In</c>, <c>Out</c>, <c>Variable</c>, or <c>Internal</c>. Together with <see cref="IsResult"/>
+	/// lets a caller tell an element's output parameters (mappable as a source) from its inputs. Omitted when the
+	/// server (an older <c>clioprocessbuilder</c>) does not report it.
+	/// </summary>
+	[JsonPropertyName("direction")]
+	public string Direction { get; set; }
+
+	/// <summary>
+	/// True when the parameter is a result (output) of its element. A parameter is an output — and therefore usable
+	/// as a mapping source — when <see cref="Direction"/> is <c>Out</c> OR this flag is true. Omitted when the server
+	/// (an older <c>clioprocessbuilder</c>) does not report it.
+	/// </summary>
+	[JsonPropertyName("isResult")]
+	public bool? IsResult { get; set; }
 
 	/// <summary>For a lookup parameter: the referenced object (entity schema) name (for example <c>City</c>); null otherwise.</summary>
 	[JsonPropertyName("referenceSchema")]

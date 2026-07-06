@@ -288,8 +288,15 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 			if (IsHtmlResponse(rawResponse)) {
 				throw new InvalidOperationException(
 					$"{methodName} returned an HTML error page instead of JSON. " +
-					$"The Creatio server encountered an unhandled error, possibly due to a stale database table from a previously deleted package. " +
-					$"Use find-entity-schema to check whether the schema was partially created before retrying.",
+					"The Creatio server encountered an unhandled error. Two common causes, check them in this order: " +
+					"(1) the target package is MISSING A DEPENDENCY on the package/app that owns the upper layer of " +
+					"the object you are extending (for example extending the Opportunity layer without depending on " +
+					"CrtLeadOppMgmtApp) — add the owning package with the add-package-dependency command/tool, then " +
+					"retry the operation; " +
+					"(2) a stale database table left by a previously deleted package — use find-entity-schema to check " +
+					"whether the schema was partially created before retrying. " +
+					"Do NOT write into the owning (managed) package and do NOT fall back to raw SQL/OData/DataService. " +
+					"MCP agents: read get-guidance name=package-dependencies for the full recovery path.",
 					rawException);
 			}
 			string correctedJson = _jsonConverter.CorrectJson(rawResponse);
