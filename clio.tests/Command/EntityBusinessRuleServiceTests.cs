@@ -746,6 +746,259 @@ public sealed class EntityBusinessRuleServiceTests {
 		results[2].Error.Should().Contain("Add-on save failed.", because: "all converted rules share the same save error");
 	}
 
+	[TestCase("", "UsrOrder", "package-name is required.")]
+	[TestCase("UsrPkg", "", "entity-schema-name is required.")]
+	[Category("Unit")]
+	[Description("Rejects missing read request-level fields before remote dependencies are invoked.")]
+	public void Read_Should_Reject_Request_Level_Guards(
+		string packageName,
+		string entitySchemaName,
+		string expectedMessage) {
+		// Arrange
+		EntityBusinessRulesReadRequest request = new(packageName, entitySchemaName);
+
+		// Act
+		Action act = () => _service.Read(request);
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage(expectedMessage,
+				because: "read request guards must run before any remote call");
+		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().GetSchema(default!);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Reads the persisted rules through the correct add-on schema request (BusinessRule addon, EntitySchemaManager, full hierarchy) and maps them to read models.")]
+	public void Read_Should_Return_Persisted_Rules_Through_Correct_Addon_Request() {
+		// Arrange
+		EntityBusinessRulesReadRequest request = new("UsrPkg", "UsrOrder");
+
+		// Act
+		IReadOnlyList<BusinessRuleReadModel> models = _service.Read(request);
+
+		// Assert
+		models.Should().ContainSingle(because: "the fixture add-on schema persists exactly one parent rule");
+		models[0].Name.Should().Be("BusinessRule_old",
+			because: "the read model must carry the persisted internal rule name as the update/delete match key");
+		models[0].Caption.Should().Be("Existing rule",
+			because: "the read model must carry the persisted caption");
+		models[0].Convertible.Should().BeTrue(
+			because: "an empty-condition rule with no actions is representable by the friendly contract");
+		_addonSchemaDesignerClient.Received(1).GetSchema(
+			Arg.Is<AddonGetRequestDto>(dto =>
+				dto.AddonName == "BusinessRule"
+				&& dto.TargetSchemaUId == Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
+				&& dto.TargetParentSchemaUId == Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc")
+				&& dto.TargetPackageUId == Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+				&& dto.TargetSchemaManagerName == "EntitySchemaManager"
+				&& dto.UseFullHierarchy));
+		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().SaveSchema(default!);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Fails a rule without a name as an isolated per-rule failure result instead of throwing, and performs no add-on work when it is the only rule.")]
+	public void Update_Should_Fail_Per_Rule_Without_Save_When_Name_Is_Missing() {
+		// Arrange
+		EntityBusinessRulesBatchRequest request = new(
+			"UsrPkg",
+			"UsrOrder",
+			[CreateRule(caption: "No name")]);
+
+		// Act
+		IReadOnlyList<BusinessRuleBatchItemResult> results = _service.Update(request);
+
+		// Assert
+		results.Should().ContainSingle(because: "one input rule yields one outcome");
+		results[0].Success.Should().BeFalse(because: "update requires the rule name as the match key");
+		results[0].Name.Should().Be("No name",
+			because: "a rule without a name is identified by its caption in the outcome");
+		results[0].Error.Should().Be("name is required to update a business rule.",
+			because: "the failure must tell the caller the match key is missing");
+		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().GetSchema(default!);
+		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().SaveSchema(default!);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Replaces the matched rule in place preserving its persisted rule and case uIds, trims the caller-supplied name, applies the explicit enabled=false intent, upserts the caption resource, and saves exactly once.")]
+	public void Update_Should_Replace_Existing_Rule_Preserving_Identity_And_Honoring_Enabled() {
+		// Arrange
+		EntityBusinessRulesBatchRequest request = new(
+			"UsrPkg",
+			"UsrOrder",
+			[
+				CreateRule(caption: "Updated caption") with {
+					Name = " BusinessRule_old ",
+					Enabled = false
+				}
+			]);
+
+		// Act
+		IReadOnlyList<BusinessRuleBatchItemResult> results = _service.Update(request);
+
+		// Assert
+		results.Should().ContainSingle(because: "one input rule yields one outcome");
+		results[0].Success.Should().BeTrue(because: "the trimmed name matches the persisted rule");
+		results[0].Name.Should().Be("BusinessRule_old",
+			because: "the caller-supplied name must be trimmed before matching and reporting");
+		_savedAddonSchema.Should().NotBeNull(because: "a matched update must persist the mutated metadata");
+		using JsonDocument metaData = JsonDocument.Parse(_savedAddonSchema!.MetaData);
+		JsonElement[] rules = [.. metaData.RootElement.GetProperty("rules").EnumerateArray()];
+		rules.Should().ContainSingle(because: "the matched rule is replaced in place without adding new rules");
+		rules[0].GetProperty("uId").GetString().Should().Be("existing-rule",
+			because: "the persisted rule uId must be preserved so the platform stores a short diff");
+		rules[0].GetProperty("name").GetString().Should().Be("BusinessRule_old",
+			because: "the replacement keeps the persisted internal rule name");
+		rules[0].GetProperty("enabled").GetBoolean().Should().BeFalse(
+			because: "the caller's explicit enabled=false intent must be applied");
+		rules[0].GetProperty("caption").GetString().Should().Be("Updated caption",
+			because: "the replacement carries the new caption");
+		rules[0].GetProperty("cases")[0].GetProperty("uId").GetString().Should().Be("existing-case",
+			because: "the persisted case uId must be grafted onto the replacement's single case");
+		_savedAddonSchema.Resources.Should().Contain(resource =>
+				resource.Key == "existing-rule.Caption" && resource.Value[0].Value == "Updated caption",
+			because: "the caption resource must be upserted with the new caption");
+		_addonSchemaDesignerClient.Received(1).SaveSchema(Arg.Any<AddonSchemaDto>());
+		_addonSchemaDesignerClient.Received(1).ResetClientScriptCache();
+		_addonSchemaDesignerClient.Received(1).BuildConfiguration();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Isolates a per-rule validation failure inside an update batch: the invalid rule fails alone while the valid rule is still updated with a single save.")]
+	public void Update_Should_Isolate_Validation_Failure_And_Still_Save_Valid_Rules() {
+		// Arrange
+		EntityBusinessRulesBatchRequest request = new(
+			"UsrPkg",
+			"UsrOrder",
+			[
+				CreateRule(caption: "Good rule") with { Name = "BusinessRule_old" },
+				CreateRule(caption: "Bad rule", leftPath: "MissingStatus") with { Name = "BusinessRule_bad" }
+			]);
+
+		// Act
+		IReadOnlyList<BusinessRuleBatchItemResult> results = _service.Update(request);
+
+		// Assert
+		results.Should().HaveCount(2, because: "every input rule gets an outcome in input order");
+		results[0].Success.Should().BeTrue(because: "the valid rule must be updated despite the failing sibling");
+		results[1].Success.Should().BeFalse(because: "the second rule references an unknown attribute");
+		results[1].Error.Should().Contain("MissingStatus",
+			because: "the validation failure keeps its own error message");
+		_addonSchemaDesignerClient.Received(1).SaveSchema(Arg.Any<AddonSchemaDto>());
+	}
+
+	[TestCase(true)]
+	[TestCase(false)]
+	[Category("Unit")]
+	[Description("Rejects delete requests without rule names before any remote schema or add-on work starts.")]
+	public void Delete_Should_Reject_When_RuleNames_Are_Missing(bool useNullList) {
+		// Arrange
+		EntityBusinessRulesDeleteRequest request = new(
+			"UsrPkg",
+			"UsrOrder",
+			useNullList ? null! : []);
+
+		// Act
+		Action act = () => _service.Delete(request);
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("rule-names is required and must contain at least one rule name.",
+				because: "delete without rule names is a request-level error");
+		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().GetSchema(default!);
+		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().SaveSchema(default!);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Deletes the named rule and its caption resource through the correct add-on schema request, saving exactly once.")]
+	public void Delete_Should_Remove_Rule_And_Caption_Resource_When_Name_Matches() {
+		// Arrange
+		EntityBusinessRulesDeleteRequest request = new("UsrPkg", "UsrOrder", ["BusinessRule_old"]);
+
+		// Act
+		IReadOnlyList<BusinessRuleBatchItemResult> results = _service.Delete(request);
+
+		// Assert
+		results.Should().ContainSingle(because: "one input name yields one outcome");
+		results[0].Success.Should().BeTrue(because: "the name matches the persisted rule");
+		_addonSchemaDesignerClient.Received(1).GetSchema(
+			Arg.Is<AddonGetRequestDto>(dto =>
+				dto.AddonName == "BusinessRule"
+				&& dto.TargetSchemaManagerName == "EntitySchemaManager"
+				&& dto.UseFullHierarchy));
+		_savedAddonSchema.Should().NotBeNull(because: "a matched delete must persist the mutated metadata");
+		using JsonDocument metaData = JsonDocument.Parse(_savedAddonSchema!.MetaData);
+		metaData.RootElement.GetProperty("rules").GetArrayLength().Should().Be(0,
+			because: "the only persisted rule was deleted");
+		_savedAddonSchema.Resources.Should().NotContain(resource => resource.Key == "existing-rule.Caption",
+			because: "the deleted rule's caption resource must be removed");
+		_addonSchemaDesignerClient.Received(1).SaveSchema(Arg.Any<AddonSchemaDto>());
+		_addonSchemaDesignerClient.Received(1).ResetClientScriptCache();
+		_addonSchemaDesignerClient.Received(1).BuildConfiguration();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Strips caller-supplied block uIds on create so fresh block identities are minted, validating a stripped copy instead of the caller's instance.")]
+	public void Create_Should_Strip_Caller_Block_UIds_When_Rule_Carries_Them() {
+		// Arrange
+		const string conditionUId = "99999999-9999-9999-9999-999999999991";
+		const string actionUId = "99999999-9999-9999-9999-999999999992";
+		BusinessRule rule = new(
+			"Strip uIds",
+			new BusinessRuleConditionGroup(
+				"AND",
+				[
+					new BusinessRuleCondition(
+						new BusinessRuleExpression("AttributeValue", "Status", null),
+						"equal",
+						new BusinessRuleExpression("Const", null, JsonSerializer.Deserialize<JsonElement>("\"Draft\""))) {
+						UId = conditionUId
+					}
+				]),
+			[
+				new MakeRequiredBusinessRuleAction(["Owner"]) { UId = actionUId }
+			]);
+		EntityBusinessRuleCreateRequest request = new("UsrPkg", "UsrOrder", rule);
+
+		// Act
+		_service.Create(request);
+
+		// Assert
+		_lookupReferenceValidator.Received(1).Validate(
+			Arg.Is<BusinessRule>(validated => !ReferenceEquals(validated, rule)),
+			Arg.Any<IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor>>());
+		using JsonDocument metaData = JsonDocument.Parse(_savedAddonSchema!.MetaData);
+		JsonElement createdRule = metaData.RootElement.GetProperty("rules")[1];
+		createdRule.GetProperty("cases")[0].GetProperty("condition").GetProperty("conditions")[0]
+			.GetProperty("uId").GetString().Should().NotBe(conditionUId,
+				because: "create must mint a fresh condition uId instead of honoring the caller-supplied one");
+		createdRule.GetProperty("cases")[0].GetProperty("actions")[0]
+			.GetProperty("uId").GetString().Should().NotBe(actionUId,
+				because: "create must mint a fresh action uId instead of honoring the caller-supplied one");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Passes the caller's rule instance through unchanged on create when it carries no block uIds, avoiding a needless copy.")]
+	public void Create_Should_Keep_Same_Rule_Instance_When_No_Block_UIds_Present() {
+		// Arrange
+		BusinessRule rule = CreateRule();
+		EntityBusinessRuleCreateRequest request = new("UsrPkg", "UsrOrder", rule);
+
+		// Act
+		_service.Create(request);
+
+		// Assert
+		_lookupReferenceValidator.Received(1).Validate(
+			Arg.Is<BusinessRule>(validated => ReferenceEquals(validated, rule)),
+			Arg.Any<IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor>>());
+	}
+
 	private static EntityDesignSchemaDto BuildEntitySchema() {
 		return new EntityDesignSchemaDto {
 			UId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),

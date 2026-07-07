@@ -20,12 +20,13 @@ The feature is expected to scale across two dimensions:
 - edit rule
 - delete rule
 
+All four operations are supported for both scopes.
 
 ## Current Support
 
-The current feature support is limited to:
-
-- create entity-level business rule - [create-entity-business-rules-spec.md](./create-entity-business-rules-spec.md)
+- create entity-level business rules - [create-entity-business-rules-spec.md](./create-entity-business-rules-spec.md)
+- create page-level business rules - [create-page-business-rules-spec.md](./create-page-business-rules-spec.md)
+- read / update / delete for both scopes - [business-rules-crud-spec.md](./business-rules-crud-spec.md)
 
 ## Batch creation
 

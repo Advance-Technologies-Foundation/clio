@@ -30,6 +30,31 @@ public interface IPageBusinessRuleService {
 	/// <param name="request">Batch page business-rule creation input.</param>
 	/// <returns>Per-rule outcomes, one entry per input rule, in input order.</returns>
 	IReadOnlyList<BusinessRuleBatchItemResult> Create(PageBusinessRulesBatchRequest request);
+
+	/// <summary>
+	/// Reads every business rule persisted for the page schema (full package hierarchy).
+	/// </summary>
+	/// <param name="request">Read input.</param>
+	/// <returns>One read model per parent rule, in persisted order.</returns>
+	IReadOnlyList<BusinessRuleReadModel> Read(PageBusinessRulesReadRequest request);
+
+	/// <summary>
+	/// Updates rules matched by <c>name</c> on the same package and page schema in a single add-on
+	/// round-trip. Matched rules are fully replaced with stable identity preserved
+	/// (rule/case/group/trigger uIds plus caller-supplied block uIds); per-rule failures
+	/// (validation, unknown name) are isolated and reported.
+	/// </summary>
+	/// <param name="request">Batch page business-rule update input; every rule requires <c>name</c>.</param>
+	/// <returns>Per-rule outcomes, one entry per input rule, in input order.</returns>
+	IReadOnlyList<BusinessRuleBatchItemResult> Update(PageBusinessRulesBatchRequest request);
+
+	/// <summary>
+	/// Deletes rules by name on the same package and page schema in a single add-on round-trip.
+	/// Unknown names are isolated per-item failures.
+	/// </summary>
+	/// <param name="request">Delete input.</param>
+	/// <returns>Per-name outcomes, one entry per input name, in input order.</returns>
+	IReadOnlyList<BusinessRuleBatchItemResult> Delete(PageBusinessRulesDeleteRequest request);
 }
 
 /// <summary>
@@ -48,6 +73,23 @@ public sealed record PageBusinessRulesBatchRequest(
 	string PackageName,
 	string PageSchemaName,
 	IReadOnlyList<BusinessRule> Rules
+);
+
+/// <summary>
+/// Describes the package and page schema whose business rules are read.
+/// </summary>
+public sealed record PageBusinessRulesReadRequest(
+	string PackageName,
+	string PageSchemaName
+);
+
+/// <summary>
+/// Describes the package, page schema, and rule names to delete in one batch.
+/// </summary>
+public sealed record PageBusinessRulesDeleteRequest(
+	string PackageName,
+	string PageSchemaName,
+	IReadOnlyList<string> RuleNames
 );
 
 internal sealed class PageBusinessRuleService(
@@ -69,12 +111,14 @@ internal sealed class PageBusinessRuleService(
 			pageContext.Bundle,
 			packageUId);
 		IReadOnlySet<string> elementNames = elementProvider.GetElementNames(pageContext.Bundle);
-		pageBusinessRuleValidator.Validate(request.Rule, attributeMap, elementNames);
+		// Create always mints fresh block uIds; caller-supplied ones are honored only by update.
+		BusinessRule rule = BusinessRuleHelpers.StripBlockUIds(request.Rule);
+		pageBusinessRuleValidator.Validate(rule, attributeMap, elementNames);
 
-		BusinessRuleMetadataDto createdRule = BusinessRuleMetadataConverter.ToPageMetadata(attributeMap, request.Rule);
+		BusinessRuleMetadataDto createdRule = BusinessRuleMetadataConverter.ToPageMetadata(attributeMap, rule);
 		return businessRuleAddonService.AppendRule(
 			BuildAddonSchemaRequest(pageContext, packageUId),
-			request.Rule,
+			rule,
 			[createdRule]);
 	}
 
@@ -99,6 +143,8 @@ internal sealed class PageBusinessRuleService(
 			string caption = rule?.Caption ?? string.Empty;
 			try {
 				ArgumentNullException.ThrowIfNull(rule);
+				// Create always mints fresh block uIds; caller-supplied ones are honored only by update.
+				rule = BusinessRuleHelpers.StripBlockUIds(rule);
 				pageBusinessRuleValidator.Validate(rule, attributeMap, elementNames);
 				BusinessRuleMetadataDto createdRule = BusinessRuleMetadataConverter.ToPageMetadata(attributeMap, rule);
 				pending.Add((index, caption, createdRule.Name));
@@ -114,6 +160,80 @@ internal sealed class PageBusinessRuleService(
 		}
 
 		return results;
+	}
+
+	public IReadOnlyList<BusinessRuleReadModel> Read(PageBusinessRulesReadRequest request) {
+		ArgumentNullException.ThrowIfNull(request);
+		RequireSchemaFields(request.PackageName, request.PageSchemaName);
+
+		Guid packageUId = packageResolver.ResolveUId(request.PackageName);
+		PageBusinessRuleSchemaContext pageContext = schemaProvider.GetSchema(request.PageSchemaName, packageUId);
+		return businessRuleAddonService.ReadRules(BuildAddonSchemaRequest(pageContext, packageUId));
+	}
+
+	public IReadOnlyList<BusinessRuleBatchItemResult> Update(PageBusinessRulesBatchRequest request) {
+		ArgumentNullException.ThrowIfNull(request);
+		BusinessRuleBatchValidation.RequireBatchFields(
+			request.PackageName, request.PageSchemaName, "page-schema-name", request.Rules);
+
+		Guid packageUId = packageResolver.ResolveUId(request.PackageName);
+		PageBusinessRuleSchemaContext pageContext = schemaProvider.GetSchema(request.PageSchemaName, packageUId);
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap = attributeProvider.GetAttributes(
+			pageContext.Bundle,
+			packageUId);
+		IReadOnlySet<string> elementNames = elementProvider.GetElementNames(pageContext.Bundle);
+
+		var results = new BusinessRuleBatchItemResult[request.Rules.Count];
+		var pending = new List<(int Index, BusinessRuleUpdateItem Item)>();
+
+		for (int index = 0; index < request.Rules.Count; index++) {
+			BusinessRule rule = request.Rules[index];
+			string identifier = rule?.Name ?? rule?.Caption ?? string.Empty;
+			try {
+				ArgumentNullException.ThrowIfNull(rule);
+				if (string.IsNullOrWhiteSpace(rule.Name)) {
+					throw new ArgumentException("name is required to update a business rule.");
+				}
+
+				pageBusinessRuleValidator.Validate(rule, attributeMap, elementNames);
+				BusinessRuleMetadataDto generatedRule = BusinessRuleMetadataConverter.ToPageMetadata(attributeMap, rule);
+				pending.Add((index, new BusinessRuleUpdateItem(rule.Name.Trim(), rule.Enabled, [generatedRule])));
+			} catch (Exception exception) {
+				results[index] = new BusinessRuleBatchItemResult(identifier, false, null, exception.Message);
+			}
+		}
+
+		if (pending.Count > 0) {
+			AddonGetRequestDto addonRequest = BuildAddonSchemaRequest(pageContext, packageUId);
+			BusinessRuleBatchSave.MergeUpdateOutcome(results, pending,
+				items => businessRuleAddonService.UpdateRules(addonRequest, items));
+		}
+
+		return results;
+	}
+
+	public IReadOnlyList<BusinessRuleBatchItemResult> Delete(PageBusinessRulesDeleteRequest request) {
+		ArgumentNullException.ThrowIfNull(request);
+		RequireSchemaFields(request.PackageName, request.PageSchemaName);
+		if (request.RuleNames is null || request.RuleNames.Count == 0) {
+			throw new ArgumentException("rule-names is required and must contain at least one rule name.");
+		}
+
+		Guid packageUId = packageResolver.ResolveUId(request.PackageName);
+		PageBusinessRuleSchemaContext pageContext = schemaProvider.GetSchema(request.PageSchemaName, packageUId);
+		return businessRuleAddonService.DeleteRules(
+			BuildAddonSchemaRequest(pageContext, packageUId),
+			request.RuleNames);
+	}
+
+	private static void RequireSchemaFields(string packageName, string pageSchemaName) {
+		if (string.IsNullOrWhiteSpace(packageName)) {
+			throw new ArgumentException("package-name is required.");
+		}
+
+		if (string.IsNullOrWhiteSpace(pageSchemaName)) {
+			throw new ArgumentException("page-schema-name is required.");
+		}
 	}
 
 	private static void ValidateCreateRequest(PageBusinessRuleCreateRequest request) {

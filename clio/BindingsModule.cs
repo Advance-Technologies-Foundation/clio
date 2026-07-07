@@ -394,6 +394,12 @@ public class BindingsModule {
 		services.AddTransient<ApplicationSectionUpdateTool>();
 		services.AddTransient<CreateEntityBusinessRuleTool>();
 		services.AddTransient<CreatePageBusinessRuleTool>();
+		services.AddTransient<ReadEntityBusinessRuleTool>();
+		services.AddTransient<ReadPageBusinessRuleTool>();
+		services.AddTransient<UpdateEntityBusinessRuleTool>();
+		services.AddTransient<UpdatePageBusinessRuleTool>();
+		services.AddTransient<DeleteEntityBusinessRuleTool>();
+		services.AddTransient<DeletePageBusinessRuleTool>();
 		services.AddTransient<ApplicationSectionDeleteTool>();
 		services.AddTransient<ApplicationSectionGetListTool>();
 		services.AddTransient<ApplicationDeleteTool>();

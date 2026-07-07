@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Collections.Generic;
 
 namespace Clio.Command.BusinessRules;
@@ -27,6 +28,29 @@ internal static class BusinessRuleBatchSave {
 		} catch (Exception exception) {
 			foreach ((int index, string caption, string _) in pending) {
 				results[index] = new BusinessRuleBatchItemResult(caption, false, null, exception.Message);
+			}
+		}
+	}
+
+	/// <summary>
+	/// Runs the single-save addon update for the converted items and writes each item's outcome
+	/// into <paramref name="results"/> by its original input index. The update counterpart of
+	/// <see cref="StampOutcome"/>: the addon service already reports per-item match/save outcomes,
+	/// so they are merged positionally; an unexpected throw fails every pending item alike.
+	/// </summary>
+	internal static void MergeUpdateOutcome(
+		BusinessRuleBatchItemResult[] results,
+		IReadOnlyList<(int Index, BusinessRuleUpdateItem Item)> pending,
+		Func<IReadOnlyList<BusinessRuleUpdateItem>, IReadOnlyList<BusinessRuleBatchItemResult>> update) {
+		try {
+			IReadOnlyList<BusinessRuleBatchItemResult> outcomes =
+				update(pending.Select(entry => entry.Item).ToList());
+			for (int position = 0; position < pending.Count; position++) {
+				results[pending[position].Index] = outcomes[position];
+			}
+		} catch (Exception exception) {
+			foreach ((int index, BusinessRuleUpdateItem item) in pending) {
+				results[index] = new BusinessRuleBatchItemResult(item.Name, false, null, exception.Message);
 			}
 		}
 	}

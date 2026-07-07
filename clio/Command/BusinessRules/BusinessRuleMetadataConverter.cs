@@ -84,8 +84,8 @@ internal static class BusinessRuleMetadataConverter {
 		return new BusinessRuleMetadataDto {
 			TypeName = BusinessRuleTypeName,
 			UId = ruleUId,
-			Name = GenerateBusinessRuleName(),
-			Enabled = true,
+			Name = ResolveRuleName(rule),
+			Enabled = rule.Enabled ?? true,
 			Caption = rule.Caption.Trim(),
 			Cases = [@case],
 			Triggers = triggers
@@ -138,7 +138,7 @@ internal static class BusinessRuleMetadataConverter {
 
 		return new BusinessRuleConditionMetadataDto {
 			TypeName = BusinessRuleConditionTypeName,
-			UId = Guid.NewGuid().ToString(),
+			UId = ResolveBlockUId(condition.UId),
 			ComparisonType = MapComparisonType(condition.ComparisonType),
 			LeftExpression = BuildOperandExpression(
 				attributeMap,
@@ -188,7 +188,8 @@ internal static class BusinessRuleMetadataConverter {
 				descriptor,
 				path,
 				descriptor.DataValueTypeName,
-				includeAttributeReferenceSchemaName);
+				includeAttributeReferenceSchemaName,
+				expression.UId);
 		}
 
 		if (string.Equals(expression.Type, SysValueExpressionType, StringComparison.OrdinalIgnoreCase)) {
@@ -203,7 +204,7 @@ internal static class BusinessRuleMetadataConverter {
 					: expression.SysValueName;
 			return new BusinessRuleExpressionMetadataDto {
 				TypeName = BusinessRuleSysValueExpressionTypeName,
-				UId = Guid.NewGuid().ToString(),
+				UId = ResolveBlockUId(expression.UId),
 				Type = SysValueExpressionType,
 				DataValueTypeName = sysValueType.DataValueTypeName,
 				ReferenceSchemaName = sysValueType.ReferenceSchemaName,
@@ -215,7 +216,7 @@ internal static class BusinessRuleMetadataConverter {
 		object? value = ConvertJsonElement(expression.Value!.Value, constValueType.DataValueTypeName);
 		return new BusinessRuleExpressionMetadataDto {
 			TypeName = BusinessRuleValueExpressionTypeName,
-			UId = Guid.NewGuid().ToString(),
+			UId = ResolveBlockUId(expression.UId),
 			Type = ConstExpressionType,
 			DataValueTypeName = constValueType.DataValueTypeName,
 			ReferenceSchemaName = constValueType.ReferenceSchemaName,
@@ -227,10 +228,11 @@ internal static class BusinessRuleMetadataConverter {
 		BusinessRuleAttributeDescriptor descriptor,
 		string path,
 		string? dataValueTypeName = null,
-		bool includeAttributeReferenceSchemaName = true) {
+		bool includeAttributeReferenceSchemaName = true,
+		string? requestedUId = null) {
 		return new BusinessRuleExpressionMetadataDto {
 			TypeName = BusinessRuleAttributeExpressionTypeName,
-			UId = Guid.NewGuid().ToString(),
+			UId = ResolveBlockUId(requestedUId),
 			Type = "AttributeValue",
 			DataValueTypeName = dataValueTypeName ?? descriptor.DataValueTypeName,
 			ReferenceSchemaName = includeAttributeReferenceSchemaName ? descriptor.ReferenceSchemaName : null,
@@ -258,7 +260,7 @@ internal static class BusinessRuleMetadataConverter {
 
 		return new FieldSelectionBusinessRuleActionMetadataDto {
 			TypeName = GetActionTypeName(action.ActionType),
-			UId = Guid.NewGuid().ToString(),
+			UId = ResolveBlockUId(action.UId),
 			Enabled = true,
 			Items = string.Join(",", action.FieldSelectionItems)
 		};
@@ -281,7 +283,7 @@ internal static class BusinessRuleMetadataConverter {
 		string? entitySchemaName) {
 		return new FieldSelectionBusinessRuleActionMetadataDto {
 			TypeName = BusinessRuleSetValuesElementTypeName,
-			UId = Guid.NewGuid().ToString(),
+			UId = ResolveBlockUId(action.UId),
 			Enabled = true,
 			Items = action.SetValueItems
 				.Select(item => BuildSetValueItem(attributeMap, item, includeAttributeReferenceSchemaName, entitySchemaName))
@@ -307,13 +309,14 @@ internal static class BusinessRuleMetadataConverter {
 			dataValueTypeName);
 		return new BusinessRuleSetValueItemMetadataDto {
 			TypeName = BusinessRuleSetValueItemTypeName,
-			UId = Guid.NewGuid().ToString(),
+			UId = ResolveBlockUId(item.UId),
 			Enabled = true,
 			Expression = BuildAttributeExpression(
 				targetDescriptor,
 				targetPath,
 				dataValueTypeName,
-				includeAttributeReferenceSchemaName),
+				includeAttributeReferenceSchemaName,
+				item.Expression.UId),
 			Value = valueExpression
 		};
 	}
@@ -346,13 +349,14 @@ internal static class BusinessRuleMetadataConverter {
 				sourceDescriptor,
 				sourcePath,
 				sourceDescriptor.DataValueTypeName,
-				includeAttributeReferenceSchemaName);
+				includeAttributeReferenceSchemaName,
+				item.Value.UId);
 		}
 
 		object? value = ConvertJsonElement(item.Value.Value!.Value, dataValueTypeName);
 		return new BusinessRuleExpressionMetadataDto {
 			TypeName = BusinessRuleValueExpressionTypeName,
-			UId = Guid.NewGuid().ToString(),
+			UId = ResolveBlockUId(item.Value.UId),
 			Type = "Const",
 			DataValueTypeName = dataValueTypeName,
 			ReferenceSchemaName = targetDescriptor.ReferenceSchemaName,
@@ -397,13 +401,13 @@ internal static class BusinessRuleMetadataConverter {
 		string normalizedTargetFilterPath = NormalizeRelativeFilterPath(action.TargetFilterPath);
 		string? normalizedSourceFilterPath = NormalizeOptionalRelativeFilterPath(action.SourceFilterPath);
 		string parentRuleUId = Guid.NewGuid().ToString();
-		string parentActionUId = Guid.NewGuid().ToString();
+		string parentActionUId = ResolveBlockUId(action.UId);
 
 		BusinessRuleMetadataDto parentRule = new() {
 			TypeName = BusinessRuleTypeName,
 			UId = parentRuleUId,
-			Name = GenerateBusinessRuleName(),
-			Enabled = true,
+			Name = ResolveRuleName(rule),
+			Enabled = rule.Enabled ?? true,
 			Caption = rule.Caption.Trim(),
 			Cases = [BuildApplyFilterParentCase(
 				attributeMap,
@@ -679,6 +683,26 @@ internal static class BusinessRuleMetadataConverter {
 
 	private static string GenerateBusinessRuleName() => $"BusinessRule_{Guid.NewGuid():N}"[..20];
 
+	private static string ResolveRuleName(BusinessRule rule) =>
+		string.IsNullOrWhiteSpace(rule.Name) ? GenerateBusinessRuleName() : rule.Name.Trim();
+
+	/// <summary>
+	/// Returns the caller-requested block uId when supplied (must be a GUID), otherwise a fresh one.
+	/// Callers pass uIds returned by the read tools so an updated rule keeps stable block identity
+	/// and the platform stores a short diff instead of a full rule copy.
+	/// </summary>
+	private static string ResolveBlockUId(string? requestedUId) {
+		if (string.IsNullOrWhiteSpace(requestedUId)) {
+			return Guid.NewGuid().ToString();
+		}
+
+		if (!Guid.TryParse(requestedUId, out Guid parsedUId)) {
+			throw new InvalidOperationException($"Block uId '{requestedUId}' is not a valid GUID.");
+		}
+
+		return parsedUId.ToString();
+	}
+
 	private static bool TryGetApplyFilterAction(BusinessRule rule, out ApplyFilterBusinessRuleAction? action) {
 		action = null;
 		if (rule.Actions.Count != 1) {
@@ -713,7 +737,7 @@ internal static class BusinessRuleMetadataConverter {
 
 		BusinessRuleSetFilterActionMetadataDto setFilterAction = new() {
 			TypeName = BusinessRuleSetFilterElementTypeName,
-			UId = Guid.NewGuid().ToString(),
+			UId = ResolveBlockUId(action.UId),
 			Enabled = true,
 			Expression = new BusinessRuleExpressionMetadataDto {
 				TypeName = BusinessRuleAttributeExpressionTypeName,
@@ -746,8 +770,8 @@ internal static class BusinessRuleMetadataConverter {
 		return new BusinessRuleMetadataDto {
 			TypeName = BusinessRuleTypeName,
 			UId = Guid.NewGuid().ToString(),
-			Name = GenerateBusinessRuleName(),
-			Enabled = true,
+			Name = ResolveRuleName(rule),
+			Enabled = rule.Enabled ?? true,
 			Caption = rule.Caption.Trim(),
 			Cases = [@case],
 			Triggers = triggers

@@ -160,6 +160,22 @@ public sealed record EntityBusinessRuleMcpContract
 	public List<EntityBusinessRuleActionMcpContract> Actions { get; init; } = null!;
 
 	/// <summary>
+	/// Gets the internal unique rule name. Optional on create (generated when omitted);
+	/// the required match key for update.
+	/// </summary>
+	[JsonPropertyName("name")]
+	[Description("Internal unique rule name. Optional on create (generated when omitted); required match key for update.")]
+	public string? Name { get; init; }
+
+	/// <summary>
+	/// Gets whether the rule is active. Defaults to <c>true</c> on create; omitted on update
+	/// preserves the existing value.
+	/// </summary>
+	[JsonPropertyName("enabled")]
+	[Description("Whether the rule is active. Defaults to true on create; omitted on update preserves the existing value.")]
+	public bool? Enabled { get; init; }
+
+	/// <summary>
 	/// Converts this MCP contract into the shared internal business-rule model.
 	/// </summary>
 	/// <returns>Shared business-rule model used by command services.</returns>
@@ -169,7 +185,7 @@ public sealed record EntityBusinessRuleMcpContract
 			actions.Add(action?.ToBusinessRuleAction()!);
 		}
 
-		return new BusinessRule(Caption, Condition, actions);
+		return new BusinessRule(Caption, Condition, actions) { Name = Name, Enabled = Enabled };
 	}
 }
 
@@ -189,6 +205,14 @@ public abstract record EntityBusinessRuleActionMcpContract
 	protected EntityBusinessRuleActionMcpContract()
 	{
 	}
+
+	/// <summary>
+	/// Stable action identity (GUID). Returned by read; pass it back on update to preserve
+	/// block identity. Ignored on create.
+	/// </summary>
+	[JsonPropertyName("uId")]
+	[Description("Stable action identity (GUID) returned by read. Pass it back on update to preserve block identity; ignored on create.")]
+	public string? UId { get; init; }
 
 	internal abstract BusinessRuleAction ToBusinessRuleAction();
 }
@@ -229,7 +253,7 @@ public sealed record EntityMakeEditableBusinessRuleActionMcpContract : EntityFie
 	{
 	}
 
-	internal override BusinessRuleAction ToBusinessRuleAction() => new MakeEditableBusinessRuleAction(Items ?? []);
+	internal override BusinessRuleAction ToBusinessRuleAction() => new MakeEditableBusinessRuleAction(Items ?? []) { UId = UId };
 }
 
 /// <summary>
@@ -245,7 +269,7 @@ public sealed record EntityMakeReadOnlyBusinessRuleActionMcpContract : EntityFie
 	{
 	}
 
-	internal override BusinessRuleAction ToBusinessRuleAction() => new MakeReadOnlyBusinessRuleAction(Items ?? []);
+	internal override BusinessRuleAction ToBusinessRuleAction() => new MakeReadOnlyBusinessRuleAction(Items ?? []) { UId = UId };
 }
 
 /// <summary>
@@ -261,7 +285,7 @@ public sealed record EntityMakeRequiredBusinessRuleActionMcpContract : EntityFie
 	{
 	}
 
-	internal override BusinessRuleAction ToBusinessRuleAction() => new MakeRequiredBusinessRuleAction(Items ?? []);
+	internal override BusinessRuleAction ToBusinessRuleAction() => new MakeRequiredBusinessRuleAction(Items ?? []) { UId = UId };
 }
 
 /// <summary>
@@ -277,7 +301,7 @@ public sealed record EntityMakeOptionalBusinessRuleActionMcpContract : EntityFie
 	{
 	}
 
-	internal override BusinessRuleAction ToBusinessRuleAction() => new MakeOptionalBusinessRuleAction(Items ?? []);
+	internal override BusinessRuleAction ToBusinessRuleAction() => new MakeOptionalBusinessRuleAction(Items ?? []) { UId = UId };
 }
 
 /// <summary>
@@ -302,7 +326,7 @@ public sealed record EntitySetValuesBusinessRuleActionMcpContract : EntityBusine
 	[Required]
 	public List<BusinessRuleSetValueItem> Items { get; init; } = [];
 
-	internal override BusinessRuleAction ToBusinessRuleAction() => new SetValuesBusinessRuleAction(Items ?? []);
+	internal override BusinessRuleAction ToBusinessRuleAction() => new SetValuesBusinessRuleAction(Items ?? []) { UId = UId };
 }
 
 /// <summary>
@@ -361,7 +385,7 @@ public sealed record EntityApplyFilterBusinessRuleActionMcpContract : EntityBusi
 		Source,
 		SourceFilterPath,
 		ClearValue,
-		PopulateValue);
+		PopulateValue) { UId = UId };
 }
 
 /// <summary>
@@ -386,7 +410,7 @@ public sealed record EntityApplyStaticFilterBusinessRuleActionMcpContract : Enti
 	public JsonElement Filter { get; init; }
 
 	internal override BusinessRuleAction ToBusinessRuleAction() =>
-		new ApplyStaticFilterBusinessRuleAction(TargetAttribute, Filter);
+		new ApplyStaticFilterBusinessRuleAction(TargetAttribute, Filter) { UId = UId };
 }
 
 /// <summary>
@@ -401,7 +425,7 @@ public sealed record PageApplyStaticFilterBusinessRuleActionMcpContract : PageBu
 	public JsonElement Filter { get; init; }
 
 	internal override BusinessRuleAction ToBusinessRuleAction() =>
-		new ApplyStaticFilterBusinessRuleAction(TargetAttribute, Filter);
+		new ApplyStaticFilterBusinessRuleAction(TargetAttribute, Filter) { UId = UId };
 }
 
 /// <summary>
@@ -448,6 +472,22 @@ public sealed record PageBusinessRuleMcpContract
 	public List<PageBusinessRuleActionMcpContract> Actions { get; init; } = null!;
 
 	/// <summary>
+	/// Gets the internal unique rule name. Optional on create (generated when omitted);
+	/// the required match key for update.
+	/// </summary>
+	[JsonPropertyName("name")]
+	[Description("Internal unique rule name. Optional on create (generated when omitted); required match key for update.")]
+	public string? Name { get; init; }
+
+	/// <summary>
+	/// Gets whether the rule is active. Defaults to <c>true</c> on create; omitted on update
+	/// preserves the existing value.
+	/// </summary>
+	[JsonPropertyName("enabled")]
+	[Description("Whether the rule is active. Defaults to true on create; omitted on update preserves the existing value.")]
+	public bool? Enabled { get; init; }
+
+	/// <summary>
 	/// Converts this MCP contract into the shared internal business-rule model.
 	/// </summary>
 	/// <returns>Shared business-rule model used by command services.</returns>
@@ -457,7 +497,7 @@ public sealed record PageBusinessRuleMcpContract
 			actions.Add(action?.ToBusinessRuleAction()!);
 		}
 
-		return new BusinessRule(Caption, Condition, actions);
+		return new BusinessRule(Caption, Condition, actions) { Name = Name, Enabled = Enabled };
 	}
 }
 
@@ -477,6 +517,14 @@ public abstract record PageBusinessRuleActionMcpContract
 	protected PageBusinessRuleActionMcpContract()
 	{
 	}
+
+	/// <summary>
+	/// Stable action identity (GUID). Returned by read; pass it back on update to preserve
+	/// block identity. Ignored on create.
+	/// </summary>
+	[JsonPropertyName("uId")]
+	[Description("Stable action identity (GUID) returned by read. Pass it back on update to preserve block identity; ignored on create.")]
+	public string? UId { get; init; }
 
 	internal abstract BusinessRuleAction ToBusinessRuleAction();
 }
@@ -517,7 +565,7 @@ public sealed record PageHideElementBusinessRuleActionMcpContract : PageElementS
 	{
 	}
 
-	internal override BusinessRuleAction ToBusinessRuleAction() => new HideElementBusinessRuleAction(Items ?? []);
+	internal override BusinessRuleAction ToBusinessRuleAction() => new HideElementBusinessRuleAction(Items ?? []) { UId = UId };
 }
 
 /// <summary>
@@ -533,7 +581,7 @@ public sealed record PageShowElementBusinessRuleActionMcpContract : PageElementS
 	{
 	}
 
-	internal override BusinessRuleAction ToBusinessRuleAction() => new ShowElementBusinessRuleAction(Items ?? []);
+	internal override BusinessRuleAction ToBusinessRuleAction() => new ShowElementBusinessRuleAction(Items ?? []) { UId = UId };
 }
 
 /// <summary>
@@ -549,7 +597,7 @@ public sealed record PageMakeEditableBusinessRuleActionMcpContract : PageElement
 	{
 	}
 
-	internal override BusinessRuleAction ToBusinessRuleAction() => new MakeEditableBusinessRuleAction(Items ?? []);
+	internal override BusinessRuleAction ToBusinessRuleAction() => new MakeEditableBusinessRuleAction(Items ?? []) { UId = UId };
 }
 
 /// <summary>
@@ -565,7 +613,7 @@ public sealed record PageMakeReadOnlyBusinessRuleActionMcpContract : PageElement
 	{
 	}
 
-	internal override BusinessRuleAction ToBusinessRuleAction() => new MakeReadOnlyBusinessRuleAction(Items ?? []);
+	internal override BusinessRuleAction ToBusinessRuleAction() => new MakeReadOnlyBusinessRuleAction(Items ?? []) { UId = UId };
 }
 
 /// <summary>
@@ -581,7 +629,7 @@ public sealed record PageMakeRequiredBusinessRuleActionMcpContract : PageElement
 	{
 	}
 
-	internal override BusinessRuleAction ToBusinessRuleAction() => new MakeRequiredBusinessRuleAction(Items ?? []);
+	internal override BusinessRuleAction ToBusinessRuleAction() => new MakeRequiredBusinessRuleAction(Items ?? []) { UId = UId };
 }
 
 /// <summary>
@@ -597,7 +645,7 @@ public sealed record PageMakeOptionalBusinessRuleActionMcpContract : PageElement
 	{
 	}
 
-	internal override BusinessRuleAction ToBusinessRuleAction() => new MakeOptionalBusinessRuleAction(Items ?? []);
+	internal override BusinessRuleAction ToBusinessRuleAction() => new MakeOptionalBusinessRuleAction(Items ?? []) { UId = UId };
 }
 
 [McpServerToolType]

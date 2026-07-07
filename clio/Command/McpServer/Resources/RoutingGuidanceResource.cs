@@ -31,11 +31,11 @@ public sealed class RoutingGuidanceResource {
 
 		       - Pages (Freedom UI): create/edit -> get-component-info (read resolvedFrom) + name=page-modification
 		         - dashboards (create a dashboard page, or lay out / size / style analytics widgets) -> name=dashboards (routes onward to dashboard-creation / dashboard-design)
-		         - page business rules (visibility/required/value) -> name=business-rules
+		         - page business rules (create/change/remove; visibility/required/value) -> name=business-rules
 		         - add a button/menu item that runs a business process -> name=run-process-button
 		       - Entities & schemas: create/modify schema, app / schema modeling -> name=app-modeling
 		         - schema designer fails with "GetSchemaDesignItem returned an HTML error page" / package dependencies -> name=package-dependencies
-		         - entity business rules / lookup filtering / dependent fields -> name=business-rules; static filters -> name=business-rule-filters
+		         - entity business rules (create/change/remove) / lookup filtering / dependent fields -> name=business-rules; static filters -> name=business-rule-filters
 		       - Data: raw ESQ queries -> name=esq AND name=esq-filters
 		         - lookup seeding / data bindings -> name=data-bindings
 		       - Applications, deploy & ops: deploy & provisioning -> name=deploy-lifecycle

@@ -1376,6 +1376,168 @@ public sealed class BusinessRuleMetadataConverterTests {
 				because: "normalized time constants should serialize as stable UTC strings in add-on metadata");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Honors the caller-supplied rule name (trimmed) and explicit enabled=false flag instead of generating a name and defaulting to enabled.")]
+	public void ToMetadata_Should_Honor_Rule_Name_And_Enabled() {
+		// Arrange
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("Status", 1));
+		BusinessRule rule = new(
+			"Named rule",
+			new BusinessRuleConditionGroup(
+				"AND",
+				[
+					new BusinessRuleCondition(
+						new BusinessRuleExpression("AttributeValue", "Status", null),
+						"equal",
+						new BusinessRuleExpression("Const", null, Json("Draft")))
+				]),
+			[
+				new MakeReadOnlyBusinessRuleAction(["Status"])
+			]) {
+			Name = " BusinessRule_named ",
+			Enabled = false
+		};
+
+		// Act
+		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
+
+		// Assert
+		metadata.Name.Should().Be("BusinessRule_named",
+			because: "the caller-supplied rule name must be trimmed and persisted as the match key");
+		metadata.Enabled.Should().BeFalse(
+			because: "the caller's explicit enabled=false intent must be persisted instead of the default");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Generates an internal rule name when the caller-supplied name is whitespace.")]
+	public void ToMetadata_Should_Generate_Name_When_Name_Is_Whitespace() {
+		// Arrange
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("Status", 1));
+		BusinessRule rule = new(
+			"Whitespace name",
+			new BusinessRuleConditionGroup(
+				"AND",
+				[
+					new BusinessRuleCondition(
+						new BusinessRuleExpression("AttributeValue", "Status", null),
+						"equal",
+						new BusinessRuleExpression("Const", null, Json("Draft")))
+				]),
+			[
+				new MakeReadOnlyBusinessRuleAction(["Status"])
+			]) {
+			Name = "   "
+		};
+
+		// Act
+		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
+
+		// Assert
+		metadata.Name.Should().StartWith("BusinessRule_",
+			because: "a whitespace name is treated as omitted and a fresh internal name is generated");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Honors valid caller-supplied block uIds on conditions, expressions, actions, and set-value items, normalizing them to canonical lowercase GUID form.")]
+	public void ToMetadata_Should_Honor_Valid_Caller_Block_UIds() {
+		// Arrange
+		const string conditionUId = "AAAAAAAA-0000-0000-0000-000000000001";
+		const string leftExpressionUId = "AAAAAAAA-0000-0000-0000-000000000002";
+		const string rightExpressionUId = "AAAAAAAA-0000-0000-0000-000000000003";
+		const string readOnlyActionUId = "AAAAAAAA-0000-0000-0000-000000000004";
+		const string setValuesActionUId = "AAAAAAAA-0000-0000-0000-000000000005";
+		const string setValueItemUId = "AAAAAAAA-0000-0000-0000-000000000006";
+		const string itemExpressionUId = "AAAAAAAA-0000-0000-0000-000000000007";
+		const string itemValueUId = "AAAAAAAA-0000-0000-0000-000000000008";
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("Status", 1),
+			CreateColumn("Amount", 6));
+		BusinessRule rule = new(
+			"Stable identity",
+			new BusinessRuleConditionGroup(
+				"AND",
+				[
+					new BusinessRuleCondition(
+						new BusinessRuleExpression("AttributeValue", "Status", null) { UId = leftExpressionUId },
+						"equal",
+						new BusinessRuleExpression("Const", null, Json("Draft")) { UId = rightExpressionUId }) {
+						UId = conditionUId
+					}
+				]),
+			[
+				new MakeReadOnlyBusinessRuleAction(["Status"]) { UId = readOnlyActionUId },
+				new SetValuesBusinessRuleAction([
+					new BusinessRuleSetValueItem(
+						new BusinessRuleExpression("AttributeValue", "Amount", null) { UId = itemExpressionUId },
+						new BusinessRuleExpression("Const", null, Json(5)) { UId = itemValueUId }) {
+						UId = setValueItemUId
+					}
+				]) { UId = setValuesActionUId }
+			]);
+
+		// Act
+		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
+
+		// Assert
+		BusinessRuleGroupConditionMetadataDto group =
+			(BusinessRuleGroupConditionMetadataDto)metadata.Cases[0].Condition!;
+		group.Conditions[0].UId.Should().Be(conditionUId.ToLowerInvariant(),
+			because: "the caller-supplied condition uId must be honored (normalized to canonical GUID form)");
+		group.Conditions[0].LeftExpression.UId.Should().Be(leftExpressionUId.ToLowerInvariant(),
+			because: "the caller-supplied left expression uId must be honored");
+		group.Conditions[0].RightExpression!.UId.Should().Be(rightExpressionUId.ToLowerInvariant(),
+			because: "the caller-supplied right expression uId must be honored");
+		metadata.Cases[0].Actions[0].UId.Should().Be(readOnlyActionUId.ToLowerInvariant(),
+			because: "the caller-supplied field-selection action uId must be honored");
+		metadata.Cases[0].Actions[1].UId.Should().Be(setValuesActionUId.ToLowerInvariant(),
+			because: "the caller-supplied set-values action uId must be honored");
+		List<BusinessRuleSetValueItemMetadataDto> items =
+			(List<BusinessRuleSetValueItemMetadataDto>)((FieldSelectionBusinessRuleActionMetadataDto)metadata.Cases[0].Actions[1]).Items!;
+		items[0].UId.Should().Be(setValueItemUId.ToLowerInvariant(),
+			because: "the caller-supplied set-value item uId must be honored");
+		items[0].Expression.UId.Should().Be(itemExpressionUId.ToLowerInvariant(),
+			because: "the caller-supplied item target expression uId must be honored");
+		items[0].Value.UId.Should().Be(itemValueUId.ToLowerInvariant(),
+			because: "the caller-supplied item value expression uId must be honored");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Throws when a caller-supplied block uId is not a valid GUID instead of persisting a broken block identity.")]
+	public void ToMetadata_Should_Throw_When_Block_UId_Is_Not_A_Guid() {
+		// Arrange
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("Status", 1));
+		BusinessRule rule = new(
+			"Broken identity",
+			new BusinessRuleConditionGroup(
+				"AND",
+				[
+					new BusinessRuleCondition(
+						new BusinessRuleExpression("AttributeValue", "Status", null),
+						"equal",
+						new BusinessRuleExpression("Const", null, Json("Draft"))) {
+						UId = "not-a-guid"
+					}
+				]),
+			[
+				new MakeReadOnlyBusinessRuleAction(["Status"])
+			]);
+
+		// Act
+		Action act = () => BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>()
+			.WithMessage("Block uId 'not-a-guid' is not a valid GUID.",
+				because: "a malformed caller-supplied block uId must fail conversion instead of persisting a broken identity");
+	}
+
 	private static IReadOnlyDictionary<string, EntitySchemaColumnDto> CreateColumnMap(params EntitySchemaColumnDto[] columns) {
 		Dictionary<string, EntitySchemaColumnDto> result = new(StringComparer.Ordinal);
 		foreach (EntitySchemaColumnDto column in columns) {
