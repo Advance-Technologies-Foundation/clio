@@ -19,12 +19,6 @@ internal static class BusinessRuleHelpers {
 		RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase,
 		TimeSpan.FromMilliseconds(100));
 
-
-	/// <summary>
-	/// Returns a copy of the rule with every block-level <c>uId</c> cleared (conditions,
-	/// expressions, actions, set-value items). Create operations always mint fresh block ids;
-	/// caller-supplied uIds are only honored by update. <c>name</c> and <c>enabled</c> are kept.
-	/// </summary>
 	internal static BusinessRule StripBlockUIds(BusinessRule rule) {
 		if (rule is null || !HasAnyBlockUId(rule)) {
 			return rule!;

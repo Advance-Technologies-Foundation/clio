@@ -460,14 +460,10 @@ public sealed class PageBusinessRuleToolE2ETests : McpContractFixtureBase {
 			arrangeContext.CancellationTokenSource.Token);
 
 		// Assert - read returns the rule in contract shape with block uIds
-		BusinessRuleReadModel createdModel = GetRuleByName(readAfterCreate, ruleName);
+		BusinessRule createdModel = GetRuleByName(readAfterCreate, ruleName);
 		createdModel.Enabled.Should().BeTrue(
 			because: "the rule was created with enabled true");
-		createdModel.Convertible.Should().BeTrue(
-			because: "a rule created through the friendly contract should read back as convertible");
-		createdModel.Rule.Should().NotBeNull(
-			because: "a convertible rule should carry the friendly contract definition");
-		BusinessRuleCondition createdCondition = createdModel.Rule!.Condition.Conditions.Should().ContainSingle(
+		BusinessRuleCondition createdCondition = createdModel.Condition.Conditions.Should().ContainSingle(
 				because: "the created page rule has exactly one condition")
 			.Which;
 		createdCondition.ComparisonType.Should().Be("is-filled-in",
@@ -476,7 +472,7 @@ public sealed class PageBusinessRuleToolE2ETests : McpContractFixtureBase {
 			because: "read should return the stable condition uId for update round-trips");
 		createdCondition.LeftExpression.UId.Should().NotBeNullOrWhiteSpace(
 			because: "read should return the stable left expression uId for update round-trips");
-		BusinessRuleAction createdAction = createdModel.Rule.Actions.Should().ContainSingle(
+		BusinessRuleAction createdAction = createdModel.Actions.Should().ContainSingle(
 				because: "the created page rule has exactly one action")
 			.Which;
 		createdAction.UId.Should().NotBeNullOrWhiteSpace(
@@ -527,13 +523,10 @@ public sealed class PageBusinessRuleToolE2ETests : McpContractFixtureBase {
 			arrangeContext.CancellationTokenSource.Token);
 
 		// Assert - the comparison changed, the caller-supplied uIds survived, enabled stayed true
-		BusinessRuleReadModel updatedModel = GetRuleByName(readAfterUpdate, ruleName);
+		BusinessRule updatedModel = GetRuleByName(readAfterUpdate, ruleName);
 		updatedModel.Enabled.Should().BeTrue(
 			because: "enabled was omitted on update, so the existing enabled value should be preserved");
-		updatedModel.Convertible.Should().BeTrue(
-			"the updated page rule should still be representable in the friendly contract, but read returned raw metadata: {0}",
-			updatedModel.Raw?.ToJsonString());
-		BusinessRuleCondition updatedCondition = updatedModel.Rule!.Condition.Conditions.Should().ContainSingle(
+		BusinessRuleCondition updatedCondition = updatedModel.Condition.Conditions.Should().ContainSingle(
 				because: "the updated page rule still has exactly one condition")
 			.Which;
 		updatedCondition.ComparisonType.Should().Be("is-not-filled-in",
@@ -542,7 +535,7 @@ public sealed class PageBusinessRuleToolE2ETests : McpContractFixtureBase {
 			because: "the caller-supplied condition uId should survive the update");
 		updatedCondition.LeftExpression.UId.Should().Be(blockIds.LeftExpressionUId,
 			because: "the caller-supplied left expression uId should survive the update");
-		updatedModel.Rule.Actions.Should().ContainSingle(
+		updatedModel.Actions.Should().ContainSingle(
 				because: "the updated page rule still has exactly one action")
 			.Which.UId.Should().Be(blockIds.ActionUId,
 				because: "the caller-supplied action uId should survive the update");
@@ -956,7 +949,7 @@ public sealed class PageBusinessRuleToolE2ETests : McpContractFixtureBase {
 		return response;
 	}
 
-	private static BusinessRuleReadModel GetRuleByName(BusinessRulesReadResponse response, string ruleName) =>
+	private static BusinessRule GetRuleByName(BusinessRulesReadResponse response, string ruleName) =>
 		response.Rules.Should().ContainSingle(
 				rule => string.Equals(rule.Name, ruleName, StringComparison.OrdinalIgnoreCase),
 				because: "the read response should contain exactly one rule with the expected internal name")

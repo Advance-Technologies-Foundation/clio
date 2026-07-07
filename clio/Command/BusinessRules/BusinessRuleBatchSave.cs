@@ -32,12 +32,6 @@ internal static class BusinessRuleBatchSave {
 		}
 	}
 
-	/// <summary>
-	/// Runs the single-save addon update for the converted items and writes each item's outcome
-	/// into <paramref name="results"/> by its original input index. The update counterpart of
-	/// <see cref="StampOutcome"/>: the addon service already reports per-item match/save outcomes,
-	/// so they are merged positionally; an unexpected throw fails every pending item alike.
-	/// </summary>
 	internal static void MergeUpdateOutcome(
 		BusinessRuleBatchItemResult[] results,
 		IReadOnlyList<(int Index, BusinessRuleUpdateItem Item)> pending,

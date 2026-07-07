@@ -769,22 +769,20 @@ public sealed class EntityBusinessRuleServiceTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Reads the persisted rules through the correct add-on schema request (BusinessRule addon, EntitySchemaManager, full hierarchy) and maps them to read models.")]
+	[Description("Reads the persisted rules through the correct add-on schema request (BusinessRule addon, EntitySchemaManager, full hierarchy) and maps them to friendly rules.")]
 	public void Read_Should_Return_Persisted_Rules_Through_Correct_Addon_Request() {
 		// Arrange
 		EntityBusinessRulesReadRequest request = new("UsrPkg", "UsrOrder");
 
 		// Act
-		IReadOnlyList<BusinessRuleReadModel> models = _service.Read(request);
+		IReadOnlyList<BusinessRule> models = _service.Read(request);
 
 		// Assert
 		models.Should().ContainSingle(because: "the fixture add-on schema persists exactly one parent rule");
 		models[0].Name.Should().Be("BusinessRule_old",
-			because: "the read model must carry the persisted internal rule name as the update/delete match key");
+			because: "the rule must carry the persisted internal rule name as the update/delete match key");
 		models[0].Caption.Should().Be("Existing rule",
-			because: "the read model must carry the persisted caption");
-		models[0].Convertible.Should().BeTrue(
-			because: "an empty-condition rule with no actions is representable by the friendly contract");
+			because: "the rule must carry the persisted caption");
 		_addonSchemaDesignerClient.Received(1).GetSchema(
 			Arg.Is<AddonGetRequestDto>(dto =>
 				dto.AddonName == "BusinessRule"

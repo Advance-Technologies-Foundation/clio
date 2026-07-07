@@ -159,18 +159,10 @@ public sealed record EntityBusinessRuleMcpContract
 	[Required]
 	public List<EntityBusinessRuleActionMcpContract> Actions { get; init; } = null!;
 
-	/// <summary>
-	/// Gets the internal unique rule name. Optional on create (generated when omitted);
-	/// the required match key for update.
-	/// </summary>
 	[JsonPropertyName("name")]
 	[Description("Internal unique rule name. Optional on create (generated when omitted); required match key for update.")]
 	public string? Name { get; init; }
 
-	/// <summary>
-	/// Gets whether the rule is active. Defaults to <c>true</c> on create; omitted on update
-	/// preserves the existing value.
-	/// </summary>
 	[JsonPropertyName("enabled")]
 	[Description("Whether the rule is active. Defaults to true on create; omitted on update preserves the existing value.")]
 	public bool? Enabled { get; init; }
@@ -206,10 +198,6 @@ public abstract record EntityBusinessRuleActionMcpContract
 	{
 	}
 
-	/// <summary>
-	/// Stable action identity (GUID). Returned by read; pass it back on update to preserve
-	/// block identity. Ignored on create.
-	/// </summary>
 	[JsonPropertyName("uId")]
 	[Description("Stable action identity (GUID) returned by read. Pass it back on update to preserve block identity; ignored on create.")]
 	public string? UId { get; init; }
@@ -471,18 +459,10 @@ public sealed record PageBusinessRuleMcpContract
 	[Required]
 	public List<PageBusinessRuleActionMcpContract> Actions { get; init; } = null!;
 
-	/// <summary>
-	/// Gets the internal unique rule name. Optional on create (generated when omitted);
-	/// the required match key for update.
-	/// </summary>
 	[JsonPropertyName("name")]
 	[Description("Internal unique rule name. Optional on create (generated when omitted); required match key for update.")]
 	public string? Name { get; init; }
 
-	/// <summary>
-	/// Gets whether the rule is active. Defaults to <c>true</c> on create; omitted on update
-	/// preserves the existing value.
-	/// </summary>
 	[JsonPropertyName("enabled")]
 	[Description("Whether the rule is active. Defaults to true on create; omitted on update preserves the existing value.")]
 	public bool? Enabled { get; init; }
@@ -518,10 +498,6 @@ public abstract record PageBusinessRuleActionMcpContract
 	{
 	}
 
-	/// <summary>
-	/// Stable action identity (GUID). Returned by read; pass it back on update to preserve
-	/// block identity. Ignored on create.
-	/// </summary>
 	[JsonPropertyName("uId")]
 	[Description("Stable action identity (GUID) returned by read. Pass it back on update to preserve block identity; ignored on create.")]
 	public string? UId { get; init; }

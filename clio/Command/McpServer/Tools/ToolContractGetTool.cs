@@ -2609,7 +2609,7 @@ internal static class ToolContractCatalog {
 			],
 			[
 				Field(CountFieldName, NumberType, "Number of rules returned."),
-				Field(RulesFieldName, ArrayType, "Persisted rules in persisted order. Each item has name (the update/delete match key), caption, enabled, convertible, and rule (the friendly create/update contract shape including block uIds); when convertible is false the item carries raw (the persisted add-on metadata) instead of rule." + rulesNotes),
+				Field(RulesFieldName, ArrayType, "Persisted rules in persisted order, each in the create/update contract shape: caption, condition, actions, name (the update/delete match key), enabled, and block uIds. A rule the contract cannot represent fails the whole read with an error naming the rule." + rulesNotes),
 				Field(ErrorFieldName, StringType, "Request-level error that prevented the read. Note: when the requested environment cannot be resolved (unknown/unreachable), the tool instead returns the standard command-execution envelope rather than this shape.")
 			]);
 	}

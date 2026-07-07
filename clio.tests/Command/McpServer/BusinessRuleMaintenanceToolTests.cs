@@ -49,13 +49,16 @@ public sealed class BusinessRuleMaintenanceToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Maps read-entity-business-rules args into the entity read request and returns the read models with their count.")]
+	[Description("Maps read-entity-business-rules args into the entity read request and returns the rules with their count.")]
 	public void EntityRead_Should_Map_Arguments_And_Return_Models() {
 		// Arrange
 		IEntityBusinessRuleService service = Substitute.For<IEntityBusinessRuleService>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<IEntityBusinessRuleService>(Arg.Any<EnvironmentOptions>()).Returns(service);
-		BusinessRuleReadModel model = new() { Name = "BusinessRule_1", Enabled = true, Convertible = true };
+		BusinessRule model = new("Entity rule", new BusinessRuleConditionGroup("AND", []), []) {
+			Name = "BusinessRule_1",
+			Enabled = true
+		};
 		service.Read(Arg.Any<EntityBusinessRulesReadRequest>()).Returns([model]);
 		ReadEntityBusinessRuleTool tool = new(commandResolver, ConsoleLogger.Instance);
 
@@ -69,7 +72,7 @@ public sealed class BusinessRuleMaintenanceToolTests {
 		// Assert
 		response.Count.Should().Be(1, because: "one persisted rule was read");
 		response.Rules.Single().Should().BeSameAs(model,
-			because: "the read models are passed through to the response unchanged");
+			because: "the rules are passed through to the response unchanged");
 		response.Error.Should().BeNull(because: "a successful read carries no request-level error");
 		commandResolver.Received(1).Resolve<IEntityBusinessRuleService>(Arg.Is<EnvironmentOptions>(options =>
 			options.Environment == "dev"));
@@ -80,14 +83,19 @@ public sealed class BusinessRuleMaintenanceToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Maps read-page-business-rules args into the page read request and returns the read models with their count.")]
+	[Description("Maps read-page-business-rules args into the page read request and returns the rules with their count.")]
 	public void PageRead_Should_Map_Arguments_And_Return_Models() {
 		// Arrange
 		IPageBusinessRuleService service = Substitute.For<IPageBusinessRuleService>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<IPageBusinessRuleService>(Arg.Any<EnvironmentOptions>()).Returns(service);
 		service.Read(Arg.Any<PageBusinessRulesReadRequest>())
-			.Returns([new BusinessRuleReadModel { Name = "BusinessRule_pg", Enabled = true, Convertible = true }]);
+			.Returns([
+				new BusinessRule("Page rule", new BusinessRuleConditionGroup("AND", []), []) {
+					Name = "BusinessRule_pg",
+					Enabled = true
+				}
+			]);
 		ReadPageBusinessRuleTool tool = new(commandResolver, ConsoleLogger.Instance);
 
 		// Act
@@ -100,7 +108,7 @@ public sealed class BusinessRuleMaintenanceToolTests {
 		// Assert
 		response.Count.Should().Be(1, because: "one persisted page rule was read");
 		response.Rules.Single().Name.Should().Be("BusinessRule_pg",
-			because: "the page read models are passed through to the response unchanged");
+			because: "the page rules are passed through to the response unchanged");
 		service.Received(1).Read(Arg.Is<PageBusinessRulesReadRequest>(request =>
 			request.PackageName == "UsrPkg"
 			&& request.PageSchemaName == "UsrOrder_FormPage"));

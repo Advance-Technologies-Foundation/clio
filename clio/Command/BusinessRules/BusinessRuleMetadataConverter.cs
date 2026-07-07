@@ -686,11 +686,6 @@ internal static class BusinessRuleMetadataConverter {
 	private static string ResolveRuleName(BusinessRule rule) =>
 		string.IsNullOrWhiteSpace(rule.Name) ? GenerateBusinessRuleName() : rule.Name.Trim();
 
-	/// <summary>
-	/// Returns the caller-requested block uId when supplied (must be a GUID), otherwise a fresh one.
-	/// Callers pass uIds returned by the read tools so an updated rule keeps stable block identity
-	/// and the platform stores a short diff instead of a full rule copy.
-	/// </summary>
 	private static string ResolveBlockUId(string? requestedUId) {
 		if (string.IsNullOrWhiteSpace(requestedUId)) {
 			return Guid.NewGuid().ToString();
@@ -812,5 +807,4 @@ internal static class BusinessRuleMetadataConverter {
 				: this;
 	}
 }
-
 

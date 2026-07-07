@@ -27,10 +27,10 @@ relative to the repo root.
 ## 2. Read path
 
 New `clio/Command/BusinessRules/BusinessRuleMetadataReader.cs` (static, mirror of the
-converter): parses the add-on metadata `rules` array into read models —
-`BusinessRuleReadResult` records carrying `name`, `caption`, `enabled`,
-`convertible`, the friendly `BusinessRule` (when convertible), `esqFilter`
-passthrough for apply-static-filter actions, and `raw` metadata JSON otherwise. Skips child
+converter): parses the add-on metadata `rules` array directly into friendly
+`BusinessRule` models (`name`, `caption`, `enabled`, block uIds, `esqFilter`
+passthrough for apply-static-filter actions); an unrepresentable rule fails the whole
+read with an error naming the rule. Skips child
 rules (`parentUId`) and derives the parent action's `clearValue`/`populateValue` flags
 from them. Reverse maps: comparison int → kebab token,
 logicalOperation int → AND/OR, action typeName → kebab action type, `items` CSV → list.
@@ -83,7 +83,7 @@ Response: `{ deleted, failed, results }`.
 
 - `ToolContractGetTool`: six new `ToolContractDefinition` entries + catalog registration.
 - `BusinessRulesGuidanceResource`: document the read → update/delete workflow, `name` as
-  the match key, uId preservation, and the non-convertible / esqFilter read shapes.
+  the match key, uId preservation, and the esqFilter read shape.
 - `BindingsModule.cs`: register the six new tools (and no new services beyond what the
   existing interfaces gain).
 
@@ -91,7 +91,7 @@ Response: `{ deleted, failed, results }`.
 
 - Unit (`clio.tests`, `Module=Command` + `Module=McpServer`):
   - `BusinessRuleMetadataReaderTests` — reverse mapping incl. round-trip through the
-    converter, child-rule folding, non-convertible fallback, caption resource fallback.
+    converter, child-rule folding, unrepresentable-rule failure, caption resource fallback.
   - `BusinessRuleAddonServiceTests` extensions — update replace/graft, delete cascade,
     caption resource upsert/removal, single save per batch, duplicate-name rejection.
   - Service tests — update matching/not-found isolation, delete outcomes.

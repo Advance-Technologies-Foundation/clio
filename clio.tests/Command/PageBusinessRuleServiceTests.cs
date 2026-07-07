@@ -288,16 +288,19 @@ public sealed class PageBusinessRuleServiceTests {
 	public void Read_Should_Return_Models_Through_Correct_Addon_Request() {
 		// Arrange
 		PageBusinessRuleService service = BuildBatchService(out IBusinessRuleAddonService addonService);
-		BusinessRuleReadModel model = new() { Name = "BusinessRule_pg", Enabled = true, Convertible = true };
+		BusinessRule model = new("Page rule", new BusinessRuleConditionGroup("AND", []), []) {
+			Name = "BusinessRule_pg",
+			Enabled = true
+		};
 		addonService.ReadRules(Arg.Any<AddonGetRequestDto>()).Returns([model]);
 
 		// Act
-		IReadOnlyList<BusinessRuleReadModel> models = service.Read(new PageBusinessRulesReadRequest("UsrPkg", "UsrPage"));
+		IReadOnlyList<BusinessRule> models = service.Read(new PageBusinessRulesReadRequest("UsrPkg", "UsrPage"));
 
 		// Assert
-		models.Should().ContainSingle(because: "the add-on service returned one read model");
+		models.Should().ContainSingle(because: "the add-on service returned one rule");
 		models[0].Should().BeSameAs(model,
-			because: "the page service passes the add-on read models through unchanged");
+			because: "the page service passes the add-on rules through unchanged");
 		addonService.Received(1).ReadRules(
 			Arg.Is<AddonGetRequestDto>(request =>
 				request.AddonName == "BusinessRule"

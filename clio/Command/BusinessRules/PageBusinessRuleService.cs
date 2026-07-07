@@ -31,29 +31,10 @@ public interface IPageBusinessRuleService {
 	/// <returns>Per-rule outcomes, one entry per input rule, in input order.</returns>
 	IReadOnlyList<BusinessRuleBatchItemResult> Create(PageBusinessRulesBatchRequest request);
 
-	/// <summary>
-	/// Reads every business rule persisted for the page schema (full package hierarchy).
-	/// </summary>
-	/// <param name="request">Read input.</param>
-	/// <returns>One read model per parent rule, in persisted order.</returns>
-	IReadOnlyList<BusinessRuleReadModel> Read(PageBusinessRulesReadRequest request);
+	IReadOnlyList<BusinessRule> Read(PageBusinessRulesReadRequest request);
 
-	/// <summary>
-	/// Updates rules matched by <c>name</c> on the same package and page schema in a single add-on
-	/// round-trip. Matched rules are fully replaced with stable identity preserved
-	/// (rule/case/group/trigger uIds plus caller-supplied block uIds); per-rule failures
-	/// (validation, unknown name) are isolated and reported.
-	/// </summary>
-	/// <param name="request">Batch page business-rule update input; every rule requires <c>name</c>.</param>
-	/// <returns>Per-rule outcomes, one entry per input rule, in input order.</returns>
 	IReadOnlyList<BusinessRuleBatchItemResult> Update(PageBusinessRulesBatchRequest request);
 
-	/// <summary>
-	/// Deletes rules by name on the same package and page schema in a single add-on round-trip.
-	/// Unknown names are isolated per-item failures.
-	/// </summary>
-	/// <param name="request">Delete input.</param>
-	/// <returns>Per-name outcomes, one entry per input name, in input order.</returns>
 	IReadOnlyList<BusinessRuleBatchItemResult> Delete(PageBusinessRulesDeleteRequest request);
 }
 
@@ -75,17 +56,11 @@ public sealed record PageBusinessRulesBatchRequest(
 	IReadOnlyList<BusinessRule> Rules
 );
 
-/// <summary>
-/// Describes the package and page schema whose business rules are read.
-/// </summary>
 public sealed record PageBusinessRulesReadRequest(
 	string PackageName,
 	string PageSchemaName
 );
 
-/// <summary>
-/// Describes the package, page schema, and rule names to delete in one batch.
-/// </summary>
 public sealed record PageBusinessRulesDeleteRequest(
 	string PackageName,
 	string PageSchemaName,
@@ -111,7 +86,6 @@ internal sealed class PageBusinessRuleService(
 			pageContext.Bundle,
 			packageUId);
 		IReadOnlySet<string> elementNames = elementProvider.GetElementNames(pageContext.Bundle);
-		// Create always mints fresh block uIds; caller-supplied ones are honored only by update.
 		BusinessRule rule = BusinessRuleHelpers.StripBlockUIds(request.Rule);
 		pageBusinessRuleValidator.Validate(rule, attributeMap, elementNames);
 
@@ -143,7 +117,6 @@ internal sealed class PageBusinessRuleService(
 			string caption = rule?.Caption ?? string.Empty;
 			try {
 				ArgumentNullException.ThrowIfNull(rule);
-				// Create always mints fresh block uIds; caller-supplied ones are honored only by update.
 				rule = BusinessRuleHelpers.StripBlockUIds(rule);
 				pageBusinessRuleValidator.Validate(rule, attributeMap, elementNames);
 				BusinessRuleMetadataDto createdRule = BusinessRuleMetadataConverter.ToPageMetadata(attributeMap, rule);
@@ -162,7 +135,7 @@ internal sealed class PageBusinessRuleService(
 		return results;
 	}
 
-	public IReadOnlyList<BusinessRuleReadModel> Read(PageBusinessRulesReadRequest request) {
+	public IReadOnlyList<BusinessRule> Read(PageBusinessRulesReadRequest request) {
 		ArgumentNullException.ThrowIfNull(request);
 		RequireSchemaFields(request.PackageName, request.PageSchemaName);
 

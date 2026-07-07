@@ -34,18 +34,10 @@ public sealed record BusinessRule
     [Required]
     public List<BusinessRuleAction> Actions { get; init; } = null!;
 
-    /// <summary>
-    /// Internal unique rule name (for example <c>BusinessRule_1c48625</c>). Optional on create
-    /// (generated when omitted); the match key for update and delete operations.
-    /// </summary>
     [JsonPropertyName("name")]
     [Description("Internal unique rule name. Optional on create (generated when omitted); required match key for update.")]
     public string? Name { get; init; }
 
-    /// <summary>
-    /// Whether the rule is active. Defaults to <c>true</c> on create; when omitted on update,
-    /// the existing value is preserved.
-    /// </summary>
     [JsonPropertyName("enabled")]
     [Description("Whether the rule is active. Defaults to true on create; omitted on update preserves the existing value.")]
     public bool? Enabled { get; init; }
@@ -106,10 +98,6 @@ public sealed record BusinessRuleCondition
         "Right expression. Supports AttributeValue, Const, or SysValue for equal, not-equal, and relational comparisons. Omit or null for is-filled-in and is-not-filled-in.")]
     public BusinessRuleExpression? RightExpression { get; init; }
 
-    /// <summary>
-    /// Stable condition identity (GUID). Returned by read; pass it back on update to preserve
-    /// the block identity so the platform stores a short diff. Ignored on create.
-    /// </summary>
     [JsonPropertyName("uId")]
     [Description("Stable condition identity (GUID). Pass the value returned by read back on update to preserve block identity; ignored on create.")]
     public string? UId { get; init; }
@@ -164,10 +152,6 @@ public sealed record BusinessRuleExpression
         "System variable name when type is SysValue. A SysValue may be on either side of a condition. Supported values: CurrentDate (Date), CurrentTime (Time), CurrentDateTime (DateTime), CurrentUser (Lookup referencing SysAdminUnit), CurrentUserContact (Lookup referencing Contact), CurrentUserAccount (Lookup referencing Account), CurrentUserRoles (ObjectList of SysAdminUnit roles; use comparisonType contain/not-contain against a role). Both operands must resolve to the same data value type, and lookup operands must reference the same schema.")]
     public string? SysValueName { get; init; }
 
-    /// <summary>
-    /// Stable expression identity (GUID). Returned by read; pass it back on update to preserve
-    /// the block identity so the platform stores a short diff. Ignored on create.
-    /// </summary>
     [JsonPropertyName("uId")]
     [Description("Stable expression identity (GUID). Pass the value returned by read back on update to preserve block identity; ignored on create.")]
     public string? UId { get; init; }
@@ -189,20 +173,13 @@ public abstract record BusinessRuleAction
     {
     }
 
-    /// <summary>
-    /// Stable action identity (GUID). Returned by read; pass it back on update to preserve
-    /// the block identity so the platform stores a short diff. Ignored on create.
-    /// </summary>
     [JsonPropertyName("uId")]
     [Description("Stable action identity (GUID). Pass the value returned by read back on update to preserve block identity; ignored on create.")]
     public string? UId { get; init; }
 
-
     [JsonIgnore] public abstract string ActionType { get; }
 
-
     [JsonIgnore] public abstract List<string> FieldSelectionItems { get; }
-
 
     [JsonIgnore] public abstract List<BusinessRuleSetValueItem> SetValueItems { get; }
 }
@@ -218,16 +195,13 @@ public abstract record FieldSelectionBusinessRuleAction : BusinessRuleAction
         Items = items ?? [];
     }
 
-
     [JsonPropertyName("items")]
     [Description(
         "Action items. Entity actions use attribute names. Page actions use page element names.")]
     [Required]
     public List<string> Items { get; init; } = [];
 
-
     [JsonIgnore] public override List<string> FieldSelectionItems => Items ?? [];
-
 
     [JsonIgnore] public override List<BusinessRuleSetValueItem> SetValueItems => [];
 }
@@ -238,11 +212,9 @@ public sealed record MakeEditableBusinessRuleAction : FieldSelectionBusinessRule
     {
     }
 
-
     public MakeEditableBusinessRuleAction(List<string> items) : base(items)
     {
     }
-
 
     [JsonIgnore] public override string ActionType => "make-editable";
 }
@@ -257,7 +229,6 @@ public sealed record MakeReadOnlyBusinessRuleAction : FieldSelectionBusinessRule
     {
     }
 
-
     [JsonIgnore] public override string ActionType => "make-read-only";
 }
 
@@ -267,11 +238,9 @@ public sealed record MakeRequiredBusinessRuleAction : FieldSelectionBusinessRule
     {
     }
 
-
     public MakeRequiredBusinessRuleAction(List<string> items) : base(items)
     {
     }
-
 
     [JsonIgnore] public override string ActionType => "make-required";
 }
@@ -282,11 +251,9 @@ public sealed record MakeOptionalBusinessRuleAction : FieldSelectionBusinessRule
     {
     }
 
-
     public MakeOptionalBusinessRuleAction(List<string> items) : base(items)
     {
     }
-
 
     [JsonIgnore] public override string ActionType => "make-optional";
 }
@@ -300,11 +267,9 @@ public sealed record HideElementBusinessRuleAction : FieldSelectionBusinessRuleA
     {
     }
 
-
     public HideElementBusinessRuleAction(List<string> items) : base(items)
     {
     }
-
 
     [JsonIgnore] public override string ActionType => "hide-element";
 }
@@ -318,11 +283,9 @@ public sealed record ShowElementBusinessRuleAction : FieldSelectionBusinessRuleA
     {
     }
 
-
     public ShowElementBusinessRuleAction(List<string> items) : base(items)
     {
     }
-
 
     [JsonIgnore] public override string ActionType => "show-element";
 }
@@ -333,7 +296,6 @@ public sealed record SetValuesBusinessRuleAction : BusinessRuleAction
     {
     }
 
-
     public SetValuesBusinessRuleAction(List<BusinessRuleSetValueItem> items)
     {
         Items = items ?? [];
@@ -341,14 +303,12 @@ public sealed record SetValuesBusinessRuleAction : BusinessRuleAction
 
     [JsonIgnore] public override string ActionType => "set-values";
 
-
     [JsonPropertyName("items")]
     [Description("Target/value assignment items for Set values actions.")]
     [Required]
     public List<BusinessRuleSetValueItem> Items { get; init; } = [];
 
     [JsonIgnore] public override List<string> FieldSelectionItems => [];
-
 
     [JsonIgnore] public override List<BusinessRuleSetValueItem> SetValueItems => Items ?? [];
 }
@@ -455,11 +415,6 @@ public sealed record ApplyStaticFilterBusinessRuleAction : BusinessRuleAction
     [Required]
     public JsonElement Filter { get; init; }
 
-    /// <summary>
-    /// The persisted ESQ filter envelope. Populated only on read output — the friendly
-    /// <see cref="Filter"/> is not reconstructed from ESQ. To change the filter on update,
-    /// supply a friendly <see cref="Filter"/> definition; <c>esqFilter</c> is ignored on input.
-    /// </summary>
     [JsonPropertyName("esqFilter")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     [Description("Persisted ESQ filter envelope, returned by read only. Ignored on input; supply a friendly filter to change it.")]
@@ -479,7 +434,6 @@ public sealed record CustomBusinessRuleAction : FieldSelectionBusinessRuleAction
         ActionType = type;
     }
 
-
     [JsonIgnore] public override string ActionType { get; }
 }
 
@@ -489,29 +443,22 @@ public sealed record BusinessRuleSetValueItem
     {
     }
 
-
     public BusinessRuleSetValueItem(BusinessRuleExpression expression, BusinessRuleExpression value)
     {
         Expression = expression;
         Value = value;
     }
 
-
     [JsonPropertyName("expression")]
     [Description("Target attribute expression. Must be AttributeValue with a direct target column path.")]
     [Required]
     public BusinessRuleExpression Expression { get; init; } = null!;
-
 
     [JsonPropertyName("value")]
     [Description("Source value expression. Supported values are Const, Formula, and AttributeValue. AttributeValue may use a direct source column path or a forward reference path such as LookupColumn.SourceColumn.")]
     [Required]
     public BusinessRuleExpression Value { get; init; } = null!;
 
-    /// <summary>
-    /// Stable set-value item identity (GUID). Returned by read; pass it back on update to
-    /// preserve the block identity so the platform stores a short diff. Ignored on create.
-    /// </summary>
     [JsonPropertyName("uId")]
     [Description("Stable set-value item identity (GUID). Pass the value returned by read back on update to preserve block identity; ignored on create.")]
     public string? UId { get; init; }
