@@ -193,15 +193,18 @@ public sealed record BusinessRuleResultDto {
 	[Description("Caller-supplied item identifier: the rule caption for create, the internal rule name for update/delete.")]
 	public string Name { get; init; } = string.Empty;
 
-	/// <summary>Gets a value indicating whether the rule was created.</summary>
+	/// <summary>Gets a value indicating whether the operation succeeded for this item.</summary>
 	[JsonPropertyName("success")]
-	[Description("Whether the rule was created.")]
+	[Description("Whether the operation succeeded for this item.")]
 	public bool Success { get; init; }
 
-	/// <summary>Gets the generated internal rule name when created.</summary>
+	/// <summary>
+	/// Gets the internal rule name when the item succeeded: generated on create, the match key
+	/// on update and delete.
+	/// </summary>
 	[JsonPropertyName("ruleName")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	[Description("The generated internal rule name when created.")]
+	[Description("Internal rule name when the item succeeded (generated on create; the match key on update/delete).")]
 	public string? RuleName { get; init; }
 
 	/// <summary>Gets the failure reason when not created.</summary>

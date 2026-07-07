@@ -220,7 +220,7 @@ flowchart LR
 }
 ```
 
-## Read / update / delete flow
+## Read / Update / Delete Flow
 
 The read/update/delete MCP tools (see
 [business-rules-crud-spec.md](./business-rules-crud-spec.md)) reuse the same service and

@@ -30,9 +30,9 @@ New `clio/Command/BusinessRules/BusinessRuleMetadataReader.cs` (static, mirror o
 converter): parses the add-on metadata `rules` array into read models —
 `BusinessRuleReadResult` records carrying `name`, `caption`, `enabled`,
 `convertible`, the friendly `BusinessRule` (when convertible), `esqFilter`
-passthrough for set-filter actions, and `raw` metadata JSON otherwise. Skips child
-rules (`parentUId`), folds their existence into nothing (parent action already carries
-clearValue/populateValue flags). Reverse maps: comparison int → kebab token,
+passthrough for apply-static-filter actions, and `raw` metadata JSON otherwise. Skips child
+rules (`parentUId`) and derives the parent action's `clearValue`/`populateValue` flags
+from them. Reverse maps: comparison int → kebab token,
 logicalOperation int → AND/OR, action typeName → kebab action type, `items` CSV → list.
 Caption fallback: metadata `caption` → `{uId}.Caption` resource.
 
@@ -45,7 +45,7 @@ Services: `IEntityBusinessRuleService.Read(EntityBusinessRulesReadRequest)` and
 request (no attribute fetch needed), call reader.
 
 Tools: `ReadEntityBusinessRuleTool` / `ReadPageBusinessRuleTool`
-(`clio/Command/McpServer/Tools/BusinessRuleReadTool.cs`), `ReadOnly = true`. Response:
+(`clio/Command/McpServer/Tools/BusinessRuleMaintenanceTools.cs`), `ReadOnly = true`. Response:
 `{ count, rules: [...] }`.
 
 ## 3. Update path

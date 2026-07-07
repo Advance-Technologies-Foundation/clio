@@ -131,6 +131,72 @@ public sealed class BusinessRuleAddonServiceTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Rejects a repeated rule name inside one update batch: the first occurrence applies, the repeat fails per-item so the second definition cannot silently graft against the first item's replacement.")]
+	public void UpdateRules_Should_Reject_Repeated_Name_Within_One_Batch() {
+		// Arrange
+		BusinessRuleMetadataDto firstDefinition = CreateGeneratedRule("Rule_A", caption: "First definition");
+		BusinessRuleMetadataDto secondDefinition = CreateGeneratedRule("Rule_A", caption: "Second definition");
+
+		// Act
+		IReadOnlyList<BusinessRuleBatchItemResult> results = _service.UpdateRules(
+			new AddonGetRequestDto(),
+			[
+				new BusinessRuleUpdateItem("Rule_A", null, [firstDefinition]),
+				new BusinessRuleUpdateItem("Rule_A", null, [secondDefinition])
+			]);
+
+		// Assert
+		results.Should().HaveCount(2, because: "every input item gets an outcome in input order");
+		results[0].Success.Should().BeTrue(because: "the first occurrence of the name applies normally");
+		results[1].Success.Should().BeFalse(because: "the repeated name must not double-apply within one batch");
+		results[1].Error.Should().Contain("more than once", because: "the failure must explain the in-batch repeat");
+		_savedSchema.Should().NotBeNull(because: "the first occurrence still persists");
+		_savedSchema!.Resources.Should().Contain(resource =>
+				resource.Key == $"{RuleAUId}.Caption" && resource.Value[0].Value == "First definition",
+			because: "only the first definition's caption must be applied");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Fails update and delete items per-item when the persisted metadata carries more than one parent rule with the requested name, instead of silently operating on an arbitrary match.")]
+	public void UpdateRules_And_DeleteRules_Should_Fail_Item_When_Persisted_Name_Is_Ambiguous() {
+		// Arrange - two parent rules sharing the same name (designer-authored duplicates)
+		_client.GetSchema(Arg.Any<AddonGetRequestDto>()).Returns(_ => new AddonSchemaDto {
+			MetaData = $$"""
+				{
+				  "typeName": "{{BusinessRuleConstants.BusinessRulesMetadataTypeName}}",
+				  "rules": [
+				    { "typeName": "{{BusinessRuleConstants.BusinessRuleTypeName}}", "uId": "{{RuleAUId}}", "name": "Dup_Rule", "cases": [], "triggers": [] },
+				    { "typeName": "{{BusinessRuleConstants.BusinessRuleTypeName}}", "uId": "{{RuleBUId}}", "name": "dup_rule", "cases": [], "triggers": [] }
+				  ]
+				}
+				""",
+			Resources = []
+		});
+		BusinessRuleMetadataDto generatedRule = CreateGeneratedRule("Dup_Rule");
+
+		// Act
+		IReadOnlyList<BusinessRuleBatchItemResult> updateResults = _service.UpdateRules(
+			new AddonGetRequestDto(),
+			[new BusinessRuleUpdateItem("Dup_Rule", null, [generatedRule])]);
+		IReadOnlyList<BusinessRuleBatchItemResult> deleteResults = _service.DeleteRules(
+			new AddonGetRequestDto(),
+			["Dup_Rule"]);
+
+		// Assert
+		updateResults[0].Success.Should().BeFalse(
+			because: "an ambiguous name must not update an arbitrary rule");
+		updateResults[0].Error.Should().Contain("more than one rule",
+			because: "the update failure must explain the ambiguity");
+		deleteResults[0].Success.Should().BeFalse(
+			because: "an ambiguous name must not delete an arbitrary rule");
+		deleteResults[0].Error.Should().Contain("more than one rule",
+			because: "the delete failure must explain the ambiguity");
+		_client.DidNotReceiveWithAnyArgs().SaveSchema(default!);
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Marks every pending (matched) item failed with the save error when the single batch save throws, preserving single-save atomicity.")]
 	public void UpdateRules_Should_Fail_All_Pending_Items_With_Save_Error_When_SaveSchema_Throws() {
 		// Arrange

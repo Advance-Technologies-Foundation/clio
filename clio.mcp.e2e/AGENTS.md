@@ -46,7 +46,7 @@ Use the `McpE2E` section with this shape:
 - `McpE2E:AllowDestructiveMcpTests`
 - `McpE2E:ClioProcessPath` optional override for the `clio` process or `clio.dll`
 - `McpE2E:Sandbox:EnvironmentName`
-- `McpE2E:Sandbox:PageSchemaName` optional Freedom UI form page targeted by the page business-rule sandbox tests; when unset, a page is discovered (`Contacts_FormPage` first, then seeded custom form pages). Set it on stands where the discoverable pages live in locked OOTB packages that `SaveSchema` refuses to layer over.
+- `McpE2E:Sandbox:PageSchemaName` optional Freedom UI form page targeted by the page business-rule sandbox tests; when unset, a page is discovered (`Contacts_FormPage` first, then seeded custom form pages). Set it on environments where the discoverable pages live in locked OOTB packages that `SaveSchema` refuses to layer over.
 - `McpE2E:Sandbox:SeedKeyPrefix`
 
 Environment variables should use the standard double-underscore form, for example:

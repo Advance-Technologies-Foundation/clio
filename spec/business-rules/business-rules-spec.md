@@ -17,10 +17,8 @@ The feature is expected to scale across two dimensions:
 
 - create rule
 - read rule
-- edit rule
+- update rule
 - delete rule
-
-All four operations are supported for both scopes.
 
 ## Current Support
 

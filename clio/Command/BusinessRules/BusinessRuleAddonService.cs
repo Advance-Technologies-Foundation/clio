@@ -136,10 +136,21 @@ internal sealed class BusinessRuleAddonService(
 
 		var results = new BusinessRuleBatchItemResult[items.Count];
 		var pending = new List<(int Index, string Name)>();
+		// A repeated name inside one batch would replace the rule twice, grafting the second item
+		// against the first item's just-serialized replacement instead of the server original —
+		// and report both as success. Reject repeats explicitly, mirroring the create-side guard.
+		HashSet<string> batchNames = new(StringComparer.OrdinalIgnoreCase);
 		for (int index = 0; index < items.Count; index++) {
 			BusinessRuleUpdateItem item = items[index];
 			try {
-				int ruleIndex = FindRuleIndexByName(rules, item.Name);
+				if (!batchNames.Add(item.Name)) {
+					results[index] = new BusinessRuleBatchItemResult(
+						item.Name, false, null,
+						$"Business rule '{item.Name}' appears more than once in the update batch.");
+					continue;
+				}
+
+				int ruleIndex = FindSingleRuleIndexByName(rules, item.Name);
 				if (ruleIndex < 0) {
 					results[index] = new BusinessRuleBatchItemResult(
 						item.Name, false, null, $"Business rule '{item.Name}' was not found.");
@@ -152,7 +163,7 @@ internal sealed class BusinessRuleAddonService(
 				BusinessRuleMetadataDto parent = graftedRules[0];
 				RemoveChildRules(rules, resources, parent.UId);
 				// Child removal can shift indexes; re-locate the parent before replacing it in place.
-				ruleIndex = FindRuleIndexByName(rules, item.Name);
+				ruleIndex = FindSingleRuleIndexByName(rules, item.Name);
 				rules[ruleIndex] = SerializeCreatedRule(parent);
 				foreach (BusinessRuleMetadataDto child in graftedRules.Skip(1)) {
 					rules.Add(SerializeCreatedRule(child));
@@ -198,7 +209,14 @@ internal sealed class BusinessRuleAddonService(
 				continue;
 			}
 
-			int ruleIndex = FindRuleIndexByName(rules, ruleName);
+			int ruleIndex;
+			try {
+				ruleIndex = FindSingleRuleIndexByName(rules, ruleName);
+			} catch (InvalidOperationException exception) {
+				results[index] = new BusinessRuleBatchItemResult(ruleName, false, null, exception.Message);
+				continue;
+			}
+
 			if (ruleIndex < 0) {
 				results[index] = new BusinessRuleBatchItemResult(
 					ruleName, false, null, $"Business rule '{ruleName}' was not found.");
@@ -288,7 +306,14 @@ internal sealed class BusinessRuleAddonService(
 		}
 	}
 
-	private static int FindRuleIndexByName(JsonArray rules, string ruleName) {
+	/// <summary>
+	/// Finds the single parent rule matching <paramref name="ruleName"/>. Returns <c>-1</c> when
+	/// no rule matches and throws when more than one parent rule carries the name (possible with
+	/// designer-authored metadata or hierarchy layers) — silently operating on an arbitrary match
+	/// would report success while doing something other than what the caller asked.
+	/// </summary>
+	private static int FindSingleRuleIndexByName(JsonArray rules, string ruleName) {
+		int foundIndex = -1;
 		for (int index = 0; index < rules.Count; index++) {
 			if (rules[index] is not JsonObject ruleObject) {
 				continue;
@@ -301,14 +326,22 @@ internal sealed class BusinessRuleAddonService(
 				continue;
 			}
 
-			if (ruleObject["name"] is JsonValue nameValue
-				&& nameValue.TryGetValue(out string? name)
-				&& string.Equals(name, ruleName, StringComparison.OrdinalIgnoreCase)) {
-				return index;
+			if (ruleObject["name"] is not JsonValue nameValue
+				|| !nameValue.TryGetValue(out string? name)
+				|| !string.Equals(name, ruleName, StringComparison.OrdinalIgnoreCase)) {
+				continue;
 			}
+
+			if (foundIndex >= 0) {
+				throw new InvalidOperationException(
+					$"Business rule name '{ruleName}' matches more than one rule on the schema; " +
+					"rename the duplicates in the Creatio designer before using name-based operations.");
+			}
+
+			foundIndex = index;
 		}
 
-		return -1;
+		return foundIndex;
 	}
 
 	private static string? GetRuleUId(JsonObject ruleObject) =>
