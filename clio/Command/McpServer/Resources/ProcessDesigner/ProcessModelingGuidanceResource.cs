@@ -118,7 +118,7 @@ public sealed class ProcessModelingGuidanceResource {
 			  through lookups (`Account.Code`, `Account.Owner.Name`); the server resolves the column type from the
 			  object's schema (so you don't supply types).
 			- `comparison`: equal (default) | notEqual | greater | greaterOrEqual | less | lessOrEqual | contains |
-			  startWith | endWith | isNull | isNotNull.
+			  notContains | startWith | notStartWith | endWith | notEndWith | isNull | isNotNull.
 			- The right-hand value of a condition is exactly ONE of: `value` (a constant as a string — the server
 			  types it by the column), `processParameter` (a process parameter by name), `elementParameter`
 			  ({ elementId, parameter } — another element's output), `expression` (a raw token). isNull/isNotNull
@@ -130,6 +130,11 @@ public sealed class ProcessModelingGuidanceResource {
 			  increment — use the signalStart filter.
 			- On an EXISTING process, set/clear a filter via `modify-business-process` ops `setFilter`
 			  ({ op:"setFilter", elementName, filter }) and `clearFilter` ({ op:"clearFilter", elementName }).
+			  `setFilter` REPLACES the element's whole filter (there is no add-one-condition op); to add a condition,
+			  read the current filter first (below) and send the complete new filter.
+			- `describe-business-process` reads a filter back: an element carries a decoded `filter` (the same
+			  object / logicalOperation / conditions / groups shape) when it has one, so you can inspect it or
+			  round-trip it into a `setFilter`. A parameter reference comes back as its raw meta-path `expression`.
 
 			== Build recipe (intent -> running process) ==
 			1. Translate the request into a graph: one start event, the activities, the sequence flows, one or
