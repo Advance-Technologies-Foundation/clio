@@ -126,6 +126,14 @@ public sealed class ProcessModelingGuidanceResource {
 			  relative-date / system macro: `Today` | `Yesterday` | `CurrentUser` | `CurrentYear` |
 			  `NextNDays` (+ `macroArgument`) | … — argument macros like NextNDays/PreviousNHours need `macroArgument`).
 			  isNull/isNotNull take none.
+			- SIGNAL-START RESTRICTION (important): on a `signalStart` filter the right-hand side may ONLY be a constant
+			  `value`, a `macro`, a `datePart`, or isNull/isNotNull — NOT `processParameter` / `elementParameter` /
+			  `expression`. The signal is evaluated to decide WHICH records start the process, BEFORE any process
+			  instance exists, so a parameter / element output / meta-path reference has no value yet. The server
+			  REJECTS a parameter reference on a signal filter (the visual designer likewise hides the "select
+			  parameter" option for signal starts). Parameter references are valid only on a data-operation element
+			  filter (Read/Add/Modify/Delete data) — which is not end-to-end buildable yet (see below), so in practice a
+			  buildable filter today uses value / macro / datePart only.
 			- `datePart` (optional, LEFT-hand modifier — NOT a right-hand source): extract a calendar/clock part from a
 			  Date/DateTime `column` and compare that integer instead of the whole date. `Year` | `Month` | `Day` |
 			  `Week` | `Weekday` | `Hour`. Pair it with an integer `value` (or a `processParameter`): e.g.
