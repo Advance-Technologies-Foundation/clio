@@ -30,7 +30,7 @@ public sealed class RoutingGuidanceResource {
 		       Pick the domain, then the row (get-guidance name=...; an unknown name returns availableGuides).
 
 		       - Pages (Freedom UI): create/edit -> get-component-info (read resolvedFrom) + name=page-modification
-		         - dashboards / analytics widgets (placement / sizing / styling) -> name=dashboards AND name=indicator-widget
+		         - dashboards (create a dashboard page, or lay out / size / style analytics widgets) -> name=dashboards (routes onward to dashboard-creation / dashboard-design)
 		         - page business rules (visibility/required/value) -> name=business-rules
 		         - add a button/menu item that runs a business process -> name=run-process-button
 		       - Entities & schemas: create/modify schema, app / schema modeling -> name=app-modeling

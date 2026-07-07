@@ -701,25 +701,18 @@ namespace Clio.Command {
 					Error = InvalidResourcesError
 				};
 			}
-			if (!string.IsNullOrWhiteSpace(options.OptionalProperties)) {
-				try {
-					parsedOptionalProperties = JArray.Parse(options.OptionalProperties);
-				} catch {
-					return new PageUpdateResponse {
-						Success = false,
-						Error = InvalidOptionalPropertiesError
-					};
-				}
+			if (!PageOptionalPropertiesHelper.TryParse(
+					options.OptionalProperties, out parsedOptionalProperties, out string optionalPropertiesError)) {
+				return new PageUpdateResponse {
+					Success = false,
+					Error = optionalPropertiesError
+				};
 			}
 			return null;
 		}
 
 		/// <summary>The canonical error for a malformed <c>resources</c> payload.</summary>
 		internal const string InvalidResourcesError = "resources must be a valid JSON object string";
-
-		/// <summary>The canonical error for a malformed <c>optional-properties</c> payload.</summary>
-		internal const string InvalidOptionalPropertiesError =
-			"optional-properties must be a valid JSON array of {key, value} objects";
 
 		/// <summary>
 		/// Validates the <c>resources</c> and <c>optional-properties</c> argument payloads WITHOUT
@@ -737,12 +730,8 @@ namespace Clio.Command {
 			if (!SchemaValidationService.TryParseResources(resources, out _, out _)) {
 				return InvalidResourcesError;
 			}
-			if (!string.IsNullOrWhiteSpace(optionalProperties)) {
-				try {
-					JArray.Parse(optionalProperties);
-				} catch {
-					return InvalidOptionalPropertiesError;
-				}
+			if (!PageOptionalPropertiesHelper.TryParse(optionalProperties, out _, out string optionalPropertiesError)) {
+				return optionalPropertiesError;
 			}
 			return null;
 		}

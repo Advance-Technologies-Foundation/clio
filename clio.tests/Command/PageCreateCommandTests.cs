@@ -314,6 +314,90 @@ public sealed class PageCreateCommandTests
 		_applicationClient.DidNotReceive().ExecutePostRequest(SaveSchemaUrl, Arg.Any<string>());
 	}
 
+	[Test]
+	[Description("Seeds the supplied optional-properties into the SaveSchema optionalProperties array.")]
+	public void TryCreatePage_Seeds_Optional_Properties_Into_SaveSchema_Payload() {
+		// Arrange
+		Queue<string> selectResponses = new([
+			$$"""{"success": true, "rows": [{"UId": "{{PackageUId}}"}]}""",
+			"""{"success": true, "rows": []}"""
+		]);
+		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>())
+			.Returns(_ => selectResponses.Dequeue());
+		_applicationClient.ExecutePostRequest(SaveSchemaUrl, Arg.Any<string>())
+			.Returns("""{"success": true}""");
+		string savePayload = null;
+		_applicationClient.When(client => client.ExecutePostRequest(SaveSchemaUrl, Arg.Any<string>()))
+			.Do(call => savePayload = call.ArgAt<string>(1));
+		PageCreateOptions options = new() {
+			SchemaName = "UsrDemo_Dashboard",
+			Template = TemplateName,
+			PackageName = "Custom",
+			OptionalProperties = """[{"key":"DashboardsEntitySchemaName","value":"Contact"},{"key":"DashboardsElementName","value":"Dashboards"}]"""
+		};
+
+		// Act
+		bool result = _command.TryCreatePage(options, out PageCreateResponse response);
+
+		// Assert
+		result.Should().BeTrue(response.Error);
+		JArray optionalProperties = (JArray)JObject.Parse(savePayload)["optionalProperties"];
+		optionalProperties.Select(item => item["key"]!.ToString())
+			.Should().BeEquivalentTo(["DashboardsEntitySchemaName", "DashboardsElementName"],
+				because: "create-page must seed the caller-supplied optional properties so a dashboard is linked at creation time");
+	}
+
+	[Test]
+	[Description("Rejects a malformed optional-properties payload before any SaveSchema call.")]
+	public void TryCreatePage_Rejects_Malformed_Optional_Properties() {
+		// Arrange
+		PageCreateOptions options = new() {
+			SchemaName = "UsrDemo_Dashboard",
+			Template = TemplateName,
+			PackageName = "Custom",
+			OptionalProperties = "{ not-an-array }"
+		};
+
+		// Act
+		bool result = _command.TryCreatePage(options, out PageCreateResponse response);
+
+		// Assert
+		result.Should().BeFalse("because a malformed optional-properties payload must fail fast");
+		response.Error.Should().Be(PageOptionalPropertiesHelper.InvalidOptionalPropertiesError,
+			because: "the failure must use the canonical shared error wording");
+		_applicationClient.DidNotReceive().ExecutePostRequest(SaveSchemaUrl, Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("Writes an empty optionalProperties array when the caller supplies none.")]
+	public void TryCreatePage_Writes_Empty_Optional_Properties_When_None_Supplied() {
+		// Arrange
+		Queue<string> selectResponses = new([
+			$$"""{"success": true, "rows": [{"UId": "{{PackageUId}}"}]}""",
+			"""{"success": true, "rows": []}"""
+		]);
+		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>())
+			.Returns(_ => selectResponses.Dequeue());
+		_applicationClient.ExecutePostRequest(SaveSchemaUrl, Arg.Any<string>())
+			.Returns("""{"success": true}""");
+		string savePayload = null;
+		_applicationClient.When(client => client.ExecutePostRequest(SaveSchemaUrl, Arg.Any<string>()))
+			.Do(call => savePayload = call.ArgAt<string>(1));
+		PageCreateOptions options = new() {
+			SchemaName = "UsrDemo_BlankPage",
+			Template = TemplateName,
+			PackageName = "Custom"
+		};
+
+		// Act
+		bool result = _command.TryCreatePage(options, out PageCreateResponse response);
+
+		// Assert
+		result.Should().BeTrue(response.Error);
+		((JArray)JObject.Parse(savePayload)["optionalProperties"]).Should().BeEmpty(
+			because: "omitting optional-properties must preserve the prior empty-array behavior");
+	}
+
 	private void StubSelectQueryResponse(string url, string responseJson) {
 		_applicationClient.ExecutePostRequest(url, Arg.Any<string>()).Returns(responseJson);
 	}

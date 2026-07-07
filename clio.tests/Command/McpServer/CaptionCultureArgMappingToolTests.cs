@@ -12,10 +12,11 @@ using NUnit.Framework;
 namespace Clio.Tests.Command.McpServer;
 
 /// <summary>
-/// Verifies that the optional <c>caption-culture</c> MCP argument is threaded from each tool's
-/// argument record into the command options / service request that the tool ultimately executes.
-/// Covers the four tools that gained the argument: create-entity-schema, modify-entity-schema-column,
-/// create-page, and create-app-section.
+/// Verifies that optional MCP arguments are threaded from each tool's argument record into the
+/// command options / service request that the tool ultimately executes.
+/// Covers <c>caption-culture</c> on the four tools that gained the argument (create-entity-schema,
+/// modify-entity-schema-column, create-page, create-app-section) and <c>optional-properties</c>
+/// on create-page.
 /// </summary>
 [TestFixture]
 [Category("Unit")]
@@ -88,6 +89,31 @@ public sealed class CaptionCultureArgMappingToolTests {
 		command.CapturedOptions.Should().NotBeNull("because the resolved command must receive the mapped options");
 		command.CapturedOptions!.CaptionCulture.Should().Be(CaptionCultureValue,
 			"because the create-page tool must thread the caption-culture argument into the command options");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Description("create-page maps args.optional-properties into PageCreateOptions.OptionalProperties.")]
+	public void CreatePage_ShouldMapOptionalProperties_WhenOptionalPropertiesProvided() {
+		// Arrange
+		const string optionalProperties =
+			"""[{"key":"DashboardsEntitySchemaName","value":"Contact"}]""";
+		CapturingPageCreateCommand command = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageCreateCommand>(Arg.Any<PageCreateOptions>())
+			.Returns(command);
+		PageCreateTool tool = new(command, ConsoleLogger.Instance, commandResolver);
+		PageCreateArgs args = new("UsrPage", "BaseDashboardTemplate", "Custom", null, null, null, "dev", null, null, null,
+			OptionalProperties: optionalProperties);
+
+		// Act
+		ConsoleLogger.Instance.ClearMessages();
+		tool.CreatePage(args);
+
+		// Assert
+		command.CapturedOptions.Should().NotBeNull("because the resolved command must receive the mapped options");
+		command.CapturedOptions!.OptionalProperties.Should().Be(optionalProperties,
+			"because the create-page tool must thread the optional-properties argument into the command options");
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
