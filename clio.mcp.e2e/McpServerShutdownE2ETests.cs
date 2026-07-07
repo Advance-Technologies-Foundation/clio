@@ -22,6 +22,7 @@ namespace Clio.Mcp.E2E;
 /// surfaces here as a non-zero exit code and an unhandled exception on stderr.
 /// </remarks>
 [TestFixture]
+[Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("mcp-server")]
 [NonParallelizable]

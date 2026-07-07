@@ -17,10 +17,11 @@ namespace Clio.Mcp.E2E;
 /// End-to-end tests for the get-page MCP tool.
 /// </summary>
 [TestFixture]
+[Category("McpE2E.Sandbox")]
 [AllureNUnit]
 [AllureFeature("get-page")]
 [NonParallelizable]
-public sealed class PageGetToolE2ETests {
+public sealed class PageGetToolE2ETests : McpContractFixtureBase {
 	private const string ToolName = PageGetTool.ToolName;
 	private const string ApplicationCode = "AutoTestClioMcp";
 	private const string SavePage = "ClioMcp_BlankPageToSave";
@@ -271,10 +272,10 @@ public sealed class PageGetToolE2ETests {
 			because: "every returned page summary should expose stable schema and package selectors");
 	}
 
-	private static async Task<ArrangeContext> ArrangeAsync(McpE2ESettings settings, TimeSpan timeout) {
+	private async Task<ArrangeContext> ArrangeAsync(McpE2ESettings settings, TimeSpan timeout) {
 		CancellationTokenSource cancellationTokenSource = new(timeout);
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		McpServerSession session = Session;
 		return new ArrangeContext(session, cancellationTokenSource, environmentName);
 	}
 
@@ -363,13 +364,13 @@ public sealed class PageGetToolE2ETests {
 		}
 	}
 
-	private sealed record ArrangeContext(
+	private new sealed record ArrangeContext(
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource,
 		string EnvironmentName) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
+		public ValueTask DisposeAsync() {
 			CancellationTokenSource.Dispose();
+			return ValueTask.CompletedTask;
 		}
 	}
 

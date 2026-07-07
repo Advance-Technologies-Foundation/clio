@@ -25,19 +25,35 @@ a regular CLI verb. It supports two modes:
 
 ### Composites and `compositeOnly`
 
-Some Designer elements (e.g. "Expanded list", "Attachments", "Next steps") are
-not standalone components but pre-built combinations of several components, so
-they have no `componentType` of their own. They are surfaced in a top-level
-`composites` array (`{ caption, description, docs }`) in list mode, and fetched
-by caption with `--composite "<caption>"`, which returns a `mode:"composite"`
+Some Designer elements are not standalone components but pre-built combinations
+of several components, so they have no `componentType` of their own. They are
+surfaced in a top-level `composites` array (`{ caption, description, docs }`) in
+list mode — read that array to discover which composites exist for the resolved
+version — and fetched by caption with `--composite "<caption>"`, which returns a `mode:"composite"`
 response carrying the composite's assembly docs. A `--composite` lookup whose
 docs all fail to load sets `documentationUnavailable: true` so a transient docs
 fetch failure is distinguishable from a composite that genuinely ships no docs.
 
 A component with no standalone Designer toolbar presence carries
-`compositeOnly: true` (with `compositeOnlyHint` on detail) — it must be built via
-its composite rather than placed directly. This CLI verb and the MCP tool stay in
-lockstep on composites; both share the same catalog and response builders.
+`compositeOnly: true` (with `compositeOnlyHint` on detail). Composites carry no
+machine-readable list of their member components, so the hint encodes a decision
+rule rather than naming the owning composite: discover composites in list mode,
+confirm membership by reading each candidate's recipe (`--composite "<caption>"`),
+build the composite when one assembles this component, and otherwise build the
+component directly as a fallback — only when the component's own applicability
+(`appliesToCustomEntities` / `entityCouplingNote`) allows it. This CLI verb and the
+MCP tool stay in lockstep on composites; both share the same catalog and response
+builders.
+
+When a positional `component-type` is not a known component it is resolved by
+name and description rather than dead-ending: it first matches components (by
+type, description, synonyms, use-cases); if none match it matches composites by
+caption/description; only when neither matches does it fall back to the
+closest-type shortlist. So passing a composite's caption as the component-type
+(e.g. `clio get-component-info "Expanded list"`) returns a not-found response
+that routes you to `--composite "Expanded list"` for the assembly recipe — an
+agent reaching for the human label still finds the composite instead of
+hand-building it. The closest-type shortlist is capped at 8 entries.
 
 The catalog is loaded through the CDN → file cache → embedded snapshot
 fallback chain (see `component-registry-refresh` for cache control). For
@@ -74,7 +90,7 @@ when it is published for the component:
 
 - `whenToUse` / `whenNotToUse` — one-line "pick this when…" / "do NOT pick
   this when…" guidance. Use them to choose between visually similar
-  components (e.g. `crt.Gallery` vs `crt.DataGrid` vs `crt.List`).
+  components that look alike but differ in behavior.
 - `synonyms` / `useCases` — alternate names and concrete scenarios. These are
   also folded into `--search` matching, so an informal term like `table`
   surfaces `crt.DataGrid`.

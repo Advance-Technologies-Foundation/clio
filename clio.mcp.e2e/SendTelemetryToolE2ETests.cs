@@ -13,6 +13,7 @@ namespace Clio.Mcp.E2E;
 /// End-to-end tests for the product telemetry MCP tool.
 /// </summary>
 [TestFixture]
+[Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("send-telemetry")]
 [NonParallelizable]
@@ -44,10 +45,17 @@ public sealed class SendTelemetryToolE2ETests
 
 		try {
 			// Act
-			JsonDocument tools = await session.SendRequestAsync("tools/list", new { });
+			// send-telemetry is hidden from tools/list on the lazy tool surface: it is discoverable only
+			// through the get-tool-contract compact index and callable only through the clio-run executor
+			// ({"command":"send-telemetry","args":{...}}), which returns the target tool's result verbatim.
+			JsonDocument discovery = await session.SendRequestAsync("tools/call", new {
+				name = ToolContractGetTool.ToolName,
+				arguments = new { }
+			});
 			JsonDocument callResult = await session.SendRequestAsync("tools/call", new {
-				name = ToolName,
+				name = ClioRunTool.ToolName,
 				arguments = new {
+					command = ToolName,
 					args = new {
 						session_id = sessionId,
 						event_name = "session_started",
@@ -59,12 +67,18 @@ public sealed class SendTelemetryToolE2ETests
 			});
 
 			// Assert
-			tools.RootElement.GetProperty("result").GetProperty("tools").EnumerateArray()
-				.Select(tool => tool.GetProperty("name").GetString())
-				.Should().Contain(ToolName,
-					because: "the real MCP server should advertise the send-telemetry tool");
+			// The compact index rides the raw CallToolResult (text and/or structured content), so the
+			// discoverability gate searches the serialized result for the tool name.
+			discovery.RootElement.GetProperty("result").ToString().Should().Contain(ToolName,
+				because: "the real MCP server should list send-telemetry in the get-tool-contract compact index on the lazy tool surface");
 			callResult.RootElement.TryGetProperty("error", out _).Should().BeFalse(
 				because: "send-telemetry should return a normal MCP response when the event is persisted locally");
+			// A clio-run dispatch failure (for example an unknown tool) surfaces as isError=true inside
+			// a normal JSON-RPC result, so the routed call outcome must be checked explicitly.
+			(callResult.RootElement.GetProperty("result").TryGetProperty("isError", out JsonElement isError)
+					&& isError.ValueKind == JsonValueKind.True)
+				.Should().BeFalse(
+					because: "the clio-run dispatch of send-telemetry should succeed so the event is persisted locally");
 			string? eventFile = FindEventFile(telemetryHome, sessionId);
 			eventFile.Should().NotBeNull(
 				because: "one product event should be persisted locally");
@@ -100,10 +114,14 @@ public sealed class SendTelemetryToolE2ETests
 		await using RawMcpSession session = RawMcpSession.Start();
 
 		try {
-			// Act — grant consent and store one event, then withdraw consent.
+			// Act — grant consent and store one event, then withdraw consent. Both telemetry tools are
+			// hidden from tools/list on the lazy tool surface, so the raw JSON-RPC calls are dispatched
+			// through the clio-run executor; withdraw-telemetry-consent takes no arguments, so no args
+			// object is forwarded alongside the command name.
 			await session.SendRequestAsync("tools/call", new {
-				name = SendTelemetryTool.ToolName,
+				name = ClioRunTool.ToolName,
 				arguments = new {
+					command = SendTelemetryTool.ToolName,
 					args = new {
 						session_id = sessionId,
 						event_name = "session_started",
@@ -116,19 +134,30 @@ public sealed class SendTelemetryToolE2ETests
 			FindEventFile(telemetryHome, sessionId).Should().NotBeNull(
 				because: "the granted-consent event should be spooled before withdrawal");
 
-			JsonDocument tools = await session.SendRequestAsync("tools/list", new { });
-			JsonDocument withdrawResult = await session.SendRequestAsync("tools/call", new {
-				name = WithdrawTelemetryConsentTool.ToolName,
+			JsonDocument discovery = await session.SendRequestAsync("tools/call", new {
+				name = ToolContractGetTool.ToolName,
 				arguments = new { }
+			});
+			JsonDocument withdrawResult = await session.SendRequestAsync("tools/call", new {
+				name = ClioRunTool.ToolName,
+				arguments = new {
+					command = WithdrawTelemetryConsentTool.ToolName
+				}
 			});
 
 			// Assert
-			tools.RootElement.GetProperty("result").GetProperty("tools").EnumerateArray()
-				.Select(tool => tool.GetProperty("name").GetString())
-				.Should().Contain(WithdrawTelemetryConsentTool.ToolName,
-					because: "the real MCP server should advertise the withdraw-telemetry-consent tool");
+			// The compact index rides the raw CallToolResult (text and/or structured content), so the
+			// discoverability gate searches the serialized result for the tool name.
+			discovery.RootElement.GetProperty("result").ToString().Should().Contain(WithdrawTelemetryConsentTool.ToolName,
+				because: "the real MCP server should list withdraw-telemetry-consent in the get-tool-contract compact index on the lazy tool surface");
 			withdrawResult.RootElement.TryGetProperty("error", out _).Should().BeFalse(
 				because: "withdraw-telemetry-consent should return a normal MCP response");
+			// A clio-run dispatch failure (for example an unknown tool) surfaces as isError=true inside
+			// a normal JSON-RPC result, so the routed call outcome must be checked explicitly.
+			(withdrawResult.RootElement.GetProperty("result").TryGetProperty("isError", out JsonElement isError)
+					&& isError.ValueKind == JsonValueKind.True)
+				.Should().BeFalse(
+					because: "the clio-run dispatch of withdraw-telemetry-consent should succeed so the outbox purge runs");
 			FindEventFile(telemetryHome, sessionId).Should().BeNull(
 				because: "withdrawal must purge the not-yet-uploaded local outbox");
 			File.Exists(Path.Combine(telemetryHome, "consent.json")).Should().BeTrue(

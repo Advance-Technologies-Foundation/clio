@@ -1,5 +1,4 @@
 using System;
-using Clio.Command.McpServer;
 using Clio.Command.McpServer.Prompts;
 using Clio.Command.McpServer.Resources;
 using FluentAssertions;
@@ -27,10 +26,11 @@ public sealed class ProfileLanguageGuidanceTests {
 	}
 
 	[Test]
-	[Description("Server instructions contain the detect-once / reuse / ask-on-failure profile-language guidance.")]
-	public void GetInstructions_ShouldContainProfileLanguageGuidance_WhenServerInitializes() {
-		AssertContainsGuidance(McpServerInstructions.Text, "server instructions");
-		McpServerInstructions.Text.Should().ContainEquivalentOf("once per session",
+	[Description("The core-rules guide (mandated first by the server instructions) carries the detect-once / reuse / ask-on-failure profile-language guidance.")]
+	public void CoreRulesGuide_ShouldContainProfileLanguageGuidance_WhenServerInitializes() {
+		string coreRules = CoreRulesGuidanceResource.Guide.Text;
+		AssertContainsGuidance(coreRules, "core-rules guide");
+		coreRules.Should().ContainEquivalentOf("once per session",
 			because: "the guidance must enforce detect-once-per-session reuse (AC-05)");
 	}
 

@@ -6,12 +6,18 @@ using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
-using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E;
 
 [TestFixture]
+// NoEnvironment tier: show-passing-infrastructure degrades gracefully on a host with no Kubernetes
+// (the discovery service catches per-section failures) and always returns a structured availability
+// payload rather than an MCP protocol error. The opaque InternalError that previously forced this
+// onto the Sandbox tier was the no-Kubernetes fallback IKubernetes client throwing from Dispose
+// during per-request DI-scope teardown — fixed under ENG-91830, so the test is now deterministically
+// green env-free and belongs in the merge-blocking NoEnvironment gate.
+[Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("show-passing-infrastructure")]
 public sealed class ShowPassingInfrastructureToolE2ETests
@@ -66,9 +72,10 @@ public sealed class ShowPassingInfrastructureToolE2ETests
 	{
 		return await AllureApi.Step("Act by invoking show-passing-infrastructure through MCP", async () =>
 		{
-			IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-			tools.Select(tool => tool.Name).Should().Contain(ToolName,
-				because: "the show-passing-infrastructure MCP tool must be advertised before the end-to-end call can be executed");
+			IReadOnlyCollection<string> toolNames =
+				await arrangeContext.Session.ListReachableToolNamesAsync(arrangeContext.CancellationTokenSource.Token);
+			toolNames.Should().Contain(ToolName,
+				because: "the show-passing-infrastructure MCP tool must be discoverable via the get-tool-contract compact index before the end-to-end call can be executed through the lazy surface");
 
 			CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
 				ToolName,

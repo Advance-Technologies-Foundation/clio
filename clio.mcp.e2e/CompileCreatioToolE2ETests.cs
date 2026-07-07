@@ -4,11 +4,9 @@ using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
-using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
-using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E;
@@ -17,9 +15,11 @@ namespace Clio.Mcp.E2E;
 /// End-to-end tests for the compile-creatio MCP tool.
 /// </summary>
 [TestFixture]
+[Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("compile-configuration")]
-public sealed class CompileCreatioToolE2ETests
+[Parallelizable(ParallelScope.Self)]
+public sealed class CompileCreatioToolE2ETests : McpContractFixtureBase
 {
 	private const string ToolName = CompileCreatioTool.CompileCreatioToolName;
 
@@ -31,8 +31,7 @@ public sealed class CompileCreatioToolE2ETests
 	public async Task CompileCreatio_Should_Report_Invalid_Environment_Failure()
 	{
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		await using CompileCreatioArrangeContext arrangeContext = await ArrangeAsync(settings);
+		await using var arrangeContext = Arrange();
 		string invalidEnvironmentName = $"missing-compile-env-{Guid.NewGuid():N}";
 
 		// Act
@@ -44,25 +43,16 @@ public sealed class CompileCreatioToolE2ETests
 		AssertFailureMentionsEnvironment(actResult, invalidEnvironmentName);
 	}
 
-	private static async Task<CompileCreatioArrangeContext> ArrangeAsync(McpE2ESettings settings)
-	{
-		return await AllureApi.Step("Arrange compile-creatio MCP session", async () =>
-		{
-			CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
-			McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-			return new CompileCreatioArrangeContext(session, cancellationTokenSource);
-		});
-	}
-
 	private static async Task<CompileCreatioActResult> ActAsync(
-		CompileCreatioArrangeContext arrangeContext,
+		ArrangeContext arrangeContext,
 		string environmentName)
 	{
 		return await AllureApi.Step("Act by invoking compile-creatio through MCP", async () =>
 		{
-			IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-			tools.Select(tool => tool.Name).Should().Contain(ToolName,
-				because: "the compile-creatio MCP tool must be advertised before the end-to-end call can be executed");
+			IReadOnlyCollection<string> toolNames =
+				await arrangeContext.Session.ListReachableToolNamesAsync(arrangeContext.CancellationTokenSource.Token);
+			toolNames.Should().Contain(ToolName,
+				because: "the compile-creatio MCP tool must be discoverable via the get-tool-contract compact index before the end-to-end call can be executed");
 
 			CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
 				ToolName,
@@ -103,17 +93,6 @@ public sealed class CompileCreatioToolE2ETests
 		combinedOutput.Should().MatchRegex(
 			$"(?is)({Regex.Escape(environmentName)}|environment.*not.*found|not found|error occurred invoking)",
 			because: "the failure should help a human understand that the requested environment is not registered");
-	}
-
-	private sealed record CompileCreatioArrangeContext(
-		McpServerSession Session,
-		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable
-	{
-		public async ValueTask DisposeAsync()
-		{
-			await Session.DisposeAsync();
-			CancellationTokenSource.Dispose();
-		}
 	}
 
 	private sealed record CompileCreatioActResult(

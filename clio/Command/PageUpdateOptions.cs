@@ -168,6 +168,10 @@ namespace Clio.Command {
 		public bool TryUpdatePage(PageUpdateOptions options, out PageUpdateResponse response) {
 			try {
 				if (!TryLoadBodyFromFile(options, out response)) return false;
+				// Single chokepoint for update-page, sync-pages, and the CLI: run the registered before-save
+				// page-body preprocessors before validating/saving. Fail-safe; a no-op for bodies no preprocessor
+				// applies to. See PageBodyBeforeSavePreprocessingPipeline.
+				options.Body = PageBodyBeforeSavePreprocessingPipeline.Preprocess(options.Body);
 				PageUpdateResponse earlyError = ValidateRequiredFields(options);
 				if (earlyError != null) { response = earlyError; return false; }
 				PageUpdateResponse commonValidationError = ValidateCommonInput(
@@ -566,7 +570,6 @@ namespace Clio.Command {
 			dto["name"] = originalName;
 			dto["isReadOnly"] = false;
 			dto["extendParent"] = true;
-			dto["caption"] = null;
 			dto[LocalizableStringsKey] = template[LocalizableStringsKey]?.DeepClone() ?? new JArray();
 			dto["package"] = new JObject {
 				["uId"] = context.DesignPackageUId,
@@ -695,18 +698,40 @@ namespace Clio.Command {
 			if (!SchemaValidationService.TryParseResources(options.Resources, out explicitResources, out _)) {
 				return new PageUpdateResponse {
 					Success = false,
-					Error = "resources must be a valid JSON object string"
+					Error = InvalidResourcesError
 				};
 			}
-			if (!string.IsNullOrWhiteSpace(options.OptionalProperties)) {
-				try {
-					parsedOptionalProperties = JArray.Parse(options.OptionalProperties);
-				} catch {
-					return new PageUpdateResponse {
-						Success = false,
-						Error = "optional-properties must be a valid JSON array of {key, value} objects"
-					};
-				}
+			if (!PageOptionalPropertiesHelper.TryParse(
+					options.OptionalProperties, out parsedOptionalProperties, out string optionalPropertiesError)) {
+				return new PageUpdateResponse {
+					Success = false,
+					Error = optionalPropertiesError
+				};
+			}
+			return null;
+		}
+
+		/// <summary>The canonical error for a malformed <c>resources</c> payload.</summary>
+		internal const string InvalidResourcesError = "resources must be a valid JSON object string";
+
+		/// <summary>
+		/// Validates the <c>resources</c> and <c>optional-properties</c> argument payloads WITHOUT
+		/// parsing the page body or touching the network. Returns the canonical, user-facing error
+		/// string for the first malformed payload, or <c>null</c> when both are well-formed (or absent).
+		/// Used by the MCP <c>update-page</c> tool to surface a specific, actionable argument error over
+		/// the generic whole-body JavaScript syntax error when a body fails to parse but a payload
+		/// argument is also malformed (ENG-90640 shadowing fix). The wording is shared with
+		/// <see cref="ValidateCommonInput"/> so both code paths report identically.
+		/// </summary>
+		/// <param name="resources">The <c>resources</c> JSON object string argument, or <c>null</c>.</param>
+		/// <param name="optionalProperties">The <c>optional-properties</c> JSON array string argument, or <c>null</c>.</param>
+		/// <returns>The canonical error message for the first malformed payload, or <c>null</c> when valid.</returns>
+		public static string ValidateArgumentPayloads(string resources, string optionalProperties) {
+			if (!SchemaValidationService.TryParseResources(resources, out _, out _)) {
+				return InvalidResourcesError;
+			}
+			if (!PageOptionalPropertiesHelper.TryParse(optionalProperties, out _, out string optionalPropertiesError)) {
+				return optionalPropertiesError;
 			}
 			return null;
 		}

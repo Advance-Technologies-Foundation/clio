@@ -145,6 +145,26 @@ and `retry-guidance`.
 | `creatio-timeout` | The request was sent but Creatio produced no response within the budget. | clio automatically checks whether the section appeared anyway: if it did, the command continues and succeeds. If not, do **not** retry blindly — the server may still be processing the insert. Wait a few minutes, run `clio list-app-sections`, and retry only if the section is still absent. |
 | `server-error` | Creatio rejected the operation (HTTP error, non-JSON/HTML response, or a rejected insert). | Retrying the same arguments will most likely fail again; fix the inputs or the server state first. |
 
+### MCP response deadline (`in-progress`)
+
+Some MCP clients (for example GitHub Copilot CLI) enforce a **hard ~180 s
+per-request ceiling that progress notifications do not reset**, so on a cold or
+large environment the whole `create-app-section` call can exceed it and the
+client abandons the request with an opaque `-32001 Request timed out` (ENG-91316).
+To stay under that ceiling the MCP tool bounds its **response** by a wall-clock
+deadline (default **150 s**, override with `CLIO_MCP_RESPONSE_DEADLINE_SECONDS`,
+whole seconds, `0 < n ≤ 600`). When the work exceeds the deadline the tool returns
+`error-class: creatio-timeout` with `section-created: in-progress` **before** the
+client gives up, while the section keeps being created in the background on the
+long-lived clio MCP server.
+
+`section-created: in-progress` is **not** a failure: do **not** retry
+`create-app-section` (a retry would create a duplicate) and do **not** fall back
+to `create-page` / `sync-pages`. Wait briefly, then poll `list-app-sections` /
+`get-app-info` until the section and its generated `<Code>_ListPage` /
+`<Code>_FormPage` appear. This deadline applies only to the MCP surface; the CLI
+command returns synchronously.
+
 Failures during the preparation reads (before the insert is attempted) are
 classified with the same rules but are always side-effect-free and safe to
 retry once the underlying issue is resolved.

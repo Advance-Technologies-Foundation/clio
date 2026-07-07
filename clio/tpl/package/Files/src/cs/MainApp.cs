@@ -44,16 +44,18 @@ namespace #RootNameSpace# {
 		private static ServiceProvider Init(){
 
 			ServiceCollection serviceCollection = new ServiceCollection();
-
 			serviceCollection.AddSingleton<ILog>(LogManager.GetLogger(Constants.LoggerName));
-			
-			// UserConnection is disposable, always register it as scoped
-			serviceCollection.AddScoped<UserConnection>(sp=> UserConnection);
-			
+
+			// UserConnection is owned by the Creatio platform (the per-request connection).
+			// Never register it as a container-managed (scoped/transient) service: the DI container
+			// disposes any IDisposable it resolves from a factory when the scope closes, which would
+			// tear down the platform connection's DB executors and clear UserConnection.Current
+			// mid-request. Expose it through a Func accessor so the container never owns its lifetime.
+			serviceCollection.AddTransient<Func<UserConnection>>(sp => () => UserConnection);
+
 			InjectedServices?.ToList().ForEach(service => service(serviceCollection));
 			return serviceCollection.BuildServiceProvider();
 		}
-
 
 		#endregion
 
@@ -89,7 +91,8 @@ namespace #RootNameSpace# {
 
 		/// <summary>
 		/// Creates a new service scope. Caller is responsible for disposing the scope.
-		/// Use this for scoped services like UserConnection.
+		/// Use this for package-owned scoped services. Do NOT use it to obtain UserConnection:
+		/// that connection is owned by the platform — resolve Func&lt;UserConnection&gt; instead.
 		/// </summary>
 		/// <returns>A new service scope that must be disposed.</returns>
 		public IServiceScope CreateScope() {

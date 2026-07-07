@@ -84,6 +84,12 @@ public class NugetPackagesProviderTests : BaseClioModuleTests{
 
 	#endregion
 
+	[TearDown]
+	public override void TearDown() {
+		_handler?.Dispose();
+		base.TearDown();
+	}
+
 	#region Methods: Public
 
 	[Test]

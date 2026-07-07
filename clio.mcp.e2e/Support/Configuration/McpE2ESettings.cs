@@ -10,10 +10,32 @@ internal sealed class McpE2ESettings {
 	public Dictionary<string, string?> ProcessEnvironmentVariables { get; set; } = new();
 
 	public SandboxSettings Sandbox { get; set; } = new();
+
+	public DataForgeSettings DataForge { get; set; } = new();
+}
+
+internal sealed class DataForgeSettings {
+	/// <summary>
+	/// When true, the DataForge similarity-search E2E fixtures (find-tables, find-lookups,
+	/// get-relations) run a one-time arrange step that invokes the destructive
+	/// <c>dataforge-initialize</c> tool and polls <c>dataforge-status</c> until the similarity
+	/// index is built before asserting. Off by default so non-DataForge runs and stands whose
+	/// index is already warm are unaffected, and so the destructive initialize stays opt-in
+	/// (mirrors <see cref="McpE2ESettings.AllowDestructiveMcpTests"/>). Set in CI via
+	/// <c>McpE2E__DataForge__InitializeAndWait=true</c>.
+	/// </summary>
+	public bool InitializeAndWait { get; set; }
 }
 
 internal sealed class SandboxSettings {
 	public string? EnvironmentName { get; set; }
+
+	/// <summary>
+	/// When set, the harness re-registers the sandbox env at this URL via reg-web-app before tests,
+	/// so it targets the freshly-deployed stand instead of a stale registration.
+	/// In CI set via <c>McpE2E__Sandbox__EnvironmentUrl=%DeployedUrl%</c>.
+	/// </summary>
+	public string? EnvironmentUrl { get; set; }
 
 	/// <summary>
 	/// Absolute path to the Creatio installation root for the sandbox environment.

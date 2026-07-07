@@ -1,7 +1,6 @@
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Resources;
-using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using FluentAssertions;
 using ModelContextProtocol.Client;
@@ -10,10 +9,11 @@ using ModelContextProtocol.Protocol;
 namespace Clio.Mcp.E2E;
 
 [TestFixture]
+[Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("mcp-guidance-resources")]
 [NonParallelizable]
-public sealed class McpGuidanceResourceE2ETests {
+public sealed class McpGuidanceResourceE2ETests : McpContractFixtureBase {
 	private const string DocsScheme = "docs";
 	private const string GuidesPath = "mcp/guides";
 	private static readonly string AppModelingUri = BuildGuideUri("app-modeling");
@@ -29,6 +29,7 @@ public sealed class McpGuidanceResourceE2ETests {
 	private static readonly string AgentExecutionUri = BuildGuideUri("agent-execution");
 	private static readonly string SupportModeUri = BuildGuideUri("support-mode");
 	private static readonly string BusinessRulesUri = BuildGuideUri("business-rules");
+	private static readonly string ServerToServerOAuthUri = BuildGuideUri("server-to-server-oauth");
 	private static readonly string ConfigurationWebServiceDtoPatternsUri =
 		BuildReferenceUri("configuration-webservice", "dto-patterns");
 	private static readonly string ConfigurationWebServiceStatusCodePatternsUri =
@@ -49,9 +50,7 @@ public sealed class McpGuidanceResourceE2ETests {
 	[AllureName("MCP server advertises modeling, binding, existing-app, validator, agent-execution, and support-mode guidance resources")]
 	public async Task McpServer_Should_Advertise_Guidance_Resources() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		IList<McpClientResource> resources = await context.Session.ListResourcesAsync(context.CancellationTokenSource.Token);
@@ -71,6 +70,7 @@ public sealed class McpGuidanceResourceE2ETests {
 				AgentExecutionUri,
 				SupportModeUri,
 				BusinessRulesUri,
+				ServerToServerOAuthUri,
 				ConfigurationWebServiceDtoPatternsUri,
 				ConfigurationWebServiceStatusCodePatternsUri,
 				ConfigurationWebServiceCompositionRootPatternUri,
@@ -85,7 +85,7 @@ public sealed class McpGuidanceResourceE2ETests {
 
 		resources.Select(resource => resource.Uri).Should().Contain(
 			expectedStaticUris.Concat(expectedGeneratedUris),
-			because: "the MCP server should advertise creation existing-app configuration-webservice converter handler validator sdk-common agent-execution support-mode business-rules and reference resources");
+			because: "the MCP server should advertise creation existing-app configuration-webservice converter handler validator sdk-common agent-execution support-mode business-rules server-to-server-oauth and reference resources");
 	}
 
 	[Test]
@@ -93,9 +93,7 @@ public sealed class McpGuidanceResourceE2ETests {
 	[AllureName("MCP server returns configuration web-service guidance and representative references")]
 	public async Task McpServer_Should_Return_Configuration_WebService_Guidance_And_References() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		ReadResourceResult guideResult = await context.Session.ReadResourceAsync(
@@ -128,9 +126,7 @@ public sealed class McpGuidanceResourceE2ETests {
 	[AllureName("MCP server returns configuration web-service test guidance and representative references")]
 	public async Task McpServer_Should_Return_Configuration_WebService_Tests_Guidance_And_References() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		ReadResourceResult guideResult = await context.Session.ReadResourceAsync(
@@ -163,9 +159,7 @@ public sealed class McpGuidanceResourceE2ETests {
 	[AllureName("MCP server returns generated composable-app skill guidance and representative references")]
 	public async Task McpServer_Should_Return_Generated_Composable_App_Skill_Guidance_And_References() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		ReadResourceResult guideResult = await context.Session.ReadResourceAsync(
@@ -196,9 +190,7 @@ public sealed class McpGuidanceResourceE2ETests {
 	[AllureName("MCP server returns the agent-execution guidance article")]
 	public async Task McpServer_Should_Return_Agent_Execution_Guidance() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		ReadResourceResult result = await context.Session.ReadResourceAsync(AgentExecutionUri, context.CancellationTokenSource.Token);
@@ -223,9 +215,7 @@ public sealed class McpGuidanceResourceE2ETests {
 	[AllureName("MCP server returns the support-mode guidance article")]
 	public async Task McpServer_Should_Return_Support_Mode_Guidance() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		ReadResourceResult result = await context.Session.ReadResourceAsync(SupportModeUri, context.CancellationTokenSource.Token);
@@ -252,9 +242,7 @@ public sealed class McpGuidanceResourceE2ETests {
 	[AllureName("MCP server publishes the caption-language and script-guard rule in the app-modeling guide")]
 	public async Task McpServer_Should_Publish_Caption_Language_Rule_In_App_Modeling_Guide() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		ReadResourceResult result = await context.Session.ReadResourceAsync(AppModelingUri, context.CancellationTokenSource.Token);
@@ -277,9 +265,7 @@ public sealed class McpGuidanceResourceE2ETests {
 	[AllureName("MCP server returns the data-bindings guidance article")]
 	public async Task McpServer_Should_Return_Data_Bindings_Guidance() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		ReadResourceResult result = await context.Session.ReadResourceAsync(DataBindingsUri, context.CancellationTokenSource.Token);
@@ -312,9 +298,7 @@ public sealed class McpGuidanceResourceE2ETests {
 	[AllureName("MCP server returns the existing-app maintenance guidance article")]
 	public async Task McpServer_Should_Return_Existing_App_Maintenance_Guidance() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		ReadResourceResult result = await context.Session.ReadResourceAsync(ExistingAppMaintenanceUri, context.CancellationTokenSource.Token);
@@ -349,9 +333,7 @@ public sealed class McpGuidanceResourceE2ETests {
 	[AllureName("MCP server returns the page-schema converters guidance article")]
 	public async Task McpServer_Should_Return_Page_Schema_Converters_Guidance() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		ReadResourceResult result = await context.Session.ReadResourceAsync(PageSchemaConvertersUri, context.CancellationTokenSource.Token);
@@ -376,9 +358,7 @@ public sealed class McpGuidanceResourceE2ETests {
 	[AllureName("MCP server returns the page-schema handlers guidance article")]
 	public async Task McpServer_Should_Return_Page_Schema_Handlers_Guidance() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		ReadResourceResult result = await context.Session.ReadResourceAsync(PageSchemaHandlersUri, context.CancellationTokenSource.Token);
@@ -528,10 +508,14 @@ public sealed class McpGuidanceResourceE2ETests {
 			because: "the handler guide should expose the runtime payload for attribute-change handlers");
 		article.Text.Should().Contain("| User-visible name | Source reality | Params | Notes |",
 			because: "the handler guide should isolate user-visible and source-runtime mismatches in a dedicated AI-readable table");
-		article.Text.Should().Contain("| `crt.ShowDialog` | source request is `crt.ShowDialogRequest`, handled by `crt.ShowDialogHandler` | `dialogConfig` with `message`, `actions`, optional `title` | in code author `type: \"crt.ShowDialogRequest\"`; `crt.ShowDialog` is the user-visible catalog label |",
+		article.Text.Should().Contain("| `crt.ShowDialog` | source request is `crt.ShowDialogRequest`, handled by `crt.ShowDialogHandler` | `dialogConfig.data` with `message`, `actions`, optional `title` | in code author `type: \"crt.ShowDialogRequest\"`; `crt.ShowDialog` is the user-visible catalog label |",
 			because: "the handler guide should disambiguate the user-visible dialog label from the actual source request type with an explicit authoring rule");
-		article.Text.Should().Contain("Minimal `dialogConfig` shape:",
-			because: "the handler guide should show a concrete minimal dialog payload instead of only naming the config field");
+		article.Text.Should().Contain("`message`, `actions`, and `title` go under `dialogConfig.data`, NOT directly on `dialogConfig`",
+			because: "the handler guide must steer authors to nest the dialog payload under dialogConfig.data so the message renders (ENG-91748)");
+		article.Text.Should().Contain("\"just show a short confirmation message\" is a `crt.ShowDialogRequest`, NOT a browser dialog",
+			because: "the handler guide must route a short confirmation message to crt.ShowDialogRequest so the agent does not fall back to alert() (ENG-91748)");
+		article.Text.Should().Contain("Do NOT use `alert(...)`, `window.alert(...)`, `confirm(...)`, or `prompt(...)` to show a message from a handler",
+			because: "the handler guide must forbid raw browser dialog primitives in deployed page-body handlers (ENG-91748)");
 		article.Text.Should().Contain("Do NOT create a custom handler when a direct request already matches the requirement",
 			because: "the handler guide should explicitly prevent unnecessary custom handlers for simple actions");
 		article.Text.Should().Contain("Multiple handlers in one page-body array",
@@ -575,9 +559,7 @@ public sealed class McpGuidanceResourceE2ETests {
 	[AllureName("MCP server returns the page-schema sdk common guidance article")]
 	public async Task McpServer_Should_Return_Page_Schema_Sdk_Common_Guidance() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		ReadResourceResult result = await context.Session.ReadResourceAsync(PageSchemaCreatioDevkitCommonUri, context.CancellationTokenSource.Token);
@@ -725,6 +707,10 @@ public sealed class McpGuidanceResourceE2ETests {
 			because: "the guide should make the dialog stop-rule explicit for request-dispatching handlers");
 		article.Text.Should().Contain("sdk.HandlerChainService.instance.process",
 			because: "the guide should include the SDK-oriented handler-chain dispatch pattern");
+		article.Text.Should().MatchRegex(@"dialogConfig:\s*\{\s*data:\s*\{\s*message:",
+			because: "the crt.ShowDialogRequest example must nest message/actions under dialogConfig.data, locking the ENG-91748 fix against a flat-shape regression");
+		article.Text.Should().Contain("wraps that same config one level deeper under `dialogConfig.data`",
+			because: "the guide must keep the MessageDialogConfig contrast rule distinguishing crt.ShowDialogRequest (data-wrapped) from the flat DialogService.open shape (ENG-91748)");
 		article.Text.Should().Contain("Inner handler/body snippet only: ProcessEngineService with model query helpers:",
 			because: "fragment-only sdk snippets should say they are not standalone schema modules");
 		article.Text.Should().Contain("Inner handler/body snippet only: DialogService from SDK code:",
@@ -762,9 +748,7 @@ public sealed class McpGuidanceResourceE2ETests {
 	[AllureName("MCP server returns the page-schema resources guidance article")]
 	public async Task McpServer_Should_Return_Page_Schema_Resources_Guidance() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		ReadResourceResult result = await context.Session.ReadResourceAsync(PageSchemaResourcesUri, context.CancellationTokenSource.Token);
@@ -787,9 +771,7 @@ public sealed class McpGuidanceResourceE2ETests {
 	[AllureName("MCP server returns the page-schema validators guidance article")]
 	public async Task McpServer_Should_Return_Page_Schema_Validators_Guidance() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
 		ReadResourceResult result = await context.Session.ReadResourceAsync(PageSchemaValidatorsUri, context.CancellationTokenSource.Token);
@@ -819,10 +801,28 @@ public sealed class McpGuidanceResourceE2ETests {
 			because: "the validator guide should redirect dynamic UI-state logic away from validators without pointing to removed handler or converter guides");
 	}
 
-	private static async Task<ArrangeContext> ArrangeAsync(McpE2ESettings settings, TimeSpan timeout) {
-		CancellationTokenSource cancellationTokenSource = new(timeout);
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		return new ArrangeContext(session, cancellationTokenSource);
+	[Test]
+	[AllureTag("mcp-guidance-resources")]
+	[AllureName("MCP server returns the server-to-server OAuth guidance article")]
+	[Description("Verifies that the MCP server exposes the server-to-server OAuth guide with token minting, bearer requests, and no-refresh-token guidance.")]
+	public async Task McpServer_Should_Return_Server_To_Server_OAuth_Guidance() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		ReadResourceResult result = await context.Session.ReadResourceAsync(ServerToServerOAuthUri, context.CancellationTokenSource.Token);
+
+		// Assert
+		TextResourceContents article = result.Contents.Single().Should().BeOfType<TextResourceContents>(
+			because: "the server-to-server OAuth guide should resolve to a single plain-text article").Subject;
+		article.Uri.Should().Be(ServerToServerOAuthUri,
+			because: "the returned article should preserve the stable OAuth guidance URI");
+		article.Text.Should().Contain("grant_type=client_credentials",
+			because: "the guide should show how outside callers mint server-to-server tokens");
+		article.Text.Should().Contain("Authorization: Bearer",
+			because: "the guide should show how outside callers authenticate Creatio API requests");
+		article.Text.Should().Contain("does not use refresh tokens",
+			because: "the guide should explicitly describe the no-refresh-token expiry model");
 	}
 
 	private static string BuildGuideUri(string guideName) => $"{DocsScheme}://{GuidesPath}/{guideName}";
@@ -830,12 +830,4 @@ public sealed class McpGuidanceResourceE2ETests {
 	private static string BuildReferenceUri(string guideName, string referenceName) =>
 		$"{DocsScheme}://mcp/references/{guideName}/{referenceName}";
 
-	private sealed record ArrangeContext(
-		McpServerSession Session,
-		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
-			CancellationTokenSource.Dispose();
-		}
-	}
 }

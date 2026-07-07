@@ -131,6 +131,10 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="add-pkg-dependency"></a>
 <a id="add-pkg-dep"></a>
 - [`add-package-dependency`](docs/commands/add-package-dependency.md) - Add one or more package dependencies to a package, `add-pkg-dependency`, `add-pkg-dep`
+<a id="remove-package-dependency"></a>
+<a id="remove-pkg-dependency"></a>
+<a id="remove-pkg-dep"></a>
+- [`remove-package-dependency`](docs/commands/remove-package-dependency.md) - Remove one or more package dependencies from a package, `remove-pkg-dependency`, `remove-pkg-dep`
 <a id="activate-pkg"></a>
 <a id="activate-package"></a>
 <a id="apkg"></a>
@@ -475,6 +479,18 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="ic"></a>
 <a id="install-creatio"></a>
 - [`deploy-creatio`](docs/commands/deploy-creatio.md) - Install Creatio from a distribution package, `dc`, `ic`, `install-creatio`
+<a id="deploy-identity"></a>
+- [`deploy-identity`](docs/commands/deploy-identity.md) - Deploy IdentityService to IIS and connect it to a Creatio environment
+<a id="get-identity-service-config"></a>
+- [`get-identity-service-config`](docs/commands/get-identity-service-config.md) - Read (or derive) the OAuth IdentityService configuration of a Creatio environment over REST
+<a id="resolve-oauth-system-user"></a>
+- [`resolve-oauth-system-user`](docs/commands/resolve-oauth-system-user.md) - Resolve a Creatio system user (SysAdminUnit) by name or id over DataService REST
+<a id="create-oauth-technical-user"></a>
+- [`create-oauth-technical-user`](docs/commands/create-oauth-technical-user.md) - Create a Creatio technical user for a server-to-server OAuth app via OAuthConfigService REST
+<a id="create-server-to-server-oauth-app"></a>
+- [`create-server-to-server-oauth-app`](docs/commands/create-server-to-server-oauth-app.md) - Create a server-to-server (client_credentials) OAuth app in Creatio via OAuthConfigService REST
+<a id="verify-oauth-app"></a>
+- [`verify-oauth-app`](docs/commands/verify-oauth-app.md) - Verify a server-to-server OAuth app: acquire a client_credentials token and run a bearer DataService smoke test
 <a id="deploy-infrastructure"></a>
 <a id="di"></a>
 - [`deploy-infrastructure`](docs/commands/deploy-infrastructure.md) - Deploy Kubernetes infrastructure for Creatio (namespace, storage, redis, postgres, pgadmin), `di`
@@ -543,8 +559,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 
 ## Integrations & Tools
 
-<a id="delete-adac"></a>
-- [`delete-adac`](docs/commands/delete-adac.md) - Uninstall the Creatio AI App Development Toolkit from coding agents (alias: delete-skill)
+<a id="delete-toolkit"></a>
+- [`delete-toolkit`](docs/commands/delete-toolkit.md) - Uninstall the Creatio AI App Development Toolkit from coding agents (alias: delete-skill)
 <a id="env-ui"></a>
 <a id="far"></a>
 <a id="gui"></a>
@@ -554,16 +570,18 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="installgate"></a>
 <a id="update-gate"></a>
 - [`install-gate`](docs/commands/install-gate.md) - Install or update cliogate in Creatio, `gate`, `installgate`, `update-gate`
-<a id="install-adac"></a>
-- [`install-adac`](docs/commands/install-adac.md) - Install the Creatio AI App Development Toolkit for all detected coding agents (alias: install-skills)
+<a id="install-toolkit"></a>
+- [`install-toolkit`](docs/commands/install-toolkit.md) - Install the Creatio AI App Development Toolkit for all detected coding agents (alias: install-skills)
 <a id="link-package-store"></a>
 <a id="lps"></a>
 - [`link-package-store`](docs/commands/link-package-store.md) - Link PackageStore packages into an environment, `lps`
+<a id="mcp-http"></a>
+- [`mcp-http`](docs/commands/mcp-http.md) - Start the MCP server over HTTP
 <a id="mcp-server"></a>
 <a id="mcp"></a>
 - [`mcp-server`](docs/commands/mcp-server.md) - Start the MCP server over stdio, `mcp`
-<a id="update-adac"></a>
-- [`update-adac`](docs/commands/update-adac.md) - Update the Creatio AI App Development Toolkit for all detected coding agents (alias: update-skill)
+<a id="update-toolkit"></a>
+- [`update-toolkit`](docs/commands/update-toolkit.md) - Update the Creatio AI App Development Toolkit for all detected coding agents (alias: update-skill)
 
 ## Identity & Authentication
 

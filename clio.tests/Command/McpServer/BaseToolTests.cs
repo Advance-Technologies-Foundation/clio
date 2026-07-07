@@ -1,8 +1,10 @@
 using System;
 using System.Linq;
+using System.Text.Json;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
+using ConsoleTables;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
@@ -122,8 +124,8 @@ public sealed class BaseToolTests {
 		string[] messageValues = result.Output.Select(message => message.Value?.ToString() ?? string.Empty).ToArray();
 
 		// Assert
-		result.ExitCode.Should().Be(1,
-			because: "an unsatisfied package requirement is an expected, caller-actionable precondition failure, so it surfaces with exit code 1 (not the unexpected-runtime code -1) and fails the MCP tool before the command runs");
+		result.ExitCode.Should().Be(-1,
+			because: "an unsatisfied package requirement must fail the MCP tool before the command runs");
 		messageValues.Should().Contain("Install the cliogate package.",
 			because: "the PackageRequirementException message must be surfaced verbatim to the MCP caller");
 		command.WasExecuted.Should().BeFalse(
@@ -154,8 +156,8 @@ public sealed class BaseToolTests {
 		// Assert
 		result.ExitCode.Should().Be(-1,
 			because: "a verification failure must surface as a clean failed result, not an uncaught exception");
-		messageValues.Should().ContainMatch("*Could not verify package requirements*401 Unauthorized*",
-			because: "the infra failure must be converted into a graceful operator-facing message");
+		messageValues.Should().ContainMatch("*401 Unauthorized*",
+			because: "the infra failure detail must be surfaced to the operator via the exception-chain formatting");
 		command.WasExecuted.Should().BeFalse(
 			because: "the command must not execute when its package requirements could not be verified");
 		ConsoleLogger.Instance.ClearMessages();
@@ -215,6 +217,60 @@ public sealed class BaseToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The typed-response path (ResolveCommand called directly, bypassing InternalExecute) is package-gated: ResolveCommand throws PackageRequirementException when the env-scoped checker reports the package missing.")]
+	public void ResolveCommand_ShouldThrowPackageRequirementException_WhenCheckerReportsPackageMissing() {
+		// Arrange
+		var command = new FakeGatedCommand(ConsoleLogger.Instance, exitCode: 0, messageToWrite: "Should not run.");
+		IRequiredPackageChecker checker = Substitute.For<IRequiredPackageChecker>();
+		checker
+			.When(c => c.EnsureRequirements(Arg.Any<object>()))
+			.Do(_ => throw new PackageRequirementException("Install the clioprocessbuilder package."));
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<FakeGatedCommand>(Arg.Any<EnvironmentOptions>()).Returns(command);
+		resolver.Resolve<IRequiredPackageChecker>(Arg.Any<EnvironmentOptions>()).Returns(checker);
+		GatedToolHarness tool = new(ConsoleLogger.Instance, resolver);
+		GatedToolHarnessOptions options = new() { Environment = "gated-env" };
+
+		// Act
+		Action act = () => tool.ResolveDirectly(options);
+
+		// Assert
+		act.Should().Throw<PackageRequirementException>()
+			.WithMessage("Install the clioprocessbuilder package.",
+				because: "the typed-response path that calls ResolveCommand directly must enforce the package gate and let the exception propagate to the tool's own catch");
+		// The checker must be resolved from the same environment-scoped resolver, bound to the per-call environment.
+		resolver.Received(1).Resolve<IRequiredPackageChecker>(
+			Arg.Is<EnvironmentOptions>(o => o.Environment == "gated-env"));
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The typed-response path (ResolveCommand called directly) does not throw and returns the resolved command when the env-scoped checker reports the package present.")]
+	public void ResolveCommand_ShouldReturnResolvedCommandAndNotThrow_WhenCheckerReportsPackagePresent() {
+		// Arrange
+		var command = new FakeGatedCommand(ConsoleLogger.Instance, exitCode: 0, messageToWrite: "Should not run.");
+		IRequiredPackageChecker checker = Substitute.For<IRequiredPackageChecker>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<FakeGatedCommand>(Arg.Any<EnvironmentOptions>()).Returns(command);
+		resolver.Resolve<IRequiredPackageChecker>(Arg.Any<EnvironmentOptions>()).Returns(checker);
+		GatedToolHarness tool = new(ConsoleLogger.Instance, resolver);
+		GatedToolHarnessOptions options = new() { Environment = "gated-env" };
+
+		// Act
+		FakeGatedCommand resolved = tool.ResolveDirectly(options);
+
+		// Assert
+		resolved.Should().BeSameAs(command,
+			because: "ResolveCommand must return the env-scoped command instance once its package requirement is satisfied");
+		// The gate must verify the requirement against the resolved options on the typed-response path,
+		// resolving the checker from the same environment-scoped resolver bound to the per-call environment.
+		checker.Received(1).EnsureRequirements(options);
+		resolver.Received(1).Resolve<IRequiredPackageChecker>(
+			Arg.Is<EnvironmentOptions>(o => o.Environment == "gated-env"));
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("A resolver EnvironmentResolutionException (unknown environment, missing URI, broken bootstrap) is an expected, caller-actionable failure and surfaces with exit code 1, and the command never runs.")]
 	public void InternalExecuteGeneric_ShouldReturnExitCodeOneAndNotRunCommand_WhenResolverThrowsEnvironmentResolutionException() {
 		// Arrange
@@ -259,8 +315,198 @@ public sealed class BaseToolTests {
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Regression (ENG-92149): a command that prints a ConsoleTable (the experimental list-features path) "
+		+ "must yield a CommandExecutionResult that serializes through System.Text.Json without throwing, with the "
+		+ "table projected to its rendered string — the raw ConsoleTable graph reaches a ReadOnlySpan<byte> ref "
+		+ "struct that System.Text.Json cannot serialize, which the MCP SDK reports as IsError=true.")]
+	public void InternalExecute_ShouldProduceSerializableEnvelope_WhenCommandPrintsConsoleTable() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		ConsoleTable table = new() { Columns = { "Feature", "State" } };
+		table.Rows.Add(["sample-feature", "ENABLED"]);
+		var command = new FakeTablePrintingCommand(ConsoleLogger.Instance, exitCode: 0, table);
+		BaseToolHarness tool = new(command, ConsoleLogger.Instance);
+
+		// Act
+		CommandExecutionResult result = tool.Execute(new BaseToolHarnessOptions("table"));
+		Action serialize = () => JsonSerializer.Serialize(result);
+		LogMessage tableMessage = result.Output.Single(message => message.LogDecoratorType == LogDecoratorType.Table);
+
+		// Assert
+		serialize.Should().NotThrow(
+			because: "the MCP SDK serializes the returned envelope with System.Text.Json; a raw ConsoleTable in LogMessage.Value would throw and surface as IsError=true (ENG-92149)");
+		result.ExitCode.Should().Be(0,
+			because: "listing feature flags via a table is a successful read operation");
+		tableMessage.Value.Should().BeOfType<string>(
+			because: "the non-serializable ConsoleTable must be projected to its rendered string form before entering the MCP envelope");
+		tableMessage.Value!.ToString().Should().Contain("sample-feature",
+			because: "the human-readable table text (table.ToString()) must be preserved in the envelope, matching what the console renders");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The environment-scoped version gate fails the tool with the distinct version exit code (78), embeds the stable version-too-old ErrorCode in the message, and never runs the command when a [RequiresCreatioVersion] options type's requirement is unmet.")]
+	public void InternalExecuteGeneric_ShouldReturnVersionExitCodeWithErrorCodeAndNotRunCommand_WhenVersionCheckerThrowsVersionTooOld() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		var command = new FakeVersionGatedCommand(ConsoleLogger.Instance, exitCode: 0, messageToWrite: "Should not run.");
+		ICreatioVersionChecker checker = Substitute.For<ICreatioVersionChecker>();
+		checker
+			.When(c => c.EnsureRequirements(Arg.Any<object>()))
+			.Do(_ => throw new CreatioVersionRequirementException(
+				"This command requires Creatio 10.0.0 or later. The target environment runs 8.1.5.",
+				CreatioVersionRequirementException.VersionTooOldCode));
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<FakeVersionGatedCommand>(Arg.Any<EnvironmentOptions>()).Returns(command);
+		resolver.Resolve<ICreatioVersionChecker>(Arg.Any<EnvironmentOptions>()).Returns(checker);
+		VersionGatedToolHarness tool = new(ConsoleLogger.Instance, resolver);
+
+		// Act
+		CommandExecutionResult result = tool.Execute(new VersionGatedToolHarnessOptions());
+		string[] messageValues = result.Output.Select(message => message.Value?.ToString() ?? string.Empty).ToArray();
+
+		// Assert
+		result.ExitCode.Should().Be(Clio.Program.CreatioVersionRequirementExitCode,
+			because: "an unmet Creatio version requirement is an expected, caller-actionable refusal that must surface with the distinct version exit code (78), not the generic validation code 1 nor the unexpected-runtime code -1, exactly mirroring the CLI dispatch gate");
+		messageValues.Should().Contain(value => value.Contains("requires Creatio 10.0.0 or later"),
+			because: "the user-facing CreatioVersionRequirementException message must be surfaced to the MCP caller");
+		messageValues.Should().Contain(value => value.Contains(CreatioVersionRequirementException.VersionTooOldCode),
+			because: "the stable machine-readable ErrorCode must be embedded so automation can branch on the failure class without parsing the human message");
+		command.WasExecuted.Should().BeFalse(
+			because: "the command must not execute when its Creatio version requirement is not satisfied");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The version gate fails closed: an undeterminable environment version surfaces with the distinct version exit code (78) and the version-undeterminable ErrorCode, and the command never runs.")]
+	public void InternalExecuteGeneric_ShouldReturnVersionExitCodeWithUndeterminableErrorCodeAndNotRunCommand_WhenVersionCheckerThrowsVersionUndeterminable() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		var command = new FakeVersionGatedCommand(ConsoleLogger.Instance, exitCode: 0, messageToWrite: "Should not run.");
+		ICreatioVersionChecker checker = Substitute.For<ICreatioVersionChecker>();
+		checker
+			.When(c => c.EnsureRequirements(Arg.Any<object>()))
+			.Do(_ => throw new CreatioVersionRequirementException(
+				"Could not determine the Creatio platform version of the target environment.",
+				CreatioVersionRequirementException.VersionUndeterminableCode));
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<FakeVersionGatedCommand>(Arg.Any<EnvironmentOptions>()).Returns(command);
+		resolver.Resolve<ICreatioVersionChecker>(Arg.Any<EnvironmentOptions>()).Returns(checker);
+		VersionGatedToolHarness tool = new(ConsoleLogger.Instance, resolver);
+
+		// Act
+		CommandExecutionResult result = tool.Execute(new VersionGatedToolHarnessOptions());
+		string[] messageValues = result.Output.Select(message => message.Value?.ToString() ?? string.Empty).ToArray();
+
+		// Assert
+		result.ExitCode.Should().Be(Clio.Program.CreatioVersionRequirementExitCode,
+			because: "an undeterminable version must fail closed and refuse the tool with the distinct version exit code rather than run against an unknown platform");
+		messageValues.Should().Contain(value => value.Contains(CreatioVersionRequirementException.VersionUndeterminableCode),
+			because: "the version-undeterminable ErrorCode must be surfaced so the failure class is machine-distinguishable from version-too-old");
+		command.WasExecuted.Should().BeFalse(
+			because: "the command must not execute when the environment version could not be determined");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An options type without [RequiresCreatioVersion] never resolves a version checker from the resolver and the command runs normally, keeping non-gated tools zero-cost and free of an extra environment round-trip.")]
+	public void InternalExecuteGeneric_ShouldRunCommandWithoutResolvingVersionChecker_WhenOptionsTypeHasNoRequiresCreatioVersionAttribute() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		var command = new FakeUngatedCommand(ConsoleLogger.Instance, exitCode: 0, messageToWrite: "Operation completed.");
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<FakeUngatedCommand>(Arg.Any<EnvironmentOptions>()).Returns(command);
+		UngatedToolHarness tool = new(ConsoleLogger.Instance, resolver);
+
+		// Act
+		CommandExecutionResult result = tool.Execute(new UngatedToolHarnessOptions());
+
+		// Assert
+		result.ExitCode.Should().Be(0,
+			because: "a tool without a Creatio version requirement must run normally");
+		command.WasExecuted.Should().BeTrue(
+			because: "the command must run when its options type declares no Creatio version requirement");
+		resolver.DidNotReceive().Resolve<ICreatioVersionChecker>(Arg.Any<EnvironmentOptions>());
+		resolver.DidNotReceive().ResolveWithoutEnvironment<ICreatioVersionChecker>(Arg.Any<EnvironmentOptions>());
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A satisfied Creatio version requirement, verified through the environment-scoped checker resolved from the same IToolCommandResolver that resolves the command, must not block execution: the command runs.")]
+	public void InternalExecuteGeneric_ShouldResolveVersionCheckerFromCommandResolverAndRunCommand_WhenRequirementIsSatisfied() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		var command = new FakeVersionGatedCommand(ConsoleLogger.Instance, exitCode: 0, messageToWrite: "Operation completed.");
+		ICreatioVersionChecker checker = Substitute.For<ICreatioVersionChecker>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<FakeVersionGatedCommand>(Arg.Any<EnvironmentOptions>()).Returns(command);
+		resolver.Resolve<ICreatioVersionChecker>(Arg.Any<EnvironmentOptions>()).Returns(checker);
+		VersionGatedToolHarness tool = new(ConsoleLogger.Instance, resolver);
+		VersionGatedToolHarnessOptions options = new();
+
+		// Act
+		CommandExecutionResult result = tool.Execute(options);
+
+		// Assert
+		resolver.Received(1).Resolve<ICreatioVersionChecker>(Arg.Any<EnvironmentOptions>());
+		checker.Received(1).EnsureRequirements(options);
+		result.ExitCode.Should().Be(0,
+			because: "a satisfied Creatio version requirement verified through the environment-scoped checker must not block execution");
+		command.WasExecuted.Should().BeTrue(
+			because: "the command must run once the environment-scoped checker reports the version requirement satisfied");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A malformed [RequiresCreatioVersion] declaration (the checker throws InvalidOperationException, e.g. the attribute on a non-bool property) must NOT be collapsed into the version-gate refusal: it surfaces with exit code -1 and carries no version ErrorCode, keeping a developer error distinguishable from a version refusal, exactly as the CLI gate leaves it to propagate.")]
+	public void InternalExecuteGeneric_ShouldReturnExitCodeMinusOneWithoutVersionErrorCode_WhenVersionCheckerThrowsInvalidOperationException() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		var command = new FakeVersionGatedCommand(ConsoleLogger.Instance, exitCode: 0, messageToWrite: "Should not run.");
+		ICreatioVersionChecker checker = Substitute.For<ICreatioVersionChecker>();
+		checker
+			.When(c => c.EnsureRequirements(Arg.Any<object>()))
+			.Do(_ => throw new InvalidOperationException(
+				"[RequiresCreatioVersion] may only decorate bool properties; 'Count' is Int32."));
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<FakeVersionGatedCommand>(Arg.Any<EnvironmentOptions>()).Returns(command);
+		resolver.Resolve<ICreatioVersionChecker>(Arg.Any<EnvironmentOptions>()).Returns(checker);
+		VersionGatedToolHarness tool = new(ConsoleLogger.Instance, resolver);
+
+		// Act
+		CommandExecutionResult result = tool.Execute(new VersionGatedToolHarnessOptions());
+		string[] messageValues = result.Output.Select(message => message.Value?.ToString() ?? string.Empty).ToArray();
+
+		// Assert
+		result.ExitCode.Should().Be(-1,
+			because: "a malformed [RequiresCreatioVersion] is a developer error, not a version refusal, so it must surface as an unexpected runtime failure (-1) rather than the version exit code 78");
+		result.ExitCode.Should().NotBe(Clio.Program.CreatioVersionRequirementExitCode,
+			because: "an InvalidOperationException from a malformed attribute must NOT be swallowed into the version-gate failure code");
+		messageValues.Should().NotContain(value => value.Contains(CreatioVersionRequirementException.VersionTooOldCode),
+			because: "a developer-error failure must not carry a version-too-old ErrorCode");
+		messageValues.Should().NotContain(value => value.Contains(CreatioVersionRequirementException.VersionUndeterminableCode),
+			because: "a developer-error failure must not carry a version-undeterminable ErrorCode");
+		messageValues.Should().Contain(value => value.Contains("may only decorate bool properties"),
+			because: "the unexpected-failure message must be surfaced to the MCP caller for diagnosis");
+		command.WasExecuted.Should().BeFalse(
+			because: "the command must not execute when its version requirement could not be verified");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
 	[RequiresPackage("cliogate", "2.0.0.0")]
 	private sealed class GatedToolHarnessOptions : EnvironmentOptions { }
+
+	// Carries [RequiresCreatioVersion] and deliberately NO [RequiresPackage], so the version gate fires in
+	// isolation (the package gate early-returns) and only the version-gate behavior is under test.
+	[RequiresCreatioVersion("10.0.0")]
+	private sealed class VersionGatedToolHarnessOptions : EnvironmentOptions { }
 
 	private sealed class UngatedToolHarnessOptions : EnvironmentOptions { }
 
@@ -270,12 +516,23 @@ public sealed class BaseToolTests {
 		: BaseTool<GatedToolHarnessOptions>(command: null, logger, commandResolver) {
 		public CommandExecutionResult Execute(GatedToolHarnessOptions options) =>
 			InternalExecute<FakeGatedCommand>(options);
+
+		// Exercises the typed-response path: tools that return a typed response call ResolveCommand
+		// directly (inside ExecuteWithCleanLog) instead of going through InternalExecute.
+		public FakeGatedCommand ResolveDirectly(GatedToolHarnessOptions options) =>
+			ResolveCommand<FakeGatedCommand>(options);
 	}
 
 	private sealed class UngatedToolHarness(ILogger logger, IToolCommandResolver commandResolver)
 		: BaseTool<UngatedToolHarnessOptions>(command: null, logger, commandResolver) {
 		public CommandExecutionResult Execute(UngatedToolHarnessOptions options) =>
 			InternalExecute<FakeUngatedCommand>(options);
+	}
+
+	private sealed class VersionGatedToolHarness(ILogger logger, IToolCommandResolver commandResolver)
+		: BaseTool<VersionGatedToolHarnessOptions>(command: null, logger, commandResolver) {
+		public CommandExecutionResult Execute(VersionGatedToolHarnessOptions options) =>
+			InternalExecute<FakeVersionGatedCommand>(options);
 	}
 
 	private sealed class BaseToolHarness(Command<BaseToolHarnessOptions> command, ILogger logger)
@@ -301,6 +558,25 @@ public sealed class BaseToolTests {
 		public bool WasExecuted { get; private set; }
 
 		public override int Execute(UngatedToolHarnessOptions options) {
+			WasExecuted = true;
+			logger.WriteInfo(messageToWrite);
+			return exitCode;
+		}
+	}
+
+	private sealed class FakeTablePrintingCommand(ILogger logger, int exitCode, ConsoleTable table)
+		: Command<BaseToolHarnessOptions> {
+		public override int Execute(BaseToolHarnessOptions options) {
+			logger.PrintTable(table);
+			return exitCode;
+		}
+	}
+
+	private sealed class FakeVersionGatedCommand(ILogger logger, int exitCode, string messageToWrite)
+		: Command<VersionGatedToolHarnessOptions> {
+		public bool WasExecuted { get; private set; }
+
+		public override int Execute(VersionGatedToolHarnessOptions options) {
 			WasExecuted = true;
 			logger.WriteInfo(messageToWrite);
 			return exitCode;

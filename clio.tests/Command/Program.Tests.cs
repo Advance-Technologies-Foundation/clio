@@ -12,6 +12,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Command;
 
 [TestFixture]
+[NonParallelizable] // writes the process-wide static Program.IsMcpServerMode; mirrors CommonProgramTest
 [Property("Module", "Command")]
 public class ProgramTestCase : BaseClioModuleTests
 {
@@ -22,6 +23,9 @@ public class ProgramTestCase : BaseClioModuleTests
 		appUpdaterMock.ClearReceivedCalls();
 		Program.Container = null;
 		Program.AppUpdater = null;
+		// Reset the process-wide MCP mode flag so it never leaks into another test: only the
+		// mcp-server build registers the MCP host, and Resolve<T> reads this flag to decide.
+		Program.IsMcpServerMode = false;
 	}
 
 	public override void Setup(){
@@ -29,6 +33,7 @@ public class ProgramTestCase : BaseClioModuleTests
 		appUpdaterMock.ClearReceivedCalls();
 		Program.Container = null;
 		Program.AppUpdater = null;
+		Program.IsMcpServerMode = false;
 	}
 
 	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
@@ -87,6 +92,10 @@ public class ProgramTestCase : BaseClioModuleTests
 	public void Resolve_Should_Not_Throw_For_McpServerCommand_When_Active_Environment_Key_Is_Invalid() {
 		// Arrange
 		Program.Container = null;
+		// The mcp-server command is resolved only when running as an MCP host, the single build that
+		// registers the McpServer singleton McpServerCommand depends on. Reproduce that mode so
+		// Resolve<T> threads registerMcpHost:true into the container build.
+		Program.IsMcpServerMode = true;
 		AddWrongActiveEnvironmentFixture();
 
 		// Act

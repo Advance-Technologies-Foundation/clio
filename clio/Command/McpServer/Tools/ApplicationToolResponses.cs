@@ -44,8 +44,11 @@ public sealed record ApplicationContextResponse(
 /// Structured existing-app section creation envelope returned by application section MCP tools.
 /// On classified failures (ENG-90679) the envelope additionally carries
 /// <c>error-class</c> (<c>transport</c> | <c>creatio-timeout</c> | <c>server-error</c>),
-/// <c>section-created</c> (<c>true</c> | <c>false</c> | <c>unknown</c>), and <c>retry-guidance</c>
-/// so the calling agent can make a rational retry-vs-abandon decision.
+/// <c>section-created</c> (<c>true</c> | <c>false</c> | <c>unknown</c> | <c>in-progress</c>), and
+/// <c>retry-guidance</c> so the calling agent can make a rational retry-vs-abandon decision. The
+/// <c>in-progress</c> value (ENG-91316) means the response deadline elapsed while the section was
+/// still being created server-side: the agent must poll, not retry. See
+/// <c>spec/adr/adr-create-app-section-response-deadline.md</c>.
 /// </summary>
 public sealed record ApplicationSectionContextResponse(
 	[property: JsonPropertyName("success")] bool Success,

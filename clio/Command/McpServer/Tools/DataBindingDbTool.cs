@@ -93,7 +93,7 @@ public class RemoveDataBindingRowDbTool(
 /// </summary>
 public sealed record CreateDataBindingDbArgs(
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Creatio environment name")]
+	[property: Description(McpToolDescriptions.EnvironmentName)]
 	[property: Required]
 	string EnvironmentName,
 
@@ -121,7 +121,7 @@ public sealed record CreateDataBindingDbArgs(
 /// </summary>
 public sealed record UpsertDataBindingRowDbArgs(
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Creatio environment name")]
+	[property: Description(McpToolDescriptions.EnvironmentName)]
 	[property: Required]
 	string EnvironmentName,
 
@@ -146,7 +146,7 @@ public sealed record UpsertDataBindingRowDbArgs(
 /// </summary>
 public sealed record RemoveDataBindingRowDbArgs(
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Creatio environment name")]
+	[property: Description(McpToolDescriptions.EnvironmentName)]
 	[property: Required]
 	string EnvironmentName,
 

@@ -42,15 +42,22 @@ NAME                        Specific environment name (positional argument)
 -e, --env <NAME>            Environment name (option alias)
 
 Display Format:
--f, --format <FORMAT>       Output format: json, table, or raw
-Default: json
+--json                      Emit the unified command envelope
+                            {schemaVersion, ok, command, data, error}. Takes precedence
+                            over --format; secrets masked; exactly one JSON object.
+-f, --format <FORMAT>       Legacy output format: json, table, or raw (default: json).
+                            Unchanged when --json is not passed.
 --raw                       Raw output (shorthand for --format raw)
 -s, --short                 Show abbreviated list format (table view)
 ```
 
 ## Output Formats
 
-    json    - Full JSON format with all environment settings (default)
+    envelope (--json) - Unified command envelope (recommended for automation).
+              data carries the environment(s) with masked secrets; on failure ok=false
+              and error.code is 'environment-not-found' or 'no-environments-registered'.
+
+    json    - Legacy full JSON format with all environment settings (default --format)
               Includes all fields from EnvironmentSettings
 
     table   - Formatted table with columns: Name, Url, Login, IsNetCore

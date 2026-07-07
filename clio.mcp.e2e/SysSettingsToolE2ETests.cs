@@ -8,16 +8,16 @@ using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
-using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E;
 
 [TestFixture]
+[Category("McpE2E.Sandbox")]
 [AllureNUnit]
 [AllureFeature("sys-setting")]
 [NonParallelizable]
-public sealed class SysSettingsToolE2ETests {
+public sealed class SysSettingsToolE2ETests : McpContractFixtureBase {
 
 	private const string GetToolName = SysSettingGetTool.GetSysSettingToolName;
 	private const string ListToolName = SysSettingsListTool.ListSysSettingsToolName;
@@ -282,9 +282,13 @@ public sealed class SysSettingsToolE2ETests {
 		ArrangeContext arrangeContext,
 		string toolName,
 		Dictionary<string, object?> args) {
-		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(toolName,
-			because: $"the {toolName} tool must be advertised by the clio MCP server before the call can be executed");
+		// The helper serves both resident tools (get-sys-setting, list-sys-settings) and hidden long-tail
+		// tools (create-sys-setting, update-sys-setting), so the discoverability gate uses the lazy-surface
+		// union of tools/list names and the get-tool-contract compact index.
+		IReadOnlyCollection<string> toolNames =
+			await arrangeContext.Session.ListReachableToolNamesAsync(arrangeContext.CancellationTokenSource.Token);
+		toolNames.Should().Contain(toolName,
+			because: $"the {toolName} tool must be discoverable on the lazy surface (tools/list or the get-tool-contract compact index) before the call can be executed");
 		return await arrangeContext.Session.CallToolAsync(
 			toolName,
 			new Dictionary<string, object?> {
@@ -293,7 +297,7 @@ public sealed class SysSettingsToolE2ETests {
 			arrangeContext.CancellationTokenSource.Token);
 	}
 
-	private static async Task<ArrangeContext> ArrangeAsync(
+	private async Task<ArrangeContext> ArrangeAsync(
 		bool requireReachableEnvironment,
 		bool requireDestructiveOptIn = false) {
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -305,7 +309,7 @@ public sealed class SysSettingsToolE2ETests {
 		string? environmentName = requireReachableEnvironment
 			? await ResolveReachableEnvironmentAsync(settings)
 			: settings.Sandbox.EnvironmentName;
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		McpServerSession session = Session;
 		return new ArrangeContext(session, cancellationTokenSource, environmentName);
 	}
 
@@ -327,13 +331,13 @@ public sealed class SysSettingsToolE2ETests {
 		return result.ExitCode == 0;
 	}
 
-	private sealed record ArrangeContext(
+	private new sealed record ArrangeContext(
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource,
 		string? EnvironmentName) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
+		public ValueTask DisposeAsync() {
 			CancellationTokenSource.Dispose();
+			return ValueTask.CompletedTask;
 		}
 	}
 

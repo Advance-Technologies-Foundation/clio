@@ -347,11 +347,11 @@ public sealed class ApplicationToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Calls the section-create service with the top-level MCP request fields and returns the structured section envelope on success.")]
+	[Description("Calls the section-create service with the top-level MCP request fields plus both background budgets (insert + readback) and returns the structured section envelope on success.")]
 	public void ApplicationSectionCreate_Should_Return_Structured_Success_Envelope() {
 		// Arrange
 		IApplicationSectionCreateService applicationSectionCreateService = Substitute.For<IApplicationSectionCreateService>();
-		applicationSectionCreateService.CreateSection("sandbox", Arg.Any<ApplicationSectionCreateRequest>())
+		applicationSectionCreateService.CreateSection("sandbox", Arg.Any<ApplicationSectionCreateRequest>(), Arg.Any<int?>(), Arg.Any<int?>())
 			.Returns(new ApplicationSectionCreateResult(
 				"pkg-uid",
 				"UsrOrdersApp",
@@ -402,7 +402,9 @@ public sealed class ApplicationToolTests {
 				request.Caption == "Orders" &&
 				request.Description == "Order workspace" &&
 				request.EntitySchemaName == "UsrOrder" &&
-				request.WithMobilePages));
+				request.WithMobilePages),
+			ApplicationSectionCreateTool.BackgroundInsertTimeoutMs,
+			ApplicationSectionCreateTool.BackgroundReadbackTimeoutMs);
 		result.Success.Should().BeTrue(
 			because: "a successful section-create call should be wrapped in a core-style success envelope");
 		result.Section.Should().NotBeNull(
@@ -443,7 +445,7 @@ public sealed class ApplicationToolTests {
 	public void ApplicationSectionCreate_Should_Return_Classified_Error_Envelope_When_Service_Throws_Typed_Exception() {
 		// Arrange
 		IApplicationSectionCreateService applicationSectionCreateService = Substitute.For<IApplicationSectionCreateService>();
-		applicationSectionCreateService.CreateSection("sandbox", Arg.Any<ApplicationSectionCreateRequest>())
+		applicationSectionCreateService.CreateSection("sandbox", Arg.Any<ApplicationSectionCreateRequest>(), Arg.Any<int?>(), Arg.Any<int?>())
 			.Returns(_ => throw new ApplicationSectionCreateException(
 				"Creatio did not respond within 90s while creating section 'Orders' (code 'UsrOrders').",
 				ApplicationSectionCreateFailureClass.CreatioTimeout,
@@ -472,11 +474,75 @@ public sealed class ApplicationToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Builds an in-progress envelope (creatio-timeout / section-created=in-progress / poll guidance) when section creation exceeds the MCP response deadline.")]
+	public void CreateSectionInProgressResponse_Should_Return_InProgress_Envelope_With_Poll_Guidance() {
+		// Arrange
+		const string caption = "Tasks";
+		const string code = "UsrTask";
+
+		// Act
+		ApplicationSectionContextResponse result = ApplicationToolHelper.CreateSectionInProgressResponse(caption, code);
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "an unfinished creation is not a success envelope even though the work continues");
+		result.ErrorClass.Should().Be("creatio-timeout",
+			because: "the deadline path reuses the creatio-timeout class so existing client guidance applies");
+		result.SectionCreated.Should().Be("in-progress",
+			because: "in-progress must be distinct from 'unknown' so the agent knows the section is still being created, not verification-failed");
+		result.Error.Should().Contain(caption,
+			because: "the human-readable message must name the section being created");
+		result.RetryGuidance.Should().Contain("list-app-sections",
+			because: "the agent must be told to poll the read tools instead of retrying");
+		result.RetryGuidance.Should().Contain("Do NOT retry",
+			because: "retrying create-app-section would create a duplicate section, so the guidance must forbid it");
+		result.RetryGuidance.Should().Contain("create-page",
+			because: "the guidance must explicitly forbid the destructive create-page fallback that the never-green test exposed");
+		result.Pages.Should().BeNull(
+			because: "no readback is available yet when the deadline elapses mid-creation");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Drives the real tool's catch(McpResponseDeadlineExceededException) path: when section creation exceeds the MCP response deadline the tool returns the in-progress envelope (success=false, creatio-timeout, section-created=in-progress, poll guidance) through the full chain, not only the helper in isolation.")]
+	public void ApplicationSectionCreate_Should_Return_InProgress_Envelope_When_Service_Exceeds_Response_Deadline() {
+		// Arrange — substitute the service to throw the deadline exception the heartbeat wrapper
+		// raises when the work outlives the response budget, exercising the tool's deadline branch.
+		IApplicationSectionCreateService applicationSectionCreateService = Substitute.For<IApplicationSectionCreateService>();
+		applicationSectionCreateService.CreateSection("sandbox", Arg.Any<ApplicationSectionCreateRequest>(), Arg.Any<int?>(), Arg.Any<int?>())
+			.Returns(_ => throw new McpResponseDeadlineExceededException(
+				ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
+				TimeSpan.FromSeconds(150)));
+		ApplicationSectionCreateTool tool = new(applicationSectionCreateService);
+
+		// Act — server: null mirrors the existing heartbeat-contract tests; the deadline exception
+		// short-circuits the heartbeat wrapper and is caught by the tool itself.
+		ApplicationSectionContextResponse result = tool.ApplicationSectionCreate(new ApplicationSectionCreateArgs(
+			EnvironmentName: "sandbox",
+			ApplicationCode: "UsrTasksApp",
+			Caption: "Tasks",
+			Code: "UsrTask"), null, System.Threading.CancellationToken.None).GetAwaiter().GetResult();
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "a deadline-bounded creation that has not finished is not a success envelope");
+		result.ErrorClass.Should().Be("creatio-timeout",
+			because: "the deadline branch must classify as creatio-timeout so existing client guidance applies");
+		result.SectionCreated.Should().Be("in-progress",
+			because: "the tool must report in-progress through the real catch path, not verification-failed");
+		result.Error.Should().Contain("Tasks",
+			because: "the in-progress message must name the section still being created server-side");
+		result.RetryGuidance.Should().Contain("list-app-sections",
+			because: "the agent must be steered to poll the read tools instead of retrying create-app-section");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Maps an unknown side-effect verification outcome onto section-created=unknown in the structured error envelope.")]
 	public void ApplicationSectionCreate_Should_Report_Unknown_Section_State_When_Verification_Was_Not_Possible() {
 		// Arrange
 		IApplicationSectionCreateService applicationSectionCreateService = Substitute.For<IApplicationSectionCreateService>();
-		applicationSectionCreateService.CreateSection("sandbox", Arg.Any<ApplicationSectionCreateRequest>())
+		applicationSectionCreateService.CreateSection("sandbox", Arg.Any<ApplicationSectionCreateRequest>(), Arg.Any<int?>(), Arg.Any<int?>())
 			.Returns(_ => throw new ApplicationSectionCreateException(
 				"Creatio did not respond and verification also failed.",
 				ApplicationSectionCreateFailureClass.CreatioTimeout,
@@ -503,7 +569,7 @@ public sealed class ApplicationToolTests {
 	public void ApplicationSectionCreate_Should_Return_Plain_Error_Envelope_When_Service_Throws_Plain_Exception() {
 		// Arrange
 		IApplicationSectionCreateService applicationSectionCreateService = Substitute.For<IApplicationSectionCreateService>();
-		applicationSectionCreateService.CreateSection("sandbox", Arg.Any<ApplicationSectionCreateRequest>())
+		applicationSectionCreateService.CreateSection("sandbox", Arg.Any<ApplicationSectionCreateRequest>(), Arg.Any<int?>(), Arg.Any<int?>())
 			.Returns(_ => throw new InvalidOperationException("Application id was not returned by get-app-info."));
 		ApplicationSectionCreateTool tool = new(applicationSectionCreateService);
 
@@ -1924,7 +1990,7 @@ public sealed class ApplicationToolTests {
 	public async Task ApplicationSectionCreate_ShouldReturnStructuredResult_AndCallServiceOnce_WhenInvokedThroughHeartbeatContract() {
 		// Arrange
 		IApplicationSectionCreateService applicationSectionCreateService = Substitute.For<IApplicationSectionCreateService>();
-		applicationSectionCreateService.CreateSection("sandbox", Arg.Any<ApplicationSectionCreateRequest>())
+		applicationSectionCreateService.CreateSection("sandbox", Arg.Any<ApplicationSectionCreateRequest>(), Arg.Any<int?>(), Arg.Any<int?>())
 			.Returns(new ApplicationSectionCreateResult(
 				"pkg-uid",
 				"UsrOrdersApp",
@@ -1959,7 +2025,9 @@ public sealed class ApplicationToolTests {
 		// Assert
 		applicationSectionCreateService.Received(1).CreateSection(
 			"sandbox",
-			Arg.Is<ApplicationSectionCreateRequest>(request => request.ApplicationCode == "UsrOrdersApp"));
+			Arg.Is<ApplicationSectionCreateRequest>(request => request.ApplicationCode == "UsrOrdersApp"),
+			ApplicationSectionCreateTool.BackgroundInsertTimeoutMs,
+			ApplicationSectionCreateTool.BackgroundReadbackTimeoutMs);
 		result.Success.Should().BeTrue(
 			because: "the heartbeat wrapper must be transparent and must not alter a successful section-create response");
 		result.Section!.Code.Should().Be("UsrOrders",

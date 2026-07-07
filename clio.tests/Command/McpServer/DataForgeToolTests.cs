@@ -76,6 +76,125 @@ public sealed class DataForgeToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("FindTables returns a structured Success=false response carrying the service error message instead of throwing when the read client reports a DataForge service failure.")]
+	public void FindTables_Should_Return_Structured_Failure_When_ReadClient_Reports_Service_Failure() {
+		// Arrange
+		IDataForgeReadClient readClient = Substitute.For<IDataForgeReadClient>();
+		readClient.FindSimilarTables(Arg.Any<string>(), Arg.Any<int?>())
+			.Returns(_ => throw new InvalidOperationException("DataForge index not initialized"));
+		DataForgeTool tool = CreateTool(readClient);
+
+		// Act
+		Func<DataForgeFindTablesResponse> act = () => tool.FindTables(new DataForgeFindTablesArgs(Query: "contact") {
+			EnvironmentName = "sandbox"
+		});
+
+		// Assert
+		DataForgeFindTablesResponse result = act.Should().NotThrow(
+			because: "the MCP tool must surface a structured failure envelope instead of letting the read-client exception escape as a protocol error")
+			.Subject;
+		result.Success.Should().BeFalse(
+			because: "a DataForge service read failure must be reported as a non-successful structured response");
+		result.Error.Should().NotBeNull(
+			because: "a failed read must populate the structured error payload the MCP client consumes");
+		result.Error!.Code.Should().Be("find_tables_error",
+			because: "find-tables failures expose a stable structured error code to MCP clients");
+		result.Error!.Message.Should().Be("DataForge index not initialized",
+			because: "the service-supplied failure message must reach the MCP client unchanged");
+		result.SimilarTables.Should().BeEmpty(
+			because: "a failed table search must return an empty result collection rather than null");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("FindLookups returns a structured Success=false response carrying the service error message instead of throwing when the read client reports a DataForge service failure.")]
+	public void FindLookups_Should_Return_Structured_Failure_When_ReadClient_Reports_Service_Failure() {
+		// Arrange
+		IDataForgeReadClient readClient = Substitute.For<IDataForgeReadClient>();
+		readClient.FindSimilarLookups(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<int?>())
+			.Returns(_ => throw new InvalidOperationException("DataForge lookups not ready"));
+		DataForgeTool tool = CreateTool(readClient);
+
+		// Act
+		Func<DataForgeFindLookupsResponse> act = () => tool.FindLookups(new DataForgeFindLookupsArgs(Query: "industry") {
+			EnvironmentName = "sandbox"
+		});
+
+		// Assert
+		DataForgeFindLookupsResponse result = act.Should().NotThrow(
+			because: "the MCP tool must surface a structured failure envelope instead of letting the read-client exception escape as a protocol error")
+			.Subject;
+		result.Success.Should().BeFalse(
+			because: "a DataForge lookup read failure must be reported as a non-successful structured response");
+		result.Error.Should().NotBeNull(
+			because: "a failed read op must carry a structured error envelope");
+		result.Error!.Code.Should().Be("find_lookups_error",
+			because: "find-lookups failures expose a stable structured error code to MCP clients");
+		result.Error!.Message.Should().Be("DataForge lookups not ready",
+			because: "the service-supplied failure message must reach the MCP client unchanged");
+		result.SimilarLookups.Should().BeEmpty(
+			because: "a failed lookup search must return an empty result collection rather than null");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("GetRelations returns a structured Success=false response carrying the service error message instead of throwing when the read client reports a DataForge service failure.")]
+	public void GetRelations_Should_Return_Structured_Failure_When_ReadClient_Reports_Service_Failure() {
+		// Arrange
+		IDataForgeReadClient readClient = Substitute.For<IDataForgeReadClient>();
+		readClient.GetTableRelationships(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int?>())
+			.Returns(_ => throw new InvalidOperationException("DataForge relations index missing"));
+		DataForgeTool tool = CreateTool(readClient);
+
+		// Act
+		Func<DataForgeRelationsResponse> act = () => tool.GetRelations(new DataForgeGetRelationsArgs(
+			SourceTable: "Contact",
+			TargetTable: "Account") {
+			EnvironmentName = "sandbox"
+		});
+
+		// Assert
+		DataForgeRelationsResponse result = act.Should().NotThrow(
+			because: "the MCP tool must surface a structured failure envelope instead of letting the read-client exception escape as a protocol error")
+			.Subject;
+		result.Success.Should().BeFalse(
+			because: "a DataForge relation read failure must be reported as a non-successful structured response");
+		result.Error.Should().NotBeNull(
+			because: "a failed read op must carry a structured error envelope");
+		result.Error!.Code.Should().Be("relations_error",
+			because: "get-relations failures expose a stable structured error code to MCP clients");
+		result.Error!.Message.Should().Be("DataForge relations index missing",
+			because: "the service-supplied failure message must reach the MCP client unchanged");
+		result.Relations.Should().BeEmpty(
+			because: "a failed relation read must return an empty result collection rather than null");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("FindTables returns a structured Success=true response with mapped table matches when the read client succeeds.")]
+	public void FindTables_Should_Return_Structured_Success_When_ReadClient_Succeeds() {
+		// Arrange
+		IDataForgeReadClient readClient = Substitute.For<IDataForgeReadClient>();
+		readClient.FindSimilarTables("contact", Arg.Any<int?>())
+			.Returns([new SimilarTableResult("Contact", "Contact", "Primary contact")]);
+		DataForgeTool tool = CreateTool(readClient);
+
+		// Act
+		DataForgeFindTablesResponse result = tool.FindTables(new DataForgeFindTablesArgs(Query: "contact") {
+			EnvironmentName = "sandbox"
+		});
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "a successful read-client table search must surface as a successful structured response");
+		result.Error.Should().BeNull(
+			because: "a successful response must not populate the structured error payload");
+		result.SimilarTables.Should().ContainSingle(table => table.Name == "Contact",
+			because: "successful table matches must be mapped through to the MCP response unchanged");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("GetContext delegates to the context service and returns its result unchanged.")]
 	public void GetContext_Should_Delegate_To_Context_Service() {
 		// Arrange
@@ -146,8 +265,10 @@ public sealed class DataForgeToolTests {
 			.Single();
 
 		// Assert
-		attribute.Description.Should().Contain("Creatio platform version 10.0.0 or later",
+		attribute.Description.Should().Contain("Creatio 10.0.0+",
 			because: "CrtDataForge is bundled into supported Creatio platform versions");
+		attribute.Description.Should().Contain("CrtDataForge",
+			because: "the requirement is the bundled CrtDataForge module, not an external package version");
 	}
 
 	[Test]

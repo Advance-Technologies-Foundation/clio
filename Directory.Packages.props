@@ -19,6 +19,7 @@ See docs: https://devblogs.microsoft.com/dotnet/introducing-central-package-mana
   </PropertyGroup>
   <ItemGroup Label="Used in production">
     <PackageVersion Include="ModelContextProtocol" Version="1.4.0" />
+    <PackageVersion Include="ModelContextProtocol.AspNetCore" Version="1.4.0" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="$(MsPackageVersion)" />
     <PackageVersion Include="Microsoft.Extensions.Http" Version="$(MsPackageVersion)" />
     <PackageVersion Include="Microsoft.Extensions.Configuration" Version="$(MsPackageVersion)" />

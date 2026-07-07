@@ -255,7 +255,7 @@ internal static class ApplicationToolHelper {
 		ApplicationSectionCreateException exception) {
 		return new ApplicationSectionContextResponse(
 			false,
-			Error: exception.Message,
+			Error: SensitiveErrorTextRedactor.Redact(exception.Message),
 			ErrorClass: exception.FailureClass.ToWireValue(),
 			SectionCreated: exception.SectionCreated switch {
 				true => "true",
@@ -263,6 +263,35 @@ internal static class ApplicationToolHelper {
 				null => "unknown"
 			},
 			RetryGuidance: exception.RetryGuidance);
+	}
+
+	/// <summary>
+	/// Builds the "in-progress" envelope returned when section creation exceeds the MCP response
+	/// deadline (ENG-91316). The backend operation keeps running on the long-lived server, so this is
+	/// not a failure: the agent must poll instead of retrying or falling back to standalone page
+	/// creation. Mirrors the <c>creatio-timeout</c> error-class so existing client guidance applies,
+	/// but uses <c>section-created: in-progress</c> to distinguish "still creating" from the
+	/// verification-failed <c>unknown</c>.
+	/// </summary>
+	/// <param name="caption">Requested section caption, surfaced in the guidance message.</param>
+	/// <param name="code">Optional explicit section code; helps the agent recognise the generated page schemas.</param>
+	/// <returns>Structured in-progress envelope.</returns>
+	public static ApplicationSectionContextResponse CreateSectionInProgressResponse(string caption, string? code) {
+		string codeHint = string.IsNullOrWhiteSpace(code)
+			? string.Empty
+			: $" (code '{code.Trim()}', pages '{code.Trim()}_ListPage' / '{code.Trim()}_FormPage')";
+		return new ApplicationSectionContextResponse(
+			false,
+			Error: $"Section '{caption}'{codeHint} is still being created server-side and did not finish "
+				+ "within the response deadline.",
+			ErrorClass: ApplicationSectionCreateFailureClass.CreatioTimeout.ToWireValue(),
+			SectionCreated: "in-progress",
+			RetryGuidance: "The section creation is still running on the server. Do NOT retry create-app-section "
+				+ "(a retry would create a duplicate section) and do NOT fall back to create-page. Wait a "
+				+ "short while, then poll list-app-sections and get-app-info until the section and its "
+				+ "generated List and Form pages appear; only then continue. If the section still does not "
+				+ "appear after several minutes of polling, the background creation has failed (not merely "
+				+ "slowed) and a single retry of create-app-section is then safe.");
 	}
 
 	public static ApplicationSectionUpdateContextResponse CreateSectionUpdateContextResponse(ApplicationSectionUpdateContextResponse response) {

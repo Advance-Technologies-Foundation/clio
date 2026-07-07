@@ -8,7 +8,6 @@ using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
-using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E;
@@ -17,30 +16,32 @@ namespace Clio.Mcp.E2E;
 [AllureNUnit]
 [AllureFeature(SchemaCreateTool.ToolName)]
 [NonParallelizable]
-public sealed class SchemaCreateToolE2ETests {
+public sealed class SchemaCreateToolE2ETests : McpContractFixtureBase {
 	private const string ToolName = SchemaCreateTool.ToolName;
 	private const string PackageName = "Custom";
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
-	[Description("Advertises create-schema in the MCP tool manifest.")]
+	[Description("Exposes create-schema via the get-tool-contract compact index on the lazy tool surface.")]
 	[AllureTag(ToolName)]
-	[AllureName("create-schema is advertised by the MCP server")]
+	[AllureName("create-schema is discoverable on the lazy surface")]
 	public async Task SchemaCreateTool_Should_Be_Listed_By_MCP_Server() {
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 
-		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		IEnumerable<string> toolNames = tools.Select(tool => tool.Name).ToList();
+		IReadOnlyCollection<string> toolNames =
+			await arrangeContext.Session.ListReachableToolNamesAsync(arrangeContext.CancellationTokenSource.Token);
 
 		toolNames.Should().Contain(ToolName,
-			because: "create-schema must be advertised so MCP callers can discover the C# schema creation tool");
+			because: "create-schema must be discoverable via the get-tool-contract compact index so MCP callers can find the C# schema creation tool even though it is not resident in tools/list");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Reports readable failures when create-schema is called with an invalid environment name.")]
 	[AllureTag(ToolName)]
 	[AllureName("create-schema reports invalid environment failures")]
 	public async Task SchemaCreateTool_Should_Report_Invalid_Environment_Failure() {
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 		string invalidEnvironmentName = $"missing-create-schema-env-{Guid.NewGuid():N}";
 
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
@@ -63,12 +64,13 @@ public sealed class SchemaCreateToolE2ETests {
 			$"(?is)({Regex.Escape(invalidEnvironmentName)}|environment.*not.*found|not found)");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Rejects malformed schema-name via create-schema before any remote calls.")]
 	[AllureTag(ToolName)]
 	[AllureName("create-schema rejects malformed schema-name")]
 	public async Task SchemaCreateTool_Should_Reject_Invalid_Schema_Name() {
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
 			ToolName,
@@ -88,6 +90,7 @@ public sealed class SchemaCreateToolE2ETests {
 		response.Error.Should().Contain("schema-name must start with a letter");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Creates a C# source-code schema and verifies it exists in the environment.")]
 	[AllureTag(ToolName)]
@@ -96,7 +99,7 @@ public sealed class SchemaCreateToolE2ETests {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(5));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
 		string schemaName = $"UsrE2EHelper{Guid.NewGuid():N}".Substring(0, 35);
 
 		CallToolResult createResult = await arrangeContext.Session.CallToolAsync(
@@ -122,6 +125,7 @@ public sealed class SchemaCreateToolE2ETests {
 		createResponse.Caption.Should().Be("E2E test helper");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("create-schema returns a duplicate-name error when the schema already exists.")]
 	[AllureTag(ToolName)]
@@ -130,7 +134,7 @@ public sealed class SchemaCreateToolE2ETests {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(5));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
 		string schemaName = $"UsrE2EDupHelper{Guid.NewGuid():N}".Substring(0, 35);
 
 		CallToolResult first = await arrangeContext.Session.CallToolAsync(
@@ -164,14 +168,6 @@ public sealed class SchemaCreateToolE2ETests {
 		duplicateResponse.Error.Should().Contain(schemaName).And.Contain("already exists");
 	}
 
-	private static async Task<ArrangeContext> ArrangeAsync(TimeSpan timeout) {
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		CancellationTokenSource cancellationTokenSource = new(timeout);
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		return new ArrangeContext(session, cancellationTokenSource);
-	}
-
 	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
 		string? configuredEnvironmentName = settings.Sandbox.EnvironmentName;
 		if (!string.IsNullOrWhiteSpace(configuredEnvironmentName) &&
@@ -202,12 +198,4 @@ public sealed class SchemaCreateToolE2ETests {
 		}
 	}
 
-	private sealed record ArrangeContext(
-		McpServerSession Session,
-		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
-			CancellationTokenSource.Dispose();
-		}
-	}
 }

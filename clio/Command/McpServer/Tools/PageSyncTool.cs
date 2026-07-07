@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Acornima.Ast;
 using Clio.Command;
+using Clio.UserEnvironment;
 using McpServerLib = ModelContextProtocol.Server;
 using ModelContextProtocol.Server;
 using IFileSystem = System.IO.Abstractions.IFileSystem;
@@ -25,7 +26,9 @@ public sealed class PageSyncTool(
 	IMobileComponentInfoCatalog mobileComponentCatalog,
 	IComponentInfoCatalog webComponentCatalog,
 	IPageBodySamplingService samplingService,
-	IPageBaselineGuard pageBaselineGuard) {
+	IPageBaselineGuard pageBaselineGuard,
+	IPlatformVersionResolverFactory? resolverFactory = null,
+	ISettingsRepository? settingsRepository = null) {
 
 	internal const string ToolName = "sync-pages";
 
@@ -59,11 +62,52 @@ public sealed class PageSyncTool(
 		PageSyncPrePassResults prePass = BuildPrePassResults(pages);
 		IReadOnlyList<PageSamplingReview?> samplingResults = await RunSamplingPrePassAsync(
 			server, args, pages, prePass, cancellationToken);
-		List<PageSyncPageResult> results = ExecuteSyncBatch(args, pages, prePass, samplingResults);
+		// Registry-driven chart-widget validation needs the async, version-scoped catalog. Scope it to the
+		// target environment's platform version (probed the same way get-component-info resolves it) so the
+		// batch validates against the component set the environment actually ships, not the broader 'latest'.
+		// Resolve the merged type definitions once here on the async entry, then reuse them across the
+		// synchronous per-page deterministic triage in ExecuteSyncBatch. Skip the probe entirely when
+		// validation is disabled — the definitions would never be consumed. Null when validation is off or
+		// the registry/version is unavailable (fail-open).
+		IReadOnlyDictionary<string, System.Text.Json.JsonElement>? chartTypeDefinitions = null;
+		if (args.Validate ?? true) {
+			string? platformVersion = await ResolvePlatformVersionAsync(args.EnvironmentName, cancellationToken).ConfigureAwait(false);
+			chartTypeDefinitions = await ChartWidgetValidation
+				.ResolveTypeDefinitionsAsync(webComponentCatalog, platformVersion, cancellationToken).ConfigureAwait(false);
+		}
+		List<PageSyncPageResult> results = ExecuteSyncBatch(args, pages, prePass, samplingResults, chartTypeDefinitions);
 		return new PageSyncResponse {
 			Success = results.Count > 0 && results.All(r => r.Success),
 			Pages = results
 		};
+	}
+
+	/// <summary>
+	/// Resolves the target environment's platform version so the chart-widget validation catalog is scoped
+	/// to the component set the environment actually ships (mirroring <c>get-component-info</c>'s resolution).
+	/// Fail-soft: a blank environment, absent resolver dependencies (e.g. a unit test that did not supply
+	/// them), or any probe failure yields <see langword="null"/>, which <see cref="ChartWidgetValidation"/>
+	/// maps to the safe <c>latest</c> superset — version resolution must never block a save.
+	/// </summary>
+	private async Task<string?> ResolvePlatformVersionAsync(string environmentName, CancellationToken cancellationToken) {
+		if (resolverFactory is null || settingsRepository is null || string.IsNullOrWhiteSpace(environmentName)) {
+			return null;
+		}
+		try {
+			EnvironmentSettings settings = settingsRepository.GetEnvironment(new EnvironmentOptions { Environment = environmentName });
+			if (settings is null) {
+				return null;
+			}
+			PlatformVersionResolution resolution = await resolverFactory.Create(settings)
+				.ResolveAsync(cancellationToken).ConfigureAwait(false);
+			return resolution?.ResolvedVersion;
+		} catch (OperationCanceledException) {
+			throw;
+		} catch (Exception) {
+			// Fail-soft: a bad/unreachable environment must not break a save. The catalog stays on 'latest'
+			// (ChartWidgetValidation maps null -> latest), matching get-component-info's soft degrade.
+			return null;
+		}
 	}
 
 	// Pre-pass: runs the deterministic syntax + AST-lint gates on every web
@@ -142,7 +186,8 @@ public sealed class PageSyncTool(
 		PageSyncArgs args,
 		IReadOnlyList<PageSyncPageInput> pages,
 		PageSyncPrePassResults prePass,
-		IReadOnlyList<PageSamplingReview?> samplingResults) {
+		IReadOnlyList<PageSamplingReview?> samplingResults,
+		IReadOnlyDictionary<string, System.Text.Json.JsonElement>? chartTypeDefinitions) {
 		var results = new List<PageSyncPageResult>(pages.Count);
 		var pendingIndices = new List<int>();
 		// Step 1: Materialise EVERY deterministic failure (syntax, regex
@@ -173,6 +218,11 @@ public sealed class PageSyncTool(
 			PageSyncPageResult deterministicFailure = TryMaterialiseDeterministicFailure(page, entry, validate);
 			if (deterministicFailure != null) {
 				results.Add(deterministicFailure);
+				continue;
+			}
+			PageSyncPageResult chartFailure = TryMaterialiseChartWidgetFailure(page, validate, chartTypeDefinitions);
+			if (chartFailure != null) {
+				results.Add(chartFailure);
 				continue;
 			}
 			results.Add(null);
@@ -206,7 +256,7 @@ public sealed class PageSyncTool(
 				}
 				Thread.Sleep(500);
 			} catch (Exception ex) {
-				FillPendingWithError(results, pendingIndices, pages, ex.Message);
+				FillPendingWithError(results, pendingIndices, pages, SensitiveErrorTextRedactor.Redact(ex.Message));
 			}
 		}
 		return results;
@@ -230,7 +280,7 @@ public sealed class PageSyncTool(
 			}
 			return true;
 		} catch (Exception ex) {
-			error = ex.Message;
+			error = SensitiveErrorTextRedactor.Redact(ex.Message);
 			return false;
 		}
 	}
@@ -308,6 +358,36 @@ public sealed class PageSyncTool(
 	// here (they are validated inside the lock by MobilePageValidation).
 	// Precedence on overlap: regex wins over lint — its wording is what
 	// existing tests and operator habits depend on.
+	// Registry-driven chart-widget required-field check, materialised into the same per-page failure
+	// shape as TryMaterialiseDeterministicFailure. Web-only (mobile bodies carry no chart widgets) and
+	// fail-open when the registry was unavailable (chartTypeDefinitions == null). The type definitions
+	// are resolved once on the async entry (SyncPages) so this stays a synchronous per-page check.
+	private static PageSyncPageResult TryMaterialiseChartWidgetFailure(
+		PageSyncPageInput page,
+		bool validate,
+		IReadOnlyDictionary<string, System.Text.Json.JsonElement>? chartTypeDefinitions) {
+		if (!validate || chartTypeDefinitions is null ||
+		    PageSchemaTypeExtensions.FromBody(page.Body) == PageSchemaType.Mobile) {
+			return null;
+		}
+		SchemaValidationResult chartResult =
+			SchemaValidationService.ValidateChartWidgetConfig(page.Body, chartTypeDefinitions);
+		if (chartResult.IsValid) {
+			return null;
+		}
+		return new PageSyncPageResult {
+			SchemaName = page.SchemaName,
+			Success = false,
+			Validation = new PageSyncValidationResult {
+				MarkersOk = true,
+				JsSyntaxOk = true,
+				ContentOk = false,
+				Errors = chartResult.Errors
+			},
+			Error = "Client-side validation failed: " + string.Join("; ", chartResult.Errors)
+		};
+	}
+
 	private static PageSyncPageResult TryMaterialiseDeterministicFailure(
 		PageSyncPageInput page,
 		PageSyncPrePassEntry entry,
@@ -514,7 +594,7 @@ public sealed class PageSyncTool(
 			return new PageSyncPageResult {
 				SchemaName = page.SchemaName,
 				Success = false,
-				Error = ex.Message
+				Error = SensitiveErrorTextRedactor.Redact(ex.Message)
 			};
 		}
 	}
@@ -855,7 +935,7 @@ public sealed class PageSyncTool(
 /// </summary>
 public sealed record PageSyncArgs(
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Creatio environment name")]
+	[property: Description(McpToolDescriptions.EnvironmentName)]
 	[property: Required]
 	string EnvironmentName,
 
@@ -896,7 +976,7 @@ public sealed record PageSyncPageInput(
 	string Body,
 
 	[property: JsonPropertyName("resources")]
-	[property: Description("JSON object string of localizable string key-value pairs the platform does NOT auto-provide \u2014 e.g. custom tab/group titles, button captions, validator messages, and explicit overrides of inherited captions. IMPORTANT: only pass keys that have NO matching DS-bound view model attribute on the target page (or that intentionally override the inherited caption). Keys matching an existing DS-bound attribute are auto-provided by the platform from the entity column caption and MUST be omitted. Inline placeholder/title/label/caption/tooltip literals in the body are REJECTED — bind each via $Resources.Strings.<Key> and register the key's default-language value here. See `page-schema-resources` guidance for the full check.")]
+	[property: Description(McpToolDescriptions.PageResources)]
 	string? Resources = null,
 	[property: JsonPropertyName("optional-properties")]
 	[property: Description("JSON array of {key, value} objects to merge into schema optionalProperties")]

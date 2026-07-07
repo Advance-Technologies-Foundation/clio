@@ -104,6 +104,17 @@ TIMEOUT AND FAILURE DIAGNOSTICS
                       arguments will most likely fail again; fix the inputs
                       or the server state first.
 
+    MCP only: when a client enforces a hard per-request ceiling that progress
+    notifications do not reset, the MCP tool bounds its response by a wall-clock
+    deadline (default 150s, override with CLIO_MCP_RESPONSE_DEADLINE_SECONDS,
+    0 < n <= 600). If the work outlives the deadline the tool returns
+    error-class=creatio-timeout with section-created=in-progress before the
+    client gives up, and the section keeps being created in the background. That
+    is NOT a failure: do NOT retry and do NOT fall back to create-page; poll
+    "clio list-app-sections" / get-app-info until the section and its
+    <Code>_ListPage / <Code>_FormPage appear. The CLI command returns
+    synchronously and is unaffected.
+
 TROUBLESHOOTING
     "Caption ... has no Latin letters or digits to generate a section code"
         The caption is non-Latin (for example "Контакти"), so a valid Latin

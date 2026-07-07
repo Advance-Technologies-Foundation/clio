@@ -25,8 +25,17 @@ The feature is expected to scale across two dimensions:
 
 The current feature support is limited to:
 
-- create entity-level business rule - [create-entity-business-rule-spec.md](./create-entity-business-rule-spec.md)
+- create entity-level business rule - [create-entity-business-rules-spec.md](./create-entity-business-rules-spec.md)
 
+## Batch creation
+
+The `create-entity-business-rules` and `create-page-business-rules` MCP tools accept a `rules`
+array and create every rule for the same entity/page schema in one call. The whole batch is applied
+with a single add-on `SaveSchema`, one client-cache reset, and one configuration rebuild — instead of
+that work repeating per rule — so creating N rules costs the same server round-trips as creating one.
+A per-rule validation/conversion failure is isolated and reported in the per-rule result array; the
+remaining rules are still saved. Callers should pass all rules for a schema in a single call rather
+than calling the tool once per rule.
 
 ## Architecture
 

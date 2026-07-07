@@ -46,15 +46,9 @@ public sealed class IndicatorWidgetGuidanceResource {
 		         another widget).
 
 		       ## Page specific rules
-		       An indicator widget can be created on different surfaces inside Creatio. Use these defaults
-		       depending on which surface you are working on.
-
-		       - Dashboards: see the `dashboards` guidance for the band/grid layout and the plain-white card policy.
-		       - Desktops: by default use `layout.color`: "transparent", `theme`: "glassmorphism".
-		       - List pages and Form pages: use `theme`: "without-fill". Never use transparent color, unless the
-		         user asked for glassmorphism style.
-		       - Home pages: use `theme`: "full-fill" and try to guess the color from other components in the
-		         schema. Never use transparent color, unless the user asked for glassmorphism style.
+		       Pick `theme` / `layout.color` by the page surface (desktop, list/form, home). Those per-surface
+		       defaults are owned by the `crt.IndicatorWidget` documentation — read it via `get-component-info`.
+		       For dashboards, see the `dashboards` guidance (band/grid layout and the plain-white card policy).
 
 		       """
 	};

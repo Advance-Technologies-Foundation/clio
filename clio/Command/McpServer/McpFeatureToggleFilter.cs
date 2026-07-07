@@ -114,6 +114,13 @@ public static class McpFeatureToggleFilter
 	/// <param name="isEnabled">The feature predicate gating each discovered type.</param>
 	/// <param name="serializerOptions">The serializer options governing tool/prompt parameter marshalling.</param>
 	/// <returns>The same <paramref name="builder"/>, for chaining.</returns>
+	/// <remarks>
+	/// The registered tool set is always the lazy-mode profile (<see cref="SelectToolTypes"/>): the core
+	/// flat types plus the <c>clio-run</c> / <c>clio-run-destructive</c> executors and
+	/// <c>get-tool-contract</c>. The long-tail flat schemas never sit in <c>tools/list</c>; they stay
+	/// reachable via the executors and discoverable via <c>get-tool-contract</c>. Resources and prompts
+	/// are registered in full.
+	/// </remarks>
 	/// <exception cref="ArgumentNullException">
 	/// Thrown when <paramref name="builder"/>, <paramref name="assembly"/>, or <paramref name="isEnabled"/> is <c>null</c>.
 	/// </exception>
@@ -128,8 +135,8 @@ public static class McpFeatureToggleFilter
 
 		IEnumerable<Type> enabledResourceTypes = GetEnabledTypes(
 			assembly, typeof(McpServerResourceTypeAttribute), isEnabled);
-		IEnumerable<Type> enabledToolTypes = GetEnabledTypes(
-			assembly, typeof(McpServerToolTypeAttribute), isEnabled);
+		IEnumerable<Type> enabledToolTypes = SelectToolTypes(GetEnabledTypes(
+			assembly, typeof(McpServerToolTypeAttribute), isEnabled));
 		IEnumerable<Type> enabledPromptTypes = GetEnabledTypes(
 			assembly, typeof(McpServerPromptTypeAttribute), isEnabled);
 
@@ -137,5 +144,28 @@ public static class McpFeatureToggleFilter
 			.WithResources(enabledResourceTypes)
 			.WithTools(enabledToolTypes, serializerOptions)
 			.WithPrompts(enabledPromptTypes, serializerOptions);
+	}
+
+	/// <summary>
+	/// Selects which feature-enabled tool TYPES are registered flat in <c>tools/list</c>: the lazy-mode
+	/// profile. This is the only tool surface clio's MCP server exposes.
+	/// </summary>
+	/// <remarks>
+	/// The registered set is the intersection of the enabled types with the core profile
+	/// (<see cref="McpCoreToolProfile.CoreToolTypes"/>) unioned with the always-on executor / contract
+	/// types (<see cref="McpCoreToolProfile.AlwaysOnLazyToolTypes"/>): <c>clio-run</c> +
+	/// <c>clio-run-destructive</c> + <c>get-tool-contract</c>. The long-tail flat schemas never sit in
+	/// <c>tools/list</c> but stay reachable via the executors and discoverable via
+	/// <c>get-tool-contract</c>. A core/executor type that is itself feature-gated off is still excluded
+	/// (the intersection with <paramref name="enabledToolTypes"/> preserves per-type gating).
+	/// </remarks>
+	/// <param name="enabledToolTypes">The feature-enabled tool-type set (per-type gates already applied).</param>
+	/// <returns>The tool-type set to register flat.</returns>
+	/// <exception cref="ArgumentNullException">Thrown when <paramref name="enabledToolTypes"/> is <c>null</c>.</exception>
+	public static IEnumerable<Type> SelectToolTypes(IEnumerable<Type> enabledToolTypes) {
+		ArgumentNullException.ThrowIfNull(enabledToolTypes);
+		HashSet<Type> lazySet = new(McpCoreToolProfile.CoreToolTypes);
+		lazySet.UnionWith(McpCoreToolProfile.AlwaysOnLazyToolTypes);
+		return enabledToolTypes.Where(lazySet.Contains).ToArray();
 	}
 }

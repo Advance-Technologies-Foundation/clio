@@ -48,7 +48,17 @@ public abstract class BaseTool<T>(
 		Action<TCommand> configureCommand = null) where TCommand : Command<T> {
 		TCommand resolvedCommand;
 		try {
+			// ResolveCommand resolves the env-scoped command AND enforces this options type's
+			// [RequiresPackage] declarations against the per-call target environment. The gate lives
+			// inside ResolveCommand so the typed-response path (tools that call it directly from inside
+			// ExecuteWithCleanLog) is package-gated too. An unmet requirement surfaces as a
+			// PackageRequirementException; an environment/argument failure as an
+			// EnvironmentResolutionException; both become a caller-actionable failed result (exit 1)
+			// below, so the command never runs when its preconditions are not satisfied.
 			resolvedCommand = ResolveCommand<TCommand>(options);
+		} catch (PackageRequirementException ex) {
+			// Surface the actionable install hint verbatim, without the exception-chain decoration.
+			return CommandExecutionResult.FromError(ex.Message);
 		} catch (EnvironmentResolutionException e) {
 			// Expected, caller-actionable environment/argument failure → exit code 1.
 			return CommandExecutionResult.FromResolverError(e);
@@ -58,45 +68,88 @@ public abstract class BaseTool<T>(
 			return CommandExecutionResult.FromException(e);
 		}
 
-		// Package-requirement gate for environment-bound commands. This runs in the env-SENSITIVE path
-		// only, because [RequiresPackage] is verified against the per-call target environment. The checker
-		// is resolved from the SAME environment-scoped container the command came from (see
-		// ResolveFromCallContainer), so it queries the correct Creatio instance. Run before the execution
-		// lock so a refusal does not hold it.
-		CommandExecutionResult requirementFailure = EnforcePackageRequirements(options);
-		if (requirementFailure is not null) {
-			return requirementFailure;
+		// Creatio-version gate for environment-bound commands. It runs AFTER ResolveCommand has already
+		// resolved the env-scoped command and enforced the package gate (see ResolveCommand), so the
+		// environment is validated by the time we get here and the version checker never hits an
+		// unknown-env. Like the package gate it runs only in the env-SENSITIVE path, resolves its checker
+		// from the SAME environment-scoped container the command came from, and runs before the execution
+		// lock so a refusal does not hold it. Package is NOT re-enforced here — ResolveCommand already did
+		// it for BOTH execution paths, and adding it again would double-gate.
+		CommandExecutionResult versionRequirementFailure = EnforceCreatioVersionRequirements(options);
+		if (versionRequirementFailure is not null) {
+			return versionRequirementFailure;
 		}
 
 		configureCommand?.Invoke(resolvedCommand);
 		return InternalExecute(resolvedCommand, options);
 	}
 
-	// Returns a failed result when the per-call environment does not satisfy this options type's
-	// [RequiresPackage] declarations, or null when there is nothing to enforce / the requirements are met.
-	// Cheap static pre-check first: options types without [RequiresPackage] skip resolution entirely,
-	// so non-gated tools stay zero-cost and never force an environment. Nothing escapes this method.
-	private CommandExecutionResult EnforcePackageRequirements(T options) {
+	/// <summary>
+	/// Resolves an environment-scoped command instance for the current MCP call and enforces the
+	/// options type's package requirements before returning it.
+	/// </summary>
+	/// <remarks>
+	/// Both BaseTool execution paths funnel through here — the <see cref="InternalExecute{TCommand}"/>
+	/// path and the typed-response path that calls this method directly from inside
+	/// <see cref="ExecuteWithCleanLog"/> — so every BaseTool tool is package-gated uniformly,
+	/// regardless of its return shape. The command is resolved FIRST (so an unknown-environment failure
+	/// surfaces as <see cref="EnvironmentResolutionException"/>), THEN the requirement is enforced. A
+	/// <see cref="PackageRequirementException"/> (unmet requirement) and any other verification failure
+	/// both propagate to the caller.
+	/// </remarks>
+	private protected TCommand ResolveCommand<TCommand>(T options) where TCommand : Command<T> {
+		TCommand resolvedCommand = ResolveFromCallContainer<TCommand>(options);
+		EnforcePackageRequirements(options);
+		return resolvedCommand;
+	}
+
+	// Enforces this options type's [RequiresPackage] declarations against the per-call target
+	// environment. This runs for BOTH BaseTool execution paths because it lives in ResolveCommand,
+	// which both the env-SENSITIVE InternalExecute<TCommand> path and the typed-response/
+	// ExecuteWithCleanLog path call. [RequiresPackage] is verified against the per-call target
+	// environment; the checker is resolved from the SAME environment-scoped container the command
+	// came from (see ResolveFromCallContainer), so it queries the correct Creatio instance.
+	// A cheap static pre-check runs first: options types without [RequiresPackage] skip resolution
+	// entirely, so non-gated tools stay zero-cost and never force an environment. On an unmet
+	// requirement this throws PackageRequirementException; any other verification failure
+	// (e.g. GetPackages/HTTP/auth failure, unknown environment) propagates as-is.
+	private void EnforcePackageRequirements(T options) {
 		if (!RequiresPackageAttribute.IsDefinedOn(typeof(T))) {
+			return;
+		}
+		IRequiredPackageChecker checker = ResolveFromCallContainer<IRequiredPackageChecker>(options);
+		checker.EnsureRequirements(options);
+	}
+
+	// Returns a failed result (exit code 78) when the per-call environment does not satisfy this options
+	// type's [RequiresCreatioVersion] declaration (too old, or undeterminable → fail-closed), or null when
+	// there is nothing to enforce / the requirement is met. Cheap static pre-check first: options types
+	// without [RequiresCreatioVersion] skip resolution entirely, so non-gated tools stay zero-cost and
+	// never force an environment round-trip — intentionally stricter than the package gate, because the
+	// version check exists solely to add that round-trip. Mirrors the CLI gate
+	// (Program.TryGetCreatioVersionRequirementError): only CreatioVersionRequirementException is mapped to
+	// the version exit code; a malformed [RequiresCreatioVersion] (e.g. on a non-bool property) surfaces as
+	// an InvalidOperationException that flows to the catch-all (exit code -1), NOT into the version-gate
+	// failure — a developer error must stay distinguishable from a version refusal. Nothing escapes here.
+	private CommandExecutionResult EnforceCreatioVersionRequirements(T options) {
+		if (!RequiresCreatioVersionAttribute.IsDefinedOn(typeof(T))) {
 			return null;
 		}
 		try {
-			IRequiredPackageChecker checker = ResolveFromCallContainer<IRequiredPackageChecker>(options);
+			ICreatioVersionChecker checker = ResolveFromCallContainer<ICreatioVersionChecker>(options);
 			checker.EnsureRequirements(options);
 			return null;
 		}
-		catch (PackageRequirementException ex) {
-			// Expected, caller-actionable precondition refusal (a required package is absent) → exit code 1.
-			return CommandExecutionResult.FromValidationError(ex.Message);
+		catch (CreatioVersionRequirementException ex) {
+			// Expected, caller-actionable refusal (unmet/undeterminable version) → distinct exit code 78.
+			return CommandExecutionResult.FromCreatioVersionRequirementError(ex);
 		}
 		catch (Exception ex) {
-			// Unexpected failure while verifying requirements (e.g. an HTTP/GetPackages error) → exit code -1.
-			return CommandExecutionResult.FromError($"Could not verify package requirements: {ex.Message}");
+			// Unexpected failure while verifying the version requirement (a malformed attribute, or a
+			// non-soft-degrading checker error) → exit code -1, never collapsed into the version exit code.
+			return CommandExecutionResult.FromException(ex);
 		}
 	}
-
-	private protected TCommand ResolveCommand<TCommand>(T options) where TCommand : Command<T> =>
-		ResolveFromCallContainer<TCommand>(options);
 
 	// Resolves an arbitrary service from the per-call, environment-scoped container using the SAME
 	// switch logic the command itself is resolved with. Sharing this with ResolveCommand guarantees the
@@ -114,24 +167,18 @@ public abstract class BaseTool<T>(
 				$"{GetType().Name} does not support environment-based command resolution.");
 		}
 
-		return options switch {
-									   //Optional environment properties are not used in command resolution for these options, so null is passed explicitly to avoid confusion about which properties are used.
-									   CreateTestProjectOptions envOptions when string.IsNullOrWhiteSpace(envOptions.Environment) && string.IsNullOrWhiteSpace(envOptions.Uri)
-										   => commandResolver.ResolveWithoutEnvironment<TService>(envOptions),
-									   AddPackageOptions envOptions when string.IsNullOrWhiteSpace(envOptions.Environment) && string.IsNullOrWhiteSpace(envOptions.Uri)
-										   => commandResolver.ResolveWithoutEnvironment<TService>(envOptions),
-									   CreateWorkspaceCommandOptions envOptions when envOptions.Empty
-										   && string.IsNullOrWhiteSpace(envOptions.Environment)
-										   && string.IsNullOrWhiteSpace(envOptions.Uri)
-										   => commandResolver.ResolveWithoutEnvironment<TService>(envOptions),
-									   CreateUiProjectOptions envOptions when string.IsNullOrWhiteSpace(envOptions.Environment)
-										   && string.IsNullOrWhiteSpace(envOptions.Uri)
-										   => commandResolver.ResolveWithoutEnvironment<TService>(envOptions),
+		if (options is not EnvironmentOptions environmentOptions) {
+			throw new InvalidOperationException(
+				$"Unsupported options type: {options.GetType().Name}");
+		}
 
-									   EnvironmentOptions envOptions => commandResolver.Resolve<TService>(envOptions),
-									   var _ => throw new InvalidOperationException(
-										   $"Unsupported options type: {options.GetType().Name}")
-								   };
+		// The env-less special-case decision is shared with the generic clio-run executor
+		// (EnvironmentScopedCommandExecutor.UsesEnvironmentlessResolution), so the four current
+		// flat tools and the generic executor resolve identically — no behavioral drift.
+		// Optional environment properties are intentionally not consulted for the env-less types.
+		return EnvironmentScopedCommandExecutor.UsesEnvironmentlessResolution(environmentOptions)
+			? commandResolver.ResolveWithoutEnvironment<TService>(environmentOptions)
+			: commandResolver.Resolve<TService>(environmentOptions);
 	}
 
 
@@ -150,7 +197,8 @@ public abstract class BaseTool<T>(
 			logger.PreserveMessages = true;
 			try {
 				int exitCode = command.Execute(options);
-				IReadOnlyList<LogMessage> flushedMessages = logger.FlushAndSnapshotMessages(clearMessages: true);
+				IReadOnlyList<LogMessage> flushedMessages = SanitizeForSerialization(
+					logger.FlushAndSnapshotMessages(clearMessages: true));
 				messagesToForward = flushedMessages;
 				executionResult = new CommandExecutionResult(
 					exitCode,
@@ -159,7 +207,8 @@ public abstract class BaseTool<T>(
 					CorrelationId: correlationId);
 			}
 			catch (Exception e) {
-				List<LogMessage> priorLogs = [.. logger.FlushAndSnapshotMessages(clearMessages: true)];
+				List<LogMessage> priorLogs = [.. SanitizeForSerialization(
+					logger.FlushAndSnapshotMessages(clearMessages: true))];
 				messagesToForward = priorLogs;
 				executionResult = CommandExecutionResult.FromException(e, priorLogs, correlationId);
 			}
@@ -171,5 +220,20 @@ public abstract class BaseTool<T>(
 		// tool invocations on stdio I/O performed by SendNotificationAsync.
 		McpLogNotifier.ForwardMessages(messagesToForward, correlationId);
 		return executionResult;
+	}
+
+	// The MCP SDK serializes the returned CommandExecutionResult with System.Text.Json, which walks
+	// LogMessage.Value (typed object). A TableMessage carries a raw ConsoleTable whose object graph
+	// reaches System.Text.Encoding.Preamble (a ReadOnlySpan<byte> ref struct) — System.Text.Json throws
+	// on that, and the SDK turns the throw into IsError=true (e.g. experimental list-features, ENG-92149).
+	// Project every non-string Value to its rendered string form (the same text the console writes via
+	// table.ToString()) before it enters the serialized envelope. This is general — any LogMessage with a
+	// non-serializable Value is made safe — and console rendering is untouched because the console reads
+	// from the live ConsoleLogger buffer, not this detached MCP snapshot.
+	private static IReadOnlyList<LogMessage> SanitizeForSerialization(IReadOnlyList<LogMessage> messages) {
+		foreach (LogMessage message in messages.Where(message => message.Value is not (null or string))) {
+			message.Value = message.Value.ToString();
+		}
+		return messages;
 	}
 }

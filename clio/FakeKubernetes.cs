@@ -13,8 +13,12 @@ public class FakeKubernetes : IKubernetes
 	{
 	}
 
+	// No-op: FakeKubernetes is the graceful fallback returned by the IKubernetes factory when no
+	// valid kubeconfig is present (see BindingsModule). It owns no unmanaged resources. Dispose must
+	// not throw: the MCP server runs each tool call in its own DI scope and disposes that scope when
+	// the request completes, so a throwing Dispose surfaced as an opaque MCP InternalError
+	// (-32603) for every infrastructure tool resolved on a no-Kubernetes host (ENG-91830).
 	public void Dispose() {
-		throw new NotImplementedException();
 	}
 
 	public Task<int> NamespacedPodExecAsync(string name, string @namespace, string container, IEnumerable<string> command, bool tty,

@@ -1,11 +1,9 @@
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
-using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
-using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E;
@@ -15,28 +13,31 @@ namespace Clio.Mcp.E2E;
 /// real clio mcp-server process.
 /// </summary>
 [TestFixture]
+[Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature(GetUserCultureTool.ToolName)]
 [NonParallelizable]
-public sealed class GetUserCultureToolE2ETests {
+public sealed class GetUserCultureToolE2ETests : McpContractFixtureBase {
 	[Test]
-	[Description("Advertises get-user-culture as a read-only, non-destructive MCP tool through the real MCP server.")]
+	[Description("Exposes get-user-culture via the get-tool-contract compact index with a non-destructive safety flag on the lazy tool surface.")]
 	[AllureTag(GetUserCultureTool.ToolName)]
-	[AllureName("get-user-culture MCP tool is advertised")]
+	[AllureName("get-user-culture MCP tool is discoverable on the lazy surface")]
 	public async Task GetUserCulture_Should_Be_Advertised() {
 		// Arrange
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
-		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(
+		IReadOnlyList<ToolContractIndexEntry> index = await arrangeContext.Session.GetToolContractIndexAsync(
 			arrangeContext.CancellationTokenSource.Token);
 
 		// Assert
-		McpClientTool tool = tools.Single(tool => tool.Name == GetUserCultureTool.ToolName);
-		tool.ProtocolTool.Annotations!.ReadOnlyHint.Should().BeTrue(
-			because: "get-user-culture only reads the profile culture and must be advertised as read-only");
-		tool.ProtocolTool.Annotations.DestructiveHint.Should().BeFalse(
-			because: "get-user-culture must not mutate Creatio state");
+		// The lazy surface exposes hidden tools only through the compact discovery index, which carries the
+		// destructive flag; the read-only hint is no longer observable for non-resident tools.
+		ToolContractIndexEntry indexEntry = index.Should().ContainSingle(entry => entry.Name == GetUserCultureTool.ToolName,
+			because: "get-user-culture must be discoverable via the get-tool-contract compact index on the lazy surface")
+			.Which;
+		indexEntry.Destructive.Should().NotBe(true,
+			because: "get-user-culture only reads the profile culture and must not be flagged destructive");
 	}
 
 	[Test]
@@ -45,7 +46,7 @@ public sealed class GetUserCultureToolE2ETests {
 	[AllureName("get-user-culture MCP tool binds arguments")]
 	public async Task GetUserCulture_Should_Bind_Arguments_And_Report_Failure_For_Invalid_Environment() {
 		// Arrange
-		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 		string invalidEnvironmentName = $"missing-culture-env-{Guid.NewGuid():N}";
 
 		// Act
@@ -70,20 +71,4 @@ public sealed class GetUserCultureToolE2ETests {
 			because: "a failure signal must never surface a fallback culture as if it were resolved");
 	}
 
-	private static async Task<ArrangeContext> ArrangeAsync(TimeSpan timeout) {
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		CancellationTokenSource cancellationTokenSource = new(timeout);
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		return new ArrangeContext(session, cancellationTokenSource);
-	}
-
-	private sealed record ArrangeContext(
-		McpServerSession Session,
-		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
-			CancellationTokenSource.Dispose();
-		}
-	}
 }

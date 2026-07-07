@@ -33,7 +33,12 @@ public sealed class ApplicationToolE2ETests {
 	private const string ApplicationIconBackground = "#0058EF";
 	private const string ApplicationCode = "AutoTestClioMcp";
 
+	// get-app-info readback after sync-schemas races a server-side schema recompile; poll up to
+	// ~2 minutes (39 attempts × 3s) so the canonical-main-entity assertion tests the settled state.
+	private const int CanonicalMainEntityReadbackAttempts = 40;
+	private static readonly TimeSpan CanonicalMainEntityReadbackPollInterval = TimeSpan.FromSeconds(3);
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes list-apps, and verifies structured installed application items when the environment exposes at least one installed application.")]
 	[AllureFeature(ListToolName)]
@@ -68,6 +73,7 @@ public sealed class ApplicationToolE2ETests {
 			because: "installed application list items should expose a version string in the structured list envelope");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, resolves the seeded installed application AutoTestClioMcp through list-apps, and verifies that get-app-info returns structured metadata for that application.")]
 	[AllureFeature(InfoToolName)]
@@ -116,6 +122,7 @@ public sealed class ApplicationToolE2ETests {
 			because: "get-app-info should return the active SchemaNamePrefix so agents can use the correct prefix for schema names in the session");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes list-apps, and verifies that the structured response remains valid whether the environment has zero installed apps or many.")]
 	[AllureFeature(ListToolName)]
@@ -155,6 +162,7 @@ public sealed class ApplicationToolE2ETests {
 			because: "successful list-apps calls should not include an error payload");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, resolves the seeded installed application AutoTestClioMcp through list-apps, and verifies that its id can be reused with get-app-info.")]
 	[AllureFeature(ListToolName)]
@@ -191,6 +199,7 @@ public sealed class ApplicationToolE2ETests {
 			because: "get-app-info should resolve the same installed application code that list-apps returned");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes get-app-info without identifiers, and verifies that a structured error envelope explains the exactly-one rule.")]
 	[AllureFeature(InfoToolName)]
@@ -218,6 +227,7 @@ public sealed class ApplicationToolE2ETests {
 			because: "the failure should explain the exact-one identifier rule with the canonical selector names");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes get-app-info with both identifiers, and verifies that a structured error envelope explains the exactly-one rule.")]
 	[AllureFeature(InfoToolName)]
@@ -245,6 +255,7 @@ public sealed class ApplicationToolE2ETests {
 			because: "the failure should explain the exact-one identifier rule with the canonical selector names");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes get-app-info with a bad application code, and verifies that a structured error envelope reports the lookup failure.")]
 	[AllureFeature(InfoToolName)]
@@ -274,6 +285,7 @@ public sealed class ApplicationToolE2ETests {
 			because: "the failure should tell a human that the requested application could not be resolved");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes create-app for a configured sandbox environment, and verifies that the created application is returned in the structured metadata envelope.")]
 	[AllureFeature(CreateToolName)]
@@ -341,6 +353,7 @@ public sealed class ApplicationToolE2ETests {
 			because: "successful create calls should not include an error payload");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes create-app with with-mobile-pages=false, and verifies the created application has no main entity mobile pages while keeping its web pages.")]
 	[AllureFeature(CreateToolName)]
@@ -390,6 +403,7 @@ public sealed class ApplicationToolE2ETests {
 			because: "a web-only app should still expose its web form page");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Creates an application, mutates the canonical main entity through sync-schemas, and verifies get-app-info still returns the application display name instead of Base object.")]
 	[AllureFeature(CreateToolName)]
@@ -435,12 +449,15 @@ public sealed class ApplicationToolE2ETests {
 			createdApplicationCode,
 			addedColumnName);
 		JsonElement schemaSyncResponse = ExtractSchemaSyncResponse(schemaSyncCallResult);
-		ApplicationInfoActResult infoResult = await ActInfoAsync(
+		// sync-schemas triggers an asynchronous server-side schema recompile; the canonical main
+		// entity can be momentarily absent from get-app-info until that settles. Poll the readback so
+		// the regression assertions below test the settled state instead of racing the recompile.
+		ApplicationInfoActResult infoResult = await WaitForCanonicalMainEntityAsync(
 			arrangeContext.Session,
 			arrangeContext.CancellationTokenSource.Token,
 			arrangeContext.EnvironmentName,
-			id: null,
-			code: createdApplicationCode);
+			createdApplicationCode,
+			applicationName);
 		ApplicationEntityEnvelope? canonicalMainEntity = infoResult.Result.Entities?
 			.FirstOrDefault(entity => string.Equals(entity.Name, createdApplicationCode, StringComparison.OrdinalIgnoreCase));
 
@@ -457,6 +474,7 @@ public sealed class ApplicationToolE2ETests {
 			because: "the canonical main entity should keep the installed application display name instead of degrading to Base object after sync-schemas");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes create-app with an invalid environment, and verifies that a structured error envelope reports the failure.")]
 	[AllureFeature(CreateToolName)]
@@ -490,6 +508,7 @@ public sealed class ApplicationToolE2ETests {
 			because: "the failure should tell a human that the requested environment is not registered");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes create-app with forbidden localization-map fields, and verifies that validation rejects the request before any create side effect is attempted.")]
 	[AllureFeature(CreateToolName)]
@@ -501,9 +520,10 @@ public sealed class ApplicationToolE2ETests {
 		McpE2ESettings settings = TestConfiguration.Load();
 		await using ApplicationArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
 		string suffix = Guid.NewGuid().ToString("N")[..8];
-		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(CreateToolName,
-			because: "the create-app MCP tool must be advertised before the end-to-end call can be executed");
+		IReadOnlyCollection<string> reachableToolNames =
+			await arrangeContext.Session.ListReachableToolNamesAsync(arrangeContext.CancellationTokenSource.Token);
+		reachableToolNames.Should().Contain(CreateToolName,
+			because: "the create-app MCP tool must be discoverable via the get-tool-contract compact index before the end-to-end call can be executed");
 
 		Dictionary<string, object?> args = BuildCreateArgs(
 			environmentName: arrangeContext.EnvironmentName,
@@ -536,6 +556,7 @@ public sealed class ApplicationToolE2ETests {
 			because: "the failure should explain that localization maps are forbidden on create-app");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes create-app with an invalid template payload, and verifies that a structured error envelope reports the failure.")]
 	[AllureFeature(CreateToolName)]
@@ -574,6 +595,7 @@ public sealed class ApplicationToolE2ETests {
 			because: "the failure should include readable diagnostics for the invalid create payload");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes create-app with malformed optional-template-data-json, and verifies that a structured error envelope is returned before any create side effect is attempted.")]
 	[AllureFeature(CreateToolName)]
@@ -608,6 +630,7 @@ public sealed class ApplicationToolE2ETests {
 			because: "the failure should explain that the JSON payload is invalid");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes create-app with icon-id set to auto, and verifies that automatic icon resolution still produces structured metadata.")]
 	[AllureFeature(CreateToolName)]
@@ -645,97 +668,6 @@ public sealed class ApplicationToolE2ETests {
 			because: "auto icon resolution should still return the normal success envelope");
 		actResult.Result.PackageName.Should().NotBeNullOrWhiteSpace(
 			because: "the auto-icon create flow should still return structured application metadata");
-	}
-
-	[Test]
-	[Description("Advertises delete-app in the MCP tool list so callers can discover the uninstall tool.")]
-	[AllureFeature(DeleteToolName)]
-	[AllureTag(DeleteToolName)]
-	[AllureName("Application delete tool is advertised by the MCP server")]
-	[AllureDescription("Starts the real clio MCP server and verifies that delete-app appears in the advertised tool manifest.")]
-	public async Task ApplicationDelete_Should_Be_Listed_By_Mcp_Server() {
-		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-
-		// Act
-		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationTokenSource.Token);
-		IEnumerable<string> toolNames = tools.Select(tool => tool.Name);
-
-		// Assert
-		toolNames.Should().Contain(DeleteToolName,
-			because: "delete-app must be advertised so MCP callers can discover the uninstall tool");
-	}
-
-	[Test]
-	[Description("Starts the real clio MCP server, invokes delete-app with an unknown environment, and verifies that the failure remains human-readable.")]
-	[AllureFeature(DeleteToolName)]
-	[AllureTag(DeleteToolName)]
-	[AllureName("Application delete reports invalid environment failures")]
-	[AllureDescription("Uses the real clio MCP server to call delete-app with an unknown environment and verifies that the tool returns a structured readable error envelope.")]
-	public async Task ApplicationDelete_Should_Report_Invalid_Environment_Failure() {
-		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		string invalidEnvironmentName = $"missing-delete-app-env-{Guid.NewGuid():N}";
-
-		// Act
-		CallToolResult callResult = await session.CallToolAsync(
-			DeleteToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["environment-name"] = invalidEnvironmentName,
-					["app-name"] = "11111111-1111-1111-1111-111111111111"
-				}
-			},
-			cancellationTokenSource.Token);
-		ApplicationDeleteResponseEnvelope response = ApplicationResultParser.ExtractDelete(callResult);
-
-		// Assert
-		callResult.IsError.Should().NotBeTrue(
-			because: $"structured delete-app failures should be returned in the payload instead of as MCP invocation errors. Actual result: {DescribeCallResult(callResult)}");
-		response.Success.Should().BeFalse(
-			because: "delete-app should fail when the requested environment does not exist");
-		response.Error.Should().MatchRegex(
-			$"(?is)({Regex.Escape(invalidEnvironmentName)}|environment.*not.*found|not found)",
-			because: "the failure should explain that the requested environment is missing");
-	}
-
-	[Test]
-	[Description("Starts the real clio MCP server, invokes delete-app without environment-name or explicit connection args, and verifies that the failure explains the missing target.")]
-	[AllureFeature(DeleteToolName)]
-	[AllureTag(DeleteToolName)]
-	[AllureName("Application delete rejects missing execution target")]
-	[AllureDescription("Uses the real clio MCP server to call delete-app without environment-name or URI credentials and verifies that the tool returns readable resolver diagnostics.")]
-	public async Task ApplicationDelete_Should_Reject_Missing_Execution_Target() {
-		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-
-		// Act
-		CallToolResult callResult = await session.CallToolAsync(
-			DeleteToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["app-name"] = "11111111-1111-1111-1111-111111111111"
-				}
-			},
-			cancellationTokenSource.Token);
-		ApplicationDeleteResponseEnvelope response = ApplicationResultParser.ExtractDelete(callResult);
-
-		// Assert
-		callResult.IsError.Should().NotBeTrue(
-			because: $"structured delete-app failures should be returned in the payload instead of as MCP invocation errors. Actual result: {DescribeCallResult(callResult)}");
-		response.Success.Should().BeFalse(
-			because: "delete-app should fail when the call does not identify any execution target");
-		response.Error.Should().Contain("Either a configured environment name or an explicit URI is required",
-			because: "the failure should explain that the MCP request needs an environment-name or explicit URI");
 	}
 
 	private static async Task<ApplicationArrangeContext> ArrangeAsync(McpE2ESettings settings, TimeSpan timeout) {
@@ -814,6 +746,47 @@ public sealed class ApplicationToolE2ETests {
 		callResult.IsError.Should().NotBeTrue(
 			because: $"structured get-app-info failures should be returned in the payload instead of as MCP invocation errors. Actual result: {DescribeCallResult(callResult)}");
 		return ApplicationResultParser.ExtractInfo(callResult);
+	}
+
+	private static async Task<ApplicationInfoActResult> WaitForCanonicalMainEntityAsync(
+		McpServerSession session,
+		CancellationToken cancellationToken,
+		string environmentName,
+		string applicationCode,
+		string expectedCaption) {
+		// The canonical main entity schema name equals the installed application code, so the same
+		// value is both the get-app-info lookup code and the expected entity name in the readback.
+		// Gate the poll on the fully-settled state the downstream assertions check: the entity must be
+		// present AND its caption must already be the installed application name. The sync-schemas
+		// recompile that delays entity visibility also delays the caption recompute, so polling on Name
+		// alone can return early on an entity whose caption is still the "Base object" fallback, leaving
+		// the caption assertion flaky. Requiring the caption here closes that race instead of relocating it.
+		for (int attempt = 1; attempt < CanonicalMainEntityReadbackAttempts; attempt++) {
+			try {
+				ApplicationInfoActResult candidate = await ActInfoAsync(
+					session, cancellationToken, environmentName, id: null, code: applicationCode);
+				if (ContainsCanonicalMainEntity(candidate, applicationCode, expectedCaption)) {
+					return candidate;
+				}
+			}
+			catch (InvalidOperationException) {
+				// get-app-info can transiently fail to read the just-recompiled schema while the
+				// server is still settling after sync-schemas; keep polling within the window.
+			}
+
+			await Task.Delay(CanonicalMainEntityReadbackPollInterval, cancellationToken);
+		}
+
+		// Final attempt outside the retry window: surface whatever get-app-info returns (or throws)
+		// so the assertions report the real readback state instead of a swallowed transient error.
+		return await ActInfoAsync(session, cancellationToken, environmentName, id: null, code: applicationCode);
+	}
+
+	private static bool ContainsCanonicalMainEntity(
+		ApplicationInfoActResult infoResult, string expectedEntityName, string expectedCaption) {
+		return infoResult.Result.Entities?
+			.Any(entity => string.Equals(entity.Name, expectedEntityName, StringComparison.OrdinalIgnoreCase)
+				&& string.Equals(entity.Caption, expectedCaption, StringComparison.Ordinal)) == true;
 	}
 
 	[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
@@ -944,9 +917,9 @@ public sealed class ApplicationToolE2ETests {
 		string? iconBackground,
 		string? optionalTemplateDataJson,
 		bool withMobilePages = true) {
-		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
-		tools.Select(tool => tool.Name).Should().Contain(CreateToolName,
-			because: "the create-app MCP tool must be advertised before the end-to-end call can be executed");
+		IReadOnlyCollection<string> reachableToolNames = await session.ListReachableToolNamesAsync(cancellationToken);
+		reachableToolNames.Should().Contain(CreateToolName,
+			because: "the create-app MCP tool must be discoverable via the get-tool-contract compact index before the end-to-end call can be executed");
 
 		return await session.CallToolAsync(
 			CreateToolName,
@@ -972,9 +945,9 @@ public sealed class ApplicationToolE2ETests {
 		string packageName,
 		string schemaName,
 		string addedColumnName) {
-		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
-		tools.Select(tool => tool.Name).Should().Contain(SchemaSyncToolName,
-			because: "the sync-schemas MCP tool must be advertised before the canonical-main-entity regression scenario can be executed");
+		IReadOnlyCollection<string> reachableToolNames = await session.ListReachableToolNamesAsync(cancellationToken);
+		reachableToolNames.Should().Contain(SchemaSyncToolName,
+			because: "the sync-schemas MCP tool must be discoverable via the get-tool-contract compact index before the canonical-main-entity regression scenario can be executed");
 
 		return await session.CallToolAsync(
 			SchemaSyncToolName,

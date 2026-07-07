@@ -3,11 +3,9 @@ using Allure.Net.Commons;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
-using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
-using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E;
@@ -16,27 +14,29 @@ namespace Clio.Mcp.E2E;
 /// End-to-end tests for the add-package-dependency MCP tool.
 /// </summary>
 [TestFixture]
+[Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("add-package-dependency")]
-public sealed class AddPackageDependencyToolE2ETests {
+[Parallelizable(ParallelScope.Self)]
+public sealed class AddPackageDependencyToolE2ETests : McpContractFixtureBase {
 
 	private const string ToolName = AddPackageDependencyTool.AddPackageDependencyToolName;
 
 	[Test]
 	[AllureTag(ToolName)]
-	[AllureDescription("Starts the real clio MCP server and verifies that add-package-dependency is advertised in the tool list.")]
-	[AllureName("add-package-dependency tool is advertised by the MCP server")]
-	[Description("Verifies that add-package-dependency appears in the MCP tool advertisement from the real clio mcp-server process.")]
-	public async Task AddPackageDependency_Should_Be_Advertised_By_McpServer() {
+	[AllureDescription("Starts the real clio MCP server and verifies that add-package-dependency is discoverable via the get-tool-contract compact index on the lazy tool surface.")]
+	[AllureName("add-package-dependency tool is discoverable on the lazy surface")]
+	[Description("Verifies that add-package-dependency is discoverable via the get-tool-contract compact index exposed by the real clio mcp-server process.")]
+	public async Task AddPackageDependency_Should_Be_Discoverable_On_Lazy_Surface() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		await using AddPackageDependencyArrangeContext arrangeContext = await ArrangeAsync(settings);
+		await using var arrangeContext = Arrange();
 
 		// Act
-		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
+		IReadOnlyCollection<string> toolNames =
+			await arrangeContext.Session.ListReachableToolNamesAsync(arrangeContext.CancellationTokenSource.Token);
 
 		// Assert
-		AssertToolIsAdvertised(tools, ToolName);
+		AssertToolIsDiscoverable(toolNames, ToolName);
 	}
 
 	[Test]
@@ -46,8 +46,7 @@ public sealed class AddPackageDependencyToolE2ETests {
 	[Description("Reports invalid environment failures for add-package-dependency through the real MCP server.")]
 	public async Task AddPackageDependency_Should_Report_Invalid_Environment_Failure() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		await using AddPackageDependencyArrangeContext arrangeContext = await ArrangeAsync(settings);
+		await using var arrangeContext = Arrange();
 		string invalidEnvironmentName = $"missing-dependency-env-{Guid.NewGuid():N}";
 
 		// Act
@@ -60,16 +59,8 @@ public sealed class AddPackageDependencyToolE2ETests {
 		AssertFailureMentionsEnvironment(actResult, invalidEnvironmentName);
 	}
 
-	private static async Task<AddPackageDependencyArrangeContext> ArrangeAsync(McpE2ESettings settings) {
-		return await AllureApi.Step("Arrange MCP server session", async () => {
-			CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
-			McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-			return new AddPackageDependencyArrangeContext(session, cancellationTokenSource);
-		});
-	}
-
 	private static async Task<CommandExecutionActResult> ActAsync(
-		AddPackageDependencyArrangeContext arrangeContext,
+		ArrangeContext arrangeContext,
 		string packageName,
 		string dependencyName,
 		string environmentName) {
@@ -91,10 +82,10 @@ public sealed class AddPackageDependencyToolE2ETests {
 		});
 	}
 
-	[AllureStep("Assert tool is advertised by MCP server")]
-	private static void AssertToolIsAdvertised(IList<McpClientTool> tools, string toolName) {
-		tools.Select(t => t.Name).Should().Contain(toolName,
-			because: $"the {toolName} MCP tool must be advertised by the clio mcp-server process");
+	[AllureStep("Assert tool is discoverable on the lazy MCP surface")]
+	private static void AssertToolIsDiscoverable(IReadOnlyCollection<string> toolNames, string toolName) {
+		toolNames.Should().Contain(toolName,
+			because: $"the {toolName} MCP tool must be discoverable on the lazy surface (get-tool-contract compact index) even though it is not resident in tools/list");
 	}
 
 	[AllureStep("Assert command-oriented MCP tool failed")]
@@ -123,15 +114,6 @@ public sealed class AddPackageDependencyToolE2ETests {
 		combinedOutput.Should().MatchRegex(
 			$"(?is)({Regex.Escape(environmentName)}|environment.*not.*found|not found|error occurred invoking)",
 			because: "the failure log should identify that the requested environment is not registered");
-	}
-
-	private sealed record AddPackageDependencyArrangeContext(
-		McpServerSession Session,
-		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
-			CancellationTokenSource.Dispose();
-		}
 	}
 
 	private sealed record CommandExecutionActResult(

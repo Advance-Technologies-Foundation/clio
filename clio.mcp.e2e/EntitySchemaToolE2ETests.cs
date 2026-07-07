@@ -36,7 +36,7 @@ namespace Clio.Mcp.E2E;
 // unaffected and remain in place.
 [AllureFeature("entity-schema")]
 [NonParallelizable]
-public sealed class EntitySchemaToolE2ETests {
+public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 	private const string CurrentDateTimeSystemValueUId = "d7c295d3-3146-4ee1-ac49-3a7bd0edc45d";
 	private const string TextDefaultSettingCode = "UsrEntitySchemaE2EDefaultText";
 	private const string CreateToolName = CreateEntitySchemaTool.CreateEntitySchemaToolName;
@@ -46,6 +46,24 @@ public sealed class EntitySchemaToolE2ETests {
 	private const string ReadColumnToolName = GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName;
 	private const string ModifyToolName = ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName;
 
+	// Option A (ENG-92458): one shared workspace+package+push for the whole fixture instead of one per
+	// test. Lazily initialized by the first ArrangeSandboxPackageAsync call (kept lazy rather than in
+	// [OneTimeSetUp] so its Assert.Ignore on a missing destructive opt-in / cliogate only skips the
+	// package tests; the InvalidEnvironment and FindEntitySchema tests need no package and stay green).
+	// The fixture is [NonParallelizable], so the lazy init runs without a race; each package test still
+	// creates its own unique schema inside the shared package, preserving per-test isolation.
+	private string? _sharedEnvironmentName;
+	private string? _sharedPackageName;
+	private string? _sharedRootDirectory;
+
+	[OneTimeTearDown]
+	public void CleanupSharedSandboxPackage() {
+		if (_sharedRootDirectory is not null && Directory.Exists(_sharedRootDirectory)) {
+			Directory.Delete(_sharedRootDirectory, recursive: true);
+		}
+	}
+
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Creates a remote entity schema, reads its structured properties, adds, modifies, and removes a column, and verifies the structured readbacks through the real MCP server.")]
 	[AllureTag(CreateToolName)]
@@ -77,11 +95,17 @@ public sealed class EntitySchemaToolE2ETests {
 			"successful schema creation should emit progress output");
 		AssertIncludesPublishMessage(createResult,
 			"create-entity-schema must publish the configuration so the schema becomes visible to lookup pickers and sys-setting reference lists (ENG-90403)");
+		AssertIncludesODataBuildMessage(createResult,
+			"create-entity-schema must request the OData entities rebuild so the schema is reachable over OData without a manual full compile (ENG-92048)");
 		AssertSchemaProperties(schemaProperties, arrangeContext);
 		AssertCommandSucceeded(addResult,
 			"modify-entity-schema-column should succeed when adding a valid own text-like column");
 		AssertIncludesInfoMessage(addResult,
 			"successful add mutation should emit progress output");
+		AssertIncludesPublishMessage(addResult,
+			"adding a column must publish the configuration so the new column compiles into configuration (ENG-90403)");
+		AssertIncludesODataBuildMessage(addResult,
+			"adding a column must request the OData entities rebuild so the new column is reachable over OData without a manual compile (ENG-92048)");
 		AssertSchemaPropertiesAfterAdd(schemaPropertiesAfterAdd, arrangeContext);
 		AssertAddedColumnProperties(addedColumnProperties, arrangeContext);
 		AssertCommandSucceeded(modifyResult,
@@ -97,6 +121,7 @@ public sealed class EntitySchemaToolE2ETests {
 		AssertSchemaPropertiesAfterRemove(schemaProperties, schemaPropertiesAfterRemove, arrangeContext);
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Creates a remote lookup schema through MCP and verifies the resulting schema inherits from BaseLookup.")]
 	[AllureTag(CreateLookupToolName)]
@@ -123,6 +148,8 @@ public sealed class EntitySchemaToolE2ETests {
 			"successful lookup creation should emit progress output");
 		AssertIncludesPublishMessage(createResult,
 			"create-lookup must publish the configuration so the lookup becomes usable as a sys-setting Lookup reference (ENG-90403)");
+		AssertIncludesODataBuildMessage(createResult,
+			"create-lookup must request the OData entities rebuild so the lookup is reachable over OData without a manual full compile (ENG-92048)");
 		schemaProperties.Name.Should().Be(arrangeContext.SchemaName,
 			because: "the created lookup should be readable through the structured schema properties tool");
 		schemaProperties.ParentSchemaName.Should().Be("BaseLookup",
@@ -148,6 +175,7 @@ public sealed class EntitySchemaToolE2ETests {
 			because: "the canonical Lookup binding should point only to the created registration row");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Creates a remote lookup schema through MCP without custom columns and verifies BaseLookup inheritance plus registration side effects.")]
 	[AllureTag(CreateLookupToolName)]
@@ -193,6 +221,7 @@ public sealed class EntitySchemaToolE2ETests {
 			because: "the canonical Lookup binding should still point only to the created registration row");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Adds Binary, Image, and File columns through update-entity-schema and verifies friendly type names through structured readback.")]
 	[AllureTag(CreateToolName)]
@@ -231,6 +260,7 @@ public sealed class EntitySchemaToolE2ETests {
 		AssertBinaryLikeColumnProperties(fileColumnProperties, fileColumnName, "File");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Adds an ImageLookup ('Image link') column through update-entity-schema and verifies it auto-references the SysImage schema so crt.ImageInput can read and write it.")]
 	[AllureTag(CreateToolName)]
@@ -266,6 +296,7 @@ public sealed class EntitySchemaToolE2ETests {
 		AssertImageLookupColumnProperties(imageLookupColumnProperties, imageLookupColumnName);
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Adds a column through update-entity-schema with only title-localizations, then applies default-value-config through modify-entity-schema-column and verifies the column remains readable.")]
 	[AllureTag(CreateToolName)]
@@ -308,6 +339,7 @@ public sealed class EntitySchemaToolE2ETests {
 			TextDefaultSettingCode);
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Applies a structured system-value default through modify-entity-schema-column and verifies both legacy summary fields and structured readback metadata.")]
 	[AllureTag(CreateToolName)]
@@ -337,6 +369,7 @@ public sealed class EntitySchemaToolE2ETests {
 		AssertStructuredSystemValueColumnProperties(columnProperties, arrangeContext.SchemaName, startDateColumnName, "Start date");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Applies a structured settings default through modify-entity-schema-column and verifies canonical setting code readback metadata.")]
 	[AllureTag(CreateToolName)]
@@ -371,6 +404,7 @@ public sealed class EntitySchemaToolE2ETests {
 			TextDefaultSettingCode);
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Rejects a lookup Const default whose referenced record does not exist, verified end to end through the real MCP server (DRAFT-AC-06).")]
 	[AllureTag(CreateToolName)]
@@ -399,6 +433,7 @@ public sealed class EntitySchemaToolE2ETests {
 			because: "the rejection must explain that the default record does not exist in the referenced schema");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Creates a schema through create-entity-schema with masked=true on a Text column and verifies masked is preserved in structured readback.")]
 	[AllureTag(CreateToolName)]
@@ -422,6 +457,7 @@ public sealed class EntitySchemaToolE2ETests {
 		AssertMaskedTextColumnProperties(columnProperties, arrangeContext.SchemaName, maskedColumnName, "Masked text");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Rejects inherited BaseLookup columns before environment resolution when create-lookup tries to redefine Name.")]
 	[AllureTag(CreateLookupToolName)]
@@ -464,6 +500,7 @@ public sealed class EntitySchemaToolE2ETests {
 			because: "validation should happen before environment resolution");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Rejects Cyrillic text under the en-US title key before environment resolution so a caption cannot be stored in the wrong language for the profile (ENG-91044).")]
 	[AllureTag(CreateToolName)]
@@ -497,6 +534,7 @@ public sealed class EntitySchemaToolE2ETests {
 			because: "the failure must name the en-US culture whose value is written in the wrong script");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Reports a readable failure when create-entity-schema is invoked with an unknown environment name.")]
 	[AllureTag(CreateToolName)]
@@ -515,6 +553,7 @@ public sealed class EntitySchemaToolE2ETests {
 			"unknown environment names should fail before remote schema creation starts");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Reports a readable failure when get-entity-schema-properties is invoked with an unknown environment name.")]
 	[AllureTag(ReadSchemaToolName)]
@@ -533,6 +572,7 @@ public sealed class EntitySchemaToolE2ETests {
 			"unknown environment names should fail before schema properties are read");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Reports a readable failure when get-entity-schema-column-properties is invoked with an unknown environment name.")]
 	[AllureTag(ReadColumnToolName)]
@@ -551,6 +591,7 @@ public sealed class EntitySchemaToolE2ETests {
 			"unknown environment names should fail before column properties are read");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Reports a readable failure when modify-entity-schema-column is invoked with an unknown environment name.")]
 	[AllureTag(ModifyToolName)]
@@ -577,6 +618,7 @@ public sealed class EntitySchemaToolE2ETests {
 			"unknown environment names should fail before column mutations start");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Reports a readable failure when create-lookup is invoked with an unknown environment name.")]
 	[AllureTag(CreateLookupToolName)]
@@ -599,6 +641,7 @@ public sealed class EntitySchemaToolE2ETests {
 			"unknown environment names should fail before remote lookup creation starts");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Returns stable structured schema metadata for Contact so callers can inspect existing schemas without destructive setup.")]
 	[AllureTag(ReadSchemaToolName)]
@@ -636,6 +679,7 @@ public sealed class EntitySchemaToolE2ETests {
 			because: "the built-in Contact schema should expose the Name column in the nested read model");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Returns the merged effective column set for a built-in schema when package-name is omitted.")]
 	[AllureTag(ReadSchemaToolName)]
@@ -669,6 +713,7 @@ public sealed class EntitySchemaToolE2ETests {
 			because: "the merged read must map the per-column indexed flag from the runtime payload, not hardcode it to false");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Returns stable structured column metadata for Contact.Name so callers can inspect existing columns without destructive setup.")]
 	[AllureTag(ReadColumnToolName)]
@@ -703,6 +748,7 @@ public sealed class EntitySchemaToolE2ETests {
 			because: "column readback should expose the normalized friendly type name");
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Returns structured schema search results that already include package-name for follow-up MCP calls.")]
 	[AllureTag(FindEntitySchemaTool.FindEntitySchemaToolName)]
@@ -732,6 +778,7 @@ public sealed class EntitySchemaToolE2ETests {
 			because: "find-entity-schema should return package-name and package-maintainer directly so callers can chain follow-up MCP requests without list-packages");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
 	[Test]
 	[Description("Reports a readable failure when find-entity-schema is invoked with an unknown environment name.")]
 	[AllureTag(FindEntitySchemaTool.FindEntitySchemaToolName)]
@@ -753,13 +800,14 @@ public sealed class EntitySchemaToolE2ETests {
 			"unknown environment names should be reported before any schema search is executed");
 	}
 
-	private static async Task<SandboxFindEntitySchemaArrangeContext> ArrangeSandboxFindEntitySchemaAsync() {
+	private async Task<SandboxFindEntitySchemaArrangeContext> ArrangeSandboxFindEntitySchemaAsync() {
 		return await AllureApi.Step("Arrange sandbox MCP session for non-destructive find-entity-schema checks", async () => {
 			McpE2ESettings settings = TestConfiguration.Load();
 			settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 			TestConfiguration.EnsureSandboxIsConfigured(settings);
 			CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
-			McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+			McpServerSession session = Session;
+			await Task.CompletedTask;
 			return new SandboxFindEntitySchemaArrangeContext(
 				settings.Sandbox.EnvironmentName!,
 				session,
@@ -767,8 +815,8 @@ public sealed class EntitySchemaToolE2ETests {
 		});
 	}
 
-	private static async Task<EntitySchemaArrangeContext> ArrangeSandboxPackageAsync() {
-		return await AllureApi.Step("Arrange sandbox package and MCP session for entity schema tools", async () => {
+	private async Task<EntitySchemaArrangeContext> ArrangeSandboxPackageAsync() {
+		return await AllureApi.Step("Arrange a unique schema in the shared sandbox package and MCP session for entity schema tools", async () => {
 			McpE2ESettings settings = TestConfiguration.Load();
 			settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 			if (!settings.AllowDestructiveMcpTests) {
@@ -776,63 +824,79 @@ public sealed class EntitySchemaToolE2ETests {
 			}
 
 			TestConfiguration.EnsureSandboxIsConfigured(settings);
-			string rootDirectory = Path.Combine(Path.GetTempPath(), $"clio-entity-schema-mcp-e2e-{Guid.NewGuid():N}");
-			Directory.CreateDirectory(rootDirectory);
-
-			string workspaceName = $"workspace-{Guid.NewGuid():N}";
-			string workspacePath = Path.Combine(rootDirectory, workspaceName);
-			string packageName = $"Pkg{Guid.NewGuid():N}".Substring(0, 18);
-			string schemaName = $"Usr{Guid.NewGuid():N}";
-			string initialColumnName = "UsrName";
-			string lookupColumnName = "UsrSortOrder";
-			string addedColumnName = "UsrCode";
 			CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(8));
 
-			try {
-				await ClioCliCommandRunner.EnsureCliogateInstalledAsync(
-					settings,
-					settings.Sandbox.EnvironmentName!,
-					cancellationTokenSource.Token);
-			}
-			catch (Exception ex) {
-				Assert.Ignore(
-					$"Skipping destructive entity schema MCP end-to-end test because cliogate could not be installed or verified for '{settings.Sandbox.EnvironmentName}'. {ex.Message}");
-			}
-			await CreateEmptyWorkspaceAsync(settings, rootDirectory, workspaceName, cancellationTokenSource.Token);
-			await AddPackageAsync(settings, workspacePath, packageName, cancellationTokenSource.Token);
-			await PushWorkspaceAsync(
-				settings,
-				workspacePath,
-				settings.Sandbox.EnvironmentName!,
-				packageName,
-				cancellationTokenSource.Token);
-			await EnsureTextSysSettingAsync(
-				settings,
-				settings.Sandbox.EnvironmentName!,
-				TextDefaultSettingCode,
-				"Entity schema MCP E2E default",
-				cancellationTokenSource.Token);
+			(string environmentName, string packageName) =
+				await EnsureSharedSandboxPackageAsync(settings, cancellationTokenSource.Token);
 
-			McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+			// Each test gets its own schema inside the shared package so creates never collide; the
+			// column names are constants but live in distinct schemas, so they do not clash either.
+			string schemaName = $"Usr{Guid.NewGuid():N}";
+			McpServerSession session = Session;
 			return new EntitySchemaArrangeContext(
-				rootDirectory,
-				settings.Sandbox.EnvironmentName!,
+				_sharedRootDirectory!,
+				environmentName,
 				packageName,
 				schemaName,
-				initialColumnName,
-				lookupColumnName,
-				addedColumnName,
+				"UsrName",
+				"UsrSortOrder",
+				"UsrCode",
 				session,
 				cancellationTokenSource);
 		});
 	}
 
-	private static async Task<InvalidEnvironmentArrangeContext> ArrangeInvalidEnvironmentAsync() {
+	/// <summary>
+	/// Lazily provisions a single sandbox workspace + package (created, pushed and unlocked once) that
+	/// every destructive entity-schema test shares, replacing the former per-test push-workspace round
+	/// trip. Subsequent calls return the cached package. Guarded by Assert.Ignore so only the package
+	/// tests skip when the stand is unavailable; relies on the fixture being [NonParallelizable].
+	/// </summary>
+	private async Task<(string environmentName, string packageName)> EnsureSharedSandboxPackageAsync(
+		McpE2ESettings settings,
+		CancellationToken cancellationToken) {
+		if (_sharedPackageName is not null) {
+			return (_sharedEnvironmentName!, _sharedPackageName);
+		}
+
+		string environmentName = settings.Sandbox.EnvironmentName!;
+		try {
+			await ClioCliCommandRunner.EnsureCliogateInstalledAsync(settings, environmentName, cancellationToken);
+		}
+		catch (Exception ex) {
+			Assert.Ignore(
+				$"Skipping destructive entity schema MCP end-to-end test because cliogate could not be installed or verified for '{environmentName}'. {ex.Message}");
+		}
+
+		string rootDirectory = Path.Combine(Path.GetTempPath(), $"clio-entity-schema-mcp-e2e-{Guid.NewGuid():N}");
+		Directory.CreateDirectory(rootDirectory);
+		string workspaceName = $"workspace-{Guid.NewGuid():N}";
+		string workspacePath = Path.Combine(rootDirectory, workspaceName);
+		string packageName = $"Pkg{Guid.NewGuid():N}".Substring(0, 18);
+
+		await CreateEmptyWorkspaceAsync(settings, rootDirectory, workspaceName, cancellationToken);
+		await AddPackageAsync(settings, workspacePath, packageName, cancellationToken);
+		await PushWorkspaceAsync(settings, workspacePath, environmentName, packageName, cancellationToken);
+		await EnsureTextSysSettingAsync(
+			settings,
+			environmentName,
+			TextDefaultSettingCode,
+			"Entity schema MCP E2E default",
+			cancellationToken);
+
+		_sharedRootDirectory = rootDirectory;
+		_sharedEnvironmentName = environmentName;
+		_sharedPackageName = packageName;
+		return (environmentName, packageName);
+	}
+
+	private async Task<InvalidEnvironmentArrangeContext> ArrangeInvalidEnvironmentAsync() {
 		return await AllureApi.Step("Arrange invalid-environment MCP session for entity schema tools", async () => {
 			McpE2ESettings settings = TestConfiguration.Load();
 			settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 			CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
-			McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+			McpServerSession session = Session;
+			await Task.CompletedTask;
 			return new InvalidEnvironmentArrangeContext(
 				$"missing-entity-schema-env-{Guid.NewGuid():N}",
 				session,
@@ -1155,9 +1219,9 @@ public sealed class EntitySchemaToolE2ETests {
 		string schemaName,
 		CancellationToken cancellationToken,
 		IReadOnlyList<Dictionary<string, object?>>? columns = null) {
-		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
-		tools.Select(tool => tool.Name).Should().Contain(CreateToolName,
-			because: "the create-entity-schema MCP tool must be advertised before the end-to-end call can be executed");
+		IReadOnlyCollection<string> reachableToolNames = await session.ListReachableToolNamesAsync(cancellationToken);
+		reachableToolNames.Should().Contain(CreateToolName,
+			because: "the create-entity-schema MCP tool must be discoverable via the get-tool-contract compact index before the end-to-end call can be executed");
 
 		return await session.CallToolAsync(
 			CreateToolName,
@@ -1180,9 +1244,9 @@ public sealed class EntitySchemaToolE2ETests {
 		string schemaName,
 		CancellationToken cancellationToken,
 		IReadOnlyList<Dictionary<string, object?>>? columns = null) {
-		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
-		tools.Select(tool => tool.Name).Should().Contain(CreateLookupToolName,
-			because: "the create-lookup MCP tool must be advertised before the end-to-end call can be executed");
+		IReadOnlyCollection<string> reachableToolNames = await session.ListReachableToolNamesAsync(cancellationToken);
+		reachableToolNames.Should().Contain(CreateLookupToolName,
+			because: "the create-lookup MCP tool must be discoverable via the get-tool-contract compact index before the end-to-end call can be executed");
 
 		return await session.CallToolAsync(
 			CreateLookupToolName,
@@ -1287,9 +1351,9 @@ public sealed class EntitySchemaToolE2ETests {
 		string? defaultValue = null,
 		Dictionary<string, object?>? defaultValueConfig = null,
 		string? referenceSchemaName = null) {
-		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
-		tools.Select(tool => tool.Name).Should().Contain(ModifyToolName,
-			because: "the modify-entity-schema-column MCP tool must be advertised before the end-to-end call can be executed");
+		IReadOnlyCollection<string> reachableToolNames = await session.ListReachableToolNamesAsync(cancellationToken);
+		reachableToolNames.Should().Contain(ModifyToolName,
+			because: "the modify-entity-schema-column MCP tool must be discoverable via the get-tool-contract compact index before the end-to-end call can be executed");
 
 		Dictionary<string, object?> args = new() {
 			["environment-name"] = environmentName,
@@ -1333,9 +1397,9 @@ public sealed class EntitySchemaToolE2ETests {
 		string schemaName,
 		CancellationToken cancellationToken,
 		IReadOnlyList<Dictionary<string, object?>> operations) {
-		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
-		tools.Select(tool => tool.Name).Should().Contain(UpdateToolName,
-			because: "the update-entity-schema MCP tool must be advertised before the end-to-end call can be executed");
+		IReadOnlyCollection<string> reachableToolNames = await session.ListReachableToolNamesAsync(cancellationToken);
+		reachableToolNames.Should().Contain(UpdateToolName,
+			because: "the update-entity-schema MCP tool must be discoverable via the get-tool-contract compact index before the end-to-end call can be executed");
 
 		return await session.CallToolAsync(
 			UpdateToolName,
@@ -1370,6 +1434,16 @@ public sealed class EntitySchemaToolE2ETests {
 		execution.Output!.Should().Contain(message => message.MessageType == LogDecoratorType.Info
 				&& message.Value != null
 				&& message.Value.Contains("published", StringComparison.OrdinalIgnoreCase),
+			because: because);
+	}
+
+	[AllureStep("Assert OData entities rebuild progress message")]
+	private static void AssertIncludesODataBuildMessage(CommandExecutionEnvelope execution, string because) {
+		execution.Output.Should().NotBeNullOrEmpty(
+			because: "successful command execution should emit human-readable diagnostics");
+		execution.Output!.Should().Contain(message => message.MessageType == LogDecoratorType.Info
+				&& message.Value != null
+				&& message.Value.Contains("OData entities rebuild requested", StringComparison.OrdinalIgnoreCase),
 			because: because);
 	}
 
@@ -1700,13 +1774,11 @@ public sealed class EntitySchemaToolE2ETests {
 		string AddedColumnName,
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
+		public ValueTask DisposeAsync() {
+			// RootDirectory is the shared fixture workspace (see EnsureSharedSandboxPackageAsync); it is
+			// deleted once in [OneTimeTearDown], so per-test disposal must NOT remove it.
 			CancellationTokenSource.Dispose();
-
-			if (Directory.Exists(RootDirectory)) {
-				Directory.Delete(RootDirectory, recursive: true);
-			}
+			return ValueTask.CompletedTask;
 		}
 	}
 
@@ -1714,9 +1786,9 @@ public sealed class EntitySchemaToolE2ETests {
 		string EnvironmentName,
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
+		public ValueTask DisposeAsync() {
 			CancellationTokenSource.Dispose();
+			return ValueTask.CompletedTask;
 		}
 	}
 
@@ -1724,9 +1796,9 @@ public sealed class EntitySchemaToolE2ETests {
 		string EnvironmentName,
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
+		public ValueTask DisposeAsync() {
 			CancellationTokenSource.Dispose();
+			return ValueTask.CompletedTask;
 		}
 	}
 }

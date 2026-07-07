@@ -14,6 +14,7 @@ using Clio.Command.ApplicationCommand;
 using Clio.Command.BusinessRules;
 using Clio.Command.ChainItems;
 using Clio.Command.CreatioInstallCommand;
+using Clio.Command.IdentityServiceDeployment;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Command.McpServer;
 using Clio.Command.McpServer.Resources;
@@ -46,6 +47,7 @@ using Clio.Requests;
 using Clio.Requests.Validators;
 using Clio.Utilities;
 using Clio.Command.McpServer.Tools;
+using Clio.Command.McpServer.Tools.ProcessDesigner;
 using Clio.Workspace;
 using Clio.Workspaces;
 using Clio.UserEnvironment;
@@ -91,14 +93,75 @@ public class BindingsModule {
 
 	#region Methods: Public
 
+	/// <summary>
+	/// Builds the clio dependency-injection container, validating the whole graph at build time
+	/// (<c>ValidateOnBuild</c> + <c>ValidateScopes</c>).
+	/// </summary>
+	/// <param name="settings">
+	/// The environment settings to bind, or <c>null</c> to resolve them from the bootstrap profile.
+	/// </param>
+	/// <param name="additionalRegistrations">
+	/// An optional hook invoked after the core registrations so tests (and callers) can add or
+	/// override services before the provider is built.
+	/// </param>
+	/// <param name="profile">
+	/// The registration profile. Defaults to <see cref="BindingsModuleRegistrationProfile.Bootstrap"/>
+	/// when <paramref name="settings"/> is <c>null</c>, otherwise
+	/// <see cref="BindingsModuleRegistrationProfile.EnvironmentScoped"/>.
+	/// </param>
+	/// <param name="applyBootstrapRepairs">
+	/// When <c>true</c> the settings bootstrap service may repair/migrate <c>appsettings.json</c>;
+	/// pass <c>false</c> for read-only help/parser builds that must not write settings.
+	/// </param>
+	/// <param name="registerMcpHost">
+	/// When <c>true</c> registers the Model Context Protocol stdio host (<c>AddMcpServer</c> +
+	/// transport + request filters + per-primitive schema generation) and the
+	/// <see cref="Command.McpServer.McpServerCommand"/> that depends on the resulting
+	/// <c>McpServer</c> singleton. Defaults to <c>false</c> (fail-safe): every non-mcp CLI build, the
+	/// bootstrap build, and the per-environment <c>ToolCommandResolver</c> builds never resolve
+	/// <c>McpServer</c>, so they skip the host registration and its eager schema-generation cost. Set
+	/// <c>true</c> ONLY on the single container build from which <see cref="Command.McpServer.McpServerCommand"/>
+	/// is resolved. Do NOT derive this from a process-wide static inside this module — it must be
+	/// threaded explicitly so a live MCP session's per-environment builds stay gated off.
+	/// </param>
+	/// <returns>The built and validated service provider.</returns>
 	public IServiceProvider Register(EnvironmentSettings settings = null,
 		Action<IServiceCollection> additionalRegistrations = null,
 		BindingsModuleRegistrationProfile? profile = null,
-		bool applyBootstrapRepairs = true){
+		bool applyBootstrapRepairs = true,
+		bool registerMcpHost = false){
+		IServiceCollection services = new ServiceCollection();
+		ISettingsRepository settingsRepository = RegisterInto(services, settings, profile, applyBootstrapRepairs);
+		if (registerMcpHost) {
+			services.AddTransient<McpServerCommand>();
+			RegisterMcpServer(services, settingsRepository).WithStdioServerTransport();
+		}
+		additionalRegistrations?.Invoke(services);
+		return services.BuildServiceProvider(new ServiceProviderOptions {
+			ValidateOnBuild = true,
+			ValidateScopes = true
+		});
+	}
+
+	/// <summary>
+	/// Registers all clio services into the supplied <paramref name="services"/> collection without
+	/// building the provider. Use <see cref="Register"/> for a self-contained build; call this method
+	/// directly when injecting clio's DI graph into an external host (e.g.
+	/// <c>WebApplicationBuilder.Services</c> for the HTTP MCP transport).
+	/// </summary>
+	/// <returns>The <see cref="ISettingsRepository"/> needed by <see cref="RegisterMcpServer"/>.</returns>
+	internal ISettingsRepository RegisterInto(
+		IServiceCollection services,
+		EnvironmentSettings settings = null,
+		BindingsModuleRegistrationProfile? profile = null,
+		bool applyBootstrapRepairs = true) {
 		BindingsModuleRegistrationProfile registrationProfile = profile
 			?? (settings is null ? BindingsModuleRegistrationProfile.Bootstrap : BindingsModuleRegistrationProfile.EnvironmentScoped);
-		IServiceCollection services = new ServiceCollection();
 		RegisterAssemblyInterfaceTypes(services);
+		services.AddTransient(sp => new EntitySchemaColumnResolvers(
+			sp.GetRequiredService<IEntitySchemaDefaultValueSourceResolver>(),
+			sp.GetRequiredService<ILookupDefaultDisplayValueResolver>(),
+			sp.GetRequiredService<IEntitySchemaCaptionCultureResolver>()));
 		services.AddSingleton<IWorkspacePathBuilder, WorkspacePathBuilder>();
 		services.AddTransient<IVsProjectFactory, VsProjectFactory>();
 		services.AddTransient<ICreatioPkgProjectCreator, CreatioPkgProjectCreator>();
@@ -144,38 +207,10 @@ public class BindingsModule {
 		EnvironmentSettings activeSettings = ResolveActiveSettings(settings, registrationProfile, bootstrapResult);
 
 		if (activeSettings is not null) {
-			services.AddSingleton(activeSettings);
-			services.AddTransient<IDataProvider>(_ => new LazyDataProvider(() =>
-				string.IsNullOrEmpty(activeSettings.ClientId)
-					? new RemoteDataProvider(activeSettings.Uri, activeSettings.Login, activeSettings.Password,
-						activeSettings.IsNetCore)
-					: new RemoteDataProvider(activeSettings.Uri, activeSettings.AuthAppUri, activeSettings.ClientId,
-						activeSettings.ClientSecret, activeSettings.IsNetCore)));
-			Lazy<CreatioClient> lazyCreatioClient = new(() => string.IsNullOrEmpty(activeSettings.ClientId)
-				? new CreatioClient(activeSettings.Uri ?? "http://localhost", activeSettings.Login ?? "Supervisor",
-					activeSettings.Password ?? "Supervisor", true, activeSettings.IsNetCore)
-				: CreatioClient.CreateOAuth20Client(activeSettings.Uri, activeSettings.AuthAppUri,
-					activeSettings.ClientId, activeSettings.ClientSecret, activeSettings.IsNetCore));
-			services.AddSingleton<CreatioClient>(_ => lazyCreatioClient.Value);
-			services.AddSingleton<IApplicationClient>(_ =>
-				new CreatioClientAdapter(lazyCreatioClient));
-			services.AddTransient<SysSettingsManager>();
+			RegisterActiveEnvironmentServices(services, activeSettings);
 		}
 
-		services.AddTransient<IKubernetes>(_ => {
-			try {
-				KubernetesClientConfiguration config = KubernetesClientConfiguration.BuildConfigFromConfigFile();
-				Uri.TryCreate(config.Host, UriKind.Absolute, out Uri uriResult);
-				if (uriResult is null || (uriResult.Scheme != Uri.UriSchemeHttp && uriResult.Scheme != Uri.UriSchemeHttps)) {
-					throw new InvalidOperationException("Invalid Kubernetes configuration host.");
-				}
-				k8sDns = uriResult.Host;
-				return new Kubernetes(config);
-			}
-			catch {
-				return new FakeKubernetes();
-			}
-		});
+		services.AddTransient<IKubernetes>(_ => CreateKubernetesClient());
 
 		services.AddTransient<IKubernetesClient, KubernetesClient>();
 		services.AddTransient<K8ContextValidator>();
@@ -193,6 +228,19 @@ public class BindingsModule {
 		services.AddTransient<k8Commands>();
 		services.AddTransient<IInfrastructurePathProvider, InfrastructurePathProvider>();
 		services.AddTransient<InstallerCommand>();
+		services.AddTransient<DeployIdentityCommand>();
+		services.AddTransient<IIdentityServiceArchiveResolver, IdentityServiceArchiveResolver>();
+		services.AddTransient<IIdentityServiceCreatioClient, IdentityServiceCreatioClient>();
+		services.AddTransient<IIdentityServiceRoleGrantService, IdentityServiceRoleGrantService>();
+		services.AddTransient<IIdentityServiceSystemUserResolver, IdentityServiceSystemUserResolver>();
+		services.AddTransient<IIdentityServiceDeploymentService, IdentityServiceDeploymentService>();
+		services.AddSingleton<Command.OAuthAppConfiguration.IIdentityServerUrlResolver, Command.OAuthAppConfiguration.IdentityServerUrlResolver>();
+		services.AddTransient<Command.OAuthAppConfiguration.IIdentityServerProbe, Command.OAuthAppConfiguration.IdentityServerProbe>();
+		services.AddTransient<Command.OAuthAppConfiguration.GetIdentityServiceConfigCommand>();
+		services.AddTransient<Command.OAuthAppConfiguration.ResolveOAuthSystemUserCommand>();
+		services.AddTransient<Command.OAuthAppConfiguration.CreateOAuthTechnicalUserCommand>();
+		services.AddTransient<Command.OAuthAppConfiguration.CreateServerToServerOAuthAppCommand>();
+		services.AddTransient<Command.OAuthAppConfiguration.VerifyOAuthAppCommand>();
 		services.AddTransient<IDockerTemplatePathProvider, DockerTemplatePathProvider>();
 		services.AddTransient<IBuildDockerImageService, BuildDockerImageService>();
 		services.AddHttpClient<ICodeServerArchiveCache, CodeServerArchiveCache>();
@@ -263,6 +311,12 @@ public class BindingsModule {
 		services.AddTransient<IFeatureToggleService, FeatureToggleService>();
 		services.AddTransient<IApplicationSectionDeleteService, ApplicationSectionDeleteService>();
 		services.AddTransient<DeleteAppSectionCommand>();
+		services.AddTransient<IListUserTasksService, ListUserTasksService>();
+		services.AddTransient<ListUserTasksCommand>();
+		services.AddTransient<ICreateBusinessProcessService, CreateBusinessProcessService>();
+		services.AddTransient<CreateBusinessProcessCommand>();
+		services.AddTransient<IModifyBusinessProcessService, ModifyBusinessProcessService>();
+		services.AddTransient<ModifyBusinessProcessCommand>();
 		services.AddTransient<IApplicationSectionGetListService, ApplicationSectionGetListService>();
 		services.AddTransient<GetAppSectionsCommand>();
 		services.AddTransient<IdentityProviderListCommand>();
@@ -361,6 +415,8 @@ public class BindingsModule {
 		services.AddTransient<ApplicationSectionGetListTool>();
 		services.AddTransient<ApplicationDeleteTool>();
 		services.AddTransient<ToolContractGetTool>();
+		services.AddTransient<ValidateProcessGraphTool>();
+		services.AddTransient<DescribeProcessTool>();
 		// Singleton: the service is effectively stateless (its only shared mutable state is a static
 		// lock), so a single instance is safe and keeps the lifetime consistent with the singleton
 		// flusher that depends on it (no captured-dependency lifetime mismatch).
@@ -406,6 +462,7 @@ public class BindingsModule {
 		services.AddTransient<GetUserCultureTool>();
 		services.AddTransient<PackageHotfixTool>();
 		services.AddTransient<AddPackageDependencyTool>();
+		services.AddTransient<RemovePackageDependencyTool>();
 		services.AddTransient<CreateUiProjectTool>();
 		services.AddTransient<DataForgeTool>();
 		services.AddTransient<SysSettingGetTool>();
@@ -415,6 +472,7 @@ public class BindingsModule {
 		services.AddTransient<InstallGateTool>();
 		services.AddTransient<ExperimentalTool>();
 		services.AddTransient<ListCreatioBuildsTool>();
+		services.AddTransient<GetCreatioInfoTool>();
 		services.AddTransient<IDataForgeEnrichmentBuilder, DataForgeEnrichmentBuilder>();
 		services.AddTransient<IApplicationCreateEnrichmentService, ApplicationCreateEnrichmentService>();
 		services.AddTransient<ISchemaEnrichmentService, SchemaEnrichmentService>();
@@ -601,6 +659,7 @@ public class BindingsModule {
 		services.AddTransient<PackageHotFixCommand>();
 		services.AddTransient<PackageEditableMutator>();
 		services.AddTransient<AddPackageDependencyCommand>();
+		services.AddTransient<RemovePackageDependencyCommand>();
 		services.AddTransient<PackageDependencyManager>();
 		services.AddTransient<SaveSettingsToManifestCommand>();
 		services.AddTransient<ShowDiffEnvironmentsCommand>();
@@ -623,6 +682,7 @@ public class BindingsModule {
 		services.AddTransient<SetApplicationIconCommand>();
 		services.AddTransient<CustomizeDataProtectionCommand>();
 		services.AddTransient<GenerateProcessModelCommand>();
+		services.AddTransient<DescribeProcessCommand>();
 		services.AddTransient<GetProcessSignatureCommand>();
 		services.AddTransient<AddItemCommand>();
 		services.AddTransient<IZipFile, ZipFileWrapper>();
@@ -673,31 +733,6 @@ public class BindingsModule {
 		services.AddTransient<LocalHelpViewer>();
 		services.AddTransient<WikiHelpViewer>();
 		
-		services.AddTransient<McpServerCommand>();
-		JsonSerializerOptions mcpSerializerOptions = CreateMcpSerializerOptions();
-		// Gate MCP tools/resources/prompts behind the same feature toggle as the CLI: a type marked
-		// [FeatureToggle("key")] whose flag is off must not be registered with the MCP server, so it
-		// is invisible to MCP clients (the *FromAssembly scanners would otherwise register ALL of
-		// them, bypassing the CLI parser gate). The feature rule is delegated to the shared
-		// IFeatureToggleService.IsEnabled so there is one rule, not two; it is constructed here over
-		// the in-scope settingsRepository because the container is still being built and the service
-		// is not yet resolvable. The enumeration replicates the SDK's discovery exactly, so with
-		// nothing gated the registered set is identical to the previous *FromAssembly behaviour.
-		Assembly mcpAssembly = Assembly.GetExecutingAssembly();
-		IFeatureToggleService mcpFeatureToggleService = new FeatureToggleService(settingsRepository);
-		IMcpServerBuilder mcpServerBuilder = services.AddMcpServer(options => {
-					options.Capabilities ??= new();
-					options.Capabilities.Logging = new();
-					options.ServerInstructions = McpServerInstructions.Text;
-				})
-				.WithStdioServerTransport()
-				.WithRequestFilters(filters => filters.AddCallToolFilter(McpToolErrorFilter.HandleCallToolErrors));
-		// Single registration seam shared with the parity regression test: registers the feature-enabled
-		// tool/resource/prompt types via the IEnumerable<Type> SDK overloads (the Type[] overload-binding
-		// hazard is documented on RegisterEnabledPrimitives).
-		McpFeatureToggleFilter.RegisterEnabledPrimitives(
-			mcpServerBuilder, mcpAssembly, mcpFeatureToggleService.IsEnabled, mcpSerializerOptions);
-		
 		services.AddTransient<Func<EnvironmentSettings, ISysSettingsManager>>(_ =>
 			envSettings => {
 				IDataProvider dataProvider = string.IsNullOrEmpty(envSettings.ClientId)
@@ -709,11 +744,65 @@ public class BindingsModule {
 			});
 
 		RegisterFluentValidators(services);
-		additionalRegistrations?.Invoke(services);
-		return services.BuildServiceProvider(new ServiceProviderOptions {
-			ValidateOnBuild = true,
-			ValidateScopes = true
-		});
+		return settingsRepository;
+	}
+
+	private static void RegisterActiveEnvironmentServices(
+		IServiceCollection services, EnvironmentSettings activeSettings) {
+		services.AddSingleton(activeSettings);
+		services.AddTransient<IDataProvider>(_ => new LazyDataProvider(() =>
+			string.IsNullOrEmpty(activeSettings.ClientId)
+				? new RemoteDataProvider(activeSettings.Uri, activeSettings.Login, activeSettings.Password,
+					activeSettings.IsNetCore)
+				: new RemoteDataProvider(activeSettings.Uri, activeSettings.AuthAppUri, activeSettings.ClientId,
+					activeSettings.ClientSecret, activeSettings.IsNetCore)));
+		Lazy<CreatioClient> lazyCreatioClient = new(() => string.IsNullOrEmpty(activeSettings.ClientId)
+			? new CreatioClient(activeSettings.Uri ?? "http://localhost", activeSettings.Login ?? "Supervisor",
+				activeSettings.Password ?? "Supervisor", true, activeSettings.IsNetCore)
+			: CreatioClient.CreateOAuth20Client(activeSettings.Uri, activeSettings.AuthAppUri,
+				activeSettings.ClientId, activeSettings.ClientSecret, activeSettings.IsNetCore));
+		services.AddSingleton<CreatioClient>(_ => lazyCreatioClient.Value);
+		services.AddSingleton<IApplicationClient>(_ =>
+			new CreatioClientAdapter(lazyCreatioClient));
+		services.AddTransient<SysSettingsManager>();
+	}
+
+	private static IKubernetes CreateKubernetesClient() {
+		try {
+			KubernetesClientConfiguration config = KubernetesClientConfiguration.BuildConfigFromConfigFile();
+			Uri.TryCreate(config.Host, UriKind.Absolute, out Uri uriResult);
+			if (uriResult is null || (uriResult.Scheme != Uri.UriSchemeHttp && uriResult.Scheme != Uri.UriSchemeHttps)) {
+				throw new InvalidOperationException("Invalid Kubernetes configuration host.");
+			}
+			k8sDns = uriResult.Host;
+			return new Kubernetes(config);
+		}
+		catch {
+			return new FakeKubernetes();
+		}
+	}
+
+	/// <summary>
+	/// Registers the MCP server host (options, request filters, feature-gated tool/resource/prompt
+	/// types) into <paramref name="services"/> and returns the <see cref="IMcpServerBuilder"/> so
+	/// the caller can chain the transport (<c>.WithStdioServerTransport()</c> or
+	/// <c>.WithHttpTransport()</c>).
+	/// </summary>
+	internal static IMcpServerBuilder RegisterMcpServer(
+		IServiceCollection services,
+		ISettingsRepository settingsRepository) {
+		JsonSerializerOptions mcpSerializerOptions = CreateMcpSerializerOptions();
+		Assembly mcpAssembly = Assembly.GetExecutingAssembly();
+		IFeatureToggleService mcpFeatureToggleService = new FeatureToggleService(settingsRepository);
+		IMcpServerBuilder mcpServerBuilder = services.AddMcpServer(options => {
+					options.Capabilities ??= new();
+					options.Capabilities.Logging = new();
+					options.ServerInstructions = McpServerInstructions.Text;
+				})
+				.WithRequestFilters(filters => filters.AddCallToolFilter(McpToolErrorFilter.HandleCallToolErrors));
+		McpFeatureToggleFilter.RegisterEnabledPrimitives(
+			mcpServerBuilder, mcpAssembly, mcpFeatureToggleService.IsEnabled, mcpSerializerOptions);
+		return mcpServerBuilder;
 	}
 
 	private static EnvironmentSettings ResolveActiveSettings(
@@ -797,7 +886,11 @@ public class BindingsModule {
 					|| implementedInterface == typeof(IMessageChannelHubConnection)
 					// ReauthExecutor requires a per-adapter Login closure; it is created by
 					// CreatioClientAdapter rather than resolved from DI.
-					|| implementedInterface == typeof(IReauthExecutor)) {
+					|| implementedInterface == typeof(IReauthExecutor)
+					// CliogateHttpReadinessProbe takes runtime-only ctor args (an HttpClient, the
+					// attempt budget, and inter-attempt delays); it is constructed by the e2e
+					// readiness wait, not resolved from DI.
+					|| implementedInterface == typeof(ICliogateHttpReadinessProbe)) {
 					continue;
 				}
 				services.AddTransient(implementedInterface, type);

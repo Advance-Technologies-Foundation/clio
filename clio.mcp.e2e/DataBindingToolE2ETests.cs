@@ -7,7 +7,6 @@ using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
-using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E;
@@ -16,10 +15,11 @@ namespace Clio.Mcp.E2E;
 /// End-to-end tests for the data-binding MCP tools.
 /// </summary>
 [TestFixture]
+[Category("McpE2E.Sandbox")]
 [AllureNUnit]
 [AllureFeature("data-binding")]
 [NonParallelizable]
-public sealed class DataBindingToolE2ETests {
+public sealed class DataBindingToolE2ETests : McpContractFixtureBase {
 	private const string CreateToolName = CreateDataBindingTool.CreateDataBindingToolName;
 	private const string AddRowToolName = AddDataBindingRowTool.AddDataBindingRowToolName;
 	private const string RemoveRowToolName = RemoveDataBindingRowTool.RemoveDataBindingRowToolName;
@@ -201,7 +201,7 @@ public sealed class DataBindingToolE2ETests {
 			because: "the failure should explain why offline generation is unavailable for the requested schema");
 	}
 
-	private static async Task<DataBindingArrangeContext> ArrangeWorkspaceAsync(bool requireEnvironment = true) {
+	private async Task<DataBindingArrangeContext> ArrangeWorkspaceAsync(bool requireEnvironment = true) {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string? environmentName = requireEnvironment
@@ -225,7 +225,7 @@ public sealed class DataBindingToolE2ETests {
 			workingDirectory: workspacePath,
 			cancellationToken: cancellationTokenSource.Token);
 
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		McpServerSession session = Session;
 		return new DataBindingArrangeContext(
 			rootDirectory,
 			workspacePath,
@@ -263,9 +263,10 @@ public sealed class DataBindingToolE2ETests {
 		DataBindingArrangeContext arrangeContext,
 		string toolName,
 		Dictionary<string, object?> args) {
-		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(toolName,
-			because: "the requested data-binding MCP tool must be advertised before the end-to-end call can be executed");
+		IReadOnlyCollection<string> toolNames =
+			await arrangeContext.Session.ListReachableToolNamesAsync(arrangeContext.CancellationTokenSource.Token);
+		toolNames.Should().Contain(toolName,
+			because: "the requested data-binding MCP tool must be discoverable via the get-tool-contract compact index before the end-to-end call can be executed");
 
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
 			toolName,
@@ -300,12 +301,12 @@ public sealed class DataBindingToolE2ETests {
 		string? EnvironmentName,
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
+		public ValueTask DisposeAsync() {
 			CancellationTokenSource.Dispose();
 			if (Directory.Exists(RootDirectory)) {
 				Directory.Delete(RootDirectory, recursive: true);
 			}
+			return ValueTask.CompletedTask;
 		}
 	}
 

@@ -29,6 +29,14 @@ internal interface IRemoteEntitySchemaDesignerClient
 	/// <c>EntitySchemaManager</c> refresh on modern ones.
 	/// </summary>
 	BaseResponse PublishConfigurationChanges(RemoteCommandOptions options);
+
+	/// <summary>
+	/// Requests a rebuild of the OData entities assembly so a freshly published schema becomes reachable
+	/// over OData (<c>/0/odata/&lt;Entity&gt;</c>) without a manual full compile. Mirrors the Freedom UI
+	/// "Save and Publish", which POSTs <c>WorkspaceExplorerService.svc/RunODataBuild</c>. The build runs
+	/// asynchronously, so OData access appears shortly after publish rather than synchronously.
+	/// </summary>
+	BaseResponse RunODataBuild(RemoteCommandOptions options);
 	RuntimeEntitySchemaResponse GetRuntimeEntitySchema(Guid schemaUId, RemoteCommandOptions options);
 	IReadOnlyList<SystemValueLookupValueDto> GetSystemValues(Guid dataValueTypeUId, RemoteCommandOptions options);
 	IReadOnlyList<SysSettingsSelectQueryRowDto> GetSysSettingsByValueTypeName(
@@ -54,6 +62,7 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 	private readonly IJsonConverter _jsonConverter;
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
 	private const string DesignerServicePath = "ServiceModel/EntitySchemaDesignerService.svc";
+	private const string WorkspaceExplorerServicePath = "ServiceModel/WorkspaceExplorerService.svc";
 
 	// Publishing triggers a server-side configuration build on legacy instances (BuildWorkspace),
 	// which is a compile-class operation. Use the same long timeout as compile-configuration
@@ -142,6 +151,16 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 			maxAttempts: 1,
 			options.RetryDelay,
 			"PublishConfigurationChanges");
+	}
+
+	public BaseResponse RunODataBuild(RemoteCommandOptions options) {
+		// Starts the OData entities rebuild as a background task and returns immediately. Triggering the build
+		// is non-idempotent (a retry may stack concurrent OData builds), so issue exactly one attempt with no
+		// retry (maxAttempts: 1), matching PublishConfigurationChanges.
+		string url = $"{_serviceUrlBuilder.Build(WorkspaceExplorerServicePath)}/RunODataBuild";
+		// RunODataBuild takes no parameters; the server accepts an empty JSON body, so an empty object ("{}") is posted.
+		return PostToUrl<object, BaseResponse>(url, new object(), options.TimeOut, maxAttempts: 1, options.RetryDelay,
+			"RunODataBuild");
 	}
 
 	public RuntimeEntitySchemaResponse GetRuntimeEntitySchema(Guid schemaUId, RemoteCommandOptions options) {
@@ -269,8 +288,15 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 			if (IsHtmlResponse(rawResponse)) {
 				throw new InvalidOperationException(
 					$"{methodName} returned an HTML error page instead of JSON. " +
-					$"The Creatio server encountered an unhandled error, possibly due to a stale database table from a previously deleted package. " +
-					$"Use find-entity-schema to check whether the schema was partially created before retrying.",
+					"The Creatio server encountered an unhandled error. Two common causes, check them in this order: " +
+					"(1) the target package is MISSING A DEPENDENCY on the package/app that owns the upper layer of " +
+					"the object you are extending (for example extending the Opportunity layer without depending on " +
+					"CrtLeadOppMgmtApp) — add the owning package with the add-package-dependency command/tool, then " +
+					"retry the operation; " +
+					"(2) a stale database table left by a previously deleted package — use find-entity-schema to check " +
+					"whether the schema was partially created before retrying. " +
+					"Do NOT write into the owning (managed) package and do NOT fall back to raw SQL/OData/DataService. " +
+					"MCP agents: read get-guidance name=package-dependencies for the full recovery path.",
 					rawException);
 			}
 			string correctedJson = _jsonConverter.CorrectJson(rawResponse);

@@ -1,20 +1,19 @@
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
-using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
-using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E;
 
 [TestFixture]
+[Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature(ExperimentalTool.ToolName)]
 [NonParallelizable]
-public sealed class ExperimentalToolE2ETests {
+public sealed class ExperimentalToolE2ETests : McpContractFixtureBase {
 	private const string ToolName = ExperimentalTool.ToolName;
 
 	[Test]
@@ -23,10 +22,11 @@ public sealed class ExperimentalToolE2ETests {
 	[Description("Starts the real clio MCP server, invokes experimental with no arguments, and verifies the list path returns a success envelope.")]
 	public async Task Tool_ShouldListFeatureFlags_WhenNoArgumentsSupplied() {
 		// Arrange
-		await using ArrangeContext context = await ArrangeAsync();
+		await using var context = Arrange();
 
 		// Act
-		IList<McpClientTool> tools = await context.Session.ListToolsAsync(context.CancellationTokenSource.Token);
+		IReadOnlyCollection<string> toolNames =
+			await context.Session.ListReachableToolNamesAsync(context.CancellationTokenSource.Token);
 		CallToolResult callResult = await context.Session.CallToolAsync(
 			ToolName,
 			new Dictionary<string, object?>(),
@@ -34,8 +34,8 @@ public sealed class ExperimentalToolE2ETests {
 		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
 
 		// Assert
-		tools.Select(tool => tool.Name).Should().Contain(ToolName,
-			because: "the experimental MCP tool must be advertised by the real server");
+		toolNames.Should().Contain(ToolName,
+			because: $"the {ToolName} MCP tool must be discoverable on the lazy surface (get-tool-contract compact index) even though it is not resident in tools/list");
 		callResult.IsError.Should().NotBeTrue(
 			because: "listing feature flags is a read operation that should return a normal MCP envelope");
 		execution.ExitCode.Should().Be(0,
@@ -48,7 +48,7 @@ public sealed class ExperimentalToolE2ETests {
 	[Description("Starts the real clio MCP server, enables a feature key and then disables it, verifying both toggles return a success envelope.")]
 	public async Task Tool_ShouldToggleFeatureFlag_WhenNameAndEnableSupplied() {
 		// Arrange
-		await using ArrangeContext context = await ArrangeAsync();
+		await using var context = Arrange();
 		const string featureKey = "e2e-experimental-feature";
 
 		// Act
@@ -75,19 +75,4 @@ public sealed class ExperimentalToolE2ETests {
 			because: "a valid disable toggle should succeed");
 	}
 
-	private static async Task<ArrangeContext> ArrangeAsync() {
-		McpE2ESettings settings = TestConfiguration.Load();
-		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		return new ArrangeContext(session, cancellationTokenSource);
-	}
-
-	private sealed record ArrangeContext(
-		McpServerSession Session,
-		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
-			CancellationTokenSource.Dispose();
-		}
-	}
 }

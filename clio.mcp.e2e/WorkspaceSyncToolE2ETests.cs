@@ -26,46 +26,26 @@ public sealed class WorkspaceSyncToolE2ETests {
 	private const string RestoreToolName = RestoreWorkspaceTool.RestoreWorkspaceToolName;
 	private const string PackageListToolName = GetPkgListTool.GetPkgListToolName;
 
-	[Test]
-	[Description("Starts the real clio MCP server, invokes push-workspace with an unknown environment name, and verifies that the tool reports a readable failure without mutating the workspace directory.")]
-	[AllureTag(PushToolName)]
-	[AllureName("Push workspace reports invalid environment failures")]
-	[AllureDescription("Uses the real clio MCP server to call push-workspace with a guaranteed-missing environment name and verifies the error diagnostics plus the absence of workspace mutations.")]
-	public async Task PushWorkspace_Should_Report_Invalid_Environment() {
-		// Arrange
-		await using WorkspaceSyncArrangeContext arrangeContext = await ArrangeInvalidEnvironmentAsync("pushw");
+	// ENG-92459: the two restore tests differ only in their assertions; both need a package that was
+	// already pushed to the environment so restore-workspace has something to recreate. Provision and push
+	// that package once for the fixture (lazily, so the destructive opt-in / sandbox guards still skip the
+	// restore tests when the stand is unavailable) instead of pushing a fresh package per restore test. The
+	// fixture is [NonParallelizable], so the lazy init runs without a race; each restore test deletes its
+	// local copy and restores independently, so they remain order-independent.
+	private string? _sharedRootDirectory;
+	private string? _sharedWorkspacePath;
+	private string? _sharedPackageName;
+	private string? _sharedEnvironmentName;
+	private PackageMetadata? _sharedPackageMetadata;
 
-		// Act
-		WorkspaceCommandActResult actResult = await ActWorkspaceCommandAsync(arrangeContext, PushToolName, arrangeContext.WorkspacePath);
-
-		// Assert
-		AssertToolCallFailed(actResult);
-		AssertCommandExitCode(actResult, 1, "unknown environment names should fail before push-workspace starts operating on the workspace");
-		AssertIncludesErrorMessage(actResult, "failed push-workspace execution should emit error diagnostics");
-		AssertFailureMentionsMissingEnvironment(actResult, arrangeContext.EnvironmentName, PushToolName);
-		AssertWorkspaceWasNotMutated(arrangeContext.WorkspacePath);
+	[OneTimeTearDown]
+	public void CleanupSharedRestoreWorkspace() {
+		if (_sharedRootDirectory is not null && Directory.Exists(_sharedRootDirectory)) {
+			Directory.Delete(_sharedRootDirectory, recursive: true);
+		}
 	}
 
-	[Test]
-	[Description("Starts the real clio MCP server, invokes restore-workspace with an unknown environment name, and verifies that the tool reports a readable failure without mutating the workspace directory.")]
-	[AllureTag(RestoreToolName)]
-	[AllureName("Restore workspace reports invalid environment failures")]
-	[AllureDescription("Uses the real clio MCP server to call restore-workspace with a guaranteed-missing environment name and verifies the error diagnostics plus the absence of workspace mutations.")]
-	public async Task RestoreWorkspace_Should_Report_Invalid_Environment() {
-		// Arrange
-		await using WorkspaceSyncArrangeContext arrangeContext = await ArrangeInvalidEnvironmentAsync("restorew");
-
-		// Act
-		WorkspaceCommandActResult actResult = await ActWorkspaceCommandAsync(arrangeContext, RestoreToolName, arrangeContext.WorkspacePath);
-
-		// Assert
-		AssertToolCallFailed(actResult);
-		AssertCommandExitCode(actResult, 1, "unknown environment names should fail before restore-workspace starts downloading or creating workspace content");
-		AssertIncludesErrorMessage(actResult, "failed restore-workspace execution should emit error diagnostics");
-		AssertFailureMentionsMissingEnvironment(actResult, arrangeContext.EnvironmentName, RestoreToolName);
-		AssertWorkspaceWasNotMutated(arrangeContext.WorkspacePath);
-	}
-
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Creates a workspace and package with the real clio CLI, pushes it through MCP, and verifies the package appears in the target environment through list-packages.")]
 	[AllureTag(PushToolName)]
@@ -87,6 +67,7 @@ public sealed class WorkspaceSyncToolE2ETests {
 		AssertPackageWasPublished(packageListResult, arrangeContext.PackageMetadata);
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Creates a workspace and package with the real clio CLI, pushes it through MCP, deletes the local package files, restores into the same workspace, and verifies the package metadata is recreated from the environment.")]
 	[AllureTag(PushToolName)]
@@ -94,28 +75,26 @@ public sealed class WorkspaceSyncToolE2ETests {
 	[AllureName("Restore workspace recreates the pushed package in the same workspace")]
 	[AllureDescription("Uses the real clio CLI to create a workspace and package locally, pushes it through MCP, removes the local package folder, restores through MCP into the same workspace, and verifies the restored package descriptor matches the pushed package.")]
 	public async Task RestoreWorkspace_Should_Recreate_Pushed_Package_In_Same_Workspace() {
-		// Arrange
-		await using WorkspaceSyncArrangeContext arrangeContext = await ArrangeSandboxWorkspaceAsync();
+		// Arrange - the package is already pushed once for the fixture (ENG-92459); push assertions are
+		// covered by PushWorkspace_Should_Publish_Arranged_Package_And_GetPkgList_Should_Return_It.
+		await using WorkspaceSyncArrangeContext arrangeContext = await ArrangeSharedRestoreWorkspaceAsync();
 		string descriptorPath = FindPackageDescriptorPath(arrangeContext.WorkspacePath, arrangeContext.PackageName);
 		string packageDirectoryPath = Directory.GetParent(descriptorPath)!.FullName;
 
 		// Act
-		WorkspaceCommandActResult pushResult = await ActWorkspaceCommandAsync(arrangeContext, PushToolName, arrangeContext.WorkspacePath);
 		DeletePackageDirectory(packageDirectoryPath);
 		Directory.Exists(packageDirectoryPath).Should().BeFalse(
 			because: "the local package directory should be removed before restore-workspace runs so the restore side effect is observable");
 		WorkspaceCommandActResult restoreResult = await ActWorkspaceCommandAsync(arrangeContext, RestoreToolName, arrangeContext.WorkspacePath);
 
 		// Assert
-		AssertToolCallSucceeded(pushResult);
-		AssertCommandExitCode(pushResult, 0, "restore coverage depends on push-workspace completing successfully first");
-		AssertIncludesInfoMessage(pushResult, "successful push-workspace execution should emit progress output");
 		AssertToolCallSucceeded(restoreResult);
 		AssertCommandExitCode(restoreResult, 0, "restore-workspace should succeed for a valid sandbox environment and existing workspace settings");
 		AssertIncludesInfoMessage(restoreResult, "successful restore-workspace execution should emit progress output");
 		AssertRestoredPackageMatchesSourceMetadata(arrangeContext.WorkspacePath, arrangeContext.PackageName, arrangeContext.PackageMetadata);
 	}
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Drives restore-workspace (a [RequiresPackage(\"cliogate\")] command) through the real clio MCP server against a sandbox where cliogate IS installed, and verifies the environment-scoped package-requirement gate does NOT false-positive: the tool runs to completion instead of refusing. "
 		+ "Residual gap: the 'package absent' refusal branch is NOT covered here because the sandbox arrange step (ArrangeSandboxWorkspaceAsync -> EnsureCliogateInstalledAsync) guarantees cliogate is present, and the invalid-environment tests fail during command resolution BEFORE the gate runs. Asserting a refusal would require a live environment that lacks cliogate, which the current harness cannot provision. The refusal branch is covered at the unit level in clio.tests/Command/McpServer/BaseToolTests.cs.")]
@@ -123,61 +102,21 @@ public sealed class WorkspaceSyncToolE2ETests {
 	[AllureName("Restore workspace package-requirement gate does not false-positive when cliogate is installed")]
 	[AllureDescription("Uses the real clio MCP server to restore a previously pushed package into a sandbox where cliogate is installed, proving the environment-scoped [RequiresPackage] gate lets the command through rather than refusing. The 'package absent' refusal branch is documented as a residual harness gap and covered by unit tests.")]
 	public async Task RestoreWorkspace_PackageRequirementGate_Should_Not_Refuse_When_Cliogate_Is_Installed() {
-		// Arrange
-		await using WorkspaceSyncArrangeContext arrangeContext = await ArrangeSandboxWorkspaceAsync();
+		// Arrange - reuse the package pushed once for the fixture (ENG-92459); this test only exercises the
+		// restore-workspace [RequiresPackage] gate, so the push assertions live in the dedicated push test.
+		await using WorkspaceSyncArrangeContext arrangeContext = await ArrangeSharedRestoreWorkspaceAsync();
 		string descriptorPath = FindPackageDescriptorPath(arrangeContext.WorkspacePath, arrangeContext.PackageName);
 		string packageDirectoryPath = Directory.GetParent(descriptorPath)!.FullName;
 
 		// Act
-		WorkspaceCommandActResult pushResult = await ActWorkspaceCommandAsync(arrangeContext, PushToolName, arrangeContext.WorkspacePath);
 		DeletePackageDirectory(packageDirectoryPath);
 		WorkspaceCommandActResult restoreResult = await ActWorkspaceCommandAsync(arrangeContext, RestoreToolName, arrangeContext.WorkspacePath);
 
 		// Assert
-		AssertToolCallSucceeded(pushResult);
-		AssertCommandExitCode(pushResult, 0, "gate-pass coverage depends on push-workspace completing successfully first");
 		AssertToolCallSucceeded(restoreResult);
 		AssertCommandExitCode(restoreResult, 0,
 			"with cliogate installed the [RequiresPackage] gate must let restore-workspace through instead of refusing");
 		AssertGateDidNotRefuse(restoreResult, "cliogate");
-	}
-
-	[Test]
-	[Description("Starts the real clio MCP server, lists tools, and verifies that both workspace-sync MCP endpoints are advertised as destructive.")]
-	[AllureTag(PushToolName)]
-	[AllureTag(RestoreToolName)]
-	[AllureName("Workspace sync tools advertise destructive metadata")]
-	[AllureDescription("Uses the real clio MCP server tool discovery response to verify that push-workspace and restore-workspace expose the destructive hint required for client-side safety policies.")]
-	public async Task WorkspaceSync_Tools_Should_Be_Advertised_As_Destructive() {
-		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-
-		// Act
-		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationTokenSource.Token);
-
-		// Assert
-		AssertToolIsAdvertisedAsDestructive(tools, PushToolName);
-		AssertToolIsAdvertisedAsDestructive(tools, RestoreToolName);
-	}
-
-	[Test]
-	[Description("Starts the real clio MCP server, inspects push-workspace tool discovery metadata, and verifies that skip-backup is exposed as an optional input argument.")]
-	[AllureTag(PushToolName)]
-	[AllureName("Push workspace advertises optional skip-backup argument")]
-	[AllureDescription("Uses the real clio MCP server tool discovery response to verify that push-workspace exposes the optional skip-backup argument for callers that explicitly want to skip the pre-install backup.")]
-	public async Task PushWorkspace_Tool_Should_Advertise_Optional_SkipBackup_Argument() {
-		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-
-		// Act
-		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationTokenSource.Token);
-
-		// Assert
-		AssertPushWorkspaceToolAdvertisesSkipBackup(tools);
 	}
 
 	private static async Task<WorkspaceSyncArrangeContext> ArrangeInvalidEnvironmentAsync(string toolPrefix) {
@@ -203,7 +142,8 @@ public sealed class WorkspaceSyncToolE2ETests {
 				PackageName: string.Empty,
 				PackageMetadata: null,
 				session,
-				cancellationTokenSource);
+				cancellationTokenSource,
+				OwnsRootDirectory: true);
 		});
 	}
 
@@ -246,8 +186,82 @@ public sealed class WorkspaceSyncToolE2ETests {
 				packageName,
 				packageMetadata,
 				session,
-				cancellationTokenSource);
+				cancellationTokenSource,
+				OwnsRootDirectory: true);
 		});
+	}
+
+	private async Task<WorkspaceSyncArrangeContext> ArrangeSharedRestoreWorkspaceAsync() {
+		return await AllureApi.Step("Arrange shared workspace-sync restore lifecycle", async () => {
+			McpE2ESettings settings = TestConfiguration.Load();
+			settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+			if (!settings.AllowDestructiveMcpTests) {
+				Assert.Ignore("Set McpE2E:AllowDestructiveMcpTests=true to run destructive MCP end-to-end tests.");
+			}
+
+			TestConfiguration.EnsureSandboxIsConfigured(settings);
+			CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(5));
+			await EnsureSharedRestoreWorkspaceAsync(settings, cancellationTokenSource.Token);
+
+			McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+			return new WorkspaceSyncArrangeContext(
+				settings,
+				_sharedRootDirectory!,
+				_sharedWorkspacePath!,
+				Path.GetFileName(_sharedWorkspacePath!),
+				RestoreWorkspacePath: string.Empty,
+				RestoreWorkspaceName: string.Empty,
+				_sharedEnvironmentName!,
+				_sharedPackageName!,
+				_sharedPackageMetadata,
+				session,
+				cancellationTokenSource,
+				OwnsRootDirectory: false);
+		});
+	}
+
+	/// <summary>
+	/// Lazily provisions a single workspace + package that is created, has its package added and is pushed
+	/// to the sandbox environment once (ENG-92459), so the restore tests can recreate it without each
+	/// re-pushing a fresh package. Subsequent calls reuse the cached workspace; relies on the fixture being
+	/// [NonParallelizable].
+	/// </summary>
+	private async Task EnsureSharedRestoreWorkspaceAsync(McpE2ESettings settings, CancellationToken cancellationToken) {
+		if (_sharedPackageName is not null) {
+			return;
+		}
+
+		string environmentName = settings.Sandbox.EnvironmentName!;
+		await ClioCliCommandRunner.EnsureCliogateInstalledAsync(settings, environmentName, cancellationToken);
+
+		string rootDirectory = Path.Combine(Path.GetTempPath(), $"clio-workspace-sync-e2e-{Guid.NewGuid():N}");
+		Directory.CreateDirectory(rootDirectory);
+		string workspaceName = $"workspace-{Guid.NewGuid():N}";
+		string workspacePath = Path.Combine(rootDirectory, workspaceName);
+		string packageName = $"Pkg{Guid.NewGuid():N}".Substring(0, 18);
+
+		await CreateEmptyWorkspaceAsync(settings, rootDirectory, workspaceName, cancellationToken);
+		await AddPackageAsync(settings, workspacePath, packageName, cancellationToken);
+		PackageMetadata packageMetadata = ReadPackageMetadata(workspacePath, packageName);
+		await PushWorkspaceCliAsync(settings, workspacePath, environmentName, cancellationToken);
+
+		_sharedRootDirectory = rootDirectory;
+		_sharedWorkspacePath = workspacePath;
+		_sharedPackageName = packageName;
+		_sharedEnvironmentName = environmentName;
+		_sharedPackageMetadata = packageMetadata;
+	}
+
+	private static async Task PushWorkspaceCliAsync(
+		McpE2ESettings settings,
+		string workspacePath,
+		string environmentName,
+		CancellationToken cancellationToken) {
+		await ClioCliCommandRunner.RunAndAssertSuccessAsync(
+			settings,
+			["push-workspace", "-e", environmentName],
+			workingDirectory: workspacePath,
+			cancellationToken: cancellationToken);
 	}
 
 	private static async Task<WorkspaceCommandActResult> ActWorkspaceCommandAsync(
@@ -255,9 +269,10 @@ public sealed class WorkspaceSyncToolE2ETests {
 		string toolName,
 		string workspacePath) {
 		return await AllureApi.Step("Act by invoking workspace-sync tool through MCP", async () => {
-			IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-			tools.Select(tool => tool.Name).Should().Contain(toolName,
-				because: "the requested workspace-sync MCP tool must be advertised before the end-to-end call can be executed");
+			IReadOnlyCollection<string> toolNames =
+				await arrangeContext.Session.ListReachableToolNamesAsync(arrangeContext.CancellationTokenSource.Token);
+			toolNames.Should().Contain(toolName,
+				because: "the requested workspace-sync MCP tool must be discoverable via the get-tool-contract compact index before the end-to-end call can be executed");
 
 			CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
 				toolName,
@@ -365,33 +380,10 @@ public sealed class WorkspaceSyncToolE2ETests {
 			because: "with a reachable environment the gate must verify requirements cleanly rather than surfacing a verification failure");
 	}
 
-	[AllureStep("Assert discovered MCP tool is marked as destructive")]
-	private static void AssertToolIsAdvertisedAsDestructive(IList<McpClientTool> tools, string toolName) {
-		McpClientTool tool = tools.Single(tool => tool.Name == toolName);
-
-		tool.ProtocolTool.Annotations.Should().NotBeNull(
-			because: "the MCP server should expose tool annotations for clients that apply safety policies");
-		tool.ProtocolTool.Annotations!.DestructiveHint.Should().BeTrue(
-			because: "workspace-sync tools mutate local workspace state and/or the target environment");
-	}
-
-	[AllureStep("Assert push-workspace MCP schema advertises optional skip-backup argument")]
-	private static void AssertPushWorkspaceToolAdvertisesSkipBackup(IList<McpClientTool> tools) {
-		McpClientTool tool = tools.Single(tool => tool.Name == PushToolName);
-		JsonElement inputSchema = JsonSerializer.SerializeToElement(tool.ProtocolTool.InputSchema);
-		JsonElement argsSchema = inputSchema.GetProperty("properties").GetProperty("args");
-		JsonElement argsProperties = argsSchema.GetProperty("properties");
-		string[] requiredArgs = argsSchema.GetProperty("required").EnumerateArray()
-			.Select(item => item.GetString()!)
-			.ToArray();
-
-		argsProperties.TryGetProperty("skip-backup", out JsonElement skipBackupProperty).Should().BeTrue(
-			because: "push-workspace callers need an explicit way to disable backup without changing the default behavior");
-		skipBackupProperty.GetProperty("type").GetString().Should().Be("boolean",
-			because: "skip-backup should be modeled as a boolean MCP input");
-		requiredArgs.Should().NotContain("skip-backup",
-			because: "backup skipping must remain opt-in and the default behavior should still create backups when the argument is omitted");
-	}
+	// The destructive-metadata and skip-backup-schema advertisement asserts moved to
+	// WorkspaceSyncContractToolE2ETests, where they read the get-tool-contract compact index / full
+	// contract (the lazy-surface replacement for tools/list annotations and input schemas). The stale
+	// tools/list-based helper copies that previously lived here were unreferenced and were removed.
 
 	[AllureStep("Assert list-packages returns the pushed package")]
 	private static void AssertPackageWasPublished(PackageListActResult actResult, PackageMetadata? expectedPackage) {
@@ -500,12 +492,15 @@ public sealed class WorkspaceSyncToolE2ETests {
 		string PackageName,
 		PackageMetadata? PackageMetadata,
 		McpServerSession Session,
-		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
+		CancellationTokenSource CancellationTokenSource,
+		bool OwnsRootDirectory) : IAsyncDisposable {
 		public async ValueTask DisposeAsync() {
 			await Session.DisposeAsync();
 			CancellationTokenSource.Dispose();
 
-			if (Directory.Exists(RootDirectory)) {
+			// Restore-test contexts reuse the shared fixture workspace (see EnsureSharedRestoreWorkspaceAsync),
+			// which is deleted once in [OneTimeTearDown]; only the per-test throwaway roots are owned here.
+			if (OwnsRootDirectory && Directory.Exists(RootDirectory)) {
 				Directory.Delete(RootDirectory, recursive: true);
 			}
 		}

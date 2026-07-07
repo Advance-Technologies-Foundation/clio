@@ -154,7 +154,8 @@ internal static class EntitySchemaDesignerSupport
 
 	internal static IReadOnlyDictionary<string, string>? NormalizeLocalizationMap(
 		IReadOnlyDictionary<string, string>? values,
-		string fieldName) {
+		string fieldName,
+		bool requireDefaultCulture = true) {
 		if (values == null) {
 			return null;
 		}
@@ -177,7 +178,7 @@ internal static class EntitySchemaDesignerSupport
 			throw new EntitySchemaDesignerException($"{fieldName} must contain at least one localization.");
 		}
 
-		if (!normalizedValues.ContainsKey(DefaultCultureName)) {
+		if (requireDefaultCulture && !normalizedValues.ContainsKey(DefaultCultureName)) {
 			throw new EntitySchemaDesignerException(
 				$"{fieldName} must contain a non-empty '{DefaultCultureName}' value.");
 		}
@@ -526,9 +527,10 @@ internal static class EntitySchemaDesignerSupport
 				SequencePrefix = NormalizeTextValue(defValue.SequencePrefix, allowEmpty: true),
 				SequenceNumberOfChars = defValue.SequenceNumberOfChars > 0 ? defValue.SequenceNumberOfChars : null
 			},
-			EntitySchemaColumnDefSource.None => new EntitySchemaDefaultValueConfig {
-				Source = source
-			},
+			// A None source means the column has no default. Project it the same as a missing
+			// DefValue (null) so a cleared default reads back as "no default" — consistent with a
+			// column that never had one, and with the modify contract that clears via source=None.
+			EntitySchemaColumnDefSource.None => null,
 			_ => new EntitySchemaDefaultValueConfig {
 				Source = source
 			}

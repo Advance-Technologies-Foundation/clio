@@ -33,17 +33,18 @@ public sealed class ComponentInfoTool(
 	ISettingsRepository settingsRepository) {
 
 	internal const string ToolName = "get-component-info";
+
+	/// <summary>
+	/// Canonical kebab-case name of the component selector parameter — the JSON property bound to
+	/// <see cref="ComponentInfoArgs.ComponentType"/>. Every <see cref="LegacyAliases"/> entry that
+	/// redirects a mis-spelled selector points at this single value, so the alias target lives in
+	/// one place instead of being repeated as a literal per entry.
+	/// </summary>
+	internal const string ComponentTypeParameterName = "component-type";
 	internal const string ResolvedFromEnvironment = ComponentInfoResolution.ResolvedFromEnvironment;
 	internal const string ResolvedFromLatestFallback = ComponentInfoResolution.ResolvedFromLatestFallback;
 	internal const string SchemaTypeMobile = "mobile";
 	internal const string DocumentationSeparator = ComponentDocumentationLoader.DocumentationSeparator;
-
-	/// <summary>
-	/// Upper bound on the "did you mean" entries returned when a requested <c>component-type</c>
-	/// is unknown. Keeps the not-found envelope a small, actionable shortlist instead of echoing
-	/// the full ~199-item catalog as "suggestions".
-	/// </summary>
-	private const int MaxNotFoundSuggestions = 8;
 
 	/// <summary>
 	/// Canonical contract text returned for every data-source-bound field component type
@@ -60,16 +61,24 @@ public sealed class ComponentInfoTool(
 
 	/// <summary>
 	/// Actionable hint surfaced next to <c>compositeOnly: true</c> on a component detail
-	/// response. The component has no standalone Designer toolbar presence, so it must be
-	/// assembled as part of a composite. Composites have no <c>componentType</c> and a
-	/// component does not name its owning composite, so the hint points the agent at the
-	/// composites section of list mode (and the <c>composite="&lt;caption&gt;"</c> detail).
+	/// response. The component has no standalone Designer toolbar presence, so it should
+	/// preferentially be built via a composite that assembles it. Composites have no
+	/// <c>componentType</c> and carry no machine-readable list of their member components
+	/// (a <see cref="CompositeDefinition"/> is only <c>caption</c>/<c>description</c>/<c>docs</c>),
+	/// so clio cannot resolve the owning composite for the agent — the hint instead encodes the
+	/// decision rule: discover composites in list mode, confirm membership by reading each
+	/// candidate's recipe (<c>composite="&lt;caption&gt;"</c>), build the composite when one
+	/// assembles this component, and otherwise fall back to building the component directly —
+	/// only when its own applicability (<c>appliesToCustomEntities</c> / <c>entityCouplingNote</c>) allows.
 	/// </summary>
 	internal const string CompositeOnlyHintText =
-		"This component has no standalone Designer toolbar presence — do not insert it on its own. "
-		+ "List composites with get-component-info (list mode); if one matches this component, fetch its assembly "
-		+ "recipe with get-component-info composite=\"<caption>\" and build that instead. If no composite matches, "
-		+ "this component is not meant to be authored directly.";
+		"This component has no standalone Designer toolbar presence. First look for a composite that assembles it: "
+		+ "call get-component-info in list mode, scan the 'composites' array, and fetch each plausible candidate's "
+		+ "recipe with get-component-info composite=\"<caption>\" to confirm it uses this component. "
+		+ "If a composite assembles this component, build that composite and follow its recipe. "
+		+ "If no composite assembles it, build this component directly as a fallback — but only if this "
+		+ "component's own applicability allows it: check appliesToCustomEntities / entityCouplingNote on this "
+		+ "response first, and do not build it standalone on an entity those fields exclude.";
 
 	/// <summary>
 	/// Returns the component catalog list or full metadata for a specific component type.
@@ -82,10 +91,10 @@ public sealed class ComponentInfoTool(
 		"PROACTIVELY list the catalog (omit component-type, or pass 'list') at the start of any page work to discover the full component set " +
 		"— including non-obvious components such as crt.Gallery — instead of authoring types from memory or waiting for the user to ask you to search. " +
 		"Detail responses include selection-metadata when the producer publishes it: whenToUse / whenNotToUse (one-line 'pick this when…' / 'do NOT pick this when…' guidance) plus synonyms / useCases — " +
-		"use whenToUse / whenNotToUse to choose between visually similar components (e.g. crt.Gallery vs crt.DataGrid vs crt.List) instead of guessing. " +
+		"use whenToUse / whenNotToUse to choose between visually similar components instead of guessing. " +
 		"The list response also returns 'composites' — pre-built combinations of several components that have NO componentType of their own " +
-		"(e.g. 'Expanded list', 'Attachments', 'Next steps'). When a user wants one of these, do NOT hand-build it from raw types: pass composite='<caption>' " +
-		"to get its assembly recipe. A component flagged compositeOnly:true has no standalone toolbar presence — never insert it directly; build the matching composite instead. " +
+		"— read the returned 'composites' array for the available captions. When a user wants one of these, do NOT hand-build it from raw types: pass composite='<caption>' " +
+		"to get its assembly recipe. A component flagged compositeOnly:true has no standalone toolbar presence — prefer the composite that assembles it and build that; build the component directly only as a fallback when no composite assembles it AND its own applicability (appliesToCustomEntities / entityCouplingNote) allows. " +
 		"IMPORTANT: pass environment-name to scope the catalog to the target environment's actual platform version — " +
 		"otherwise results come from the 'latest' catalog, a SUPERSET of every GA version, and may list components " +
 		"(e.g. a freshly shipped crt.Switch) that do NOT exist in that environment and will fail to render at runtime. " +
@@ -94,11 +103,7 @@ public sealed class ComponentInfoTool(
 		"If schema-type is omitted, defaults to the web component catalog (excludes mobile-only components such as crt.Toggle and crt.BarcodeScanner). " +
 		"Use schema-type: 'mobile' to retrieve mobile-specific components — the mobile registry is separate and excludes web-only types.")]
 	public async Task<ComponentInfoResponse> GetComponentInfo(
-		[Description("Parameters: component-type (optional; omit or use 'list' to return the catalog of components AND composites), " +
-			"composite (optional; a composite Designer-element caption such as 'Expanded list' — returns its assembly docs; mutually exclusive with component-type), " +
-			"search (optional keyword filter over both components and composites). " +
-			"schema-type: 'web' (default) or 'mobile'. environment-name: PREFERRED — scopes the catalog to the target platform version (mutually exclusive with version). " +
-			"version: explicit 3-part semver. uri/login/password: emergency fallback only.")]
+		[Description("component-type (optional; omit or 'list' for the catalog of components AND composites), composite (optional; a composite Designer-element caption such as 'Expanded list' — returns its assembly docs, mutually exclusive with component-type), search (optional, filters both). schema-type 'web' (default) or 'mobile'. environment-name preferred (mutually exclusive with version). uri/login/password fallback only.")]
 		[Required] ComponentInfoArgs args,
 		CancellationToken cancellationToken = default) {
 		string? legacyAliasError = McpToolArgumentSupport.BuildLegacyAliasError(
@@ -120,7 +125,7 @@ public sealed class ComponentInfoTool(
 			return new ComponentInfoResponse {
 				Success = false,
 				Mode = "list",
-				Error = ex.Message,
+				Error = SensitiveErrorTextRedactor.Redact(ex.Message),
 				Count = 0,
 				Items = []
 			};
@@ -136,8 +141,16 @@ public sealed class ComponentInfoTool(
 	/// dropping an unbound camelCase value and degrading a detail request to a 199-item list.
 	/// </summary>
 	private static readonly Dictionary<string, string> LegacyAliases = new(StringComparer.Ordinal) {
-		["componentType"] = "component-type",
-		["component_type"] = "component-type",
+		["componentType"] = ComponentTypeParameterName,
+		["component_type"] = ComponentTypeParameterName,
+		// 'component-name' (plus its camelCase/snake_case spellings) is the wrong-WORD mistake an LLM
+		// reaches for when it expects the selector to be named after the component "name" rather than
+		// its "type" (observed in the field). Reject it with the same precise rename hint as the casing
+		// variants above instead of letting it fall through to the generic "Unknown args" message — the
+		// contract advertises the identical aliases (see ToolContractGetTool.BuildComponentInfo).
+		["component-name"] = ComponentTypeParameterName,
+		["componentName"] = ComponentTypeParameterName,
+		["component_name"] = ComponentTypeParameterName,
 		["schemaType"] = "schema-type",
 		["schema_type"] = "schema-type",
 		["environmentName"] = "environment-name",
@@ -215,27 +228,13 @@ public sealed class ComponentInfoTool(
 		}
 
 		string requestedType = args.ComponentType.Trim();
-		IReadOnlyList<ComponentRegistryEntry> suggestions =
-			ComponentInfoGrouping.SuggestForUnknown(state.Entries, requestedType, args.Search, MaxNotFoundSuggestions);
-		// Carry composites on the not-found response too, so both mode:"list" shapes
-		// (normal list and component-not-found suggestions) surface composites uniformly.
-		IReadOnlyList<CompositeDefinition> notFoundComposites =
-			ComponentInfoGrouping.FilterComposites(state.Composites, args.Search);
-		IReadOnlyList<CompositeSummary> notFoundCompositeItems =
-			ComponentInfoGrouping.CreateCompositeItems(notFoundComposites);
-		return new ComponentInfoResponse {
-			Success = false,
-			Mode = "list",
-			Error = $"Component type '{requestedType}' was not found. "
-				+ $"Showing the {suggestions.Count} closest known type(s) — pass one of these as 'component-type', "
-				+ "or omit 'component-type' to list the full catalog.",
-			Count = suggestions.Count,
-			Items = ComponentInfoGrouping.CreateItems(suggestions),
-			Composites = notFoundCompositeItems.Count == 0 ? null : notFoundCompositeItems,
-			ResolvedTargetVersion = state.ResolvedVersion,
-			ResolvedFrom = resolvedFrom,
-			ResolvedFromReason = resolvedFromReason
-		};
+		// Name/description-first resolution: when the exact type id misses, the requested label may
+		// be a composite ("Expanded list") the agent reached for as if it were a component. The shared
+		// factory matches components by name/description first, then routes to composite="<caption>"
+		// when the label names a composite. Shared with the CLI verb so both resolve identically.
+		return ComponentInfoResponseFactory.CreateComponentNotFoundResponse(
+			state.Entries, state.Composites, requestedType, args.Search,
+			state.ResolvedVersion, resolvedFrom, resolvedFromReason);
 	}
 
 	/// <summary>
@@ -462,27 +461,27 @@ public sealed record ComponentInfoArgs(
 	string? Composite = null,
 
 	[property: JsonPropertyName("schema-type")]
-	[property: Description("Component registry to query: 'web' (default) for standard Freedom UI pages, or 'mobile' for mobile page components (crt.Toggle, crt.BarcodeScanner, crt.Sort, etc.).")]
+	[property: Description("Component registry: 'web' (default) or 'mobile'.")]
 	string? SchemaType = null,
 
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Registered environment name to scope the catalog to its real platform version (probed via cliogate GetSysInfo). PREFER this — pass the same environment you edit pages on. Mutually exclusive with 'version'.")]
+	[property: Description("Registered environment name; scopes the catalog to its real platform version. Preferred. Mutually exclusive with version.")]
 	string? EnvironmentName = null,
 
 	[property: JsonPropertyName("version")]
-	[property: Description("Explicit catalog version (3-part semver, e.g. '8.3.3') when the platform version is already known. Mutually exclusive with 'environment-name'.")]
+	[property: Description("Explicit catalog version (3-part semver). Mutually exclusive with environment-name.")]
 	string? Version = null,
 
 	[property: JsonPropertyName("uri")]
-	[property: Description("Emergency fallback only: direct application URI when no environment is registered. Prefer 'environment-name'.")]
+	[property: Description(McpToolDescriptions.Uri)]
 	string? Uri = null,
 
 	[property: JsonPropertyName("login")]
-	[property: Description("Emergency fallback only: login paired with 'uri'. Prefer 'environment-name'.")]
+	[property: Description(McpToolDescriptions.Login)]
 	string? Login = null,
 
 	[property: JsonPropertyName("password")]
-	[property: Description("Emergency fallback only: password paired with 'uri'. Prefer 'environment-name'.")]
+	[property: Description(McpToolDescriptions.Password)]
 	string? Password = null
 ) {
 	/// <summary>
@@ -618,8 +617,9 @@ public sealed class ComponentInfoResponse : ComponentSelectionMetadata {
 
 	/// <summary>
 	/// Gets or sets the composite-only flag on a component detail response. <c>true</c>
-	/// means the component has no standalone Designer toolbar presence and must be built
-	/// as part of a composite (see <see cref="CompositeOnlyHint"/>); omitted otherwise.
+	/// means the component has no standalone Designer toolbar presence and should preferentially
+	/// be built via a composite that assembles it, falling back to building the component directly
+	/// when none does (see <see cref="CompositeOnlyHint"/> for the decision rule); omitted otherwise.
 	/// </summary>
 	[JsonPropertyName("compositeOnly")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

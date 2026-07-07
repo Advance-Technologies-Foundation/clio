@@ -9,12 +9,12 @@ using Clio.Mcp.E2E.Support.Creatio;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
-using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E;
 
 [TestFixture]
+[Category("McpE2E.Sandbox")]
 [AllureNUnit]
 [AllureFeature("reg-web-app")]
 [NonParallelizable]
@@ -71,9 +71,10 @@ public sealed class RegWebAppToolE2ETests {
 
 	private static async Task<RegWebAppActResult> ActAsync(ArrangeContext context) {
 		string environmentName = $"runtime-auto-{Guid.NewGuid():N}";
-		IList<McpClientTool> tools = await context.Session.ListToolsAsync(context.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(ToolName,
-			because: "the real MCP server must advertise reg-web-app before the test can invoke it");
+		IReadOnlyCollection<string> toolNames =
+			await context.Session.ListReachableToolNamesAsync(context.CancellationTokenSource.Token);
+		toolNames.Should().Contain(ToolName,
+			because: $"the {ToolName} MCP tool must be discoverable via the get-tool-contract compact index before the test can invoke it through the lazy surface");
 
 		CallToolResult callResult = await context.Session.CallToolAsync(
 			ToolName,

@@ -1,0 +1,59 @@
+COMMAND TYPE
+    Installation and Deployment commands
+
+NAME
+    create-server-to-server-oauth-app - Create a server-to-server (client_credentials) OAuth app in Creatio via OAuthConfigService REST
+
+DESCRIPTION
+    Creates a server-to-server (client_credentials) OAuth app in Creatio through the platform
+    OAuthConfigService/AddClient endpoint over REST, binding it to a system user. Supply
+    --system-user-id (from resolve-oauth-system-user or create-oauth-technical-user) or
+    --system-user by name (defaults to Supervisor).
+
+    The returned client id and client secret are surfaced ONLY in the structured command result.
+    On the CLI this result is printed as a single JSON object (clientId, clientSecret, systemUserId,
+    name) to STDOUT, with a one-time-capture warning on STDERR; via MCP it is the structured tool
+    record. The secret is never written to logs and is NOT persisted to clio settings by this command
+    (that is the responsibility of the higher-level deploy-identity flow). Capture the secret
+    immediately; it cannot be retrieved again.
+
+SYNOPSIS
+    clio create-server-to-server-oauth-app -e ENVIRONMENT [OPTIONS]
+
+OPTIONS
+    -e, --environment NAME
+        Required. Registered Creatio environment.
+
+    --system-user-id ID
+        System user id to bind the OAuth app to. Resolve it first with resolve-oauth-system-user
+        or create-oauth-technical-user.
+
+    --system-user NAME
+        System user name to bind the OAuth app to when --system-user-id is omitted.
+        Default: Supervisor
+
+    --client-name NAME
+        OAuth client display name.
+        Default: clio s2s
+
+    --client-application-url URL
+        OAuth client application URL.
+        Default: https://github.com/Advance-Technologies-Foundation/clio.git
+
+    --client-description TEXT
+        OAuth client description.
+        Default: server-to-server integration for clio cli
+
+EXAMPLES
+    # Create a server-to-server app bound to the Supervisor user.
+    clio create-server-to-server-oauth-app -e c-dev
+
+    # Create a server-to-server app bound to a specific system user id.
+    clio create-server-to-server-oauth-app -e c-dev --system-user-id 410006e1-ca4e-4502-a9ec-e54d922d2c00
+
+NOTES
+    This command is experimental and hidden by default. Enable it before use:
+        clio experimental --name deploy-identity --enable
+
+    This command mutates Creatio (creates an OAuth client). The generated client secret is
+    returned only in the structured result and is never logged.

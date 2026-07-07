@@ -43,6 +43,8 @@ TestResults/
 ######################
 *.log
 *.sqlite
+.codex/identityservice-bank-connect-network-redacted.json
+Clio.Analyzers/bin_verify/
 # OS generated files #
 ######################
 .DS_Store?

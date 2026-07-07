@@ -56,24 +56,24 @@ public abstract class SkillCommandOptions {
 /// <summary>
 /// Options for the <c>install-skills</c> command.
 /// </summary>
-[Verb("install-adac", Aliases = ["install-skills"],
-	HelpText = "Install the Creatio AI App Development Toolkit (ADAC) for all detected coding agents")]
+[Verb("install-toolkit", Aliases = ["install-skills"],
+	HelpText = "Install the Creatio AI App Development Toolkit for all detected coding agents")]
 public class InstallSkillsOptions : SkillCommandOptions {
 }
 
 /// <summary>
 /// Options for the <c>update-skill</c> command.
 /// </summary>
-[Verb("update-adac", Aliases = ["update-skill"],
-	HelpText = "Update the Creatio AI App Development Toolkit (ADAC) for all detected coding agents")]
+[Verb("update-toolkit", Aliases = ["update-skill"],
+	HelpText = "Update the Creatio AI App Development Toolkit for all detected coding agents")]
 public class UpdateSkillOptions : SkillCommandOptions {
 }
 
 /// <summary>
 /// Options for the <c>delete-skill</c> command.
 /// </summary>
-[Verb("delete-adac", Aliases = ["delete-skill"],
-	HelpText = "Uninstall the Creatio AI App Development Toolkit (ADAC) from coding agents")]
+[Verb("delete-toolkit", Aliases = ["delete-skill"],
+	HelpText = "Uninstall the Creatio AI App Development Toolkit from coding agents")]
 public class DeleteSkillOptions : SkillCommandOptions {
 }
 

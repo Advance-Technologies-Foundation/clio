@@ -1,0 +1,44 @@
+COMMAND TYPE
+    Installation and Deployment commands
+
+NAME
+    verify-oauth-app - Verify a server-to-server OAuth app: acquire a client_credentials token and run a bearer DataService smoke test
+
+DESCRIPTION
+    Verifies a server-to-server OAuth app end to end over REST. It acquires a client_credentials
+    access token from the IdentityService token endpoint, then runs a minimal bearer-authenticated
+    Creatio DataService smoke request with that token.
+
+    It reports tokenAcquired, dataServiceStatus (the HTTP status of the smoke request), and ok
+    (token acquired AND dataServiceStatus 200). The access token text is never returned or logged.
+
+SYNOPSIS
+    clio verify-oauth-app -e ENVIRONMENT --client-id ID --client-secret SECRET [OPTIONS]
+
+OPTIONS
+    -e, --environment NAME
+        Required. Registered Creatio environment.
+
+    --client-id ID
+        Required. OAuth client id to verify.
+
+    --client-secret SECRET
+        Required. OAuth client secret to verify. Never returned or logged.
+
+    --identity-server-url URL
+        Explicit IdentityService base URL. When omitted, it is read from the
+        OAuth20IdentityServerUrl system setting, then derived from the Creatio host.
+
+EXAMPLES
+    # Verify an OAuth app, deriving the IdentityService URL.
+    clio verify-oauth-app -e c-dev --client-id my-client --client-secret my-secret
+
+    # Verify against an explicit IdentityService URL.
+    clio verify-oauth-app -e c-dev --client-id my-client --client-secret my-secret \
+        --identity-server-url https://c-dev-is.creatio.com
+
+NOTES
+    This command is experimental and hidden by default. Enable it before use:
+        clio experimental --name deploy-identity --enable
+
+    This command is read-only; it does not modify Creatio. The access token is never logged.

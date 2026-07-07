@@ -24,39 +24,58 @@ namespace Clio.Mcp.E2E;
 /// End-to-end tests for the sync-schemas composite MCP tool.
 /// </summary>
 [TestFixture]
+[Category("McpE2E.Sandbox")]
 [AllureNUnit]
 [AllureFeature("sync-schemas")]
 [NonParallelizable]
-public sealed class SchemaSyncToolE2ETests {
+public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 
 	private const string ToolName = SchemaSyncTool.ToolName;
 	private const string ReadSchemaToolName = GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName;
 	private const string ReadColumnToolName = GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName;
 	private const string CurrentDateTimeSystemValueUId = "d7c295d3-3146-4ee1-ac49-3a7bd0edc45d";
 
+	// ENG-92459: one shared workspace+package+push for the whole fixture instead of one push-workspace
+	// round-trip per environment-bound test. Lazily initialized by the first requireEnvironment arrange so
+	// its Assert.Ignore on a missing destructive opt-in / unreachable environment / cliogate only skips the
+	// environment-bound tests; the non-environment tests need no package and stay green. The fixture is
+	// [NonParallelizable], so the lazy init runs without a race; each environment-bound test still creates
+	// its own unique schemas (entity + lookup) inside the shared package, preserving per-test isolation.
+	private string? _sharedRootDirectory;
+	private string? _sharedWorkspacePath;
+	private string? _sharedEnvironmentName;
+	private string? _sharedPackageName;
+
+	[OneTimeTearDown]
+	public void CleanupSharedSandboxPackage() {
+		if (_sharedRootDirectory is not null && Directory.Exists(_sharedRootDirectory)) {
+			Directory.Delete(_sharedRootDirectory, recursive: true);
+		}
+	}
+
 	[Test]
-	[Description("Advertises sync-schemas MCP tool in the server tool list so callers can discover and invoke it.")]
+	[Description("Exposes sync-schemas via the get-tool-contract compact index so callers can discover and invoke it on the lazy surface.")]
 	[AllureTag(ToolName)]
-	[AllureName("sync-schemas tool is advertised by the MCP server")]
-	[AllureDescription("Verifies that sync-schemas appears in the MCP server tool manifest.")]
+	[AllureName("sync-schemas tool is discoverable on the lazy surface")]
+	[AllureDescription("Verifies that sync-schemas is discoverable via the get-tool-contract compact index of the MCP server.")]
 	public async Task SchemaSyncTool_Should_Be_Listed_By_MCP_Server() {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: false);
 
 		// Act
-		IList<McpClientTool> tools = await context.Session.ListToolsAsync(context.CancellationTokenSource.Token);
-		IEnumerable<string> toolNames = tools.Select(t => t.Name);
+		IReadOnlyCollection<string> toolNames =
+			await context.Session.ListReachableToolNamesAsync(context.CancellationTokenSource.Token);
 
 		// Assert
 		toolNames.Should().Contain(ToolName,
-			because: "sync-schemas must be advertised so MCP clients can discover the composite tool");
+			because: "sync-schemas must be discoverable on the lazy surface (get-tool-contract compact index) so MCP clients can find the composite tool even though it is not resident in tools/list");
 	}
 
 	[Test]
-	[Description("Returns a top-level MCP invocation error when sync-schemas is called without the required args wrapper.")]
+	[Description("Returns a binding-layer error when sync-schemas is called without the required args wrapper on the lazy surface.")]
 	[AllureTag(ToolName)]
 	[AllureName("sync-schemas returns invocation error when args wrapper is missing")]
-	[AllureDescription("Starts the real MCP server, invokes sync-schemas without the args wrapper, and verifies that MCP binding fails at the invocation layer instead of returning a structured SchemaSyncResponse payload.")]
+	[AllureDescription("Starts the real MCP server, invokes sync-schemas without the args wrapper, and verifies that binding fails before sync-schemas can produce a structured SchemaSyncResponse payload. On the lazy surface the call is dispatched via clio-run, so the SDK binding failure of the target's args record is wrapped in the executor's \"Error: tool 'sync-schemas' failed:\" text.")]
 	public async Task SchemaSyncTool_Should_Return_Invocation_Error_When_Args_Wrapper_Is_Missing() {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: false);
@@ -68,16 +87,21 @@ public sealed class SchemaSyncToolE2ETests {
 			context.CancellationTokenSource.Token);
 
 		// Assert
+		// sync-schemas is hidden from tools/list, so the session routes this call through clio-run with the
+		// `args` payload omitted. The SDK still fails binding the target's args record INSIDE the dispatch;
+		// the executor wraps that failure ("Error: tool 'sync-schemas' failed: ..."). A native resident call
+		// would have surfaced "An error occurred invoking 'sync-schemas'." — both shapes are the same
+		// binding-layer contract (IsError=true, no structured payload), so either diagnostic is accepted.
 		AssertInvocationFailure(
 			callResult,
 			because: "missing args should fail during MCP binding before sync-schemas can produce a structured tool response");
 	}
 
 	[Test]
-	[Description("Returns a top-level MCP invocation error when sync-schemas args has the wrong type.")]
+	[Description("Returns a binding-layer error when sync-schemas args has the wrong type on the lazy surface.")]
 	[AllureTag(ToolName)]
 	[AllureName("sync-schemas returns invocation error when args has invalid type")]
-	[AllureDescription("Starts the real MCP server, invokes sync-schemas with args set to a string instead of an object, and verifies that MCP binding fails at the invocation layer instead of returning a structured SchemaSyncResponse payload.")]
+	[AllureDescription("Starts the real MCP server, invokes sync-schemas with args set to a string instead of an object, and verifies that the binding layer rejects the payload before sync-schemas can produce a structured SchemaSyncResponse payload. On the lazy surface the call is dispatched via clio-run, whose args-shape validation rejects the non-object payload.")]
 	public async Task SchemaSyncTool_Should_Return_Invocation_Error_When_Args_Has_Invalid_Type() {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: false);
@@ -91,9 +115,15 @@ public sealed class SchemaSyncToolE2ETests {
 			context.CancellationTokenSource.Token);
 
 		// Assert
+		// sync-schemas is hidden from tools/list, so a present-but-wrong-type `args` no longer reaches the
+		// SDK's per-tool argument deserializer ("Failed to deserialize argument 'args' for MCP tool
+		// 'sync-schemas'"). The session routes the call through clio-run, which validates the args shape
+		// itself and rejects the non-object payload ("'args' for tool 'sync-schemas' must be a JSON object
+		// ..."). Either shape is the same binding-layer contract: the failure happens before the target tool
+		// executes, IsError=true, and no structured SchemaSyncResponse payload is produced.
 		AssertInvocationFailure(
 			callResult,
-			because: "wrong-type args should fail during MCP binding before sync-schemas can produce a structured tool response");
+			because: "wrong-type args should fail at the binding layer before sync-schemas can produce a structured tool response");
 	}
 
 	[Test]
@@ -116,8 +146,15 @@ public sealed class SchemaSyncToolE2ETests {
 			context.LookupSchemaName!,
 			context.LookupColumnName,
 			context.CancellationTokenSource.Token);
+		callResult.IsError.Should().NotBeTrue(
+			because: "sync-schemas should return a structured success payload for a valid sandbox package");
 		JsonElement response = ExtractSchemaSyncResponse(callResult);
 		JsonElement[] results = response.GetProperty("results").EnumerateArray().ToArray();
+		string responsePayload = FormatPayload(response);
+		response.GetProperty("success").GetBoolean().Should().BeTrue(
+			because: $"the composite batch should succeed on the reachable sandbox environment. Payload: {responsePayload}");
+		results.Should().HaveCount(4,
+			because: $"create-entity, create-lookup, seed-data, and update-entity should each produce one result. Payload: {responsePayload}");
 		JsonElement createLookupResult = FindResult(results, "create-lookup", context.LookupSchemaName!);
 		JsonElement seedResult = FindResult(results, "seed-data", context.LookupSchemaName!);
 		JsonElement updateResult = FindResult(results, "update-entity", context.EntitySchemaName!);
@@ -143,12 +180,6 @@ public sealed class SchemaSyncToolE2ETests {
 			context.CancellationTokenSource.Token);
 
 		// Assert
-		callResult.IsError.Should().NotBeTrue(
-			because: "sync-schemas should return a structured success payload for a valid sandbox package");
-		response.GetProperty("success").GetBoolean().Should().BeTrue(
-			because: "the composite batch should succeed on the reachable sandbox environment");
-		results.Should().HaveCount(4,
-			because: "create-entity, create-lookup, seed-data, and update-entity should each produce one result");
 		results.Select(result => result.GetProperty("type").GetString()).Should().OnlyContain(type =>
 				!string.IsNullOrWhiteSpace(type),
 			because: "sync-schemas should expose the canonical type field on every result");
@@ -203,9 +234,10 @@ public sealed class SchemaSyncToolE2ETests {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: false);
 		string invalidEnvironmentName = $"missing-sync-schemas-env-{Guid.NewGuid():N}";
-		IList<McpClientTool> tools = await context.Session.ListToolsAsync(context.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(ToolName,
-			because: "sync-schemas must be advertised before the validation scenario can be invoked");
+		IReadOnlyCollection<string> reachableToolNames =
+			await context.Session.ListReachableToolNamesAsync(context.CancellationTokenSource.Token);
+		reachableToolNames.Should().Contain(ToolName,
+			because: "sync-schemas must be discoverable via the get-tool-contract compact index before the validation scenario can be invoked");
 
 		// Act
 		CallToolResult callResult = await context.Session.CallToolAsync(
@@ -315,73 +347,106 @@ public sealed class SchemaSyncToolE2ETests {
 			because: "structured default value readback should include the resolved system value guid");
 	}
 
-	private static async Task<ArrangeContext> ArrangeAsync(bool requireEnvironment) {
+	private async Task<ArrangeContext> ArrangeAsync(bool requireEnvironment) {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		if (requireEnvironment && !settings.AllowDestructiveMcpTests) {
 			Assert.Ignore("Set McpE2E:AllowDestructiveMcpTests=true to run destructive sync-schemas MCP end-to-end tests.");
 		}
 
-		string? environmentName = requireEnvironment
-			? await ResolveReachableEnvironmentAsync(settings)
-			: null;
-		string rootDirectory = Path.Combine(Path.GetTempPath(), $"clio-sync-schemas-e2e-{Guid.NewGuid():N}");
-		Directory.CreateDirectory(rootDirectory);
-		string workspaceName = $"workspace-{Guid.NewGuid():N}";
-		string workspacePath = Path.Combine(rootDirectory, workspaceName);
 		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(8));
-		await CreateEmptyWorkspaceAsync(settings, rootDirectory, workspaceName, cancellationTokenSource.Token);
+		McpServerSession session = Session;
+		const string lookupColumnName = "UsrStatus";
 
-		string? packageName = null;
-		string? entitySchemaName = null;
-		string? lookupSchemaName = null;
-		string lookupColumnName = "UsrStatus";
-		if (requireEnvironment) {
-			try {
-				await ClioCliCommandRunner.EnsureCliogateInstalledAsync(
-					settings,
-					environmentName!,
-					cancellationTokenSource.Token);
-			}
-			catch (Exception ex) {
-				Assert.Ignore(
-					$"Skipping destructive sync-schemas MCP end-to-end test because cliogate could not be installed or verified for '{environmentName}'. {ex.Message}");
-			}
-
-			packageName = $"Pkg{Guid.NewGuid():N}".Substring(0, 18);
-			entitySchemaName = $"Usr{Guid.NewGuid():N}";
-			lookupSchemaName = $"Usr{Guid.NewGuid():N}";
-			await AddPackageAsync(settings, workspacePath, packageName, cancellationTokenSource.Token);
-			await PushWorkspaceAsync(
-				settings,
-				workspacePath,
-				environmentName!,
-				packageName,
-				cancellationTokenSource.Token);
+		if (!requireEnvironment) {
+			// Non-environment tests only need a live MCP session; they never touch the workspace or a
+			// package, so skip the shared sandbox provisioning entirely and use a throwaway root that is
+			// owned (and deleted) by the per-test context.
+			string throwawayRoot = Path.Combine(Path.GetTempPath(), $"clio-sync-schemas-e2e-{Guid.NewGuid():N}");
+			return new ArrangeContext(
+				throwawayRoot,
+				WorkspacePath: throwawayRoot,
+				EnvironmentName: null,
+				PackageName: null,
+				EntitySchemaName: null,
+				LookupSchemaName: null,
+				lookupColumnName,
+				OwnsRootDirectory: true,
+				session,
+				cancellationTokenSource);
 		}
 
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		(string environmentName, string packageName) =
+			await EnsureSharedSandboxPackageAsync(settings, cancellationTokenSource.Token);
+
+		// Each environment-bound test gets its own entity and lookup schemas inside the shared package so
+		// concurrent creates never collide; the schema names are unique guids while the column names are
+		// constants that live in distinct schemas, so they do not clash either.
+		string entitySchemaName = $"Usr{Guid.NewGuid():N}";
+		string lookupSchemaName = $"Usr{Guid.NewGuid():N}";
 		return new ArrangeContext(
-			rootDirectory,
-			workspacePath,
+			_sharedRootDirectory!,
+			_sharedWorkspacePath!,
 			environmentName,
 			packageName,
 			entitySchemaName,
 			lookupSchemaName,
 			lookupColumnName,
+			OwnsRootDirectory: false,
 			session,
 			cancellationTokenSource);
 	}
 
-	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
+	/// <summary>
+	/// Lazily provisions a single sandbox workspace + package (created, pushed and unlocked once) that every
+	/// environment-bound sync-schemas test shares, replacing the former per-test push-workspace round trip.
+	/// Subsequent calls return the cached package. Guarded by Assert.Ignore so only the environment-bound
+	/// tests skip when the stand is unavailable; relies on the fixture being [NonParallelizable].
+	/// </summary>
+	private async Task<(string environmentName, string packageName)> EnsureSharedSandboxPackageAsync(
+		McpE2ESettings settings,
+		CancellationToken cancellationToken) {
+		if (_sharedPackageName is not null) {
+			return (_sharedEnvironmentName!, _sharedPackageName);
+		}
+
+		string environmentName = await ResolveReachableEnvironmentAsync(settings, cancellationToken);
+		try {
+			await ClioCliCommandRunner.EnsureCliogateInstalledAsync(settings, environmentName, cancellationToken);
+		}
+		catch (Exception ex) {
+			Assert.Ignore(
+				$"Skipping destructive sync-schemas MCP end-to-end test because cliogate could not be installed or verified for '{environmentName}'. {ex.Message}");
+		}
+
+		string rootDirectory = Path.Combine(Path.GetTempPath(), $"clio-sync-schemas-e2e-{Guid.NewGuid():N}");
+		Directory.CreateDirectory(rootDirectory);
+		string workspaceName = $"workspace-{Guid.NewGuid():N}";
+		string workspacePath = Path.Combine(rootDirectory, workspaceName);
+		string packageName = $"Pkg{Guid.NewGuid():N}".Substring(0, 18);
+
+		await CreateEmptyWorkspaceAsync(settings, rootDirectory, workspaceName, cancellationToken);
+		await AddPackageAsync(settings, workspacePath, packageName, cancellationToken);
+		await PushWorkspaceAsync(settings, workspacePath, environmentName, packageName, cancellationToken);
+
+		_sharedRootDirectory = rootDirectory;
+		_sharedWorkspacePath = workspacePath;
+		_sharedEnvironmentName = environmentName;
+		_sharedPackageName = packageName;
+		return (environmentName, packageName);
+	}
+
+	private static async Task<string> ResolveReachableEnvironmentAsync(
+		McpE2ESettings settings,
+		CancellationToken cancellationToken) {
 		string? configuredEnvironmentName = settings.Sandbox.EnvironmentName;
 		if (!string.IsNullOrWhiteSpace(configuredEnvironmentName) &&
-			await CanReachEnvironmentAsync(settings, configuredEnvironmentName)) {
+			await CanReachEnvironmentAsync(settings, configuredEnvironmentName, cancellationToken)) {
 			return configuredEnvironmentName;
 		}
 
 		const string fallbackEnvironmentName = "d2";
-		if (await CanReachEnvironmentAsync(settings, fallbackEnvironmentName)) {
+		if (await CanReachEnvironmentAsync(settings, fallbackEnvironmentName, cancellationToken)) {
 			return fallbackEnvironmentName;
 		}
 
@@ -390,10 +455,14 @@ public sealed class SchemaSyncToolE2ETests {
 		return string.Empty;
 	}
 
-	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) {
+	private static async Task<bool> CanReachEnvironmentAsync(
+		McpE2ESettings settings,
+		string environmentName,
+		CancellationToken cancellationToken) {
 		ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(
 			settings,
-			["ping-app", "-e", environmentName]);
+			["ping-app", "-e", environmentName, "--timeout", "30000"],
+			cancellationToken: cancellationToken);
 		return result.ExitCode == 0;
 	}
 
@@ -447,9 +516,9 @@ public sealed class SchemaSyncToolE2ETests {
 		string lookupSchemaName,
 		string lookupColumnName,
 		CancellationToken cancellationToken) {
-		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
-		tools.Select(tool => tool.Name).Should().Contain(ToolName,
-			because: "sync-schemas must be advertised before the end-to-end call can be executed");
+		IReadOnlyCollection<string> reachableToolNames = await session.ListReachableToolNamesAsync(cancellationToken);
+		reachableToolNames.Should().Contain(ToolName,
+			because: "sync-schemas must be discoverable via the get-tool-contract compact index before the end-to-end call can be executed");
 
 		return await session.CallToolAsync(
 			ToolName,
@@ -514,9 +583,9 @@ public sealed class SchemaSyncToolE2ETests {
 		string entitySchemaName,
 		string columnName,
 		CancellationToken cancellationToken) {
-		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
-		tools.Select(tool => tool.Name).Should().Contain(ToolName,
-			because: "sync-schemas must be advertised before the structured default-value scenario can be executed");
+		IReadOnlyCollection<string> reachableToolNames = await session.ListReachableToolNamesAsync(cancellationToken);
+		reachableToolNames.Should().Contain(ToolName,
+			because: "sync-schemas must be discoverable via the get-tool-contract compact index before the structured default-value scenario can be executed");
 
 		return await session.CallToolAsync(
 			ToolName,
@@ -697,6 +766,9 @@ public sealed class SchemaSyncToolE2ETests {
 			string.Equals(result.GetProperty("schema-name").GetString(), schemaName, StringComparison.Ordinal));
 	}
 
+	private static string FormatPayload(JsonElement payload) =>
+		JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = false });
+
 	private static string[] GetMessageValues(JsonElement result) {
 		if (!result.TryGetProperty("messages", out JsonElement messagesElement) ||
 			messagesElement.ValueKind != JsonValueKind.Array) {
@@ -712,6 +784,17 @@ public sealed class SchemaSyncToolE2ETests {
 		];
 	}
 
+	// Binding-layer failures reach the client through several equivalent surfaces on the lazy tool
+	// surface: a native resident call fails with the SDK diagnostics ("An error occurred invoking
+	// 'sync-schemas'." / "Failed to deserialize argument 'args' for MCP tool 'sync-schemas'"), while a
+	// clio-run-dispatched call can fail at TWO different layers — (a) the executor's own dispatch wraps
+	// a target-side failure and names the target ("Error: tool 'sync-schemas' failed: ..." / "'args' for
+	// tool 'sync-schemas' must be a JSON object ..."), or (b) a payload that clio-run's OWN `args`
+	// parameter (typed `Dictionary<string, JsonElement>`) cannot bind (e.g. a JSON string instead of an
+	// object) fails the SDK's per-parameter deserializer for clio-run itself, BEFORE dispatch ever runs —
+	// that diagnostic names 'clio-run', not the target tool, because the target was never reached. All
+	// four shapes mean the same contract — the failure happened before sync-schemas executed — so the
+	// assert accepts either tool name being identified.
 	private static void AssertInvocationFailure(CallToolResult callResult, string because) {
 		callResult.IsError.Should().BeTrue(
 			because: because);
@@ -720,8 +803,13 @@ public sealed class SchemaSyncToolE2ETests {
 		string diagnostics = string.Join(
 			Environment.NewLine,
 			(callResult.Content ?? []).Select(content => content.ToString()));
-		diagnostics.Should().Contain("An error occurred invoking 'sync-schemas'.",
-			because: "the transport-level failure should surface as the generic invocation error for the tool");
+		(diagnostics.Contains(ToolName, StringComparison.Ordinal)
+			|| diagnostics.Contains(ClioRunTool.ToolName, StringComparison.Ordinal))
+			.Should().BeTrue(
+				because: "the binding-layer failure diagnostic should identify either the sync-schemas tool or, when clio-run's own argument binding rejected the payload before dispatch, clio-run itself");
+		diagnostics.Should().MatchRegex(
+			"(An error occurred invoking|Failed to deserialize argument|failed:|must be a JSON object)",
+			because: "the failure should surface a binding-layer diagnostic — either the SDK's native message or the clio-run executor's wrapped equivalent");
 	}
 
 	[Test]
@@ -733,9 +821,10 @@ public sealed class SchemaSyncToolE2ETests {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: false);
 		string missingEnv = $"missing-sync-schemas-env-{Guid.NewGuid():N}";
-		IList<McpClientTool> tools = await context.Session.ListToolsAsync(context.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(ToolName,
-			because: "sync-schemas must be advertised before the flat seed-rows validation scenario can be invoked");
+		IReadOnlyCollection<string> reachableToolNames =
+			await context.Session.ListReachableToolNamesAsync(context.CancellationTokenSource.Token);
+		reachableToolNames.Should().Contain(ToolName,
+			because: "sync-schemas must be discoverable via the get-tool-contract compact index before the flat seed-rows validation scenario can be invoked");
 
 		// Act - seed-rows use the flat {"Name":"New"} format (missing "values" wrapper)
 		CallToolResult callResult = await context.Session.CallToolAsync(
@@ -916,7 +1005,7 @@ public sealed class SchemaSyncToolE2ETests {
 		};
 	}
 
-	private sealed record ArrangeContext(
+	private new sealed record ArrangeContext(
 		string RootDirectory,
 		string WorkspacePath,
 		string? EnvironmentName,
@@ -924,15 +1013,18 @@ public sealed class SchemaSyncToolE2ETests {
 		string? EntitySchemaName,
 		string? LookupSchemaName,
 		string LookupColumnName,
+		bool OwnsRootDirectory,
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
 
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
+		public ValueTask DisposeAsync() {
 			CancellationTokenSource.Dispose();
-			if (Directory.Exists(RootDirectory)) {
+			// Environment-bound contexts reuse the shared fixture workspace (see EnsureSharedSandboxPackageAsync),
+			// which is deleted once in [OneTimeTearDown]; only the per-test throwaway roots are owned here.
+			if (OwnsRootDirectory && Directory.Exists(RootDirectory)) {
 				Directory.Delete(RootDirectory, recursive: true);
 			}
+			return ValueTask.CompletedTask;
 		}
 	}
 }

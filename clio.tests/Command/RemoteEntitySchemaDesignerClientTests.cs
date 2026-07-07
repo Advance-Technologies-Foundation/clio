@@ -72,6 +72,35 @@ internal class RemoteEntitySchemaDesignerClientTests
 	}
 
 	[Test]
+	[Description("Surfaces the missing-dependency root cause and the add-package-dependency recovery when the server returns an HTML error page, so an agent reaches the one-call fix instead of burning workaround detours (ENG-91314).")]
+	public void GetSchemaDesignItem_ShouldSurfaceDependencyRecovery_WhenServerReturnsHtmlErrorPage() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns("<!DOCTYPE html><html><body>Server Error in '/' Application.</body></html>");
+
+		// Act
+		Action act = () => _client.GetSchemaDesignItem(new GetSchemaDesignItemRequestDto {
+			Name = "Opportunity",
+			PackageUId = Guid.Parse("22222222-2222-2222-2222-222222222222"),
+			UseFullHierarchy = true
+		}, new RemoteCommandOptions());
+
+		// Assert
+		InvalidOperationException exception = act.Should().Throw<InvalidOperationException>(
+				because: "an HTML error page is never a valid designer payload and must fail loudly")
+			.Which;
+		exception.Message.Should().Contain("add-package-dependency",
+			because: "the missing-dependency cause is the most common one and the message must point the caller at the one-call fix");
+		exception.Message.Should().Contain("MISSING A DEPENDENCY",
+			because: "the message must name the missing-dependency root cause that misdirected agents previously missed");
+		exception.Message.Should().Contain("find-entity-schema",
+			because: "the stale-table cause must remain documented as the secondary check");
+		exception.Message.Should().Contain("package-dependencies",
+			because: "the message must actively point MCP agents at the package-dependencies guidance article");
+	}
+
+	[Test]
 	[Description("Posts schema UIds to SchemaDesignerRequest so saved entity schemas can be materialized in the runtime database.")]
 	public void SaveSchemaDbStructure_PostsSchemaDesignerRequest() {
 		// Arrange
@@ -150,6 +179,55 @@ internal class RemoteEntitySchemaDesignerClientTests
 			.Replace("\r", string.Empty)
 			.Replace("\n", string.Empty);
 		return normalizedBody.Contains($"\"{flagName}\":true", StringComparison.Ordinal);
+	}
+
+	[Test]
+	[Description("Posts to WorkspaceExplorerService.svc/RunODataBuild so a freshly published schema is rebuilt into the OData entities assembly without a manual full compile (ENG-92048).")]
+	public void RunODataBuild_ShouldPostToWorkspaceExplorerWithSingleAttempt_WhenInvoked() {
+		// Arrange
+		_serviceUrlBuilder.Build("ServiceModel/WorkspaceExplorerService.svc")
+			.Returns("http://local/ServiceModel/WorkspaceExplorerService.svc");
+		int capturedMaxAttempts = -1;
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+			Arg.Any<int>())
+			.Returns(callInfo => {
+				capturedMaxAttempts = callInfo.ArgAt<int>(3);
+				return "{\"success\":true}";
+			});
+
+		// Act — seed a non-default MaxAttempts (default is 3) so the assertion below actively distinguishes
+		// the hard-coded literal 1 from a regression that accidentally forwards options.MaxAttempts.
+		BaseResponse response = _client.RunODataBuild(new RemoteCommandOptions { MaxAttempts = 5 });
+
+		// Assert
+		response.Success.Should().BeTrue(because: "a successful RunODataBuild response must surface to the caller");
+		_applicationClient.Received(1).ExecutePostRequest(
+			"http://local/ServiceModel/WorkspaceExplorerService.svc/RunODataBuild",
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+		capturedMaxAttempts.Should().Be(1,
+			because: "triggering the OData build is non-idempotent — it must issue exactly one attempt with no retry so a timed-out trigger does not stack concurrent builds, regardless of the options value (seeded to 5 here)");
+	}
+
+	[Test]
+	[Description("Throws an actionable error when RunODataBuild reports failure so the caller can decide how to react (the creator swallows it as a warning) (ENG-92048).")]
+	public void RunODataBuild_ShouldThrow_WhenServiceReportsFailure() {
+		// Arrange
+		_serviceUrlBuilder.Build("ServiceModel/WorkspaceExplorerService.svc")
+			.Returns("http://local/ServiceModel/WorkspaceExplorerService.svc");
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+			Arg.Any<int>())
+			.Returns("{\"success\":false,\"errorInfo\":{\"message\":\"OData build refused.\"}}");
+
+		// Act
+		Action act = () => _client.RunODataBuild(new RemoteCommandOptions());
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>()
+			.WithMessage("*OData build refused.*",
+				because: "an unsuccessful RunODataBuild response must surface the server error message");
 	}
 
 	[Test]

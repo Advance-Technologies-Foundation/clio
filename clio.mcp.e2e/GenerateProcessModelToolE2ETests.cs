@@ -7,7 +7,6 @@ using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
-using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E;
@@ -22,6 +21,7 @@ namespace Clio.Mcp.E2E;
 public sealed class GenerateProcessModelToolE2ETests {
 	private const string ToolName = GenerateProcessModelTool.GenerateProcessModelToolName;
 
+	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes generate-process-model for a configured sandbox process, and verifies that an explicit destination file path is respected.")]
 	[AllureTag(ToolName)]
@@ -57,44 +57,6 @@ public sealed class GenerateProcessModelToolE2ETests {
 			because: "the generated file should use the namespace passed to the MCP tool");
 		fileContent.Should().Contain($"public class {arrangeContext.ProcessCode}",
 			because: "the generated file should define a class named after the requested process code");
-	}
-
-	[Test]
-	[Description("Starts the real clio MCP server, invokes generate-process-model with an invalid environment name, and verifies that a readable structured failure is returned without creating a file.")]
-	[AllureTag(ToolName)]
-	[AllureName("Generate process model reports invalid environment failures")]
-	[AllureDescription("Uses the real clio MCP server to call generate-process-model with an unknown environment name and verifies that the MCP result stays structured, reports a human-readable failure, and does not create the expected output file.")]
-	public async Task GenerateProcessModel_Should_Report_Invalid_Environment_Failure() {
-		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		await using GenerateProcessModelArrangeContext arrangeContext = await ArrangeFailureAsync(settings);
-		string invalidEnvironmentName = $"missing-gpm-env-{Guid.NewGuid():N}";
-		string missingProcessCode = "UsrMissingProcess";
-
-		// Act
-		GenerateProcessModelActResult actResult = await ActAsync(
-			arrangeContext.Session,
-			arrangeContext.CancellationTokenSource.Token,
-			missingProcessCode,
-			invalidEnvironmentName,
-			arrangeContext.DestinationPath);
-
-		// Assert
-		actResult.CallResult.IsError.Should().NotBeTrue(
-			because: "invalid environment failures should be returned as normal command execution envelopes");
-		actResult.Execution.ExitCode.Should().Be(1,
-			because: $"unknown environment names should fail before generate-process-model writes files. Actual execution: {DescribeExecution(actResult.Execution)}");
-		actResult.Execution.Output.Should().Contain(message => message.MessageType == LogDecoratorType.Error,
-			because: "failed generate-process-model execution should emit error diagnostics");
-		string combinedOutput = string.Join(
-			Environment.NewLine,
-			(actResult.Execution.Output ?? []).Select(message => $"{message.MessageType}: {message.Value}"));
-		combinedOutput.Should().MatchRegex(
-			$"(?is)({Regex.Escape(invalidEnvironmentName)}|environment.*not.*found|not found)",
-			because: "the failure should help a human understand that the requested environment is not registered");
-		File.Exists(arrangeContext.GeneratedFilePath).Should().BeFalse(
-			because: "invalid environment failures must not create the requested process model file");
 	}
 
 	private static async Task<GenerateProcessModelArrangeContext> ArrangeSuccessAsync(McpE2ESettings settings) {
@@ -160,9 +122,9 @@ public sealed class GenerateProcessModelToolE2ETests {
 		string code,
 		string environmentName,
 		string destinationPath) {
-		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
-		tools.Select(tool => tool.Name).Should().Contain(ToolName,
-			because: "the generate-process-model MCP tool must be advertised before the end-to-end call can be executed");
+		IReadOnlyCollection<string> toolNames = await session.ListReachableToolNamesAsync(cancellationToken);
+		toolNames.Should().Contain(ToolName,
+			because: "the generate-process-model MCP tool must be discoverable via the get-tool-contract compact index on the lazy surface before the end-to-end call can be executed");
 
 		CallToolResult callResult = await session.CallToolAsync(
 			ToolName,

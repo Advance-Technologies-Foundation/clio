@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Text.Json;
 using Clio.Command;
 using FluentAssertions;
 using NUnit.Framework;
@@ -3711,8 +3712,8 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
-	[Description("Custom validators with any logic are allowed — guidance steers AI toward standard validators; runtime validation does not second-guess custom implementations.")]
-	public void ValidateStandardValidatorUsage_CustomMaxLengthStyleValidator_ReturnsValid() {
+	[Description("Custom validator whose name contains 'MaxLength' is rejected in favour of the built-in crt.MaxLength.")]
+	public void ValidateStandardValidatorUsage_CustomMaxLengthStyleValidator_ReturnsInvalid() {
 		// Arrange
 		string viewConfigDiff = """
 			[
@@ -3764,10 +3765,104 @@ public sealed class SchemaValidationServiceTests
 		SchemaValidationResult result = SchemaValidationService.ValidateStandardValidatorUsage(body);
 
 		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "a custom validator whose name contains 'MaxLength' re-implements crt.MaxLength and must be replaced with the built-in");
+		result.Errors.Should().ContainSingle(error =>
+			error.Contains("usr.NameMaxLength") && error.Contains("crt.MaxLength"),
+			because: "the error should identify both the rejected validator and the built-in replacement");
+	}
+
+	[Test]
+	[Description("Control binding to a proxy view-model attribute (flat form, no path:[]) gets an error message that names both the proxy binding and the expected datasource-derived binding.")]
+	public void ValidateInsertedFieldSelfConsistency_ProxyBindingFlatForm_ErrorNamesExpectedDatasourceBinding() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"UsrStatus",
+						"values":
+							{
+								"type":"crt.ComboBox",
+								"label":"$Resources.Strings.PDS_UsrStatus",
+								"control":"$UsrStatus"
+							}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"merge",
+						"values":{"UsrStatus":{"modelConfig":{"path":"PDS.UsrStatus"}}}
+					}
+				]
+			""");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateInsertedFieldSelfConsistency(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "the attribute is declared in flat form without the required path:[] nesting");
+		result.Errors.Should().Contain(error =>
+			error.Contains("$UsrStatus") && error.Contains("$PDS_UsrStatus"),
+			because: "the error must name both the rejected proxy binding and the expected datasource-derived binding so the agent knows what to replace it with");
+	}
+
+	[Test]
+	[Description("Custom validator whose name does not contain 'MaxLength' is not rejected — only MaxLength re-implementations are flagged.")]
+	public void ValidateStandardValidatorUsage_CustomNonMaxLengthValidator_ReturnsValid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""
+				[
+					{
+						"operation":"insert",
+						"name":"UsrName",
+						"values":{"type":"crt.Input","control":"$PDS_UsrName"}
+					}
+				]
+			""",
+			"""
+				[
+					{
+						"operation":"merge",
+						"path":[],
+						"values":{"attributes":{"PDS_UsrName":{"modelConfig":{"path":"PDS.UsrName"}}}}
+					}
+				]
+			""");
+		string body2 = body.Replace(
+			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/",
+			"""
+				/**SCHEMA_VALIDATORS*/
+					{
+						"usr.UpperCaseOnly": {
+							"validator":
+								function(config){
+									return function(control){
+										if (control.value && control.value !== control.value.toUpperCase()) {
+											return {"usr.UpperCaseOnly": { message: config.message }};
+										} return null;
+									};
+								},
+							"params":[{"name":"message"}],
+							"async":false
+						}
+					}
+				/**SCHEMA_VALIDATORS*/
+			""");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateStandardValidatorUsage(body2);
+
+		// Assert
 		result.IsValid.Should().BeTrue(
-			because: "runtime validation no longer second-guesses whether a custom validator duplicates a built-in; guidance steers the AI at authoring time");
+			because: "validators without 'MaxLength' in their name are not flagged as built-in reimplementations");
 		result.Errors.Should().BeEmpty(
-			because: "custom validators with .length checks are valid — only structural schema errors are rejected at runtime");
+			because: "only MaxLength-named validators trigger the built-in replacement error");
 	}
 
 	[Test]

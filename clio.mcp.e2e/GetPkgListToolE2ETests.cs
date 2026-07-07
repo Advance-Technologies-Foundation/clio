@@ -15,6 +15,7 @@ namespace Clio.Mcp.E2E;
 /// End-to-end tests for the list-packages MCP tool.
 /// </summary>
 [TestFixture]
+[Category("McpE2E.Sandbox")]
 [AllureNUnit]
 [AllureFeature("list-packages")]
 [NonParallelizable]

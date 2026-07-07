@@ -1,11 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
-using System.ComponentModel.DataAnnotations;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Command.BusinessRules;
+using Clio.Command.McpServer;
 using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
@@ -14,28 +15,82 @@ namespace Clio.Command.McpServer.Tools;
 public sealed class ToolContractGetTool {
 	internal const string ToolName = "get-tool-contract";
 
+	/// <summary>
+	/// In-band discovery hint appended to "tool not found" / "unknown tool" error messages so an agent
+	/// whose guessed name (and any "did you mean" shortlist) missed still has an explicit path to the full
+	/// catalog: the compact index returned by <c>get-tool-contract</c> with no arguments. Wording mirrors
+	/// <c>McpServerInstructions</c> ("compact index of every tool") for a single consistent phrasing.
+	/// </summary>
+	internal const string DiscoveryHint =
+		"Call get-tool-contract with no arguments for a compact index of every tool.";
+
+	private readonly IMcpToolInvokerRegistry? _toolInvokerRegistry;
+
+	/// <summary>
+	/// Initializes the tool without a registry. Curated contracts and the lossy reflection fallback
+	/// still resolve; only registry-derived contracts for uncurated tools are unavailable.
+	/// </summary>
+	public ToolContractGetTool()
+		: this(null) {
+	}
+
+	/// <summary>
+	/// Initializes the tool with the invoker registry so contracts for UNCURATED tools are derived from
+	/// the same MCP tool input schema <c>clio-run</c> / <c>clio-run-destructive</c> dispatch against,
+	/// keeping the advertised contract aligned with the real invokable argument shape.
+	/// </summary>
+	/// <param name="toolInvokerRegistry">
+	/// The MCP invoker registry; resolved from DI by the SDK per call (may be <c>null</c> in tests that
+	/// only exercise curated contracts).
+	/// </param>
+	public ToolContractGetTool(IMcpToolInvokerRegistry? toolInvokerRegistry) {
+		_toolInvokerRegistry = toolInvokerRegistry;
+	}
+
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
-	[Description("Returns the authoritative clio MCP executable contract for discovery, inspection, and mutation tools, including parameter schema, aliases, defaults, examples, and preferred or fallback workflow hints.")]
+	[Description("Returns clio MCP tool contracts. Omit tool-names for a compact index of ALL tools (names + one-line purpose + safety flags) — cheap discovery without full schemas; pass tool-names to expand those tools' full contracts (parameter schema, aliases, defaults, examples, and preferred or fallback workflow hints); pass detail=full (with no tool-names) to expand every tool's full contract at once.")]
 	public ToolContractGetResponse GetToolContracts(
-		[Description("Parameters: tool-names (optional array of tool names). Omit to return the canonical clio MCP contract set.")]
-		[Required]
-		ToolContractGetArgs args) {
+		[Description("Parameters: tool-names (optional array of tool names) and detail (optional 'index' | 'full'). Omit entirely for a compact index of all tools; pass tool-names for full contracts; pass detail=full to expand all full contracts.")]
+		ToolContractGetArgs? args = null) {
+		// A natural no-arguments discovery call (the first call an agent makes) sends no args object at all.
+		// Treat a missing args object exactly like an omitted-tool-names call so it yields the compact index:
+		// new ToolContractGetArgs() has ToolNames=null / Detail=null, which the downstream logic resolves to
+		// the index path unchanged. All recovery/alias/detail handling below then operates on a non-null args.
+		args ??= new ToolContractGetArgs();
 		try {
+			// Field-test defect #4: an agent that omits the SDK's nested `args` wrapper and calls flat
+			// (e.g. {"tool-names":[...]} or {"name":"x"}) has those keys land in the [JsonExtensionData]
+			// overflow bag rather than binding to ToolNames. Recover a flat tool-names / name (and the
+			// known kebab/camel/snake spellings) from the overflow when ToolNames was not bound and the
+			// overflow contains ONLY name-bearing keys, so the natural flat shape resolves contracts
+			// instead of failing. A genuinely-unknown key still falls through to the helpful alias error.
+			// Resolve detail first so the flat path below can honor a co-present flat `detail` key, and so
+			// {"tool-names":[...],"detail":"full"} flat calls resolve named contracts instead of failing.
+			string? detail = TryRecoverFlatDetail(args) ?? args.Detail;
+			IReadOnlyList<string>? flatToolNames = TryRecoverFlatToolNames(args);
+			if (flatToolNames is not null) {
+				return ToolContractCatalog.GetContracts(flatToolNames, _toolInvokerRegistry, detail);
+			}
 			string? aliasError = CollectLegacyAliasError(args);
 			if (aliasError is not null) {
 				return new ToolContractGetResponse(
 					false,
-					Error: new ToolContractError("invalid-parameter-alias", aliasError));
+					Error: new ToolContractError(
+						"invalid-parameter-alias",
+						aliasError + " " + ExpectedArgsShapeHint));
 			}
-			return ToolContractCatalog.GetContracts(args.ToolNames);
+			return ToolContractCatalog.GetContracts(args.ToolNames, _toolInvokerRegistry, detail);
 		} catch (Exception ex) {
 			return new ToolContractGetResponse(
 				false,
 				Error: new ToolContractError(
 					"internal-error",
-					$"get-tool-contract failed: {ex.Message}. Expected args shape: {{\"tool-names\": [\"list-pages\", ...] }} or omit tool-names to list all."));
+					$"get-tool-contract failed: {ex.Message}. {ExpectedArgsShapeHint}"));
 		}
 	}
+
+	private const string ExpectedArgsShapeHint =
+		"Expected args shape: {\"tool-names\": [\"list-pages\", ...] } or omit tool-names to list all.";
 
 	private static readonly Dictionary<string, string> LegacyAliases = new(StringComparer.Ordinal) {
 		["toolNames"] = ToolNamesParam,
@@ -47,28 +102,176 @@ public sealed class ToolContractGetTool {
 		["names"] = ToolNamesParam
 	};
 
+	// Flat top-level keys that carry the tool name(s) when the nested `args` wrapper is omitted. Limited
+	// to the canonical 'tool-names' (which lands in the overflow bag only when the call is flat) and the
+	// natural 'name' spelling. The camelCase/snake_case legacy spellings (toolName, tool_names, ...) are
+	// deliberately NOT recovered here — they keep returning the teaching alias error from LegacyAliases.
+	private static readonly HashSet<string> FlatToolNameKeys = new(StringComparer.Ordinal) {
+		ToolNamesParam,
+		"name"
+	};
+
 	private const string ToolNamesParam = "tool-names";
 
+	private const string DetailParam = "detail";
+
+	/// <summary>
+	/// Recovers a flat <c>detail</c> value from the overflow bag when the caller sent <c>detail</c> at the
+	/// top level without the SDK's nested <c>args</c> wrapper. Returns the string value when the overflow
+	/// carries a <c>detail</c> string key; otherwise <c>null</c> so <see cref="ToolContractGetArgs.Detail"/>
+	/// (the bound nested value) is used instead.
+	/// </summary>
+	private static string? TryRecoverFlatDetail(ToolContractGetArgs args) {
+		Dictionary<string, JsonElement>? overflow = args.ExtensionData;
+		if (overflow is null
+			|| !overflow.TryGetValue(DetailParam, out JsonElement value)
+			|| value.ValueKind != JsonValueKind.String) {
+			return null;
+		}
+		string? detail = value.GetString();
+		return string.IsNullOrWhiteSpace(detail) ? null : detail.Trim();
+	}
+
+	/// <summary>
+	/// Recovers a flat <c>tool-names</c> payload from the overflow bag when the caller sent the request
+	/// without the SDK's nested <c>args</c> wrapper. Returns the recovered names only when <see
+	/// cref="ToolContractGetArgs.ToolNames"/> was not bound and EVERY overflow key is a recognized
+	/// name-bearing key; otherwise returns <c>null</c> so an unknown key still produces the helpful
+	/// alias error. String and string-array overflow values are both accepted.
+	/// </summary>
+	private static IReadOnlyList<string>? TryRecoverFlatToolNames(ToolContractGetArgs args) {
+		if (args.ToolNames is { Count: > 0 }) {
+			return null;
+		}
+		Dictionary<string, JsonElement>? overflow = args.ExtensionData;
+		if (overflow is null || overflow.Count == 0) {
+			return null;
+		}
+		// A co-present flat `detail` key is recovered separately (TryRecoverFlatDetail) and is NOT a
+		// name-bearing key, so exclude it before deciding whether the remaining keys are all flat
+		// tool-name keys. This lets {"tool-names":[...],"detail":"full"} flat calls recover the names
+		// instead of mis-reporting `tool-names` as an unknown arg.
+		List<KeyValuePair<string, JsonElement>> nameEntries = overflow
+			.Where(pair => !string.Equals(pair.Key, DetailParam, StringComparison.Ordinal))
+			.ToList();
+		if (nameEntries.Count == 0 || !nameEntries.All(pair => FlatToolNameKeys.Contains(pair.Key))) {
+			return null;
+		}
+		List<string> recovered = [];
+		// Every name-bearing value must contribute a valid name; .All short-circuits on the first
+		// malformed value (mirrors the original early-return) so recovery is abandoned wholesale.
+		if (!nameEntries.All(pair => TryAppendFlatToolName(pair.Value, recovered))) {
+			return null;
+		}
+		return recovered.Count > 0 ? recovered : null;
+	}
+
+	/// <summary>
+	/// Appends the tool name(s) carried by a single overflow <paramref name="value"/> to
+	/// <paramref name="recovered"/>. A string value contributes itself; an array value contributes each
+	/// of its string items. Blank entries are skipped. Returns <c>false</c> when the value is neither a
+	/// string nor an array (a malformed name-bearing key), signalling the caller to abandon recovery so
+	/// the request falls through to the alias error path; otherwise returns <c>true</c>.
+	/// </summary>
+	private static bool TryAppendFlatToolName(JsonElement value, List<string> recovered) {
+		switch (value.ValueKind) {
+			case JsonValueKind.String:
+				AddIfNotBlank(value.GetString(), recovered);
+				return true;
+			case JsonValueKind.Array:
+				AppendStringArrayItems(value, recovered);
+				return true;
+			default:
+				// A name-bearing key carrying a non-string/non-array value is malformed; do not
+				// recover — let it fall through to the alias error path with the shape hint.
+				return false;
+		}
+	}
+
+	/// <summary>
+	/// Appends every string item of a JSON array <paramref name="array"/> to <paramref name="recovered"/>,
+	/// skipping non-string items and blank values.
+	/// </summary>
+	private static void AppendStringArrayItems(JsonElement array, List<string> recovered) {
+		foreach (JsonElement item in array.EnumerateArray()) {
+			if (item.ValueKind == JsonValueKind.String) {
+				AddIfNotBlank(item.GetString(), recovered);
+			}
+		}
+	}
+
+	/// <summary>
+	/// Adds <paramref name="name"/> (trimmed) to <paramref name="recovered"/> when it is neither
+	/// <c>null</c> nor whitespace.
+	/// </summary>
+	private static void AddIfNotBlank(string? name, List<string> recovered) {
+		if (!string.IsNullOrWhiteSpace(name)) {
+			recovered.Add(name.Trim());
+		}
+	}
+
 	private static string? CollectLegacyAliasError(ToolContractGetArgs args) {
+		// A recognized flat `detail` key is already recovered by TryRecoverFlatDetail, so drop it from the
+		// overflow before the alias check to avoid reporting it as an unknown arg. Any OTHER unknown key
+		// still produces the helpful teaching error.
+		IReadOnlyDictionary<string, JsonElement>? overflow = args.ExtensionData;
+		if (overflow is not null && overflow.ContainsKey(DetailParam)) {
+			overflow = overflow
+				.Where(pair => !string.Equals(pair.Key, DetailParam, StringComparison.Ordinal))
+				.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+		}
 		return McpToolArgumentSupport.BuildLegacyAliasError(
-			args.ExtensionData, LegacyAliases, ". tool-names must be an array of strings.",
+			overflow, LegacyAliases, ". tool-names must be an array of strings.",
 			"Valid: tool-names (array of strings). Omit args to list all tools.");
 	}
 }
 
 public sealed record ToolContractGetArgs(
 	[property: JsonPropertyName("tool-names")]
-	[property: Description("Optional array of tool names. Omit to return the canonical clio MCP contract set.")]
-	IReadOnlyList<string>? ToolNames = null
+	[property: Description("Optional array of tool names. Omit to return a compact index of all clio MCP tools (names + one-line purpose); pass names to expand their full contracts.")]
+	IReadOnlyList<string>? ToolNames = null,
+	[property: JsonPropertyName("detail")]
+	[property: Description("Optional detail level used only when tool-names is omitted: 'index' (default) returns the compact index of all tools; 'full' returns the full contracts of all tools (legacy behavior).")]
+	string? Detail = null
 ) {
-	[System.Text.Json.Serialization.JsonExtensionData]
-	public Dictionary<string, System.Text.Json.JsonElement>? ExtensionData { get; init; }
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
 }
 
 public sealed record ToolContractGetResponse(
 	[property: JsonPropertyName("success")] bool Success,
 	[property: JsonPropertyName("tools")] IReadOnlyList<ToolContractDefinition>? Tools = null,
-	[property: JsonPropertyName("error")] ToolContractError? Error = null
+	[property: JsonPropertyName("error")] ToolContractError? Error = null,
+	[property: JsonPropertyName("index")] IReadOnlyList<ToolContractIndexEntry>? Index = null
+);
+
+/// <summary>
+/// A compact, discovery-only entry for one clio MCP tool. It carries the tool name, a one-line purpose
+/// distilled from the tool's full description, and lightweight safety/availability flags so an agent can
+/// see WHAT tools exist without paying for the heavy full contract (input schema, examples, flows, error
+/// contract). This is the Anthropic <c>defer_loading</c> shape — names resident, schemas on demand. Call
+/// <c>get-tool-contract</c> with the specific <c>tool-names</c> to expand any entry into its full contract.
+/// </summary>
+/// <param name="Name">The stable MCP tool name (kebab-case), matching the full contract's name.</param>
+/// <param name="Purpose">A one-line purpose distilled from the first sentence of the tool's description.</param>
+/// <param name="ContractAvailable">Whether a full curated contract is reachable by naming this tool.</param>
+/// <param name="Resident">
+/// Whether the tool is present in <c>tools/list</c> and therefore called natively (<c>true</c>), or hidden
+/// from <c>tools/list</c> and reachable only through <c>clio-run</c> / <c>clio-run-destructive</c>
+/// (<c>false</c>). Derived from <see cref="McpCoreToolProfile.IsResident"/>, independent of whether an
+/// invoker registry is supplied. Never wrap a resident tool in <c>clio-run</c>.
+/// </param>
+/// <param name="Destructive">
+/// Whether the tool is destructive (modifies/deletes data) when this is cheaply known from the MCP tool
+/// annotation; <c>null</c> when the destructive hint is unavailable (for example when no invoker registry
+/// is supplied).
+/// </param>
+public sealed record ToolContractIndexEntry(
+	[property: JsonPropertyName("name")] string Name,
+	[property: JsonPropertyName("purpose")] string Purpose,
+	[property: JsonPropertyName("contract-available")] bool ContractAvailable,
+	[property: JsonPropertyName("resident")] bool Resident,
+	[property: JsonPropertyName("destructive")] bool? Destructive = null
 );
 
 [SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters", Justification = "This serialized contract record mirrors the external MCP wire shape and grouping fields would make the contract harder to inspect and evolve.")]
@@ -185,6 +388,7 @@ internal static class ToolContractCatalog {
 	private const string BooleanType = "boolean";
 	private const string ColumnNameFieldName = "column-name";
 	private const string ColumnsFieldName = "columns";
+	private const string CountFieldName = "count";
 	private const string ConstDefaultValueSourceName = nameof(Terrasoft.Core.Entities.EntitySchemaColumnDefSource.Const);
 	private const string DefaultValueConfigFieldName = "default-value-config";
 	private const string DefaultValueConfigSourceKey = "source";
@@ -263,6 +467,7 @@ internal static class ToolContractCatalog {
 	private const string PrimaryPackageIdentifierDescription = "Primary package identifier.";
 	private const string PrimaryPackageNameDescription = "Primary package name.";
 	private const string RuleFieldName = "rule";
+	private const string RulesFieldName = "rules";
 	private const string SectionCodeFieldName = "section-code";
 	private const string DeleteEntitySchemaFieldName = "delete-entity-schema";
 	private const string SearchPatternFieldName = "search-pattern";
@@ -354,6 +559,7 @@ internal static class ToolContractCatalog {
 			[ShowPassingInfrastructureTool.ShowPassingInfrastructureToolName] = BuildShowPassingInfrastructure(),
 			[FindEmptyIisPortTool.FindEmptyIisPortToolName] = BuildFindEmptyIisPort(),
 			[InstallerCommandTool.DeployCreatioToolName] = BuildDeployCreatio(),
+			[DeployIdentityTool.DeployIdentityToolName] = BuildDeployIdentity(),
 			[RestoreWorkspaceTool.RestoreWorkspaceToolName] = BuildRestoreWorkspace(),
 			[PushWorkspaceTool.PushWorkspaceToolName] = BuildPushWorkspace(),
 			[ListCreatioBuildsTool.ListCreatioBuildsToolName] = BuildListCreatioBuilds()
@@ -412,11 +618,37 @@ internal static class ToolContractCatalog {
 		SysSettingUpdateTool.UpdateSysSettingToolName
 	];
 
-	internal static ToolContractGetResponse GetContracts(IReadOnlyList<string>? toolNames) {
+	/// <summary>The <c>detail</c> value that opts into the legacy full-contract dump for a no-names request.</summary>
+	private const string FullDetail = "full";
+
+	/// <summary>The one-line purpose is truncated to this many characters for the compact index.</summary>
+	private const int MaxPurposeLength = 120;
+
+	/// <summary>
+	/// Resolves clio MCP tool contracts. When <paramref name="toolNames"/> is omitted the response depends
+	/// on <paramref name="detail"/>: any value other than <c>full</c> (the default) returns the cheap
+	/// compact INDEX of EVERY invokable tool — curated core plus the hidden long tail reachable through
+	/// clio-run (names + one-line purpose + safety flags, <c>Tools</c> null);
+	/// <c>full</c> returns every canonical tool's full contract (legacy behavior, <c>Index</c> null). When
+	/// <paramref name="toolNames"/> is supplied the named tools' full contracts are returned via the
+	/// curated → registry → reflection → not-found cascade (unchanged).
+	/// </summary>
+	/// <param name="toolNames">The requested tool names, or <c>null</c>/empty to discover all tools.</param>
+	/// <param name="toolInvokerRegistry">Optional invoker registry used to derive uncurated contracts and the index destructive hint.</param>
+	/// <param name="detail">Optional detail level for a no-names request: <c>index</c> (default) or <c>full</c>.</param>
+	internal static ToolContractGetResponse GetContracts(
+		IReadOnlyList<string>? toolNames,
+		IMcpToolInvokerRegistry? toolInvokerRegistry = null,
+		string? detail = null) {
 		if (toolNames is null || toolNames.Count == 0) {
+			if (string.Equals(detail, FullDetail, StringComparison.OrdinalIgnoreCase)) {
+				return new ToolContractGetResponse(
+					true,
+					CanonicalToolNames.Select(name => Contracts[name]).ToArray());
+			}
 			return new ToolContractGetResponse(
 				true,
-				CanonicalToolNames.Select(name => Contracts[name]).ToArray());
+				Index: BuildCompactIndex(toolInvokerRegistry));
 		}
 		List<string> normalizedNames = [];
 		for (int index = 0; index < toolNames.Count; index++) {
@@ -436,13 +668,21 @@ internal static class ToolContractCatalog {
 		}
 		List<ToolContractDefinition> results = [];
 		foreach (string normalizedName in normalizedNames.Distinct(StringComparer.OrdinalIgnoreCase)) {
+			// Curated contracts take precedence over any derived contract.
 			if (Contracts.TryGetValue(normalizedName, out ToolContractDefinition? contract)) {
 				results.Add(contract);
 				continue;
 			}
-			// No curated contract: fall back to a contract synthesized from the tool's own input
-			// schema so that any registered-but-uncurated tool stays discoverable instead of
-			// returning tool-not-found.
+			// No curated contract: derive the contract from the SAME registered MCP tool input schema that
+			// clio-run / clio-run-destructive dispatch against, so the advertised contract matches the real
+			// invokable argument shape (Codex review #1). This captures single-scalar params (e.g.
+			// stop-creatio's environmentName) the lossy reflection fallback drops.
+			if (McpToolRegistrySchemaContract.TryBuild(toolInvokerRegistry, normalizedName, out ToolContractDefinition registryContract)) {
+				results.Add(registryContract);
+				continue;
+			}
+			// Last resort: reflection over the options type. Only reached when the registry has no entry
+			// (e.g. registry unavailable), and may be lossy for some tools.
 			if (McpToolSchemaCatalog.TryGetSchemaContract(normalizedName, out ToolContractDefinition schemaContract)) {
 				results.Add(schemaContract);
 				continue;
@@ -451,7 +691,7 @@ internal static class ToolContractCatalog {
 				false,
 				Error: new ToolContractError(
 					"tool-not-found",
-					$"Tool '{normalizedName}' is not registered by clio MCP.",
+					$"Tool '{normalizedName}' is not registered by clio MCP. {ToolContractGetTool.DiscoveryHint}",
 					BuildSuggestions(normalizedName)));
 		}
 		return new ToolContractGetResponse(true, results);
@@ -467,14 +707,165 @@ internal static class ToolContractCatalog {
 			.ToArray();
 	}
 
+	/// <summary>
+	/// Builds the compact discovery index over EVERY invokable MCP tool — the curated core (canonical
+	/// contracts) plus the hidden long tail reachable only through <c>clio-run</c> /
+	/// <c>clio-run-destructive</c> (for example <c>stop-creatio</c>, <c>add-package-dependency</c>). The
+	/// name set is the case-insensitive union of <see cref="CanonicalToolNames"/>, the invoker registry's
+	/// <see cref="IMcpToolInvokerRegistry.ToolNames"/>, and the reflection catalog's
+	/// <see cref="McpToolSchemaCatalog.RegisteredToolNames"/>, deduplicated and ordered ordinally so the
+	/// index is deterministic for prompt-cache prefix stability. Each entry carries the tool name, a
+	/// one-line purpose (curated description, else the registry/reflection-derived description), the
+	/// contract-available flag (true when a curated OR derived contract resolves), and the destructive
+	/// hint when the invoker registry can cheaply supply it. The index stays compact — names + purpose +
+	/// safety flags only, never full schemas.
+	/// </summary>
+	/// <param name="toolInvokerRegistry">Optional registry used to enumerate hidden tools and read each tool's destructive hint; <c>null</c> leaves the flag unset and limits the set to curated + reflection-discovered tools.</param>
+	private static IReadOnlyList<ToolContractIndexEntry> BuildCompactIndex(
+		IMcpToolInvokerRegistry? toolInvokerRegistry) {
+		return BuildIndexToolNames(toolInvokerRegistry)
+			.Select(name => BuildIndexEntry(name, toolInvokerRegistry))
+			.ToArray();
+	}
+
+	/// <summary>
+	/// Produces the deterministic, deduplicated (case-insensitive) union of every invokable MCP tool name:
+	/// curated canonical tools, registry-invokable hidden tools, and reflection-discovered tools. Ordered
+	/// ordinally by name so the index prefix stays stable for prompt caching. <c>get-tool-contract</c>
+	/// itself is excluded so the discovery tool does not index itself (matching the curated-only behavior).
+	/// </summary>
+	/// <param name="toolInvokerRegistry">Optional registry contributing the hidden long-tail tool names.</param>
+	private static IEnumerable<string> BuildIndexToolNames(IMcpToolInvokerRegistry? toolInvokerRegistry) {
+		IEnumerable<string> registryNames = toolInvokerRegistry?.ToolNames ?? [];
+		return CanonicalToolNames
+			.Concat(registryNames)
+			.Concat(McpToolSchemaCatalog.RegisteredToolNames)
+			.Where(name => !string.IsNullOrWhiteSpace(name)
+				&& !string.Equals(name, ToolContractGetTool.ToolName, StringComparison.OrdinalIgnoreCase))
+			.Distinct(StringComparer.OrdinalIgnoreCase)
+			.OrderBy(name => name, StringComparer.Ordinal);
+	}
+
+	/// <summary>
+	/// Builds a single compact index entry for <paramref name="name"/>. The purpose is distilled from the
+	/// curated contract when one exists, otherwise from the tool's RAW registry/reflection description
+	/// (without the "no curated contract yet" note the full named contract carries); a missing description
+	/// falls back to the tool name so the purpose is never empty.
+	/// <c>contract-available</c> is true when a curated OR registry OR reflection contract resolves.
+	/// <c>resident</c> is derived from <see cref="McpCoreToolProfile.IsResident"/> and does not depend on
+	/// an invoker registry being supplied.
+	/// </summary>
+	/// <param name="name">The tool name to describe.</param>
+	/// <param name="toolInvokerRegistry">Optional registry used to derive uncurated descriptions and the destructive hint.</param>
+	private static ToolContractIndexEntry BuildIndexEntry(
+		string name,
+		IMcpToolInvokerRegistry? toolInvokerRegistry) {
+		bool contractAvailable = TryResolveIndexDescription(name, toolInvokerRegistry, out string description);
+		string purpose = BuildPurpose(description);
+		return new ToolContractIndexEntry(
+			name,
+			string.IsNullOrEmpty(purpose) ? name : purpose,
+			ContractAvailable: contractAvailable,
+			Resident: McpCoreToolProfile.IsResident(name),
+			Destructive: ResolveDestructive(toolInvokerRegistry, name));
+	}
+
+	/// <summary>
+	/// Resolves the description for an index entry through the same curated → registry → reflection cascade
+	/// the NAMED contract path uses for AVAILABILITY, but reads the RAW functional description (no
+	/// "Auto-generated … no curated contract yet" note) for the uncurated registry/reflection levels so the
+	/// compact one-line purpose reflects only what the tool DOES. The note still appears in the FULL named
+	/// contract (see <see cref="GetContracts"/>); only this index one-liner is noteless. Returns <c>true</c>
+	/// with the resolved description when any source matches — preserving <c>contract-available</c> semantics
+	/// (a tool with a raw description but no curated contract is still dispatchable via clio-run) — otherwise
+	/// <c>false</c> with an empty description (the caller supplies a safe fallback to the tool name).
+	/// </summary>
+	/// <param name="name">The tool name to resolve.</param>
+	/// <param name="toolInvokerRegistry">Optional registry holding hidden, dispatchable tools.</param>
+	/// <param name="description">The resolved description when available; otherwise empty.</param>
+	private static bool TryResolveIndexDescription(
+		string name,
+		IMcpToolInvokerRegistry? toolInvokerRegistry,
+		out string description) {
+		// Level 1 — curated descriptions are handwritten and carry NO note, so use them verbatim.
+		if (Contracts.TryGetValue(name, out ToolContractDefinition? curated)) {
+			description = curated.Description;
+			return true;
+		}
+		// Level 2 — registry-derived: read the RAW tool description (not TryBuild, which appends the note).
+		// A registered tool resolves here under the SAME condition TryBuild would, so contract-available
+		// stays true even though the one-liner is now noteless.
+		if (toolInvokerRegistry is not null
+			&& McpToolRegistrySchemaContract.TryGetRawDescription(toolInvokerRegistry, name, out description)) {
+			return true;
+		}
+		// Level 3 — reflection fallback: read the RAW reflected description (not TryGetSchemaContract, which
+		// appends the note). Same availability condition as the note-appending path.
+		if (McpToolSchemaCatalog.TryGetRawDescription(name, out description)) {
+			return true;
+		}
+		description = string.Empty;
+		return false;
+	}
+
+	/// <summary>
+	/// Distills a one-line purpose from a full tool description: takes the first sentence (up to the first
+	/// period followed by whitespace) or first line, collapses inner whitespace, and truncates to
+	/// <see cref="MaxPurposeLength"/> characters with an ellipsis so the index stays compact.
+	/// </summary>
+	/// <param name="description">The full curated tool description.</param>
+	private static string BuildPurpose(string description) {
+		string normalized = string.Join(' ',
+			(description ?? string.Empty).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+		if (normalized.Length == 0) {
+			return string.Empty;
+		}
+		int sentenceEnd = FindFirstSentenceEnd(normalized);
+		string firstSentence = sentenceEnd >= 0 ? normalized[..(sentenceEnd + 1)] : normalized;
+		if (firstSentence.Length <= MaxPurposeLength) {
+			return firstSentence;
+		}
+		return firstSentence[..(MaxPurposeLength - 1)].TrimEnd() + "…";
+	}
+
+	/// <summary>
+	/// Returns the index of the first sentence-terminating period (a '.' followed by whitespace or the end
+	/// of the text), or <c>-1</c> when the text has no sentence break. Abbreviation periods mid-word (for
+	/// example <c>en-US</c> or version numbers) are kept because they are not followed by whitespace.
+	/// </summary>
+	/// <param name="text">The whitespace-normalized description.</param>
+	private static int FindFirstSentenceEnd(string text) {
+		for (int index = 0; index < text.Length; index++) {
+			if (text[index] != '.') {
+				continue;
+			}
+			if (index == text.Length - 1 || char.IsWhiteSpace(text[index + 1])) {
+				return index;
+			}
+		}
+		return -1;
+	}
+
+	/// <summary>
+	/// Reads the destructive hint for a tool from the invoker registry when one is supplied. Returns
+	/// <c>null</c> when no registry is available so the flag is omitted rather than guessed. The registry
+	/// fails CLOSED for unknown names, so a registered-but-unmapped name reports destructive.
+	/// </summary>
+	/// <param name="toolInvokerRegistry">Optional registry exposing the per-tool destructive hint.</param>
+	/// <param name="toolName">The tool name to resolve.</param>
+	private static bool? ResolveDestructive(IMcpToolInvokerRegistry? toolInvokerRegistry, string toolName) {
+		return toolInvokerRegistry?.IsDestructive(toolName);
+	}
+
 	private static ToolContractDefinition BuildToolContractGet() {
 		return new ToolContractDefinition(
 			ToolContractGetTool.ToolName,
-			"Returns the authoritative executable contract for canonical clio MCP discovery, inspection, and mutation tools.",
+			"Returns clio MCP tool contracts. Omit tool-names for a compact index of all tools (name + one-line purpose + safety flags) for cheap discovery; pass tool-names to expand those tools' full executable contracts; pass detail=full (with no tool-names) to expand every tool's full contract.",
 			new ToolInputSchemaContract(
 				[],
 				[
-					Field("tool-names", ArrayType, "Optional array of tool names. Omit to return the canonical clio MCP contract set.")
+					Field("tool-names", ArrayType, "Optional array of tool names. Omit for a compact index of all tools; pass names to expand their full contracts."),
+					Field("detail", StringType, "Optional detail level used only when tool-names is omitted: 'index' (default) returns the compact index; 'full' returns every tool's full contract.")
 				]),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -482,19 +873,23 @@ internal static class ToolContractCatalog {
 					SuccessFalseSignal
 				],
 				Field(SuccessFieldName, BooleanType, "Whether the contract lookup succeeded."),
-				Field("tools", ArrayType, "Tool contract definitions."),
+				Field("tools", ArrayType, "Full tool contract definitions; populated when tool-names are passed or detail=full."),
+				Field("index", ArrayType, "Compact tool index (name, purpose, contract-available, resident, destructive); populated for a no-names request unless detail=full. resident=true tools are present in tools/list and are called natively; resident=false tools are reachable only via clio-run/clio-run-destructive — never wrap a resident tool in clio-run."),
 				Field(ErrorFieldName, ObjectType, "Structured error payload when lookup fails.")
 			),
 			CommonErrorContract,
 			[],
 			[],
 			[
-				Example("Return the canonical clio MCP contract set", new Dictionary<string, object?>()),
+				Example("Return the compact index of all clio MCP tools (cheap discovery)", new Dictionary<string, object?>()),
+				Example("Return the full contracts of every tool (legacy behavior)", new Dictionary<string, object?> {
+					["detail"] = "full"
+				}),
 				Example("Return the contract for list-apps, update-page, and modify-entity-schema-column", new Dictionary<string, object?> {
 					["tool-names"] = new[] { "list-apps", "update-page", "modify-entity-schema-column" }
 				})
 			],
-			Flow(["get-tool-contract"], "Use before execution when the caller needs authoritative clio MCP metadata or must choose the next discovery, inspection, or mutation step."),
+			Flow(["get-tool-contract"], "Call with no args first for the compact index of all tools, then call with specific tool-names for full schemas before execution."),
 			[],
 			[]);
 	}
@@ -726,7 +1121,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildExecuteEsq() {
 		return new ToolContractDefinition(
 			ExecuteEsqTool.ToolName,
-			"Runs a raw EntitySchemaQuery (ESQ) SelectQuery against a Creatio environment via the DataService SelectQuery endpoint and returns the rows. The primary way to read Creatio data with a raw ESQ query; also used to confirm an ESQ filter is valid before saving it into a page. ESQ is a proprietary format: call get-guidance for 'esq' and 'esq-filters' before composing a query rather than guessing the shape.",
+			"Runs a raw EntitySchemaQuery (ESQ) SelectQuery against a Creatio environment via the DataService SelectQuery endpoint and returns the rows. The primary way to read Creatio data with a raw ESQ query; also used to confirm an ESQ filter is valid before saving it into a page. ESQ is a proprietary format: call get-guidance for 'esq' and 'esq-filters' before composing a query rather than guessing the shape. A requested columns.items alias whose columnPath does not resolve fails the call with success:false instead of silently omitting that column from the rows.",
 			new ToolInputSchemaContract(
 				[QueryFieldName, EnvironmentNameFieldName],
 				[
@@ -740,7 +1135,7 @@ internal static class ToolContractCatalog {
 					SuccessFalseSignal
 				],
 				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
-				Field("count", NumberType, "Number of rows returned."),
+				Field(CountFieldName, NumberType, "Number of rows returned."),
 				Field("rows", ArrayType, "Rows returned by the SelectQuery."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)),
 			CommonErrorContract,
@@ -930,7 +1325,7 @@ internal static class ToolContractCatalog {
 				Field(PagesFieldName, ArrayType, "Created page summaries using list-pages item shape (`schema-name`, `uId`, `packageName`, `parentSchemaName`)."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription),
 				Field("error-class", StringType, "Failure classification, present on classified errors only: 'transport' (request never reached Creatio — retry is safe), 'creatio-timeout' (no response within the budget — side effects unknown, verify with list-app-sections before retrying), 'server-error' (Creatio rejected the operation — fix inputs or server state first)."),
-				Field("section-created", StringType, "Side-effect verification outcome on classified errors: 'true', 'false', or 'unknown'."),
+				Field("section-created", StringType, "Side-effect verification outcome on classified errors: 'true', 'false', 'unknown', or 'in-progress'. 'in-progress' is not a verification outcome — it means the section is still being created server-side after the MCP response deadline returned early; do NOT retry create-app-section, poll list-app-sections / get-app-info until the section appears."),
 				Field("retry-guidance", StringType, "Actionable next step for the classified failure. Follow it instead of blind retries.")
 			),
 			CommonErrorContract,
@@ -1403,11 +1798,11 @@ internal static class ToolContractCatalog {
 					Field(SelectFieldName, ArrayType, "Fields to return. Use [\"Id\", \"Name\"] when resolving lookup records by display value."),
 					Field("expand", ArrayType, "Navigation properties to expand."),
 					Field("order-by", StringType, "OData $orderby clause, for example CreatedOn desc or Name asc."),
-					Field("top", NumberType, "Maximum number of records to return, 1-100. Default: 25.")
+					Field("top", NumberType, "Maximum number of records to return, 1-100. Default: 25. An out-of-range top (including 0 or negative) is rejected with success:false, never silently changed.")
 				],
 				Validators: [
-					new ToolContractValidator("limit", "invalid-top", "top",
-						Context: "top must be between 1 and 100; omitted or out-of-range values default to 25.")
+					new ToolContractValidator(LimitFieldName, "invalid-top", "top",
+						Context: "top must be between 1 and 100; omitting it uses the default of 25, and an out-of-range value (including 0 or negative) is rejected with success:false.")
 				]),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -1416,7 +1811,7 @@ internal static class ToolContractCatalog {
 				],
 				Field(SuccessFieldName, BooleanType, "Whether the OData read succeeded."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription),
-				Field("count", NumberType, "Number of records returned."),
+				Field(CountFieldName, NumberType, "Number of records returned."),
 				Field(ValueFieldName, ArrayType, "OData value array or single entity response."),
 				Field("next-link", StringType, "OData next-link URL when more records are available.")
 			),
@@ -1495,22 +1890,16 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildODataCreate() {
 		return new ToolContractDefinition(
 			ODataCreateTool.ToolName,
-			"Creates a Creatio record through OData v4 (POST). Returns the created record including its generated Id.",
+			"Creates one or more Creatio records through OData v4 (POST) in a single call. Pass all rows for the same entity in the 'rows' array rather than one call per row; each row is inserted sequentially and reported independently. Returns a created/failed summary and a per-row result array including each created record's Id.",
 			new ToolInputSchemaContract(
-				[EntityFieldName, "data", EnvironmentNameFieldName],
+				[EntityFieldName, "rows", EnvironmentNameFieldName],
 				[
 					Field(EntityFieldName, StringType, "Creatio OData entity set name such as Contact, Account, or a custom schema."),
-					Field("data", ObjectType, "Object of field/value pairs for the new record. Lookup fields are set with their GUID, for example { \"Name\": \"Acme\", \"TypeId\": \"00000000-0000-0000-0000-000000000001\" }."),
+					Field("rows", ArrayType, "Array of row objects to insert; each row is an object of field/value pairs for one new record. Lookup fields are set with their GUID, for example [ { \"Name\": \"Acme\", \"TypeId\": \"00000000-0000-0000-0000-000000000001\" } ]. Pass all rows in one call rather than one call per row."),
+					Field("stop-on-error", BooleanType, "Optional. Stop after the first failed row. Default false: continue and report every row independently. When true, rows after a failure are not attempted and do not appear in results, so results may be shorter than rows."),
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription)
 				]),
-			EnvelopeOutput(
-				SuccessFieldName,
-				[SuccessFalseSignal],
-				Field(SuccessFieldName, BooleanType, "Whether the OData create succeeded."),
-				Field(ErrorFieldName, StringType, FailureMessageDescription),
-				Field("id", StringType, "Generated GUID of the created record."),
-				Field("record", ObjectType, "The created record returned by Creatio.")
-			),
+			ODataCreateBatchOutput(),
 			CommonErrorContract,
 			[],
 			[],
@@ -1518,7 +1907,7 @@ internal static class ToolContractCatalog {
 				Example("Create a contact", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
 					[EntityFieldName] = ExampleContactSchemaName,
-					["data"] = new Dictionary<string, object?> { ["Name"] = "Jane Doe", ["JobTitle"] = "CEO" }
+					["rows"] = new object[] { new Dictionary<string, object?> { ["Name"] = "Jane Doe", ["JobTitle"] = "CEO" } }
 				})
 			],
 			Flow([ODataCreateTool.ToolName], "Use to insert a new Creatio record when field values are known."),
@@ -1763,35 +2152,35 @@ internal static class ToolContractCatalog {
 			CreateEntityBusinessRuleTool.BusinessRuleCreateToolName,
 			"Creates an entity-level Freedom UI business rule with equality, filled-in, numeric or date/time relational comparisons, Set values actions from constants, formulas, or attributes, and dynamic apply-filter lookup actions. Read get-guidance business-rules and this get-tool-contract entry before calling.",
 			new ToolInputSchemaContract(
-				[EnvironmentNameFieldName, PackageNameFieldName, EntitySchemaNameFieldName, RuleFieldName],
+				[EnvironmentNameFieldName, PackageNameFieldName, EntitySchemaNameFieldName, RulesFieldName],
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(PackageNameFieldName, StringType, "Target package name."),
 					Field(EntitySchemaNameFieldName, StringType, "Target entity schema name."),
-					Field(RuleFieldName, ObjectType, "Structured entity business-rule definition with caption, one top-level condition group, and one or more actions. Unary filled-in comparisons omit rightExpression. EITHER side of a condition may be an attribute (type AttributeValue), a constant (type Const), or a system variable (type SysValue with sysValueName such as CurrentDate, CurrentDateTime, CurrentTime, CurrentUser, CurrentUserContact, CurrentUserAccount, CurrentUserRoles) — any pairing is allowed; type/reference-schema compatibility is the only constraint. Role-based logic: CurrentUserRoles (left) comparisonType contain/not-contain a Const SysAdminUnit role id. Relational comparisons only support numeric and date/time operands. Set values actions support Const assignments for text, number, boolean, Date, DateTime, Time, and Lookup targets, Formula assignments with simple numeric direct-field expressions such as Field1 + Field2, and AttributeValue assignments from same-typed direct or forward reference paths such as Owner.Age. Apply-filter actions target one lookup field and may use an empty condition group because the filter logic is expressed inside the action itself.")
+					Field(RulesFieldName, ArrayType, "Array of one or more entity business-rule definitions saved together in a single batch (one configuration rebuild for the whole array; prefer one call over many). A failed rule does not abort the others. Each item is a rule with caption, one top-level condition group, and one or more actions. Unary filled-in comparisons omit rightExpression. EITHER side of a condition may be an attribute (type AttributeValue), a constant (type Const), or a system variable (type SysValue with sysValueName such as CurrentDate, CurrentDateTime, CurrentTime, CurrentUser, CurrentUserContact, CurrentUserAccount, CurrentUserRoles) — any pairing is allowed; type/reference-schema compatibility is the only constraint. Role-based logic: CurrentUserRoles (left) comparisonType contain/not-contain a Const SysAdminUnit role id. Relational comparisons only support numeric and date/time operands. Set values actions support Const assignments for text, number, boolean, Date, DateTime, Time, and Lookup targets, Formula assignments with simple numeric direct-field expressions such as Field1 + Field2, and AttributeValue assignments from same-typed direct or forward reference paths such as Owner.Age. Apply-filter actions target one lookup field and may use an empty condition group because the filter logic is expressed inside the action itself.")
 				],
 				Validators: [
 					.. BusinessRuleConditionValidators(),
-					new ToolContractValidator("enum", "unsupported-action", "rule.actions[*].type",
+					new ToolContractValidator("enum", "unsupported-action", "rules[*].actions[*].type",
 						Context: $"Supported values: {BusinessRuleConstants.SupportedActionTypesDescription}."),
-					new ToolContractValidator("set-values-shape", "invalid-set-values-item", "rule.actions[*].items[*]",
+					new ToolContractValidator("set-values-shape", "invalid-set-values-item", "rules[*].actions[*].items[*]",
 						Context: "When rule.actions[*].type is set-values, each item must provide expression { type: AttributeValue, path } and value { type: Const, value }, { type: Formula, expression }, or { type: AttributeValue, path }. Formula expression must be a string using a simple numeric direct-field arithmetic expression, for example Field1 + Field2. Formula target and source attributes must be numeric; date/time arithmetic is not supported. AttributeValue source paths may be direct columns or forward reference paths like LookupColumn.SourceColumn; the final source attribute and target attribute must have the same data value type. Formula functions, comparison operators, and string literals are not supported in formula scope."),
-					new ToolContractValidator("set-values-constant", "unsupported-set-values-constant", "rule.actions[*].items[*].value.value",
+					new ToolContractValidator("set-values-constant", "unsupported-set-values-constant", "rules[*].actions[*].items[*].value.value",
 						Context: "Set values supports JSON string constants for text targets, JSON number constants for numeric targets, JSON booleans for Boolean targets, yyyy-MM-dd strings for Date targets, ISO 8601 strings with timezone suffix for DateTime targets, ISO 8601 time strings with timezone suffix for Time targets, and GUID string constants for Lookup targets."),
-					new ToolContractValidator("set-values-formula", "invalid-set-values-formula", "rule.actions[*].items[*].value.expression",
+					new ToolContractValidator("set-values-formula", "invalid-set-values-formula", "rules[*].actions[*].items[*].value.expression",
 						Context: "Formula expressions are translated after payload parsing into expression-schema PowerFx metadata, checked locally against a numeric arithmetic whitelist, then validated remotely through ServiceModel/ExpressionService.svc/Validate before saving. Referenced direct numeric source fields are added as business-rule triggers. AttributeValue sources are serialized as business-rule attribute expressions; direct sources trigger on that source column, and forward sources trigger on the root lookup column."),
-					new ToolContractValidator("apply-filter-shape", "invalid-apply-filter-action", "rule.actions[*]",
+					new ToolContractValidator("apply-filter-shape", "invalid-apply-filter-action", "rules[*].actions[*]",
 						Context: "When rule.actions[*].type is apply-filter, provide target, targetFilterPath, source, optional sourceFilterPath, clearValue, and populateValue. Target and source must be direct lookup attributes on the root entity. targetFilterPath and sourceFilterPath resolve inside the referenced lookup schemas and must themselves resolve to Lookup attributes, not Guid columns. apply-filter rules support exactly one action and may use an empty condition group."),
-					new ToolContractValidator("apply-filter-lookup", "unsupported-apply-filter-lookup", "rule.actions[*].target",
+					new ToolContractValidator("apply-filter-lookup", "unsupported-apply-filter-lookup", "rules[*].actions[*].target",
 						Context: "apply-filter only supports lookup targets and lookup sources. The final targetFilterPath and source/sourceFilterPath endpoints must both resolve to Lookup attributes that reference the same schema; Guid endpoints are not supported. If sourceFilterPath is provided, populateValue must be false."),
-					new ToolContractValidator("apply-static-filter-shape", "invalid-apply-static-filter-action", "rule.actions[*]",
+					new ToolContractValidator("apply-static-filter-shape", "invalid-apply-static-filter-action", "rules[*].actions[*]",
 						Context: "When rule.actions[*].type is apply-static-filter, provide targetAttribute (a direct Lookup column on the root entity) and filter (a friendly filter group). rootSchemaName is inferred from the target lookup's reference schema and must never be sent by the caller. apply-static-filter rules support exactly one action and may use an empty condition group."),
-					new ToolContractValidator("apply-static-filter-group", "invalid-apply-static-filter-group", "rule.actions[*].filter",
+					new ToolContractValidator("apply-static-filter-group", "invalid-apply-static-filter-group", "rules[*].actions[*].filter",
 						Context: "filter requires logicalOperation (AND or OR) and may include filters[], groups[] for nested logical compositions, and backwardReferenceFilters[]. Leaf comparisonType uses UPPER_SNAKE_CASE tokens (distinct from the kebab-case condition comparisons): EQUAL, NOT_EQUAL, IS_NULL, IS_NOT_NULL, GREATER, GREATER_OR_EQUAL, LESS, LESS_OR_EQUAL, CONTAIN, NOT_CONTAIN, START_WITH, NOT_START_WITH, END_WITH, NOT_END_WITH. columnPath is rooted at the target lookup's reference schema (not the rule entity) and supports forward paths through Lookup chains. To test a field is filled use IS_NOT_NULL on that column directly, not a backward EXISTS workaround. backwardReferenceFilters[].referenceColumnPath MUST be the bare `[ChildSchema:LinkColumn]` form (no `.Id` suffix, no trailing column); the builder appends `.Id` and stamps platform-canonical metadata. A backward clause is EITHER an existence check (comparisonType EXISTS/NOT_EXISTS) OR an aggregation: set aggregationType (COUNT/SUM/AVG/MIN/MAX), a relational/equality comparisonType (GREATER, GREATER_OR_EQUAL, LESS, LESS_OR_EQUAL, EQUAL, NOT_EQUAL) and a numeric aggregationValue — e.g. 'more than 10 activities' → { referenceColumnPath: '[Activity:Contact]', aggregationType: 'COUNT', comparisonType: 'GREATER', aggregationValue: 10 }. COUNT omits aggregationColumnPath; SUM/AVG/MIN/MAX require aggregationColumnPath (numeric child column). This is NOT the page DataSource staticFilters/filterConfig in body.js — never hand-edit body.js to restrict a lookup; use this action. Lookup values accept GUID strings or display names (resolved against the lookup's primary display column). JSON array of strings on a Lookup column with EQUAL/NOT_EQUAL produces a multi-value IN. For dynamic values use valueMacros (mutually exclusive with value): date macros (Today, Yesterday, Tomorrow, Previous/Current/Next Week/Month/Quarter/HalfYear/Year/Hour) on Date/DateTime/Time columns; 'birthday today/tomorrow' → DayOfYearTodayPlusDaysOffset with valueMacrosArgument 0/1 on the birth-date column; CurrentUser/CurrentUserContact on Lookup columns with EQUAL/NOT_EQUAL; N-style macros (NextNDays, PreviousNDays, NextNHours, PreviousNHours) also require valueMacrosArgument (positive integer). For a FIXED clock time or calendar part (NOT a relative period) use datePart on a Date/DateTime/Time column (mutually exclusive with valueMacros): Day/Week/Month/Year/Weekday/Hour take an integer value, HourMinute (alias Time) takes an 'HH:mm[:ss]' string — e.g. a fixed time of day → { columnPath: '<DateColumn>', datePart: 'HourMinute', comparisonType: 'EQUAL', value: '<HH:mm:ss>' }; a fixed calendar year → { columnPath: '<DateColumn>', datePart: 'Year', comparisonType: 'EQUAL', value: <YYYY> }. Exact time-of-day IS expressible via datePart — do not report it as unsupported. For 'age = N'/'aged between X and Y', resolve the schema first: filter a numeric age column directly when it exists, otherwise translate to a birth-date range with computed ISO date constants. See guidance resource business-rule-filters for the full contract."),
-					new ToolContractValidator("lookup-record", "missing-lookup-record", "rule.actions[*].items[*].value.value",
-						Context: $"Lookup set-values constants must be GUID strings for existing records in the target attribute reference schema. Use {ODataReadTool.ToolName} or {ExecuteEsqTool.ToolName} to resolve or verify the lookup record Id before calling create-entity-business-rule; with odata-read, filter records by a lookup value using traversal paths such as Account/Id.")
+					new ToolContractValidator("lookup-record", "missing-lookup-record", "rules[*].actions[*].items[*].value.value",
+						Context: $"Lookup set-values constants must be GUID strings for existing records in the target attribute reference schema. Use {ODataReadTool.ToolName} or {ExecuteEsqTool.ToolName} to resolve or verify the lookup record Id before calling create-entity-business-rules; with odata-read, filter records by a lookup value using traversal paths such as Account/Id.")
 				]),
-			CommandExecutionOutput(),
+			BusinessRuleBatchOutput(),
 			CommonErrorContract,
 			[
 			],
@@ -1998,7 +2387,7 @@ internal static class ToolContractCatalog {
 					GuidanceGetTool.ToolName,
 					CreateEntityBusinessRuleTool.BusinessRuleCreateToolName
 				],
-				"When the application exists and the entity is a part of it. Read the business-rules guidance and the create-entity-business-rule contract before calling the mutation tool. Successful rule creation writes add-on metadata directly, so do not add compile-creatio as a routine post-step."),
+				"When the application exists and the entity is a part of it. Read the business-rules guidance and the create-entity-business-rules contract before calling the mutation tool. Successful rule creation writes add-on metadata directly, so do not add compile-creatio as a routine post-step."),
 			[
 				Flow(
 					[
@@ -2025,9 +2414,9 @@ internal static class ToolContractCatalog {
 			[],
 			null,
 			[
-				"Call get-guidance with name business-rules before calling create-entity-business-rule.",
+				"Call get-guidance with name business-rules before calling create-entity-business-rules.",
 				"For an apply-static-filter action, also call get-guidance with name business-rule-filters to load the full filter contract.",
-				"Call get-tool-contract for create-entity-business-rule before building the final payload.",
+				"Call get-tool-contract for create-entity-business-rules before building the final payload.",
 				"When any lookup condition or lookup set-values constant is needed, resolve it with odata-read or execute-esq first and use an existing record Id."
 			]);
 	}
@@ -2037,25 +2426,25 @@ internal static class ToolContractCatalog {
 			CreatePageBusinessRuleTool.BusinessRuleCreateToolName,
 			"Creates a page-level Freedom UI business rule that changes visibility, editability, or required state of named page elements using datasource-bound page attributes and constants. Read get-guidance business-rules and this get-tool-contract entry before calling.",
 			new ToolInputSchemaContract(
-				[EnvironmentNameFieldName, PackageNameFieldName, PageSchemaNameFieldName, RuleFieldName],
+				[EnvironmentNameFieldName, PackageNameFieldName, PageSchemaNameFieldName, RulesFieldName],
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(PackageNameFieldName, StringType, "Target package name where the page BusinessRule add-on will be saved."),
 					Field(PageSchemaNameFieldName, StringType, "Target Freedom UI page schema name."),
-					Field(RuleFieldName, ObjectType, "Structured page business-rule definition with caption, one top-level condition group, and one or more page actions. AttributeValue paths must be declared page attribute names from get-page bundle.viewModelConfig.attributes, not datasource paths like PDS.Priority. EITHER side of a condition may be a page attribute (type AttributeValue), a constant (type Const), or a system variable (type SysValue with sysValueName such as CurrentDate, CurrentDateTime, CurrentTime, CurrentUser, CurrentUserContact, CurrentUserAccount, CurrentUserRoles). For role-based or current-user visibility (e.g. 'show field only for administrators / for the supervisor') put CurrentUserRoles (left) comparisonType contain/not-contain a Const SysAdminUnit role id, or compare CurrentUser/CurrentUserContact/CurrentUserAccount to a Const id — use this instead of a HandleViewModelInitRequest handler. Action items must be page element names from recursive get-page bundle.viewConfig. Lookup constants are supported when supplied as stable GUID strings.")
+					Field(RulesFieldName, ArrayType, "Array of one or more page business-rule definitions saved together in a single batch (one configuration rebuild for the whole array; prefer one call over many). A failed rule does not abort the others. Each item is a rule with caption, one top-level condition group, and one or more page actions. AttributeValue paths must be declared page attribute names from get-page bundle.viewModelConfig.attributes, not datasource paths like PDS.Priority. EITHER side of a condition may be a page attribute (type AttributeValue), a constant (type Const), or a system variable (type SysValue with sysValueName such as CurrentDate, CurrentDateTime, CurrentTime, CurrentUser, CurrentUserContact, CurrentUserAccount, CurrentUserRoles). For role-based or current-user visibility (e.g. 'show field only for administrators / for the supervisor') put CurrentUserRoles (left) comparisonType contain/not-contain a Const SysAdminUnit role id, or compare CurrentUser/CurrentUserContact/CurrentUserAccount to a Const id — use this instead of a HandleViewModelInitRequest handler. Action items must be page element names from recursive get-page bundle.viewConfig. Lookup constants are supported when supplied as stable GUID strings.")
 				],
 				Validators: [
 					.. BusinessRuleConditionValidators(),
-					new ToolContractValidator("page-attribute", "unsupported-condition-attribute", "rule.condition.conditions[*].leftExpression.path",
+					new ToolContractValidator("page-attribute", "unsupported-condition-attribute", "rules[*].condition.conditions[*].leftExpression.path",
 						Context: "Use declared datasource-bound page attribute names from bundle.viewModelConfig.attributes, for example PDS_Priority. Do not use datasource paths like PDS.Priority."),
-					new ToolContractValidator("page-attribute", "unsupported-right-attribute", "rule.condition.conditions[*].rightExpression.path",
+					new ToolContractValidator("page-attribute", "unsupported-right-attribute", "rules[*].condition.conditions[*].rightExpression.path",
 						Context: "Right-side AttributeValue is supported only when it is also a declared datasource-bound page attribute and resolves to the same data value type as the left attribute."),
-					new ToolContractValidator("enum", "unsupported-action", "rule.actions[*].type",
+					new ToolContractValidator("enum", "unsupported-action", "rules[*].actions[*].type",
 						Context: $"Supported values: {BusinessRuleConstants.SupportedPageActionTypesDescription}."),
-					new ToolContractValidator("page-element", "unknown-page-element", "rule.actions[*].items",
+					new ToolContractValidator("page-element", "unknown-page-element", "rules[*].actions[*].items",
 						Context: "Use any named element from recursive get-page bundle.viewConfig.")
 				]),
-			CommandExecutionOutput(),
+			BusinessRuleBatchOutput(),
 			CommonErrorContract,
 			[],
 			[],
@@ -2139,7 +2528,7 @@ internal static class ToolContractCatalog {
 					GuidanceGetTool.ToolName,
 					CreatePageBusinessRuleTool.BusinessRuleCreateToolName
 				],
-				"Use list-pages or application discovery to choose the page, call get-page to inspect bundle.viewConfig and bundle.viewModelConfig.attributes, then read the business-rules guidance and create-page-business-rule contract before creating the page rule. Successful rule creation writes add-on metadata directly, so do not add compile-creatio as a routine post-step."),
+				"Use list-pages or application discovery to choose the page, call get-page to inspect bundle.viewConfig and bundle.viewModelConfig.attributes, then read the business-rules guidance and create-page-business-rules contract before creating the page rule. Successful rule creation writes add-on metadata directly, so do not add compile-creatio as a routine post-step."),
 			[
 				Flow(
 					[
@@ -2158,31 +2547,31 @@ internal static class ToolContractCatalog {
 					"Page business rules use declared view-model attribute names from bundle.viewModelConfig.attributes so the generated metadata and triggers match the page runtime.")
 			],
 			[
-				"Call get-guidance with name business-rules before calling create-page-business-rule.",
-				"Call get-tool-contract for create-page-business-rule before building the final payload.",
+				"Call get-guidance with name business-rules before calling create-page-business-rules.",
+				"Call get-tool-contract for create-page-business-rules before building the final payload.",
 				"When any lookup condition constant is needed, resolve it with odata-read or execute-esq first and use an existing record Id. With odata-read, filter records by a lookup value using a structured-filter traversal path such as Account/Id."
 			]);
 	}
 
 	private static ToolContractValidator[] BusinessRuleConditionValidators() =>
 		[
-			new ToolContractValidator("enum", "unsupported-operator", "rule.condition.logicalOperation",
+			new ToolContractValidator("enum", "unsupported-operator", "rules[*].condition.logicalOperation",
 				Context: "Supported values: AND, OR."),
-			new ToolContractValidator("enum", "unsupported-comparison", "rule.condition.conditions[*].comparisonType",
+			new ToolContractValidator("enum", "unsupported-comparison", "rules[*].condition.conditions[*].comparisonType",
 				Context: $"Supported values: {BusinessRuleConstants.SupportedComparisonTypesDescription}."),
-			new ToolContractValidator("conditional-field", "invalid-right-expression-shape", "rule.condition.conditions[*].rightExpression",
+			new ToolContractValidator("conditional-field", "invalid-right-expression-shape", "rules[*].condition.conditions[*].rightExpression",
 				Context: "Required for equal, not-equal, greater-than, greater-than-or-equal, less-than, and less-than-or-equal. Omit or null for is-filled-in and is-not-filled-in."),
-			new ToolContractValidator("comparison-family", "unsupported-relational-operands", "rule.condition.conditions[*]",
+			new ToolContractValidator("comparison-family", "unsupported-relational-operands", "rules[*].condition.conditions[*]",
 				Context: "greater-than, greater-than-or-equal, less-than, and less-than-or-equal only support numeric and date/time left attributes (Date, DateTime, Time). Attribute-to-attribute relational comparisons must use matching data value types."),
-			new ToolContractValidator("comparison-family", "unsupported-equality-operands", "rule.condition.conditions[*]",
+			new ToolContractValidator("comparison-family", "unsupported-equality-operands", "rules[*].condition.conditions[*]",
 				Context: "equal and not-equal are not supported when the left attribute data value type is RichText or Image. Use is-filled-in or is-not-filled-in for those attributes."),
-			new ToolContractValidator("date-time-constant", "invalid-date-time-constant", "rule.condition.conditions[*].rightExpression.value",
+			new ToolContractValidator("date-time-constant", "invalid-date-time-constant", "rules[*].condition.conditions[*].rightExpression.value",
 				Context: "Date constants must be JSON strings in yyyy-MM-dd format. DateTime constants must be JSON strings in ISO 8601 date-time format with a timezone suffix ('Z' or '+/-HH:mm'). Time constants must be JSON strings in ISO 8601 time format with a timezone suffix ('Z' or '+/-HH:mm')."),
-			new ToolContractValidator("lookup-record", "missing-lookup-record", "rule.condition.conditions[*].rightExpression.value",
+			new ToolContractValidator("lookup-record", "missing-lookup-record", "rules[*].condition.conditions[*].rightExpression.value",
 				Context: $"Lookup constants must be GUID strings for existing records in the attribute reference schema. Use {ODataReadTool.ToolName} or {ExecuteEsqTool.ToolName} to resolve or verify the lookup record Id before calling the business-rule creation tool; with odata-read, filter records by a lookup value using traversal paths such as Account/Id."),
-			new ToolContractValidator("sys-value", "unsupported-system-variable", "rule.condition.conditions[*].leftExpression|rightExpression.sysValueName",
+			new ToolContractValidator("sys-value", "unsupported-system-variable", "rules[*].condition.conditions[*].leftExpression|rightExpression.sysValueName",
 				Context: $"A SysValue may be on EITHER side of a condition. sysValueName must be one of: {BusinessRuleConstants.SupportedSystemVariablesDescription}. Types: CurrentDate=Date, CurrentTime=Time, CurrentDateTime=DateTime, CurrentUser/CurrentUserContact/CurrentUserAccount=Lookup, CurrentUserRoles=ObjectList (a collection of SysAdminUnit roles). Both operands must resolve to the same data value type and, for lookups, the same reference schema (CurrentUserContact=Contact, CurrentUserAccount=Account, CurrentUser/CurrentUserRoles=SysAdminUnit). Role-based visibility: CurrentUserRoles on the left, comparisonType contain/not-contain, and a Const SysAdminUnit role id on the right."),
-			new ToolContractValidator("comparison-operand", "incompatible-condition-operands", "rule.condition.conditions[*]",
+			new ToolContractValidator("comparison-operand", "incompatible-condition-operands", "rules[*].condition.conditions[*]",
 				Context: "Either side may be AttributeValue, Const, or SysValue, in any pairing. comparisonType contain/not-contain requires the left operand to be an ObjectList (for example CurrentUserRoles) or a text type. A Const operand inherits its data value type and reference schema from the operand it is compared against.")
 		];
 
@@ -2265,14 +2654,14 @@ internal static class ToolContractCatalog {
 			[EnvironmentNameFieldName] = ExampleEnvironmentName,
 			[PackageNameFieldName] = ExamplePackageName,
 			[EntitySchemaNameFieldName] = entitySchemaName,
-			[RuleFieldName] = new Dictionary<string, object?> {
+			[RulesFieldName] = new object[] { new Dictionary<string, object?> {
 				["caption"] = caption,
 				[ConditionFieldName] = new Dictionary<string, object?> {
 					[LogicalOperationFieldName] = "AND",
 					[ConditionsFieldName] = System.Array.Empty<object>()
 				},
 				[ActionsFieldName] = new object[] { action }
-			}
+			} }
 		});
 	}
 
@@ -2292,14 +2681,14 @@ internal static class ToolContractCatalog {
 			[EnvironmentNameFieldName] = ExampleEnvironmentName,
 			[PackageNameFieldName] = ExamplePackageName,
 			[EntitySchemaNameFieldName] = entitySchemaName,
-			[RuleFieldName] = new Dictionary<string, object?> {
+			[RulesFieldName] = new object[] { new Dictionary<string, object?> {
 				["caption"] = caption,
 				[ConditionFieldName] = new Dictionary<string, object?> {
 					[LogicalOperationFieldName] = "AND",
 					[ConditionsFieldName] = System.Array.Empty<object>()
 				},
 				[ActionsFieldName] = new object[] { action }
-			}
+			} }
 		});
 	}
 
@@ -2368,7 +2757,7 @@ internal static class ToolContractCatalog {
 			[EnvironmentNameFieldName] = ExampleEnvironmentName,
 			[PackageNameFieldName] = ExamplePackageName,
 			[schemaFieldName] = schemaName,
-			[RuleFieldName] = new Dictionary<string, object?> {
+			[RulesFieldName] = new object[] { new Dictionary<string, object?> {
 				["caption"] = caption,
 				[ConditionFieldName] = new Dictionary<string, object?> {
 					[LogicalOperationFieldName] = "AND",
@@ -2382,7 +2771,7 @@ internal static class ToolContractCatalog {
 						["items"] = actionItems
 					}
 				}
-			}
+			} }
 		});
 	}
 
@@ -2391,7 +2780,7 @@ internal static class ToolContractCatalog {
 			[EnvironmentNameFieldName] = ExampleEnvironmentName,
 			[PackageNameFieldName] = ExamplePackageName,
 			[PageSchemaNameFieldName] = ExampleOrderPageSchemaName,
-			[RuleFieldName] = new Dictionary<string, object?> {
+			[RulesFieldName] = new object[] { new Dictionary<string, object?> {
 				["caption"] = "Hide warning when planned and actual dates match",
 				[ConditionFieldName] = new Dictionary<string, object?> {
 					[LogicalOperationFieldName] = "AND",
@@ -2415,7 +2804,7 @@ internal static class ToolContractCatalog {
 						["items"] = new object[] { "DateMismatchWarningLabel" }
 					}
 				}
-			}
+			} }
 		});
 	}
 
@@ -2445,7 +2834,7 @@ internal static class ToolContractCatalog {
 			[EnvironmentNameFieldName] = ExampleEnvironmentName,
 			[PackageNameFieldName] = ExamplePackageName,
 			[schemaFieldName] = schemaName,
-			[RuleFieldName] = new Dictionary<string, object?> {
+			[RulesFieldName] = new object[] { new Dictionary<string, object?> {
 				["caption"] = caption,
 				[ConditionFieldName] = new Dictionary<string, object?> {
 					[LogicalOperationFieldName] = "AND",
@@ -2459,7 +2848,7 @@ internal static class ToolContractCatalog {
 						["items"] = actionItems
 					}
 				}
-			}
+			} }
 		});
 	}
 
@@ -2489,7 +2878,7 @@ internal static class ToolContractCatalog {
 			[EnvironmentNameFieldName] = ExampleEnvironmentName,
 			[PackageNameFieldName] = ExamplePackageName,
 			[schemaFieldName] = schemaName,
-			[RuleFieldName] = new Dictionary<string, object?> {
+			[RulesFieldName] = new object[] { new Dictionary<string, object?> {
 				["caption"] = caption,
 				[ConditionFieldName] = new Dictionary<string, object?> {
 					[LogicalOperationFieldName] = "AND",
@@ -2503,7 +2892,7 @@ internal static class ToolContractCatalog {
 						["items"] = actionItems
 					}
 				}
-			}
+			} }
 		});
 	}
 
@@ -2514,7 +2903,7 @@ internal static class ToolContractCatalog {
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PackageNameFieldName, OperationsFieldName],
 				EnvironmentPackageFields(
-					Field(OperationsFieldName, ArrayType, "Ordered schema operations. For update-entity, supply `update-operations` (add/modify/remove) or a `columns` add-batch. Column fields are unified with get-app-info: `column-name` (alias `name`), `type` (alias `data-value-type`), `reference-schema-name` (alias `reference-schema`), `required` (alias `is-required`) — and in a `columns` add-batch the read-shape scalar `caption` is promoted to `title-localizations` — so a column read from get-app-info can be sent back by adding the `action` verb.")),
+					Field(OperationsFieldName, ArrayType, "Ordered schema operations. For update-entity, supply `update-operations` (add/modify/remove) or a `columns` add-batch. Column fields are unified with get-app-info: `column-name` (alias `name`), `type` (alias `data-value-type`), `reference-schema-name` (alias `reference-schema`), `required` (alias `is-required`) — so a column read from get-app-info can be sent back by adding the `action` verb. For an add, `title-localizations` is OPTIONAL: when omitted, `en-US` is auto-derived from a scalar `title`/`caption` or the column name (the `en-US` value must be English when supplied).")),
 				Validators: [
 					new ToolContractValidator(
 						"sync-schemas-operations-localizations",
@@ -2673,7 +3062,7 @@ internal static class ToolContractCatalog {
 					Field(PackageNameFieldName, StringType, "Package name to inspect."),
 					Field(SelectorCodeFieldName, StringType, "Installed application code. When provided, list-pages resolves the application's primary package before querying pages."),
 					Field(SearchPatternFieldName, StringType, "Optional case-insensitive schema-name filter."),
-					Field("limit", NumberType, "Optional max result count.")),
+					Field(LimitFieldName, NumberType, "Optional max result count. Omit or pass 0 to use the default of 50. A negative limit is rejected with success:false (it must not disable the cap).")),
 				Validators: [
 					new ToolContractValidator(
 						"mutually-exclusive-fields",
@@ -2683,6 +3072,9 @@ internal static class ToolContractCatalog {
 							SelectorCodeFieldName
 						],
 						Context: "list-pages accepts package-name or code, not both."),
+					new ToolContractValidator(
+						LimitFieldName, "invalid-limit", LimitFieldName,
+						Context: "limit must be zero or greater; 0 (or omitting it) uses the default of 50, and a negative value is rejected with success:false."),
 				],
 				AnyOf: EnvironmentOrExplicitConnectionRequirements()),
 			EnvelopeOutput(
@@ -2691,6 +3083,9 @@ internal static class ToolContractCatalog {
 					SuccessFalseSignal
 				],
 				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
+				Field(CountFieldName, NumberType, "Number of pages returned (after the result cap is applied)."),
+				Field("total", NumberType, "Total pages matching the query before the cap. Compare to count to detect an incomplete result."),
+				Field("truncated", BooleanType, "True when total is greater than count, meaning more pages match than were returned. Raise limit or add a filter to retrieve the rest."),
 				Field(PagesFieldName, ArrayType, "Discovered pages using `schema-name`, `uId`, `packageName`, and `parentSchemaName`."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
 			),
@@ -3333,11 +3728,12 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildComponentInfo() {
 		return new ToolContractDefinition(
 			ComponentInfoTool.ToolName,
-			"Returns a flat list of Freedom UI component summaries or the full contract for one component type.",
+			"Returns a flat list of Freedom UI component summaries, the full contract for one component type, or the assembly recipe for a composite Designer element.",
 			new ToolInputSchemaContract(
 				[],
 				[
-					Field(ComponentTypeFieldName, StringType, "Freedom UI component type, e.g. 'crt.TabContainer'. Omit or use 'list' to return the catalog (list mode); a known type returns that one component's full contract (detail mode); an unknown type returns a bounded suggestion shortlist."),
+					Field(ComponentTypeFieldName, StringType, "Freedom UI component type, e.g. 'crt.TabContainer'. Omit or use 'list' to return the catalog (list mode); a known type returns that one component's full contract (detail mode); an unknown type returns a bounded suggestion shortlist. Mutually exclusive with 'composite'."),
+					Field("composite", StringType, "Composite Designer element caption, for example 'Expanded list' or 'Next steps'. Returns the composite's assembly docs — a composite is a pre-built combination of several components with NO componentType of its own. Discover available captions via list mode (composites section). Mutually exclusive with 'component-type'."),
 					Field("search", StringType, "Optional keyword filter applied in list mode and to not-found suggestions, e.g. 'tab'."),
 					Field("schema-type", StringType, "Component registry to query: 'web' (default) or 'mobile'. The mobile registry is separate (crt.Toggle, crt.BarcodeScanner, crt.Sort, ...) and excludes web-only types."),
 					Field(EnvironmentNameFieldName, StringType, "PREFERRED. Registered environment name; scopes the catalog to its real platform version. Mutually exclusive with 'version'."),
@@ -3345,6 +3741,13 @@ internal static class ToolContractCatalog {
 					Field("uri", StringType, "Emergency fallback only: direct application URI. Prefer 'environment-name'."),
 					Field(LoginFieldName, StringType, "Emergency fallback only: login paired with 'uri'."),
 					Field(PasswordFieldName, StringType, "Emergency fallback only: password paired with 'uri'.")
+				],
+				Validators: [
+					new ToolContractValidator(
+						"mutually-exclusive",
+						InvalidWorkflowShapeCode,
+						Fields: [ComponentTypeFieldName, "composite"],
+						Context: "'component-type' and 'composite' are mutually exclusive — pass one or the other, not both.")
 				]),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -3352,10 +3755,13 @@ internal static class ToolContractCatalog {
 					SuccessFalseSignal
 				],
 				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
-				Field("mode", StringType, "detail or list."),
-				Field("count", NumberType, "Number of matching components."),
+				Field("mode", StringType, "detail, list, or composite."),
+				Field(CountFieldName, NumberType, "Number of matching components or composites."),
 				Field("items", ArrayType, "Flat list-mode component summaries, each with componentType and an optional description."),
-				Field("componentType", StringType, "Component type echoed back in detail mode."),
+				Field("composites", ArrayType, "Composite Designer elements in list mode, each with caption and optional description. Fetch a composite's assembly recipe with composite=\"<caption>\"."),
+				Field("caption", StringType, "Composite caption echoed back in composite detail mode."),
+				Field("documentation", StringType, "Composite assembly recipe markdown in composite detail mode."),
+				Field("componentType", StringType, "Component type echoed back in component detail mode."),
 				Field("resolvedTargetVersion", StringType, "Catalog version the response was filtered against."),
 				Field("resolvedFrom", StringType, "Resolver tier that produced the version: 'environment' (known, exact), 'environment-superset' (known version, approximate catalog — soft caveat), or 'latest-fallback' (version unknown — hard stop)."),
 				Field("versionWarning", StringType, "Prose caveat present on 'environment-superset' (soft) and 'latest-fallback' (hard stop); omitted on 'environment'."),
@@ -3366,6 +3772,9 @@ internal static class ToolContractCatalog {
 			CommonErrorContract,
 			[
 				Alias(ParameterScope, ComponentTypeFieldName, "componentType", RejectedStatus, "Use 'component-type' instead of 'componentType'."),
+				Alias(ParameterScope, ComponentTypeFieldName, "component-name", RejectedStatus, "Use 'component-type' instead of 'component-name'."),
+				Alias(ParameterScope, ComponentTypeFieldName, "componentName", RejectedStatus, "Use 'component-type' instead of 'componentName'."),
+				Alias(ParameterScope, ComponentTypeFieldName, "component_name", RejectedStatus, "Use 'component-type' instead of 'component_name'."),
 				Alias(ParameterScope, "schema-type", "schemaType", RejectedStatus, "Use 'schema-type' instead of 'schemaType'."),
 				Alias(ParameterScope, EnvironmentNameFieldName, "environmentName", RejectedStatus, "Use 'environment-name' instead of 'environmentName'.")
 			],
@@ -3378,11 +3787,24 @@ internal static class ToolContractCatalog {
 				Example("Inspect a mobile component contract", new Dictionary<string, object?> {
 					[ComponentTypeFieldName] = "crt.Toggle",
 					["schema-type"] = "mobile"
+				}),
+				Example("Get the assembly recipe for a composite Designer element", new Dictionary<string, object?> {
+					["composite"] = "Expanded list"
 				})
 			],
-			Flow([ComponentInfoTool.ToolName], "Use after get-page when bundle.viewConfig contains unfamiliar crt.* component types."),
+			Flow([ComponentInfoTool.ToolName],
+				"Use after get-page when bundle.viewConfig contains unfamiliar crt.* component types. "
+				+ "Use with composite=\"<caption>\" (not component-type) to get the authoritative assembly recipe for a composite Designer element "
+				+ "(e.g. 'Expanded list', 'Attachments', 'Next steps') — composites have no componentType and must be fetched by caption."),
 			[],
-			[]);
+			[],
+			[
+				new ToolAntiPattern(
+					"Hand-building a composite structure from memory, raw component docs, or guidance articles",
+					"The 'documentation' field of a composite detail response contains the complete, authoritative assembly recipe. "
+					+ "Do NOT synthesize the structure from memory or other sources — those are incomplete and will produce a broken result. "
+					+ "Follow the documentation field verbatim.")
+			]);
 	}
 
 	private static ToolContractDefinition BuildPageUpdate() {
@@ -3670,12 +4092,12 @@ internal static class ToolContractCatalog {
 
 	private static ToolContractAlias TitleParameterAlias() {
 		return Alias(ParameterScope, TitleLocalizationsFieldName, "title", RejectedStatus,
-			$"Use '{TitleLocalizationsFieldName}' instead of legacy scalar 'title'.");
+			$"Prefer '{TitleLocalizationsFieldName}'; legacy scalar 'title' is used only as an en-US fallback for an add.");
 	}
 
 	private static ToolContractAlias CaptionParameterAlias() {
 		return Alias(ParameterScope, TitleLocalizationsFieldName, CaptionFieldName, RejectedStatus,
-			$"Use '{TitleLocalizationsFieldName}' instead of legacy scalar 'caption'.");
+			$"Prefer '{TitleLocalizationsFieldName}'; legacy scalar 'caption' is used only as an en-US fallback for an add.");
 	}
 
 	private static ToolContractAlias DescriptionParameterAlias() {
@@ -3895,7 +4317,7 @@ internal static class ToolContractCatalog {
 				"`set-fsm-mode` was just toggled (full compilation only).",
 				"C# schemas were added or modified in the targeted package.",
 				"The runtime reported a missing-in-runtime or schema-not-found error that maps to a compilation gap.",
-				"Caller must NOT call this tool after `create-app`, `update-page`, `sync-pages`, `update-entity-schema`, `create-page`, `create-entity-business-rule`, or `create-page-business-rule`."
+				"Caller must NOT call this tool after `create-app`, `update-page`, `sync-pages`, `update-entity-schema`, `create-page`, `create-entity-business-rules`, or `create-page-business-rules`."
 			]);
 	}
 
@@ -4044,6 +4466,17 @@ internal static class ToolContractCatalog {
 	private const string SitePortFieldName = "sitePort";
 	private const string DbServerNameFieldName = "dbServerName";
 	private const string RedisServerNameFieldName = "redisServerName";
+	private const string IdentitySitePortFieldName = "identitySitePort";
+	private const string IdentitySiteNameFieldName = "identitySiteName";
+	private const string IdentityPathFieldName = "identityPath";
+	private const string IdentityArchivePathInBundleFieldName = "identityArchivePathInBundle";
+	private const string ConfigurationModeFieldName = "configurationMode";
+	private const string ClientNameFieldName = "clientName";
+	private const string ClientApplicationUrlFieldName = "clientApplicationUrl";
+	private const string ClientDescriptionFieldName = "clientDescription";
+	private const string NoAppFieldName = "noApp";
+	private const string CreateTechUserFieldName = "createTechUser";
+	private const string UserFieldName = "user";
 	private const string SkipBackupFieldName = "skip-backup";
 	private const string ExampleWorkspaceAbsolutePath = @"C:\Projects\Workspaces\UsrTaskApp";
 
@@ -4178,6 +4611,51 @@ internal static class ToolContractCatalog {
 			]);
 	}
 
+	private static ToolContractDefinition BuildDeployIdentity() {
+		return new ToolContractDefinition(
+			DeployIdentityTool.DeployIdentityToolName,
+			"Deploys IdentityService to IIS for a registered local Creatio environment, connects Creatio through the platform sys-settings/REST path, creates a fresh clio OAuth client bound to an existing user by default, and stores the returned client credentials in local clio appsettings. Never echo the generated client secret in logs or public messages.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameFieldName],
+				[
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(ZipFileFieldName, StringType, "Optional path to a standalone IdentityService.zip or a Creatio distribution bundle containing IdentityService.zip. When omitted, deploy-identity finds IdentityService.zip under the registered EnvironmentPath."),
+					Field(IdentitySitePortFieldName, NumberType, "Optional HTTP port where IdentityService will listen. When omitted, deploy-identity selects the first free IIS port in range 40001-40100."),
+					Field(IdentityArchivePathInBundleFieldName, StringType, "Nested IdentityService archive path when zipFile is a Creatio bundle, and the relative path preferred under EnvironmentPath when zipFile is omitted. Default: IdentityService.zip."),
+					Field(IdentitySiteNameFieldName, StringType, "Optional IIS site and app pool name. Defaults to <environment>-identity."),
+					Field(IdentityPathFieldName, StringType, "Optional target directory for IdentityService files."),
+					Field(ConfigurationModeFieldName, StringType, "Creatio connection mode: db-first, rest, or db. db-first currently falls back to REST/sys-settings until direct DB seeding is proven."),
+					Field(ClientNameFieldName, StringType, "OAuth client display name created for clio."),
+					Field(ClientApplicationUrlFieldName, StringType, "OAuth client application URL."),
+					Field(ClientDescriptionFieldName, StringType, "OAuth client description."),
+					Field(NoAppFieldName, BooleanType, "Deploy and connect IdentityService without creating a clio OAuth app or verifying client_credentials."),
+					Field(CreateTechUserFieldName, BooleanType, "Create a new technical user for the OAuth app instead of binding it to an existing user."),
+					Field(UserFieldName, StringType, "Existing Creatio system user used by the OAuth client. Defaults to Supervisor.")
+				]),
+			CommandExecutionOutput(),
+			CommonErrorContract,
+			[],
+			[],
+			[
+				Example("Deploy IdentityService with environment defaults", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[ConfigurationModeFieldName] = "db-first"
+				})
+			],
+			Flow(
+				[
+					DeployIdentityTool.DeployIdentityToolName
+				],
+				"Deploy IdentityService for an already registered local Creatio environment. The command can discover IdentityService.zip under EnvironmentPath and auto-pick a free IIS port; by default it creates a fresh OAuth app bound to Supervisor, stores generated clio OAuth credentials in local clio settings, and masks the secret in command output."),
+			[],
+			[],
+			Preconditions: [
+				"The environment is registered and has EnvironmentPath pointing to a local Creatio installation.",
+				"Supervisor/default credentials or existing environment credentials can authenticate to Creatio.",
+				"Use explicit zipFile or identitySitePort only when overriding the EnvironmentPath archive discovery or default port range."
+			]);
+	}
+
 	private static ToolContractDefinition BuildRestoreWorkspace() {
 		return new ToolContractDefinition(
 			RestoreWorkspaceTool.RestoreWorkspaceToolName,
@@ -4288,6 +4766,38 @@ internal static class ToolContractCatalog {
 				Field("exit-code", NumberType, "Process exit code."),
 				Field("execution-log-messages", ArrayType, "Structured log messages."),
 				Field("log-file-path", StringType, "Optional operation log path.")
+			]);
+	}
+
+	private static ToolOutputContract BusinessRuleBatchOutput() {
+		return new ToolOutputContract(
+			"business-rule-batch-result",
+			null,
+			[
+				"failed > 0",
+				"error != null"
+			],
+			[
+				Field("created", NumberType, "Number of rules created."),
+				Field("failed", NumberType, "Number of rules that failed."),
+				Field("results", ArrayType, "Per-rule outcomes in input order; each item has name, success, ruleName, and error."),
+				Field("error", StringType, "Request-level error that prevented the whole batch from running. Note: when the requested environment cannot be resolved (unknown/unreachable), the tool instead returns the standard command-execution envelope (exit-code 1 with execution-log-messages referencing the environment) rather than this batch shape.")
+			]);
+	}
+
+	private static ToolOutputContract ODataCreateBatchOutput() {
+		return new ToolOutputContract(
+			"odata-create-batch-result",
+			null,
+			[
+				"failed > 0",
+				"error != null"
+			],
+			[
+				Field("created", NumberType, "Number of rows created."),
+				Field("failed", NumberType, "Number of rows that failed."),
+				Field("results", ArrayType, "Per-row outcomes for every attempted row; each item has index, success, id, and error."),
+				Field("error", StringType, "Request-level error that prevented any row from being attempted.")
 			]);
 	}
 

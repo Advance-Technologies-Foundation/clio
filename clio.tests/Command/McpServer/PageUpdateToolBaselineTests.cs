@@ -1,10 +1,14 @@
 using System.IO.Abstractions.TestingHelpers;
+using System.Linq;
 using System.Text.Json;
+using System.Threading;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
+using Clio.UserEnvironment;
 using FluentAssertions;
 using NSubstitute;
+using NSubstitute.Core;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command.McpServer;
@@ -32,6 +36,7 @@ public sealed class PageUpdateToolBaselineTests
 
 	private IApplicationClient _applicationClient;
 	private MockFileSystem _fileSystem;
+	private IComponentInfoCatalog _webComponentCatalog;
 	private PageUpdateTool _tool;
 
 	[SetUp]
@@ -62,12 +67,24 @@ public sealed class PageUpdateToolBaselineTests
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		_fileSystem = new MockFileSystem();
+		_webComponentCatalog = Substitute.For<IComponentInfoCatalog>();
+		// The target environment resolves to platform version 8.3.4, so chart-widget validation is scoped
+		// to that version rather than 'latest'. Chart validation itself is fail-open here (the substitute
+		// catalog returns no state), so this affects only the requested version, not the other assertions.
+		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
+		settingsRepository.GetEnvironment(Arg.Any<EnvironmentOptions>()).Returns(new EnvironmentSettings());
+		IPlatformVersionResolver resolver = Substitute.For<IPlatformVersionResolver>();
+		resolver.ResolveAsync(Arg.Any<CancellationToken>())
+			.Returns(new PlatformVersionResolution("8.3.4", VersionResolutionSource.Environment));
+		IPlatformVersionResolverFactory resolverFactory = Substitute.For<IPlatformVersionResolverFactory>();
+		resolverFactory.Create(Arg.Any<EnvironmentSettings>()).Returns(resolver);
 		_tool = new PageUpdateTool(
 			command, logger, commandResolver,
 			Substitute.For<IMobileComponentInfoCatalog>(),
-			Substitute.For<IComponentInfoCatalog>(),
+			_webComponentCatalog,
 			Substitute.For<IPageBodySamplingService>(),
-			new PageBaselineGuard(_fileSystem));
+			new PageBaselineGuard(_fileSystem),
+			resolverFactory, settingsRepository);
 	}
 
 	private void StubChecksumByUId(params string[] responses) {
@@ -101,6 +118,24 @@ public sealed class PageUpdateToolBaselineTests
 	private static PageUpdateArgs CreateArgs(bool? force = null) =>
 		new(SchemaName, ValidBody, null, null, "sandbox", null, null, null,
 			SkipSampling: true, OutputDirectory: "/ws", Force: force);
+
+	[Test]
+	[Description("update-page scopes the registry-driven chart-widget validation to the platform version resolved from the target environment.")]
+	public async System.Threading.Tasks.Task UpdatePage_ShouldScopeChartValidationToResolvedEnvironmentVersion() {
+		// Arrange
+		PageUpdateArgs args = new(SchemaName, ValidBody, null, null, "sandbox", null, null, null,
+			SkipSampling: true, OutputDirectory: "/ws");
+
+		// Act
+		await _tool.UpdatePage(args, null);
+
+		// Assert
+		string requestedVersion = (string)_webComponentCatalog.ReceivedCalls()
+			.Single(c => c.GetMethodInfo().Name == nameof(IComponentInfoCatalog.LoadAsync))
+			.GetArguments()[0];
+		requestedVersion.Should().Be("8.3.4",
+			because: "update-page must scope its save-time chart-widget validation to the version resolved from the target environment");
+	}
 
 	[Test]
 	[Description("update-page must read the meta.json baseline and surface a conflict when the server checksum differs from the stored baseline.")]

@@ -6,7 +6,6 @@ using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
-using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E;
@@ -15,10 +14,11 @@ namespace Clio.Mcp.E2E;
 /// End-to-end tests for the identity-assertion MCP tools (Identity Service V3 token-exchange flow).
 /// </summary>
 [TestFixture]
+[Category("McpE2E.Sandbox")]
 [AllureNUnit]
 [AllureFeature("identity-assertion")]
 [NonParallelizable]
-public sealed class IdentityAssertionToolE2ETests {
+public sealed class IdentityAssertionToolE2ETests : McpContractFixtureBase {
 
 	private static readonly string[] ExpectedToolNames = [
 		GetIdentityAssertionTool.ToolName,
@@ -29,23 +29,23 @@ public sealed class IdentityAssertionToolE2ETests {
 
 	[Test]
 	[AllureTag("identity-assertion")]
-	[AllureName("Identity-assertion MCP tools are advertised by the real server")]
-	[AllureDescription("Starts the real clio MCP server and verifies all four identity-assertion tools are advertised.")]
-	[Description("Starts the real clio MCP server and verifies all four identity-assertion tools are advertised.")]
+	[AllureName("Identity-assertion MCP tools are discoverable on the lazy surface")]
+	[AllureDescription("Starts the real clio MCP server and verifies all four identity-assertion tools are discoverable via the get-tool-contract compact index.")]
+	[Description("Starts the real clio MCP server and verifies all four identity-assertion tools are discoverable via the get-tool-contract compact index.")]
 	public async Task IdentityTools_Should_Be_Advertised_By_McpServer() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		TestConfiguration.EnsureSandboxIsConfigured(settings);
-		await using IdentityArrangeContext arrangeContext = await ArrangeAsync(settings);
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
 
 		// Act
-		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
+		IReadOnlyCollection<string> reachableToolNames =
+			await arrangeContext.Session.ListReachableToolNamesAsync(arrangeContext.CancellationTokenSource.Token);
 
 		// Assert
-		IEnumerable<string> advertised = tools.Select(tool => tool.Name);
-		advertised.Should().Contain(ExpectedToolNames,
-			because: "all four identity-assertion tools must be advertised by the MCP server");
+		reachableToolNames.Should().Contain(ExpectedToolNames,
+			because: "all four identity-assertion MCP tools must be discoverable on the lazy surface (get-tool-contract compact index) even though they are not resident in tools/list");
 	}
 
 	[Test]
@@ -58,7 +58,7 @@ public sealed class IdentityAssertionToolE2ETests {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		TestConfiguration.EnsureSandboxIsConfigured(settings);
-		await using IdentityArrangeContext arrangeContext = await ArrangeAsync(settings);
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
 
 		// Act
 		CommandExecutionEnvelope execution = await ActCheckAuthCodeFlowAsync(
@@ -74,20 +74,13 @@ public sealed class IdentityAssertionToolE2ETests {
 				because: "the command prints the authorization-code-flow flag as a plain boolean");
 	}
 
-	private static async Task<IdentityArrangeContext> ArrangeAsync(McpE2ESettings settings) {
-		return await AllureApi.Step("Arrange identity-assertion MCP session", async () => {
-			CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(5));
-			McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-			return new IdentityArrangeContext(session, cancellationTokenSource);
-		});
-	}
-
 	private static async Task<CommandExecutionEnvelope> ActCheckAuthCodeFlowAsync(
-		IdentityArrangeContext arrangeContext, string environmentName) {
+		ArrangeContext arrangeContext, string environmentName) {
 		return await AllureApi.Step("Act by invoking check-auth-code-flow through MCP", async () => {
-			IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-			tools.Select(tool => tool.Name).Should().Contain(CheckAuthCodeFlowTool.ToolName,
-				because: "the check-auth-code-flow MCP tool must be advertised before the end-to-end call can be executed");
+			IReadOnlyCollection<string> toolNames =
+				await arrangeContext.Session.ListReachableToolNamesAsync(arrangeContext.CancellationTokenSource.Token);
+			toolNames.Should().Contain(CheckAuthCodeFlowTool.ToolName,
+				because: "the check-auth-code-flow MCP tool must be discoverable via the get-tool-contract compact index before the end-to-end call can be executed");
 
 			CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
 				CheckAuthCodeFlowTool.ToolName,
@@ -99,15 +92,6 @@ public sealed class IdentityAssertionToolE2ETests {
 
 			return McpCommandExecutionParser.Extract(callResult);
 		});
-	}
-
-	private sealed record IdentityArrangeContext(
-		McpServerSession Session,
-		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
-			CancellationTokenSource.Dispose();
-		}
 	}
 
 }

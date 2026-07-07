@@ -870,13 +870,17 @@ foreach (ContactModel contact in appDataContext.Models<ContactModel>().OrderBy(x
 Preferred local pattern in Creatio package code:
 
 ```csharp
+// UserConnection is owned by the Creatio platform. Inject it through a Func accessor so the
+// DI container never tracks or disposes the per-request connection.
+serviceCollection.AddTransient<Func<UserConnection>>(sp => () => UserConnection);
 serviceCollection.AddScoped<IDataProvider>(sp =>
-	new LocalDataProvider(sp.GetRequiredService<UserConnection>()));
+	new LocalDataProvider(sp.GetRequiredService<Func<UserConnection>>()()));
 ```
 
 Guidance:
 
-- Register `UserConnection` as scoped.
+- Never register `UserConnection` as scoped or transient: the container would dispose the
+  platform-owned connection when the scope closes. Inject `Func<UserConnection>` and call it.
 - Register `IDataProvider` as scoped.
 - Do not register `IAppDataContext` in DI.
 - Create `IAppDataContext` from the current `IDataProvider` close to the operation that uses it.

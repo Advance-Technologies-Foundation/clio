@@ -39,7 +39,7 @@ public sealed class MobilePageGuidanceResource {
 
 		       | Web-guide section | On mobile |
 		       | --- | --- |
-		       | PRE-EDIT GUIDANCE CHECKLIST: `page-schema-resources`, entity-level `business-rules` (`create-entity-business-rule`), page-level `business-rules` (`create-page-business-rule`) | Applies with mobile-specific limits |
+		       | PRE-EDIT GUIDANCE CHECKLIST: `page-schema-resources`, entity-level `business-rules` (`create-entity-business-rules`), page-level `business-rules` (`create-page-business-rules`) | Applies with mobile-specific limits |
 		       | PRE-EDIT: `page-schema-converters` | Concept only — page body must not declare a `converters` section; reference OOTB converters inline (see below) or an already-existing custom converter in a remote module |
 		       | PRE-EDIT: `page-schema-handlers` | Concept only — page body must not declare a `handlers` section; only reference an already-existing remote handler when the user explicitly asks |
 		       | PRE-EDIT: `page-schema-validators`, `page-schema-creatio-devkit-common` | Does NOT apply — no validator support on mobile (even OOTB), no devkit-common AMD dependency |
@@ -61,12 +61,12 @@ public sealed class MobilePageGuidanceResource {
 		       ─────────────────────────────────────────────────────────────
 		       Mobile Freedom UI pages do support business rules. Business rule generation works
 		       identically to web — mobile pages do not affect how rules are created or stored.
-		       The same `create-page-business-rule` / `create-entity-business-rule` tools produce
+		       The same `create-page-business-rules` / `create-entity-business-rules` tools produce
 		       valid rules for both web and mobile pages without any mobile-specific parameters.
 
 		       Read `business-rules` for rule semantics; this guide adds only the mobile-specific boundary:
-		         - Use `create-page-business-rule` for UI state changes on one mobile page.
-		         - Use `create-entity-business-rule` when the rule should apply everywhere the entity is used,
+		         - Use `create-page-business-rules` for UI state changes on one mobile page.
+		         - Use `create-entity-business-rules` when the rule should apply everywhere the entity is used,
 		           or when the user needs validation-like enforcement that mobile page bodies cannot provide.
 		         - Business rules are separate artifacts. Do not implement business-rule logic in the mobile page
 		           body itself. Use `get-page` first when you need page attribute or element names for a page-level rule.
@@ -105,7 +105,7 @@ public sealed class MobilePageGuidanceResource {
 		           on mobile", "crt.DataGrid is web-only", "page body must not declare
 		           handlers").
 		         - The closest supported alternative, if any (e.g. entity-level business rule
-		           via `create-entity-business-rule`, an OOTB converter from the allowed list,
+		           via `create-entity-business-rules`, an OOTB converter from the allowed list,
 		           a remote handler the user must implement separately and reference by name).
 		         - Stop and ask the user how to proceed before writing the body.
 
@@ -134,7 +134,7 @@ public sealed class MobilePageGuidanceResource {
 		         Mobile pages do not support validators at all, including OOTB validators.
 		         Do not add a "validators" section. Do not reference any validator (custom or OOTB)
 		         from a mobile page body. If the user asks for validation, implement it via entity-level
-		         business rules (`create-entity-business-rule`) instead.
+		         business rules (`create-entity-business-rules`) instead.
 
 		       Converters — OOTB inline, or reference an existing custom converter:
 		         Do not add a "converters" section to the page body.

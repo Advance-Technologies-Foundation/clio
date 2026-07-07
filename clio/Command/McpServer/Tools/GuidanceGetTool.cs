@@ -19,6 +19,19 @@ namespace Clio.Command.McpServer.Tools;
 public sealed class GuidanceGetTool {
 	internal const string ToolName = "get-guidance";
 
+	private readonly IFeatureToggleService _featureToggleService;
+
+	/// <summary>
+	/// Initializes a new instance of the <see cref="GuidanceGetTool"/> class.
+	/// </summary>
+	/// <param name="featureToggleService">
+	/// Evaluates feature-gated guidance entries so experimental guides stay hidden from the always-on
+	/// <c>get-guidance</c> tool while their feature flag is off.
+	/// </param>
+	public GuidanceGetTool(IFeatureToggleService featureToggleService) {
+		_featureToggleService = featureToggleService ?? throw new ArgumentNullException(nameof(featureToggleService));
+	}
+
 	private static readonly Dictionary<string, string> LegacyAliases = new(StringComparer.Ordinal) {
 		["topic"] = "name",
 		["guide"] = "name",
@@ -35,11 +48,11 @@ public sealed class GuidanceGetTool {
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description("Returns a named clio MCP guidance article, or lists all available guide names when "
 		+ "the requested name is unknown. Known names include clio guides such as app-modeling, "
-		+ "page-modification, page-schema-handlers, and run-process-button plus composable-app skill "
+		+ "page-modification, and page-schema-handlers plus composable-app skill "
 		+ "guides such as atf-repository-dev, feature-toggle, sys-setting, configuration-webservice, "
-		+ "and their test guides.")]
+		+ "and their test guides. Always read the availableGuides list for the authoritative set.")]
 	public Task<GuidanceGetResponse> GetGuidance(
-		[Description("Parameters: name (required). Use one of the known guidance names returned in availableGuides, for example atf-repository-dev, feature-toggle-tests, sys-setting, configuration-webservice, page-modification, page-schema-handlers, indicator-widget, related-list, esq-filters, or existing-app-maintenance.")]
+		[Description("Parameters: name (required). Use one of the known guidance names returned in availableGuides, for example atf-repository-dev, feature-toggle-tests, sys-setting, configuration-webservice, page-modification, page-schema-handlers, related-list, esq-filters, or existing-app-maintenance.")]
 		[Required] GuidanceGetArgs args,
 		CancellationToken cancellationToken = default) {
 		try {
@@ -59,10 +72,10 @@ public sealed class GuidanceGetTool {
 				return Task.FromResult(new GuidanceGetResponse {
 					Success = false,
 					Error = "Missing required parameter 'name'. Pass {\"name\": \"<guide>\"}. See availableGuides for valid values.",
-					AvailableGuides = GuidanceCatalog.GetNames().ToList()
+					AvailableGuides = GuidanceCatalog.GetNames(_featureToggleService).ToList()
 				});
 			}
-			if (GuidanceCatalog.TryGet(effectiveName, out GuidanceCatalogEntry entry)) {
+			if (GuidanceCatalog.TryGet(effectiveName, _featureToggleService, out GuidanceCatalogEntry entry)) {
 				return Task.FromResult(new GuidanceGetResponse {
 					Success = true,
 					Hint = aliasHint,
@@ -76,13 +89,13 @@ public sealed class GuidanceGetTool {
 			return Task.FromResult(new GuidanceGetResponse {
 				Success = false,
 				Error = $"Unknown guidance '{effectiveName}'. Use one of availableGuides.",
-				AvailableGuides = GuidanceCatalog.GetNames().ToList()
+				AvailableGuides = GuidanceCatalog.GetNames(_featureToggleService).ToList()
 			});
 		} catch (Exception ex) {
 			return Task.FromResult(new GuidanceGetResponse {
 				Success = false,
-				Error = $"get-guidance failed: {ex.Message}. Expected args: {{\"name\": \"<guide>\"}}.",
-				AvailableGuides = GuidanceCatalog.GetNames().ToList()
+				Error = SensitiveErrorTextRedactor.Redact($"get-guidance failed: {ex.Message}. Expected args: {{\"name\": \"<guide>\"}}."),
+				AvailableGuides = GuidanceCatalog.GetNames(_featureToggleService).ToList()
 			});
 		}
 	}
@@ -93,7 +106,7 @@ public sealed class GuidanceGetTool {
 /// </summary>
 public sealed record GuidanceGetArgs(
 	[property: JsonPropertyName("name")]
-	[property: Description("Stable guidance name. Use one of the names returned in 'availableGuides' when unknown, for example atf-repository-dev, feature-toggle-tests, sys-setting, configuration-webservice, page-modification, page-schema-handlers, indicator-widget, related-list, esq-filters, or existing-app-maintenance.")]
+	[property: Description("Stable guidance name. Use one of the names returned in 'availableGuides' when unknown, for example atf-repository-dev, feature-toggle-tests, sys-setting, configuration-webservice, page-modification, page-schema-handlers, related-list, esq-filters, or existing-app-maintenance.")]
 	string? Name = null
 ) {
 	[JsonExtensionData]

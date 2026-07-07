@@ -39,7 +39,7 @@ public sealed class PageListTool(
 	};
 
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
-	[Description("List Freedom UI pages in Creatio with package and parent schema context. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
+	[Description("List Freedom UI pages in Creatio with package and parent schema context. Results are capped (default 50); the response always reports total (full match count) and truncated so an incomplete result is observable. A negative limit is rejected. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
 	public PageListResponse ListPages([Description("Parameters: package-name, code, search-pattern, limit (optional); environment-name preferred; uri/login/password emergency fallback only.")] [Required] PageListArgs args) {
 		string? legacyAliasError = GetLegacyAliasError(args);
 		if (!string.IsNullOrWhiteSpace(legacyAliasError)) {
@@ -52,7 +52,10 @@ public sealed class PageListTool(
 			PackageName = args.PackageName,
 			AppCode = args.Code,
 			SearchPattern = args.SearchPattern,
-			Limit = args.Limit ?? 50,
+			// When limit is omitted, pass zero so the command applies its default cap; an
+			// explicit zero means the same. The command rejects a negative limit instead of
+			// treating it as "disable the cap".
+			Limit = args.Limit ?? 0,
 			UId = args.UId,
 			Environment = args.EnvironmentName,
 			Uri = args.Uri,
@@ -64,7 +67,7 @@ public sealed class PageListTool(
 			try {
 				resolvedCommand = ResolveCommand<PageListCommand>(options);
 			} catch (Exception ex) {
-				return new PageListResponse { Success = false, Error = ex.Message };
+				return new PageListResponse { Success = false, Error = SensitiveErrorTextRedactor.Redact(ex.Message) };
 			}
 			resolvedCommand.TryListPages(options, out PageListResponse response);
 			return response;
@@ -92,21 +95,21 @@ public sealed record PageListArgs(
 	string? SearchPattern,
 
 	[property: JsonPropertyName("limit")]
-	[property: Description("Maximum number of results. Default: 50")]
+	[property: Description("Maximum number of results. Omit or pass 0 to use the default of 50. A negative limit is rejected (it must not disable the cap). The response always carries total and truncated so a capped result is observable.")]
 	int? Limit,
 
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Registered clio environment name, e.g. 'local'. Preferred for normal MCP work.")]
+	[property: Description(McpToolDescriptions.EnvironmentName)]
 	string? EnvironmentName,
 
 	[property: JsonPropertyName("uri")]
-	[property: Description("Direct Creatio URL. Use only when bootstrap is broken or before the environment can be registered through reg-web-app.")]
+	[property: Description(McpToolDescriptions.Uri)]
 	string? Uri,
 	[property: JsonPropertyName("login")]
-	[property: Description("Direct Creatio login paired with `uri`. Emergency fallback only.")]
+	[property: Description(McpToolDescriptions.Login)]
 	string? Login,
 	[property: JsonPropertyName("password")]
-	[property: Description("Direct Creatio password paired with `uri`. Emergency fallback only.")]
+	[property: Description(McpToolDescriptions.Password)]
 	string? Password,
 
 	[property: JsonPropertyName("uid")]

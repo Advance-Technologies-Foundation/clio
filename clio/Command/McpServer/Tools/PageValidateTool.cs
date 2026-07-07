@@ -20,13 +20,8 @@ public sealed class PageValidateTool(
 
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false,
 		Idempotent = true, OpenWorld = false)]
-	[Description("Validates a Freedom UI page body client-side without saving to Creatio. " +
-		"For web pages: checks marker integrity, JS syntax, JSON content, field bindings, column bindings, " +
-		"handler structure (SCHEMA_HANDLERS must be an array of {request, handler} entries), " +
-		"and VendorPrefix.Name format for SCHEMA_CONVERTERS / SCHEMA_VALIDATORS keys and SCHEMA_HANDLERS entry `request` values — " +
-		"read get-guidance `page-schema-converters`, `page-schema-handlers`, or `page-schema-validators` before adding them. " +
-		"For mobile pages (plain JSON body starting with '{'): validates that disallowed constructs " +
-		"(validators, handlers, custom converters sections) are absent.")]
+	[Description("Validates a Freedom UI page body client-side without saving to Creatio (markers, JS syntax, field/column bindings, handler/converter/validator structure for web; disallowed-construct check for mobile). " +
+		"Run before update-page. See get-guidance `page-schema-converters` / `page-schema-handlers` / `page-schema-validators` for the contracts it enforces.")]
 	public async Task<PageValidateResponse> ValidatePage(
 		[Description("Parameters: body (required); resources (optional)")]
 		[Required] PageValidateArgs args,
@@ -44,9 +39,29 @@ public sealed class PageValidateTool(
 			};
 		}
 		PageSyncValidationResult result = Validate(args.Body, args.Resources);
+		// Registry-driven chart-widget validation needs the (async, version-scoped) component catalog,
+		// so it runs here rather than in the static content-validation pipeline. Fail-open inside.
+		SchemaValidationResult chartResult =
+			await ChartWidgetValidation.ValidateAsync(args.Body, webComponentCatalog, args.Version, cancellationToken).ConfigureAwait(false);
+		if (!chartResult.IsValid) {
+			result = FoldInChartErrors(result, chartResult);
+		}
 		return new PageValidateResponse {
 			Valid = result.MarkersOk && result.JsSyntaxOk && result.ContentOk,
 			Validation = result
+		};
+	}
+
+	private static PageSyncValidationResult FoldInChartErrors(
+		PageSyncValidationResult result, SchemaValidationResult chartResult) {
+		List<string> mergedErrors = result.Errors is null ? new List<string>() : new List<string>(result.Errors);
+		mergedErrors.AddRange(chartResult.Errors);
+		return new PageSyncValidationResult {
+			MarkersOk = result.MarkersOk,
+			JsSyntaxOk = result.JsSyntaxOk,
+			ContentOk = false,
+			Errors = mergedErrors.Count > 0 ? mergedErrors : null,
+			Warnings = result.Warnings
 		};
 	}
 
@@ -221,8 +236,12 @@ public sealed record PageValidateArgs(
 	string Body,
 
 	[property: JsonPropertyName("resources")]
-	[property: Description("JSON object string of localizable string key-value pairs the platform does NOT auto-provide (custom tab/group titles, button captions, validator messages, explicit caption overrides). IMPORTANT: only pass keys that have NO matching DS-bound view model attribute on the target page (or that intentionally override the inherited caption). Keys matching an existing DS-bound attribute are auto-provided by the platform and MUST be omitted. Inline placeholder/title/label/caption/tooltip literals in the body are REJECTED — bind each via $Resources.Strings.<Key> and register the key's default-language value here. See `page-schema-resources` guidance for the full check.")]
-	string? Resources = null
+	[property: Description(McpToolDescriptions.PageResources)]
+	string? Resources = null,
+
+	[property: JsonPropertyName("version")]
+	[property: Description("Optional explicit platform version (3-part semver, e.g. '8.3.3') that scopes the registry-driven chart-widget (crt.ChartWidget) validation to the target environment's component set. PREFER passing the resolvedTargetVersion you already got from get-component-info for the same environment, so this pre-flight check matches what update-page / sync-pages will enforce on save. When omitted, validation uses the 'latest' catalog (a superset of all GA versions). If no registry is published for the given version, the catalog automatically falls back to 'latest'.")]
+	string? Version = null
 );
 
 public sealed class PageValidateResponse {

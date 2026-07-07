@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Acornima.Ast;
 using Clio.Common;
+using Clio.UserEnvironment;
 using McpServerLib = ModelContextProtocol.Server;
 using ModelContextProtocol.Server;
 
@@ -21,7 +22,9 @@ public sealed class PageUpdateTool(
 	IMobileComponentInfoCatalog mobileComponentCatalog,
 	IComponentInfoCatalog webComponentCatalog,
 	IPageBodySamplingService samplingService,
-	IPageBaselineGuard pageBaselineGuard)
+	IPageBaselineGuard pageBaselineGuard,
+	IPlatformVersionResolverFactory? resolverFactory = null,
+	ISettingsRepository? settingsRepository = null)
 	: BaseTool<PageUpdateOptions>(command, logger, commandResolver) {
 
 	private readonly IToolCommandResolver _commandResolver = commandResolver;
@@ -29,29 +32,17 @@ public sealed class PageUpdateTool(
 
 	internal const string ToolName = "update-page";
 
+	// Prefix shared by every offline validation-failure response so the wording stays consistent.
+	private const string ValidationFailedPrefix = "Validation failed: ";
+
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
-	[Description("Update Freedom UI page schema body. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows. " +
-		"On successful non-dry-run saves, update-page also attempts a best-effort live Designer Presence `save` notification so active Creatio designers can be warned about outdated pages. This live notification requires forms-auth browser-session cookies (login/password-backed flow); in OAuth-only or credential-less environments the page save still succeeds and the response carries a warning when the live notification is skipped or fails. " +
-		"CONFLICT DETECTION: when get-page previously stored a checksum baseline in .clio-pages/{schema}/meta.json for the same environment, this tool blocks the save with `conflict: true` + `conflictDetails` if the schema was modified outside this session (e.g. the user edited the page in the Creatio designer). On a conflict: do NOT retry with the same body — re-run get-page, re-apply your change on top of the fresh body, then retry; inform the user about the external changes and set force=true ONLY after they explicitly confirm overwriting them. A small race window between the check and the save remains (last write wins). " +
-		"Before editing page bodies or resource payloads, call get-guidance with name `page-modification` and use its pre-edit checklist to select specialized page-authoring guides. " +
-			"For conditional visibility, editability, required state based on field values or conditional set and clear value. Also filtering of lookups, based on condition or value from other field (e.g. \"when Status=Closed, hide Description\"), OR for writing/clearing column values when another field changes (e.g. \"when Type=Personal, clear Company\"; \"when Country=USA, set Currency=USD\"; two interdependent fields where changing one auto-fills or wipes the other), use business rules instead of writing handlers or validators in page body \u2014 business rules can both populate AND clear columns via the `set-values` action; call get-guidance with name `business-rules` to learn more. " +
-			"To restrict / filter which records a lookup or ComboBox field offers (e.g. \"show only contacts who\u2026\", \"limit the Assignee field to\u2026\", \"only accounts that have\u2026\"), do NOT add filterConfig / staticFilters / dataSourceFilters to a datasource list attribute here \u2014 use create-entity-business-rule with apply-static-filter (call get-guidance with name `business-rules`). " +
-			"This holds for ANY constraint mechanism \u2014 an attribute value, a now-relative period (date macro), a fixed calendar/clock part such as a time of day (datePart), the existence or count of related child records, or a constraint gated by another field's value \u2014 classify the mechanism, not the wording; all are apply-static-filter, never a handler or crt.InitRequest. A gated constraint puts the gate (X = Y) into the rule's condition group and the apply-static-filter action on the target lookup. " +
-		"Section authoring rules for the body payload: " +
-		"if the requirement involves display-only value transformation (email as mailto link, phone as tel link, text to uppercase, boolean inversion, number formatting, any value that should look different on screen without changing the underlying model) call get-guidance with name `page-schema-converters` first — this determines whether a converter is the right tool before choosing a component type; " +
-		"if the body changes SCHEMA_HANDLERS call get-guidance with name `page-schema-handlers` first — NOTE: restricting which records a lookup/ComboBox offers is NEVER handler business logic, regardless of the constraint mechanism (attribute value, relative period, fixed time-of-day, child existence/count, or gating by another field); it is an entity business rule (apply-static-filter), so use create-entity-business-rule, not crt.InitRequest; " +
-		"if the body changes SCHEMA_VALIDATORS call get-guidance with name `page-schema-validators` first; " +
-		"if the body changes SCHEMA_CONVERTERS call get-guidance with name `page-schema-converters` first; " +
-		"if the body adds or edits `@creatio-devkit/common` usage call get-guidance with name `page-schema-creatio-devkit-common` before editing SCHEMA_DEPS or SDK calls; " +
-		"if the body contains `$Resources.Strings.*` or `#ResourceString(...)#`, or you plan to pass the `resources` parameter, call get-guidance with name `page-schema-resources` first — do NOT register localizable strings until this guidance tells you to do so. " +
-		"if the body adds a button that runs a business process (a `clicked` bound to " +
-			"`crt.RunBusinessProcessRequest`), call get-guidance with name `run-process-button` and resolve " +
-			"the process with get-process-signature FIRST — parameter keys must be the process parameter " +
-			"CODE (not caption); update-page validates the codes against the live signature and rejects " +
-			"unknown ones. " +
-			"INSERTED-FIELD CONTRACT: " + SchemaValidationService.InsertedFieldContractSummary)]
+	[Description("Update a Freedom UI page schema body. environment-name preferred; uri/login/password fallback only. " +
+		"On a successful non-dry-run save it also best-effort notifies active Creatio designers (Designer Presence); the save still succeeds if that notification is skipped (carried as a warning). " +
+		"CONFLICT DETECTION: if get-page stored a checksum baseline for the same environment and the schema changed outside this session, the save is blocked with `conflict: true` + `conflictDetails` — do NOT retry the same body; re-run get-page, re-apply your change, retry, and set force=true only after the user confirms overwriting. " +
+		"BEFORE editing the body call get-guidance `page-modification` and follow its pre-edit checklist — it routes visibility/required/value-set and lookup-filter work to business rules (not handlers/validators), display-only transforms to converters, run-process buttons to `run-process-button` (resolve parameter CODEs with get-process-signature first), and localizable strings to `page-schema-resources`. " +
+		"INSERTED-FIELD CONTRACT: " + SchemaValidationService.InsertedFieldContractSummary)]
 	public async Task<PageUpdateResponse> UpdatePage(
-		[Description("Parameters: schema-name, body (required); resources, dry-run (optional); environment-name preferred; uri/login/password emergency fallback only.")]
+		[Description("schema-name, body (required); resources, dry-run (optional); environment-name preferred; uri/login/password fallback only.")]
 		[Required] PageUpdateArgs args,
 		McpServerLib.McpServer server,
 		CancellationToken cancellationToken = default) {
@@ -72,7 +63,7 @@ public sealed class PageUpdateTool(
 			try {
 				resolvedCommand = ResolveCommand<PageUpdateCommand>(options);
 			} catch (Exception ex) {
-				return new PageUpdateResponse { Success = false, Error = ex.Message };
+				return new PageUpdateResponse { Success = false, Error = SensitiveErrorTextRedactor.Redact(ex.Message) };
 			}
 			resolvedCommand.TryUpdatePage(options, out PageUpdateResponse inner);
 			if (inner.Success && args.Verify == true)
@@ -107,9 +98,11 @@ public sealed class PageUpdateTool(
 			}, null, null, null);
 		}
 		PageUpdateResponse syntaxFailure = TryValidateBodySyntax(options, out Script parsedAst);
-		if (syntaxFailure != null)
-			return (syntaxFailure, null, null, null);
-		(PageUpdateResponse validationFailure, IReadOnlyList<string> validationWarnings) = ValidateBody(options);
+		if (syntaxFailure != null) {
+			return (ResolveSyntaxFailure(options, syntaxFailure), null, null, null);
+		}
+		string? requestedVersion = await ResolvePlatformVersionAsync(options, cancellationToken).ConfigureAwait(false);
+		(PageUpdateResponse validationFailure, IReadOnlyList<string> validationWarnings) = ValidateBody(options, requestedVersion);
 		if (validationFailure != null)
 			return (validationFailure, null, null, null);
 		(PageUpdateResponse runProcessFailure, IReadOnlyList<string> runProcessWarnings) =
@@ -147,6 +140,83 @@ public sealed class PageUpdateTool(
 			Success = false,
 			Error = PageBodySyntaxValidator.FormatError(syntaxResult)
 		};
+	}
+
+	// A whole-body JavaScript syntax error is frequently a SIDE EFFECT of a more specific,
+	// offline-detectable problem the operator can actually act on: a malformed `resources` /
+	// `optional-properties` argument payload, a run-process button missing its required
+	// `processName`, a broken JSON SCHEMA_* marker / wrong-shaped converter-validator-handler, or
+	// simply an unregistered environment name. The generic "JavaScript syntax error at line X,
+	// column Y" message names none of those. Prefer the specific, actionable error when one of the
+	// OFFLINE validators pinpoints it — preserving the ENG-89796 fail-fast-on-pure-syntax wording
+	// when nothing more specific is found (clean payloads + a genuine JS-only typo).
+	//
+	// ENG-92049 constraint (honored here): only OFFLINE validators run on this path. No HTTP
+	// signature resolution (ValidateRunProcessButtons resolves process signatures over the wire and
+	// deliberately stays on the success path); the run-process STRUCTURAL check below is a pure
+	// regex over the body. The environment check resolves the command, which is offline up to the
+	// EnvironmentResolutionException throw (the unknown-environment / missing-settings guard runs
+	// before any network call); the resolved command is discarded, so a body that cannot parse
+	// triggers no Creatio I/O even in dry-run.
+	internal PageUpdateResponse ResolveSyntaxFailure(PageUpdateOptions options, PageUpdateResponse syntaxFailure) {
+		// 1. Argument-payload validation — pure offline, independent of body parsing or markers.
+		string argumentError = PageUpdateCommand.ValidateArgumentPayloads(options.Resources, options.OptionalProperties);
+		if (argumentError != null) {
+			return new PageUpdateResponse { Success = false, Error = argumentError };
+		}
+		// 2. Run-process STRUCTURAL check (processName / processRunType required) — pure offline
+		//    regex. Runs regardless of marker integrity so a run-process button that omits
+		//    processName is surfaced even when the body is otherwise not a recognizable page.
+		SchemaValidationResult runProcessStructure =
+			SchemaValidationService.ValidateRunProcessButtonStructure(options.Body);
+		if (!runProcessStructure.IsValid) {
+			return new PageUpdateResponse {
+				Success = false,
+				Error = ValidationFailedPrefix + string.Join("; ", runProcessStructure.Errors)
+			};
+		}
+		// 3. Offline content chain — only when the body is still a recognizable page (markers present
+		//    and paired). If marker integrity fails the body is not a usable page and the generic JS
+		//    syntax error is the more honest signal (ENG-89796).
+		if (SchemaValidationService.ValidateMarkerIntegrity(options.Body).IsValid) {
+			// Offline syntax-failure path: chart validation is version-scoped, but no environment
+			// probe runs here, so validate against the 'latest' superset (requestedVersion: null).
+			(PageUpdateResponse contentFailure, _) = ValidateBody(options, requestedVersion: null);
+			if (contentFailure != null) {
+				return contentFailure;
+			}
+		}
+		// 4. Environment resolution — offline up to the unknown-environment guard. Surface a missing
+		//    environment over the generic syntax error so the operator fixes the right thing first.
+		PageUpdateResponse environmentFailure = TryResolveEnvironmentFailure(options);
+		if (environmentFailure != null) {
+			return environmentFailure;
+		}
+		// 5. Genuine JS-only syntax error — nothing more specific was found.
+		return syntaxFailure;
+	}
+
+	// Attempts to resolve the update-page command purely to detect an unknown-environment /
+	// broken-settings argument error WITHOUT making any network call (the resolver's environment
+	// guard throws before any HTTP). Returns a structured failure on EnvironmentResolutionException,
+	// or null when the environment resolves (or no resolver / environment was supplied). Any other
+	// exception is swallowed so this offline probe never masks the original syntax error.
+	private PageUpdateResponse TryResolveEnvironmentFailure(PageUpdateOptions options) {
+		bool hasEnvironment = !string.IsNullOrWhiteSpace(options.Environment)
+			|| !string.IsNullOrWhiteSpace(options.Uri);
+		if (!hasEnvironment) {
+			return null;
+		}
+		try {
+			ResolveCommand<PageUpdateCommand>(options);
+			return null;
+		} catch (EnvironmentResolutionException ex) {
+			return new PageUpdateResponse { Success = false, Error = ex.Message };
+		} catch (Exception) {
+			// A DI/bootstrap failure here is unexpected; do not let it mask the syntax error the
+			// caller actually needs to fix. Fall back to the generic syntax message.
+			return null;
+		}
 	}
 
 	// AST lint pass runs on the success path of the regex validators so the
@@ -187,7 +257,41 @@ public sealed class PageUpdateTool(
 		return combined;
 	}
 
-	private (PageUpdateResponse Failure, IReadOnlyList<string> Warnings) ValidateBody(PageUpdateOptions options) {
+	/// <summary>
+	/// Resolves the target environment's platform version so the chart-widget validation catalog is scoped
+	/// to the component set the environment actually ships (mirroring <c>get-component-info</c>'s resolution).
+	/// Returns <see langword="null"/> for mobile bodies (chart validation is web-only — no probe needed) and
+	/// fail-soft on any resolution failure or absent resolver dependencies; <see cref="ChartWidgetValidation"/>
+	/// maps <see langword="null"/> to the safe <c>latest</c> superset so version resolution never blocks a save.
+	/// </summary>
+	private async Task<string?> ResolvePlatformVersionAsync(PageUpdateOptions options, CancellationToken cancellationToken) {
+		if (PageSchemaTypeExtensions.FromBody(options.Body) == PageSchemaType.Mobile
+			|| resolverFactory is null || settingsRepository is null) {
+			return null;
+		}
+		try {
+			EnvironmentSettings settings = settingsRepository.GetEnvironment(new EnvironmentOptions {
+				Environment = options.Environment,
+				Uri = options.Uri,
+				Login = options.Login,
+				Password = options.Password
+			});
+			if (settings is null) {
+				return null;
+			}
+			PlatformVersionResolution resolution = await resolverFactory.Create(settings)
+				.ResolveAsync(cancellationToken).ConfigureAwait(false);
+			return resolution?.ResolvedVersion;
+		} catch (OperationCanceledException) {
+			throw;
+		} catch (Exception) {
+			// Fail-soft: a bad/unreachable environment must not break a save; the catalog stays on 'latest'.
+			return null;
+		}
+	}
+
+	private (PageUpdateResponse Failure, IReadOnlyList<string> Warnings) ValidateBody(
+		PageUpdateOptions options, string? requestedVersion) {
 		if (PageSchemaTypeExtensions.FromBody(options.Body) == PageSchemaType.Mobile) {
 			// Mobile body validation requires async catalogs (CDN+cache) AND the
 			// parsed-resources lookup master added in ENG-89649. PageUpdateTool runs
@@ -201,7 +305,7 @@ public sealed class PageUpdateTool(
 			if (!mobileResult.ContentOk) {
 				return (new PageUpdateResponse {
 					Success = false,
-					Error = "Validation failed: " + string.Join("; ", mobileResult.Errors ?? [])
+					Error = ValidationFailedPrefix + string.Join("; ", mobileResult.Errors ?? [])
 				}, null);
 			}
 			// The web path runs this inside ValidateWebPageBody; mobile validation does not, so run the
@@ -212,7 +316,7 @@ public sealed class PageUpdateTool(
 			if (!mobileRunProcess.IsValid) {
 				return (new PageUpdateResponse {
 					Success = false,
-					Error = "Validation failed: " + string.Join("; ", mobileRunProcess.Errors)
+					Error = ValidationFailedPrefix + string.Join("; ", mobileRunProcess.Errors)
 				}, null);
 			}
 			return (null, mobileResult.Warnings);
@@ -225,6 +329,20 @@ public sealed class PageUpdateTool(
 		(string bodyError, IReadOnlyList<string> webWarnings) = ValidateWebPageBody(options.Body, explicitResources);
 		if (bodyError != null) {
 			return (new PageUpdateResponse { Success = false, Error = bodyError }, null);
+		}
+		// Registry-driven chart-widget validation needs the async, version-scoped component catalog.
+		// Sync-over-async is deadlock-free here under the McpToolExecutionLock (no SynchronizationContext),
+		// the same pattern the mobile branch above uses. Fail-open inside when the registry is unavailable.
+		// requestedVersion scopes the catalog to the target environment's resolved platform version
+		// (probed the same way get-component-info resolves it); null validates against 'latest' (fail-soft).
+		SchemaValidationResult chartResult = ChartWidgetValidation
+			.ValidateAsync(options.Body, webComponentCatalog, requestedVersion, CancellationToken.None)
+			.GetAwaiter().GetResult();
+		if (!chartResult.IsValid) {
+			return (new PageUpdateResponse {
+				Success = false,
+				Error = "Validation failed: " + string.Join("; ", chartResult.Errors)
+			}, null);
 		}
 		return (null, webWarnings);
 	}
@@ -382,14 +500,14 @@ public sealed class PageUpdateTool(
 		try {
 			signatureCommand = _commandResolver.Resolve<GetProcessSignatureCommand>(signatureOptions);
 		} catch (Exception ex) {
-			warning = $"Run-process button parameter codes for process '{processName}' were not validated: {ex.Message}";
+			warning = SensitiveErrorTextRedactor.Redact($"Run-process button parameter codes for process '{processName}' were not validated: {ex.Message}");
 			return false;
 		}
 		try {
 			signatureCommand.TryGetSignature(signatureOptions, out signature);
 			return true;
 		} catch (Exception ex) {
-			warning = $"Run-process button parameter codes for process '{processName}' were not validated: {ex.Message}";
+			warning = SensitiveErrorTextRedactor.Redact($"Run-process button parameter codes for process '{processName}' were not validated: {ex.Message}");
 			return false;
 		}
 	}
@@ -416,7 +534,7 @@ public sealed class PageUpdateTool(
 		var warnings = new List<string>();
 		warnings.AddRange(SchemaValidationService.ValidateSchemaDepsCompleteness(body).Warnings);
 		warnings.AddRange(SchemaValidationService.ValidateContextAccessAwait(body).Warnings);
-		string error = errors.Count > 0 ? "Validation failed: " + string.Join("; ", errors) : null;
+		string error = errors.Count > 0 ? ValidationFailedPrefix + string.Join("; ", errors) : null;
 		return (error, warnings.Count > 0 ? warnings : null);
 	}
 
@@ -460,7 +578,7 @@ public sealed record PageUpdateArgs(
 	string? Body,
 
 	[property: JsonPropertyName("resources")]
-	[property: Description("JSON object string of localizable string key-value pairs the platform does NOT auto-provide \u2014 e.g. custom tab/group titles, button captions, validator messages, and explicit overrides of inherited captions \u2014 e.g. '{\"UsrDetailsTab_caption\": \"Details\"}'. IMPORTANT: only pass keys that have NO matching DS-bound view model attribute on the target page (or that intentionally override the inherited caption). Keys matching an existing DS-bound attribute are auto-provided by the platform from the entity column caption and MUST be omitted. Inline placeholder/title/label/caption/tooltip literals in the body are REJECTED — bind each via $Resources.Strings.<Key> and register the key's default-language value here. See `page-schema-resources` guidance for the full check.")]
+	[property: Description(McpToolDescriptions.PageResources)]
 	string? Resources,
 
 	[property: JsonPropertyName("dry-run")]
@@ -468,17 +586,17 @@ public sealed record PageUpdateArgs(
 	bool? DryRun,
 
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Registered clio environment name, e.g. 'local'. Preferred for normal MCP work.")]
+	[property: Description(McpToolDescriptions.EnvironmentName)]
 	string? EnvironmentName,
 
 	[property: JsonPropertyName("uri")]
-	[property: Description("Direct Creatio URL. Use only when bootstrap is broken or before the environment can be registered through reg-web-app.")]
+	[property: Description(McpToolDescriptions.Uri)]
 	string? Uri,
 	[property: JsonPropertyName("login")]
-	[property: Description("Direct Creatio login paired with `uri`. Emergency fallback only.")]
+	[property: Description(McpToolDescriptions.Login)]
 	string? Login,
 	[property: JsonPropertyName("password")]
-	[property: Description("Direct Creatio password paired with `uri`. Emergency fallback only.")]
+	[property: Description(McpToolDescriptions.Password)]
 	string? Password,
 	[property: JsonPropertyName("skip-sampling")]
 	[property: Description("Reserved escape hatch. Omit by default. Pre-condition for setting true: the immediately preceding user message in this turn contains an explicit instruction to skip the AI semantic review, OR the MCP host has reported sampling as unavailable in this session. Absent that evidence, omit this field. Default: false")]

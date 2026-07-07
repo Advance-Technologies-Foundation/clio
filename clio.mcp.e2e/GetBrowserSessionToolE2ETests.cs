@@ -8,7 +8,6 @@ using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
-using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E;
@@ -19,17 +18,18 @@ namespace Clio.Mcp.E2E;
 /// test is gated on a reachable forms-auth environment.
 /// </summary>
 [TestFixture]
+[Category("McpE2E.Sandbox")]
 [AllureNUnit]
 [AllureFeature(GetBrowserSessionTool.ToolName)]
 [NonParallelizable]
-public sealed class GetBrowserSessionToolE2ETests {
+public sealed class GetBrowserSessionToolE2ETests : McpContractFixtureBase {
 
 	private const string ToolName = GetBrowserSessionTool.ToolName;
 
 	[Test]
-	[Description("Starts the real clio MCP server and verifies get-browser-session is advertised in the tool list (hermetic — no Creatio environment required).")]
+	[Description("Starts the real clio MCP server and verifies get-browser-session is discoverable via the get-tool-contract compact index (hermetic — no Creatio environment required).")]
 	[AllureTag(ToolName)]
-	[AllureName("get-browser-session is advertised by the clio MCP server")]
+	[AllureName("get-browser-session is discoverable on the lazy surface of the clio MCP server")]
 	public async Task GetBrowserSession_Should_Be_Advertised_By_Mcp_Server() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -37,11 +37,12 @@ public sealed class GetBrowserSessionToolE2ETests {
 		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3), requireReachableEnvironment: false);
 
 		// Act
-		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
+		IReadOnlyCollection<string> toolNames =
+			await arrangeContext.Session.ListReachableToolNamesAsync(arrangeContext.CancellationTokenSource.Token);
 
 		// Assert
-		tools.Select(tool => tool.Name).Should().Contain(ToolName,
-			because: "the get-browser-session tool must be discoverable on the real clio MCP server");
+		toolNames.Should().Contain(ToolName,
+			because: $"the {ToolName} MCP tool must be discoverable on the lazy surface (get-tool-contract compact index) even though it is not resident in tools/list");
 	}
 
 	[Test]
@@ -102,9 +103,10 @@ public sealed class GetBrowserSessionToolE2ETests {
 		ArrangeContext arrangeContext,
 		string toolName,
 		Dictionary<string, object?> args) {
-		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(toolName,
-			because: "the get-browser-session tool must be advertised before the end-to-end call can be executed");
+		IReadOnlyCollection<string> toolNames =
+			await arrangeContext.Session.ListReachableToolNamesAsync(arrangeContext.CancellationTokenSource.Token);
+		toolNames.Should().Contain(toolName,
+			because: "the get-browser-session tool must be discoverable via the get-tool-contract compact index before the end-to-end call can be executed");
 		return await arrangeContext.Session.CallToolAsync(
 			toolName,
 			new Dictionary<string, object?> {
@@ -113,12 +115,12 @@ public sealed class GetBrowserSessionToolE2ETests {
 			arrangeContext.CancellationTokenSource.Token);
 	}
 
-	private static async Task<ArrangeContext> ArrangeAsync(
+	private async Task<ArrangeContext> ArrangeAsync(
 		McpE2ESettings settings,
 		TimeSpan timeout,
 		bool requireReachableEnvironment) {
 		CancellationTokenSource cancellationTokenSource = new(timeout);
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		McpServerSession session = Session;
 		string? environmentName = requireReachableEnvironment
 			? await ResolveReachableEnvironmentAsync(settings)
 			: settings.Sandbox.EnvironmentName;
@@ -145,13 +147,13 @@ public sealed class GetBrowserSessionToolE2ETests {
 		return result.ExitCode == 0;
 	}
 
-	private sealed record ArrangeContext(
+	private new sealed record ArrangeContext(
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource,
 		string? EnvironmentName) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
+		public ValueTask DisposeAsync() {
 			CancellationTokenSource.Dispose();
+			return ValueTask.CompletedTask;
 		}
 	}
 }

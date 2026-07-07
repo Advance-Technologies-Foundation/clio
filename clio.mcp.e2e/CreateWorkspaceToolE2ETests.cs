@@ -6,7 +6,6 @@ using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
-using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using System.Text.RegularExpressions;
 
@@ -16,6 +15,7 @@ namespace Clio.Mcp.E2E;
 /// End-to-end tests for the create-workspace MCP tool.
 /// </summary>
 [TestFixture]
+[Category("McpE2E.NoEnvironment")]
 // [AllureNUnit] is intentionally omitted.
 // NUnit runs each async test on a single thread, and [AllureNUnit] adds
 // per-test bookkeeping that runs on that same thread. In tests with many
@@ -143,9 +143,10 @@ public sealed class CreateWorkspaceToolE2ETests {
 	[AllureStep("Act by invoking create-workspace through MCP")]
 	[AllureDescription("Act by discovering the create-workspace MCP tool and invoking it with the arranged workspace name and directory")]
 	private static async Task<CreateWorkspaceActResult> ActAsync(CreateWorkspaceArrangeContext arrangeContext) {
-		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(ToolName,
-			because: "the create-workspace MCP tool must be advertised by the server before the end-to-end call can be executed");
+		IReadOnlyCollection<string> toolNames =
+			await arrangeContext.Session.ListReachableToolNamesAsync(arrangeContext.CancellationTokenSource.Token);
+		toolNames.Should().Contain(ToolName,
+			because: "the create-workspace MCP tool must be discoverable via the get-tool-contract compact index before the end-to-end call can be executed");
 
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
 			ToolName,
@@ -164,9 +165,10 @@ public sealed class CreateWorkspaceToolE2ETests {
 	[AllureStep("Act by invoking create-workspace without directory through MCP")]
 	[AllureDescription("Act by discovering the create-workspace MCP tool and invoking it with only the arranged workspace name so clio uses the configured workspaces-root setting")]
 	private static async Task<CreateWorkspaceActResult> ActWithoutDirectoryAsync(CreateWorkspaceArrangeContext arrangeContext) {
-		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(ToolName,
-			because: "the create-workspace MCP tool must be advertised by the server before the end-to-end call can be executed");
+		IReadOnlyCollection<string> toolNames =
+			await arrangeContext.Session.ListReachableToolNamesAsync(arrangeContext.CancellationTokenSource.Token);
+		toolNames.Should().Contain(ToolName,
+			because: "the create-workspace MCP tool must be discoverable via the get-tool-contract compact index before the end-to-end call can be executed");
 
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
 			ToolName,

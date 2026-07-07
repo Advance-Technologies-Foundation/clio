@@ -1,0 +1,6 @@
+# Pin test fixtures that are compared byte-for-byte against serialized output to LF,
+# so the working-tree line endings do not depend on each machine's core.autocrlf.
+# The clio YAML serializer emits Environment.NewLine (CRLF on Windows); tests normalize
+# line endings before comparing, and these fixtures stay LF in git to avoid churn.
+clio.tests/Examples/**/*.yaml text eol=lf
+clio.tests/Examples/**/*.yml  text eol=lf

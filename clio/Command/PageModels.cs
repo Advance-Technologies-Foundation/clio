@@ -59,12 +59,31 @@ public sealed class PageListResponse {
 	public bool Success { get; set; }
 
 	/// <summary>
-	/// Gets or sets the number of returned pages.
+	/// Gets or sets the number of returned pages (after the result cap is applied).
 	/// </summary>
 	[DataMember(Name = "count")]
 	[JsonProperty("count")]
 	[JsonPropertyName("count")]
 	public int Count { get; set; }
+
+	/// <summary>
+	/// Gets or sets the total number of pages matching the query before the result cap is applied.
+	/// Callers should compare this to <see cref="Count"/> to detect when the result is incomplete.
+	/// </summary>
+	[DataMember(Name = "total")]
+	[JsonProperty("total")]
+	[JsonPropertyName("total")]
+	public int Total { get; set; }
+
+	/// <summary>
+	/// Gets or sets a value indicating whether the result was truncated by the limit
+	/// (<see cref="Total"/> is greater than <see cref="Count"/>). When <c>true</c>, raise the
+	/// limit or add a filter to retrieve the remaining pages.
+	/// </summary>
+	[DataMember(Name = "truncated")]
+	[JsonProperty("truncated")]
+	[JsonPropertyName("truncated")]
+	public bool Truncated { get; set; }
 
 	/// <summary>
 	/// Gets or sets the returned pages.
@@ -1058,4 +1077,10 @@ public sealed class PageCreateResponse {
 	[JsonProperty("error")]
 	[JsonPropertyName("error")]
 	public string Error { get; set; }
+
+	[DataMember(Name = "note")]
+	[JsonProperty("note", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("note")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string Note { get; set; }
 }

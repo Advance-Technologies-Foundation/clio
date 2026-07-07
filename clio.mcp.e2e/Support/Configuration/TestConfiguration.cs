@@ -15,6 +15,17 @@ internal static class TestConfiguration {
 
 		McpE2ESettings settings = new();
 		configuration.GetSection("McpE2E").Bind(settings);
+
+		// Suppress clio's background self-update for EVERY e2e-spawned clio process from a single
+		// seam. Both spawn paths (ClioCliCommandRunner.RunAsync and McpServerSession) forward
+		// settings.ProcessEnvironmentVariables to the child, and clio's ShouldSkipUpdateCheck honors
+		// CLIO_NO_UPDATE_CHECK. This removes the "Updating clio ... in background" confound from
+		// install-gate and keeps the suite from racing an in-flight self-update. An explicit value
+		// from configuration is preserved.
+		if (!settings.ProcessEnvironmentVariables.ContainsKey("CLIO_NO_UPDATE_CHECK")) {
+			settings.ProcessEnvironmentVariables["CLIO_NO_UPDATE_CHECK"] = "true";
+		}
+
 		return settings;
 	}
 

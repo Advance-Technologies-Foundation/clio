@@ -2,19 +2,18 @@ using Allure.Net.Commons;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
-using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
-using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E;
 
 [TestFixture]
+[Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("find-empty-iis-port")]
-public sealed class FindEmptyIisPortToolE2ETests
+public sealed class FindEmptyIisPortToolE2ETests : McpContractFixtureBase
 {
 	private const string ToolName = FindEmptyIisPortTool.FindEmptyIisPortToolName;
 
@@ -26,7 +25,7 @@ public sealed class FindEmptyIisPortToolE2ETests
 	public async Task FindEmptyIisPort_Should_Return_Structured_Result()
 	{
 		// Arrange
-		await using ArrangeContext arrangeContext = await ArrangeAsync();
+		await using var arrangeContext = Arrange();
 
 		// Act
 		ActResult actResult = await ActAsync(arrangeContext);
@@ -61,24 +60,13 @@ public sealed class FindEmptyIisPortToolE2ETests
 		}
 	}
 
-	private static async Task<ArrangeContext> ArrangeAsync()
-	{
-		return await AllureApi.Step("Arrange find-empty-iis-port MCP session", async () =>
-		{
-			McpE2ESettings settings = TestConfiguration.Load();
-			CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
-			McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-			return new ArrangeContext(session, cancellationTokenSource);
-		});
-	}
-
-	private static async Task<ActResult> ActAsync(ArrangeContext arrangeContext)
+	private static async Task<ActResult> ActAsync(McpContractFixtureBase.ArrangeContext arrangeContext)
 	{
 		return await AllureApi.Step("Act by invoking find-empty-iis-port through MCP", async () =>
 		{
-			IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-			tools.Select(tool => tool.Name).Should().Contain(ToolName,
-				because: "the find-empty-iis-port MCP tool must be advertised before the end-to-end call can be executed");
+			IReadOnlyCollection<string> toolNames = await arrangeContext.Session.ListReachableToolNamesAsync(arrangeContext.CancellationTokenSource.Token);
+			toolNames.Should().Contain(ToolName,
+				because: "the find-empty-iis-port MCP tool must be discoverable via the get-tool-contract compact index on the lazy surface before the end-to-end call can be executed");
 
 			CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
 				ToolName,
@@ -88,17 +76,6 @@ public sealed class FindEmptyIisPortToolE2ETests
 			FindAvailableIisPortEnvelope execution = FindAvailableIisPortResultParser.Extract(callResult);
 			return new ActResult(callResult, execution);
 		});
-	}
-
-	private sealed record ArrangeContext(
-		McpServerSession Session,
-		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable
-	{
-		public async ValueTask DisposeAsync()
-		{
-			await Session.DisposeAsync();
-			CancellationTokenSource.Dispose();
-		}
 	}
 
 	private sealed record ActResult(

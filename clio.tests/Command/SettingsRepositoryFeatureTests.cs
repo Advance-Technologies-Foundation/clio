@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.IO.Abstractions.TestingHelpers;
 using Clio.Tests.Infrastructure;
 using FluentAssertions;
@@ -123,11 +124,12 @@ public sealed class SettingsRepositoryFeatureTests {
 		sut.SetFeature("aiassist", false);
 		SettingsRepository reloaded = new(_fileSystem);
 		bool result = reloaded.IsFeatureEnabled("AIASSIST");
-		int featureCount = ((Dictionary<string, bool>)reloaded.GetFeatures()).Count;
+		int aiAssistEntryCount = reloaded.GetFeatures().Keys
+			.Count(key => string.Equals(key, "aiassist", StringComparison.OrdinalIgnoreCase));
 
 		// Assert
 		result.Should().BeFalse(because: "re-setting the same key with different casing overwrites the single stored entry");
-		featureCount.Should().Be(1, because: "case-insensitive keys must not produce duplicate entries for the same logical feature");
+		aiAssistEntryCount.Should().Be(1, because: "case-insensitive keys must not produce duplicate entries for the same logical feature");
 	}
 
 	[Test]
@@ -163,14 +165,15 @@ public sealed class SettingsRepositoryFeatureTests {
 		Action act = () => _ = new SettingsRepository(fileSystem);
 		SettingsRepository sut = new(fileSystem);
 		bool enabled = sut.IsFeatureEnabled("AiAssist");
-		int featureCount = ((Dictionary<string, bool>)sut.GetFeatures()).Count;
+		int aiAssistEntryCount = sut.GetFeatures().Keys
+			.Count(key => string.Equals(key, "aiassist", StringComparison.OrdinalIgnoreCase));
 
 		// Assert
 		act.Should().NotThrow(
 			because: "case-variant duplicate keys must be rebuilt last-wins instead of throwing ArgumentException");
 		enabled.Should().BeFalse(
 			because: "the last case-variant entry in file order (aiassist=false) must win the case-insensitive rebuild");
-		featureCount.Should().Be(1,
+		aiAssistEntryCount.Should().Be(1,
 			because: "case-variant duplicate keys collapse into a single case-insensitive entry");
 	}
 

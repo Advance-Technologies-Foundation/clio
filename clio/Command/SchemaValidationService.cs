@@ -398,7 +398,7 @@ public static class SchemaValidationService
 				$"Attribute '{attr.Name}' binds a 'validators' property. " +
 				"Mobile pages do not support validator usages in any form (custom or OOTB). " +
 				"Remove the validators binding and implement field-level validation via " +
-				"entity-level business rules (create-entity-business-rule).");
+				"entity-level business rules (create-entity-business-rules).");
 		}
 	}
 
@@ -1127,6 +1127,289 @@ public static class SchemaValidationService
 		return result;
 	}
 
+	#region Registry-driven chart-widget validation
+	// Walks the registry's typeDefinitions for each inserted chart and enforces ONLY the data-block
+	// nesting (data.providing.aggregation.column), never cosmetic fields (color/formatting/legend/title).
+	// Full contract on ValidateChartWidgetConfig below; the two registry-content bridges are TODO(ENG-92174).
+
+	private const string ChartWidgetType = "crt.ChartWidget";
+	private const string ChartWidgetRootType = "ChartWidgetConfig";
+
+	/// <summary>
+	/// TODO(ENG-92174, registry-bridge-1): remove once the producer emits the real key. The registry references the
+	/// chart series type as "SeriesConfig", but the typeDefinitions dictionary defines it under
+	/// "ChartSeriesConfig"; without this alias the walk dead-ends at the series and never reaches the
+	/// data/aggregation fields. <see cref="ResolveTypeAlias"/> applies it only when the wire name is
+	/// absent AND the alias target exists, so it self-deactivates once the producer emits the real name.
+	/// </summary>
+	private static readonly IReadOnlyDictionary<string, string> ChartTypeNameAliases =
+		new Dictionary<string, string>(StringComparer.Ordinal) {
+			["SeriesConfig"] = "ChartSeriesConfig"
+		};
+
+	/// <summary>
+	/// TODO(ENG-92174, registry-bridge-2): remove once the registry records generic type-parameter order. A generic
+	/// field type is stored as the raw string "WidgetDataConfig&lt;WidgetDataProvidingConfig, ...&gt;",
+	/// but the registry never names the type's parameters, so "providing" (typed as the placeholder
+	/// "TProvidingConfig") cannot be bound to its concrete argument. This maps the parameter order for
+	/// the one generic on the chart path. <see cref="BuildGenericSubstitution"/> applies it only when a
+	/// known order exists, so it self-deactivates once the registry carries the metadata itself.
+	/// </summary>
+	private static readonly IReadOnlyDictionary<string, string[]> ChartGenericParameterOrder =
+		new Dictionary<string, string[]>(StringComparer.Ordinal) {
+			["WidgetDataConfig"] = new[] { "TProvidingConfig", "TFormat" }
+		};
+
+	/// <summary>
+	/// The data-providing type whose subtree the validator actually checks. The walk navigates from the
+	/// chart config down to here (through the bridges), but only reports a missing required field once it
+	/// has entered this type — so it validates the data structure (aggregation / schemaName / column) and
+	/// leaves the cosmetic fields above it (color, formatting, legend, title) alone.
+	/// </summary>
+	private const string ChartDataProvidingType = "WidgetDataProvidingConfig";
+
+	private static readonly IReadOnlyDictionary<string, string> EmptyTypeSubstitution =
+		new Dictionary<string, string>(StringComparer.Ordinal);
+
+	/// <summary>
+	/// Registry-driven validation of <c>crt.ChartWidget</c> inserts in the page's <c>viewConfigDiff</c>.
+	/// Walks <paramref name="typeDefinitions"/> (the merged per-component + document-level registry type
+	/// schemas) from <c>ChartWidgetConfig</c> down to each series' <c>data.providing</c> block and reports
+	/// required fields missing INSIDE that block — most importantly <c>aggregation.column</c>, whose
+	/// absence renders an empty chart. Cosmetic fields above the data block (color, formatting, legend,
+	/// title) are intentionally NOT checked, so the registry over-marking them required cannot false-positive.
+	/// <para>
+	/// Scope: only <c>operation:"insert"</c> entries are checked (a <c>merge</c> legitimately omits
+	/// fields supplied by the base schema). Fail-open: an empty/absent registry, a missing marker, or an
+	/// unparseable body yields a passing result so an offline run never blocks a save.
+	/// </para>
+	/// </summary>
+	public static SchemaValidationResult ValidateChartWidgetConfig(
+		string jsBody,
+		IReadOnlyDictionary<string, JsonElement>? typeDefinitions) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrEmpty(jsBody)) {
+			return result;
+		}
+		// Fail-open: registry unavailable (offline / not yet cached) — skip, never block. Mirrors
+		// ValidateMobileComponentTypes' empty-catalog behaviour.
+		if (typeDefinitions is null || typeDefinitions.Count == 0) {
+			return result;
+		}
+		if (!PageSchemaSectionReader.TryRead(jsBody, out string vcdContent, SchemaViewConfigDiff, SchemaDiffMarker)) {
+			return result;
+		}
+		if (!TryParseJsonDocument(vcdContent, out JsonDocument vcdDoc, out _)) {
+			return result;
+		}
+		using (vcdDoc) {
+			if (vcdDoc.RootElement.ValueKind == JsonValueKind.Array) {
+				foreach (JsonElement entry in vcdDoc.RootElement.EnumerateArray()) {
+					// Only freshly-inserted charts are self-contained; merges/removes legitimately omit
+					// fields and are skipped.
+					if (IsInsertOperation(entry)) {
+						ScanInsertedChartWidgets(entry, string.Empty, typeDefinitions, result);
+					}
+				}
+			}
+		}
+		if (result.Errors.Count > 0) {
+			result.IsValid = false;
+		}
+		return result;
+	}
+
+	private static void ScanInsertedChartWidgets(
+		JsonElement node, string ownerName,
+		IReadOnlyDictionary<string, JsonElement> typeDefinitions, SchemaValidationResult result) {
+		switch (node.ValueKind) {
+			case JsonValueKind.Object:
+				string currentName = TryGetNodeName(node, out string nodeName) ? nodeName : ownerName;
+				if (IsChartWidgetNode(node, out JsonElement config)) {
+					string label = string.IsNullOrWhiteSpace(currentName)
+						? "a crt.ChartWidget config"
+						: $"chart widget '{currentName}' config";
+					ValidateValueAgainstType(config, ChartWidgetRootType, EmptyTypeSubstitution, typeDefinitions, label, result, report: false);
+				}
+				foreach (JsonProperty property in node.EnumerateObject()) {
+					ScanInsertedChartWidgets(property.Value, currentName, typeDefinitions, result);
+				}
+				break;
+			case JsonValueKind.Array:
+				foreach (JsonElement item in node.EnumerateArray()) {
+					ScanInsertedChartWidgets(item, ownerName, typeDefinitions, result);
+				}
+				break;
+		}
+	}
+
+	private static bool IsChartWidgetNode(JsonElement node, out JsonElement config) {
+		config = default;
+		if (!node.TryGetProperty(TypePropertyName, out JsonElement typeElement) ||
+		    typeElement.ValueKind != JsonValueKind.String ||
+		    !string.Equals(typeElement.GetString(), ChartWidgetType, StringComparison.OrdinalIgnoreCase)) {
+			return false;
+		}
+		if (!node.TryGetProperty("config", out JsonElement configElement) ||
+		    configElement.ValueKind != JsonValueKind.Object) {
+			return false;
+		}
+		config = configElement;
+		return true;
+	}
+
+	/// <summary>
+	/// Validates <paramref name="value"/> against the registry type <paramref name="typeName"/>: every
+	/// field that type marks <c>required</c> must be present, and present values recurse into their own
+	/// types. Stops without error at a type absent from the dictionary — an opaque/external leaf the
+	/// registry does not describe, so nothing deeper can be checked. Recursion is bounded by the (finite)
+	/// page-body value tree: it only descends into fields the value actually carries.
+	/// </summary>
+	private static void ValidateValueAgainstType(
+		JsonElement value, string typeName,
+		IReadOnlyDictionary<string, string> substitution,
+		IReadOnlyDictionary<string, JsonElement> typeDefinitions,
+		string path, SchemaValidationResult result, bool report) {
+		string resolvedName = ResolveTypeAlias(typeName, typeDefinitions);
+		if (!typeDefinitions.TryGetValue(resolvedName, out JsonElement definition) ||
+		    !definition.TryGetProperty("fields", out JsonElement fields) ||
+		    fields.ValueKind != JsonValueKind.Object) {
+			return;
+		}
+		// Begin reporting once we enter the data-providing block; before that we only navigate, so the
+		// cosmetic fields higher up (color/formatting/legend/title) are never flagged.
+		bool reportHere = report || string.Equals(resolvedName, ChartDataProvidingType, StringComparison.Ordinal);
+		ValidateFieldsMap(value, fields, substitution, typeDefinitions, path, result, reportHere);
+	}
+
+	private static void ValidateFieldsMap(
+		JsonElement value, JsonElement fields,
+		IReadOnlyDictionary<string, string> substitution,
+		IReadOnlyDictionary<string, JsonElement> typeDefinitions,
+		string path, SchemaValidationResult result, bool report) {
+		if (value.ValueKind != JsonValueKind.Object) {
+			return;
+		}
+		foreach (JsonProperty field in fields.EnumerateObject()) {
+			bool required = field.Value.TryGetProperty("required", out JsonElement requiredElement) &&
+				requiredElement.ValueKind == JsonValueKind.True;
+			bool present = value.TryGetProperty(field.Name, out JsonElement fieldValue);
+			if (!present) {
+				// Only flag inside the data-providing block; cosmetic fields above it are out of scope.
+				if (report && required) {
+					result.Errors.Add(
+						$"{path}.{field.Name} is required by the component registry but is missing. " +
+						"Call get-guidance with name 'chart-widget-guidance' for the full contract.");
+				}
+				continue;
+			}
+			RecurseIntoFieldValue(fieldValue, field.Value, substitution, typeDefinitions, $"{path}.{field.Name}", result, report);
+		}
+	}
+
+	private static void RecurseIntoFieldValue(
+		JsonElement value, JsonElement fieldDefinition,
+		IReadOnlyDictionary<string, string> substitution,
+		IReadOnlyDictionary<string, JsonElement> typeDefinitions,
+		string path, SchemaValidationResult result, bool report) {
+		// Inline object shape (e.g. aggregation: { column: { required } }).
+		if (fieldDefinition.TryGetProperty("shape", out JsonElement shape) && shape.ValueKind == JsonValueKind.Object) {
+			ValidateFieldsMap(value, shape, substitution, typeDefinitions, path, result, report);
+			return;
+		}
+		if (!fieldDefinition.TryGetProperty("type", out JsonElement typeElement) ||
+		    typeElement.ValueKind != JsonValueKind.String) {
+			return;
+		}
+		string typeExpression = typeElement.GetString() ?? string.Empty;
+		// Array: validate each element against the item type.
+		if (string.Equals(typeExpression, "array", StringComparison.Ordinal)) {
+			if (value.ValueKind == JsonValueKind.Array &&
+			    fieldDefinition.TryGetProperty("items", out JsonElement items)) {
+				int index = 0;
+				foreach (JsonElement element in value.EnumerateArray()) {
+					RecurseIntoFieldValue(element, items, substitution, typeDefinitions, $"{path}[{index}]", result, report);
+					index++;
+				}
+			}
+			return;
+		}
+		// Resolve a generic placeholder ("TProvidingConfig") to the concrete argument bound above.
+		typeExpression = ApplyTypeSubstitution(typeExpression, substitution);
+		// Generic instantiation: WidgetDataConfig<WidgetDataProvidingConfig, ...>.
+		if (TryParseGenericType(typeExpression, out string genericName, out string[] genericArguments)) {
+			ValidateValueAgainstType(
+				value, genericName, BuildGenericSubstitution(genericName, genericArguments),
+				typeDefinitions, path, result, report);
+			return;
+		}
+		// Union ("A | B | C"): cannot pick a branch deterministically — stop rather than false-positive.
+		if (typeExpression.Contains('|')) {
+			return;
+		}
+		ValidateValueAgainstType(value, typeExpression, EmptyTypeSubstitution, typeDefinitions, path, result, report);
+	}
+
+	private static string ResolveTypeAlias(string typeName, IReadOnlyDictionary<string, JsonElement> typeDefinitions) {
+		// Self-deactivating bridge 1: alias only when the wire name is absent and the alias target exists.
+		if (!typeDefinitions.ContainsKey(typeName) &&
+		    ChartTypeNameAliases.TryGetValue(typeName, out string alias) &&
+		    typeDefinitions.ContainsKey(alias)) {
+			return alias;
+		}
+		return typeName;
+	}
+
+	private static IReadOnlyDictionary<string, string> BuildGenericSubstitution(string genericName, string[] arguments) {
+		// Self-deactivating bridge 2: only when we know this generic's parameter order.
+		if (!ChartGenericParameterOrder.TryGetValue(genericName, out string[] parameterNames)) {
+			return EmptyTypeSubstitution;
+		}
+		var map = new Dictionary<string, string>(StringComparer.Ordinal);
+		for (int i = 0; i < parameterNames.Length && i < arguments.Length; i++) {
+			map[parameterNames[i]] = arguments[i];
+		}
+		return map;
+	}
+
+	private static string ApplyTypeSubstitution(string typeExpression, IReadOnlyDictionary<string, string> substitution) {
+		return substitution.TryGetValue(typeExpression, out string concrete) ? concrete : typeExpression;
+	}
+
+	private static bool TryParseGenericType(string expression, out string name, out string[] arguments) {
+		name = string.Empty;
+		arguments = System.Array.Empty<string>();
+		int open = expression.IndexOf('<');
+		if (open <= 0 || !expression.EndsWith(">", StringComparison.Ordinal)) {
+			return false;
+		}
+		name = expression.Substring(0, open).Trim();
+		string inner = expression.Substring(open + 1, expression.Length - open - 2);
+		arguments = SplitTopLevelGenericArguments(inner);
+		return arguments.Length > 0;
+	}
+
+	private static string[] SplitTopLevelGenericArguments(string inner) {
+		var parts = new List<string>();
+		int depth = 0;
+		int start = 0;
+		for (int i = 0; i < inner.Length; i++) {
+			char c = inner[i];
+			if (c == '<') {
+				depth++;
+			} else if (c == '>') {
+				depth--;
+			} else if (c == ',' && depth == 0) {
+				parts.Add(inner.Substring(start, i - start).Trim());
+				start = i + 1;
+			}
+		}
+		parts.Add(inner.Substring(start).Trim());
+		return parts.ToArray();
+	}
+
+	#endregion
+
 	private static bool ValidateMarkers(
 		string jsBody,
 		IEnumerable<string> markers,
@@ -1462,7 +1745,7 @@ public static class SchemaValidationService
 		if (!TryGetInsertedFieldDescriptor(entry, out InsertedFieldDescriptor descriptor)) {
 			return;
 		}
-		AppendBindingDeclarationError(descriptor, declaredAttributes, properlyNestedAttributes, result);
+		AppendBindingDeclarationError(descriptor, declaredAttributes, properlyNestedAttributes, modelPaths, result);
 		AppendLabelResourceError(descriptor, modelPaths, explicitResources, result);
 	}
 
@@ -1502,6 +1785,7 @@ public static class SchemaValidationService
 		InsertedFieldDescriptor descriptor,
 		IReadOnlySet<string> declaredAttributes,
 		IReadOnlySet<string> properlyNestedAttributes,
+		IReadOnlyDictionary<string, string> modelPaths,
 		SchemaValidationResult result) {
 		string attr = descriptor.BindingAttribute;
 		if (properlyNestedAttributes.Contains(attr)) {
@@ -1514,13 +1798,21 @@ public static class SchemaValidationService
 			// The platform save accepts it, but at runtime the attribute ends up at
 			// viewModelConfig.<name> instead of viewModelConfig.attributes.<name>, which the
 			// Freedom UI runtime ignores — controls render but read and write no data.
+			string expectedBindingHint = string.Empty;
+			if (modelPaths.TryGetValue(attr, out string modelPath)
+			    && modelPath.Contains('.', StringComparison.Ordinal)) {
+				string expectedBinding = BuildExpectedBinding(modelPath);
+				if (!string.Equals(expectedBinding, "$" + attr, StringComparison.Ordinal)) {
+					expectedBindingHint = " The expected datasource binding for '" + modelPath + "' is '" + expectedBinding + "'.";
+				}
+			}
 			result.Errors.Add(
 				"inserted field controls: field '" + descriptor.DisplayName + "' (type '" + descriptor.ComponentType + "') binds to '$" + attr + "' " +
 				"which is declared in viewModelConfigDiff without the required nesting. " +
 				"The attribute must be nested under values.attributes with \"path\":[] so the platform places it at " +
 				"viewModelConfig.attributes." + attr + " (required for runtime data binding). " +
 				"The current flat form puts the attribute at viewModelConfig." + attr + " which the runtime ignores — " +
-				"the control will render but read and write no data. " +
+				"the control will render but read and write no data." + expectedBindingHint + " " +
 				"Use: " + canonicalEntry + ".");
 			return;
 		}
@@ -2170,6 +2462,17 @@ public static class SchemaValidationService
 		IReadOnlyDictionary<string, HashSet<string>> validatorContracts = BuildValidatorParameterContracts(jsBody);
 		ValidateValidatorBindingContractsInMarker(jsBody, SchemaViewModelConfig, false, validatorContracts, result);
 		ValidateValidatorBindingContractsInMarker(jsBody, SchemaViewModelConfigDiff, true, validatorContracts, result);
+		if (PageSchemaSectionReader.TryRead(jsBody, out string validatorsSection, SchemaValidatorsMarker)) {
+			foreach ((string validatorType, _) in ExtractCustomValidatorContracts(validatorsSection)) {
+				if (validatorType.Contains("maxlength", StringComparison.OrdinalIgnoreCase)) {
+					result.Errors.Add(
+						$"Custom validator '{validatorType}' re-implements the built-in 'crt.MaxLength'. " +
+						"Replace it with a 'crt.MaxLength' binding in viewModelConfig/viewModelConfigDiff: " +
+						"{\"type\": \"crt.MaxLength\", \"params\": {\"maxLength\": <N>}}. " +
+						"Read docs://mcp/guides/page-schema-validators for the canonical validator shape.");
+				}
+			}
+		}
 		if (result.Errors.Count > 0) {
 			result.IsValid = false;
 		}

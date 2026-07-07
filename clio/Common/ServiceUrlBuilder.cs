@@ -142,7 +142,42 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		/// <summary>
 		///     Reports whether the environment can use the OAuth authorization code flow.
 		/// </summary>
-		IdentityServiceInfoCanUseAuthorizationCodeFlow = 45
+		IdentityServiceInfoCanUseAuthorizationCodeFlow = 45,
+
+		/// <summary>
+		///     Reads the designer IdentityService client secret from Creatio.
+		/// </summary>
+		OAuthConfigGetIdentityServerClientSecret = 46,
+
+		/// <summary>
+		///     Creates a technical user for an OAuth client.
+		/// </summary>
+		OAuthConfigCreateTechnicalUser = 47,
+
+		/// <summary>
+		///     Adds an OAuth client through Creatio OAuth configuration service.
+		/// </summary>
+		OAuthConfigAddClient = 48,
+
+		/// <summary>
+		///     Builds a business process from a declarative descriptor via the ProcessDesignService package.
+		/// </summary>
+		BuildProcess = 49,
+
+		/// <summary>
+		///     Lists the available user-facing user tasks (designer palette) via the ProcessDesignService package.
+		/// </summary>
+		ListUserTasks = 50,
+
+		/// <summary>
+		///     Reads an existing process as a structured graph via the ProcessDesignService package.
+		/// </summary>
+		DescribeProcess = 51,
+
+		/// <summary>
+		///     Edits an existing business process (add/remove elements, flows, …) via the ProcessDesignService package.
+		/// </summary>
+		ModifyProcess = 52
 
 	}
 
@@ -201,6 +236,13 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.IdentityAssertionPublicJwk, "identityAssertion/publicJwk"},
 		{KnownRoute.IdentityAssertionRegenerateSigningKey, "identityAssertion/regenerateSigningKey"},
 		{KnownRoute.IdentityServiceInfoCanUseAuthorizationCodeFlow, "identityServiceInfo/canUseAuthorizationCodeFlow"},
+		{KnownRoute.OAuthConfigGetIdentityServerClientSecret, "/rest/OAuthConfigService/GetIdentityServerClientSecret"},
+		{KnownRoute.OAuthConfigCreateTechnicalUser, "/rest/OAuthConfigService/CreateTechnicalUser"},
+		{KnownRoute.OAuthConfigAddClient, "/rest/OAuthConfigService/AddClient"},
+		{KnownRoute.BuildProcess, "/rest/ProcessDesignService/BuildProcess"},
+		{KnownRoute.ListUserTasks, "/rest/ProcessDesignService/ListUserTasks"},
+		{KnownRoute.DescribeProcess, "/rest/ProcessDesignService/DescribeProcess"},
+		{KnownRoute.ModifyProcess, "/rest/ProcessDesignService/ModifyProcess"},
 	};
 
 	private EnvironmentSettings _environmentSettings;

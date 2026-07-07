@@ -36,6 +36,33 @@ internal class HelpArtifactConsistencyTests {
 	}
 
 	[Test]
+	[Description("Every deploy-identity / OAuth configuration verb is classified in the Deployment & Infrastructure group with an explicit description so the catalog does not fall back to source-index classification.")]
+	public void DeploymentIdentityCommands_ShouldBeClassifiedWithDescription_WhenCatalogBuilt() {
+		// Arrange
+		string[] verbs = [
+			"deploy-identity",
+			"get-identity-service-config",
+			"resolve-oauth-system-user",
+			"create-oauth-technical-user",
+			"create-server-to-server-oauth-app",
+			"verify-oauth-app"
+		];
+		CommandHelpCatalog catalog = new();
+
+		// Act & Assert
+		foreach (string verb in verbs) {
+			catalog.TryGetCommand(verb, out HelpCommandMetadata command).Should().BeTrue(
+				because: $"'{verb}' must be present in the canonical help catalog");
+			command.GroupId.Should().Be(HelpGroupId.DeploymentAndInfrastructure,
+				because: $"'{verb}' must be grouped with deploy-identity under Deployment & Infrastructure, not fallback-classified");
+			command.ShortDescription.Should().NotBe(verb,
+				because: $"'{verb}' must have an explicit description override rather than echoing its own verb name");
+			command.ShortDescription.Should().NotBeNullOrWhiteSpace(
+				because: $"'{verb}' must carry a human-readable description in the catalog");
+		}
+	}
+
+	[Test]
 	[Description("The CLI help directory should contain only canonical command files plus the root help file.")]
 	public void HelpDirectory_ShouldContainOnlyCanonicalFiles() {
 		CommandHelpCatalog catalog = new();

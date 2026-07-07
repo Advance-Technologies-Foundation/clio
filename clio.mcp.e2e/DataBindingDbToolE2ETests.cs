@@ -11,7 +11,6 @@ using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
-using ModelContextProtocol.Client;
 using NUnit.Framework;
 
 namespace Clio.Mcp.E2E;
@@ -20,34 +19,35 @@ namespace Clio.Mcp.E2E;
 /// End-to-end tests for the DB-first data-binding MCP tools.
 /// </summary>
 [TestFixture]
+[Category("McpE2E.Sandbox")]
 [AllureNUnit]
 [AllureFeature("data-binding-db")]
 [NonParallelizable]
-public sealed class DataBindingDbToolE2ETests {
+public sealed class DataBindingDbToolE2ETests : McpContractFixtureBase {
 	private const string CreateDbToolName = CreateDataBindingDbTool.CreateDataBindingDbToolName;
 	private const string UpsertRowDbToolName = UpsertDataBindingRowDbTool.UpsertDataBindingRowDbToolName;
 	private const string RemoveRowDbToolName = RemoveDataBindingRowDbTool.RemoveDataBindingRowDbToolName;
 
 	[Test]
-	[Description("Advertises all three DB-first data-binding MCP tools in the server tool list so callers can discover and invoke them.")]
+	[Description("Exposes all three DB-first data-binding MCP tools via the get-tool-contract compact index so callers can discover and invoke them on the lazy surface.")]
 	[AllureTag(CreateDbToolName)]
-	[AllureName("DB-first data-binding tools are advertised by the MCP server")]
-	[AllureDescription("Verifies that create-data-binding-db, upsert-data-binding-row-db, and remove-data-binding-row-db appear in the MCP server tool manifest.")]
+	[AllureName("DB-first data-binding tools are discoverable on the lazy surface")]
+	[AllureDescription("Verifies that create-data-binding-db, upsert-data-binding-row-db, and remove-data-binding-row-db are discoverable via the get-tool-contract compact index.")]
 	public async Task DataBindingDbTools_Should_Be_Listed_By_MCP_Server() {
 		// Arrange
 		await using DataBindingDbArrangeContext arrangeContext = await ArrangeAsync(requireEnvironment: false);
 
 		// Act
-		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		IEnumerable<string> toolNames = tools.Select(t => t.Name);
+		IReadOnlyCollection<string> toolNames =
+			await arrangeContext.Session.ListReachableToolNamesAsync(arrangeContext.CancellationTokenSource.Token);
 
 		// Assert
 		toolNames.Should().Contain(CreateDbToolName,
-			because: "create-data-binding-db must be advertised so MCP clients can discover it");
+			because: "create-data-binding-db must be discoverable on the lazy surface (get-tool-contract compact index) even though it is not resident in tools/list");
 		toolNames.Should().Contain(UpsertRowDbToolName,
-			because: "upsert-data-binding-row-db must be advertised so MCP clients can discover it");
+			because: "upsert-data-binding-row-db must be discoverable on the lazy surface (get-tool-contract compact index) even though it is not resident in tools/list");
 		toolNames.Should().Contain(RemoveRowDbToolName,
-			because: "remove-data-binding-row-db must be advertised so MCP clients can discover it");
+			because: "remove-data-binding-row-db must be discoverable on the lazy surface (get-tool-contract compact index) even though it is not resident in tools/list");
 	}
 
 	[Test]
@@ -163,10 +163,10 @@ public sealed class DataBindingDbToolE2ETests {
 	}
 
 	[Test]
-	[Description("Returns a top-level invocation error when create-data-binding-db is called without the MCP args wrapper.")]
+	[Description("Returns a binding-layer error when create-data-binding-db is called without the MCP args wrapper. On the lazy surface the call is dispatched through clio-run, so the same binding failure surfaces as an executor-wrapped error that still names the target tool.")]
 	[AllureTag(CreateDbToolName)]
 	[AllureName("Create DB-first binding rejects malformed MCP envelope")]
-	[AllureDescription("Uses the real clio MCP server to invoke create-data-binding-db without the args wrapper and verifies the MCP server rejects the malformed transport envelope before tool execution starts.")]
+	[AllureDescription("Uses the real clio MCP server to invoke create-data-binding-db without the args wrapper and verifies the binding layer rejects the malformed envelope before tool execution starts — either natively or via the clio-run dispatch on the lazy surface.")]
 	public async Task CreateDataBindingDb_Should_Return_Invocation_Error_When_Args_Wrapper_Is_Missing() {
 		// Arrange
 		await using DataBindingDbArrangeContext arrangeContext = await ArrangeAsync(requireEnvironment: false);
@@ -182,10 +182,10 @@ public sealed class DataBindingDbToolE2ETests {
 	}
 
 	[Test]
-	[Description("Returns a top-level invocation error when upsert-data-binding-row-db receives a non-object args payload.")]
+	[Description("Returns a binding-layer error when upsert-data-binding-row-db receives a non-object args payload. On the lazy surface the hidden tool is dispatched through clio-run, so the malformed args payload fails binding clio-run's own args parameter and the diagnostic names clio-run instead of the target tool.")]
 	[AllureTag(UpsertRowDbToolName)]
 	[AllureName("Upsert DB-first row rejects malformed MCP envelope")]
-	[AllureDescription("Uses the real clio MCP server to invoke upsert-data-binding-row-db with args set to a string and verifies the MCP server rejects the malformed transport envelope before tool execution starts.")]
+	[AllureDescription("Uses the real clio MCP server to invoke upsert-data-binding-row-db with args set to a string and verifies the binding layer rejects the malformed envelope before tool execution starts; on the lazy surface the failure is reported against the clio-run executor.")]
 	public async Task UpsertDataBindingRowDb_Should_Return_Invocation_Error_When_Args_Have_Invalid_Type() {
 		// Arrange
 		await using DataBindingDbArrangeContext arrangeContext = await ArrangeAsync(requireEnvironment: false);
@@ -197,14 +197,18 @@ public sealed class DataBindingDbToolE2ETests {
 			arrangeContext.CancellationTokenSource.Token);
 
 		// Assert
-		AssertInvocationFailure(callResult, UpsertRowDbToolName);
+		// Lazy-surface routing: upsert-data-binding-row-db is not resident, so the session dispatches the
+		// call through clio-run. The string "invalid" fails to deserialize into clio-run's own `args`
+		// parameter, therefore the SDK binding diagnostic names 'clio-run' — not the target tool. The
+		// intent is unchanged: a binding-layer failure with no structured payload.
+		AssertInvocationFailure(callResult, ClioRunTool.ToolName);
 	}
 
 	[Test]
-	[Description("Returns a top-level invocation error when remove-data-binding-row-db is called without the MCP args wrapper.")]
+	[Description("Returns a binding-layer error when remove-data-binding-row-db is called without the MCP args wrapper. On the lazy surface the call is dispatched through clio-run, so the same binding failure surfaces as an executor-wrapped error that still names the target tool.")]
 	[AllureTag(RemoveRowDbToolName)]
 	[AllureName("Remove DB-first row rejects malformed MCP envelope")]
-	[AllureDescription("Uses the real clio MCP server to invoke remove-data-binding-row-db without the args wrapper and verifies the MCP server rejects the malformed transport envelope before tool execution starts.")]
+	[AllureDescription("Uses the real clio MCP server to invoke remove-data-binding-row-db without the args wrapper and verifies the binding layer rejects the malformed envelope before tool execution starts — either natively or via the clio-run dispatch on the lazy surface.")]
 	public async Task RemoveDataBindingRowDb_Should_Return_Invocation_Error_When_Args_Wrapper_Is_Missing() {
 		// Arrange
 		await using DataBindingDbArrangeContext arrangeContext = await ArrangeAsync(requireEnvironment: false);
@@ -290,7 +294,7 @@ public sealed class DataBindingDbToolE2ETests {
 			"successful Account DB-first binding creation should emit a completion message");
 	}
 
-	private static async Task<DataBindingDbArrangeContext> ArrangeAsync(bool requireEnvironment) {
+	private async Task<DataBindingDbArrangeContext> ArrangeAsync(bool requireEnvironment) {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string? environmentName = requireEnvironment
@@ -326,7 +330,7 @@ public sealed class DataBindingDbToolE2ETests {
 				cancellationToken: cancellationTokenSource.Token);
 		}
 
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		McpServerSession session = Session;
 		return new DataBindingDbArrangeContext(
 			rootDirectory,
 			workspacePath,
@@ -366,9 +370,10 @@ public sealed class DataBindingDbToolE2ETests {
 		DataBindingDbArrangeContext arrangeContext,
 		string toolName,
 		Dictionary<string, object?> args) {
-		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(toolName,
-			because: "the requested DB-first data-binding MCP tool must be advertised before the end-to-end call");
+		IReadOnlyCollection<string> toolNames =
+			await arrangeContext.Session.ListReachableToolNamesAsync(arrangeContext.CancellationTokenSource.Token);
+		toolNames.Should().Contain(toolName,
+			because: "the requested DB-first data-binding MCP tool must be discoverable via the get-tool-contract compact index before the end-to-end call");
 
 		ModelContextProtocol.Protocol.CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
 			toolName,
@@ -406,8 +411,15 @@ public sealed class DataBindingDbToolE2ETests {
 			because: $"malformed MCP envelopes for {toolName} should be rejected before tool execution starts");
 		callResult.StructuredContent.Should().BeNull(
 			because: "invocation-level MCP failures should not return structured command output");
-		DescribeCallResult(callResult).Should().Contain(toolName,
+		string diagnostics = DescribeCallResult(callResult);
+		diagnostics.Should().Contain(toolName,
 			because: "the invocation failure should identify the affected MCP tool");
+		// Accept both the native SDK binding diagnostic (resident tools) and the clio-run-surfaced
+		// executor error (lazy surface): "An error occurred invoking '<tool>'." /
+		// "Failed to deserialize argument 'args' for MCP tool '<tool>'" / "Error: tool '<tool>' failed: …".
+		diagnostics.Should().MatchRegex(
+			"(?is)(an error occurred invoking|failed to deserialize argument|failed)",
+			because: "the diagnostic should describe a binding-layer failure whether it is raised natively or wrapped by the clio-run executor");
 	}
 
 	private static string DescribeCallResult(ModelContextProtocol.Protocol.CallToolResult callResult) {
@@ -425,12 +437,12 @@ public sealed class DataBindingDbToolE2ETests {
 		string? EnvironmentName,
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource) : System.IAsyncDisposable {
-		public async System.Threading.Tasks.ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
+		public System.Threading.Tasks.ValueTask DisposeAsync() {
 			CancellationTokenSource.Dispose();
 			if (Directory.Exists(RootDirectory)) {
 				Directory.Delete(RootDirectory, recursive: true);
 			}
+			return System.Threading.Tasks.ValueTask.CompletedTask;
 		}
 	}
 

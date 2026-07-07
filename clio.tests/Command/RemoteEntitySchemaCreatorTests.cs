@@ -1059,6 +1059,301 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 	}
 
 	[Test]
+	[Description("Requests the OData entities rebuild after a successful publish so the new schema becomes reachable over OData without a manual full compile (ENG-92048).")]
+	public void Create_ShouldRequestODataBuild_AfterPublish()
+	{
+		// Arrange
+		bool publishCalled = false;
+		bool odataBuildCalled = false;
+		SetupApplicationClient((url, body) => {
+			if (url.Contains("CreateNewSchema", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
+			}
+			if (url.Contains("CheckUniqueSchemaName", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":true}";
+			}
+			if (url.Contains("SaveSchema", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schemaUid\":\"22222222-2222-2222-2222-222222222222\"}";
+			}
+			if (url.Contains("RunODataBuild", StringComparison.Ordinal)) {
+				odataBuildCalled = true;
+				return "{\"success\":true}";
+			}
+			if (url.Contains("SchemaDesignerRequest", StringComparison.Ordinal)) {
+				publishCalled = true;
+				return "{\"success\":true}";
+			}
+			if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"UsrVehicle\"}}";
+			}
+			throw new InvalidOperationException($"Unexpected url {url}");
+		});
+
+		// Act
+		_creator.Create(new CreateEntitySchemaOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Title = "Vehicle",
+			Columns = ["Name:Text:Vehicle name"]
+		});
+
+		// Assert
+		publishCalled.Should().BeTrue(because: "the OData rebuild must follow a successful publish, not replace it");
+		odataBuildCalled.Should().BeTrue(
+			because: "create must request the OData entities rebuild so the schema is reachable over OData without a full compile");
+		_applicationClient.Received(1).ExecutePostRequest(
+			Arg.Is<string>(url => url.Contains("RunODataBuild", StringComparison.Ordinal)),
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+		_logger.Received().WriteInfo(Arg.Is<string>(message =>
+			message.Contains("OData entities rebuild requested") && message.Contains("UsrVehicle")));
+	}
+
+	[Test]
+	[Description("Schema creation still succeeds (with a warning) when the OData rebuild request fails, because the schema is already published and usable (ENG-92048).")]
+	public void Create_ShouldSucceedWithWarning_WhenODataBuildFails()
+	{
+		// Arrange
+		SetupApplicationClient((url, body) => {
+			if (url.Contains("CreateNewSchema", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
+			}
+			if (url.Contains("CheckUniqueSchemaName", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":true}";
+			}
+			if (url.Contains("SaveSchema", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schemaUid\":\"22222222-2222-2222-2222-222222222222\"}";
+			}
+			if (url.Contains("RunODataBuild", StringComparison.Ordinal)) {
+				return "{\"success\":false,\"errorInfo\":{\"message\":\"OData build refused.\"}}";
+			}
+			if (url.Contains("SchemaDesignerRequest", StringComparison.Ordinal)) {
+				return "{\"success\":true}";
+			}
+			if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"UsrVehicle\"}}";
+			}
+			throw new InvalidOperationException($"Unexpected url {url}");
+		});
+
+		// Act
+		Action act = () => _creator.Create(new CreateEntitySchemaOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Title = "Vehicle",
+			Columns = ["Name:Text:Vehicle name"]
+		});
+
+		// Assert
+		act.Should().NotThrow(
+			because: "a failed OData rebuild must not undo or fail the already-published schema");
+		_logger.Received().WriteWarning(Arg.Is<string>(message =>
+			message.Contains(RemoteEntitySchemaCreator.ODataBuildRequestFailedWarningFragment) && message.Contains("UsrVehicle")));
+		_logger.Received().WriteInfo(Arg.Is<string>(message =>
+			message.Contains("UsrVehicle") && message.Contains("created")));
+	}
+
+	[Test]
+	[Description("Schema creation still succeeds (with a warning) when the OData rebuild request fails with an AggregateException-wrapped transport fault, because the real HTTP client (Creatio.Client) executes via Task.Result and wraps transport/timeout faults in an AggregateException (ENG-92048).")]
+	public void Create_ShouldSucceedWithWarning_WhenODataBuildThrowsAggregateException()
+	{
+		// Arrange — the real Creatio HTTP client runs the POST via Task.Result, so a transport/timeout fault on
+		// the RunODataBuild request surfaces as an AggregateException wrapping the inner HttpRequestException.
+		SetupApplicationClient((url, body) => {
+			if (url.Contains("CreateNewSchema", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
+			}
+			if (url.Contains("CheckUniqueSchemaName", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":true}";
+			}
+			if (url.Contains("SaveSchema", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schemaUid\":\"22222222-2222-2222-2222-222222222222\"}";
+			}
+			if (url.Contains("RunODataBuild", StringComparison.Ordinal)) {
+				throw new AggregateException(
+					new System.Net.Http.HttpRequestException("Connection refused while triggering the OData build."));
+			}
+			if (url.Contains("SchemaDesignerRequest", StringComparison.Ordinal)) {
+				return "{\"success\":true}";
+			}
+			if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"UsrVehicle\"}}";
+			}
+			throw new InvalidOperationException($"Unexpected url {url}");
+		});
+
+		// Act
+		Action act = () => _creator.Create(new CreateEntitySchemaOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Title = "Vehicle",
+			Columns = ["Name:Text:Vehicle name"]
+		});
+
+		// Assert
+		act.Should().NotThrow(
+			because: "an AggregateException-wrapped transport fault on the OData rebuild must degrade to a warning, not escape and fail the already-published schema");
+		_logger.Received().WriteWarning(Arg.Is<string>(message =>
+			message.Contains(RemoteEntitySchemaCreator.ODataBuildRequestFailedWarningFragment) && message.Contains("UsrVehicle")));
+		_logger.Received().WriteInfo(Arg.Is<string>(message =>
+			message.Contains("UsrVehicle") && message.Contains("created")));
+	}
+
+	[TestCase(typeof(System.Net.Http.HttpRequestException))]
+	[TestCase(typeof(System.Threading.Tasks.TaskCanceledException))]
+	[TestCase(typeof(System.Net.WebException))]
+	[TestCase(typeof(System.Net.Sockets.SocketException))]
+	[TestCase(typeof(System.IO.IOException))]
+	[TestCase(typeof(System.OperationCanceledException))]
+	[TestCase(typeof(Newtonsoft.Json.JsonException))]
+	[Description("Schema creation still succeeds (with a warning) when the OData rebuild request throws a raw, unwrapped transport / IO / parse fault — the likeliest real-world failure of a compile-class trigger — because the schema is already published and usable (ENG-92048).")]
+	public void Create_ShouldSucceedWithWarning_WhenODataBuildThrowsTransportFault(Type transportFaultType)
+	{
+		// Arrange — a timeout or connection fault is thrown directly out of ExecutePostRequest (not wrapped),
+		// exercising the non-aggregate branch of the production exception filter that the other failure tests
+		// (success:false → InvalidOperationException, and AggregateException-wrapped) do not cover.
+		Exception transportFault = (Exception)Activator.CreateInstance(transportFaultType)!;
+		SetupApplicationClient((url, body) => {
+			if (url.Contains("CreateNewSchema", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
+			}
+			if (url.Contains("CheckUniqueSchemaName", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":true}";
+			}
+			if (url.Contains("SaveSchema", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schemaUid\":\"22222222-2222-2222-2222-222222222222\"}";
+			}
+			if (url.Contains("RunODataBuild", StringComparison.Ordinal)) {
+				throw transportFault;
+			}
+			if (url.Contains("SchemaDesignerRequest", StringComparison.Ordinal)) {
+				return "{\"success\":true}";
+			}
+			if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"UsrVehicle\"}}";
+			}
+			throw new InvalidOperationException($"Unexpected url {url}");
+		});
+
+		// Act
+		Action act = () => _creator.Create(new CreateEntitySchemaOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Title = "Vehicle",
+			Columns = ["Name:Text:Vehicle name"]
+		});
+
+		// Assert
+		act.Should().NotThrow(
+			because: "a thrown transport fault on the OData rebuild must degrade to a warning, not escape and fail the already-published schema");
+		_logger.Received().WriteWarning(Arg.Is<string>(message =>
+			message.Contains(RemoteEntitySchemaCreator.ODataBuildRequestFailedWarningFragment) && message.Contains("UsrVehicle")));
+		_logger.Received().WriteInfo(Arg.Is<string>(message =>
+			message.Contains("UsrVehicle") && message.Contains("created")));
+	}
+
+	[TestCase(typeof(NullReferenceException))]
+	[TestCase(typeof(ArgumentException))]
+	[TestCase(typeof(InvalidCastException))]
+	[Description("Schema creation rethrows (never swallows) when the OData rebuild request throws a fault outside the expected transport/IO/parse allow-list — a genuine programming error must surface, not be downgraded to a warning (ENG-92048).")]
+	public void Create_ShouldRethrow_WhenODataBuildThrowsUnexpectedFault(Type unexpectedFaultType)
+	{
+		// Arrange — a fault that is not on the IsExpectedODataBuildFault allow-list must escape PublishSchema so a
+		// real bug is never masked by the best-effort warning path.
+		Exception unexpectedFault = (Exception)Activator.CreateInstance(unexpectedFaultType)!;
+		SetupClientThrowingOnODataBuild(unexpectedFault);
+
+		// Act
+		Action act = () => _creator.Create(new CreateEntitySchemaOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Title = "Vehicle",
+			Columns = ["Name:Text:Vehicle name"]
+		});
+
+		// Assert
+		act.Should().Throw<Exception>(
+				because: "a fault outside the expected transport/IO/parse families must escape and fail the create, not be swallowed as a warning")
+			.Which.Should().BeOfType(unexpectedFaultType,
+				because: "the original, unexpected fault type must propagate unchanged");
+		_logger.DidNotReceive().WriteWarning(Arg.Is<string>(message =>
+			message.Contains(RemoteEntitySchemaCreator.ODataBuildRequestFailedWarningFragment)));
+	}
+
+	[Test]
+	[Description("Schema creation rethrows when the OData rebuild request throws an AggregateException whose inner fault is outside the allow-list — a wrapped programming error must surface, not be downgraded to a warning (ENG-92048).")]
+	public void Create_ShouldRethrow_WhenODataBuildThrowsAggregateWithUnexpectedInner()
+	{
+		// Arrange
+		SetupClientThrowingOnODataBuild(new AggregateException(new NullReferenceException()));
+
+		// Act
+		Action act = () => _creator.Create(new CreateEntitySchemaOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Title = "Vehicle",
+			Columns = ["Name:Text:Vehicle name"]
+		});
+
+		// Assert
+		act.Should().Throw<AggregateException>(
+			because: "an AggregateException whose inner fault is not an expected transport/IO/parse type must propagate, not be swallowed");
+		_logger.DidNotReceive().WriteWarning(Arg.Is<string>(message =>
+			message.Contains(RemoteEntitySchemaCreator.ODataBuildRequestFailedWarningFragment)));
+	}
+
+	[Test]
+	[Description("Schema creation rethrows when the OData rebuild request throws an empty AggregateException (Count == 0) — the Count > 0 guard must let a contentless aggregate surface instead of vacuously treating it as an expected fault (ENG-92048).")]
+	public void Create_ShouldRethrow_WhenODataBuildThrowsEmptyAggregateException()
+	{
+		// Arrange
+		SetupClientThrowingOnODataBuild(new AggregateException());
+
+		// Act
+		Action act = () => _creator.Create(new CreateEntitySchemaOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Title = "Vehicle",
+			Columns = ["Name:Text:Vehicle name"]
+		});
+
+		// Assert
+		act.Should().Throw<AggregateException>(
+			because: "an empty AggregateException carries no expected inner fault, so the Count > 0 guard must let it surface rather than swallow it via a vacuous All(...)");
+		_logger.DidNotReceive().WriteWarning(Arg.Is<string>(message =>
+			message.Contains(RemoteEntitySchemaCreator.ODataBuildRequestFailedWarningFragment)));
+	}
+
+	// Builds the standard create-schema success responses but throws the supplied fault when the OData rebuild
+	// is requested, so a test can exercise how PublishSchema's exception filter treats that fault.
+	private void SetupClientThrowingOnODataBuild(Exception odataBuildFault)
+	{
+		SetupApplicationClient((url, body) => {
+			if (url.Contains("CreateNewSchema", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
+			}
+			if (url.Contains("CheckUniqueSchemaName", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":true}";
+			}
+			if (url.Contains("SaveSchema", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schemaUid\":\"22222222-2222-2222-2222-222222222222\"}";
+			}
+			if (url.Contains("RunODataBuild", StringComparison.Ordinal)) {
+				throw odataBuildFault;
+			}
+			if (url.Contains("SchemaDesignerRequest", StringComparison.Ordinal)) {
+				return "{\"success\":true}";
+			}
+			if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"UsrVehicle\"}}";
+			}
+			throw new InvalidOperationException($"Unexpected url {url}");
+		});
+	}
+
+	[Test]
 	[Description("Anchors the schema caption to the explicit --caption-culture override when provided (override > profile > en-US).")]
 	public void Create_ShouldAnchorCaptionToOverrideCulture_WhenCaptionCultureProvided()
 	{

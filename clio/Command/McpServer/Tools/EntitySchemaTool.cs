@@ -37,8 +37,11 @@ public sealed class CreateEntitySchemaTool(
 
 				 The tool applies the DB structure and publishes the schema automatically, so the new entity is
 				 immediately usable as a Lookup reference in sys-settings and lookup pickers — no compile needed.
+				 Publishing also requests an OData entities rebuild, so the entity becomes reachable over OData
+				 (/0/odata/<Entity>) without a compile. That rebuild is asynchronous (~1-2 min): a 404 from an
+				 odata-* tool right after creation is the expected async gap — wait briefly and retry, do not compile.
 
-				 Entity business rules (conditional editability/required/values) are separate artifacts — call get-guidance with name business-rules to learn more.
+				 Entity business rules (conditional editability/required/values) are separate artifacts — call get-guidance with name business-rules to learn more. For the schema-design workflow call get-guidance with name app-modeling.
 				 """)]
 	public async Task<CommandExecutionResult> CreateEntitySchema(
 		[Description("Parameters: environment-name, package-name, schema-name, title-localizations (all required); columns, parent-schema-name (optional, defaults to BaseEntity unless extend-parent is true), extend-parent (optional, requires parent-schema-name when true)")] [Required] CreateEntitySchemaArgs args
@@ -53,7 +56,7 @@ public sealed class CreateEntitySchemaTool(
 			CommandExecutionResult result = InternalExecute<CreateEntitySchemaCommand>(options);
 			return result with { DataForge = dataForge };
 		} catch (Exception exception) {
-			return new CommandExecutionResult(1, [new ErrorMessage(exception.Message)], null, dataForge);
+			return new CommandExecutionResult(1, [new ErrorMessage(SensitiveErrorTextRedactor.Redact(exception.Message))], null, dataForge);
 		}
 	}
 
@@ -109,6 +112,7 @@ public sealed class CreateEntitySchemaTool(
 			column.TitleLocalizations,
 			column.LegacyTitle,
 			column.LegacyCaption,
+			column.ResolveName(),
 			context);
 		string? resolvedReferenceSchemaName = column.ResolveReferenceSchemaName();
 		return JsonSerializer.Serialize(new Dictionary<string, object?> {
@@ -159,10 +163,13 @@ public sealed class CreateLookupTool : BaseTool<CreateEntitySchemaOptions> {
 
 				 The schema always inherits from BaseLookup. Use this when the caller explicitly requested a lookup
 				 entity instead of a generic entity schema. BaseLookup already provides Name and Description, so do
-				 not send them as custom columns.
+				 not send them as custom columns. Entity business rules are separate — call get-guidance with name business-rules.
 
 				 The tool applies the DB structure and publishes the schema automatically, so the new lookup is
 				 immediately usable as a Lookup reference in sys-settings and lookup pickers — no compile needed.
+				 Publishing also requests an OData entities rebuild, so the lookup becomes reachable over OData
+				 (/0/odata/<Entity>) without a compile. That rebuild is asynchronous (~1-2 min): a 404 from an
+				 odata-* tool right after creation is the expected async gap — wait briefly and retry, do not compile.
 				 """)]
 	public async Task<CommandExecutionResult> CreateLookup(
 		[Description("Parameters: environment-name, package-name, schema-name, title-localizations (all required); columns (optional)")] [Required] CreateLookupArgs args
@@ -206,7 +213,7 @@ public sealed class CreateLookupTool : BaseTool<CreateEntitySchemaOptions> {
 					return returnResult;
 				}
 				catch (Exception exception) {
-					List<LogMessage> logMessages = [.. _logger.FlushAndSnapshotMessages(clearMessages: true), new ErrorMessage(exception.Message)];
+					List<LogMessage> logMessages = [.. _logger.FlushAndSnapshotMessages(clearMessages: true), new ErrorMessage(SensitiveErrorTextRedactor.Redact(exception.Message))];
 					CommandExecutionResult returnResult = new(
 						exitCode > 0 ? exitCode : 1,
 						logMessages,
@@ -219,7 +226,7 @@ public sealed class CreateLookupTool : BaseTool<CreateEntitySchemaOptions> {
 				}
 			}
 		} catch (Exception exception) {
-			return new CommandExecutionResult(1, [new ErrorMessage(exception.Message)], null, dataForge);
+			return new CommandExecutionResult(1, [new ErrorMessage(SensitiveErrorTextRedactor.Redact(exception.Message))], null, dataForge);
 		}
 	}
 }
@@ -242,7 +249,8 @@ public sealed class UpdateEntitySchemaTool(
 	[McpServerTool(Name = UpdateEntitySchemaToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
 	[Description("Applies a batch of add, modify, and remove column operations to a remote Creatio entity schema. " +
-		"Entity business rules (conditional editability/required/values) are separate artifacts — call get-guidance with name business-rules to learn more.")]
+		"The batch is published and the OData entities are rebuilt automatically, so changed columns become reachable over OData (/0/odata/<Entity>) without a compile. That rebuild is asynchronous (~1-2 min): a 404 (or \"The request is invalid\") from an odata-* tool right after a change is the expected async gap — wait briefly and retry, do not compile. " +
+		"Entity business rules (conditional editability/required/values) are separate artifacts — call get-guidance with name business-rules to learn more. For the schema-design workflow call get-guidance with name app-modeling.")]
 	public async Task<CommandExecutionResult> UpdateEntitySchema(
 		[Description("Parameters: environment-name, package-name, schema-name, operations (all required)")] [Required] UpdateEntitySchemaArgs args) {
 		ApplicationDataForgeResult? dataForge = null;
@@ -264,9 +272,12 @@ public sealed class UpdateEntitySchemaTool(
 				Operations = SerializeOperations(args.Operations, args.SchemaName)
 			};
 			CommandExecutionResult result = InternalExecute<UpdateEntitySchemaCommand>(options);
-			return result with { DataForge = dataForge };
+			return result with {
+				DataForge = dataForge,
+				Note = result.ExitCode == 0 ? CommandExecutionResult.CompileNotRequiredNote : result.Note
+			};
 		} catch (Exception exception) {
-			return new CommandExecutionResult(1, [new ErrorMessage(exception.Message)], null, dataForge);
+			return new CommandExecutionResult(1, [new ErrorMessage(SensitiveErrorTextRedactor.Redact(exception.Message))], null, dataForge);
 		}
 	}
 
@@ -308,6 +319,8 @@ public sealed class UpdateEntitySchemaTool(
 				operation.Action,
 				operation.TitleLocalizations,
 				operation.LegacyTitle,
+				operation.LegacyCaption,
+				operation.ResolveColumnName(),
 				context);
 		IReadOnlyDictionary<string, string>? descriptionLocalizations =
 			EntitySchemaLocalizationContract.NormalizeMutationDescriptionLocalizations(
@@ -359,19 +372,13 @@ public sealed class GetEntitySchemaPropertiesTool(
 	/// </summary>
 	[McpServerTool(Name = GetEntitySchemaPropertiesToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
-	[Description("Returns structured properties for the specified remote Creatio entity schema. "
-		+ "Omit 'package-name' to get the MERGED/EFFECTIVE schema with columns from ALL packages "
-		+ "(including custom columns added in other packages) — use this for column discovery. "
-		+ "Supply 'package-name' only to inspect a single package layer's slice. "
-		+ "IMPORTANT: an empty column list from a single-package read does NOT prove a column is absent; "
-		+ "re-read without 'package-name', or use 'find-entity-schema' to locate the customization package. "
-		+ "Note: in the merged view a few schema-level fields are not exposed by the runtime endpoint and are "
-		+ "returned as null (NOT false/0), so null means 'unavailable in merged mode' rather than a real value: "
-		+ "parent-schema-name, indexes-count, ssp-available, use-record-deactivation, use-deny-record-rights, "
-		+ "use-live-editing; supply 'package-name' to read those authoritative values.")]
+	[Description("Returns structured properties for a remote Creatio entity schema. "
+		+ "Omit package-name for the MERGED/EFFECTIVE view (columns from all packages) — use this for column discovery; "
+		+ "an empty column list from a single-package read does NOT prove a column is absent. "
+		+ "Supply package-name to inspect one package layer and to read schema-level fields that the merged view returns as null "
+		+ "(parent-schema-name, indexes-count, ssp-available, use-record-deactivation, use-deny-record-rights, use-live-editing).")]
 	public EntitySchemaPropertiesInfo GetEntitySchemaProperties(
-		[Description("Parameters: environment-name, schema-name (required); package-name (optional — omit for the "
-			+ "merged all-packages view, supply for a single package layer)")] [Required] GetEntitySchemaPropertiesArgs args) {
+		[Description("environment-name, schema-name (required); package-name (optional — omit for the merged all-packages view)")] [Required] GetEntitySchemaPropertiesArgs args) {
 		GetEntitySchemaPropertiesOptions options = new() {
 			Environment = args.EnvironmentName,
 			Package = args.PackageName,
@@ -471,10 +478,15 @@ public sealed class ModifyEntitySchemaColumnTool(ModifyEntitySchemaColumnCommand
 	[McpServerTool(Name = ModifyEntitySchemaColumnToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
 	[Description("Adds, modifies, or removes a column in a remote Creatio entity schema. "
+		+ "The change is published and the OData entities are rebuilt automatically, so the column becomes reachable "
+		+ "over OData (/0/odata/<Entity>) without a compile. That rebuild is asynchronous (~1-2 min): a 404 (or "
+		+ "\"The request is invalid\") from an odata-* tool right after the change is the expected async gap — wait "
+		+ "briefly and retry, do not compile. Each call publishes once, so to change several columns at once batch "
+		+ "them through update-entity-schema rather than one call per column. "
 		+ "When setting a Const default on a lookup column, the referenced record's existence is validated "
 		+ "before save: a GUID that does not exist in the referenced schema is rejected with a non-zero exit "
 		+ "and the schema is not saved. The check is point-in-time (TOCTOU) and is skipped when the referenced "
-		+ "record cannot be read.")]
+		+ "record cannot be read. Entity business rules are separate — call get-guidance with name business-rules.")]
 	public CommandExecutionResult ModifyEntitySchemaColumn(
 		[Description("Parameters: environment-name, package-name, schema-name, action, column-name (all required); type, title-localizations, description-localizations, reference-schema-name, and many flags (optional)")] [Required] ModifyEntitySchemaColumnArgs args) {
 		try {
@@ -485,6 +497,8 @@ public sealed class ModifyEntitySchemaColumnTool(ModifyEntitySchemaColumnCommand
 					args.Action,
 					args.TitleLocalizations,
 					args.LegacyTitle,
+					args.LegacyCaption,
+					resolvedColumnName,
 					context);
 			TitleLocalizationNormalizationResult titleNormalization =
 				EntitySchemaDesignerSupport.NormalizeTitleLocalizations(
@@ -527,7 +541,7 @@ public sealed class ModifyEntitySchemaColumnTool(ModifyEntitySchemaColumnCommand
 			};
 			return InternalExecute<ModifyEntitySchemaColumnCommand>(options);
 		} catch (Exception exception) {
-			return new CommandExecutionResult(1, [new ErrorMessage(exception.Message)], null);
+			return new CommandExecutionResult(1, [new ErrorMessage(SensitiveErrorTextRedactor.Redact(exception.Message))], null);
 		}
 	}
 }
@@ -556,7 +570,7 @@ public abstract record EntitySchemaCreateArgsBase(
 	Dictionary<string, string> TitleLocalizations,
 
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Creatio environment name")]
+	[property: Description(McpToolDescriptions.EnvironmentName)]
 	[property: Required]
 	string EnvironmentName,
 
@@ -613,7 +627,7 @@ public sealed record CreateLookupArgs(
 /// </summary>
 public abstract record EntitySchemaTargetArgsBase(
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Creatio environment name")]
+	[property: Description(McpToolDescriptions.EnvironmentName)]
 	[property: Required]
 	string EnvironmentName,
 
@@ -672,9 +686,8 @@ public sealed record CreateEntitySchemaColumnArgs(
 	string Type,
 
 	[property: JsonPropertyName("title-localizations")]
-	[property: Description("Column title/caption localizations. Must include en-US.")]
-	[property: Required]
-	Dictionary<string, string> TitleLocalizations,
+	[property: Description("Column title/caption localizations. OPTIONAL — when omitted, en-US is auto-derived from a scalar title/caption or the column name. Must include en-US when provided, and the en-US value must be English.")]
+	Dictionary<string, string>? TitleLocalizations = null,
 
 	[property: JsonPropertyName("reference-schema-name")]
 	[property: Description("Required when type is Lookup. Use an entity schema name like Contact or Account. Do not set for ImageLookup — it references the SysImage schema automatically.")]
@@ -757,6 +770,24 @@ public sealed record CreateEntitySchemaColumnArgs(
 	/// </summary>
 	/// <returns>The canonical required flag, or the alias when the canonical field is absent.</returns>
 	public bool? ResolveRequired() => Required ?? IsRequiredAlias;
+
+	/// <summary>
+	/// Gets the <c>column-name</c> alias for <c>name</c>. The <c>get-tool-contract</c> output advertises
+	/// <c>column-name</c> (alias <c>name</c>) for column identity, so an agent following the contract naturally
+	/// puts <c>column-name</c> into the read/create-shape <c>columns[]</c> array. Accepting it here keeps that
+	/// documented field working instead of silently dropping it (field-test defect #1).
+	/// </summary>
+	[property: JsonPropertyName("column-name")]
+	[property: Description("Alias for name. Accepts the get-tool-contract column identity field 'column-name'.")]
+	public string? ColumnNameAlias { get; init; }
+
+	/// <summary>
+	/// Resolves the effective column code, preferring the canonical <c>name</c> and falling back to the
+	/// <c>column-name</c> alias advertised by <c>get-tool-contract</c>.
+	/// </summary>
+	/// <returns>The canonical name, or the <c>column-name</c> alias when the canonical field is absent.</returns>
+	public string? ResolveName() =>
+		!string.IsNullOrWhiteSpace(Name) ? Name : ColumnNameAlias;
 }
 
 /// <summary>
@@ -796,7 +827,7 @@ public abstract record ColumnModificationArgsBase(
 	string? Type = null,
 
 	[property: JsonPropertyName("title-localizations")]
-	[property: Description("Column title/caption localizations. Required for add. Must include en-US when provided.")]
+	[property: Description("Column title/caption localizations. OPTIONAL for add — when omitted, en-US is auto-derived from a scalar title/caption or the column name. Must include en-US when provided, and the en-US value must be English.")]
 	Dictionary<string, string>? TitleLocalizations = null,
 
 	[property: JsonPropertyName("description-localizations")]
@@ -868,8 +899,12 @@ public abstract record ColumnModificationArgsBase(
 	bool? DoNotControlIntegrity = null
 ) {
 	[property: JsonPropertyName("title")]
-	[property: Description("Legacy scalar title. Not accepted by MCP. Use title-localizations instead.")]
+	[property: Description("Legacy scalar title. For add it is used only as an en-US fallback when title-localizations is omitted; prefer title-localizations.")]
 	public string? LegacyTitle { get; init; }
+
+	[property: JsonPropertyName("caption")]
+	[property: Description("Legacy scalar caption alias. For add it is used only as an en-US fallback when title-localizations is omitted; prefer title-localizations.")]
+	public string? LegacyCaption { get; init; }
 
 	[property: JsonPropertyName("description")]
 	[property: Description("Legacy scalar description. Not accepted by MCP. Use description-localizations instead.")]
@@ -994,7 +1029,7 @@ public sealed record UpdateEntitySchemaOperationArgs(
 /// </remarks>
 public sealed record GetEntitySchemaPropertiesArgs(
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Creatio environment name")]
+	[property: Description(McpToolDescriptions.EnvironmentName)]
 	[property: Required]
 	string EnvironmentName,
 
@@ -1028,7 +1063,7 @@ public sealed record GetEntitySchemaColumnPropertiesArgs(
 /// </summary>
 public sealed record ModifyEntitySchemaColumnArgs(
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Creatio environment name")]
+	[property: Description(McpToolDescriptions.EnvironmentName)]
 	[property: Required]
 	string EnvironmentName,
 
@@ -1075,7 +1110,7 @@ public sealed record ModifyEntitySchemaColumnArgs(
 /// </summary>
 public sealed record FindEntitySchemaArgs(
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Creatio environment name")]
+	[property: Description(McpToolDescriptions.EnvironmentName)]
 	[property: Required]
 	string EnvironmentName,
 

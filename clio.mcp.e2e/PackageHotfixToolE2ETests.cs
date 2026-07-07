@@ -3,11 +3,9 @@ using Allure.Net.Commons;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
-using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
-using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E;
@@ -16,45 +14,47 @@ namespace Clio.Mcp.E2E;
 /// End-to-end tests for the unlock-for-hotfix and finish-hotfix MCP tools.
 /// </summary>
 [TestFixture]
+[Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature("pkg-hotfix")]
-public sealed class PackageHotfixToolE2ETests {
+[Parallelizable(ParallelScope.Self)]
+public sealed class PackageHotfixToolE2ETests : McpContractFixtureBase {
 
 	private const string UnlockToolName = PackageHotfixTool.UnlockForHotfixToolName;
 	private const string FinishToolName = PackageHotfixTool.FinishHotfixToolName;
 
 	[Test]
 	[AllureTag(UnlockToolName)]
-	[AllureDescription("Starts the real clio MCP server and verifies that unlock-for-hotfix is advertised in the tool list.")]
-	[AllureName("unlock-for-hotfix tool is advertised by the MCP server")]
-	[Description("Verifies that unlock-for-hotfix appears in the MCP tool advertisement from the real clio mcp-server process.")]
+	[AllureDescription("Starts the real clio MCP server and verifies that unlock-for-hotfix is discoverable via the get-tool-contract compact index.")]
+	[AllureName("unlock-for-hotfix tool is discoverable on the lazy surface")]
+	[Description("Verifies that unlock-for-hotfix is discoverable via the get-tool-contract compact index of the real clio mcp-server process.")]
 	public async Task UnlockForHotfix_Should_Be_Advertised_By_McpServer() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		await using PackageHotfixArrangeContext arrangeContext = await ArrangeAsync(settings);
+		await using var arrangeContext = Arrange();
 
 		// Act
-		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
+		IReadOnlyCollection<string> toolNames =
+			await arrangeContext.Session.ListReachableToolNamesAsync(arrangeContext.CancellationTokenSource.Token);
 
 		// Assert
-		AssertToolIsAdvertised(tools, UnlockToolName);
+		AssertToolIsDiscoverable(toolNames, UnlockToolName);
 	}
 
 	[Test]
 	[AllureTag(FinishToolName)]
-	[AllureDescription("Starts the real clio MCP server and verifies that finish-hotfix is advertised in the tool list.")]
-	[AllureName("finish-hotfix tool is advertised by the MCP server")]
-	[Description("Verifies that finish-hotfix appears in the MCP tool advertisement from the real clio mcp-server process.")]
+	[AllureDescription("Starts the real clio MCP server and verifies that finish-hotfix is discoverable via the get-tool-contract compact index.")]
+	[AllureName("finish-hotfix tool is discoverable on the lazy surface")]
+	[Description("Verifies that finish-hotfix is discoverable via the get-tool-contract compact index of the real clio mcp-server process.")]
 	public async Task FinishHotfix_Should_Be_Advertised_By_McpServer() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		await using PackageHotfixArrangeContext arrangeContext = await ArrangeAsync(settings);
+		await using var arrangeContext = Arrange();
 
 		// Act
-		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
+		IReadOnlyCollection<string> toolNames =
+			await arrangeContext.Session.ListReachableToolNamesAsync(arrangeContext.CancellationTokenSource.Token);
 
 		// Assert
-		AssertToolIsAdvertised(tools, FinishToolName);
+		AssertToolIsDiscoverable(toolNames, FinishToolName);
 	}
 
 	[Test]
@@ -64,8 +64,7 @@ public sealed class PackageHotfixToolE2ETests {
 	[Description("Reports invalid environment failures for unlock-for-hotfix through the real MCP server.")]
 	public async Task UnlockForHotfix_Should_Report_Invalid_Environment_Failure() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		await using PackageHotfixArrangeContext arrangeContext = await ArrangeAsync(settings);
+		await using var arrangeContext = Arrange();
 		string invalidEnvironmentName = $"missing-hotfix-env-{Guid.NewGuid():N}";
 
 		// Act
@@ -84,8 +83,7 @@ public sealed class PackageHotfixToolE2ETests {
 	[Description("Reports invalid environment failures for finish-hotfix through the real MCP server.")]
 	public async Task FinishHotfix_Should_Report_Invalid_Environment_Failure() {
 		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		await using PackageHotfixArrangeContext arrangeContext = await ArrangeAsync(settings);
+		await using var arrangeContext = Arrange();
 		string invalidEnvironmentName = $"missing-hotfix-env-{Guid.NewGuid():N}";
 
 		// Act
@@ -97,16 +95,8 @@ public sealed class PackageHotfixToolE2ETests {
 		AssertFailureMentionsEnvironment(actResult, invalidEnvironmentName);
 	}
 
-	private static async Task<PackageHotfixArrangeContext> ArrangeAsync(McpE2ESettings settings) {
-		return await AllureApi.Step("Arrange MCP server session", async () => {
-			CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
-			McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-			return new PackageHotfixArrangeContext(session, cancellationTokenSource);
-		});
-	}
-
 	private static async Task<CommandExecutionActResult> ActAsync(
-		PackageHotfixArrangeContext arrangeContext,
+		ArrangeContext arrangeContext,
 		string toolName,
 		string packageName,
 		string environmentName) {
@@ -125,10 +115,10 @@ public sealed class PackageHotfixToolE2ETests {
 		});
 	}
 
-	[AllureStep("Assert tool is advertised by MCP server")]
-	private static void AssertToolIsAdvertised(IList<McpClientTool> tools, string toolName) {
-		tools.Select(t => t.Name).Should().Contain(toolName,
-			because: $"the {toolName} MCP tool must be advertised by the clio mcp-server process");
+	[AllureStep("Assert tool is discoverable on the lazy surface")]
+	private static void AssertToolIsDiscoverable(IReadOnlyCollection<string> toolNames, string toolName) {
+		toolNames.Should().Contain(toolName,
+			because: $"the {toolName} MCP tool must be discoverable on the lazy surface (get-tool-contract compact index) even though it is not resident in tools/list");
 	}
 
 	[AllureStep("Assert command-oriented MCP tool failed")]
@@ -154,18 +144,11 @@ public sealed class PackageHotfixToolE2ETests {
 
 		combinedOutput.Should().NotBeNullOrWhiteSpace(
 			because: "failed hotfix execution should provide diagnostics that explain the failure");
+		// The hotfix tools are hidden long-tail tools routed through the clio-run executor, so an
+		// invocation-layer failure may also surface as the wrapped "Error: tool '<name>' failed:" text.
 		combinedOutput.Should().MatchRegex(
-			$"(?is)({Regex.Escape(environmentName)}|environment.*not.*found|not found|error occurred invoking)",
+			$"(?is)({Regex.Escape(environmentName)}|environment.*not.*found|not found|error occurred invoking|tool '[^']+' failed)",
 			because: "the failure log should identify that the requested environment is not registered");
-	}
-
-	private sealed record PackageHotfixArrangeContext(
-		McpServerSession Session,
-		CancellationTokenSource CancellationTokenSource) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
-			CancellationTokenSource.Dispose();
-		}
 	}
 
 	private sealed record CommandExecutionActResult(

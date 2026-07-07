@@ -39,9 +39,9 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		       - A business-rule condition is NOT limited to field values: it can also test the current user (CurrentUser / CurrentUserContact / CurrentUserAccount), the user's roles (CurrentUserRoles CONTAIN / NOT_CONTAIN a role), or the current date/time (CurrentDate / CurrentTime / CurrentDateTime). Such a check is a business-rule CONDITION, not handler "data access" — do NOT reach for `crt.HandleViewModelInitRequest` (or `sdk.RightsService` / `sdk.Model`) to gate a field by role, user, or date; close it with a business rule.
 
 		       Decision tree
-		       - If the requirement is conditional field/element visibility, editability, or required state based on another field's value (e.g. "when Status is Closed, hide field X" or "when Type is Internal, make Description required"), this is a BUSINESS RULE, not a handler. Use `create-page-business-rule` or `create-entity-business-rule`. Call `get-guidance` with name `business-rules` first.
-		       - If the requirement is conditional visibility, editability, or required state based on the current user's ROLE, the current user's identity, or the current DATE/TIME (e.g. "Resolved visible only for administrators", "Assignee group visible only for the Supervisor contact", "show this label only on 2026-06-09"), this is a BUSINESS RULE, not a handler. Put the system variable in the condition: CurrentUserRoles CONTAIN / NOT_CONTAIN a role id; CurrentUser / CurrentUserContact / CurrentUserAccount equal a target id; or a CurrentDate / CurrentDateTime comparison. Use `create-page-business-rule` or `create-entity-business-rule` and call `get-guidance` with name `business-rules` first. Do NOT write a `crt.HandleViewModelInitRequest` handler, and do NOT treat the role/user/date check as "data access".
-		       - If the requirement is writing a value into a column or clearing a column when another field changes (e.g. "when Type=Personal, clear Company"; "when Country=USA, set Currency=USD"; two interdependent fields where one drives the other's value), this is a BUSINESS RULE with the `set-values` action, not a handler. Use `create-entity-business-rule` and call `get-guidance` with name `business-rules` first. Do NOT implement this as a `crt.HandleViewModelAttributeChangeRequest` handler.
+		       - If the requirement is conditional field/element visibility, editability, or required state based on another field's value (e.g. "when Status is Closed, hide field X" or "when Type is Internal, make Description required"), this is a BUSINESS RULE, not a handler. Use `create-page-business-rules` or `create-entity-business-rules`. Call `get-guidance` with name `business-rules` first.
+		       - If the requirement is conditional visibility, editability, or required state based on the current user's ROLE, the current user's identity, or the current DATE/TIME (e.g. "Resolved visible only for administrators", "Assignee group visible only for the Supervisor contact", "show this label only on 2026-06-09"), this is a BUSINESS RULE, not a handler. Put the system variable in the condition: CurrentUserRoles CONTAIN / NOT_CONTAIN a role id; CurrentUser / CurrentUserContact / CurrentUserAccount equal a target id; or a CurrentDate / CurrentDateTime comparison. Use `create-page-business-rules` or `create-entity-business-rules` and call `get-guidance` with name `business-rules` first. Do NOT write a `crt.HandleViewModelInitRequest` handler, and do NOT treat the role/user/date check as "data access".
+		       - If the requirement is writing a value into a column or clearing a column when another field changes (e.g. "when Type=Personal, clear Company"; "when Country=USA, set Currency=USD"; two interdependent fields where one drives the other's value), this is a BUSINESS RULE with the `set-values` action, not a handler. Use `create-entity-business-rules` and call `get-guidance` with name `business-rules` first. Do NOT implement this as a `crt.HandleViewModelAttributeChangeRequest` handler.
 		       - If the requirement is field-value validation, stop and read `page-schema-validators`.
 		       - If the requirement is max/min/length/range/regex validation whose threshold comes from a system setting, SDK lookup, or other async read, it is still validator work. Do NOT default to an init handler that only sets `maxLength` or another UI-only property.
 		       - Else if the requirement is a pure value transform for bound data, use `SCHEMA_CONVERTERS`, not `SCHEMA_HANDLERS`.
@@ -207,7 +207,7 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		           }
 		         ]/**SCHEMA_HANDLERS*/
 
-		       - CAVEAT for the two value-sync templates below: a plain "copy/clear field B based on field A's value" requirement is a BUSINESS RULE (`set-values` action), not a handler — close it with `create-entity-business-rule`. Use these handler templates only when the sync needs logic a business rule cannot express (e.g. transforming the value before writing, multi-source computation, or conditional branching beyond a simple condition→value mapping).
+		       - CAVEAT for the two value-sync templates below: a plain "copy/clear field B based on field A's value" requirement is a BUSINESS RULE (`set-values` action), not a handler — close it with `create-entity-business-rules`. Use these handler templates only when the sync needs logic a business rule cannot express (e.g. transforming the value before writing, multi-source computation, or conditional branching beyond a simple condition→value mapping).
 		       - Mirror one text field into another on attribute change:
 		         handlers: /**SCHEMA_HANDLERS*/[
 		           {
@@ -245,6 +245,11 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		           }
 		         ]/**SCHEMA_HANDLERS*/
 
+		       - NOTE: if the goal is to RUN A BUSINESS PROCESS when the record is saved, do NOT use this save
+		         handler. A record-triggered process is started by a Signal start element INSIDE the process
+		         (build it with `create-business-process`, start element type `signalStart`, `signal.entity` =
+		         the page object, `signal.on` = added|modified|deleted) — not by a page handler. Use the
+		         save-handler pattern below only for in-page logic (setting attributes, reloading data, etc.).
 		       - Save handler that runs custom logic after the base save succeeds:
 		         handlers: /**SCHEMA_HANDLERS*/[
 		           {
@@ -464,24 +469,27 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		         | `crt.CloseSidebarRequest` | config | `containerName?` | direct request |
 		         | `crt.GetSidebarStateRequest` | config | `sidebarCode` | direct request |
 		       - Dialog and special cases:
+		       - To show ANY user-facing message from a handler - a short confirmation, info, success, or error popup such as "Approved." or "Saved." - dispatch `crt.ShowDialogRequest` (shape below). "just show a short confirmation message" is a `crt.ShowDialogRequest`, NOT a browser dialog. This needs `@creatio-devkit/common` in `SCHEMA_DEPS` and the `sdk` alias in `SCHEMA_ARGS`. NEVER use `alert(...)`, `window.alert(...)`, `confirm(...)`, or `prompt(...)`: they are raw browser primitives, not the Freedom UI dialog, and are not acceptable in deployed page-body handlers.
 		         | User-visible name | Source reality | Params | Notes |
 		         | --- | --- | --- | --- |
-		         | `crt.ShowDialog` | source request is `crt.ShowDialogRequest`, handled by `crt.ShowDialogHandler` | `dialogConfig` with `message`, `actions`, optional `title` | in code author `type: "crt.ShowDialogRequest"`; `crt.ShowDialog` is the user-visible catalog label |
-		       - Minimal `dialogConfig` shape:
+		         | `crt.ShowDialog` | source request is `crt.ShowDialogRequest`, handled by `crt.ShowDialogHandler` | `dialogConfig.data` with `message`, `actions`, optional `title` | in code author `type: "crt.ShowDialogRequest"`; `crt.ShowDialog` is the user-visible catalog label |
+		       - Minimal `dialogConfig` shape - `message`, `actions`, and `title` go under `dialogConfig.data`, NOT directly on `dialogConfig` (it is a `MessageDialogConfig`; the platform renders `dialogConfig.data.message` / `dialogConfig.data.actions`). Placing them on `dialogConfig` directly opens an empty dialog with only the default OK button:
 		         await sdk.HandlerChainService.instance.process({
 		           type: "crt.ShowDialogRequest",
 		           dialogConfig: {
-		             title: "<OptionalTitle>",
-		             message: "<MessageText>",
-		             actions: [
-		               {
-		                 key: "ok",
-		                 config: {
-		                   color: "primary",
-		                   caption: "OK"
+		             data: {
+		               title: "<OptionalTitle>",
+		               message: "<MessageText>",
+		               actions: [
+		                 {
+		                   key: "ok",
+		                   config: {
+		                     color: "primary",
+		                     caption: "OK"
+		                   }
 		                 }
-		               }
-		             ]
+		               ]
+		             }
 		           },
 		           $context: request.$context,
 		           scopes: [...request.scopes]
@@ -502,6 +510,7 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		       - Do NOT choose raw `fetch(...)` to a platform endpoint before checking `page-schema-creatio-devkit-common` for a canonical `crt.*Request`, SDK service, or `sdk.Model` pattern.
 		       - Do NOT invent placeholder SDK services such as `<Service>.subscribe(...)`; when SDK-based subscriptions are required, use a concrete service such as `sdk.MessageChannelService` and keep `SCHEMA_DEPS` / `SCHEMA_ARGS` aligned.
 		       - Do NOT write `type: "crt.ShowDialog"` in imperative request code; use `type: "crt.ShowDialogRequest"`.
+		       - Do NOT use `alert(...)`, `window.alert(...)`, `confirm(...)`, or `prompt(...)` to show a message from a handler; dispatch `crt.ShowDialogRequest` instead (message/actions under `dialogConfig.data`).
 		       - Do NOT use `request.viewModel`, `request.sender`, `.$get(...)`, `.$set(...)`, or `request.$context.get(...)` in deployed page-body handlers.
 		       - Do NOT omit `$context` or `scopes` when forwarding a request from one handler into another page-scoped handler chain.
 		       - Do NOT mutate unrelated request fields; only use documented control flags such as `preventAttributeChangeRequest` when that request type explicitly supports them.

@@ -1,9 +1,12 @@
 using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
+using Clio.Command;
+using Clio.Command.McpServer.Resources.ProcessDesigner;
 using Clio.Command.McpServer.Tools;
 using FluentAssertions;
 using ModelContextProtocol.Server;
+using NSubstitute;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command.McpServer;
@@ -12,6 +15,17 @@ namespace Clio.Tests.Command.McpServer;
 [Category("Unit")]
 [Property("Module", "McpServer")]
 public sealed class GuidanceGetToolTests {
+	private IFeatureToggleService _featureToggleService;
+
+	[SetUp]
+	public void SetUp() {
+		// A bare substitute returns false for every IsEnabled(...) call, which keeps feature-gated
+		// guidance hidden while ungated guidance stays visible (GuidanceCatalog.IsVisible short-circuits
+		// on a null gate type and never calls the toggle service). Tests that need a gated guide enable
+		// it explicitly on this substitute.
+		_featureToggleService = Substitute.For<IFeatureToggleService>();
+	}
+
 	[Test]
 	[Category("Unit")]
 	[Description("Advertises a stable MCP tool name for get-guidance.")]
@@ -59,8 +73,6 @@ public sealed class GuidanceGetToolTests {
 			because: "the top-level argument hint should mention generated composable-app test guidance names");
 		parameterDescription.Description.Should().Contain("page-schema-handlers",
 			because: "the top-level argument hint should mention the dedicated handler guidance name");
-		parameterDescription.Description.Should().Contain("indicator-widget",
-			because: "the top-level argument hint should mention the dedicated indicator widget guidance name");
 		parameterDescription.Description.Should().Contain("related-list",
 			because: "the top-level argument hint should mention the dedicated related-list (detail) guidance name");
 		parameterDescription.Description.Should().Contain("esq-filters",
@@ -75,8 +87,6 @@ public sealed class GuidanceGetToolTests {
 			because: "the serialized name field hint should mention generated composable-app test guidance names");
 		propertyDescription.Description.Should().Contain("page-schema-handlers",
 			because: "the serialized name field hint should stay aligned with the known handler guidance name");
-		propertyDescription.Description.Should().Contain("indicator-widget",
-			because: "the serialized name field hint should mention the dedicated indicator widget guidance name");
 		propertyDescription.Description.Should().Contain("related-list",
 			because: "the serialized name field hint should mention the dedicated related-list (detail) guidance name");
 		propertyDescription.Description.Should().Contain("esq-filters",
@@ -90,7 +100,7 @@ public sealed class GuidanceGetToolTests {
 	[Description("Returns the canonical ESQ filters guidance article when the caller requests esq-filters.")]
 	public async Task GuidanceGet_Should_Return_Esq_Filters_Article() {
 		// Arrange
-		GuidanceGetTool tool = new();
+		GuidanceGetTool tool = new(_featureToggleService);
 
 		// Act
 		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("esq-filters"));
@@ -109,7 +119,7 @@ public sealed class GuidanceGetToolTests {
 	[Description("Returns the canonical indicator widget guidance article when the caller requests indicator-widget.")]
 	public async Task GuidanceGet_Should_Return_Indicator_Widget_Article() {
 		// Arrange
-		GuidanceGetTool tool = new();
+		GuidanceGetTool tool = new(_featureToggleService);
 
 		// Act
 		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("indicator-widget"));
@@ -129,10 +139,33 @@ public sealed class GuidanceGetToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Returns the canonical chart widget guidance article when the caller requests chart-widget.")]
+	public async Task GuidanceGet_Should_Return_Chart_Widget_Article() {
+		// Arrange
+		GuidanceGetTool tool = new(_featureToggleService);
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("chart-widget"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "chart-widget is a registered guidance name");
+		result.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article");
+		result.Article!.Uri.Should().Be("docs://mcp/guides/chart-widget",
+			because: "the guidance tool should preserve the canonical chart-widget guide URI in the response");
+		result.Article.Text.Should().Contain("clio MCP chart widget guide",
+			because: "the guidance tool should return the canonical chart widget article text");
+		result.Article.Text.Should().Contain("get-component-info",
+			because: "the trimmed chart widget guide should point callers to get-component-info as the source of truth");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Returns the canonical related-list guidance article when the caller requests related-list.")]
 	public async Task GuidanceGet_Should_Return_Related_List_Article() {
 		// Arrange
-		GuidanceGetTool tool = new();
+		GuidanceGetTool tool = new(_featureToggleService);
 
 		// Act
 		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("related-list"));
@@ -158,10 +191,31 @@ public sealed class GuidanceGetToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Pins the get-component-info-first / anti-bundle-reverse-engineering sentence in the page-modification guidance so it cannot be silently reverted (ENG-91953 recurrence guard).")]
+	public async Task GuidanceGet_Should_Pin_AntiBundleReverseEngineering_ForPageModification() {
+		// Arrange
+		GuidanceGetTool tool = new(_featureToggleService);
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("page-modification"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "page-modification is a registered guidance name");
+		result.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article");
+		result.Article!.Text.Should().Contain("reverse-engineering one is NOT a substitute",
+			because: "the anti-bundle-reverse-engineering guidance is a core ENG-91953 deliverable and must be guarded against silent reverts");
+		result.Article.Text.Should().Contain("compiled bundle",
+			because: "the guidance must keep warning that a compiled page bundle hides the catalog-only signals get-component-info carries");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Returns the canonical handler guidance article when the caller requests page-schema-handlers.")]
 	public async Task GuidanceGet_Should_Return_Page_Schema_Handlers_Article() {
 		// Arrange
-		GuidanceGetTool tool = new();
+		GuidanceGetTool tool = new(_featureToggleService);
 
 		// Act
 		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("page-schema-handlers"));
@@ -182,7 +236,7 @@ public sealed class GuidanceGetToolTests {
 	[Description("Returns the canonical SDK common guidance article when the caller requests page-schema-creatio-devkit-common.")]
 	public async Task GuidanceGet_Should_Return_Page_Schema_Sdk_Common_Article() {
 		// Arrange
-		GuidanceGetTool tool = new();
+		GuidanceGetTool tool = new(_featureToggleService);
 
 		// Act
 		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("page-schema-creatio-devkit-common"));
@@ -205,7 +259,7 @@ public sealed class GuidanceGetToolTests {
 	[Description("Returns the canonical page modification guidance article when the caller requests page-modification.")]
 	public async Task GuidanceGet_Should_Return_Page_Modification_Article() {
 		// Arrange
-		GuidanceGetTool tool = new();
+		GuidanceGetTool tool = new(_featureToggleService);
 
 		// Act
 		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("page-modification"));
@@ -231,6 +285,69 @@ public sealed class GuidanceGetToolTests {
 			because: "Step 0 must default to web when the requirement does not name a surface");
 		result.Article.Text.Should().Contain("whenToUse",
 			because: "the guide must steer selection between similar components using the producer's whenToUse/whenNotToUse selection-metadata (ENG-91134 / Solution A)");
+		result.Article.Text.Should().Contain("showing a user-facing message/confirmation/info/success/error popup",
+			because: "the gate table must route a 'show a confirmation message' requirement into page-schema-handlers so the agent uses crt.ShowDialogRequest (ENG-91748)");
+		result.Article.Text.Should().Contain("NEVER use `alert(...)`, `window.alert(...)`, `confirm(...)`, or `prompt(...)`",
+			because: "the page modification guide must forbid raw browser dialog primitives in page-body handlers so the agent stops emitting alert() (ENG-91748)");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the canonical page-creation guidance article when the caller requests page-creation.")]
+	public async Task GuidanceGet_Should_Return_Page_Creation_Article() {
+		// Arrange
+		GuidanceGetTool tool = new(_featureToggleService);
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("page-creation"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "page-creation is a registered guidance name that the dashboard-creation guide routes to by name");
+		result.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article");
+		result.Article!.Uri.Should().Be("docs://mcp/guides/page-creation",
+			because: "the guidance tool should preserve the canonical page-creation guide URI in the response");
+		result.Article.Text.Should().Contain("clio MCP page-creation guide",
+			because: "the guidance tool should return the canonical page-creation article text");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Resolves the dashboard-creation guide through get-guidance to its canonical URI.")]
+	public async Task GuidanceGet_Should_Return_Dashboard_Creation_Article() {
+		// Arrange
+		GuidanceGetTool tool = new(_featureToggleService);
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("dashboard-creation"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "dashboard-creation is a registered guidance name the create-page tool and the dashboards router route to");
+		result.Article.Should().NotBeNull(
+			because: "a successful guidance lookup must return the resolved article");
+		result.Article!.Uri.Should().Be("docs://mcp/guides/dashboard-creation",
+			because: "the tool must resolve the dashboard-creation name to its canonical guide URI");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Resolves the dashboard-design guide through get-guidance to its canonical URI.")]
+	public async Task GuidanceGet_Should_Return_Dashboard_Design_Article() {
+		// Arrange
+		GuidanceGetTool tool = new(_featureToggleService);
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("dashboard-design"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "dashboard-design is a registered guidance name the dashboards router routes to");
+		result.Article.Should().NotBeNull(
+			because: "a successful guidance lookup must return the resolved article");
+		result.Article!.Uri.Should().Be("docs://mcp/guides/dashboard-design",
+			because: "the tool must resolve the dashboard-design name to its canonical guide URI");
 	}
 
 	[Test]
@@ -238,7 +355,7 @@ public sealed class GuidanceGetToolTests {
 	[Description("Returns the canonical page localizable string guidance article when the caller requests page-schema-resources.")]
 	public async Task GuidanceGet_Should_Return_Page_Schema_Resources_Article() {
 		// Arrange
-		GuidanceGetTool tool = new();
+		GuidanceGetTool tool = new(_featureToggleService);
 
 		// Act
 		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("page-schema-resources"));
@@ -259,7 +376,7 @@ public sealed class GuidanceGetToolTests {
 	[Description("Returns the canonical validator guidance article when the caller requests page-schema-validators.")]
 	public void GuidanceGet_Should_Return_Page_Schema_Validators_Article() {
 		// Arrange
-		GuidanceGetTool tool = new();
+		GuidanceGetTool tool = new(_featureToggleService);
 
 		// Act
 		GuidanceGetResponse result = tool.GetGuidance(new GuidanceGetArgs("page-schema-validators")).Result;
@@ -280,7 +397,7 @@ public sealed class GuidanceGetToolTests {
 	[Description("Resolves guidance names case-insensitively so prompt-generated uppercase names still work.")]
 	public void GuidanceGet_Should_Resolve_Guidance_Name_Case_Insensitively() {
 		// Arrange
-		GuidanceGetTool tool = new();
+		GuidanceGetTool tool = new(_featureToggleService);
 
 		// Act
 		GuidanceGetResponse result = tool.GetGuidance(new GuidanceGetArgs("PAGE-SCHEMA-VALIDATORS")).Result;
@@ -298,7 +415,7 @@ public sealed class GuidanceGetToolTests {
 	[Category("Unit")]
 	[Description("Returns structured error with availableGuides when args omit the required name parameter")]
 	public void GuidanceGet_Should_Return_Structured_Error_On_Missing_Name() {
-		GuidanceGetTool tool = new();
+		GuidanceGetTool tool = new(_featureToggleService);
 
 		GuidanceGetResponse result = tool.GetGuidance(new GuidanceGetArgs(null)).Result;
 
@@ -313,7 +430,7 @@ public sealed class GuidanceGetToolTests {
 	[Category("Unit")]
 	[Description("Legacy alias 'topic' is accepted as 'name' with a hint when ExtensionData carries the value")]
 	public void GuidanceGet_Should_Accept_Legacy_Alias_Topic() {
-		GuidanceGetTool tool = new();
+		GuidanceGetTool tool = new(_featureToggleService);
 		var element = System.Text.Json.JsonDocument.Parse("\"page-schema-validators\"").RootElement;
 		GuidanceGetArgs args = new(null) {
 			ExtensionData = new System.Collections.Generic.Dictionary<string, System.Text.Json.JsonElement> {
@@ -335,7 +452,7 @@ public sealed class GuidanceGetToolTests {
 	[Description("Returns an explicit error and the known guide names when the requested guidance name is unknown.")]
 	public void GuidanceGet_Should_Return_Known_Guide_Names_For_Unknown_Request() {
 		// Arrange
-		GuidanceGetTool tool = new();
+		GuidanceGetTool tool = new(_featureToggleService);
 
 		// Act
 		GuidanceGetResponse result = tool.GetGuidance(new GuidanceGetArgs("not-a-guide")).Result;
@@ -382,7 +499,7 @@ public sealed class GuidanceGetToolTests {
 	[Description("Returns the canonical configuration web-service guidance article when the caller requests configuration-webservice.")]
 	public async Task GuidanceGet_Should_Return_Configuration_WebService_Article() {
 		// Arrange
-		GuidanceGetTool tool = new();
+		GuidanceGetTool tool = new(_featureToggleService);
 
 		// Act
 		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("configuration-webservice"));
@@ -403,7 +520,7 @@ public sealed class GuidanceGetToolTests {
 	[Description("Returns the canonical configuration web-service test guidance article when the caller requests configuration-webservice-tests.")]
 	public async Task GuidanceGet_Should_Return_Configuration_WebService_Tests_Article() {
 		// Arrange
-		GuidanceGetTool tool = new();
+		GuidanceGetTool tool = new(_featureToggleService);
 
 		// Act
 		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("configuration-webservice-tests"));
@@ -424,7 +541,7 @@ public sealed class GuidanceGetToolTests {
 	[Description("Returns generated composable-app skill guidance articles by their skill names.")]
 	public async Task GuidanceGet_Should_Return_Generated_Composable_App_Skill_Articles() {
 		// Arrange
-		GuidanceGetTool tool = new();
+		GuidanceGetTool tool = new(_featureToggleService);
 
 		// Act
 		GuidanceGetResponse atfResult = await tool.GetGuidance(new GuidanceGetArgs("atf-repository-dev"));
@@ -455,7 +572,7 @@ public sealed class GuidanceGetToolTests {
 	[Description("Returns the canonical converter guidance article when the caller requests page-schema-converters.")]
 	public async Task GuidanceGet_Should_Return_Page_Schema_Converters_Article() {
 		// Arrange
-		GuidanceGetTool tool = new();
+		GuidanceGetTool tool = new(_featureToggleService);
 
 		// Act
 		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("page-schema-converters"));
@@ -476,7 +593,7 @@ public sealed class GuidanceGetToolTests {
 	[Description("Returns the canonical agent-execution guidance article when the caller requests agent-execution.")]
 	public async Task GuidanceGet_Should_Return_Agent_Execution_Article() {
 		// Arrange
-		GuidanceGetTool tool = new();
+		GuidanceGetTool tool = new(_featureToggleService);
 
 		// Act
 		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("agent-execution"));
@@ -497,7 +614,7 @@ public sealed class GuidanceGetToolTests {
 	[Description("Returns the canonical support-mode guidance article when the caller requests support-mode.")]
 	public async Task GuidanceGet_Should_Return_Support_Mode_Article() {
 		// Arrange
-		GuidanceGetTool tool = new();
+		GuidanceGetTool tool = new(_featureToggleService);
 
 		// Act
 		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("support-mode"));
@@ -518,7 +635,7 @@ public sealed class GuidanceGetToolTests {
 	[Description("Returns the canonical sys-settings guidance article when the caller requests sys-settings, with the documented core contract, value-type rules, SecureText masking, and Lookup resolution sections.")]
 	public async Task GuidanceGet_Should_Return_SysSettings_Article() {
 		// Arrange
-		GuidanceGetTool tool = new();
+		GuidanceGetTool tool = new(_featureToggleService);
 
 		// Act
 		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("sys-settings"));
@@ -553,7 +670,7 @@ public sealed class GuidanceGetToolTests {
 	[Description("Returns the canonical deploy-lifecycle guidance article when the caller requests deploy-lifecycle.")]
 	public async Task GuidanceGet_Should_Return_Deploy_Lifecycle_Article() {
 		// Arrange
-		GuidanceGetTool tool = new();
+		GuidanceGetTool tool = new(_featureToggleService);
 
 		// Act
 		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("deploy-lifecycle"));
@@ -571,5 +688,110 @@ public sealed class GuidanceGetToolTests {
 			because: "the deploy lifecycle guide must culminate in the deployment call");
 		result.Article.Text.Should().Contain("install-gate",
 			because: "the deploy lifecycle guide must cover cliogate installation as a post-deploy readiness step");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Hides process-modeling from availableGuides when the process-designer feature gate is disabled, while the ungated run-process-button guide stays listed.")]
+	public void GuidanceGet_Should_Hide_ProcessModeling_From_AvailableGuides_When_Gate_Disabled() {
+		// Arrange
+		// _featureToggleService is a bare substitute: IsEnabled(...) returns false, so the gated guides are disabled.
+		GuidanceGetTool tool = new(_featureToggleService);
+
+		// Act
+		GuidanceGetResponse result = tool.GetGuidance(new GuidanceGetArgs("not-a-guide")).Result;
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "an unknown guidance name must not resolve");
+		result.AvailableGuides.Should().NotContain("process-modeling",
+			because: "process-modeling is gated behind a disabled process-designer flag and must not leak through get-guidance");
+		result.AvailableGuides.Should().Contain("run-process-button",
+			because: "run-process-button documents the shipped run-process scenario (get-process-signature + update-page) and is deliberately ungated, like the gps tool itself");
+		result.AvailableGuides.Should().Contain("app-modeling",
+			because: "ungated guidance entries must stay listed regardless of feature-toggle state");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Treats process-modeling as an unknown guide when the process-designer feature gate is disabled.")]
+	public void GuidanceGet_Should_Reject_ProcessModeling_As_Unknown_When_Gate_Disabled() {
+		// Arrange
+		GuidanceGetTool tool = new(_featureToggleService);
+
+		// Act
+		GuidanceGetResponse result = tool.GetGuidance(new GuidanceGetArgs("process-modeling")).Result;
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "a gated guide must resolve as unknown while its feature flag is off");
+		result.Article.Should().BeNull(
+			because: "a disabled gated guide must not return its article");
+		result.Error.Should().Contain("Unknown guidance 'process-modeling'",
+			because: "the failure must name the rejected guide so the disabled gate is indistinguishable from a non-existent guide");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Resolves run-process-button while the process-designer feature gate is disabled: the guide documents the shipped run-process scenario and is not gated.")]
+	public void GuidanceGet_Should_Resolve_RunProcessButton_When_Gate_Disabled() {
+		// Arrange
+		GuidanceGetTool tool = new(_featureToggleService);
+
+		// Act
+		GuidanceGetResponse result = tool.GetGuidance(new GuidanceGetArgs("run-process-button")).Result;
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "run-process-button is ungated — its consumers (update-page, page-modification, page-schema-handlers, mobile-page guides) are public and must never hit a dead pointer");
+		result.Article.Should().NotBeNull(
+			because: "the ungated guide must return its article regardless of the process-designer flag");
+		result.Article!.Uri.Should().Be("docs://mcp/guides/run-process-button",
+			because: "the canonical run-process-button article URI must be stable");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Lists and resolves process-modeling when the process-designer feature gate is enabled; the ungated run-process-button resolves alongside it.")]
+	public async Task GuidanceGet_Should_List_And_Resolve_ProcessDesigner_Guides_When_Gate_Enabled() {
+		// Arrange
+		_featureToggleService.IsEnabled(typeof(ProcessModelingGuidanceResource)).Returns(true);
+		GuidanceGetTool tool = new(_featureToggleService);
+
+		// Act
+		GuidanceGetResponse listing = tool.GetGuidance(new GuidanceGetArgs("not-a-guide")).Result;
+		GuidanceGetResponse processModeling = await tool.GetGuidance(new GuidanceGetArgs("process-modeling"));
+		GuidanceGetResponse runProcessButton = await tool.GetGuidance(new GuidanceGetArgs("run-process-button"));
+
+		// Assert
+		listing.AvailableGuides.Should().Contain("process-modeling",
+			because: "process-modeling must be listed when the process-designer gate is enabled");
+		listing.AvailableGuides.Should().Contain("run-process-button",
+			because: "run-process-button is ungated and must always be listed");
+		processModeling.Success.Should().BeTrue(
+			because: "process-modeling must resolve when the process-designer gate is enabled");
+		processModeling.Article!.Uri.Should().Be("docs://mcp/guides/process-modeling",
+			because: "the enabled process-modeling guide must return its canonical article URI");
+		runProcessButton.Success.Should().BeTrue(
+			because: "run-process-button is ungated and must resolve regardless of the gate");
+		runProcessButton.Article!.Uri.Should().Be("docs://mcp/guides/run-process-button",
+			because: "the enabled run-process-button guide must return its canonical article URI");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Resolves a non-gated guide regardless of feature-toggle state, while gated guides are disabled.")]
+	public async Task GuidanceGet_Should_Resolve_NonGated_Guide_When_ProcessDesigner_Gate_Disabled() {
+		// Arrange
+		GuidanceGetTool tool = new(_featureToggleService);
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("app-modeling"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "app-modeling carries no feature gate and must resolve even while process-designer is off");
+		result.Article!.Uri.Should().Be("docs://mcp/guides/app-modeling",
+			because: "the ungated guide must return its canonical article URI");
 	}
 }

@@ -11,6 +11,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Clio.Command;
 using Clio.Command.ApplicationCommand;
 using Clio.Command.CreatioInstallCommand;
+using Clio.Command.IdentityServiceDeployment;
+using Clio.Command.OAuthAppConfiguration;
 using Clio.Command.McpServer;
 using Clio.Command.PackageCommand;
 using Clio.Command.SqlScriptCommand;
@@ -153,6 +155,12 @@ internal class Program {
 		typeof(InstallSkillsOptions),
 		typeof(UpdateSkillOptions),
 		typeof(DeleteSkillOptions),
+		typeof(DeployIdentityOptions),
+		typeof(GetIdentityServiceConfigOptions),
+		typeof(ResolveOAuthSystemUserOptions),
+		typeof(CreateOAuthTechnicalUserOptions),
+		typeof(CreateServerToServerOAuthAppOptions),
+		typeof(VerifyOAuthAppOptions),
 		typeof(PfInstallerOptions),
 		typeof(CreateInfrastructureOptions),
 		typeof(DeployInfrastructureOptions),
@@ -213,9 +221,11 @@ internal class Program {
 		typeof(LinkCoreSrcOptions),
 		typeof(AssertOptions),
 		typeof(McpServerCommandOptions),
+		typeof(McpHttpServerCommandOptions),
 		typeof(QuizCommandOptions),
 		typeof(GenerateSourceCodeOptions),
 		typeof(AddPackageDependencyOptions),
+		typeof(RemovePackageDependencyOptions),
 		typeof(GetIdentityAssertionOptions),
 		typeof(GetIdentityPublicJwkOptions),
 		typeof(RegenerateIdentitySigningKeyOptions),
@@ -227,8 +237,18 @@ internal class Program {
 		new(CreateCommandSuggestionsCatalog);
 	private const int CommandSuggestionLimit = 10;
 
+	/// <summary>
+	/// Distinct, stable process exit code returned when a command is refused because the target
+	/// environment does not satisfy its declarative Creatio platform version requirement
+	/// (<see cref="RequiresCreatioVersionAttribute"/>). Deliberately different from the generic
+	/// failure code <c>1</c> so callers and automation can branch on a version-gate refusal
+	/// specifically; the human message additionally carries the stable
+	/// <see cref="CreatioVersionRequirementException.ErrorCode"/>.
+	/// </summary>
+	internal const int CreatioVersionRequirementExitCode = 78;
+
 	internal static bool IsCfgOpenCommand;
-	internal static bool IsMcpServerMode { get; private set; }
+	internal static bool IsMcpServerMode { get; set; }
 	public static IAppUpdater _appUpdater;
 
 	private sealed record CommandSuggestionEntry(string CanonicalName, IReadOnlyList<string> SearchTerms);
@@ -237,6 +257,7 @@ internal class Program {
 	internal static IReadOnlyList<Type> GetCommandOptionTypes() => CommandOption;
 
 	private static string[] NormalizeCommandLineArgs(string[] args) {
+		string[] result = args;
 		if (args.Length >= 3 &&
 			string.Equals(args[0], "create-data-binding", StringComparison.OrdinalIgnoreCase)) {
 			string[] normalizedArgs = (string[])args.Clone();
@@ -246,10 +267,58 @@ internal class Program {
 				}
 			}
 
-			return normalizedArgs;
+			result = normalizedArgs;
 		}
 
-		return args;
+		return NormalizeJsonFlagArgs(result);
+	}
+
+	// The --json option is declared as bool? (its established public form is `--json true|false`).
+	// To ALSO accept a bare `--json` additively — without breaking the value form or letting a bare
+	// `--json` swallow a positional argument — inject an explicit `true` after any --json/-j/--Json
+	// token that is not already followed by true|false. This keeps `--json true|false` byte-identical
+	// (strict back-compat) while making bare `--json` work everywhere.
+	internal static string[] NormalizeJsonFlagArgs(string[] args) {
+		if (args is null || args.Length == 0) {
+			return args;
+		}
+		var output = new List<string>(args.Length + 2);
+		for (int index = 0; index < args.Length; index++) {
+			string token = args[index];
+			output.Add(token);
+			if (!IsJsonFlagToken(token)) {
+				continue;
+			}
+			bool nextIsBoolLiteral = index + 1 < args.Length
+				&& (string.Equals(args[index + 1], "true", StringComparison.OrdinalIgnoreCase)
+					|| string.Equals(args[index + 1], "false", StringComparison.OrdinalIgnoreCase));
+			if (!nextIsBoolLiteral) {
+				output.Add("true");
+			}
+		}
+		return output.ToArray();
+	}
+
+	private static bool IsJsonFlagToken(string token) =>
+		string.Equals(token, "--json", StringComparison.OrdinalIgnoreCase)
+		|| string.Equals(token, "-j", StringComparison.OrdinalIgnoreCase)
+		|| string.Equals(token, "--Json", StringComparison.OrdinalIgnoreCase);
+
+	// JSON output is ON only when a --json/-j/--Json flag resolves to the value 'true' (bare flags are
+	// normalized to true by NormalizeJsonFlagArgs; an explicit `--json false` stays off). Used to route
+	// decorated diagnostics to stderr so stdout is exactly one JSON object.
+	internal static bool IsJsonOutputRequested(string[] args) {
+		string[] normalized = NormalizeJsonFlagArgs(args);
+		if (normalized is null) {
+			return false;
+		}
+		for (int index = 0; index + 1 < normalized.Length; index++) {
+			if (IsJsonFlagToken(normalized[index])
+				&& string.Equals(normalized[index + 1], "true", StringComparison.OrdinalIgnoreCase)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	public static Func<object, int> ExecuteCommandWithOption = instance => {
@@ -268,6 +337,20 @@ internal class Program {
 				$"Error: command '{verb}' is part of a disabled experimental feature '{disabledFeatureName}'. "
 				+ $"Enable it with: clio experimental --name {disabledFeatureName} --enable");
 			return 1;
+		}
+		// Creatio-version gate at the same single dispatch chokepoint, ordered BEFORE the package gate
+		// (feature-toggle → creatio-version → package → execute). Zero-cost: the cheap, network-free
+		// IsDefinedOn pre-check runs first, so a command without [RequiresCreatioVersion] never resolves
+		// the checker and never contacts the environment. This is intentionally stricter than the
+		// package gate (which resolves its checker unconditionally) because the version check exists
+		// solely to add an environment round-trip. On a refusal we return a DISTINCT, STABLE exit code
+		// (not the generic 1) and surface the machine-readable ErrorCode in the message.
+		if (RequiresCreatioVersionAttribute.IsDefinedOn(instance.GetType())) {
+			ICreatioVersionChecker creatioVersionChecker = Resolve<ICreatioVersionChecker>(instance);
+			if (TryGetCreatioVersionRequirementError(instance, creatioVersionChecker, out string versionRequirementError)) {
+				ConsoleLogger.Instance.WriteError(versionRequirementError);
+				return CreatioVersionRequirementExitCode;
+			}
 		}
 		// Package-requirement gate at the same single dispatch chokepoint: every path that runs a
 		// command (normal parse, scenario runner, any future caller) flows through here, so a command
@@ -386,6 +469,12 @@ internal class Program {
 			InstallSkillsOptions opts => Resolve<InstallSkillsCommand>().Execute(opts),
 			UpdateSkillOptions opts => Resolve<UpdateSkillCommand>().Execute(opts),
 			DeleteSkillOptions opts => Resolve<DeleteSkillCommand>().Execute(opts),
+			DeployIdentityOptions opts => Resolve<DeployIdentityCommand>(opts).Execute(opts),
+			GetIdentityServiceConfigOptions opts => Resolve<GetIdentityServiceConfigCommand>(opts).Execute(opts),
+			ResolveOAuthSystemUserOptions opts => Resolve<ResolveOAuthSystemUserCommand>(opts).Execute(opts),
+			CreateOAuthTechnicalUserOptions opts => Resolve<CreateOAuthTechnicalUserCommand>(opts).Execute(opts),
+			CreateServerToServerOAuthAppOptions opts => Resolve<CreateServerToServerOAuthAppCommand>(opts).Execute(opts),
+			VerifyOAuthAppOptions opts => Resolve<VerifyOAuthAppCommand>(opts).Execute(opts),
 			PfInstallerOptions opts => Resolve<InstallerCommand>(opts).Execute(opts),
 			CreateInfrastructureOptions opts => Resolve<CreateInfrastructureCommand>().Execute(opts),
 			DeployInfrastructureOptions opts => Resolve<DeployInfrastructureCommand>().Execute(opts),
@@ -443,6 +532,7 @@ internal class Program {
 			AssertOptions opts => Resolve<AssertCommand>(opts).Execute(opts),
 			LinkPackageStoreOptions opts => Resolve<LinkPackageStoreCommand>(opts).Execute(opts),
 			McpServerCommandOptions opts => Resolve<McpServerCommand>(opts).Execute(opts),
+			McpHttpServerCommandOptions opts => McpHttpServerCommand.Run(opts),
 			PageCreateOptions opts => Resolve<PageCreateCommand>(opts).Execute(opts),
 			SourceCodeSchemaCreateOptions opts => Resolve<SourceCodeSchemaCreateCommand>(opts).Execute(opts),
 			SourceCodeSchemaUpdateOptions opts => Resolve<SourceCodeSchemaUpdateCommand>(opts).Execute(opts),
@@ -461,6 +551,7 @@ internal class Program {
 			QuizCommandOptions opts => Resolve<QuizCommand>().Execute(opts),
 			GenerateSourceCodeOptions opts => Resolve<GenerateSourceCodeCommand>(opts).Execute(opts),
 			AddPackageDependencyOptions opts => Resolve<AddPackageDependencyCommand>(opts).Execute(opts),
+			RemovePackageDependencyOptions opts => Resolve<RemovePackageDependencyCommand>(opts).Execute(opts),
 			GetIdentityAssertionOptions opts => Resolve<GetIdentityAssertionCommand>(opts).Execute(opts),
 			GetIdentityPublicJwkOptions opts => Resolve<GetIdentityPublicJwkCommand>(opts).Execute(opts),
 			RegenerateIdentitySigningKeyOptions opts => Resolve<RegenerateIdentitySigningKeyCommand>(opts).Execute(opts),
@@ -533,6 +624,49 @@ internal class Program {
 			// unreachable so GetPackages() throws an HTTP/connection/auth exception) must not escape as a
 			// raw stack trace. Surface a readable message and refuse dispatch (caller maps true to exit 1).
 			errorMessage = ex.GetReadableMessageException(IsDebugMode);
+			return true;
+		}
+	}
+
+	/// <summary>
+	/// Validates the declarative Creatio platform version requirements
+	/// (<see cref="RequiresCreatioVersionAttribute"/>) of an options instance against the target
+	/// environment at the single dispatch chokepoint.
+	/// </summary>
+	/// <param name="options">The command options instance whose type carries any requirements.</param>
+	/// <param name="checker">The resolved Creatio-version checker.</param>
+	/// <param name="errorMessage">
+	/// The user-facing refusal message when a requirement is unmet. It embeds the stable, machine-readable
+	/// <see cref="CreatioVersionRequirementException.ErrorCode"/> so automation can branch on the failure
+	/// class without parsing the human message.
+	/// </param>
+	/// <returns>
+	/// <c>true</c> when a triggered requirement is not satisfied (dispatch must be refused with
+	/// <see cref="CreatioVersionRequirementExitCode"/>); <c>false</c> when every triggered requirement is
+	/// satisfied.
+	/// </returns>
+	/// <remarks>
+	/// Only <see cref="CreatioVersionRequirementException"/> is caught here — that is the single failure
+	/// class this gate owns. A malformed <c>[RequiresCreatioVersion]</c> declaration surfaces as an
+	/// <see cref="InvalidOperationException"/>: a developer error that must NOT be mapped to the version
+	/// exit code, so it is deliberately left to propagate as a normal error. The provider behind the
+	/// checker swallows transport failures and reports an undeterminable version (fail-closed) rather than
+	/// throwing, so an unreachable environment becomes a
+	/// <see cref="CreatioVersionRequirementException.VersionUndeterminableCode"/> refusal here, not a raw
+	/// stack trace.
+	/// </remarks>
+	internal static bool TryGetCreatioVersionRequirementError(
+		object options, ICreatioVersionChecker checker, out string errorMessage) {
+		errorMessage = null;
+		if (options is null || checker is null) {
+			return false;
+		}
+		try {
+			checker.EnsureRequirements(options);
+			return false;
+		}
+		catch (CreatioVersionRequirementException ex) {
+			errorMessage = $"{ex.Message} [{ex.ErrorCode}]";
 			return true;
 		}
 	}
@@ -612,6 +746,13 @@ internal class Program {
 }
 
 	public static bool IsDebugMode { get; set; }
+
+	/// <summary>
+	/// True when a command was invoked with <c>--json</c> (or the <c>-j</c> alias). In this mode the
+	/// <see cref="ConsoleLogger"/> routes decorated diagnostic lines ([INF]/[WAR]/[DBG]) to stderr so
+	/// stdout carries exactly one JSON object — the unified command envelope. Set once during startup.
+	/// </summary>
+	public static bool IsJsonOutputMode { get; set; }
 
 	public static bool IsEnvironmentReported { get; set; }
 
@@ -1003,6 +1144,11 @@ internal class Program {
 			|| string.Equals(commandName, "mcp", StringComparison.OrdinalIgnoreCase);
 	}
 
+	private static bool IsTruthyEnvironmentFlag(string variableName) {
+		string? value = Environment.GetEnvironmentVariable(variableName);
+		return string.Equals(value, "true", StringComparison.OrdinalIgnoreCase) || value == "1";
+	}
+
 	/// <summary>
 	/// Main entry point for the application.
 	/// </summary>
@@ -1030,12 +1176,27 @@ internal class Program {
 			IsMcpServerMode = isMcp;
 			IsDebugMode = args.Any(x => x.ToLower() == "--debug");
 			AddTimeStampToOutput = args.Any(x => x.ToLower() == "--ts");
+			// Detect json output early (before the background updater logs) so decorated diagnostics are
+			// routed to stderr and stdout stays a single JSON envelope. Honors --json true|false and a
+			// bare --json (normalized to true); an explicit --json false stays off.
+			IsJsonOutputMode = IsJsonOutputRequested(args);
 			OriginalArgs = args;
 			
 			// Set IsCfgOpenCommand based on input arguments
 			IsCfgOpenCommand = (args.Length >= 2 && args[0] == "cfg" && args[1] == "open");
 			
 			if (isMcp) {
+				// Neutralize any ambient HTTP(S)/ALL_PROXY for all outbound HttpClient calls when running
+				// as an MCP server. AI-agent sandboxes frequently inject process proxy env vars (sometimes
+				// pointing at a dead/poisoned address); clio always targets an explicitly configured Creatio
+				// URL that must be reached directly, so an inherited proxy must not break it. An empty
+				// WebProxy bypasses every host. CLI mode is unchanged (a CLI user may legitimately need the
+				// proxy). See DataForgeStatus_Should_Ignore_Poisoned_Proxy_Environment_Variables (ENG-90640).
+				// Opt out (fail-safe default is to bypass) by setting CLIO_MCP_RESPECT_AMBIENT_PROXY=true|1
+				// — for an org that mandates an inspecting/DLP egress proxy even for the MCP server.
+				if (!IsTruthyEnvironmentFlag("CLIO_MCP_RESPECT_AMBIENT_PROXY")) {
+					System.Net.Http.HttpClient.DefaultProxy = new System.Net.WebProxy();
+				}
 				ConsoleLogger.Instance.PreserveMessages = true;
 			}
 			
@@ -1219,11 +1380,21 @@ internal class Program {
 
 	private static bool ShouldSkipUpdateCheck(string[] args) {
 		if (IsMcpServerMode) return true;
+		// Honor an opt-out env var so harnesses (e.g. the MCP e2e suite) can suppress the
+		// background self-update for every spawned clio process from a single seam, instead of
+		// relying on per-process appsettings.json edits. Any non-empty, non-"false" value enables.
+		string? noUpdate = Environment.GetEnvironmentVariable("CLIO_NO_UPDATE_CHECK");
+		if (!string.IsNullOrWhiteSpace(noUpdate)
+			&& !string.Equals(noUpdate, "false", StringComparison.OrdinalIgnoreCase)
+			&& !string.Equals(noUpdate, "0", StringComparison.Ordinal)) {
+			return true;
+		}
 		if (args == null || args.Length == 0) return true;
 		string first = args[0];
 		if (string.Equals(first, "update-cli", StringComparison.OrdinalIgnoreCase)
 			|| string.Equals(first, "update", StringComparison.OrdinalIgnoreCase)
-			|| string.Equals(first, "autoupdate", StringComparison.OrdinalIgnoreCase)) {
+			|| string.Equals(first, "autoupdate", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(first, "mcp-http", StringComparison.OrdinalIgnoreCase)) {
 			return true;
 		}
 		return args.Any(arg =>
@@ -1368,7 +1539,11 @@ internal class Program {
 			BindingsModuleRegistrationProfile profile = settings is null
 				? BindingsModuleRegistrationProfile.Bootstrap
 				: BindingsModuleRegistrationProfile.EnvironmentScoped;
-			Container = new BindingsModule().Register(settings, profile: profile);
+			// registerMcpHost is threaded explicitly (never read inside BindingsModule) and is true only
+			// here, the single build from which McpServerCommand is resolved. In a live MCP session this
+			// is the Bootstrap-profile build that backs mcp-server; every other command leaves it false,
+			// and ToolCommandResolver's per-environment builds pass false too, so they skip the MCP host.
+			Container = new BindingsModule().Register(settings, profile: profile, registerMcpHost: IsMcpServerMode);
 		}
 		if (useCreatioLogStreamer) {
 			ConsoleLogger.Instance.SetCreatioLogStreamer(Container.GetRequiredService<ILogStreamer>());

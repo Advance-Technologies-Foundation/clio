@@ -3,6 +3,7 @@ add-data-binding-row:add-data-binding-row
 add-item:add-item,create
 add-package:add-package,ap
 add-package-dependency:add-package-dependency,add-pkg-dependency,add-pkg-dep
+remove-package-dependency:remove-package-dependency,remove-pkg-dependency,remove-pkg-dep
 add-schema:add-schema
 add-user-task:add-user-task
 alm-deploy:alm-deploy,deploy
@@ -43,9 +44,15 @@ delete-infrastructure:delete-infrastructure,di-delete,remove-infrastructure
 delete-pkg-remote:delete-pkg-remote,delete
 delete-app-section:delete-app-section
 delete-schema:delete-schema
-delete-adac:delete-adac
+delete-toolkit:delete-toolkit
 deploy-application:deploy-application,deploy-app
 deploy-creatio:deploy-creatio,dc,ic,install-creatio
+deploy-identity:deploy-identity
+get-identity-service-config:get-identity-service-config
+resolve-oauth-system-user:resolve-oauth-system-user
+create-oauth-technical-user:create-oauth-technical-user
+create-server-to-server-oauth-app:create-server-to-server-oauth-app
+verify-oauth-app:verify-oauth-app
 deploy-infrastructure:deploy-infrastructure,di
 download-application:download-application,dapp,download-app
 download-configuration:download-configuration,dconf
@@ -90,7 +97,7 @@ info:info,get-version,i,ver
 install-application:install-application,install-app,push-app
 install-gate:install-gate,gate,installgate,update-gate
 install-nuget-pkg:install-nuget-pkg,installng
-install-adac:install-adac
+install-toolkit:install-toolkit
 install-sql-schema:install-sql-schema,sql-schema-install,execute-sql-schema
 last-compilation-log:last-compilation-log,lcl
 link-core-src:link-core-src,lcs
@@ -100,6 +107,7 @@ link-to-repository:link-to-repository,l2r,link2repo
 listen:listen
 lock-package:lock-package,lp
 manage-windows-features:manage-windows-features,mng-win-features,mwf
+mcp-http:mcp-http
 mcp-server:mcp-server,mcp
 merge-workspaces:merge-workspaces,mergew
 mock-data:mock-data,data-mock
@@ -166,7 +174,7 @@ update-client-unit-schema:update-client-unit-schema,client-unit-schema-update
 update-cli:update-cli,update
 update-entity-schema:update-entity-schema
 update-schema:update-schema,schema-update
-update-adac:update-adac
+update-toolkit:update-toolkit
 update-sql-schema:update-sql-schema,sql-schema-update
 upload-license:upload-license,license,load-license,loadlicense
 upload-licenses:upload-licenses,lic
