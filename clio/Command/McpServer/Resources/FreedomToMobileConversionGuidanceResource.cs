@@ -117,10 +117,9 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			     carries the type and EVERY source property the mobile component supports — never drop any of
 			     them. It also already carries the CONVERTED event-binding requests (a button's `clicked`, a
 			     field's `valueChange`/`updated`): supported requests are kept (remapped when the mobile name
-			     differs); a request NOT in the supported map (web-only with no mobile equivalent, or a custom
-			     usr.* request) is kept and FLAGGED for you to verify/remove. (Only a request a rules version
-			     explicitly marks unsupported has its binding stripped outright.) Do NOT re-add or hand-edit
-			     these bindings — paste mobileValues as-is. Then add ONLY
+			     differs). A component whose request the mobile app does NOT support is not inserted at all — it
+			     was already DROPPED (see the elementMap `drop` entry), so you never see it here. Do NOT re-add or
+			     hand-edit these bindings — paste mobileValues as-is. Then add ONLY
 			     what mobileValues deliberately leaves out:
 			       • the value binding (control, or value for lookups) — type-specific, so it is not prebuilt;
 			       • for a structural mapping (grid → crt.List + crt.ListItem), build the row: add a crt.ListItem
@@ -222,12 +221,12 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			  droppedRules[] did not convert (every referenced element drops) — report them.
 			  OBJECT-/entity-level business rules are shared across web and mobile — do NOT re-create or touch them.
 			- REQUESTS (actions) on component event bindings (a button's `clicked`, a field's `valueChange`/`updated`)
-			  ARE converted for you and already baked into elementMap[].mobileValues — paste mobileValues verbatim.
-			  The conversion map stores only the requests SUPPORTED on mobile (a subset of web): those are kept and
-			  remapped. A request NOT in the map (a web-only request with no mobile equivalent, or a custom usr.*
-			  request) is kept and FLAGGED for you to verify on mobile and remove if it does not apply. (A rules
-			  version may also explicitly mark a request unsupported, in which case its binding is stripped.)
-			  guide.requestConversions is the advisory summary (convertedRequests / flaggedRequests / droppedRequests).
+			  ARE handled for you. A component whose request the Creatio Mobile app does NOT support (and that does
+			  not remap to a supported one) is DROPPED entirely (elementMap operation `drop`, reason names the
+			  request) — a component with a dead action is not shipped. A supported request is kept in
+			  elementMap[].mobileValues (remapped when the mobile name differs) — paste mobileValues verbatim.
+			  guide.requestConversions is the advisory summary (convertedRequests / flaggedRequests); dropped
+			  components appear in elementMap as `drop`. Tell the user which action components were removed.
 			  Page `handlers` (the web-only AMD section) are NEVER transferred — re-implement that behavior as entity-level business rules.
 			- ADAPTIVE LAYOUT (multi-column crt.GridContainer) is two-sided and the guide builds AND bakes both sides
 			  into mobileValues for you: the container's per-breakpoint columns (small = 1, medium/large = the web

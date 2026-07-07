@@ -67,8 +67,8 @@ public sealed class MobilePageConversionGuideTool {
 		"localized strings (captions AND nested ones like config.title/text.template) are carried verbatim in mobileValues as #ResourceString tokens and collected+resolved into guide.resourceStrings ({key: en-US text}) — register that whole map via update-page resources so every token renders), " +
 		"plus pageBusinessRules (the source page's PAGE-level business rules converted for mobile — condition kept, only the " +
 		"hide/show/make-* actions whose elements survive; recreate each convertedRules[].rule with create-page-business-rule), " +
-		"plus requestConversions (component event-binding requests/actions converted for mobile — supported requests are already " +
-		"remapped inside elementMap[].mobileValues, unsupported ones stripped from the binding, custom ones flagged; advisory summary only), " +
+		"plus requestConversions (component event-binding requests/actions for mobile — supported requests are kept/remapped inside " +
+		"elementMap[].mobileValues; a component whose request the mobile app does not support is DROPPED entirely, appearing as an elementMap `drop`; advisory summary only), " +
 		"plus adaptiveLayout (the responsive layout for each MULTI-column grid container - phone collapses to 1 column and stacks, " +
 			"tablet/desktop keep the web columns; both the container columns and each child's layoutConfig.adaptive are already baked " +
 			"into mobileValues, nothing separate to apply; a single-column grid gets no adaptive; present it to the user to adjust or decline), " +

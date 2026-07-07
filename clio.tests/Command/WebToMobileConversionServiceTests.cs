@@ -839,7 +839,9 @@ public sealed class WebToMobileConversionServiceTests {
 		Requests = [
 			new RequestMappingRule { Web = "crt.SaveRecordRequest", Mobile = "crt.SaveRecordRequest", Category = "DirectMapping" },
 			new RequestMappingRule { Web = "crt.PrintablesRequest", Mobile = null, Category = "Unsupported", Note = "Printables are web-only." },
-			new RequestMappingRule { Web = "crt.LegacyOpenRequest", Mobile = "crt.OpenPageRequest", Category = "WithAdaptation" }
+			new RequestMappingRule { Web = "crt.LegacyOpenRequest", Mobile = "crt.OpenPageRequest", Category = "WithAdaptation" },
+			// Optimistically mapped by the rules, but NOT in the authoritative mobile-supported set.
+			new RequestMappingRule { Web = "crt.QuickFilterRequest", Mobile = "crt.QuickFilterRequest", Category = "DirectMapping" }
 		]
 	};
 
@@ -881,31 +883,29 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("An unsupported event-binding request has its binding stripped from mobileValues; the component stays and the request is recorded as dropped.")]
-	public void Analyze_UnsupportedRequest_BindingStrippedComponentKept() {
+	[Description("A component whose event-binding request is not supported on mobile (and does not remap to a supported one) is DROPPED entirely — not shipped with a dead action.")]
+	public void Analyze_UnsupportedRequest_ComponentDropped() {
 		MobilePageConversionGuide guide = AnalyzeRequests(ButtonBundle("PrintButton", "crt.PrintablesRequest"));
 
-		JsonObject vals = ClickedOf(guide, "PrintButton");
-		vals["type"]!.GetValue<string>().Should().Be("crt.Button", because: "the component still renders");
-		vals.ContainsKey("clicked").Should().BeFalse(because: "the unsupported request's binding is removed");
-
-		guide.RequestConversions!.DroppedRequests.Should().ContainSingle(r =>
-			r.ElementName == "PrintButton" && r.Binding == "clicked" && r.WebRequest == "crt.PrintablesRequest");
-		guide.RequestConversions.ConvertedRequests.Should().BeEmpty();
+		ElementMapEntry entry = Element(guide, "PrintButton");
+		entry.Operation.Should().Be("drop");
+		entry.Reason.Should().Contain("crt.PrintablesRequest");
 	}
 
 	[Test]
-	[Description("An unknown/custom request (absent from the map) is kept verbatim in mobileValues and flagged for manual review.")]
-	public void Analyze_UnknownRequest_KeptAndFlagged() {
+	[Description("A component with an unknown/custom request (not in the supported set and not remapped) is DROPPED.")]
+	public void Analyze_UnknownRequest_ComponentDropped() {
 		MobilePageConversionGuide guide = AnalyzeRequests(ButtonBundle("CustomButton", "usr.MyCustomRequest"));
 
-		JsonObject clicked = ClickedOf(guide, "CustomButton")["clicked"]!.AsObject();
-		clicked["request"]!.GetValue<string>().Should().Be("usr.MyCustomRequest");
+		Element(guide, "CustomButton").Operation.Should().Be("drop");
+	}
 
-		guide.RequestConversions!.FlaggedRequests.Should().ContainSingle(r =>
-			r.ElementName == "CustomButton" && r.Binding == "clicked" && r.Request == "usr.MyCustomRequest");
-		guide.RequestConversions.ConvertedRequests.Should().BeEmpty();
-		guide.RequestConversions.DroppedRequests.Should().BeEmpty();
+	[Test]
+	[Description("The authoritative mobile-supported set overrides an optimistic rules DirectMapping: a request the rules map keeps 1:1 but that is NOT actually supported on mobile still drops the component.")]
+	public void Analyze_OptimisticDirectMappingNotSupportedOnMobile_ComponentDropped() {
+		MobilePageConversionGuide guide = AnalyzeRequests(ButtonBundle("FilterButton", "crt.QuickFilterRequest"));
+
+		Element(guide, "FilterButton").Operation.Should().Be("drop");
 	}
 
 	[Test]

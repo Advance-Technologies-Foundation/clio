@@ -847,6 +847,14 @@ public static class WebToMobileAnalysisService {
 			// column count — the adaptive pass reads both to build the per-breakpoint mobile layout.
 			CaptureSource(ctx, name, node);
 
+			// 0. drop — the element triggers a request the Creatio Mobile app does not support (e.g. a button
+			//    whose clicked request is web-only). Such a component would be non-functional on mobile, so it
+			//    is removed rather than shipped with a dead action.
+			if (UnsupportedRequestOf(ctx, node) is { } unsupportedRequest) {
+				ctx.Out.Add(Drop(name, type, $"uses request '{unsupportedRequest}' not supported on the Creatio Mobile app"));
+				continue;
+			}
+
 			// 1. merge — element is a template twin (provided by the mobile template). Recurse so its
 			//    children get their own entries (parent = the template element).
 			if (ctx.Map.TryGetValue(name, out string twinMobileName)) {
@@ -1152,6 +1160,53 @@ public static class WebToMobileAnalysisService {
 			}
 		}
 		return allowed;
+	}
+
+	/// <summary>
+	/// Requests the Creatio Mobile app supports (from the monorepo <c>@CrtInterfaceDesignerMobileRequest</c>
+	/// decorators). A converted component whose event-binding request does not resolve to one of these is
+	/// dropped. TODO(ENG-93027): source this list dynamically (like the versioned component registries)
+	/// instead of hardcoding it — https://creatio.atlassian.net/browse/ENG-93027.
+	/// </summary>
+	private static readonly HashSet<string> MobileSupportedRequests = new(StringComparer.OrdinalIgnoreCase) {
+		"crt.AddCommunicationOptionsRequest",
+		"crt.CancelRecordChangesRequest",
+		"crt.ClosePageRequest",
+		"crt.CreateRecordRequest",
+		"crt.DeleteRecordRequest",
+		"crt.LoadDataRequest",
+		"crt.OpenPageRequest",
+		"crt.RunBusinessProcessRequest",
+		"crt.SaveRecordRequest",
+		"crt.SetAttributeFromBarcodeRequest",
+		"crt.SetAttributeFromNfcRequest",
+		"crt.UpdateQuickFilterGroupRequest",
+		"crt.UpdateRecordRequest",
+		"crt.UploadFileRequest"
+	};
+
+	/// <summary>
+	/// The first event-binding request on the node whose EFFECTIVE mobile request the Creatio Mobile app does
+	/// not support (or null when every binding is supported). "Effective" honours the rules remap: a request
+	/// the rules map renames to a supported one (e.g. → crt.OpenPageRequest) is fine; an unknown request, or
+	/// one the rules explicitly mark unsupported, resolves to itself and is checked against
+	/// <see cref="MobileSupportedRequests"/>.
+	/// </summary>
+	private static string UnsupportedRequestOf(ElementMapContext ctx, JObject node) {
+		foreach (JProperty prop in node.Properties()) {
+			if (!IsEventBinding(prop.Value)) {
+				continue;
+			}
+			string webRequest = ((JObject)prop.Value)["request"].ToString();
+			string effective = ctx.RequestMap.TryGetValue(webRequest, out RequestMappingRule rule)
+				&& !string.IsNullOrWhiteSpace(rule.Mobile)
+					? rule.Mobile
+					: webRequest;
+			if (!MobileSupportedRequests.Contains(effective)) {
+				return webRequest;
+			}
+		}
+		return null;
 	}
 
 	/// <summary>
