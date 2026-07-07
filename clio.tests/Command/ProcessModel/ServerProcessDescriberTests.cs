@@ -206,6 +206,35 @@ public sealed class ServerProcessDescriberTests {
 	}
 
 	[Test]
+	[Description("Deserializes a filter condition's raw expression token and its elementParameter reference so a parameter-referencing filter survives describe read-back instead of being dropped by the clio DTO.")]
+	public void Describe_ShouldReadFilterConditionReferences_WhenServerReportsIt() {
+		// Arrange — a data element filter: Address = [#Custom.Token#] AND Account = task1.Account (element output ref)
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"read1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"usertask\","
+			+ "\"filter\":{\"object\":\"Contact\",\"logicalOperation\":\"and\",\"conditions\":["
+			+ "{\"column\":\"Address\",\"comparison\":\"equal\",\"expression\":\"[#Custom.Token#]\"},"
+			+ "{\"column\":\"Account\",\"comparison\":\"equal\",\"elementParameter\":{\"elementId\":\"task1\",\"parameter\":\"Account\"}}]}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		DescribedFilter filter = result.Value.Elements[0].Filter;
+		filter.Conditions[0].Expression.Should().Be("[#Custom.Token#]",
+			because: "a raw expression token must surface on read-back, not be dropped by the clio DTO");
+		filter.Conditions[1].ElementParameter.Should().NotBeNull(
+			because: "an element-parameter reference must deserialize into the clio DTO, not be dropped");
+		filter.Conditions[1].ElementParameter.ElementId.Should().Be("task1",
+			because: "the referenced element id round-trips");
+		filter.Conditions[1].ElementParameter.Parameter.Should().Be("Account",
+			because: "the referenced parameter name round-trips");
+	}
+
+	[Test]
 	[Description("Posts the uid (not the name) when the identity is a uid.")]
 	public void Describe_ShouldPostWrappedUid_WhenIdentityIsUid() {
 		IApplicationClient client = ClientReturning(
