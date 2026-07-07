@@ -122,8 +122,10 @@ public sealed class ProcessModelingGuidanceResource {
 			- The right-hand value of a condition is exactly ONE of: `value` (a constant as a string — the server
 			  types it by the column; for a Date/DateTime/Time column pass ISO-8601, e.g. `2026-05-01` or
 			  `2026-05-01T12:00:00Z`), `processParameter` (a process parameter by name), `elementParameter`
-			  ({ elementId, parameter } — another element's output), `expression` (a raw token). isNull/isNotNull
-			  take none.
+			  ({ elementId, parameter } — another element's output), `expression` (a raw token), or `macro` (a
+			  relative-date / system macro: `Today` | `Yesterday` | `CurrentUser` | `CurrentYear` |
+			  `NextNDays` (+ `macroArgument`) | … — argument macros like NextNDays/PreviousNHours need `macroArgument`).
+			  isNull/isNotNull take none.
 			- Groups nest to any depth: A AND (B OR C) = conditions:[A] + groups:[{ "logicalOperation":"or",
 			  conditions:[B, C] }].
 			- A `filter` on a data task (Read/Add/Modify/Delete data) is serialized too, but those tasks' target
