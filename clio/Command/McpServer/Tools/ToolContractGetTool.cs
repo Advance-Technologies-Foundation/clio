@@ -1,11 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
-using System.ComponentModel.DataAnnotations;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Command.BusinessRules;
+using Clio.Command.McpServer;
 using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
@@ -14,28 +15,82 @@ namespace Clio.Command.McpServer.Tools;
 public sealed class ToolContractGetTool {
 	internal const string ToolName = "get-tool-contract";
 
+	/// <summary>
+	/// In-band discovery hint appended to "tool not found" / "unknown tool" error messages so an agent
+	/// whose guessed name (and any "did you mean" shortlist) missed still has an explicit path to the full
+	/// catalog: the compact index returned by <c>get-tool-contract</c> with no arguments. Wording mirrors
+	/// <c>McpServerInstructions</c> ("compact index of every tool") for a single consistent phrasing.
+	/// </summary>
+	internal const string DiscoveryHint =
+		"Call get-tool-contract with no arguments for a compact index of every tool.";
+
+	private readonly IMcpToolInvokerRegistry? _toolInvokerRegistry;
+
+	/// <summary>
+	/// Initializes the tool without a registry. Curated contracts and the lossy reflection fallback
+	/// still resolve; only registry-derived contracts for uncurated tools are unavailable.
+	/// </summary>
+	public ToolContractGetTool()
+		: this(null) {
+	}
+
+	/// <summary>
+	/// Initializes the tool with the invoker registry so contracts for UNCURATED tools are derived from
+	/// the same MCP tool input schema <c>clio-run</c> / <c>clio-run-destructive</c> dispatch against,
+	/// keeping the advertised contract aligned with the real invokable argument shape.
+	/// </summary>
+	/// <param name="toolInvokerRegistry">
+	/// The MCP invoker registry; resolved from DI by the SDK per call (may be <c>null</c> in tests that
+	/// only exercise curated contracts).
+	/// </param>
+	public ToolContractGetTool(IMcpToolInvokerRegistry? toolInvokerRegistry) {
+		_toolInvokerRegistry = toolInvokerRegistry;
+	}
+
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
-	[Description("Returns the authoritative clio MCP executable contract for discovery, inspection, and mutation tools, including parameter schema, aliases, defaults, examples, and preferred or fallback workflow hints.")]
+	[Description("Returns clio MCP tool contracts. Omit tool-names for a compact index of ALL tools (names + one-line purpose + safety flags) — cheap discovery without full schemas; pass tool-names to expand those tools' full contracts (parameter schema, aliases, defaults, examples, and preferred or fallback workflow hints); pass detail=full (with no tool-names) to expand every tool's full contract at once.")]
 	public ToolContractGetResponse GetToolContracts(
-		[Description("Parameters: tool-names (optional array of tool names). Omit to return the canonical clio MCP contract set.")]
-		[Required]
-		ToolContractGetArgs args) {
+		[Description("Parameters: tool-names (optional array of tool names) and detail (optional 'index' | 'full'). Omit entirely for a compact index of all tools; pass tool-names for full contracts; pass detail=full to expand all full contracts.")]
+		ToolContractGetArgs? args = null) {
+		// A natural no-arguments discovery call (the first call an agent makes) sends no args object at all.
+		// Treat a missing args object exactly like an omitted-tool-names call so it yields the compact index:
+		// new ToolContractGetArgs() has ToolNames=null / Detail=null, which the downstream logic resolves to
+		// the index path unchanged. All recovery/alias/detail handling below then operates on a non-null args.
+		args ??= new ToolContractGetArgs();
 		try {
+			// Field-test defect #4: an agent that omits the SDK's nested `args` wrapper and calls flat
+			// (e.g. {"tool-names":[...]} or {"name":"x"}) has those keys land in the [JsonExtensionData]
+			// overflow bag rather than binding to ToolNames. Recover a flat tool-names / name (and the
+			// known kebab/camel/snake spellings) from the overflow when ToolNames was not bound and the
+			// overflow contains ONLY name-bearing keys, so the natural flat shape resolves contracts
+			// instead of failing. A genuinely-unknown key still falls through to the helpful alias error.
+			// Resolve detail first so the flat path below can honor a co-present flat `detail` key, and so
+			// {"tool-names":[...],"detail":"full"} flat calls resolve named contracts instead of failing.
+			string? detail = TryRecoverFlatDetail(args) ?? args.Detail;
+			IReadOnlyList<string>? flatToolNames = TryRecoverFlatToolNames(args);
+			if (flatToolNames is not null) {
+				return ToolContractCatalog.GetContracts(flatToolNames, _toolInvokerRegistry, detail);
+			}
 			string? aliasError = CollectLegacyAliasError(args);
 			if (aliasError is not null) {
 				return new ToolContractGetResponse(
 					false,
-					Error: new ToolContractError("invalid-parameter-alias", aliasError));
+					Error: new ToolContractError(
+						"invalid-parameter-alias",
+						aliasError + " " + ExpectedArgsShapeHint));
 			}
-			return ToolContractCatalog.GetContracts(args.ToolNames);
+			return ToolContractCatalog.GetContracts(args.ToolNames, _toolInvokerRegistry, detail);
 		} catch (Exception ex) {
 			return new ToolContractGetResponse(
 				false,
 				Error: new ToolContractError(
 					"internal-error",
-					$"get-tool-contract failed: {ex.Message}. Expected args shape: {{\"tool-names\": [\"list-pages\", ...] }} or omit tool-names to list all."));
+					$"get-tool-contract failed: {ex.Message}. {ExpectedArgsShapeHint}"));
 		}
 	}
+
+	private const string ExpectedArgsShapeHint =
+		"Expected args shape: {\"tool-names\": [\"list-pages\", ...] } or omit tool-names to list all.";
 
 	private static readonly Dictionary<string, string> LegacyAliases = new(StringComparer.Ordinal) {
 		["toolNames"] = ToolNamesParam,
@@ -47,28 +102,176 @@ public sealed class ToolContractGetTool {
 		["names"] = ToolNamesParam
 	};
 
+	// Flat top-level keys that carry the tool name(s) when the nested `args` wrapper is omitted. Limited
+	// to the canonical 'tool-names' (which lands in the overflow bag only when the call is flat) and the
+	// natural 'name' spelling. The camelCase/snake_case legacy spellings (toolName, tool_names, ...) are
+	// deliberately NOT recovered here — they keep returning the teaching alias error from LegacyAliases.
+	private static readonly HashSet<string> FlatToolNameKeys = new(StringComparer.Ordinal) {
+		ToolNamesParam,
+		"name"
+	};
+
 	private const string ToolNamesParam = "tool-names";
 
+	private const string DetailParam = "detail";
+
+	/// <summary>
+	/// Recovers a flat <c>detail</c> value from the overflow bag when the caller sent <c>detail</c> at the
+	/// top level without the SDK's nested <c>args</c> wrapper. Returns the string value when the overflow
+	/// carries a <c>detail</c> string key; otherwise <c>null</c> so <see cref="ToolContractGetArgs.Detail"/>
+	/// (the bound nested value) is used instead.
+	/// </summary>
+	private static string? TryRecoverFlatDetail(ToolContractGetArgs args) {
+		Dictionary<string, JsonElement>? overflow = args.ExtensionData;
+		if (overflow is null
+			|| !overflow.TryGetValue(DetailParam, out JsonElement value)
+			|| value.ValueKind != JsonValueKind.String) {
+			return null;
+		}
+		string? detail = value.GetString();
+		return string.IsNullOrWhiteSpace(detail) ? null : detail.Trim();
+	}
+
+	/// <summary>
+	/// Recovers a flat <c>tool-names</c> payload from the overflow bag when the caller sent the request
+	/// without the SDK's nested <c>args</c> wrapper. Returns the recovered names only when <see
+	/// cref="ToolContractGetArgs.ToolNames"/> was not bound and EVERY overflow key is a recognized
+	/// name-bearing key; otherwise returns <c>null</c> so an unknown key still produces the helpful
+	/// alias error. String and string-array overflow values are both accepted.
+	/// </summary>
+	private static IReadOnlyList<string>? TryRecoverFlatToolNames(ToolContractGetArgs args) {
+		if (args.ToolNames is { Count: > 0 }) {
+			return null;
+		}
+		Dictionary<string, JsonElement>? overflow = args.ExtensionData;
+		if (overflow is null || overflow.Count == 0) {
+			return null;
+		}
+		// A co-present flat `detail` key is recovered separately (TryRecoverFlatDetail) and is NOT a
+		// name-bearing key, so exclude it before deciding whether the remaining keys are all flat
+		// tool-name keys. This lets {"tool-names":[...],"detail":"full"} flat calls recover the names
+		// instead of mis-reporting `tool-names` as an unknown arg.
+		List<KeyValuePair<string, JsonElement>> nameEntries = overflow
+			.Where(pair => !string.Equals(pair.Key, DetailParam, StringComparison.Ordinal))
+			.ToList();
+		if (nameEntries.Count == 0 || !nameEntries.All(pair => FlatToolNameKeys.Contains(pair.Key))) {
+			return null;
+		}
+		List<string> recovered = [];
+		// Every name-bearing value must contribute a valid name; .All short-circuits on the first
+		// malformed value (mirrors the original early-return) so recovery is abandoned wholesale.
+		if (!nameEntries.All(pair => TryAppendFlatToolName(pair.Value, recovered))) {
+			return null;
+		}
+		return recovered.Count > 0 ? recovered : null;
+	}
+
+	/// <summary>
+	/// Appends the tool name(s) carried by a single overflow <paramref name="value"/> to
+	/// <paramref name="recovered"/>. A string value contributes itself; an array value contributes each
+	/// of its string items. Blank entries are skipped. Returns <c>false</c> when the value is neither a
+	/// string nor an array (a malformed name-bearing key), signalling the caller to abandon recovery so
+	/// the request falls through to the alias error path; otherwise returns <c>true</c>.
+	/// </summary>
+	private static bool TryAppendFlatToolName(JsonElement value, List<string> recovered) {
+		switch (value.ValueKind) {
+			case JsonValueKind.String:
+				AddIfNotBlank(value.GetString(), recovered);
+				return true;
+			case JsonValueKind.Array:
+				AppendStringArrayItems(value, recovered);
+				return true;
+			default:
+				// A name-bearing key carrying a non-string/non-array value is malformed; do not
+				// recover — let it fall through to the alias error path with the shape hint.
+				return false;
+		}
+	}
+
+	/// <summary>
+	/// Appends every string item of a JSON array <paramref name="array"/> to <paramref name="recovered"/>,
+	/// skipping non-string items and blank values.
+	/// </summary>
+	private static void AppendStringArrayItems(JsonElement array, List<string> recovered) {
+		foreach (JsonElement item in array.EnumerateArray()) {
+			if (item.ValueKind == JsonValueKind.String) {
+				AddIfNotBlank(item.GetString(), recovered);
+			}
+		}
+	}
+
+	/// <summary>
+	/// Adds <paramref name="name"/> (trimmed) to <paramref name="recovered"/> when it is neither
+	/// <c>null</c> nor whitespace.
+	/// </summary>
+	private static void AddIfNotBlank(string? name, List<string> recovered) {
+		if (!string.IsNullOrWhiteSpace(name)) {
+			recovered.Add(name.Trim());
+		}
+	}
+
 	private static string? CollectLegacyAliasError(ToolContractGetArgs args) {
+		// A recognized flat `detail` key is already recovered by TryRecoverFlatDetail, so drop it from the
+		// overflow before the alias check to avoid reporting it as an unknown arg. Any OTHER unknown key
+		// still produces the helpful teaching error.
+		IReadOnlyDictionary<string, JsonElement>? overflow = args.ExtensionData;
+		if (overflow is not null && overflow.ContainsKey(DetailParam)) {
+			overflow = overflow
+				.Where(pair => !string.Equals(pair.Key, DetailParam, StringComparison.Ordinal))
+				.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+		}
 		return McpToolArgumentSupport.BuildLegacyAliasError(
-			args.ExtensionData, LegacyAliases, ". tool-names must be an array of strings.",
+			overflow, LegacyAliases, ". tool-names must be an array of strings.",
 			"Valid: tool-names (array of strings). Omit args to list all tools.");
 	}
 }
 
 public sealed record ToolContractGetArgs(
 	[property: JsonPropertyName("tool-names")]
-	[property: Description("Optional array of tool names. Omit to return the canonical clio MCP contract set.")]
-	IReadOnlyList<string>? ToolNames = null
+	[property: Description("Optional array of tool names. Omit to return a compact index of all clio MCP tools (names + one-line purpose); pass names to expand their full contracts.")]
+	IReadOnlyList<string>? ToolNames = null,
+	[property: JsonPropertyName("detail")]
+	[property: Description("Optional detail level used only when tool-names is omitted: 'index' (default) returns the compact index of all tools; 'full' returns the full contracts of all tools (legacy behavior).")]
+	string? Detail = null
 ) {
-	[System.Text.Json.Serialization.JsonExtensionData]
-	public Dictionary<string, System.Text.Json.JsonElement>? ExtensionData { get; init; }
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
 }
 
 public sealed record ToolContractGetResponse(
 	[property: JsonPropertyName("success")] bool Success,
 	[property: JsonPropertyName("tools")] IReadOnlyList<ToolContractDefinition>? Tools = null,
-	[property: JsonPropertyName("error")] ToolContractError? Error = null
+	[property: JsonPropertyName("error")] ToolContractError? Error = null,
+	[property: JsonPropertyName("index")] IReadOnlyList<ToolContractIndexEntry>? Index = null
+);
+
+/// <summary>
+/// A compact, discovery-only entry for one clio MCP tool. It carries the tool name, a one-line purpose
+/// distilled from the tool's full description, and lightweight safety/availability flags so an agent can
+/// see WHAT tools exist without paying for the heavy full contract (input schema, examples, flows, error
+/// contract). This is the Anthropic <c>defer_loading</c> shape — names resident, schemas on demand. Call
+/// <c>get-tool-contract</c> with the specific <c>tool-names</c> to expand any entry into its full contract.
+/// </summary>
+/// <param name="Name">The stable MCP tool name (kebab-case), matching the full contract's name.</param>
+/// <param name="Purpose">A one-line purpose distilled from the first sentence of the tool's description.</param>
+/// <param name="ContractAvailable">Whether a full curated contract is reachable by naming this tool.</param>
+/// <param name="Resident">
+/// Whether the tool is present in <c>tools/list</c> and therefore called natively (<c>true</c>), or hidden
+/// from <c>tools/list</c> and reachable only through <c>clio-run</c> / <c>clio-run-destructive</c>
+/// (<c>false</c>). Derived from <see cref="McpCoreToolProfile.IsResident"/>, independent of whether an
+/// invoker registry is supplied. Never wrap a resident tool in <c>clio-run</c>.
+/// </param>
+/// <param name="Destructive">
+/// Whether the tool is destructive (modifies/deletes data) when this is cheaply known from the MCP tool
+/// annotation; <c>null</c> when the destructive hint is unavailable (for example when no invoker registry
+/// is supplied).
+/// </param>
+public sealed record ToolContractIndexEntry(
+	[property: JsonPropertyName("name")] string Name,
+	[property: JsonPropertyName("purpose")] string Purpose,
+	[property: JsonPropertyName("contract-available")] bool ContractAvailable,
+	[property: JsonPropertyName("resident")] bool Resident,
+	[property: JsonPropertyName("destructive")] bool? Destructive = null
 );
 
 [SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters", Justification = "This serialized contract record mirrors the external MCP wire shape and grouping fields would make the contract harder to inspect and evolve.")]
@@ -185,6 +388,7 @@ internal static class ToolContractCatalog {
 	private const string BooleanType = "boolean";
 	private const string ColumnNameFieldName = "column-name";
 	private const string ColumnsFieldName = "columns";
+	private const string CountFieldName = "count";
 	private const string ConstDefaultValueSourceName = nameof(Terrasoft.Core.Entities.EntitySchemaColumnDefSource.Const);
 	private const string DefaultValueConfigFieldName = "default-value-config";
 	private const string DefaultValueConfigSourceKey = "source";
@@ -414,11 +618,37 @@ internal static class ToolContractCatalog {
 		SysSettingUpdateTool.UpdateSysSettingToolName
 	];
 
-	internal static ToolContractGetResponse GetContracts(IReadOnlyList<string>? toolNames) {
+	/// <summary>The <c>detail</c> value that opts into the legacy full-contract dump for a no-names request.</summary>
+	private const string FullDetail = "full";
+
+	/// <summary>The one-line purpose is truncated to this many characters for the compact index.</summary>
+	private const int MaxPurposeLength = 120;
+
+	/// <summary>
+	/// Resolves clio MCP tool contracts. When <paramref name="toolNames"/> is omitted the response depends
+	/// on <paramref name="detail"/>: any value other than <c>full</c> (the default) returns the cheap
+	/// compact INDEX of EVERY invokable tool — curated core plus the hidden long tail reachable through
+	/// clio-run (names + one-line purpose + safety flags, <c>Tools</c> null);
+	/// <c>full</c> returns every canonical tool's full contract (legacy behavior, <c>Index</c> null). When
+	/// <paramref name="toolNames"/> is supplied the named tools' full contracts are returned via the
+	/// curated → registry → reflection → not-found cascade (unchanged).
+	/// </summary>
+	/// <param name="toolNames">The requested tool names, or <c>null</c>/empty to discover all tools.</param>
+	/// <param name="toolInvokerRegistry">Optional invoker registry used to derive uncurated contracts and the index destructive hint.</param>
+	/// <param name="detail">Optional detail level for a no-names request: <c>index</c> (default) or <c>full</c>.</param>
+	internal static ToolContractGetResponse GetContracts(
+		IReadOnlyList<string>? toolNames,
+		IMcpToolInvokerRegistry? toolInvokerRegistry = null,
+		string? detail = null) {
 		if (toolNames is null || toolNames.Count == 0) {
+			if (string.Equals(detail, FullDetail, StringComparison.OrdinalIgnoreCase)) {
+				return new ToolContractGetResponse(
+					true,
+					CanonicalToolNames.Select(name => Contracts[name]).ToArray());
+			}
 			return new ToolContractGetResponse(
 				true,
-				CanonicalToolNames.Select(name => Contracts[name]).ToArray());
+				Index: BuildCompactIndex(toolInvokerRegistry));
 		}
 		List<string> normalizedNames = [];
 		for (int index = 0; index < toolNames.Count; index++) {
@@ -438,13 +668,21 @@ internal static class ToolContractCatalog {
 		}
 		List<ToolContractDefinition> results = [];
 		foreach (string normalizedName in normalizedNames.Distinct(StringComparer.OrdinalIgnoreCase)) {
+			// Curated contracts take precedence over any derived contract.
 			if (Contracts.TryGetValue(normalizedName, out ToolContractDefinition? contract)) {
 				results.Add(contract);
 				continue;
 			}
-			// No curated contract: fall back to a contract synthesized from the tool's own input
-			// schema so that any registered-but-uncurated tool stays discoverable instead of
-			// returning tool-not-found.
+			// No curated contract: derive the contract from the SAME registered MCP tool input schema that
+			// clio-run / clio-run-destructive dispatch against, so the advertised contract matches the real
+			// invokable argument shape (Codex review #1). This captures single-scalar params (e.g.
+			// stop-creatio's environmentName) the lossy reflection fallback drops.
+			if (McpToolRegistrySchemaContract.TryBuild(toolInvokerRegistry, normalizedName, out ToolContractDefinition registryContract)) {
+				results.Add(registryContract);
+				continue;
+			}
+			// Last resort: reflection over the options type. Only reached when the registry has no entry
+			// (e.g. registry unavailable), and may be lossy for some tools.
 			if (McpToolSchemaCatalog.TryGetSchemaContract(normalizedName, out ToolContractDefinition schemaContract)) {
 				results.Add(schemaContract);
 				continue;
@@ -453,7 +691,7 @@ internal static class ToolContractCatalog {
 				false,
 				Error: new ToolContractError(
 					"tool-not-found",
-					$"Tool '{normalizedName}' is not registered by clio MCP.",
+					$"Tool '{normalizedName}' is not registered by clio MCP. {ToolContractGetTool.DiscoveryHint}",
 					BuildSuggestions(normalizedName)));
 		}
 		return new ToolContractGetResponse(true, results);
@@ -469,14 +707,165 @@ internal static class ToolContractCatalog {
 			.ToArray();
 	}
 
+	/// <summary>
+	/// Builds the compact discovery index over EVERY invokable MCP tool — the curated core (canonical
+	/// contracts) plus the hidden long tail reachable only through <c>clio-run</c> /
+	/// <c>clio-run-destructive</c> (for example <c>stop-creatio</c>, <c>add-package-dependency</c>). The
+	/// name set is the case-insensitive union of <see cref="CanonicalToolNames"/>, the invoker registry's
+	/// <see cref="IMcpToolInvokerRegistry.ToolNames"/>, and the reflection catalog's
+	/// <see cref="McpToolSchemaCatalog.RegisteredToolNames"/>, deduplicated and ordered ordinally so the
+	/// index is deterministic for prompt-cache prefix stability. Each entry carries the tool name, a
+	/// one-line purpose (curated description, else the registry/reflection-derived description), the
+	/// contract-available flag (true when a curated OR derived contract resolves), and the destructive
+	/// hint when the invoker registry can cheaply supply it. The index stays compact — names + purpose +
+	/// safety flags only, never full schemas.
+	/// </summary>
+	/// <param name="toolInvokerRegistry">Optional registry used to enumerate hidden tools and read each tool's destructive hint; <c>null</c> leaves the flag unset and limits the set to curated + reflection-discovered tools.</param>
+	private static IReadOnlyList<ToolContractIndexEntry> BuildCompactIndex(
+		IMcpToolInvokerRegistry? toolInvokerRegistry) {
+		return BuildIndexToolNames(toolInvokerRegistry)
+			.Select(name => BuildIndexEntry(name, toolInvokerRegistry))
+			.ToArray();
+	}
+
+	/// <summary>
+	/// Produces the deterministic, deduplicated (case-insensitive) union of every invokable MCP tool name:
+	/// curated canonical tools, registry-invokable hidden tools, and reflection-discovered tools. Ordered
+	/// ordinally by name so the index prefix stays stable for prompt caching. <c>get-tool-contract</c>
+	/// itself is excluded so the discovery tool does not index itself (matching the curated-only behavior).
+	/// </summary>
+	/// <param name="toolInvokerRegistry">Optional registry contributing the hidden long-tail tool names.</param>
+	private static IEnumerable<string> BuildIndexToolNames(IMcpToolInvokerRegistry? toolInvokerRegistry) {
+		IEnumerable<string> registryNames = toolInvokerRegistry?.ToolNames ?? [];
+		return CanonicalToolNames
+			.Concat(registryNames)
+			.Concat(McpToolSchemaCatalog.RegisteredToolNames)
+			.Where(name => !string.IsNullOrWhiteSpace(name)
+				&& !string.Equals(name, ToolContractGetTool.ToolName, StringComparison.OrdinalIgnoreCase))
+			.Distinct(StringComparer.OrdinalIgnoreCase)
+			.OrderBy(name => name, StringComparer.Ordinal);
+	}
+
+	/// <summary>
+	/// Builds a single compact index entry for <paramref name="name"/>. The purpose is distilled from the
+	/// curated contract when one exists, otherwise from the tool's RAW registry/reflection description
+	/// (without the "no curated contract yet" note the full named contract carries); a missing description
+	/// falls back to the tool name so the purpose is never empty.
+	/// <c>contract-available</c> is true when a curated OR registry OR reflection contract resolves.
+	/// <c>resident</c> is derived from <see cref="McpCoreToolProfile.IsResident"/> and does not depend on
+	/// an invoker registry being supplied.
+	/// </summary>
+	/// <param name="name">The tool name to describe.</param>
+	/// <param name="toolInvokerRegistry">Optional registry used to derive uncurated descriptions and the destructive hint.</param>
+	private static ToolContractIndexEntry BuildIndexEntry(
+		string name,
+		IMcpToolInvokerRegistry? toolInvokerRegistry) {
+		bool contractAvailable = TryResolveIndexDescription(name, toolInvokerRegistry, out string description);
+		string purpose = BuildPurpose(description);
+		return new ToolContractIndexEntry(
+			name,
+			string.IsNullOrEmpty(purpose) ? name : purpose,
+			ContractAvailable: contractAvailable,
+			Resident: McpCoreToolProfile.IsResident(name),
+			Destructive: ResolveDestructive(toolInvokerRegistry, name));
+	}
+
+	/// <summary>
+	/// Resolves the description for an index entry through the same curated → registry → reflection cascade
+	/// the NAMED contract path uses for AVAILABILITY, but reads the RAW functional description (no
+	/// "Auto-generated … no curated contract yet" note) for the uncurated registry/reflection levels so the
+	/// compact one-line purpose reflects only what the tool DOES. The note still appears in the FULL named
+	/// contract (see <see cref="GetContracts"/>); only this index one-liner is noteless. Returns <c>true</c>
+	/// with the resolved description when any source matches — preserving <c>contract-available</c> semantics
+	/// (a tool with a raw description but no curated contract is still dispatchable via clio-run) — otherwise
+	/// <c>false</c> with an empty description (the caller supplies a safe fallback to the tool name).
+	/// </summary>
+	/// <param name="name">The tool name to resolve.</param>
+	/// <param name="toolInvokerRegistry">Optional registry holding hidden, dispatchable tools.</param>
+	/// <param name="description">The resolved description when available; otherwise empty.</param>
+	private static bool TryResolveIndexDescription(
+		string name,
+		IMcpToolInvokerRegistry? toolInvokerRegistry,
+		out string description) {
+		// Level 1 — curated descriptions are handwritten and carry NO note, so use them verbatim.
+		if (Contracts.TryGetValue(name, out ToolContractDefinition? curated)) {
+			description = curated.Description;
+			return true;
+		}
+		// Level 2 — registry-derived: read the RAW tool description (not TryBuild, which appends the note).
+		// A registered tool resolves here under the SAME condition TryBuild would, so contract-available
+		// stays true even though the one-liner is now noteless.
+		if (toolInvokerRegistry is not null
+			&& McpToolRegistrySchemaContract.TryGetRawDescription(toolInvokerRegistry, name, out description)) {
+			return true;
+		}
+		// Level 3 — reflection fallback: read the RAW reflected description (not TryGetSchemaContract, which
+		// appends the note). Same availability condition as the note-appending path.
+		if (McpToolSchemaCatalog.TryGetRawDescription(name, out description)) {
+			return true;
+		}
+		description = string.Empty;
+		return false;
+	}
+
+	/// <summary>
+	/// Distills a one-line purpose from a full tool description: takes the first sentence (up to the first
+	/// period followed by whitespace) or first line, collapses inner whitespace, and truncates to
+	/// <see cref="MaxPurposeLength"/> characters with an ellipsis so the index stays compact.
+	/// </summary>
+	/// <param name="description">The full curated tool description.</param>
+	private static string BuildPurpose(string description) {
+		string normalized = string.Join(' ',
+			(description ?? string.Empty).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+		if (normalized.Length == 0) {
+			return string.Empty;
+		}
+		int sentenceEnd = FindFirstSentenceEnd(normalized);
+		string firstSentence = sentenceEnd >= 0 ? normalized[..(sentenceEnd + 1)] : normalized;
+		if (firstSentence.Length <= MaxPurposeLength) {
+			return firstSentence;
+		}
+		return firstSentence[..(MaxPurposeLength - 1)].TrimEnd() + "…";
+	}
+
+	/// <summary>
+	/// Returns the index of the first sentence-terminating period (a '.' followed by whitespace or the end
+	/// of the text), or <c>-1</c> when the text has no sentence break. Abbreviation periods mid-word (for
+	/// example <c>en-US</c> or version numbers) are kept because they are not followed by whitespace.
+	/// </summary>
+	/// <param name="text">The whitespace-normalized description.</param>
+	private static int FindFirstSentenceEnd(string text) {
+		for (int index = 0; index < text.Length; index++) {
+			if (text[index] != '.') {
+				continue;
+			}
+			if (index == text.Length - 1 || char.IsWhiteSpace(text[index + 1])) {
+				return index;
+			}
+		}
+		return -1;
+	}
+
+	/// <summary>
+	/// Reads the destructive hint for a tool from the invoker registry when one is supplied. Returns
+	/// <c>null</c> when no registry is available so the flag is omitted rather than guessed. The registry
+	/// fails CLOSED for unknown names, so a registered-but-unmapped name reports destructive.
+	/// </summary>
+	/// <param name="toolInvokerRegistry">Optional registry exposing the per-tool destructive hint.</param>
+	/// <param name="toolName">The tool name to resolve.</param>
+	private static bool? ResolveDestructive(IMcpToolInvokerRegistry? toolInvokerRegistry, string toolName) {
+		return toolInvokerRegistry?.IsDestructive(toolName);
+	}
+
 	private static ToolContractDefinition BuildToolContractGet() {
 		return new ToolContractDefinition(
 			ToolContractGetTool.ToolName,
-			"Returns the authoritative executable contract for canonical clio MCP discovery, inspection, and mutation tools.",
+			"Returns clio MCP tool contracts. Omit tool-names for a compact index of all tools (name + one-line purpose + safety flags) for cheap discovery; pass tool-names to expand those tools' full executable contracts; pass detail=full (with no tool-names) to expand every tool's full contract.",
 			new ToolInputSchemaContract(
 				[],
 				[
-					Field("tool-names", ArrayType, "Optional array of tool names. Omit to return the canonical clio MCP contract set.")
+					Field("tool-names", ArrayType, "Optional array of tool names. Omit for a compact index of all tools; pass names to expand their full contracts."),
+					Field("detail", StringType, "Optional detail level used only when tool-names is omitted: 'index' (default) returns the compact index; 'full' returns every tool's full contract.")
 				]),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -484,19 +873,23 @@ internal static class ToolContractCatalog {
 					SuccessFalseSignal
 				],
 				Field(SuccessFieldName, BooleanType, "Whether the contract lookup succeeded."),
-				Field("tools", ArrayType, "Tool contract definitions."),
+				Field("tools", ArrayType, "Full tool contract definitions; populated when tool-names are passed or detail=full."),
+				Field("index", ArrayType, "Compact tool index (name, purpose, contract-available, resident, destructive); populated for a no-names request unless detail=full. resident=true tools are present in tools/list and are called natively; resident=false tools are reachable only via clio-run/clio-run-destructive — never wrap a resident tool in clio-run."),
 				Field(ErrorFieldName, ObjectType, "Structured error payload when lookup fails.")
 			),
 			CommonErrorContract,
 			[],
 			[],
 			[
-				Example("Return the canonical clio MCP contract set", new Dictionary<string, object?>()),
+				Example("Return the compact index of all clio MCP tools (cheap discovery)", new Dictionary<string, object?>()),
+				Example("Return the full contracts of every tool (legacy behavior)", new Dictionary<string, object?> {
+					["detail"] = "full"
+				}),
 				Example("Return the contract for list-apps, update-page, and modify-entity-schema-column", new Dictionary<string, object?> {
 					["tool-names"] = new[] { "list-apps", "update-page", "modify-entity-schema-column" }
 				})
 			],
-			Flow(["get-tool-contract"], "Use before execution when the caller needs authoritative clio MCP metadata or must choose the next discovery, inspection, or mutation step."),
+			Flow(["get-tool-contract"], "Call with no args first for the compact index of all tools, then call with specific tool-names for full schemas before execution."),
 			[],
 			[]);
 	}
@@ -728,7 +1121,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildExecuteEsq() {
 		return new ToolContractDefinition(
 			ExecuteEsqTool.ToolName,
-			"Runs a raw EntitySchemaQuery (ESQ) SelectQuery against a Creatio environment via the DataService SelectQuery endpoint and returns the rows. The primary way to read Creatio data with a raw ESQ query; also used to confirm an ESQ filter is valid before saving it into a page. ESQ is a proprietary format: call get-guidance for 'esq' and 'esq-filters' before composing a query rather than guessing the shape.",
+			"Runs a raw EntitySchemaQuery (ESQ) SelectQuery against a Creatio environment via the DataService SelectQuery endpoint and returns the rows. The primary way to read Creatio data with a raw ESQ query; also used to confirm an ESQ filter is valid before saving it into a page. ESQ is a proprietary format: call get-guidance for 'esq' and 'esq-filters' before composing a query rather than guessing the shape. A requested columns.items alias whose columnPath does not resolve fails the call with success:false instead of silently omitting that column from the rows.",
 			new ToolInputSchemaContract(
 				[QueryFieldName, EnvironmentNameFieldName],
 				[
@@ -742,7 +1135,7 @@ internal static class ToolContractCatalog {
 					SuccessFalseSignal
 				],
 				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
-				Field("count", NumberType, "Number of rows returned."),
+				Field(CountFieldName, NumberType, "Number of rows returned."),
 				Field("rows", ArrayType, "Rows returned by the SelectQuery."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)),
 			CommonErrorContract,
@@ -1405,11 +1798,11 @@ internal static class ToolContractCatalog {
 					Field(SelectFieldName, ArrayType, "Fields to return. Use [\"Id\", \"Name\"] when resolving lookup records by display value."),
 					Field("expand", ArrayType, "Navigation properties to expand."),
 					Field("order-by", StringType, "OData $orderby clause, for example CreatedOn desc or Name asc."),
-					Field("top", NumberType, "Maximum number of records to return, 1-100. Default: 25.")
+					Field("top", NumberType, "Maximum number of records to return, 1-100. Default: 25. An out-of-range top (including 0 or negative) is rejected with success:false, never silently changed.")
 				],
 				Validators: [
-					new ToolContractValidator("limit", "invalid-top", "top",
-						Context: "top must be between 1 and 100; omitted or out-of-range values default to 25.")
+					new ToolContractValidator(LimitFieldName, "invalid-top", "top",
+						Context: "top must be between 1 and 100; omitting it uses the default of 25, and an out-of-range value (including 0 or negative) is rejected with success:false.")
 				]),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -1418,7 +1811,7 @@ internal static class ToolContractCatalog {
 				],
 				Field(SuccessFieldName, BooleanType, "Whether the OData read succeeded."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription),
-				Field("count", NumberType, "Number of records returned."),
+				Field(CountFieldName, NumberType, "Number of records returned."),
 				Field(ValueFieldName, ArrayType, "OData value array or single entity response."),
 				Field("next-link", StringType, "OData next-link URL when more records are available.")
 			),
@@ -2510,7 +2903,7 @@ internal static class ToolContractCatalog {
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PackageNameFieldName, OperationsFieldName],
 				EnvironmentPackageFields(
-					Field(OperationsFieldName, ArrayType, "Ordered schema operations. For update-entity, supply `update-operations` (add/modify/remove) or a `columns` add-batch. Column fields are unified with get-app-info: `column-name` (alias `name`), `type` (alias `data-value-type`), `reference-schema-name` (alias `reference-schema`), `required` (alias `is-required`) — and in a `columns` add-batch the read-shape scalar `caption` is promoted to `title-localizations` — so a column read from get-app-info can be sent back by adding the `action` verb.")),
+					Field(OperationsFieldName, ArrayType, "Ordered schema operations. For update-entity, supply `update-operations` (add/modify/remove) or a `columns` add-batch. Column fields are unified with get-app-info: `column-name` (alias `name`), `type` (alias `data-value-type`), `reference-schema-name` (alias `reference-schema`), `required` (alias `is-required`) — so a column read from get-app-info can be sent back by adding the `action` verb. For an add, `title-localizations` is OPTIONAL: when omitted, `en-US` is auto-derived from a scalar `title`/`caption` or the column name (the `en-US` value must be English when supplied).")),
 				Validators: [
 					new ToolContractValidator(
 						"sync-schemas-operations-localizations",
@@ -2669,7 +3062,7 @@ internal static class ToolContractCatalog {
 					Field(PackageNameFieldName, StringType, "Package name to inspect."),
 					Field(SelectorCodeFieldName, StringType, "Installed application code. When provided, list-pages resolves the application's primary package before querying pages."),
 					Field(SearchPatternFieldName, StringType, "Optional case-insensitive schema-name filter."),
-					Field("limit", NumberType, "Optional max result count.")),
+					Field(LimitFieldName, NumberType, "Optional max result count. Omit or pass 0 to use the default of 50. A negative limit is rejected with success:false (it must not disable the cap).")),
 				Validators: [
 					new ToolContractValidator(
 						"mutually-exclusive-fields",
@@ -2679,6 +3072,9 @@ internal static class ToolContractCatalog {
 							SelectorCodeFieldName
 						],
 						Context: "list-pages accepts package-name or code, not both."),
+					new ToolContractValidator(
+						LimitFieldName, "invalid-limit", LimitFieldName,
+						Context: "limit must be zero or greater; 0 (or omitting it) uses the default of 50, and a negative value is rejected with success:false."),
 				],
 				AnyOf: EnvironmentOrExplicitConnectionRequirements()),
 			EnvelopeOutput(
@@ -2687,6 +3083,9 @@ internal static class ToolContractCatalog {
 					SuccessFalseSignal
 				],
 				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
+				Field(CountFieldName, NumberType, "Number of pages returned (after the result cap is applied)."),
+				Field("total", NumberType, "Total pages matching the query before the cap. Compare to count to detect an incomplete result."),
+				Field("truncated", BooleanType, "True when total is greater than count, meaning more pages match than were returned. Raise limit or add a filter to retrieve the rest."),
 				Field(PagesFieldName, ArrayType, "Discovered pages using `schema-name`, `uId`, `packageName`, and `parentSchemaName`."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
 			),
@@ -3357,7 +3756,7 @@ internal static class ToolContractCatalog {
 				],
 				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
 				Field("mode", StringType, "detail, list, or composite."),
-				Field("count", NumberType, "Number of matching components or composites."),
+				Field(CountFieldName, NumberType, "Number of matching components or composites."),
 				Field("items", ArrayType, "Flat list-mode component summaries, each with componentType and an optional description."),
 				Field("composites", ArrayType, "Composite Designer elements in list mode, each with caption and optional description. Fetch a composite's assembly recipe with composite=\"<caption>\"."),
 				Field("caption", StringType, "Composite caption echoed back in composite detail mode."),
@@ -3373,6 +3772,9 @@ internal static class ToolContractCatalog {
 			CommonErrorContract,
 			[
 				Alias(ParameterScope, ComponentTypeFieldName, "componentType", RejectedStatus, "Use 'component-type' instead of 'componentType'."),
+				Alias(ParameterScope, ComponentTypeFieldName, "component-name", RejectedStatus, "Use 'component-type' instead of 'component-name'."),
+				Alias(ParameterScope, ComponentTypeFieldName, "componentName", RejectedStatus, "Use 'component-type' instead of 'componentName'."),
+				Alias(ParameterScope, ComponentTypeFieldName, "component_name", RejectedStatus, "Use 'component-type' instead of 'component_name'."),
 				Alias(ParameterScope, "schema-type", "schemaType", RejectedStatus, "Use 'schema-type' instead of 'schemaType'."),
 				Alias(ParameterScope, EnvironmentNameFieldName, "environmentName", RejectedStatus, "Use 'environment-name' instead of 'environmentName'.")
 			],
@@ -3690,12 +4092,12 @@ internal static class ToolContractCatalog {
 
 	private static ToolContractAlias TitleParameterAlias() {
 		return Alias(ParameterScope, TitleLocalizationsFieldName, "title", RejectedStatus,
-			$"Use '{TitleLocalizationsFieldName}' instead of legacy scalar 'title'.");
+			$"Prefer '{TitleLocalizationsFieldName}'; legacy scalar 'title' is used only as an en-US fallback for an add.");
 	}
 
 	private static ToolContractAlias CaptionParameterAlias() {
 		return Alias(ParameterScope, TitleLocalizationsFieldName, CaptionFieldName, RejectedStatus,
-			$"Use '{TitleLocalizationsFieldName}' instead of legacy scalar 'caption'.");
+			$"Prefer '{TitleLocalizationsFieldName}'; legacy scalar 'caption' is used only as an en-US fallback for an add.");
 	}
 
 	private static ToolContractAlias DescriptionParameterAlias() {

@@ -10,7 +10,7 @@ namespace Clio.Command.McpServer.Tools;
 /// </summary>
 public sealed record ApplicationGetListArgs(
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Creatio environment name")]
+	[property: Description(McpToolDescriptions.EnvironmentName)]
 	[property: Required]
 	string? EnvironmentName = null
 );
@@ -20,7 +20,7 @@ public sealed record ApplicationGetListArgs(
 /// </summary>
 public sealed record ApplicationGetInfoArgs(
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Registered clio environment name, e.g. 'local'")]
+	[property: Description(McpToolDescriptions.EnvironmentName)]
 	[property: Required]
 	string EnvironmentName,
 
@@ -38,7 +38,7 @@ public sealed record ApplicationGetInfoArgs(
 /// </summary>
 public sealed record ApplicationCreateArgs(
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Registered clio environment name, e.g. 'local'")]
+	[property: Description(McpToolDescriptions.EnvironmentName)]
 	[property: Required]
 	string EnvironmentName,
 
@@ -122,7 +122,7 @@ public sealed record ApplicationOptionalTemplateDataJsonArgs(
 /// </summary>
 public sealed record ApplicationSectionCreateArgs(
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Registered clio environment name, e.g. 'local'")]
+	[property: Description(McpToolDescriptions.EnvironmentName)]
 	[property: Required]
 	string EnvironmentName,
 
@@ -182,7 +182,7 @@ public sealed record ApplicationSectionCreateArgs(
 /// </summary>
 public sealed record ApplicationSectionDeleteArgs(
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Registered clio environment name, e.g. 'local'")]
+	[property: Description(McpToolDescriptions.EnvironmentName)]
 	[property: Required]
 	string EnvironmentName,
 
@@ -206,7 +206,7 @@ public sealed record ApplicationSectionDeleteArgs(
 /// </summary>
 public sealed record ApplicationSectionGetListArgs(
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Registered clio environment name, e.g. 'local'")]
+	[property: Description(McpToolDescriptions.EnvironmentName)]
 	[property: Required]
 	string EnvironmentName,
 
@@ -221,7 +221,7 @@ public sealed record ApplicationSectionGetListArgs(
 /// </summary>
 public sealed record ApplicationSectionUpdateArgs(
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Registered clio environment name, e.g. 'local'")]
+	[property: Description(McpToolDescriptions.EnvironmentName)]
 	[property: Required]
 	string EnvironmentName,
 

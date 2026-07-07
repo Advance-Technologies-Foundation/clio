@@ -41,7 +41,7 @@ public sealed class SqlSchemaCreateTool(
 				resolvedCommand = ResolveCommand<SqlSchemaCreateCommand>(options);
 			}
 			catch (Exception ex) {
-				return new SqlSchemaCreateResponse { Success = false, Error = ex.Message };
+				return new SqlSchemaCreateResponse { Success = false, Error = SensitiveErrorTextRedactor.Redact(ex.Message) };
 			}
 			resolvedCommand.TryCreate(options, out SqlSchemaCreateResponse response);
 			return response;

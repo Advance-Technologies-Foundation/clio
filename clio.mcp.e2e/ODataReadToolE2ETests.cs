@@ -4,7 +4,6 @@ using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
-using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E;
@@ -19,23 +18,25 @@ namespace Clio.Mcp.E2E;
 [NonParallelizable]
 public sealed class ODataReadToolE2ETests : McpContractFixtureBase {
 	[Test]
-	[Description("Advertises odata-read as a read-only MCP tool through the real MCP server.")]
+	[Description("Exposes odata-read via the get-tool-contract compact index with a non-destructive safety flag on the lazy tool surface.")]
 	[AllureTag(ODataReadTool.ToolName)]
-	[AllureName("odata-read MCP tool is advertised")]
+	[AllureName("odata-read MCP tool is discoverable on the lazy surface")]
 	public async Task ODataRead_Should_Be_Advertised() {
 		// Arrange
 		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
-		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(
+		IReadOnlyList<ToolContractIndexEntry> index = await arrangeContext.Session.GetToolContractIndexAsync(
 			arrangeContext.CancellationTokenSource.Token);
 
 		// Assert
-		McpClientTool tool = tools.Single(tool => tool.Name == ODataReadTool.ToolName);
-		tool.ProtocolTool.Annotations!.ReadOnlyHint.Should().BeTrue(
-			because: "odata-read must be advertised as a read-only query tool");
-		tool.ProtocolTool.Annotations.DestructiveHint.Should().BeFalse(
-			because: "odata-read must not mutate Creatio state");
+		// The lazy surface exposes hidden tools only through the compact discovery index, which carries the
+		// destructive flag; the read-only hint is no longer observable for non-resident tools.
+		ToolContractIndexEntry entry = index.Should().ContainSingle(entry => entry.Name == ODataReadTool.ToolName,
+			because: "odata-read must be discoverable via the get-tool-contract compact index so callers can find the query tool")
+			.Which;
+		entry.Destructive.Should().NotBe(true,
+			because: "odata-read is a read-only query tool and must not be flagged destructive");
 	}
 
 	[Test]

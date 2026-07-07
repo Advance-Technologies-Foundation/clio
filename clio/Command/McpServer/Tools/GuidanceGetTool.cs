@@ -94,7 +94,7 @@ public sealed class GuidanceGetTool {
 		} catch (Exception ex) {
 			return Task.FromResult(new GuidanceGetResponse {
 				Success = false,
-				Error = $"get-guidance failed: {ex.Message}. Expected args: {{\"name\": \"<guide>\"}}.",
+				Error = SensitiveErrorTextRedactor.Redact($"get-guidance failed: {ex.Message}. Expected args: {{\"name\": \"<guide>\"}}."),
 				AvailableGuides = GuidanceCatalog.GetNames(_featureToggleService).ToList()
 			});
 		}

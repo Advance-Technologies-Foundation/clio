@@ -31,9 +31,12 @@ public sealed class CreateEntityBusinessRuleTool(
 	/// </remarks>
 	[McpServerTool(Name = BusinessRuleCreateToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
-	[Description("Creates one or more entity-level Freedom UI business rules on a single entity schema in ONE batch call (one configuration rebuild for the whole batch). Use for: hide/show/enable/disable/require fields, set-values, apply-filter (dynamic dependent lookups), and apply-static-filter — limit/restrict a lookup field to records matching a fixed condition by ANY mechanism — attribute value, relative period, fixed time-of-day (datePart), child existence/count, or gating by another field (e.g. 'show only <records> that have at least one related <child>', 'limit a lookup to records whose <field> is filled', 'only records where a status flag is set'). PREFER this tool over editing page DataSource staticFilters in body.js for any 'limit lookup / restrict lookup / show only X where ...' request on a Freedom UI section/page — entity business rules apply everywhere the lookup is used and are the documented Creatio no-code surface. Phrases like 'business entity rule', 'apply static filter', 'apply-static-filter', 'limit lookup to', 'restrict lookup', 'show only ... that have ...' route here. Pass every rule for the same entity schema in the 'rules' array — the whole batch is saved with a single configuration rebuild, so prefer one batch call over many single-rule calls. A failed rule does not abort the others; the response reports per-rule status. Before calling, read get-guidance business-rules (and, for an apply-static-filter action, also get-guidance business-rule-filters) and get-tool-contract for create-entity-business-rules.")]
+	[Description("Creates one or more entity-level Freedom UI business rules on a single entity schema in ONE batch call (one configuration rebuild for the whole batch): hide/show/enable/disable/require fields, set-values, apply-filter (dynamic dependent lookups), and apply-static-filter (restrict a lookup to records matching a fixed condition by ANY mechanism — attribute value, relative period, time-of-day, child existence/count, or gating by another field). " +
+		"PREFER this over editing page DataSource staticFilters in body.js for any 'limit lookup / restrict lookup / show only X where …' request — entity rules apply everywhere the lookup is used. " +
+		"Pass every rule for the same entity schema in the 'rules' array; a failed rule does not abort the others (the response reports per-rule status). " +
+		"Read get-guidance `business-rules` / `business-rule-filters` and get-tool-contract `create-entity-business-rules` before calling.")]
 	public object BusinessRuleCreate(
-		[Description("Parameters: environment-name, package-name, entity-schema-name, rules (all required).")]
+		[Description("environment-name, package-name, entity-schema-name, rules (all required).")]
 		[Required]
 		CreateEntityBusinessRulesArgs args) =>
 		ExecuteWithCleanLog(() => CreateRules(args));
@@ -84,7 +87,7 @@ public sealed record CreateEntityBusinessRulesArgs
 	/// Gets the registered Creatio environment name.
 	/// </summary>
 	[JsonPropertyName("environment-name")]
-	[Description("Creatio environment name.")]
+	[Description(McpToolDescriptions.EnvironmentName)]
 	[Required]
 	public string EnvironmentName { get; init; } = null!;
 
@@ -670,7 +673,7 @@ public sealed record CreatePageBusinessRulesArgs
 	/// Gets the registered Creatio environment name.
 	/// </summary>
 	[JsonPropertyName("environment-name")]
-	[Description("Creatio environment name.")]
+	[Description(McpToolDescriptions.EnvironmentName)]
 	[Required]
 	public string EnvironmentName { get; init; } = null!;
 

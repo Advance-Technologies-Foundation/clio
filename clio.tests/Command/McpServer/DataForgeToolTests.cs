@@ -265,8 +265,10 @@ public sealed class DataForgeToolTests {
 			.Single();
 
 		// Assert
-		attribute.Description.Should().Contain("Creatio platform version 10.0.0 or later",
+		attribute.Description.Should().Contain("Creatio 10.0.0+",
 			because: "CrtDataForge is bundled into supported Creatio platform versions");
+		attribute.Description.Should().Contain("CrtDataForge",
+			because: "the requirement is the bundled CrtDataForge module, not an external package version");
 	}
 
 	[Test]

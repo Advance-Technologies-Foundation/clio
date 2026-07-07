@@ -7,7 +7,6 @@ using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
-using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E;
@@ -123,9 +122,9 @@ public sealed class GenerateProcessModelToolE2ETests {
 		string code,
 		string environmentName,
 		string destinationPath) {
-		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
-		tools.Select(tool => tool.Name).Should().Contain(ToolName,
-			because: "the generate-process-model MCP tool must be advertised before the end-to-end call can be executed");
+		IReadOnlyCollection<string> toolNames = await session.ListReachableToolNamesAsync(cancellationToken);
+		toolNames.Should().Contain(ToolName,
+			because: "the generate-process-model MCP tool must be discoverable via the get-tool-contract compact index on the lazy surface before the end-to-end call can be executed");
 
 		CallToolResult callResult = await session.CallToolAsync(
 			ToolName,

@@ -1,9 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
+using Clio.Command;
+using Clio.Command.McpServer;
 using Clio.Command.McpServer.Tools;
 using FluentAssertions;
 using ModelContextProtocol.Server;
+using NSubstitute;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command.McpServer;
@@ -11,6 +15,19 @@ namespace Clio.Tests.Command.McpServer;
 [TestFixture]
 [Property("Module", "McpServer")]
 public sealed class ToolContractGetToolTests {
+	// Builds the get-tool-contract tool over the REAL invoker registry so contracts for uncurated tools
+	// derive from the same MCP tool input schema clio-run dispatches against (Codex review #1, story-6).
+	private static ToolContractGetTool BuildToolWithRegistry() {
+		IServiceProvider provider = Substitute.For<IServiceProvider>();
+		IFeatureToggleService featureToggle = Substitute.For<IFeatureToggleService>();
+		featureToggle.IsEnabled(Arg.Any<Type>()).Returns(true);
+		McpToolInvokerRegistry registry = new(
+			provider,
+			typeof(SchemaSyncTool).Assembly,
+			featureToggle,
+			JsonSerializerOptions.Default);
+		return new ToolContractGetTool(registry);
+	}
 	[Test]
 	[Category("Unit")]
 	[Description("Advertises a stable MCP tool name for get-tool-contract.")]
@@ -28,23 +45,115 @@ public sealed class ToolContractGetToolTests {
 			because: "the MCP tool name must stay stable for clients that bootstrap from the contract tool");
 	}
 
+	// Codex review #1 (PR #743): in lazy mode the long tail is hidden from tools/list but stays
+	// invokable via clio-run / clio-run-destructive. The review claimed high-impact hidden tools have
+	// NO discoverable contract. They DO: get-tool-contract resolves a contract entry for every one
+	// (curated, or auto-generated from the tool input schema). This guard refutes the "no contract"
+	// claim and pins it against regression.
 	[Test]
 	[Category("Unit")]
-	[Description("Returns the canonical clio MCP contract set when the request omits tool names.")]
-	public void ToolContractGet_Should_Return_Canonical_Contracts_When_Request_Is_Empty() {
+	[TestCase("stop-creatio")]
+	[TestCase("stop-all-creatio")]
+	[TestCase("clear-redis-db-by-environment")]
+	[TestCase("restart-by-environment-name")]
+	[TestCase("uninstall-creatio")]
+	[TestCase("sync-schemas")]
+	[TestCase("sync-pages")]
+	[TestCase("odata-read")]
+	[TestCase("execute-esq")]
+	[TestCase("create-user-task")]
+	[TestCase("create-entity-business-rules")]
+	[Description("Every hidden, clio-run-invokable tool resolves to a contract entry with a schema via get-tool-contract, so a lazy-mode client always has something to inspect before dispatch.")]
+	public void ToolContractGet_Should_ResolveContract_ForHiddenInvokableTool(string toolName) {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([toolName]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: $"'{toolName}' is invokable via clio-run and must expose a discoverable contract in lazy mode");
+		result.Tools.Should().NotBeNullOrEmpty(
+			because: "a known invokable tool must return a contract entry, not an empty result");
+		ToolContractDefinition entry = result.Tools!.Single();
+		entry.Name.Should().Be(toolName, because: "the returned contract must be for the requested tool");
+		entry.InputSchema.Should().NotBeNull(because: "the contract must carry an argument schema object");
+	}
+
+	// Arg-bearing tools must expose a USABLE (non-empty) property schema, not an empty fallback.
+	// story-6 (Codex review #1, gap closed): uncurated contracts are now derived from the SAME registered
+	// MCP tool input schema clio-run dispatches against. The single-scalar env tools (stop-creatio,
+	// clear-redis-db-by-environment, restart-by-environment-name) — which the lossy reflection fallback
+	// dropped to an EMPTY property list — now expose their real `environmentName` property, so they are
+	// merged into this non-empty coverage set alongside the richer arg-bearing tools.
+	[Test]
+	[Category("Unit")]
+	[TestCase("stop-creatio")]
+	[TestCase("clear-redis-db-by-environment")]
+	[TestCase("restart-by-environment-name")]
+	[TestCase("sync-schemas")]
+	[TestCase("sync-pages")]
+	[TestCase("odata-read")]
+	[TestCase("execute-esq")]
+	[TestCase("create-user-task")]
+	[TestCase("create-entity-business-rules")]
+	[Description("An arg-bearing hidden tool exposes a non-empty property schema via get-tool-contract, so the client can build a valid clio-run call.")]
+	public void ToolContractGet_Should_ReturnNonEmptyProperties_ForArgBearingHiddenTool(string toolName) {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([toolName]));
+
+		// Assert
+		result.Tools.Should().NotBeNullOrEmpty(because: "a known invokable tool must return a contract entry");
+		result.Tools!.Single().InputSchema.Properties.Should().NotBeEmpty(
+			because: "an arg-bearing tool must expose a usable property schema, not an empty fallback");
+	}
+
+	// Pins the Codex #1 fix: the uncurated contract for a single-scalar env tool now derives from the real
+	// dispatched MCP input schema, exposing the `environmentName` property the lossy reflection fallback
+	// dropped. This is the exact mismatch the review flagged — advertised contract vs what clio-run accepts.
+	[Test]
+	[Category("Unit")]
+	[Description("get-tool-contract derives stop-creatio's contract from the real dispatched MCP input schema and exposes the environmentName property, matching what clio-run actually accepts.")]
+	public void ToolContractGet_Should_ExposeEnvironmentNameProperty_ForStopCreatio() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs(["stop-creatio"]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "stop-creatio is invokable via clio-run-destructive and must expose a discoverable contract");
+		ToolContractDefinition entry = result.Tools!.Single();
+		entry.InputSchema.Properties.Select(property => property.Name).Should().Contain("environmentName",
+			because: "the contract must derive from the real dispatched MCP schema, which carries the environmentName argument clio-run binds");
+		entry.InputSchema.Required.Should().Contain("environmentName",
+			because: "environmentName is marked [Required] on the tool method, so the derived contract must mark it required");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the canonical clio MCP full contract set when the request omits tool names and asks for detail=full (legacy back-compat behavior).")]
+	public void ToolContractGet_Should_Return_Canonical_Contracts_When_Request_Is_Empty_And_DetailIsFull() {
 		// Arrange
 		ToolContractGetTool tool = new();
 
 		// Act
-		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs());
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs(Detail: "full"));
 
 		// Assert
 		result.Success.Should().BeTrue(
-			because: "an empty request should be a valid bootstrap entry point for canonical contract discovery");
+			because: "an empty request with detail=full should still be a valid bootstrap entry point for canonical full-contract discovery");
 		result.Error.Should().BeNull(
 			because: "a successful bootstrap lookup should not return a structured error");
+		result.Index.Should().BeNull(
+			because: "detail=full preserves the legacy behavior and must not emit the compact index alongside the full contracts");
 		result.Tools.Should().NotBeNull(
-			because: "the bootstrap response should include the canonical contract set");
+			because: "the detail=full bootstrap response should include the canonical full contract set");
 		result.Tools!.Select(contract => contract.Name).Should().Contain([
 				GuidanceGetTool.ToolName,
 				ExecuteEsqTool.ToolName,
@@ -69,6 +178,199 @@ public sealed class ToolContractGetToolTests {
 			because: "destructive Data Forge maintenance tools should stay available only through explicit contract lookup rather than the default bootstrap set");
 		result.Tools!.Select(contract => contract.Name).Should().NotContain(ToolContractGetTool.ToolName,
 			because: "get-tool-contract should not include itself in the default returned contract set");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a compact index of all canonical tools (names + one-line purpose, Tools null) when the request omits tool names and detail.")]
+	public void ToolContractGet_Should_Return_Compact_Index_When_Request_Is_Empty() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs());
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "a no-args request is the default compact-discovery entry point");
+		result.Error.Should().BeNull(
+			because: "a successful index lookup should not return a structured error");
+		result.Tools.Should().BeNull(
+			because: "the compact index must NOT pay for the heavy full contracts — that is the whole point of defer_loading");
+		result.Index.Should().NotBeNullOrEmpty(
+			because: "the no-args default must populate the compact index so an agent can see what tools exist");
+		result.Index!.Select(entry => entry.Name).Should().Contain([
+				GuidanceGetTool.ToolName,
+				ExecuteEsqTool.ToolName,
+				SettingsHealthTool.ToolName,
+				ApplicationGetListTool.ApplicationGetListToolName,
+				CreateEntityBusinessRuleTool.BusinessRuleCreateToolName,
+				PageSyncTool.ToolName,
+				PageUpdateTool.ToolName,
+				ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName,
+				SchemaNamePrefixTool.GetSchemaNamePrefixToolName
+			],
+			because: "the compact index must cover the same canonical tool surface the full default used to expose");
+		result.Index!.Select(entry => entry.Name).Should().NotContain(ToolContractGetTool.ToolName,
+			because: "get-tool-contract should not index itself in the default discovery set");
+		result.Index!.Should().OnlyContain(entry => !string.IsNullOrWhiteSpace(entry.Purpose),
+			because: "every index entry must carry a non-empty one-line purpose so the agent can choose a tool without the full schema");
+		result.Index!.Should().OnlyContain(entry => entry.Purpose.Length <= 120,
+			because: "the purpose must be truncated to a single short line to keep the index cheap");
+		result.Index!.Should().OnlyContain(entry => entry.ContractAvailable,
+			because: "every canonical index entry has a full curated contract reachable by naming the tool");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the compact index (Index populated, Tools null) when called with a null args object, proving the no-arguments discovery call is null-safe and yields the index path.")]
+	public void ToolContractGet_Should_Return_Compact_Index_When_Args_Is_Null() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(null);
+
+		// Assert
+		result.Should().NotBeNull(
+			because: "a null args object is the natural no-arguments discovery call and must not throw");
+		result.Success.Should().BeTrue(
+			because: "the no-arguments discovery call is the default compact-discovery entry point");
+		result.Error.Should().BeNull(
+			because: "a successful index lookup should not return a structured error");
+		result.Tools.Should().BeNull(
+			because: "the no-arguments call must yield the compact index, not the heavy full contracts");
+		result.Index.Should().NotBeNullOrEmpty(
+			because: "a null args object must resolve to the same compact index as an omitted-tool-names call");
+		result.Index!.Select(entry => entry.Name).Should().NotContain(ToolContractGetTool.ToolName,
+			because: "get-tool-contract should not index itself in the default discovery set");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Populates the destructive safety flag in the compact index from the MCP tool annotation when an invoker registry is available.")]
+	public void ToolContractGet_Should_Populate_Destructive_Flag_In_Index_When_Registry_Available() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs());
+
+		// Assert
+		result.Index.Should().NotBeNullOrEmpty(
+			because: "the no-args default must populate the compact index");
+		result.Index!.Should().OnlyContain(entry => entry.Destructive != null,
+			because: "with an invoker registry the destructive hint is cheaply available for every indexed tool");
+		ToolContractIndexEntry executeEsq = result.Index!.Single(entry => entry.Name == ExecuteEsqTool.ToolName);
+		executeEsq.Destructive.Should().BeFalse(
+			because: "execute-esq is a read-only ESQ query tool annotated as non-destructive");
+	}
+
+	// ENG-92761 (F2): the compact index must let an agent tell WHICH tools are called natively (present
+	// in tools/list) vs. reached only through clio-run, without depending on an invoker registry.
+	[Test]
+	[Category("Unit")]
+	[Description("A core tool (list-apps) is marked resident=true in the compact index, matching its membership in McpCoreToolProfile.CoreToolTypes.")]
+	public void ToolContractGet_Should_MarkResident_True_ForCoreToolInIndex() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs());
+
+		// Assert
+		result.Index.Should().NotBeNullOrEmpty(
+			because: "the no-args default must populate the compact index");
+		ToolContractIndexEntry listApps = result.Index!.Single(entry => entry.Name == ApplicationGetListTool.ApplicationGetListToolName);
+		listApps.Resident.Should().BeTrue(
+			because: "list-apps is declared on ApplicationGetListTool, a member of McpCoreToolProfile.CoreToolTypes");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A long-tail tool (sync-schemas) is marked resident=false in the compact index, matching its absence from McpCoreToolProfile.CoreToolTypes and AlwaysOnLazyToolTypes.")]
+	public void ToolContractGet_Should_MarkResident_False_ForLongTailToolInIndex() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs());
+
+		// Assert
+		result.Index.Should().NotBeNullOrEmpty(
+			because: "the no-args default must populate the compact index");
+		ToolContractIndexEntry syncSchemas = result.Index!.Single(entry => entry.Name == SchemaSyncTool.ToolName);
+		syncSchemas.Resident.Should().BeFalse(
+			because: "sync-schemas is hidden from tools/list and reachable only via clio-run/clio-run-destructive");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The always-on lazy-mode executors (clio-run, clio-run-destructive) surface in the compact index as resident=true, matching McpCoreToolProfile.AlwaysOnLazyToolTypes.")]
+	public void ToolContractGet_Should_MarkResident_True_ForAlwaysOnExecutorsInIndex() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs());
+
+		// Assert
+		result.Index.Should().NotBeNullOrEmpty(
+			because: "the no-args default must populate the compact index");
+		result.Index!.Single(entry => entry.Name == ClioRunTool.ToolName).Resident.Should().BeTrue(
+			because: "clio-run is one of the always-on lazy-mode executor types");
+		result.Index!.Single(entry => entry.Name == ClioRunDestructiveTool.ToolName).Resident.Should().BeTrue(
+			because: "clio-run-destructive is one of the always-on lazy-mode executor types");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("get-tool-contract itself is classified resident=true by McpCoreToolProfile even though it is excluded from its own compact index (a tool does not index itself).")]
+	public void McpCoreToolProfile_Should_ClassifyGetToolContract_AsResident() {
+		// Arrange
+
+		// Act
+		bool isResident = McpCoreToolProfile.IsResident(ToolContractGetTool.ToolName);
+
+		// Assert
+		isResident.Should().BeTrue(
+			because: "get-tool-contract is both a core tool and an always-on lazy-mode discovery surface");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Adding the resident flag does not disturb the compact index's ordinal name ordering, which must stay deterministic for prompt-cache prefix stability.")]
+	public void ToolContractGet_Should_KeepIndexOrdering_Stable_AfterAddingResidentFlag() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs());
+
+		// Assert
+		result.Index.Should().NotBeNullOrEmpty(
+			because: "the no-args default must populate the compact index");
+		result.Index!.Select(entry => entry.Name).Should().BeInAscendingOrder(StringComparer.Ordinal,
+			because: "the index must stay ordinally sorted by name so its prefix is stable for prompt caching");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Serializes the compact index to materially fewer bytes than the full contract dump, proving the token win.")]
+	public void ToolContractGet_Should_Serialize_Index_Much_Smaller_Than_Full_Contracts() {
+		// Arrange
+		ToolContractGetTool tool = new();
+		JsonSerializerOptions options = new(JsonSerializerDefaults.Web);
+
+		// Act
+		ToolContractGetResponse indexResult = tool.GetToolContracts(new ToolContractGetArgs());
+		ToolContractGetResponse fullResult = tool.GetToolContracts(new ToolContractGetArgs(Detail: "full"));
+		int indexLength = JsonSerializer.Serialize(indexResult, options).Length;
+		int fullLength = JsonSerializer.Serialize(fullResult, options).Length;
+
+		// Assert
+		indexLength.Should().BeLessThan(fullLength / 5,
+			because: "the compact index must be a fraction of the full contract payload to justify the defer_loading default");
 	}
 
 	[Test]
@@ -1255,6 +1557,10 @@ public sealed class ToolContractGetToolTests {
 			because: "unknown tool names should map to the tool-not-found error code");
 		result.Error.Suggestions.Should().Contain(PageUpdateTool.ToolName,
 			because: "the error should suggest the closest matching registered tool name");
+		result.Error.Message.Should().Contain("get-tool-contract",
+			because: "the tool-not-found message must point the agent at the discovery tool when its guess (and suggestions) miss");
+		result.Error.Message.Should().Contain("compact index of every tool",
+			because: "the discovery hint must name the cheap compact-index path for in-band recovery");
 	}
 
 	[Test]
@@ -1378,6 +1684,104 @@ public sealed class ToolContractGetToolTests {
 			because: "unknown args should be quoted back so the caller sees what was rejected");
 		result.Error.Message.Should().Contain("tool-names",
 			because: "the error should point to the canonical valid args");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Resolves contracts from a flat top-level 'tool-names' array sent without the nested 'args' wrapper (field-test defect #4).")]
+	public void ToolContractGet_Should_Resolve_Contracts_From_Flat_ToolNames() {
+		// Arrange
+		ToolContractGetTool tool = new();
+		JsonElement flat = JsonDocument.Parse("[\"get-tool-contract\"]").RootElement;
+		ToolContractGetArgs args = new() {
+			ExtensionData = new Dictionary<string, JsonElement> {
+				["tool-names"] = flat
+			}
+		};
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(args);
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "a flat top-level 'tool-names' (no nested 'args' wrapper) must resolve contracts instead of failing");
+		result.Tools.Should().ContainSingle(contract => contract.Name == ToolContractGetTool.ToolName,
+			because: "the flat-shape tool name must resolve to its contract");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Resolves named contracts from a flat 'tool-names' sent alongside a co-key 'detail' (no nested 'args' wrapper) instead of mis-reporting 'tool-names' as an unknown arg.")]
+	public void ToolContractGet_Should_Resolve_Contracts_From_Flat_ToolNames_When_Detail_CoKey_Present() {
+		// Arrange
+		ToolContractGetTool tool = new();
+		JsonElement flatNames = JsonDocument.Parse("[\"get-tool-contract\"]").RootElement;
+		JsonElement flatDetail = JsonDocument.Parse("\"full\"").RootElement;
+		ToolContractGetArgs args = new() {
+			ExtensionData = new Dictionary<string, JsonElement> {
+				["tool-names"] = flatNames,
+				["detail"] = flatDetail
+			}
+		};
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(args);
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "a co-present flat 'detail' key must not block recovery of flat 'tool-names'");
+		result.Error.Should().BeNull(
+			because: "the canonical 'tool-names' key must never be reported as an unknown arg when a 'detail' co-key is present");
+		result.Tools.Should().ContainSingle(contract => contract.Name == ToolContractGetTool.ToolName,
+			because: "named tool-names must resolve their full contract even when 'detail' is also supplied");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Resolves a contract from a flat scalar 'name' sent without the nested 'args' wrapper (field-test defect #4).")]
+	public void ToolContractGet_Should_Resolve_Contract_From_Flat_Name_Scalar() {
+		// Arrange
+		ToolContractGetTool tool = new();
+		JsonElement flat = JsonDocument.Parse("\"get-tool-contract\"").RootElement;
+		ToolContractGetArgs args = new() {
+			ExtensionData = new Dictionary<string, JsonElement> {
+				["name"] = flat
+			}
+		};
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(args);
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "a flat scalar 'name' must resolve a single contract instead of failing");
+		result.Tools.Should().ContainSingle(contract => contract.Name == ToolContractGetTool.ToolName,
+			because: "the flat 'name' value must resolve to its contract");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the helpful 'Expected args shape' hint for a genuinely-unknown wrong-shape key instead of an opaque error (field-test defect #4).")]
+	public void ToolContractGet_Should_Return_Expected_Shape_Hint_For_Wrong_Shape() {
+		// Arrange
+		ToolContractGetTool tool = new();
+		JsonElement element = JsonDocument.Parse("\"list-pages\"").RootElement;
+		ToolContractGetArgs args = new() {
+			ExtensionData = new Dictionary<string, JsonElement> {
+				["wrong-shape"] = element
+			}
+		};
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(args);
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "an unknown key is not a recoverable flat shape");
+		result.Error!.Message.Should().Contain("Expected args shape",
+			because: "the wrong-shape path must surface the helpful expected-shape hint rather than an opaque error");
+		result.Error.Message.Should().Contain("tool-names",
+			because: "the hint must teach the canonical tool-names array shape");
 	}
 
 	[Test]
@@ -1550,6 +1954,10 @@ public sealed class ToolContractGetToolTests {
 			because: "the fallback must not mask genuinely unknown tool names");
 		result.Error.Suggestions.Should().NotBeNullOrEmpty(
 			because: "the error should still offer nearest-name suggestions");
+		result.Error.Message.Should().EndWith(ToolContractGetTool.DiscoveryHint,
+			because: "the discovery hint must trail the tool-not-found message so a missed guess has the full-catalog path");
+		result.Error.Message.Should().Contain("compact index of every tool",
+			because: "the hint must name the cheap compact-index discovery route");
 	}
 	[Test]
 	[Category("Unit")]
@@ -1581,6 +1989,161 @@ public sealed class ToolContractGetToolTests {
 				InstallerCommandTool.DeployCreatioToolName
 			},
 			because: "build discovery should flow into deploy-creatio with the chosen archive");
+	}
+
+	// Codex review #2 (PR #743): the no-args compact index was built ONLY from the curated canonical set,
+	// so a lazy-mode client following the "compact index of every tool" guidance could not discover the
+	// hidden long tail (stop-creatio, add-package-dependency, ...) it must reach through clio-run. The
+	// index now spans EVERY invokable tool (curated core + registry-invokable hidden tools). This guard
+	// pins the union behavior and refutes the "hidden tools omitted from the index" regression.
+	[Test]
+	[Category("Unit")]
+	[Description("The no-args compact index includes hidden long-tail tools (stop-creatio, add-package-dependency) alongside the curated core, so a lazy-mode client can discover every invokable tool from the index.")]
+	public void ToolContractGet_Should_Include_HiddenInvokableTools_In_Compact_Index() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs());
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "the no-args request is the default compact-discovery entry point");
+		result.Index.Should().NotBeNullOrEmpty(
+			because: "the no-args default must populate the compact index");
+		IReadOnlyList<ToolContractIndexEntry> index = result.Index!;
+		index.Select(entry => entry.Name).Should().Contain([
+				"stop-creatio",
+				AddPackageDependencyTool.AddPackageDependencyToolName
+			],
+			because: "the compact index must list hidden, clio-run-invokable tools so a lazy-mode client can discover them without already knowing the exact name");
+		index.Select(entry => entry.Name).Should().Contain([
+				GuidanceGetTool.ToolName,
+				PageUpdateTool.ToolName
+			],
+			because: "extending the index to the long tail must not drop the curated core tools");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The hidden long-tail entries in the no-args compact index carry a non-empty purpose and the correct destructive flag derived from the tool annotation.")]
+	public void ToolContractGet_Should_Populate_Purpose_And_Destructive_For_HiddenIndexEntries() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs());
+
+		// Assert
+		result.Index.Should().NotBeNullOrEmpty(
+			because: "the no-args default must populate the compact index");
+		IReadOnlyList<ToolContractIndexEntry> index = result.Index!;
+		ToolContractIndexEntry stopCreatio = index.Single(entry => entry.Name == "stop-creatio");
+		stopCreatio.Purpose.Should().NotBeNullOrWhiteSpace(
+			because: "a hidden tool must carry a non-empty one-line purpose so the agent can choose it without the full schema");
+		stopCreatio.Destructive.Should().BeTrue(
+			because: "stop-creatio is annotated Destructive = true on its MCP tool method");
+		stopCreatio.ContractAvailable.Should().BeTrue(
+			because: "stop-creatio resolves a registry-derived contract, so its index entry is expandable");
+		ToolContractIndexEntry addDependency = index.Single(entry =>
+			entry.Name == AddPackageDependencyTool.AddPackageDependencyToolName);
+		addDependency.Purpose.Should().NotBeNullOrWhiteSpace(
+			because: "add-package-dependency must carry a non-empty one-line purpose distilled from its description");
+		addDependency.Destructive.Should().BeFalse(
+			because: "add-package-dependency is annotated Destructive = false on its MCP tool method");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Every no-args compact index entry built over the real registry keeps a one-line purpose under the length cap, even after extending the index to the hidden long tail.")]
+	public void ToolContractGet_Should_Keep_Index_Compact_When_Including_HiddenTools() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs());
+
+		// Assert
+		result.Index.Should().NotBeNullOrEmpty(
+			because: "the no-args default must populate the compact index");
+		result.Index!.Should().OnlyContain(entry => !string.IsNullOrWhiteSpace(entry.Purpose),
+			because: "every index entry — curated or hidden — must carry a non-empty one-line purpose");
+		result.Index!.Should().OnlyContain(entry => entry.Purpose.Length <= 120,
+			because: "the purpose must stay a single short line so the long-tail index remains cheap");
+	}
+
+	// PR #743 follow-up: the uncurated registry/reflection contract appends an "Auto-generated … no curated
+	// contract yet" note to its Description. Because a hidden tool's raw description often has no terminating
+	// period (e.g. stop-creatio's "Stops Creatio instance by environment name"), BuildPurpose could not cut
+	// at a sentence boundary and the index one-liner leaked the meta-note (e.g. "Stops Creatio instance by
+	// environment name Auto-ge…"). The note describes the ABSENCE of curation, not what the tool does, so it
+	// is noise in a compact index. These guards pin: (a) the index one-liner is noteless functional text,
+	// and (b) the FULL named contract still carries the note.
+	[Test]
+	[Category("Unit")]
+	[Description("A hidden long-tail tool's compact-index purpose carries only the raw functional description, never the uncurated 'Auto-generated … no curated contract' note.")]
+	public void ToolContractGet_Should_Strip_UncuratedNote_From_HiddenIndexPurpose() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs());
+
+		// Assert
+		result.Index.Should().NotBeNullOrEmpty(
+			because: "the no-args default must populate the compact index");
+		ToolContractIndexEntry stopCreatio = result.Index!.Single(entry => entry.Name == "stop-creatio");
+		stopCreatio.Purpose.Should().NotContain("Auto-generated",
+			because: "the compact index one-liner must describe what the tool does, not announce that no curated contract exists");
+		stopCreatio.Purpose.Should().NotContain("no curated contract",
+			because: "the absence-of-curation meta-note is noise in a compact discovery index");
+		stopCreatio.Purpose.Should().Be("Stops Creatio instance by environment name",
+			because: "the purpose must be the tool's raw functional description, not the description merged with and truncated against the meta-note");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A hidden tool with a no-period description (add-package-dependency) yields a noteless functional compact-index purpose, proving the strip is independent of sentence-boundary detection.")]
+	public void ToolContractGet_Should_Strip_UncuratedNote_From_HiddenIndexPurpose_When_Description_Has_No_SentenceBreak() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs());
+
+		// Assert
+		result.Index.Should().NotBeNullOrEmpty(
+			because: "the no-args default must populate the compact index");
+		ToolContractIndexEntry addDependency = result.Index!.Single(entry =>
+			entry.Name == AddPackageDependencyTool.AddPackageDependencyToolName);
+		addDependency.Purpose.Should().NotContain("Auto-generated",
+			because: "stripping the note must not depend on the description ending in a sentence-terminating period");
+		addDependency.Purpose.Should().NotContain("no curated contract",
+			because: "the meta-note must be removed before the purpose is distilled, for every uncurated tool");
+		addDependency.Purpose.Should().StartWith("Adds one or more package dependencies",
+			because: "the purpose must be distilled from the tool's own functional description");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The FULL named contract for a hidden long-tail tool still carries the 'Auto-generated … no curated contract' note, proving the note was stripped only from the compact index, not from the full contract.")]
+	public void ToolContractGet_Should_Keep_UncuratedNote_In_FullNamedContract_ForHiddenTool() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs(["stop-creatio"]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "stop-creatio is invokable via clio-run-destructive and must expose a discoverable full contract");
+		ToolContractDefinition contract = result.Tools!.Single();
+		contract.Description.Should().Contain("Auto-generated",
+			because: "the full named contract must keep the note so a caller knows the contract is auto-derived, not curated");
+		contract.Description.Should().Contain("no curated contract",
+			because: "the note correctly signals the uncurated nature only in the full contract; the index one-liner stays noteless");
+		contract.Description.Should().StartWith("Stops Creatio instance by environment name",
+			because: "the full contract still leads with the tool's functional description before the appended note");
 	}
 
 	[Test]
@@ -1632,5 +2195,32 @@ public sealed class ToolContractGetToolTests {
 				p.Why.Contains("synthesize", StringComparison.OrdinalIgnoreCase) ||
 				p.Pattern.Contains("synthesize", StringComparison.OrdinalIgnoreCase),
 			because: "the anti-pattern must explicitly warn against synthesizing instead of following the documentation field");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The get-component-info contract advertises 'component-name' (plus its camelCase/snake_case spellings) as a rejected alias of 'component-type', so a contract-driven validator steers an agent that reaches for the wrong-WORD selector to the canonical parameter instead of a generic 'unknown parameter' guess.")]
+	[TestCase("component-name")]
+	[TestCase("componentName")]
+	[TestCase("component_name")]
+	public void ToolContractGet_Should_Advertise_ComponentName_As_Rejected_Alias_Of_ComponentType(string spelling) {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
+			ComponentInfoTool.ToolName
+		]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "get-component-info must be discoverable through get-tool-contract");
+		ToolContractDefinition contract = result.Tools!.Single();
+		contract.Aliases.Should().Contain(alias =>
+				alias.Alias == spelling
+				&& alias.CanonicalName == "component-type"
+				&& alias.Status == "rejected"
+				&& alias.Message.Contains("component-type"),
+			because: "an agent that passes the wrong-WORD selector must be redirected to 'component-type' rather than left to guess");
 	}
 }

@@ -8,7 +8,6 @@ using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
-using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E;
@@ -283,9 +282,13 @@ public sealed class SysSettingsToolE2ETests : McpContractFixtureBase {
 		ArrangeContext arrangeContext,
 		string toolName,
 		Dictionary<string, object?> args) {
-		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(toolName,
-			because: $"the {toolName} tool must be advertised by the clio MCP server before the call can be executed");
+		// The helper serves both resident tools (get-sys-setting, list-sys-settings) and hidden long-tail
+		// tools (create-sys-setting, update-sys-setting), so the discoverability gate uses the lazy-surface
+		// union of tools/list names and the get-tool-contract compact index.
+		IReadOnlyCollection<string> toolNames =
+			await arrangeContext.Session.ListReachableToolNamesAsync(arrangeContext.CancellationTokenSource.Token);
+		toolNames.Should().Contain(toolName,
+			because: $"the {toolName} tool must be discoverable on the lazy surface (tools/list or the get-tool-contract compact index) before the call can be executed");
 		return await arrangeContext.Session.CallToolAsync(
 			toolName,
 			new Dictionary<string, object?> {

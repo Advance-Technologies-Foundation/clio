@@ -136,7 +136,7 @@ public sealed class RestoreWorkspaceTool(
 /// </summary>
 public sealed record PushWorkspaceArgs(
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Registered clio environment name")]
+	[property: Description(McpToolDescriptions.EnvironmentName)]
 	[property: Required]
 	string EnvironmentName,
 
@@ -155,7 +155,7 @@ public sealed record PushWorkspaceArgs(
 /// </summary>
 public sealed record RestoreWorkspaceArgs(
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Registered clio environment name")]
+	[property: Description(McpToolDescriptions.EnvironmentName)]
 	[property: Required]
 	string EnvironmentName,
 

@@ -5,8 +5,7 @@ using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
-using ModelContextProtocol.Client;
-using System.Text.Json;
+using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E;
 
@@ -17,35 +16,55 @@ namespace Clio.Mcp.E2E;
 [Parallelizable(ParallelScope.Self)]
 public sealed class RestoreDbToolE2ETests : McpContractFixtureBase {
 	[Test]
-	[Description("Starts the real clio MCP server, discovers the restore-db tools, and verifies that all three restore entrypoints are advertised as destructive operations.")]
+	[Description("Starts the real clio MCP server, reads the get-tool-contract compact index, and verifies that all three restore-db entrypoints are discoverable and flagged destructive on the lazy tool surface.")]
 	[AllureTag(RestoreDbTool.RestoreDbByEnvironmentToolName)]
 	[AllureTag(RestoreDbTool.RestoreDbByCredentialsToolName)]
 	[AllureTag(RestoreDbTool.RestoreDbToLocalServerToolName)]
-	[AllureName("Restore-db tools advertise stable names and destructive metadata")]
-	[AllureDescription("Uses the real clio MCP server tool discovery payload to verify that the environment, credentials, and local-server restore-db tools are all discoverable and marked destructive.")]
+	[AllureName("Restore-db tools are discoverable with destructive metadata on the lazy surface")]
+	[AllureDescription("Uses the get-tool-contract compact index and full contract of the real clio MCP server to verify that the environment, credentials, and local-server restore-db tools are all discoverable, marked destructive, and expose the approved argument contract.")]
 	public async Task RestoreDb_Should_Advertise_All_Tool_Variants() {
 		// Arrange
 		await using var arrangeContext = Arrange();
+		CancellationToken token = arrangeContext.CancellationTokenSource.Token;
 
 		// Act
-		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		McpClientTool environmentTool = tools.Single(tool => tool.Name == RestoreDbTool.RestoreDbByEnvironmentToolName);
-		McpClientTool credentialsTool = tools.Single(tool => tool.Name == RestoreDbTool.RestoreDbByCredentialsToolName);
-		McpClientTool localServerTool = tools.Single(tool => tool.Name == RestoreDbTool.RestoreDbToLocalServerToolName);
+		IReadOnlyList<ToolContractIndexEntry> index = await arrangeContext.Session.GetToolContractIndexAsync(token);
+		CallToolResult contractResult = await arrangeContext.Session.CallToolAsync(
+			ToolContractGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["tool-names"] = new[] { RestoreDbTool.RestoreDbToLocalServerToolName }
+				}
+			},
+			token);
+		ToolContractGetResponse contracts =
+			EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(contractResult);
 
 		// Assert
-		environmentTool.ProtocolTool.Annotations!.DestructiveHint.Should().BeTrue(
+		ToolContractIndexEntry environmentEntry = index.Should()
+			.ContainSingle(entry => entry.Name == RestoreDbTool.RestoreDbByEnvironmentToolName,
+				because: "the environment-based restore-db tool must be discoverable via the get-tool-contract compact index on the lazy surface")
+			.Which;
+		ToolContractIndexEntry credentialsEntry = index.Should()
+			.ContainSingle(entry => entry.Name == RestoreDbTool.RestoreDbByCredentialsToolName,
+				because: "the credentials-based restore-db tool must be discoverable via the get-tool-contract compact index on the lazy surface")
+			.Which;
+		ToolContractIndexEntry localServerEntry = index.Should()
+			.ContainSingle(entry => entry.Name == RestoreDbTool.RestoreDbToLocalServerToolName,
+				because: "the local-server restore-db tool must be discoverable via the get-tool-contract compact index on the lazy surface")
+			.Which;
+		environmentEntry.Destructive.Should().BeTrue(
 			because: "environment-based restore-db execution can replace a target database");
-		credentialsTool.ProtocolTool.Annotations!.DestructiveHint.Should().BeTrue(
+		credentialsEntry.Destructive.Should().BeTrue(
 			because: "credentials-based restore-db execution can replace a target database");
-		localServerTool.ProtocolTool.Annotations!.DestructiveHint.Should().BeTrue(
+		localServerEntry.Destructive.Should().BeTrue(
 			because: "local-server restore-db execution can replace a target database");
 
-		JsonElement localInputSchema = JsonSerializer.SerializeToElement(localServerTool.ProtocolTool.InputSchema);
-		localInputSchema.GetProperty("properties").GetProperty("args").GetProperty("properties").EnumerateObject()
-			.Select(property => property.Name)
+		ToolContractDefinition localContract = contracts.Tools!
+			.Single(tool => tool.Name == RestoreDbTool.RestoreDbToLocalServerToolName);
+		localContract.InputSchema.Properties.Select(property => property.Name)
 			.Should().BeEquivalentTo(["dbServerName", "backupPath", "dbName", "dropIfExists", "asTemplate", "disableResetPassword"],
-				because: "the local restore-db MCP tool should advertise the approved local restore argument contract");
+				because: "the local restore-db MCP tool should expose the approved local restore argument contract through get-tool-contract");
 	}
 
 	[Test]
