@@ -106,6 +106,55 @@ public sealed class ServerProcessDescriberTests {
 	}
 
 	[Test]
+	[Description("Deserializes an element's data source filter (object + logical operation + conditions + nested groups) from the server response into the DescribedFilter DTO, so describe read-back surfaces the filter instead of dropping it.")]
+	public void Describe_ShouldReadElementFilter_WhenServerReportsIt() {
+		// Arrange — a signal start whose decoded filter is Age > 30 AND (Address = 'x')
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"SignalStart1\",\"type\":\"ProcessSchemaStartSignalEvent\",\"buildType\":\"signalstart\","
+			+ "\"filter\":{\"object\":\"Contact\",\"logicalOperation\":\"and\","
+			+ "\"conditions\":[{\"column\":\"Age\",\"comparison\":\"greater\",\"value\":\"30\"}],"
+			+ "\"groups\":[{\"logicalOperation\":\"or\",\"conditions\":[{\"column\":\"Address\",\"comparison\":\"equal\",\"value\":\"x\"}]}]}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		DescribedFilter filter = result.Value.Elements[0].Filter;
+		filter.Should().NotBeNull(because: "the element's data source filter must be surfaced, not dropped by the clio DTO");
+		filter.Object.Should().Be("Contact", because: "the filter's root object is read back");
+		filter.LogicalOperation.Should().Be("and", because: "the root logical operation is read back");
+		filter.Conditions.Should().ContainSingle(because: "the single root condition is deserialized");
+		filter.Conditions[0].Column.Should().Be("Age", because: "the condition column round-trips");
+		filter.Conditions[0].Comparison.Should().Be("greater", because: "the comparison round-trips");
+		filter.Conditions[0].Value.Should().Be("30", because: "the constant value round-trips");
+		filter.Groups.Should().ContainSingle(because: "the nested group is deserialized");
+		filter.Groups[0].LogicalOperation.Should().Be("or", because: "the nested group operator round-trips");
+		filter.Groups[0].Conditions[0].Column.Should().Be("Address", because: "the nested condition round-trips");
+	}
+
+	[Test]
+	[Description("Leaves the element filter null when the server reports no filter, so it serializes away for non-filtered elements.")]
+	public void Describe_ShouldLeaveFilterNull_WhenServerOmitsIt() {
+		// Arrange — an element with no data source filter
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"task1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"usertask\"}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.Value.Elements[0].Filter.Should().BeNull(
+			because: "an element without a filter keeps Filter null so it serializes away (WhenWritingNull)");
+	}
+
+	[Test]
 	[Description("Posts the uid (not the name) when the identity is a uid.")]
 	public void Describe_ShouldPostWrappedUid_WhenIdentityIsUid() {
 		IApplicationClient client = ClientReturning(

@@ -212,6 +212,14 @@ public sealed class DescribedElement {
 	/// <summary>For a signal start element: the record-event trigger (entity + change type). Null otherwise.</summary>
 	[JsonPropertyName("signal")]
 	public DescribedSignal Signal { get; set; }
+
+	/// <summary>
+	/// The element's data source filter (a signal start's <c>EntityFilters</c> or a data-operation element's
+	/// <c>DataSourceFilters</c>), decoded server-side into the high-level shape; <c>null</c> when the element
+	/// carries no filter. Round-trips into a <c>create</c>/<c>modify</c> <c>filter</c> descriptor.
+	/// </summary>
+	[JsonPropertyName("filter")]
+	public DescribedFilter Filter { get; set; }
 }
 
 /// <summary>The record-event trigger of a signal start element (what starts the process).</summary>
@@ -227,6 +235,66 @@ public sealed class DescribedSignal {
 	/// <summary>Record change(s) that start the process: <c>added</c>, <c>modified</c>, <c>deleted</c>, or a combination.</summary>
 	[JsonPropertyName("on")]
 	public string On { get; set; }
+}
+
+/// <summary>A data source filter group read back from an element — a recursive AND/OR tree of conditions.</summary>
+public class DescribedFilterGroup {
+	/// <summary>How the members combine: <c>and</c> or <c>or</c>.</summary>
+	[JsonPropertyName("logicalOperation")]
+	public string LogicalOperation { get; set; }
+
+	/// <summary>Leaf comparisons at this group level.</summary>
+	[JsonPropertyName("conditions")]
+	public List<DescribedFilterCondition> Conditions { get; set; }
+
+	/// <summary>Nested sub-groups, each with its own <see cref="LogicalOperation"/>.</summary>
+	[JsonPropertyName("groups")]
+	public List<DescribedFilterGroup> Groups { get; set; }
+}
+
+/// <summary>The root data source filter of an element: the group tree plus the object its columns belong to.</summary>
+public sealed class DescribedFilter : DescribedFilterGroup {
+	/// <summary>Root object (entity schema) the filter columns belong to (for example <c>Contact</c>).</summary>
+	[JsonPropertyName("object")]
+	public string Object { get; set; }
+}
+
+/// <summary>A single leaf comparison of a described filter: <c>column comparison &lt;right-hand value&gt;</c>.</summary>
+public sealed class DescribedFilterCondition {
+	/// <summary>Column path (may traverse lookups, for example <c>Account.Code</c>).</summary>
+	[JsonPropertyName("column")]
+	public string Column { get; set; }
+
+	/// <summary>Comparison token (for example <c>equal</c>, <c>greater</c>, <c>contains</c>, <c>isNull</c>).</summary>
+	[JsonPropertyName("comparison")]
+	public string Comparison { get; set; }
+
+	/// <summary>Constant value (string form); null for a reference or a null check.</summary>
+	[JsonPropertyName("value")]
+	public string Value { get; set; }
+
+	/// <summary>Referenced process parameter (by name); null otherwise.</summary>
+	[JsonPropertyName("processParameter")]
+	public string ProcessParameter { get; set; }
+
+	/// <summary>Referenced element output parameter; null otherwise.</summary>
+	[JsonPropertyName("elementParameter")]
+	public DescribedFilterElementRef ElementParameter { get; set; }
+
+	/// <summary>Raw meta-path expression token; the read-back surfaces a parameter reference here.</summary>
+	[JsonPropertyName("expression")]
+	public string Expression { get; set; }
+}
+
+/// <summary>An element-parameter reference used as a filter's right-hand value.</summary>
+public sealed class DescribedFilterElementRef {
+	/// <summary>Local name of the element that owns the parameter.</summary>
+	[JsonPropertyName("elementId")]
+	public string ElementId { get; set; }
+
+	/// <summary>Name of the parameter on that element.</summary>
+	[JsonPropertyName("parameter")]
+	public string Parameter { get; set; }
 }
 
 /// <summary>A sequence flow between two nodes.</summary>
