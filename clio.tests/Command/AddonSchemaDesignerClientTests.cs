@@ -172,6 +172,48 @@ public sealed class AddonSchemaDesignerClientTests {
 	}
 
 	[Test]
+	[Description("Tolerates an empty rebuild response: BuildConfiguration is a shared fire-and-forget refresh (the business-rule path calls it after saving), so an empty body is not a failure and must not throw.")]
+	public void BuildConfiguration_ShouldNotThrow_WhenResponseIsEmpty() {
+		// Arrange
+		StubResponse(string.Empty);
+
+		// Act
+		Action act = () => _client.BuildConfiguration();
+
+		// Assert
+		act.Should().NotThrow(
+			because: "an empty rebuild body carries no explicit failure signal; throwing would regress the shared business-rule creation path");
+	}
+
+	[Test]
+	[Description("Tolerates a rebuild response with no success flag: only an explicit success:false is a failure, so a body that omits success must not throw.")]
+	public void BuildConfiguration_ShouldNotThrow_WhenSuccessFlagIsAbsent() {
+		// Arrange
+		StubResponse("{\"errorInfo\":null}");
+
+		// Act
+		Action act = () => _client.BuildConfiguration();
+
+		// Assert
+		act.Should().NotThrow(
+			because: "a missing success flag is non-committal, not an explicit failure — the business-rule path relies on this tolerance");
+	}
+
+	[Test]
+	[Description("Tolerates a non-JSON rebuild response (e.g. an HTML/redirect page): it carries no explicit failure signal, so BuildConfiguration must not throw.")]
+	public void BuildConfiguration_ShouldNotThrow_WhenResponseIsNonJson() {
+		// Arrange
+		StubResponse("<!DOCTYPE html><html><body>redirect</body></html>");
+
+		// Act
+		Action act = () => _client.BuildConfiguration();
+
+		// Assert
+		act.Should().NotThrow(
+			because: "a non-JSON body is a non-committal response, not an explicit success:false — throwing would regress business-rule creation");
+	}
+
+	[Test]
 	[Description("Surfaces the server's rejection message when SaveSchema reports success:false.")]
 	public void SaveSchema_ShouldThrowWithServerMessage_WhenSuccessIsFalse() {
 		// Arrange

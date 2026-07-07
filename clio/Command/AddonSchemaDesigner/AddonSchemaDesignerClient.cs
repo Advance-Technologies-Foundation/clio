@@ -81,14 +81,24 @@ internal sealed class AddonSchemaDesignerClient(
 		string responseBody = applicationClient.ExecutePostRequest(
 			serviceUrlBuilder.Build("ServiceModel/WorkspaceExplorerService.svc/BuildConfiguration"),
 			string.Empty);
-		// The rebuild reports its own success (verified shape: {"errorInfo":null,"success":true}); surface a
-		// failed static-content rebuild instead of leaving the user with a saved add-on but stale pages in the UI.
-		AddonBuildResponseDto response = Deserialize<AddonBuildResponseDto>(
-			responseBody,
-			"AddonSchemaDesignerService.BuildConfiguration returned an empty response.");
-		if (!response.Success) {
+		// This static-content rebuild is a SHARED, fire-and-forget refresh — the business-rule add-on path
+		// (BusinessRuleAddonService.AppendRules) calls it too, AFTER its rule is already saved. So a non-committal
+		// response — an empty body, a non-JSON page (e.g. an auth redirect), or a payload with no `success` flag —
+		// must NOT be treated as a failure: some environments return that on success, and failing here would wrongly
+		// report an already-committed business rule as failed. Surface ONLY an EXPLICIT `success:false` (a genuine
+		// rebuild failure), so a real failure still isn't left as stale pages in the UI.
+		if (string.IsNullOrWhiteSpace(responseBody)) {
+			return;
+		}
+		AddonBuildResponseDto response;
+		try {
+			response = JsonSerializer.Deserialize<AddonBuildResponseDto>(responseBody, JsonOptions);
+		} catch (JsonException) {
+			return; // non-JSON body (e.g. an HTML/redirect page) carries no explicit failure signal — tolerate it
+		}
+		if (response?.Success == false) {
 			throw new InvalidOperationException(
-				response.ErrorInfo?.Message ?? "AddonSchemaDesignerService.BuildConfiguration failed.");
+				response.ErrorInfo?.Message ?? "WorkspaceExplorerService.svc/BuildConfiguration failed.");
 		}
 	}
 
