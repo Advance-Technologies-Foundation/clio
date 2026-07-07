@@ -121,7 +121,8 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 			return 1;
 		}
 		WriteWarnings(writeWarnings);
-		_logger.WriteInfo($"Theme '{options.CssClassName}' written to {options.Output}");
+		ThemeParameterValidator.TryResolveCssClassName(options.CssClassName, options.Caption, out string themeName, out _);
+		_logger.WriteInfo($"Theme '{themeName}' written to {options.Output}");
 		return 0;
 	}
 
@@ -208,16 +209,15 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 		css = null;
 		descriptor = null;
 		warnings = [];
-		if (!ThemeParameterValidator.TryResolveCssClassName(options.CssClassName, options.Caption, out string resolvedClass, out error)) {
+		if (!TryNormalizeOptions(options, out BuildThemeOptions normalizedOptions, out error)) {
 			return false;
 		}
-		options.CssClassName = resolvedClass;
 		try {
-			PlatformVersionResolution resolution = ResolveVersion(options);
+			PlatformVersionResolution resolution = ResolveVersion(normalizedOptions);
 			string templateVersion = resolution.Source == VersionResolutionSource.LatestFallback ? null : resolution.ResolvedVersion;
-			css = _themeCssBuilder.Build(_themeTemplateProvider.GetCssTemplate(templateVersion), ToBuilderOptions(options));
-			descriptor = BuildDescriptor(options, templateVersion);
-			warnings = CollectWarnings(options);
+			css = _themeCssBuilder.Build(_themeTemplateProvider.GetCssTemplate(templateVersion), ToBuilderOptions(normalizedOptions));
+			descriptor = BuildDescriptor(normalizedOptions, templateVersion);
+			warnings = CollectWarnings(normalizedOptions);
 			return true;
 		}
 		catch (ArgumentException ex) {
@@ -274,6 +274,30 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 			return resolution;
 		}
 		return new PlatformVersionResolution(null, VersionResolutionSource.LatestFallback);
+	}
+
+	private static bool TryNormalizeOptions(BuildThemeOptions options, out BuildThemeOptions normalizedOptions, out string error) {
+		normalizedOptions = null;
+		if (!ThemeParameterValidator.TryResolveCssClassName(options.CssClassName, options.Caption, out string resolvedClass, out error)) {
+			return false;
+		}
+		normalizedOptions = new BuildThemeOptions {
+			Primary = options.Primary,
+			Secondary = options.Secondary,
+			Accent = options.Accent,
+			Success = options.Success,
+			Error = options.Error,
+			CssClassName = resolvedClass,
+			HeadingFont = options.HeadingFont,
+			BodyFont = options.BodyFont,
+			FontWeights = options.FontWeights,
+			Id = options.Id,
+			Caption = options.Caption,
+			Version = options.Version,
+			EnvironmentName = options.EnvironmentName,
+			Output = options.Output,
+		};
+		return true;
 	}
 
 	private static BuildThemeInput ToBuilderOptions(BuildThemeOptions options) {

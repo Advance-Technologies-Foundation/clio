@@ -10,6 +10,7 @@ using System.Text.RegularExpressions;
 using Clio.Command;
 using Clio.Command.Theming;
 using Clio.Common;
+using Clio.Theming;
 using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
@@ -130,6 +131,11 @@ public sealed class BuildThemeTool(
 		}
 		if (!PackageNamePattern.IsMatch(args.PackageName)) {
 			error = $"package-name must be a simple identifier matching '^[A-Za-z0-9_]+$'. Path separators, '..', and absolute paths are rejected to keep the write inside the workspace. Received: '{args.PackageName}'.";
+			return false;
+		}
+		if (!string.IsNullOrWhiteSpace(args.CssClassName)
+			&& !ThemeParameterValidator.TryValidateCssClassName(args.CssClassName, out string cssClassError)) {
+			error = cssClassError;
 			return false;
 		}
 		return true;

@@ -21,6 +21,30 @@ internal static class PaletteGenerator {
 	/// <summary>Default lightness floor the darker shades converge toward (OKLCH L).</summary>
 	private const double LightnessBottom = 0.2;
 
+	/// <summary>Fraction of the primary lightness the secondary starts from before the cap is applied.</summary>
+	private const double SecondaryLightnessScale = 0.61;
+
+	/// <summary>Upper bound on the secondary lightness (OKLCH L), keeping it reliably darker than the primary.</summary>
+	private const double SecondaryLightnessCap = 0.3;
+
+	/// <summary>Hue nudge (degrees) applied to the secondary relative to the primary.</summary>
+	private const double SecondaryHueShiftDeg = 11;
+
+	/// <summary>Centre hue (degrees) of the chroma-damping dip.</summary>
+	private const double SecondaryDipCenterHueDeg = 20;
+
+	/// <summary>Spread (degrees) of the Gaussian chroma-damping dip.</summary>
+	private const double SecondaryDipSigmaDeg = 40;
+
+	/// <summary>Baseline fraction of the primary chroma retained by the secondary.</summary>
+	private const double SecondaryChromaBase = 0.319;
+
+	/// <summary>Extra chroma removed at the centre of the dip.</summary>
+	private const double SecondaryChromaDipDepth = 0.113;
+
+	/// <summary>Chroma floor so the secondary never becomes fully neutral.</summary>
+	private const double SecondaryMinChroma = 0.015;
+
 	/// <summary>The twelve palette shade stops, in ascending order; 500 is each hue's base shade.</summary>
 	internal static readonly int[] Steps = { 10, 25, 50, 100, 200, 300, 400, 500, 600, 700, 800, 900 };
 
@@ -77,12 +101,12 @@ internal static class PaletteGenerator {
 	/// <summary>Derives the secondary base colour from the primary (darker, hue-shifted, chroma-damped).</summary>
 	internal static string DeriveSecondary(string primaryHex) {
 		(double l, double c, double h) = ColorSpace.HexToOklch(primaryHex);
-		double ls = Math.Min(l * 0.61, 0.3);
-		double hs = (h - 11 + 360) % 360;
-		double d = Math.Min(Math.Abs(hs - 20), Math.Abs(hs - 380));
-		double dip = Math.Exp(-(d * d) / (2 * 40 * 40));
-		double mult = 0.319 - 0.113 * dip;
-		double cs = Math.Min(Math.Max(c * mult, 0.015), ColorSpace.MaxChromaInGamut(ls, hs));
+		double ls = Math.Min(l * SecondaryLightnessScale, SecondaryLightnessCap);
+		double hs = (h - SecondaryHueShiftDeg + 360) % 360;
+		double d = Math.Min(Math.Abs(hs - SecondaryDipCenterHueDeg), Math.Abs(hs - (SecondaryDipCenterHueDeg + 360)));
+		double dip = Math.Exp(-(d * d) / (2 * SecondaryDipSigmaDeg * SecondaryDipSigmaDeg));
+		double mult = SecondaryChromaBase - SecondaryChromaDipDepth * dip;
+		double cs = Math.Min(Math.Max(c * mult, SecondaryMinChroma), ColorSpace.MaxChromaInGamut(ls, hs));
 		return ColorSpace.OklchToHex(ls, cs, hs);
 	}
 

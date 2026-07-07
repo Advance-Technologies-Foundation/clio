@@ -440,8 +440,8 @@ public sealed class BuildThemeToolTests
 	[Test]
 	[Description("Returns a graceful failure (no build, no write) when an explicit css-class-name could escape the theme directory, because the resolved css-class-name becomes a filesystem path segment.")]
 	public void BuildTheme_ShouldReturnFailure_WhenCssClassNameEscapesWorkspace() {
-		// Act — a valid absolute workspace and simple package name clear the tool's own gates, so the failure
-		// must come from the resolver rejecting the traversal css-class-name before any path is written.
+		// Act — a valid absolute workspace and simple package name clear the earlier gates; the tool-boundary
+		// css-class-name guard then rejects the traversal value before any path is written.
 		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "../evil",
 			WorkspaceDirectory: Path.GetTempPath(), PackageName: "UsrTheme"));
 
