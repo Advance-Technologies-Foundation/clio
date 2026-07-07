@@ -32,5 +32,10 @@ context — read them before doing any work.
 - **Non-trivial feature → run the BMAD pipeline first** (PRD → ADR → stories → test
   plan). No code before the ADR exists. See the "BMAD development pipeline" section
   in `AGENTS.md`.
+- **Agentic code review is a mandatory gate.** Run a comprehensive parallel review
+  (quality, performance/correctness, security) **before opening a PR** and again **before
+  marking it ready-to-merge**; review **every new commit** pushed to an already-open PR,
+  but scoped to that commit's diff with a triage skip for zero-risk changes so it never
+  slows development. Full rules in `AGENTS.md` → "Code review".
 - **Workspace diary:** read recent relevant entries in `.codex/workspace-diary.md`
   before non-trivial work, and append an entry after completing it.

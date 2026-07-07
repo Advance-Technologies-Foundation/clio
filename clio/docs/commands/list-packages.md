@@ -39,8 +39,11 @@ The environment must be registered using
 -f, --Filter           Filter packages by name (case-insensitive partial match)
 Shows only packages containing the specified text
 
--j, --Json             Return results in JSON format
-Default: false (returns formatted table)
+-j, --json             Return results in JSON format (default: false).
+With --json the output is the unified command envelope.
+
+--legacy-form          Compatibility escape hatch (only with --json): emit the
+historical {value, success, errorInfo} shape instead of the unified envelope.
 
 Standard environment options are also available:
 -u, --uri              Application URI
@@ -79,8 +82,29 @@ Name                Version         Maintainer
 PackageName1        1.0.0          Company
 PackageName2        2.1.3          Developer
 
-JSON format (-j flag):
-Returns an array of package objects with detailed information
+JSON format (`--json`) — unified envelope (default):
+
+```json
+{
+  "schemaVersion": "1.0",
+  "ok": true,
+  "command": "list-packages",
+  "data": [ { "descriptor": { "name": "...", "packageVersion": "...", "maintainer": "..." } } ],
+  "error": null
+}
+```
+
+On failure: `ok=false`, `data=null`, `error={ "code": "<stable-code>", "message": "..." }`.
+
+JSON format (`--json --legacy-form`) — legacy shape (deprecated):
+
+```json
+{ "value": [ /* packages */ ], "success": true, "errorInfo": null }
+```
+
+> **Migration note:** the default `--json` shape changed from `{value,success,errorInfo}` to the
+> unified envelope `{schemaVersion,ok,command,data,error}`. Consumers not yet migrated can pass
+> `--legacy-form` to keep the old shape during the transition. The non-JSON (table) output is unchanged.
 
 ## Reporting Bugs
 

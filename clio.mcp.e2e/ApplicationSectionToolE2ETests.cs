@@ -14,7 +14,6 @@ using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
 using ModelContextProtocol;
-using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E;
@@ -314,9 +313,9 @@ public sealed class ApplicationSectionToolE2ETests {
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
 		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(SectionCreateToolName,
-			because: "create-app-section must be advertised before the end-to-end validation calls can run");
+		IReadOnlyCollection<string> reachableToolNames = await session.ListReachableToolNamesAsync(cancellationTokenSource.Token);
+		reachableToolNames.Should().Contain(SectionCreateToolName,
+			because: "create-app-section must be discoverable via the get-tool-contract compact index before the end-to-end validation calls can run");
 
 		// Act
 		CallToolResult missingSelectorCallResult = await session.CallToolAsync(

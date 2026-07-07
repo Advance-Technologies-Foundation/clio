@@ -32,9 +32,9 @@ public sealed class ClearBrowserSessionTool(IToolCommandResolver commandResolver
 			service.ClearSessionAsync(environment).ConfigureAwait(false).GetAwaiter().GetResult();
 			return new ClearBrowserSessionResult(true, $"Browser session for '{args.EnvironmentName}' cleared.");
 		} catch (SafeEnvironmentConfirmationRequiredException ex) {
-			return new ClearBrowserSessionResult(false, null, ex.Message);
+			return new ClearBrowserSessionResult(false, null, SensitiveErrorTextRedactor.Redact(ex.Message));
 		} catch (InvalidOperationException ex) {
-			return new ClearBrowserSessionResult(false, null, ex.Message);
+			return new ClearBrowserSessionResult(false, null, SensitiveErrorTextRedactor.Redact(ex.Message));
 		} catch (Exception) {
 			return new ClearBrowserSessionResult(false, null, "Failed to clear the browser session.");
 		}
@@ -44,7 +44,7 @@ public sealed class ClearBrowserSessionTool(IToolCommandResolver commandResolver
 /// <summary>MCP arguments for the <c>clear-browser-session</c> tool.</summary>
 public sealed record ClearBrowserSessionArgs(
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Registered clio environment name, e.g. 'local'")]
+	[property: Description(McpToolDescriptions.EnvironmentName)]
 	[property: Required]
 	string EnvironmentName);
 

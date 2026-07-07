@@ -5,7 +5,6 @@ using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
-using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E;
@@ -33,7 +32,8 @@ public sealed class SettingsHealthToolE2ETests {
 		await using ArrangeContext context = await ArrangeAsync(settings, TimeSpan.FromMinutes(3), settingsOverride);
 
 		// Act
-		IList<McpClientTool> tools = await context.Session.ListToolsAsync(context.CancellationTokenSource.Token);
+		IReadOnlyCollection<string> toolNames =
+			await context.Session.ListReachableToolNamesAsync(context.CancellationTokenSource.Token);
 		CallToolResult callResult = await context.Session.CallToolAsync(
 			SettingsHealthTool.ToolName,
 			new Dictionary<string, object?>(),
@@ -41,8 +41,8 @@ public sealed class SettingsHealthToolE2ETests {
 		SettingsHealthResult result = EntitySchemaStructuredResultParser.Extract<SettingsHealthResult>(callResult);
 
 		// Assert
-		tools.Select(tool => tool.Name).Should().Contain(SettingsHealthTool.ToolName,
-			because: "the repaired bootstrap server should advertise the check-settings-health diagnostics tool");
+		toolNames.Should().Contain(SettingsHealthTool.ToolName,
+			because: "the repaired bootstrap server should keep the check-settings-health diagnostics tool discoverable via the get-tool-contract compact index");
 		callResult.IsError.Should().NotBeTrue(
 			because: "check-settings-health should return a normal MCP tool result envelope");
 		result.SettingsFilePath.Should().Be(settingsOverride.AppSettingsPath,

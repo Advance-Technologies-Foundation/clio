@@ -8,7 +8,6 @@ using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
-using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E;
@@ -27,22 +26,22 @@ public sealed class PageCreateToolE2ETests : McpContractFixtureBase {
 
 	[Category("McpE2E.NoEnvironment")]
 	[Test]
-	[Description("Advertises create-page and list-page-templates in the MCP tool manifest.")]
+	[Description("Exposes create-page and list-page-templates via the get-tool-contract compact index on the lazy tool surface.")]
 	[AllureTag(ToolName)]
-	[AllureName("create-page and list-page-templates are advertised by the MCP server")]
+	[AllureName("create-page and list-page-templates are discoverable on the lazy surface")]
 	public async Task PageCreateTool_Should_Be_Listed_By_MCP_Server() {
 		// Arrange
 		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
-		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		IEnumerable<string> toolNames = tools.Select(tool => tool.Name).ToList();
+		IReadOnlyCollection<string> toolNames =
+			await arrangeContext.Session.ListReachableToolNamesAsync(arrangeContext.CancellationTokenSource.Token);
 
 		// Assert
 		toolNames.Should().Contain(ToolName,
-			because: "create-page must be advertised so MCP callers can discover the page-creation tool directly");
+			because: $"the {ToolName} MCP tool must be discoverable on the lazy surface (get-tool-contract compact index) even though it is not resident in tools/list, so MCP callers can discover the page-creation tool");
 		toolNames.Should().Contain(ListTemplatesToolName,
-			because: "list-page-templates must be advertised alongside create-page for template discovery");
+			because: $"the {ListTemplatesToolName} MCP tool must be discoverable on the lazy surface alongside create-page for template discovery");
 	}
 
 	[Category("McpE2E.NoEnvironment")]

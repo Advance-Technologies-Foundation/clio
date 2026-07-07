@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Common;
@@ -27,7 +29,9 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 	[Description(
 		"Run a raw EntitySchemaQuery (ESQ) SelectQuery against a Creatio environment and return the rows — to read " +
 		"Creatio data, or to validate a widget/page filter before saving it. ESQ is a proprietary format that is " +
-		"easy to mis-guess: call get-guidance for 'esq' and 'esq-filters' before composing a query.")]
+		"easy to mis-guess: call get-guidance for 'esq' and 'esq-filters' before composing a query. " +
+		"A requested column whose columnPath does not resolve fails the call (success:false) instead of being " +
+		"silently dropped from the rows.")]
 	public ExecuteEsqResponse Execute(
 		[Description("Parameters: query, environment-name (required); timeout (optional).")]
 		[Required]
@@ -57,14 +61,16 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 			string url = urlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select);
 			string responseJson = client.ExecutePostRequest(url, query.GetRawText(), timeout);
 
-			return ParseSelectQueryResponse(responseJson);
+			IReadOnlyList<string> requestedColumns = ExtractRequestedColumnAliases(query);
+			string rootSchemaName = rootSchema.GetString() ?? string.Empty;
+			return ParseSelectQueryResponse(responseJson, requestedColumns, rootSchemaName);
 		} catch (Exception ex) when (ex is OperationCanceledException or TimeoutException) {
 			// A timeout/cancellation is not a malformed-query problem, so it must not carry the
 			// "you probably guessed the ESQ format wrong" recovery hint.
 			return ExecuteEsqResponse.FailureWithoutGuidance(
 				$"SelectQuery request timed out or was canceled (timeout window {MinTimeoutMs}-{MaxTimeoutMs} ms). Increase 'timeout' or narrow the query, then retry.");
 		} catch (Exception ex) {
-			return ExecuteEsqResponse.Failure(ex.Message);
+			return ExecuteEsqResponse.Failure(SensitiveErrorTextRedactor.Redact(ex.Message));
 		}
 	}
 
@@ -88,7 +94,7 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 					return true;
 				} catch (JsonException jsonEx) {
 					normalized = default;
-					error = $"query is not valid JSON: {jsonEx.Message}";
+					error = SensitiveErrorTextRedactor.Redact($"query is not valid JSON: {jsonEx.Message}");
 					return false;
 				}
 			default:
@@ -98,7 +104,8 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 		}
 	}
 
-	private static ExecuteEsqResponse ParseSelectQueryResponse(string json) {
+	private static ExecuteEsqResponse ParseSelectQueryResponse(
+		string json, IReadOnlyList<string> requestedColumns, string rootSchemaName) {
 		if (string.IsNullOrWhiteSpace(json)) {
 			return ExecuteEsqResponse.Failure("SelectQuery returned an empty response.");
 		}
@@ -132,14 +139,80 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 			}
 
 			if (hasRowsArray) {
+				// A column path that does not resolve is NOT always rejected by the server: a
+				// success:true response can simply omit the unresolved alias from every row, which
+				// would silently hand a caller rows that are missing a column it explicitly asked
+				// for. Detect that here and fail loudly instead, mirroring odata-read's bad-$select
+				// behavior so the caller can tell a requested column was invalid.
+				string? unknownColumnError = DetectUnknownColumns(rowsEl, requestedColumns, rootSchemaName);
+				if (unknownColumnError is not null) {
+					return ExecuteEsqResponse.Failure(unknownColumnError);
+				}
 				return new ExecuteEsqResponse(true, null, rowsEl.GetArrayLength(), rowsEl.Clone());
 			}
 
 			// Succeeded but no rows array (e.g. a non-standard projection): return the whole body.
 			return new ExecuteEsqResponse(true, null, null, root.Clone());
 		} catch (Exception ex) {
-			return ExecuteEsqResponse.Failure($"Failed to parse SelectQuery response: {ex.Message} | Response: {Truncate(json)}");
+			return ExecuteEsqResponse.Failure(SensitiveErrorTextRedactor.Redact($"Failed to parse SelectQuery response: {ex.Message} | Response: {Truncate(json)}"));
 		}
+	}
+
+	/// <summary>
+	/// Reads the result aliases requested in <c>query.columns.items</c>. Each key of the
+	/// <c>items</c> map is the alias the SelectQuery projects each requested column under, so the
+	/// same keys are expected to appear on every returned row.
+	/// </summary>
+	private static IReadOnlyList<string> ExtractRequestedColumnAliases(JsonElement query) {
+		if (query.ValueKind != JsonValueKind.Object
+			|| !query.TryGetProperty("columns", out JsonElement columns)
+			|| columns.ValueKind != JsonValueKind.Object
+			|| !columns.TryGetProperty("items", out JsonElement items)
+			|| items.ValueKind != JsonValueKind.Object) {
+			return [];
+		}
+		return items.EnumerateObject().Select(property => property.Name).ToList();
+	}
+
+	/// <summary>
+	/// Returns a descriptive error when one or more explicitly requested column aliases are absent
+	/// from the returned rows (the SelectQuery silently dropped an unresolved column path), or
+	/// <c>null</c> when every requested alias is present (or detection is not possible).
+	/// </summary>
+	private static string? DetectUnknownColumns(
+		JsonElement rowsEl, IReadOnlyList<string> requestedColumns, string rootSchemaName) {
+		if (requestedColumns.Count == 0 || rowsEl.GetArrayLength() == 0) {
+			// With no requested aliases to verify, or no row to inspect, a dropped column cannot be
+			// distinguished from a legitimately empty result, so do not raise a false positive.
+			return null;
+		}
+
+		HashSet<string> presentColumns = [];
+		foreach (JsonElement row in rowsEl.EnumerateArray()) {
+			if (row.ValueKind != JsonValueKind.Object) {
+				// A non-object row (e.g. a scalar projection) cannot be inspected by alias.
+				return null;
+			}
+			foreach (JsonProperty property in row.EnumerateObject()) {
+				presentColumns.Add(property.Name);
+			}
+		}
+
+		List<string> missingColumns = requestedColumns
+			.Where(alias => !presentColumns.Contains(alias))
+			.ToList();
+		if (missingColumns.Count == 0) {
+			return null;
+		}
+
+		string columnList = string.Join(", ", missingColumns.Select(alias => $"'{alias}'"));
+		string schemaSuffix = string.IsNullOrWhiteSpace(rootSchemaName)
+			? string.Empty
+			: $" on schema '{rootSchemaName}'";
+		string columnWord = missingColumns.Count == 1 ? "column" : "columns";
+		return $"unknown {columnWord} {columnList}{schemaSuffix}: the requested column was not returned by the "
+			+ "SelectQuery, which means its columnPath did not resolve. Verify the column path against the schema "
+			+ "(get-entity-schema-properties / find-entity-schema) and read the 'esq' guidance for the columns shape.";
 	}
 
 	private static string? ExtractErrorMessage(JsonElement root) {
@@ -194,7 +267,7 @@ public sealed record ExecuteEsqArgs {
 
 	/// <summary>Registered clio environment name.</summary>
 	[JsonPropertyName("environment-name")]
-	[Description("Registered clio environment name, e.g. 'dev_5001'.")]
+	[Description(McpToolDescriptions.EnvironmentName)]
 	[Required]
 	public required string EnvironmentName { get; init; }
 

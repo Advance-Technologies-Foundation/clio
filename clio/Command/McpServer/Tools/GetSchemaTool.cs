@@ -39,7 +39,7 @@ public sealed class GetSchemaTool(
 				resolvedCommand = ResolveCommand<GetSourceCodeSchemaCommand>(options);
 			}
 			catch (Exception ex) {
-				return new GetSourceCodeSchemaResponse { Success = false, Error = ex.Message };
+				return new GetSourceCodeSchemaResponse { Success = false, Error = SensitiveErrorTextRedactor.Redact(ex.Message) };
 			}
 			resolvedCommand.TryGetSchema(options, out GetSourceCodeSchemaResponse response);
 			return response;

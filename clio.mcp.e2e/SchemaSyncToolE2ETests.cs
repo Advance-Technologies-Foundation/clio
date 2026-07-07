@@ -54,28 +54,28 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
-	[Description("Advertises sync-schemas MCP tool in the server tool list so callers can discover and invoke it.")]
+	[Description("Exposes sync-schemas via the get-tool-contract compact index so callers can discover and invoke it on the lazy surface.")]
 	[AllureTag(ToolName)]
-	[AllureName("sync-schemas tool is advertised by the MCP server")]
-	[AllureDescription("Verifies that sync-schemas appears in the MCP server tool manifest.")]
+	[AllureName("sync-schemas tool is discoverable on the lazy surface")]
+	[AllureDescription("Verifies that sync-schemas is discoverable via the get-tool-contract compact index of the MCP server.")]
 	public async Task SchemaSyncTool_Should_Be_Listed_By_MCP_Server() {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: false);
 
 		// Act
-		IList<McpClientTool> tools = await context.Session.ListToolsAsync(context.CancellationTokenSource.Token);
-		IEnumerable<string> toolNames = tools.Select(t => t.Name);
+		IReadOnlyCollection<string> toolNames =
+			await context.Session.ListReachableToolNamesAsync(context.CancellationTokenSource.Token);
 
 		// Assert
 		toolNames.Should().Contain(ToolName,
-			because: "sync-schemas must be advertised so MCP clients can discover the composite tool");
+			because: "sync-schemas must be discoverable on the lazy surface (get-tool-contract compact index) so MCP clients can find the composite tool even though it is not resident in tools/list");
 	}
 
 	[Test]
-	[Description("Returns a top-level MCP invocation error when sync-schemas is called without the required args wrapper.")]
+	[Description("Returns a binding-layer error when sync-schemas is called without the required args wrapper on the lazy surface.")]
 	[AllureTag(ToolName)]
 	[AllureName("sync-schemas returns invocation error when args wrapper is missing")]
-	[AllureDescription("Starts the real MCP server, invokes sync-schemas without the args wrapper, and verifies that MCP binding fails at the invocation layer instead of returning a structured SchemaSyncResponse payload.")]
+	[AllureDescription("Starts the real MCP server, invokes sync-schemas without the args wrapper, and verifies that binding fails before sync-schemas can produce a structured SchemaSyncResponse payload. On the lazy surface the call is dispatched via clio-run, so the SDK binding failure of the target's args record is wrapped in the executor's \"Error: tool 'sync-schemas' failed:\" text.")]
 	public async Task SchemaSyncTool_Should_Return_Invocation_Error_When_Args_Wrapper_Is_Missing() {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: false);
@@ -87,16 +87,21 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 			context.CancellationTokenSource.Token);
 
 		// Assert
+		// sync-schemas is hidden from tools/list, so the session routes this call through clio-run with the
+		// `args` payload omitted. The SDK still fails binding the target's args record INSIDE the dispatch;
+		// the executor wraps that failure ("Error: tool 'sync-schemas' failed: ..."). A native resident call
+		// would have surfaced "An error occurred invoking 'sync-schemas'." — both shapes are the same
+		// binding-layer contract (IsError=true, no structured payload), so either diagnostic is accepted.
 		AssertInvocationFailure(
 			callResult,
 			because: "missing args should fail during MCP binding before sync-schemas can produce a structured tool response");
 	}
 
 	[Test]
-	[Description("Returns a top-level MCP deserialize error when sync-schemas args has the wrong type.")]
+	[Description("Returns a binding-layer error when sync-schemas args has the wrong type on the lazy surface.")]
 	[AllureTag(ToolName)]
 	[AllureName("sync-schemas returns invocation error when args has invalid type")]
-	[AllureDescription("Starts the real MCP server, invokes sync-schemas with args set to a string instead of an object, and verifies that MCP binding fails at the deserialize layer with the SDK's argument-deserialization diagnostic instead of returning a structured SchemaSyncResponse payload.")]
+	[AllureDescription("Starts the real MCP server, invokes sync-schemas with args set to a string instead of an object, and verifies that the binding layer rejects the payload before sync-schemas can produce a structured SchemaSyncResponse payload. On the lazy surface the call is dispatched via clio-run, whose args-shape validation rejects the non-object payload.")]
 	public async Task SchemaSyncTool_Should_Return_Invocation_Error_When_Args_Has_Invalid_Type() {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: false);
@@ -110,15 +115,15 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 			context.CancellationTokenSource.Token);
 
 		// Assert
-		// A present-but-wrong-type `args` reaches the SDK's argument deserializer, which fails with a
-		// specific "Failed to deserialize argument 'args' ..." diagnostic — distinct from the generic
-		// "An error occurred invoking ..." surfaced when the `args` wrapper is absent entirely. Both are
-		// binding-layer failures (IsError=true, no structured payload); the deserialize message is the
-		// real contract for a type mismatch.
+		// sync-schemas is hidden from tools/list, so a present-but-wrong-type `args` no longer reaches the
+		// SDK's per-tool argument deserializer ("Failed to deserialize argument 'args' for MCP tool
+		// 'sync-schemas'"). The session routes the call through clio-run, which validates the args shape
+		// itself and rejects the non-object payload ("'args' for tool 'sync-schemas' must be a JSON object
+		// ..."). Either shape is the same binding-layer contract: the failure happens before the target tool
+		// executes, IsError=true, and no structured SchemaSyncResponse payload is produced.
 		AssertInvocationFailure(
 			callResult,
-			because: "wrong-type args should fail during MCP argument deserialization before sync-schemas can produce a structured tool response",
-			expectedDiagnostic: "Failed to deserialize argument 'args' for MCP tool 'sync-schemas'");
+			because: "wrong-type args should fail at the binding layer before sync-schemas can produce a structured tool response");
 	}
 
 	[Test]
@@ -229,9 +234,10 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: false);
 		string invalidEnvironmentName = $"missing-sync-schemas-env-{Guid.NewGuid():N}";
-		IList<McpClientTool> tools = await context.Session.ListToolsAsync(context.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(ToolName,
-			because: "sync-schemas must be advertised before the validation scenario can be invoked");
+		IReadOnlyCollection<string> reachableToolNames =
+			await context.Session.ListReachableToolNamesAsync(context.CancellationTokenSource.Token);
+		reachableToolNames.Should().Contain(ToolName,
+			because: "sync-schemas must be discoverable via the get-tool-contract compact index before the validation scenario can be invoked");
 
 		// Act
 		CallToolResult callResult = await context.Session.CallToolAsync(
@@ -510,9 +516,9 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 		string lookupSchemaName,
 		string lookupColumnName,
 		CancellationToken cancellationToken) {
-		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
-		tools.Select(tool => tool.Name).Should().Contain(ToolName,
-			because: "sync-schemas must be advertised before the end-to-end call can be executed");
+		IReadOnlyCollection<string> reachableToolNames = await session.ListReachableToolNamesAsync(cancellationToken);
+		reachableToolNames.Should().Contain(ToolName,
+			because: "sync-schemas must be discoverable via the get-tool-contract compact index before the end-to-end call can be executed");
 
 		return await session.CallToolAsync(
 			ToolName,
@@ -577,9 +583,9 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 		string entitySchemaName,
 		string columnName,
 		CancellationToken cancellationToken) {
-		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
-		tools.Select(tool => tool.Name).Should().Contain(ToolName,
-			because: "sync-schemas must be advertised before the structured default-value scenario can be executed");
+		IReadOnlyCollection<string> reachableToolNames = await session.ListReachableToolNamesAsync(cancellationToken);
+		reachableToolNames.Should().Contain(ToolName,
+			because: "sync-schemas must be discoverable via the get-tool-contract compact index before the structured default-value scenario can be executed");
 
 		return await session.CallToolAsync(
 			ToolName,
@@ -778,11 +784,18 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 		];
 	}
 
-	private static void AssertInvocationFailure(CallToolResult callResult, string because) =>
-		AssertInvocationFailure(callResult, because, "An error occurred invoking 'sync-schemas'.");
-
-	private static void AssertInvocationFailure(
-		CallToolResult callResult, string because, string expectedDiagnostic) {
+	// Binding-layer failures reach the client through several equivalent surfaces on the lazy tool
+	// surface: a native resident call fails with the SDK diagnostics ("An error occurred invoking
+	// 'sync-schemas'." / "Failed to deserialize argument 'args' for MCP tool 'sync-schemas'"), while a
+	// clio-run-dispatched call can fail at TWO different layers — (a) the executor's own dispatch wraps
+	// a target-side failure and names the target ("Error: tool 'sync-schemas' failed: ..." / "'args' for
+	// tool 'sync-schemas' must be a JSON object ..."), or (b) a payload that clio-run's OWN `args`
+	// parameter (typed `Dictionary<string, JsonElement>`) cannot bind (e.g. a JSON string instead of an
+	// object) fails the SDK's per-parameter deserializer for clio-run itself, BEFORE dispatch ever runs —
+	// that diagnostic names 'clio-run', not the target tool, because the target was never reached. All
+	// four shapes mean the same contract — the failure happened before sync-schemas executed — so the
+	// assert accepts either tool name being identified.
+	private static void AssertInvocationFailure(CallToolResult callResult, string because) {
 		callResult.IsError.Should().BeTrue(
 			because: because);
 		callResult.StructuredContent.Should().BeNull(
@@ -790,8 +803,13 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 		string diagnostics = string.Join(
 			Environment.NewLine,
 			(callResult.Content ?? []).Select(content => content.ToString()));
-		diagnostics.Should().Contain(expectedDiagnostic,
-			because: "the transport-level failure should surface the expected MCP binding diagnostic for the tool");
+		(diagnostics.Contains(ToolName, StringComparison.Ordinal)
+			|| diagnostics.Contains(ClioRunTool.ToolName, StringComparison.Ordinal))
+			.Should().BeTrue(
+				because: "the binding-layer failure diagnostic should identify either the sync-schemas tool or, when clio-run's own argument binding rejected the payload before dispatch, clio-run itself");
+		diagnostics.Should().MatchRegex(
+			"(An error occurred invoking|Failed to deserialize argument|failed:|must be a JSON object)",
+			because: "the failure should surface a binding-layer diagnostic — either the SDK's native message or the clio-run executor's wrapped equivalent");
 	}
 
 	[Test]
@@ -803,9 +821,10 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: false);
 		string missingEnv = $"missing-sync-schemas-env-{Guid.NewGuid():N}";
-		IList<McpClientTool> tools = await context.Session.ListToolsAsync(context.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(ToolName,
-			because: "sync-schemas must be advertised before the flat seed-rows validation scenario can be invoked");
+		IReadOnlyCollection<string> reachableToolNames =
+			await context.Session.ListReachableToolNamesAsync(context.CancellationTokenSource.Token);
+		reachableToolNames.Should().Contain(ToolName,
+			because: "sync-schemas must be discoverable via the get-tool-contract compact index before the flat seed-rows validation scenario can be invoked");
 
 		// Act - seed-rows use the flat {"Name":"New"} format (missing "values" wrapper)
 		CallToolResult callResult = await context.Session.CallToolAsync(

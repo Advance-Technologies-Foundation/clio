@@ -231,6 +231,32 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 
 	[Test]
 	[AllureTag(GuidanceGetTool.ToolName)]
+	[AllureName("get-guidance page-modification pins the anti-bundle-reverse-engineering rule")]
+	public async Task GuidanceGet_Should_Pin_AntiBundleReverseEngineering_ForPageModification() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		GuidanceGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["name"] = "page-modification"
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "page-modification is a registered guidance name");
+		response.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article payload");
+		response.Article!.Uri.Should().Be("docs://mcp/guides/page-modification",
+			because: "the canonical page-modification resource URI should still be visible in the tool response");
+		response.Article.Text.Should().Contain("reverse-engineering one is NOT a substitute",
+			because: "the anti-bundle-reverse-engineering guidance is a core ENG-91953 deliverable and must survive over the real MCP wire");
+	}
+
+	[Test]
+	[AllureTag(GuidanceGetTool.ToolName)]
 	[AllureName("get-guidance returns the canonical configuration web-service guide")]
 	public async Task GuidanceGet_Should_Return_Configuration_WebService_Guide() {
 		// Arrange
@@ -390,6 +416,10 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "the verification rule must route the agent to get-component-info as the authoritative component catalog");
 		response.Article.Text.Should().Contain("ASK THE USER",
 			because: "the web page guide must tell the agent to ask the user (existing component vs custom) when no OOTB component matches");
+		response.Article.Text.Should().Contain("showing a user-facing message/confirmation/info/success/error popup",
+			because: "the gate table must route a 'show a confirmation message' requirement into page-schema-handlers so the agent uses crt.ShowDialogRequest (ENG-91748)");
+		response.Article.Text.Should().Contain("NEVER use `alert(...)`, `window.alert(...)`, `confirm(...)`, or `prompt(...)`",
+			because: "the web page guide must forbid raw browser dialog primitives in page-body handlers so the agent stops emitting alert() (ENG-91748)");
 	}
 
 	[Test]

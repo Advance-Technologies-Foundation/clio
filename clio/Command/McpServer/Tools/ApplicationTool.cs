@@ -41,7 +41,7 @@ public sealed class ApplicationGetListTool(IApplicationListService applicationLi
 						application.Version))
 					.ToList());
 		} catch (Exception ex) {
-			return ApplicationToolHelper.CreateListErrorResponse(ex.Message);
+			return ApplicationToolHelper.CreateListErrorResponse(SensitiveErrorTextRedactor.Redact(ex.Message));
 		}
 	}
 }
@@ -90,7 +90,7 @@ public sealed class ApplicationGetInfoTool(IApplicationInfoService applicationIn
 				cancellationToken).ConfigureAwait(false);
 			return ApplicationToolHelper.CreateContextResponse(ApplicationToolResultMapper.Map(result));
 		} catch (Exception ex) {
-			return ApplicationToolHelper.CreateContextErrorResponse(ex.Message);
+			return ApplicationToolHelper.CreateContextErrorResponse(SensitiveErrorTextRedactor.Redact(ex.Message));
 		}
 	}
 }
@@ -152,7 +152,7 @@ public sealed class ApplicationCreateTool(
 				ApplicationToolResultMapper.Map(result),
 				dataForge);
 		} catch (Exception ex) {
-			return ApplicationToolHelper.CreateContextErrorResponse(ex.Message);
+			return ApplicationToolHelper.CreateContextErrorResponse(SensitiveErrorTextRedactor.Redact(ex.Message));
 		}
 	}
 
@@ -268,7 +268,7 @@ public sealed class ApplicationSectionCreateTool(IApplicationSectionCreateServic
 		} catch (ApplicationSectionCreateException ex) {
 			return ApplicationToolHelper.CreateSectionContextErrorResponse(ex);
 		} catch (Exception ex) {
-			return ApplicationToolHelper.CreateSectionContextErrorResponse(ex.Message);
+			return ApplicationToolHelper.CreateSectionContextErrorResponse(SensitiveErrorTextRedactor.Redact(ex.Message));
 		}
 	}
 
@@ -339,7 +339,7 @@ public sealed class ApplicationSectionUpdateTool(IApplicationSectionUpdateServic
 				cancellationToken).ConfigureAwait(false);
 			return ApplicationToolHelper.CreateSectionUpdateContextResponse(ApplicationToolResultMapper.Map(result));
 		} catch (Exception ex) {
-			return ApplicationToolHelper.CreateSectionUpdateContextErrorResponse(ex.Message);
+			return ApplicationToolHelper.CreateSectionUpdateContextErrorResponse(SensitiveErrorTextRedactor.Redact(ex.Message));
 		}
 	}
 
@@ -408,7 +408,7 @@ public sealed class ApplicationSectionDeleteTool(IApplicationSectionDeleteServic
 				cancellationToken).ConfigureAwait(false);
 			return ApplicationToolHelper.CreateSectionDeleteContextResponse(ApplicationToolResultMapper.Map(result));
 		} catch (Exception ex) {
-			return ApplicationToolHelper.CreateSectionDeleteContextErrorResponse(ex.Message);
+			return ApplicationToolHelper.CreateSectionDeleteContextErrorResponse(SensitiveErrorTextRedactor.Redact(ex.Message));
 		}
 	}
 
@@ -461,7 +461,7 @@ public sealed class ApplicationSectionGetListTool(IApplicationSectionGetListServ
 				cancellationToken).ConfigureAwait(false);
 			return ApplicationToolHelper.CreateSectionListContextResponse(ApplicationToolResultMapper.Map(result));
 		} catch (Exception ex) {
-			return ApplicationToolHelper.CreateSectionListContextErrorResponse(ex.Message);
+			return ApplicationToolHelper.CreateSectionListContextErrorResponse(SensitiveErrorTextRedactor.Redact(ex.Message));
 		}
 	}
 }

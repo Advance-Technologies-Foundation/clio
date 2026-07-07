@@ -5,8 +5,7 @@ using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
-using ModelContextProtocol.Client;
-using System.Text.Json;
+using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E;
 
@@ -22,33 +21,44 @@ public sealed class DeployCreatioToolE2ETests : McpContractFixtureBase
 		"Infrastructure temporarily unavailable due to scheduled maintenance. Please try again later.";
 
 	[Test]
-	[Description("Starts the real clio MCP server, discovers deploy-creatio, and verifies the tool metadata advertises destructive behavior plus the required preflight guidance.")]
+	[Description("Starts the real clio MCP server, discovers deploy-creatio through the get-tool-contract lazy surface, and verifies the discovery metadata flags destructive behavior plus the required preflight guidance.")]
 	[AllureTag(ToolName)]
-	[AllureName("Deploy creatio advertises preflight guidance and destructive metadata")]
-	[AllureDescription("Uses the real clio MCP server tool discovery payload to verify that deploy-creatio is destructive and instructs agents to run assert-infrastructure and show-passing-infrastructure first.")]
+	[AllureName("Deploy creatio exposes preflight guidance and destructive metadata on the lazy surface")]
+	[AllureDescription("Uses the get-tool-contract compact index and full contract of the real clio MCP server to verify that deploy-creatio is destructive and instructs agents to run assert-infrastructure and show-passing-infrastructure first.")]
 	public async Task DeployCreatio_Should_Advertise_Preflight_Guidance()
 	{
 		// Arrange
 		await using var arrangeContext = Arrange();
 
 		// Act
-		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		McpClientTool tool = tools.Single(tool => tool.Name == ToolName);
+		// deploy-creatio is a hidden (non-resident) tool on the lazy surface: its safety flag comes from
+		// the get-tool-contract compact index, and its description/input schema from the full contract.
+		IReadOnlyList<ToolContractIndexEntry> index =
+			await arrangeContext.Session.GetToolContractIndexAsync(arrangeContext.CancellationTokenSource.Token);
+		CallToolResult contractResult = await arrangeContext.Session.CallToolAsync(
+			ToolContractGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> { ["tool-names"] = new[] { ToolName } }
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		ToolContractGetResponse contracts =
+			EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(contractResult);
+		ToolContractDefinition contract = contracts.Tools!.Single(tool => tool.Name == ToolName);
 
 		// Assert
-		tool.ProtocolTool.Annotations.Should().NotBeNull(
-			because: "the MCP server should expose tool annotations for client-side safety policies");
-		tool.ProtocolTool.Annotations!.DestructiveHint.Should().BeTrue(
-			because: "deploy-creatio mutates infrastructure and should be marked destructive");
-		tool.Description.Should().Contain("assert-infrastructure",
-			because: "the deploy-creatio description should tell the agent to review full infrastructure first");
-		tool.Description.Should().Contain("show-passing-infrastructure",
-			because: "the deploy-creatio description should tell the agent to fetch deployable recommendations second");
-		JsonElement inputSchema = JsonSerializer.SerializeToElement(tool.ProtocolTool.InputSchema);
-		JsonElement argsSchema = inputSchema.GetProperty("properties").GetProperty("args");
-		argsSchema.GetProperty("properties").EnumerateObject().Select(property => property.Name).Should().BeEquivalentTo(
+		ToolContractIndexEntry entry = index.Should()
+			.ContainSingle(entry => entry.Name == ToolName,
+				because: "the compact discovery index must carry exactly one entry for deploy-creatio")
+			.Which;
+		entry.Destructive.Should().BeTrue(
+			because: "deploy-creatio mutates infrastructure and should be flagged destructive in the discovery index");
+		contract.Description.Should().Contain("assert-infrastructure",
+			because: "the deploy-creatio contract description should tell the agent to review full infrastructure first");
+		contract.Description.Should().Contain("show-passing-infrastructure",
+			because: "the deploy-creatio contract description should tell the agent to fetch deployable recommendations second");
+		contract.InputSchema.Properties.Select(property => property.Name).Should().BeEquivalentTo(
 			["siteName", "zipFile", "sitePort", "dbServerName", "redisServerName"],
-			because: "the real MCP server should only advertise the five approved deploy-creatio arguments inside the args wrapper");
+			because: "the full deploy-creatio contract should only expose the five approved arguments");
 	}
 
 	[Test]
