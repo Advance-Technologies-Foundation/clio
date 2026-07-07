@@ -295,6 +295,40 @@ public sealed class CreateBusinessProcessToolE2ETests {
 			because: "describe-business-process decodes the signalStart EntityFilters back into the filter descriptor, so the distinctive filter value round-trips");
 	}
 
+	[Test]
+	[Description("Over the real MCP path, create-business-process builds a signalStart filter using a relative-date macro (Today) AND a left-hand date-part (Year(CreatedOn) = 2026), and describe-business-process reads both the macro and the date-part back (round-trip of the extended filter vocabulary).")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process builds a macro + date-part filter and describe reads them back")]
+	public async Task CreateBusinessProcess_Should_BuildSignalStartFilterWithMacroAndDatePart_AndReadItBack() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpFilterVocabE2e{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildMacroAndDatePartFilteredDescriptor(processName)
+		});
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a signalStart filter using a macro and a date-part must build without a transport error");
+		string callResultJson = JsonSerializer.Serialize(callResult);
+		callResultJson.Should().Contain(processName,
+			because: "a successful build reports the created schema name (run against an environment with the ProcessDesignService package and a writable Custom package)");
+
+		// Readback: describe and confirm BOTH extended-vocabulary fields round-tripped. A macro or date-part that
+		// serialized on build but was dropped by either descriptor DTO on decode would be caught here — the same
+		// both-sides drop that silently lost macros before clio's DescribedFilterCondition carried them.
+		string describeJson = JsonSerializer.Serialize(await DescribeAsync(context, processName));
+		describeJson.Should().Contain("Today",
+			because: "the relative-date macro round-trips: describe decodes the right-hand Macros function back to macro=Today");
+		describeJson.Should().Contain("datePart",
+			because: "the left-hand date-part modifier round-trips: describe decodes the DatePart function and surfaces the datePart field");
+		describeJson.Should().Contain("Year",
+			because: "the date-part name round-trips on read-back (Year(CreatedOn) = 2026)");
+	}
+
 	// A signal-start process whose EntityFilters carry a distinctive constant value, so the describe read-back can
 	// prove the filter round-tripped (build serialize -> describe decode) rather than just that a signalStart exists.
 	// Contact.Name is a base column present on every stand.
@@ -308,6 +342,33 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		    { "name": "SignalStart1", "type": "signalStart", "signal": { "entity": "Contact", "on": "added" },
 		      "filter": { "object": "Contact", "logicalOperation": "and",
 		        "conditions": [ { "column": "Name", "comparison": "contains", "value": "ClioFilterProbe" } ] } },
+		    { "name": "task1", "type": "performTask" },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "SignalStart1", "target": "task1" },
+		    { "source": "task1", "target": "EndEvent1" }
+		  ]
+		}
+		""";
+
+	// A signal-start filter exercising the extended vocabulary over the real MCP path: a relative-date MACRO
+	// (CreatedOn = Today, a right-hand Macros function) AND a left-hand DATE-PART (Year(CreatedOn) = 2026). CreatedOn
+	// is a base DateTime column on every entity, so this runs on any stand. Both conditions must survive the
+	// build-serialize -> describe-decode round-trip on BOTH the package and clio descriptor DTOs.
+	private static string BuildMacroAndDatePartFilteredDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Filter Vocab E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "SignalStart1", "type": "signalStart", "signal": { "entity": "Contact", "on": "modified" },
+		      "filter": { "object": "Contact", "logicalOperation": "and",
+		        "conditions": [
+		          { "column": "CreatedOn", "comparison": "equal", "macro": "Today" },
+		          { "column": "CreatedOn", "comparison": "equal", "datePart": "Year", "value": "2026" }
+		        ] } },
 		    { "name": "task1", "type": "performTask" },
 		    { "name": "EndEvent1", "type": "endEvent" }
 		  ],
