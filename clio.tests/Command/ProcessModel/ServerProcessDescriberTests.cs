@@ -182,6 +182,30 @@ public sealed class ServerProcessDescriberTests {
 	}
 
 	[Test]
+	[Description("Deserializes a filter condition's date-part (Year(CreatedOn) = 2026) so the left-hand date-part modifier survives read-back instead of being dropped by the clio DTO.")]
+	public void Describe_ShouldReadFilterConditionDatePart_WhenServerReportsIt() {
+		// Arrange — Year(CreatedOn) = 2026
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"SignalStart1\",\"type\":\"ProcessSchemaStartSignalEvent\",\"buildType\":\"signalstart\","
+			+ "\"filter\":{\"object\":\"Contact\",\"logicalOperation\":\"and\",\"conditions\":["
+			+ "{\"column\":\"CreatedOn\",\"comparison\":\"equal\",\"datePart\":\"Year\",\"value\":\"2026\"}]}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		DescribedFilter filter = result.Value.Elements[0].Filter;
+		filter.Conditions[0].DatePart.Should().Be("Year",
+			because: "the left-hand date-part modifier must surface on read-back, not be dropped by the clio DTO");
+		filter.Conditions[0].Column.Should().Be("CreatedOn", because: "the date-part column round-trips");
+		filter.Conditions[0].Value.Should().Be("2026", because: "the extracted-part integer value round-trips");
+	}
+
+	[Test]
 	[Description("Posts the uid (not the name) when the identity is a uid.")]
 	public void Describe_ShouldPostWrappedUid_WhenIdentityIsUid() {
 		IApplicationClient client = ClientReturning(

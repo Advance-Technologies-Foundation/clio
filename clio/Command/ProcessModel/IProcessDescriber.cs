@@ -292,6 +292,14 @@ public sealed class DescribedFilterCondition {
 	/// <summary>The integer argument for an argument macro (for example <c>NextNDays</c> / <c>PreviousNHours</c>).</summary>
 	[JsonPropertyName("macroArgument")]
 	public int? MacroArgument { get; set; }
+
+	/// <summary>
+	/// A calendar/clock part extracted from a Date/DateTime <see cref="Column"/> before comparing (for example
+	/// <c>Year</c>, <c>Month</c>, <c>Day</c>, <c>Weekday</c>): the condition reads <c>Year(CreatedOn) = 2026</c>. A
+	/// left-hand modifier of the column, not a right-hand source — pairs with an integer <see cref="Value"/>.
+	/// </summary>
+	[JsonPropertyName("datePart")]
+	public string DatePart { get; set; }
 }
 
 /// <summary>An element-parameter reference used as a filter's right-hand value.</summary>

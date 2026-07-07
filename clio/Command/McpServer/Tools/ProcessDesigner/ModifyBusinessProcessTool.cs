@@ -43,7 +43,7 @@ public class ModifyBusinessProcessTool(
 		 + "rejected), removeParameter (with 'parameterName'; blocked when another parameter or an element mapping "
 		 + "still references it), setFilter (elementName + a 'filter': {object, logicalOperation:and|or, "
 		 + "conditions:[{column (may be a lookup dot-path), comparison:equal|notEqual|greater|less|contains|isNull|..., "
-		 + "one of value|processParameter|elementParameter|expression}], groups?} — on a signalStart restricts the "
+		 + "one of value|processParameter|elementParameter|expression|macro (+macroArgument), optional datePart}], groups?} — on a signalStart restricts the "
 		 + "record trigger; server serializes the platform filter), clearFilter (elementName). "
 		 + "Operations apply in order; any failure aborts the edit (nothing is saved). "
 		 + "Use describe-business-process to inspect the current elements/names first. May remove elements — destructive. "

@@ -126,6 +126,12 @@ public sealed class ProcessModelingGuidanceResource {
 			  relative-date / system macro: `Today` | `Yesterday` | `CurrentUser` | `CurrentYear` |
 			  `NextNDays` (+ `macroArgument`) | … — argument macros like NextNDays/PreviousNHours need `macroArgument`).
 			  isNull/isNotNull take none.
+			- `datePart` (optional, LEFT-hand modifier — NOT a right-hand source): extract a calendar/clock part from a
+			  Date/DateTime `column` and compare that integer instead of the whole date. `Year` | `Month` | `Day` |
+			  `Week` | `Weekday` | `Hour`. Pair it with an integer `value` (or a `processParameter`): e.g.
+			  `{ "column": "CreatedOn", "datePart": "Year", "comparison": "equal", "value": "2026" }` reads
+			  `Year(CreatedOn) = 2026`. Combines with any comparison (`greaterOrEqual`, …); it modifies the left side, so
+			  it is independent of the right-hand source choice (but do not use it with a `macro`).
 			- Groups nest to any depth: A AND (B OR C) = conditions:[A] + groups:[{ "logicalOperation":"or",
 			  conditions:[B, C] }].
 			- A `filter` on a data task (Read/Add/Modify/Delete data) is serialized too, but those tasks' target
