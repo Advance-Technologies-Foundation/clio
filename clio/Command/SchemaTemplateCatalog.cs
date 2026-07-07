@@ -16,6 +16,17 @@ public interface ISchemaTemplateCatalog {
 
 /// <inheritdoc cref="ISchemaTemplateCatalog" />
 public sealed class SchemaTemplateCatalog : ISchemaTemplateCatalog {
+	/// <summary>
+	/// Name of the base Freedom UI dashboard page template.
+	/// </summary>
+	internal const string DashboardTemplateName = "BaseDashboardTemplate";
+
+	/// <summary>
+	/// UId of the base <c>BaseDashboardTemplate</c> schema (owned by the <c>CrtUIPlatform</c> base
+	/// package, so the GUID is a fixed platform constant across environments).
+	/// </summary>
+	internal const string DashboardTemplateUId = "eb4d4a67-25d8-fcfa-7851-c4c91efb7b9c";
+
 	private readonly IApplicationClient _applicationClient;
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
 	private readonly Dictionary<int, IReadOnlyList<PageTemplateInfo>> _cache = new();
@@ -81,9 +92,37 @@ public sealed class SchemaTemplateCatalog : ISchemaTemplateCatalog {
 					SchemaType = schemaType
 				});
 			}
+			AddDashboardTemplateIfMissing(schemaType, result);
 			_cache[schemaType] = result;
 			return result;
 		}
+	}
+
+	/// <summary>
+	/// Appends the base <c>BaseDashboardTemplate</c> to the web catalog when the platform template
+	/// endpoint (<c>schema.template.api/templates</c>) does not advertise it. The endpoint returns a
+	/// curated subset that omits the dashboard template, yet it is the correct parent for a Freedom UI
+	/// dashboard page — so clio injects it here (deduped by name) so it is reachable through both
+	/// <c>list-page-templates</c> and <c>create-page</c>. Mobile catalogs are left untouched.
+	/// </summary>
+	private static void AddDashboardTemplateIfMissing(int schemaType, List<PageTemplateInfo> result) {
+		if (schemaType != (int)PageSchemaType.Web) {
+			return;
+		}
+		if (result.Any(t => string.Equals(t.Name, DashboardTemplateName, StringComparison.OrdinalIgnoreCase))) {
+			return;
+		}
+		result.Add(new PageTemplateInfo {
+			UId = DashboardTemplateUId,
+			Name = DashboardTemplateName,
+			Title = "Dashboard",
+			// create-page stamps the new schema's group from this GroupName, and the platform's
+			// SysFreedomDashboardQueryExecutor lists a dashboard in a crt.Dashboards element ONLY when the
+			// schema group is exactly "DashboardPage" (plus matching DashboardsElementName /
+			// DashboardsClientUnitSchemaUId optional properties). Any other group hides the dashboard.
+			GroupName = "DashboardPage",
+			SchemaType = (int)PageSchemaType.Web
+		});
 	}
 
 	private static string BuildNonJsonErrorMessage(string url, string responseBody, Exception parseException) {

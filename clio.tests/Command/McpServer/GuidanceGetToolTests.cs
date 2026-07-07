@@ -357,6 +357,65 @@ public sealed class GuidanceGetToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Returns the canonical page-creation guidance article when the caller requests page-creation.")]
+	public async Task GuidanceGet_Should_Return_Page_Creation_Article() {
+		// Arrange
+		GuidanceGetTool tool = new(_featureToggleService);
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("page-creation"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "page-creation is a registered guidance name that the dashboard-creation guide routes to by name");
+		result.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article");
+		result.Article!.Uri.Should().Be("docs://mcp/guides/page-creation",
+			because: "the guidance tool should preserve the canonical page-creation guide URI in the response");
+		result.Article.Text.Should().Contain("clio MCP page-creation guide",
+			because: "the guidance tool should return the canonical page-creation article text");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Resolves the dashboard-creation guide through get-guidance to its canonical URI.")]
+	public async Task GuidanceGet_Should_Return_Dashboard_Creation_Article() {
+		// Arrange
+		GuidanceGetTool tool = new(_featureToggleService);
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("dashboard-creation"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "dashboard-creation is a registered guidance name the create-page tool and the dashboards router route to");
+		result.Article.Should().NotBeNull(
+			because: "a successful guidance lookup must return the resolved article");
+		result.Article!.Uri.Should().Be("docs://mcp/guides/dashboard-creation",
+			because: "the tool must resolve the dashboard-creation name to its canonical guide URI");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Resolves the dashboard-design guide through get-guidance to its canonical URI.")]
+	public async Task GuidanceGet_Should_Return_Dashboard_Design_Article() {
+		// Arrange
+		GuidanceGetTool tool = new(_featureToggleService);
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("dashboard-design"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "dashboard-design is a registered guidance name the dashboards router routes to");
+		result.Article.Should().NotBeNull(
+			because: "a successful guidance lookup must return the resolved article");
+		result.Article!.Uri.Should().Be("docs://mcp/guides/dashboard-design",
+			because: "the tool must resolve the dashboard-design name to its canonical guide URI");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Returns the canonical page localizable string guidance article when the caller requests page-schema-resources.")]
 	public async Task GuidanceGet_Should_Return_Page_Schema_Resources_Article() {
 		// Arrange

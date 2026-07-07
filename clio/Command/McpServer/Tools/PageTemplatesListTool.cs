@@ -16,7 +16,7 @@ public sealed class PageTemplatesListTool(
 	internal const string ToolName = "list-page-templates";
 
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
-	[Description("List Freedom UI page templates advertised by the target Creatio environment. Call this before create-page to discover valid `template` values. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
+	[Description("List Freedom UI page templates advertised by the target Creatio environment. Call this before create-page to discover valid `template` values. The web catalog always includes `BaseDashboardTemplate` (title `Dashboard`, groupName `DashboardPage`) — use it as the `template` for a dashboard. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
 	public PageTemplateListResponse ListPageTemplates(
 		[Description("Optional schema-type filter ('web' or 'mobile'); environment-name preferred; uri/login/password emergency fallback only.")]
 		PageTemplatesListArgs args) {
