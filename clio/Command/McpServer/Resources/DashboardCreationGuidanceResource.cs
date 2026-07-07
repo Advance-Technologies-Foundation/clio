@@ -35,10 +35,15 @@ public sealed class DashboardCreationGuidanceResource {
 		       ## Flow
 
 		       1. `list-page-templates` — confirm `BaseDashboardTemplate` is available in the target environment.
-		       2. `create-page` with `template` = `BaseDashboardTemplate`, a `schema-name` (active prefix, e.g.
+		       2. Agree the widget set. When the user's request does not determine a concrete widget list, propose
+		          widgets that make sense for the dashboard's subject and data scope, and get the user's approval
+		          BEFORE calling `create-page` — no mutation until the set is approved; iterate on the proposal
+		          until it is. Skip the proposal only when the user explicitly delegates the choice. Add the
+		          approved widgets after creation per `dashboard-design`.
+		       3. `create-page` with `template` = `BaseDashboardTemplate`, a `schema-name` (active prefix, e.g.
 		          `UsrMyDashboard`), the target `package-name`, and `optional-properties` carrying the three
 		          properties below.
-		       3. `get-page` to verify the schema reads back; its `bundle.json` `optionalProperties` array holds the
+		       4. `get-page` to verify the schema reads back; its `bundle.json` `optionalProperties` array holds the
 		          values you set.
 
 		       `optional-properties` is a JSON array of `{key, value}` objects, e.g.:
