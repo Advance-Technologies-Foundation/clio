@@ -51,9 +51,10 @@ internal static class ThemeServiceResponseParser
 	/// </summary>
 	/// <param name="response">The raw response body returned by the ThemeService endpoint.</param>
 	/// <param name="errorMessage">
-	/// On an explicit <c>success:false</c>, the server-provided <c>errorInfo.message</c> (may be <c>null</c> when
-	/// the server omits the block); on a non-empty, non-JSON body, an "Unexpected response from server"
-	/// diagnostic carrying a control-character-stripped, length-capped excerpt of the body; otherwise <c>null</c>.
+	/// On an explicit <c>success:false</c>, the server-provided <c>errorInfo.message</c> — control-character-stripped
+	/// and length-capped for safe display (may be <c>null</c> when the server omits the block); on a non-empty,
+	/// non-JSON body, an "Unexpected response from server" diagnostic carrying a control-character-stripped,
+	/// length-capped excerpt of the body; otherwise <c>null</c>.
 	/// </param>
 	/// <returns>
 	/// <c>true</c> when the body carries an explicit <c>success:false</c> or is a non-empty, non-JSON body;
@@ -88,7 +89,7 @@ internal static class ThemeServiceResponseParser
 			return true;
 		}
 		if (payload?.Success == false) {
-			errorMessage = payload.ErrorInfo?.Message;
+			errorMessage = TextUtilities.SanitizeForDisplay(payload.ErrorInfo?.Message);
 			return true;
 		}
 		return false;

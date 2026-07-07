@@ -34,7 +34,7 @@ public sealed class ThemingGuidanceResource {
 		       - Get or set the default theme — see "Get / set the default theme".
 
 		       Constraints
-		       - Do not change the per-role `--crt-<role>-font-size` or `--crt-<role>-line-height` declarations (for example `--crt-body-1-font-size`, `--crt-headline-1-line-height`). Only the `--crt-font-family-*` tokens are meant to change. The interface is not yet adapted to altered typography metrics, so overriding these degrades or breaks the layout. When the user wants to change them, tell them this and keep the template's values. If the user keeps insisting, change them only when the user explicitly tells you to ignore this guide. Hand-authored `css-content` must not override them unless that explicit override was given.
+		       - Do not change font sizes or line heights — only the font family is meant to change. The interface is not yet adapted to altered typography metrics, so overriding them degrades or breaks the layout. When the user wants to change them, tell them this and leave them at their defaults. If the user keeps insisting, change them only when the user explicitly tells you to ignore this guide. Hand-authored `css-content` must not override them unless that explicit override was given.
 
 		       Calling the tools
 		       - Wrap tool arguments under the top-level `args` JSON object exactly as advertised by the tool schema (for example `{"args": {"environment-name": "...", "css-content": "..."}}`). Do not flatten or rename canonical fields.
@@ -58,11 +58,12 @@ public sealed class ThemingGuidanceResource {
 		       Which flow
 		       - Workspace / dev flow — use it when you have a clio workspace/package — see "Workspace / dev flow".
 		       - No-code / server flow — use it when you have only a registered environment (no workspace/package) — see "No-code / server flow".
+		       Pick the flow from what the user already has, not as a fallback — never create a clio workspace/package solely to route a theme around a blocked no-code operation.
 
 		       Checking access
 		       Check access up front with `check-theming-access` — it returns `{ success, canManageThemes, canCustomizeBranding }`. The write tools enforce the same rights and return an explicit access error, so never retry past a failed check.
 		       - `canCustomizeBranding` false means the environment has no branding license and no custom theme will apply at all — stop, do not build or create anything, and tell the user something like: "Custom branding is not available for the Growth plan. Upgrade your subscription to Enterprise or Unlimited."
-		       - `canManageThemes` false blocks the no-code `create-theme` / `update-theme` / `delete-theme` operations, so the operation the user asked for will be rejected — stop and tell the user they lack the right for this operation and to contact their system administrator. This right does not affect the workspace / dev flow, which ships theme files through a package push.
+		       - `canManageThemes` false blocks the no-code `create-theme` / `update-theme` / `delete-theme` operations, so the operation the user asked for will be rejected — stop and tell the user they lack the right for this operation and to contact their system administrator. Do not switch to the workspace / dev flow to work around this — choose the flow from the user's context (see "Which flow"), never as a fallback for a blocked no-code operation. That flow ships theme files through a package push and so does not exercise this right, but use it only when the user is already working in a clio workspace/package, not to bypass the missing operation.
 		       - Never try to grant the license or the system operation yourself, or to work around missing access — that is the administrator's job. Report the gap and stop.
 
 		       Workspace / dev flow

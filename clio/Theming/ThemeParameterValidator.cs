@@ -157,7 +157,7 @@ internal static class ThemeParameterValidator {
 			error = $"css-class-name must be at most {MaxCssClassNameLength} characters.";
 			return false;
 		}
-		if (!CssClassNamePattern.IsMatch(cssClassName)) {
+		if (!IsMatchSafe(CssClassNamePattern, cssClassName)) {
 			error = "css-class-name must match ^[A-Za-z][A-Za-z0-9_-]*$ (start with a letter).";
 			return false;
 		}
