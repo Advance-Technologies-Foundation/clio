@@ -155,6 +155,33 @@ public sealed class ServerProcessDescriberTests {
 	}
 
 	[Test]
+	[Description("Deserializes a filter condition's macro (and its integer macroArgument) so a relative-date / system macro survives read-back instead of being dropped by the clio DTO.")]
+	public void Describe_ShouldReadFilterConditionMacro_WhenServerReportsIt() {
+		// Arrange — CreatedOn = Today (no argument) AND CreatedOn > NextNDays(7)
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"SignalStart1\",\"type\":\"ProcessSchemaStartSignalEvent\",\"buildType\":\"signalstart\","
+			+ "\"filter\":{\"object\":\"Contact\",\"logicalOperation\":\"and\",\"conditions\":["
+			+ "{\"column\":\"CreatedOn\",\"comparison\":\"equal\",\"macro\":\"Today\"},"
+			+ "{\"column\":\"CreatedOn\",\"comparison\":\"greater\",\"macro\":\"NextNDays\",\"macroArgument\":7}]}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		DescribedFilter filter = result.Value.Elements[0].Filter;
+		filter.Conditions[0].Macro.Should().Be("Today",
+			because: "a no-argument macro must surface on read-back, not be dropped by the clio DTO");
+		filter.Conditions[0].MacroArgument.Should().BeNull(because: "Today takes no argument");
+		filter.Conditions[1].Macro.Should().Be("NextNDays", because: "an argument macro's name surfaces");
+		filter.Conditions[1].MacroArgument.Should().Be(7,
+			because: "the macro's integer argument must surface, not be dropped by the clio DTO");
+	}
+
+	[Test]
 	[Description("Posts the uid (not the name) when the identity is a uid.")]
 	public void Describe_ShouldPostWrappedUid_WhenIdentityIsUid() {
 		IApplicationClient client = ClientReturning(

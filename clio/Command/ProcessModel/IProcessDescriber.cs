@@ -284,6 +284,14 @@ public sealed class DescribedFilterCondition {
 	/// <summary>Raw meta-path expression token; the read-back surfaces a parameter reference here.</summary>
 	[JsonPropertyName("expression")]
 	public string Expression { get; set; }
+
+	/// <summary>A relative-date / system macro compared against the column (for example <c>Today</c>, <c>NextNDays</c>).</summary>
+	[JsonPropertyName("macro")]
+	public string Macro { get; set; }
+
+	/// <summary>The integer argument for an argument macro (for example <c>NextNDays</c> / <c>PreviousNHours</c>).</summary>
+	[JsonPropertyName("macroArgument")]
+	public int? MacroArgument { get; set; }
 }
 
 /// <summary>An element-parameter reference used as a filter's right-hand value.</summary>
