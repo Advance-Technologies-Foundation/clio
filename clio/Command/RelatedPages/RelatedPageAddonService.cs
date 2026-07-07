@@ -251,6 +251,21 @@ internal sealed class RelatedPageAddonService(
 		(IsPortalAudience(page) ? PortalRoleName : EmployeesRoleName,
 			string.IsNullOrWhiteSpace(page.TypeColumnValue) ? null : page.TypeColumnValue.Trim().ToLowerInvariant());
 
+	// Parses the add-on's existing MetaData into a mutable object so the write can PRESERVE any top-level field
+	// this tool does not model (see Create — keeps us safe against a future platform field added without a tool
+	// update). A null / blank / non-object / unparseable body yields an empty object, so a fresh or malformed
+	// baseline just starts clean instead of failing the write.
+	private static JsonObject ParseMetadataObject(string metaData) {
+		if (string.IsNullOrWhiteSpace(metaData)) {
+			return new JsonObject();
+		}
+		try {
+			return JsonNode.Parse(metaData) as JsonObject ?? new JsonObject();
+		} catch (System.Text.Json.JsonException) {
+			return new JsonObject();
+		}
+	}
+
 	public RelatedPageAddonResult Create(RelatedPageAddonRequest request) {
 		ValidateRequest(request);
 
@@ -268,15 +283,6 @@ internal sealed class RelatedPageAddonService(
 
 		IReadOnlyDictionary<string, string> roleByName = ResolveRoleNames(request.Pages);
 		JsonArray pages = BuildPages(request.Pages, roleByName);
-		var metadata = new JsonObject {
-			["Pages"] = pages,
-			// A reset-to-inline (empty page set) carries no typed page sets, and the empty-clear path early-returns
-			// from ValidateRequest before the TypeColumnUId GUID guard — so drop any TypeColumnUId here instead of
-			// persisting an unvalidated value that could never apply to an empty configuration.
-			["TypeColumnUId"] = request.Pages.Count == 0 || string.IsNullOrWhiteSpace(request.TypeColumnUId)
-				? null
-				: request.TypeColumnUId.Trim()
-		};
 
 		var addonRequest = new AddonGetRequestDto {
 			AddonName = RelatedPageAddonName,
@@ -290,11 +296,20 @@ internal sealed class RelatedPageAddonService(
 		};
 
 		AddonSchemaDto schema = addonSchemaDesignerClient.GetSchema(addonRequest);
-		// Replace the add-on metadata wholesale. The RelatedPage add-on's MetaData is exactly
-		// {"Pages":[...],"TypeColumnUId":...} (verified backend contract) — it carries no sibling fields that a
-		// full replace could silently drop — and the Interface Designer likewise rewrites the whole document on
-		// save. RelatedPageAddonServiceTests pins this so a future contract change fails a test instead of silently
-		// dropping data.
+		// Start from the FETCHED metadata and replace only the two keys this tool owns (Pages, TypeColumnUId), so
+		// any OTHER top-level field survives the write. The RelatedPage MetaData is exactly
+		// {"Pages":[...],"TypeColumnUId":...} today (verified backend contract), but preserving unknown top-level
+		// keys keeps the tool safe if the platform later adds a field and this tool is not updated in lockstep — a
+		// wholesale rebuild would silently drop it. Pages and TypeColumnUId are still FULLY replaced (replace-not-
+		// merge for the configuration this tool manages).
+		JsonObject metadata = ParseMetadataObject(schema.MetaData);
+		metadata["Pages"] = pages;
+		// A reset-to-inline (empty page set) carries no typed page sets, and the empty-clear path early-returns from
+		// ValidateRequest before the TypeColumnUId GUID guard — so drop any TypeColumnUId here instead of persisting
+		// an unvalidated value that could never apply to an empty configuration.
+		metadata["TypeColumnUId"] = request.Pages.Count == 0 || string.IsNullOrWhiteSpace(request.TypeColumnUId)
+			? null
+			: request.TypeColumnUId.Trim();
 		schema.MetaData = metadata.ToJsonString();
 
 		addonSchemaDesignerClient.SaveSchema(schema);

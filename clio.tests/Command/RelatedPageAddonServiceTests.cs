@@ -493,6 +493,28 @@ public sealed class RelatedPageAddonServiceTests {
 	}
 
 	[Test]
+	[Description("Preserves an unknown top-level MetaData field on write: a field this tool does not model (e.g. a future platform addition) round-trips instead of being dropped, while the owned Pages/TypeColumnUId keys are still fully replaced.")]
+	public void Create_ShouldPreserveUnknownTopLevelMetadataField_OnReplace() {
+		// Arrange — the fetched add-on carries an extra top-level key the tool doesn't model, plus a stale page.
+		StubAddonMetadata(
+			"""{"Pages":[{"UId":"old","PageSchemaUId":"99999999-9999-9999-9999-999999999999","IsDefault":true}],"TypeColumnUId":null,"FutureField":"keepme"}""");
+		StubSelectQueue(Rows(PackageUId), Rows(PageAUId));
+
+		// Act
+		_service.Create(Request(new RelatedPageSpec("UsrDeliveryItemFormPage", IsDefault: true)));
+
+		// Assert
+		JsonObject metadata = JsonNode.Parse(_savedSchema.MetaData)!.AsObject();
+		metadata["FutureField"]!.GetValue<string>().Should().Be("keepme",
+			because: "an unknown top-level field must round-trip through the write, not be dropped by the wholesale replace");
+		JsonArray writtenPages = metadata["Pages"]!.AsArray();
+		writtenPages.Count.Should().Be(1,
+			because: "the tool's own Pages key is still fully replaced (the stale entry is dropped)");
+		writtenPages[0]!["PageSchemaUId"]!.GetValue<string>().Should().Be(PageAUId,
+			because: "only the request's page is written into the owned Pages key");
+	}
+
+	[Test]
 	[Description("Rejects a non-GUID type-column-uid before any remote call, since the platform can never match a malformed type column.")]
 	public void Create_ShouldThrow_WhenTypeColumnUidIsNotAGuid() {
 		// Arrange / Act — a valid base default is present, but the type-column-uid is not a GUID.
