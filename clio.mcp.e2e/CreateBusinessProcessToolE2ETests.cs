@@ -266,6 +266,58 @@ public sealed class CreateBusinessProcessToolE2ETests {
 			because: "the parameter description is persisted and read back by describe-business-process");
 	}
 
+	[Test]
+	[Description("Over the real MCP path, create-business-process builds a signalStart with a data source filter, and describe-business-process reads the filter back (round-trip).")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process builds a filtered signal start and describe reads the filter back")]
+	public async Task CreateBusinessProcess_Should_BuildSignalStartFilter_AndReadItBack() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpFilterE2e{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildFilteredDescriptor(processName)
+		});
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a signalStart with a data source filter must build without a transport error");
+		string callResultJson = JsonSerializer.Serialize(callResult);
+		callResultJson.Should().Contain(processName,
+			because: "a successful build reports the created schema name (run against an environment with the ProcessDesignService package and a writable Custom package)");
+
+		// Readback: describe and confirm the signal-start filter round-tripped. The distinctive constant value proves
+		// the filter both serialized on build AND decoded back on describe — not merely that a signalStart exists.
+		string describeJson = JsonSerializer.Serialize(await DescribeAsync(context, processName));
+		describeJson.Should().Contain("ClioFilterProbe",
+			because: "describe-business-process decodes the signalStart EntityFilters back into the filter descriptor, so the distinctive filter value round-trips");
+	}
+
+	// A signal-start process whose EntityFilters carry a distinctive constant value, so the describe read-back can
+	// prove the filter round-tripped (build serialize -> describe decode) rather than just that a signalStart exists.
+	// Contact.Name is a base column present on every stand.
+	private static string BuildFilteredDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Filter E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "SignalStart1", "type": "signalStart", "signal": { "entity": "Contact", "on": "added" },
+		      "filter": { "object": "Contact", "logicalOperation": "and",
+		        "conditions": [ { "column": "Name", "comparison": "contains", "value": "ClioFilterProbe" } ] } },
+		    { "name": "task1", "type": "performTask" },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "SignalStart1", "target": "task1" },
+		    { "source": "task1", "target": "EndEvent1" }
+		  ]
+		}
+		""";
+
 	private static string BuildDescriptorWithDescription(string processName) =>
 		$$"""
 		{
