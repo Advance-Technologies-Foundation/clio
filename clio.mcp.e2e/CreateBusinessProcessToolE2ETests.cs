@@ -185,6 +185,38 @@ public sealed class CreateBusinessProcessToolE2ETests {
 	}
 
 	[Test]
+	[Description("Over the real MCP path, create-business-process REJECTS a self-referential parameter mapping (a process parameter mapped to itself) with the platform's circular-dependency validation — the pre-save interpretation-validation gate, which the per-mapping type check cannot catch.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process rejects a self-referential (circular) parameter mapping")]
+	public async Task CreateBusinessProcess_Should_RejectSelfReferentialMapping_WithCircularDependency() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpCycleE2e{Guid.NewGuid():N}";
+		string descriptor = BuildSelfReferentialMappingDescriptor(processName);
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = descriptor
+		});
+
+		// Assert — the pre-save platform interpretation-validation gate rejects the self-referential mapping.
+		// Requires a stand whose clioprocessbuilder package includes the pre-save validation gate.
+		string callResultJson = JsonSerializer.Serialize(callResult);
+		// Primary, culture-stable: the clio-authored prefix that ONLY the gate emits (ProcessSchemaValidator) — proves
+		// the gate fired regardless of the stand's profile culture (the platform's own message below is localizable).
+		callResultJson.Should().Contain("Process validation failed",
+			because: "the pre-save gate rejected the schema (clio-authored, culture-independent marker)");
+		// Secondary: the specific platform rule. Platform-localized text, so this holds on an English-culture sandbox.
+		callResultJson.Should().Contain("circular dependency",
+			because: "a process parameter mapped to itself forms a circular dependency the platform rejects on save (a case the per-mapping type check does not detect)");
+		// The rejected build must leave NO orphaned schema — describe reports the clio-owned 'was not found' message.
+		string describeJson = JsonSerializer.Serialize(await DescribeAsync(context, processName));
+		describeJson.Should().Contain("was not found",
+			because: "a rejected build is rolled back, leaving no orphaned schema on the stand");
+	}
+
+	[Test]
 	[Description("Over the real MCP path, create-business-process maps one element's OUTPUT into ANOTHER element's INPUT (element->element, ENG-92127 AC#1): performTask's Guid output ActivityResult into CheckCanExecuteOperationUserTask's Guid input UserId; describe reads the target element's input back bound to the source element's output.")]
 	[AllureTag(ToolName)]
 	[AllureName("create-business-process maps one element's output into another element's input")]
@@ -410,6 +442,31 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		  ],
 		  "mappings": [
 		    { "targetProcessParameter": "BadNum", "sourceElement": "check", "sourceElementParameter": "{{SourceOutputParameter}}" }
+		  ]
+		}
+		""";
+
+	// A self-referential parameter mapping — a process parameter mapped to ITSELF — forms a
+	// circular dependency the platform interpretation validator rejects on save; the pre-save gate
+	// (ProcessSchemaValidator -> GetProcessValidationResult) surfaces that rejection instead of persisting it.
+	private static string BuildSelfReferentialMappingDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Self-Map E2E",
+		  "packageName": "Custom",
+		  "parameters": [
+		    { "name": "SelfRef", "type": "Text", "direction": "Variable" }
+		  ],
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "StartEvent1", "target": "EndEvent1" }
+		  ],
+		  "mappings": [
+		    { "targetProcessParameter": "SelfRef", "processParameter": "SelfRef" }
 		  ]
 		}
 		""";
