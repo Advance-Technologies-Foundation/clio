@@ -28,15 +28,28 @@ public sealed class BuildThemeToolE2ETests : McpContractFixtureBase {
 
 	[Test]
 	[AllureTag(ToolName)]
-	[AllureName("build-theme advertises write-capable metadata and builds CSS from the bundled template")]
-	[Description("Starts the real clio MCP server, verifies build-theme is advertised as write-capable (ReadOnly=false, the output mode writes local files) with the guidance pointer, and invokes it in compute mode to build a theme.css from the bundled template.")]
-	public async Task BuildTheme_Should_Advertise_And_Build() {
+	[AllureName("build-theme is discoverable on the lazy surface and builds CSS from the bundled template")]
+	[Description("Starts the real clio MCP server, verifies build-theme is discoverable via the get-tool-contract compact index as non-destructive with the guidance pointer in its contract, and invokes it in compute mode to build a theme.css from the bundled template.")]
+	public async Task BuildTheme_Should_Be_Discoverable_And_Build() {
 		// Arrange
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
-		IList<McpClientTool> tools = await context.Session.ListToolsAsync(context.CancellationTokenSource.Token);
-		McpClientTool tool = tools.Single(t => t.Name == ToolName);
+		// build-theme is hidden from tools/list on the lazy surface, so its discovery metadata comes from the
+		// get-tool-contract compact index (destructive flag) and full contract (description) instead of
+		// tools/list annotations.
+		IReadOnlyList<ToolContractIndexEntry> index =
+			await context.Session.GetToolContractIndexAsync(context.CancellationTokenSource.Token);
+		CallToolResult contractResult = await context.Session.CallToolAsync(
+			ToolContractGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["tool-names"] = new[] { ToolName }
+				}
+			},
+			context.CancellationTokenSource.Token);
+		ToolContractGetResponse contracts =
+			EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(contractResult);
 		CallToolResult callResult = await context.Session.CallToolAsync(
 			ToolName,
 			new Dictionary<string, object?> {
@@ -49,14 +62,14 @@ public sealed class BuildThemeToolE2ETests : McpContractFixtureBase {
 		BuildThemeResult result = EntitySchemaStructuredResultParser.Extract<BuildThemeResult>(callResult);
 
 		// Assert
-		tool.ProtocolTool.Annotations.Should().NotBeNull(
-			because: "the MCP server should expose tool annotations for client-side safety policies");
-		tool.ProtocolTool.Annotations!.ReadOnlyHint.Should().BeFalse(
-			because: "build-theme can write theme.css + theme.json to a local directory in its output mode");
-		tool.ProtocolTool.Annotations.DestructiveHint.Should().BeFalse(
+		ToolContractIndexEntry indexEntry = index.Should().ContainSingle(entry => entry.Name == ToolName,
+			because: "the build-theme MCP tool must be discoverable on the lazy surface (get-tool-contract compact index) even though it is not resident in tools/list")
+			.Which;
+		indexEntry.Destructive.Should().BeFalse(
 			because: "build-theme writes generated build artifacts into a caller-supplied directory, never destructive updates");
-		tool.Description.Should().Contain("get-guidance theming",
-			because: "the description routes agents to the theme workflow guidance");
+		ToolContractDefinition contract = contracts.Tools!.Single(definition => definition.Name == ToolName);
+		contract.Description.Should().Contain("get-guidance theming",
+			because: "the contract routes agents to the theme workflow guidance");
 		callResult.IsError.Should().NotBeTrue(
 			because: "build-theme returns a structured result instead of a top-level MCP failure");
 		result.Success.Should().BeTrue(

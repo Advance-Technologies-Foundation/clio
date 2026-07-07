@@ -28,15 +28,28 @@ public sealed class AdviseThemePaletteToolE2ETests : McpContractFixtureBase {
 
 	[Test]
 	[AllureTag(ToolName)]
-	[AllureName("advise-theme-palette advertises read-only metadata and adapts a low-contrast primary")]
-	[Description("Starts the real clio MCP server, verifies advise-theme-palette is advertised as read-only with the guidance pointer, and invokes the adapt-primary operation on a low-contrast colour.")]
-	public async Task ThemeColorAdvisor_Should_Advertise_And_AdaptPrimary() {
+	[AllureName("advise-theme-palette is discoverable on the lazy surface and adapts a low-contrast primary")]
+	[Description("Starts the real clio MCP server, verifies advise-theme-palette is discoverable via the get-tool-contract compact index as non-destructive with the guidance pointer in its contract, and invokes the adapt-primary operation on a low-contrast colour.")]
+	public async Task ThemeColorAdvisor_Should_Be_Discoverable_And_AdaptPrimary() {
 		// Arrange
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
-		IList<McpClientTool> tools = await context.Session.ListToolsAsync(context.CancellationTokenSource.Token);
-		McpClientTool tool = tools.Single(t => t.Name == ToolName);
+		// advise-theme-palette is hidden from tools/list on the lazy surface, so its discovery metadata comes
+		// from the get-tool-contract compact index (destructive flag) and full contract (description) instead
+		// of tools/list annotations.
+		IReadOnlyList<ToolContractIndexEntry> index =
+			await context.Session.GetToolContractIndexAsync(context.CancellationTokenSource.Token);
+		CallToolResult contractResult = await context.Session.CallToolAsync(
+			ToolContractGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["tool-names"] = new[] { ToolName }
+				}
+			},
+			context.CancellationTokenSource.Token);
+		ToolContractGetResponse contracts =
+			EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(contractResult);
 		CallToolResult callResult = await context.Session.CallToolAsync(
 			ToolName,
 			new Dictionary<string, object?> {
@@ -49,12 +62,14 @@ public sealed class AdviseThemePaletteToolE2ETests : McpContractFixtureBase {
 		ThemeColorAdvisorResult result = EntitySchemaStructuredResultParser.Extract<ThemeColorAdvisorResult>(callResult);
 
 		// Assert
-		tool.ProtocolTool.Annotations.Should().NotBeNull(
-			because: "the MCP server should expose tool annotations for client-side safety policies");
-		tool.ProtocolTool.Annotations!.ReadOnlyHint.Should().BeTrue(
+		ToolContractIndexEntry indexEntry = index.Should().ContainSingle(entry => entry.Name == ToolName,
+			because: "the advise-theme-palette MCP tool must be discoverable on the lazy surface (get-tool-contract compact index) even though it is not resident in tools/list")
+			.Which;
+		indexEntry.Destructive.Should().BeFalse(
 			because: "the advisor is pure compute that never writes or touches an environment");
-		tool.Description.Should().Contain("get-guidance theming",
-			because: "the description routes agents to the theme workflow guidance");
+		ToolContractDefinition contract = contracts.Tools!.Single(definition => definition.Name == ToolName);
+		contract.Description.Should().Contain("get-guidance theming",
+			because: "the contract routes agents to the theme workflow guidance");
 		callResult.IsError.Should().NotBeTrue(
 			because: "the advisor returns a structured result instead of a top-level MCP failure");
 		result.Success.Should().BeTrue(

@@ -27,19 +27,19 @@ namespace Clio.Mcp.E2E;
 public sealed class CreateThemeToolE2ETests : McpContractFixtureBase {
 	[Test]
 	[AllureTag(CreateThemeTool.ToolName)]
-	[AllureName("create-theme tool is advertised by the MCP server")]
-	[Description("Starts the real clio MCP server and verifies create-theme is advertised.")]
-	public async Task CreateTheme_Should_Be_Listed_By_Mcp_Server() {
+	[AllureName("create-theme tool is discoverable on the lazy surface")]
+	[Description("Starts the real clio MCP server and verifies create-theme is discoverable via the get-tool-contract compact index on the lazy tool surface.")]
+	public async Task CreateTheme_Should_Be_Discoverable_On_Lazy_Surface() {
 		// Arrange
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
-		IList<McpClientTool> tools = await context.Session.ListToolsAsync(context.CancellationTokenSource.Token);
-		IEnumerable<string> toolNames = tools.Select(tool => tool.Name);
+		IReadOnlyCollection<string> toolNames =
+			await context.Session.ListReachableToolNamesAsync(context.CancellationTokenSource.Token);
 
 		// Assert
 		toolNames.Should().Contain(CreateThemeTool.ToolName,
-			because: "the MCP server should advertise the create-theme tool for the no-code server flow");
+			because: "the create-theme MCP tool must be discoverable on the lazy surface (get-tool-contract compact index) even though it is not resident in tools/list");
 	}
 
 	[Test]

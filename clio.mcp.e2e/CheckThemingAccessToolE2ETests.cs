@@ -27,19 +27,19 @@ namespace Clio.Mcp.E2E;
 public sealed class CheckThemingAccessToolE2ETests : McpContractFixtureBase {
 	[Test]
 	[AllureTag(CheckThemingAccessTool.ToolName)]
-	[AllureName("check-theming-access tool is advertised by the MCP server")]
-	[Description("Starts the real clio MCP server and verifies check-theming-access is advertised.")]
-	public async Task CheckThemingAccess_Should_Be_Listed_By_Mcp_Server() {
+	[AllureName("check-theming-access tool is discoverable on the lazy surface")]
+	[Description("Starts the real clio MCP server and verifies check-theming-access is discoverable via the get-tool-contract compact index on the lazy tool surface.")]
+	public async Task CheckThemingAccess_Should_Be_Discoverable_On_Lazy_Surface() {
 		// Arrange
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
-		IList<McpClientTool> tools = await context.Session.ListToolsAsync(context.CancellationTokenSource.Token);
-		IEnumerable<string> toolNames = tools.Select(tool => tool.Name);
+		IReadOnlyCollection<string> toolNames =
+			await context.Session.ListReachableToolNamesAsync(context.CancellationTokenSource.Token);
 
 		// Assert
 		toolNames.Should().Contain(CheckThemingAccessTool.ToolName,
-			because: "the MCP server should advertise the check-theming-access tool for the theming precheck");
+			because: "the check-theming-access MCP tool must be discoverable on the lazy surface (get-tool-contract compact index) even though it is not resident in tools/list");
 	}
 
 	[Test]

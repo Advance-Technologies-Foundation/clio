@@ -27,22 +27,23 @@ namespace Clio.Mcp.E2E;
 public sealed class UpdateThemeToolE2ETests : McpContractFixtureBase {
 	[Test]
 	[AllureTag(UpdateThemeTool.ToolName)]
-	[AllureName("update-theme tool is advertised by the MCP server as a destructive overwrite")]
-	[Description("Starts the real clio MCP server and verifies update-theme is advertised with the destructive hint, so confirmation-seeking MCP clients prompt before the full overwrite.")]
-	public async Task UpdateTheme_Should_Be_Listed_By_Mcp_Server() {
+	[AllureName("update-theme is discoverable on the lazy surface with a destructive hint")]
+	[Description("Starts the real clio MCP server and verifies update-theme is discoverable via the get-tool-contract compact index carrying the destructive flag, so confirmation-seeking MCP clients prompt before the full overwrite.")]
+	public async Task UpdateTheme_Should_Be_Discoverable_On_Lazy_Surface() {
 		// Arrange
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
-		IList<McpClientTool> tools = await context.Session.ListToolsAsync(context.CancellationTokenSource.Token);
-		McpClientTool tool = tools.SingleOrDefault(tool => tool.Name == UpdateThemeTool.ToolName);
+		// update-theme is hidden from tools/list on the lazy surface, so its destructive hint comes from
+		// the get-tool-contract compact index instead of a tools/list annotation.
+		IReadOnlyList<ToolContractIndexEntry> index =
+			await context.Session.GetToolContractIndexAsync(context.CancellationTokenSource.Token);
 
 		// Assert
-		tool.Should().NotBeNull(
-			because: "the MCP server should advertise the update-theme tool for the no-code server flow");
-		tool!.ProtocolTool.Annotations.Should().NotBeNull(
-			because: "the MCP server should expose tool annotations for client-side safety policies");
-		tool.ProtocolTool.Annotations!.DestructiveHint.Should().BeTrue(
+		ToolContractIndexEntry indexEntry = index.Should().ContainSingle(entry => entry.Name == UpdateThemeTool.ToolName,
+			because: "the update-theme MCP tool must be discoverable on the lazy surface (get-tool-contract compact index) even though it is not resident in tools/list")
+			.Which;
+		indexEntry.Destructive.Should().BeTrue(
 			because: "update-theme is a full overwrite by id that destroys the theme's previous content");
 	}
 
