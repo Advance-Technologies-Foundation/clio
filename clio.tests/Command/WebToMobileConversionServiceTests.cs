@@ -613,6 +613,46 @@ public sealed class WebToMobileConversionServiceTests {
 		Element(guide, "JobTitle").MobileValues!.AsObject()["label"]!.GetValue<string>().Should().Be("$Resources.Strings.JobTitle");
 	}
 
+	[Test]
+	[Description("A carried property whose mobile registry input declares an object shape (type 'unknown' + object default) is coerced from the web one-element array to a single object; other props are untouched.")]
+	public void Analyze_ListInsert_ItemLayoutArray_CoercedToObjectByRegistryShape() {
+		PageBundleInfo bundle = Bundle(
+			viewConfigJson: """
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "SimilarLeadList", "type": "crt.List", "items": "$SimilarLeadList",
+				  "itemLayout": [ { "type": "crt.ListItem", "title": "$DS_LeadName",
+				                    "body": [ { "value": "$DS_Status" } ] } ] } ] } ]
+			""");
+		var crtList = new ComponentRegistryEntry {
+			ComponentType = "crt.List",
+			Inputs = new Dictionary<string, JsonElement> {
+				["items"] = JsonSerializer.SerializeToElement(new { }),
+				// The mobile registry declares itemLayout with an UNKNOWN type and an OBJECT default —
+				// the expected shape is inferred from the default (a map), so the web array must be unwrapped.
+				["itemLayout"] = JsonSerializer.SerializeToElement(new {
+					type = "unknown",
+					@default = new { name = "'ListItem_' + GENERATE_GUID_MACRO", type = "crt.ListItem", body = Array.Empty<object>() }
+				})
+			}
+		};
+		var mobileByType = new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase) {
+			["crt.List"] = crtList
+		};
+		var webByType = new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase) {
+			["crt.FlexContainer"] = new ComponentRegistryEntry { ComponentType = "crt.FlexContainer", Container = true }
+		};
+
+		MobilePageConversionGuide guide = Analyze(bundle, webByType: webByType, mobileByType: mobileByType);
+
+		JsonObject vals = Element(guide, "SimilarLeadList").MobileValues!.AsObject();
+		vals["type"]!.GetValue<string>().Should().Be("crt.List");
+		// itemLayout is now a single object (the array wrapper was dropped), carrying the row config.
+		vals["itemLayout"]!.GetValueKind().Should().Be(JsonValueKind.Object);
+		vals["itemLayout"]!.AsObject()["title"]!.GetValue<string>().Should().Be("$DS_LeadName");
+		// The string collection binding is carried unchanged.
+		vals["items"]!.GetValue<string>().Should().Be("$SimilarLeadList");
+	}
+
 	#region ConvertPageBusinessRules
 
 	private static ElementMapEntry El(string web, string operation, string mobile = null) =>

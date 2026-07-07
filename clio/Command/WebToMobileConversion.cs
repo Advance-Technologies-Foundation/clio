@@ -3,6 +3,7 @@ namespace Clio.Command;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Clio.Command.McpServer.Tools;
 using Newtonsoft.Json.Linq;
@@ -1130,7 +1131,10 @@ public static class WebToMobileAnalysisService {
 			// (a system/framework property — e.g. caption, layoutConfig — the client resolves itself).
 			// Drop only a web-registry-specific property the mobile component does not support.
 			if (allowed.Contains(prop.Name) || !webAllowed.Contains(prop.Name)) {
-				values[prop.Name] = prop.Value.DeepClone();
+				// Coerce the carried value to the shape the MOBILE registry declares for this input
+				// (e.g. crt.List `itemLayout` is a single object on mobile but the web node carries a
+				// one-element array). Registry-driven, so no property names are hardcoded.
+				values[prop.Name] = CoerceToDeclaredShape(ctx, mobileType, prop.Name, prop.Value.DeepClone());
 			}
 		}
 		ProcessEventBindings(ctx, node, values, mobileName);
@@ -1160,6 +1164,97 @@ public static class WebToMobileAnalysisService {
 			}
 		}
 		return allowed;
+	}
+
+	/// <summary>
+	/// Coerces a carried value to the shape (object vs array) the MOBILE registry declares for
+	/// <paramref name="propName"/> on <paramref name="mobileType"/>. Some web nodes carry a property in a
+	/// different container shape than mobile expects — e.g. crt.List <c>itemLayout</c> is a single object
+	/// on mobile, but the web node carries a one-element array. The expected shape comes from the input
+	/// descriptor's <c>type</c> (<c>"array"</c>/<c>"object"</c>); when the type is <c>"unknown"</c> (or
+	/// absent) it is inferred from the descriptor's <c>default</c> value kind. No property names are
+	/// hardcoded — the rule is registry-driven. Returns the value unchanged when there is no descriptor,
+	/// the expected shape is indeterminate, or it already matches.
+	/// </summary>
+	private static JToken CoerceToDeclaredShape(ElementMapContext ctx, string mobileType, string propName, JToken value) {
+		if (value is null || string.IsNullOrEmpty(mobileType)
+			|| !ctx.MobileByType.TryGetValue(mobileType, out ComponentRegistryEntry entry) || entry is null) {
+			return value;
+		}
+		JsonValueKind? expected = ResolveExpectedShape(entry, propName);
+		if (expected is null) {
+			return value;
+		}
+		if (expected == JsonValueKind.Object && value is JArray arr) {
+			// The mobile slot is a single map: unwrap the first object element (drop array wrapper).
+			JToken first = arr.FirstOrDefault(t => t is JObject);
+			return first ?? value;
+		}
+		if (expected == JsonValueKind.Array && value is JObject) {
+			// The mobile slot is a collection: wrap the single object.
+			return new JArray(value);
+		}
+		return value;
+	}
+
+	/// <summary>
+	/// Resolves the container shape (Object/Array) a mobile registry entry declares for an input — from the
+	/// input descriptor's <c>type</c>, falling back to the kind of its <c>default</c> when the type is
+	/// <c>"unknown"</c>. Checks both the wrapped <c>inputs</c> shape and the legacy <c>properties</c> shape.
+	/// Returns null when the property is absent or its shape cannot be determined.
+	/// </summary>
+	private static JsonValueKind? ResolveExpectedShape(ComponentRegistryEntry entry, string propName) {
+		if (entry.Inputs is not null) {
+			foreach (KeyValuePair<string, JsonElement> input in entry.Inputs) {
+				if (string.Equals(input.Key, propName, StringComparison.OrdinalIgnoreCase)) {
+					return ShapeFromDescriptor(input.Value);
+				}
+			}
+		}
+		if (entry.Properties is not null) {
+			foreach (KeyValuePair<string, ComponentPropertyDefinition> prop in entry.Properties) {
+				if (string.Equals(prop.Key, propName, StringComparison.OrdinalIgnoreCase)) {
+					return ShapeFromTypeAndDefault(prop.Value.Type, prop.Value.Default);
+				}
+			}
+		}
+		return null;
+	}
+
+	/// <summary>Reads <c>type</c>/<c>default</c> from a wrapped-registry input descriptor JSON element.</summary>
+	private static JsonValueKind? ShapeFromDescriptor(JsonElement descriptor) {
+		if (descriptor.ValueKind != JsonValueKind.Object) {
+			return null;
+		}
+		string type = descriptor.TryGetProperty("type", out JsonElement t) && t.ValueKind == JsonValueKind.String
+			? t.GetString()
+			: null;
+		JsonElement? def = descriptor.TryGetProperty("default", out JsonElement d) ? d : (JsonElement?)null;
+		return ShapeFromTypeAndDefault(type, def);
+	}
+
+	/// <summary>
+	/// Maps a declared <c>type</c> string (and a fallback <c>default</c> value) to an expected container kind.
+	/// A concrete <c>"array"</c>/<c>"object"</c>/<c>"map"</c> type wins; an <c>"unknown"</c>/absent type is
+	/// resolved from the <c>default</c> value kind (object/array). Returns null when indeterminate.
+	/// </summary>
+	private static JsonValueKind? ShapeFromTypeAndDefault(string type, JsonElement? def) {
+		if (string.Equals(type, "array", StringComparison.OrdinalIgnoreCase)) {
+			return JsonValueKind.Array;
+		}
+		if (string.Equals(type, "object", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(type, "map", StringComparison.OrdinalIgnoreCase)) {
+			return JsonValueKind.Object;
+		}
+		if (def is { } d) {
+			if (d.ValueKind == JsonValueKind.Object) {
+				return JsonValueKind.Object;
+			}
+			if (d.ValueKind == JsonValueKind.Array) {
+				return JsonValueKind.Array;
+			}
+		}
+		return null;
 	}
 
 	/// <summary>
