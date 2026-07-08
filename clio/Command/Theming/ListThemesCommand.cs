@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json.Serialization;
 using Clio.Common;
+using Clio.Theming;
 using CommandLine;
 
 namespace Clio.Command.Theming;
@@ -72,10 +73,10 @@ public class ListThemesCommand : RemoteCommand<ListThemesOptions>
 		};
 		foreach (ThemeDescriptor theme in themes) {
 			table.Add(new[] {
-				theme.Id ?? string.Empty,
-				theme.Caption ?? string.Empty,
-				theme.CssClassName ?? string.Empty,
-				theme.CssFilePath ?? string.Empty
+				TextUtilities.SanitizeForDisplay(theme.Id ?? string.Empty, ThemeParameterValidator.MaxIdLength),
+				TextUtilities.SanitizeForDisplay(theme.Caption ?? string.Empty, ThemeParameterValidator.MaxCaptionLength),
+				TextUtilities.SanitizeForDisplay(theme.CssClassName ?? string.Empty, ThemeParameterValidator.MaxCssClassNameLength),
+				TextUtilities.SanitizeForDisplay(theme.CssFilePath ?? string.Empty)
 			});
 		}
 		Logger.WriteLine();

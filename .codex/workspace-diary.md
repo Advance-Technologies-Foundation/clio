@@ -5323,3 +5323,9 @@ Decision: Fixed the spec (added TASK_SECTION_CODE='UsrTasks' for runtime page lo
 Caveats surfaced to user: (1) green sweep also needs clio>=#769 on the stand + the User_009 auth-warmup user (its absence aborted the Playwright suite before this test ran — stand-config, not code); (2) my ENG-92928 PR #104 (todo-app mobile pages) DUPLICATES PR #92 Fix 3 — needs deconfliction (pick one canonical home).
 Files: creatio-playwright-tests tests/features/caadt/specs/create-tasks-section.spec.ts
 Impact: create-tasks-section moved from "retire candidate" to a fixed, keepable scenario; corrects a premature deferral. Lesson: re-check whether an upstream (clio) fix has already landed before trusting a subtask's stale "not fixable / retire" framing.
+
+## 2026-07-08 – ENG-90636 theming: sanitize list-themes success-path output
+Context: PR #748 review — the error paths sanitized server strings but the list-themes success path printed server-controlled descriptor fields raw.
+Fix: route theme Id/Caption/CssClassName/CssFilePath through TextUtilities.SanitizeForDisplay (reusing ThemeParameterValidator.MaxIdLength/MaxCaptionLength/MaxCssClassNameLength, promoted private→internal; CssFilePath uses the default cap) so a hostile caption can't forge output lines or inject terminal escapes; the per-field cap also bounds column width.
+Files: clio/Command/Theming/ListThemesCommand.cs, clio/Theming/ThemeParameterValidator.cs, clio.tests/Command/ListThemesCommandTests.cs
+Impact: closes the only merge-worthy finding from the PR review; regression test verifies collapse-to-spaces via the public Execute path.

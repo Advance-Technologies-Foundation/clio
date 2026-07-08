@@ -19,8 +19,12 @@ internal static class ThemeParameterValidator {
 	/// <summary>Maximum accepted css-class-name length.</summary>
 	internal const int MaxCssClassNameLength = 100;
 
-	private const int MaxIdLength = 100;
-	private const int MaxCaptionLength = 250;
+	/// <summary>Maximum accepted theme id length.</summary>
+	internal const int MaxIdLength = 100;
+
+	/// <summary>Maximum accepted theme caption length.</summary>
+	internal const int MaxCaptionLength = 250;
+
 	private const string CssClassNameFallback = "theme";
 
 	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);

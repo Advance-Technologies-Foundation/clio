@@ -166,6 +166,27 @@ public sealed class ListThemesCommandTests : BaseCommandTests<ListThemesOptions>
 	}
 
 	[Test, Category("Unit")]
+	[Description("Replaces control characters (carriage return, line feed, ANSI escape) in server-provided descriptor fields with spaces before printing the catalog so a hostile theme caption cannot forge extra output lines or inject terminal escape sequences.")]
+	public void ListThemes_ShouldReplaceControlCharactersWithSpaces_WhenPrintingCatalog() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"success\":true,\"values\":[" +
+				"{\"id\":\"evil\",\"caption\":\"Dark\\r\\nInjected line\\u001b[31m\",\"cssClassName\":\"theme\",\"cssFilePath\":\"a/theme.css\"}]}");
+
+		// Act
+		int exitCode = _command.Execute(new ListThemesOptions());
+
+		// Assert
+		exitCode.Should().Be(0,
+			because: "a well-formed catalog is still readable regardless of the descriptor field contents");
+		_logger.Received(1).WriteInfo(Arg.Is<string>(message =>
+			message.Contains("Dark  Injected line [31m")
+			&& !message.Contains("Dark\nInjected")
+			&& !message.Contains("Dark\rInjected")));
+	}
+
+	[Test, Category("Unit")]
 	[Description("Treats an empty response body as an empty catalog (the contract default), so a minimal response is not misread as a failure.")]
 	public void ListThemes_ShouldReturnEmptyList_WhenResponseBodyIsEmpty() {
 		// Arrange
