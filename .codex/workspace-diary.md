@@ -5329,3 +5329,10 @@ Context: PR #748 review — the error paths sanitized server strings but the lis
 Fix: route theme Id/Caption/CssClassName/CssFilePath through TextUtilities.SanitizeForDisplay (reusing ThemeParameterValidator.MaxIdLength/MaxCaptionLength/MaxCssClassNameLength, promoted private→internal; CssFilePath uses the default cap) so a hostile caption can't forge output lines or inject terminal escapes; the per-field cap also bounds column width.
 Files: clio/Command/Theming/ListThemesCommand.cs, clio/Theming/ThemeParameterValidator.cs, clio.tests/Command/ListThemesCommandTests.cs
 Impact: closes the only merge-worthy finding from the PR review; regression test verifies collapse-to-spaces via the public Execute path.
+
+## 2026-07-08 – PR #748: validate latest request-changes review, fix confirmed findings
+Context: Latest CHANGES_REQUESTED review (id 4654343682) listed 9 findings; validated each against HEAD d7cb9dd0 before fixing.
+Discovery: Finding "delete-package always exits 0 (IApplicationPackageListProvider unregistered)" is false — BindingsModule.RegisterAssemblyInterfaceTypes auto-registers all Clio.* interface impls, so the optional ctor param IS injected. Private JsonSerializerOptions{PropertyNameCaseInsensitive} is a codebase-wide idiom (6+ sites), not a two-file drift.
+Fix: sanitize list-themes MCP result fields via SanitizeForDisplay (mirrors CLI printer); add 6 missing theming-tool AddTransient registrations; cache parameterized regexes in ThemeCssBuilder (ConcurrentDictionary); merge duplicate IOException/UnauthorizedAccessException catch pairs via `when` filter (ThemeRequestBuilder, BuildThemeCommand).
+Files: clio/Command/McpServer/Tools/ListThemesTool.cs, clio/BindingsModule.cs, clio/Theming/ThemeCssBuilder.cs, clio/Command/Theming/ThemeRequestBuilder.cs, clio/Command/Theming/BuildThemeCommand.cs, clio.tests/Command/McpServer/ListThemesToolTests.cs
+Impact: rebuttal evidence recorded for rejected findings (RC-1, RC-3, RC-5, RC-7, RC-9); full unit suite green on net8.0+net10.0.

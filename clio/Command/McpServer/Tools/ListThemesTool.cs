@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Command.Theming;
 using Clio.Common;
+using Clio.Theming;
 using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
@@ -103,12 +104,19 @@ public sealed record ListThemesResult {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string Error { get; init; }
 
-	/// <summary>Creates a success result carrying the resolved theme catalog.</summary>
+	/// <summary>
+	/// Creates a success result carrying the resolved theme catalog. Server-provided fields are
+	/// control-character-stripped and length-capped (as in the CLI printer) before being returned.
+	/// </summary>
 	public static ListThemesResult Successful(IReadOnlyList<ThemeDescriptor> themes) {
 		return new ListThemesResult {
 			Success = true,
 			Themes = (themes ?? Array.Empty<ThemeDescriptor>())
-				.Select(theme => new ThemeDescriptorResult(theme.Id, theme.Caption, theme.CssClassName, theme.CssFilePath))
+				.Select(theme => new ThemeDescriptorResult(
+					TextUtilities.SanitizeForDisplay(theme.Id ?? string.Empty, ThemeParameterValidator.MaxIdLength),
+					TextUtilities.SanitizeForDisplay(theme.Caption ?? string.Empty, ThemeParameterValidator.MaxCaptionLength),
+					TextUtilities.SanitizeForDisplay(theme.CssClassName ?? string.Empty, ThemeParameterValidator.MaxCssClassNameLength),
+					TextUtilities.SanitizeForDisplay(theme.CssFilePath ?? string.Empty)))
 				.ToList()
 		};
 	}

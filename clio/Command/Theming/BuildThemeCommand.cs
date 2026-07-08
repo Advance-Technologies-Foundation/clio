@@ -238,11 +238,7 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 			_fileSystem.WriteAllTextToFile(Path.Combine(outputDirectory, "theme.json"), descriptor);
 			return true;
 		}
-		catch (IOException ex) {
-			error = DescribeWriteFailure(outputDirectory, ex);
-			return false;
-		}
-		catch (UnauthorizedAccessException ex) {
+		catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
 			error = DescribeWriteFailure(outputDirectory, ex);
 			return false;
 		}

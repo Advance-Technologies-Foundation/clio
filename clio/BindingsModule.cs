@@ -449,6 +449,12 @@ public class BindingsModule {
 		services.AddTransient<ComponentInfoTool>();
 		services.AddTransient<BuildThemeTool>();
 		services.AddTransient<AdviseThemePaletteTool>();
+		services.AddTransient<ClearThemesCacheTool>();
+		services.AddTransient<ListThemesTool>();
+		services.AddTransient<CreateThemeTool>();
+		services.AddTransient<UpdateThemeTool>();
+		services.AddTransient<DeleteThemeTool>();
+		services.AddTransient<CheckThemingAccessTool>();
 		services.AddTransient<GetUserCultureTool>();
 		services.AddTransient<PackageHotfixTool>();
 		services.AddTransient<AddPackageDependencyTool>();

@@ -52,11 +52,7 @@ internal static class ThemeRequestBuilder
 			}
 			resolved = fileSystem.ReadAllText(cssContentFile);
 		}
-		catch (IOException ex) {
-			error = $"Could not read CSS file '{cssContentFile}': {ex.Message}";
-			return false;
-		}
-		catch (UnauthorizedAccessException ex) {
+		catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) {
 			error = $"Could not read CSS file '{cssContentFile}': {ex.Message}";
 			return false;
 		}

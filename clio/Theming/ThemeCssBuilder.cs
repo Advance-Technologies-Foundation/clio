@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -69,6 +70,12 @@ internal sealed class ThemeCssBuilder : IThemeCssBuilder {
 	private static readonly Regex PaletteRefRegex = new(@"var\(--crt-palette-([a-z]+)-(\d+)\)", RegexOptions.Compiled, RegexTimeout);
 	private static readonly Regex ColorDeclarationRegex = new(@"(--crt-color-[a-z0-9-]+):\s*([^;]+);", RegexOptions.Compiled, RegexTimeout);
 
+	private static readonly ConcurrentDictionary<string, Regex> DeclarationRegexCache = new(StringComparer.Ordinal);
+
+	private static Regex GetDeclarationRegex(string pattern) {
+		return DeclarationRegexCache.GetOrAdd(pattern, p => new Regex(p, RegexOptions.None, RegexTimeout));
+	}
+
 	/// <inheritdoc />
 	public string Build(string templateCss, BuildThemeInput options) {
 		if (string.IsNullOrEmpty(options?.Primary)) {
@@ -117,7 +124,7 @@ internal sealed class ThemeCssBuilder : IThemeCssBuilder {
 		string next = css;
 		foreach (string name in GeneratedPaletteNames) {
 			foreach (int step in PaletteGenerator.Steps) {
-				Regex regex = new($@"(--crt-palette-{name}-{step}:\s*)#[0-9a-f]{{6}}(;)", RegexOptions.None, RegexTimeout);
+				Regex regex = GetDeclarationRegex($@"(--crt-palette-{name}-{step}:\s*)#[0-9a-f]{{6}}(;)");
 				next = regex.Replace(next, $"$1{palettes[name][step]}$2", 1);
 			}
 		}
@@ -168,12 +175,12 @@ internal sealed class ThemeCssBuilder : IThemeCssBuilder {
 	}
 
 	private static string ReplaceFontFamily(string css, string which, string family) {
-		Regex regex = new($@"(--crt-font-family-{which}:\s*)[^;]+(;)", RegexOptions.None, RegexTimeout);
+		Regex regex = GetDeclarationRegex($@"(--crt-font-family-{which}:\s*)[^;]+(;)");
 		return regex.Replace(css, match => match.Groups[1].Value + "'" + family + "', sans-serif" + match.Groups[2].Value, 1);
 	}
 
 	private static string SetColorDeclaration(string css, string token, string value) {
-		Regex regex = new($@"(--crt-color-{token}:\s*)[^;]+(;)", RegexOptions.None, RegexTimeout);
+		Regex regex = GetDeclarationRegex($@"(--crt-color-{token}:\s*)[^;]+(;)");
 		return regex.Replace(css, $"$1{value}$2", 1);
 	}
 
@@ -200,7 +207,7 @@ internal sealed class ThemeCssBuilder : IThemeCssBuilder {
 		}
 		foreach (string name in GeneratedPaletteNames) {
 			foreach (int step in PaletteGenerator.Steps) {
-				Regex regex = new($@"--crt-palette-{name}-{step}:\s*([^;]+);", RegexOptions.None, RegexTimeout);
+				Regex regex = GetDeclarationRegex($@"--crt-palette-{name}-{step}:\s*([^;]+);");
 				Match match = regex.Match(css);
 				if (!match.Success || match.Groups[1].Value.Trim() != palettes[name][step]) {
 					throw new InvalidOperationException(

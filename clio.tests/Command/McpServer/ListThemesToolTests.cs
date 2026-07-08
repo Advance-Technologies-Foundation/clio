@@ -130,6 +130,41 @@ public class ListThemesToolTests {
 	}
 
 	[Test]
+	[Description("Strips control characters and length-caps server-provided theme fields in the structured result, mirroring the CLI printer's sanitization of the same untrusted catalog data.")]
+	[Category("Unit")]
+	public void ListThemes_ShouldSanitizeThemeFields_WhenCatalogCarriesControlCharacters() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		string hostileCaption = "Ocean\u001b[31m\nforged";
+		string overlongId = new('a', 150);
+		IReadOnlyList<ThemeDescriptor> themes = new List<ThemeDescriptor> {
+			new() { Id = overlongId, Caption = hostileCaption, CssClassName = "ocean\ttheme", CssFilePath = "a/\rtheme.css" }
+		};
+		FakeListThemesCommand defaultCommand = new();
+		FakeListThemesCommand resolvedCommand = new(themes);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<ListThemesCommand>(Arg.Any<ListThemesOptions>()).Returns(resolvedCommand);
+		ListThemesTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		ListThemesResult result = tool.ListThemes(new ListThemesArgs(EnvironmentName: "docker_fix2"));
+
+		// Assert
+		result.Success.Should().BeTrue(because: "hostile field content must not break a successful catalog read");
+		ThemeDescriptorResult sanitized = result.Themes.Should().ContainSingle(
+			because: "the single hostile theme must still be surfaced, sanitized").Subject;
+		sanitized.Caption.Should().Be("Ocean [31m forged",
+			because: "escape and newline control characters must be replaced with spaces so the caption cannot forge output or inject terminal escapes");
+		sanitized.Id.Should().Be(new string('a', 100) + "...",
+			because: "the id must be capped at the same MaxIdLength the CLI printer applies");
+		sanitized.CssClassName.Should().Be("ocean theme",
+			because: "tab control characters must be replaced with spaces");
+		sanitized.CssFilePath.Should().Be("a/ theme.css",
+			because: "carriage-return control characters must be replaced with spaces");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
 	[Description("Surfaces the ThemeService failure message as a structured failure when the resolved command reports success=false.")]
 	[Category("Unit")]
 	public void ListThemes_ShouldReturnFailure_WhenCommandReportsFailure() {
