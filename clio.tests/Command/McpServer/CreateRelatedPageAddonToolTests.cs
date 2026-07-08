@@ -130,7 +130,8 @@ public sealed class CreateRelatedPageAddonToolTests {
 		_tool.CreateRelatedPageAddon(args);
 
 		// Assert
-		_resolverOptions.Should().NotBeNull();
+		_resolverOptions.Should().NotBeNull(
+			because: "the tool must forward mapped options to the command resolver");
 		_resolverOptions.TypeColumnUId.Should().Be("TYPE-COLUMN-UID",
 			because: "the top-level type-column-uid maps onto the command options");
 		RelatedPageSpec spec = _resolverOptions.Pages.Should().ContainSingle().Which;

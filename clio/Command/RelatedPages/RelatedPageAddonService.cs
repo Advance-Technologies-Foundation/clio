@@ -269,32 +269,14 @@ internal sealed class RelatedPageAddonService(
 	public RelatedPageAddonResult Create(RelatedPageAddonRequest request) {
 		ValidateRequest(request);
 
-		(string packageUId, string packageError) = PageSchemaMetadataHelper.QueryPackageUId(
-			applicationClient, serviceUrlBuilder, request.PackageName);
-		if (packageError != null) {
-			throw new InvalidOperationException(packageError);
-		}
-		if (!Guid.TryParse(packageUId, out Guid packageId)) {
-			throw new InvalidOperationException(
-				$"Resolved package '{request.PackageName}' UId '{packageUId}' is not a valid GUID.");
-		}
-
-		EntityDesignSchemaDto entitySchema = ResolveEntitySchema(request.EntitySchemaName, packageId, request.PackageName);
+		(string packageUId, Guid packageId, EntityDesignSchemaDto entitySchema) =
+			ResolveTarget(request.PackageName, request.EntitySchemaName);
+		ValidateTypeColumn(request.TypeColumnUId, entitySchema);
 
 		IReadOnlyDictionary<string, string> roleByName = ResolveRoleNames(request.Pages);
 		JsonArray pages = BuildPages(request.Pages, roleByName);
 
-		var addonRequest = new AddonGetRequestDto {
-			AddonName = RelatedPageAddonName,
-			TargetSchemaUId = entitySchema.UId,
-			// Mirror the Interface Designer / Business Rule add-on path: a replacing or derived object
-			// reports the parent it extends; a plain object reports none (Guid.Empty).
-			TargetParentSchemaUId = entitySchema.ParentSchema?.UId ?? Guid.Empty,
-			TargetPackageUId = packageId,
-			TargetSchemaManagerName = EntitySchemaManagerName,
-			UseFullHierarchy = true
-		};
-
+		AddonGetRequestDto addonRequest = BuildAddonGetRequest(entitySchema, packageId);
 		AddonSchemaDto schema = addonSchemaDesignerClient.GetSchema(addonRequest);
 		// Start from the FETCHED metadata and replace only the two keys this tool owns (Pages, TypeColumnUId), so
 		// any OTHER top-level field survives the write. The RelatedPage MetaData is exactly
@@ -331,27 +313,10 @@ internal sealed class RelatedPageAddonService(
 			throw new ArgumentException(RelatedPageAddonMessages.PackageNameRequired);
 		}
 
-		(string packageUId, string packageError) = PageSchemaMetadataHelper.QueryPackageUId(
-			applicationClient, serviceUrlBuilder, request.PackageName);
-		if (packageError != null) {
-			throw new InvalidOperationException(packageError);
-		}
-		if (!Guid.TryParse(packageUId, out Guid packageId)) {
-			throw new InvalidOperationException(
-				$"Resolved package '{request.PackageName}' UId '{packageUId}' is not a valid GUID.");
-		}
+		(string packageUId, Guid packageId, EntityDesignSchemaDto entitySchema) =
+			ResolveTarget(request.PackageName, request.EntitySchemaName);
 
-		EntityDesignSchemaDto entitySchema = ResolveEntitySchema(request.EntitySchemaName, packageId, request.PackageName);
-
-		var addonRequest = new AddonGetRequestDto {
-			AddonName = RelatedPageAddonName,
-			TargetSchemaUId = entitySchema.UId,
-			TargetParentSchemaUId = entitySchema.ParentSchema?.UId ?? Guid.Empty,
-			TargetPackageUId = packageId,
-			TargetSchemaManagerName = EntitySchemaManagerName,
-			UseFullHierarchy = true
-		};
-
+		AddonGetRequestDto addonRequest = BuildAddonGetRequest(entitySchema, packageId);
 		// Read-only: GetSchema returns the (server auto-provisioned) add-on with its current metadata; no save.
 		AddonSchemaDto schema = addonSchemaDesignerClient.GetSchema(addonRequest);
 		IReadOnlyList<RelatedPageEntry> pages = DecodePages(schema.MetaData, out string typeColumnUId);
@@ -372,28 +337,75 @@ internal sealed class RelatedPageAddonService(
 		if (string.IsNullOrWhiteSpace(metaData)) {
 			return entries;
 		}
-		JsonNode root = JsonNode.Parse(metaData);
-		typeColumnUId = root?["TypeColumnUId"]?.GetValue<string>();
-		if (root?["Pages"] is not JsonArray pages) {
+		// Parse defensively (mirrors the write path's ParseMetadataObject): a malformed body or a non-object root
+		// yields an empty object, and every field below is read tolerantly, so a wrong-typed payload decodes to what
+		// it can rather than throwing a raw framework exception out of a read.
+		JsonObject root = ParseMetadataObject(metaData);
+		typeColumnUId = ReadString(root, "TypeColumnUId");
+		if (root["Pages"] is not JsonArray pages) {
 			return entries;
 		}
+		// Reverse-resolve every DISTINCT PageSchemaUId to its name ONCE, then look up locally — mirroring the write
+		// path's dedup (ResolvePageSchemaUIds). A Role x Type matrix reuses the same page across many entries (e.g.
+		// one page as both the default and the add for several types), so a per-entry lookup would issue O(entries)
+		// round-trips instead of O(distinct pages).
+		IReadOnlyDictionary<string, string> pageNameByUId = ResolvePageNames(pages);
 		foreach (JsonNode page in pages) {
-			if (page is null) {
-				continue;
+			if (page is not JsonObject pageObject) {
+				continue; // skip a null or non-object entry rather than dereferencing it
 			}
-			string pageSchemaUId = page["PageSchemaUId"]?.GetValue<string>();
-			string role = page["Role"]?.GetValue<string>();
+			string pageSchemaUId = ReadString(pageObject, "PageSchemaUId");
+			string role = ReadString(pageObject, "Role");
+			bool isAdd = pageObject["Actions"] is JsonObject actions && ReadBool(actions, "Add");
 			entries.Add(new RelatedPageEntry(
 				pageSchemaUId,
-				ResolvePageName(pageSchemaUId),
-				page["IsDefault"]?.GetValue<bool>() ?? false,
-				page["Actions"]?["Add"]?.GetValue<bool>() ?? false,
-				page["IsSspDefault"]?.GetValue<bool>() ?? false,
+				pageSchemaUId is not null && pageNameByUId.TryGetValue(pageSchemaUId, out string pageName) ? pageName : null,
+				ReadBool(pageObject, "IsDefault"),
+				isAdd,
+				ReadBool(pageObject, "IsSspDefault"),
 				role,
 				ResolveRoleName(role),
-				page["TypeColumnValue"]?.GetValue<string>()));
+				ReadString(pageObject, "TypeColumnValue")));
 		}
 		return entries;
+	}
+
+	/// <summary>
+	/// Reverse-resolves every DISTINCT non-empty <c>PageSchemaUId</c> in the page set to its schema name with a
+	/// single lookup per distinct UId (case-insensitive), mirroring the write path's
+	/// <see cref="ResolvePageSchemaUIds"/> dedup. A UId that does not resolve maps to <c>null</c> (best-effort) and
+	/// is not re-queried.
+	/// </summary>
+	private IReadOnlyDictionary<string, string> ResolvePageNames(JsonArray pages) {
+		var pageNameByUId = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+		foreach (JsonNode page in pages) {
+			string pageSchemaUId = page is JsonObject pageObject ? ReadString(pageObject, "PageSchemaUId") : null;
+			if (string.IsNullOrWhiteSpace(pageSchemaUId) || pageNameByUId.ContainsKey(pageSchemaUId)) {
+				continue;
+			}
+			pageNameByUId[pageSchemaUId] = ResolvePageName(pageSchemaUId);
+		}
+		return pageNameByUId;
+	}
+
+	// Reads a string field WITHOUT throwing on a wrong-typed payload: null when the key is absent or not a scalar;
+	// the raw scalar text when it is present but not a JSON string (e.g. stored as a number). The platform is not
+	// known to emit such shapes, but a read must degrade gracefully rather than surface a framework exception.
+	private static string ReadString(JsonObject parent, string key) =>
+		parent[key] is JsonValue value
+			? (value.TryGetValue(out string text) ? text : value.ToString())
+			: null;
+
+	// Reads a boolean flag WITHOUT throwing: a real JSON bool passes through; a bool stored as the string
+	// "true"/"false" is parsed; anything else (absent, number, object) is false.
+	private static bool ReadBool(JsonObject parent, string key) {
+		if (parent[key] is not JsonValue value) {
+			return false;
+		}
+		if (value.TryGetValue(out bool flag)) {
+			return flag;
+		}
+		return value.TryGetValue(out string text) && bool.TryParse(text, out bool parsed) && parsed;
 	}
 
 	/// <summary>Best-effort reverse resolution of a page <c>PageSchemaUId</c> to its schema name; null if absent/unresolvable.</summary>
@@ -405,6 +417,42 @@ internal sealed class RelatedPageAddonService(
 		!string.IsNullOrWhiteSpace(roleUId) && KnownPlatformRoleNamesById.TryGetValue(roleUId, out string name)
 			? name
 			: null;
+
+	/// <summary>
+	/// Shared prologue for <see cref="Create"/> and <see cref="Get"/>: resolves the package to its UId (rejecting a
+	/// missing package or a non-GUID UId), then resolves the target object (entity schema) from that package. Both
+	/// entry points target the same object in the same package, so the resolution lives here rather than being
+	/// duplicated (and drifting) in each.
+	/// </summary>
+	private (string packageUId, Guid packageId, EntityDesignSchemaDto entitySchema) ResolveTarget(
+		string packageName, string entitySchemaName) {
+		(string packageUId, string packageError) = PageSchemaMetadataHelper.QueryPackageUId(
+			applicationClient, serviceUrlBuilder, packageName);
+		if (packageError != null) {
+			throw new InvalidOperationException(packageError);
+		}
+		if (!Guid.TryParse(packageUId, out Guid packageId)) {
+			throw new InvalidOperationException(
+				$"Resolved package '{packageName}' UId '{packageUId}' is not a valid GUID.");
+		}
+		EntityDesignSchemaDto entitySchema = ResolveEntitySchema(entitySchemaName, packageId, packageName);
+		return (packageUId, packageId, entitySchema);
+	}
+
+	/// <summary>
+	/// Builds the <c>RelatedPage</c> add-on <c>GetSchema</c> request for the resolved object — the single shape both
+	/// <see cref="Create"/> and <see cref="Get"/> send. Mirrors the Interface Designer / Business Rule add-on path:
+	/// a replacing or derived object reports the parent it extends; a plain object reports none (<c>Guid.Empty</c>).
+	/// </summary>
+	private static AddonGetRequestDto BuildAddonGetRequest(EntityDesignSchemaDto entitySchema, Guid packageId) =>
+		new() {
+			AddonName = RelatedPageAddonName,
+			TargetSchemaUId = entitySchema.UId,
+			TargetParentSchemaUId = entitySchema.ParentSchema?.UId ?? Guid.Empty,
+			TargetPackageUId = packageId,
+			TargetSchemaManagerName = EntitySchemaManagerName,
+			UseFullHierarchy = true
+		};
 
 	/// <summary>
 	/// Resolves the target object (entity schema) through the entity schema designer — the same source the
@@ -431,6 +479,36 @@ internal sealed class RelatedPageAddonService(
 				$"Object (entity schema) '{entitySchemaName}' not found in package '{packageName}'. The object must "
 				+ "be visible from that package — if it lives elsewhere, add a package dependency.");
 	}
+
+	/// <summary>
+	/// Verifies a supplied <c>TypeColumnUId</c> is a real column of the resolved object (its own or an inherited
+	/// column). Typed page sets are matched by (TypeColumnUId, TypeColumnValue), so a well-formed-but-wrong column
+	/// UId would write typed pages the platform can never select — a silent <c>Success=true</c> with dead pages.
+	/// The object's schema was already fetched to resolve it, so this adds no round-trip. Fail-soft: if the fetched
+	/// schema exposes no columns (an unverifiable response), the check is skipped rather than false-rejecting a
+	/// valid set — mirroring the codebase's other best-effort existence checks. The GUID shape is enforced upstream
+	/// by <see cref="ValidateRequest"/>; a non-empty non-GUID value never reaches here with a column to match.
+	/// </summary>
+	private static void ValidateTypeColumn(string typeColumnUId, EntityDesignSchemaDto entitySchema) {
+		if (string.IsNullOrWhiteSpace(typeColumnUId) || !Guid.TryParse(typeColumnUId.Trim(), out Guid typeColumnId)) {
+			return;
+		}
+		var columns = SchemaColumns(entitySchema).ToList();
+		if (columns.Count == 0) {
+			return; // the schema fetch surfaced no columns — cannot verify, so do not block (never false-reject)
+		}
+		if (columns.All(column => column.UId != typeColumnId)) {
+			throw new InvalidOperationException(
+				$"type-column-uid '{typeColumnUId}' is not a column of object '{entitySchema.Name}'. It must be the "
+				+ "u-id of a column on the object — the record-type lookup (e.g. Type or Category) the typed page sets "
+				+ "are keyed by.");
+		}
+	}
+
+	// The object's own plus inherited columns (a type column is commonly inherited — e.g. Case.Category), matching
+	// how the column-properties read path spans both sets.
+	private static IEnumerable<EntitySchemaColumnDto> SchemaColumns(EntityDesignSchemaDto entitySchema) =>
+		(entitySchema.Columns ?? []).Concat(entitySchema.InheritedColumns ?? []);
 
 	/// <summary>
 	/// Resolves every distinct role NAME referenced by the page specs to its <c>SysAdminUnit</c> Id. An explicit

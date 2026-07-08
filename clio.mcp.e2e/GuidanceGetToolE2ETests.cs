@@ -63,6 +63,34 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 
 	[Test]
 	[AllureTag(GuidanceGetTool.ToolName)]
+	[AllureName("get-guidance returns the canonical page-to-object binding guidance article")]
+	public async Task GuidanceGet_Should_Return_Related_Page_Binding_Guide() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		GuidanceGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["name"] = "related-page-binding"
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "related-page-binding is a registered guidance name");
+		response.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article payload");
+		response.Article!.Uri.Should().Be("docs://mcp/guides/related-page-binding",
+			because: "the canonical resource URI should still be visible in the tool response");
+		response.Article.Text.Should().Contain("clio MCP page-to-object binding guide",
+			because: "the guidance tool should return the canonical page-to-object binding guide text");
+		response.Article.Text.Should().Contain("create-related-page-addon",
+			because: "the resolved article must document the create-related-page-addon write tool");
+	}
+
+	[Test]
+	[AllureTag(GuidanceGetTool.ToolName)]
 	[AllureName("get-guidance returns the canonical validator guidance article")]
 	public async Task GuidanceGet_Should_Return_Page_Schema_Validators_Guide() {
 		// Arrange

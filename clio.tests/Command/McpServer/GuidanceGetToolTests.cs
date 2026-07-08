@@ -191,6 +191,29 @@ public sealed class GuidanceGetToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Returns the canonical related-page-binding guidance article when the caller requests related-page-binding.")]
+	public async Task GuidanceGet_Should_Return_Related_Page_Binding_Article() {
+		// Arrange
+		GuidanceGetTool tool = new(_featureToggleService);
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("related-page-binding"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "related-page-binding is a registered guidance name");
+		result.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article");
+		result.Article!.Uri.Should().Be("docs://mcp/guides/related-page-binding",
+			because: "the guidance tool should preserve the canonical related-page-binding guide URI in the response");
+		result.Article.Text.Should().Contain("clio MCP page-to-object binding guide",
+			because: "the guidance tool should return the canonical page-to-object binding article text");
+		result.Article.Text.Should().Contain("create-related-page-addon",
+			because: "the resolved article must document the create-related-page-addon write tool");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Pins the get-component-info-first / anti-bundle-reverse-engineering sentence in the page-modification guidance so it cannot be silently reverted (ENG-91953 recurrence guard).")]
 	public async Task GuidanceGet_Should_Pin_AntiBundleReverseEngineering_ForPageModification() {
 		// Arrange
@@ -427,6 +450,8 @@ public sealed class GuidanceGetToolTests {
 				"page-schema-handlers",
 				"page-schema-creatio-devkit-common",
 				"page-schema-validators",
+				"related-list",
+				"related-page-binding",
 				"sys-setting",
 				"sys-setting-tests",
 				"sys-settings",

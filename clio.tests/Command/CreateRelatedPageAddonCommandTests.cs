@@ -77,12 +77,14 @@ public sealed class CreateRelatedPageAddonCommandTests {
 		_captured.Pages.Should().HaveCount(1,
 			because: "only a default page is given, so a single entry is built (no auto-add fallback)");
 		RelatedPageSpec spec = _captured.Pages[0];
-		spec.IsDefault.Should().BeTrue();
+		spec.IsDefault.Should().BeTrue(
+			because: "a default-only build yields a single is-default entry");
 		spec.IsAdd.Should().BeFalse(
 			because: "the default page serves adding at runtime; no separate add entry is written");
 		spec.RoleName.Should().Be("All employees",
 			because: "the base set is scoped to All employees, matching the designer (not role-less)");
-		spec.PageSchemaName.Should().Be("CaseFormPage");
+		spec.PageSchemaName.Should().Be("CaseFormPage",
+			because: "the built entry carries the default page name from --default-page");
 	}
 
 	[Test]
@@ -100,7 +102,8 @@ public sealed class CreateRelatedPageAddonCommandTests {
 		// Assert
 		ok.Should().BeFalse(
 			because: "a no-option CLI call must not silently clear the configuration");
-		response.Success.Should().BeFalse();
+		response.Success.Should().BeFalse(
+			because: "the no-option CLI call is rejected, not silently cleared");
 		response.Error.Should().Contain("No pages specified",
 			because: "the CLI rejects an empty scalar build; clearing is an explicit MCP-only operation");
 		_service.DidNotReceiveWithAnyArgs().Create(default!);
@@ -147,7 +150,8 @@ public sealed class CreateRelatedPageAddonCommandTests {
 		// Assert
 		ok.Should().BeFalse(
 			because: "a portal add page with no portal default leaves portal users no page to open");
-		response.Success.Should().BeFalse();
+		response.Success.Should().BeFalse(
+			because: "a portal add page with no portal default page is rejected");
 		response.Error.Should().Contain("--portal-default-page",
 			because: "the error should name the missing portal default page option");
 		_service.DidNotReceiveWithAnyArgs().Create(default!);
@@ -171,7 +175,8 @@ public sealed class CreateRelatedPageAddonCommandTests {
 		// Assert
 		ok.Should().BeFalse(
 			because: "an internal add page with no internal default leaves internal users no page to open");
-		response.Success.Should().BeFalse();
+		response.Success.Should().BeFalse(
+			because: "an internal add page with no internal default page is rejected");
 		response.Error.Should().Contain("--default-page",
 			because: "the error should name the missing default page option");
 		_service.DidNotReceiveWithAnyArgs().Create(default!);
@@ -232,7 +237,8 @@ public sealed class CreateRelatedPageAddonCommandTests {
 
 		// Assert
 		ok.Should().BeFalse(because: "a service failure is reported as a failed response, not surfaced as an exception");
-		response.Success.Should().BeFalse();
+		response.Success.Should().BeFalse(
+			because: "a thrown service error is reported as a failed response envelope");
 		response.Error.Should().Contain("service boom",
 			because: "the service exception message is carried to the CLI user via response.Error");
 		_logger.Received().WriteInfo(Arg.Is<string>(message => message.Contains("service boom")));
@@ -246,7 +252,8 @@ public sealed class CreateRelatedPageAddonCommandTests {
 
 		// Assert
 		ok.Should().BeFalse(because: "a null options object is invalid input");
-		response.Success.Should().BeFalse();
+		response.Success.Should().BeFalse(
+			because: "null options is rejected as invalid input");
 		response.Error.Should().Contain("options is required",
 			because: "the response should explain that options is required");
 		_service.DidNotReceiveWithAnyArgs().Create(default!);

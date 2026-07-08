@@ -783,4 +783,131 @@ public sealed class RelatedPageAddonServiceTests {
 			because: "a type-column-value is case-insensitive, so the two typed defaults are the same cell — a duplicate");
 		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().SaveSchema(default!);
 	}
+
+	[Test]
+	[Description("Reverse-resolves a page name only ONCE when several entries share the same PageSchemaUId (the same page reused across a Role x Type matrix), mirroring the write path's dedup — O(distinct pages) lookups, not O(entries).")]
+	public void Get_ShouldResolvePageNameOnlyOnce_WhenSamePageUidRepeats() {
+		// Arrange — two entries share PageAUId. Only ONE name-lookup row is queued, so if the read re-queried per
+		// entry the second Dequeue would throw (queue exhausted) and the test would fail.
+		StubAddonMetadata(
+			"""{"Pages":[{"UId":"u1","PageSchemaUId":"cc000000-0000-0000-0000-00000000000a","IsDefault":true,"Actions":{"Add":false}},{"UId":"u2","PageSchemaUId":"cc000000-0000-0000-0000-00000000000a","IsDefault":false,"Actions":{"Add":true}}],"TypeColumnUId":null}""");
+		StubSelectQueue(Rows(PackageUId), NameRow("UsrDeliveryItemFormPage"));
+
+		// Act
+		RelatedPageAddonReadResult result = _service.Get(new RelatedPageAddonReadRequest("Custom", "UsrDeliveryItem"));
+
+		// Assert
+		result.PageCount.Should().Be(2,
+			because: "both entries decode even though they share one PageSchemaUId");
+		result.Pages[0].PageSchemaName.Should().Be("UsrDeliveryItemFormPage",
+			because: "the shared page UId resolves to its name");
+		result.Pages[1].PageSchemaName.Should().Be("UsrDeliveryItemFormPage",
+			because: "the repeated PageSchemaUId reuses the single resolved name without a second lookup");
+	}
+
+	[Test]
+	[Description("Rejects a well-formed type-column-uid that is not a column of the resolved object, so typed page sets are never written against a column the platform cannot match (which would silently save dead pages).")]
+	public void Create_ShouldThrow_WhenTypeColumnUidIsNotAColumnOfTheObject() {
+		// Arrange — the object resolves WITH its columns, but the supplied type-column-uid matches none of them.
+		const string realColumnUId = "af280321-e749-41dd-98e5-383906747e29";
+		const string foreignColumnUId = "12341234-1234-1234-1234-123412341234";
+		StubEntitySchema(new EntityDesignSchemaDto {
+			UId = Guid.Parse(EntityUId),
+			Name = "Case",
+			Columns = new[] { new EntitySchemaColumnDto { UId = Guid.Parse(realColumnUId), Name = "Category" } }
+		});
+		StubSelectQueue(Rows(PackageUId));
+
+		// Act — a valid base default plus a typed page, but the type-column-uid is a foreign GUID (not a real column).
+		Action act = () => _service.Create(new RelatedPageAddonRequest("Custom", "Case", new[] {
+			new RelatedPageSpec("CaseFormPage", IsDefault: true),
+			new RelatedPageSpec("CaseIncidentPage", IsDefault: true, TypeColumnValue: "1b0bc159-150a-e111-a31b-00155d04c01d")
+		}, foreignColumnUId));
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>().WithMessage("*not a column of*",
+			because: "a type-column-uid that is not a real column of the object would write unmatchable typed pages");
+		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().SaveSchema(default!);
+	}
+
+	[Test]
+	[Description("Accepts a type-column-uid that matches an INHERITED column of the object (e.g. Category on Case), confirming the check spans inherited columns and does not false-reject a valid typed set.")]
+	public void Create_ShouldAccept_WhenTypeColumnUidMatchesInheritedColumn() {
+		// Arrange — the type column is inherited (the common case: Case.Category is inherited from the base object).
+		const string categoryColumnUId = "af280321-e749-41dd-98e5-383906747e29";
+		StubEntitySchema(new EntityDesignSchemaDto {
+			UId = Guid.Parse(EntityUId),
+			Name = "Case",
+			InheritedColumns = new[] { new EntitySchemaColumnDto { UId = Guid.Parse(categoryColumnUId), Name = "Category" } }
+		});
+		StubSelectQueue(Rows(PackageUId), Rows(PageAUId), Rows(PageBUId));
+
+		// Act
+		RelatedPageAddonResult result = _service.Create(new RelatedPageAddonRequest("Custom", "Case", new[] {
+			new RelatedPageSpec("CaseFormPage", IsDefault: true),
+			new RelatedPageSpec("CaseIncidentPage", IsDefault: true, TypeColumnValue: "1b0bc159-150a-e111-a31b-00155d04c01d")
+		}, categoryColumnUId));
+
+		// Assert
+		result.PageCount.Should().Be(2,
+			because: "a type-column-uid matching an inherited column is valid and is saved");
+		JsonNode.Parse(_savedSchema.MetaData)!["TypeColumnUId"]!.GetValue<string>().Should().Be(categoryColumnUId,
+			because: "the validated inherited type column UId is written into the metadata");
+	}
+
+	[Test]
+	[Description("Does not reject a typed set when the resolved object exposes no columns: an unverifiable check must never block a write (fail-soft, mirroring the codebase's best-effort existence checks).")]
+	public void Create_ShouldNotValidateTypeColumn_WhenObjectExposesNoColumns() {
+		// Arrange — the default stub resolves an object with no Columns/InheritedColumns, yet a type-column-uid is set.
+		const string typeColumnUId = "af280321-e749-41dd-98e5-383906747e29";
+		StubSelectQueue(Rows(PackageUId), Rows(PageAUId), Rows(PageBUId));
+
+		// Act
+		RelatedPageAddonResult result = _service.Create(new RelatedPageAddonRequest("Custom", "Case", new[] {
+			new RelatedPageSpec("CaseFormPage", IsDefault: true),
+			new RelatedPageSpec("CaseIncidentPage", IsDefault: true, TypeColumnValue: "1b0bc159-150a-e111-a31b-00155d04c01d")
+		}, typeColumnUId));
+
+		// Assert
+		result.PageCount.Should().Be(2,
+			because: "with no columns to verify against, the type-column check is skipped and the set is saved");
+		_addonSchemaDesignerClient.Received(1).SaveSchema(Arg.Any<AddonSchemaDto>());
+	}
+
+	[Test]
+	[Description("Get decodes tolerantly when metadata fields are wrong-typed: a flag stored as a string still reads, and a non-object entry in Pages is skipped rather than throwing a raw framework exception out of a read.")]
+	public void Get_ShouldDecodeTolerantly_WhenMetadataFieldsAreWrongTyped() {
+		// Arrange — IsDefault as the string "true", Actions.Add as the string "false", plus a stray non-object entry.
+		StubAddonMetadata(
+			"""{"Pages":[{"UId":"u1","PageSchemaUId":"cc000000-0000-0000-0000-00000000000a","IsDefault":"true","Actions":{"Add":"false"}},42],"TypeColumnUId":null}""");
+		StubSelectQueue(Rows(PackageUId), NameRow("UsrDeliveryItemFormPage"));
+
+		// Act
+		RelatedPageAddonReadResult result = _service.Get(new RelatedPageAddonReadRequest("Custom", "UsrDeliveryItem"));
+
+		// Assert
+		result.PageCount.Should().Be(1,
+			because: "the stray non-object entry is skipped and the one object entry decodes");
+		result.Pages[0].IsDefault.Should().BeTrue(
+			because: "IsDefault stored as the string \"true\" is read tolerantly as true");
+		result.Pages[0].IsAdd.Should().BeFalse(
+			because: "Actions.Add stored as the string \"false\" is read tolerantly as false");
+	}
+
+	[Test]
+	[Description("Get returns an empty configuration (not a thrown exception) when the add-on metadata body is malformed / not JSON.")]
+	public void Get_ShouldReturnEmpty_WhenMetadataIsMalformed() {
+		// Arrange — a body that is not valid JSON; the tolerant parse yields an empty object, not a throw.
+		StubAddonMetadata("not-json {");
+		StubSelectQueue(Rows(PackageUId));
+
+		// Act
+		RelatedPageAddonReadResult result = _service.Get(new RelatedPageAddonReadRequest("Custom", "UsrDeliveryItem"));
+
+		// Assert
+		result.PageCount.Should().Be(0,
+			because: "a malformed metadata body decodes to an empty set rather than throwing out of a read");
+		result.Pages.Should().BeEmpty(
+			because: "there are no entries to decode from an unparseable body");
+	}
 }

@@ -1646,6 +1646,53 @@ public sealed class McpGuidanceResourceTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Returns a canonical MCP guidance article for binding Freedom UI pages to an object (the RelatedPage add-on) so AI callers can choose the default record page and the add-record page via create-related-page-addon.")]
+	public void RelatedPageBindingGuidanceResource_Should_Return_Canonical_Guide() {
+		// Arrange
+		RelatedPageBindingGuidanceResource resource = new();
+
+		// Act
+		ResourceContents result = resource.GetGuide();
+		TextResourceContents article = result.Should().BeOfType<TextResourceContents>(
+			because: "the related-page-binding guide should be returned as a plain-text MCP resource").Subject;
+
+		// Assert
+		article.Uri.Should().Be("docs://mcp/guides/related-page-binding",
+			because: "the resource should expose a stable MCP URI for related-page-binding guidance");
+		article.MimeType.Should().Be("text/plain",
+			because: "the related-page-binding guide should be discoverable as plain text");
+		article.Text.Should().Contain("clio MCP page-to-object binding guide",
+			because: "the article should identify itself as the dedicated page-to-object binding guide");
+		article.Text.Should().Contain("create-related-page-addon",
+			because: "the guide must name the write tool it documents");
+		article.Text.Should().Contain("get-related-page-addon",
+			because: "the guide must name the read tool for the read then modify then write round-trip");
+		article.Text.Should().Contain("FULLY REPLACES",
+			because: "the guide must warn about the replace-not-merge semantics so callers read first before rewriting");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("GuidanceCatalog exposes related-page-binding so AI callers can retrieve page-to-object binding guidance by name.")]
+	public void GuidanceCatalog_Should_Include_Related_Page_Binding_Entry() {
+		// Act
+		bool found = GuidanceCatalog.TryGet("related-page-binding", out GuidanceCatalogEntry entry);
+
+		// Assert
+		found.Should().BeTrue(
+			because: "the catalog must expose related-page-binding so get-guidance can return it by name");
+		entry.Name.Should().Be("related-page-binding",
+			because: "the catalog entry name must match the lookup key exactly");
+		entry.Description.Should().Contain("create-related-page-addon",
+			because: "the catalog description should name the tool the guidance article documents");
+		entry.Article.Should().NotBeNull(
+			because: "the catalog entry must carry the guidance text article");
+		entry.Article.Uri.Should().Be("docs://mcp/guides/related-page-binding",
+			because: "the article URI in the catalog must match the resource URI");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("GuidanceCatalog exposes esq-filters so AI callers can retrieve filter authoring guidance by name.")]
 	public void GuidanceCatalog_Should_Include_Esq_Filters_Entry() {
 		// Act
