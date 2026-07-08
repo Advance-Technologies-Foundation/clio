@@ -89,7 +89,8 @@ internal sealed class RelatedPageAddonService(
 	IApplicationClient applicationClient,
 	IServiceUrlBuilder serviceUrlBuilder,
 	IAddonSchemaDesignerClient addonSchemaDesignerClient,
-	IRemoteEntitySchemaDesignerClient entitySchemaDesignerClient)
+	IRemoteEntitySchemaDesignerClient entitySchemaDesignerClient,
+	ILogger logger)
 	: IRelatedPageAddonService {
 
 	private const string RelatedPageAddonName = "RelatedPage";
@@ -489,13 +490,22 @@ internal sealed class RelatedPageAddonService(
 	/// valid set — mirroring the codebase's other best-effort existence checks. The GUID shape is enforced upstream
 	/// by <see cref="ValidateRequest"/>; a non-empty non-GUID value never reaches here with a column to match.
 	/// </summary>
-	private static void ValidateTypeColumn(string typeColumnUId, EntityDesignSchemaDto entitySchema) {
+	private void ValidateTypeColumn(string typeColumnUId, EntityDesignSchemaDto entitySchema) {
 		if (string.IsNullOrWhiteSpace(typeColumnUId) || !Guid.TryParse(typeColumnUId.Trim(), out Guid typeColumnId)) {
 			return;
 		}
 		var columns = SchemaColumns(entitySchema).ToList();
 		if (columns.Count == 0) {
-			return; // the schema fetch surfaced no columns — cannot verify, so do not block (never false-reject)
+			// Never false-reject: an unverifiable schema must not block a valid write. But an object that supports
+			// related pages exposing ZERO columns (own + inherited) is unlikely — a partial/incomplete GetSchema (a
+			// transient server condition) is the more probable cause — so leave a warning trail, because an unverified
+			// TypeColumnUId is about to be written straight into the add-on (replace-not-merge).
+			logger.WriteWarning(
+				$"type-column-uid '{typeColumnUId.Trim()}' could not be verified: object '{entitySchema.Name}' returned "
+				+ "no columns (own or inherited), so the type-column existence check was skipped and the value is written "
+				+ "unverified. If the binding does not resolve at runtime, re-check the type column — the schema fetch may "
+				+ "have been incomplete.");
+			return;
 		}
 		if (columns.All(column => column.UId != typeColumnId)) {
 			throw new InvalidOperationException(
@@ -607,6 +617,17 @@ internal sealed class RelatedPageAddonService(
 		if (!string.IsNullOrWhiteSpace(spec.Role)) {
 			return spec.Role.Trim();
 		}
-		return !string.IsNullOrWhiteSpace(spec.RoleName) ? roleByName[spec.RoleName.Trim()] : null;
+		if (string.IsNullOrWhiteSpace(spec.RoleName)) {
+			return null;
+		}
+		string roleName = spec.RoleName.Trim();
+		if (!roleByName.TryGetValue(roleName, out string roleUId)) {
+			// ValidateRequest already rejects any audience outside the two known roles, so this is unreachable in the
+			// normal flow. Look up via TryGetValue rather than the indexer so that, if that upstream invariant ever
+			// diverges, this fails with a clear, traceable message instead of a bare KeyNotFoundException.
+			throw new InvalidOperationException(
+				$"Unexpected unresolved audience '{roleName}' — ValidateRequest should have rejected it before this point.");
+		}
+		return roleUId;
 	}
 }

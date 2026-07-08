@@ -28,6 +28,7 @@ public sealed class RelatedPageAddonServiceTests {
 	private IServiceUrlBuilder _serviceUrlBuilder;
 	private IAddonSchemaDesignerClient _addonSchemaDesignerClient;
 	private IRemoteEntitySchemaDesignerClient _entitySchemaDesignerClient;
+	private ILogger _logger;
 	private RelatedPageAddonService _service;
 	private AddonSchemaDto _savedSchema;
 
@@ -37,6 +38,7 @@ public sealed class RelatedPageAddonServiceTests {
 		_serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		_addonSchemaDesignerClient = Substitute.For<IAddonSchemaDesignerClient>();
 		_entitySchemaDesignerClient = Substitute.For<IRemoteEntitySchemaDesignerClient>();
+		_logger = Substitute.For<ILogger>();
 		_serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns(SelectQueryUrl);
 		_addonSchemaDesignerClient.GetSchema(Arg.Any<AddonGetRequestDto>())
 			.Returns(new AddonSchemaDto { MetaData = """{"Pages":[],"TypeColumnUId":null}""" });
@@ -46,7 +48,7 @@ public sealed class RelatedPageAddonServiceTests {
 		// The object (entity schema) is resolved through the entity schema designer, not a SelectQuery.
 		StubEntitySchema(new EntityDesignSchemaDto { UId = Guid.Parse(EntityUId), Name = "UsrDeliveryItem" });
 		_service = new RelatedPageAddonService(
-			_applicationClient, _serviceUrlBuilder, _addonSchemaDesignerClient, _entitySchemaDesignerClient);
+			_applicationClient, _serviceUrlBuilder, _addonSchemaDesignerClient, _entitySchemaDesignerClient, _logger);
 	}
 
 	private void StubEntitySchema(EntityDesignSchemaDto schema) =>
@@ -909,5 +911,32 @@ public sealed class RelatedPageAddonServiceTests {
 			because: "a malformed metadata body decodes to an empty set rather than throwing out of a read");
 		result.Pages.Should().BeEmpty(
 			because: "there are no entries to decode from an unparseable body");
+	}
+
+	[Test]
+	[Description("Get returns an entry with null names (best-effort) when a stored PageSchemaUId no longer resolves to a page and the stored Role UId is outside the known platform audiences — the read-modify-write safety guarantee, not a throw or a dropped entry.")]
+	public void Get_ShouldReturnEntryWithNullNames_WhenPageAndRoleDoNotResolve() {
+		// Arrange — an add-on (e.g. configured in the Interface Designer) whose page UId no longer resolves and whose
+		// role is a custom/since-changed UId outside KnownPlatformRoleNamesById. The raw UIds must survive for a safe
+		// round-trip; only the reverse-resolved names degrade to null.
+		StubAddonMetadata(
+			"""{"Pages":[{"UId":"u1","PageSchemaUId":"cc000000-0000-0000-0000-0000000000ff","IsDefault":true,"Actions":{"Add":false},"Role":"99998888-7777-6666-5555-444433332222"}],"TypeColumnUId":null}""");
+		// package resolves, then the page-name reverse lookup returns no rows (the page no longer exists).
+		StubSelectQueue(Rows(PackageUId), """{"success": true, "rows": []}""");
+
+		// Act
+		RelatedPageAddonReadResult result = _service.Get(new RelatedPageAddonReadRequest("Custom", "UsrDeliveryItem"));
+
+		// Assert
+		result.PageCount.Should().Be(1,
+			because: "an entry with unresolvable references is still returned for a safe read-modify-write, not dropped");
+		result.Pages[0].PageSchemaUId.Should().Be("cc000000-0000-0000-0000-0000000000ff",
+			because: "the raw page UId is preserved so the caller can round-trip it unchanged");
+		result.Pages[0].PageSchemaName.Should().BeNull(
+			because: "an unresolvable PageSchemaUId degrades to a null name rather than throwing or dropping the entry");
+		result.Pages[0].Role.Should().Be("99998888-7777-6666-5555-444433332222",
+			because: "the raw role UId is preserved for the round-trip");
+		result.Pages[0].RoleName.Should().BeNull(
+			because: "a role UId outside the known platform audiences degrades to a null name, not an error");
 	}
 }
