@@ -137,6 +137,30 @@ public sealed class ServerProcessDescriberTests {
 	}
 
 	[Test]
+	[Description("Deserializes a lookup condition's displayValue (the resolved caption) alongside its raw id value, so a lookup reads back as a human-readable caption instead of the clio DTO dropping it and leaving only a GUID.")]
+	public void Describe_ShouldReadFilterConditionDisplayValue_WhenServerReportsLookupCaption() {
+		// Arrange — UsrStage = <guid> with the resolved caption "Approved" carried on displayValue
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"SignalStart1\",\"type\":\"ProcessSchemaStartSignalEvent\",\"buildType\":\"signalstart\","
+			+ "\"filter\":{\"object\":\"UsrClioFilterTest\",\"logicalOperation\":\"and\","
+			+ "\"conditions\":[{\"column\":\"UsrStage\",\"comparison\":\"equal\",\"value\":\"09cd1bea-6a0e-4972-a6ad-97be3ea83dac\",\"displayValue\":\"Approved\"}]}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		DescribedFilterCondition condition = result.Value.Elements[0].Filter.Conditions[0];
+		condition.Value.Should().Be("09cd1bea-6a0e-4972-a6ad-97be3ea83dac",
+			because: "the raw lookup id round-trips as the value for an unambiguous re-build");
+		condition.DisplayValue.Should().Be("Approved",
+			because: "the resolved lookup caption is surfaced so the read-back is human-readable, not a bare GUID");
+	}
+
+	[Test]
 	[Description("Leaves the element filter null when the server reports no filter, so it serializes away for non-filtered elements.")]
 	public void Describe_ShouldLeaveFilterNull_WhenServerOmitsIt() {
 		// Arrange — an element with no data source filter

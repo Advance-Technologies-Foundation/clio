@@ -157,6 +157,8 @@ public sealed class ProcessModelingGuidanceResource {
 			- `describe-business-process` reads a filter back: an element carries a decoded `filter` (the same
 			  object / logicalOperation / conditions / groups shape) when it has one, so you can inspect it or
 			  round-trip it into a `setFilter`. A parameter reference comes back as its raw meta-path `expression`.
+			  A lookup value reads back as the raw id in `value` plus its resolved caption in `displayValue` (so
+			  `UsrStage` shows `Approved`, not a bare GUID); `displayValue` is read-only — omit it on `setFilter`.
 
 			== Build recipe (intent -> running process) ==
 			1. Translate the request into a graph: one start event, the activities, the sequence flows, one or

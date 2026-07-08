@@ -273,6 +273,15 @@ public sealed class DescribedFilterCondition {
 	[JsonPropertyName("value")]
 	public string Value { get; set; }
 
+	/// <summary>
+	/// Human-readable caption of the value on read-back (never sent on write). For a lookup constant this is the
+	/// referenced record's display name (for example <c>Approved</c>) so the value is not shown as a bare GUID; for a
+	/// process/element parameter reference it is that parameter's caption (making the opaque <see cref="Expression"/>
+	/// token readable). Null for a plain scalar, or when the source process predates the resolved-display serialization.
+	/// </summary>
+	[JsonPropertyName("displayValue")]
+	public string DisplayValue { get; set; }
+
 	/// <summary>Referenced process parameter (by name); null otherwise.</summary>
 	[JsonPropertyName("processParameter")]
 	public string ProcessParameter { get; set; }
