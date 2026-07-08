@@ -232,7 +232,7 @@ public sealed class DescribedSignal {
 	[JsonPropertyName("entitySchemaUId")]
 	public string EntitySchemaUId { get; set; }
 
-	/// <summary>Record change(s) that start the process: <c>added</c>, <c>modified</c>, <c>deleted</c>, or a combination.</summary>
+	/// <summary>The record change that starts the process: <c>added</c>, <c>modified</c>, or <c>deleted</c> (a single event — the designer has no combined trigger).</summary>
 	[JsonPropertyName("on")]
 	public string On { get; set; }
 }
