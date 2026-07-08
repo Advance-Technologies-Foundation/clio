@@ -14,7 +14,7 @@ namespace Clio.Tests.Command.McpServer;
 
 /// <summary>
 /// Unit coverage for the <c>advise-theme-palette</c> MCP tool: the flat tool shape and the verdict
-/// packet each operation returns (over the real <see cref="ThemeColorAdvisor"/> engine, with a substituted
+/// packet each operation returns (over the real <see cref="ThemePaletteAdvisor"/> engine, with a substituted
 /// template provider for the preview system defaults).
 /// </summary>
 [TestFixture]
@@ -28,7 +28,7 @@ public sealed class AdviseThemePaletteToolTests {
 	[SetUp]
 	public void SetUp() {
 		_templateProvider = Substitute.For<IThemeTemplateProvider>();
-		_tool = new AdviseThemePaletteTool(new ThemeColorAdvisor(_templateProvider));
+		_tool = new AdviseThemePaletteTool(new ThemePaletteAdvisor(_templateProvider));
 	}
 
 	[Test]
@@ -67,8 +67,8 @@ public sealed class AdviseThemePaletteToolTests {
 	[Description("An empty or unknown operation returns a graceful failure, not an exception.")]
 	public void Advise_ShouldReturnFailure_WhenOperationMissingOrUnknown() {
 		// Act
-		ThemeColorAdvisorResult empty = _tool.Advise(new AdviseThemePaletteArgs(Operation: " "));
-		ThemeColorAdvisorResult unknown = _tool.Advise(new AdviseThemePaletteArgs(Operation: "make-magic"));
+		ThemePaletteAdvisorResult empty = _tool.Advise(new AdviseThemePaletteArgs(Operation: " "));
+		ThemePaletteAdvisorResult unknown = _tool.Advise(new AdviseThemePaletteArgs(Operation: "make-magic"));
 
 		// Assert
 		empty.Success.Should().BeFalse(because: "operation is required");
@@ -80,7 +80,7 @@ public sealed class AdviseThemePaletteToolTests {
 	[Description("Returns a structured failure naming operation when the required field is omitted entirely.")]
 	public void Advise_ShouldReturnFailure_WhenOperationOmitted() {
 		// Act
-		ThemeColorAdvisorResult result = _tool.Advise(new AdviseThemePaletteArgs());
+		ThemePaletteAdvisorResult result = _tool.Advise(new AdviseThemePaletteArgs());
 
 		// Assert
 		result.Success.Should().BeFalse(because: "an advisory request without the required operation is invalid");
@@ -99,7 +99,7 @@ public sealed class AdviseThemePaletteToolTests {
 		};
 
 		// Act
-		ThemeColorAdvisorResult result = _tool.Advise(args);
+		ThemePaletteAdvisorResult result = _tool.Advise(args);
 
 		// Assert
 		result.Success.Should().BeFalse(because: "a camelCase alias must be rejected, not silently dropped");
@@ -138,7 +138,7 @@ public sealed class AdviseThemePaletteToolTests {
 	[Description("triage normalizes each colour, scores contrast on white, counts accepted/passing, and names the highest-contrast candidate.")]
 	public void Advise_ShouldTriageColours_WhenOperationTriage() {
 		// Act
-		ThemeColorAdvisorResult result = _tool.Advise(new AdviseThemePaletteArgs(
+		ThemePaletteAdvisorResult result = _tool.Advise(new AdviseThemePaletteArgs(
 			Operation: "triage", Colors: new[] { "#004fd6", "not-a-color", "#cccccc" }));
 
 		// Assert
@@ -156,8 +156,8 @@ public sealed class AdviseThemePaletteToolTests {
 	[Description("adapt-primary reports compliant for a readable primary and adapted (with the darker variant) for a low-contrast one.")]
 	public void Advise_ShouldReportAdaptationState_WhenOperationAdaptPrimary() {
 		// Act
-		ThemeColorAdvisorResult compliant = _tool.Advise(new AdviseThemePaletteArgs(Operation: "adapt-primary", Primary: "#000000"));
-		ThemeColorAdvisorResult adapted = _tool.Advise(new AdviseThemePaletteArgs(Operation: "adapt-primary", Primary: "#cccccc"));
+		ThemePaletteAdvisorResult compliant = _tool.Advise(new AdviseThemePaletteArgs(Operation: "adapt-primary", Primary: "#000000"));
+		ThemePaletteAdvisorResult adapted = _tool.Advise(new AdviseThemePaletteArgs(Operation: "adapt-primary", Primary: "#cccccc"));
 
 		// Assert
 		compliant.AdaptationState.Should().Be("compliant", because: "black already passes 3:1 on white");
@@ -172,8 +172,8 @@ public sealed class AdviseThemePaletteToolTests {
 	[Description("derive-secondary returns the auto secondary, and validates an override against the secondary role.")]
 	public void Advise_ShouldDeriveAndValidateSecondary_WhenOperationDeriveSecondary() {
 		// Act
-		ThemeColorAdvisorResult auto = _tool.Advise(new AdviseThemePaletteArgs(Operation: "derive-secondary", Primary: "#004fd6"));
-		ThemeColorAdvisorResult lowOverride = _tool.Advise(new AdviseThemePaletteArgs(
+		ThemePaletteAdvisorResult auto = _tool.Advise(new AdviseThemePaletteArgs(Operation: "derive-secondary", Primary: "#004fd6"));
+		ThemePaletteAdvisorResult lowOverride = _tool.Advise(new AdviseThemePaletteArgs(
 			Operation: "derive-secondary", Primary: "#004fd6", Secondary: "#cccccc"));
 
 		// Assert
@@ -187,7 +187,7 @@ public sealed class AdviseThemePaletteToolTests {
 	[Description("accent-suggest generates three candidates, marks valid/best, counts them, and gates the primary-as-accent fallback.")]
 	public void Advise_ShouldSuggestAccents_WhenOperationAccentSuggest() {
 		// Act
-		ThemeColorAdvisorResult result = _tool.Advise(new AdviseThemePaletteArgs(Operation: "accent-suggest", Primary: "#004fd6"));
+		ThemePaletteAdvisorResult result = _tool.Advise(new AdviseThemePaletteArgs(Operation: "accent-suggest", Primary: "#004fd6"));
 
 		// Assert
 		result.SuggestedCandidates.Should().HaveCount(3, because: "three candidates are generated at +135/180/225");
@@ -200,7 +200,7 @@ public sealed class AdviseThemePaletteToolTests {
 	[Description("accent-evaluate-stored bands each stored candidate: an identical-to-primary colour is strong (not recommended); a distinct one is clean.")]
 	public void Advise_ShouldBandStoredAccents_WhenOperationAccentEvaluateStored() {
 		// Act
-		ThemeColorAdvisorResult result = _tool.Advise(new AdviseThemePaletteArgs(
+		ThemePaletteAdvisorResult result = _tool.Advise(new AdviseThemePaletteArgs(
 			Operation: "accent-evaluate-stored", Primary: "#004fd6", CandidateHexes: new[] { "#004fd6", "#f94e11" }));
 
 		// Assert
@@ -215,11 +215,11 @@ public sealed class AdviseThemePaletteToolTests {
 	[Description("validate-color role=primary returns a strong verdict below 3:1; role=secondary returns warn.")]
 	public void Advise_ShouldApplyRoleOverlay_WhenOperationValidateColor() {
 		// Act
-		ThemeColorAdvisorResult primary = _tool.Advise(new AdviseThemePaletteArgs(
+		ThemePaletteAdvisorResult primary = _tool.Advise(new AdviseThemePaletteArgs(
 			Operation: "validate-color", Role: "primary", Color: "#cccccc"));
-		ThemeColorAdvisorResult secondary = _tool.Advise(new AdviseThemePaletteArgs(
+		ThemePaletteAdvisorResult secondary = _tool.Advise(new AdviseThemePaletteArgs(
 			Operation: "validate-color", Role: "secondary", Color: "#cccccc"));
-		ThemeColorAdvisorResult ok = _tool.Advise(new AdviseThemePaletteArgs(
+		ThemePaletteAdvisorResult ok = _tool.Advise(new AdviseThemePaletteArgs(
 			Operation: "validate-color", Role: "primary", Color: "#004fd6"));
 
 		// Assert
@@ -233,9 +233,9 @@ public sealed class AdviseThemePaletteToolTests {
 	[Description("validate-color role=accent applies the strong-similarity-first precedence: a colour identical to the primary is strong.")]
 	public void Advise_ShouldRankAccentSimilarityFirst_WhenOperationValidateColorAccent() {
 		// Act
-		ThemeColorAdvisorResult tooSimilar = _tool.Advise(new AdviseThemePaletteArgs(
+		ThemePaletteAdvisorResult tooSimilar = _tool.Advise(new AdviseThemePaletteArgs(
 			Operation: "validate-color", Role: "accent", Color: "#004fd6", Primary: "#004fd6"));
-		ThemeColorAdvisorResult distinct = _tool.Advise(new AdviseThemePaletteArgs(
+		ThemePaletteAdvisorResult distinct = _tool.Advise(new AdviseThemePaletteArgs(
 			Operation: "validate-color", Role: "accent", Color: "#f94e11", Primary: "#004fd6"));
 
 		// Assert
@@ -248,7 +248,7 @@ public sealed class AdviseThemePaletteToolTests {
 	[Description("accent-validate-manual routes to the canonical accent validation shape.")]
 	public void Advise_ShouldValidateManualAccent_WhenOperationAccentValidateManual() {
 		// Act
-		ThemeColorAdvisorResult result = _tool.Advise(new AdviseThemePaletteArgs(
+		ThemePaletteAdvisorResult result = _tool.Advise(new AdviseThemePaletteArgs(
 			Operation: "accent-validate-manual", Color: "#f94e11", Primary: "#004fd6"));
 
 		// Assert
@@ -270,7 +270,7 @@ public sealed class AdviseThemePaletteToolTests {
 			.Returns(callInfo => { callInfo[2] = "#d2310d"; return true; });
 
 		// Act
-		ThemeColorAdvisorResult result = _tool.Advise(new AdviseThemePaletteArgs(
+		ThemePaletteAdvisorResult result = _tool.Advise(new AdviseThemePaletteArgs(
 			Operation: "preview", Primary: "#004fd6", Secondary: "#0d2e4e", Accent: "#f94e11", Version: "10.0"));
 
 		// Assert
@@ -295,7 +295,7 @@ public sealed class AdviseThemePaletteToolTests {
 			.Returns(callInfo => { callInfo[2] = "#d2310d"; return true; });
 
 		// Act
-		ThemeColorAdvisorResult result = _tool.Advise(new AdviseThemePaletteArgs(
+		ThemePaletteAdvisorResult result = _tool.Advise(new AdviseThemePaletteArgs(
 			Operation: "preview", Primary: "#004fd6", Secondary: "#0d2e4e", Accent: "#f94e11", Version: "10.0",
 			FullStops: true));
 
@@ -313,9 +313,9 @@ public sealed class AdviseThemePaletteToolTests {
 	[Description("validate-color rejects a null or unknown role with a graceful INVALID_ROLE failure.")]
 	public void Advise_ShouldReturnInvalidRole_WhenRoleUnknown() {
 		// Act
-		ThemeColorAdvisorResult nullRole = _tool.Advise(new AdviseThemePaletteArgs(
+		ThemePaletteAdvisorResult nullRole = _tool.Advise(new AdviseThemePaletteArgs(
 			Operation: "validate-color", Color: "#004fd6"));
-		ThemeColorAdvisorResult unknownRole = _tool.Advise(new AdviseThemePaletteArgs(
+		ThemePaletteAdvisorResult unknownRole = _tool.Advise(new AdviseThemePaletteArgs(
 			Operation: "validate-color", Role: "brand", Color: "#004fd6"));
 
 		// Assert
@@ -329,7 +329,7 @@ public sealed class AdviseThemePaletteToolTests {
 	[Description("validate-color role=accent takes the contrast-fail arm for a distinct-but-unreadable accent (not the similarity arm).")]
 	public void Advise_ShouldFlagAccentLowContrast_WhenDistinctButUnreadable() {
 		// Act — #cccccc is far from the blue primary (clean band) yet below 3:1 on white.
-		ThemeColorAdvisorResult result = _tool.Advise(new AdviseThemePaletteArgs(
+		ThemePaletteAdvisorResult result = _tool.Advise(new AdviseThemePaletteArgs(
 			Operation: "validate-color", Role: "accent", Color: "#cccccc", Primary: "#004fd6"));
 
 		// Assert
@@ -347,7 +347,7 @@ public sealed class AdviseThemePaletteToolTests {
 		_templateProvider.TryGetPaletteDefault(Arg.Any<string>(), "success", out missing).Returns(false);
 
 		// Act
-		ThemeColorAdvisorResult result = _tool.Advise(new AdviseThemePaletteArgs(
+		ThemePaletteAdvisorResult result = _tool.Advise(new AdviseThemePaletteArgs(
 			Operation: "preview", Primary: "#004fd6", Secondary: "#0d2e4e", Accent: "#f94e11", Version: "10.0"));
 
 		// Assert
@@ -364,7 +364,7 @@ public sealed class AdviseThemePaletteToolTests {
 			.Returns(_ => throw new System.ArgumentException("Themes require Creatio 10.0 or newer."));
 
 		// Act
-		ThemeColorAdvisorResult result = _tool.Advise(new AdviseThemePaletteArgs(
+		ThemePaletteAdvisorResult result = _tool.Advise(new AdviseThemePaletteArgs(
 			Operation: "preview", Primary: "#004fd6", Secondary: "#0d2e4e", Accent: "#f94e11", Version: "9.0"));
 
 		// Assert

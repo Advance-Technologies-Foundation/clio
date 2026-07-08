@@ -15,10 +15,10 @@ namespace Clio.Command.McpServer.Tools;
 /// deterministic <c>Clio.Theming</c> engine into pre-computed verdicts (readable or not, too similar or not,
 /// valid candidate or not) so the agent never compares a colour metric to a threshold. Read-only, offline,
 /// and stateless — the caller re-invokes it whenever a colour input changes. Delegates to
-/// <see cref="IThemeColorAdvisor"/>.
+/// <see cref="IThemePaletteAdvisor"/>.
 /// </summary>
 [McpServerToolType]
-public sealed class AdviseThemePaletteTool(IThemeColorAdvisor advisor) {
+public sealed class AdviseThemePaletteTool(IThemePaletteAdvisor advisor) {
 
 	internal const string ToolName = "advise-theme-palette";
 
@@ -39,7 +39,7 @@ public sealed class AdviseThemePaletteTool(IThemeColorAdvisor advisor) {
 		+ "derive-secondary (auto secondary + validate an override), accent-evaluate-stored / accent-suggest / accent-validate-manual "
 		+ "(the three accent paths), validate-color (check a colour for a role), preview (base -500 per role + system success/error). "
 		+ "For the theme workflow, read get-guidance theming first.")]
-	public ThemeColorAdvisorResult Advise(
+	public ThemePaletteAdvisorResult Advise(
 		[Description("Parameters: operation (required), colors, primary, role, color, secondary, accent, " +
 			"candidate-hexes, success, error, version, full-stops (all optional; see each operation's needs).")]
 		[Required] AdviseThemePaletteArgs args) {
@@ -47,10 +47,10 @@ public sealed class AdviseThemePaletteTool(IThemeColorAdvisor advisor) {
 			args.ExtensionData, LegacyAliases, ".",
 			"Valid: operation, colors, primary, role, color, secondary, accent, candidate-hexes, success, error, version, full-stops.");
 		if (!string.IsNullOrWhiteSpace(aliasError)) {
-			return ThemeColorAdvisorResult.Failure(aliasError);
+			return ThemePaletteAdvisorResult.Failure(aliasError);
 		}
 		if (string.IsNullOrWhiteSpace(args.Operation)) {
-			return ThemeColorAdvisorResult.Failure("operation is required and cannot be empty.");
+			return ThemePaletteAdvisorResult.Failure("operation is required and cannot be empty.");
 		}
 		return args.Operation switch {
 			"triage" => advisor.Triage(args.Colors),
@@ -62,7 +62,7 @@ public sealed class AdviseThemePaletteTool(IThemeColorAdvisor advisor) {
 			"validate-color" => advisor.ValidateColor(args.Role, args.Color, args.Primary),
 			"preview" => advisor.Preview(args.Primary, args.Secondary, args.Accent, args.Success, args.Error,
 				args.Version, args.FullStops ?? false),
-			_ => ThemeColorAdvisorResult.Failure($"operation \"{args.Operation}\" is not recognized.")
+			_ => ThemePaletteAdvisorResult.Failure($"operation \"{args.Operation}\" is not recognized.")
 		};
 	}
 }

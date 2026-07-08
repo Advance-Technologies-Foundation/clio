@@ -8,7 +8,7 @@ using NSubstitute;
 using NUnit.Framework;
 
 /// <summary>
-/// Direct unit coverage for the <see cref="ThemeColorAdvisor"/> engine: each operation is invoked on the
+/// Direct unit coverage for the <see cref="ThemePaletteAdvisor"/> engine: each operation is invoked on the
 /// engine itself (not through the MCP tool wrapper), asserting the verdict packet it returns and the named
 /// hard-failure codes. The color math is delegated to the deterministic <c>Clio.Theming</c> engine, so the
 /// asserted hexes/verdicts are the calibrated golden values; only the preview system defaults are stubbed
@@ -17,15 +17,15 @@ using NUnit.Framework;
 [TestFixture]
 [Category("Unit")]
 [Property("Module", "Command")]
-public sealed class ThemeColorAdvisorTests {
+public sealed class ThemePaletteAdvisorTests {
 
 	private IThemeTemplateProvider _templateProvider;
-	private ThemeColorAdvisor _advisor;
+	private ThemePaletteAdvisor _advisor;
 
 	[SetUp]
 	public void SetUp() {
 		_templateProvider = Substitute.For<IThemeTemplateProvider>();
-		_advisor = new ThemeColorAdvisor(_templateProvider);
+		_advisor = new ThemePaletteAdvisor(_templateProvider);
 	}
 
 	[TearDown]
@@ -37,7 +37,7 @@ public sealed class ThemeColorAdvisorTests {
 	[Description("Triage normalizes each input, scores contrast on white, counts accepted/passing, names the highest-contrast candidate, and surfaces the rejection code for an unparseable input.")]
 	public void Triage_ShouldNormalizeScoreAndRank_WhenGivenMixedInputs() {
 		// Act
-		ThemeColorAdvisorResult result = _advisor.Triage(new[] { "#004fd6", "not-a-color", "#cccccc" });
+		ThemePaletteAdvisorResult result = _advisor.Triage(new[] { "#004fd6", "not-a-color", "#cccccc" });
 
 		// Assert
 		result.Success.Should().BeTrue(because: "triage completes even when some inputs are rejected");
@@ -53,8 +53,8 @@ public sealed class ThemeColorAdvisorTests {
 	[Description("Triage fails with INVALID_COLOR when the input list is null or empty (nothing to triage).")]
 	public void Triage_ShouldFail_WhenNoColorsSupplied() {
 		// Act
-		ThemeColorAdvisorResult empty = _advisor.Triage(Array.Empty<string>());
-		ThemeColorAdvisorResult nul = _advisor.Triage(null);
+		ThemePaletteAdvisorResult empty = _advisor.Triage(Array.Empty<string>());
+		ThemePaletteAdvisorResult nul = _advisor.Triage(null);
 
 		// Assert
 		empty.Success.Should().BeFalse(because: "there is nothing to triage for an empty list");
@@ -66,7 +66,7 @@ public sealed class ThemeColorAdvisorTests {
 	[Description("AdaptPrimary reports the compliant state for a readable primary and omits the non-compliant-only fields.")]
 	public void AdaptPrimary_ShouldReportCompliant_WhenReadable() {
 		// Act
-		ThemeColorAdvisorResult result = _advisor.AdaptPrimary("#000000");
+		ThemePaletteAdvisorResult result = _advisor.AdaptPrimary("#000000");
 
 		// Assert
 		result.Success.Should().BeTrue(because: "a readable primary is a successful, compliant outcome");
@@ -79,7 +79,7 @@ public sealed class ThemeColorAdvisorTests {
 	[Description("AdaptPrimary returns the calibrated darker variant and a strong low-contrast warning for a low-contrast primary.")]
 	public void AdaptPrimary_ShouldReportAdaptedVariant_WhenLowContrast() {
 		// Act
-		ThemeColorAdvisorResult result = _advisor.AdaptPrimary("#cccccc");
+		ThemePaletteAdvisorResult result = _advisor.AdaptPrimary("#cccccc");
 
 		// Assert
 		result.AdaptationState.Should().Be("adapted", because: "a light grey is below 3:1 but a darker compliant variant exists");
@@ -92,7 +92,7 @@ public sealed class ThemeColorAdvisorTests {
 	[Description("AdaptPrimary fails with a rejection code when the primary cannot be normalized.")]
 	public void AdaptPrimary_ShouldFail_WhenPrimaryInvalid() {
 		// Act
-		ThemeColorAdvisorResult result = _advisor.AdaptPrimary("not-a-color");
+		ThemePaletteAdvisorResult result = _advisor.AdaptPrimary("not-a-color");
 
 		// Assert
 		result.Success.Should().BeFalse(because: "an unparseable primary cannot be adapted");
@@ -103,7 +103,7 @@ public sealed class ThemeColorAdvisorTests {
 	[Description("DeriveSecondary returns the calibrated auto secondary and leaves the override fields unset when no override is supplied.")]
 	public void DeriveSecondary_ShouldReturnCalibratedSecondary_WhenNoOverride() {
 		// Act
-		ThemeColorAdvisorResult result = _advisor.DeriveSecondary("#004fd6", secondaryOverride: null);
+		ThemePaletteAdvisorResult result = _advisor.DeriveSecondary("#004fd6", secondaryOverride: null);
 
 		// Assert
 		result.Success.Should().BeTrue(because: "deriving a secondary from a valid primary succeeds");
@@ -115,8 +115,8 @@ public sealed class ThemeColorAdvisorTests {
 	[Description("DeriveSecondary validates a supplied override against the secondary role: a readable one passes without a warning, a low-contrast one is flagged (still a success).")]
 	public void DeriveSecondary_ShouldValidateOverride_WhenOverrideSupplied() {
 		// Act
-		ThemeColorAdvisorResult readable = _advisor.DeriveSecondary("#004fd6", secondaryOverride: "#004fd6");
-		ThemeColorAdvisorResult low = _advisor.DeriveSecondary("#004fd6", secondaryOverride: "#cccccc");
+		ThemePaletteAdvisorResult readable = _advisor.DeriveSecondary("#004fd6", secondaryOverride: "#004fd6");
+		ThemePaletteAdvisorResult low = _advisor.DeriveSecondary("#004fd6", secondaryOverride: "#cccccc");
 
 		// Assert
 		readable.SecondaryHex.Should().Be("#004fd6", because: "the override is normalized and returned");
@@ -130,8 +130,8 @@ public sealed class ThemeColorAdvisorTests {
 	[Description("DeriveSecondary fails on an invalid primary and on an invalid override, each echoing the offending input.")]
 	public void DeriveSecondary_ShouldFail_WhenPrimaryOrOverrideInvalid() {
 		// Act
-		ThemeColorAdvisorResult badPrimary = _advisor.DeriveSecondary("nope", secondaryOverride: null);
-		ThemeColorAdvisorResult badOverride = _advisor.DeriveSecondary("#004fd6", secondaryOverride: "nope");
+		ThemePaletteAdvisorResult badPrimary = _advisor.DeriveSecondary("nope", secondaryOverride: null);
+		ThemePaletteAdvisorResult badOverride = _advisor.DeriveSecondary("#004fd6", secondaryOverride: "nope");
 
 		// Assert
 		badPrimary.Success.Should().BeFalse(because: "an unparseable primary cannot seed a secondary");
@@ -143,7 +143,7 @@ public sealed class ThemeColorAdvisorTests {
 	[Description("EvaluateStoredAccents bands each stored candidate: one identical to the primary is strong (not recommended); a distinct one is clean (recommended).")]
 	public void EvaluateStoredAccents_ShouldBandCandidates_WhenGivenStoredHexes() {
 		// Act
-		ThemeColorAdvisorResult result = _advisor.EvaluateStoredAccents("#004fd6", new[] { "#004fd6", "#f94e11" });
+		ThemePaletteAdvisorResult result = _advisor.EvaluateStoredAccents("#004fd6", new[] { "#004fd6", "#f94e11" });
 
 		// Assert
 		result.EvaluatedCandidates.Should().HaveCount(2, because: "both stored candidates are scored");
@@ -157,8 +157,8 @@ public sealed class ThemeColorAdvisorTests {
 	[Description("EvaluateStoredAccents skips unparseable candidates and fails on an invalid primary.")]
 	public void EvaluateStoredAccents_ShouldSkipInvalidAndFailOnBadPrimary() {
 		// Act
-		ThemeColorAdvisorResult skipped = _advisor.EvaluateStoredAccents("#004fd6", new[] { "#f94e11", "not-a-color" });
-		ThemeColorAdvisorResult badPrimary = _advisor.EvaluateStoredAccents("nope", new[] { "#f94e11" });
+		ThemePaletteAdvisorResult skipped = _advisor.EvaluateStoredAccents("#004fd6", new[] { "#f94e11", "not-a-color" });
+		ThemePaletteAdvisorResult badPrimary = _advisor.EvaluateStoredAccents("nope", new[] { "#f94e11" });
 
 		// Assert
 		skipped.EvaluatedCandidates.Should().HaveCount(1, because: "an unparseable candidate is silently skipped, not reported");
@@ -169,9 +169,9 @@ public sealed class ThemeColorAdvisorTests {
 	[Description("ValidateColor applies the role overlay: a low-contrast primary is strong, a low-contrast secondary is only warn, and a readable colour passes.")]
 	public void ValidateColor_ShouldApplyRoleOverlay_WhenPrimaryOrSecondary() {
 		// Act
-		ThemeColorAdvisorResult primary = _advisor.ValidateColor("primary", "#cccccc", primary: null);
-		ThemeColorAdvisorResult secondary = _advisor.ValidateColor("secondary", "#cccccc", primary: null);
-		ThemeColorAdvisorResult ok = _advisor.ValidateColor("primary", "#004fd6", primary: null);
+		ThemePaletteAdvisorResult primary = _advisor.ValidateColor("primary", "#cccccc", primary: null);
+		ThemePaletteAdvisorResult secondary = _advisor.ValidateColor("secondary", "#cccccc", primary: null);
+		ThemePaletteAdvisorResult ok = _advisor.ValidateColor("primary", "#004fd6", primary: null);
 
 		// Assert
 		primary.Verdict.Should().Be("strong", because: "a low-contrast primary is a strong failure");
@@ -184,9 +184,9 @@ public sealed class ThemeColorAdvisorTests {
 	[Description("ValidateColor role=accent ranks strong similarity first, then a contrast failure as warn, and passes a distinct readable accent.")]
 	public void ValidateColor_ShouldRankSimilarityFirst_WhenRoleAccent() {
 		// Act
-		ThemeColorAdvisorResult tooSimilar = _advisor.ValidateColor("accent", "#004fd6", primary: "#004fd6");
-		ThemeColorAdvisorResult lowContrast = _advisor.ValidateColor("accent", "#cccccc", primary: "#004fd6");
-		ThemeColorAdvisorResult distinct = _advisor.ValidateColor("accent", "#f94e11", primary: "#004fd6");
+		ThemePaletteAdvisorResult tooSimilar = _advisor.ValidateColor("accent", "#004fd6", primary: "#004fd6");
+		ThemePaletteAdvisorResult lowContrast = _advisor.ValidateColor("accent", "#cccccc", primary: "#004fd6");
+		ThemePaletteAdvisorResult distinct = _advisor.ValidateColor("accent", "#f94e11", primary: "#004fd6");
 
 		// Assert
 		tooSimilar.Verdict.Should().Be("strong", because: "an accent identical to the primary is strongly too similar");
@@ -200,9 +200,9 @@ public sealed class ThemeColorAdvisorTests {
 	[Description("ValidateColor fails with INVALID_ROLE for a null or unknown role, and echoes the rejection code for an unparseable colour.")]
 	public void ValidateColor_ShouldFail_WhenRoleUnknownOrColorInvalid() {
 		// Act
-		ThemeColorAdvisorResult nullRole = _advisor.ValidateColor(null, "#004fd6", primary: null);
-		ThemeColorAdvisorResult unknownRole = _advisor.ValidateColor("brand", "#004fd6", primary: null);
-		ThemeColorAdvisorResult badColor = _advisor.ValidateColor("primary", "nope", primary: null);
+		ThemePaletteAdvisorResult nullRole = _advisor.ValidateColor(null, "#004fd6", primary: null);
+		ThemePaletteAdvisorResult unknownRole = _advisor.ValidateColor("brand", "#004fd6", primary: null);
+		ThemePaletteAdvisorResult badColor = _advisor.ValidateColor("primary", "nope", primary: null);
 
 		// Assert
 		nullRole.Success.Should().BeFalse(because: "a role is required to validate a colour");
@@ -216,7 +216,7 @@ public sealed class ThemeColorAdvisorTests {
 	[Description("SuggestAccents generates the three candidates, scores them, marks exactly one best, counts the valid ones, and gates the primary-as-accent fallback.")]
 	public void SuggestAccents_ShouldGenerateScoreAndMarkBest_WhenGivenPrimary() {
 		// Act
-		ThemeColorAdvisorResult result = _advisor.SuggestAccents("#004fd6");
+		ThemePaletteAdvisorResult result = _advisor.SuggestAccents("#004fd6");
 
 		// Assert
 		result.SuggestedCandidates.Should().HaveCount(3, because: "three candidates are generated at +135/180/225");
@@ -230,7 +230,7 @@ public sealed class ThemeColorAdvisorTests {
 	[Description("SuggestAccents fails on an invalid primary.")]
 	public void SuggestAccents_ShouldFail_WhenPrimaryInvalid() {
 		// Act
-		ThemeColorAdvisorResult result = _advisor.SuggestAccents("nope");
+		ThemePaletteAdvisorResult result = _advisor.SuggestAccents("nope");
 
 		// Assert
 		result.Success.Should().BeFalse(because: "accent candidates cannot be generated without a valid primary");
@@ -243,7 +243,7 @@ public sealed class ThemeColorAdvisorTests {
 		GivenTemplateDefaults();
 
 		// Act
-		ThemeColorAdvisorResult result = _advisor.Preview("#004fd6", "#0d2e4e", "#f94e11", success: null, error: null, version: "10.0", fullStops: false);
+		ThemePaletteAdvisorResult result = _advisor.Preview("#004fd6", "#0d2e4e", "#f94e11", success: null, error: null, version: "10.0", fullStops: false);
 
 		// Assert
 		result.Success.Should().BeTrue(because: "a valid preview with template-sourced system colours completes");
@@ -261,7 +261,7 @@ public sealed class ThemeColorAdvisorTests {
 		GivenTemplateDefaults();
 
 		// Act
-		ThemeColorAdvisorResult result = _advisor.Preview("#004fd6", "#0d2e4e", "#f94e11", success: null, error: null, version: "10.0", fullStops: true);
+		ThemePaletteAdvisorResult result = _advisor.Preview("#004fd6", "#0d2e4e", "#f94e11", success: null, error: null, version: "10.0", fullStops: true);
 
 		// Assert
 		result.Success.Should().BeTrue(because: "a valid full-stops preview completes");
@@ -275,7 +275,7 @@ public sealed class ThemeColorAdvisorTests {
 		GivenTemplateDefaults();
 
 		// Act — success is overridden with a low-contrast grey; error still comes from the template default.
-		ThemeColorAdvisorResult result = _advisor.Preview("#004fd6", "#0d2e4e", "#f94e11", success: "#cccccc", error: null, version: "10.0", fullStops: false);
+		ThemePaletteAdvisorResult result = _advisor.Preview("#004fd6", "#0d2e4e", "#f94e11", success: "#cccccc", error: null, version: "10.0", fullStops: false);
 
 		// Assert
 		result.SuccessSource.Should().Be("user-override", because: "the success colour was supplied explicitly");
@@ -293,7 +293,7 @@ public sealed class ThemeColorAdvisorTests {
 			.Returns(_ => throw new ArgumentException("Themes require Creatio 10.0 or newer."));
 
 		// Act
-		ThemeColorAdvisorResult result = _advisor.Preview("#004fd6", "#0d2e4e", "#f94e11", success: null, error: null, version: "9.0", fullStops: false);
+		ThemePaletteAdvisorResult result = _advisor.Preview("#004fd6", "#0d2e4e", "#f94e11", success: null, error: null, version: "9.0", fullStops: false);
 
 		// Assert
 		result.Success.Should().BeFalse(because: "an unsupported version cannot source system defaults");
@@ -309,7 +309,7 @@ public sealed class ThemeColorAdvisorTests {
 		_templateProvider.TryGetPaletteDefault(Arg.Any<string>(), "success", out missing).Returns(false);
 
 		// Act
-		ThemeColorAdvisorResult result = _advisor.Preview("#004fd6", "#0d2e4e", "#f94e11", success: null, error: null, version: "10.0", fullStops: false);
+		ThemePaletteAdvisorResult result = _advisor.Preview("#004fd6", "#0d2e4e", "#f94e11", success: null, error: null, version: "10.0", fullStops: false);
 
 		// Assert
 		result.Success.Should().BeFalse(because: "a preview cannot render a role whose system default is missing");
@@ -321,7 +321,7 @@ public sealed class ThemeColorAdvisorTests {
 	[Description("Preview fails and echoes the offending input when a brand colour (here the secondary) cannot be normalized, before any template lookup.")]
 	public void Preview_ShouldFail_WhenBrandColorInvalid() {
 		// Act
-		ThemeColorAdvisorResult result = _advisor.Preview("#004fd6", "not-a-color", "#f94e11", success: null, error: null, version: "10.0", fullStops: false);
+		ThemePaletteAdvisorResult result = _advisor.Preview("#004fd6", "not-a-color", "#f94e11", success: null, error: null, version: "10.0", fullStops: false);
 
 		// Assert
 		result.Success.Should().BeFalse(because: "a preview cannot be built from an unparseable brand colour");

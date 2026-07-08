@@ -30,7 +30,7 @@ public sealed class AdviseThemePaletteToolE2ETests : McpContractFixtureBase {
 	[AllureTag(ToolName)]
 	[AllureName("advise-theme-palette is discoverable on the lazy surface and adapts a low-contrast primary")]
 	[Description("Starts the real clio MCP server, verifies advise-theme-palette is discoverable via the get-tool-contract compact index as non-destructive with the guidance pointer in its contract, and invokes the adapt-primary operation on a low-contrast colour.")]
-	public async Task ThemeColorAdvisor_Should_Be_Discoverable_And_AdaptPrimary() {
+	public async Task ThemePaletteAdvisor_Should_Be_Discoverable_And_AdaptPrimary() {
 		// Arrange
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
 
@@ -59,7 +59,7 @@ public sealed class AdviseThemePaletteToolE2ETests : McpContractFixtureBase {
 				}
 			},
 			context.CancellationTokenSource.Token);
-		ThemeColorAdvisorResult result = EntitySchemaStructuredResultParser.Extract<ThemeColorAdvisorResult>(callResult);
+		ThemePaletteAdvisorResult result = EntitySchemaStructuredResultParser.Extract<ThemePaletteAdvisorResult>(callResult);
 
 		// Assert
 		ToolContractIndexEntry indexEntry = index.Should().ContainSingle(entry => entry.Name == ToolName,
@@ -84,7 +84,7 @@ public sealed class AdviseThemePaletteToolE2ETests : McpContractFixtureBase {
 	[AllureTag(ToolName)]
 	[AllureName("advise-theme-palette triage sorts brand colours and identifies the primary candidate")]
 	[Description("Starts the real clio MCP server and invokes the triage operation on a mix of valid and invalid colours; verifies the accepted/passing counts and the highest-contrast candidate.")]
-	public async Task ThemeColorAdvisor_Should_Triage_BrandColours() {
+	public async Task ThemePaletteAdvisor_Should_Triage_BrandColours() {
 		// Arrange
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
 
@@ -98,7 +98,7 @@ public sealed class AdviseThemePaletteToolE2ETests : McpContractFixtureBase {
 				}
 			},
 			context.CancellationTokenSource.Token);
-		ThemeColorAdvisorResult result = EntitySchemaStructuredResultParser.Extract<ThemeColorAdvisorResult>(callResult);
+		ThemePaletteAdvisorResult result = EntitySchemaStructuredResultParser.Extract<ThemePaletteAdvisorResult>(callResult);
 
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
@@ -115,7 +115,7 @@ public sealed class AdviseThemePaletteToolE2ETests : McpContractFixtureBase {
 	[AllureTag(ToolName)]
 	[AllureName("advise-theme-palette preview returns only the base -500 per role by default")]
 	[Description("Starts the real clio MCP server and invokes the preview operation without full-stops; verifies each role's palette carries only the base -500 stop, not the full palette ramp.")]
-	public async Task ThemeColorAdvisor_Should_Preview_Base500_ByDefault() {
+	public async Task ThemePaletteAdvisor_Should_Preview_Base500_ByDefault() {
 		// Arrange
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
 
@@ -131,7 +131,7 @@ public sealed class AdviseThemePaletteToolE2ETests : McpContractFixtureBase {
 				}
 			},
 			context.CancellationTokenSource.Token);
-		ThemeColorAdvisorResult result = EntitySchemaStructuredResultParser.Extract<ThemeColorAdvisorResult>(callResult);
+		ThemePaletteAdvisorResult result = EntitySchemaStructuredResultParser.Extract<ThemePaletteAdvisorResult>(callResult);
 
 		// Assert
 		callResult.IsError.Should().NotBeTrue(

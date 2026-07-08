@@ -516,7 +516,7 @@ stories:
   # only the DEFERRED / in-progress work remains.
   # Story 7 (decommission @creatio/theming) — DEFERRED, externally gated on the --crt-* token catalog rehoming to
   # CDN/Academy + the cross-repo REMOTE_COMPONENT_STYLING guide repoint (needs a named owner + target date).
-  # Story 8 (go-live) — DEFERRED, flip [FeatureToggle("theming")] once the surface is complete + parity verified.
+  # Story 8 (go-live) — DONE 2026-07-08 (PR #748): [FeatureToggle("theming")] removed, surface live on all four surfaces, parity gate verified.
   - id: story-theming-native-build-7
     title: "Decommission @creatio/theming + styling-migration (R-01) — scaffold dep removal + token-catalog repoint"
     feature: "theming-native-build"
@@ -528,15 +528,15 @@ stories:
     blocks: []
     note: "DEFERRED — producer/external-gated (R-01). Full removal of @creatio/theming, with its component-styling use HANDLED (supersedes the earlier 'keep the dep' resolution / devflow D3 / CAP-04). clio-side is SMALL: remove '@creatio/theming':'^0.1000.0' from clio/tpl/ui-project/package.json:41 (full removal) + repoint the scaffold clio/tpl/ui-project/AGENTS.md --crt-* token-catalog reference to the catalog's rehomed CDN/Academy home (~15-25 lines). NOT a build/SCSS migration — nothing in the scaffold imports the package; --crt-* are platform :root runtime primitives, so npm i still succeeds + components still render. GATE (why deferred): 'styling use handled' requires the --crt-* token catalog to have a surviving online home (CDN/Academy — producer workstream) AND the cross-repo @creatio-devkit/common REMOTE_COMPONENT_STYLING guide repointed (clio cannot edit it). Removing the dep before that leaves an AUTHOR-TIME DOCUMENTATION GAP. Stays deferred until both land (needs named owner + target date). Verify (TC-I-04..06): new-ui-project scaffolds + npm i succeeds without the dep; sample --crt-* component renders (platform :root); scaffold AGENTS.md styling path resolves to the rehomed catalog. Cross-repo devkit repoint flagged external (TC-M-05). npm i checks need Node on the runner — demote to TC-M-05 if absent."
   - id: story-theming-native-build-8
-    title: "Go-live (Phase 5) — verify parity, flip the toggle on, surface public docs"
+    title: "Go-live (Phase 5) — verify parity, remove the toggle, surface public docs"
     feature: "theming-native-build"
     size: M
-    status: deferred
+    status: done
     file: spec/adr/adr-theming.md
     adr: spec/adr/adr-theming.md
     depends_on: []
     blocks: []
-    note: "DEFERRED — sequenced after the surface (stories 3-6: provider, command, MCP tool, guidance, docs) is COMPLETE + parity verified. NOT externally gated: the template is bundled in clio (tpl/themes/{version}/), so there is no CDN switch, no live-snapshot cross-repo guard, and no creatio-ui producer dependency (R-12 revised). Verify parity against the in-repo template/builder contract guard; then flip [FeatureToggle(theming)] ON (the feature un-darkens, reachable on all four surfaces). PUBLIC DOCS LAND HERE (D6): Commands.md/help/wiki authored in Story 6 enter the generated export baseline only when the toggle is on; add a RELEASE.md note. Manual live-stand runbook TC-M-01/03 (no-code + workspace, bundled template) + TC-E2E-01 toggle-on (manual, NOT in CI)."
+    note: "DONE 2026-07-08 (PR #748). The native-build surface (stories 3-6: provider, command, MCP tool, guidance, docs) is complete and the bit-exact parity gate is green — ThemeCssBuilder was made checkout-independent (LF-normalized template + regenerated golden), closing the flaky red gate. [FeatureToggle(theming)] has been REMOVED from the entire theming surface (verbs, MCP tools, resources, prompts), so it is reachable on all four surfaces and the public docs (Commands.md/help/wiki) already ship in the generated export baseline. Release note belongs in the GitHub Release at tag time (RELEASE.md is the release-cutting process, not a changelog). Manual live-stand runbook TC-M-01/03 (no-code + workspace, bundled template) + TC-E2E-01 remain manual (NOT in CI)."
 
   - id: story-theming-agent-advisor-1
     title: "advise-theme-palette MCP tool + Clio.Theming engine changes (interactive palette layer)"

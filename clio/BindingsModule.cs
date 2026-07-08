@@ -375,7 +375,7 @@ public class BindingsModule {
 		services.AddSingleton<IMobileComponentInfoCatalog, MobileComponentInfoCatalog>();
 		services.AddSingleton<IThemeCssBuilder, ThemeCssBuilder>();
 		services.AddSingleton<IThemeTemplateProvider, ThemeTemplateProvider>();
-		services.AddSingleton<IThemeColorAdvisor, ThemeColorAdvisor>();
+		services.AddSingleton<IThemePaletteAdvisor, ThemePaletteAdvisor>();
 		// Only the per-environment IPlatformVersionResolverFactory is registered: both the
 		// get-component-info MCP tool and the CLI verb resolve the platform version from
 		// per-call arguments (environment-name / uri / version), never from an ambient

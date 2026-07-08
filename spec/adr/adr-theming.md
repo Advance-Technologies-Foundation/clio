@@ -11,12 +11,13 @@ and `adr-theming-agent-advisor.md`. It is the single design-rationale document f
 |------|------|--------|
 | Contour A — dev / workspace flow | ENG-90636 | **Shipped** — `clear-themes-cache`, `list-themes`, delegate/guidance model |
 | Contour B — no-code / server flow | ENG-91387 | **Shipped** — `create-theme`, `update-theme`, `delete-theme` over native `ThemeService` |
-| Native build engine | ENG-90636 (continuation) | **Implemented**, gated by `[FeatureToggle("theming")]` — dark until go-live |
-| Agent advisor | theming-agent | **Implemented**, renamed `theme-color-advisor` → `advise-theme-palette`; story in-progress, dark under `[FeatureToggle("theming")]` |
+| Native build engine | ENG-90636 (continuation) | **Live** — `build-theme`; `[FeatureToggle("theming")]` removed at go-live (2026-07-08), parity gate verified |
+| Agent advisor | theming-agent | **Live** — renamed `theme-color-advisor` → `advise-theme-palette`; reachable (toggle removed at go-live); advisor story still in progress |
 
-All theming verbs, MCP tools, resources, and prompts now carry `[FeatureToggle("theming")]` on
-**both** their options/tool class and (where present) their MCP type. The whole surface is one
-feature key, dark by default until go-live is approved (see Native build D6 / OQ-02).
+**Go-live (2026-07-08).** `[FeatureToggle("theming")]` has been removed from the entire theming
+surface (verbs, MCP tools, resources, prompts); the feature is live on all four surfaces and the
+public docs ship in the generated export baseline. The parity gate (C-D7) is green. This supersedes
+the "dark by default until go-live" state that B-D1 and C-D6 below record as the original design.
 
 ---
 
@@ -239,6 +240,8 @@ gates the **entire** theming surface (build + CRUD + list + cache + advisor + gu
 attribute on its options class and MCP type (OQ-02). Because the template is bundled, nothing external
 gates the feature; go-live = surface complete + parity verified, then flip the toggle. MCP registration
 stays through `McpFeatureToggleFilter.RegisterEnabledPrimitives` (`IEnumerable<Type>`).
+**Superseded at go-live (2026-07-08): the toggle has been removed and the surface is live (see Status
+above); this records the original gated design.**
 
 **C-D7 — Bit-exact validation: spec anchors + generated parity fixture + drift guard.** Three layers:
 (1) ported `*.spec.ts` anchors as NUnit assertions; (2) a **committed, frozen JSON parity fixture** of
@@ -381,16 +384,16 @@ calibration at hex boundaries (banker's rounding / last-ULP) — port operator-f
   no workspace and no push. `create-theme` returns the generated id so an agent chains follow-ups without a
   list round-trip. Purely additive — no behavior change to `list-themes`/`clear-themes-cache`; create uses
   the non-logging data path, update/delete the clean log envelope.
-- **Native build (implemented, toggled dark):** agents stop shelling out to Node; theme CSS is produced
+- **Native build (implemented, live):** agents stop shelling out to Node; theme CSS is produced
   in-process, deterministically, bit-exact with the retired package; the template ships bundled (no network
   dependency, no producer gate). The MCP workspace-write mode keeps the large CSS out of the agent context.
-- **Agent advisor (implemented, toggled dark, story in-progress):** the interactive palette conversation is
+- **Agent advisor (implemented, live; story in-progress):** the interactive palette conversation is
   deliverable; the skill owns state/policy, clio owns thresholds and verdicts.
-- **Gating:** the entire theming surface is dark under `[FeatureToggle("theming")]` (enable with
-  `clio experimental --name theming --enable`) until go-live. Runtime auth (`CanCustomizeBranding` +
-  `CanManageThemes`) gates real environment use independently.
+- **Gating:** `[FeatureToggle("theming")]` was removed at go-live (2026-07-08) — the entire theming surface
+  is live on all four surfaces. Runtime auth (`CanCustomizeBranding` + `CanManageThemes`) gates real
+  environment use independently.
 - **Breaking change:** none across all areas — additive verbs/routes/tools/guidance, a scaffold-dependency
-  removal, and a feature-toggle-gated surface. `RELEASE.md` notes suffice once the toggle ships on.
+  removal, and a formerly feature-toggle-gated surface (toggle removed at go-live). A GitHub Release note suffices.
 - **Standing risks:** float parity (`Math.Pow`/`Math.Cbrt` ULP divergence — the mandatory parity fixture is
   the gate); regex parity (ported verbatim with match timeouts); `build-theme` output can exceed the
   downstream 1 MiB `cssContent` cap (R-14, enforced in `create-theme`, not pre-checked by `build-theme`);
@@ -404,10 +407,11 @@ calibration at hex boundaries (banker's rounding / last-ULP) — port operator-f
   catalog rehoming to CDN/Academy **and** the cross-repo `@creatio-devkit/common` REMOTE_COMPONENT_STYLING
   guide repoint. Removing the dep before the catalog is rehomed leaves an author-time documentation gap. The
   npm deprecation/unpublish is a creatio-ui workstream outside clio's control. (C-D9 / R-01)
-- **Native build — go-live (story 8).** Flip `[FeatureToggle("theming")]` on. Gated only on the clio surface
-  being complete (tests, docs, MCP tool) + parity verified — no external producer ticket, since the template
-  is bundled. (C-D6 / R-12)
+- **Native build — go-live (story 8) — DONE 2026-07-08.** `[FeatureToggle("theming")]` removed; the surface is
+  live (tests, docs, MCP tool complete) and the parity gate is verified/green — no external producer ticket,
+  since the template is bundled. (C-D6 / R-12)
 - **Agent advisor — story in-progress.** Engine changes + `advise-theme-palette` tool + DTOs + unit/e2e tests
-  + `ThemingGuidanceResource` rewrite. Stays dark under `[FeatureToggle("theming")]`. Deferred follow-ups from
+  + `ThemingGuidanceResource` rewrite. Reachable now (toggle removed at go-live); the advisor story itself is
+  still in progress. Deferred follow-ups from
   the contract: threshold calibration on real brands, the specific Academy article URL, metadata persistence
   if a future flow needs re-editing from source colors.

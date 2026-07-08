@@ -11,31 +11,31 @@ namespace Clio.Command.Theming;
 /// verdicts, warning codes, and threshold-free messages — while every threshold (3:1 contrast, 0.10/0.07
 /// similarity) stays in the engine. All colour math is delegated; this type never re-implements it.
 /// </summary>
-public interface IThemeColorAdvisor {
+public interface IThemePaletteAdvisor {
 	/// <summary>Triages raw brand colours: normalizes each, scores contrast on white, and identifies the primary candidate.</summary>
-	ThemeColorAdvisorResult Triage(IReadOnlyList<string> colors);
+	ThemePaletteAdvisorResult Triage(IReadOnlyList<string> colors);
 
 	/// <summary>Evaluates the primary for readability and returns the compliant / adapted / could-not-adapt outcome.</summary>
-	ThemeColorAdvisorResult AdaptPrimary(string primary);
+	ThemePaletteAdvisorResult AdaptPrimary(string primary);
 
 	/// <summary>Derives the secondary from the primary; validates a supplied override against the secondary role.</summary>
-	ThemeColorAdvisorResult DeriveSecondary(string primary, string secondaryOverride);
+	ThemePaletteAdvisorResult DeriveSecondary(string primary, string secondaryOverride);
 
 	/// <summary>Scores already-collected candidate hexes for similarity to the primary (accent path A).</summary>
-	ThemeColorAdvisorResult EvaluateStoredAccents(string primary, IReadOnlyList<string> candidateHexes);
+	ThemePaletteAdvisorResult EvaluateStoredAccents(string primary, IReadOnlyList<string> candidateHexes);
 
 	/// <summary>Validates a single manually-entered colour against a role, returning the role-aware verdict.</summary>
-	ThemeColorAdvisorResult ValidateColor(string role, string color, string primary);
+	ThemePaletteAdvisorResult ValidateColor(string role, string color, string primary);
 
 	/// <summary>Generates and scores the three accent candidates, marking valid ones and the best (accent path C).</summary>
-	ThemeColorAdvisorResult SuggestAccents(string primary);
+	ThemePaletteAdvisorResult SuggestAccents(string primary);
 
 	/// <summary>Builds the palette preview for every brand and system role — the base -500 per role by default, or the full 12-stop scale when <paramref name="fullStops"/> is true.</summary>
-	ThemeColorAdvisorResult Preview(string primary, string secondary, string accent, string success, string error, string version, bool fullStops);
+	ThemePaletteAdvisorResult Preview(string primary, string secondary, string accent, string success, string error, string version, bool fullStops);
 }
 
-/// <summary>Default <see cref="IThemeColorAdvisor"/> over the bundled engine and theme templates.</summary>
-public sealed class ThemeColorAdvisor : IThemeColorAdvisor {
+/// <summary>Default <see cref="IThemePaletteAdvisor"/> over the bundled engine and theme templates.</summary>
+public sealed class ThemePaletteAdvisor : IThemePaletteAdvisor {
 
 	private const string RolePrimary = "primary";
 	private const string RoleSecondary = "secondary";
@@ -67,12 +67,12 @@ public sealed class ThemeColorAdvisor : IThemeColorAdvisor {
 	private readonly IThemeTemplateProvider _templateProvider;
 
 	/// <summary>Initializes the advisor with the bundled theme-template provider (for preview system defaults).</summary>
-	public ThemeColorAdvisor(IThemeTemplateProvider templateProvider) {
+	public ThemePaletteAdvisor(IThemeTemplateProvider templateProvider) {
 		_templateProvider = templateProvider;
 	}
 
 	/// <inheritdoc />
-	public ThemeColorAdvisorResult Triage(IReadOnlyList<string> colors) {
+	public ThemePaletteAdvisorResult Triage(IReadOnlyList<string> colors) {
 		if (colors is null || colors.Count == 0) {
 			return Failure("INVALID_COLOR: at least one colour is required for triage.");
 		}
@@ -105,8 +105,8 @@ public sealed class ThemeColorAdvisor : IThemeColorAdvisor {
 	}
 
 	/// <inheritdoc />
-	public ThemeColorAdvisorResult AdaptPrimary(string primary) {
-		if (!TryNormalizeRequired(primary, out string p, out ThemeColorAdvisorResult failure)) {
+	public ThemePaletteAdvisorResult AdaptPrimary(string primary) {
+		if (!TryNormalizeRequired(primary, out string p, out ThemePaletteAdvisorResult failure)) {
 			return failure;
 		}
 		AdaptedPrimaryResult result = ColorMetrics.AdaptPrimary500(p);
@@ -134,12 +134,12 @@ public sealed class ThemeColorAdvisor : IThemeColorAdvisor {
 	}
 
 	/// <inheritdoc />
-	public ThemeColorAdvisorResult DeriveSecondary(string primary, string secondaryOverride) {
-		if (!TryNormalizeRequired(primary, out string p, out ThemeColorAdvisorResult failure)) {
+	public ThemePaletteAdvisorResult DeriveSecondary(string primary, string secondaryOverride) {
+		if (!TryNormalizeRequired(primary, out string p, out ThemePaletteAdvisorResult failure)) {
 			return failure;
 		}
 		string derived = PaletteGenerator.DeriveSecondary(p);
-		ThemeColorAdvisorResult baseResult = Success() with { DerivedSecondary = derived };
+		ThemePaletteAdvisorResult baseResult = Success() with { DerivedSecondary = derived };
 		if (string.IsNullOrWhiteSpace(secondaryOverride)) {
 			return baseResult;
 		}
@@ -158,8 +158,8 @@ public sealed class ThemeColorAdvisor : IThemeColorAdvisor {
 	}
 
 	/// <inheritdoc />
-	public ThemeColorAdvisorResult EvaluateStoredAccents(string primary, IReadOnlyList<string> candidateHexes) {
-		if (!TryNormalizeRequired(primary, out string p, out ThemeColorAdvisorResult failure)) {
+	public ThemePaletteAdvisorResult EvaluateStoredAccents(string primary, IReadOnlyList<string> candidateHexes) {
+		if (!TryNormalizeRequired(primary, out string p, out ThemePaletteAdvisorResult failure)) {
 			return failure;
 		}
 		List<EvaluatedAccentCandidate> evaluated = new();
@@ -181,14 +181,14 @@ public sealed class ThemeColorAdvisor : IThemeColorAdvisor {
 	}
 
 	/// <inheritdoc />
-	public ThemeColorAdvisorResult ValidateColor(string role, string color, string primary) {
+	public ThemePaletteAdvisorResult ValidateColor(string role, string color, string primary) {
 		if (role is null || !TryParseRole(role, out ThemeRole parsedRole)) {
 			return Failure("INVALID_ROLE: role must be primary, secondary, accent, success, or error.");
 		}
 		if (!ColorNormalizer.TryNormalize(color, out string c, out string rejectionCode)) {
 			return Failure($"{rejectionCode}: \"{color}\"");
 		}
-		ThemeColorAdvisorResult baseResult = Success() with {
+		ThemePaletteAdvisorResult baseResult = Success() with {
 			NormalizedColor = c,
 			WasConverted = WasConverted(color, c)
 		};
@@ -207,8 +207,8 @@ public sealed class ThemeColorAdvisor : IThemeColorAdvisor {
 	}
 
 	/// <inheritdoc />
-	public ThemeColorAdvisorResult SuggestAccents(string primary) {
-		if (!TryNormalizeRequired(primary, out string p, out ThemeColorAdvisorResult failure)) {
+	public ThemePaletteAdvisorResult SuggestAccents(string primary) {
+		if (!TryNormalizeRequired(primary, out string p, out ThemePaletteAdvisorResult failure)) {
 			return failure;
 		}
 		ScoredAccentCandidate best = ColorMetrics.SelectBestValidAccent(
@@ -232,14 +232,14 @@ public sealed class ThemeColorAdvisor : IThemeColorAdvisor {
 	}
 
 	/// <inheritdoc />
-	public ThemeColorAdvisorResult Preview(string primary, string secondary, string accent, string success, string error, string version, bool fullStops) {
-		if (!TryNormalizeRequired(primary, out string p, out ThemeColorAdvisorResult primaryFailure)) {
+	public ThemePaletteAdvisorResult Preview(string primary, string secondary, string accent, string success, string error, string version, bool fullStops) {
+		if (!TryNormalizeRequired(primary, out string p, out ThemePaletteAdvisorResult primaryFailure)) {
 			return primaryFailure;
 		}
-		if (!TryNormalizeRequired(secondary, out string s, out ThemeColorAdvisorResult secondaryFailure)) {
+		if (!TryNormalizeRequired(secondary, out string s, out ThemePaletteAdvisorResult secondaryFailure)) {
 			return secondaryFailure;
 		}
-		if (!TryNormalizeRequired(accent, out string a, out ThemeColorAdvisorResult accentFailure)) {
+		if (!TryNormalizeRequired(accent, out string a, out ThemePaletteAdvisorResult accentFailure)) {
 			return accentFailure;
 		}
 		string resolvedVersion;
@@ -271,7 +271,7 @@ public sealed class ThemeColorAdvisor : IThemeColorAdvisor {
 		if (errorColor.Verdict == false) {
 			warnings.Add(LowContrastCodeByRole[ThemeRole.Error]);
 		}
-		ThemeColorAdvisorResult result = Success() with {
+		ThemePaletteAdvisorResult result = Success() with {
 			Palettes = palettes,
 			SuccessSource = successColor.Source,
 			ErrorSource = errorColor.Source,
@@ -281,7 +281,7 @@ public sealed class ThemeColorAdvisor : IThemeColorAdvisor {
 		return WithErrorOverride(WithSuccessOverride(result, successColor), errorColor);
 	}
 
-	private ThemeColorAdvisorResult ValidateAccent(ThemeColorAdvisorResult baseResult, string accentHex, string primary) {
+	private ThemePaletteAdvisorResult ValidateAccent(ThemePaletteAdvisorResult baseResult, string accentHex, string primary) {
 		if (!ColorNormalizer.TryNormalize(primary, out string p, out _)) {
 			return Failure("INVALID_COLOR: a valid primary is required to validate an accent.");
 		}
@@ -332,7 +332,7 @@ public sealed class ThemeColorAdvisor : IThemeColorAdvisor {
 		return new SystemColorResolution { Resolved = true, Hex = hex, Source = TemplateDefaultSource };
 	}
 
-	private static ThemeColorAdvisorResult WithSuccessOverride(ThemeColorAdvisorResult result, SystemColorResolution resolution) {
+	private static ThemePaletteAdvisorResult WithSuccessOverride(ThemePaletteAdvisorResult result, SystemColorResolution resolution) {
 		if (resolution.Source != UserOverrideSource) {
 			return result;
 		}
@@ -344,7 +344,7 @@ public sealed class ThemeColorAdvisor : IThemeColorAdvisor {
 		};
 	}
 
-	private static ThemeColorAdvisorResult WithErrorOverride(ThemeColorAdvisorResult result, SystemColorResolution resolution) {
+	private static ThemePaletteAdvisorResult WithErrorOverride(ThemePaletteAdvisorResult result, SystemColorResolution resolution) {
 		if (resolution.Source != UserOverrideSource) {
 			return result;
 		}
@@ -368,7 +368,7 @@ public sealed class ThemeColorAdvisor : IThemeColorAdvisor {
 		return result;
 	}
 
-	private static bool TryNormalizeRequired(string input, out string normalizedHex, out ThemeColorAdvisorResult failure) {
+	private static bool TryNormalizeRequired(string input, out string normalizedHex, out ThemePaletteAdvisorResult failure) {
 		failure = null;
 		if (ColorNormalizer.TryNormalize(input, out normalizedHex, out string rejectionCode)) {
 			return true;
@@ -454,12 +454,12 @@ public sealed class ThemeColorAdvisor : IThemeColorAdvisor {
 		};
 	}
 
-	private static ThemeColorAdvisorResult Success() {
-		return new ThemeColorAdvisorResult { Success = true };
+	private static ThemePaletteAdvisorResult Success() {
+		return new ThemePaletteAdvisorResult { Success = true };
 	}
 
-	private static ThemeColorAdvisorResult Failure(string error) {
-		return new ThemeColorAdvisorResult { Success = false, Error = error };
+	private static ThemePaletteAdvisorResult Failure(string error) {
+		return new ThemePaletteAdvisorResult { Success = false, Error = error };
 	}
 
 	private enum ThemeRole {

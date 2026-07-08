@@ -4,3 +4,8 @@
 # line endings before comparing, and these fixtures stay LF in git to avoid churn.
 clio.tests/Examples/**/*.yaml text eol=lf
 clio.tests/Examples/**/*.yml  text eol=lf
+
+# Theme templates feed ThemeCssBuilder (which normalizes them to LF) and the byte-compared
+# theme-css golden; pin both to LF so the parity gate never depends on each machine's core.autocrlf.
+clio/tpl/themes/**/*.tpl                   text eol=lf
+clio.tests/Theming/Fixtures/*.json         text eol=lf

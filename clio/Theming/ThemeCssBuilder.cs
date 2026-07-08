@@ -83,6 +83,7 @@ internal sealed class ThemeCssBuilder : IThemeCssBuilder {
 		if (templateCss == null) {
 			throw new ArgumentNullException(nameof(templateCss), "A theme template is required.");
 		}
+		templateCss = templateCss.Replace("\r\n", "\n").Replace("\r", "\n");
 		string primary = ColorNormalizer.Normalize(options.Primary);
 		string secondary = ColorNormalizer.Normalize(options.Secondary ?? PaletteGenerator.DeriveSecondary(primary));
 		string accent = ColorNormalizer.Normalize(options.Accent ?? ColorMetrics.ChooseBestAccent(primary, PaletteGenerator.GenerateAccentCandidates(primary)).Hex);

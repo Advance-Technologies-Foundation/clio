@@ -120,7 +120,7 @@ public sealed record SuggestedAccentCandidate {
 /// The advisor returns pre-computed verdicts, not raw thresholds — every populated verdict field already
 /// applied the clio-owned thresholds.
 /// </summary>
-public sealed record ThemeColorAdvisorResult {
+public sealed record ThemePaletteAdvisorResult {
 	/// <summary>Whether the operation completed. <c>false</c> only on a hard failure (see <see cref="Error"/>).</summary>
 	[JsonPropertyName("success")]
 	public bool Success { get; init; }
@@ -316,8 +316,8 @@ public sealed record ThemeColorAdvisorResult {
 	public AdvisorWarning Warning { get; init; }
 
 	/// <summary>Creates a hard-failure result carrying the diagnostic message.</summary>
-	public static ThemeColorAdvisorResult Failure(string error) {
-		return new ThemeColorAdvisorResult {
+	public static ThemePaletteAdvisorResult Failure(string error) {
+		return new ThemePaletteAdvisorResult {
 			Success = false,
 			Error = string.IsNullOrWhiteSpace(error) ? "unknown" : error
 		};
