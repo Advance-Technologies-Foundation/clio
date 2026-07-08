@@ -355,8 +355,7 @@ public sealed class PageBusinessRuleToolE2ETests : McpContractFixtureBase {
 		PageRuleTarget target = await ResolvePageRuleTargetAsync(
 			arrangeContext.Session,
 			arrangeContext.CancellationTokenSource.Token,
-			environmentName,
-			settings.Sandbox.PageSchemaName);
+			environmentName);
 		// Intentional destructive fixture: Contacts_FormPage in Custom is the canonical sandbox target.
 		// There is no business-rule delete action yet, so each run writes a uniquely captioned rule and verifies readback.
 		string caption = $"MCP E2E Contact page {Guid.NewGuid():N}";
@@ -419,8 +418,7 @@ public sealed class PageBusinessRuleToolE2ETests : McpContractFixtureBase {
 		PageRuleTarget target = await ResolvePageRuleTargetAsync(
 			arrangeContext.Session,
 			arrangeContext.CancellationTokenSource.Token,
-			environmentName,
-			settings.Sandbox.PageSchemaName);
+			environmentName);
 		string suffix = Guid.NewGuid().ToString("N");
 		string ruleName = $"UsrMcpE2EPageRule{suffix}";
 		string caption = $"MCP E2E page CRUD {suffix}";
@@ -657,31 +655,18 @@ public sealed class PageBusinessRuleToolE2ETests : McpContractFixtureBase {
 	private static async Task<PageRuleTarget> ResolvePageRuleTargetAsync(
 		McpServerSession session,
 		CancellationToken cancellationToken,
-		string environmentName,
-		string? configuredPageSchemaName = null) {
-		// The rule needs a real Freedom UI form page bound to an entity datasource. When
-		// McpE2E:Sandbox:PageSchemaName is configured, that page is resolved exclusively — the
-		// escape hatch for stands whose discoverable pages live in locked OOTB packages that
-		// SaveSchema refuses to layer over. Otherwise the default discovery below is unchanged:
-		// a base-Contact page (Contacts_FormPage) only ships with CRM editions, so a bare Studio
-		// sandbox has none. Discover any seeded custom form page instead (the AutoTest seed
-		// installs several) and build the rule on the first one that exposes a datasource-bound
-		// attribute, preferring a Contact-bound page so the test keeps its original Contact intent
-		// where the stand provides one.
+		string environmentName) {
+		// The rule needs a real Freedom UI form page bound to an entity datasource. A base-Contact
+		// page (Contacts_FormPage) only ships with CRM editions, so a bare Studio sandbox has none.
+		// Discover any seeded custom form page instead (the AutoTest seed installs several) and build
+		// the rule on the first one that exposes a datasource-bound attribute, preferring a
+		// Contact-bound page so the test keeps its original Contact intent where the stand provides one.
 		foreach (string candidate in await ResolveCandidatePageSchemaNamesAsync(
-			session, cancellationToken, environmentName, configuredPageSchemaName)) {
+			session, cancellationToken, environmentName)) {
 			PageRuleTarget? target = await TryResolvePageRuleTargetAsync(session, cancellationToken, environmentName, candidate);
 			if (target is not null) {
 				return target;
 			}
-		}
-
-		if (!string.IsNullOrWhiteSpace(configuredPageSchemaName)) {
-			Assert.Ignore(
-				$"The configured page '{configuredPageSchemaName}' (McpE2E:Sandbox:PageSchemaName) could not be resolved " +
-				$"to a Freedom UI form page with a datasource-bound attribute on environment '{environmentName}'. " +
-				"Ensure cliogate is installed and the configured page exists in the sandbox before running this test.");
-			return null!;
 		}
 
 		Assert.Ignore(
@@ -693,14 +678,8 @@ public sealed class PageBusinessRuleToolE2ETests : McpContractFixtureBase {
 	private static async Task<IReadOnlyList<string>> ResolveCandidatePageSchemaNamesAsync(
 		McpServerSession session,
 		CancellationToken cancellationToken,
-		string environmentName,
-		string? configuredPageSchemaName) {
-		// A configured page pins the target: no discovery, no fallback to other pages.
-		if (!string.IsNullOrWhiteSpace(configuredPageSchemaName)) {
-			return [configuredPageSchemaName];
-		}
-
-		// Legacy base-Contact names first (real CRM stands), then any seeded custom form page.
+		string environmentName) {
+		// Base-Contact names first (real CRM stands), then any seeded custom form page.
 		List<string> candidates = ["Contacts_FormPage", "Contact_FormPage"];
 
 		CallToolResult listResult = await session.CallToolAsync(

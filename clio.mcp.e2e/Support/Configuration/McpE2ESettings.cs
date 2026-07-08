@@ -51,15 +51,5 @@ internal sealed class SandboxSettings {
 
 	public string? PackageName { get; set; }
 
-	/// <summary>
-	/// Optional Freedom UI form page schema name used as the target for the page business-rule
-	/// sandbox tests. When set, target resolution pins to this page instead of discovering one
-	/// (Contacts_FormPage first, then seeded custom form pages) — needed on stands where every
-	/// discoverable page's BusinessRule addon schema lives in a locked OOTB package that
-	/// SaveSchema refuses to layer over. Set via <c>McpE2E__Sandbox__PageSchemaName</c>.
-	/// When unset, the default discovery behavior is unchanged.
-	/// </summary>
-	public string? PageSchemaName { get; set; }
-
 	public string SeedKeyPrefix { get; set; } = "clio-mcp-e2e";
 }
