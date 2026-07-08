@@ -81,6 +81,111 @@ public sealed class PageBusinessRuleProbeTests {
 	}
 
 	[Test]
+	[Description("A nested condition group (Creatio persists UI-authored rules this way) is flattened, not emptied: the inner is-not-filled-in leaf survives.")]
+	public void ParseRules_NestedConditionGroup_IsFlattenedNotEmptied() {
+		string meta = $$"""
+		{
+		  "typeName": "{{BusinessRulesMetadataTypeName}}",
+		  "rules": [
+		    {
+		      "typeName": "{{BusinessRuleTypeName}}",
+		      "uId": "rule-1",
+		      "caption": "Hide elements when Account is not filled in",
+		      "cases": [
+		        {
+		          "typeName": "{{BusinessRuleCaseTypeName}}",
+		          "condition": {
+		            "typeName": "{{BusinessRuleGroupConditionTypeName}}",
+		            "logicalOperation": 1,
+		            "conditions": [
+		              {
+		                "typeName": "{{BusinessRuleGroupConditionTypeName}}",
+		                "logicalOperation": 1,
+		                "conditions": [
+		                  {
+		                    "typeName": "{{BusinessRuleConditionTypeName}}",
+		                    "comparisonType": 0,
+		                    "leftExpression": {
+		                      "typeName": "{{BusinessRuleAttributeExpressionTypeName}}",
+		                      "type": "AttributeValue",
+		                      "path": "Parameter_3pxm4wn"
+		                    },
+		                    "rightExpression": null
+		                  }
+		                ]
+		              }
+		            ]
+		          },
+		          "actions": [
+		            { "typeName": "{{BusinessRuleHideElementTypeName}}", "items": "AccountFieldsFlexContainer" }
+		          ]
+		        }
+		      ]
+		    }
+		  ]
+		}
+		""";
+
+		List<SourcePageBusinessRule> rules = PageBusinessRuleProbe.ParseRules(Schema(meta));
+
+		rules.Should().HaveCount(1);
+		var conditions = rules[0].Condition!["conditions"]!.AsArray();
+		conditions.Should().HaveCount(1, because: "the nested group must be flattened, never dropped");
+		conditions[0]!["comparisonType"]!.GetValue<string>().Should().Be("is-not-filled-in");
+		conditions[0]!["leftExpression"]!["path"]!.GetValue<string>().Should().Be("Parameter_3pxm4wn");
+		// A unary operator carries no rightExpression.
+		conditions[0]!.AsObject().ContainsKey("rightExpression").Should().BeFalse();
+	}
+
+	[Test]
+	[Description("A condition with only a left attribute expression and no comparisonType (Creatio's default 'is not filled in') converts to is-not-filled-in instead of being dropped.")]
+	public void ParseRules_ConditionWithoutComparisonType_DefaultsToIsNotFilledIn() {
+		string meta = $$"""
+		{
+		  "typeName": "{{BusinessRulesMetadataTypeName}}",
+		  "rules": [
+		    {
+		      "typeName": "{{BusinessRuleTypeName}}",
+		      "uId": "rule-1",
+		      "caption": "Hide elements when Account is not filled in",
+		      "cases": [
+		        {
+		          "typeName": "{{BusinessRuleCaseTypeName}}",
+		          "condition": {
+		            "typeName": "{{BusinessRuleGroupConditionTypeName}}",
+		            "logicalOperation": 1,
+		            "conditions": [
+		              {
+		                "typeName": "{{BusinessRuleConditionTypeName}}",
+		                "leftExpression": {
+		                  "typeName": "{{BusinessRuleAttributeExpressionTypeName}}",
+		                  "type": "AttributeValue",
+		                  "path": "QualifiedAccount"
+		                }
+		              }
+		            ]
+		          },
+		          "actions": [
+		            { "typeName": "{{BusinessRuleHideElementTypeName}}", "items": "AccountFieldsFlexContainer" }
+		          ]
+		        }
+		      ]
+		    }
+		  ]
+		}
+		""";
+
+		List<SourcePageBusinessRule> rules = PageBusinessRuleProbe.ParseRules(Schema(meta));
+
+		rules.Should().HaveCount(1);
+		var conditions = rules[0].Condition!["conditions"]!.AsArray();
+		conditions.Should().HaveCount(1, because: "a bare condition must convert, never be dropped");
+		conditions[0]!["comparisonType"]!.GetValue<string>().Should().Be("is-not-filled-in");
+		conditions[0]!["leftExpression"]!["path"]!.GetValue<string>().Should().Be("QualifiedAccount");
+		conditions[0]!.AsObject().ContainsKey("rightExpression").Should().BeFalse();
+	}
+
+	[Test]
 	[Description("When the rule caption is empty, it is resolved from the add-on resources keyed by the rule UId.")]
 	public void ParseRules_ResolvesCaptionFromResources() {
 		string meta = $$"""

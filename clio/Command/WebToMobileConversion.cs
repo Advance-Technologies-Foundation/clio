@@ -140,9 +140,10 @@ public static class WebToMobileAnalysisService {
 		JsonNode modelConfigDiff = BuildRootMergeDiff(modelConfig);
 		JsonNode viewModelConfigDiff = BuildRootMergeDiff(viewModelConfig);
 
-		// 7. Page-level business rules: keep each rule's condition verbatim and only the actions that
-		//    survive on mobile; drop a rule whose every action drops (object-level rules are untouched).
-		PageBusinessRuleConversionInfo pageBusinessRules = ConvertPageBusinessRules(pageBusinessRulesProbe, elementMap);
+		// 7. Page-level business rules: carry each rule's condition (operand paths remapped from the source
+		//    DS column path to the mobile viewModel attribute name) and only the actions that survive on
+		//    mobile; drop a rule whose every action drops (object-level rules are untouched).
+		PageBusinessRuleConversionInfo pageBusinessRules = ConvertPageBusinessRules(pageBusinessRulesProbe, elementMap, bundle?.ViewModelConfig);
 
 		// 8. Every localized string the converted body references (top-level captions AND nested tokens such
 		//    as config.title / text.template), resolved to its text — so the caller registers them all.
@@ -183,11 +184,13 @@ public static class WebToMobileAnalysisService {
 	/// optional). An action converts only for the referenced elements that survive on mobile (elementMap
 	/// operation merge/insert), with their names remapped web→mobile and only the survivors kept. A rule
 	/// with no surviving action is dropped together with its condition; otherwise the condition is carried
-	/// verbatim and the rule is ready for create-page-business-rule. Returns null when no probe ran.
+	/// with each operand's attribute path remapped from the source DS column path to the mobile viewModel
+	/// attribute name, so the rule is ready for create-page-business-rule. Returns null when no probe ran.
 	/// </summary>
 	internal static PageBusinessRuleConversionInfo ConvertPageBusinessRules(
 		PageBusinessRuleProbeResult probe,
-		IReadOnlyList<ElementMapEntry> elementMap) {
+		IReadOnlyList<ElementMapEntry> elementMap,
+		JsonNode viewModelConfig = null) {
 		if (probe is null) {
 			return null;
 		}
@@ -206,6 +209,11 @@ public static class WebToMobileAnalysisService {
 				survivors[entry.WebName] = string.IsNullOrWhiteSpace(entry.MobileName) ? entry.WebName : entry.MobileName;
 			}
 		}
+
+		// A condition operand references an attribute by its DATA path (e.g. the source stores "PDS.QualifiedAccount"
+		// or the column "QualifiedAccount"), but create-page-business-rule expects the page's viewModel ATTRIBUTE
+		// NAME (e.g. "Parameter_3pxm4wn", whose modelConfig.path is "PDS.QualifiedAccount"). Build the reverse map.
+		AttributePathResolver pathResolver = BuildAttributePathResolver(viewModelConfig);
 
 		var converted = new List<ConvertedPageBusinessRule>();
 		var dropped = new List<DroppedPageBusinessRule>();
@@ -235,11 +243,13 @@ public static class WebToMobileAnalysisService {
 				continue;
 			}
 
+			JsonNode conditionClone = rule.Condition?.DeepClone();
+			RemapConditionAttributePaths(conditionClone, pathResolver);
 			converted.Add(new ConvertedPageBusinessRule {
 				Caption = rule.Caption,
 				Rule = new JsonObject {
 					["caption"] = rule.Caption,
-					["condition"] = rule.Condition?.DeepClone(),
+					["condition"] = conditionClone,
 					["actions"] = actions
 				}
 			});
@@ -251,6 +261,93 @@ public static class WebToMobileAnalysisService {
 			ConvertedRules = converted,
 			DroppedRules = dropped
 		};
+	}
+
+	/// <summary>
+	/// Reverse lookup for condition operand remapping: given a source data path it returns the mobile viewModel
+	/// attribute NAME. Matches (in order): an exact attribute name (already correct), the full
+	/// <c>"&lt;DS&gt;.&lt;Column&gt;"</c> modelConfig path, or the bare column name when it is unambiguous.
+	/// </summary>
+	private sealed record AttributePathResolver(
+		IReadOnlyDictionary<string, string> ByPath,
+		IReadOnlyDictionary<string, string> ByColumn,
+		IReadOnlySet<string> AttributeNames) {
+
+		public string Resolve(string sourcePath) {
+			if (string.IsNullOrWhiteSpace(sourcePath) || AttributeNames.Contains(sourcePath)) {
+				return sourcePath;
+			}
+			if (ByPath.TryGetValue(sourcePath, out string byFullPath)) {
+				return byFullPath;
+			}
+			string column = sourcePath.Contains('.') ? sourcePath[(sourcePath.LastIndexOf('.') + 1)..] : sourcePath;
+			return ByColumn.TryGetValue(column, out string byColumn) ? byColumn : sourcePath;
+		}
+	}
+
+	/// <summary>
+	/// Builds the source-path → viewModel-attribute-name resolver from the (mobile) viewModelConfig. Each
+	/// top-level attribute's <c>modelConfig.path</c> (e.g. <c>"PDS.QualifiedAccount"</c>) is indexed both by the
+	/// full path and by the bare column; a column shared by more than one attribute is dropped from the column
+	/// index (ambiguous) so it never remaps to the wrong attribute.
+	/// </summary>
+	private static AttributePathResolver BuildAttributePathResolver(JsonNode viewModelConfig) {
+		var byPath = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+		var byColumn = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+		var ambiguousColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		if (viewModelConfig is JsonObject root && root["attributes"] is JsonObject attributes) {
+			foreach (KeyValuePair<string, JsonNode> attr in attributes) {
+				names.Add(attr.Key);
+				string path = (attr.Value as JsonObject)?["modelConfig"]?["path"]?.GetValue<string>();
+				if (string.IsNullOrWhiteSpace(path)) {
+					continue;
+				}
+				byPath[path] = attr.Key;
+				string column = path.Contains('.') ? path[(path.LastIndexOf('.') + 1)..] : path;
+				if (ambiguousColumns.Contains(column)) {
+					continue;
+				}
+				if (byColumn.ContainsKey(column)) {
+					byColumn.Remove(column);
+					ambiguousColumns.Add(column);
+				} else {
+					byColumn[column] = attr.Key;
+				}
+			}
+		}
+		return new AttributePathResolver(byPath, byColumn, names);
+	}
+
+	/// <summary>
+	/// Rewrites every AttributeValue operand path inside a (possibly nested) condition group from the source data
+	/// path to the mobile viewModel attribute name, in place. Leaves non-attribute operands (Const/SysValue/Formula)
+	/// and unresolvable paths untouched — the condition always converts.
+	/// </summary>
+	private static void RemapConditionAttributePaths(JsonNode conditionNode, AttributePathResolver resolver) {
+		if (conditionNode is not JsonObject node) {
+			return;
+		}
+		if (node["conditions"] is JsonArray inner) {
+			foreach (JsonNode child in inner) {
+				RemapConditionAttributePaths(child, resolver);
+			}
+		}
+		RemapOperandPath(node["leftExpression"], resolver);
+		RemapOperandPath(node["rightExpression"], resolver);
+	}
+
+	private static void RemapOperandPath(JsonNode expression, AttributePathResolver resolver) {
+		if (expression is not JsonObject operand
+			|| operand["path"]?.GetValue<string>() is not { } path
+			|| string.IsNullOrWhiteSpace(path)) {
+			return;
+		}
+		string type = operand["type"]?.GetValue<string>();
+		if (type is not null && !string.Equals(type, "AttributeValue", StringComparison.OrdinalIgnoreCase)) {
+			return;
+		}
+		operand["path"] = resolver.Resolve(path);
 	}
 
 	/// <summary>

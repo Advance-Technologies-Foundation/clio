@@ -736,6 +736,46 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
+	[Description("A condition operand referencing the source DS path (full 'DS.Column' or bare column) is remapped to the mobile viewModel attribute name; an unresolvable path is left as-is.")]
+	public void ConvertPageBusinessRules_RemapsConditionOperandPathToAttributeName() {
+		var probe = new PageBusinessRuleProbeResult {
+			ProbeOk = true,
+			Rules = [
+				new SourcePageBusinessRule {
+					Caption = "Hide account fields when account not filled in",
+					Condition = JsonNode.Parse("""
+						{ "logicalOperation": "AND", "conditions": [
+							{ "leftExpression": { "type": "AttributeValue", "path": "PDS.QualifiedAccount" }, "comparisonType": "is-not-filled-in" },
+							{ "leftExpression": { "type": "AttributeValue", "path": "QualifiedContact" }, "comparisonType": "is-not-filled-in" },
+							{ "leftExpression": { "type": "AttributeValue", "path": "PDS.Unknownia" }, "comparisonType": "is-not-filled-in" } ] }
+						"""),
+					Actions = [ElementAction("hide-element", "AccountFieldsFlexContainer")]
+				}
+			]
+		};
+		var elementMap = new List<ElementMapEntry> {
+			El("AccountFieldsFlexContainer", "insert", "AccountFieldsFlexContainer")
+		};
+		JsonNode viewModelConfig = JsonNode.Parse("""
+			{ "attributes": {
+				"Parameter_3pxm4wn": { "modelConfig": { "path": "PDS.QualifiedAccount" } },
+				"Parameter_r8t9n2f": { "modelConfig": { "path": "PDS.QualifiedContact" } } } }
+			""");
+
+		PageBusinessRuleConversionInfo result =
+			WebToMobileAnalysisService.ConvertPageBusinessRules(probe, elementMap, viewModelConfig);
+
+		result.ConvertedRules.Should().HaveCount(1);
+		JsonArray conditions = result.ConvertedRules[0].Rule!["condition"]!["conditions"]!.AsArray();
+		// Full "DS.Column" path → attribute name.
+		conditions[0]!["leftExpression"]!["path"]!.GetValue<string>().Should().Be("Parameter_3pxm4wn");
+		// Bare column → attribute name.
+		conditions[1]!["leftExpression"]!["path"]!.GetValue<string>().Should().Be("Parameter_r8t9n2f");
+		// Unresolvable path → left untouched (condition still converts).
+		conditions[2]!["leftExpression"]!["path"]!.GetValue<string>().Should().Be("PDS.Unknownia");
+	}
+
+	[Test]
 	[Description("A failed probe yields a not-OK conversion info carrying the note; a null probe yields null.")]
 	public void ConvertPageBusinessRules_ProbeFailedOrNull_DegradesGracefully() {
 		PageBusinessRuleConversionInfo failed = WebToMobileAnalysisService.ConvertPageBusinessRules(

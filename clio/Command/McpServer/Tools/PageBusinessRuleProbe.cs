@@ -161,27 +161,20 @@ public static class PageBusinessRuleProbe {
 		return actions;
 	}
 
-	/// <summary>Reverse-maps a persisted condition group into the create-page-business-rule input shape.</summary>
+	/// <summary>
+	/// Reverse-maps a persisted condition group into the create-page-business-rule input shape. A condition
+	/// is NEVER dropped: leaf conditions are collected recursively so nested groups (which Creatio persists
+	/// for UI-authored rules) do not empty the result. The create-page-business-rule input supports only a
+	/// single flat <c>conditions</c> array, so nested groups are FLATTENED (their inner leaf conditions are
+	/// lifted); the outer group's logical operator is kept.
+	/// </summary>
 	private static JsonNode ConvertCondition(JsonNode conditionNode) {
 		if (conditionNode is not JsonObject group) {
 			return null;
 		}
 
 		var conditions = new JsonArray();
-		// A group carries "conditions"; a bare single condition carries "leftExpression".
-		if (group["conditions"] is JsonArray inner) {
-			foreach (JsonNode c in inner) {
-				JsonNode converted = ConvertSingleCondition(c);
-				if (converted is not null) {
-					conditions.Add(converted);
-				}
-			}
-		} else if (group["leftExpression"] is not null) {
-			JsonNode converted = ConvertSingleCondition(group);
-			if (converted is not null) {
-				conditions.Add(converted);
-			}
-		}
+		CollectLeafConditions(group, conditions);
 
 		string logicalOperation = IntOf(group["logicalOperation"]) == LogicalOr ? "OR" : "AND";
 		return new JsonObject {
@@ -190,17 +183,37 @@ public static class PageBusinessRuleProbe {
 		};
 	}
 
+	/// <summary>
+	/// Recursively lifts every leaf condition out of a (possibly nested) condition group into
+	/// <paramref name="conditions"/>. A node with a <c>conditions</c> array is a group — recurse into each
+	/// child; otherwise it is a bare leaf (carries <c>leftExpression</c>/<c>comparisonType</c>) — convert and
+	/// add it. This guarantees conditions always convert instead of being silently emptied by nesting.
+	/// </summary>
+	private static void CollectLeafConditions(JsonObject node, JsonArray conditions) {
+		if (node["conditions"] is JsonArray inner) {
+			foreach (JsonNode child in inner) {
+				if (child is JsonObject childObj) {
+					CollectLeafConditions(childObj, conditions);
+				}
+			}
+			return;
+		}
+		if (node["leftExpression"] is null && node["comparisonType"] is null) {
+			return; // not a leaf condition (e.g. an empty/degenerate group node) — nothing to lift.
+		}
+		JsonNode converted = ConvertSingleCondition(node);
+		if (converted is not null) {
+			conditions.Add(converted);
+		}
+	}
+
 	private static JsonNode ConvertSingleCondition(JsonNode node) {
 		if (node is not JsonObject condition) {
 			return null;
 		}
-		int comparisonValue = IntOf(condition["comparisonType"]);
-		if (!ComparisonNameByValue.TryGetValue(comparisonValue, out string comparisonName)) {
-			return null; // unknown comparison operator — skip rather than emit an invalid condition.
-		}
 		var result = new JsonObject {
 			["leftExpression"] = ConvertExpression(condition["leftExpression"]),
-			["comparisonType"] = comparisonName
+			["comparisonType"] = ResolveComparisonName(condition["comparisonType"])
 		};
 		JsonNode right = ConvertExpression(condition["rightExpression"]);
 		if (right is not null) {
@@ -208,6 +221,49 @@ public static class PageBusinessRuleProbe {
 		}
 		return result;
 	}
+
+	/// <summary>
+	/// Resolves the create-page-business-rule comparison name from a persisted condition. Creatio omits the
+	/// comparison for a bare "is (not) filled in" check, so an ABSENT/unrecognized value defaults to
+	/// <c>is-not-filled-in</c> (Creatio's default, enum 0) rather than dropping the condition — conditions must
+	/// always convert. Accepts the numeric enum value, an already-kebab supported name, or a PascalCase enum
+	/// name (e.g. <c>IsFilledIn</c>).
+	/// </summary>
+	private static string ResolveComparisonName(JsonNode comparisonNode) {
+		const string defaultComparison = "is-not-filled-in";
+		if (comparisonNode is not JsonValue value) {
+			return defaultComparison;
+		}
+		if (value.TryGetValue(out int numeric) && ComparisonNameByValue.TryGetValue(numeric, out string byValue)) {
+			return byValue;
+		}
+		string text = value.ToString();
+		if (string.IsNullOrWhiteSpace(text)) {
+			return defaultComparison;
+		}
+		if (int.TryParse(text, out int parsed) && ComparisonNameByValue.TryGetValue(parsed, out string byParsed)) {
+			return byParsed;
+		}
+		if (SupportedComparisonTypeValues.ContainsKey(text)) {
+			return text; // already a supported kebab name (e.g. "is-filled-in").
+		}
+		return PascalEnumToKebab.TryGetValue(text, out string mapped) ? mapped : defaultComparison;
+	}
+
+	// Creatio BusinessRuleComparisonType PascalCase enum names -> create-page-business-rule kebab names.
+	private static readonly IReadOnlyDictionary<string, string> PascalEnumToKebab =
+		new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+			["IsNotFilledIn"] = "is-not-filled-in",
+			["IsFilledIn"] = "is-filled-in",
+			["Equal"] = "equal",
+			["NotEqual"] = "not-equal",
+			["Less"] = "less-than",
+			["LessOrEqual"] = "less-than-or-equal",
+			["Greater"] = "greater-than",
+			["GreaterOrEqual"] = "greater-than-or-equal",
+			["Contain"] = "contain",
+			["NotContain"] = "not-contain"
+		};
 
 	private static JsonNode ConvertExpression(JsonNode expressionNode) {
 		if (expressionNode is not JsonObject expression) {
