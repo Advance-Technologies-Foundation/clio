@@ -81,7 +81,12 @@ internal sealed class RelatedPageService(
 
 	/// <summary>Resolves a schema's UId by name via OData (<c>SysSchema</c>).</summary>
 	private Guid ResolveSchemaUId(string schemaName) {
-		string filter = Uri.EscapeDataString($"Name eq '{schemaName}'");
+		// Escape the OData string literal by doubling single quotes before building the $filter.
+		// Uri.EscapeDataString only encodes for URL transport (the server decodes it before the
+		// OData parser sees it), so it does not neutralize a quote — without this a name containing
+		// a single quote alters the filter (injection) or simply fails to resolve. See ODataKeyFormatter.
+		string literal = schemaName.Replace("'", "''");
+		string filter = Uri.EscapeDataString($"Name eq '{literal}'");
 		string url = serviceUrlBuilder.Build($"odata/SysSchema?$select=UId&$filter={filter}&$top=1");
 		string json = applicationClient.ExecuteGetRequest(url, 30_000);
 		using JsonDocument doc = JsonDocument.Parse(json);
