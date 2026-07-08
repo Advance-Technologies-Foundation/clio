@@ -425,17 +425,23 @@ public sealed class WebToMobileConversionServiceTests {
 			["SideAreaProfileContainer"] = "AreaProfileContainer"
 		};
 
-	private static MobilePageConversionGuide AnalyzeTabbed(PageBundleInfo bundle) =>
+	private static MobilePageConversionGuide AnalyzeTabbed(
+		PageBundleInfo bundle,
+		IReadOnlyDictionary<string, string> containerNameMap = null,
+		IReadOnlyList<WebToMobileAnalysisService.PositionalPlacement> positionalPlacements = null,
+		IReadOnlyDictionary<string, string> mobileContainerParents = null) =>
 		WebToMobileAnalysisService.Analyze(
 			bundle, TabbedMobileTypes,
 			new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "crt.DataGrid", "crt.IndicatorWidget", "crt.Timeline" },
 			webByType: new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase),
 			mobileByType: null, GridRule, templateRule: null,
 			sourcePage: "Leads_FormPage", sourceTemplate: "PageWithTabsFreedomTemplate",
-			suggestedTarget: "UsrLeads_MobileFormPage", containerNameMap: TabbedContainerMap);
+			suggestedTarget: "UsrLeads_MobileFormPage", containerNameMap: containerNameMap ?? TabbedContainerMap,
+			positionalPlacements: positionalPlacements,
+			mobileContainerParents: mobileContainerParents);
 
 	[Test]
-	[Description("Golden Leads_FormPage: Tabs merges; first tab relocates fields and drops widgets; a page-specific tab inserts with caption and drops its multi-DS grid; empty tabs drop; template twins merge.")]
+	[Description("Golden Leads_FormPage: Tabs merges; EVERY web tab inserts as its OWN new mobile tab (no general-tab collapsing); a tab with a caption keeps it; multi-DS/unsupported children drop; template twins merge.")]
 	public void Analyze_ElementMap_GoldenLeadsFormPage() {
 		PageBundleInfo bundle = Bundle(
 			viewConfigJson: """
@@ -474,14 +480,16 @@ public sealed class WebToMobileConversionServiceTests {
 		Element(guide, "Feed").ParentName.Should().Be("FeedContainer");
 		Element(guide, "AttachmentList").ParentName.Should().Be("AttachmentsContainer");
 
-		// First tab → relocate-children into AreaProfileContainer; its children carry that parentName.
+		// Every web tab (including the first) → insert as its OWN new mobile tab under Tabs; its children
+		// carry that tab's name (no general-tab collapse into AreaProfileContainer).
 		ElementMapEntry overview = Element(guide, "OverviewTab");
-		overview.Operation.Should().Be("relocate-children");
-		overview.ParentName.Should().Be("AreaProfileContainer");
+		overview.Operation.Should().Be("insert");
+		overview.ParentName.Should().Be("Tabs");
+		overview.Index.Should().BeNull(because: "a web tab is not a positional insert");
 		Element(guide, "LeadName").Operation.Should().Be("insert");
-		Element(guide, "LeadName").ParentName.Should().Be("AreaProfileContainer");
-		Element(guide, "Status").ParentName.Should().Be("AreaProfileContainer");
-		// Unsupported / foreign-DS children of the relocated tab → drop.
+		Element(guide, "LeadName").ParentName.Should().Be("OverviewTab");
+		Element(guide, "Status").ParentName.Should().Be("OverviewTab");
+		// Unsupported / foreign-DS children of the tab → drop.
 		Element(guide, "IndicatorWidget").Operation.Should().Be("drop");
 		Element(guide, "SimilarLeadList").Operation.Should().Be("drop");
 		Element(guide, "SimilarLeadList").Reason.Should().Contain("SimilarLeadsDS");
@@ -503,6 +511,125 @@ public sealed class WebToMobileConversionServiceTests {
 		Element(guide, "Timeline").Operation.Should().Be("drop");
 		Element(guide, "HistoryTab").Operation.Should().Be("insert");
 		Element(guide, "HistGrid").Operation.Should().Be("drop");
+	}
+
+	[Test]
+	[Description("Positional rule: a sibling ABOVE the anchor inserts into the mobile Tabs' parent at index 0 (above Tabs); a sibling BELOW appends (no index); the anchor's own non-tab content goes to GeneralTabContainer and each web tab becomes a new mobile tab.")]
+	public void Analyze_ElementMap_PositionalSiblings_PlacedAroundMobileTabs() {
+		PageBundleInfo bundle = Bundle("""
+			[
+			  { "name": "ProgressBarContainer", "type": "crt.FlexContainer", "items": [ { "name": "ProgressBar", "type": "crt.Input" } ] },
+			  { "name": "CardContentWrapper", "type": "crt.GridContainer", "items": [
+			      { "name": "SideField", "type": "crt.Input" },
+			      { "name": "Tabs", "type": "crt.TabPanel", "items": [
+			          { "name": "OverviewTab", "type": "crt.TabContainer", "items": [ { "name": "LeadName", "type": "crt.Input" } ] } ] } ] },
+			  { "name": "FooterField", "type": "crt.Input" }
+			]
+			""");
+		var mobileTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+			"crt.GridContainer", "crt.FlexContainer", "crt.TabContainer", "crt.Input"
+		};
+		var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+			["CardContentWrapper"] = "GeneralTabContainer", ["Tabs"] = "Tabs"
+		};
+		var placements = new List<WebToMobileAnalysisService.PositionalPlacement> {
+			new("CardContentWrapper", "Tabs")
+		};
+		var mobileParents = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["Tabs"] = "MainContainer" };
+
+		MobilePageConversionGuide guide = WebToMobileAnalysisService.Analyze(
+			bundle, mobileTypes, new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+			webByType: new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase),
+			mobileByType: null, GridRule, templateRule: null,
+			sourcePage: "Leads_FormPage", sourceTemplate: "PageWithTabsFreedomTemplate",
+			suggestedTarget: "UsrLeads_MobileFormPage", containerNameMap: map,
+			positionalPlacements: placements, mobileContainerParents: mobileParents);
+
+		// Anchor wrapper merges into the general tab's grid; its non-tab content lands there.
+		Element(guide, "CardContentWrapper").Operation.Should().Be("merge");
+		Element(guide, "CardContentWrapper").MobileName.Should().Be("GeneralTabContainer");
+		Element(guide, "SideField").Operation.Should().Be("insert");
+		Element(guide, "SideField").ParentName.Should().Be("GeneralTabContainer");
+
+		// Web tab becomes its own new mobile tab.
+		Element(guide, "OverviewTab").Operation.Should().Be("insert");
+		Element(guide, "OverviewTab").ParentName.Should().Be("Tabs");
+		Element(guide, "LeadName").ParentName.Should().Be("OverviewTab");
+
+		// Sibling ABOVE the wrapper → inserted into the mobile Tabs' parent at index 0 (above Tabs).
+		ElementMapEntry progress = Element(guide, "ProgressBarContainer");
+		progress.Operation.Should().Be("insert");
+		progress.ParentName.Should().Be("MainContainer");
+		progress.Index.Should().Be(0);
+		Element(guide, "ProgressBar").ParentName.Should().Be("ProgressBarContainer");
+
+		// Sibling BELOW the wrapper → appended (no index) into the same parent.
+		ElementMapEntry footer = Element(guide, "FooterField");
+		footer.Operation.Should().Be("insert");
+		footer.ParentName.Should().Be("MainContainer");
+		footer.Index.Should().BeNull();
+	}
+
+	[Test]
+	[Description("Positional fallback: with no mobile-template parent map, a positional sibling still routes to the default MainContainer.")]
+	public void Analyze_ElementMap_PositionalSiblings_FallbackParentWhenAnchorParentUnknown() {
+		PageBundleInfo bundle = Bundle("""
+			[
+			  { "name": "ProgressBarContainer", "type": "crt.FlexContainer", "items": [ { "name": "ProgressBar", "type": "crt.Input" } ] },
+			  { "name": "CardContentWrapper", "type": "crt.GridContainer", "items": [
+			      { "name": "Tabs", "type": "crt.TabPanel", "items": [] } ] }
+			]
+			""");
+		var mobileTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+			"crt.GridContainer", "crt.FlexContainer", "crt.Input"
+		};
+		var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+			["CardContentWrapper"] = "GeneralTabContainer", ["Tabs"] = "Tabs"
+		};
+		var placements = new List<WebToMobileAnalysisService.PositionalPlacement> { new("CardContentWrapper", "Tabs") };
+
+		MobilePageConversionGuide guide = WebToMobileAnalysisService.Analyze(
+			bundle, mobileTypes, new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+			webByType: new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase),
+			mobileByType: null, GridRule, templateRule: null,
+			sourcePage: "Leads_FormPage", sourceTemplate: "PageWithTabsFreedomTemplate",
+			suggestedTarget: "UsrLeads_MobileFormPage", containerNameMap: map,
+			positionalPlacements: placements, mobileContainerParents: null);
+
+		ElementMapEntry progress = Element(guide, "ProgressBarContainer");
+		progress.ParentName.Should().Be("MainContainer", because: "the anchor's mobile parent is unknown → default");
+		progress.Index.Should().Be(0);
+	}
+
+	[Test]
+	[Description("The template rule's positional (:top/:bottom) entries are parsed into placements (deduped by anchor) and excluded from the plain container-name map; a mobile bundle yields child→parent for anchor resolution.")]
+	public void ContainerRule_PositionalEntries_ParsedAndExcludedFromNameMap() {
+		var rule = new TemplateMappingRule {
+			Web = "PageWithTabsFreedomTemplate",
+			Mobile = "MobilePageWithTabsFreedomTemplate",
+			Containers = [
+				new ContainerMappingRule { Web = "Tabs", Mobile = "Tabs" },
+				new ContainerMappingRule { Web = "CardContentWrapper", Mobile = "GeneralTabContainer" },
+				new ContainerMappingRule { Web = "CardContentWrapper:top", Mobile = "Tabs:top" },
+				new ContainerMappingRule { Web = "CardContentWrapper:bottom", Mobile = "Tabs:bottom" }
+			]
+		};
+
+		IReadOnlyDictionary<string, string> nameMap = MobilePageConversionGuideTool.BuildContainerNameMap(rule);
+		nameMap.Should().ContainKey("Tabs");
+		nameMap.Should().ContainKey("CardContentWrapper");
+		nameMap.Keys.Should().NotContain(k => k.Contains(':'), because: "positional entries are not element-name twins");
+
+		IReadOnlyList<WebToMobileAnalysisService.PositionalPlacement> placements =
+			MobilePageConversionGuideTool.BuildPositionalPlacements(rule);
+		placements.Should().ContainSingle(because: ":top and :bottom of one anchor dedupe to a single placement");
+		placements[0].WebAnchor.Should().Be("CardContentWrapper");
+		placements[0].MobileAnchor.Should().Be("Tabs");
+
+		var mobileTree = System.Text.Json.Nodes.JsonNode.Parse("""
+			[ { "name": "MainContainer", "items": [ { "name": "Tabs", "items": [] } ] } ]
+			""").AsArray();
+		WebToMobileAnalysisService.CollectParentByName(mobileTree)["Tabs"].Should().Be("MainContainer");
 	}
 
 	[Test]

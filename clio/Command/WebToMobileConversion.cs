@@ -36,6 +36,18 @@ public static class WebToMobileAnalysisService {
 	/// <summary>Source page type this analyzer handles.</summary>
 	public const string SourceTypeFreedomWeb = "freedom-web";
 
+	/// <summary>Mobile container a positional insert falls back to when the mobile anchor's parent is unknown.</summary>
+	private const string PositionalFallbackParent = "MainContainer";
+
+	/// <summary>
+	/// A positional container rule parsed from a <c>&lt;webAnchor&gt;:top</c> / <c>:bottom</c> template entry.
+	/// Content that is a sibling of the web <paramref name="WebAnchor"/> container — appearing above it — is
+	/// placed above the mobile <paramref name="MobileAnchor"/> (in that anchor's parent container); content
+	/// below it is placed below. Both the <c>:top</c> and <c>:bottom</c> entries of an anchor resolve to the
+	/// same mobile parent (the anchor's parent); the side is inferred from the sibling's position.
+	/// </summary>
+	public sealed record PositionalPlacement(string WebAnchor, string MobileAnchor);
+
 	/// <summary>
 	/// Inspects the source page bundle and produces the advisory conversion guide.
 	/// </summary>
@@ -64,7 +76,9 @@ public static class WebToMobileAnalysisService {
 		SectionRegistrationInfo sectionRegistration = null,
 		PageBusinessRuleProbeResult pageBusinessRulesProbe = null,
 		IReadOnlySet<string> templateComponentNames = null,
-		IReadOnlyDictionary<string, ComponentMappingRule> componentNameMap = null) {
+		IReadOnlyDictionary<string, ComponentMappingRule> componentNameMap = null,
+		IReadOnlyList<PositionalPlacement> positionalPlacements = null,
+		IReadOnlyDictionary<string, string> mobileContainerParents = null) {
 		ArgumentNullException.ThrowIfNull(bundle);
 		ArgumentNullException.ThrowIfNull(mobileTypes);
 		ArgumentNullException.ThrowIfNull(webTypes);
@@ -119,9 +133,14 @@ public static class WebToMobileAnalysisService {
 		var flaggedRequests = new List<FlaggedRequest>();
 		var sourceLayouts = new Dictionary<string, JObject>(StringComparer.OrdinalIgnoreCase);
 		var gridContainerColumns = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+		// Positional placement: a web anchor container (e.g. CardContentWrapper) whose siblings above it go
+		// above the mobile anchor (Tabs) and below it go below — realized by inserting those siblings into the
+		// mobile anchor's PARENT container with an index. Resolve each web anchor to that mobile parent.
+		IReadOnlyDictionary<string, string> positionalParentByAnchor =
+			ResolvePositionalParents(positionalPlacements, mobileContainerParents);
 		List<ElementMapEntry> elementMap = BuildElementMap(
 			tree, map, componentMap, mobileTypes, mobileByType, webByType, rules, attrToDs, attrToColumn, dataSourceSet, primaryDs, resources,
-			requestMap, convertedRequests, droppedRequests, flaggedRequests, sourceLayouts, gridContainerColumns);
+			requestMap, convertedRequests, droppedRequests, flaggedRequests, sourceLayouts, gridContainerColumns, positionalParentByAnchor);
 		RequestConversionInfo requestConversions = BuildRequestConversionInfo(convertedRequests, droppedRequests, flaggedRequests);
 
 		// Adaptive (per-breakpoint) layout for multi-column crt.GridContainer: on the phone (small) collapse
@@ -447,6 +466,38 @@ public static class WebToMobileAnalysisService {
 	}
 
 	/// <summary>
+	/// Builds a child-name → parent-name map for every named component of a merged viewConfig tree
+	/// (System.Text.Json). Used to resolve the mobile parent a positional (<c>:top</c> / <c>:bottom</c>)
+	/// insert attaches to — e.g. the mobile <c>Tabs</c> anchor lives in <c>MainContainer</c>, so content
+	/// mapped above/below the Tabs is inserted into <c>MainContainer</c>. Case-insensitive.
+	/// </summary>
+	public static Dictionary<string, string> CollectParentByName(JsonArray viewConfig) {
+		var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+		CollectParentByName(viewConfig, parentName: null, map);
+		return map;
+	}
+
+	private static void CollectParentByName(JsonArray nodes, string parentName, Dictionary<string, string> map) {
+		if (nodes is null) {
+			return;
+		}
+		foreach (JsonNode node in nodes) {
+			if (node is not JsonObject obj) {
+				continue;
+			}
+			string name = obj.TryGetPropertyValue("name", out JsonNode nameNode) && nameNode is not null
+				? nameNode.GetValue<string>()
+				: null;
+			if (!string.IsNullOrWhiteSpace(name) && !string.IsNullOrWhiteSpace(parentName) && !map.ContainsKey(name)) {
+				map[name] = parentName;
+			}
+			if (obj.TryGetPropertyValue("items", out JsonNode itemsNode) && itemsNode is JsonArray items) {
+				CollectParentByName(items, string.IsNullOrWhiteSpace(name) ? parentName : name, map);
+			}
+		}
+	}
+
+	/// <summary>
 	/// Removes from the merged page tree every component the source page inherits from its web template
 	/// (and the template's base schemas): a node whose name is in <paramref name="baseline"/> is dropped
 	/// unless it is a container twin listed in <paramref name="containerNameMap"/> (kept as a merge target).
@@ -638,6 +689,33 @@ public static class WebToMobileAnalysisService {
 			}
 		}
 		return allowed.ToList();
+	}
+
+	/// <summary>
+	/// Resolves each positional web anchor to the mobile container its top/bottom siblings insert into:
+	/// the mobile anchor's parent (looked up in <paramref name="mobileContainerParents"/>), falling back to
+	/// <see cref="PositionalFallbackParent"/> when the parent is unknown. Returns an empty map when there
+	/// are no positional placements.
+	/// </summary>
+	private static IReadOnlyDictionary<string, string> ResolvePositionalParents(
+		IReadOnlyList<PositionalPlacement> placements,
+		IReadOnlyDictionary<string, string> mobileContainerParents) {
+		var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+		if (placements is null) {
+			return map;
+		}
+		foreach (PositionalPlacement p in placements) {
+			if (p is null || string.IsNullOrWhiteSpace(p.WebAnchor) || string.IsNullOrWhiteSpace(p.MobileAnchor)) {
+				continue;
+			}
+			string parent = mobileContainerParents is not null
+				&& mobileContainerParents.TryGetValue(p.MobileAnchor, out string resolved)
+				&& !string.IsNullOrWhiteSpace(resolved)
+					? resolved
+					: PositionalFallbackParent;
+			map[p.WebAnchor] = parent;
+		}
+		return map;
 	}
 
 	/// <summary>Builds the web→mobile container correspondence from the matched template rule.</summary>
@@ -886,7 +964,8 @@ public static class WebToMobileAnalysisService {
 		List<DroppedRequest> DroppedRequests,
 		List<FlaggedRequest> FlaggedRequests,
 		Dictionary<string, JObject> SourceLayouts,
-		Dictionary<string, int> GridContainerColumns);
+		Dictionary<string, int> GridContainerColumns,
+		IReadOnlyDictionary<string, string> PositionalParentByAnchor);
 
 	/// <summary>
 	/// Produces one <see cref="ElementMapEntry"/> per named element of the resolved tree, deciding
@@ -910,19 +989,24 @@ public static class WebToMobileAnalysisService {
 		List<DroppedRequest> droppedRequests,
 		List<FlaggedRequest> flaggedRequests,
 		Dictionary<string, JObject> sourceLayouts,
-		Dictionary<string, int> gridContainerColumns) {
+		Dictionary<string, int> gridContainerColumns,
+		IReadOnlyDictionary<string, string> positionalParentByAnchor) {
 		var ctx = new ElementMapContext(map,
 			componentMap ?? new Dictionary<string, ComponentMappingRule>(StringComparer.OrdinalIgnoreCase),
 			mobileTypes, mobileByType ?? new Dictionary<string, ComponentRegistryEntry>(),
 			webByType ?? new Dictionary<string, ComponentRegistryEntry>(),
 			rules, attrToDs, attrToColumn, dataSources, primaryDs, resources, RelocateTargetFor(map), [],
-			requestMap, convertedRequests, droppedRequests, flaggedRequests, sourceLayouts, gridContainerColumns);
-		WalkElements(ctx, tree, mobileParentName: null, parentIsTabs: false);
+			requestMap, convertedRequests, droppedRequests, flaggedRequests, sourceLayouts, gridContainerColumns,
+			positionalParentByAnchor ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
+		WalkElements(ctx, tree, mobileParentName: null);
 		return ctx.Out;
 	}
 
-	private static void WalkElements(ElementMapContext ctx, JArray nodes, string mobileParentName, bool parentIsTabs) {
-		bool firstPageTabConsumed = false;
+	private static void WalkElements(ElementMapContext ctx, JArray nodes, string mobileParentName) {
+		// Positional siblings: when this array holds a positional anchor container (e.g. CardContentWrapper),
+		// each sibling ABOVE it is placed above the mobile anchor (Tabs) — inserted into the anchor's parent
+		// (MainContainer) with an ascending index from 0 — and each sibling BELOW it is appended after.
+		IReadOnlyDictionary<string, (string Parent, int? Index)> positional = ResolvePositionalSiblings(ctx, nodes);
 		foreach (JToken token in nodes) {
 			if (token is not JObject node) {
 				continue;
@@ -934,10 +1018,13 @@ public static class WebToMobileAnalysisService {
 			// Anonymous wrapper: no entry, but recurse preserving the parent context.
 			if (string.IsNullOrEmpty(name)) {
 				if (items is not null) {
-					WalkElements(ctx, items, mobileParentName, parentIsTabs);
+					WalkElements(ctx, items, mobileParentName);
 				}
 				continue;
 			}
+
+			// A positional sibling of the anchor is rerouted to the mobile anchor's parent (± index).
+			bool isPositional = positional.TryGetValue(name, out (string Parent, int? Index) place);
 
 			bool isContainer = (items is { Count: > 0 }) || IsLayoutContainer(type, name, null, ctx.MobileByType);
 
@@ -962,7 +1049,7 @@ public static class WebToMobileAnalysisService {
 					Reason = TwinReason(name)
 				});
 				if (items is not null) {
-					WalkElements(ctx, items, twinMobileName, string.Equals(twinMobileName, "Tabs", StringComparison.OrdinalIgnoreCase));
+					WalkElements(ctx, items, twinMobileName);
 				}
 				continue;
 			}
@@ -979,50 +1066,47 @@ public static class WebToMobileAnalysisService {
 					Reason = ComponentTwinReason(name, type, compRule)
 				});
 				if (items is not null) {
-					WalkElements(ctx, items, compRule.Mobile, parentIsTabs: false);
+					WalkElements(ctx, items, compRule.Mobile);
 				}
 				continue;
-			}
-
-			// The first page-specific container directly under the mobile Tabs is the general tab.
-			bool isGeneralTab = false;
-			if (parentIsTabs && isContainer) {
-				isGeneralTab = !firstPageTabConsumed;
-				firstPageTabConsumed = true;
 			}
 
 			if (isContainer) {
 				bool typeSupported = !string.IsNullOrEmpty(type) && ctx.MobileTypes.Contains(type);
 
-				// 3. relocate-children — the general (first) tab (already present on the mobile template)
-				//    or a container type with no mobile equivalent: the wrapper is not recreated; its
-				//    children are placed directly in the target container (children carry that parentName).
-				if (isGeneralTab || !typeSupported) {
-					string target = isGeneralTab ? ctx.RelocateTarget : ResolveParent(ctx, mobileParentName);
+				// 3. relocate-children — a container type with no mobile equivalent: the wrapper is not
+				//    recreated; its children are placed directly in the target container (children carry
+				//    that parentName). A web tab (crt.TabContainer) IS mobile-supported, so it falls through
+				//    to the insert below and becomes its OWN new mobile tab (no more general-tab collapsing).
+				if (!typeSupported) {
+					string target = isPositional ? place.Parent : ResolveParent(ctx, mobileParentName);
 					ctx.Out.Add(new ElementMapEntry {
 						WebName = name, WebType = Nz(type), Operation = "relocate-children", ParentName = target,
-						Reason = isGeneralTab
-							? $"general (first) tab — its children are placed directly in the mobile {target} (no duplicate tab)"
-							: $"container type '{type}' has no mobile equivalent — its children are placed in {target}"
+						Reason = $"container type '{type}' has no mobile equivalent — its children are placed in {target}"
 					});
 					if (items is not null) {
-						WalkElements(ctx, items, target, parentIsTabs: false);
+						WalkElements(ctx, items, target);
 					}
 					continue;
 				}
 
 				// 2. insert — mobile-supported container; always emitted (even if it ends up empty —
-				//    unsupported children simply drop and the user can remove an empty container).
+				//    unsupported children simply drop and the user can remove an empty container). A web tab
+				//    inserts into the mobile Tabs as a new tab; a positional sibling inserts into the mobile
+				//    anchor's parent (± index) instead of the walk parent.
 				CaptionResource containerCaption = ResolveCaptionResource(ctx, node, name);
 				ctx.Out.Add(new ElementMapEntry {
 					WebName = name, WebType = Nz(type), Operation = "insert", MobileName = name, MobileType = type,
-					ParentName = ResolveParent(ctx, mobileParentName), PropertyName = "items",
+					ParentName = isPositional ? place.Parent : ResolveParent(ctx, mobileParentName), PropertyName = "items",
+					Index = isPositional ? place.Index : null,
 					CaptionResource = containerCaption,
 					MobileValues = BuildMobileValues(ctx, node, name, type, containerCaption),
-					Reason = "container; mobile-supported"
+					Reason = isPositional
+						? $"container; placed {(place.Index.HasValue ? "above" : "below")} the mobile Tabs (in {place.Parent})"
+						: "container; mobile-supported"
 				});
 				if (items is not null) {
-					WalkElements(ctx, items, name, parentIsTabs: false);
+					WalkElements(ctx, items, name);
 				}
 				continue;
 			}
@@ -1041,10 +1125,13 @@ public static class WebToMobileAnalysisService {
 			CaptionResource leafCaption = ResolveCaptionResource(ctx, node, name);
 			ctx.Out.Add(new ElementMapEntry {
 				WebName = name, WebType = Nz(type), Operation = "insert", MobileName = name, MobileType = leafMobileType,
-				ParentName = ResolveParent(ctx, mobileParentName), PropertyName = "items",
+				ParentName = isPositional ? place.Parent : ResolveParent(ctx, mobileParentName), PropertyName = "items",
+				Index = isPositional ? place.Index : null,
 				CaptionResource = leafCaption,
 				MobileValues = BuildMobileValues(ctx, node, name, leafMobileType, leafCaption),
-				Reason = "field/leaf; mobile-supported"
+				Reason = isPositional
+					? $"field/leaf; placed {(place.Index.HasValue ? "above" : "below")} the mobile Tabs (in {place.Parent})"
+					: "field/leaf; mobile-supported"
 			});
 		}
 	}
@@ -1640,6 +1727,49 @@ public static class WebToMobileAnalysisService {
 
 	private static string ResolveParent(ElementMapContext ctx, string mobileParentName) =>
 		!string.IsNullOrEmpty(mobileParentName) ? mobileParentName : ctx.RelocateTarget;
+
+	/// <summary>
+	/// If <paramref name="nodes"/> contains a positional anchor container (a name in
+	/// <see cref="ElementMapContext.PositionalParentByAnchor"/>), classifies its other named siblings:
+	/// those declared ABOVE the anchor get an ascending index from 0 (so they land before the mobile anchor,
+	/// e.g. above the Tabs); those BELOW get a null index (appended after). Both resolve to the anchor's
+	/// mobile parent. Returns an empty map when this array has no positional anchor.
+	/// </summary>
+	private static IReadOnlyDictionary<string, (string Parent, int? Index)> ResolvePositionalSiblings(
+		ElementMapContext ctx, JArray nodes) {
+		var result = new Dictionary<string, (string Parent, int? Index)>(StringComparer.Ordinal);
+		if (ctx.PositionalParentByAnchor.Count == 0) {
+			return result;
+		}
+		int anchorIdx = -1;
+		string parent = null;
+		var named = new List<(int Pos, string Name)>();
+		for (int i = 0; i < nodes.Count; i++) {
+			if (nodes[i] is not JObject o) {
+				continue;
+			}
+			string nm = o["name"]?.ToString();
+			if (string.IsNullOrEmpty(nm)) {
+				continue;
+			}
+			named.Add((i, nm));
+			if (anchorIdx < 0 && ctx.PositionalParentByAnchor.TryGetValue(nm, out string p)) {
+				anchorIdx = i;
+				parent = p;
+			}
+		}
+		if (anchorIdx < 0 || string.IsNullOrEmpty(parent)) {
+			return result;
+		}
+		int topIndex = 0;
+		foreach ((int pos, string nm) in named) {
+			if (pos == anchorIdx) {
+				continue;
+			}
+			result[nm] = pos < anchorIdx ? (parent, topIndex++) : (parent, (int?)null);
+		}
+		return result;
+	}
 
 	/// <summary>The mobile container surviving children relocate into; prefers profile/general, else MainContainer.</summary>
 	private static string RelocateTargetFor(IReadOnlyDictionary<string, string> map) {

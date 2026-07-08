@@ -46,15 +46,17 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 	}
 
 	[Test]
-	[Description("Bundled templates carry container-name correspondence (e.g. SideAreaProfileContainer -> AreaProfileContainer).")]
+	[Description("Bundled tabbed template carries container-name correspondence, the CardContentWrapper->GeneralTabContainer leftover mapping, and positional CardContentWrapper:top/:bottom -> Tabs:top/:bottom entries.")]
 	public void LoadBundled_TemplatesCarryContainerCorrespondence() {
 		WebToMobilePageConversionRules rules = WebToMobilePageConversionRulesCatalog.LoadBundled();
 
 		TemplateMappingRule tabbed = rules.Templates.First(t =>
 			t.Web == "PageWithTabsFreedomTemplate" && t.Mobile == "MobilePageWithTabsFreedomTemplate");
-		tabbed.Containers.Should().Contain(c =>
-			c.Web == "SideAreaProfileContainer" && c.Mobile == "AreaProfileContainer");
+		tabbed.Containers.Should().Contain(c => c.Web == "Tabs" && c.Mobile == "Tabs");
 		tabbed.Containers.Should().Contain(c => c.Web == "FeedTabContainer" && c.Mobile == "FeedContainer");
+		tabbed.Containers.Should().Contain(c => c.Web == "CardContentWrapper" && c.Mobile == "GeneralTabContainer");
+		tabbed.Containers.Should().Contain(c => c.Web == "CardContentWrapper:top" && c.Mobile == "Tabs:top");
+		tabbed.Containers.Should().Contain(c => c.Web == "CardContentWrapper:bottom" && c.Mobile == "Tabs:bottom");
 	}
 
 	[Test]

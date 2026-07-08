@@ -114,6 +114,14 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			     do NOT put itemLayout inside a merge of the parent List (silent no-op; ListItem is a
 			     separate named element).
 			   - insert — add mobileType under parentName/propertyName (propertyName defaults to "items").
+			     When elementMap[].index is present, add it to the insert op at that 0-based position (a
+			     positional element mapped above/below an anchor, e.g. above the mobile Tabs); otherwise omit
+			     index and append. On a tabbed record page EVERY web tab inserts as its OWN new mobile tab under
+			     Tabs (no general-tab collapse); the web wrapper's non-tab content merges into the mobile general
+			     tab's grid (e.g. CardContentWrapper→GeneralTabContainer). The mobile template's Feed and
+			     Attachments tabs (FeedTab, AttachmentsTab) MUST stay last: insert each converted web tab BEFORE
+			     them (index it after the general tab) so the order is general tab, converted web tabs, Feed,
+			     Attachments.
 			     START from elementMap[].mobileValues: paste it as the component's values VERBATIM. It already
 			     carries the type and EVERY source property the mobile component supports — never drop any of
 			     them. It also already carries the CONVERTED event-binding requests (a button's `clicked`, a

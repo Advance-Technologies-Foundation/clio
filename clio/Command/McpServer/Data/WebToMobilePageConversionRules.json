@@ -20,14 +20,12 @@
       "mobile": "MobilePageWithTabsFreedomTemplate",
       "note": "Tabbed record page (Tabs + Feed + Attachments). Preferred target for web tabbed record pages.",
       "containers": [
-        { "web": "CardContentWrapper", "mobile": "MainContainer" },
-        { "web": "CenterContainer", "mobile": "MainContainer" },
-        { "web": "Tabs", "mobile": "Tabs" },
-        { "web": "SideContainer", "mobile": "GeneralTabContainer" },
-        { "web": "GeneralInfoTabContainer", "mobile": "GeneralTabContainer", "note": "Main fields grid." },
-        { "web": "SideAreaProfileContainer", "mobile": "AreaProfileContainer", "note": "Mobile has no side area; profile fields go to AreaProfileContainer." },
-        { "web": "FeedTabContainer", "mobile": "FeedContainer", "note": "Feed tab content." },
-        { "web": "AttachmentsTabContainer", "mobile": "AttachmentsContainer", "note": "Attachments tab content." }
+        { "web": "Tabs", "mobile": "Tabs", "note": "The mobile template provides the Feed and Attachments tabs (FeedTab, AttachmentsTab) — they must stay LAST. Insert every converted web tab BEFORE them (after the general tab), so tab order is: general tab, converted web tabs, Feed, Attachments." },
+        { "web": "FeedTabContainer", "mobile": "FeedContainer", "note": "Feed tab content; the FeedTab stays the second-to-last tab (before Attachments)." },
+        { "web": "AttachmentsTabContainer", "mobile": "AttachmentsContainer", "note": "Attachments tab content; the AttachmentsTab stays the LAST tab." },
+        { "web": "CardContentWrapper", "mobile": "GeneralTabContainer", "note": "Web card-content wrapper; its non-tab content (side/profile) fills the mobile general tab's grid." },
+        { "web": "CardContentWrapper:top", "mobile": "Tabs:top", "note": "Content ABOVE the web card-content wrapper (e.g. a progress bar) is placed above the mobile Tabs (in the Tabs' parent container)." },
+        { "web": "CardContentWrapper:bottom", "mobile": "Tabs:bottom", "note": "Content BELOW the web card-content wrapper is placed below the mobile Tabs." }
       ]
     },
     {

@@ -131,6 +131,18 @@ public sealed class ElementMapEntry {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string PropertyName { get; init; }
 
+	/// <summary>
+	/// Optional 0-based insert position within the parent's <c>items</c>. Set ONLY for a positional insert
+	/// — a web element mapped above/below an anchor container via a <c>&lt;container&gt;:top</c> /
+	/// <c>:bottom</c> template rule. <c>:top</c> elements get an ascending index from 0 so they land before
+	/// the anchor (e.g. above the mobile <c>Tabs</c>); <c>:bottom</c> elements are appended (no index). Add it
+	/// to the insert operation verbatim when present. Omitted for every other element — the mobile designer
+	/// owns ordering.
+	/// </summary>
+	[JsonPropertyName("index")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public int? Index { get; init; }
+
 	/// <summary>For an <c>insert</c> of a named element with a localizable caption.</summary>
 	[JsonPropertyName("captionResource")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

@@ -65,6 +65,7 @@ public sealed class MobilePageConversionGuideTool {
 		"modelConfig / viewModelConfig (same data in full-object form, for reference; viewModelConfig already " +
 		"filtered to drop attributes of unsupported components), plus per-element elementMap (each insert carries " +
 		"prebuilt mobileValues — paste them verbatim to keep every mobile-supported property, then add only the value binding; " +
+		"on a tabbed record page every web tab inserts as its own new mobile tab (elementMap parentName Tabs), and a positional insert carries an `index` to sit above/below the mobile Tabs; " +
 		"localized strings (captions AND nested ones like config.title/text.template) are carried verbatim in mobileValues as #ResourceString tokens and collected+resolved into guide.resourceStrings ({key: en-US text}) — register that whole map via update-page resources so every token renders), " +
 		"plus pageBusinessRules (the source page's PAGE-level business rules converted for mobile — condition kept, only the " +
 		"hide/show/make-* actions whose elements survive; recreate each convertedRules[].rule with create-page-business-rule), " +
@@ -144,6 +145,13 @@ public sealed class MobilePageConversionGuideTool {
 		TemplateMappingRule templateRule = ResolveTemplateRule(rules, pageResponse.Page?.ParentSchemaName);
 		IReadOnlyDictionary<string, string> containerNameMap = BuildContainerNameMap(templateRule);
 		IReadOnlyDictionary<string, ComponentMappingRule> componentNameMap = BuildComponentNameMap(templateRule);
+		IReadOnlyList<WebToMobileAnalysisService.PositionalPlacement> positionalPlacements = BuildPositionalPlacements(templateRule);
+
+		// Positional (:top/:bottom) inserts attach to the mobile anchor's parent container. Read the mobile
+		// template to resolve that parent; only needed when the rule declares positional entries.
+		IReadOnlyDictionary<string, string> mobileContainerParents = positionalPlacements is { Count: > 0 }
+			? LoadMobileContainerParents(templateRule?.Mobile, args)
+			: null;
 
 		// Read the source page's web template (its parent schema) so its inherited chrome can be
 		// filtered out of the conversion: the merged page tree carries the template's header/scaffold
@@ -180,7 +188,9 @@ public sealed class MobilePageConversionGuideTool {
 				sectionRegistration: sectionRegistration,
 				pageBusinessRulesProbe: pageBusinessRules,
 				templateComponentNames: templateComponentNames,
-				componentNameMap: componentNameMap);
+				componentNameMap: componentNameMap,
+				positionalPlacements: positionalPlacements,
+				mobileContainerParents: mobileContainerParents);
 		} catch (Exception ex) {
 			return Fail(args, sourceType, $"Failed to analyze source page '{args.SchemaName}': {ex.Message}");
 		}
@@ -274,11 +284,80 @@ public sealed class MobilePageConversionGuideTool {
 		}
 		var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 		foreach (ContainerMappingRule c in rule.Containers) {
-			if (!string.IsNullOrWhiteSpace(c?.Web) && !string.IsNullOrWhiteSpace(c.Mobile)) {
+			// Skip positional entries (`<anchor>:top` / `:bottom`) — they are not element-name twins; they
+			// are parsed separately by BuildPositionalPlacements.
+			if (!string.IsNullOrWhiteSpace(c?.Web) && !string.IsNullOrWhiteSpace(c.Mobile)
+				&& !c.Web.Contains(':') && !c.Mobile.Contains(':')) {
 				map[c.Web] = c.Mobile;
 			}
 		}
 		return map.Count > 0 ? map : null;
+	}
+
+	/// <summary>
+	/// Parses the positional container entries of a template rule. A positional entry has the form
+	/// <c>{ "web": "&lt;anchor&gt;:top|bottom", "mobile": "&lt;mobileAnchor&gt;:top|bottom" }</c>: content
+	/// that is a sibling of the web <c>&lt;anchor&gt;</c> container is placed above/below the mobile
+	/// <c>&lt;mobileAnchor&gt;</c> (in that anchor's parent container). Both the <c>:top</c> and <c>:bottom</c>
+	/// entries of an anchor resolve to the same placement (the side is inferred from sibling order), so the
+	/// result is deduplicated by web anchor. Returns null when the rule declares no positional entries.
+	/// </summary>
+	internal static IReadOnlyList<WebToMobileAnalysisService.PositionalPlacement> BuildPositionalPlacements(TemplateMappingRule rule) {
+		if (rule?.Containers is null || rule.Containers.Count == 0) {
+			return null;
+		}
+		var byAnchor = new Dictionary<string, WebToMobileAnalysisService.PositionalPlacement>(StringComparer.OrdinalIgnoreCase);
+		foreach (ContainerMappingRule c in rule.Containers) {
+			if (string.IsNullOrWhiteSpace(c?.Web) || string.IsNullOrWhiteSpace(c.Mobile)
+				|| !c.Web.Contains(':') || !c.Mobile.Contains(':')) {
+				continue;
+			}
+			string webAnchor = c.Web.Split(':', 2)[0].Trim();
+			string mobileAnchor = c.Mobile.Split(':', 2)[0].Trim();
+			if (webAnchor.Length == 0 || mobileAnchor.Length == 0 || byAnchor.ContainsKey(webAnchor)) {
+				continue;
+			}
+			byAnchor[webAnchor] = new WebToMobileAnalysisService.PositionalPlacement(webAnchor, mobileAnchor);
+		}
+		return byAnchor.Count > 0 ? byAnchor.Values.ToList() : null;
+	}
+
+	/// <summary>
+	/// Best-effort read of the mobile template (<paramref name="mobileSchemaName"/>) to map each mobile
+	/// container to its parent — used to resolve where a positional (<c>:top</c> / <c>:bottom</c>) insert
+	/// attaches (the mobile anchor's parent). Mirrors <see cref="LoadTemplateComponentNames"/>: loads the
+	/// template's merged bundle and never throws. Returns an empty map when the name is missing or the read
+	/// fails (positional inserts then fall back to the default container).
+	/// </summary>
+	private IReadOnlyDictionary<string, string> LoadMobileContainerParents(string mobileSchemaName, MobilePageConversionGuideArgs args) {
+		var empty = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+		if (string.IsNullOrWhiteSpace(mobileSchemaName)) {
+			return empty;
+		}
+		try {
+			PageGetOptions options = new() {
+				SchemaName = mobileSchemaName,
+				Environment = args.EnvironmentName,
+				Uri = args.Uri,
+				Login = args.Login,
+				Password = args.Password
+			};
+			PageGetResponse templateResponse;
+			PageGetCommand command = _commandResolver.Resolve<PageGetCommand>(options);
+			lock (McpToolExecutionLock.SyncRoot) {
+				try {
+					command.TryGetPage(options, out templateResponse);
+				} finally {
+					_logger.ClearMessages();
+				}
+			}
+			if (templateResponse?.Success == true && templateResponse.Bundle?.ViewConfig is { } viewConfig) {
+				return WebToMobileAnalysisService.CollectParentByName(viewConfig);
+			}
+		} catch (Exception) {
+			// Best-effort: a failed mobile-template read falls back to the default positional container.
+		}
+		return empty;
 	}
 
 	/// <summary>
