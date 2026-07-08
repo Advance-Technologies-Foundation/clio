@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Clio.Command.BusinessRules;
 using Clio.Command.EntitySchemaDesigner;
 using FluentAssertions;
@@ -1538,6 +1539,255 @@ public sealed class SimpleToFullBusinessRuleConverterTests {
 			.WithMessage("Block uId 'not-a-guid' is not a valid GUID.",
 				because: "a malformed caller-supplied block uId must fail conversion instead of persisting a broken identity");
 	}
+
+	private const string ExistingRuleUId = "11111111-1111-1111-1111-111111111111";
+	private const string ExistingCaseUId = "22222222-2222-2222-2222-222222222222";
+	private const string ExistingGroupUId = "33333333-3333-3333-3333-333333333333";
+
+	[Test]
+	[Category("Unit")]
+	[Description("Produces the updated rule with the existing persisted rule, case, and top-level group-condition uIds when an existingRule is supplied, discarding the throwaway generated identities.")]
+	public void ToEntityMetadata_Should_Carry_Existing_Rule_Case_And_Group_UIds_When_ExistingRule_Provided() {
+		// Arrange
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap =
+			new Dictionary<string, BusinessRuleAttributeDescriptor>(StringComparer.Ordinal) {
+				["Status"] = new("Status", "Text", null)
+			};
+		BusinessRule rule = CreateStandardRule();
+		JsonObject existingRule = CreateExistingRule();
+
+		// Act
+		IReadOnlyList<BusinessRuleMetadataDto> metadata = SimpleToFullBusinessRuleConverter.ToEntityMetadata(
+			attributeMap, rule, "UsrTask", filterSchemaProvider: null, lookupValueResolver: null, existingRule);
+
+		// Assert
+		metadata[0].UId.Should().Be(ExistingRuleUId,
+			because: "the replacement rule must carry the persisted rule uId produced during construction");
+		metadata[0].Cases[0].UId.Should().Be(ExistingCaseUId,
+			because: "the single generated case must carry the persisted case uId");
+		metadata[0].Cases[0].Condition!.UId.Should().Be(ExistingGroupUId,
+			because: "the top-level group condition must carry the persisted group uId");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Mints fresh rule, case, and group uIds on the create path when no existingRule is supplied.")]
+	public void ToEntityMetadata_Should_Mint_Fresh_UIds_When_No_ExistingRule() {
+		// Arrange
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap =
+			new Dictionary<string, BusinessRuleAttributeDescriptor>(StringComparer.Ordinal) {
+				["Status"] = new("Status", "Text", null)
+			};
+		BusinessRule rule = CreateStandardRule();
+
+		// Act
+		IReadOnlyList<BusinessRuleMetadataDto> metadata = SimpleToFullBusinessRuleConverter.ToEntityMetadata(
+			attributeMap, rule, "UsrTask", filterSchemaProvider: null, lookupValueResolver: null);
+
+		// Assert
+		metadata[0].UId.Should().NotBe(ExistingRuleUId,
+			because: "the create path mints a fresh rule uId instead of reusing a persisted one");
+		Guid.TryParse(metadata[0].UId, out _).Should().BeTrue(
+			because: "the freshly minted rule uId must be a valid GUID");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Carries the existing trigger uIds onto generated triggers matched by case-insensitive name plus type, keeps fresh uIds where nothing matches, and consumes each existing trigger uId at most once.")]
+	public void ToEntityMetadata_Should_Carry_Existing_Trigger_UIds_Matched_By_Name_And_Type() {
+		// Arrange
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap =
+			new Dictionary<string, BusinessRuleAttributeDescriptor>(StringComparer.Ordinal) {
+				["Status"] = new("Status", "Text", null)
+			};
+		BusinessRule rule = CreateStandardRule();
+		JsonObject existingRule = CreateExistingRule(triggersJson: $$"""
+			[
+			  { "typeName": "Trigger", "uId": "44444444-4444-4444-4444-444444444444", "name": "STATUS", "type": 0 },
+			  { "typeName": "Trigger", "uId": "55555555-5555-5555-5555-555555555555", "name": "", "type": 2 }
+			]
+			""");
+
+		// Act
+		IReadOnlyList<BusinessRuleMetadataDto> metadata = SimpleToFullBusinessRuleConverter.ToEntityMetadata(
+			attributeMap, rule, "UsrTask", filterSchemaProvider: null, lookupValueResolver: null, existingRule);
+
+		// Assert
+		BusinessRuleTriggerMetadataDto changeTrigger = metadata[0].Triggers.Single(trigger =>
+			trigger.Type == BusinessRuleConstants.ChangeAttributeValueTriggerType && trigger.Name == "Status");
+		changeTrigger.UId.Should().Be("44444444-4444-4444-4444-444444444444",
+			because: "a change trigger matching by case-insensitive name and type must carry the persisted trigger uId");
+		BusinessRuleTriggerMetadataDto dataLoadedTrigger = metadata[0].Triggers.Single(trigger =>
+			trigger.Type == BusinessRuleConstants.DataLoadedTriggerType);
+		dataLoadedTrigger.UId.Should().Be("55555555-5555-5555-5555-555555555555",
+			because: "the DataLoaded trigger (empty name, type 2) must carry the persisted trigger uId");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Matches a persisted change trigger whose zero-valued 'type' property was stripped by the platform's addon-metadata normalization, treating an absent type as ChangeAttributeValue (0).")]
+	public void ToEntityMetadata_Should_Match_Change_Trigger_When_Persisted_Type_Property_Is_Absent() {
+		// Arrange - Creatio omits zero-valued properties on read-back, so change triggers (type 0)
+		// come back without a "type" property at all.
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap =
+			new Dictionary<string, BusinessRuleAttributeDescriptor>(StringComparer.Ordinal) {
+				["Status"] = new("Status", "Text", null)
+			};
+		BusinessRule rule = CreateStandardRule();
+		JsonObject existingRule = CreateExistingRule(triggersJson: """
+			[
+			  { "typeName": "Trigger", "uId": "44444444-4444-4444-4444-444444444444", "name": "Status" }
+			]
+			""");
+
+		// Act
+		IReadOnlyList<BusinessRuleMetadataDto> metadata = SimpleToFullBusinessRuleConverter.ToEntityMetadata(
+			attributeMap, rule, "UsrTask", filterSchemaProvider: null, lookupValueResolver: null, existingRule);
+
+		// Assert
+		metadata[0].Triggers.Single(trigger => trigger.Name == "Status").UId
+			.Should().Be("44444444-4444-4444-4444-444444444444",
+				because: "a persisted change trigger stripped of its zero-valued type must still match a generated type-0 trigger");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Throws when the existing persisted rule carries no uId, because identity cannot be preserved without it.")]
+	public void ToEntityMetadata_Should_Throw_When_Existing_Rule_Has_No_UId() {
+		// Arrange
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap =
+			new Dictionary<string, BusinessRuleAttributeDescriptor>(StringComparer.Ordinal) {
+				["Status"] = new("Status", "Text", null)
+			};
+		BusinessRule rule = CreateStandardRule();
+		JsonObject existingRule = (JsonObject)JsonNode.Parse("""{ "name": "Rule_A", "enabled": true }""")!;
+
+		// Act
+		Action act = () => SimpleToFullBusinessRuleConverter.ToEntityMetadata(
+			attributeMap, rule, "UsrTask", filterSchemaProvider: null, lookupValueResolver: null, existingRule);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>()
+			.WithMessage("Existing business rule has no uId.",
+				because: "a persisted rule without a uId cannot donate its identity to the replacement");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Builds apply-filter child rules anchored to the existing parent uId from the start, so child parentUId, autogenerated names, and captions embed the persisted uId without a post-conversion re-anchor.")]
+	public void ToEntityMetadata_Should_Anchor_ApplyFilter_Children_To_Existing_UId_When_ExistingRule_Provided() {
+		// Arrange
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap =
+			new Dictionary<string, BusinessRuleAttributeDescriptor>(StringComparer.Ordinal) {
+				["Country"] = new("Country", "Lookup", "Country"),
+				["City"] = new("City", "Lookup", "City"),
+				["City.Country"] = new("City.Country", "Lookup", "Country")
+			};
+		BusinessRule rule = new(
+			"Filter city by country",
+			new BusinessRuleConditionGroup("AND", []),
+			[
+				new ApplyFilterBusinessRuleAction(
+					"City",
+					"Country",
+					"Country",
+					null,
+					clearValue: true,
+					populateValue: true)
+			]);
+		JsonObject existingRule = CreateExistingRule();
+
+		// Act
+		IReadOnlyList<BusinessRuleMetadataDto> metadata = SimpleToFullBusinessRuleConverter.ToEntityMetadata(
+			attributeMap, rule, "UsrOrder", filterSchemaProvider: null, lookupValueResolver: null, existingRule);
+
+		// Assert
+		metadata[0].UId.Should().Be(ExistingRuleUId,
+			because: "the apply-filter parent rule must carry the persisted rule uId");
+		metadata.Skip(1).Should().OnlyContain(child => child.ParentUId == ExistingRuleUId,
+			because: "every apply-filter child must be anchored to the existing parent uId from construction");
+		metadata[1].Name.Should().Be($"Autogenerated_{ExistingRuleUId}_ClearValue",
+			because: "the parent uId embedded in the autogenerated clear child name must be the persisted uId");
+		metadata[1].Caption.Should().Be($"ChildRule-{ExistingRuleUId}-ClearValue",
+			because: "the parent uId embedded in the autogenerated clear child caption must be the persisted uId");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Carries the existing rule, case, and group uIds onto a page rule when an existingRule is supplied.")]
+	public void ToPageMetadata_Should_Carry_Existing_UIds_When_ExistingRule_Provided() {
+		// Arrange
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap =
+			new Dictionary<string, BusinessRuleAttributeDescriptor>(StringComparer.Ordinal) {
+				["PDS_Status"] = new("PDS_Status", "Text", null)
+			};
+		BusinessRule rule = new(
+			"Change page element state",
+			new BusinessRuleConditionGroup(
+				"AND",
+				[
+					new BusinessRuleCondition(
+						new BusinessRuleExpression("AttributeValue", "PDS_Status", null),
+						"is-filled-in")
+				]),
+			[
+				new ShowElementBusinessRuleAction(["NameInput"])
+			]);
+		JsonObject existingRule = CreateExistingRule();
+
+		// Act
+		BusinessRuleMetadataDto metadata = SimpleToFullBusinessRuleConverter.ToPageMetadata(attributeMap, rule, existingRule);
+
+		// Assert
+		metadata.UId.Should().Be(ExistingRuleUId,
+			because: "the page replacement rule must carry the persisted rule uId");
+		metadata.Cases[0].UId.Should().Be(ExistingCaseUId,
+			because: "the single page case must carry the persisted case uId");
+		metadata.Cases[0].Condition!.UId.Should().Be(ExistingGroupUId,
+			because: "the top-level page group condition must carry the persisted group uId");
+	}
+
+	private static BusinessRule CreateStandardRule() =>
+		new(
+			"Readonly status",
+			new BusinessRuleConditionGroup(
+				"AND",
+				[
+					new BusinessRuleCondition(
+						new BusinessRuleExpression("AttributeValue", "Status", null),
+						"equal",
+						new BusinessRuleExpression("Const", null, Json("Draft")))
+				]),
+			[
+				new MakeReadOnlyBusinessRuleAction(["Status"])
+			]) {
+			Name = "Rule_A"
+		};
+
+	private static JsonObject CreateExistingRule(bool enabled = true, string triggersJson = "[]") =>
+		(JsonObject)JsonNode.Parse($$"""
+			{
+			  "typeName": "{{BusinessRuleConstants.BusinessRuleTypeName}}",
+			  "uId": "{{ExistingRuleUId}}",
+			  "name": "Rule_A",
+			  "enabled": {{(enabled ? "true" : "false")}},
+			  "caption": "Rule A",
+			  "cases": [
+			    {
+			      "typeName": "{{BusinessRuleConstants.BusinessRuleCaseTypeName}}",
+			      "uId": "{{ExistingCaseUId}}",
+			      "condition": {
+			        "typeName": "{{BusinessRuleConstants.BusinessRuleGroupConditionTypeName}}",
+			        "uId": "{{ExistingGroupUId}}",
+			        "logicalOperation": 1,
+			        "conditions": []
+			      },
+			      "actions": []
+			    }
+			  ],
+			  "triggers": {{triggersJson}}
+			}
+			""")!;
 
 	private static IReadOnlyDictionary<string, EntitySchemaColumnDto> CreateColumnMap(params EntitySchemaColumnDto[] columns) {
 		Dictionary<string, EntitySchemaColumnDto> result = new(StringComparer.Ordinal);

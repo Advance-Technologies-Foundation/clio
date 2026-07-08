@@ -157,33 +157,14 @@ internal sealed class PageBusinessRuleService(
 			packageUId);
 		IReadOnlySet<string> elementNames = elementProvider.GetElementNames(pageContext.Bundle);
 
-		var results = new BusinessRuleBatchItemResult[request.Rules.Count];
-		var pending = new List<(int Index, BusinessRuleUpdateItem Item)>();
-
-		for (int index = 0; index < request.Rules.Count; index++) {
-			BusinessRule rule = request.Rules[index];
-			string identifier = rule?.Name ?? rule?.Caption ?? string.Empty;
-			try {
-				ArgumentNullException.ThrowIfNull(rule);
-				if (string.IsNullOrWhiteSpace(rule.Name)) {
-					throw new ArgumentException("name is required to update a business rule.");
-				}
-
+		return BusinessRuleAddonMetadata.ApplyUpdateBatch(
+			businessRuleAddonService,
+			BuildAddonSchemaRequest(pageContext, packageUId),
+			request.Rules,
+			(rule, existing) => {
 				pageBusinessRuleValidator.Validate(rule, attributeMap, elementNames);
-				BusinessRuleMetadataDto generatedRule = SimpleToFullBusinessRuleConverter.ToPageMetadata(attributeMap, rule);
-				pending.Add((index, new BusinessRuleUpdateItem(rule.Name.Trim(), rule.Enabled, [generatedRule])));
-			} catch (Exception exception) {
-				results[index] = new BusinessRuleBatchItemResult(identifier, false, null, exception.Message);
-			}
-		}
-
-		if (pending.Count > 0) {
-			AddonGetRequestDto addonRequest = BuildAddonSchemaRequest(pageContext, packageUId);
-			BusinessRuleBatchSave.MergeUpdateOutcome(results, pending,
-				items => businessRuleAddonService.UpdateRules(addonRequest, items));
-		}
-
-		return results;
+				return [SimpleToFullBusinessRuleConverter.ToPageMetadata(attributeMap, rule, existing)];
+			});
 	}
 
 	public IReadOnlyList<BusinessRuleBatchItemResult> Delete(PageBusinessRulesDeleteRequest request) {

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json.Nodes;
 using Clio.Command.BusinessRules.Filters;
 using Clio.Command.BusinessRules.Filters.Esq;
 using Clio.Command.BusinessRules.Filters.Schema;
@@ -33,17 +34,19 @@ internal static class SimpleToFullBusinessRuleConverter {
 		BusinessRule rule,
 		string entitySchemaName,
 		IFilterSchemaProvider? filterSchemaProvider,
-		ILookupValueResolver? lookupValueResolver) {
+		ILookupValueResolver? lookupValueResolver,
+		JsonObject? existingRule = null) {
+		ExistingRuleIdentity? identity = existingRule is null ? null : new ExistingRuleIdentity(existingRule);
 		if (TryGetApplyFilterAction(rule, out ApplyFilterBusinessRuleAction? applyFilterAction)) {
-			return BuildApplyFilterRules(attributeMap, rule, applyFilterAction!);
+			return BuildApplyFilterRules(attributeMap, rule, applyFilterAction!, identity);
 		}
 
 		if (TryGetApplyStaticFilterAction(rule, out ApplyStaticFilterBusinessRuleAction? applyStaticFilterAction)) {
 			return [BuildApplyStaticFilterRule(
-				attributeMap, rule, applyStaticFilterAction!, filterSchemaProvider, lookupValueResolver)];
+				attributeMap, rule, applyStaticFilterAction!, filterSchemaProvider, lookupValueResolver, identity)];
 		}
 
-		return [ToMetadata(attributeMap, rule, includeAttributeReferenceSchemaName: true, entitySchemaName: entitySchemaName)];
+		return [ToMetadata(attributeMap, rule, includeAttributeReferenceSchemaName: true, entitySchemaName: entitySchemaName, identity)];
 	}
 
 	internal static BusinessRuleMetadataDto ToMetadata(
@@ -60,27 +63,31 @@ internal static class SimpleToFullBusinessRuleConverter {
 	internal static BusinessRuleMetadataDto ToMetadata(
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
 		BusinessRule rule) =>
-		ToMetadata(attributeMap, rule, includeAttributeReferenceSchemaName: true, entitySchemaName: null);
+		ToMetadata(attributeMap, rule, includeAttributeReferenceSchemaName: true, entitySchemaName: null, identity: null);
 
 	internal static BusinessRuleMetadataDto ToMetadata(
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
 		BusinessRule rule,
 		string entitySchemaName) =>
-		ToMetadata(attributeMap, rule, includeAttributeReferenceSchemaName: true, entitySchemaName: entitySchemaName);
+		ToMetadata(attributeMap, rule, includeAttributeReferenceSchemaName: true, entitySchemaName: entitySchemaName, identity: null);
 
 	internal static BusinessRuleMetadataDto ToPageMetadata(
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
-		BusinessRule rule) =>
-		ToMetadata(attributeMap, rule, includeAttributeReferenceSchemaName: false, entitySchemaName: null);
+		BusinessRule rule,
+		JsonObject? existingRule = null) {
+		ExistingRuleIdentity? identity = existingRule is null ? null : new ExistingRuleIdentity(existingRule);
+		return ToMetadata(attributeMap, rule, includeAttributeReferenceSchemaName: false, entitySchemaName: null, identity);
+	}
 
 	private static BusinessRuleMetadataDto ToMetadata(
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
 		BusinessRule rule,
 		bool includeAttributeReferenceSchemaName,
-		string? entitySchemaName) {
-		string ruleUId = Guid.NewGuid().ToString();
-		BusinessRuleCaseMetadataDto @case = BuildCase(attributeMap, rule, includeAttributeReferenceSchemaName, entitySchemaName);
-		List<BusinessRuleTriggerMetadataDto> triggers = BuildTriggers(attributeMap, rule, entitySchemaName);
+		string? entitySchemaName,
+		ExistingRuleIdentity? identity) {
+		string ruleUId = identity?.RuleUId ?? Guid.NewGuid().ToString();
+		BusinessRuleCaseMetadataDto @case = BuildCase(attributeMap, rule, includeAttributeReferenceSchemaName, entitySchemaName, identity);
+		List<BusinessRuleTriggerMetadataDto> triggers = BuildTriggers(attributeMap, rule, entitySchemaName, identity);
 		return new BusinessRuleMetadataDto {
 			TypeName = BusinessRuleTypeName,
 			UId = ruleUId,
@@ -96,11 +103,12 @@ internal static class SimpleToFullBusinessRuleConverter {
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
 		BusinessRule rule,
 		bool includeAttributeReferenceSchemaName,
-		string? entitySchemaName) {
+		string? entitySchemaName,
+		ExistingRuleIdentity? identity = null) {
 		return new BusinessRuleCaseMetadataDto {
 			TypeName = BusinessRuleCaseTypeName,
-			UId = Guid.NewGuid().ToString(),
-			Condition = BuildConditionGroup(attributeMap, rule.Condition, includeAttributeReferenceSchemaName),
+			UId = identity?.CaseUId ?? Guid.NewGuid().ToString(),
+			Condition = BuildConditionGroup(attributeMap, rule.Condition, includeAttributeReferenceSchemaName, identity),
 			Actions = rule.Actions
 				.Select(action => BuildAction(attributeMap, action, includeAttributeReferenceSchemaName, entitySchemaName))
 				.ToList()
@@ -110,10 +118,11 @@ internal static class SimpleToFullBusinessRuleConverter {
 	private static BusinessRuleGroupConditionMetadataDto BuildConditionGroup(
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
 		BusinessRuleConditionGroup group,
-		bool includeAttributeReferenceSchemaName) {
+		bool includeAttributeReferenceSchemaName,
+		ExistingRuleIdentity? identity = null) {
 		return new BusinessRuleGroupConditionMetadataDto {
 			TypeName = BusinessRuleGroupConditionTypeName,
-			UId = Guid.NewGuid().ToString(),
+			UId = identity?.GroupConditionUId ?? Guid.NewGuid().ToString(),
 			LogicalOperation = string.Equals(group.LogicalOperation, "OR", StringComparison.OrdinalIgnoreCase) ? LogicalOr : LogicalAnd,
 			Conditions = (group.Conditions ?? [])
 				.Select(condition => BuildCondition(attributeMap, condition, includeAttributeReferenceSchemaName))
@@ -367,7 +376,8 @@ internal static class SimpleToFullBusinessRuleConverter {
 	private static List<BusinessRuleTriggerMetadataDto> BuildTriggers(
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
 		BusinessRule rule,
-		string? entitySchemaName) {
+		string? entitySchemaName,
+		ExistingRuleIdentity? identity = null) {
 		IEnumerable<string> conditionTriggers = rule.Condition.Conditions.SelectMany(EnumerateTriggerNames);
 		IEnumerable<string> formulaTriggers = string.IsNullOrWhiteSpace(entitySchemaName)
 			? Enumerable.Empty<string>()
@@ -391,16 +401,18 @@ internal static class SimpleToFullBusinessRuleConverter {
 			Name = string.Empty,
 			Type = DataLoadedTriggerType
 		});
+		identity?.ApplyTriggerIdentities(triggers);
 		return triggers;
 	}
 
 	private static IReadOnlyList<BusinessRuleMetadataDto> BuildApplyFilterRules(
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
 		BusinessRule rule,
-		ApplyFilterBusinessRuleAction action) {
+		ApplyFilterBusinessRuleAction action,
+		ExistingRuleIdentity? identity = null) {
 		string normalizedTargetFilterPath = NormalizeRelativeFilterPath(action.TargetFilterPath);
 		string? normalizedSourceFilterPath = NormalizeOptionalRelativeFilterPath(action.SourceFilterPath);
-		string parentRuleUId = Guid.NewGuid().ToString();
+		string parentRuleUId = identity?.RuleUId ?? Guid.NewGuid().ToString();
 		string parentActionUId = ResolveBlockUId(action.UId);
 
 		BusinessRuleMetadataDto parentRule = new() {
@@ -415,8 +427,9 @@ internal static class SimpleToFullBusinessRuleConverter {
 				action,
 				normalizedTargetFilterPath,
 				normalizedSourceFilterPath,
-				parentActionUId)],
-			Triggers = BuildApplyFilterParentTriggers(rule, action)
+				parentActionUId,
+				identity)],
+			Triggers = BuildApplyFilterParentTriggers(rule, action, identity)
 		};
 
 		List<BusinessRuleMetadataDto> rules = [parentRule];
@@ -448,13 +461,14 @@ internal static class SimpleToFullBusinessRuleConverter {
 		ApplyFilterBusinessRuleAction action,
 		string normalizedTargetFilterPath,
 		string? normalizedSourceFilterPath,
-		string parentActionUId) {
+		string parentActionUId,
+		ExistingRuleIdentity? identity = null) {
 		BusinessRuleAttributeDescriptor targetDescriptor = attributeMap[action.Target];
 		BusinessRuleAttributeDescriptor sourceDescriptor = attributeMap[action.Source];
 		return new BusinessRuleCaseMetadataDto {
 			TypeName = BusinessRuleCaseTypeName,
-			UId = Guid.NewGuid().ToString(),
-			Condition = BuildConditionGroup(attributeMap, rule.Condition, includeAttributeReferenceSchemaName: true),
+			UId = identity?.CaseUId ?? Guid.NewGuid().ToString(),
+			Condition = BuildConditionGroup(attributeMap, rule.Condition, includeAttributeReferenceSchemaName: true, identity),
 			Actions = [
 				new BusinessRuleFilterLookupActionMetadataDto {
 					TypeName = BusinessRuleFilterLookupElementTypeName,
@@ -572,7 +586,8 @@ internal static class SimpleToFullBusinessRuleConverter {
 
 	private static List<BusinessRuleTriggerMetadataDto> BuildApplyFilterParentTriggers(
 		BusinessRule rule,
-		ApplyFilterBusinessRuleAction action) {
+		ApplyFilterBusinessRuleAction action,
+		ExistingRuleIdentity? identity = null) {
 		List<BusinessRuleTriggerMetadataDto> triggers = (rule.Condition.Conditions ?? [])
 			.SelectMany(EnumerateTriggerNames)
 			.Append(action.Source)
@@ -580,6 +595,7 @@ internal static class SimpleToFullBusinessRuleConverter {
 			.Select(BuildChangeTrigger)
 			.ToList();
 		triggers.Add(BuildDataLoadedTrigger());
+		identity?.ApplyTriggerIdentities(triggers);
 		return triggers;
 	}
 
@@ -723,7 +739,8 @@ internal static class SimpleToFullBusinessRuleConverter {
 		BusinessRule rule,
 		ApplyStaticFilterBusinessRuleAction action,
 		IFilterSchemaProvider? filterSchemaProvider,
-		ILookupValueResolver? lookupValueResolver) {
+		ILookupValueResolver? lookupValueResolver,
+		ExistingRuleIdentity? identity = null) {
 		BusinessRuleAttributeDescriptor targetDescriptor = attributeMap[action.TargetAttribute];
 		string rootSchemaName = targetDescriptor.ReferenceSchemaName!;
 		StaticFilterGroup filterGroup = StaticFilterDeserializer.Deserialize(action.Filter);
@@ -750,8 +767,8 @@ internal static class SimpleToFullBusinessRuleConverter {
 
 		BusinessRuleCaseMetadataDto @case = new() {
 			TypeName = BusinessRuleCaseTypeName,
-			UId = Guid.NewGuid().ToString(),
-			Condition = BuildConditionGroup(attributeMap, rule.Condition, includeAttributeReferenceSchemaName: true),
+			UId = identity?.CaseUId ?? Guid.NewGuid().ToString(),
+			Condition = BuildConditionGroup(attributeMap, rule.Condition, includeAttributeReferenceSchemaName: true, identity),
 			Actions = [setFilterAction]
 		};
 
@@ -761,10 +778,11 @@ internal static class SimpleToFullBusinessRuleConverter {
 			.Select(BuildChangeTrigger)
 			.ToList();
 		triggers.Add(BuildDataLoadedTrigger());
+		identity?.ApplyTriggerIdentities(triggers);
 
 		return new BusinessRuleMetadataDto {
 			TypeName = BusinessRuleTypeName,
-			UId = Guid.NewGuid().ToString(),
+			UId = identity?.RuleUId ?? Guid.NewGuid().ToString(),
 			Name = ResolveRuleName(rule),
 			Enabled = rule.Enabled ?? true,
 			Caption = rule.Caption.Trim(),
@@ -785,6 +803,74 @@ internal static class SimpleToFullBusinessRuleConverter {
 
 		SimpleToFullFilterConverter builder = new(filterSchemaProvider, lookupValueResolver);
 		return builder.Build(filterGroup, rootSchemaName);
+	}
+
+	private sealed class ExistingRuleIdentity {
+		private readonly List<(string Name, int Type, string UId)> _unconsumedTriggers;
+
+		public ExistingRuleIdentity(JsonObject existingRule) {
+			RuleUId = GetString(existingRule, "uId")
+				?? throw new InvalidOperationException("Existing business rule has no uId.");
+			(CaseUId, GroupConditionUId) = ReadCaseIdentity(existingRule);
+			_unconsumedTriggers = ReadTriggers(existingRule);
+		}
+
+		public string RuleUId { get; }
+
+		public string? CaseUId { get; }
+
+		public string? GroupConditionUId { get; }
+
+		public void ApplyTriggerIdentities(IEnumerable<BusinessRuleTriggerMetadataDto> triggers) {
+			foreach (BusinessRuleTriggerMetadataDto trigger in triggers) {
+				int matchIndex = _unconsumedTriggers.FindIndex(candidate =>
+					candidate.Type == trigger.Type
+					&& string.Equals(candidate.Name, trigger.Name ?? string.Empty, StringComparison.OrdinalIgnoreCase));
+				if (matchIndex < 0) {
+					continue;
+				}
+
+				trigger.UId = _unconsumedTriggers[matchIndex].UId;
+				_unconsumedTriggers.RemoveAt(matchIndex);
+			}
+		}
+
+		private static (string? CaseUId, string? GroupConditionUId) ReadCaseIdentity(JsonObject existingRule) {
+			if (existingRule["cases"] is not JsonArray cases
+				|| cases.Count != 1
+				|| cases[0] is not JsonObject existingCase) {
+				return (null, null);
+			}
+
+			string? caseUId = GetString(existingCase, "uId");
+			string? groupUId = null;
+			if (existingCase["condition"] is JsonObject condition
+				&& string.Equals(GetString(condition, "typeName"), BusinessRuleGroupConditionTypeName, StringComparison.Ordinal)) {
+				groupUId = GetString(condition, "uId");
+			}
+
+			return (
+				string.IsNullOrWhiteSpace(caseUId) ? null : caseUId,
+				string.IsNullOrWhiteSpace(groupUId) ? null : groupUId);
+		}
+
+		private static List<(string Name, int Type, string UId)> ReadTriggers(JsonObject existingRule) =>
+			existingRule["triggers"] is not JsonArray triggers
+				? []
+				: triggers
+					.OfType<JsonObject>()
+					.Select(trigger => (
+						Name: GetString(trigger, "name") ?? string.Empty,
+						Type: GetInt(trigger, "type", ChangeAttributeValueTriggerType),
+						UId: GetString(trigger, "uId") ?? string.Empty))
+					.Where(trigger => !string.IsNullOrWhiteSpace(trigger.UId))
+					.ToList();
+
+		private static string? GetString(JsonObject source, string propertyName) =>
+			source[propertyName] is JsonValue value && value.TryGetValue(out string? text) ? text : null;
+
+		private static int GetInt(JsonObject source, string propertyName, int defaultValue) =>
+			source[propertyName] is JsonValue value && value.TryGetValue(out int result) ? result : defaultValue;
 	}
 
 	/// <summary>

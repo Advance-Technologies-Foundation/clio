@@ -353,22 +353,21 @@ public sealed class PageBusinessRuleServiceTests {
 			because: "a rule without a name is identified by its caption in the outcome");
 		results[0].Error.Should().Be("name is required to update a business rule.",
 			because: "the failure must tell the caller the match key is missing");
-		addonService.DidNotReceiveWithAnyArgs().UpdateRules(default!, default!);
+		addonService.DidNotReceiveWithAnyArgs().SaveSchema(default!);
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Converts each update rule and passes a BusinessRuleUpdateItem carrying the trimmed name, the caller's enabled intent, and the generated metadata to the add-on service through the correct schema request.")]
-	public void Update_Should_Pass_Trimmed_Name_And_Enabled_To_Addon_Service() {
+	[Description("Replaces the matched page rule in place preserving its persisted rule uId, trims the caller-supplied name, applies the explicit enabled=false intent, and saves exactly once through the correct schema request.")]
+	public void Update_Should_Replace_Page_Rule_Preserving_Identity_And_Honoring_Enabled() {
 		// Arrange
 		PageBusinessRuleService service = BuildBatchService(out IBusinessRuleAddonService addonService);
-		IReadOnlyList<BusinessRuleUpdateItem>? capturedItems = null;
-		addonService.UpdateRules(
-				Arg.Any<AddonGetRequestDto>(),
-				Arg.Do<IReadOnlyList<BusinessRuleUpdateItem>>(items => capturedItems = items))
-			.Returns(callInfo => callInfo.Arg<IReadOnlyList<BusinessRuleUpdateItem>>()
-				.Select(item => new BusinessRuleBatchItemResult(item.Name, true, item.Name, null))
-				.ToList());
+		addonService.GetSchema(Arg.Any<AddonGetRequestDto>())
+			.Returns(BuildPageAddonSchema(("BusinessRule_pg", "pg-rule")));
+		AddonSchemaDto? saved = null;
+		addonService
+			.When(addon => addon.SaveSchema(Arg.Any<AddonSchemaDto>()))
+			.Do(callInfo => saved = callInfo.Arg<AddonSchemaDto>());
 		PageBusinessRulesBatchRequest request = new(
 			"UsrPkg",
 			"UsrPage",
@@ -384,35 +383,37 @@ public sealed class PageBusinessRuleServiceTests {
 
 		// Assert
 		results.Should().ContainSingle(because: "one input rule yields one outcome");
-		results[0].Success.Should().BeTrue(because: "the add-on service reported a successful update");
-		capturedItems.Should().NotBeNull(because: "the service must delegate the converted batch to the add-on service");
-		capturedItems!.Should().ContainSingle(because: "one valid rule produces one update item");
-		capturedItems[0].Name.Should().Be("BusinessRule_pg",
-			because: "the caller-supplied name must be trimmed before it is used as the match key");
-		capturedItems[0].Enabled.Should().BeFalse(
-			because: "the caller's explicit enabled intent must travel with the update item");
-		capturedItems[0].GeneratedRules.Should().ContainSingle(
-			because: "a page rule converts to exactly one metadata rule with no children");
-		capturedItems[0].GeneratedRules[0].Name.Should().Be("BusinessRule_pg",
-			because: "the converted metadata carries the trimmed rule name");
-		addonService.Received(1).UpdateRules(
+		results[0].Success.Should().BeTrue(because: "the trimmed name matches the persisted page rule");
+		results[0].Name.Should().Be("BusinessRule_pg",
+			because: "the caller-supplied name must be trimmed before matching and reporting");
+		saved.Should().NotBeNull(because: "a matched update must persist the mutated metadata");
+		using JsonDocument metaData = JsonDocument.Parse(saved!.MetaData);
+		JsonElement[] rules = [.. metaData.RootElement.GetProperty("rules").EnumerateArray()];
+		rules.Should().ContainSingle(because: "the matched page rule is replaced in place without adding new rules");
+		rules[0].GetProperty("uId").GetString().Should().Be("pg-rule",
+			because: "the persisted page rule uId must be preserved so the platform stores a short diff");
+		rules[0].GetProperty("name").GetString().Should().Be("BusinessRule_pg",
+			because: "the replacement keeps the persisted internal rule name");
+		rules[0].GetProperty("enabled").GetBoolean().Should().BeFalse(
+			because: "the caller's explicit enabled=false intent must be applied");
+		rules[0].GetProperty("caption").GetString().Should().Be("Updated rule",
+			because: "the replacement carries the new caption");
+		addonService.Received(1).GetSchema(
 			Arg.Is<AddonGetRequestDto>(addonRequest =>
 				addonRequest.AddonName == "BusinessRule"
 				&& addonRequest.TargetSchemaManagerName == "ClientUnitSchemaManager"
-				&& addonRequest.UseFullHierarchy),
-			Arg.Any<IReadOnlyList<BusinessRuleUpdateItem>>());
+				&& addonRequest.UseFullHierarchy));
+		addonService.Received(1).SaveSchema(Arg.Any<AddonSchemaDto>());
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Isolates a per-rule validation failure inside an update batch: only the valid rule reaches the add-on service and the invalid rule keeps its own error.")]
+	[Description("Isolates a per-rule validation failure inside an update batch: only the valid rule is saved and the invalid rule keeps its own error.")]
 	public void Update_Should_Isolate_Validation_Failure_When_Batch_Has_Invalid_Rule() {
 		// Arrange
 		PageBusinessRuleService service = BuildBatchService(out IBusinessRuleAddonService addonService);
-		addonService.UpdateRules(Arg.Any<AddonGetRequestDto>(), Arg.Any<IReadOnlyList<BusinessRuleUpdateItem>>())
-			.Returns(callInfo => callInfo.Arg<IReadOnlyList<BusinessRuleUpdateItem>>()
-				.Select(item => new BusinessRuleBatchItemResult(item.Name, true, item.Name, null))
-				.ToList());
+		addonService.GetSchema(Arg.Any<AddonGetRequestDto>())
+			.Returns(BuildPageAddonSchema(("BusinessRule_good", "good"), ("BusinessRule_bad", "bad")));
 		PageBusinessRulesBatchRequest request = new(
 			"UsrPkg",
 			"UsrPage",
@@ -430,10 +431,7 @@ public sealed class PageBusinessRuleServiceTests {
 		results[1].Success.Should().BeFalse(because: "the second rule targets an unknown page element");
 		results[1].Error.Should().Contain("MissingInput",
 			because: "the validation failure keeps its own error message");
-		addonService.Received(1).UpdateRules(
-			Arg.Any<AddonGetRequestDto>(),
-			Arg.Is<IReadOnlyList<BusinessRuleUpdateItem>>(items =>
-				items.Count == 1 && items[0].Name == "BusinessRule_good"));
+		addonService.Received(1).SaveSchema(Arg.Any<AddonSchemaDto>());
 	}
 
 	[TestCase(true)]
@@ -557,6 +555,8 @@ public sealed class PageBusinessRuleServiceTests {
 		addonService = Substitute.For<IBusinessRuleAddonService>();
 		addonService.AppendRules(Arg.Any<AddonGetRequestDto>(), Arg.Any<IReadOnlyList<BusinessRuleMetadataDto>>())
 			.Returns(new BusinessRuleCreateResult("BusinessRule_1234567"));
+		addonService.GetSchema(Arg.Any<AddonGetRequestDto>())
+			.Returns(new AddonSchemaDto { MetaData = string.Empty, Resources = [] });
 		return new PageBusinessRuleService(
 			packageResolver,
 			schemaProvider,
@@ -564,6 +564,24 @@ public sealed class PageBusinessRuleServiceTests {
 			elementProvider,
 			addonService,
 			new PageBusinessRuleValidator(new BusinessRuleValidator(lookupReferenceValidator)));
+	}
+
+	private static AddonSchemaDto BuildPageAddonSchema(params (string Name, string UId)[] rules) {
+		string rulesJson = string.Join(",", rules.Select(rule => $$"""
+			{
+			  "typeName": "{{BusinessRuleConstants.BusinessRuleTypeName}}",
+			  "uId": "{{rule.UId}}",
+			  "name": "{{rule.Name}}",
+			  "enabled": true,
+			  "caption": "{{rule.Name}}",
+			  "cases": [{ "typeName": "{{BusinessRuleConstants.BusinessRuleCaseTypeName}}", "uId": "{{rule.UId}}-case", "actions": [] }],
+			  "triggers": []
+			}
+			"""));
+		return new AddonSchemaDto {
+			MetaData = $$"""{ "typeName": "{{BusinessRuleConstants.BusinessRulesMetadataTypeName}}", "rules": [{{rulesJson}}] }""",
+			Resources = []
+		};
 	}
 
 	private static BusinessRule CreatePageRule(string actionElementName = "Input_One", string caption = "Show input") =>

@@ -814,7 +814,6 @@ public sealed class EntityBusinessRuleServiceTests {
 			because: "a rule without a name is identified by its caption in the outcome");
 		results[0].Error.Should().Be("name is required to update a business rule.",
 			because: "the failure must tell the caller the match key is missing");
-		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().GetSchema(default!);
 		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().SaveSchema(default!);
 	}
 
@@ -868,6 +867,8 @@ public sealed class EntityBusinessRuleServiceTests {
 	[Description("Isolates a per-rule validation failure inside an update batch: the invalid rule fails alone while the valid rule is still updated with a single save.")]
 	public void Update_Should_Isolate_Validation_Failure_And_Still_Save_Valid_Rules() {
 		// Arrange
+		_addonSchemaDesignerClient.GetSchema(Arg.Any<AddonGetRequestDto>())
+			.Returns(BuildAddonSchemaWithRules(("BusinessRule_old", "existing-rule"), ("BusinessRule_bad", "existing-bad")));
 		EntityBusinessRulesBatchRequest request = new(
 			"UsrPkg",
 			"UsrOrder",
@@ -995,6 +996,288 @@ public sealed class EntityBusinessRuleServiceTests {
 		_lookupReferenceValidator.Received(1).Validate(
 			Arg.Is<BusinessRule>(validated => ReferenceEquals(validated, rule)),
 			Arg.Any<IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor>>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Reports a not-found failure without saving when the only update rule names a rule absent from the schema.")]
+	public void Update_Should_Report_Not_Found_Without_Saving_When_Name_Is_Unknown() {
+		// Arrange
+		EntityBusinessRulesBatchRequest request = new(
+			"UsrPkg",
+			"UsrOrder",
+			[CreateRule(caption: "Missing") with { Name = "BusinessRule_missing" }]);
+
+		// Act
+		IReadOnlyList<BusinessRuleBatchItemResult> results = _service.Update(request);
+
+		// Assert
+		results.Should().ContainSingle(because: "one input rule yields one outcome");
+		results[0].Success.Should().BeFalse(because: "no persisted rule matches the requested name");
+		results[0].Error.Should().Be("Business rule 'BusinessRule_missing' was not found.",
+			because: "the failure must name the missing rule so the caller can correct it");
+		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().SaveSchema(default!);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Isolates an unknown-name failure inside a mixed batch: the matched rule is still updated with a single save while the unknown name fails alone.")]
+	public void Update_Should_Isolate_Unknown_Name_When_Batch_Has_Matched_Rules() {
+		// Arrange
+		EntityBusinessRulesBatchRequest request = new(
+			"UsrPkg",
+			"UsrOrder",
+			[
+				CreateRule(caption: "Good") with { Name = "BusinessRule_old" },
+				CreateRule(caption: "Missing") with { Name = "BusinessRule_missing" }
+			]);
+
+		// Act
+		IReadOnlyList<BusinessRuleBatchItemResult> results = _service.Update(request);
+
+		// Assert
+		results.Should().HaveCount(2, because: "every input rule gets an outcome in input order");
+		results[0].Success.Should().BeTrue(because: "the matched rule must still be updated despite the failing sibling");
+		results[1].Success.Should().BeFalse(because: "no persisted rule matches the second name");
+		results[1].Error.Should().Contain("BusinessRule_missing", because: "the failure must name the missing rule");
+		_addonSchemaDesignerClient.Received(1).SaveSchema(Arg.Any<AddonSchemaDto>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects a repeated rule name inside one update batch: the first occurrence applies and the repeat fails per-item so the second definition cannot double-apply.")]
+	public void Update_Should_Reject_Repeated_Name_Within_One_Batch() {
+		// Arrange
+		EntityBusinessRulesBatchRequest request = new(
+			"UsrPkg",
+			"UsrOrder",
+			[
+				CreateRule(caption: "First") with { Name = "BusinessRule_old" },
+				CreateRule(caption: "Second") with { Name = "BusinessRule_old" }
+			]);
+
+		// Act
+		IReadOnlyList<BusinessRuleBatchItemResult> results = _service.Update(request);
+
+		// Assert
+		results.Should().HaveCount(2, because: "every input rule gets an outcome in input order");
+		results[0].Success.Should().BeTrue(because: "the first occurrence of the name applies normally");
+		results[1].Success.Should().BeFalse(because: "the repeated name must not double-apply within one batch");
+		results[1].Error.Should().Contain("more than once", because: "the failure must explain the in-batch repeat");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Fails an update item when the persisted metadata carries more than one parent rule with the requested name, without saving.")]
+	public void Update_Should_Fail_Item_When_Persisted_Name_Is_Ambiguous() {
+		// Arrange
+		_addonSchemaDesignerClient.GetSchema(Arg.Any<AddonGetRequestDto>())
+			.Returns(BuildAddonSchemaWithRules(("Dup_Rule", "dup-a"), ("dup_rule", "dup-b")));
+		EntityBusinessRulesBatchRequest request = new(
+			"UsrPkg",
+			"UsrOrder",
+			[CreateRule(caption: "Dup") with { Name = "Dup_Rule" }]);
+
+		// Act
+		IReadOnlyList<BusinessRuleBatchItemResult> results = _service.Update(request);
+
+		// Assert
+		results[0].Success.Should().BeFalse(because: "an ambiguous name must not update an arbitrary rule");
+		results[0].Error.Should().Contain("more than one rule", because: "the failure must explain the ambiguity");
+		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().SaveSchema(default!);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Marks every pending (matched) update item failed with the save error when the single batch save throws, preserving single-save atomicity.")]
+	public void Update_Should_Fail_All_Pending_With_Save_Error_When_Save_Throws() {
+		// Arrange
+		_addonSchemaDesignerClient.GetSchema(Arg.Any<AddonGetRequestDto>())
+			.Returns(BuildAddonSchemaWithRules(("BusinessRule_old", "existing-rule"), ("BusinessRule_two", "existing-two")));
+		_addonSchemaDesignerClient
+			.When(client => client.SaveSchema(Arg.Any<AddonSchemaDto>()))
+			.Do(_ => throw new InvalidOperationException("Add-on save failed."));
+		EntityBusinessRulesBatchRequest request = new(
+			"UsrPkg",
+			"UsrOrder",
+			[
+				CreateRule(caption: "One") with { Name = "BusinessRule_old" },
+				CreateRule(caption: "Two") with { Name = "BusinessRule_two" }
+			]);
+
+		// Act
+		IReadOnlyList<BusinessRuleBatchItemResult> results = _service.Update(request);
+
+		// Assert
+		results.Should().HaveCount(2, because: "every input rule still gets an outcome");
+		results.Should().OnlyContain(result => !result.Success,
+			because: "the single batch save failed, so no item can report success");
+		results.Should().OnlyContain(result => result.Error == "Add-on save failed.",
+			because: "all pending items share the same save error under single-save atomicity");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Preserves the persisted enabled flag when the update rule omits enabled.")]
+	public void Update_Should_Preserve_Existing_Enabled_When_Omitted() {
+		// Arrange
+		_addonSchemaDesignerClient.GetSchema(Arg.Any<AddonGetRequestDto>())
+			.Returns(new AddonSchemaDto {
+				MetaData = $$"""
+					{
+					  "typeName": "{{BusinessRuleConstants.BusinessRulesMetadataTypeName}}",
+					  "rules": [
+					    {
+					      "typeName": "{{BusinessRuleConstants.BusinessRuleTypeName}}",
+					      "uId": "existing-rule",
+					      "name": "BusinessRule_old",
+					      "enabled": false,
+					      "caption": "Existing rule",
+					      "cases": [{ "typeName": "{{BusinessRuleConstants.BusinessRuleCaseTypeName}}", "uId": "existing-case", "actions": [] }],
+					      "triggers": []
+					    }
+					  ]
+					}
+					""",
+				Resources = []
+			});
+		EntityBusinessRulesBatchRequest request = new(
+			"UsrPkg",
+			"UsrOrder",
+			[CreateRule(caption: "Keep disabled") with { Name = "BusinessRule_old" }]);
+
+		// Act
+		IReadOnlyList<BusinessRuleBatchItemResult> results = _service.Update(request);
+
+		// Assert
+		results[0].Success.Should().BeTrue(because: "the trimmed name matches the persisted rule");
+		using JsonDocument metaData = JsonDocument.Parse(_savedAddonSchema!.MetaData);
+		metaData.RootElement.GetProperty("rules")[0].GetProperty("enabled").GetBoolean().Should().BeFalse(
+			because: "omitting enabled on update must preserve the persisted enabled=false value");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Replaces an apply-filter rule in place, preserves its persisted parent uId, removes its old autogenerated child, appends the regenerated child anchored to the preserved uId, and saves once.")]
+	public void Update_Should_Regenerate_ApplyFilter_Children_And_Remove_Old_When_Name_Matches() {
+		// Arrange
+		_addonSchemaDesignerClient.GetSchema(Arg.Any<AddonGetRequestDto>())
+			.Returns(new AddonSchemaDto {
+				MetaData = $$"""
+					{
+					  "typeName": "{{BusinessRuleConstants.BusinessRulesMetadataTypeName}}",
+					  "rules": [
+					    {
+					      "typeName": "{{BusinessRuleConstants.BusinessRuleTypeName}}",
+					      "uId": "af-parent",
+					      "name": "BusinessRule_af",
+					      "enabled": true,
+					      "caption": "Filter",
+					      "cases": [{ "typeName": "{{BusinessRuleConstants.BusinessRuleCaseTypeName}}", "uId": "af-case", "actions": [] }],
+					      "triggers": []
+					    },
+					    {
+					      "typeName": "{{BusinessRuleConstants.BusinessRuleTypeName}}",
+					      "uId": "af-child",
+					      "name": "Autogenerated_af-parent_ClearValue",
+					      "enabled": true,
+					      "caption": "ChildRule-af-parent-ClearValue",
+					      "parentUId": "af-parent",
+					      "cases": [],
+					      "triggers": []
+					    }
+					  ]
+					}
+					""",
+				Resources = [
+					new AddonResourceDto { Key = "af-child.Caption", Value = [new AddonResourceValueDto { Key = "en-US", Value = "ChildRule-af-parent-ClearValue" }] }
+				]
+			});
+		EntityBusinessRulesBatchRequest request = new(
+			"UsrPkg",
+			"UsrOrder",
+			[
+				new BusinessRule(
+					"Filter city by country",
+					new BusinessRuleConditionGroup("AND", []),
+					[
+						new ApplyFilterBusinessRuleAction("City", "Country", "Country", null, clearValue: true, populateValue: false)
+					]) { Name = "BusinessRule_af" }
+			]);
+
+		// Act
+		IReadOnlyList<BusinessRuleBatchItemResult> results = _service.Update(request);
+
+		// Assert
+		results[0].Success.Should().BeTrue(because: "the name matches the persisted apply-filter parent");
+		using JsonDocument metaData = JsonDocument.Parse(_savedAddonSchema!.MetaData);
+		JsonElement[] rules = [.. metaData.RootElement.GetProperty("rules").EnumerateArray()];
+		rules.Should().HaveCount(2,
+			because: "the replaced parent stays plus one regenerated clear child; the old child is removed");
+		rules[0].GetProperty("uId").GetString().Should().Be("af-parent",
+			because: "the apply-filter parent must keep its persisted rule uId");
+		rules.Should().NotContain(rule => rule.GetProperty("uId").GetString() == "af-child",
+			because: "the old autogenerated child of the replaced rule must be removed");
+		rules[1].GetProperty("parentUId").GetString().Should().Be("af-parent",
+			because: "the regenerated child must be anchored to the preserved parent uId");
+		rules[1].GetProperty("name").GetString().Should().Be("Autogenerated_af-parent_ClearValue",
+			because: "the parent uId embedded in the regenerated child name must be the preserved uId");
+		_savedAddonSchema.Resources.Should().NotContain(resource => resource.Key == "af-child.Caption",
+			because: "the caption resource of the removed old child must be deleted");
+		_addonSchemaDesignerClient.Received(1).SaveSchema(Arg.Any<AddonSchemaDto>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Honors caller-supplied block uIds from the update payload so unchanged condition blocks keep their identity.")]
+	public void Update_Should_Preserve_Block_UIds_From_Payload() {
+		// Arrange
+		const string conditionUId = "aaaaaaaa-0000-0000-0000-000000000001";
+		BusinessRule rule = new(
+			"Keep identity",
+			new BusinessRuleConditionGroup(
+				"AND",
+				[
+					new BusinessRuleCondition(
+						new BusinessRuleExpression("AttributeValue", "Status", null),
+						"equal",
+						new BusinessRuleExpression("Const", null, JsonSerializer.Deserialize<JsonElement>("\"Draft\""))) {
+						UId = conditionUId
+					}
+				]),
+			[new MakeRequiredBusinessRuleAction(["Owner"])]) {
+			Name = "BusinessRule_old"
+		};
+		EntityBusinessRulesBatchRequest request = new("UsrPkg", "UsrOrder", [rule]);
+
+		// Act
+		IReadOnlyList<BusinessRuleBatchItemResult> results = _service.Update(request);
+
+		// Assert
+		results[0].Success.Should().BeTrue(because: "the name matches the persisted rule");
+		using JsonDocument metaData = JsonDocument.Parse(_savedAddonSchema!.MetaData);
+		metaData.RootElement.GetProperty("rules")[0]
+			.GetProperty("cases")[0].GetProperty("condition").GetProperty("conditions")[0]
+			.GetProperty("uId").GetString().Should().Be(conditionUId,
+				because: "update must honor the caller-supplied condition block uId instead of minting a fresh one");
+	}
+
+	private static AddonSchemaDto BuildAddonSchemaWithRules(params (string Name, string UId)[] rules) {
+		string rulesJson = string.Join(",", rules.Select(rule => $$"""
+			{
+			  "typeName": "{{BusinessRuleConstants.BusinessRuleTypeName}}",
+			  "uId": "{{rule.UId}}",
+			  "name": "{{rule.Name}}",
+			  "enabled": true,
+			  "caption": "{{rule.Name}}",
+			  "cases": [{ "typeName": "{{BusinessRuleConstants.BusinessRuleCaseTypeName}}", "uId": "{{rule.UId}}-case", "actions": [] }],
+			  "triggers": []
+			}
+			"""));
+		return new AddonSchemaDto {
+			MetaData = $$"""{ "typeName": "{{BusinessRuleConstants.BusinessRulesMetadataTypeName}}", "rules": [{{rulesJson}}] }""",
+			Resources = []
+		};
 	}
 
 	private static EntityDesignSchemaDto BuildEntitySchema() {

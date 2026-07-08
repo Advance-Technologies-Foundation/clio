@@ -187,20 +187,13 @@ internal sealed class EntityBusinessRuleService(
 		EntityBusinessRuleAttributeContext attributeContext = attributeProvider.GetAttributes(
 			request.EntitySchemaName,
 			packageUId);
-
-		var results = new BusinessRuleBatchItemResult[request.Rules.Count];
-		var pending = new List<(int Index, BusinessRuleUpdateItem Item)>();
 		StaticFilterContext? batchStaticFilterContext = null;
 
-		for (int index = 0; index < request.Rules.Count; index++) {
-			BusinessRule rule = request.Rules[index];
-			string identifier = rule?.Name ?? rule?.Caption ?? string.Empty;
-			try {
-				ArgumentNullException.ThrowIfNull(rule);
-				if (string.IsNullOrWhiteSpace(rule.Name)) {
-					throw new ArgumentException("name is required to update a business rule.");
-				}
-
+		return BusinessRuleAddonMetadata.ApplyUpdateBatch(
+			businessRuleAddonService,
+			BuildAddonSchemaRequest(attributeContext.EntitySchema, packageUId),
+			request.Rules,
+			(rule, existing) => {
 				StaticFilterContext? staticFilterContext = RequiresStaticFilterScope(rule)
 					? batchStaticFilterContext ??= staticFilterContextFactory.Create(packageUId, attributeContext.EntitySchema)
 					: null;
@@ -208,30 +201,14 @@ internal sealed class EntityBusinessRuleService(
 				businessRuleValidator.ValidateEntity(rule, attributeContext.Attributes, staticFilterContext?.SchemaProvider);
 				ValidateFormulas(attributeContext.EntitySchema.Name, attributeContext.Attributes, rule);
 
-				IReadOnlyList<BusinessRuleMetadataDto> generatedRules = SimpleToFullBusinessRuleConverter.ToEntityMetadata(
+				return SimpleToFullBusinessRuleConverter.ToEntityMetadata(
 					attributeContext.Attributes,
 					rule,
 					attributeContext.EntitySchema.Name,
 					staticFilterContext?.SchemaProvider,
-					staticFilterContext?.LookupResolver);
-				if (generatedRules.Count == 0) {
-					results[index] = new BusinessRuleBatchItemResult(identifier, false, null, "Rule produced no metadata.");
-					continue;
-				}
-
-				pending.Add((index, new BusinessRuleUpdateItem(rule.Name.Trim(), rule.Enabled, generatedRules)));
-			} catch (Exception exception) {
-				results[index] = new BusinessRuleBatchItemResult(identifier, false, null, exception.Message);
-			}
-		}
-
-		if (pending.Count > 0) {
-			AddonGetRequestDto addonRequest = BuildAddonSchemaRequest(attributeContext.EntitySchema, packageUId);
-			BusinessRuleBatchSave.MergeUpdateOutcome(results, pending,
-				items => businessRuleAddonService.UpdateRules(addonRequest, items));
-		}
-
-		return results;
+					staticFilterContext?.LookupResolver,
+					existing);
+			});
 	}
 
 	public IReadOnlyList<BusinessRuleBatchItemResult> Delete(EntityBusinessRulesDeleteRequest request) {
