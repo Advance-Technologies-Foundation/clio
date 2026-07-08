@@ -23,6 +23,7 @@ namespace Clio.Command.McpServer.Tools;
 /// UI) are detected and reported as not yet supported.
 /// </summary>
 [McpServerToolType]
+[FeatureToggle("mobile-page-converter")]
 public sealed class MobilePageConversionGuideTool {
 	private readonly IToolCommandResolver _commandResolver;
 	private readonly ILogger _logger;
@@ -108,17 +109,13 @@ public sealed class MobilePageConversionGuideTool {
 				"If the page is a Classic UI page, migrate it to a Freedom UI web page first.");
 		}
 
-		// Detect the source page type. Only Freedom UI web is supported today.
+		// Detect the source page type and gate on it. Only Freedom UI web is supported today; a
+		// non-Freedom-web source (e.g. Classic UI) or an already-mobile page short-circuits with a
+		// failure and never starts conversion (hard acceptance criterion).
 		string sourceType = DetectSourceType(pageResponse.Page?.SchemaType);
-		if (string.Equals(sourceType, "mobile", StringComparison.OrdinalIgnoreCase)) {
-			return Fail(args, sourceType, $"Source page '{args.SchemaName}' is already a mobile page. Nothing to convert.");
-		}
-		if (!string.Equals(sourceType, WebToMobileAnalysisService.SourceTypeFreedomWeb, StringComparison.OrdinalIgnoreCase)) {
-			return Fail(args, sourceType,
-				$"Source page '{args.SchemaName}' has source type '{sourceType}', which is not yet supported by get-mobile-page-conversion-guide " +
-				$"(supported today: '{WebToMobileAnalysisService.SourceTypeFreedomWeb}'). " +
-				"A Classic UI page must first be converted to a Freedom UI web page (use the dedicated classic-web -> freedom-web converter), " +
-				"then run get-mobile-page-conversion-guide.");
+		MobilePageConversionGuideResponse sourceTypeRejection = RejectUnsupportedSourceType(args, sourceType);
+		if (sourceTypeRejection is not null) {
+			return sourceTypeRejection;
 		}
 
 		string version = string.IsNullOrWhiteSpace(args.Version)
@@ -335,6 +332,28 @@ public sealed class MobilePageConversionGuideTool {
 			SourceType = sourceType,
 			Error = error
 		};
+
+	/// <summary>
+	/// Gates a detected source type against what the converter supports today. Returns a failure
+	/// response to short-circuit with — an already-mobile page, or a not-yet-supported source such as
+	/// Classic UI — or <c>null</c> when the source is a supported Freedom UI web page and conversion may
+	/// proceed. Extracted as an internal static gate so the safety-critical "never convert an
+	/// unsupported source" rule is unit-testable without a live page read.
+	/// </summary>
+	internal static MobilePageConversionGuideResponse RejectUnsupportedSourceType(
+		MobilePageConversionGuideArgs args, string sourceType) {
+		if (string.Equals(sourceType, "mobile", StringComparison.OrdinalIgnoreCase)) {
+			return Fail(args, sourceType, $"Source page '{args?.SchemaName}' is already a mobile page. Nothing to convert.");
+		}
+		if (!string.Equals(sourceType, WebToMobileAnalysisService.SourceTypeFreedomWeb, StringComparison.OrdinalIgnoreCase)) {
+			return Fail(args, sourceType,
+				$"Source page '{args?.SchemaName}' has source type '{sourceType}', which is not yet supported by get-mobile-page-conversion-guide " +
+				$"(supported today: '{WebToMobileAnalysisService.SourceTypeFreedomWeb}'). " +
+				"A Classic UI page must first be converted to a Freedom UI web page (use the dedicated classic-web -> freedom-web converter), " +
+				"then run get-mobile-page-conversion-guide.");
+		}
+		return null;
+	}
 }
 
 /// <summary>

@@ -15,6 +15,7 @@ namespace Clio.Command.McpServer.Tools;
 /// page the entity's default mobile edit page, and reusable for registering web/extra related pages.
 /// </summary>
 [McpServerToolType]
+[FeatureToggle("mobile-page-converter")]
 public sealed class RelatedPageTool(
 	RegisterRelatedPageCommand command,
 	ILogger logger,

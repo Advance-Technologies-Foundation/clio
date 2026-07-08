@@ -303,6 +303,81 @@ public sealed class WebToMobileConversionServiceTests {
 		MobilePageConversionGuideTool.DetectSourceType(null).Should().Be("unknown");
 	}
 
+	private static MobilePageConversionGuideArgs ArgsFor(string schemaName) =>
+		new(schemaName, null, null, null, null, null, null);
+
+	[Test]
+	[Description("A Classic UI source page is rejected: no conversion runs and the failure explains a Freedom UI web migration is required first.")]
+	public void RejectUnsupportedSourceType_ShouldReturnMigrationFailure_WhenSourceIsClassicUi() {
+		// Arrange
+		MobilePageConversionGuideArgs args = ArgsFor("UsrApp_FormPage");
+
+		// Act
+		MobilePageConversionGuideResponse rejection =
+			MobilePageConversionGuideTool.RejectUnsupportedSourceType(args, "classic");
+
+		// Assert
+		rejection.Should().NotBeNull(
+			because: "a Classic UI page must never start mobile conversion (hard acceptance criterion)");
+		rejection.Success.Should().BeFalse(
+			because: "an unsupported source type is a failed conversion request, not a partial success");
+		rejection.SourceType.Should().Be("classic",
+			because: "the response echoes the detected source type so the caller can explain what was found");
+		rejection.Error.Should().Contain("Freedom UI web",
+			because: "the message must direct the user to convert Classic UI to Freedom UI web first");
+	}
+
+	[Test]
+	[Description("A page that is already a mobile page is rejected as nothing to convert.")]
+	public void RejectUnsupportedSourceType_ShouldReturnAlreadyMobileFailure_WhenSourceIsMobile() {
+		// Arrange
+		MobilePageConversionGuideArgs args = ArgsFor("UsrApp_MobileFormPage");
+
+		// Act
+		MobilePageConversionGuideResponse rejection =
+			MobilePageConversionGuideTool.RejectUnsupportedSourceType(args, "mobile");
+
+		// Assert
+		rejection.Should().NotBeNull(
+			because: "an already-mobile page has nothing to convert and must short-circuit");
+		rejection.Success.Should().BeFalse(
+			because: "there is no conversion to perform on a mobile page");
+		rejection.Error.Should().Contain("already a mobile page",
+			because: "the message must tell the user the source is already mobile");
+	}
+
+	[Test]
+	[Description("An unknown/undetectable source type is rejected rather than converted on a guess.")]
+	public void RejectUnsupportedSourceType_ShouldReturnFailure_WhenSourceIsUnknown() {
+		// Arrange
+		MobilePageConversionGuideArgs args = ArgsFor("UsrApp_FormPage");
+
+		// Act
+		MobilePageConversionGuideResponse rejection =
+			MobilePageConversionGuideTool.RejectUnsupportedSourceType(args, "unknown");
+
+		// Assert
+		rejection.Should().NotBeNull(
+			because: "the converter must not silently proceed when the source type could not be classified");
+		rejection.Success.Should().BeFalse(
+			because: "an unclassified source is not a supported Freedom UI web page");
+	}
+
+	[Test]
+	[Description("A Freedom UI web source is accepted (no rejection) so conversion can proceed.")]
+	public void RejectUnsupportedSourceType_ShouldReturnNull_WhenSourceIsFreedomWeb() {
+		// Arrange
+		MobilePageConversionGuideArgs args = ArgsFor("UsrApp_FormPage");
+
+		// Act
+		MobilePageConversionGuideResponse rejection =
+			MobilePageConversionGuideTool.RejectUnsupportedSourceType(args, WebToMobileAnalysisService.SourceTypeFreedomWeb);
+
+		// Assert
+		rejection.Should().BeNull(
+			because: "a Freedom UI web page is the one supported source today and must be allowed to convert");
+	}
+
 	[Test]
 	[Description("Mobile schema name is derived from the web page name with the correct suffix.")]
 	public void DeriveMobileSchemaName_AppliesMobileSuffix() {

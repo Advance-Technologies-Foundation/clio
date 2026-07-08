@@ -42,7 +42,17 @@ public static class MobileSectionRegistrationProbe {
 			IServiceUrlBuilder urlBuilder = commandResolver.Resolve<IServiceUrlBuilder>(options);
 
 			// 1. Is this page a section? Match SysModule.SectionSchemaUId or SysPageSchemaUId == page UId.
-			string moduleFilter = $"SectionSchemaUId eq {pageSchemaUId} or SysPageSchemaUId eq {pageSchemaUId}";
+			// Parse the UId first: OData v4 GUID literals are unquoted, so a non-GUID value would inject
+			// filter syntax. A malformed value degrades gracefully to a "not probed" result below.
+			if (!Guid.TryParse(pageSchemaUId, out Guid pageUId)) {
+				return new SectionRegistrationInfo {
+					IsFormPage = isFormPage,
+					ProbeOk = false,
+					Note = "Section registration was not probed (page schema UId is not a valid GUID).",
+					RegistrationActions = [ManualEditPageActionOrSkip(isFormPage)]
+				};
+			}
+			string moduleFilter = $"SectionSchemaUId eq {pageUId} or SysPageSchemaUId eq {pageUId}";
 			JsonElement[] modules = Query(client, urlBuilder,
 				"SysModule",
 				"$select=Id,Code,Caption,SectionSchemaUId,SysPageSchemaUId,MobileSectionSchemaUId&$filter=" + moduleFilter);
