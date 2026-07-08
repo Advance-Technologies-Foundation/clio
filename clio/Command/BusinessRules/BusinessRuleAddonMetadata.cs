@@ -11,92 +11,6 @@ namespace Clio.Command.BusinessRules;
 
 internal static class BusinessRuleAddonMetadata {
 
-	internal static IReadOnlyList<BusinessRuleBatchItemResult> ApplyUpdateBatch(
-		IBusinessRuleAddonService addon,
-		AddonGetRequestDto request,
-		IReadOnlyList<BusinessRule> inputRules,
-		Func<BusinessRule, JsonObject, IReadOnlyList<BusinessRuleMetadataDto>> convert) {
-		ArgumentNullException.ThrowIfNull(addon);
-		ArgumentNullException.ThrowIfNull(request);
-		ArgumentNullException.ThrowIfNull(inputRules);
-		ArgumentNullException.ThrowIfNull(convert);
-
-		AddonSchemaDto schema = addon.GetSchema(request);
-		JsonObject metadata = ParseMetadata(schema.MetaData);
-		JsonArray rules = GetOrCreateRules(metadata);
-		List<AddonResourceDto> resources = NormalizeResourceKeys(schema.Resources.ToList());
-
-		var results = new BusinessRuleBatchItemResult[inputRules.Count];
-		var pending = new List<(int Index, string Name)>();
-		HashSet<string> batchNames = new(StringComparer.OrdinalIgnoreCase);
-
-		for (int index = 0; index < inputRules.Count; index++) {
-			BusinessRule rule = inputRules[index];
-			string identifier = string.IsNullOrWhiteSpace(rule?.Name)
-				? rule?.Caption ?? string.Empty
-				: rule.Name.Trim();
-			try {
-				ArgumentNullException.ThrowIfNull(rule);
-				if (string.IsNullOrWhiteSpace(rule.Name)) {
-					throw new ArgumentException("name is required to update a business rule.");
-				}
-
-				string name = rule.Name.Trim();
-				if (!batchNames.Add(name)) {
-					throw new InvalidOperationException(
-						$"Business rule '{name}' appears more than once in the update batch.");
-				}
-
-				int ruleIndex = FindSingleRuleIndexByName(rules, name);
-				if (ruleIndex < 0) {
-					throw new InvalidOperationException($"Business rule '{name}' was not found.");
-				}
-
-				JsonObject existing = (JsonObject)rules[ruleIndex]!;
-				bool effectiveEnabled = rule.Enabled ?? GetBool(existing, "enabled", defaultValue: true);
-				BusinessRule effectiveRule = rule with { Enabled = effectiveEnabled };
-
-				IReadOnlyList<BusinessRuleMetadataDto> generated = convert(effectiveRule, existing);
-				BusinessRuleMetadataDto parent = generated[0];
-				RemoveChildRules(rules, resources, parent.UId);
-				ruleIndex = FindSingleRuleIndexByName(rules, name);
-				rules[ruleIndex] = SerializeCreatedRule(parent);
-				foreach (BusinessRuleMetadataDto child in generated.Skip(1)) {
-					rules.Add(SerializeCreatedRule(child));
-				}
-
-				foreach (BusinessRuleMetadataDto generatedRule in generated) {
-					if (!string.IsNullOrWhiteSpace(generatedRule.Caption)) {
-						UpsertCaptionResource(resources, generatedRule.UId, generatedRule.Caption.Trim());
-					}
-				}
-
-				pending.Add((index, name));
-			} catch (Exception exception) {
-				results[index] = new BusinessRuleBatchItemResult(identifier, false, null, exception.Message);
-			}
-		}
-
-		if (pending.Count == 0) {
-			return results;
-		}
-
-		schema.MetaData = metadata.ToJsonString(JsonOptions);
-		schema.Resources = resources;
-		try {
-			addon.SaveSchema(schema);
-			foreach ((int index, string name) in pending) {
-				results[index] = new BusinessRuleBatchItemResult(name, true, name, null);
-			}
-		} catch (Exception exception) {
-			foreach ((int index, string name) in pending) {
-				results[index] = new BusinessRuleBatchItemResult(name, false, null, exception.Message);
-			}
-		}
-
-		return results;
-	}
-
 	internal static void EnsureUniqueRuleNames(JsonArray existingRules, IReadOnlyList<BusinessRuleMetadataDto> createdRules) {
 		HashSet<string> names = new(StringComparer.OrdinalIgnoreCase);
 		foreach (JsonNode? node in existingRules) {
@@ -245,6 +159,6 @@ internal static class BusinessRuleAddonMetadata {
 		existing.Value = [enUsValue];
 	}
 
-	private static bool GetBool(JsonObject source, string propertyName, bool defaultValue) =>
+	internal static bool GetBool(JsonObject source, string propertyName, bool defaultValue) =>
 		source[propertyName] is JsonValue value && value.TryGetValue(out bool result) ? result : defaultValue;
 }

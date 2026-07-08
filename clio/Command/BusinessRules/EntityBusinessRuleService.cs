@@ -78,13 +78,13 @@ internal sealed class EntityBusinessRuleService(
 	IBusinessRuleFormulaValidationService formulaValidationService,
 	IBusinessRuleValidator businessRuleValidator,
 	IStaticFilterContextFactory staticFilterContextFactory)
-	: IEntityBusinessRuleService {
+	: BaseBusinessRuleService(packageResolver, businessRuleAddonService), IEntityBusinessRuleService {
 
 	public BusinessRuleCreateResult Create(EntityBusinessRuleCreateRequest request) {
 		ArgumentNullException.ThrowIfNull(request);
 		ValidateCreateRequest(request);
 
-		Guid packageUId = packageResolver.ResolveUId(request.PackageName);
+		Guid packageUId = PackageResolver.ResolveUId(request.PackageName);
 		EntityBusinessRuleAttributeContext attributeContext = attributeProvider.GetAttributes(
 			request.EntitySchemaName,
 			packageUId);
@@ -103,7 +103,7 @@ internal sealed class EntityBusinessRuleService(
 			attributeContext.EntitySchema.Name,
 			staticFilterContext?.SchemaProvider,
 			staticFilterContext?.LookupResolver);
-		return businessRuleAddonService.AppendRule(
+		return AddonService.AppendRule(
 			BuildAddonSchemaRequest(attributeContext.EntitySchema, packageUId),
 			rule,
 			createdRules);
@@ -114,25 +114,19 @@ internal sealed class EntityBusinessRuleService(
 		BusinessRuleBatchValidation.RequireBatchFields(
 			request.PackageName, request.EntitySchemaName, "entity-schema-name", request.Rules);
 
-		Guid packageUId = packageResolver.ResolveUId(request.PackageName);
+		Guid packageUId = PackageResolver.ResolveUId(request.PackageName);
 		EntityBusinessRuleAttributeContext attributeContext = attributeProvider.GetAttributes(
 			request.EntitySchemaName,
 			packageUId);
-
-		var results = new BusinessRuleBatchItemResult[request.Rules.Count];
-		var pending = new List<(int Index, string Caption, string RuleName)>();
-		var toAppend = new List<BusinessRuleMetadataDto>();
 
 		// One static-filter context is shared across the whole batch: its schema/lookup caches then
 		// accumulate across rules instead of being rebuilt (and re-fetched) for every static-filter rule.
 		StaticFilterContext? batchStaticFilterContext = null;
 
-		for (int index = 0; index < request.Rules.Count; index++) {
-			BusinessRule rule = request.Rules[index];
-			string caption = rule?.Caption ?? string.Empty;
-			try {
-				ArgumentNullException.ThrowIfNull(rule);
-				rule = BusinessRuleHelpers.StripBlockUIds(rule);
+		return CreateBatch(
+			BuildAddonSchemaRequest(attributeContext.EntitySchema, packageUId),
+			request.Rules,
+			rule => {
 				StaticFilterContext? staticFilterContext = RequiresStaticFilterScope(rule)
 					? batchStaticFilterContext ??= staticFilterContextFactory.Create(packageUId, attributeContext.EntitySchema)
 					: null;
@@ -140,42 +134,24 @@ internal sealed class EntityBusinessRuleService(
 				businessRuleValidator.ValidateEntity(rule, attributeContext.Attributes, staticFilterContext?.SchemaProvider);
 				ValidateFormulas(attributeContext.EntitySchema.Name, attributeContext.Attributes, rule);
 
-				IReadOnlyList<BusinessRuleMetadataDto> createdRules = SimpleToFullBusinessRuleConverter.ToEntityMetadata(
+				return SimpleToFullBusinessRuleConverter.ToEntityMetadata(
 					attributeContext.Attributes,
 					rule,
 					attributeContext.EntitySchema.Name,
 					staticFilterContext?.SchemaProvider,
 					staticFilterContext?.LookupResolver);
-				if (createdRules.Count == 0) {
-					results[index] = new BusinessRuleBatchItemResult(caption, false, null, "Rule produced no metadata.");
-					continue;
-				}
-
-				pending.Add((index, caption, createdRules[0].Name));
-				toAppend.AddRange(createdRules);
-			} catch (Exception exception) {
-				results[index] = new BusinessRuleBatchItemResult(caption, false, null, exception.Message);
-			}
-		}
-
-		if (toAppend.Count > 0) {
-			AddonGetRequestDto addonRequest = BuildAddonSchemaRequest(attributeContext.EntitySchema, packageUId);
-			BusinessRuleBatchSave.StampOutcome(results, pending, () => businessRuleAddonService.AppendRules(addonRequest, toAppend));
-		}
-
-		return results;
+			});
 	}
 
 	public IReadOnlyList<BusinessRule> Read(EntityBusinessRulesReadRequest request) {
 		ArgumentNullException.ThrowIfNull(request);
-		RequireSchemaFields(request.PackageName, request.EntitySchemaName);
+		RequireSchemaFields(request.PackageName, request.EntitySchemaName, "entity-schema-name");
 
-		Guid packageUId = packageResolver.ResolveUId(request.PackageName);
+		Guid packageUId = PackageResolver.ResolveUId(request.PackageName);
 		EntityBusinessRuleAttributeContext attributeContext = attributeProvider.GetAttributes(
 			request.EntitySchemaName,
 			packageUId);
-		return businessRuleAddonService.ReadRules(
-			BuildAddonSchemaRequest(attributeContext.EntitySchema, packageUId));
+		return ReadCore(BuildAddonSchemaRequest(attributeContext.EntitySchema, packageUId));
 	}
 
 	public IReadOnlyList<BusinessRuleBatchItemResult> Update(EntityBusinessRulesBatchRequest request) {
@@ -183,14 +159,13 @@ internal sealed class EntityBusinessRuleService(
 		BusinessRuleBatchValidation.RequireBatchFields(
 			request.PackageName, request.EntitySchemaName, "entity-schema-name", request.Rules);
 
-		Guid packageUId = packageResolver.ResolveUId(request.PackageName);
+		Guid packageUId = PackageResolver.ResolveUId(request.PackageName);
 		EntityBusinessRuleAttributeContext attributeContext = attributeProvider.GetAttributes(
 			request.EntitySchemaName,
 			packageUId);
 		StaticFilterContext? batchStaticFilterContext = null;
 
-		return BusinessRuleAddonMetadata.ApplyUpdateBatch(
-			businessRuleAddonService,
+		return UpdateBatch(
 			BuildAddonSchemaRequest(attributeContext.EntitySchema, packageUId),
 			request.Rules,
 			(rule, existing) => {
@@ -213,28 +188,15 @@ internal sealed class EntityBusinessRuleService(
 
 	public IReadOnlyList<BusinessRuleBatchItemResult> Delete(EntityBusinessRulesDeleteRequest request) {
 		ArgumentNullException.ThrowIfNull(request);
-		RequireSchemaFields(request.PackageName, request.EntitySchemaName);
-		if (request.RuleNames is null || request.RuleNames.Count == 0) {
-			throw new ArgumentException("rule-names is required and must contain at least one rule name.");
-		}
+		RequireSchemaFields(request.PackageName, request.EntitySchemaName, "entity-schema-name");
 
-		Guid packageUId = packageResolver.ResolveUId(request.PackageName);
+		Guid packageUId = PackageResolver.ResolveUId(request.PackageName);
 		EntityBusinessRuleAttributeContext attributeContext = attributeProvider.GetAttributes(
 			request.EntitySchemaName,
 			packageUId);
-		return businessRuleAddonService.DeleteRules(
+		return DeleteCore(
 			BuildAddonSchemaRequest(attributeContext.EntitySchema, packageUId),
 			request.RuleNames);
-	}
-
-	private static void RequireSchemaFields(string packageName, string entitySchemaName) {
-		if (string.IsNullOrWhiteSpace(packageName)) {
-			throw new ArgumentException("package-name is required.");
-		}
-
-		if (string.IsNullOrWhiteSpace(entitySchemaName)) {
-			throw new ArgumentException("entity-schema-name is required.");
-		}
 	}
 
 	private static bool RequiresStaticFilterScope(BusinessRule rule) =>
