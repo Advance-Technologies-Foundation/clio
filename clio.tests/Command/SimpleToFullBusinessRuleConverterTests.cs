@@ -11,7 +11,7 @@ namespace Clio.Tests.Command;
 
 [TestFixture]
 [Property("Module", "Command")]
-public sealed class BusinessRuleMetadataConverterTests {
+public sealed class SimpleToFullBusinessRuleConverterTests {
 	[TestCase("is-not-filled-in", BusinessRuleConstants.ComparisonIsNotFilledIn, false)]
 	[TestCase("is-filled-in", BusinessRuleConstants.ComparisonIsFilledIn, false)]
 	[TestCase("equal", BusinessRuleConstants.ComparisonEqual, true)]
@@ -47,7 +47,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			]);
 
 		// Act
-		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
+		BusinessRuleMetadataDto metadata = SimpleToFullBusinessRuleConverter.ToMetadata(columnMap, rule, "UsrTask");
 
 		// Assert
 		BusinessRuleGroupConditionMetadataDto conditionGroup = metadata.Cases[0].Condition!
@@ -95,7 +95,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			]);
 
 		// Act
-		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
+		BusinessRuleMetadataDto metadata = SimpleToFullBusinessRuleConverter.ToMetadata(columnMap, rule, "UsrTask");
 
 		// Assert
 		metadata.Name.Should().StartWith("BusinessRule_",
@@ -188,7 +188,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			]);
 
 		// Act
-		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
+		BusinessRuleMetadataDto metadata = SimpleToFullBusinessRuleConverter.ToMetadata(columnMap, rule, "UsrTask");
 
 		// Assert
 		BusinessRuleGroupConditionMetadataDto conditionGroup = metadata.Cases[0].Condition!
@@ -230,7 +230,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			]);
 
 		// Act
-		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
+		BusinessRuleMetadataDto metadata = SimpleToFullBusinessRuleConverter.ToMetadata(columnMap, rule, "UsrTask");
 
 		// Assert
 		BusinessRuleGroupConditionMetadataDto conditionGroup = metadata.Cases[0].Condition!
@@ -280,7 +280,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			]);
 
 		// Act
-		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToPageMetadata(attributeMap, rule);
+		BusinessRuleMetadataDto metadata = SimpleToFullBusinessRuleConverter.ToPageMetadata(attributeMap, rule);
 
 		// Assert
 		BusinessRuleConditionMetadataDto condition = metadata.Cases[0].Condition!
@@ -332,7 +332,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			]);
 
 		// Act
-		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToPageMetadata(attributeMap, rule);
+		BusinessRuleMetadataDto metadata = SimpleToFullBusinessRuleConverter.ToPageMetadata(attributeMap, rule);
 
 		// Assert
 		BusinessRuleConditionMetadataDto condition = metadata.Cases[0].Condition!
@@ -373,7 +373,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			]);
 
 		// Act
-		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToPageMetadata(attributeMap, rule);
+		BusinessRuleMetadataDto metadata = SimpleToFullBusinessRuleConverter.ToPageMetadata(attributeMap, rule);
 
 		// Assert
 		BusinessRuleGroupConditionMetadataDto conditionGroup = metadata.Cases[0].Condition!
@@ -417,7 +417,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			]);
 
 		// Act
-		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
+		BusinessRuleMetadataDto metadata = SimpleToFullBusinessRuleConverter.ToMetadata(columnMap, rule, "UsrTask");
 
 		// Assert
 		BusinessRuleGroupConditionMetadataDto conditionGroup = metadata.Cases[0].Condition!
@@ -452,7 +452,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			]);
 
 		// Act
-		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToPageMetadata(attributeMap, rule);
+		BusinessRuleMetadataDto metadata = SimpleToFullBusinessRuleConverter.ToPageMetadata(attributeMap, rule);
 
 		// Assert
 		BusinessRuleGroupConditionMetadataDto conditionGroup = metadata.Cases[0].Condition!
@@ -496,7 +496,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			]);
 
 		// Act
-		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToPageMetadata(attributeMap, rule);
+		BusinessRuleMetadataDto metadata = SimpleToFullBusinessRuleConverter.ToPageMetadata(attributeMap, rule);
 
 		// Assert
 		BusinessRuleGroupConditionMetadataDto conditionGroup = metadata.Cases[0].Condition!
@@ -535,7 +535,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			]);
 
 		// Act
-		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToPageMetadata(attributeMap, rule);
+		BusinessRuleMetadataDto metadata = SimpleToFullBusinessRuleConverter.ToPageMetadata(attributeMap, rule);
 
 		// Assert
 		metadata.Cases.Single().Actions.Select(action => action.TypeName).Should().Equal([
@@ -609,7 +609,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			]);
 
 		// Act
-		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
+		BusinessRuleMetadataDto metadata = SimpleToFullBusinessRuleConverter.ToMetadata(columnMap, rule, "UsrTask");
 
 		// Assert
 		FieldSelectionBusinessRuleActionMetadataDto action = metadata.Cases[0].Actions.Single()
@@ -697,7 +697,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			]);
 
 		// Act
-		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
+		BusinessRuleMetadataDto metadata = SimpleToFullBusinessRuleConverter.ToMetadata(columnMap, rule, "UsrTask");
 
 		// Assert
 		FieldSelectionBusinessRuleActionMetadataDto action = metadata.Cases[0].Actions.Single()
@@ -779,7 +779,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			]);
 
 		// Act
-		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(attributeMap, rule, "UsrTask");
+		BusinessRuleMetadataDto metadata = SimpleToFullBusinessRuleConverter.ToMetadata(attributeMap, rule, "UsrTask");
 
 		// Assert
 		FieldSelectionBusinessRuleActionMetadataDto action = metadata.Cases[0].Actions.Single()
@@ -845,7 +845,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			]);
 
 		// Act
-		IReadOnlyList<BusinessRuleMetadataDto> metadata = BusinessRuleMetadataConverter.ToEntityMetadata(attributeMap, rule, "UsrOrder");
+		IReadOnlyList<BusinessRuleMetadataDto> metadata = SimpleToFullBusinessRuleConverter.ToEntityMetadata(attributeMap, rule, "UsrOrder");
 
 		// Assert
 		metadata.Should().HaveCount(2,
@@ -934,7 +934,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			because: "the empty lookup expression should preserve its lookup type metadata");
 		clearItems.Single().Value.Value.Should().Be(Guid.Empty.ToString(),
 			because: "UI parity requires clear child rules to assign the zero GUID empty lookup value");
-		BusinessRuleMetadataDto populateRule = BusinessRuleMetadataConverter.ToEntityMetadata(
+		BusinessRuleMetadataDto populateRule = SimpleToFullBusinessRuleConverter.ToEntityMetadata(
 			attributeMap,
 			new BusinessRule(
 				rule.Caption,
@@ -1003,7 +1003,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			]);
 
 		// Act
-		IReadOnlyList<BusinessRuleMetadataDto> metadata = BusinessRuleMetadataConverter.ToEntityMetadata(attributeMap, rule, "UsrOrder");
+		IReadOnlyList<BusinessRuleMetadataDto> metadata = SimpleToFullBusinessRuleConverter.ToEntityMetadata(attributeMap, rule, "UsrOrder");
 
 		// Assert
 		BusinessRuleConditionMetadataDto clearCondition = metadata[1].Cases.Single().Condition!
@@ -1040,7 +1040,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			]);
 
 		// Act
-		IReadOnlyList<BusinessRuleMetadataDto> metadata = BusinessRuleMetadataConverter.ToEntityMetadata(attributeMap, rule, "UsrOrder");
+		IReadOnlyList<BusinessRuleMetadataDto> metadata = SimpleToFullBusinessRuleConverter.ToEntityMetadata(attributeMap, rule, "UsrOrder");
 
 		// Assert
 		BusinessRuleFilterLookupActionMetadataDto parentAction = metadata[0].Cases.Single().Actions.Single()
@@ -1090,7 +1090,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			]);
 
 		// Act
-		IReadOnlyList<BusinessRuleMetadataDto> metadata = BusinessRuleMetadataConverter.ToEntityMetadata(attributeMap, rule, "Ninja");
+		IReadOnlyList<BusinessRuleMetadataDto> metadata = SimpleToFullBusinessRuleConverter.ToEntityMetadata(attributeMap, rule, "Ninja");
 
 		// Assert
 		BusinessRuleMetadataDto parentRule = metadata[0];
@@ -1125,7 +1125,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 		BusinessRule rule = CreateFormulaRule("Score", "BaseScore + MissingScore");
 
 		// Act
-		Action act = () => BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
+		Action act = () => SimpleToFullBusinessRuleConverter.ToMetadata(columnMap, rule, "UsrTask");
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
@@ -1146,7 +1146,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 		BusinessRule rule = CreateFormulaRule("NumberOfDays", "EndDate - StartDate + 1");
 
 		// Act
-		Action act = () => BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrLeaveRequest");
+		Action act = () => SimpleToFullBusinessRuleConverter.ToMetadata(columnMap, rule, "UsrLeaveRequest");
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
@@ -1165,7 +1165,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 		BusinessRule rule = CreateFormulaRule("Score", "1 + 2");
 
 		// Act
-		Action act = () => BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
+		Action act = () => SimpleToFullBusinessRuleConverter.ToMetadata(columnMap, rule, "UsrTask");
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
@@ -1185,7 +1185,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 		BusinessRule rule = CreateFormulaRule("Score", "If(BaseScore > 0, BaseScore, 0)");
 
 		// Act
-		Action act = () => BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
+		Action act = () => SimpleToFullBusinessRuleConverter.ToMetadata(columnMap, rule, "UsrTask");
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
@@ -1205,7 +1205,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 		BusinessRule rule = CreateFormulaRule("Score", "BaseScore > 0");
 
 		// Act
-		Action act = () => BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
+		Action act = () => SimpleToFullBusinessRuleConverter.ToMetadata(columnMap, rule, "UsrTask");
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
@@ -1235,7 +1235,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			]);
 
 		// Act
-		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
+		BusinessRuleMetadataDto metadata = SimpleToFullBusinessRuleConverter.ToMetadata(columnMap, rule, "UsrTask");
 		string json = JsonSerializer.Serialize(metadata, BusinessRuleConstants.JsonOptions);
 
 		// Assert
@@ -1303,7 +1303,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			]);
 
 		// Act
-		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
+		BusinessRuleMetadataDto metadata = SimpleToFullBusinessRuleConverter.ToMetadata(columnMap, rule, "UsrTask");
 		BusinessRuleGroupConditionMetadataDto dateConditionGroup = metadata.Cases[0].Condition!
 			.Should().BeOfType<BusinessRuleGroupConditionMetadataDto>(
 				because: "standard business rules should still persist grouped case conditions").Subject;
@@ -1351,7 +1351,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			]);
 
 		// Act
-		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
+		BusinessRuleMetadataDto metadata = SimpleToFullBusinessRuleConverter.ToMetadata(columnMap, rule, "UsrTask");
 		BusinessRuleGroupConditionMetadataDto timeConditionGroup = metadata.Cases[0].Condition!
 			.Should().BeOfType<BusinessRuleGroupConditionMetadataDto>(
 				because: "standard business rules should still persist grouped case conditions").Subject;
@@ -1401,7 +1401,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 		};
 
 		// Act
-		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
+		BusinessRuleMetadataDto metadata = SimpleToFullBusinessRuleConverter.ToMetadata(columnMap, rule, "UsrTask");
 
 		// Assert
 		metadata.Name.Should().Be("BusinessRule_named",
@@ -1434,7 +1434,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 		};
 
 		// Act
-		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
+		BusinessRuleMetadataDto metadata = SimpleToFullBusinessRuleConverter.ToMetadata(columnMap, rule, "UsrTask");
 
 		// Assert
 		metadata.Name.Should().StartWith("BusinessRule_",
@@ -1481,7 +1481,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			]);
 
 		// Act
-		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
+		BusinessRuleMetadataDto metadata = SimpleToFullBusinessRuleConverter.ToMetadata(columnMap, rule, "UsrTask");
 
 		// Assert
 		BusinessRuleGroupConditionMetadataDto group =
@@ -1530,7 +1530,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			]);
 
 		// Act
-		Action act = () => BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
+		Action act = () => SimpleToFullBusinessRuleConverter.ToMetadata(columnMap, rule, "UsrTask");
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>()

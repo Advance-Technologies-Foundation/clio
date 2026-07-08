@@ -13,7 +13,7 @@ namespace Clio.Command.BusinessRules;
 /// <summary>
 /// Converts validated business-rule definitions into add-on metadata DTOs.
 /// </summary>
-internal static class BusinessRuleMetadataConverter {
+internal static class SimpleToFullBusinessRuleConverter {
 
 	internal static IReadOnlyList<BusinessRuleMetadataDto> ToEntityMetadata(
 		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap,
@@ -783,7 +783,7 @@ internal static class BusinessRuleMetadataConverter {
 				"apply-static-filter requires an IFilterSchemaProvider to resolve column metadata.");
 		}
 
-		LocalEsqFilterBuilder builder = new(filterSchemaProvider, lookupValueResolver);
+		SimpleToFullFilterConverter builder = new(filterSchemaProvider, lookupValueResolver);
 		return builder.Build(filterGroup, rootSchemaName);
 	}
 

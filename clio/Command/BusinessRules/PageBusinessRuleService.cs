@@ -89,7 +89,7 @@ internal sealed class PageBusinessRuleService(
 		BusinessRule rule = BusinessRuleHelpers.StripBlockUIds(request.Rule);
 		pageBusinessRuleValidator.Validate(rule, attributeMap, elementNames);
 
-		BusinessRuleMetadataDto createdRule = BusinessRuleMetadataConverter.ToPageMetadata(attributeMap, rule);
+		BusinessRuleMetadataDto createdRule = SimpleToFullBusinessRuleConverter.ToPageMetadata(attributeMap, rule);
 		return businessRuleAddonService.AppendRule(
 			BuildAddonSchemaRequest(pageContext, packageUId),
 			rule,
@@ -119,7 +119,7 @@ internal sealed class PageBusinessRuleService(
 				ArgumentNullException.ThrowIfNull(rule);
 				rule = BusinessRuleHelpers.StripBlockUIds(rule);
 				pageBusinessRuleValidator.Validate(rule, attributeMap, elementNames);
-				BusinessRuleMetadataDto createdRule = BusinessRuleMetadataConverter.ToPageMetadata(attributeMap, rule);
+				BusinessRuleMetadataDto createdRule = SimpleToFullBusinessRuleConverter.ToPageMetadata(attributeMap, rule);
 				pending.Add((index, caption, createdRule.Name));
 				toAppend.Add(createdRule);
 			} catch (Exception exception) {
@@ -169,7 +169,7 @@ internal sealed class PageBusinessRuleService(
 				}
 
 				pageBusinessRuleValidator.Validate(rule, attributeMap, elementNames);
-				BusinessRuleMetadataDto generatedRule = BusinessRuleMetadataConverter.ToPageMetadata(attributeMap, rule);
+				BusinessRuleMetadataDto generatedRule = SimpleToFullBusinessRuleConverter.ToPageMetadata(attributeMap, rule);
 				pending.Add((index, new BusinessRuleUpdateItem(rule.Name.Trim(), rule.Enabled, [generatedRule])));
 			} catch (Exception exception) {
 				results[index] = new BusinessRuleBatchItemResult(identifier, false, null, exception.Message);

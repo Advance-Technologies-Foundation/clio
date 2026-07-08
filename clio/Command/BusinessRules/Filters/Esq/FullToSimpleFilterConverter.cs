@@ -6,7 +6,7 @@ using System.Text.Json.Nodes;
 
 namespace Clio.Command.BusinessRules.Filters.Esq;
 
-internal static class LocalEsqFilterDecompiler {
+internal static class FullToSimpleFilterConverter {
 
 	internal static JsonNode Decompile(string esqEnvelopeJson) {
 		if (string.IsNullOrWhiteSpace(esqEnvelopeJson)) {

@@ -13,7 +13,7 @@ namespace Clio.Tests.Command;
 
 [TestFixture]
 [Property("Module", "Command")]
-public sealed class BusinessRuleMetadataReaderTests {
+public sealed class FullToSimpleBusinessRuleConverterTests {
 
 	[Test]
 	[Category("Unit")]
@@ -49,7 +49,7 @@ public sealed class BusinessRuleMetadataReaderTests {
 						new BusinessRuleExpression("Const", null, Json("Ready")))
 				])
 			]);
-		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(columnMap, input, "UsrOrder");
+		BusinessRuleMetadataDto metadata = SimpleToFullBusinessRuleConverter.ToMetadata(columnMap, input, "UsrOrder");
 		BusinessRuleGroupConditionMetadataDto metadataGroup =
 			(BusinessRuleGroupConditionMetadataDto)metadata.Cases[0].Condition!;
 		List<BusinessRuleSetValueItemMetadataDto> metadataSetValueItems =
@@ -57,7 +57,7 @@ public sealed class BusinessRuleMetadataReaderTests {
 		JsonArray rules = [JsonSerializer.SerializeToNode(metadata, BusinessRuleConstants.JsonOptions)];
 
 		// Act
-		IReadOnlyList<BusinessRule> models = BusinessRuleMetadataReader.Read(rules, []);
+		IReadOnlyList<BusinessRule> models = FullToSimpleBusinessRuleConverter.Read(rules, []);
 
 		// Assert
 		models.Should().ContainSingle(because: "one persisted parent rule yields one friendly rule");
@@ -140,14 +140,14 @@ public sealed class BusinessRuleMetadataReaderTests {
 					populateValue: true)
 			]);
 		IReadOnlyList<BusinessRuleMetadataDto> generatedRules =
-			BusinessRuleMetadataConverter.ToEntityMetadata(columnMap, input, "UsrOrder");
+			SimpleToFullBusinessRuleConverter.ToEntityMetadata(columnMap, input, "UsrOrder");
 		JsonArray rules = [];
 		foreach (BusinessRuleMetadataDto generatedRule in generatedRules) {
 			rules.Add(JsonSerializer.SerializeToNode(generatedRule, BusinessRuleConstants.JsonOptions));
 		}
 
 		// Act
-		IReadOnlyList<BusinessRule> models = BusinessRuleMetadataReader.Read(rules, []);
+		IReadOnlyList<BusinessRule> models = FullToSimpleBusinessRuleConverter.Read(rules, []);
 
 		// Assert
 		generatedRules.Should().HaveCount(3,
@@ -221,7 +221,7 @@ public sealed class BusinessRuleMetadataReaderTests {
 			""");
 
 		// Act
-		IReadOnlyList<BusinessRule> models = BusinessRuleMetadataReader.Read(rules, []);
+		IReadOnlyList<BusinessRule> models = FullToSimpleBusinessRuleConverter.Read(rules, []);
 
 		// Assert
 		models.Should().ContainSingle(because: "the single persisted rule yields one friendly rule");
@@ -277,7 +277,7 @@ public sealed class BusinessRuleMetadataReaderTests {
 			""");
 
 		// Act
-		Action act = () => BusinessRuleMetadataReader.Read(rules, []);
+		Action act = () => FullToSimpleBusinessRuleConverter.Read(rules, []);
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>()
@@ -310,7 +310,7 @@ public sealed class BusinessRuleMetadataReaderTests {
 			""");
 
 		// Act
-		Action act = () => BusinessRuleMetadataReader.Read(rules, []);
+		Action act = () => FullToSimpleBusinessRuleConverter.Read(rules, []);
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>()
@@ -359,7 +359,7 @@ public sealed class BusinessRuleMetadataReaderTests {
 			""");
 
 		// Act
-		Action act = () => BusinessRuleMetadataReader.Read(rules, []);
+		Action act = () => FullToSimpleBusinessRuleConverter.Read(rules, []);
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>()
@@ -401,7 +401,7 @@ public sealed class BusinessRuleMetadataReaderTests {
 		];
 
 		// Act
-		IReadOnlyList<BusinessRule> models = BusinessRuleMetadataReader.Read(rules, resources);
+		IReadOnlyList<BusinessRule> models = FullToSimpleBusinessRuleConverter.Read(rules, resources);
 
 		// Assert
 		models.Should().ContainSingle(because: "the single persisted rule yields one friendly rule");
@@ -464,7 +464,7 @@ public sealed class BusinessRuleMetadataReaderTests {
 			""");
 
 		// Act
-		IReadOnlyList<BusinessRule> models = BusinessRuleMetadataReader.Read(rules, []);
+		IReadOnlyList<BusinessRule> models = FullToSimpleBusinessRuleConverter.Read(rules, []);
 
 		// Assert
 		models.Should().ContainSingle(because: "the single persisted rule yields one friendly rule");
@@ -542,7 +542,7 @@ public sealed class BusinessRuleMetadataReaderTests {
 			""");
 
 		// Act
-		IReadOnlyList<BusinessRule> models = BusinessRuleMetadataReader.Read(rules, []);
+		IReadOnlyList<BusinessRule> models = FullToSimpleBusinessRuleConverter.Read(rules, []);
 
 		// Assert
 		models.Should().ContainSingle(because: "the single persisted rule yields one friendly rule");
@@ -605,7 +605,7 @@ public sealed class BusinessRuleMetadataReaderTests {
 			""");
 
 		// Act
-		IReadOnlyList<BusinessRule> models = BusinessRuleMetadataReader.Read(rules, []);
+		IReadOnlyList<BusinessRule> models = FullToSimpleBusinessRuleConverter.Read(rules, []);
 
 		// Assert
 		BusinessRule model = models.Should().ContainSingle(
@@ -660,7 +660,7 @@ public sealed class BusinessRuleMetadataReaderTests {
 			""");
 
 		// Act
-		IReadOnlyList<BusinessRule> models = BusinessRuleMetadataReader.Read(rules, []);
+		IReadOnlyList<BusinessRule> models = FullToSimpleBusinessRuleConverter.Read(rules, []);
 
 		// Assert
 		BusinessRule model = models.Should().ContainSingle(
@@ -732,7 +732,7 @@ public sealed class BusinessRuleMetadataReaderTests {
 			""");
 
 		// Act
-		IReadOnlyList<BusinessRule> models = BusinessRuleMetadataReader.Read(rules, []);
+		IReadOnlyList<BusinessRule> models = FullToSimpleBusinessRuleConverter.Read(rules, []);
 
 		// Assert
 		BusinessRule model = models.Should().ContainSingle(
@@ -779,7 +779,7 @@ public sealed class BusinessRuleMetadataReaderTests {
 			""");
 
 		// Act
-		Action act = () => BusinessRuleMetadataReader.Read(rules, []);
+		Action act = () => FullToSimpleBusinessRuleConverter.Read(rules, []);
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>()

@@ -81,8 +81,8 @@ Example (update input / read output item):
   expected to happen for designer- or clio-authored rules.
 - `apply-static-filter` rules are returned with the target attribute and a friendly
   `filter` object: the persisted ESQ envelope is decompiled back into the same friendly
-  `filter` shape used on create (via `LocalEsqFilterDecompiler`, the inverse of
-  `LocalEsqFilterBuilder`). One lossy point — a Lookup filter value reads back as the
+  `filter` shape used on create (via `FullToSimpleFilterConverter`, the inverse of
+  `SimpleToFullFilterConverter`). One lossy point — a Lookup filter value reads back as the
   stored display name (Id fallback), so a display-name-ambiguous lookup could re-resolve
   to a different Id on update. To change such a rule, the caller supplies a friendly
   `filter` again and the envelope is regenerated.

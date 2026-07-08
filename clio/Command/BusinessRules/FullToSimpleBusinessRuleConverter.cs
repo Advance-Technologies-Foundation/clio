@@ -9,7 +9,7 @@ using static Clio.Command.BusinessRules.BusinessRuleConstants;
 
 namespace Clio.Command.BusinessRules;
 
-internal static class BusinessRuleMetadataReader {
+internal static class FullToSimpleBusinessRuleConverter {
 
 	private static readonly IReadOnlyDictionary<int, string> ComparisonTypeNamesByValue =
 		SupportedComparisonTypeValues
@@ -254,7 +254,7 @@ internal static class BusinessRuleMetadataReader {
 		JsonObject expression = actionObject["expression"] as JsonObject
 			?? throw new InvalidOperationException("apply-static-filter action has no expression.");
 		string? esqEnvelope = GetString(actionObject["value"] as JsonObject, "value");
-		JsonNode filter = Clio.Command.BusinessRules.Filters.Esq.LocalEsqFilterDecompiler.Decompile(esqEnvelope!);
+		JsonNode filter = Clio.Command.BusinessRules.Filters.Esq.FullToSimpleFilterConverter.Decompile(esqEnvelope!);
 		return new ApplyStaticFilterBusinessRuleAction(
 			GetString(expression, "path") ?? string.Empty,
 			JsonSerializer.SerializeToElement(filter)) {

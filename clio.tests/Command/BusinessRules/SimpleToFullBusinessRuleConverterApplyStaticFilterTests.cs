@@ -12,7 +12,7 @@ namespace Clio.Tests.Command.BusinessRules;
 
 [TestFixture]
 [Property("Module", "Command")]
-public sealed class BusinessRuleMetadataConverterApplyStaticFilterTests {
+public sealed class SimpleToFullBusinessRuleConverterApplyStaticFilterTests {
 
 	[Test]
 	[Category("Unit")]
@@ -99,7 +99,7 @@ public sealed class BusinessRuleMetadataConverterApplyStaticFilterTests {
 		string entitySchemaName,
 		IFilterSchemaProvider? filterSchemaProvider,
 		ILookupValueResolver? lookupValueResolver) =>
-		BusinessRuleMetadataConverter.ToEntityMetadata(
+		SimpleToFullBusinessRuleConverter.ToEntityMetadata(
 			attributeMap, rule, entitySchemaName, filterSchemaProvider, lookupValueResolver);
 
 	private static BusinessRule MakeRule(string targetAttribute, string filterJson) =>

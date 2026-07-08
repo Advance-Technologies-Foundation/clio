@@ -16,7 +16,7 @@ relative to the repo root.
   `PageBusinessRuleMcpContract`, and the action contracts; thread them through
   `ToBusinessRule()` / `ToBusinessRuleAction()`.
 
-`clio/Command/BusinessRules/BusinessRuleMetadataConverter.cs`
+`clio/Command/BusinessRules/SimpleToFullBusinessRuleConverter.cs`
 - Honor `rule.Enabled ?? true` and a non-empty `rule.Name` (else generate).
 - Honor caller block `uId`s when present (conditions, expressions, actions, set-value
   items); generate otherwise.
@@ -26,10 +26,10 @@ relative to the repo root.
 
 ## 2. Read path
 
-New `clio/Command/BusinessRules/BusinessRuleMetadataReader.cs` (static, mirror of the
+New `clio/Command/BusinessRules/FullToSimpleBusinessRuleConverter.cs` (static, mirror of the
 converter): parses the add-on metadata `rules` array directly into friendly
 `BusinessRule` models (`name`, `caption`, `enabled`, block uIds, and the friendly
-`filter` decompiled via `LocalEsqFilterDecompiler` for apply-static-filter actions); an
+`filter` decompiled via `FullToSimpleFilterConverter` for apply-static-filter actions); an
 unrepresentable rule fails the whole
 read with an error naming the rule. Skips child
 rules (`parentUId`) and derives the parent action's `clearValue`/`populateValue` flags
@@ -85,14 +85,14 @@ Response: `{ deleted, failed, results }`.
 - `ToolContractGetTool`: six new `ToolContractDefinition` entries + catalog registration.
 - `BusinessRulesGuidanceResource`: document the read → update/delete workflow, `name` as
   the match key, uId preservation, and the friendly `filter` read shape (decompiled via
-  `LocalEsqFilterDecompiler`).
+  `FullToSimpleFilterConverter`).
 - `BindingsModule.cs`: register the six new tools (and no new services beyond what the
   existing interfaces gain).
 
 ## 6. Tests
 
 - Unit (`clio.tests`, `Module=Command` + `Module=McpServer`):
-  - `BusinessRuleMetadataReaderTests` — reverse mapping incl. round-trip through the
+  - `FullToSimpleBusinessRuleConverterTests` — reverse mapping incl. round-trip through the
     converter, child-rule folding, unrepresentable-rule failure, caption resource fallback.
   - `BusinessRuleAddonServiceTests` extensions — update replace/graft, delete cascade,
     caption resource upsert/removal, single save per batch, duplicate-name rejection.

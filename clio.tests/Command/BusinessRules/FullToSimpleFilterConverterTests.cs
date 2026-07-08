@@ -13,7 +13,7 @@ namespace Clio.Tests.Command.BusinessRules;
 
 [TestFixture]
 [Property("Module", "Command")]
-public sealed class LocalEsqFilterDecompilerTests {
+public sealed class FullToSimpleFilterConverterTests {
 
 	[Test]
 	[Category("Unit")]
@@ -522,7 +522,7 @@ public sealed class LocalEsqFilterDecompilerTests {
 		string envelope = string.Empty;
 
 		// Act
-		Action act = () => LocalEsqFilterDecompiler.Decompile(envelope);
+		Action act = () => FullToSimpleFilterConverter.Decompile(envelope);
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>(
@@ -537,7 +537,7 @@ public sealed class LocalEsqFilterDecompilerTests {
 		string envelope = "{ not json";
 
 		// Act
-		Action act = () => LocalEsqFilterDecompiler.Decompile(envelope);
+		Action act = () => FullToSimpleFilterConverter.Decompile(envelope);
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>(
@@ -553,7 +553,7 @@ public sealed class LocalEsqFilterDecompilerTests {
 			"""{ "logicalOperation": 0, "items": { "Filter_0": { "filterType": 99 } } }""";
 
 		// Act
-		Action act = () => LocalEsqFilterDecompiler.Decompile(envelope);
+		Action act = () => FullToSimpleFilterConverter.Decompile(envelope);
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>(
@@ -566,9 +566,9 @@ public sealed class LocalEsqFilterDecompilerTests {
 		IFilterSchemaProvider schema,
 		ILookupValueResolver? resolver = null,
 		Func<DateTimeOffset>? now = null) {
-		LocalEsqFilterBuilder builder = new(schema, resolver, now);
+		SimpleToFullFilterConverter builder = new(schema, resolver, now);
 		string envelope = builder.Build(group, rootSchemaName);
-		return LocalEsqFilterDecompiler.Decompile(envelope);
+		return FullToSimpleFilterConverter.Decompile(envelope);
 	}
 
 	private static StaticFilterGroup Deserialize(string json) {
