@@ -79,10 +79,13 @@ Example (update input / read output item):
   deliberately permissive about the platform's metadata normalization (stripped `type`
   markers, stripped zero-valued properties, dropped apply-filter flags), so this is not
   expected to happen for designer- or clio-authored rules.
-- `apply-static-filter` rules are returned with the target attribute and the persisted ESQ
-  envelope under `esqFilter` (the friendly filter is not reconstructed from ESQ). To
-  change such a rule, the caller supplies a friendly `filter` again and the envelope is
-  regenerated.
+- `apply-static-filter` rules are returned with the target attribute and a friendly
+  `filter` object: the persisted ESQ envelope is decompiled back into the same friendly
+  `filter` shape used on create (via `LocalEsqFilterDecompiler`, the inverse of
+  `LocalEsqFilterBuilder`). One lossy point — a Lookup filter value reads back as the
+  stored display name (Id fallback), so a display-name-ambiguous lookup could re-resolve
+  to a different Id on update. To change such a rule, the caller supplies a friendly
+  `filter` again and the envelope is regenerated.
 - Formula set-value items are returned best-effort with the persisted expression text.
 
 ### Update

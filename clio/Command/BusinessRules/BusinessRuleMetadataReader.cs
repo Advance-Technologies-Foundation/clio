@@ -253,12 +253,12 @@ internal static class BusinessRuleMetadataReader {
 	private static ApplyStaticFilterBusinessRuleAction ConvertApplyStaticFilterAction(JsonObject actionObject, string? uId) {
 		JsonObject expression = actionObject["expression"] as JsonObject
 			?? throw new InvalidOperationException("apply-static-filter action has no expression.");
-		string? esqFilter = GetString(actionObject["value"] as JsonObject, "value");
+		string? esqEnvelope = GetString(actionObject["value"] as JsonObject, "value");
+		JsonNode filter = Clio.Command.BusinessRules.Filters.Esq.LocalEsqFilterDecompiler.Decompile(esqEnvelope!);
 		return new ApplyStaticFilterBusinessRuleAction(
 			GetString(expression, "path") ?? string.Empty,
-			JsonSerializer.SerializeToElement<object?>(null)) {
-			UId = uId,
-			EsqFilter = esqFilter
+			JsonSerializer.SerializeToElement(filter)) {
+			UId = uId
 		};
 	}
 

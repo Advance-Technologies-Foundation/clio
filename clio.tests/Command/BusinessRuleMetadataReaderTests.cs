@@ -170,10 +170,12 @@ public sealed class BusinessRuleMetadataReaderTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Maps a persisted set-filter action into an ApplyStaticFilterBusinessRuleAction carrying the raw ESQ envelope in esqFilter and a JSON null friendly filter.")]
-	public void Read_Should_Map_SetFilter_Action_To_ApplyStaticFilter_With_Esq_Envelope() {
+	[Description("Maps a persisted set-filter action into an ApplyStaticFilterBusinessRuleAction whose persisted ESQ envelope is decompiled back into the friendly filter shape used to create it.")]
+	public void Read_Should_Map_SetFilter_Action_To_ApplyStaticFilter_With_Decompiled_Filter() {
 		// Arrange
-		const string esqEnvelope = "{\"rootSchemaName\":\"Account\",\"filters\":{}}";
+		const string esqEnvelope = """
+			{"rootSchemaName":"Account","filterType":6,"logicalOperation":0,"isEnabled":true,"items":{"Filter_0":{"filterType":2,"comparisonType":2,"isNull":false,"isEnabled":true,"leftExpression":{"expressionType":0,"columnPath":"Email","className":"Terrasoft.ColumnExpression"},"key":"","className":"Terrasoft.IsNullFilter"}},"key":"","className":"Terrasoft.FilterGroup"}
+			""";
 		JsonArray rules = ParseRules($$"""
 			[
 			  {
@@ -228,10 +230,15 @@ public sealed class BusinessRuleMetadataReaderTests {
 				because: "set-filter metadata maps back to the friendly apply-static-filter action").Subject;
 		action.TargetAttribute.Should().Be("Account",
 			because: "the filtered lookup attribute round-trips from the action expression path");
-		action.EsqFilter.Should().Be(esqEnvelope,
-			because: "the persisted ESQ envelope is passed through verbatim rather than reconstructed as a friendly filter");
-		action.Filter.ValueKind.Should().Be(JsonValueKind.Null,
-			because: "the friendly filter is never reconstructed from the persisted ESQ envelope");
+		action.Filter.ValueKind.Should().Be(JsonValueKind.Object,
+			because: "the persisted ESQ envelope is decompiled back into the friendly filter object");
+		action.Filter.GetProperty("logicalOperation").GetString().Should().Be("AND",
+			because: "the envelope's AND logical operation maps back to the friendly token");
+		JsonElement decompiledLeaf = action.Filter.GetProperty("filters").EnumerateArray().Single();
+		decompiledLeaf.GetProperty("columnPath").GetString().Should().Be("Email",
+			because: "the IsNull filter column round-trips into the friendly leaf");
+		decompiledLeaf.GetProperty("comparisonType").GetString().Should().Be("IS_NOT_NULL",
+			because: "comparisonType 2 (IsNotNull) maps back to the friendly IS_NOT_NULL token");
 		action.UId.Should().Be("aaaaaaaa-0000-0000-0000-000000000004",
 			because: "the action block uId must be propagated so update can preserve identity");
 	}

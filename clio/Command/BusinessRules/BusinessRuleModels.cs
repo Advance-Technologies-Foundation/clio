@@ -415,11 +415,6 @@ public sealed record ApplyStaticFilterBusinessRuleAction : BusinessRuleAction
     [Required]
     public JsonElement Filter { get; init; }
 
-    [JsonPropertyName("esqFilter")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    [Description("Persisted ESQ filter envelope, returned by read only. Ignored on input; supply a friendly filter to change it.")]
-    public string? EsqFilter { get; init; }
-
     [JsonIgnore] public override string ActionType => BusinessRuleConstants.ApplyStaticFilterActionTypeName;
 
     [JsonIgnore] public override List<string> FieldSelectionItems => [];

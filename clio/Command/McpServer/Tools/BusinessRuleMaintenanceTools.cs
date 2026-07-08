@@ -50,7 +50,7 @@ public sealed class ReadEntityBusinessRuleTool(
 		OpenWorld = false)]
 	[Description("Reads ALL entity-level Freedom UI business rules persisted for an entity schema (full package hierarchy, so inherited rules are included). " +
 		"Each rule is returned in the create/update contract shape with 'name', 'enabled', and block 'uId's — pass those uIds back to update-entity-business-rules so the platform stores a short diff. " +
-		"apply-static-filter rules carry the persisted ESQ envelope in 'esqFilter' (read-only; supply a friendly 'filter' to change it). " +
+		"apply-static-filter rules read back with the same friendly 'filter' shape used to create them. " +
 		"Call this BEFORE updating or deleting rules to obtain exact rule names and uIds.")]
 	public object BusinessRulesRead(
 		[Description("environment-name, package-name, entity-schema-name (all required).")]

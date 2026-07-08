@@ -28,8 +28,9 @@ relative to the repo root.
 
 New `clio/Command/BusinessRules/BusinessRuleMetadataReader.cs` (static, mirror of the
 converter): parses the add-on metadata `rules` array directly into friendly
-`BusinessRule` models (`name`, `caption`, `enabled`, block uIds, `esqFilter`
-passthrough for apply-static-filter actions); an unrepresentable rule fails the whole
+`BusinessRule` models (`name`, `caption`, `enabled`, block uIds, and the friendly
+`filter` decompiled via `LocalEsqFilterDecompiler` for apply-static-filter actions); an
+unrepresentable rule fails the whole
 read with an error naming the rule. Skips child
 rules (`parentUId`) and derives the parent action's `clearValue`/`populateValue` flags
 from them. Reverse maps: comparison int → kebab token,
@@ -83,7 +84,8 @@ Response: `{ deleted, failed, results }`.
 
 - `ToolContractGetTool`: six new `ToolContractDefinition` entries + catalog registration.
 - `BusinessRulesGuidanceResource`: document the read → update/delete workflow, `name` as
-  the match key, uId preservation, and the esqFilter read shape.
+  the match key, uId preservation, and the friendly `filter` read shape (decompiled via
+  `LocalEsqFilterDecompiler`).
 - `BindingsModule.cs`: register the six new tools (and no new services beyond what the
   existing interfaces gain).
 
