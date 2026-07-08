@@ -18,7 +18,10 @@ namespace Clio.Command {
 		bool IsSspDefault = false,
 		string Role = null,
 		string TypeColumnValue = null,
-		string RoleName = null);
+		string RoleName = null,
+		// Explicit page schema UId. When set it is used verbatim and page-schema-name is NOT resolved — the
+		// round-trip vehicle from get-related-page-addon, robust to a page whose name no longer reverse-resolves.
+		string PageSchemaUId = null);
 
 	/// <summary>
 	/// Options for the <c>create-related-page-addon</c> command. Configures which Freedom UI pages open

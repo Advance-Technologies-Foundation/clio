@@ -68,3 +68,8 @@ clio create-related-page-addon -e dev --entity-schema-name UsrRequest --package-
 - Sending an **empty** `pages` array through the MCP tool clears all bindings (reset to inline) — the
   effective delete, since the platform has no add-on delete. The scalar CLI cannot express this: a
   no-option invocation is rejected rather than silently wiping the configuration.
+- For a safe read-modify-write, `get-related-page-addon` output can be replayed into the MCP `pages` array
+  verbatim: an entry may carry both `role` and `role-name` (reconciled when they agree), and each entry's
+  `page-schema-uid` is accepted and used as-is — so a page whose name no longer reverse-resolves still
+  round-trips instead of being silently dropped. `page-schema-uid` wins over `page-schema-name` when both
+  are present. (`page-schema-uid` is an MCP-only field; the scalar CLI resolves by page name.)

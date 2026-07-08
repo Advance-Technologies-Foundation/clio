@@ -565,18 +565,60 @@ public sealed class RelatedPageAddonServiceTests {
 	}
 
 	[Test]
-	[Description("Rejects a page entry that sets both an explicit role UId and a role name, so the caller's audience is never silently dropped.")]
-	public void Create_ShouldThrow_WhenPageSetsBothRoleAndRoleName() {
-		// Arrange / Act
+	[Description("Rejects a page entry whose role and role-name point at DIFFERENT audiences (employee UId + portal name): role would silently win and the role-name's intent would be dropped, so the genuine conflict is surfaced.")]
+	public void Create_ShouldThrow_WhenRoleAndRoleNameConflict() {
+		// Arrange / Act — role is the employees UId but role-name says the portal audience.
 		Action act = () => _service.Create(Request(
 			new RelatedPageSpec("UsrDeliveryItemFormPage", IsDefault: true,
 				Role: "a29a3ba5-4b0d-de11-9a51-005056c00008", RoleName: "All external users")));
 
 		// Assert
-		act.Should().Throw<ArgumentException>().WithMessage("*both role and role-name*",
-			because: "an ambiguous role + role-name pair must be rejected, not resolved by silently dropping role-name");
+		act.Should().Throw<ArgumentException>().WithMessage("*different audiences*",
+			because: "role and role-name naming different audiences is a genuine conflict and must be rejected");
 		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!);
 		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().SaveSchema(default!);
+	}
+
+	[Test]
+	[Description("Accepts a page that sets BOTH role and role-name when they resolve to the same audience — the shape get-related-page-addon returns — so a verbatim read-modify-write replay is not rejected and role wins.")]
+	public void Create_ShouldAccept_WhenRoleAndConsistentRoleNameBothSet() {
+		// Arrange — the base default carries both the raw employee UId and its friendly name, exactly as `get` emits.
+		const string employees = "a29a3ba5-4b0d-de11-9a51-005056c00008";
+		StubSelectQueue(Rows(PackageUId), Rows(PageAUId));
+
+		// Act
+		RelatedPageAddonResult result = _service.Create(new RelatedPageAddonRequest("Custom", "UsrDeliveryItem", new[] {
+			new RelatedPageSpec("UsrDeliveryItemFormPage", IsDefault: true, Role: employees, RoleName: "All employees")
+		}, null));
+
+		// Assert
+		result.PageCount.Should().Be(1,
+			because: "role + a consistent role-name (same audience) is the get output shape and must round-trip, not be rejected");
+		JsonNode.Parse(_savedSchema.MetaData)!["Pages"]!.AsArray()[0]!["Role"]!.GetValue<string>().Should().Be(employees,
+			because: "when both are set and agree, the explicit role UId wins");
+	}
+
+	[Test]
+	[Description("End-to-end read-modify-write: entries returned by Get (which carry BOTH the raw role UId and the resolved role-name) feed straight back into Create without hand-editing — the round-trip the tool advertises, previously broken by the both-role-and-role-name guard.")]
+	public void GetThenCreate_ShouldRoundTrip_WhenReplayingResolvedEntriesVerbatim() {
+		// Arrange — Get decodes an employee default (name reverse-resolved); the entries are then replayed into
+		// Create verbatim. Queue: [Get] package + page-name reverse; [Create] package + page-name forward.
+		StubAddonMetadata(
+			"""{"Pages":[{"UId":"u1","PageSchemaUId":"cc000000-0000-0000-0000-00000000000a","IsDefault":true,"Actions":{"Add":false},"Role":"a29a3ba5-4b0d-de11-9a51-005056c00008"}],"TypeColumnUId":null}""");
+		StubSelectQueue(Rows(PackageUId), NameRow("UsrDeliveryItemFormPage"), Rows(PackageUId), Rows(PageAUId));
+
+		// Act — read, then replay the decoded entries (raw role UId + resolved role-name both present) unchanged.
+		RelatedPageAddonReadResult read = _service.Get(new RelatedPageAddonReadRequest("Custom", "UsrDeliveryItem"));
+		RelatedPageAddonResult written = _service.Create(new RelatedPageAddonRequest("Custom", "UsrDeliveryItem",
+			read.Pages.Select(p => new RelatedPageSpec(
+				p.PageSchemaName, p.IsDefault, p.IsAdd, p.IsSspDefault, p.Role, p.TypeColumnValue, p.RoleName)).ToList(),
+			read.TypeColumnUId));
+
+		// Assert
+		read.Pages[0].Role.Should().NotBeNull(because: "Get returns the raw role UId");
+		read.Pages[0].RoleName.Should().Be("All employees", because: "Get also returns the resolved role-name");
+		written.PageCount.Should().Be(1,
+			because: "the get output (role + consistent role-name) must feed straight back into create without a conflict");
 	}
 
 	[Test]
@@ -938,5 +980,153 @@ public sealed class RelatedPageAddonServiceTests {
 			because: "the raw role UId is preserved for the round-trip");
 		result.Pages[0].RoleName.Should().BeNull(
 			because: "a role UId outside the known platform audiences degrades to a null name, not an error");
+	}
+
+	[Test]
+	[Description("A page given by explicit page-schema-uid is written verbatim without any name resolution, so a page whose name no longer resolves still round-trips.")]
+	public void Create_ShouldUsePageSchemaUId_WithoutResolvingName() {
+		// Arrange — ONLY the package is queried; a page-schema-uid must not trigger a page-name SelectQuery (if it
+		// did, the queue would be exhausted and Dequeue would throw).
+		const string pageUId = "cc000000-0000-0000-0000-0000000000ff";
+		StubSelectQueue(Rows(PackageUId));
+
+		// Act — base default identified by UId only (no page-schema-name), role-less general audience.
+		RelatedPageAddonResult result = _service.Create(new RelatedPageAddonRequest("Custom", "UsrDeliveryItem", new[] {
+			new RelatedPageSpec(null, IsDefault: true, PageSchemaUId: pageUId)
+		}, null));
+
+		// Assert
+		result.PageCount.Should().Be(1, because: "a page identified by UId is written without a name lookup");
+		JsonNode.Parse(_savedSchema.MetaData)!["Pages"]!.AsArray()[0]!["PageSchemaUId"]!.GetValue<string>()
+			.Should().Be(pageUId, because: "the explicit page-schema-uid is stored verbatim");
+	}
+
+	[Test]
+	[Description("When a page sets both page-schema-uid and page-schema-name, the explicit UId wins and no name resolution is issued.")]
+	public void Create_ShouldPreferPageSchemaUId_OverName() {
+		// Arrange — only the package is queried; no page-name lookup should happen.
+		const string pageUId = "cc000000-0000-0000-0000-0000000000ff";
+		StubSelectQueue(Rows(PackageUId));
+
+		// Act
+		RelatedPageAddonResult result = _service.Create(new RelatedPageAddonRequest("Custom", "UsrDeliveryItem", new[] {
+			new RelatedPageSpec("UsrDeliveryItemFormPage", IsDefault: true, PageSchemaUId: pageUId)
+		}, null));
+
+		// Assert
+		result.PageCount.Should().Be(1, because: "the entry is written");
+		JsonNode.Parse(_savedSchema.MetaData)!["Pages"]!.AsArray()[0]!["PageSchemaUId"]!.GetValue<string>()
+			.Should().Be(pageUId, because: "page-schema-uid wins over page-schema-name");
+	}
+
+	[Test]
+	[Description("End-to-end read-modify-write of a page whose name no longer resolves: Get returns its raw pageSchemaUId with a null name; replaying via page-schema-uid re-sends it, so the binding is NOT silently dropped by the replace-not-merge write.")]
+	public void GetThenCreate_ShouldRoundTripUnresolvablePage_ViaPageSchemaUId() {
+		// Arrange — Get: the page-name reverse lookup returns no rows (name unresolvable) → PageSchemaName null, raw
+		// UId survives. Create: only the package is queried (the UId short-circuits name resolution).
+		StubAddonMetadata(
+			"""{"Pages":[{"UId":"u1","PageSchemaUId":"cc000000-0000-0000-0000-0000000000ff","IsDefault":true,"Actions":{"Add":false},"Role":"a29a3ba5-4b0d-de11-9a51-005056c00008"}],"TypeColumnUId":null}""");
+		StubSelectQueue(Rows(PackageUId), """{"success": true, "rows": []}""", Rows(PackageUId));
+
+		// Act
+		RelatedPageAddonReadResult read = _service.Get(new RelatedPageAddonReadRequest("Custom", "UsrDeliveryItem"));
+		RelatedPageAddonResult written = _service.Create(new RelatedPageAddonRequest("Custom", "UsrDeliveryItem",
+			read.Pages.Select(p => new RelatedPageSpec(
+				p.PageSchemaName, p.IsDefault, p.IsAdd, p.IsSspDefault, p.Role, p.TypeColumnValue, p.RoleName,
+				p.PageSchemaUId)).ToList(),
+			read.TypeColumnUId));
+
+		// Assert
+		read.Pages[0].PageSchemaName.Should().BeNull(because: "the page name no longer resolves");
+		read.Pages[0].PageSchemaUId.Should().Be("cc000000-0000-0000-0000-0000000000ff",
+			because: "the raw page UId still survives Get for the round-trip");
+		written.PageCount.Should().Be(1,
+			because: "replaying via page-schema-uid re-sends the unresolvable page instead of dropping it");
+		JsonNode.Parse(_savedSchema.MetaData)!["Pages"]!.AsArray()[0]!["PageSchemaUId"]!.GetValue<string>()
+			.Should().Be("cc000000-0000-0000-0000-0000000000ff",
+				because: "the original page UId is preserved through the round-trip");
+	}
+
+	[Test]
+	[Description("Rejects a page entry that supplies neither page-schema-name nor page-schema-uid before any remote call.")]
+	public void Create_ShouldThrow_WhenPageHasNeitherNameNorUId() {
+		// Act
+		Action act = () => _service.Create(Request(new RelatedPageSpec(null, IsDefault: true)));
+
+		// Assert
+		act.Should().Throw<ArgumentException>().WithMessage("*page-schema-name or a page-schema-uid*",
+			because: "a page with no name and no UId cannot be resolved");
+		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().SaveSchema(default!);
+	}
+
+	[Test]
+	[Description("Rejects a non-GUID page-schema-uid before any remote call.")]
+	public void Create_ShouldThrow_WhenPageSchemaUIdIsNotAGuid() {
+		// Act
+		Action act = () => _service.Create(Request(new RelatedPageSpec(null, IsDefault: true, PageSchemaUId: "not-a-guid")));
+
+		// Assert
+		act.Should().Throw<ArgumentException>().WithMessage("*page-schema-uid*not a valid GUID*",
+			because: "a malformed page-schema-uid must be rejected, not written into metadata");
+		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().SaveSchema(default!);
+	}
+
+	[Test]
+	[Description("Accepts a supported audience role UId given in brace format ({…}) — recognition compares GUIDs, not strings — and stores it normalized to canonical D format, matching what the Interface Designer writes.")]
+	public void Create_ShouldAcceptAndNormalizeBraceFormatRoleUId() {
+		// Arrange — the portal role in brace format, layered on a role-less general base.
+		const string portalBrace = "{720b771c-e7a7-4f31-9cfb-52cd21c3739f}";
+		StubSelectQueue(Rows(PackageUId), Rows(PageAUId), Rows(PageBUId));
+
+		// Act
+		RelatedPageAddonResult result = _service.Create(new RelatedPageAddonRequest("Custom", "UsrDeliveryItem", new[] {
+			new RelatedPageSpec("UsrDeliveryItemFormPage", IsDefault: true),
+			new RelatedPageSpec("UsrDeliveryItemPortalPage", IsDefault: true, Role: portalBrace)
+		}, null));
+
+		// Assert
+		result.PageCount.Should().Be(2,
+			because: "a valid portal role UId in brace format is a recognized audience, not rejected as unsupported");
+		JsonNode.Parse(_savedSchema.MetaData)!["Pages"]!.AsArray()[1]!["Role"]!.GetValue<string>()
+			.Should().Be("720b771c-e7a7-4f31-9cfb-52cd21c3739f",
+				because: "the role is stored normalized to canonical D format, as the Interface Designer writes it");
+	}
+
+	[Test]
+	[Description("A non-JSON page-name lookup response (e.g. an auth-redirect HTML page from an expired session) surfaces as a clean lookup failure, not a raw JSON parse exception — QuerySysSchemaRow now routes through the guarded ExecuteSelectQuery like every other lookup in the helper.")]
+	public void Create_ShouldFailCleanly_WhenPageNameLookupReturnsNonJson() {
+		// Arrange — package resolves, then the page-name SelectQuery returns an HTML login redirect.
+		StubSelectQueue(Rows(PackageUId), "<!DOCTYPE html><html><body>login</body></html>");
+
+		// Act
+		Action act = () => _service.Create(Request(new RelatedPageSpec("UsrDeliveryItemFormPage", IsDefault: true)));
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>().WithMessage("*Failed to query schema metadata*",
+			because: "a non-JSON response must surface as a clean lookup failure, not a raw JObject.Parse exception");
+		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().SaveSchema(default!);
+	}
+
+	[Test]
+	[Description("Normalizes type-column-uid and per-page type-column-value to canonical D format when stored, so a valid UId given in brace/N format matches what the Interface Designer writes (typed matching would otherwise silently fail at runtime).")]
+	public void Create_ShouldNormalizeTypeColumnUidAndValue_ToDFormat() {
+		// Arrange — the type column UId and the typed value both supplied in brace format.
+		const string typeColumnBrace = "{af280321-e749-41dd-98e5-383906747e29}";
+		const string typeValueBrace = "{1b0bc159-150a-e111-a31b-00155d04c01d}";
+		StubSelectQueue(Rows(PackageUId), Rows(PageAUId), Rows(PageBUId));
+
+		// Act — a base default plus a typed page; both type identifiers are in brace format.
+		_service.Create(new RelatedPageAddonRequest("Custom", "Case", new[] {
+			new RelatedPageSpec("CaseFormPage", IsDefault: true),
+			new RelatedPageSpec("CaseIncidentPage", IsDefault: true, TypeColumnValue: typeValueBrace)
+		}, typeColumnBrace));
+
+		// Assert
+		JsonNode metadata = JsonNode.Parse(_savedSchema.MetaData)!;
+		metadata["TypeColumnUId"]!.GetValue<string>().Should().Be("af280321-e749-41dd-98e5-383906747e29",
+			because: "type-column-uid is stored normalized to canonical D format, as the Interface Designer writes it");
+		metadata["Pages"]!.AsArray()[1]!["TypeColumnValue"]!.GetValue<string>()
+			.Should().Be("1b0bc159-150a-e111-a31b-00155d04c01d",
+				because: "the typed value is stored normalized to canonical D format so runtime type matching succeeds");
 	}
 }

@@ -39,6 +39,10 @@ public sealed class RelatedPageBindingGuidanceResource {
 		       object may already have a configuration: it returns the current entries (raw UIds + resolved page/role
 		       names + flags + type-column-uid). Then modify that set and send the full set back — read → modify →
 		       write. Skipping the read on an already-configured object silently drops the entries you omit.
+		       Replaying a get result verbatim is supported: an entry may carry BOTH `role` and `role-name` (they are
+		       reconciled when they agree), and you should pass each entry's `page-schema-uid` back — it is used as-is,
+		       so a page whose name did not reverse-resolve (null `page-schema-name`) still round-trips instead of
+		       being silently dropped.
 
 		       Inputs
 		       - `entity-schema-name` (required) — the OBJECT (entity schema) the pages belong to, e.g. `UsrDelivery`.
@@ -46,7 +50,10 @@ public sealed class RelatedPageBindingGuidanceResource {
 		       - `pages` (required) — the full set of page entries. This FULLY REPLACES the object's current
 		         related-page configuration (it is not a merge), so always send every entry you want to keep.
 		         Each entry:
-		         - `page-schema-name` (required) — an existing Freedom UI page schema name.
+		         - `page-schema-name` — an existing Freedom UI page schema name. Required UNLESS `page-schema-uid` is
+		           given; when both are present `page-schema-uid` wins and the name is ignored.
+		         - `page-schema-uid` — optional explicit page schema UId; prefer it when replaying a get result (used
+		           verbatim, robust to a name that no longer resolves).
 		         - `is-default` — true marks the page opened by default when a record is opened.
 		         - `is-add` — true marks the page used when ADDING a record (the same page may be both default and add).
 		         - `is-ssp-default` — low-level RelatedPagesMetadata flag; leave false. This is NOT how the portal

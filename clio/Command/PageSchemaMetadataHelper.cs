@@ -322,12 +322,13 @@ namespace Clio.Command {
 				[ColumnsKey] = new JObject { [ItemsKey] = columnsItems },
 				[RowCountKey] = 1
 			};
-			string dataServiceUrl = serviceUrlBuilder.Build(SelectQueryUrl);
-			string metadataJson = applicationClient.ExecutePostRequest(dataServiceUrl, query.ToString(Formatting.None));
-			var metadataResponse = JObject.Parse(metadataJson);
-			if (!(metadataResponse["success"]?.Value<bool>() ?? false))
+			// Route through the shared, guarded ExecuteSelectQuery (like QuerySysSchemaRowByUId and every other
+			// lookup in this helper) instead of a raw ExecutePostRequest + JObject.Parse: an expired session that
+			// returns an HTML/redirect body then surfaces as a clean lookup failure rather than a raw
+			// "Unexpected character '<'" JSON parse exception.
+			var (rows, success) = ExecuteSelectQuery(applicationClient, serviceUrlBuilder, query);
+			if (!success)
 				return (null, "Failed to query schema metadata");
-			var rows = metadataResponse["rows"] as JArray ?? new JArray();
 			if (rows.Count == 0)
 				return (null, $"Schema '{schemaName}' not found");
 			return (rows[0], null);

@@ -17,6 +17,7 @@ namespace Clio.Mcp.E2E;
 /// End-to-end tests for the create-related-page-addon MCP tool, driven through the real clio MCP server.
 /// </summary>
 [TestFixture]
+[Category("McpE2E.NoEnvironment")]
 [AllureNUnit]
 [AllureFeature(CreateRelatedPageAddonTool.ToolName)]
 [NonParallelizable]

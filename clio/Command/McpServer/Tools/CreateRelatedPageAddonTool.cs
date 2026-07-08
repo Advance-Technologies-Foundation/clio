@@ -55,7 +55,8 @@ public sealed class CreateRelatedPageAddonTool(
 					p.IsSspDefault ?? false,
 					p.Role,
 					p.TypeColumnValue,
-					p.RoleName))
+					p.RoleName,
+					p.PageSchemaUId))
 				.ToList(),
 			Environment = args.EnvironmentName,
 			Uri = args.Uri,
@@ -115,8 +116,7 @@ public sealed record CreateRelatedPageAddonArgs(
 
 public sealed record RelatedPageArg(
 	[property: JsonPropertyName("page-schema-name")]
-	[property: Description("Freedom UI page schema name, e.g. 'UsrDeliveryItemFormPage'.")]
-	[property: Required]
+	[property: Description("Freedom UI page schema name, e.g. 'UsrDeliveryItemFormPage'. Required UNLESS page-schema-uid is supplied. When both are present, page-schema-uid wins and the name is ignored.")]
 	string PageSchemaName,
 
 	[property: JsonPropertyName("is-default")]
@@ -141,5 +141,9 @@ public sealed record RelatedPageArg(
 
 	[property: JsonPropertyName("role-name")]
 	[property: Description("Optional audience role NAME (alternative to role). Only 'All external users' (portal/self-service) and 'All employees' (internal) are supported — any other role name is rejected, because the Interface Designer offers no other audience. Omit for all users (the general audience).")]
-	string? RoleName = null
+	string? RoleName = null,
+
+	[property: JsonPropertyName("page-schema-uid")]
+	[property: Description("Optional explicit page schema UId. Prefer this when replaying a get-related-page-addon result: it is used verbatim (page-schema-name is not resolved), so a page whose name no longer reverse-resolves still round-trips instead of being silently dropped. Omit to resolve by page-schema-name.")]
+	string? PageSchemaUId = null
 );

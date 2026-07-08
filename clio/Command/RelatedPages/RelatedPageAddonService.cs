@@ -158,13 +158,42 @@ internal sealed class RelatedPageAddonService(
 			throw new ArgumentException(
 				$"type-column-uid '{request.TypeColumnUId}' is not a valid GUID; it must be the entity column's u-id.");
 		}
-		// A page entry that sets BOTH an explicit role UId and a role name is ambiguous: role wins and role-name
-		// would be silently ignored. Reject it so the caller's intended audience is never quietly dropped.
-		if (request.Pages.Any(page =>
-				!string.IsNullOrWhiteSpace(page.Role) && !string.IsNullOrWhiteSpace(page.RoleName))) {
-			throw new ArgumentException(
-				"A page entry sets both role and role-name; provide only one — role-name to resolve a role by name, "
-				+ "or role for an explicit SysAdminUnit UId.");
+		// Each page needs a way to identify its page schema: a page-schema-name (resolved to a UId) OR an explicit
+		// page-schema-uid (used verbatim — the round-trip vehicle from get-related-page-addon, robust to a page whose
+		// name no longer reverse-resolves). Require at least one, and validate an explicit UId as a GUID up front
+		// (symmetric with the role / package / type-column UId guards).
+		foreach (RelatedPageSpec page in request.Pages) {
+			bool hasName = !string.IsNullOrWhiteSpace(page.PageSchemaName);
+			bool hasUId = !string.IsNullOrWhiteSpace(page.PageSchemaUId);
+			if (!hasName && !hasUId) {
+				throw new ArgumentException("Each page entry requires a page-schema-name or a page-schema-uid.");
+			}
+			if (hasUId && !Guid.TryParse(page.PageSchemaUId.Trim(), out _)) {
+				throw new ArgumentException(
+					$"page-schema-uid '{page.PageSchemaUId}' is not a valid GUID; it must be the page schema's u-id.");
+			}
+		}
+		// A page may describe its audience by an explicit role UId OR by role-name. get-related-page-addon returns
+		// BOTH (the raw UId for a safe round-trip plus the friendly name), so a verbatim read-modify-write replay
+		// legitimately carries both. Reject ONLY a genuine conflict — both set but pointing at DIFFERENT audiences
+		// (role wins downstream via ResolvePageRole, so a disagreeing role-name would be silently dropped). When
+		// they agree (the round-trip case) accept it and let role win. A malformed role is deferred to the GUID
+		// guard below; a role-name outside the supported audiences surfaces here as a conflict.
+		foreach (RelatedPageSpec page in request.Pages) {
+			if (string.IsNullOrWhiteSpace(page.Role) || string.IsNullOrWhiteSpace(page.RoleName)
+				|| !Guid.TryParse(page.Role.Trim(), out Guid roleId)) {
+				continue;
+			}
+			bool roleNameAgrees =
+				KnownPlatformRoleIds.TryGetValue(page.RoleName.Trim(), out string roleNameUId)
+				&& Guid.TryParse(roleNameUId, out Guid roleNameId)
+				&& roleNameId == roleId;
+			if (!roleNameAgrees) {
+				throw new ArgumentException(
+					$"A page entry sets both role ('{page.Role.Trim()}') and role-name ('{page.RoleName.Trim()}') and "
+					+ "they point at different audiences; provide only one, or make role-name resolve to the same "
+					+ "audience as role.");
+			}
 		}
 		// An explicit role must be a SysAdminUnit GUID. Validated here — before any remote call — symmetric with
 		// the guards above (it previously fired inside BuildPages, after several round-trips).
@@ -228,13 +257,27 @@ internal sealed class RelatedPageAddonService(
 	private static bool IsGeneralAudience(RelatedPageSpec page) =>
 		(string.IsNullOrWhiteSpace(page.Role) && string.IsNullOrWhiteSpace(page.RoleName))
 		|| string.Equals(page.RoleName?.Trim(), EmployeesRoleName, StringComparison.OrdinalIgnoreCase)
-		|| string.Equals(page.Role?.Trim(), KnownPlatformRoleIds[EmployeesRoleName], StringComparison.OrdinalIgnoreCase);
+		|| IsRoleUId(page.Role, KnownPlatformRoleIds[EmployeesRoleName]);
 
 	// A page targets the PORTAL audience when it is scoped to the "All external users" role — by name or by its
 	// seeded UId.
 	private static bool IsPortalAudience(RelatedPageSpec page) =>
 		string.Equals(page.RoleName?.Trim(), PortalRoleName, StringComparison.OrdinalIgnoreCase)
-		|| string.Equals(page.Role?.Trim(), KnownPlatformRoleIds[PortalRoleName], StringComparison.OrdinalIgnoreCase);
+		|| IsRoleUId(page.Role, KnownPlatformRoleIds[PortalRoleName]);
+
+	// True when a role reference equals a known platform role Id AS A GUID — so a valid UId in ANY format (canonical
+	// "D", brace "{…}", or dash-less "N") matches the seeded Id. A plain string compare would wrongly reject e.g.
+	// "{720b771c-…}" (accepted by Guid.TryParse) as an unsupported audience.
+	private static bool IsRoleUId(string role, string knownRoleId) =>
+		Guid.TryParse(role?.Trim(), out Guid roleId)
+		&& Guid.TryParse(knownRoleId, out Guid knownId)
+		&& roleId == knownId;
+
+	// Normalizes a UId/GUID string to canonical "D" format (accepting e.g. brace "{…}" or dash-less "N" input), so
+	// values written into the add-on metadata match what the Interface Designer stores and the platform matches at
+	// runtime. A non-GUID value is returned trimmed (callers validate GUID-ness where it is required).
+	private static string NormalizeGuid(string value) =>
+		Guid.TryParse(value?.Trim(), out Guid parsed) ? parsed.ToString("D") : value?.Trim();
 
 	// A page's audience is recognized when it is the general audience (role-less / "All employees") or the portal
 	// audience ("All external users") — the only two the designer produces. Anything else is a custom role, which
@@ -292,7 +335,7 @@ internal sealed class RelatedPageAddonService(
 		// an unvalidated value that could never apply to an empty configuration.
 		metadata["TypeColumnUId"] = request.Pages.Count == 0 || string.IsNullOrWhiteSpace(request.TypeColumnUId)
 			? null
-			: request.TypeColumnUId.Trim();
+			: NormalizeGuid(request.TypeColumnUId);
 		schema.MetaData = metadata.ToJsonString();
 
 		addonSchemaDesignerClient.SaveSchema(schema);
@@ -567,12 +610,12 @@ internal sealed class RelatedPageAddonService(
 			string role = ResolvePageRole(spec, roleByName);
 			pages.Add(new JsonObject {
 				["UId"] = Guid.NewGuid().ToString("D"),
-				["PageSchemaUId"] = pageUIdByName[spec.PageSchemaName.Trim()],
+				["PageSchemaUId"] = ResolvePageUId(spec, pageUIdByName),
 				["IsDefault"] = spec.IsDefault,
 				["IsSspDefault"] = spec.IsSspDefault,
 				["Actions"] = new JsonObject { ["Add"] = spec.IsAdd },
 				["Role"] = string.IsNullOrWhiteSpace(role) ? null : role,
-				["TypeColumnValue"] = string.IsNullOrWhiteSpace(spec.TypeColumnValue) ? null : spec.TypeColumnValue.Trim()
+				["TypeColumnValue"] = string.IsNullOrWhiteSpace(spec.TypeColumnValue) ? null : NormalizeGuid(spec.TypeColumnValue)
 			});
 		}
 		return pages;
@@ -587,8 +630,11 @@ internal sealed class RelatedPageAddonService(
 	private IReadOnlyDictionary<string, string> ResolvePageSchemaUIds(IReadOnlyList<RelatedPageSpec> specs) {
 		var resolved = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 		foreach (RelatedPageSpec spec in specs) {
-			if (string.IsNullOrWhiteSpace(spec.PageSchemaName)) {
-				throw new ArgumentException("Each page entry requires a page-schema-name.");
+			// A spec with an explicit page-schema-uid is used verbatim (validated as a GUID in ValidateRequest), so
+			// only a spec WITHOUT one needs its name resolved. ValidateRequest already guaranteed name-or-uid, so a
+			// blank name here means the uid path is taken.
+			if (!string.IsNullOrWhiteSpace(spec.PageSchemaUId) || string.IsNullOrWhiteSpace(spec.PageSchemaName)) {
+				continue;
 			}
 			string pageName = spec.PageSchemaName.Trim();
 			if (resolved.ContainsKey(pageName)) {
@@ -609,13 +655,25 @@ internal sealed class RelatedPageAddonService(
 	}
 
 	/// <summary>
+	/// The <c>PageSchemaUId</c> stored for a spec: an explicit <c>page-schema-uid</c> wins (the round-trip vehicle
+	/// from <c>get-related-page-addon</c>, which also survives a page whose name no longer resolves); otherwise the
+	/// UId resolved from <c>page-schema-name</c> via <see cref="ResolvePageSchemaUIds"/>.
+	/// </summary>
+	private static string ResolvePageUId(RelatedPageSpec spec, IReadOnlyDictionary<string, string> pageUIdByName) =>
+		!string.IsNullOrWhiteSpace(spec.PageSchemaUId)
+			? spec.PageSchemaUId.Trim()
+			: pageUIdByName[spec.PageSchemaName.Trim()];
+
+	/// <summary>
 	/// Chooses the audience role UId stored on a page entry: an explicit role UId wins (already validated as a
 	/// GUID upfront in <see cref="ValidateRequest"/>), otherwise the role resolved from the spec's role name,
 	/// otherwise none (the set applies to all users).
 	/// </summary>
 	private static string ResolvePageRole(RelatedPageSpec spec, IReadOnlyDictionary<string, string> roleByName) {
 		if (!string.IsNullOrWhiteSpace(spec.Role)) {
-			return spec.Role.Trim();
+			// Normalize to canonical "D" format so a valid UId given in brace/N format is stored the way the
+			// Interface Designer writes it (and is matched by the platform at runtime), not verbatim.
+			return NormalizeGuid(spec.Role);
 		}
 		if (string.IsNullOrWhiteSpace(spec.RoleName)) {
 			return null;
