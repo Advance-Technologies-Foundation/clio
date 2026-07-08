@@ -208,3 +208,34 @@ Nested groups, `between`, `in (multiple)`, and date-relative filters are increme
   as strings; the runtime deserializes a filter date via `Json.DeserializeJsonDate` (JSON-deserialize →
   `DateTime`), so a bare `"2026-06-19"` likely won't parse. Capture a designer date-filter and confirm the
   accepted value format before relying on date/time constant filters (numeric/text/boolean are verified).
+
+## 8. Implementation deltas (as shipped — supersedes §6–§7 where they differ)
+
+This document is the original research/design; several decisions were made during implementation. The
+shipped feature differs as follows (see `.codex/workspace-diary.md` for the blow-by-blow):
+
+- **Vocabulary (beyond §6):** negative string comparisons (`notContains` / `notStartWith` / `notEndWith`);
+  relative-date / system **macros** (`Today`, `CurrentUser`, `NextNDays`(+arg), …) as a right-hand
+  `FunctionExpression` (`functionType=1`); left-hand **date-parts** (`Year`/`Month`/`Day`/`Week`/`Weekday`/`Hour`)
+  as a `FunctionExpression` (`functionType=3`) compared to an Integer.
+- **Date/Time constant — RESOLVED** (closes the §7 "UNVERIFIED" risk): stored as a quote-wrapped LOCAL ISO
+  literal `"\"yyyy-MM-ddTHH:mm:ss.fff\""` (both reps) plus a UTC `dateValue` (edit rep only); TZ from the
+  user connection with a UTC fallback. Offset detection uses `DateTime.Kind` (no manual scan). Live-verified.
+- **Signal-start restriction:** a `signalStart` filter may **NOT** reference a process/element parameter or a
+  raw expression (the signal is evaluated before any process instance exists) — enforced server-side in
+  `ProcessFilterApplier`, mirroring the designer hiding the "select parameter" option. Constants / macros /
+  date-parts / `isNull` only. Data-operation element filters keep parameter references.
+- **Architecture:** `ProcessFilterService` is a PURE serializer (descriptor → JSON, no element knowledge); the
+  element-aware apply (EntityFilters-vs-DataSourceFilters storage routing + the signal restriction) lives in
+  `ProcessFilterApplier`. `ProcessDesigner` is a thin facade over per-use-case handlers
+  (`ProcessBuildHandler` / `ProcessModifyHandler`) + a shared `ProcessDesignGuard`; package files are grouped
+  by concern folders (`Design/`, `Filters/`, `Layout/`, …).
+- **Core reuse (refines §2's "we emit it ourselves"):** the wire numeric codes now bind to the platform enums
+  (`FilterComparisonType`, `Terrasoft.Core.Entities.Filters.*`, `EntitySchemaQueryExpressionType`,
+  `LogicalOperationStrict`), and column-path resolution reuses `EntitySchema.FindSchemaColumnByPath`. A
+  DataContract-based serialization was evaluated and **rejected** — the designer edit rep has client-only
+  fields (`className` / `dateValue` / `displayValue`) absent from `Terrasoft.Nui.ServiceModel.DataContract.Filters`.
+- **Scope today:** only the `signalStart` filter is end-to-end usable; data-task filters (Read / Add / Modify /
+  Delete) serialize but their target-object config is not buildable yet (Tier 3 / ENG-91850).
+- **Status:** implemented; unit + MCP e2e covered; live-verified on krestov-test (dates, macros, date-parts,
+  signal guard).
