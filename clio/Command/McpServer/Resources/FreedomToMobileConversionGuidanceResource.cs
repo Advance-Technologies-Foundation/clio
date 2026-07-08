@@ -10,6 +10,7 @@ namespace Clio.Command.McpServer.Resources;
 /// as <c>freedom-page-web-to-mobile-conversion</c>.
 /// </summary>
 [McpServerResourceType]
+[FeatureToggle("mobile-page-converter")]
 public sealed class FreedomToMobileConversionGuidanceResource {
 	private const string DocsScheme = "docs";
 	private const string ResourcePath = "mcp/guides/freedom-page-web-to-mobile-conversion";

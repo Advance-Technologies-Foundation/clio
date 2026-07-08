@@ -23,6 +23,7 @@ namespace Clio.Command.McpServer.Tools;
 /// UI) are detected and reported as not yet supported.
 /// </summary>
 [McpServerToolType]
+[FeatureToggle("mobile-page-converter")]
 public sealed class MobilePageConversionGuideTool {
 	private readonly IToolCommandResolver _commandResolver;
 	private readonly ILogger _logger;

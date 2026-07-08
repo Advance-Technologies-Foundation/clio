@@ -5,6 +5,7 @@ using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
+using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
@@ -26,6 +27,25 @@ namespace Clio.Mcp.E2E;
 public sealed class MobilePageConversionGuideToolE2ETests : McpContractFixtureBase {
 
 	private const string ToolName = MobilePageConversionGuideTool.ToolName;
+
+	// get-mobile-page-conversion-guide is gated behind [FeatureToggle("mobile-page-converter")], so the
+	// shared child server is started with an isolated CLIO_HOME whose appsettings enables the flag —
+	// otherwise the tool would not be registered and discovery/invocation would fail.
+	private protected override void ConfigureMcpServerSettings(McpE2ESettings settings) {
+		string clioHome = CreateIsolatedClioHome(
+			"""
+			{
+			  "ActiveEnvironmentKey": "dev",
+			  "Autoupdate": false,
+			  "Features": { "mobile-page-converter": true },
+			  "Environments": {
+			    "dev": { "Uri": "http://localhost", "Login": "Supervisor", "Password": "Supervisor", "IsNetCore": true }
+			  }
+			}
+			""",
+			GetType().Name);
+		settings.ProcessEnvironmentVariables["CLIO_HOME"] = clioHome;
+	}
 
 	[Test]
 	[Description("Advertises get-mobile-page-conversion-guide so MCP callers can discover the web->mobile conversion guide tool.")]

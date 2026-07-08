@@ -28,6 +28,9 @@ public sealed class RelatedPageToolE2ETests : McpContractFixtureBase {
 
 	private const string ToolName = RelatedPageTool.ToolName;
 
+	// register-related-page is a universal tool (registers web + mobile related pages) and is NOT
+	// feature-gated, so it is resident on the default shared server — no isolated CLIO_HOME needed.
+
 	[Test]
 	[Description("Advertises register-related-page so MCP callers can discover the related-page registration tool.")]
 	[AllureTag(ToolName)]
