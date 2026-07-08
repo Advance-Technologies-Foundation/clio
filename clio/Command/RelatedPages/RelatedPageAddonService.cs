@@ -249,6 +249,18 @@ internal sealed class RelatedPageAddonService(
 					+ "one is-add page; remove the duplicate add page.");
 			}
 		}
+		// Every audience that has an ADD page must also have a DEFAULT page for that audience — an add page with no
+		// matching default leaves that audience able to ADD a record but with no page to OPEN one. The CLI already
+		// enforces this (--add-page needs --default-page, --portal-add-page needs --portal-default-page); the MCP
+		// full-pages path must enforce the same invariant. The general audience's default is guaranteed above, so
+		// this closes the portal (and any audience-scoped) gap.
+		foreach (IGrouping<string, RelatedPageSpec> audience in request.Pages.GroupBy(AudienceKey)) {
+			if (audience.Any(page => page.IsAdd) && !audience.Any(page => page.IsDefault)) {
+				throw new ArgumentException(
+					$"The '{audience.Key}' audience has an add page but no default page. A page used to ADD a record "
+					+ "needs a page to OPEN one for the same audience; add an is-default page for that audience.");
+			}
+		}
 	}
 
 	// A page targets the GENERAL audience when it is role-less (applies to everyone) or scoped to the "All
@@ -264,6 +276,11 @@ internal sealed class RelatedPageAddonService(
 	private static bool IsPortalAudience(RelatedPageSpec page) =>
 		string.Equals(page.RoleName?.Trim(), PortalRoleName, StringComparison.OrdinalIgnoreCase)
 		|| IsRoleUId(page.Role, KnownPlatformRoleIds[PortalRoleName]);
+
+	// The audience bucket a page belongs to — general (role-less / "All employees") vs portal ("All external
+	// users"). The audience half of AudienceTypeCell, reused by the add/default pairing guard.
+	private static string AudienceKey(RelatedPageSpec page) =>
+		IsPortalAudience(page) ? PortalRoleName : EmployeesRoleName;
 
 	// True when a role reference equals a known platform role Id AS A GUID — so a valid UId in ANY format (canonical
 	// "D", brace "{…}", or dash-less "N") matches the seeded Id. A plain string compare would wrongly reject e.g.
@@ -292,7 +309,7 @@ internal sealed class RelatedPageAddonService(
 	// case-insensitive audience matching, and it never lets a case-only variant slip past as a distinct cell. Only
 	// recognized audiences reach here (ValidateRequest rejects the rest first).
 	private static (string audience, string type) AudienceTypeCell(RelatedPageSpec page) =>
-		(IsPortalAudience(page) ? PortalRoleName : EmployeesRoleName,
+		(AudienceKey(page),
 			string.IsNullOrWhiteSpace(page.TypeColumnValue) ? null : page.TypeColumnValue.Trim().ToLowerInvariant());
 
 	// Parses the add-on's existing MetaData into a mutable object so the write can PRESERVE any top-level field

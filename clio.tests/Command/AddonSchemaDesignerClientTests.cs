@@ -13,6 +13,7 @@ namespace Clio.Tests.Command;
 public sealed class AddonSchemaDesignerClientTests {
 	private IApplicationClient _applicationClient = null!;
 	private IServiceUrlBuilder _serviceUrlBuilder = null!;
+	private ILogger _logger = null!;
 	private AddonSchemaDesignerClient _client = null!;
 
 	[SetUp]
@@ -25,7 +26,8 @@ public sealed class AddonSchemaDesignerClientTests {
 			.Returns("http://local/rest/WorkplaceService/ResetScriptCache");
 		_serviceUrlBuilder.Build("ServiceModel/WorkspaceExplorerService.svc/BuildConfiguration")
 			.Returns("http://local/ServiceModel/WorkspaceExplorerService.svc/BuildConfiguration");
-		_client = new AddonSchemaDesignerClient(_applicationClient, new JsonConverter(), _serviceUrlBuilder);
+		_logger = Substitute.For<ILogger>();
+		_client = new AddonSchemaDesignerClient(_applicationClient, new JsonConverter(), _serviceUrlBuilder, _logger);
 	}
 
 	private void StubResponse(string json) =>
@@ -156,19 +158,18 @@ public sealed class AddonSchemaDesignerClientTests {
 	}
 
 	[Test]
-	[Description("Surfaces a failed static-content rebuild instead of leaving the caller with a saved add-on but stale pages.")]
-	public void BuildConfiguration_ThrowsWhenRebuildReportsFailure() {
+	[Description("Warns (does not throw) on an explicit rebuild failure: BuildConfiguration runs AFTER the schema is already saved, so throwing would falsely report an already-committed operation as failed — the failure is logged as a warning instead.")]
+	public void BuildConfiguration_ShouldWarnNotThrow_WhenRebuildReportsFailure() {
 		// Arrange
-		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
-				Arg.Any<int>())
-			.Returns("{\"success\":false,\"errorInfo\":{\"message\":\"static build failed\"}}");
+		StubResponse("{\"success\":false,\"errorInfo\":{\"message\":\"static build failed\"}}");
 
 		// Act
 		Action act = () => _client.BuildConfiguration();
 
 		// Assert
-		act.Should().Throw<InvalidOperationException>().WithMessage("*static build failed*",
-			because: "a failed rebuild must be surfaced with the server message, not silently swallowed");
+		act.Should().NotThrow(
+			because: "the schema is already saved when the rebuild runs, so a post-save rebuild failure must not fail the operation");
+		_logger.Received(1).WriteWarning(Arg.Is<string>(message => message.Contains("static build failed")));
 	}
 
 	[Test]

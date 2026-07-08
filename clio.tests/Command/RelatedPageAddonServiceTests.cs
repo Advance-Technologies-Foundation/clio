@@ -1129,4 +1129,38 @@ public sealed class RelatedPageAddonServiceTests {
 			.Should().Be("1b0bc159-150a-e111-a31b-00155d04c01d",
 				because: "the typed value is stored normalized to canonical D format so runtime type matching succeeds");
 	}
+
+	[Test]
+	[Description("Rejects an MCP full-pages configuration where the portal audience has an add page but no portal default page — that audience could add a record but have no page to open one (the invariant the CLI enforces via --portal-add-page requires --portal-default-page).")]
+	public void Create_ShouldThrow_WhenAudienceHasAddButNoDefault() {
+		// Arrange / Act — a valid GENERAL base default (satisfies the base-default guard) plus a PORTAL add page with
+		// no portal default; this bypasses the CLI scalar check but must be rejected on the MCP path too.
+		Action act = () => _service.Create(new RelatedPageAddonRequest("Custom", "UsrDeliveryItem", new[] {
+			new RelatedPageSpec("UsrDeliveryItemFormPage", IsDefault: true),
+			new RelatedPageSpec("UsrDeliveryItemPortalAddPage", IsAdd: true, RoleName: "All external users")
+		}, null));
+
+		// Assert
+		act.Should().Throw<ArgumentException>().WithMessage("*add page but no default page*",
+			because: "a portal add page with no portal default leaves portal users a way to add a record but none to open one");
+		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().SaveSchema(default!);
+	}
+
+	[Test]
+	[Description("Accepts a portal audience that has BOTH a default and an add page (the --portal-default-page + --portal-add-page shape), so the add/default pairing guard does not over-reject a valid, complete portal set.")]
+	public void Create_ShouldAccept_WhenPortalHasBothDefaultAndAdd() {
+		// Arrange — general base default + portal default + portal add (three distinct pages).
+		StubSelectQueue(Rows(PackageUId), Rows(PageAUId), Rows(PageBUId), Rows("cc000000-0000-0000-0000-00000000000c"));
+
+		// Act
+		RelatedPageAddonResult result = _service.Create(new RelatedPageAddonRequest("Custom", "UsrDeliveryItem", new[] {
+			new RelatedPageSpec("UsrDeliveryItemFormPage", IsDefault: true),
+			new RelatedPageSpec("UsrDeliveryItemPortalPage", IsDefault: true, RoleName: "All external users"),
+			new RelatedPageSpec("UsrDeliveryItemPortalAddPage", IsAdd: true, RoleName: "All external users")
+		}, null));
+
+		// Assert
+		result.PageCount.Should().Be(3,
+			because: "a portal audience with both a default and an add page is a valid, complete set");
+	}
 }

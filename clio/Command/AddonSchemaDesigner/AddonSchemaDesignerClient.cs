@@ -15,7 +15,8 @@ internal interface IAddonSchemaDesignerClient {
 internal sealed class AddonSchemaDesignerClient(
 	IApplicationClient applicationClient,
 	IJsonConverter jsonConverter,
-	IServiceUrlBuilder serviceUrlBuilder)
+	IServiceUrlBuilder serviceUrlBuilder,
+	ILogger logger)
 	: IAddonSchemaDesignerClient {
 
 	private const string DesignerServicePath = "ServiceModel/AddonSchemaDesignerService.svc";
@@ -81,12 +82,13 @@ internal sealed class AddonSchemaDesignerClient(
 		string responseBody = applicationClient.ExecutePostRequest(
 			serviceUrlBuilder.Build("ServiceModel/WorkspaceExplorerService.svc/BuildConfiguration"),
 			string.Empty);
-		// This static-content rebuild is a SHARED, fire-and-forget refresh — the business-rule add-on path
-		// (BusinessRuleAddonService.AppendRules) calls it too, AFTER its rule is already saved. So a non-committal
-		// response — an empty body, a non-JSON page (e.g. an auth redirect), or a payload with no `success` flag —
-		// must NOT be treated as a failure: some environments return that on success, and failing here would wrongly
-		// report an already-committed business rule as failed. Surface ONLY an EXPLICIT `success:false` (a genuine
-		// rebuild failure), so a real failure still isn't left as stale pages in the UI.
+		// This static-content rebuild is a SHARED, fire-and-forget refresh that runs AFTER the schema has already
+		// been durably saved — both callers (BusinessRuleAddonService.AppendRules and RelatedPageAddonService.Create)
+		// invoke it post-save, and neither can undo the committed save. So a rebuild failure must NOT throw: a
+		// non-committal response (empty body, a non-JSON auth-redirect page, or a payload with no `success` flag) is
+		// tolerated silently, and even an EXPLICIT `success:false` is surfaced as a WARNING rather than an exception —
+		// throwing would report an already-committed create-*-business-rules / create-related-page-addon operation as
+		// failed (a false negative). The change is persisted; the client static-content rebuild may need a retry.
 		if (string.IsNullOrWhiteSpace(responseBody)) {
 			return;
 		}
@@ -97,8 +99,10 @@ internal sealed class AddonSchemaDesignerClient(
 			return; // non-JSON body (e.g. an HTML/redirect page) carries no explicit failure signal — tolerate it
 		}
 		if (response?.Success == false) {
-			throw new InvalidOperationException(
-				response.ErrorInfo?.Message ?? "WorkspaceExplorerService.svc/BuildConfiguration failed.");
+			logger.WriteWarning(
+				"WorkspaceExplorerService.svc/BuildConfiguration reported a failure AFTER the schema was already saved: "
+				+ (response.ErrorInfo?.Message ?? "static content rebuild failed")
+				+ ". The change is persisted; the client static-content rebuild may need a manual retry.");
 		}
 	}
 

@@ -10,11 +10,12 @@ using NUnit.Framework;
 
 /// <summary>
 /// Regression coverage for the SHARED <see cref="AddonSchemaDesignerClient.BuildConfiguration"/> behavior as seen
-/// through the pre-existing business-rule batch path (<see cref="BusinessRuleAddonService.AppendRules"/>). The
-/// related-page-addon PR changed <c>BuildConfiguration</c> from fire-and-forget to throw on an EXPLICIT
-/// <c>success:false</c>; because that client is shared, these tests pin what the business-rule consumer sees on a
-/// rebuild failure (the schema is already saved when the throw happens) and confirm the happy path is unaffected.
-/// A real <see cref="AddonSchemaDesignerClient"/> is used (not a mock) so the actual response parsing runs.
+/// through the pre-existing business-rule batch path (<see cref="BusinessRuleAddonService.AppendRules"/>).
+/// <c>BuildConfiguration</c> runs AFTER the schema is already saved, so an explicit <c>success:false</c> rebuild is
+/// logged as a WARNING, not thrown; because that client is shared, these tests pin that the business-rule consumer
+/// still reports success on a post-save rebuild failure (no false negative for an already-committed rule) and that
+/// the happy path is unaffected. A real <see cref="AddonSchemaDesignerClient"/> is used (not a mock) so the actual
+/// response handling runs.
 /// </summary>
 [TestFixture]
 [Category("Unit")]
@@ -28,18 +29,20 @@ public sealed class BusinessRuleAddonServiceTests {
 
 	private IApplicationClient _applicationClient = null!;
 	private IServiceUrlBuilder _serviceUrlBuilder = null!;
+	private ILogger _logger = null!;
 	private BusinessRuleAddonService _service = null!;
 
 	[SetUp]
 	public void SetUp() {
 		_applicationClient = Substitute.For<IApplicationClient>();
 		_serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		_logger = Substitute.For<ILogger>();
 		_serviceUrlBuilder.Build("ServiceModel/AddonSchemaDesignerService.svc").Returns(DesignerBase);
 		_serviceUrlBuilder.Build("/rest/WorkplaceService/ResetScriptCache").Returns(ResetCacheUrl);
 		_serviceUrlBuilder.Build("ServiceModel/WorkspaceExplorerService.svc/BuildConfiguration").Returns(BuildConfigUrl);
-		// A REAL AddonSchemaDesignerClient so the actual BuildConfiguration success:false -> throw parsing runs,
-		// exercised through the business-rule batch path (AppendRules), not a mock that no-ops the rebuild.
-		AddonSchemaDesignerClient addonClient = new(_applicationClient, new JsonConverter(), _serviceUrlBuilder);
+		// A REAL AddonSchemaDesignerClient so the actual BuildConfiguration success:false handling runs, exercised
+		// through the business-rule batch path (AppendRules), not a mock that no-ops the rebuild.
+		AddonSchemaDesignerClient addonClient = new(_applicationClient, new JsonConverter(), _serviceUrlBuilder, _logger);
 		_service = new BusinessRuleAddonService(addonClient);
 	}
 
@@ -61,8 +64,8 @@ public sealed class BusinessRuleAddonServiceTests {
 		new() { Name = "UsrRule1", UId = "33333333-3333-3333-3333-333333333333", Caption = "Rule 1" };
 
 	[Test]
-	[Description("Regression (shared BuildConfiguration path): an explicit success:false rebuild surfaces as a failure through AppendRules EVEN THOUGH SaveSchema already persisted the rule — the 'schema saved, rebuild failed' surface the business-rule batch (StampOutcome) reports to its caller, introduced by this PR's BuildConfiguration strictness change.")]
-	public void AppendRules_ShouldThrowAfterSaving_WhenRebuildReportsExplicitFailure() {
+	[Description("Regression (shared BuildConfiguration path): an explicit success:false rebuild does NOT fail AppendRules — the rule was already persisted by SaveSchema, so a post-save rebuild failure is logged as a warning and the batch still returns success (no false-negative for an already-committed rule).")]
+	public void AppendRules_ShouldCompleteAndWarn_WhenRebuildReportsExplicitFailure() {
 		// Arrange — GetSchema / SaveSchema / ResetScriptCache succeed; only the SHARED BuildConfiguration fails.
 		Stub(GetSchemaUrl, """{"success":true,"schema":{"metaData":"{}","resources":[]}}""");
 		Stub(SaveSchemaUrl, """{"success":true,"value":true}""");
@@ -70,16 +73,14 @@ public sealed class BusinessRuleAddonServiceTests {
 		Stub(BuildConfigUrl, """{"success":false,"errorInfo":{"message":"static build failed"}}""");
 
 		// Act
-		Action act = () => _service.AppendRules(Request(), new[] { Rule() });
+		BusinessRuleCreateResult result = _service.AppendRules(Request(), new[] { Rule() });
 
-		// Assert
-		act.Should().Throw<InvalidOperationException>().WithMessage("*static build failed*",
-			because: "an explicit success:false rebuild must surface as a failure through the shared AppendRules path");
-		// The throw happens AFTER the rule was persisted: SaveSchema ran before BuildConfiguration failed, so the
-		// batch reports a failure for an already-saved rule (rebuild-only failure, not 'nothing saved').
+		// Assert — the rule was already saved (SaveSchema ran before the rebuild), so the batch reports success and
+		// the post-save rebuild failure is surfaced only as a warning, not as a thrown failure.
+		result.RuleName.Should().Be("UsrRule1",
+			because: "a post-save rebuild failure must not fail an already-committed rule (no false negative)");
+		_logger.Received(1).WriteWarning(Arg.Is<string>(message => message.Contains("static build failed")));
 		_applicationClient.Received(1).ExecutePostRequest(SaveSchemaUrl, Arg.Any<string>(),
-			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
-		_applicationClient.Received(1).ExecutePostRequest(BuildConfigUrl, Arg.Any<string>(),
 			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
