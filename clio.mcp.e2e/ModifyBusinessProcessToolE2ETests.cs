@@ -26,6 +26,7 @@ namespace Clio.Mcp.E2E;
 [AllureNUnit]
 [AllureFeature(ModifyBusinessProcessTool.ModifyBusinessProcessToolName)]
 [NonParallelizable]
+[Category(ProcessDesignerE2EGate.CategoryName)]
 public sealed class ModifyBusinessProcessToolE2ETests {
 
 	private const string ToolName = ModifyBusinessProcessTool.ModifyBusinessProcessToolName;

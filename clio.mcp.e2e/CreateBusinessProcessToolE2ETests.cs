@@ -24,6 +24,7 @@ namespace Clio.Mcp.E2E;
 [AllureNUnit]
 [AllureFeature(CreateBusinessProcessTool.CreateBusinessProcessToolName)]
 [NonParallelizable]
+[Category(ProcessDesignerE2EGate.CategoryName)]
 public sealed class CreateBusinessProcessToolE2ETests {
 
 	private const string ToolName = CreateBusinessProcessTool.CreateBusinessProcessToolName;
