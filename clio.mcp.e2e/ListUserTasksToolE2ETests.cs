@@ -22,6 +22,7 @@ namespace Clio.Mcp.E2E;
 [AllureNUnit]
 [AllureFeature(ListUserTasksTool.ListUserTasksToolName)]
 [NonParallelizable]
+[Category(ProcessDesignerE2EGate.CategoryName)]
 public sealed class ListUserTasksToolE2ETests {
 
 	private const string ToolName = ListUserTasksTool.ListUserTasksToolName;
