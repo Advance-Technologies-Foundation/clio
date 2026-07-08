@@ -37,11 +37,12 @@ public class ModifyBusinessProcessTool(
 		 + "referenceSchema for a Lookup to an object e.g. City, or typeFromElement + typeFromElementParameter to "
 		 + "copy an element parameter's exact type), addMapping (with a 'mapping': target {elementName, "
 		 + "elementParameter} or {targetProcessParameter}, and one source of {sourceElement, sourceElementParameter} "
-		 + "| processParameter | value | expression; parameter-to-parameter mappings require compatible types), "
+		 + "| processParameter | value | expression; parameter-to-parameter mappings require compatible types; "
+		 + "re-mapping an already-bound target overwrites it in place — there is no removeMapping/clear op), "
 		 + "setParameter (with 'parameterName' = the target parameter by name/UId and 'parameterUpdate' = any of "
-		 + "caption/description/code/direction/referenceSchema/value, updated in place — a data-type change is "
-		 + "rejected), removeParameter (with 'parameterName'; blocked when another parameter or an element mapping "
-		 + "still references it), setFilter (elementName + a 'filter': {object, logicalOperation:and|or, "
+		 + "caption/description/code/direction/referenceSchema (re-targets an existing Lookup only)/value, updated "
+		 + "in place — a data-type change is rejected), removeParameter (with 'parameterName'; blocked when another "
+		 + "parameter or an element mapping still references it), setFilter (elementName + a 'filter': {object, logicalOperation:and|or, "
 		 + "conditions:[{column (may be a lookup dot-path), comparison:equal|notEqual|greater|less|contains|isNull|..., "
 		 + "one of value|processParameter|elementParameter|expression|macro (+macroArgument), optional datePart}], groups?} — on a signalStart restricts the "
 		 + "record trigger (there its right side must be value/macro/datePart only, NOT a parameter reference — the "
@@ -49,7 +50,8 @@ public class ModifyBusinessProcessTool(
 		 + "Operations apply in order; any failure aborts the edit (nothing is saved). "
 		 + "Use describe-business-process to inspect the current elements/names first. May remove elements — destructive. "
 		 + "Removals are NOT structurally validated (a broken graph can still be saved) and every edit re-lays-out the "
-		 + "whole diagram — read the 'Modifying an existing process' rules in get-guidance name=process-modeling first.")]
+		 + "whole diagram — read the 'Modifying an existing process' rules in get-guidance name=process-modeling "
+		 + "first. Requires the ProcessDesignService (clioprocessbuilder) package on the target environment.")]
 	public CommandExecutionResult ModifyBusinessProcess(
 		[Description("modify-business-process parameters")] [Required] ModifyBusinessProcessArgs args
 	) {

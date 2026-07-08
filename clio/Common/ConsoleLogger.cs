@@ -138,13 +138,20 @@ public class ConsoleLogger : ILogger, IDisposable{
 		return AddTimeStampToOutput ? DateTime.Now.ToString("HH:mm:ss") + " " : string.Empty;
 	}
 
+	// In --json mode, decorated diagnostic lines ([INF]/[WAR]/[DBG]) are routed to stderr so stdout
+	// carries exactly one JSON object (the command envelope, emitted via WriteLine). Errors already go
+	// to stderr, and undecorated WriteLine (the envelope) stays on stdout.
+	private static System.IO.TextWriter DecoratedLogSink =>
+		Program.IsJsonOutputMode ? Console.Error : Console.Out;
+
 	private void WriteInfoInternal(string value){
 		string linePrefix = GetLinePrefix("[INF]");
 		if (!Program.IsMcpServerMode) {
+			System.IO.TextWriter sink = DecoratedLogSink;
 			Console.ForegroundColor = ConsoleColor.Green;
-			Console.Out.Write(linePrefix);
+			sink.Write(linePrefix);
 			Console.ForegroundColor = _defaultConsoleColor;
-			Console.Out.WriteLine(value);
+			sink.WriteLine(value);
 		}
 		_logFileWriter?.WriteLine($"{linePrefix}{value}");
 		WriteToAdditionalSinks($"{linePrefix}{value}");
@@ -154,10 +161,11 @@ public class ConsoleLogger : ILogger, IDisposable{
 	private void PrintDebugInternal(string value){
 		string linePrefix = GetLinePrefix("[DBG]");
 		if (!Program.IsMcpServerMode) {
+			System.IO.TextWriter sink = DecoratedLogSink;
 			Console.ForegroundColor = ConsoleColor.DarkYellow;
-			Console.Out.Write(linePrefix);
+			sink.Write(linePrefix);
 			Console.ForegroundColor = _defaultConsoleColor;
-			Console.Out.WriteLine(value);
+			sink.WriteLine(value);
 		}
 		_logFileWriter?.WriteLine($"{linePrefix}{value}");
 		WriteToAdditionalSinks($"{linePrefix}{value}");
@@ -177,10 +185,11 @@ public class ConsoleLogger : ILogger, IDisposable{
 	private void WriteWarningInternal(string value){
 		string linePrefix = GetLinePrefix("[WAR]");
 		if (!Program.IsMcpServerMode) {
+			System.IO.TextWriter sink = DecoratedLogSink;
 			Console.ForegroundColor = ConsoleColor.DarkYellow;
-			Console.Out.Write(linePrefix);
+			sink.Write(linePrefix);
 			Console.ForegroundColor = _defaultConsoleColor;
-			Console.Out.WriteLine(value);
+			sink.WriteLine(value);
 		}
 		_logFileWriter?.WriteLine($"{linePrefix}{value}");
 		WriteToAdditionalSinks($"{linePrefix}{value}");

@@ -56,6 +56,10 @@ clio create-page [options]
 --entity-schema-name               Optional entity schema to record in the
                                    new page dependencies
 
+--optional-properties              Optional JSON array of {key, value} objects
+                                   seeded into the new schema optionalProperties.
+                                   Used to create a dashboard (see Notes).
+
 --caption-culture                  Override the culture for the generated page
                                    caption (e.g. en-US, uk-UA). Precedence:
                                    override > the connected user's profile
@@ -83,11 +87,16 @@ create the Freedom UI page from the BlankPageTemplate parent
 
 clio create-page --schema-name UsrDemo_Mobile --template BlankMobilePageTemplate --package-name Custom -e dev
 create a mobile Freedom UI page from the BlankMobilePageTemplate parent
+
+clio create-page --schema-name UsrDemo_Dashboard --template BaseDashboardTemplate --package-name Custom --optional-properties "[{\"key\":\"DashboardsEntitySchemaName\",\"value\":\"Contact\"},{\"key\":\"DashboardsElementName\",\"value\":\"Dashboards\"},{\"key\":\"DashboardsClientUnitSchemaUId\",\"value\":\"<root-schema-uid>\"}]" -e dev
+create a dashboard from BaseDashboardTemplate and seed its link-back optional properties
 ```
 
 ## Notes
 
 - The page caption is stored under the resolved culture (`--caption-culture` override > the connected user's profile culture > `en-US`). A caption whose script does not match a Latin-script culture (for example Cyrillic under `en-US`) is rejected with an actionable error; pass `--caption-culture` to author the caption in a specific language.
+- `--optional-properties` accepts a JSON array of `{key, value}` objects that are written verbatim into the new schema's `optionalProperties`. A malformed payload fails before any remote call.
+- To create a **dashboard**, use `--template BaseDashboardTemplate` and pass its link-back properties (`DashboardsEntitySchemaName`, `DashboardsElementName`, `DashboardsClientUnitSchemaUId`) through `--optional-properties`. When the host page has replacements, `DashboardsClientUnitSchemaUId` must be the root schema's UId. MCP callers should read the `dashboard-creation` guidance (`get-guidance name=dashboard-creation`) for how to retrieve each value.
 
 ## Reporting Bugs
 

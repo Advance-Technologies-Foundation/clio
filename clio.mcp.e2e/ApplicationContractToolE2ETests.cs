@@ -6,7 +6,6 @@ using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
-using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E;
@@ -22,22 +21,22 @@ public sealed class ApplicationContractToolE2ETests : McpContractFixtureBase {
 	private const string DeleteToolName = ApplicationDeleteTool.ToolName;
 
 	[Test]
-	[Description("Advertises delete-app in the MCP tool list so callers can discover the uninstall tool.")]
+	[Description("Exposes delete-app via the get-tool-contract compact index so callers can discover the uninstall tool on the lazy surface.")]
 	[AllureFeature(DeleteToolName)]
 	[AllureTag(DeleteToolName)]
-	[AllureName("Application delete tool is advertised by the MCP server")]
-	[AllureDescription("Starts the real clio MCP server and verifies that delete-app appears in the advertised tool manifest.")]
+	[AllureName("Application delete tool is discoverable on the lazy surface")]
+	[AllureDescription("Starts the real clio MCP server and verifies that delete-app is discoverable via the get-tool-contract compact index.")]
 	public async Task ApplicationDelete_Should_Be_Listed_By_Mcp_Server() {
 		// Arrange
 		await using ArrangeContext arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
-		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		IEnumerable<string> toolNames = tools.Select(tool => tool.Name);
+		IReadOnlyCollection<string> toolNames =
+			await arrangeContext.Session.ListReachableToolNamesAsync(arrangeContext.CancellationTokenSource.Token);
 
 		// Assert
 		toolNames.Should().Contain(DeleteToolName,
-			because: "delete-app must be advertised so MCP callers can discover the uninstall tool");
+			because: $"the {DeleteToolName} MCP tool must be discoverable on the lazy surface (get-tool-contract compact index) even though it is not resident in tools/list, so MCP callers can discover the uninstall tool");
 	}
 
 	[Test]

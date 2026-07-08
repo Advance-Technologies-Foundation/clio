@@ -159,6 +159,50 @@ public sealed class ProcessModelingGuidanceResourceTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The guidance discloses the surviving signal-start 'modified' limit: it fires on any field change and cannot be restricted to specific tracked-change columns, with an instruction to confirm before building.")]
+	public void GetGuide_ShouldDiscloseSignalTriggerLimits_WhenRead() {
+		// Act
+		string text = new ProcessModelingGuidanceResource().GetGuide().Should().BeOfType<TextResourceContents>().Subject.Text;
+
+		// Assert
+		text.Should().Contain("column-level restriction cannot be built yet",
+			because: "a signalStart record filter IS buildable now, but the agent must still disclose that WHICH columns count as a change cannot be restricted");
+		text.Should().Contain("ANY field change",
+			because: "the agent must disclose that a 'modified' trigger cannot be limited to specific columns");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The guidance teaches that unbound element inputs are omitted from describe output and that addMapping overwrites in place with no clear/unbind operation.")]
+	public void GetGuide_ShouldTeachUnboundInputAndOverwriteRules_WhenRead() {
+		// Act
+		string text = new ProcessModelingGuidanceResource().GetGuide().Should().BeOfType<TextResourceContents>().Subject.Text;
+
+		// Assert
+		text.Should().Contain("UNBOUND element INPUT parameters",
+			because: "the agent must know absence from describe output does not mean the parameter does not exist");
+		text.Should().Contain("overwrites the binding",
+			because: "re-sending addMapping is the documented way to change a bound value");
+		text.Should().Contain("no removeMapping",
+			because: "the agent must disclose that clearing a binding is not supported instead of inventing an op");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The guidance spells out the concrete type-compatibility groups instead of a vague number-to-number shorthand.")]
+	public void GetGuide_ShouldCarryTypeCompatibilityGroups_WhenRead() {
+		// Act
+		string text = new ProcessModelingGuidanceResource().GetGuide().Should().BeOfType<TextResourceContents>().Subject.Text;
+
+		// Assert
+		text.Should().Contain("Integer maps ONLY to Integer",
+			because: "Integer is isolated server-side (ENG-92127 TC-05) and a number-to-number shorthand would wrongly promise Integer->Float");
+		text.Should().Contain("Guid source INTO a lookup target IS allowed",
+			because: "the Guid-into-lookup allowance is a useful capability the compatibility check permits");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("GuidanceCatalog exposes process-modeling so get-guidance can return it by canonical name.")]
 	public void GuidanceCatalog_ShouldIncludeProcessModelingEntry_WhenQueried() {
 		// Act

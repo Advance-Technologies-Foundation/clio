@@ -95,6 +95,130 @@ public class GetPkgListCommandTests {
 	}
 
 	[Test]
+	[Description("Execute should emit the unified BL-1 envelope (via FormatEnvelope) when --json is set without --legacy-form")]
+	public void Execute_ShouldEmitUnifiedEnvelope_WhenJsonWithoutLegacyForm() {
+		// Arrange
+		_packageListProvider.GetPackages().Returns(Array.Empty<PackageInfo>());
+		_jsonResponseFormater.FormatEnvelope(Arg.Any<string>(), Arg.Any<System.Collections.Generic.IEnumerable<PackageInfo>>())
+			.Returns("{\"schemaVersion\":\"1.0\"}");
+
+		// Act
+		int result = _command.Execute(new PkgListOptions { Json = true });
+
+		// Assert
+		result.Should().Be(0, because: "a successful listing returns exit code 0");
+		_jsonResponseFormater.Received(1).FormatEnvelope("list-packages",
+			Arg.Any<System.Collections.Generic.IEnumerable<PackageInfo>>());
+		_jsonResponseFormater.DidNotReceive().Format(Arg.Any<System.Collections.Generic.IEnumerable<PackageInfo>>());
+		_logger.Received(1).WriteLine("{\"schemaVersion\":\"1.0\"}");
+	}
+
+	[Test]
+	[Description("Execute should emit the legacy {value,success,errorInfo} shape (via Format) when --json --legacy-form is set")]
+	public void Execute_ShouldEmitLegacyShape_WhenJsonWithLegacyForm() {
+		// Arrange
+		_packageListProvider.GetPackages().Returns(Array.Empty<PackageInfo>());
+
+		// Act
+		int result = _command.Execute(new PkgListOptions { Json = true, LegacyForm = true });
+
+		// Assert
+		result.Should().Be(0, because: "a successful listing returns exit code 0 regardless of output shape");
+		_jsonResponseFormater.Received(1).Format(Arg.Any<System.Collections.Generic.IEnumerable<PackageInfo>>());
+		_jsonResponseFormater.DidNotReceive().FormatEnvelope(Arg.Any<string>(),
+			Arg.Any<System.Collections.Generic.IEnumerable<PackageInfo>>());
+	}
+
+	[Test]
+	[Description("Execute should emit an error envelope with a stable code (via FormatEnvelope) when --json is set and the provider throws")]
+	public void Execute_ShouldEmitErrorEnvelope_WhenJsonAndProviderThrows() {
+		// Arrange
+		_packageListProvider.GetPackages().Returns(_ => throw new Exception("boom"));
+
+		// Act
+		int result = _command.Execute(new PkgListOptions { Json = true });
+
+		// Assert
+		result.Should().Be(1, because: "a failure returns a non-zero exit code");
+		_jsonResponseFormater.Received(1).FormatEnvelope("list-packages",
+			Clio.Common.CommandErrorCodes.UnexpectedError, Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("Execute should use the legacy error path (WriteInfo + Format(exception)) when --json --legacy-form is set and the provider throws")]
+	public void Execute_ShouldUseLegacyErrorPath_WhenJsonLegacyFormAndProviderThrows() {
+		// Arrange
+		_packageListProvider.GetPackages().Returns(_ => throw new Exception("boom"));
+
+		// Act
+		int result = _command.Execute(new PkgListOptions { Json = true, LegacyForm = true });
+
+		// Assert
+		result.Should().Be(1, because: "a failure returns a non-zero exit code");
+		_jsonResponseFormater.Received(1).Format(Arg.Any<Exception>());
+		_jsonResponseFormater.DidNotReceive().FormatEnvelope(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("Execute should NOT emit any JSON (neither envelope nor legacy) when --json is not set — text output regression guard")]
+	public void Execute_ShouldNotEmitJson_WhenJsonNotSet() {
+		// Arrange
+		_packageListProvider.GetPackages().Returns(Array.Empty<PackageInfo>());
+
+		// Act
+		int result = _command.Execute(new PkgListOptions());
+
+		// Assert
+		result.Should().Be(0, because: "listing succeeds");
+		_jsonResponseFormater.DidNotReceive().FormatEnvelope(Arg.Any<string>(),
+			Arg.Any<System.Collections.Generic.IEnumerable<PackageInfo>>());
+		_jsonResponseFormater.DidNotReceive().Format(Arg.Any<System.Collections.Generic.IEnumerable<PackageInfo>>());
+	}
+
+	[Test]
+	[Description("Execute non-JSON with packages should render the table (Name/Version/Maintainer) and the summary line, without any JSON — AC#3/C1 golden for the non-empty table render")]
+	public void Execute_ShouldRenderTableAndSummary_WhenNonJsonWithPackages() {
+		// Arrange
+		var settings = new EnvironmentSettings { Uri = "https://example-host" };
+		var command = new GetPkgListCommand(settings, _packageListProvider, _jsonResponseFormater, _logger);
+		var package = new PackageInfo(
+			new Clio.Package.PackageDescriptor { Name = "FooPkg", PackageVersion = "1.2.3", Maintainer = "Acme" },
+			"path", new System.Collections.Generic.List<string>());
+		_packageListProvider.GetPackages().Returns(new[] { package });
+
+		// Act
+		int result = command.Execute(new PkgListOptions());
+
+		// Assert
+		result.Should().Be(0, because: "listing succeeds");
+		_logger.Received(1).WriteInfo(Arg.Is<string>(s =>
+			s != null && s.Contains("FooPkg") && s.Contains("1.2.3") && s.Contains("Acme")));
+		_logger.Received(1).WriteInfo("Find 1 packages in https://example-host");
+		_logger.DidNotReceive().WriteLine(Arg.Is<string>(s => s != null && s.Contains("schemaVersion")));
+		_jsonResponseFormater.DidNotReceive().FormatEnvelope(Arg.Any<string>(),
+			Arg.Any<System.Collections.Generic.IEnumerable<PackageInfo>>());
+	}
+
+	[Test]
+	[Description("Execute non-JSON should emit the exact 'Find N packages' summary line and no JSON — AC#3/C1 text-output regression guard for the changed json-branch")]
+	public void Execute_ShouldEmitExactSummaryLine_WhenNonJson() {
+		// Arrange
+		var settings = new EnvironmentSettings { Uri = "https://example-host" };
+		var command = new GetPkgListCommand(settings, _packageListProvider, _jsonResponseFormater, _logger);
+		_packageListProvider.GetPackages().Returns(Array.Empty<PackageInfo>());
+
+		// Act
+		int result = command.Execute(new PkgListOptions());
+
+		// Assert
+		result.Should().Be(0, because: "listing succeeds");
+		_logger.Received(1).WriteInfo("Find 0 packages in https://example-host");
+		_logger.DidNotReceive().WriteLine(Arg.Is<string>(s => s != null && s.Contains("schemaVersion")));
+		_jsonResponseFormater.DidNotReceive().FormatEnvelope(Arg.Any<string>(),
+			Arg.Any<System.Collections.Generic.IEnumerable<PackageInfo>>());
+	}
+
+	[Test]
 	[Description("Execute should log a user-friendly 'Cannot connect' message when the site is unreachable (connection refused)")]
 	public void Execute_ShouldLogFriendlyConnectMessage_WhenConnectionRefused() {
 		bool originalDebugMode = Program.IsDebugMode;

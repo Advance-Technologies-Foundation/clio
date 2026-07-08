@@ -33,7 +33,8 @@ public class CreateBusinessProcessTool(
 		 + "source object/filters/columns cannot be set yet, tell the user), caption, userTaskName?, signal?, "
 		 + "filter?}), flows[] ({source, target} of "
 		 + "element names), parameters[] ({name, type (a supported scalar or Lookup — other types rejected), "
-		 + "direction, caption, description?, value? (a literal constant default — not a formula)}; or "
+		 + "referenceSchema? (object name, e.g. City — makes it a Lookup), direction, caption, description?, "
+		 + "value? (a literal constant default — not a formula)}; or "
 		 + "typeFromElement + typeFromElementParameter to copy an element parameter's exact type), "
 		 + "and mappings[] (bind a target to a source — target is {elementName, "
 		 + "elementParameter} (an element input) or {targetProcessParameter} (a process parameter, e.g. expose an "
@@ -42,7 +43,7 @@ public class CreateBusinessProcessTool(
 		 + "require compatible types). To run the process when a record "
 		 + "is saved/added/changed, use a "
 		 + "signalStart element with signal:{entity:<EntityName>, on:added|modified|deleted} (one event) instead "
-		 + "of a page save handler. To fire that trigger only for matching records, add filter:{object, logicalOperation:and|or, conditions:[{column (entity column name, may be a lookup dot-path like Account.Code), comparison:equal|notEqual|greater|less|contains|isNull|..., and one of value|macro (a relative-date/system macro like Today/NextNDays + macroArgument), plus optional datePart (Year|Month|Day|... to compare a date's part against an integer value)}], groups?} to the signalStart element. A signalStart filter's right side must be a constant/macro/datePart — NOT a process/element parameter (the signal is evaluated before the process instance exists; the server rejects a parameter reference here). The server serializes the platform filter; never hand-write filter JSON. Use list-user-tasks to discover valid userTaskName values.")]
+		 + "of a page save handler. To fire that trigger only for matching records, add filter:{object, logicalOperation:and|or, conditions:[{column (entity column name, may be a lookup dot-path like Account.Code), comparison:equal|notEqual|greater|less|contains|isNull|..., and one of value|macro (a relative-date/system macro like Today/NextNDays + macroArgument), plus optional datePart (Year|Month|Day|... to compare a date's part against an integer value)}], groups?} to the signalStart element. A signalStart filter's right side must be a constant/macro/datePart — NOT a process/element parameter (the signal is evaluated before the process instance exists; the server rejects a parameter reference here). The server serializes the platform filter; never hand-write filter JSON. Read get-guidance name=process-modeling FIRST — the full descriptor contract (buildable slice, date/time and Lookup DEFAULT-value macro rules, mapping type-compatibility groups, formula policy, FSD caveat). Use list-user-tasks to discover valid userTaskName values. Requires the ProcessDesignService (clioprocessbuilder) package on the target environment.")]
 	public CommandExecutionResult CreateBusinessProcess(
 		[Description("create-business-process parameters")] [Required] CreateBusinessProcessArgs args
 	) {

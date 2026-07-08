@@ -12,7 +12,6 @@ using Clio.Command.ProcessModel;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using FluentAssertions;
-using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E;
@@ -33,19 +32,20 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	private const string CreateToolName = CreateBusinessProcessTool.CreateBusinessProcessToolName;
 
 	[Test]
-	[Description("Starts the real clio MCP server and verifies modify-business-process is advertised (hermetic).")]
+	[Description("Starts the real clio MCP server and verifies modify-business-process is discoverable via the get-tool-contract compact index (hermetic).")]
 	[AllureTag(ToolName)]
-	[AllureName("modify-business-process is advertised by the clio MCP server")]
+	[AllureName("modify-business-process is discoverable on the lazy surface of the clio MCP server")]
 	public async Task ModifyBusinessProcess_Should_Be_Advertised_By_Mcp_Server() {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: false);
 
 		// Act
-		IList<McpClientTool> tools = await context.Session.ListToolsAsync(context.CancellationTokenSource.Token);
+		IReadOnlyCollection<string> toolNames =
+			await context.Session.ListReachableToolNamesAsync(context.CancellationTokenSource.Token);
 
 		// Assert
-		tools.Select(tool => tool.Name).Should().Contain(ToolName,
-			because: "the modify-business-process tool must be discoverable on the real clio MCP server");
+		toolNames.Should().Contain(ToolName,
+			because: $"the {ToolName} MCP tool must be discoverable on the lazy surface (get-tool-contract compact index) even though it is not resident in tools/list");
 	}
 
 	[Test]
@@ -363,6 +363,65 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			because: "the rejection names the parameter whose value was invalid");
 	}
 
+	[Test]
+	[Description("Over the real MCP path: modify-business-process REJECTS an addMapping that maps a process parameter to itself, via the platform's pre-save interpretation validation (circular dependency); the edit is not persisted and the process survives.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process rejects a self-referential (circular) parameter mapping")]
+	public async Task ModifyBusinessProcess_Should_RejectSelfReferentialMapping_WithCircularDependency() {
+		// Arrange — build a valid process carrying a mappable process parameter
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpModCycleE2e{Guid.NewGuid():N}";
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildDescriptorWithSelfMappableParameter(processName)
+		});
+
+		// Act — map the process parameter to itself (a circular dependency), which validates a design-session instance
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = """[ { "op": "addMapping", "mapping": { "targetProcessParameter": "SelfRef", "processParameter": "SelfRef" } } ]"""
+		});
+
+		// Assert — the pre-save gate rejects the edit on the design instance (the build-path E2E covers a freshly built
+		// schema; this covers the modify path's GetDesignInstance state, a different schema state).
+		string callResultJson = JsonSerializer.Serialize(callResult);
+		callResultJson.Should().Contain("Process validation failed",
+			because: "the pre-save gate rejected the edit (clio-authored, culture-independent marker)");
+		callResultJson.Should().Contain("circular dependency",
+			because: "mapping a process parameter to itself is a circular dependency the platform rejects on save (English-culture sandbox)");
+		// The rejected edit is discarded and the design session released — the process itself still exists and reads back.
+		DescribeProcessResult described = ParseDescribeResult(await CallToolAsync(context, DescribeProcessTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName
+			}));
+		// ParseDescribeResult already throws unless the process reads back (proving it survived); assert a DISCRIMINATING
+		// value — the parameter is still unbound (source "None"), so the rejected self-mapping was NOT persisted.
+		DescribedParameter selfRef = described.Parameters.Single(parameter => parameter.Name == "SelfRef");
+		selfRef.Source.Should().Be("None",
+			because: "a rejected modify discards the edit — the process survives and SelfRef stays unbound (the self-mapping was not persisted)");
+	}
+
+	private static string BuildDescriptorWithSelfMappableParameter(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Modify Cycle E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "StartEvent1", "target": "EndEvent1" }
+		  ],
+		  "parameters": [
+		    { "name": "SelfRef", "type": "Text", "direction": "Variable" }
+		  ]
+		}
+		""";
+
 	private static string SetParameterOperations() =>
 		"""
 		[ { "op": "setParameter", "parameterName": "Amount", "parameterUpdate": { "value": "7", "caption": "Amount due", "direction": "Out" } } ]
@@ -466,9 +525,10 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 
 	private static async Task<CallToolResult> CallToolAsync(ArrangeContext context, string toolName,
 		Dictionary<string, object?> args) {
-		IList<McpClientTool> tools = await context.Session.ListToolsAsync(context.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(toolName,
-			because: $"the {toolName} tool must be advertised before the end-to-end call");
+		IReadOnlyCollection<string> toolNames =
+			await context.Session.ListReachableToolNamesAsync(context.CancellationTokenSource.Token);
+		toolNames.Should().Contain(toolName,
+			because: $"the {toolName} tool must be discoverable via the get-tool-contract compact index before the end-to-end call");
 		return await context.Session.CallToolAsync(
 			toolName, new Dictionary<string, object?> { ["args"] = args }, context.CancellationTokenSource.Token);
 	}

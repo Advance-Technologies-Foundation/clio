@@ -58,7 +58,7 @@ public sealed class ShowWebAppListToolTests
 				}
 			}
 		});
-		ShowAppListCommand command = new(settingsRepository, logger);
+		ShowAppListCommand command = new(settingsRepository, logger, Substitute.For<IJsonResponseFormater>());
 		ShowWebAppListTool tool = new(command);
 
 		// Act

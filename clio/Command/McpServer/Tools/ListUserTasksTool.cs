@@ -26,7 +26,8 @@ public class ListUserTasksTool(
 		 OpenWorld = false),
 	 Description("List the user-facing user tasks available on a Creatio environment (the process designer "
 		 + "palette), including custom ones. Returns each task's name and UId; pass a name as a userTaskName "
-		 + "on a userTask element when building a process with create-business-process.")]
+		 + "on a userTask element when building a process with create-business-process. Requires the "
+		 + "ProcessDesignService (clioprocessbuilder) package on the target environment.")]
 	public CommandExecutionResult ListUserTasks(
 		[Description("list-user-tasks parameters")] [Required] ListUserTasksArgs args
 	) {

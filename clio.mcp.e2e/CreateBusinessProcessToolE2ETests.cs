@@ -11,7 +11,6 @@ using Clio.Command.McpServer.Tools.ProcessDesigner;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using FluentAssertions;
-using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E;
@@ -45,19 +44,20 @@ public sealed class CreateBusinessProcessToolE2ETests {
 	private const string ElementTargetInput = "UserId";
 
 	[Test]
-	[Description("Starts the real clio MCP server and verifies create-business-process is advertised (hermetic).")]
+	[Description("Starts the real clio MCP server and verifies create-business-process is discoverable via the get-tool-contract compact index (hermetic).")]
 	[AllureTag(ToolName)]
-	[AllureName("create-business-process is advertised by the clio MCP server")]
+	[AllureName("create-business-process is discoverable on the lazy surface")]
 	public async Task CreateBusinessProcess_Should_Be_Advertised_By_Mcp_Server() {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: false);
 
 		// Act
-		IList<McpClientTool> tools = await context.Session.ListToolsAsync(context.CancellationTokenSource.Token);
+		IReadOnlyCollection<string> toolNames =
+			await context.Session.ListReachableToolNamesAsync(context.CancellationTokenSource.Token);
 
 		// Assert
-		tools.Select(tool => tool.Name).Should().Contain(ToolName,
-			because: "the create-business-process tool must be discoverable on the real clio MCP server");
+		toolNames.Should().Contain(ToolName,
+			because: $"the {ToolName} MCP tool must be discoverable on the lazy surface (get-tool-contract compact index) even though it is not resident in tools/list");
 	}
 
 	[Test]
@@ -182,6 +182,38 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		string callResultJson = JsonSerializer.Serialize(callResult);
 		callResultJson.Should().Contain("incompatible",
 			because: "mapping a Boolean element output into an Integer process parameter must be rejected by the type-compatibility check");
+	}
+
+	[Test]
+	[Description("Over the real MCP path, create-business-process REJECTS a self-referential parameter mapping (a process parameter mapped to itself) with the platform's circular-dependency validation — the pre-save interpretation-validation gate, which the per-mapping type check cannot catch.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process rejects a self-referential (circular) parameter mapping")]
+	public async Task CreateBusinessProcess_Should_RejectSelfReferentialMapping_WithCircularDependency() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpCycleE2e{Guid.NewGuid():N}";
+		string descriptor = BuildSelfReferentialMappingDescriptor(processName);
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = descriptor
+		});
+
+		// Assert — the pre-save platform interpretation-validation gate rejects the self-referential mapping.
+		// Requires a stand whose clioprocessbuilder package includes the pre-save validation gate.
+		string callResultJson = JsonSerializer.Serialize(callResult);
+		// Primary, culture-stable: the clio-authored prefix that ONLY the gate emits (ProcessSchemaValidator) — proves
+		// the gate fired regardless of the stand's profile culture (the platform's own message below is localizable).
+		callResultJson.Should().Contain("Process validation failed",
+			because: "the pre-save gate rejected the schema (clio-authored, culture-independent marker)");
+		// Secondary: the specific platform rule. Platform-localized text, so this holds on an English-culture sandbox.
+		callResultJson.Should().Contain("circular dependency",
+			because: "a process parameter mapped to itself forms a circular dependency the platform rejects on save (a case the per-mapping type check does not detect)");
+		// The rejected build must leave NO orphaned schema — describe reports the clio-owned 'was not found' message.
+		string describeJson = JsonSerializer.Serialize(await DescribeAsync(context, processName));
+		describeJson.Should().Contain("was not found",
+			because: "a rejected build is rolled back, leaving no orphaned schema on the stand");
 	}
 
 	[Test]
@@ -527,6 +559,31 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		}
 		""";
 
+	// A self-referential parameter mapping — a process parameter mapped to ITSELF — forms a
+	// circular dependency the platform interpretation validator rejects on save; the pre-save gate
+	// (ProcessSchemaValidator -> GetProcessValidationResult) surfaces that rejection instead of persisting it.
+	private static string BuildSelfReferentialMappingDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Self-Map E2E",
+		  "packageName": "Custom",
+		  "parameters": [
+		    { "name": "SelfRef", "type": "Text", "direction": "Variable" }
+		  ],
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "StartEvent1", "target": "EndEvent1" }
+		  ],
+		  "mappings": [
+		    { "targetProcessParameter": "SelfRef", "processParameter": "SelfRef" }
+		  ]
+		}
+		""";
+
 	// ENG-92127 (AC#1): one element's OUTPUT into ANOTHER element's INPUT. performTask (ActivityUserTask) exposes
 	// the Guid output ActivityResult, which flows into CheckCanExecuteOperationUserTask's Guid input UserId
 	// (Guid<->Guid). The source element precedes the target in the flow so its output exists first.
@@ -554,9 +611,10 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		""";
 
 	private static async Task<CallToolResult> CallToolAsync(ArrangeContext context, Dictionary<string, object?> args) {
-		IList<McpClientTool> tools = await context.Session.ListToolsAsync(context.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(ToolName,
-			because: "the create-business-process tool must be advertised before the end-to-end call");
+		IReadOnlyCollection<string> toolNames =
+			await context.Session.ListReachableToolNamesAsync(context.CancellationTokenSource.Token);
+		toolNames.Should().Contain(ToolName,
+			because: "the create-business-process tool must be discoverable via the get-tool-contract compact index before the end-to-end call");
 		return await context.Session.CallToolAsync(
 			ToolName, new Dictionary<string, object?> { ["args"] = args }, context.CancellationTokenSource.Token);
 	}

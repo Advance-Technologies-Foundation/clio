@@ -46,7 +46,7 @@ public sealed class InstallGateTool(
 /// </summary>
 public sealed record InstallGateArgs(
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Registered clio environment name")]
+	[property: Description(McpToolDescriptions.EnvironmentName)]
 	[property: Required]
 	string EnvironmentName
 );
