@@ -495,6 +495,42 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("Returns valid=false for a mobile JSON body whose viewConfigDiff trips the Creatio differ: a child insert targets a parent slot (itemLayout) the in-diff parent does not declare, so the differ raises the not-a-container error via MobileDiffApplyValidator.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page rejects a mobile body that trips the differ (not a container)")]
+	[AllureDescription("Sends a mobile JSON body whose viewConfigDiff inserts a crt.ListItem into an itemLayout slot the parent crt.List never declares, and verifies validate-page surfaces the server-faithful 'is not a container for other items' differ error end-to-end.")]
+	public async Task PageValidateTool_Should_Reject_Mobile_Body_That_Trips_The_Differ() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string mobileBodyWithBadDiff = """
+			{
+			  "viewConfigDiff": [
+			    { "operation": "insert", "name": "ProductsList", "parentName": "ProductsListContainer", "propertyName": "items",
+			      "values": { "type": "crt.List", "items": "$ProductsList" } },
+			    { "operation": "insert", "name": "ProductsList_ListItem", "parentName": "ProductsList", "propertyName": "itemLayout",
+			      "values": { "type": "crt.ListItem", "title": "$PDS_Name" } }
+			  ],
+			  "viewModelConfigDiff": [],
+			  "modelConfigDiff": []
+			}
+			""";
+
+		// Act
+		PageValidateResponse response = await CallAsync(context.Session, context.CancellationTokenSource.Token, mobileBodyWithBadDiff);
+
+		// Assert
+		response.Valid.Should().BeFalse(
+			because: "the parent crt.List does not declare an 'itemLayout' slot, so the Creatio differ rejects the child insert");
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		response.Validation!.Errors.Should().NotBeNullOrEmpty(
+			because: "the differ failure must be surfaced as an actionable validation error");
+		response.Validation.Errors!.Should().Contain(
+			e => e.Contains("ProductsList") && e.Contains("is not a container for other items"),
+			because: "validate-page must surface the server-faithful differ exception so the agent fixes the diff before writing");
+	}
+
+	[Test]
 	[Description("Returns valid=false for a mobile JSON body that contains a 'validators' section.")]
 	[AllureTag(ToolName)]
 	[AllureName("validate-page rejects mobile body with 'validators' key")]
