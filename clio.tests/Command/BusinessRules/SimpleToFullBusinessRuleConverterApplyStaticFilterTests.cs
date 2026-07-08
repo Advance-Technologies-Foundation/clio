@@ -7,6 +7,7 @@ using Clio.Command.BusinessRules.Filters.Schema;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
+using Clio.Command.BusinessRules.Converters;
 
 namespace Clio.Tests.Command.BusinessRules;
 

@@ -35,7 +35,7 @@ flowchart LR
                 Validator["BusinessRuleValidator"]
                 Converter["SimpleToFullBusinessRuleConverter"]
                 Reader["FullToSimpleBusinessRuleConverter"]
-                Grafter["BusinessRuleIdentityGrafter"]
+                Mergeer["BusinessRuleIdentityMerger"]
             end
 
             AddonService["BusinessRuleAddonService"]
@@ -234,7 +234,7 @@ add-on pipeline:
   `FullToSimpleFilterConverter` (the inverse of `SimpleToFullFilterConverter`) to decompile the
   persisted ESQ envelope back into the friendly `filter` object.
 - `BusinessRuleAddonService.UpdateRules` matches rules by name and replaces them with
-  freshly converted metadata; `BusinessRuleIdentityGrafter` preserves the existing rule,
+  freshly converted metadata; `BusinessRuleIdentityMerger` preserves the existing rule,
   case, condition-group, and trigger uIds (and re-anchors regenerated child rules) so the
   platform stores a short diff. Caller-supplied block uIds are honored by the converter.
 - `BusinessRuleAddonService.DeleteRules` removes rules by name, cascading to

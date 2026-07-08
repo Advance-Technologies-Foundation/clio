@@ -7,7 +7,7 @@ using Clio.Command.AddonSchemaDesigner;
 using Clio.Command.EntitySchemaDesigner;
 using static Clio.Command.BusinessRules.BusinessRuleConstants;
 
-namespace Clio.Command.BusinessRules;
+namespace Clio.Command.BusinessRules.Converters;
 
 internal static class FullToSimpleBusinessRuleConverter {
 

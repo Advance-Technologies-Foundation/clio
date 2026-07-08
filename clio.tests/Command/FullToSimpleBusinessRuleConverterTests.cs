@@ -8,6 +8,7 @@ using Clio.Command.BusinessRules;
 using Clio.Command.EntitySchemaDesigner;
 using FluentAssertions;
 using NUnit.Framework;
+using Clio.Command.BusinessRules.Converters;
 
 namespace Clio.Tests.Command;
 

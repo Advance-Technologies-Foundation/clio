@@ -8,7 +8,7 @@ using Clio.Command.EntitySchemaDesigner;
 using static Clio.Command.BusinessRules.BusinessRuleConstants;
 using static Clio.Command.BusinessRules.BusinessRuleHelpers;
 
-namespace Clio.Command.BusinessRules;
+namespace Clio.Command.BusinessRules.Converters;
 
 /// <summary>
 /// Converts validated business-rule definitions into add-on metadata DTOs.

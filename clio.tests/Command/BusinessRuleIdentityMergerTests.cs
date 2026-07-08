@@ -9,7 +9,7 @@ namespace Clio.Tests.Command;
 
 [TestFixture]
 [Property("Module", "Command")]
-public sealed class BusinessRuleIdentityGrafterTests {
+public sealed class BusinessRuleIdentityMergerTests {
 
 	private const string ExistingRuleUId = "11111111-1111-1111-1111-111111111111";
 	private const string ExistingCaseUId = "22222222-2222-2222-2222-222222222222";
@@ -18,7 +18,7 @@ public sealed class BusinessRuleIdentityGrafterTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Stamps the existing persisted rule uId onto the freshly generated parent rule so the platform stores a short diff instead of a new rule.")]
-	public void Graft_Should_Preserve_Existing_Rule_UId_When_Replacing_Rule() {
+	public void Merge_Should_Preserve_Existing_Rule_UId_When_Replacing_Rule() {
 		// Arrange
 		JsonObject existingRule = CreateExistingRule();
 		BusinessRuleMetadataDto generatedParent = CreateGeneratedRule("Rule_A");
@@ -26,7 +26,7 @@ public sealed class BusinessRuleIdentityGrafterTests {
 
 		// Act
 		IReadOnlyList<BusinessRuleMetadataDto> grafted =
-			BusinessRuleIdentityGrafter.Graft(existingRule, [generatedParent], requestedEnabled: null);
+			BusinessRuleIdentityMerger.Merge(existingRule, [generatedParent], requestedEnabled: null);
 
 		// Assert
 		grafted[0].UId.Should().Be(ExistingRuleUId,
@@ -41,7 +41,7 @@ public sealed class BusinessRuleIdentityGrafterTests {
 	[TestCase(true, false, false)]
 	[Category("Unit")]
 	[Description("Preserves the existing enabled flag when the caller omits it and applies the caller's explicit enabled intent when provided.")]
-	public void Graft_Should_Resolve_Enabled_From_Request_Or_Existing_Rule(
+	public void Merge_Should_Resolve_Enabled_From_Request_Or_Existing_Rule(
 		bool existingEnabled,
 		bool? requestedEnabled,
 		bool expectedEnabled) {
@@ -51,7 +51,7 @@ public sealed class BusinessRuleIdentityGrafterTests {
 
 		// Act
 		IReadOnlyList<BusinessRuleMetadataDto> grafted =
-			BusinessRuleIdentityGrafter.Graft(existingRule, [generatedParent], requestedEnabled);
+			BusinessRuleIdentityMerger.Merge(existingRule, [generatedParent], requestedEnabled);
 
 		// Assert
 		grafted[0].Enabled.Should().Be(expectedEnabled,
@@ -61,7 +61,7 @@ public sealed class BusinessRuleIdentityGrafterTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Stamps the existing case uId and top-level group-condition uId onto the generated single case so unchanged case structure keeps stable identity.")]
-	public void Graft_Should_Graft_Case_And_Group_Condition_UIds_When_Existing_Rule_Has_Single_Case() {
+	public void Merge_Should_Merge_Case_And_Group_Condition_UIds_When_Existing_Rule_Has_Single_Case() {
 		// Arrange
 		JsonObject existingRule = CreateExistingRule();
 		BusinessRuleMetadataDto generatedParent = CreateGeneratedRule("Rule_A");
@@ -70,7 +70,7 @@ public sealed class BusinessRuleIdentityGrafterTests {
 
 		// Act
 		IReadOnlyList<BusinessRuleMetadataDto> grafted =
-			BusinessRuleIdentityGrafter.Graft(existingRule, [generatedParent], requestedEnabled: null);
+			BusinessRuleIdentityMerger.Merge(existingRule, [generatedParent], requestedEnabled: null);
 
 		// Assert
 		grafted[0].Cases[0].UId.Should().Be(ExistingCaseUId,
@@ -85,8 +85,8 @@ public sealed class BusinessRuleIdentityGrafterTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Grafts trigger uIds matched by case-insensitive name plus type from the existing rule onto the generated triggers.")]
-	public void Graft_Should_Graft_Trigger_UIds_When_Name_And_Type_Match_Case_Insensitively() {
+	[Description("Merges trigger uIds matched by case-insensitive name plus type from the existing rule onto the generated triggers.")]
+	public void Merge_Should_Merge_Trigger_UIds_When_Name_And_Type_Match_Case_Insensitively() {
 		// Arrange
 		JsonObject existingRule = CreateExistingRule(triggersJson: """
 			[
@@ -102,7 +102,7 @@ public sealed class BusinessRuleIdentityGrafterTests {
 
 		// Act
 		IReadOnlyList<BusinessRuleMetadataDto> grafted =
-			BusinessRuleIdentityGrafter.Graft(existingRule, [generatedParent], requestedEnabled: null);
+			BusinessRuleIdentityMerger.Merge(existingRule, [generatedParent], requestedEnabled: null);
 
 		// Assert
 		grafted[0].Triggers[0].UId.Should().Be("44444444-4444-4444-4444-444444444444",
@@ -113,8 +113,8 @@ public sealed class BusinessRuleIdentityGrafterTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Grafts a persisted change trigger whose zero-valued 'type' property was stripped by the platform's addon-metadata normalization, treating an absent type as ChangeAttributeValue (0).")]
-	public void Graft_Should_Graft_Trigger_UId_When_Persisted_Change_Trigger_Has_No_Type_Property() {
+	[Description("Merges a persisted change trigger whose zero-valued 'type' property was stripped by the platform's addon-metadata normalization, treating an absent type as ChangeAttributeValue (0).")]
+	public void Merge_Should_Merge_Trigger_UId_When_Persisted_Change_Trigger_Has_No_Type_Property() {
 		// Arrange - Creatio omits zero-valued properties on read-back, so change triggers (type 0)
 		// come back without a "type" property at all.
 		JsonObject existingRule = CreateExistingRule(triggersJson: """
@@ -127,7 +127,7 @@ public sealed class BusinessRuleIdentityGrafterTests {
 
 		// Act
 		IReadOnlyList<BusinessRuleMetadataDto> grafted =
-			BusinessRuleIdentityGrafter.Graft(existingRule, [generatedParent], requestedEnabled: null);
+			BusinessRuleIdentityMerger.Merge(existingRule, [generatedParent], requestedEnabled: null);
 
 		// Assert
 		grafted[0].Triggers[0].UId.Should().Be("44444444-4444-4444-4444-444444444444",
@@ -137,7 +137,7 @@ public sealed class BusinessRuleIdentityGrafterTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Keeps fresh uIds on generated triggers that have no matching existing trigger and consumes each existing trigger uId at most once.")]
-	public void Graft_Should_Keep_Fresh_Trigger_UIds_When_No_Existing_Trigger_Matches() {
+	public void Merge_Should_Keep_Fresh_Trigger_UIds_When_No_Existing_Trigger_Matches() {
 		// Arrange
 		JsonObject existingRule = CreateExistingRule(triggersJson: """
 			[
@@ -153,7 +153,7 @@ public sealed class BusinessRuleIdentityGrafterTests {
 		generatedParent.Triggers = [firstStatusTrigger, secondStatusTrigger, unmatchedTrigger];
 
 		// Act
-		BusinessRuleIdentityGrafter.Graft(existingRule, [generatedParent], requestedEnabled: null);
+		BusinessRuleIdentityMerger.Merge(existingRule, [generatedParent], requestedEnabled: null);
 
 		// Assert
 		firstStatusTrigger.UId.Should().Be("44444444-4444-4444-4444-444444444444",
@@ -167,7 +167,7 @@ public sealed class BusinessRuleIdentityGrafterTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Re-anchors regenerated apply-filter child rules from the converter's throwaway parent uId to the preserved existing uId, rewriting the uId embedded in child names and captions, while leaving unrelated children untouched.")]
-	public void Graft_Should_Reanchor_Child_Rules_When_Children_Reference_Generated_Parent_UId() {
+	public void Merge_Should_Reanchor_Child_Rules_When_Children_Reference_Generated_Parent_UId() {
 		// Arrange
 		JsonObject existingRule = CreateExistingRule();
 		BusinessRuleMetadataDto generatedParent = CreateGeneratedRule("Rule_A");
@@ -180,7 +180,7 @@ public sealed class BusinessRuleIdentityGrafterTests {
 		unrelatedChild.Caption = "ChildRule-other-ClearValue";
 
 		// Act
-		BusinessRuleIdentityGrafter.Graft(
+		BusinessRuleIdentityMerger.Merge(
 			existingRule,
 			[generatedParent, child, unrelatedChild],
 			requestedEnabled: null);
@@ -201,13 +201,13 @@ public sealed class BusinessRuleIdentityGrafterTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Throws when the existing persisted rule carries no uId, because identity cannot be preserved without it.")]
-	public void Graft_Should_Throw_When_Existing_Rule_Has_No_UId() {
+	public void Merge_Should_Throw_When_Existing_Rule_Has_No_UId() {
 		// Arrange
 		JsonObject existingRule = (JsonObject)JsonNode.Parse("""{ "name": "Rule_A", "enabled": true }""")!;
 		BusinessRuleMetadataDto generatedParent = CreateGeneratedRule("Rule_A");
 
 		// Act
-		Action act = () => BusinessRuleIdentityGrafter.Graft(existingRule, [generatedParent], requestedEnabled: null);
+		Action act = () => BusinessRuleIdentityMerger.Merge(existingRule, [generatedParent], requestedEnabled: null);
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>()

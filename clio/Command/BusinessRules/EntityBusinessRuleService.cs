@@ -5,6 +5,7 @@ using Clio.Command.AddonSchemaDesigner;
 using Clio.Command.BusinessRules.Filters.Schema;
 using Clio.Command.EntitySchemaDesigner;
 using static Clio.Command.BusinessRules.BusinessRuleConstants;
+using Clio.Command.BusinessRules.Converters;
 
 namespace Clio.Command.BusinessRules;
 

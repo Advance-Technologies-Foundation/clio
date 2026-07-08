@@ -6,9 +6,9 @@ using static Clio.Command.BusinessRules.BusinessRuleConstants;
 
 namespace Clio.Command.BusinessRules;
 
-internal static class BusinessRuleIdentityGrafter {
+internal static class BusinessRuleIdentityMerger {
 
-	internal static IReadOnlyList<BusinessRuleMetadataDto> Graft(
+	internal static IReadOnlyList<BusinessRuleMetadataDto> Merge(
 		JsonObject existingRule,
 		IReadOnlyList<BusinessRuleMetadataDto> generatedRules,
 		bool? requestedEnabled) {
@@ -25,13 +25,13 @@ internal static class BusinessRuleIdentityGrafter {
 
 		parent.UId = existingUId;
 		parent.Enabled = requestedEnabled ?? GetBool(existingRule, "enabled", defaultValue: true);
-		GraftCaseIdentity(existingRule, parent);
-		GraftTriggerIdentity(existingRule, parent);
+		MergeCaseIdentity(existingRule, parent);
+		MergeTriggerIdentity(existingRule, parent);
 		ReanchorChildRules(generatedRules, generatedUId, existingUId);
 		return generatedRules;
 	}
 
-	private static void GraftCaseIdentity(JsonObject existingRule, BusinessRuleMetadataDto parent) {
+	private static void MergeCaseIdentity(JsonObject existingRule, BusinessRuleMetadataDto parent) {
 		if (parent.Cases.Count != 1
 			|| existingRule["cases"] is not JsonArray existingCases
 			|| existingCases.Count != 1
@@ -55,7 +55,7 @@ internal static class BusinessRuleIdentityGrafter {
 		}
 	}
 
-	private static void GraftTriggerIdentity(JsonObject existingRule, BusinessRuleMetadataDto parent) {
+	private static void MergeTriggerIdentity(JsonObject existingRule, BusinessRuleMetadataDto parent) {
 		if (existingRule["triggers"] is not JsonArray existingTriggers) {
 			return;
 		}

@@ -6,6 +6,7 @@ using System.Text.Json.Nodes;
 using Clio.Command.AddonSchemaDesigner;
 using Clio.Command.EntitySchemaDesigner;
 using static Clio.Command.BusinessRules.BusinessRuleConstants;
+using Clio.Command.BusinessRules.Converters;
 
 namespace Clio.Command.BusinessRules;
 
@@ -125,7 +126,7 @@ internal sealed class BusinessRuleAddonService(
 
 				JsonObject existingRule = (JsonObject)rules[ruleIndex]!;
 				IReadOnlyList<BusinessRuleMetadataDto> graftedRules =
-					BusinessRuleIdentityGrafter.Graft(existingRule, item.GeneratedRules, item.Enabled);
+					BusinessRuleIdentityMerger.Merge(existingRule, item.GeneratedRules, item.Enabled);
 				BusinessRuleMetadataDto parent = graftedRules[0];
 				RemoveChildRules(rules, resources, parent.UId);
 				ruleIndex = FindSingleRuleIndexByName(rules, item.Name);

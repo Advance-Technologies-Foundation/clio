@@ -14,7 +14,7 @@ namespace Clio.Tests.Command.McpServer;
 
 [TestFixture]
 [Property("Module", "McpServer")]
-public sealed class BusinessRuleMaintenanceToolTests {
+public sealed class BusinessRuleReadUpdateDeleteToolTests {
 
 	private const string ActionUId = "aaaaaaaa-0000-0000-0000-000000000001";
 
