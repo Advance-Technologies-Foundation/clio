@@ -79,8 +79,12 @@ public sealed class ComponentSuggestion {
 }
 
 /// <summary>
-/// Caption/resource convention for a newly inserted named element. The caller passes
-/// <see cref="Key"/> = <see cref="SourceValue"/> (the resolved en-US text) to <c>update-page resources</c>.
+/// Caption/resource convention for a newly inserted named element. <see cref="Key"/> is UNIQUE to the
+/// element (<c>&lt;mobileName&gt;_caption</c>) — never the web element's inherited key — so it cannot collide
+/// with a caption key the mobile template already owns (a collision would be silently dropped by update-page,
+/// which does not overwrite an existing key). The caller registers <see cref="Key"/> = <see cref="SourceValue"/>
+/// (the web caption's resolved en-US text) via <c>update-page resources</c>; the inserted element's caption
+/// token references the same <see cref="Key"/>.
 /// </summary>
 public sealed class CaptionResource {
 	[JsonPropertyName("key")]

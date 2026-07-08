@@ -1194,11 +1194,20 @@ public static class WebToMobileAnalysisService {
 		if (string.IsNullOrEmpty(caption)) {
 			return null;
 		}
-		string key = ResourceStringHelper.ExtractKeys(caption).FirstOrDefault();
-		if (string.IsNullOrEmpty(key)) {
+		string sourceKey = ResourceStringHelper.ExtractKeys(caption).FirstOrDefault();
+		if (string.IsNullOrEmpty(sourceKey)) {
 			return null; // literal (carried verbatim) or data binding — no resource to register
 		}
-		return new CaptionResource { Key = key, SourceValue = ResolveResourceString(ctx.Resources, key) ?? key };
+		// Re-key the caption to a key UNIQUE to this new mobile element (<mobileName>_caption). A web element
+		// can carry an INHERITED caption key whose name does not match the element (e.g. web OverviewTab is
+		// bound to the base-template key GeneralInfoTab_caption). If carried verbatim, that key collides with
+		// one the mobile template already owns with a different value (GeneralInfoTab_caption = "Details"), and
+		// update-page — which never overwrites an existing page/template key — silently drops our override, so
+		// the template value wins at render. A per-element key avoids the collision. SourceValue keeps the
+		// web caption's own text (resolved from the source key). When the source key already equals the
+		// element key, nothing changes and the caller keeps the source token verbatim.
+		string key = mobileName + "_caption";
+		return new CaptionResource { Key = key, SourceValue = ResolveResourceString(ctx.Resources, sourceKey) ?? sourceKey };
 	}
 
 	/// <summary>Resolves a page resource key into its en-US text (else the first culture) from the bundle's strings.</summary>
@@ -1237,6 +1246,15 @@ public static class WebToMobileAnalysisService {
 			}
 		}
 		foreach (ElementMapEntry entry in elementMap) {
+			// Register the element's caption key with its source text FIRST. A re-keyed caption
+			// (<mobileName>_caption, used to dodge a template key collision) does not exist under that name in
+			// the source strings, so a token scan alone would not resolve it — take the value from the
+			// CaptionResource, which carries the web caption's own text.
+			if (entry.CaptionResource is { } cap
+				&& !string.IsNullOrEmpty(cap.Key) && !string.IsNullOrEmpty(cap.SourceValue)
+				&& !result.ContainsKey(cap.Key)) {
+				result[cap.Key] = cap.SourceValue;
+			}
 			if (entry.MobileValues is not null) {
 				Scan(entry.MobileValues.ToJsonString());
 			}
@@ -1319,6 +1337,16 @@ public static class WebToMobileAnalysisService {
 				// (e.g. crt.List `itemLayout` is a single object on mobile but the web node carries a
 				// one-element array). Registry-driven, so no property names are hardcoded.
 				values[prop.Name] = CoerceToDeclaredShape(ctx, mobileType, prop.Name, prop.Value.DeepClone());
+			}
+		}
+		// Re-key the carried caption token ONLY when the source references a key different from this element's
+		// unique key (the collision case, e.g. OverviewTab carrying GeneralInfoTab_caption): emit a plain
+		// #ResourceString(<mobileName>_caption)# so it cannot clash with a template-owned key. When the keys
+		// already match, keep the source token verbatim (preserving wrappers like #MacrosTemplateString(...)#).
+		if (caption is not null && values["caption"] is { } carriedCaption) {
+			string carriedKey = ResourceStringHelper.ExtractKeys(carriedCaption.ToString()).FirstOrDefault();
+			if (!string.Equals(carriedKey, caption.Key, StringComparison.Ordinal)) {
+				values["caption"] = "#ResourceString(" + caption.Key + ")#";
 			}
 		}
 		ProcessEventBindings(ctx, node, values, mobileName);

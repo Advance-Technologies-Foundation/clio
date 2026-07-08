@@ -1383,6 +1383,55 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
+	[Description("Caption key collision: a web tab bound to an INHERITED key (OverviewTab → GeneralInfoTab_caption, a key the mobile template owns with a different value) is re-keyed to the element-unique OverviewTab_caption — the token, captionResource.Key and resourceStrings all use it, so update-page registers it and the web value ('Overview') renders instead of the template's 'Details'.")]
+	public void Analyze_CaptionKeyCollision_RekeyedToElementUniqueKey() {
+		PageBundleInfo bundle = Bundle(
+			viewConfigJson: """
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "OverviewTab", "type": "crt.TabContainer", "caption": "#ResourceString(GeneralInfoTab_caption)#", "items": [
+					{ "name": "LeadName", "type": "crt.Input" } ] } ] } ]
+			""",
+			resourcesJson: """
+			{ "GeneralInfoTab_caption": { "en-US": "Overview" } }
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeTabbed(bundle);
+
+		ElementMapEntry overview = Element(guide, "OverviewTab");
+		overview.Operation.Should().Be("insert");
+		overview.CaptionResource!.Key.Should().Be("OverviewTab_caption",
+			because: "re-keyed to the element, not the inherited GeneralInfoTab_caption");
+		overview.CaptionResource.SourceValue.Should().Be("Overview");
+		overview.MobileValues!.AsObject()["caption"]!.GetValue<string>()
+			.Should().Be("#ResourceString(OverviewTab_caption)#");
+		guide.ResourceStrings!["OverviewTab_caption"].Should().Be("Overview");
+		guide.ResourceStrings.Should().NotContainKey("GeneralInfoTab_caption",
+			because: "the converter never registers the colliding template-owned key");
+	}
+
+	[Test]
+	[Description("No collision: a caption whose source key already matches the element (SalesTab → SalesTab_caption) keeps its source token verbatim (wrappers preserved) and is registered unchanged.")]
+	public void Analyze_CaptionKeyMatchesElement_TokenKeptVerbatim() {
+		PageBundleInfo bundle = Bundle(
+			viewConfigJson: """
+			[ { "name": "Tabs", "type": "crt.TabPanel", "items": [
+				{ "name": "SalesTab", "type": "crt.TabContainer", "caption": "#MacrosTemplateString(#ResourceString(SalesTab_caption)#)#", "items": [
+					{ "name": "Budget", "type": "crt.Input" } ] } ] } ]
+			""",
+			resourcesJson: """
+			{ "SalesTab_caption": { "en-US": "Sales" } }
+			""");
+
+		MobilePageConversionGuide guide = AnalyzeTabbed(bundle);
+
+		Element(guide, "SalesTab").CaptionResource!.Key.Should().Be("SalesTab_caption");
+		Element(guide, "SalesTab").MobileValues!.AsObject()["caption"]!.GetValue<string>()
+			.Should().Be("#MacrosTemplateString(#ResourceString(SalesTab_caption)#)#",
+				because: "the key already matches the element, so the source token (with its wrapper) is kept verbatim");
+		guide.ResourceStrings!["SalesTab_caption"].Should().Be("Sales");
+	}
+
+	[Test]
 	[Description("`items` as a STRING is a real collection binding and is carried into mobileValues (e.g. crt.CommunicationOptions items: \"$Attr\"); `items` as an ARRAY of child elements is structural and is not carried (the tree walk emits the children).")]
 	public void Analyze_ItemsStringBinding_IsCarried_NotTreatedAsStructuralChildren() {
 		PageBundleInfo bundle = Bundle("""
