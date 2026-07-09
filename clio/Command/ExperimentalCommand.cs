@@ -154,10 +154,16 @@ public class ExperimentalCommand : Command<ExperimentalOptions> {
 	}
 
 	// Feature keys clio recognizes that are NOT derived from a [FeatureToggle] attribute on an
-	// options/MCP type (registration-filter profiles, etc.), listed so `clio experimental` shows them
-	// and `--enable/--disable` does not warn they are unknown. Compared case-insensitively.
-	// Currently empty: the mcp-lazy-tools profile toggle was removed — lazy is now the only tool surface.
-	internal static readonly string[] StandaloneFeatureKeys = [];
+	// options/MCP type (registration-filter profiles, incubation gates, etc.), listed so
+	// `clio experimental` shows them and `--enable/--disable` does not warn they are unknown.
+	// Compared case-insensitively.
+	//   * mcp-http-credential-passthrough — the ENG-93208 incubation gate for MCP HTTP per-request
+	//     credential passthrough. Deliberately NOT a [FeatureToggle] on the mcp-http options class
+	//     (that would hide the verb entirely and regress FR-10); it gates only the passthrough leg
+	//     inside McpHttpServerCommand, so it is attribute-less and would otherwise be invisible here.
+	internal static readonly string[] StandaloneFeatureKeys = [
+		McpServer.McpHttpServerCommand.CredentialPassthroughFeatureName
+	];
 
 	private static IEnumerable<string> GetKnownFeatureKeys() =>
 		GetGatedTypes()

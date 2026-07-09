@@ -67,7 +67,42 @@ Targeted run: `dotnet test clio.tests/clio.tests.csproj --filter "Category=Unit&
 
 ## Dev Agent Record
 
-- Implementation started:
-- Implementation completed:
-- Tests passing:
+- Implementation started: 2026-07-09
+- Implementation completed: 2026-07-09
+- Tests passing: yes
 - Notes:
+  - **Docs updated:**
+    - `clio/help/en/mcp-http.txt` — added `--platform-api-key`, `--allowed-base-urls`,
+      `--session-idle-ttl`, `--max-sessions`, `--credentials-header-name` with defaults; a
+      CREDENTIAL PASSTHROUGH section (double gate, header contract, precedence, cookie-rejected-in-v1,
+      nothing-persisted, arg policy, DNS-rebinding residual); `CLIO_MCP_HTTP_PLATFORM_API_KEY` env var
+      and a passthrough example.
+    - `clio/docs/commands/mcp-http.md` — new option rows; full "Credential passthrough (multi-tenant
+      edge)" section: double gate (incubation flag + api-key), header shapes + precedence, cookie leg
+      parses-but-rejected in v1 / non-Bearer rejected, SSRF baseline + allowlist scheme requirement +
+      fail-fast, nothing-persisted/memory-pooled, mode-gated arg policy, DNS-rebinding TOCTOU residual;
+      example + env var row.
+    - `clio/Commands.md` — overview entry now mentions the passthrough edge.
+    - `docs/McpCapabilityMap.md` — added "HTTP credential-passthrough edge" targeting mode note.
+    - `clio/Wiki/WikiAnchors.txt` — reviewed, no update required (verb name `mcp-http` unchanged; anchor
+      already present at line 110).
+  - **MCP surface review (AC-03):** `mcp-http` is the HTTP HOST verb (`Command<TOptions>`, not a
+    `BaseTool`). Grepped `Tools/`, `Prompts/`, `Resources/` for `mcp-http` / `passthrough` /
+    `X-Integration` / `credential`: only internal implementation classes reference it
+    (`ToolCommandResolver`, `TenantExecutionLockProvider`, `SessionContainerCache`,
+    `McpToolExecutionLock`, `CredentialContext`) — no MCP tool/prompt/resource `[Description]` and no
+    `GuidanceCatalog`/routing guide is tied to it. **MCP reviewed, no update required.**
+  - **StandaloneFeatureKeys (Story-11 follow-up):** `ExperimentalCommand.StandaloneFeatureKeys` now
+    contains `McpHttpServerCommand.CredentialPassthroughFeatureName`
+    (`"mcp-http-credential-passthrough"`) so `clio experimental` lists the attribute-less incubation key
+    with its live on/off state and `--enable/--disable` no longer warns it is unknown. Stale
+    "currently empty / mcp-lazy-tools" comment rewritten. Added two unit tests to
+    `ExperimentalCommandTests`: listing surfaces the key (`IsFeatureEnabled` received) and toggling it
+    emits no unknown-key warning.
+  - **Gates:** `dotnet build clio/clio.csproj -f net10.0` clean (no new CLIO*; the 2 CLIO005 warnings
+    are pre-existing in `BindingsModule`). `dotnet test --filter "Category=Unit&(Module=McpServer|Module=Command)"`
+    → 3819 passed / 0 failed. Doc-checker gate (`HelpArtifactConsistencyTests`, `Module=Core`) +
+    `CommandHelpRendererTests` green. `ExperimentalCommandTests` 11/11.
+  - **Note:** `CommandHelpRendererTests.RenderMarkdownDoc_WhenManualHelpContainsCustomSections_PreservesThemInOrder`
+    showed a pre-existing cross-test ordering flake (hermetic mock-FS test, unrelated to these files);
+    passes in isolation and on re-run.

@@ -48,6 +48,105 @@ every host that can reach the machine on the LAN — use it only on trusted netw
 | `--port` | `8005` | Port to listen on |
 | `--host` | `127.0.0.1` | Host address to bind to |
 | `--path` | `/mcp` | MCP endpoint path |
+| `--platform-api-key` | _(unset)_ | Comma-separated platform API key set (also read from `CLIO_MCP_HTTP_PLATFORM_API_KEY`). Setting at least one key **enables** per-request credential passthrough. See [Credential passthrough](#credential-passthrough-multi-tenant-edge). |
+| `--allowed-base-urls` | _(unset)_ | Comma-separated SSRF allowlist of origins a passthrough target `url` may reach. Each entry **must include a scheme** (e.g. `https://tenant.creatio.com`). |
+| `--session-idle-ttl` | `5m` | Idle time after which an unused per-session container is evicted. Accepts `90s` / `5m` / `1h` / `1d`, bare seconds (`300`), or a `TimeSpan` (`00:05:00`). |
+| `--max-sessions` | `50` | Maximum per-session containers kept in memory; the least-recently-used one is evicted when exceeded. |
+| `--credentials-header-name` | `X-Integration-Credentials` | Name of the request header carrying the base64-encoded JSON credentials. |
+
+## Credential passthrough (multi-tenant edge)
+
+By default `mcp-http` targets **pre-registered** environments (`-e <env>`) or explicit
+connection arguments, exactly like `mcp-server`. The **credential-passthrough edge** lets a
+gateway target a **different Creatio tenant on each request** — the target URL and
+credentials ride the request header instead of clio settings. This is aimed at AI-platform
+gateways that broker many tenants through one clio process.
+
+### Double gate (off by default)
+
+Passthrough is honored only when **both** gates are satisfied:
+
+1. **Incubation feature flag** `mcp-http-credential-passthrough`, enabled with:
+
+   ```shell
+   clio experimental --name mcp-http-credential-passthrough --enable
+   ```
+
+   It is deliberately **not** a `[FeatureToggle]` on the verb — that would hide `mcp-http`
+   entirely. Only the passthrough leg is gated; the verb, stdio mode, and `-e <env>`
+   targeting remain **always available**.
+
+2. **Platform API key** — at least one key set via `--platform-api-key` or the
+   `CLIO_MCP_HTTP_PLATFORM_API_KEY` environment variable.
+
+When **either** gate is off, the credential header is ignored and the server behaves exactly
+as the pre-passthrough release.
+
+### Header contract
+
+An authorized passthrough request carries two headers:
+
+```text
+Authorization: Bearer <platform-api-key>
+X-Integration-Credentials: <base64 JSON>
+```
+
+- **`Authorization: Bearer <platform-api-key>`** — must match one of the configured keys.
+  Comparison is **constant-time** and no key material is echoed. A missing/invalid key on a
+  request that carries the credential header is rejected with **HTTP 401**. Rotate keys by
+  supplying both the old and new key in the comma-set.
+- **`X-Integration-Credentials`** (name configurable via `--credentials-header-name`) — a
+  base64-encoded JSON object. A malformed payload is rejected with **HTTP 400** naming the
+  defect only (no secret is echoed).
+
+The JSON payload always requires `url` plus authentication material. Auth is resolved by
+precedence **accessToken → login+password**:
+
+```jsonc
+// access token (must be Bearer-typed)
+{ "url": "https://tenant.creatio.com", "accessToken": "<access-token>" }
+
+// login + password (both required)
+{ "url": "https://tenant.creatio.com", "login": "<login>", "password": "<password>" }
+```
+
+> **Cookie leg (v1):** a `{ "url": ..., "cookie": ... }` payload parses, but a cookie-only
+> credential is **rejected as unsupported in v1** — supply an access token instead. A
+> non-`Bearer` access-token type is likewise rejected.
+
+### SSRF / egress allowlist
+
+The caller-supplied `url` is validated **before any outbound call** (Story 6):
+
+- **Baseline blocks (always on, regardless of the allowlist):** cloud-metadata
+  (`169.254.169.254`), IPv4/IPv6 link-local, and loopback (loopback is permitted only when
+  the server itself is bound to loopback). IP-literal, integer/hex/octal, IPv4-mapped-IPv6,
+  and single-trailing-dot encodings are all normalized before the check.
+- **`--allowed-base-urls`:** when set, the target **origin** (scheme+host+port) must be on
+  the list. Each entry must include a scheme (`https://…`); a set with no valid absolute
+  http/https origin **fails fast at startup** rather than silently degrading to baseline-only.
+  When unset, only the baseline blocks apply and any other reachable https host is allowed.
+
+> **DNS-rebinding TOCTOU residual:** a non-literal hostname is **not** DNS-resolved by the
+> validator. A hostname that passes the allowlist but resolves to a blocked IP *after*
+> validation (the client does its own resolution when it dials) is a documented residual and
+> is **out of scope for v1**.
+
+### Nothing persisted, memory-pooled
+
+clio stores **no** passthrough credential. Each request builds an **ephemeral**
+`EnvironmentSettings` directly from the header — never written to settings, disk, or
+`appsettings.json`. Per-tenant containers are **pooled in memory** and evicted by idle-TTL
+(`--session-idle-ttl`) and an LRU cap (`--max-sessions`), so a rotating stream of tokens
+stays memory-bounded.
+
+### Arg policy (mode-gated)
+
+While passthrough is active for a request, supplying `uri` / `login` / `password` /
+`client-id` / `client-secret` or an environment name as tool **arguments** is **rejected** —
+they would otherwise be silently ignored (the header wins). Credentials must ride the header,
+not the arguments. Stdio mode and default (non-passthrough) HTTP requests keep honoring these
+arguments unchanged.
 
 ## Examples
 
@@ -75,6 +174,15 @@ Custom endpoint path:
 clio mcp-http --path /api/mcp
 ```
 
+Enable the multi-tenant credential-passthrough edge:
+
+```shell
+clio experimental --name mcp-http-credential-passthrough --enable
+clio mcp-http --host 0.0.0.0 \
+  --platform-api-key <platform-api-key> \
+  --allowed-base-urls https://tenant.creatio.com
+```
+
 ## Testing with curl
 
 Send an `initialize` request:
@@ -99,6 +207,7 @@ curl -X POST http://localhost:8005/mcp \
 | Variable | Description |
 |----------|-------------|
 | `CLIO_MCP_RESPECT_AMBIENT_PROXY` | When `true` or `1`, do NOT neutralize inherited proxy env vars. Default: proxy is bypassed. |
+| `CLIO_MCP_HTTP_PLATFORM_API_KEY` | Comma-separated platform API key set, unioned with `--platform-api-key`. Setting at least one key enables per-request credential passthrough. |
 
 ## See Also
 

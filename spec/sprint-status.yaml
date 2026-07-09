@@ -847,7 +847,7 @@ stories:
     title: "MCP surface + docs — passthrough edge, header contract, api-key gate, allowlist, arg policy"
     feature: "mcp-http-credential-passthrough"
     size: M
-    status: ready-for-dev
+    status: review
     file: spec/stories/story-mcp-http-credential-passthrough-14.md
     prd: spec/prd/prd-mcp-http-credential-passthrough.md
     adr: spec/adr/adr-mcp-http-credential-passthrough.md

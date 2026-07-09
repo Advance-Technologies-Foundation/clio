@@ -39,6 +39,74 @@ OPTIONS
         MCP endpoint path.
         Default: /mcp
 
+    --platform-api-key <keys>
+        Comma-separated set of platform API key(s) (also read from the
+        CLIO_MCP_HTTP_PLATFORM_API_KEY environment variable). Setting at least
+        one key ENABLES per-request credential passthrough; each request must
+        then present a matching 'Authorization: Bearer <platform-api-key>'.
+        Keys are compared in constant time; rotate by supplying the old and new
+        key together in the comma-set. Unset (default) => passthrough disabled.
+
+    --allowed-base-urls <urls>
+        Comma-separated SSRF allowlist of origins a passthrough target url may
+        reach. Each entry MUST include a scheme (e.g. https://tenant.creatio.com);
+        bare hostnames fail at startup. When unset, only the always-on baseline
+        blocks (cloud-metadata / link-local / loopback) apply and any other
+        https host is allowed.
+
+    --session-idle-ttl <duration>
+        Idle time after which an unused per-session container is evicted.
+        Accepts '90s' / '5m' / '1h' / '1d', bare seconds ('300'), or a TimeSpan
+        ('00:05:00').
+        Default: 5m
+
+    --max-sessions <count>
+        Maximum per-session containers kept in memory; the least-recently-used
+        one is evicted when exceeded.
+        Default: 50
+
+    --credentials-header-name <name>
+        Name of the request header carrying the base64-encoded JSON credentials.
+        Default: X-Integration-Credentials
+
+CREDENTIAL PASSTHROUGH (multi-tenant edge)
+    Per-request credential passthrough lets a gateway target a different Creatio
+    tenant on each request instead of a pre-registered environment. It is
+    DOUBLY gated and off by default:
+
+      1. Incubation feature flag 'mcp-http-credential-passthrough'
+         (clio experimental --name mcp-http-credential-passthrough --enable).
+      2. A platform API key (--platform-api-key / CLIO_MCP_HTTP_PLATFORM_API_KEY).
+
+    When either gate is off, the credential header is ignored and the server
+    behaves exactly as before — the verb, stdio mode, and '-e <env>' targeting
+    are always available.
+
+    When enabled, an authorized request carries credentials in the header:
+
+        Authorization: Bearer <platform-api-key>
+        X-Integration-Credentials: <base64 JSON>
+
+    The base64 JSON payload requires 'url' plus auth material, resolved by
+    precedence accessToken -> login+password:
+
+        {"url":"https://tenant.creatio.com","accessToken":"<access-token>"}
+        {"url":"https://tenant.creatio.com","login":"<login>","password":"<password>"}
+
+    An access token must be Bearer-typed. A cookie-only payload parses but is
+    REJECTED as unsupported in v1 — supply an access token instead.
+
+    Nothing is persisted: clio builds an ephemeral, in-memory container per
+    tenant (never written to settings/disk), pooled with idle-TTL / LRU
+    eviction (--session-idle-ttl / --max-sessions).
+
+    While passthrough is active for a request, supplying uri/login/password/
+    client-id/client-secret or an environment name as tool ARGS is rejected —
+    credentials must ride the header, not the arguments.
+
+    Residual: a hostname that passes --allowed-base-urls but resolves to a
+    blocked IP AFTER validation (DNS-rebinding TOCTOU) is out of scope for v1.
+
 EXAMPLES
     Start with default settings (port 8005, localhost):
         clio mcp-http
@@ -52,11 +120,21 @@ EXAMPLES
     Custom endpoint path:
         clio mcp-http --path /api/mcp
 
+    Enable the multi-tenant credential-passthrough edge:
+        clio experimental --name mcp-http-credential-passthrough --enable
+        clio mcp-http --host 0.0.0.0 \
+            --platform-api-key <platform-api-key> \
+            --allowed-base-urls https://tenant.creatio.com
+
 ENVIRONMENT VARIABLES
     CLIO_MCP_RESPECT_AMBIENT_PROXY
         When set to "true" or "1", the HTTP MCP server does NOT neutralize
         ambient proxy environment variables. Default behavior (absent or
         any other value) bypasses all inherited proxies.
+
+    CLIO_MCP_HTTP_PLATFORM_API_KEY
+        Comma-separated platform API key(s), unioned with --platform-api-key.
+        Setting at least one key enables per-request credential passthrough.
 
 SEE ALSO
     mcp-server    Start MCP server in stdio mode
