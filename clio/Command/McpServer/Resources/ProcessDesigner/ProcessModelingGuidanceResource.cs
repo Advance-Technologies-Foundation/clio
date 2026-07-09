@@ -128,9 +128,14 @@ public sealed class ProcessModelingGuidanceResource {
 			  types it by the column; for a Date/DateTime/Time column pass ISO-8601, e.g. `2026-05-01` or
 			  `2026-05-01T12:00:00Z`), `processParameter` (a process parameter by name), `elementParameter`
 			  ({ elementId, parameter } — another element's output), `expression` (a raw token), or `macro` (a
-			  relative-date / system macro: `Today` | `Yesterday` | `CurrentUser` | `CurrentYear` |
-			  `NextNDays` (+ `macroArgument`) | … — argument macros like NextNDays/PreviousNHours need `macroArgument`).
-			  isNull/isNotNull take none.
+			  relative-date / system macro — the complete set is in the next bullet). isNull/isNotNull take none.
+			- `macro` vocabulary (COMPLETE set — an unknown name is rejected at BUILD, validated against the platform
+			  macro catalog, never silently accepted): **relative periods** `Yesterday` | `Today` | `Tomorrow`, plus
+			  `Previous`/`Current`/`Next` for each of `Week` | `Month` | `Quarter` | `HalfYear` | `Year` | `Hour`
+			  (so `CurrentHalfYear`, `NextWeek`, `PreviousQuarter`, `CurrentHour`, … are ALL valid); **argument macros**
+			  `NextNDays` | `PreviousNDays` | `NextNHours` | `PreviousNHours` (require an integer `macroArgument`);
+			  **recurring "every year"** `DayOfYearToday` | `DayOfYearTodayPlusDaysOffset` | `NextNDaysOfYear` |
+			  `PreviousNDaysOfYear`; **system / lookup** `CurrentUser` | `CurrentUserContact`.
 			- SIGNAL-START RESTRICTION (important): on a `signalStart` filter the right-hand side may ONLY be a constant
 			  `value`, a `macro`, a `datePart`, or isNull/isNotNull — NOT `processParameter` / `elementParameter` /
 			  `expression`. The signal is evaluated to decide WHICH records start the process, BEFORE any process
