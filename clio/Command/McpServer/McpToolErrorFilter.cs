@@ -16,6 +16,9 @@ namespace Clio.Command.McpServer;
 /// </summary>
 public static class McpToolErrorFilter
 {
+	// Placeholder surfaced in error text when the MCP request carries no tool name (context.Params?.Name is null).
+	private const string UnknownToolName = "<unknown>";
+
 	private static readonly JsonSerializerOptions SerializerOptions = BindingsModule.CreateMcpSerializerOptions();
 
 	/// <summary>
@@ -32,8 +35,34 @@ public static class McpToolErrorFilter
 			if (TryCreateMissingCompositeArgumentHint(context, out CallToolResult? hintResult)) {
 				return hintResult;
 			}
-			return await next(context, cancellationToken);
+			try {
+				return await next(context, cancellationToken);
+			}
+			catch (OperationCanceledException) {
+				// Honour cooperative cancellation/timeout — let the host see a cancellation, not a tool error.
+				throw;
+			}
+			catch (Exception ex) {
+				// Without this, an unhandled tool-method exception reaches the SDK's default handler, which
+				// returns a generic "An error occurred invoking '<tool>'" with no detail — so an agent cannot
+				// see WHY the call failed (e.g. "Environment ... not found") and cannot self-correct. Surface
+				// the real (inner-most) message as a structured error result for EVERY tool uniformly — but
+				// redacted, because this text lands in the model/host transcript and inner-most messages
+				// routinely carry absolute paths, request URIs (target hosts), and credentials.
+				return CreateJsonErrorResult(
+					$"MCP tool '{context.Params?.Name ?? UnknownToolName}' failed: {SensitiveErrorTextRedactor.Redact(GetInnermostMessage(ex))}");
+			}
 		};
+
+	// Unwraps to the inner-most exception message so the surfaced detail is the actual cause rather than a
+	// generic wrapper (e.g. TargetInvocationException) added by the dispatch machinery.
+	private static string GetInnermostMessage(Exception exception) {
+		Exception current = exception;
+		while (current.InnerException is not null) {
+			current = current.InnerException;
+		}
+		return current.Message;
+	}
 
 	private static bool TryCreateArgumentDeserializationError(
 		RequestContext<CallToolRequestParams> context,
@@ -81,9 +110,11 @@ public static class McpToolErrorFilter
 		?? string.Empty;
 
 	private static string BuildDeserializationErrorMessage(string? toolName, string? argumentName, Exception exception) {
+		// The serializer message can echo back the offending argument value, so redact it too.
+		string detail = SensitiveErrorTextRedactor.Redact(exception.Message);
 		string message = string.IsNullOrWhiteSpace(argumentName)
-			? $"Failed to deserialize arguments for MCP tool '{toolName ?? "<unknown>"}': {exception.Message}"
-			: $"Failed to deserialize argument '{argumentName}' for MCP tool '{toolName ?? "<unknown>"}': {exception.Message}";
+			? $"Failed to deserialize arguments for MCP tool '{toolName ?? UnknownToolName}': {detail}"
+			: $"Failed to deserialize argument '{argumentName}' for MCP tool '{toolName ?? UnknownToolName}': {detail}";
 		return message;
 	}
 
@@ -184,7 +215,7 @@ public static class McpToolErrorFilter
 		string? toolName, string wrapperName, List<string> allProperties, List<string> matchedKeys) {
 		string flatKeysDisplay = string.Join(", ", matchedKeys.Select(k => $"\"{k}\""));
 		string exampleInner = string.Join(", ", allProperties.Select(k => $"\"{k}\": \"...\""));
-		return $"Tool '{toolName ?? "<unknown>"}' expects arguments wrapped inside "
+		return $"Tool '{toolName ?? UnknownToolName}' expects arguments wrapped inside "
 			+ $"an \"{wrapperName}\" object, but received {flatKeysDisplay} at the top level. "
 			+ $"Correct format: {{\"{wrapperName}\": {{{exampleInner}}}}}";
 	}

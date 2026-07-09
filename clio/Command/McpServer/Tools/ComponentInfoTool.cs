@@ -103,11 +103,7 @@ public sealed class ComponentInfoTool(
 		"If schema-type is omitted, defaults to the web component catalog (excludes mobile-only components such as crt.Toggle and crt.BarcodeScanner). " +
 		"Use schema-type: 'mobile' to retrieve mobile-specific components — the mobile registry is separate and excludes web-only types.")]
 	public async Task<ComponentInfoResponse> GetComponentInfo(
-		[Description("Parameters: component-type (optional; omit or use 'list' to return the catalog of components AND composites), " +
-			"composite (optional; a composite Designer-element caption such as 'Expanded list' — returns its assembly docs; mutually exclusive with component-type), " +
-			"search (optional keyword filter over both components and composites). " +
-			"schema-type: 'web' (default) or 'mobile'. environment-name: PREFERRED — scopes the catalog to the target platform version (mutually exclusive with version). " +
-			"version: explicit 3-part semver. uri/login/password: emergency fallback only.")]
+		[Description("component-type (optional; omit or 'list' for the catalog of components AND composites), composite (optional; a composite Designer-element caption such as 'Expanded list' — returns its assembly docs, mutually exclusive with component-type), search (optional, filters both). schema-type 'web' (default) or 'mobile'. environment-name preferred (mutually exclusive with version). uri/login/password fallback only.")]
 		[Required] ComponentInfoArgs args,
 		CancellationToken cancellationToken = default) {
 		string? legacyAliasError = McpToolArgumentSupport.BuildLegacyAliasError(
@@ -129,7 +125,7 @@ public sealed class ComponentInfoTool(
 			return new ComponentInfoResponse {
 				Success = false,
 				Mode = "list",
-				Error = ex.Message,
+				Error = SensitiveErrorTextRedactor.Redact(ex.Message),
 				Count = 0,
 				Items = []
 			};
@@ -465,27 +461,27 @@ public sealed record ComponentInfoArgs(
 	string? Composite = null,
 
 	[property: JsonPropertyName("schema-type")]
-	[property: Description("Component registry to query: 'web' (default) for standard Freedom UI pages, or 'mobile' for mobile page components (crt.Toggle, crt.BarcodeScanner, crt.Sort, etc.).")]
+	[property: Description("Component registry: 'web' (default) or 'mobile'.")]
 	string? SchemaType = null,
 
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Registered environment name to scope the catalog to its real platform version (probed via cliogate GetSysInfo). PREFER this — pass the same environment you edit pages on. Mutually exclusive with 'version'.")]
+	[property: Description("Registered environment name; scopes the catalog to its real platform version. Preferred. Mutually exclusive with version.")]
 	string? EnvironmentName = null,
 
 	[property: JsonPropertyName("version")]
-	[property: Description("Explicit catalog version (3-part semver, e.g. '8.3.3') when the platform version is already known. Mutually exclusive with 'environment-name'.")]
+	[property: Description("Explicit catalog version (3-part semver). Mutually exclusive with environment-name.")]
 	string? Version = null,
 
 	[property: JsonPropertyName("uri")]
-	[property: Description("Emergency fallback only: direct application URI when no environment is registered. Prefer 'environment-name'.")]
+	[property: Description(McpToolDescriptions.Uri)]
 	string? Uri = null,
 
 	[property: JsonPropertyName("login")]
-	[property: Description("Emergency fallback only: login paired with 'uri'. Prefer 'environment-name'.")]
+	[property: Description(McpToolDescriptions.Login)]
 	string? Login = null,
 
 	[property: JsonPropertyName("password")]
-	[property: Description("Emergency fallback only: password paired with 'uri'. Prefer 'environment-name'.")]
+	[property: Description(McpToolDescriptions.Password)]
 	string? Password = null
 ) {
 	/// <summary>

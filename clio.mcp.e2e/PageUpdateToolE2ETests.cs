@@ -12,7 +12,6 @@ using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
-using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E;
@@ -37,21 +36,21 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
 
 	[Test]
-	[Description("Advertises update-page MCP tool in the server tool list so callers can discover it directly instead of relying on get-page tests.")]
+	[Description("Exposes update-page via the get-tool-contract compact index so callers can discover it directly on the lazy tool surface.")]
 	[AllureTag(ToolName)]
-	[AllureName("update-page tool is advertised by the MCP server")]
-	[AllureDescription("Verifies that update-page appears in the MCP server tool manifest.")]
+	[AllureName("update-page tool is discoverable on the lazy surface")]
+	[AllureDescription("Verifies that update-page is discoverable via the get-tool-contract compact index of the MCP server.")]
 	public async Task PageUpdateTool_Should_Be_Listed_By_MCP_Server() {
 		// Arrange
 		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
-		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		IEnumerable<string> toolNames = tools.Select(tool => tool.Name);
+		IReadOnlyCollection<string> toolNames =
+			await arrangeContext.Session.ListReachableToolNamesAsync(arrangeContext.CancellationTokenSource.Token);
 
 		// Assert
 		toolNames.Should().Contain(ToolName,
-			because: "update-page must be advertised so MCP callers can discover the single-page save tool directly");
+			because: $"the {ToolName} MCP tool must be discoverable on the lazy surface (get-tool-contract compact index) even though it is not resident in tools/list, so MCP callers can discover the single-page save tool");
 	}
 
 	[Test]

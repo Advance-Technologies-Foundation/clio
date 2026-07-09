@@ -114,7 +114,7 @@ public record CreateTestProjectArgs(
 	string WorkspacePath,
 
 	[property:JsonPropertyName("environment-name")]
-	[Description("Creatio environment name")]
+	[Description(McpToolDescriptions.EnvironmentName)]
 	[property:Required]
 	string EnvironmentName
 );

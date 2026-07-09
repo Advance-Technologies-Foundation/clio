@@ -4,7 +4,6 @@ using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
-using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E;
@@ -26,20 +25,23 @@ namespace Clio.Mcp.E2E;
 public sealed class SkillManagementToolE2ETests : McpContractFixtureBase {
 	[Test]
 	[AllureTag(InstallSkillsTool.ToolName)]
-	[Description("The real clio MCP server advertises install-skills, update-skill, and delete-skill.")]
-	[AllureName("Skill management tools are advertised")]
+	[Description("The real clio MCP server exposes install-skills, update-skill, and delete-skill via the get-tool-contract compact index on the lazy tool surface.")]
+	[AllureName("Skill management tools are discoverable on the lazy surface")]
 	public async Task SkillManagementTools_ShouldBeAdvertised() {
 		// Arrange
 		await using var context = Arrange();
 
 		// Act
-		IList<McpClientTool> tools = await context.Session.ListToolsAsync(context.CancellationTokenSource.Token);
+		IReadOnlyCollection<string> toolNames =
+			await context.Session.ListReachableToolNamesAsync(context.CancellationTokenSource.Token);
 
 		// Assert
-		IEnumerable<string> toolNames = tools.Select(tool => tool.Name);
-		toolNames.Should().Contain(InstallSkillsTool.ToolName, because: "install-skills must be advertised");
-		toolNames.Should().Contain(UpdateSkillTool.ToolName, because: "update-skill must be advertised");
-		toolNames.Should().Contain(DeleteSkillTool.ToolName, because: "delete-skill must be advertised");
+		toolNames.Should().Contain(InstallSkillsTool.ToolName,
+			because: "install-skills must be discoverable via the get-tool-contract compact index even though it is not resident in tools/list");
+		toolNames.Should().Contain(UpdateSkillTool.ToolName,
+			because: "update-skill must be discoverable via the get-tool-contract compact index even though it is not resident in tools/list");
+		toolNames.Should().Contain(DeleteSkillTool.ToolName,
+			because: "delete-skill must be discoverable via the get-tool-contract compact index even though it is not resident in tools/list");
 	}
 
 	[Test]
@@ -107,9 +109,10 @@ public sealed class SkillManagementToolE2ETests : McpContractFixtureBase {
 		ArrangeContext context,
 		string toolName,
 		Dictionary<string, object?> arguments) {
-		IList<McpClientTool> tools = await context.Session.ListToolsAsync(context.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(toolName,
-			because: "the requested skill management MCP tool must be advertised before the end-to-end call");
+		IReadOnlyCollection<string> toolNames =
+			await context.Session.ListReachableToolNamesAsync(context.CancellationTokenSource.Token);
+		toolNames.Should().Contain(toolName,
+			because: "the requested skill management MCP tool must be discoverable via the get-tool-contract compact index before the end-to-end call");
 
 		CallToolResult callResult = await context.Session.CallToolAsync(
 			toolName,

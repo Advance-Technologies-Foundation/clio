@@ -1,4 +1,3 @@
-using System.Text.Json;
 using System.Text.RegularExpressions;
 using Allure.Net.Commons;
 using Allure.NUnit;
@@ -8,7 +7,6 @@ using Clio.Common;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
-using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E;
@@ -66,37 +64,47 @@ public sealed class WorkspaceSyncContractToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
-	[Description("Starts the real clio MCP server, lists tools, and verifies that both workspace-sync MCP endpoints are advertised as destructive.")]
+	[Description("Starts the real clio MCP server, reads the get-tool-contract compact index, and verifies that both workspace-sync MCP endpoints are discoverable with the destructive flag on the lazy tool surface.")]
 	[AllureTag(PushToolName)]
 	[AllureTag(RestoreToolName)]
-	[AllureName("Workspace sync tools advertise destructive metadata")]
-	[AllureDescription("Uses the real clio MCP server tool discovery response to verify that push-workspace and restore-workspace expose the destructive hint required for client-side safety policies.")]
+	[AllureName("Workspace sync tools expose destructive metadata on the lazy surface")]
+	[AllureDescription("Uses the get-tool-contract compact index of the real clio MCP server to verify that push-workspace and restore-workspace expose the destructive flag required for client-side safety policies.")]
 	public async Task WorkspaceSync_Tools_Should_Be_Advertised_As_Destructive() {
 		// Arrange
 		await using ArrangeContext arrangeContext = Arrange();
 
 		// Act
-		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
+		IReadOnlyList<ToolContractIndexEntry> index =
+			await arrangeContext.Session.GetToolContractIndexAsync(arrangeContext.CancellationTokenSource.Token);
 
 		// Assert
-		AssertToolIsAdvertisedAsDestructive(tools, PushToolName);
-		AssertToolIsAdvertisedAsDestructive(tools, RestoreToolName);
+		AssertToolIsDiscoverableAsDestructive(index, PushToolName);
+		AssertToolIsDiscoverableAsDestructive(index, RestoreToolName);
 	}
 
 	[Test]
-	[Description("Starts the real clio MCP server, inspects push-workspace tool discovery metadata, and verifies that skip-backup is exposed as an optional input argument.")]
+	[Description("Starts the real clio MCP server, fetches the push-workspace full contract via get-tool-contract, and verifies that skip-backup is exposed as an optional input argument.")]
 	[AllureTag(PushToolName)]
 	[AllureName("Push workspace advertises optional skip-backup argument")]
-	[AllureDescription("Uses the real clio MCP server tool discovery response to verify that push-workspace exposes the optional skip-backup argument for callers that explicitly want to skip the pre-install backup.")]
+	[AllureDescription("Uses the get-tool-contract full contract of the real clio MCP server to verify that push-workspace exposes the optional skip-backup argument for callers that explicitly want to skip the pre-install backup.")]
 	public async Task PushWorkspace_Tool_Should_Advertise_Optional_SkipBackup_Argument() {
 		// Arrange
 		await using ArrangeContext arrangeContext = Arrange();
 
 		// Act
-		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
+		CallToolResult contractResult = await arrangeContext.Session.CallToolAsync(
+			ToolContractGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["tool-names"] = new[] { PushToolName }
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		ToolContractGetResponse contracts =
+			EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(contractResult);
 
 		// Assert
-		AssertPushWorkspaceToolAdvertisesSkipBackup(tools);
+		AssertPushWorkspaceContractAdvertisesSkipBackup(contracts);
 	}
 
 	private WorkspaceSyncArrangeContext ArrangeInvalidEnvironment(string toolPrefix) {
@@ -118,9 +126,10 @@ public sealed class WorkspaceSyncContractToolE2ETests : McpContractFixtureBase {
 		string toolName,
 		string workspacePath) {
 		return await AllureApi.Step("Act by invoking workspace-sync tool through MCP", async () => {
-			IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-			tools.Select(tool => tool.Name).Should().Contain(toolName,
-				because: "the requested workspace-sync MCP tool must be advertised before the end-to-end call can be executed");
+			IReadOnlyCollection<string> toolNames =
+				await arrangeContext.Session.ListReachableToolNamesAsync(arrangeContext.CancellationTokenSource.Token);
+			toolNames.Should().Contain(toolName,
+				because: "the requested workspace-sync MCP tool must be discoverable via the get-tool-contract compact index before the end-to-end call can be executed");
 
 			CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
 				toolName,
@@ -178,35 +187,27 @@ public sealed class WorkspaceSyncContractToolE2ETests : McpContractFixtureBase {
 			because: "invalid environment requests must not create or modify files in the target workspace directory");
 	}
 
-	[AllureStep("Assert discovered MCP tool is marked as destructive")]
-	private static void AssertToolIsAdvertisedAsDestructive(IList<McpClientTool> tools, string toolName) {
-		McpClientTool tool = tools.Single(tool => tool.Name == toolName);
-
-		tool.ProtocolTool.Annotations.Should().NotBeNull(
-			because: "the MCP server should expose tool annotations for clients that apply safety policies");
-		tool.ProtocolTool.Annotations!.DestructiveHint.Should().BeTrue(
-			because: "workspace-sync tools mutate local workspace state and/or the target environment");
+	[AllureStep("Assert tool is discoverable in the compact index and marked as destructive")]
+	private static void AssertToolIsDiscoverableAsDestructive(IReadOnlyList<ToolContractIndexEntry> index, string toolName) {
+		ToolContractIndexEntry entry = index.Should()
+			.ContainSingle(indexEntry => indexEntry.Name == toolName,
+				because: "workspace-sync tools must be discoverable via the get-tool-contract compact index on the lazy surface")
+			.Which;
+		entry.Destructive.Should().BeTrue(
+			because: "workspace-sync tools mutate local workspace state and/or the target environment, so clients that apply safety policies must see the destructive flag");
 	}
 
-	[AllureStep("Assert push-workspace MCP schema advertises optional skip-backup argument")]
-	private static void AssertPushWorkspaceToolAdvertisesSkipBackup(IList<McpClientTool> tools) {
-		McpClientTool tool = tools.Single(tool => tool.Name == PushToolName);
-		JsonElement inputSchema = JsonSerializer.SerializeToElement(tool.ProtocolTool.InputSchema);
-		JsonElement argsSchema = inputSchema.GetProperty("properties").GetProperty("args");
-		JsonElement argsProperties = argsSchema.GetProperty("properties");
-		string[] requiredArgs = argsSchema.GetProperty("required").EnumerateArray()
-			.Select(item => item.GetString()!)
-			.ToArray();
+	[AllureStep("Assert push-workspace contract advertises optional skip-backup argument")]
+	private static void AssertPushWorkspaceContractAdvertisesSkipBackup(ToolContractGetResponse contracts) {
+		ToolContractDefinition contract = contracts.Tools!.Single(tool => tool.Name == PushToolName);
 
-		argsProperties.TryGetProperty("skip-backup", out JsonElement skipBackupProperty).Should().BeTrue(
+		ToolContractField skipBackupField = contract.InputSchema.Properties
+			.SingleOrDefault(field => field.Name == "skip-backup");
+		skipBackupField.Should().NotBeNull(
 			because: "push-workspace callers need an explicit way to disable backup without changing the default behavior");
-		JsonElement skipBackupType = skipBackupProperty.GetProperty("type");
-		IEnumerable<string> declaredTypes = skipBackupType.ValueKind == JsonValueKind.Array
-			? skipBackupType.EnumerateArray().Select(item => item.GetString()!)
-			: [skipBackupType.GetString()!];
-		declaredTypes.Should().Contain("boolean",
-			because: "skip-backup should be modeled as a boolean MCP input (an optional nullable boolean may also advertise 'null')");
-		requiredArgs.Should().NotContain("skip-backup",
+		skipBackupField!.Type.Should().Be("boolean",
+			because: "skip-backup should be modeled as a boolean MCP input");
+		contract.InputSchema.Required.Should().NotContain("skip-backup",
 			because: "backup skipping must remain opt-in and the default behavior should still create backups when the argument is omitted");
 	}
 

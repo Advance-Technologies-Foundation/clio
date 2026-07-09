@@ -520,9 +520,10 @@ public sealed class ApplicationToolE2ETests {
 		McpE2ESettings settings = TestConfiguration.Load();
 		await using ApplicationArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3));
 		string suffix = Guid.NewGuid().ToString("N")[..8];
-		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(CreateToolName,
-			because: "the create-app MCP tool must be advertised before the end-to-end call can be executed");
+		IReadOnlyCollection<string> reachableToolNames =
+			await arrangeContext.Session.ListReachableToolNamesAsync(arrangeContext.CancellationTokenSource.Token);
+		reachableToolNames.Should().Contain(CreateToolName,
+			because: "the create-app MCP tool must be discoverable via the get-tool-contract compact index before the end-to-end call can be executed");
 
 		Dictionary<string, object?> args = BuildCreateArgs(
 			environmentName: arrangeContext.EnvironmentName,
@@ -916,9 +917,9 @@ public sealed class ApplicationToolE2ETests {
 		string? iconBackground,
 		string? optionalTemplateDataJson,
 		bool withMobilePages = true) {
-		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
-		tools.Select(tool => tool.Name).Should().Contain(CreateToolName,
-			because: "the create-app MCP tool must be advertised before the end-to-end call can be executed");
+		IReadOnlyCollection<string> reachableToolNames = await session.ListReachableToolNamesAsync(cancellationToken);
+		reachableToolNames.Should().Contain(CreateToolName,
+			because: "the create-app MCP tool must be discoverable via the get-tool-contract compact index before the end-to-end call can be executed");
 
 		return await session.CallToolAsync(
 			CreateToolName,
@@ -944,9 +945,9 @@ public sealed class ApplicationToolE2ETests {
 		string packageName,
 		string schemaName,
 		string addedColumnName) {
-		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
-		tools.Select(tool => tool.Name).Should().Contain(SchemaSyncToolName,
-			because: "the sync-schemas MCP tool must be advertised before the canonical-main-entity regression scenario can be executed");
+		IReadOnlyCollection<string> reachableToolNames = await session.ListReachableToolNamesAsync(cancellationToken);
+		reachableToolNames.Should().Contain(SchemaSyncToolName,
+			because: "the sync-schemas MCP tool must be discoverable via the get-tool-contract compact index before the canonical-main-entity regression scenario can be executed");
 
 		return await session.CallToolAsync(
 			SchemaSyncToolName,

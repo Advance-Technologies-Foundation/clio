@@ -171,8 +171,8 @@ public sealed class RunProcessButtonGuidanceResource {
 			       update-page notes
 			       - Use mode `append` to add the button without overwriting existing customizations
 			         (it dedupes viewConfigDiff by `name`).
-			       - See the `page-modification` guide for the body envelope, container selection, and the
-			         "do not resend the full raw.body" rule.
+			       - See `page-modification-components` for the body envelope and container selection, and
+			         `page-modification-overview` for the "do not resend the full raw.body" rule.
 			       """
 		};
 }

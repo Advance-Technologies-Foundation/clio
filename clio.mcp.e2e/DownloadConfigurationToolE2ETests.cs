@@ -7,7 +7,6 @@ using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
-using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E;
@@ -97,9 +96,10 @@ public sealed class DownloadConfigurationToolE2ETests : McpContractFixtureBase {
 
 	[AllureStep("Act by invoking download-configuration-by-build through MCP")]
 	private static async Task<DownloadConfigurationActResult> ActBuildAsync(DownloadConfigurationArrangeContext arrangeContext) {
-		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(BuildToolName,
-			because: "the build-based dconf MCP tool must be advertised before the end-to-end call can be executed");
+		IReadOnlyCollection<string> toolNames =
+			await arrangeContext.Session.ListReachableToolNamesAsync(arrangeContext.CancellationTokenSource.Token);
+		toolNames.Should().Contain(BuildToolName,
+			because: "the build-based dconf MCP tool must be discoverable via the get-tool-contract compact index before the end-to-end call can be executed");
 
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
 			BuildToolName,
@@ -117,9 +117,10 @@ public sealed class DownloadConfigurationToolE2ETests : McpContractFixtureBase {
 
 	[AllureStep("Act by invoking download-configuration-by-environment through MCP")]
 	private static async Task<DownloadConfigurationActResult> ActEnvironmentFailureAsync(DownloadConfigurationArrangeContext arrangeContext) {
-		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(EnvironmentToolName,
-			because: "the environment-based dconf MCP tool must be advertised before the end-to-end call can be executed");
+		IReadOnlyCollection<string> toolNames =
+			await arrangeContext.Session.ListReachableToolNamesAsync(arrangeContext.CancellationTokenSource.Token);
+		toolNames.Should().Contain(EnvironmentToolName,
+			because: "the environment-based dconf MCP tool must be discoverable via the get-tool-contract compact index before the end-to-end call can be executed");
 
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
 			EnvironmentToolName,
@@ -196,8 +197,11 @@ public sealed class DownloadConfigurationToolE2ETests : McpContractFixtureBase {
 
 		combinedOutput.Should().NotBeNullOrWhiteSpace(
 			because: "failed environment execution should explain why the call was rejected");
+		// The invocation-wrapper alternatives cover both surfaces: the native SDK diagnostic
+		// ("An error occurred invoking '<tool>'.") and the clio-run executor wrapper used for
+		// non-resident tools on the lazy surface ("Error: tool '<tool>' failed: …").
 		combinedOutput.Should().MatchRegex(
-			$"(?is)({Regex.Escape(environmentName)}.*not found|an error occurred invoking '{Regex.Escape(EnvironmentToolName)}')",
+			$"(?is)({Regex.Escape(environmentName)}.*not found|an error occurred invoking '{Regex.Escape(EnvironmentToolName)}'|tool '{Regex.Escape(EnvironmentToolName)}' failed)",
 			because: "the failure should either identify the missing environment directly or include the MCP invocation wrapper");
 	}
 

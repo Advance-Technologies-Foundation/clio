@@ -30,9 +30,10 @@ public sealed class RelatedListGuidanceResource {
 
 		       Before you author or edit a detail, fetch the structure from `get-component-info`: the full
 		       "Expanded list" recipe with `composite="Expanded list"`. Read it in full. Also read `page-modification`
-		       (body markers, append vs replace, static-vs-diff body forms, container selection). Those are the
-		       source of truth for the component/composite shapes; this guide owns the master-detail WIRING that
-		       connects them — the part AI most often gets wrong.
+		       and its sub-guides (`page-modification-overview` for body markers / append vs replace,
+		       `page-modification-field-contract` for static-vs-diff body forms, `page-modification-containers` for
+		       container selection). Those are the source of truth for the component/composite shapes; this guide owns
+		       the master-detail WIRING that connects them — the part AI most often gets wrong.
 
 		       The headline rule — scope a detail with `modelConfig.dependencies`, NOT a handler
 		       The platform filters a child list by the open record DECLARATIVELY. You declare the child→master
@@ -133,7 +134,7 @@ public sealed class RelatedListGuidanceResource {
 		         id changes, so switching the open record re-scopes the child list with no handler.
 		       - The grid `items` binding and the panel/grid `viewConfigDiff` inserts are normal page edits — fetch
 		         the structure with `get-component-info composite="Expanded list"` (the canonical recipe), and see
-		         `page-modification` for `parentName`/`propertyName`/`index` placement and `get-component-info` for
+		         `page-modification-components` for `parentName`/`propertyName`/`index` placement and `get-component-info` for
 		         `columns`, `features`, and toolbar slots.
 
 		       Adding records to the detail — two mechanisms; page-based add/edit is the primary one

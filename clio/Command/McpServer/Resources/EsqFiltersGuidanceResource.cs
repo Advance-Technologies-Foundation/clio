@@ -186,7 +186,7 @@ public sealed class EsqFiltersGuidanceResource {
 
 		       ## Related guidance
 		       - Read `esq` for the SelectQuery envelope, columns/select, expression building blocks, the forward/backward reference grammar, aggregations, and the master enum tables.
-		       - Read `page-modification` for page-body save mechanics after the filter shape is decided.
+		       - Read `page-modification` (and `page-modification-overview` for page-body save mechanics) after the filter shape is decided.
 		       """
 	};
 

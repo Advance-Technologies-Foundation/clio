@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using Clio.Common;
+using Clio.Common.DataForge;
 using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
@@ -44,12 +45,36 @@ public sealed class SchemaSyncTool(
 	public async Task<SchemaSyncResponse> SchemaSync(
 		[Description("Parameters: environment-name, package-name (required); operations array (required)")]
 		[Required] SchemaSyncArgs args) {
-		ApplicationDataForgeResult? dataForge = enrichmentService is not null
-			? enrichmentService.Enrich(
-				args.EnvironmentName,
-				CollectCandidateTerms(args),
-				CollectLookupHints(args))
-			: null;
+		// Data Forge enrichment is DIAGNOSTIC ONLY — it never gates the schema operations below. The
+		// builder already degrades gracefully (an unhealthy dataforge subsystem, e.g. 'baseUri: Value
+		// cannot be null', is caught and surfaced as a warning rather than thrown). This outer guard is
+		// belt-and-suspenders: a throwing enrichment service must NEVER fail an otherwise-valid column
+		// op — degrade by attaching the warning and proceeding (field-test defect #2).
+		ApplicationDataForgeResult? dataForge = null;
+		if (enrichmentService is not null) {
+			try {
+				dataForge = enrichmentService.Enrich(
+					args.EnvironmentName,
+					CollectCandidateTerms(args),
+					CollectLookupHints(args));
+			} catch (Exception ex) when (!McpExceptionPolicy.IsUnrecoverable(ex)) {
+				// Degrade ONLY operational enrichment failures (dataforge/HTTP/data-layer) into a warning —
+				// a fatal condition or programming defect (OOM/NRE/…) must propagate, not be hidden here
+				// (project rule: no blanket catch). The recoverable set is open-ended, so we exclude the
+				// unrecoverable set rather than enumerate every operational type the builder may surface.
+				dataForge = new ApplicationDataForgeResult(
+					Used: true,
+					Health: null,
+					Status: null,
+					Coverage: new DataForgeCoverage(false, false, false, false, false),
+					// Redact before surfacing: a dataforge/HTTP/data-layer failure routinely carries
+					// absolute paths, target URIs, and connection-string hosts (e.g. the 'baseUri: …'
+					// case named above), and this warning is copied verbatim into the MCP client/
+					// transcript — the same information-disclosure class the throw paths already redact.
+					Warnings: [$"dataforge:{SensitiveErrorTextRedactor.Redact(ex.Message)}"],
+					ContextSummary: new ApplicationDataForgeContextSummary([], [], [], []));
+			}
+		}
 		var results = new List<SchemaSyncOperationResult>();
 		lock (McpToolExecutionLock.SyncRoot) {
 			bool previousPreserveMessages = logger.PreserveMessages;
@@ -195,7 +220,7 @@ public sealed class SchemaSyncTool(
 				Type = operationName,
 				SchemaName = op.SchemaName,
 				Success = false,
-				Error = ex.Message,
+				Error = SensitiveErrorTextRedactor.Redact(ex.Message),
 				Messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)],
 				CollisionInfo = collisionInfo
 			};
@@ -254,7 +279,7 @@ public sealed class SchemaSyncTool(
 					Type = UpdateEntityOperationName,
 				SchemaName = op.SchemaName,
 				Success = false,
-				Error = ex.Message,
+				Error = SensitiveErrorTextRedactor.Redact(ex.Message),
 				Messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)]
 			};
 		}
@@ -286,7 +311,7 @@ public sealed class SchemaSyncTool(
 	private static UpdateEntitySchemaOperationArgs CoerceColumnToAddOperation(CreateEntitySchemaColumnArgs column) {
 		return new UpdateEntitySchemaOperationArgs(
 			Action: "add",
-			ColumnName: column.Name,
+			ColumnName: column.ResolveName() ?? string.Empty,
 			Type: column.ResolveType(),
 			TitleLocalizations: ResolveAddBatchTitleLocalizations(column),
 			ReferenceSchemaName: column.ResolveReferenceSchemaName(),
@@ -295,6 +320,7 @@ public sealed class SchemaSyncTool(
 			DefaultValueSource: column.DefaultValueSource,
 			Masked: column.Masked) {
 			LegacyTitle = column.LegacyTitle,
+			LegacyCaption = column.LegacyCaption,
 			DefaultValueConfig = column.DefaultValueConfig
 		};
 	}
@@ -352,7 +378,7 @@ public sealed class SchemaSyncTool(
 				Type = SeedDataOperationName,
 				SchemaName = op.SchemaName,
 				Success = false,
-				Error = ex.Message,
+				Error = SensitiveErrorTextRedactor.Redact(ex.Message),
 				Messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)]
 			};
 		}
@@ -408,7 +434,7 @@ public sealed class SchemaSyncTool(
 /// </summary>
 public sealed record SchemaSyncArgs(
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Creatio environment name")]
+	[property: Description(McpToolDescriptions.EnvironmentName)]
 	[property: Required]
 	string EnvironmentName,
 

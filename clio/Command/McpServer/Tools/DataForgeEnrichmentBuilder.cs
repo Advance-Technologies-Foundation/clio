@@ -72,7 +72,9 @@ public sealed class DataForgeEnrichmentBuilder(IToolCommandResolver commandResol
 				Health: null,
 				Status: null,
 				Coverage: new DataForgeCoverage(false, false, false, false, false),
-				Warnings: [$"dataforge:{ex.Message}"],
+				// Redact before surfacing — this degraded warning is copied verbatim into the MCP
+				// client/transcript and a dataforge failure routinely carries paths/URIs/credentials.
+				Warnings: [$"dataforge:{SensitiveErrorTextRedactor.Redact(ex.Message)}"],
 				ContextSummary: new ApplicationDataForgeContextSummary([], [], [], []));
 		}
 	}
