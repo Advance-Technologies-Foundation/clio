@@ -77,7 +77,12 @@ Targeted run: `dotnet test clio.tests/clio.tests.csproj --filter "Category=Unit&
 
 ## Dev Agent Record
 
-- Implementation started:
-- Implementation completed:
-- Tests passing:
+- Implementation started: 2026-07-09 (investigation only — no code; blocked by session/API limit, resets 18:30 Europe/Warsaw)
+- Implementation completed: —
+- Tests passing: —
 - Notes:
+  - **CRITICAL design finding (verified by reading `ConsoleLogger.cs`) — the naive "AsyncLocal-back `PreserveMessages`/`LogMessages`" would BREAK capture entirely.** Log capture does NOT happen where `PreserveMessages` is set/read; it happens at **drain time** in `ConsoleLogger.FlushQueueCore` (line 74: `if (PreserveMessages) LogMessages.Add(item)`), which runs on the shared background `_printThread` (started once at process init), NOT on the producing tool flow. A drain-thread AsyncLocal slot ≠ the tool flow's slot → nothing would be captured.
+  - **Approved FR-06 mechanism:** move capture from drain-time to **enqueue-time** — inside the `Write*` methods (which run on the producing flow) — gated by a per-flow `AsyncLocal<bool>` PreserveMessages flag writing into a per-flow `AsyncLocal<List<LogMessage>>` buffer. Console **rendering** stays on the shared `_printThread` unchanged. The `PreserveMessages = true` setter must establish a FRESH per-flow buffer (neutralizes the `Program.cs:1200` process-wide MCP-mode set + any inherited startup-flow context, so each tool scope is isolated). `DbOperationLogContextAccessor.CurrentSession`/`LastCompletedPath` → static `AsyncLocal` analogously.
+  - **CLI safety (checked):** production capture READERS are MCP-only (`BaseTool` + EntitySchema/CompileCreatio/SchemaSync/AddItemModel tools); no CLI production path reads `LogMessages`/`FlushAndSnapshotMessages`, and tests set/read on the same flow → AsyncLocal is safe.
+  - **Still to do (FR-05, unchanged from the story):** `ITenantExecutionLockProvider` (DI singleton, keyed by the Story-8 cache identity) + `GetTenantKey` on `IToolCommandResolver` (shared key-builder); migrate ALL 6 lock sites (9a shared-root: `BaseTool` ×2, `PageEditToolHelpers`, `PageSyncTool`, `SchemaSyncTool`; 9b tool-local static: `CompileCreatioTool`, `AddItemModelTool`) — per-site decide re-key vs remove-if-redundant; wire Story-8 `MarkInUse`/`MarkAvailable` around the execution boundary. DI-breadth: adding a `ITenantExecutionLockProvider` ctor param to `BaseTool` touches many subclass ctors — assess vs a static facade that delegates to the DI provider.
+  - Order remains STRICT: FR-06 (enqueue-time capture isolation) BEFORE FR-05 (lock de-globalization).
