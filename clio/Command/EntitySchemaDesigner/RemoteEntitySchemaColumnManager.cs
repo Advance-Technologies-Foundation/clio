@@ -1122,7 +1122,9 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 					throw new EntitySchemaDesignerException(
 						$"Column '{expectedColumnName}' could not be reloaded after save.");
 				}
-				if (!ownColumnExists && inheritedMatch != null) {
+				// Reaching here with !ownColumnExists guarantees inheritedMatch != null (the guard above threw
+				// otherwise): a modify that resolved to an inherited column is a caption override to verify.
+				if (!ownColumnExists) {
 					VerifyInheritedCaptionOverride(inheritedMatch, options, effectiveCultureName);
 				}
 				break;
@@ -1177,13 +1179,11 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	}
 
 	private static string FindCultureValue(IReadOnlyDictionary<string, string> localizations, string cultureName) {
-		foreach (KeyValuePair<string, string> localization in localizations) {
-			if (string.Equals(localization.Key, cultureName, StringComparison.OrdinalIgnoreCase)
-				&& !string.IsNullOrWhiteSpace(localization.Value)) {
-				return localization.Value.Trim();
-			}
-		}
-		return null;
+		return localizations
+			.Where(localization => string.Equals(localization.Key, cultureName, StringComparison.OrdinalIgnoreCase)
+				&& !string.IsNullOrWhiteSpace(localization.Value))
+			.Select(localization => localization.Value.Trim())
+			.FirstOrDefault();
 	}
 
 	private static string FormatBoolean(bool value) {

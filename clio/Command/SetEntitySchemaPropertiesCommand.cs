@@ -77,15 +77,15 @@ public class SetEntitySchemaPropertiesCommand : Command<SetEntitySchemaPropertie
 	internal static void ValidateOptions(SetEntitySchemaPropertiesOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
 		if (string.IsNullOrWhiteSpace(options.Package)) {
-			throw new ArgumentException("Package is required.", nameof(options.Package));
+			throw new ArgumentException("Package is required.", nameof(options));
 		}
 		if (string.IsNullOrWhiteSpace(options.SchemaName)) {
-			throw new ArgumentException("Schema name is required.", nameof(options.SchemaName));
+			throw new ArgumentException("Schema name is required.", nameof(options));
 		}
 		if (string.IsNullOrWhiteSpace(options.PrimaryDisplayColumn)) {
 			throw new ArgumentException(
 				"At least one schema property to set is required (for example --primary-display-column).",
-				nameof(options.PrimaryDisplayColumn));
+				nameof(options));
 		}
 	}
 }
