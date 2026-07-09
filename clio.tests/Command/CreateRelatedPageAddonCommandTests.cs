@@ -11,7 +11,7 @@ using NUnit.Framework;
 [TestFixture]
 [Category("Unit")]
 [Property("Module", "Command")]
-public sealed class CreateRelatedPageAddonCommandTests {
+public sealed class CreateRelatedPageAddonCommandTests : BaseCommandTests<CreateRelatedPageAddonOptions> {
 	private IRelatedPageAddonService _service = null!;
 	private ILogger _logger = null!;
 	private RelatedPageAddonRequest _captured;
