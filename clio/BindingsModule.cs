@@ -464,6 +464,15 @@ public class BindingsModule {
 		services.AddTransient<IDataForgeEnrichmentBuilder, DataForgeEnrichmentBuilder>();
 		services.AddTransient<IApplicationCreateEnrichmentService, ApplicationCreateEnrichmentService>();
 		services.AddTransient<ISchemaEnrichmentService, SchemaEnrichmentService>();
+		// Shared null-object defaults for the credential-passthrough seam so ToolCommandResolver's
+		// ctor deps are always satisfiable (stdio host + per-environment ephemeral containers, where
+		// the real accessor/validator are absent). The mcp-http host registers the REAL
+		// CredentialContextAccessor + TargetUrlValidator AFTER this shared build (McpHttpServerCommand.Run),
+		// so last-registration-wins resolves the real ones in HTTP and these null objects everywhere else.
+		// Both interfaces stay in the RegisterAssemblyInterfaceTypes skip-list, which suppresses
+		// auto-registration of BOTH the real and the null implementations (the skip is keyed on the interface).
+		services.AddSingleton<ICredentialContextAccessor, NullCredentialContextAccessor>();
+		services.AddSingleton<ITargetUrlValidator, NullTargetUrlValidator>();
 		services.AddTransient<IToolCommandResolver, ToolCommandResolver>();
 		services.AddTransient<IDataForgePlatformVersionGuard, DataForgePlatformVersionGuard>();
 		services.AddTransient<IDataForgeReadClient, DataForgeReadClient>();

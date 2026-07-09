@@ -86,10 +86,11 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 
 		// Per-request credential-passthrough seam (Story 4). Registered in the HTTP host,
 		// NOT the shared BindingsModule, so IHttpContextAccessor is not pulled into the
-		// stdio graph. FLAG FOR STORY 7: when the credential resolver consumes
-		// ICredentialContextAccessor it must resolve in BOTH hosts — either move these
-		// registrations (plus AddHttpContextAccessor) into BindingsModule, or make the
-		// stdio path tolerate a null accessor.
+		// stdio graph. STORY 7 RESOLUTION: the shared BindingsModule.RegisterInto registers
+		// null-object defaults (NullCredentialContextAccessor / NullTargetUrlValidator) so the
+		// credential resolver's ctor deps resolve in BOTH hosts; the REAL accessor + validator
+		// are registered here, AFTER the shared build, so last-registration-wins gives the real
+		// ones in HTTP and the null objects in stdio / ephemeral containers.
 		builder.Services.AddHttpContextAccessor();
 		builder.Services.AddSingleton<ICredentialHeaderParser, CredentialHeaderParser>();
 		builder.Services.AddSingleton<ICredentialContextAccessor, CredentialContextAccessor>();
