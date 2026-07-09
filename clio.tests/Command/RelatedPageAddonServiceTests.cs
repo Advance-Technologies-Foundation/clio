@@ -915,6 +915,8 @@ public sealed class RelatedPageAddonServiceTests {
 		// Assert
 		result.PageCount.Should().Be(2,
 			because: "with no columns to verify against, the type-column check is skipped and the set is saved");
+		result.Warning.Should().Contain("could not be verified",
+			because: "the fail-soft skip is surfaced as a warning in the result payload (not only logged), so an MCP/API caller who cannot see server logs can detect the unverified write");
 		_addonSchemaDesignerClient.Received(1).SaveSchema(Arg.Any<AddonSchemaDto>());
 	}
 

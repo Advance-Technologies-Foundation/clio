@@ -107,7 +107,8 @@ namespace Clio.Command {
 					PackageName = options.PackageName,
 					PackageUId = result.PackageUId,
 					AddonName = result.AddonName,
-					PageCount = result.PageCount
+					PageCount = result.PageCount,
+					Warning = result.Warning
 				};
 				return true;
 			} catch (Exception ex) {
@@ -160,6 +161,11 @@ namespace Clio.Command {
 		[JsonProperty("pageCount")]
 		[JsonPropertyName("pageCount")]
 		public int PageCount { get; set; }
+
+		[DataMember(Name = "warning")]
+		[JsonProperty("warning", NullValueHandling = NullValueHandling.Ignore)]
+		[JsonPropertyName("warning")]
+		public string Warning { get; set; }
 
 		[DataMember(Name = "error")]
 		[JsonProperty("error", NullValueHandling = NullValueHandling.Ignore)]

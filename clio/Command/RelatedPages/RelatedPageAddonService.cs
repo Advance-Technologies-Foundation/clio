@@ -25,7 +25,10 @@ public sealed record RelatedPageAddonResult(
 	string EntitySchemaUId,
 	string PackageUId,
 	int PageCount,
-	string AddonName);
+	string AddonName,
+	// Non-fatal warning surfaced to the caller (e.g. a fail-soft type-column check that could not be verified
+	// because the fetched schema exposed no columns). Null when the write completed with nothing to flag.
+	string Warning = null);
 
 /// <summary>
 /// Identifies the object whose current <c>RelatedPage</c> configuration should be read.
@@ -332,7 +335,7 @@ internal sealed class RelatedPageAddonService(
 
 		(string packageUId, Guid packageId, EntityDesignSchemaDto entitySchema) =
 			ResolveTarget(request.PackageName, request.EntitySchemaName);
-		ValidateTypeColumn(request.TypeColumnUId, entitySchema);
+		string typeColumnWarning = ValidateTypeColumn(request.TypeColumnUId, entitySchema);
 
 		IReadOnlyDictionary<string, string> roleByName = ResolveRoleNames(request.Pages);
 		JsonArray pages = BuildPages(request.Pages, roleByName);
@@ -362,7 +365,7 @@ internal sealed class RelatedPageAddonService(
 		addonSchemaDesignerClient.BuildConfiguration();
 
 		return new RelatedPageAddonResult(
-			entitySchema.UId.ToString("D"), packageUId, pages.Count, RelatedPageAddonName);
+			entitySchema.UId.ToString("D"), packageUId, pages.Count, RelatedPageAddonName, typeColumnWarning);
 	}
 
 	public RelatedPageAddonReadResult Get(RelatedPageAddonReadRequest request) {
@@ -550,22 +553,26 @@ internal sealed class RelatedPageAddonService(
 	/// valid set — mirroring the codebase's other best-effort existence checks. The GUID shape is enforced upstream
 	/// by <see cref="ValidateRequest"/>; a non-empty non-GUID value never reaches here with a column to match.
 	/// </summary>
-	private void ValidateTypeColumn(string typeColumnUId, EntityDesignSchemaDto entitySchema) {
+	// Returns a non-fatal warning when the type-column check had to be skipped (fail-soft), or null when there is
+	// nothing to flag. The warning is BOTH logged (server-side trail) AND returned so the command/tool can surface
+	// it in the result payload — an MCP/API caller does not see server logs.
+	private string ValidateTypeColumn(string typeColumnUId, EntityDesignSchemaDto entitySchema) {
 		if (string.IsNullOrWhiteSpace(typeColumnUId) || !Guid.TryParse(typeColumnUId.Trim(), out Guid typeColumnId)) {
-			return;
+			return null;
 		}
 		var columns = SchemaColumns(entitySchema).ToList();
 		if (columns.Count == 0) {
 			// Never false-reject: an unverifiable schema must not block a valid write. But an object that supports
 			// related pages exposing ZERO columns (own + inherited) is unlikely — a partial/incomplete GetSchema (a
-			// transient server condition) is the more probable cause — so leave a warning trail, because an unverified
-			// TypeColumnUId is about to be written straight into the add-on (replace-not-merge).
-			logger.WriteWarning(
+			// transient server condition) is the more probable cause — so both log AND return a warning, because an
+			// unverified TypeColumnUId is about to be written straight into the add-on (replace-not-merge).
+			string warning =
 				$"type-column-uid '{typeColumnUId.Trim()}' could not be verified: object '{entitySchema.Name}' returned "
-				+ "no columns (own or inherited), so the type-column existence check was skipped and the value is written "
-				+ "unverified. If the binding does not resolve at runtime, re-check the type column — the schema fetch may "
-				+ "have been incomplete.");
-			return;
+				+ "no columns (own or inherited), so the type-column existence check was skipped and the value was written "
+				+ "unverified. If the typed pages do not resolve at runtime, re-check the type column — the schema fetch "
+				+ "may have been incomplete.";
+			logger.WriteWarning(warning);
+			return warning;
 		}
 		if (columns.All(column => column.UId != typeColumnId)) {
 			throw new InvalidOperationException(
@@ -573,6 +580,7 @@ internal sealed class RelatedPageAddonService(
 				+ "u-id of a column on the object — the record-type lookup (e.g. Type or Category) the typed page sets "
 				+ "are keyed by.");
 		}
+		return null;
 	}
 
 	// The object's own plus inherited columns (a type column is commonly inherited — e.g. Case.Category), matching

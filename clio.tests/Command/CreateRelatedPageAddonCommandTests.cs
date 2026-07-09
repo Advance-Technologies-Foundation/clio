@@ -245,6 +245,29 @@ public sealed class CreateRelatedPageAddonCommandTests {
 	}
 
 	[Test]
+	[Description("TryCreate surfaces a non-fatal service warning (e.g. an unverified type-column on a column-less schema response) in the response payload, so an MCP/API caller that cannot see server logs still detects it; success is unaffected.")]
+	public void TryCreate_ShouldSurfaceServiceWarning_InResponse() {
+		// Arrange — the service reports success WITH a warning.
+		_service.Create(Arg.Any<RelatedPageAddonRequest>()).Returns(
+			new RelatedPageAddonResult("entity-uid", "package-uid", 1, "RelatedPage",
+				"type-column-uid '...' could not be verified"));
+		CreateRelatedPageAddonOptions options = new() {
+			EntitySchemaName = "Case",
+			PackageName = "Custom",
+			DefaultPage = "CaseFormPage"
+		};
+
+		// Act
+		bool ok = _command.TryCreate(options, out CreateRelatedPageAddonResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: "a non-fatal warning does not fail the operation");
+		response.Success.Should().BeTrue(because: "the write succeeded; the warning is advisory");
+		response.Warning.Should().Contain("could not be verified",
+			because: "the service warning must be carried into the response payload for callers that don't see server logs");
+	}
+
+	[Test]
 	[Description("TryCreate returns false without calling the service when options is null.")]
 	public void TryCreate_ShouldReturnFalseWithoutCallingService_WhenOptionsIsNull() {
 		// Act
