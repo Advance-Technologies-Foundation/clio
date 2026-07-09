@@ -731,36 +731,57 @@ public class BindingsModule {
 		services.AddTransient<WikiHelpViewer>();
 		
 		services.AddTransient<Func<EnvironmentSettings, ISysSettingsManager>>(_ =>
-			envSettings => {
-				IDataProvider dataProvider = string.IsNullOrEmpty(envSettings.ClientId)
-					? new RemoteDataProvider(envSettings.Uri, envSettings.Login, envSettings.Password,
-						envSettings.IsNetCore)
-					: new RemoteDataProvider(envSettings.Uri, envSettings.AuthAppUri, envSettings.ClientId,
-						envSettings.ClientSecret, envSettings.IsNetCore);
-				return new SysSettingsManager(dataProvider);
-			});
+			envSettings => new SysSettingsManager(BuildRemoteDataProvider(envSettings)));
 
 		RegisterFluentValidators(services);
 		return settingsRepository;
 	}
 
+	// Builds an ATF RemoteDataProvider for the environment. Bearer-first: an AccessToken is
+	// consumed via the dedicated bearer ctor and must never reach the login/password path
+	// (multi-tenant safety, ENG-93208 B1). Login/password are passed as-is (no Supervisor default).
+	private static RemoteDataProvider BuildRemoteDataProvider(EnvironmentSettings settings) {
+		if (!string.IsNullOrEmpty(settings.AccessToken)) {
+			return new RemoteDataProvider(settings.Uri, settings.AccessToken, settings.IsNetCore);
+		}
+		if (string.IsNullOrEmpty(settings.ClientId)) {
+			return new RemoteDataProvider(settings.Uri, settings.Login, settings.Password, settings.IsNetCore);
+		}
+		return new RemoteDataProvider(settings.Uri, settings.AuthAppUri, settings.ClientId,
+			settings.ClientSecret, settings.IsNetCore);
+	}
+
+	// Builds a CreatioClient for the environment. Bearer-first: an AccessToken is consumed via the
+	// bearer ctor and must never reach the "Supervisor" fallback (multi-tenant safety, ENG-93208 B1).
+	// The Supervisor/localhost default stays reachable ONLY for the no-credential bootstrap case.
+	private static CreatioClient BuildCreatioClient(EnvironmentSettings settings) {
+		if (!string.IsNullOrEmpty(settings.AccessToken)) {
+			return new CreatioClient(settings.Uri ?? "http://localhost", settings.AccessToken, settings.IsNetCore);
+		}
+		if (string.IsNullOrEmpty(settings.ClientId)) {
+			return new CreatioClient(settings.Uri ?? "http://localhost", settings.Login ?? "Supervisor",
+				settings.Password ?? "Supervisor", true, settings.IsNetCore);
+		}
+		return CreatioClient.CreateOAuth20Client(settings.Uri, settings.AuthAppUri,
+			settings.ClientId, settings.ClientSecret, settings.IsNetCore);
+	}
+
 	private static void RegisterActiveEnvironmentServices(
 		IServiceCollection services, EnvironmentSettings activeSettings) {
 		services.AddSingleton(activeSettings);
-		services.AddTransient<IDataProvider>(_ => new LazyDataProvider(() =>
-			string.IsNullOrEmpty(activeSettings.ClientId)
-				? new RemoteDataProvider(activeSettings.Uri, activeSettings.Login, activeSettings.Password,
-					activeSettings.IsNetCore)
-				: new RemoteDataProvider(activeSettings.Uri, activeSettings.AuthAppUri, activeSettings.ClientId,
-					activeSettings.ClientSecret, activeSettings.IsNetCore)));
-		Lazy<CreatioClient> lazyCreatioClient = new(() => string.IsNullOrEmpty(activeSettings.ClientId)
-			? new CreatioClient(activeSettings.Uri ?? "http://localhost", activeSettings.Login ?? "Supervisor",
-				activeSettings.Password ?? "Supervisor", true, activeSettings.IsNetCore)
-			: CreatioClient.CreateOAuth20Client(activeSettings.Uri, activeSettings.AuthAppUri,
-				activeSettings.ClientId, activeSettings.ClientSecret, activeSettings.IsNetCore));
+		services.AddTransient<IDataProvider>(_ => new LazyDataProvider(() => BuildRemoteDataProvider(activeSettings)));
+		// Bearer-first; AccessToken must never reach the "Supervisor" fallback below
+		// (multi-tenant safety, ENG-93208 B1).
+		Lazy<CreatioClient> lazyCreatioClient = new(() => BuildCreatioClient(activeSettings));
 		services.AddSingleton<CreatioClient>(_ => lazyCreatioClient.Value);
-		services.AddSingleton<IApplicationClient>(_ =>
-			new CreatioClientAdapter(lazyCreatioClient));
+		services.AddSingleton<IApplicationClient>(sp =>
+			// Bearer path must never re-login: wire NoReauthExecutor (the DI'd IReauthExecutor)
+			// so an ephemeral bearer client cannot fall back to a login/password re-auth
+			// (multi-tenant safety, ENG-93208 B1). Non-bearer keeps the adapter's default
+			// internal closure-based ReauthExecutor byte-for-byte.
+			!string.IsNullOrEmpty(activeSettings.AccessToken)
+				? new CreatioClientAdapter(lazyCreatioClient, sp.GetRequiredService<IReauthExecutor>())
+				: new CreatioClientAdapter(lazyCreatioClient));
 		services.AddTransient<SysSettingsManager>();
 	}
 
