@@ -99,8 +99,11 @@ internal sealed class RelatedPageAddonService(
 
 	private const string RelatedPageAddonName = "RelatedPage";
 	private const string EntitySchemaManagerName = "EntitySchemaManager";
-	private const string EmployeesRoleName = "All employees";
-	private const string PortalRoleName = "All external users";
+	// Single source of truth for the two audience role names is RelatedPageSpecBuilder (the CLI emitter of these
+	// role names); alias them here so the emitter and this validator cannot drift, while the validation code below
+	// still reads with the short unqualified names.
+	private const string EmployeesRoleName = RelatedPageSpecBuilder.EmployeesRoleName;
+	private const string PortalRoleName = RelatedPageSpecBuilder.PortalRoleName;
 
 	/// <summary>
 	/// The two audiences a related-page binding supports, mapped to their fixed seeded <c>SysAdminUnit</c> Ids
@@ -114,8 +117,8 @@ internal sealed class RelatedPageAddonService(
 	/// </summary>
 	private static readonly IReadOnlyDictionary<string, string> KnownPlatformRoleIds =
 		new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
-			["All employees"] = "a29a3ba5-4b0d-de11-9a51-005056c00008",
-			["All external users"] = "720b771c-e7a7-4f31-9cfb-52cd21c3739f"
+			[EmployeesRoleName] = "a29a3ba5-4b0d-de11-9a51-005056c00008",
+			[PortalRoleName] = "720b771c-e7a7-4f31-9cfb-52cd21c3739f"
 		};
 
 	// Reverse of KnownPlatformRoleIds (UId -> name), used by the read path to surface friendly audience names
@@ -176,6 +179,16 @@ internal sealed class RelatedPageAddonService(
 				throw new ArgumentException(
 					$"page-schema-uid '{page.PageSchemaUId}' is not a valid GUID; it must be the page schema's u-id.");
 			}
+			// type-column-value is a lookup RECORD Id — the platform matches typed page sets by
+			// (TypeColumnUId, TypeColumnValue) as GUIDs — so reject a non-GUID up front, symmetric with the
+			// type-column-uid / role / page-schema-uid GUID guards. Otherwise a malformed value is written verbatim
+			// (NormalizeTypeColumnValue returns a non-GUID trimmed as-is) into a typed page the platform can never
+			// select: a silent Success with a dead page — the very failure ValidateTypeColumn exists to prevent.
+			if (!string.IsNullOrWhiteSpace(page.TypeColumnValue) && !Guid.TryParse(page.TypeColumnValue.Trim(), out _)) {
+				throw new ArgumentException(
+					$"type-column-value '{page.TypeColumnValue}' is not a valid GUID; it must be the lookup record's Id "
+					+ "(the record in the reference lookup that type-column-uid points at).");
+			}
 		}
 		// A page may describe its audience by an explicit role UId OR by role-name. get-related-page-addon returns
 		// BOTH (the raw UId for a safe round-trip plus the friendly name), so a verbatim read-modify-write replay
@@ -234,7 +247,7 @@ internal sealed class RelatedPageAddonService(
 			throw new ArgumentException(
 				"A base default page for the general audience is required: include one page with is-default=true, no "
 				+ "type-column-value, and either no role or the 'All employees' role (the page opened for a record and "
-				+ "the fallback for any type or audience without a dedicated set). Portal ('All external users') and "
+				+ "the fallback for any record type without a dedicated set). Portal ('All external users') and "
 				+ "type-specific pages are layered on top; a portal-only or other audience-scoped-only binding is rejected.");
 		}
 		// At most one default page and one add page per (audience x type) cell — the shape the designer enforces
@@ -338,6 +351,14 @@ internal sealed class RelatedPageAddonService(
 		}
 	}
 
+	// Joins the non-null, non-blank warnings (the fail-soft type-column check plus the best-effort post-save
+	// refreshes) into the single RelatedPageAddonResult.Warning channel, so an MCP/API caller — who cannot read
+	// server logs — sees every non-fatal issue from one create. Null when there is nothing to flag.
+	private static string CombineWarnings(params string[] warnings) {
+		string[] present = warnings.Where(warning => !string.IsNullOrWhiteSpace(warning)).ToArray();
+		return present.Length == 0 ? null : string.Join(" ", present);
+	}
+
 	public RelatedPageAddonResult Create(RelatedPageAddonRequest request) {
 		ValidateRequest(request);
 
@@ -371,13 +392,17 @@ internal sealed class RelatedPageAddonService(
 		schema.MetaData = metadata.ToJsonString();
 
 		addonSchemaDesignerClient.SaveSchema(schema);
-		// Make the saved add-on visible to the current session without a full reload, then rebuild static
-		// client content so online and offline users pick up the change.
-		addonSchemaDesignerClient.ResetClientScriptCache();
-		addonSchemaDesignerClient.BuildConfiguration();
+		// Make the saved add-on visible to the current session without a full reload, then rebuild static client
+		// content so online and offline users pick up the change. Both run AFTER the durable save and are best-effort
+		// (warn-not-throw): each returns a non-fatal warning instead of failing an already-committed write, and those
+		// warnings are surfaced to the caller (who cannot see server logs) alongside the type-column warning rather
+		// than silently dropped.
+		string resetWarning = addonSchemaDesignerClient.ResetClientScriptCache();
+		string buildWarning = addonSchemaDesignerClient.BuildConfiguration();
 
 		return new RelatedPageAddonResult(
-			entitySchema.UId.ToString("D"), packageUId, pages.Count, RelatedPageAddonName, typeColumnWarning);
+			entitySchema.UId.ToString("D"), packageUId, pages.Count, RelatedPageAddonName,
+			CombineWarnings(typeColumnWarning, resetWarning, buildWarning));
 	}
 
 	public RelatedPageAddonReadResult Get(RelatedPageAddonReadRequest request) {

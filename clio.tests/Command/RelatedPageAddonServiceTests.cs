@@ -114,9 +114,51 @@ public sealed class RelatedPageAddonServiceTests {
 			because: "both requested page entries were written");
 		result.AddonName.Should().Be("RelatedPage",
 			because: "the configured add-on is the RelatedPage add-on");
+		result.Warning.Should().BeNull(
+			because: "a clean create — save and both refreshes succeed, no type-column warning — surfaces no warning");
 		_addonSchemaDesignerClient.Received(1).SaveSchema(Arg.Any<AddonSchemaDto>());
 		_addonSchemaDesignerClient.Received(1).ResetClientScriptCache();
 		_addonSchemaDesignerClient.Received(1).BuildConfiguration();
+	}
+
+	[Test]
+	[Description("Surfaces the best-effort post-save refresh warnings (ResetClientScriptCache / BuildConfiguration) in the result Warning: both run after the durable save and warn-not-throw, so a caller who cannot read server logs still learns the binding was saved but the client refresh needs a retry.")]
+	public void Create_ShouldSurfaceRefreshWarnings_InResult_WhenPostSaveRefreshWarns() {
+		// Arrange — the save succeeds, but BOTH post-save refreshes report a non-fatal warning.
+		StubSelectQueue(Rows(PackageUId), Rows(PageAUId));
+		_addonSchemaDesignerClient.ResetClientScriptCache().Returns("cache reset failed: boomreset.");
+		_addonSchemaDesignerClient.BuildConfiguration().Returns("rebuild failed: boombuild.");
+
+		// Act
+		RelatedPageAddonResult result = _service.Create(Request(
+			new RelatedPageSpec("UsrDeliveryItemFormPage", IsDefault: true)));
+
+		// Assert
+		_addonSchemaDesignerClient.Received(1).SaveSchema(Arg.Any<AddonSchemaDto>());
+		result.Warning.Should().Contain("boomreset").And.Contain("boombuild",
+			because: "both best-effort post-save refresh warnings are aggregated into the single result Warning channel, not dropped");
+	}
+
+	[Test]
+	[Description("Aggregates ALL non-fatal warnings into the single result Warning channel: the fail-soft type-column check (object exposes no columns) plus both post-save refresh warnings appear together.")]
+	public void Create_ShouldAggregateTypeColumnAndRefreshWarnings_InResult() {
+		// Arrange — a type-column-uid is supplied but the object exposes no columns, so the type-column check
+		// fail-softs to a warning; both post-save refreshes also warn.
+		const string typeColumnUId = "af280321-e749-41dd-98e5-383906747e29";
+		StubSelectQueue(Rows(PackageUId), Rows(PageAUId));
+		_addonSchemaDesignerClient.ResetClientScriptCache().Returns("cache reset failed: boomreset.");
+		_addonSchemaDesignerClient.BuildConfiguration().Returns("rebuild failed: boombuild.");
+
+		// Act
+		RelatedPageAddonResult result = _service.Create(new RelatedPageAddonRequest("Custom", "UsrDeliveryItem", new[] {
+			new RelatedPageSpec("UsrDeliveryItemFormPage", IsDefault: true)
+		}, typeColumnUId));
+
+		// Assert — all three warnings surface in the one channel.
+		result.Warning.Should().Contain("could not be verified",
+			because: "the fail-soft type-column warning is aggregated");
+		result.Warning.Should().Contain("boomreset").And.Contain("boombuild",
+			because: "both post-save refresh warnings are aggregated alongside the type-column warning");
 	}
 
 	[Test]
@@ -330,6 +372,25 @@ public sealed class RelatedPageAddonServiceTests {
 		// Assert
 		act.Should().Throw<ArgumentException>().WithMessage("*type-column-uid*",
 			because: "a per-page type-column-value is unmatchable without the type column it keys on");
+		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!);
+		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().SaveSchema(default!);
+	}
+
+	[Test]
+	[Description("Rejects a non-GUID type-column-value before any remote call — symmetric with the type-column-uid / role / page-schema-uid GUID guards. A type-column-value is a lookup RECORD Id; a non-GUID could only be written verbatim into a typed page the platform can never select (a silent Success with a dead page).")]
+	public void Create_ShouldThrow_WhenTypeColumnValueIsNotAGuid() {
+		// Arrange
+		const string typeColumnUId = "af280321-e749-41dd-98e5-383906747e29";
+
+		// Act — a valid untyped base default is present; a typed entry carries a non-GUID type-column-value.
+		Action act = () => _service.Create(new RelatedPageAddonRequest("Custom", "Case", new[] {
+			new RelatedPageSpec("CaseFormPage", IsDefault: true),
+			new RelatedPageSpec("CaseIncidentPage", IsDefault: true, TypeColumnValue: "Incident")
+		}, typeColumnUId));
+
+		// Assert
+		act.Should().Throw<ArgumentException>().WithMessage("*type-column-value*",
+			because: "a type-column-value must be the lookup record's GUID; a non-GUID can never match a record type at runtime");
 		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!);
 		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().SaveSchema(default!);
 	}

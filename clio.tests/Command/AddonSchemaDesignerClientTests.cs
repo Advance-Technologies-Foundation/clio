@@ -125,9 +125,10 @@ public sealed class AddonSchemaDesignerClientTests {
 			.Returns("{\"success\":true}");
 
 		// Act
-		_client.ResetClientScriptCache();
+		string warning = _client.ResetClientScriptCache();
 
 		// Assert
+		warning.Should().BeNull(because: "a successful cache reset returns no warning");
 		_applicationClient.Received(1).ExecutePostRequest(
 			"http://local/rest/WorkplaceService/ResetScriptCache",
 			string.Empty,
@@ -162,10 +163,12 @@ public sealed class AddonSchemaDesignerClientTests {
 			.Returns("{\"errorInfo\":null,\"success\":true}");
 
 		// Act
-		Action act = () => _client.BuildConfiguration();
+		string warning = null;
+		Action act = () => warning = _client.BuildConfiguration();
 
 		// Assert
 		act.Should().NotThrow(because: "a successful rebuild response should complete without throwing");
+		warning.Should().BeNull(because: "a successful rebuild returns no warning");
 		_applicationClient.Received(1).ExecutePostRequest(
 			"http://local/ServiceModel/WorkspaceExplorerService.svc/BuildConfiguration",
 			string.Empty,
@@ -181,11 +184,14 @@ public sealed class AddonSchemaDesignerClientTests {
 		StubResponse("{\"success\":false,\"errorInfo\":{\"message\":\"static build failed\"}}");
 
 		// Act
-		Action act = () => _client.BuildConfiguration();
+		string warning = null;
+		Action act = () => warning = _client.BuildConfiguration();
 
 		// Assert
 		act.Should().NotThrow(
 			because: "the schema is already saved when the rebuild runs, so a post-save rebuild failure must not fail the operation");
+		warning.Should().Contain("static build failed",
+			because: "an explicit rebuild failure is RETURNED (not only logged) so Create can surface it in result.Warning");
 		_logger.Received(1).WriteWarning(Arg.Is<string>(message => message.Contains("static build failed")));
 	}
 
@@ -229,6 +235,26 @@ public sealed class AddonSchemaDesignerClientTests {
 		// Assert
 		act.Should().NotThrow(
 			because: "a non-JSON body is a non-committal response, not an explicit success:false — throwing would regress business-rule creation");
+	}
+
+	[Test]
+	[Description("BuildConfiguration is best-effort like ResetClientScriptCache: it runs AFTER the schema is already saved, so a THROWN rebuild POST (e.g. an expired-session redirect between the save and the rebuild) is caught, logged as a warning, and RETURNED — never propagated — so an already-committed operation is not reported as failed.")]
+	public void BuildConfiguration_ShouldWarnNotThrowAndReturnWarning_WhenPostThrows() {
+		// Arrange — the rebuild POST itself throws (a transport / expired-session failure after the save committed).
+		_applicationClient.ExecutePostRequest("http://local/ServiceModel/WorkspaceExplorerService.svc/BuildConfiguration",
+				string.Empty, Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(_ => throw new InvalidOperationException("rebuild boom"));
+
+		// Act
+		string warning = null;
+		Action act = () => warning = _client.BuildConfiguration();
+
+		// Assert
+		act.Should().NotThrow(
+			because: "a thrown post-save rebuild POST must not fail an already-committed operation (symmetric with ResetClientScriptCache)");
+		warning.Should().Contain("rebuild boom",
+			because: "the caught rebuild failure is returned so the caller can surface it, not silently swallowed");
+		_logger.Received(1).WriteWarning(Arg.Is<string>(message => message.Contains("rebuild boom")));
 	}
 
 	[Test]
