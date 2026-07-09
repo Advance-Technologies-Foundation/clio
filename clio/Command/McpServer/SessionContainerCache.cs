@@ -24,21 +24,23 @@ public interface ISessionContainerCache {
 
 	/// <summary>
 	/// Marks the entry for <paramref name="cacheKey"/> as having an in-flight call, so eviction
-	/// never disposes it mid-call. Balanced by <see cref="MarkAvailable"/>. No-op for an unknown key.
+	/// never disposes it mid-call. Balanced by <see cref="MarkAvailable"/>.
 	/// </summary>
 	/// <remarks>
-	/// TODAY the global <c>McpToolExecutionLock</c> serializes all tool execution, so no container of
-	/// another tenant can be evicted while a call is in flight; the execution-boundary wiring of
-	/// <see cref="MarkInUse"/> / <see cref="MarkAvailable"/> is completed in Story 9 when that global
-	/// lock is removed. The guard itself is implemented and unit-tested here so the eviction path can
-	/// never pick an in-use entry.
+	/// <b>Order-independent (FIX 1, ENG-93208).</b> <see cref="MarkInUse"/> may run BEFORE the entry
+	/// exists: on the typed-response tool path the execution lock is taken (and the entry marked) before
+	/// <see cref="Acquire"/> creates the container. When the key is not yet cached, this records a PENDING
+	/// in-use reservation which <see cref="Acquire"/> applies to the entry the moment it creates it — so
+	/// the guard protects the entry on ALL paths, not only the <c>Acquire</c>-then-<c>MarkInUse</c> order.
 	/// </remarks>
 	/// <param name="cacheKey">The cache key whose entry is now in use.</param>
 	void MarkInUse(string cacheKey);
 
 	/// <summary>
-	/// Clears one in-use marker set by <see cref="MarkInUse"/> for <paramref name="cacheKey"/>.
-	/// No-op for an unknown key or an entry that is not currently in use.
+	/// Clears one in-use marker set by <see cref="MarkInUse"/> for <paramref name="cacheKey"/>. Decrements
+	/// the entry's in-use count when it exists, otherwise a pending reservation recorded by
+	/// <see cref="MarkInUse"/> before <see cref="Acquire"/> ran, so the marker pair stays balanced even
+	/// when the call ends before the container is built. No-op when neither holds a count.
 	/// </summary>
 	/// <param name="cacheKey">The cache key whose in-flight call has completed.</param>
 	void MarkAvailable(string cacheKey);
@@ -140,6 +142,13 @@ public sealed class SessionContainerCache : ISessionContainerCache {
 	}
 
 	private readonly Dictionary<string, CacheEntry> _entries = new(StringComparer.OrdinalIgnoreCase);
+	// Pending in-use reservations recorded by MarkInUse for a key whose entry does NOT exist yet (FIX 1,
+	// ENG-93208). Acquire drains a key's reservation into the InUseCount of the entry it creates, so a
+	// MarkInUse-before-Acquire (the typed-response tool path) still protects the entry the moment it is
+	// created. Same comparer as _entries so a case-variant key never splits across the two maps.
+	// Invariant: a key present here is ABSENT from _entries (MarkInUse routes to the entry when present,
+	// and Acquire drains the reservation on the create branch), so new-entry-only draining is complete.
+	private readonly Dictionary<string, int> _pendingInUse = new(StringComparer.OrdinalIgnoreCase);
 	private readonly object _sync = new();
 	private readonly TimeSpan _idleTtl;
 	private readonly int _maxSessions;
@@ -183,10 +192,14 @@ public sealed class SessionContainerCache : ISessionContainerCache {
 			// Build under the lock so a given key is materialized exactly once even under contention.
 			// A failing factory throws here BEFORE the entry is added, so no broken entry is cached.
 			IServiceProvider provider = factory();
+			// FIX 1: seed the new entry's in-use count from any reservation MarkInUse recorded before this
+			// Acquire (typed-response path), and clear it — so the in-flight guard protects the entry the
+			// instant it exists and a concurrent different-tenant Acquire cannot LRU-evict it mid-call.
+			_pendingInUse.Remove(cacheKey, out int reserved);
 			_entries[cacheKey] = new CacheEntry {
 				Provider = provider,
 				LastAccessUtc = now,
-				InUseCount = 0
+				InUseCount = reserved
 			};
 			EvictOverCapacity(cacheKey);
 			return provider;
@@ -201,6 +214,11 @@ public sealed class SessionContainerCache : ISessionContainerCache {
 				entry.InUseCount++;
 				entry.LastAccessUtc = _utcNow();
 			}
+			else {
+				// FIX 1: the entry does not exist yet (MarkInUse before Acquire on the typed-response path).
+				// Record a pending reservation; Acquire applies it to the entry's InUseCount on creation.
+				_pendingInUse[cacheKey] = _pendingInUse.GetValueOrDefault(cacheKey) + 1;
+			}
 		}
 	}
 
@@ -208,9 +226,21 @@ public sealed class SessionContainerCache : ISessionContainerCache {
 	public void MarkAvailable(string cacheKey) {
 		ArgumentException.ThrowIfNullOrWhiteSpace(cacheKey);
 		lock (_sync) {
-			if (_entries.TryGetValue(cacheKey, out CacheEntry entry) && entry.InUseCount > 0) {
-				entry.InUseCount--;
-				entry.LastAccessUtc = _utcNow();
+			if (_entries.TryGetValue(cacheKey, out CacheEntry entry)) {
+				if (entry.InUseCount > 0) {
+					entry.InUseCount--;
+					entry.LastAccessUtc = _utcNow();
+				}
+			}
+			// FIX 1: no entry yet — balance a pending reservation instead, so a call that ends before
+			// Acquire ran (e.g. a resolve that throws on the typed path) does not leak a phantom in-use.
+			else if (_pendingInUse.TryGetValue(cacheKey, out int pending) && pending > 0) {
+				if (pending == 1) {
+					_pendingInUse.Remove(cacheKey);
+				}
+				else {
+					_pendingInUse[cacheKey] = pending - 1;
+				}
 			}
 		}
 	}

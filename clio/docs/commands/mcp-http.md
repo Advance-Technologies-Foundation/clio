@@ -82,6 +82,11 @@ Passthrough is honored only when **both** gates are satisfied:
 When **either** gate is off, the credential header is ignored and the server behaves exactly
 as the pre-passthrough release.
 
+> **The platform API key gates ONLY the passthrough leg.** It does **not** protect
+> pre-registered `-e <env>` or explicit-URI access — those paths use credentials already
+> stored in clio settings and are reachable regardless of the API key. On a public bind,
+> host/origin filtering or a fronting proxy remains the control for stored-credential access.
+
 ### Header contract
 
 An authorized passthrough request carries two headers:
@@ -126,6 +131,11 @@ The caller-supplied `url` is validated **before any outbound call** (Story 6):
   the list. Each entry must include a scheme (`https://…`); a set with no valid absolute
   http/https origin **fails fast at startup** rather than silently degrading to baseline-only.
   When unset, only the baseline blocks apply and any other reachable https host is allowed.
+
+> **For PUBLIC deployments, setting `--allowed-base-urls` is REQUIRED.** The no-allowlist
+> baseline blocks only cloud-metadata, link-local, and loopback — it does **not** block
+> general RFC1918 private ranges (`10/8`, `172.16/12`, `192.168/16`). Without an allowlist a
+> passthrough caller can reach arbitrary private-network hosts the clio process can route to.
 
 > **DNS-rebinding TOCTOU residual:** a non-literal hostname is **not** DNS-resolved by the
 > validator. A hostname that passes the allowlist but resolves to a blocked IP *after*

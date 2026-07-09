@@ -53,6 +53,16 @@ public interface ITenantExecutionLockProvider {
 /// the LRU sweep never picks the newest entry). Evicting a mapping merely forgets it; an in-flight holder
 /// keeps its own object reference, and a later <see cref="GetLock"/> for the same key mints a new object
 /// only after the old one is no longer referenced.
+/// <para>
+/// <b>Note — the SESSION-CACHE window is NOT sub-microsecond.</b> This provider's own
+/// <see cref="GetLock"/>→<see cref="MarkInUse"/> gap is trivially short, but on the
+/// <c>InternalExecute</c> path the session container is <c>Acquire</c>d and only later marked in-use,
+/// AFTER the package and Creatio-version gates (each a potential HTTP round-trip). That wider
+/// <c>Acquire</c>→<c>MarkInUse</c> interval is the session cache's concern, not this lock map's: it is
+/// covered on the typed-response path by <see cref="SessionContainerCache"/>'s pending-reservation guard
+/// (FIX 1, ENG-93208), and stays benign on the <c>InternalExecute</c> path only because nothing on it is
+/// <see cref="System.IDisposable"/> (see the disposal note on <see cref="SessionContainerCache"/>).
+/// </para>
 /// </remarks>
 public sealed class TenantExecutionLockProvider : ITenantExecutionLockProvider {
 

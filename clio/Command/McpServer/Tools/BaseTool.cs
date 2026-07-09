@@ -35,7 +35,11 @@ public abstract class BaseTool<T>(
 
 	// Runs body under the per-tenant execution lock (FR-05) and marks the session-container entry
 	// in-use for the duration (FR-08 in-flight guard) so eviction cannot dispose the container mid-call
-	// now that different tenants are no longer serialized by a single global lock.
+	// now that different tenants are no longer serialized by a single global lock. Here MarkInUse runs
+	// BEFORE the container is Acquired (Acquire happens inside body → the tool's ResolveCommand); the
+	// cache records a PENDING in-use reservation that Acquire applies the moment it creates the entry
+	// (FIX 1, order-independent guard), so the guard holds on this typed-response path too — not only on
+	// the InternalExecute path where the entry already exists when MarkInUse runs.
 	private protected TResult ExecuteUnderTenantLock<TResult>(EnvironmentOptions options, Func<TResult> body) {
 		string tenantKey = ResolveTenantLockKey(options);
 		lock (McpToolExecutionLock.GetLock(tenantKey)) {
@@ -282,8 +286,8 @@ public abstract class BaseTool<T>(
 			logger.PreserveMessages = true;
 			try {
 				int exitCode = command.Execute(options);
-				IReadOnlyList<LogMessage> flushedMessages = SanitizeForSerialization(
-					logger.FlushAndSnapshotMessages(clearMessages: true));
+				IReadOnlyList<LogMessage> flushedMessages = RedactForPassthrough(
+					SanitizeForSerialization(logger.FlushAndSnapshotMessages(clearMessages: true)), tenantKey);
 				messagesToForward = flushedMessages;
 				executionResult = new CommandExecutionResult(
 					exitCode,
@@ -294,6 +298,7 @@ public abstract class BaseTool<T>(
 			catch (Exception e) {
 				List<LogMessage> priorLogs = [.. SanitizeForSerialization(
 					logger.FlushAndSnapshotMessages(clearMessages: true))];
+				RedactForPassthrough(priorLogs, tenantKey);
 				messagesToForward = priorLogs;
 				executionResult = CommandExecutionResult.FromException(e, priorLogs, correlationId);
 			}
@@ -322,4 +327,32 @@ public abstract class BaseTool<T>(
 		}
 		return messages;
 	}
+
+	// FIX 2 (ENG-93208, FR-11): scrub each command log-message value before it crosses the MCP boundary,
+	// but ONLY on a credential-passthrough request. On the public multi-tenant passthrough edge the
+	// returned CommandExecutionResult AND the forwarded log notifications are copied into the model/host
+	// transcript (often a third-party LLM), and a command log line routinely carries the target URI/host
+	// (or a Bearer/cookie/password value on a failure). The trusted stdio / -e path is NOT redacted so it
+	// keeps full-fidelity logs (no diagnosability regression). The passthrough signal is the resolved
+	// tenant key: only a passthrough context produces a key with ToolCommandResolver.PassthroughKeyPrefix
+	// (env-sensitive path threads it from the resolve; the injected/direct path only ever holds the shared
+	// fallback or a registry/URI key). Mirrors SanitizeForSerialization's per-message in-place walk and
+	// runs AFTER it, so a table-derived value already stringified is scrubbed too. The local
+	// db-operation log FILE is intentionally left at full fidelity — redaction hits only this detached,
+	// MCP-crossing snapshot, never the console or file sink.
+	private static IReadOnlyList<LogMessage> RedactForPassthrough(IReadOnlyList<LogMessage> messages, string tenantKey) {
+		if (!IsPassthroughKey(tenantKey)) {
+			return messages;
+		}
+		foreach (LogMessage message in messages) {
+			if (message.Value is string text) {
+				message.Value = SensitiveErrorTextRedactor.Redact(text);
+			}
+		}
+		return messages;
+	}
+
+	private static bool IsPassthroughKey(string tenantKey) =>
+		tenantKey is not null
+		&& tenantKey.StartsWith(ToolCommandResolver.PassthroughKeyPrefix, StringComparison.OrdinalIgnoreCase);
 }

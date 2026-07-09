@@ -379,6 +379,57 @@ public sealed class CredentialPassthroughSecretHygieneTests {
 			because: "FromException redacts the full formatted exception chain, so a secret on any inner exception is scrubbed (FR-11, Story 15b)");
 	}
 
+	// ---- Sink 10: passthrough log-channel redaction boundary (FIX 2, ENG-93208) ------------------
+	// Story 13/15b redacted only the THROWN exception chain (FromException) and the per-call-site error
+	// paths. FIX 2 closes the remaining channels: the SUCCESS-path flushedMessages, the FromException
+	// priorLogs it prepends, and the McpLogNotifier payload — all previously UN-redacted. On a PASSTHROUGH
+	// request those log-message values (which routinely carry the target URI/host) are now scrubbed before
+	// the CommandExecutionResult crosses the MCP boundary; on the trusted stdio/-e path they are preserved
+	// (no diagnosability regression). These two tests pin both sides of that boundary by seeding the secret
+	// into the LOG BUFFER (not a thrown exception) of a command that SUCCEEDS.
+
+	[Test]
+	[Description("On a passthrough request, a redactable secret sitting in the command LOG BUFFER (not a thrown exception) is scrubbed from the returned execution-log-messages (FIX 2, FR-11).")]
+	public void ExecuteLocked_ShouldRedactLogBuffer_WhenPassthroughRequest() {
+		// Arrange — a successful command whose log buffer carries a Bearer/URI-shaped secret, resolved under
+		// a PASSTHROUGH tenant key (the signal BaseTool uses to scope redaction to the public edge).
+		string logLine = $"POST {Url}/0/ServiceModel/EntitySchemaService.svc — Authorization: Bearer {Secret}";
+		PassthroughLogToolHarness tool = PassthroughLogToolHarness.WithTenantKey(
+			$"{ToolCommandResolver.PassthroughKeyPrefix}{Url}:ABC123", logLine);
+
+		// Act
+		CommandExecutionResult result = tool.Execute(new PassthroughLogToolOptions { Uri = Url });
+
+		// Assert
+		result.ExitCode.Should().Be(0,
+			because: "the command succeeded; only its log-message values are redacted, not the outcome");
+		foreach (LogMessage message in result.Output) {
+			(message.Value?.ToString() ?? string.Empty).Should().NotContain(Secret,
+				because: "on a passthrough request every returned log-message value is redacted before it crosses the MCP boundary (FIX 2, FR-11)");
+		}
+	}
+
+	[Test]
+	[Description("On a NON-passthrough (registry/stdio) request the same log content is preserved verbatim — no redaction, no diagnosability regression (FIX 2 boundary).")]
+	public void ExecuteLocked_ShouldPreserveLogBuffer_WhenNotPassthroughRequest() {
+		// Arrange — identical secret-bearing log line, but resolved under a REGISTRY key (not passthrough).
+		string logLine = $"POST {Url}/0/ServiceModel/EntitySchemaService.svc — Authorization: Bearer {Secret}";
+		PassthroughLogToolHarness tool = PassthroughLogToolHarness.WithTenantKey("registry-env-key", logLine);
+
+		// Act
+		CommandExecutionResult result = tool.Execute(new PassthroughLogToolOptions { Uri = Url });
+
+		// Assert
+		bool secretPreserved = false;
+		foreach (LogMessage message in result.Output) {
+			if ((message.Value?.ToString() ?? string.Empty).Contains(Secret)) {
+				secretPreserved = true;
+			}
+		}
+		secretPreserved.Should().BeTrue(
+			because: "the trusted stdio/-e path keeps full-fidelity logs; redaction is scoped to passthrough keys only (FIX 2)");
+	}
+
 	// A logger that satisfies BaseTool's ExecuteLocked contract without touching the shared
 	// ConsoleLogger.Instance singleton, so this fixture stays parallelizable. FlushAndSnapshotMessages is
 	// an extension over ILogger.LogMessages, so the substitute must return a non-null empty collection
@@ -402,5 +453,35 @@ public sealed class CredentialPassthroughSecretHygieneTests {
 	private sealed class SecretLeakToolHarness(Command<SecretLeakToolOptions> command, ILogger logger)
 		: BaseTool<SecretLeakToolOptions>(command, logger) {
 		public CommandExecutionResult Execute(SecretLeakToolOptions options) => InternalExecute(options);
+	}
+
+	// ---- FIX 2 boundary harness -------------------------------------------------------------------
+	// Options with a URI so the env-SENSITIVE path is taken (UsesEnvironmentlessResolution → false),
+	// which threads the resolver's LastResolvedTenantKey into ExecuteLocked — the passthrough signal.
+	private sealed class PassthroughLogToolOptions : EnvironmentOptions { }
+
+	private sealed class NoopCommand : Command<PassthroughLogToolOptions> {
+		public override int Execute(PassthroughLogToolOptions options) => 0;
+	}
+
+	// Exercises the env-sensitive InternalExecute<TCommand> → ExecuteLocked path with a substitute resolver
+	// whose LastResolvedTenantKey decides passthrough vs registry, and a substitute logger pre-seeded with a
+	// secret-bearing log line so ExecuteLocked flushes it into the returned envelope.
+	private sealed class PassthroughLogToolHarness(
+		Command<PassthroughLogToolOptions> command, ILogger logger, IToolCommandResolver resolver)
+		: BaseTool<PassthroughLogToolOptions>(command, logger, resolver) {
+
+		public CommandExecutionResult Execute(PassthroughLogToolOptions options) =>
+			InternalExecute<NoopCommand>(options);
+
+		public static PassthroughLogToolHarness WithTenantKey(string tenantKey, string seededLogLine) {
+			NoopCommand command = new();
+			ILogger logger = Substitute.For<ILogger>();
+			logger.LogMessages.Returns(new List<LogMessage> { new InfoMessage(seededLogLine) });
+			IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+			resolver.Resolve<NoopCommand>(Arg.Any<EnvironmentOptions>()).Returns(command);
+			resolver.LastResolvedTenantKey.Returns(tenantKey);
+			return new PassthroughLogToolHarness(command, logger, resolver);
+		}
 	}
 }

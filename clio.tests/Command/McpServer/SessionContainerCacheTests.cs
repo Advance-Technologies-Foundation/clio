@@ -158,6 +158,62 @@ public sealed class SessionContainerCacheTests {
 	}
 
 	[Test]
+	[Description("MarkInUse before Acquire reserves in-use so the entry Acquire creates starts protected and survives an over-capacity sweep; MarkAvailable afterwards makes it evictable again (FIX 1, order-independent guard).")]
+	public void Acquire_ShouldStartInUseAndSurviveEviction_WhenMarkInUsePrecededAcquire() {
+		// Arrange
+		SessionContainerCache cache = CreateCache(TimeSpan.FromHours(1), 1);
+		SpyServiceProvider reserved = new();
+
+		// Act — reserve the in-use marker BEFORE the entry exists (the typed-response tool-path order:
+		// MarkInUse runs before ResolveCommand → Acquire), then create the entry, then trigger an
+		// over-capacity sweep with a DIFFERENT tenant that would otherwise LRU-evict the only slack.
+		cache.MarkInUse("reserved");
+		IServiceProvider acquired = cache.Acquire("reserved", () => reserved);
+		_now = _now.AddSeconds(1);
+		cache.Acquire("newcomer", () => new SpyServiceProvider()); // count 2 > cap 1
+
+		// Assert
+		acquired.Should().BeSameAs(reserved,
+			because: "Acquire returns the freshly built provider for the reserved key");
+		reserved.Disposed.Should().BeFalse(
+			because: "a MarkInUse recorded before Acquire must protect the entry the moment Acquire creates it, so an over-capacity sweep cannot evict it mid-call");
+		cache.Acquire("reserved",
+				() => throw new InvalidOperationException("reserved entry must have survived eviction"))
+			.Should().BeSameAs(reserved,
+				because: "the reserved-then-created container survived the over-capacity sweep as a temporary overshoot");
+
+		// Act 2 — release the reservation; the entry must now be idle-evictable like any other.
+		cache.MarkAvailable("reserved");
+		_now = _now.AddHours(2); // idle past the TTL
+		cache.Acquire("sweeper", () => new SpyServiceProvider()); // triggers the idle sweep
+
+		// Assert 2
+		reserved.Disposed.Should().BeTrue(
+			because: "once MarkAvailable balances the pre-Acquire MarkInUse, the entry is idle-evictable and disposed again");
+	}
+
+	[Test]
+	[Description("A MarkAvailable that balances a pre-Acquire MarkInUse when Acquire never ran leaves the later-created entry unprotected (FIX 1 reservation balances even without Acquire).")]
+	public void Acquire_ShouldNotInheritStaleReservation_WhenMarkInUseWasBalancedBeforeAcquire() {
+		// Arrange
+		SessionContainerCache cache = CreateCache(TimeSpan.FromMinutes(5), 50);
+		SpyServiceProvider later = new();
+
+		// Act — MarkInUse then MarkAvailable BEFORE any Acquire (a typed-path call that failed to resolve
+		// and released its marker in finally). The reservation must be fully cleared, so a later Acquire of
+		// the same key builds an entry with in-use count 0 and is idle-evictable.
+		cache.MarkInUse("orphan");
+		cache.MarkAvailable("orphan");
+		cache.Acquire("orphan", () => later);
+		_now = _now.AddMinutes(6); // past the TTL
+		cache.Acquire("fresh", () => new SpyServiceProvider()); // triggers the idle sweep
+
+		// Assert
+		later.Disposed.Should().BeTrue(
+			because: "a reservation balanced by MarkAvailable before Acquire must not leak a phantom in-use onto the later entry");
+	}
+
+	[Test]
 	[Description("After MarkAvailable balances MarkInUse, the entry becomes evictable again.")]
 	public void Acquire_ShouldEvictReleasedEntry_WhenMarkAvailableClearsInUse() {
 		// Arrange

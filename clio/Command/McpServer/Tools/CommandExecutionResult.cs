@@ -56,6 +56,14 @@ public record CommandExecutionResult(
 	/// Creates a failed <see cref="CommandExecutionResult"/> with exit code -1 (an UNEXPECTED runtime
 	/// failure). For an EXPECTED, caller-actionable validation error use <see cref="FromValidationError"/>.
 	/// </summary>
+	/// <remarks>
+	/// The <paramref name="message"/> is surfaced to the MCP client VERBATIM — it is NOT run through
+	/// <see cref="SensitiveErrorTextRedactor"/>. Callers must pass only static / secret-free text; route
+	/// any dynamic exception text (which on a credential-passthrough request can carry the target URI,
+	/// host, or a credential value) through <see cref="FromException"/> instead, which redacts before the
+	/// message crosses the MCP boundary (FR-11, ENG-93208). Breaking this keeps the audited secret-hygiene
+	/// invariant silently.
+	/// </remarks>
 	public static CommandExecutionResult FromError(string message) =>
 		new(-1, [new ErrorMessage(message)]);
 

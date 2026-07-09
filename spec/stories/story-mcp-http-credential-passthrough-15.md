@@ -120,3 +120,61 @@ MCP reviewed, no update required — `mcp-http` is a host verb, not an MCP tool 
 ### Notes
 
 Full Unit suite required because `McpHttpServerCommand.cs` (host wiring) changed; both host graphs still pass `ValidateOnBuild`. No new `CLIO*` warnings; MCP9004 suppressed with justification; no nested ternaries; no raw `HttpClient` in production paths. NOT committed/pushed per work order.
+
+### Pre-ready-to-merge review fixes (2026-07-10) — two Medium findings + doc/comment items
+
+Applied the final pre-PR review findings. NOT committed/pushed.
+
+- **FIX 1 (Medium, correctness) — in-flight guard was a no-op on the typed-response path.**
+  `SessionContainerCache.MarkInUse` previously hit a `TryGetValue` miss and silently no-op'd when called
+  BEFORE `Acquire` (the `ExecuteWithCleanLog`/`ExecuteUnderTenantLock` order: lock+mark, then `Acquire`
+  inside `ResolveCommand`), so the entry `Acquire` created started with `InUseCount=0` and a concurrent
+  different-tenant `Acquire` could LRU-evict it mid-call. Fixed with an **order-independent** reservation:
+  a new `_pendingInUse` dictionary (same `OrdinalIgnoreCase` comparer as `_entries`) records a pending
+  in-use count when the entry is absent; `Acquire` drains the reservation into the new entry's
+  `InUseCount` on the create branch; `MarkAvailable` decrements the entry if present, else the pending
+  reservation, so the pair stays balanced even if a call ends before `Acquire` ran. `InternalExecute`
+  path (where `MarkInUse` already finds the entry) is unchanged. `TenantExecutionLockProvider` was
+  deliberately NOT touched — its entry is created by `GetLock` which always precedes `MarkInUse`, so it
+  has no cold-key window. Interface XML doc (`MarkInUse`/`MarkAvailable`) and the `ExecuteUnderTenantLock`
+  comment in `BaseTool.cs` updated to describe the reservation and are now accurate.
+  Tests (`SessionContainerCacheTests`): `Acquire_ShouldStartInUseAndSurviveEviction_WhenMarkInUsePrecededAcquire`
+  (MarkInUse→Acquire survives an over-capacity sweep, then MarkAvailable → idle-evictable) and
+  `Acquire_ShouldNotInheritStaleReservation_WhenMarkInUseWasBalancedBeforeAcquire` (a reservation balanced
+  before Acquire leaks no phantom in-use). Deterministic injected clock.
+
+- **FIX 2 (Medium, security/correctness) — redact command log channels crossing the MCP boundary on PASSTHROUGH requests only.**
+  The success-path `flushedMessages`, the `FromException` `priorLogs`, and the `McpLogNotifier.ForwardMessages`
+  payload previously crossed the MCP boundary UN-redacted (only the appended exception chain was scrubbed).
+  Added `BaseTool.RedactForPassthrough(messages, tenantKey)` — runs each string `LogMessage.Value` through
+  `SensitiveErrorTextRedactor.Redact` ONLY when the resolved tenant key starts with
+  `ToolCommandResolver.PassthroughKeyPrefix` (`"passthrough:"`, promoted to a shared const and reused by
+  `BuildPassthroughCacheKey`). Applied in `ExecuteLocked` to both the success `flushedMessages` and the
+  catch `priorLogs`; `messagesToForward` reuses the same redacted list so the forwarded notifications are
+  covered too. The trusted stdio/`-e` path (null/registry key) keeps full-fidelity logs — no diagnosability
+  regression; the local db-operation log FILE is untouched (redaction hits only the MCP-crossing snapshot).
+  **Deviation from literal wording (justified):** keyed off the `tenantKey` already threaded into
+  `ExecuteLocked` (M2) rather than re-reading `commandResolver.LastResolvedTenantKey`; on the passthrough
+  path the threaded key IS that value, and the threaded key is correct on the injected/direct path too
+  (where `LastResolvedTenantKey` is stale/null).
+  Tests (`CredentialPassthroughSecretHygieneTests`, Sink 10):
+  `ExecuteLocked_ShouldRedactLogBuffer_WhenPassthroughRequest` (secret in the LOG BUFFER of a SUCCEEDING
+  command is scrubbed under a passthrough key) and `ExecuteLocked_ShouldPreserveLogBuffer_WhenNotPassthroughRequest`
+  (identical content preserved under a registry key — pins the no-regression boundary).
+
+- **FIX 3 (Low, doc/comment).**
+  - `CommandExecutionResult.FromError` — added a `<remarks>` directing callers to pass only static/secret-free
+    text and route dynamic exception text through `FromException` (which redacts), so the audited invariant
+    is not silently broken.
+  - `TenantExecutionLockProvider` remarks — added a note that the SESSION-CACHE `Acquire`→`MarkInUse` window
+    (across the package/version gates on the `InternalExecute` path) is NOT sub-microsecond, distinct from
+    this provider's own trivially-short `GetLock`→`MarkInUse` gap. No behavior change.
+  - `clio/docs/commands/mcp-http.md` — added (a) the platform API key gates ONLY the passthrough leg (not
+    pre-registered `-e`/explicit-URI access; host/origin filtering or a fronting proxy remains the control),
+    and (b) for PUBLIC deployments `--allowed-base-urls` is REQUIRED (the no-allowlist baseline does not
+    block RFC1918 private ranges).
+
+- **Gates:** build clean, 0 errors, no new `CLIO*` warnings in touched files; no nested ternaries.
+  Full Unit suite `net10.0`: baseline at HEAD **5178 passed / 0 failed / 35 skipped**; post-change
+  **5182 passed / 0 failed / 35 skipped** (+4 new tests). Both host graphs still pass `ValidateOnBuild`
+  (`CredentialPassthroughDiTests`). MCP surface: no verb/tool contract change — reviewed, no update required.

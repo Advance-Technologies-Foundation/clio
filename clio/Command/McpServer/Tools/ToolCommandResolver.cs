@@ -62,6 +62,13 @@ public class ToolCommandResolver(
 	ISessionContainerCache sessionContainerCache) : IToolCommandResolver {
 
 	/// <summary>
+	/// Prefix of every credential-passthrough cache key (see <see cref="BuildPassthroughCacheKey"/>).
+	/// A resolved tenant key that starts with this prefix identifies a passthrough request — the signal
+	/// BaseTool uses to scope log redaction to the public multi-tenant edge (FIX 2, ENG-93208).
+	/// </summary>
+	internal const string PassthroughKeyPrefix = "passthrough:";
+
+	/// <summary>
 	/// Resolves a command against an explicit environment or URI-based target.
 	/// </summary>
 	/// <typeparam name="TCommand">The command type to resolve.</typeparam>
@@ -293,7 +300,7 @@ public class ToolCommandResolver(
 			auth?.Cookie ?? string.Empty, "|",
 			auth?.Login ?? string.Empty, "|",
 			auth?.Password ?? string.Empty);
-		return $"passthrough:{context.Url}:{HashSecretMaterial(material)}";
+		return $"{PassthroughKeyPrefix}{context.Url}:{HashSecretMaterial(material)}";
 	}
 
 	// Single secret-hashing helper shared by both cache keys (FR-07/FR-11): the credential material is
