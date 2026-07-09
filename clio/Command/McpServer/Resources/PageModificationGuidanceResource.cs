@@ -185,6 +185,42 @@ public sealed class PageModificationGuidanceResource {
 		       - Fallback: walk `bundle.viewConfig` tree manually when `bundle.containers` is empty (possible for pages built entirely via diffs without a root viewConfig node).
 		       - For how to insert and configure any `crt.*` component — including the child-collection slots a container exposes — `get-component-info` is the authoritative source. Call it for the exact type and build the insert from its response and embedded `documentation`; do not author component shape from this guide or from memory.
 
+		       Inserting a NEW container — its content slot MUST be initialized (MANDATORY)
+		       When the SAME diff inserts a NEW container (ANY `crt.*` container type), that container's `insert` MUST initialize its content-slot array in `values` (look up the exact slot name with `get-component-info` for that type — commonly `items`). A container inserted WITHOUT its slot is not treated as a container at runtime.
+		       - SYMPTOM: dry-run validates JSON/schema shape ONLY and will NOT catch this; `update-page` / `sync-pages` report `success: true`. The failure surfaces at RUNTIME as `Item "X" is not a container for other items`, and the page renders blank or partial. This is the same root cause the `related-list` guide calls the "#1 detail footgun" — keep the two consistent.
+		       - SCOPE: only a NEWLY-inserted container needs this. A container that ALREADY exists in the hierarchy (its `name` appears in `bundle.containers`) already has its slot — insert children into it normally.
+		       - ADDING THE CHILDREN — two equivalent shapes, both supported. The ONLY hard requirement is that the container's slot is initialized in its own insert; inline vs separate is a style choice:
+		         1. INLINE — put the children directly in the new container's slot array in the SAME insert (slot is non-empty).
+		         2. SEPARATE — initialize the slot empty (e.g. `"items": []`) on the container insert, then add each child as its own `insert` targeting the container via `parentName` + `propertyName`. This is exactly what the `related-list` composite and the `get-component-info` examples do — separate `parentName` inserts are fully supported.
+		       - Do NOT insert the container without its slot. The container `type`, the exact slot name, and each child's shape come from `get-component-info` for that container type — clio does not describe per-component shape; the component registry is the authoritative source. Note that inline children are config-node objects, NOT diff operations — they carry NO `operation`/`parentName` key (those belong only to top-level `viewConfigDiff` entries).
+		       - For a related/child list (a "detail"), the separate-insert structure is owned by the `related-list` guide and the `get-component-info composite` recipe — follow those.
+		       - Structural illustration (the container `type`, slot name, and child shape come from `get-component-info`, NOT from this guide):
+
+		       ```
+		       // WRONG — container inserted WITHOUT its content slot → runtime "Item ... is not a container for other items" (dry-run still passes):
+		       [
+		           { "operation": "insert", "name": "NewPanel", "parentName": "<existing container>", "propertyName": "items", "values": { "type": "<container type from get-component-info>" } }
+		       ]
+
+		       // CORRECT (inline) — slot populated in the same insert; children are config nodes (no "operation"/"parentName"):
+		       [
+		           { "operation": "insert", "name": "NewPanel", "parentName": "<existing container>", "propertyName": "items", "values": {
+		               "type": "<container type from get-component-info>",
+		               "items": [
+		                   { "name": "ChildA", "values": { /* ... */ } },
+		                   { "name": "ChildB", "values": { /* ... */ } }
+		               ]
+		           } }
+		       ]
+
+		       // CORRECT (separate) — slot initialized empty, children added by parentName (the related-list / composite pattern):
+		       [
+		           { "operation": "insert", "name": "NewPanel", "parentName": "<existing container>", "propertyName": "items", "values": { "type": "<container type from get-component-info>", "items": [] } },
+		           { "operation": "insert", "name": "ChildA", "parentName": "NewPanel", "propertyName": "items", "values": { /* ... */ } },
+		           { "operation": "insert", "name": "ChildB", "parentName": "NewPanel", "propertyName": "items", "values": { /* ... */ } }
+		       ]
+		       ```
+
 		       Inserted-field contract for a new data-bound field control
 		       """
 		       + "\n\n" + SchemaValidationService.InsertedFieldContractSummary + "\n\n"

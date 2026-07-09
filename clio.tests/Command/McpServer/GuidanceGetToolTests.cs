@@ -349,6 +349,18 @@ public sealed class GuidanceGetToolTests {
 			because: "Step 0 must default to web when the requirement does not name a surface");
 		result.Article.Text.Should().Contain("whenToUse",
 			because: "the guide must steer selection between similar components using the producer's whenToUse/whenNotToUse selection-metadata (ENG-91134 / Solution A)");
+		result.Article.Text.Should().Contain("its content slot MUST be initialized",
+			because: "the new-container rule must center on initializing the content slot, the verified root cause aligned with related-list and get-component-info (ENG-91555, PR #789 review)");
+		result.Article.Text.Should().Contain("is not a container for other items",
+			because: "the guide must name the exact runtime error a slot-less container raises so the agent recognizes it");
+		result.Article.Text.Should().Contain("only a NEWLY-inserted container needs this",
+			because: "the guide must scope the slot-init rule to newly-inserted containers so existing-container inserts are not mistakenly rewritten");
+		result.Article.Text.Should().Contain("dry-run validates JSON/schema shape ONLY and will NOT catch this",
+			because: "the guide must state the dry-run limitation so the agent does not treat a passing validation as proof the page works (ENG-91555)");
+		result.Article.Text.Should().Contain("inline children are config-node objects, NOT diff operations",
+			because: "the example must clarify that inline children carry no operation/parentName key so an agent does not turn them into malformed diff operations (PR #789 review)");
+		result.Article.Text.Should().Contain("initialize the slot empty",
+			because: "the rule must not contradict the related-list composite: separate parentName child inserts are valid when the container initializes its slot (PR #789 review)");
 		result.Article.Text.Should().Contain("showing a user-facing message/confirmation/info/success/error popup",
 			because: "the gate table must route a 'show a confirmation message' requirement into page-schema-handlers so the agent uses crt.ShowDialogRequest (ENG-91748)");
 		result.Article.Text.Should().Contain("NEVER use `alert(...)`, `window.alert(...)`, `confirm(...)`, or `prompt(...)`",

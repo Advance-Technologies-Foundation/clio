@@ -416,6 +416,10 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "the verification rule must route the agent to get-component-info as the authoritative component catalog");
 		response.Article.Text.Should().Contain("ASK THE USER",
 			because: "the web page guide must tell the agent to ask the user (existing component vs custom) when no OOTB component matches");
+		response.Article.Text.Should().Contain("its content slot MUST be initialized",
+			because: "the web page guide must center the new-container rule on initializing the content slot, the verified root cause (ENG-91555, PR #789 review)");
+		response.Article.Text.Should().Contain("is not a container for other items",
+			because: "the web page guide must name the exact runtime error a slot-less container raises so the agent recognizes it");
 		response.Article.Text.Should().Contain("showing a user-facing message/confirmation/info/success/error popup",
 			because: "the gate table must route a 'show a confirmation message' requirement into page-schema-handlers so the agent uses crt.ShowDialogRequest (ENG-91748)");
 		response.Article.Text.Should().Contain("NEVER use `alert(...)`, `window.alert(...)`, `confirm(...)`, or `prompt(...)`",
