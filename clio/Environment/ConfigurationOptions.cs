@@ -107,6 +107,28 @@ namespace Clio
 			}
 		}
 
+		// Credential-passthrough secret fields (FR-01/FR-02/FR-18). Carried on an ephemeral,
+		// per-request EnvironmentSettings only; mirror the SimpleloginUri secret discipline
+		// ([YamlIgnore] + [Newtonsoft.Json.JsonIgnore]) so they are never persisted to
+		// appsettings.json and never appear in ShowSettingsTo output.
+		[YamlIgnore]
+		[Newtonsoft.Json.JsonIgnore]
+		public string AccessToken {
+			get; set;
+		}
+
+		[YamlIgnore]
+		[Newtonsoft.Json.JsonIgnore]
+		public string AccessTokenType {
+			get; set;
+		} = "Bearer";
+
+		[YamlIgnore]
+		[Newtonsoft.Json.JsonIgnore]
+		public string Cookie {
+			get; set;
+		}
+
 		internal void Merge(EnvironmentSettings environment) {
 			if (!string.IsNullOrEmpty(environment.Login)) {
 				Login = environment.Login;

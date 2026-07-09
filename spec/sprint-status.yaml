@@ -637,7 +637,7 @@ stories:
     title: "Client seam — EnvironmentSettings token/cookie fields + NoReauthExecutor + factory branch"
     feature: "mcp-http-credential-passthrough"
     size: M
-    status: ready-for-dev
+    status: in-progress
     file: spec/stories/story-mcp-http-credential-passthrough-3.md
     prd: spec/prd/prd-mcp-http-credential-passthrough.md
     adr: spec/adr/adr-mcp-http-credential-passthrough.md

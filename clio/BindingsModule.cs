@@ -211,6 +211,12 @@ public class BindingsModule {
 
 		services.AddTransient<IKubernetes>(_ => CreateKubernetesClient());
 
+		// NoReauthExecutor is the ONLY DI-resolved IReauthExecutor: it is injected into
+		// ApplicationClientFactory to build the credential-passthrough (bearer) client, which must
+		// never re-login. It does NOT hijack reauth globally — the login/password + OAuth paths use
+		// CreatioClientAdapter's own internal closure-based ReauthExecutor (not resolved from DI).
+		services.AddSingleton<IReauthExecutor, NoReauthExecutor>();
+
 		services.AddTransient<IKubernetesClient, KubernetesClient>();
 		services.AddTransient<K8ContextValidator>();
 		services.AddTransient<IK8ServiceResolver, K8ServiceResolver>();
