@@ -68,7 +68,93 @@ Targeted run: `dotnet test clio.tests/clio.tests.csproj --filter "Category=Unit&
 
 ## Dev Agent Record
 
-- Implementation started:
-- Implementation completed:
-- Tests passing:
+- Implementation started: 2026-07-09
+- Implementation completed: 2026-07-09
+- Tests passing: Yes — full unit suite `dotnet test --filter "Category=Unit" -f net10.0` → **Passed: 5161, Failed: 0, Skipped: 35**. Targeted `Category=Unit&Module=McpServer` → Passed: 1889, Failed: 0, Skipped: 1.
 - Notes:
+
+### Consolidation — single-definition confirmation (AC-01/AC-05)
+
+The five passthrough flags live on `McpHttpServerCommandOptions` (defined inside
+`clio/Command/McpServer/McpHttpServerCommand.cs`, NOT a separate
+`McpHttpServerCommandOptions.cs` as the story key-files list assumed). Verified by reading the whole
+options class: each flag is defined **exactly once**, all kebab-case, with the ADR defaults:
+
+| Flag | Type | Default |
+|---|---|---|
+| `--credentials-header-name` | string | `X-Integration-Credentials` |
+| `--platform-api-key` | comma-set string | unset (fail-closed / passthrough disabled) |
+| `--allowed-base-urls` | comma-set string | unset (baseline-only egress) |
+| `--session-idle-ttl` | duration string | `5m` (resolves to 5 min) |
+| `--max-sessions` | int | `50` |
+
+`--port` / `--host` / `--path` unchanged. No duplication or inconsistency found → **no consolidation
+fix required**. No new CLI flags added. No hidden aliases needed (all five are net-new, no camelCase
+predecessor).
+
+### CLIO001 / CLIO005 clean confirmation (AC-02)
+
+Build clean. The only two `CLIO005` warnings in the build (`CreateEntityBusinessRuleCommand`,
+`CreatePageBusinessRuleCommand` in `BindingsModule.cs`) are **pre-existing and unrelated** to this
+story's files — I did not touch `BindingsModule.cs`. Zero new `CLIO001` (kebab-case) or `CLIO005`
+(dead-DI) diagnostics in the changed files. DI completeness verified by reading the registrations:
+all new services are registered and consumed; the `RegisterAssemblyInterfaceTypes` skip-list entries
+(`IReauthExecutor`, `ICredentialContextAccessor`, `ICredentialHeaderParser`, `IPlatformApiKeyGate`,
+`ITargetUrlValidator`, `ISessionContainerCache`, `ITenantExecutionLockProvider`) each carry a
+justification comment and are genuine (HTTP-host-scoped / primitive-ctor / run-time-configured
+instances) — no dead registration to remove.
+
+### DI-resolution test (AC-03)
+
+`clio.tests/Command/McpServer/CredentialPassthroughDiTests.cs`: asserts every new passthrough
+service resolves under the mcp-http host graph built with `ValidateOnBuild=true` +
+`ValidateScopes=true` (accessor, validator, header parser, api-key gate, session cache, tenant lock,
+reauth, IHttpContextAccessor), AND that the shared stdio graph still builds and resolves its
+always-registered members via the null-object seams. Distinct from
+`CredentialPassthroughDiRegistrationTests` (which owns the null-vs-real last-registration-wins
+contract) — extended rather than duplicated.
+
+**AC-03 coverage boundary (honest scope):** the unit test builds `RegisterInto` + the passthrough
+registrations and proves every passthrough service is **resolvable** under
+`ValidateOnBuild`+`ValidateScopes`. It deliberately omits `RegisterMcpServer(...).WithHttpTransport()`
+— that layer requires the ASP.NET `WebApplicationBuilder`/web host and is not constructible from a
+bare `ServiceCollection` (the sibling fixtures, incl. `BindingsModuleMcpHostGateTests`, use the same
+subset approach for the stdio host and validate only the stdio graph — none covers `WithHttpTransport`).
+The **full** HTTP host graph's `ValidateOnBuild` is therefore exercised only at real startup, where
+`McpHttpServerCommand.Run` sets `o.ValidateOnBuild = true; o.ValidateScopes = true` on the host's
+`DefaultServiceProviderFactory`. So AC-03 is verified at two levels: service-resolvability by the
+unit test, and full-graph validation by the production `Run` path (not by a unit test).
+
+### Story-6 follow-up — allowlist fail-OPEN decision (implemented: fail-CLOSED)
+
+Decision: **implemented the small, safe fail-closed change.** Previously a non-empty
+`--allowed-base-urls` whose entries ALL fail to parse yielded an empty origin set →
+`TargetUrlValidator` silently degraded to baseline-only (fail-OPEN), so an operator typo would
+silently disable the intended allowlist. `TargetUrlValidator`'s ctor now throws a clear
+`ArgumentException` ("Error: --allowed-base-urls was set but contained no valid absolute http/https
+origin; …") when the input is non-empty but yields zero origins. An UNSET flag (empty input) remains
+the legitimate baseline-only case and does not throw; a partially-valid allowlist enforces the
+parseable origin(s) and does not throw. The throw surfaces via the top-level `Program` handler as
+`Error: {message}` with a non-zero exit. Covered by three new tests in `TargetUrlValidatorTests.cs`.
+No existing test passed an all-unparseable non-empty allowlist, so the change is non-breaking.
+**Story-14 doc note:** the fail-closed guard makes the scheme mandatory — a bare-hostname entry
+(`--allowed-base-urls acme.creatio.com`) is not an absolute URL, parses to zero origins, and now
+throws at startup. Entries must carry `https://`/`http://`. Story 14 should state this scheme
+requirement in the flag docs.
+
+### AC-ERR / duration deviation (surfaced for architect)
+
+`--session-idle-ttl` is a `string` and `SessionContainerCacheDefaults.ResolveIdleTtl` is
+**fault-tolerant by design** — an unparseable or non-positive value silently falls back to the 5-min
+default (Story 8 owns that behavior). There is therefore no parse-error path for the duration, so
+AC-ERR ("non-parseable duration/int → error") is satisfiable only via `--max-sessions <non-int>`
+(int → `NotParsed` → non-zero), which the test covers. This leaves an intentional asymmetry: the
+duration fails **open** (silent default) while `--allowed-base-urls` now fails **closed**.
+Recommendation: leave the duration as-is (changing it is Story 8 scope creep); flagged for the
+architect to reconcile if a consistent policy is desired.
+
+### MCP / docs
+
+MCP reviewed, no update required — the five flags are on the `mcp-http` HOST command, not an MCP
+tool; there is no MCP tool/prompt/resource for the host itself, and no verb/tool contract changed.
+Flag documentation is owned by Story 14 (deferred per this story's DoD).

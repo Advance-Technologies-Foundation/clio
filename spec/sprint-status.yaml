@@ -809,7 +809,7 @@ stories:
     title: "CLI wiring + DI — kebab-case flags on mcp-http, BindingsModule registration"
     feature: "mcp-http-credential-passthrough"
     size: M
-    status: ready-for-dev
+    status: review
     note: "Consolidates the five kebab-case flags (--platform-api-key, --allowed-base-urls, --session-idle-ttl, --max-sessions, --credentials-header-name) + CLIO_MCP_HTTP_PLATFORM_API_KEY. CLIO001/CLIO005 acceptance gate. BindingsModule changed -> full unit suite (repo rule 4)."
     file: spec/stories/story-mcp-http-credential-passthrough-12.md
     prd: spec/prd/prd-mcp-http-credential-passthrough.md

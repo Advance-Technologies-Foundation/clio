@@ -81,18 +81,38 @@ public sealed class TargetUrlValidator : ITargetUrlValidator
 	/// </param>
 	/// <param name="allowedBaseUrls">
 	/// The operator-configured allowed base URLs (already split, trimmed, non-empty). Each is
-	/// normalized to its origin (scheme+host+port). When empty, no allowlist check is applied —
-	/// the baseline address-class blocks still apply and any other reachable host is permitted.
+	/// normalized to its origin (scheme+host+port). When empty (flag unset), no allowlist check is
+	/// applied — the baseline address-class blocks still apply and any other reachable host is
+	/// permitted. When non-empty but <b>every</b> entry fails to parse into a valid absolute
+	/// http/https origin, construction fails-closed with an <see cref="ArgumentException"/> rather
+	/// than silently degrading to baseline-only.
 	/// </param>
+	/// <exception cref="ArgumentException">
+	/// <paramref name="allowedBaseUrls"/> is non-empty but yields no valid origin (operator typo).
+	/// </exception>
 	public TargetUrlValidator(string boundHost, IEnumerable<string> allowedBaseUrls) {
 		_boundHostIsLoopback = IsLoopbackIpOrLocalhost(boundHost);
 		_allowedOrigins = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		bool anyConfigured = false;
 		if (allowedBaseUrls is not null) {
 			foreach (string baseUrl in allowedBaseUrls) {
+				anyConfigured = true;
 				if (TryGetOrigin(baseUrl, out string origin)) {
 					_allowedOrigins.Add(origin);
 				}
 			}
+		}
+
+		// Fail-closed (Story 12 / Story-6 follow-up, FR-14/FR-17): a NON-EMPTY --allowed-base-urls
+		// whose entries ALL fail to parse into a valid absolute http/https origin is almost certainly
+		// an operator typo. Silently keeping an empty origin set would fail-OPEN to baseline-only and
+		// silently disable the allowlist the operator intended to enforce — so reject it loudly at
+		// construction (startup) instead. An UNSET flag (no entries) is the legitimate baseline-only
+		// case and is left untouched.
+		if (anyConfigured && _allowedOrigins.Count == 0) {
+			throw new ArgumentException(
+				"Error: --allowed-base-urls was set but contained no valid absolute http/https origin; "
+				+ "fix the value or omit the flag to fall back to baseline-only egress protection.");
 		}
 	}
 

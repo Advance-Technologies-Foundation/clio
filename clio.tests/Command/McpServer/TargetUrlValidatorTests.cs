@@ -408,4 +408,40 @@ public sealed class TargetUrlValidatorTests
 		exception.Message.Should().NotContain("secret-value",
 			because: "the rejection message must not echo caller-supplied query/path data (AC-ERR/FR-11)");
 	}
+
+	[Test]
+	[Description("Construction fails-closed when a non-empty --allowed-base-urls contains no parseable origin (operator typo), rather than silently degrading to baseline-only (Story 12 / Story-6 follow-up).")]
+	public void Ctor_ShouldThrow_WhenAllowlistIsNonEmptyButAllEntriesUnparseable() {
+		// Arrange & Act
+		Action act = () => CreateValidator(boundHost: NonLoopbackBoundHost, "not-a-url", "also/garbage");
+
+		// Assert
+		act.Should().Throw<ArgumentException>(
+				because: "a non-empty allowlist yielding zero valid origins is almost certainly a typo and must fail-closed")
+			.Which.Message.Should().StartWith("Error: --allowed-base-urls",
+				because: "the startup error names the offending flag and starts with the Error: convention (AC-ERR)");
+	}
+
+	[Test]
+	[Description("Construction does NOT fail-closed when at least one --allowed-base-urls entry parses, so the fail-closed guard triggers only on an all-unparseable allowlist (Story 12 / Story-6 follow-up).")]
+	public void Ctor_ShouldNotThrow_WhenAllowlistHasAtLeastOneValidEntry() {
+		// Arrange & Act
+		Action act = () => CreateValidator(
+			boundHost: NonLoopbackBoundHost, "https://acme.creatio.com", "not-a-url");
+
+		// Assert
+		act.Should().NotThrow(
+			because: "a partially-valid allowlist still enforces the parseable origin(s); only an all-unparseable set fails-closed");
+	}
+
+	[Test]
+	[Description("Construction with an empty allowlist (flag unset) does not fail-closed — baseline-only is the legitimate default (Story 12 / Story-6 follow-up).")]
+	public void Ctor_ShouldNotThrow_WhenAllowlistIsEmpty() {
+		// Arrange & Act
+		Action act = () => CreateValidator(boundHost: NonLoopbackBoundHost);
+
+		// Assert
+		act.Should().NotThrow(
+			because: "an unset allowlist is the legitimate baseline-only case and must not fail-closed");
+	}
 }
