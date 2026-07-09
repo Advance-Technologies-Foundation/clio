@@ -237,6 +237,7 @@ internal class Program {
 		typeof(GetIdentityPublicJwkOptions),
 		typeof(RegenerateIdentitySigningKeyOptions),
 		typeof(CheckAuthCodeFlowOptions),
+		typeof(RegisterSsoProviderOptions),
 
 
 	];
@@ -569,6 +570,7 @@ internal class Program {
 			GetIdentityPublicJwkOptions opts => Resolve<GetIdentityPublicJwkCommand>(opts).Execute(opts),
 			RegenerateIdentitySigningKeyOptions opts => Resolve<RegenerateIdentitySigningKeyCommand>(opts).Execute(opts),
 			CheckAuthCodeFlowOptions opts => Resolve<CheckAuthCodeFlowCommand>(opts).Execute(opts),
+			RegisterSsoProviderOptions opts => Resolve<RegisterSsoProviderCommand>(opts).Execute(opts),
 			var _ => 1
 		};
 	};

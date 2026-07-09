@@ -614,6 +614,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="check-auth-code-flow"></a>
 <a id="auth-code-flow"></a>
 - [`check-auth-code-flow`](docs/commands/check-auth-code-flow.md) - Check whether the environment can use the OAuth authorization code flow, `auth-code-flow`
+<a id="register-sso-provider"></a>
+<a id="sso-register-provider"></a>
+- [`register-sso-provider`](docs/commands/register-sso-provider.md) - Register a new OIDC SSO provider in Creatio, `sso-register-provider`
 
 ## General
 
