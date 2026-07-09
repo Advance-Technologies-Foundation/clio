@@ -428,6 +428,122 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 
 	[Test]
 	[AllureTag(GuidanceGetTool.ToolName)]
+	[AllureName("get-guidance returns the page-modification-overview sub-guide")]
+	[Description("Verifies get-guidance returns the page-modification-overview sub-guide created by the ENG-91556 split, carrying the relocated body save-lifecycle content.")]
+	public async Task GuidanceGet_Should_Return_Page_Modification_Overview_Guide() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		GuidanceGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["name"] = "page-modification-overview"
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "page-modification-overview is a registered guidance name after the split");
+		response.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article payload");
+		response.Article!.Uri.Should().Be("docs://mcp/guides/page-modification-overview",
+			because: "the canonical resource URI for the overview sub-guide should be stable");
+		response.Article.Text.Should().Contain("clio MCP page modification overview guide",
+			because: "the guidance tool should return the canonical overview sub-guide text");
+		response.Article.Text.Should().Contain("do NOT resend the full raw.body",
+			because: "the do-not-resend rule moved into the overview sub-guide");
+	}
+
+	[Test]
+	[AllureTag(GuidanceGetTool.ToolName)]
+	[AllureName("get-guidance returns the page-modification-field-contract sub-guide")]
+	[Description("Verifies get-guidance returns the page-modification-field-contract sub-guide created by the ENG-91556 split, carrying the relocated inserted-field contract content.")]
+	public async Task GuidanceGet_Should_Return_Page_Modification_Field_Contract_Guide() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		GuidanceGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["name"] = "page-modification-field-contract"
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "page-modification-field-contract is a registered guidance name after the split");
+		response.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article payload");
+		response.Article!.Uri.Should().Be("docs://mcp/guides/page-modification-field-contract",
+			because: "the canonical resource URI for the field-contract sub-guide should be stable");
+		response.Article.Text.Should().Contain("clio MCP page modification field-contract guide",
+			because: "the guidance tool should return the canonical field-contract sub-guide text");
+		response.Article.Text.Should().Contain("Inserted-field contract for a new data-bound field control",
+			because: "the inserted-field contract section moved into the field-contract sub-guide");
+	}
+
+	[Test]
+	[AllureTag(GuidanceGetTool.ToolName)]
+	[AllureName("get-guidance returns the page-modification-containers sub-guide")]
+	[Description("Verifies get-guidance returns the page-modification-containers sub-guide created by the ENG-91556 split, carrying the relocated bundle.json / parentName content.")]
+	public async Task GuidanceGet_Should_Return_Page_Modification_Containers_Guide() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		GuidanceGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["name"] = "page-modification-containers"
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "page-modification-containers is a registered guidance name after the split");
+		response.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article payload");
+		response.Article!.Uri.Should().Be("docs://mcp/guides/page-modification-containers",
+			because: "the canonical resource URI for the containers sub-guide should be stable");
+		response.Article.Text.Should().Contain("clio MCP page modification containers guide",
+			because: "the guidance tool should return the canonical containers sub-guide text");
+		response.Article.Text.Should().Contain("Finding a container for a new component",
+			because: "the container-selection section moved into the containers sub-guide");
+	}
+
+	[Test]
+	[AllureTag(GuidanceGetTool.ToolName)]
+	[AllureName("get-guidance returns the page-modification-components sub-guide")]
+	[Description("Verifies get-guidance returns the page-modification-components sub-guide created by the ENG-91556 split, carrying the relocated viewConfigDiff/handler/get-component-info content.")]
+	public async Task GuidanceGet_Should_Return_Page_Modification_Components_Guide() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		GuidanceGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["name"] = "page-modification-components"
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "page-modification-components is a registered guidance name after the split");
+		response.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article payload");
+		response.Article!.Uri.Should().Be("docs://mcp/guides/page-modification-components",
+			because: "the canonical resource URI for the components sub-guide should be stable");
+		response.Article.Text.Should().Contain("clio MCP page modification components guide",
+			because: "the guidance tool should return the canonical components sub-guide text");
+		response.Article.Text.Should().Contain("Adding a button with a click handler",
+			because: "the button+handler section moved into the components sub-guide");
+	}
+
+	[Test]
+	[AllureTag(GuidanceGetTool.ToolName)]
 	[AllureName("get-guidance returns the canonical ESQ guidance article")]
 	public async Task GuidanceGet_Should_Return_Esq_Guide() {
 		// Arrange
