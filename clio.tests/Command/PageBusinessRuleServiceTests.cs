@@ -484,59 +484,6 @@ public sealed class PageBusinessRuleServiceTests {
 			Arg.Is<IReadOnlyList<string>>(names => names.Count == 1 && names[0] == "BusinessRule_pg"));
 	}
 
-	[Test]
-	[Category("Unit")]
-	[Description("Strips caller-supplied block uIds on create so fresh block identities are minted, converting and appending a stripped copy instead of the caller's instance.")]
-	public void Create_Should_Strip_Caller_Block_UIds_When_Rule_Carries_Them() {
-		// Arrange
-		const string actionUId = "99999999-9999-9999-9999-999999999992";
-		PageBusinessRuleService service = BuildBatchService(out IBusinessRuleAddonService addonService);
-		IReadOnlyList<BusinessRuleMetadataDto>? capturedMetadata = null;
-		addonService.AppendRule(
-				Arg.Any<AddonGetRequestDto>(),
-				Arg.Any<BusinessRule>(),
-				Arg.Do<IReadOnlyList<BusinessRuleMetadataDto>>(metadata => capturedMetadata = metadata))
-			.Returns(new BusinessRuleCreateResult("BusinessRule_1234567"));
-		BusinessRule rule = CreatePageRule() with {
-			Actions = [new ShowElementBusinessRuleAction(["Input_One"]) { UId = actionUId }]
-		};
-
-		// Act
-		service.Create(new BusinessRuleCreateRequest("UsrPkg", "UsrPage", rule));
-
-		// Assert
-		addonService.Received(1).AppendRule(
-			Arg.Any<AddonGetRequestDto>(),
-			Arg.Is<BusinessRule>(appended => !ReferenceEquals(appended, rule)),
-			Arg.Any<IReadOnlyList<BusinessRuleMetadataDto>>());
-		capturedMetadata.Should().NotBeNull(because: "the stripped rule must still be converted and appended");
-		capturedMetadata![0].Cases[0].Actions[0].UId.Should().NotBe(actionUId,
-			because: "create must mint a fresh action uId instead of honoring the caller-supplied one");
-	}
-
-	[Test]
-	[Category("Unit")]
-	[Description("Passes the caller's rule instance through unchanged on create when it carries no block uIds, avoiding a needless copy.")]
-	public void Create_Should_Keep_Same_Rule_Instance_When_No_Block_UIds_Present() {
-		// Arrange
-		PageBusinessRuleService service = BuildBatchService(out IBusinessRuleAddonService addonService);
-		addonService.AppendRule(
-				Arg.Any<AddonGetRequestDto>(),
-				Arg.Any<BusinessRule>(),
-				Arg.Any<IReadOnlyList<BusinessRuleMetadataDto>>())
-			.Returns(new BusinessRuleCreateResult("BusinessRule_1234567"));
-		BusinessRule rule = CreatePageRule();
-
-		// Act
-		service.Create(new BusinessRuleCreateRequest("UsrPkg", "UsrPage", rule));
-
-		// Assert
-		addonService.Received(1).AppendRule(
-			Arg.Any<AddonGetRequestDto>(),
-			Arg.Is<BusinessRule>(appended => ReferenceEquals(appended, rule)),
-			Arg.Any<IReadOnlyList<BusinessRuleMetadataDto>>());
-	}
-
 	private static PageBusinessRuleService BuildBatchService(out IBusinessRuleAddonService addonService) {
 		IBusinessRulePackageResolver packageResolver = Substitute.For<IBusinessRulePackageResolver>();
 		IPageBusinessRuleSchemaProvider schemaProvider = Substitute.For<IPageBusinessRuleSchemaProvider>();

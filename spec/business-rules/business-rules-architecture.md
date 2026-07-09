@@ -219,7 +219,7 @@ flowchart LR
 ## Read / Update / Delete Flow
 
 The read/update/delete MCP tools (see
-[business-rules-crud-spec.md](./business-rules-crud-spec.md)) reuse the same service and
+[business-rules-spec.md](./business-rules-spec.md)) reuse the same service and
 add-on pipeline:
 
 - `BusinessRuleAddonService.ReadRules` fetches the add-on schema and
@@ -255,7 +255,4 @@ add-on pipeline:
 
 ## Related Docs
 
-- Entry point: [README.md](C:/Projects/clio/spec/business-rules/README.md)
-- Product spec: [business-rules-spec.md](C:/Projects/clio/spec/business-rules/business-rules-spec.md)
-- Capability doc: [create-entity-business-rules-spec.md](C:/Projects/clio/spec/business-rules/create-entity-business-rules-spec.md)
-- Previous design note: [design.md](C:/Projects/clio/spec/business-rules/design.md)
+- Product spec: [business-rules-spec.md](./business-rules-spec.md)

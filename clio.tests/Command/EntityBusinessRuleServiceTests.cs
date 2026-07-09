@@ -942,64 +942,6 @@ public sealed class EntityBusinessRuleServiceTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Strips caller-supplied block uIds on create so fresh block identities are minted, validating a stripped copy instead of the caller's instance.")]
-	public void Create_Should_Strip_Caller_Block_UIds_When_Rule_Carries_Them() {
-		// Arrange
-		const string conditionUId = "99999999-9999-9999-9999-999999999991";
-		const string actionUId = "99999999-9999-9999-9999-999999999992";
-		BusinessRule rule = new(
-			"Strip uIds",
-			new BusinessRuleConditionGroup(
-				"AND",
-				[
-					new BusinessRuleCondition(
-						new BusinessRuleExpression("AttributeValue", "Status", null),
-						"equal",
-						new BusinessRuleExpression("Const", null, JsonSerializer.Deserialize<JsonElement>("\"Draft\""))) {
-						UId = conditionUId
-					}
-				]),
-			[
-				new MakeRequiredBusinessRuleAction(["Owner"]) { UId = actionUId }
-			]);
-		BusinessRuleCreateRequest request = new("UsrPkg", "UsrOrder", rule);
-
-		// Act
-		_service.Create(request);
-
-		// Assert
-		_lookupReferenceValidator.Received(1).Validate(
-			Arg.Is<BusinessRule>(validated => !ReferenceEquals(validated, rule)),
-			Arg.Any<IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor>>());
-		using JsonDocument metaData = JsonDocument.Parse(_savedAddonSchema!.MetaData);
-		JsonElement createdRule = metaData.RootElement.GetProperty("rules")[1];
-		createdRule.GetProperty("cases")[0].GetProperty("condition").GetProperty("conditions")[0]
-			.GetProperty("uId").GetString().Should().NotBe(conditionUId,
-				because: "create must mint a fresh condition uId instead of honoring the caller-supplied one");
-		createdRule.GetProperty("cases")[0].GetProperty("actions")[0]
-			.GetProperty("uId").GetString().Should().NotBe(actionUId,
-				because: "create must mint a fresh action uId instead of honoring the caller-supplied one");
-	}
-
-	[Test]
-	[Category("Unit")]
-	[Description("Passes the caller's rule instance through unchanged on create when it carries no block uIds, avoiding a needless copy.")]
-	public void Create_Should_Keep_Same_Rule_Instance_When_No_Block_UIds_Present() {
-		// Arrange
-		BusinessRule rule = CreateRule();
-		BusinessRuleCreateRequest request = new("UsrPkg", "UsrOrder", rule);
-
-		// Act
-		_service.Create(request);
-
-		// Assert
-		_lookupReferenceValidator.Received(1).Validate(
-			Arg.Is<BusinessRule>(validated => ReferenceEquals(validated, rule)),
-			Arg.Any<IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor>>());
-	}
-
-	[Test]
-	[Category("Unit")]
 	[Description("Reports a not-found failure without saving when the only update rule names a rule absent from the schema.")]
 	public void Update_Should_Report_Not_Found_Without_Saving_When_Name_Is_Unknown() {
 		// Arrange

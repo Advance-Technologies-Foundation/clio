@@ -184,7 +184,7 @@ public abstract record EntityBusinessRuleActionMcpContract
 	}
 
 	[JsonPropertyName("uId")]
-	[Description("Stable action identity (GUID) returned by read. Pass it back on update to preserve block identity; ignored on create.")]
+	[Description("Stable action identity (GUID) returned by read. Pass it back on update to preserve block identity; omit on create to generate a fresh id.")]
 	public string? UId { get; init; }
 
 	internal abstract BusinessRuleAction ToBusinessRuleAction();
@@ -484,7 +484,7 @@ public abstract record PageBusinessRuleActionMcpContract
 	}
 
 	[JsonPropertyName("uId")]
-	[Description("Stable action identity (GUID) returned by read. Pass it back on update to preserve block identity; ignored on create.")]
+	[Description("Stable action identity (GUID) returned by read. Pass it back on update to preserve block identity; omit on create to generate a fresh id.")]
 	public string? UId { get; init; }
 
 	internal abstract BusinessRuleAction ToBusinessRuleAction();

@@ -58,7 +58,7 @@ internal sealed class PageBusinessRuleService(
 			pageContext.Bundle,
 			packageUId);
 		IReadOnlySet<string> elementNames = elementProvider.GetElementNames(pageContext.Bundle);
-		BusinessRule rule = BusinessRuleHelpers.StripBlockUIds(request.Rule);
+		BusinessRule rule = request.Rule;
 		pageBusinessRuleValidator.Validate(rule, attributeMap, elementNames);
 
 		BusinessRuleMetadataDto createdRule = SimpleToFullBusinessRuleConverter.ToPageMetadata(attributeMap, rule);

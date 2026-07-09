@@ -28,7 +28,7 @@ internal abstract class BaseBusinessRuleService(
 			string caption = rule?.Caption ?? string.Empty;
 			try {
 				ArgumentNullException.ThrowIfNull(rule);
-				IReadOnlyList<BusinessRuleMetadataDto> createdRules = convert(BusinessRuleHelpers.StripBlockUIds(rule));
+				IReadOnlyList<BusinessRuleMetadataDto> createdRules = convert(rule);
 				if (createdRules.Count == 0) {
 					results[index] = new BusinessRuleBatchItemResult(caption, false, null, "Rule produced no metadata.");
 					continue;

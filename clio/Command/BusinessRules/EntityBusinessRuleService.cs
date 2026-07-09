@@ -60,7 +60,7 @@ internal sealed class EntityBusinessRuleService(
 			request.SchemaName,
 			packageUId);
 
-		BusinessRule rule = BusinessRuleHelpers.StripBlockUIds(request.Rule);
+		BusinessRule rule = request.Rule;
 		StaticFilterContext? staticFilterContext = RequiresStaticFilterScope(rule)
 			? staticFilterContextFactory.Create(packageUId, attributeContext.EntitySchema)
 			: null;

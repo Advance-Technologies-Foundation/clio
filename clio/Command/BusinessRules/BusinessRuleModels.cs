@@ -99,7 +99,7 @@ public sealed record BusinessRuleCondition
     public BusinessRuleExpression? RightExpression { get; init; }
 
     [JsonPropertyName("uId")]
-    [Description("Stable condition identity (GUID). Pass the value returned by read back on update to preserve block identity; ignored on create.")]
+    [Description("Stable condition identity (GUID). Pass the value returned by read back on update to preserve block identity; omit on create to generate a fresh id.")]
     public string? UId { get; init; }
 }
 
@@ -153,7 +153,7 @@ public sealed record BusinessRuleExpression
     public string? SysValueName { get; init; }
 
     [JsonPropertyName("uId")]
-    [Description("Stable expression identity (GUID). Pass the value returned by read back on update to preserve block identity; ignored on create.")]
+    [Description("Stable expression identity (GUID). Pass the value returned by read back on update to preserve block identity; omit on create to generate a fresh id.")]
     public string? UId { get; init; }
 }
 
@@ -174,7 +174,7 @@ public abstract record BusinessRuleAction
     }
 
     [JsonPropertyName("uId")]
-    [Description("Stable action identity (GUID). Pass the value returned by read back on update to preserve block identity; ignored on create.")]
+    [Description("Stable action identity (GUID). Pass the value returned by read back on update to preserve block identity; omit on create to generate a fresh id.")]
     public string? UId { get; init; }
 
     [JsonIgnore] public abstract string ActionType { get; }
@@ -455,6 +455,6 @@ public sealed record BusinessRuleSetValueItem
     public BusinessRuleExpression Value { get; init; } = null!;
 
     [JsonPropertyName("uId")]
-    [Description("Stable set-value item identity (GUID). Pass the value returned by read back on update to preserve block identity; ignored on create.")]
+    [Description("Stable set-value item identity (GUID). Pass the value returned by read back on update to preserve block identity; omit on create to generate a fresh id.")]
     public string? UId { get; init; }
 }
