@@ -308,13 +308,14 @@ internal sealed class RelatedPageAddonService(
 
 	// Normalizes a page to its (audience, type) cell for the uniqueness guard. The general audience (role-less or
 	// "All employees") collapses to one bucket — two untyped general defaults would both match an employee — and
-	// the portal audience to another. The type key is the trimmed TypeColumnValue LOWER-CASED, so the cell is
-	// case-insensitive (a lookup GUID differing only in letter case is the same type) — consistent with the
-	// case-insensitive audience matching, and it never lets a case-only variant slip past as a distinct cell. Only
-	// recognized audiences reach here (ValidateRequest rejects the rest first).
+	// the portal audience to another. The type key uses the SAME normalization as the stored value
+	// (NormalizeGuid — canonical "D", lower-cased), so a lookup GUID that differs only in letter case OR format
+	// (brace "{…}" / dash-less "N") is treated as one cell. Keying on the raw value here while BuildPages stores the
+	// normalized value would let a brace/N variant slip past as a distinct cell yet be written as the same value —
+	// two defaults for one cell. Only recognized audiences reach here (ValidateRequest rejects the rest first).
 	private static (string audience, string type) AudienceTypeCell(RelatedPageSpec page) =>
 		(AudienceKey(page),
-			string.IsNullOrWhiteSpace(page.TypeColumnValue) ? null : page.TypeColumnValue.Trim().ToLowerInvariant());
+			string.IsNullOrWhiteSpace(page.TypeColumnValue) ? null : NormalizeGuid(page.TypeColumnValue)?.ToLowerInvariant());
 
 	// Parses the add-on's existing MetaData into a mutable object so the write can PRESERVE any top-level field
 	// this tool does not model (see Create — keeps us safe against a future platform field added without a tool

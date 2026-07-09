@@ -1190,4 +1190,114 @@ public sealed class RelatedPageAddonServiceTests {
 		result.PageCount.Should().Be(3,
 			because: "a portal audience with both a default and an add page is a valid, complete set");
 	}
+
+	[Test]
+	[Description("Treats the same type-column-value in different GUID FORMATS (brace vs canonical D) as one cell: two general defaults for that type are rejected as a duplicate default — the cell key uses the same normalization as the stored value, so a brace/N variant cannot bypass the per-cell uniqueness guard.")]
+	public void Create_ShouldThrow_WhenSameTypeValueDiffersOnlyInGuidFormat() {
+		// Arrange / Act — a base default plus two typed defaults whose type value is the SAME GUID in different
+		// formats (brace vs canonical). BuildPages normalizes both to the same stored value, so they are one cell.
+		const string typeColumnUId = "af280321-e749-41dd-98e5-383906747e29";
+		Action act = () => _service.Create(new RelatedPageAddonRequest("Custom", "Case", new[] {
+			new RelatedPageSpec("CaseFormPage", IsDefault: true),
+			new RelatedPageSpec("CaseIncidentPage", IsDefault: true, TypeColumnValue: "{1b0bc159-150a-e111-a31b-00155d04c01d}"),
+			new RelatedPageSpec("CaseOtherPage", IsDefault: true, TypeColumnValue: "1b0bc159-150a-e111-a31b-00155d04c01d")
+		}, typeColumnUId));
+
+		// Assert
+		act.Should().Throw<ArgumentException>().WithMessage("*more than one default page*",
+			because: "a brace-format and a canonical type value normalize to the same stored value, so the two typed defaults are one cell — a duplicate that must not bypass the uniqueness guard");
+		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().SaveSchema(default!);
+	}
+
+	[Test]
+	[Description("Get rejects a blank entity-schema-name before any remote call.")]
+	public void Get_ShouldThrow_WhenEntitySchemaNameBlank() {
+		// Act
+		Action act = () => _service.Get(new RelatedPageAddonReadRequest("Custom", ""));
+
+		// Assert
+		act.Should().Throw<ArgumentException>().WithMessage("*entity-schema-name*",
+			because: "a read needs the object name; a blank one must fail fast");
+		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().GetSchema(default!);
+	}
+
+	[Test]
+	[Description("Get rejects a blank package-name before any remote call.")]
+	public void Get_ShouldThrow_WhenPackageNameBlank() {
+		// Act
+		Action act = () => _service.Get(new RelatedPageAddonReadRequest("", "UsrDeliveryItem"));
+
+		// Assert
+		act.Should().Throw<ArgumentException>().WithMessage("*package-name*",
+			because: "a read needs the owning package; a blank one must fail fast");
+		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().GetSchema(default!);
+	}
+
+	[Test]
+	[Description("Get fails with a clear not-found error (and never fetches the add-on) when the object does not resolve in the package — AC4 for the read path.")]
+	public void Get_ShouldThrow_WhenObjectNotFound() {
+		// Arrange — the package resolves, then the entity schema designer returns no schema.
+		StubSelectQueue(Rows(PackageUId));
+		StubEntitySchema(null);
+
+		// Act
+		Action act = () => _service.Get(new RelatedPageAddonReadRequest("Custom", "UsrDeliveryItem"));
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>().WithMessage("*UsrDeliveryItem*not found*",
+			because: "an object that does not resolve in the package must fail the read with a clear message (AC4)");
+		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().GetSchema(default!);
+	}
+
+	[Test]
+	[Description("Create rejects a null request before any remote call.")]
+	public void Create_ShouldThrow_WhenRequestIsNull() {
+		// Act
+		Action act = () => _service.Create(null);
+
+		// Assert
+		act.Should().Throw<ArgumentNullException>(
+			because: "a null request is invalid input and must fail before any remote call");
+		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().GetSchema(default!);
+	}
+
+	[Test]
+	[Description("Create rejects a null pages list with a message that steers the caller to the reset-to-inline semantics (an empty list clears bindings).")]
+	public void Create_ShouldThrow_WhenPagesIsNull() {
+		// Act
+		Action act = () => _service.Create(new RelatedPageAddonRequest("Custom", "UsrDeliveryItem", null, null));
+
+		// Assert
+		act.Should().Throw<ArgumentException>().WithMessage("*pages is required*",
+			because: "null pages is rejected, and the message must point the caller to sending an empty list to reset to inline");
+		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().GetSchema(default!);
+	}
+
+	[Test]
+	[Description("Create rejects a blank entity-schema-name at the service level before any remote call.")]
+	public void Create_ShouldThrow_WhenEntitySchemaNameBlank() {
+		// Act
+		Action act = () => _service.Create(new RelatedPageAddonRequest("Custom", "", new[] {
+			new RelatedPageSpec("UsrDeliveryItemFormPage", IsDefault: true)
+		}, null));
+
+		// Assert
+		act.Should().Throw<ArgumentException>().WithMessage("*entity-schema-name*",
+			because: "a bind needs the object name; a blank one must fail fast");
+		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().GetSchema(default!);
+	}
+
+	[Test]
+	[Description("Create rejects a blank package-name at the service level before any remote call.")]
+	public void Create_ShouldThrow_WhenPackageNameBlank() {
+		// Act
+		Action act = () => _service.Create(new RelatedPageAddonRequest("", "UsrDeliveryItem", new[] {
+			new RelatedPageSpec("UsrDeliveryItemFormPage", IsDefault: true)
+		}, null));
+
+		// Assert
+		act.Should().Throw<ArgumentException>().WithMessage("*package-name*",
+			because: "a bind needs the owning package; a blank one must fail fast");
+		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().GetSchema(default!);
+	}
 }
