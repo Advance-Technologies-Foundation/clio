@@ -569,3 +569,320 @@ stories:
       - story-mcp-e2e-noenvironment-parallelization-2
       - story-mcp-e2e-noenvironment-parallelization-3
     blocks: []
+
+  # --- mcp-http-credential-passthrough stories (ENG-93208), added 2026-07-09 ---
+  # Stateless multi-tenant edge: per-request X-Integration-Credentials passthrough for clio mcp-http.
+  # Sliced 1:1 from the ADR's 15-step implementation plan.
+  # STORIES 1 AND 2 ARE BLOCKING SPIKES: every code story (3-15) depends on BOTH.
+  #   - Spike 1 decides the per-request context seam (RISK #1); if it fails, stories 4/7/10 re-target the SDK per-request DI scope.
+  #   - Spike 2 decides the token/cookie client: bearer leg is committed scope; COOKIE LEG IS AT-RISK and DROPPED from v1 if no supported injection path exists.
+  # Recommended order: 1 ∥ 2 (spikes) -> 3 ∥ 4 -> 5, 6 -> 7 -> 8 -> 9 -> 10, 11 -> 12 -> 13 -> 14 -> 15.
+  # Dependency graph is acyclic; no story depends on a later one. FR-05/FR-06 are COUPLED in story 9 (FR-06 first).
+  # clio.mcp.e2e is NOT in CI — story 15 concurrency/multi-tenant cases run manually.
+  - id: story-mcp-http-credential-passthrough-1
+    title: "[SPIKE] Per-request context flow (RISK #1)"
+    feature: "mcp-http-credential-passthrough"
+    size: S
+    status: ready-for-dev
+    note: "BLOCKING SPIKE. Confirms singleton ICredentialContextAccessor over IHttpContextAccessor is readable inside tool execution under ValidateOnBuild+ValidateScopes, and probes the FR-06 independent-async-flow prerequisite. If it fails: fall back to the SDK per-request DI scope and re-target stories 4/7/10."
+    file: spec/stories/story-mcp-http-credential-passthrough-1.md
+    prd: spec/prd/prd-mcp-http-credential-passthrough.md
+    adr: spec/adr/adr-mcp-http-credential-passthrough.md
+    fr: [FR-04]
+    oq: [OQ-04]
+    depends_on: []
+    blocks:
+      - story-mcp-http-credential-passthrough-3
+      - story-mcp-http-credential-passthrough-4
+      - story-mcp-http-credential-passthrough-5
+      - story-mcp-http-credential-passthrough-6
+      - story-mcp-http-credential-passthrough-7
+      - story-mcp-http-credential-passthrough-8
+      - story-mcp-http-credential-passthrough-9
+      - story-mcp-http-credential-passthrough-10
+      - story-mcp-http-credential-passthrough-11
+      - story-mcp-http-credential-passthrough-12
+      - story-mcp-http-credential-passthrough-13
+      - story-mcp-http-credential-passthrough-14
+      - story-mcp-http-credential-passthrough-15
+
+  - id: story-mcp-http-credential-passthrough-2
+    title: "[SPIKE] Token/cookie client feasibility (OQ-01 / bearer vs cookie leg)"
+    feature: "mcp-http-credential-passthrough"
+    size: S
+    status: ready-for-dev
+    note: "BLOCKING SPIKE. Bearer leg (COMMITTED): confirm CreatioClient(appUrl, bearerToken, isNetCore) attaches Authorization: Bearer on a POST with no auto-Login(). Cookie leg (AT-RISK/CONDITIONAL): only non-public InitAuthCookie/AddCsrfToken found — DROP cookie leg from v1 if no supported injection path exists. If bearer also fails, degrade to {url, login, password}-only."
+    file: spec/stories/story-mcp-http-credential-passthrough-2.md
+    prd: spec/prd/prd-mcp-http-credential-passthrough.md
+    adr: spec/adr/adr-mcp-http-credential-passthrough.md
+    fr: [FR-01, FR-18]
+    oq: [OQ-01]
+    depends_on: []
+    blocks:
+      - story-mcp-http-credential-passthrough-3
+      - story-mcp-http-credential-passthrough-4
+      - story-mcp-http-credential-passthrough-5
+      - story-mcp-http-credential-passthrough-6
+      - story-mcp-http-credential-passthrough-7
+      - story-mcp-http-credential-passthrough-8
+      - story-mcp-http-credential-passthrough-9
+      - story-mcp-http-credential-passthrough-10
+      - story-mcp-http-credential-passthrough-11
+      - story-mcp-http-credential-passthrough-12
+      - story-mcp-http-credential-passthrough-13
+      - story-mcp-http-credential-passthrough-14
+      - story-mcp-http-credential-passthrough-15
+
+  - id: story-mcp-http-credential-passthrough-3
+    title: "Client seam — EnvironmentSettings token/cookie fields + NoReauthExecutor + factory branch"
+    feature: "mcp-http-credential-passthrough"
+    size: M
+    status: ready-for-dev
+    file: spec/stories/story-mcp-http-credential-passthrough-3.md
+    prd: spec/prd/prd-mcp-http-credential-passthrough.md
+    adr: spec/adr/adr-mcp-http-credential-passthrough.md
+    fr: [FR-01, FR-02, FR-18]
+    ac: [AC-01, AC-02, AC-15, AC-ERR]
+    depends_on: [story-mcp-http-credential-passthrough-1, story-mcp-http-credential-passthrough-2]
+    blocks:
+      - story-mcp-http-credential-passthrough-7
+      - story-mcp-http-credential-passthrough-8
+      - story-mcp-http-credential-passthrough-15
+
+  - id: story-mcp-http-credential-passthrough-4
+    title: "Header + credential context — X-Integration-Credentials parse, precedence, context seam"
+    feature: "mcp-http-credential-passthrough"
+    size: M
+    status: ready-for-dev
+    file: spec/stories/story-mcp-http-credential-passthrough-4.md
+    prd: spec/prd/prd-mcp-http-credential-passthrough.md
+    adr: spec/adr/adr-mcp-http-credential-passthrough.md
+    fr: [FR-01, FR-02, FR-04]
+    oq: [OQ-02]
+    ac: [AC-02, AC-ERR]
+    depends_on: [story-mcp-http-credential-passthrough-1, story-mcp-http-credential-passthrough-2]
+    blocks:
+      - story-mcp-http-credential-passthrough-5
+      - story-mcp-http-credential-passthrough-6
+      - story-mcp-http-credential-passthrough-7
+      - story-mcp-http-credential-passthrough-10
+      - story-mcp-http-credential-passthrough-13
+      - story-mcp-http-credential-passthrough-15
+
+  - id: story-mcp-http-credential-passthrough-5
+    title: "Edge API-key gate — fail-closed, strictly additive"
+    feature: "mcp-http-credential-passthrough"
+    size: M
+    status: ready-for-dev
+    file: spec/stories/story-mcp-http-credential-passthrough-5.md
+    prd: spec/prd/prd-mcp-http-credential-passthrough.md
+    adr: spec/adr/adr-mcp-http-credential-passthrough.md
+    fr: [FR-09, FR-10]
+    oq: [OQ-05]
+    ac: [AC-01, AC-08, AC-09, AC-10]
+    depends_on: [story-mcp-http-credential-passthrough-1, story-mcp-http-credential-passthrough-2, story-mcp-http-credential-passthrough-4]
+    blocks:
+      - story-mcp-http-credential-passthrough-10
+      - story-mcp-http-credential-passthrough-11
+      - story-mcp-http-credential-passthrough-12
+      - story-mcp-http-credential-passthrough-15
+
+  - id: story-mcp-http-credential-passthrough-6
+    title: "SSRF / egress validator on the per-request target URL"
+    feature: "mcp-http-credential-passthrough"
+    size: M
+    status: ready-for-dev
+    file: spec/stories/story-mcp-http-credential-passthrough-6.md
+    prd: spec/prd/prd-mcp-http-credential-passthrough.md
+    adr: spec/adr/adr-mcp-http-credential-passthrough.md
+    fr: [FR-17]
+    ac: [AC-14]
+    depends_on: [story-mcp-http-credential-passthrough-1, story-mcp-http-credential-passthrough-2, story-mcp-http-credential-passthrough-4]
+    blocks:
+      - story-mcp-http-credential-passthrough-7
+      - story-mcp-http-credential-passthrough-12
+      - story-mcp-http-credential-passthrough-15
+
+  - id: story-mcp-http-credential-passthrough-7
+    title: "Ephemeral resolution + FR-12 error fix"
+    feature: "mcp-http-credential-passthrough"
+    size: L
+    status: ready-for-dev
+    file: spec/stories/story-mcp-http-credential-passthrough-7.md
+    prd: spec/prd/prd-mcp-http-credential-passthrough.md
+    adr: spec/adr/adr-mcp-http-credential-passthrough.md
+    fr: [FR-03, FR-04, FR-12]
+    ac: [AC-03, AC-12, AC-14, SM-01]
+    depends_on:
+      - story-mcp-http-credential-passthrough-1
+      - story-mcp-http-credential-passthrough-2
+      - story-mcp-http-credential-passthrough-3
+      - story-mcp-http-credential-passthrough-4
+      - story-mcp-http-credential-passthrough-6
+    blocks:
+      - story-mcp-http-credential-passthrough-8
+      - story-mcp-http-credential-passthrough-9
+      - story-mcp-http-credential-passthrough-13
+      - story-mcp-http-credential-passthrough-15
+
+  - id: story-mcp-http-credential-passthrough-8
+    title: "Cache-key discrimination + TTL/bounded eviction (with disposal/GC-safety decision)"
+    feature: "mcp-http-credential-passthrough"
+    size: L
+    status: ready-for-dev
+    note: "Carries the verified caveat: CreatioClient/CreatioClientAdapter/IApplicationClient are NOT IDisposable — provider disposal releases no transport resources. AC-05 must PROVE GC-safety under bounded churn OR add a real lifecycle; never claim 'dispose the provider' sufficient. Never evict in-flight."
+    file: spec/stories/story-mcp-http-credential-passthrough-8.md
+    prd: spec/prd/prd-mcp-http-credential-passthrough.md
+    adr: spec/adr/adr-mcp-http-credential-passthrough.md
+    fr: [FR-07, FR-08]
+    ac: [AC-04, AC-07]
+    depends_on:
+      - story-mcp-http-credential-passthrough-1
+      - story-mcp-http-credential-passthrough-2
+      - story-mcp-http-credential-passthrough-3
+      - story-mcp-http-credential-passthrough-7
+    blocks:
+      - story-mcp-http-credential-passthrough-9
+      - story-mcp-http-credential-passthrough-12
+      - story-mcp-http-credential-passthrough-15
+
+  - id: story-mcp-http-credential-passthrough-9
+    title: "De-globalize the execution lock + isolate the capture it guards (FR-06 -> FR-05, COUPLED)"
+    feature: "mcp-http-credential-passthrough"
+    size: L
+    status: ready-for-dev
+    note: "COUPLED design unit, STRICT ORDER FR-06 (isolate capture) BEFORE FR-05 (narrow lock). Full lock inventory: 9a shared-root (BaseTool, PageEditToolHelpers, PageSyncTool, SchemaSyncTool) AND 9b tool-local static (CompileCreatioTool, AddItemModelTool). Concurrency-isolation proof is story 15c."
+    file: spec/stories/story-mcp-http-credential-passthrough-9.md
+    prd: spec/prd/prd-mcp-http-credential-passthrough.md
+    adr: spec/adr/adr-mcp-http-credential-passthrough.md
+    fr: [FR-05, FR-06]
+    ac: [AC-04, AC-05, AC-06]
+    depends_on:
+      - story-mcp-http-credential-passthrough-1
+      - story-mcp-http-credential-passthrough-2
+      - story-mcp-http-credential-passthrough-7
+      - story-mcp-http-credential-passthrough-8
+    blocks:
+      - story-mcp-http-credential-passthrough-13
+      - story-mcp-http-credential-passthrough-15
+
+  - id: story-mcp-http-credential-passthrough-10
+    title: "Mode-gated plaintext-arg policy (FR-19) + up-front required-arg validation (FR-13)"
+    feature: "mcp-http-credential-passthrough"
+    size: M
+    status: ready-for-dev
+    file: spec/stories/story-mcp-http-credential-passthrough-10.md
+    prd: spec/prd/prd-mcp-http-credential-passthrough.md
+    adr: spec/adr/adr-mcp-http-credential-passthrough.md
+    fr: [FR-19, FR-13]
+    ac: [AC-13, AC-16]
+    depends_on:
+      - story-mcp-http-credential-passthrough-1
+      - story-mcp-http-credential-passthrough-2
+      - story-mcp-http-credential-passthrough-4
+      - story-mcp-http-credential-passthrough-5
+    blocks:
+      - story-mcp-http-credential-passthrough-14
+      - story-mcp-http-credential-passthrough-15
+
+  - id: story-mcp-http-credential-passthrough-11
+    title: "Incubation feature-flag gate on the passthrough behavior"
+    feature: "mcp-http-credential-passthrough"
+    size: S
+    status: ready-for-dev
+    note: "Gate the BEHAVIOR via IsFeatureEnabled('mcp-http-credential-passthrough') in McpHttpServerCommand.Run — NOT [FeatureToggle] on the options class (that hides the shipped verb and regresses FR-10/AC-10). Doubly-gated: incubation flag AND api-key gate."
+    file: spec/stories/story-mcp-http-credential-passthrough-11.md
+    prd: spec/prd/prd-mcp-http-credential-passthrough.md
+    adr: spec/adr/adr-mcp-http-credential-passthrough.md
+    oq: [OQ-03]
+    ac: [AC-10]
+    depends_on:
+      - story-mcp-http-credential-passthrough-1
+      - story-mcp-http-credential-passthrough-2
+      - story-mcp-http-credential-passthrough-5
+    blocks:
+      - story-mcp-http-credential-passthrough-12
+      - story-mcp-http-credential-passthrough-14
+      - story-mcp-http-credential-passthrough-15
+
+  - id: story-mcp-http-credential-passthrough-12
+    title: "CLI wiring + DI — kebab-case flags on mcp-http, BindingsModule registration"
+    feature: "mcp-http-credential-passthrough"
+    size: M
+    status: ready-for-dev
+    note: "Consolidates the five kebab-case flags (--platform-api-key, --allowed-base-urls, --session-idle-ttl, --max-sessions, --credentials-header-name) + CLIO_MCP_HTTP_PLATFORM_API_KEY. CLIO001/CLIO005 acceptance gate. BindingsModule changed -> full unit suite (repo rule 4)."
+    file: spec/stories/story-mcp-http-credential-passthrough-12.md
+    prd: spec/prd/prd-mcp-http-credential-passthrough.md
+    adr: spec/adr/adr-mcp-http-credential-passthrough.md
+    fr: [FR-14]
+    ac: [AC-18]
+    depends_on:
+      - story-mcp-http-credential-passthrough-1
+      - story-mcp-http-credential-passthrough-2
+      - story-mcp-http-credential-passthrough-5
+      - story-mcp-http-credential-passthrough-6
+      - story-mcp-http-credential-passthrough-8
+      - story-mcp-http-credential-passthrough-11
+    blocks: [story-mcp-http-credential-passthrough-14]
+
+  - id: story-mcp-http-credential-passthrough-13
+    title: "Secret-hygiene sweep — url-only logging across every sink"
+    feature: "mcp-http-credential-passthrough"
+    size: M
+    status: ready-for-dev
+    file: spec/stories/story-mcp-http-credential-passthrough-13.md
+    prd: spec/prd/prd-mcp-http-credential-passthrough.md
+    adr: spec/adr/adr-mcp-http-credential-passthrough.md
+    fr: [FR-11]
+    ac: [AC-11]
+    depends_on:
+      - story-mcp-http-credential-passthrough-1
+      - story-mcp-http-credential-passthrough-2
+      - story-mcp-http-credential-passthrough-4
+      - story-mcp-http-credential-passthrough-7
+      - story-mcp-http-credential-passthrough-9
+    blocks: [story-mcp-http-credential-passthrough-15]
+
+  - id: story-mcp-http-credential-passthrough-14
+    title: "MCP surface + docs — passthrough edge, header contract, api-key gate, allowlist, arg policy"
+    feature: "mcp-http-credential-passthrough"
+    size: M
+    status: ready-for-dev
+    file: spec/stories/story-mcp-http-credential-passthrough-14.md
+    prd: spec/prd/prd-mcp-http-credential-passthrough.md
+    adr: spec/adr/adr-mcp-http-credential-passthrough.md
+    fr: [FR-15]
+    ac: [AC-17]
+    depends_on:
+      - story-mcp-http-credential-passthrough-1
+      - story-mcp-http-credential-passthrough-2
+      - story-mcp-http-credential-passthrough-10
+      - story-mcp-http-credential-passthrough-11
+      - story-mcp-http-credential-passthrough-12
+    blocks: []
+
+  - id: story-mcp-http-credential-passthrough-15
+    title: "Tests — unit, secret-leak matrix, concurrency-isolation e2e, no-regression, transport-default assertion"
+    feature: "mcp-http-credential-passthrough"
+    size: L
+    status: ready-for-dev
+    note: "FR-16 5 sub-deliverables (15a-15e). clio.mcp.e2e is NOT in CI — concurrency-isolation (15c) and multi-tenant (SM-01) cases run MANUALLY against a live stand. 15d no-regression is a core contract, not folded into 'tests'. 15e pins EnableLegacySse=false/PerSessionExecutionContext=false so RISK #1 cannot drift."
+    file: spec/stories/story-mcp-http-credential-passthrough-15.md
+    prd: spec/prd/prd-mcp-http-credential-passthrough.md
+    adr: spec/adr/adr-mcp-http-credential-passthrough.md
+    fr: [FR-16]
+    ac: [AC-04, AC-05, AC-06, AC-10, AC-11, SM-01]
+    depends_on:
+      - story-mcp-http-credential-passthrough-1
+      - story-mcp-http-credential-passthrough-2
+      - story-mcp-http-credential-passthrough-3
+      - story-mcp-http-credential-passthrough-4
+      - story-mcp-http-credential-passthrough-5
+      - story-mcp-http-credential-passthrough-6
+      - story-mcp-http-credential-passthrough-7
+      - story-mcp-http-credential-passthrough-8
+      - story-mcp-http-credential-passthrough-9
+      - story-mcp-http-credential-passthrough-10
+      - story-mcp-http-credential-passthrough-11
+      - story-mcp-http-credential-passthrough-13
+    blocks: []
