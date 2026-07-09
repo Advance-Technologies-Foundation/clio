@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using System.Threading;
 using Allure.NUnit;
@@ -8,7 +9,6 @@ using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
-using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E;
@@ -27,22 +27,22 @@ public sealed class PageCreateToolE2ETests : McpContractFixtureBase {
 
 	[Category("McpE2E.NoEnvironment")]
 	[Test]
-	[Description("Advertises create-page and list-page-templates in the MCP tool manifest.")]
+	[Description("Exposes create-page and list-page-templates via the get-tool-contract compact index on the lazy tool surface.")]
 	[AllureTag(ToolName)]
-	[AllureName("create-page and list-page-templates are advertised by the MCP server")]
+	[AllureName("create-page and list-page-templates are discoverable on the lazy surface")]
 	public async Task PageCreateTool_Should_Be_Listed_By_MCP_Server() {
 		// Arrange
 		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
-		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		IEnumerable<string> toolNames = tools.Select(tool => tool.Name).ToList();
+		IReadOnlyCollection<string> toolNames =
+			await arrangeContext.Session.ListReachableToolNamesAsync(arrangeContext.CancellationTokenSource.Token);
 
 		// Assert
 		toolNames.Should().Contain(ToolName,
-			because: "create-page must be advertised so MCP callers can discover the page-creation tool directly");
+			because: $"the {ToolName} MCP tool must be discoverable on the lazy surface (get-tool-contract compact index) even though it is not resident in tools/list, so MCP callers can discover the page-creation tool");
 		toolNames.Should().Contain(ListTemplatesToolName,
-			because: "list-page-templates must be advertised alongside create-page for template discovery");
+			because: $"the {ListTemplatesToolName} MCP tool must be discoverable on the lazy surface alongside create-page for template discovery");
 	}
 
 	[Category("McpE2E.NoEnvironment")]
@@ -136,6 +136,8 @@ public sealed class PageCreateToolE2ETests : McpContractFixtureBase {
 			because: "the platform always advertises at least one Freedom UI template");
 		response.Items.Select(t => t.Name).Should().Contain("BlankPageTemplate",
 			because: "BlankPageTemplate is a stable baseline template across Creatio 7.x environments");
+		response.Items.Select(t => t.Name).Should().Contain("BaseDashboardTemplate",
+			because: "clio injects the dashboard-page parent that the platform template endpoint omits");
 	}
 
 	[Category("McpE2E.Sandbox")]
@@ -193,6 +195,76 @@ public sealed class PageCreateToolE2ETests : McpContractFixtureBase {
 		getResponse.Page.SchemaName.Should().Be(schemaName);
 		getResponse.Page.ParentSchemaName.Should().Be("BlankPageTemplate",
 			because: "create-page must wire the new schema to the requested parent template");
+	}
+
+	[Category("McpE2E.Sandbox")]
+	[Test]
+	[Description("Creates a dashboard from BaseDashboardTemplate with optional-properties and reads it back via get-page.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-page creates a dashboard with optional-properties and get-page reads it back")]
+	public async Task PageCreateTool_Should_Create_Dashboard_With_Optional_Properties() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
+		string schemaName = $"UsrE2E_Dashboard_{Guid.NewGuid():N}".Substring(0, 40);
+		const string optionalProperties =
+			"""[{"key":"DashboardsEntitySchemaName","value":"Contact"},{"key":"DashboardsElementName","value":"Dashboards"}]""";
+
+		// Act
+		CallToolResult createResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = schemaName,
+					["template"] = "BaseDashboardTemplate",
+					["package-name"] = PackageName,
+					["caption"] = "E2E dashboard",
+					["optional-properties"] = optionalProperties,
+					["environment-name"] = environmentName
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		PageCreateResponse createResponse = EntitySchemaStructuredResultParser.Extract<PageCreateResponse>(createResult);
+
+		// Assert create
+		createResult.IsError.Should().NotBeTrue();
+		createResponse.Success.Should().BeTrue(
+			because: $"create-page must accept optional-properties and create the dashboard '{schemaName}'. Error: {createResponse.Error}");
+		createResponse.SchemaUId.Should().NotBeNullOrWhiteSpace(
+			because: "a created dashboard schema must return its UId");
+
+		// Act read-back
+		CallToolResult getResult = await arrangeContext.Session.CallToolAsync(
+			PageGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = schemaName,
+					["environment-name"] = environmentName
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		PageGetResponse getResponse = EntitySchemaStructuredResultParser.Extract<PageGetResponse>(getResult);
+
+		// Assert read-back
+		getResult.IsError.Should().NotBeTrue();
+		getResponse.Success.Should().BeTrue(because: "the freshly created dashboard must be readable through get-page");
+		getResponse.Page.ParentSchemaName.Should().Be("BaseDashboardTemplate",
+			because: "create-page must wire the dashboard to the BaseDashboardTemplate parent");
+		getResponse.Bundle.Should().NotBeNull(
+			because: "get-page must return the merged bundle for the created dashboard");
+		Dictionary<string, string?> persistedOptionalProperties = getResponse.Bundle.OptionalProperties
+			.OfType<JsonNode>()
+			.ToDictionary(node => node["key"]?.ToString() ?? string.Empty, node => node["value"]?.ToString());
+		persistedOptionalProperties.Should().ContainKey("DashboardsEntitySchemaName",
+			because: "the designer service must persist the seeded entity-schema link-back, not silently drop it");
+		persistedOptionalProperties["DashboardsEntitySchemaName"].Should().Be("Contact",
+			because: "the persisted entity-schema link-back value must match what create-page seeded");
+		persistedOptionalProperties.Should().ContainKey("DashboardsElementName",
+			because: "the designer service must persist the seeded dashboards-element link-back, not silently drop it");
+		persistedOptionalProperties["DashboardsElementName"].Should().Be("Dashboards",
+			because: "the persisted dashboards-element link-back value must match what create-page seeded");
 	}
 
 	[Category("McpE2E.Sandbox")]

@@ -11,7 +11,6 @@ namespace Clio.Command;
 #region Class: PushWorkspaceCommandOptions
 
 [Verb("push-workspace", Aliases = ["pushw"], HelpText = "Push workspace to selected environment")]
-[RequiresPackage("cliogate", "2.0.0.0", Hint = "Run 'clio install-gate -e <environment>' (or call the install-gate MCP tool) to install/update cliogate.")]
 public class PushWorkspaceCommandOptions : EnvironmentOptions{
 	#region Properties: Public
 

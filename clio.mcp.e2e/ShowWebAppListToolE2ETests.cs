@@ -18,6 +18,7 @@ namespace Clio.Mcp.E2E;
 [Category("McpE2E.Sandbox")]
 [AllureNUnit]
 [AllureFeature("list-environments")]
+[NonParallelizable]
 public sealed class ShowWebAppListToolE2ETests
 {
 	private const string ToolName = ShowWebAppListTool.ShowWebAppListToolName;

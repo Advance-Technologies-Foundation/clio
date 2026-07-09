@@ -255,7 +255,7 @@ internal static class ApplicationToolHelper {
 		ApplicationSectionCreateException exception) {
 		return new ApplicationSectionContextResponse(
 			false,
-			Error: exception.Message,
+			Error: SensitiveErrorTextRedactor.Redact(exception.Message),
 			ErrorClass: exception.FailureClass.ToWireValue(),
 			SectionCreated: exception.SectionCreated switch {
 				true => "true",

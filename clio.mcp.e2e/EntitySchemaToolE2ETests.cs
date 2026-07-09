@@ -102,6 +102,10 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 			"modify-entity-schema-column should succeed when adding a valid own text-like column");
 		AssertIncludesInfoMessage(addResult,
 			"successful add mutation should emit progress output");
+		AssertIncludesPublishMessage(addResult,
+			"adding a column must publish the configuration so the new column compiles into configuration (ENG-90403)");
+		AssertIncludesODataBuildMessage(addResult,
+			"adding a column must request the OData entities rebuild so the new column is reachable over OData without a manual compile (ENG-92048)");
 		AssertSchemaPropertiesAfterAdd(schemaPropertiesAfterAdd, arrangeContext);
 		AssertAddedColumnProperties(addedColumnProperties, arrangeContext);
 		AssertCommandSucceeded(modifyResult,
@@ -1215,9 +1219,9 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 		string schemaName,
 		CancellationToken cancellationToken,
 		IReadOnlyList<Dictionary<string, object?>>? columns = null) {
-		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
-		tools.Select(tool => tool.Name).Should().Contain(CreateToolName,
-			because: "the create-entity-schema MCP tool must be advertised before the end-to-end call can be executed");
+		IReadOnlyCollection<string> reachableToolNames = await session.ListReachableToolNamesAsync(cancellationToken);
+		reachableToolNames.Should().Contain(CreateToolName,
+			because: "the create-entity-schema MCP tool must be discoverable via the get-tool-contract compact index before the end-to-end call can be executed");
 
 		return await session.CallToolAsync(
 			CreateToolName,
@@ -1240,9 +1244,9 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 		string schemaName,
 		CancellationToken cancellationToken,
 		IReadOnlyList<Dictionary<string, object?>>? columns = null) {
-		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
-		tools.Select(tool => tool.Name).Should().Contain(CreateLookupToolName,
-			because: "the create-lookup MCP tool must be advertised before the end-to-end call can be executed");
+		IReadOnlyCollection<string> reachableToolNames = await session.ListReachableToolNamesAsync(cancellationToken);
+		reachableToolNames.Should().Contain(CreateLookupToolName,
+			because: "the create-lookup MCP tool must be discoverable via the get-tool-contract compact index before the end-to-end call can be executed");
 
 		return await session.CallToolAsync(
 			CreateLookupToolName,
@@ -1347,9 +1351,9 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 		string? defaultValue = null,
 		Dictionary<string, object?>? defaultValueConfig = null,
 		string? referenceSchemaName = null) {
-		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
-		tools.Select(tool => tool.Name).Should().Contain(ModifyToolName,
-			because: "the modify-entity-schema-column MCP tool must be advertised before the end-to-end call can be executed");
+		IReadOnlyCollection<string> reachableToolNames = await session.ListReachableToolNamesAsync(cancellationToken);
+		reachableToolNames.Should().Contain(ModifyToolName,
+			because: "the modify-entity-schema-column MCP tool must be discoverable via the get-tool-contract compact index before the end-to-end call can be executed");
 
 		Dictionary<string, object?> args = new() {
 			["environment-name"] = environmentName,
@@ -1393,9 +1397,9 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 		string schemaName,
 		CancellationToken cancellationToken,
 		IReadOnlyList<Dictionary<string, object?>> operations) {
-		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
-		tools.Select(tool => tool.Name).Should().Contain(UpdateToolName,
-			because: "the update-entity-schema MCP tool must be advertised before the end-to-end call can be executed");
+		IReadOnlyCollection<string> reachableToolNames = await session.ListReachableToolNamesAsync(cancellationToken);
+		reachableToolNames.Should().Contain(UpdateToolName,
+			because: "the update-entity-schema MCP tool must be discoverable via the get-tool-contract compact index before the end-to-end call can be executed");
 
 		return await session.CallToolAsync(
 			UpdateToolName,

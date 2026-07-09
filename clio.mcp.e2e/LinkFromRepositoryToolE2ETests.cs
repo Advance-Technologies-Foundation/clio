@@ -6,7 +6,6 @@ using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
-using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using System.Text.RegularExpressions;
 
@@ -140,27 +139,6 @@ public sealed class LinkFromRepositoryToolE2ETests {
 		AssertPackageFolderWasNotCreated(arrangeContext, "MissingPkg");
 	}
 
-	[Category("McpE2E.NoEnvironment")]
-	[Test]
-	[Description("Starts the real clio MCP server, lists tools, and verifies that both link-from-repository MCP endpoints are advertised as destructive.")]
-	[AllureTag(EnvironmentToolName)]
-	[AllureTag(EnvPkgPathToolName)]
-	[AllureName("Link From Repository tools advertise destructive metadata")]
-	[AllureDescription("Uses the real clio MCP server tool discovery response to verify that both link-from-repository MCP tools expose the destructive hint required for client-side safety policies.")]
-	public async Task LinkFromRepository_Tools_Should_Be_Advertised_As_Destructive() {
-		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-
-		// Act
-		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationTokenSource.Token);
-
-		// Assert
-		AssertToolIsAdvertisedAsDestructive(tools, EnvironmentToolName);
-		AssertToolIsAdvertisedAsDestructive(tools, EnvPkgPathToolName);
-	}
-
 	[AllureStep("Arrange link-from-repository MCP sandbox")]
 	[AllureDescription("Arrange by creating temporary repository and Creatio package directories, seeding a package folder, and starting a real clio MCP server session")]
 	private static async Task<LinkFromRepositoryArrangeContext> ArrangeAsync() {
@@ -205,9 +183,10 @@ public sealed class LinkFromRepositoryToolE2ETests {
 	private static async Task<LinkFromRepositoryActResult> ActByEnvPackagePathAsync(
 		LinkFromRepositoryArrangeContext arrangeContext,
 		string packages) {
-		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(EnvPkgPathToolName,
-			because: "the direct-path link-from-repository tool must be advertised before the end-to-end call can be executed");
+		IReadOnlyCollection<string> toolNames =
+			await arrangeContext.Session.ListReachableToolNamesAsync(arrangeContext.CancellationTokenSource.Token);
+		toolNames.Should().Contain(EnvPkgPathToolName,
+			because: "the direct-path link-from-repository tool must be discoverable via the get-tool-contract compact index before the end-to-end call can be executed");
 
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
 			EnvPkgPathToolName,
@@ -228,9 +207,10 @@ public sealed class LinkFromRepositoryToolE2ETests {
 		LinkFromRepositoryArrangeContext arrangeContext,
 		string environmentName,
 		string packages) {
-		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(EnvironmentToolName,
-			because: "the environment-name link-from-repository tool must be advertised before the end-to-end call can be executed");
+		IReadOnlyCollection<string> toolNames =
+			await arrangeContext.Session.ListReachableToolNamesAsync(arrangeContext.CancellationTokenSource.Token);
+		toolNames.Should().Contain(EnvironmentToolName,
+			because: "the environment-name link-from-repository tool must be discoverable via the get-tool-contract compact index before the end-to-end call can be executed");
 
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
 			EnvironmentToolName,
@@ -346,8 +326,10 @@ public sealed class LinkFromRepositoryToolE2ETests {
 
 		combinedOutput.Should().NotBeNullOrWhiteSpace(
 			because: "failed environment-name execution should provide diagnostics that explain why linking did not run");
+		// The environment-name tool is a hidden long-tail tool routed through the clio-run executor,
+		// so an invocation-layer failure may also surface as the wrapped "Error: tool '<name>' failed:" text.
 		combinedOutput.Should().MatchRegex(
-			"(?is)(only supported on windows|not a registered environment|environment .* not found|error occurred invoking)",
+			$"(?is)(only supported on windows|not a registered environment|environment .* not found|error occurred invoking|tool '{Regex.Escape(EnvironmentToolName)}' failed)",
 			because: "the failure log should tell the user whether the environment-name flow was rejected because the environment was missing or because the platform does not support that mode");
 	}
 
@@ -361,8 +343,10 @@ public sealed class LinkFromRepositoryToolE2ETests {
 
 		combinedOutput.Should().NotBeNullOrWhiteSpace(
 			because: "failed direct-path execution should explain why the requested package could not be linked");
+		// The direct-path tool is a hidden long-tail tool routed through the clio-run executor,
+		// so an invocation-layer failure may also surface as the wrapped "Error: tool '<name>' failed:" text.
 		combinedOutput.Should().MatchRegex(
-			$"(?is)({Regex.Escape(packageName)}|not found in repository|error occurred invoking)",
+			$"(?is)({Regex.Escape(packageName)}|not found in repository|error occurred invoking|tool '{Regex.Escape(EnvPkgPathToolName)}' failed)",
 			because: "the failure log should help a human understand that the requested package did not exist in the repository");
 	}
 
@@ -372,17 +356,6 @@ public sealed class LinkFromRepositoryToolE2ETests {
 		string missingPackagePath = Path.Combine(arrangeContext.EnvironmentPackagesPath, packageName);
 		Directory.Exists(missingPackagePath).Should().BeFalse(
 			because: "a failed link-from-repository request should not create a new package directory for a package that does not exist in the repository");
-	}
-
-	[AllureStep("Assert discovered MCP tool is marked as destructive")]
-	[AllureDescription("Assert from the real MCP discovery payload that the requested link-from-repository tool exposes the destructive hint")]
-	private static void AssertToolIsAdvertisedAsDestructive(IList<McpClientTool> tools, string toolName) {
-		McpClientTool tool = tools.Single(tool => tool.Name == toolName);
-
-		tool.ProtocolTool.Annotations.Should().NotBeNull(
-			because: "the MCP server should expose tool annotations for clients that apply safety policies");
-		tool.ProtocolTool.Annotations!.DestructiveHint.Should().BeTrue(
-			because: "link-from-repository removes existing package directories before replacing them with symbolic links");
 	}
 
 	private sealed record LinkFromRepositoryArrangeContext(

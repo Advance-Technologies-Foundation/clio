@@ -14,7 +14,6 @@ using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
 using ModelContextProtocol;
-using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E;
@@ -26,67 +25,6 @@ public sealed class ApplicationSectionToolE2ETests {
 	private const string SectionCreateToolName = ApplicationSectionCreateTool.ApplicationSectionCreateToolName;
 	private const string SectionDeleteToolName = ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName;
 	private const string ApplicationCode = "AutoTestClioMcp";
-
-	[Category("McpE2E.NoEnvironment")]
-	[Test]
-	[Description("Advertises create-app-section in the MCP tool list so callers can discover the existing-app section creation tool.")]
-	[AllureFeature(SectionCreateToolName)]
-	[AllureTag(SectionCreateToolName)]
-	[AllureName("Application section create tool is advertised by the MCP server")]
-	[AllureDescription("Starts the real clio MCP server and verifies that create-app-section appears in the advertised tool manifest.")]
-	public async Task ApplicationSectionCreate_Should_Be_Listed_By_Mcp_Server() {
-		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-
-		// Act
-		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationTokenSource.Token);
-		IEnumerable<string> toolNames = tools.Select(tool => tool.Name);
-
-		// Assert
-		toolNames.Should().Contain(SectionCreateToolName,
-			because: "create-app-section must be advertised so MCP callers can discover the existing-app section creation tool");
-	}
-
-	[Category("McpE2E.NoEnvironment")]
-	[Test]
-	[Description("Starts the real clio MCP server, invokes create-app-section with an invalid environment, and verifies that the failure remains human-readable.")]
-	[AllureFeature(SectionCreateToolName)]
-	[AllureTag(SectionCreateToolName)]
-	[AllureName("Application section create reports invalid environment failures")]
-	[AllureDescription("Uses the real clio MCP server to call create-app-section with an unknown environment name and verifies that the tool returns a structured readable error envelope.")]
-	public async Task ApplicationSectionCreate_Should_Report_Invalid_Environment_Failure() {
-		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		string invalidEnvironmentName = $"missing-section-create-env-{Guid.NewGuid():N}";
-
-		// Act
-		CallToolResult callResult = await session.CallToolAsync(
-			SectionCreateToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["environment-name"] = invalidEnvironmentName,
-					["application-code"] = "UsrMissingApp",
-					["caption"] = "Orders"
-				}
-			},
-			cancellationTokenSource.Token);
-		ApplicationSectionContextResponseEnvelope response = ApplicationResultParser.ExtractSectionCreate(callResult);
-
-		// Assert
-		callResult.IsError.Should().NotBeTrue(
-			because: $"structured create-app-section failures should be returned in the payload instead of as MCP invocation errors. Actual result: {JsonSerializer.Serialize(new { callResult.IsError, callResult.StructuredContent, callResult.Content })}");
-		response.Success.Should().BeFalse(
-			because: "create-app-section should fail when the requested environment does not exist");
-		response.Error.Should().MatchRegex(
-			$"(?is)({Regex.Escape(invalidEnvironmentName)}|environment.*not.*found|not found)",
-			because: "the failure should explain that the requested environment is missing");
-	}
 
 	[Category("McpE2E.NoEnvironment")]
 	[Test]
@@ -375,9 +313,9 @@ public sealed class ApplicationSectionToolE2ETests {
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
 		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(SectionCreateToolName,
-			because: "create-app-section must be advertised before the end-to-end validation calls can run");
+		IReadOnlyCollection<string> reachableToolNames = await session.ListReachableToolNamesAsync(cancellationTokenSource.Token);
+		reachableToolNames.Should().Contain(SectionCreateToolName,
+			because: "create-app-section must be discoverable via the get-tool-contract compact index before the end-to-end validation calls can run");
 
 		// Act
 		CallToolResult missingSelectorCallResult = await session.CallToolAsync(

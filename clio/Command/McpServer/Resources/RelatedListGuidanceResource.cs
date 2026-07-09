@@ -168,7 +168,7 @@ public sealed class RelatedListGuidanceResource {
 		         - give the child entity a real section (`create-app-section`) so its edit page is registered for
 		           navigation.
 		         Either way set `params.defaultValues` to the master FK, e.g.
-		         `[{ "name": "<ChildForeignKeyColumn>", "value": "$Id" }]` (the same column used as the dependency
+		         `[{ "attributeName": "<ChildForeignKeyColumn>", "value": "$Id" }]` (the same column used as the dependency
 		         `attributePath`), so the created record points back at the open record.
 
 		       Reuse, don't duplicate

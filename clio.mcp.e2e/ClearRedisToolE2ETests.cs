@@ -7,7 +7,6 @@ using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
-using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using System.Text.RegularExpressions;
 
@@ -78,28 +77,22 @@ public sealed class ClearRedisToolE2ETests {
 		AssertFailureMessageMentionsInvalidUrl(actResult);
 	}
 
-	// Lightweight arrange for the invalid-input tests: resolves the sandbox context from config and
-	// starts the MCP server, but does NOT connect to or seed a real Redis. Both negative cases fail
-	// before any live Redis is touched (unknown-environment lookup; deliberately unreachable URL), so
-	// they are env-free (McpE2E.NoEnvironment) and must not depend on a runner-reachable sandbox Redis.
+	// Lightweight arrange for the invalid-input tests: uses synthetic connection details and starts the
+	// MCP server, but does NOT require sandbox configuration or connect to a real Redis. Both negative
+	// cases fail before any live Redis is touched (unknown-environment lookup; deliberately unreachable
+	// URL), so they are env-free (McpE2E.NoEnvironment).
 	// No AllowDestructiveMcpTests gate: rejecting an invalid request mutates nothing.
 	private async Task<ClearRedisArrangeContext> ArrangeWithoutRedisAsync() {
 		return await AllureApi.Step("Arrange clear-redis invalid-input state (no sandbox Redis)", async () => {
 			McpE2ESettings settings = TestConfiguration.Load();
 			settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-			TestConfiguration.EnsureSandboxIsConfigured(settings);
-			// Resolve ONLY the registered clio environment (Uri/Login/Password) from config. The full
-			// SandboxEnvironmentResolver.Resolve also demands EnvironmentPath + ConnectionStrings.config
-			// + live redis/db connection strings — a false prerequisite here, since both invalid-input
-			// tests fail before touching a live Redis (and EnvironmentPath is unset for a remote stand).
-			string environmentName = settings.Sandbox.EnvironmentName!;
-			EnvironmentSettings registeredEnvironment = RegisteredClioEnvironmentSettingsResolver.Resolve(environmentName);
+			const string environmentName = "clear-redis-synthetic-env";
 			SandboxEnvironmentContext sandboxContext = new(
 				environmentName,
-				registeredEnvironment.Uri,
-				registeredEnvironment.Login,
-				registeredEnvironment.Password,
-				registeredEnvironment.IsNetCore,
+				Uri: "http://127.0.0.1:49998",
+				Login: "Supervisor",
+				Password: "Supervisor",
+				IsNetCore: true,
 				EnvironmentPath: string.Empty,
 				ConnectionStringsPath: string.Empty,
 				RedisConnectionString: string.Empty,
@@ -131,9 +124,10 @@ public sealed class ClearRedisToolE2ETests {
 		string? url = null,
 		bool? isNetCore = null) {
 		return await AllureApi.Step("Act by invoking clear-redis with explicit credentials", async () => {
-			IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-			tools.Select(tool => tool.Name).Should().Contain(CredentialsToolName,
-				because: "the credentials clear-redis tool must be advertised by the MCP server for credentials-path end-to-end coverage");
+			IReadOnlyCollection<string> toolNames =
+				await arrangeContext.Session.ListReachableToolNamesAsync(arrangeContext.CancellationTokenSource.Token);
+			toolNames.Should().Contain(CredentialsToolName,
+				because: "the credentials clear-redis tool must be discoverable via the get-tool-contract compact index for credentials-path end-to-end coverage");
 
 			Dictionary<string, object?> arguments = new() {
 				["url"] = url ?? arrangeContext.SandboxContext.Uri,

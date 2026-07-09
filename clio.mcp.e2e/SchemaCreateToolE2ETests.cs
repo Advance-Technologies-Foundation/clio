@@ -8,7 +8,6 @@ using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
-using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E;
@@ -23,17 +22,17 @@ public sealed class SchemaCreateToolE2ETests : McpContractFixtureBase {
 
 	[Category("McpE2E.NoEnvironment")]
 	[Test]
-	[Description("Advertises create-schema in the MCP tool manifest.")]
+	[Description("Exposes create-schema via the get-tool-contract compact index on the lazy tool surface.")]
 	[AllureTag(ToolName)]
-	[AllureName("create-schema is advertised by the MCP server")]
+	[AllureName("create-schema is discoverable on the lazy surface")]
 	public async Task SchemaCreateTool_Should_Be_Listed_By_MCP_Server() {
 		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 
-		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		IEnumerable<string> toolNames = tools.Select(tool => tool.Name).ToList();
+		IReadOnlyCollection<string> toolNames =
+			await arrangeContext.Session.ListReachableToolNamesAsync(arrangeContext.CancellationTokenSource.Token);
 
 		toolNames.Should().Contain(ToolName,
-			because: "create-schema must be advertised so MCP callers can discover the C# schema creation tool");
+			because: "create-schema must be discoverable via the get-tool-contract compact index so MCP callers can find the C# schema creation tool even though it is not resident in tools/list");
 	}
 
 	[Category("McpE2E.NoEnvironment")]

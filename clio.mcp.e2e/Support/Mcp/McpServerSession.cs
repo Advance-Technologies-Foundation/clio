@@ -1,4 +1,6 @@
+using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E.Support.Configuration;
+using Clio.Mcp.E2E.Support.Results;
 using Microsoft.Extensions.Logging.Abstractions;
 using ModelContextProtocol;
 using ModelContextProtocol.Client;
@@ -8,6 +10,9 @@ namespace Clio.Mcp.E2E.Support.Mcp;
 
 internal sealed class McpServerSession : IAsyncDisposable {
 	private readonly StdioClientTransport _transport;
+	private HashSet<string>? _advertisedToolNames;
+	private IReadOnlyCollection<string>? _reachableToolNames;
+	private IReadOnlyList<ToolContractIndexEntry>? _toolContractIndex;
 
 	private McpServerSession(McpClient client, StdioClientTransport transport) {
 		Client = client;
@@ -69,23 +74,127 @@ internal sealed class McpServerSession : IAsyncDisposable {
 	public async Task<ReadResourceResult> ReadResourceAsync(string uri, CancellationToken cancellationToken) =>
 		await Client.ReadResourceAsync(uri, cancellationToken: cancellationToken);
 
+	/// <summary>
+	/// Invokes an MCP tool by its flat name, transparently honouring the lazy tool surface: a tool
+	/// advertised in <c>tools/list</c> (resident) is called natively, while a hidden long-tail tool is
+	/// dispatched through the <c>clio-run</c> executor with the equivalent
+	/// <c>{"command":&lt;name&gt;,"args":{…}}</c> call shape. <c>clio-run</c> returns the target tool's
+	/// <see cref="CallToolResult"/> verbatim (plus an out-of-band <c>_meta</c> audit entry), so
+	/// envelope parsers observe the same payload either way.
+	/// </summary>
 	public async Task<CallToolResult> CallToolAsync(
 		string toolName,
 		IReadOnlyDictionary<string, object?> arguments,
-		CancellationToken cancellationToken) =>
-		await Client.CallToolAsync(toolName, arguments, cancellationToken: cancellationToken);
+		CancellationToken cancellationToken) {
+		if (await IsToolAdvertisedAsync(toolName, cancellationToken)) {
+			return await Client.CallToolAsync(toolName, arguments, cancellationToken: cancellationToken);
+		}
+		return await Client.CallToolAsync(
+			ClioRunTool.ToolName,
+			BuildClioRunArguments(toolName, arguments),
+			cancellationToken: cancellationToken);
+	}
 
 	/// <summary>
 	/// Invokes a tool while forwarding the server's <c>notifications/progress</c> to
 	/// <paramref name="progress"/>. The SDK generates a progress token for the request, so this
-	/// overload is the way E2E tests observe the long-running heartbeat (ENG-91274).
+	/// overload is the way E2E tests observe the long-running heartbeat (ENG-91274). Applies the same
+	/// resident-vs-<c>clio-run</c> routing as
+	/// <see cref="CallToolAsync(string, IReadOnlyDictionary{string, object?}, CancellationToken)"/>;
+	/// the retargeted request context keeps the caller's progress token, so heartbeats flow for
+	/// dispatched long-tail tools too.
 	/// </summary>
 	public async Task<CallToolResult> CallToolAsync(
 		string toolName,
 		IReadOnlyDictionary<string, object?> arguments,
 		IProgress<ProgressNotificationValue> progress,
-		CancellationToken cancellationToken) =>
-		await Client.CallToolAsync(toolName, arguments, progress: progress, cancellationToken: cancellationToken);
+		CancellationToken cancellationToken) {
+		if (await IsToolAdvertisedAsync(toolName, cancellationToken)) {
+			return await Client.CallToolAsync(toolName, arguments, progress: progress, cancellationToken: cancellationToken);
+		}
+		return await Client.CallToolAsync(
+			ClioRunTool.ToolName,
+			BuildClioRunArguments(toolName, arguments),
+			progress: progress,
+			cancellationToken: cancellationToken);
+	}
+
+	/// <summary>
+	/// True when <paramref name="toolName"/> is advertised in <c>tools/list</c> (a resident tool on the
+	/// lazy surface). The advertised set is fetched once per session — tool registration is fixed at
+	/// server-process start, so the cache cannot go stale.
+	/// </summary>
+	public async Task<bool> IsToolAdvertisedAsync(string toolName, CancellationToken cancellationToken) {
+		_advertisedToolNames ??= (await Client.ListToolsAsync(cancellationToken: cancellationToken))
+			.Select(tool => tool.Name)
+			.ToHashSet(StringComparer.OrdinalIgnoreCase);
+		return _advertisedToolNames.Contains(toolName);
+	}
+
+	/// <summary>
+	/// Every tool name reachable through this server: the resident <c>tools/list</c> names unioned with
+	/// the compact discovery index from <c>get-tool-contract</c> (the long tail dispatched via
+	/// <c>clio-run</c>). This is the lazy-surface replacement for asserting flat advertisement — a tool
+	/// "advertised" to an agent is one discoverable in the index, not necessarily resident.
+	/// </summary>
+	public async Task<IReadOnlyCollection<string>> ListReachableToolNamesAsync(CancellationToken cancellationToken) {
+		if (_reachableToolNames is not null) {
+			return _reachableToolNames;
+		}
+		IList<McpClientTool> tools = await Client.ListToolsAsync(cancellationToken: cancellationToken);
+		HashSet<string> names = tools
+			.Select(tool => tool.Name)
+			.ToHashSet(StringComparer.OrdinalIgnoreCase);
+		foreach (ToolContractIndexEntry entry in await GetToolContractIndexAsync(cancellationToken)) {
+			names.Add(entry.Name);
+		}
+		_reachableToolNames = names;
+		return names;
+	}
+
+	/// <summary>
+	/// The compact discovery index from <c>get-tool-contract</c> (no args), fetched once per session.
+	/// Use it to assert per-tool discovery metadata (for example the <c>destructive</c> flag) for
+	/// long-tail tools that no longer surface an MCP tool annotation via <c>tools/list</c>.
+	/// </summary>
+	public async Task<IReadOnlyList<ToolContractIndexEntry>> GetToolContractIndexAsync(CancellationToken cancellationToken) {
+		if (_toolContractIndex is not null) {
+			return _toolContractIndex;
+		}
+		CallToolResult indexResult = await Client.CallToolAsync(
+			ToolContractGetTool.ToolName,
+			new Dictionary<string, object?>(),
+			cancellationToken: cancellationToken);
+		ToolContractGetResponse indexResponse =
+			EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(indexResult);
+		_toolContractIndex = indexResponse.Index ?? [];
+		return _toolContractIndex;
+	}
+
+	// Maps a flat-name call onto the clio-run call shape. The common clio tool takes ONE record
+	// parameter named `args`, so tests send {"args":{…}}; clio-run expects the TARGET tool's args
+	// object (it re-wraps under the record parameter itself), so that inner object is forwarded.
+	// Any other shape (multi-scalar parameters, or a deliberately malformed payload) is forwarded
+	// as-is so clio-run's own binding surfaces the equivalent failure.
+	private static Dictionary<string, object?> BuildClioRunArguments(
+		string toolName,
+		IReadOnlyDictionary<string, object?> arguments) {
+		Dictionary<string, object?> wrapped = new() { ["command"] = toolName };
+		// A call with NO top-level keys at all means the caller omitted the args wrapper entirely
+		// (the "missing required args wrapper" binding-failure tests) — omit "args" here too so
+		// clio-run's own dispatch fails binding the target's args record inside the retargeted
+		// context, preserving that native failure instead of silently defaulting it. A call that
+		// DOES carry an "args" key — even {"args":{}}, a deliberate no-op call with no properties —
+		// forwards that value verbatim, so an intentionally empty args object still reaches the
+		// target tool as an empty (not missing) object.
+		if (arguments.Count == 0) {
+			return wrapped;
+		}
+		wrapped["args"] = arguments.Count == 1 && arguments.TryGetValue("args", out object? inner)
+			? inner
+			: arguments;
+		return wrapped;
+	}
 
 	public async ValueTask DisposeAsync() {
 		await Client.DisposeAsync();

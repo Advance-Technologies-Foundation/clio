@@ -54,9 +54,13 @@ public sealed class SendTelemetryFlushE2ETests
 
 		try {
 			// Act
+			// send-telemetry is hidden from tools/list on the lazy tool surface, so the raw JSON-RPC
+			// call is dispatched through the clio-run executor ({"command":"send-telemetry","args":{...}});
+			// clio-run returns the target tool's result verbatim, so the flush behavior under test is unchanged.
 			JsonDocument callResult = await session.SendRequestAsync("tools/call", new {
-				name = ToolName,
+				name = ClioRunTool.ToolName,
 				arguments = new {
+					command = ToolName,
 					args = new {
 						session_id = sessionId,
 						event_name = "session_started",
@@ -71,6 +75,12 @@ public sealed class SendTelemetryFlushE2ETests
 			// Assert
 			callResult.RootElement.TryGetProperty("error", out _).Should().BeFalse(
 				because: "send-telemetry should store the event and respond normally");
+			// A clio-run dispatch failure (for example an unknown tool) surfaces as isError=true inside
+			// a normal JSON-RPC result, so the routed call outcome must be checked explicitly.
+			(callResult.RootElement.GetProperty("result").TryGetProperty("isError", out JsonElement isError)
+					&& isError.ValueKind == JsonValueKind.True)
+				.Should().BeFalse(
+					because: "the clio-run dispatch of send-telemetry should succeed so the event reaches the local spool");
 			uploaded.Should().BeTrue(
 				because: "the background flusher should upload the stored event shortly after the tool call");
 			StubCollector.CapturedRequest request = collector.Requests[0];

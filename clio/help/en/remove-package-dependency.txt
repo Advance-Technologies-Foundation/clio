@@ -1,0 +1,68 @@
+NAME
+    remove-package-dependency - Remove one or more package dependencies from a package
+
+SYNOPSIS
+    clio remove-package-dependency --package-name <PACKAGE> --dependencies <DEP[,DEP...]> [OPTIONS]
+    clio remove-pkg-dependency --package-name <PACKAGE> --dependencies <DEP[,DEP...]> [OPTIONS]
+    clio remove-pkg-dep --package-name <PACKAGE> --dependencies <DEP[,DEP...]> [OPTIONS]
+
+DESCRIPTION
+    Removes one or more package dependencies from a Creatio package via the
+    PackageService.svc endpoint, then persists the change. This is the symmetric
+    counterpart of add-package-dependency.
+
+    Use this command to roll back a dependency that was added only to unblock the
+    schema designer once it is no longer needed.
+
+    Dependencies are matched by name (case-insensitive); a trailing ':version' is
+    accepted for symmetry with add-package-dependency but ignored. The operation
+    is idempotent: removing a dependency that is not present is a no-op.
+
+    CAUTION: keep the dependency if your package still extends an object whose
+    upper layer the dependency owns — removing it will break the schema designer
+    again.
+
+OPTIONS
+    --package-name <PACKAGE>
+        Target package whose dependency list is trimmed (required)
+
+    --dependencies <DEP[,DEP...]>
+        One or more dependency package names to remove (required), matched by
+        name. Multiple entries can be comma-separated or passed as separate
+        values.
+
+    -e, --environment <ENVIRONMENT_NAME>
+        Target environment name from your configuration
+
+    Environment options (can be used instead of -e):
+        -u, --uri <URI>
+            Application URI
+
+        -l, --Login <LOGIN>
+            User login (administrator permission required)
+
+        -p, --Password <PASSWORD>
+            User password
+
+EXAMPLES
+    Remove a single dependency using a configured environment:
+        clio remove-package-dependency --package-name MyApp --dependencies CrtLeadOppMgmtApp -e dev
+
+    Remove several dependencies at once:
+        clio remove-package-dependency --package-name MyApp --dependencies CrtLeadOppMgmtApp,CrtCase -e dev
+
+    Using the shortest alias:
+        clio remove-pkg-dep --package-name MyApp --dependencies CrtLeadOppMgmtApp -e dev
+
+NOTES
+    - Administrator permissions are required on the target environment.
+    - Removing a dependency may require a configuration compilation afterwards
+      (use 'clio compile-configuration').
+
+SEE ALSO
+    add-package-dependency - Add one or more package dependencies to a package
+    list-packages - List packages in a Creatio environment
+    compile-package - Compile a package in Creatio
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

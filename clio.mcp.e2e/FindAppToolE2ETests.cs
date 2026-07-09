@@ -26,27 +26,6 @@ namespace Clio.Mcp.E2E;
 public sealed class FindAppToolE2ETests {
 	private const string FindAppToolName = FindAppTool.FindAppToolName;
 
-	[Category("McpE2E.NoEnvironment")]
-	[Test]
-	[Description("Starts the real clio MCP server and verifies that find-app is advertised so callers can discover the fast app-discovery tool.")]
-	[AllureTag(FindAppToolName)]
-	[AllureName("find-app is advertised by the MCP server")]
-	[AllureDescription("Starts the real clio MCP server and verifies that find-app appears in the advertised tool manifest.")]
-	public async Task FindApp_Should_Be_Listed_By_Mcp_Server() {
-		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(2));
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-
-		// Act
-		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationTokenSource.Token);
-
-		// Assert
-		tools.Select(tool => tool.Name).Should().Contain(FindAppToolName,
-			because: "find-app must be advertised so MCP callers can discover the fast app-discovery tool");
-	}
-
 	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, calls find-app with no filter against the sandbox, and verifies a structured applications-with-sections envelope.")]

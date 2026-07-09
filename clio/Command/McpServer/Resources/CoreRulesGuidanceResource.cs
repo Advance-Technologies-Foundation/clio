@@ -34,6 +34,7 @@ public sealed class CoreRulesGuidanceResource {
 		       - Captions use the connected user's profile culture: call get-user-culture once per session (re-detect when the environment changes) and reuse it. The en-US entry must hold English text; a non-Latin caption under en-US is rejected. If it fails, ASK the user; never assume the host locale.
 		       - Destructive tools (uninstall-creatio, clear-redis-db, stop-creatio, delete-*) are high-impact: confirm the target environment with the user first.
 		       - Every response carries a correlation-id; on error, inspect the inner-exception chain.
+		       - Resident tools (get-tool-contract index: resident=true) are called natively; every other tool is invoked via clio-run <command>. Never wrap a resident tool in clio-run.
 		       """
 	};
 

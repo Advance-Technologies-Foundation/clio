@@ -67,6 +67,10 @@ internal static class GuidanceCatalog {
 				"page-schema-validators",
 				"Canonical MCP guidance for creating and editing Freedom UI page validators inside raw page schema bodies.",
 				PageSchemaValidatorsGuidanceResource.Guide),
+			["page-creation"] = Create(
+				"page-creation",
+				"Canonical MCP guidance for creating Freedom UI pages from supported templates via create-page: the list-page-templates -> create-page -> get-page flow, the supported web/mobile template catalog, required and optional inputs, validation/failure modes, and designer-type mapping.",
+				PageCreationGuidanceResource.Guide),
 			["page-modification"] = Create(
 				"page-modification",
 				"Canonical MCP guidance for Freedom UI page modification: replacing-schema concept, bundle.json structure, update-page write modes, multi-app target-package-uid resolution, and container selection.",
@@ -89,8 +93,16 @@ internal static class GuidanceCatalog {
 				ChartWidgetGuidanceResource.Guide),
 			["dashboards"] = Create(
 				"dashboards",
-				"Canonical MCP guidance for placing, sizing, grouping, and styling Freedom UI analytical widgets (metrics and charts) on dashboards: the 12-column grid, the metric-band-then-chart-grid skeleton, section grouping, per-widget-type default sizes, and the plain-white default card style.",
+				"The clio MCP dashboards router: a names-only index that routes dashboard work to dashboard-creation (create the page), dashboard-design (widget layout/sizing/styling), and indicator-widget / chart-widget (per-widget payload).",
 				DashboardGuidanceResource.Guide),
+			["dashboard-creation"] = Create(
+				"dashboard-creation",
+				"Canonical MCP guidance for creating a Freedom UI dashboard page via create-page with BaseDashboardTemplate, and resolving the DashboardsEntitySchemaName / DashboardsElementName / DashboardsClientUnitSchemaUId optional properties (including the root-schema UId rule).",
+				DashboardCreationGuidanceResource.Guide),
+			["dashboard-design"] = Create(
+				"dashboard-design",
+				"Canonical MCP guidance for placing, sizing, grouping, and styling Freedom UI analytical widgets (metrics and charts) on dashboards: the 12-column grid, the metric-band-then-chart-grid skeleton, section grouping, per-widget-type default sizes, the plain-white default card style, and the DashboardDS data source widgets filter by.",
+				DashboardDesignGuidanceResource.Guide),
 			["related-list"] = Create(
 				"related-list",
 				"Canonical MCP guidance for adding a Freedom UI related/child list and filtering it by the current page record (master-detail \"filter by page data\"): the declarative, dependencies-based scoping — no handler. Fetch the 'Expanded list' composite structure via get-component-info.",
@@ -141,10 +153,12 @@ internal static class GuidanceCatalog {
 			["process-modeling"] = Create(
 				"process-modeling",
 				"""
-				Canonical MCP guidance for designing Creatio business processes (BPMN): 
-				the determinism contract (clio makes no LLM call; the agent owns intent->BPMN translation), 
-				the element catalog (data-id/label/purpose/setup fields), connection rules R1-R17 + can/can't matrix, 
-				the validate-then-drive build recipe, and the supported slice (Simple/Signal/Timer start + Read data).
+				Canonical MCP guidance for designing Creatio business processes (BPMN):
+				the determinism contract (clio makes no LLM call; the agent owns intent->BPMN translation),
+				the element catalog (data-id/label/purpose/setup fields), connection rules R1-R17 + can/can't matrix,
+				the validate-then-drive build recipe, the buildable slice (Simple/Signal start, end, user tasks +
+				sequence flows — gateways/conditional flows/timers not yet), and the modify-safety rules for
+				editing an existing process.
 				""",
 				ProcessModelingGuidanceResource.Guide,
 				featureGateType: typeof(ProcessModelingGuidanceResource)),
@@ -156,8 +170,7 @@ internal static class GuidanceCatalog {
 				key = CODE not caption (silent-skip warning), and the static-constant /
 				view-model-attribute-binding / current-record variants.
 				""",
-				RunProcessButtonGuidanceResource.Guide,
-				featureGateType: typeof(RunProcessButtonGuidanceResource)),
+				RunProcessButtonGuidanceResource.Guide),
 			["identity-assertion"] = Create(
 				"identity-assertion",
 				"Canonical MCP guidance for the Creatio identity-assertion / Identity Service V3 token-exchange "
@@ -170,7 +183,15 @@ internal static class GuidanceCatalog {
 				"Canonical MCP guidance for using Creatio server-to-server OAuth client credentials: "
 				+ "minting client_credentials tokens, handling expiry without refresh tokens, and calling "
 				+ "Creatio APIs with an Authorization: Bearer token.",
-				ServerToServerOAuthGuidanceResource.Guide)
+				ServerToServerOAuthGuidanceResource.Guide),
+			["package-dependencies"] = Create(
+				"package-dependencies",
+				"Canonical MCP guidance for managing Creatio package dependencies: the schema-designer "
+				+ "'GetSchemaDesignItem returned an HTML error page' recovery via add-package-dependency "
+				+ "(missing dependency on the owner of the extended object's upper layer), the symmetric "
+				+ "remove-package-dependency cleanup, and the anti-patterns (no writes into the owning managed "
+				+ "package, no raw SQL/OData/DataService dependency edits).",
+				PackageDependenciesGuidanceResource.Guide)
 		};
 
 		foreach (ComposableAppSkillResourceEntry guide in ComposableAppSkillResourceCatalog.GetGuides()) {
