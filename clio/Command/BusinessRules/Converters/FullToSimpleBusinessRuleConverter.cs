@@ -11,6 +11,9 @@ namespace Clio.Command.BusinessRules.Converters;
 
 internal static class FullToSimpleBusinessRuleConverter {
 
+	private const string TypeNameProperty = "typeName";
+	private const string ValueProperty = "value";
+
 	private static readonly IReadOnlyDictionary<int, string> ComparisonTypeNamesByValue =
 		SupportedComparisonTypeValues
 			.GroupBy(pair => pair.Value)
@@ -105,7 +108,7 @@ internal static class FullToSimpleBusinessRuleConverter {
 			throw new InvalidOperationException("Business-rule condition must be a JSON object.");
 		}
 
-		string typeName = GetString(conditionObject, "typeName") ?? string.Empty;
+		string typeName = GetString(conditionObject, TypeNameProperty) ?? string.Empty;
 		if (string.Equals(typeName, BusinessRuleConditionTypeName, StringComparison.Ordinal)) {
 			return new BusinessRuleConditionGroup("AND", [ConvertCondition(conditionObject)]);
 		}
@@ -128,7 +131,7 @@ internal static class FullToSimpleBusinessRuleConverter {
 					throw new InvalidOperationException("Business-rule group condition entries must be JSON objects.");
 				}
 
-				string nestedTypeName = GetString(nestedObject, "typeName") ?? string.Empty;
+				string nestedTypeName = GetString(nestedObject, TypeNameProperty) ?? string.Empty;
 				if (!string.Equals(nestedTypeName, BusinessRuleConditionTypeName, StringComparison.Ordinal)) {
 					throw new InvalidOperationException($"Unsupported nested condition typeName '{nestedTypeName}'.");
 				}
@@ -159,7 +162,7 @@ internal static class FullToSimpleBusinessRuleConverter {
 	}
 
 	private static BusinessRuleExpression ConvertExpression(JsonObject expressionObject) {
-		string typeName = GetString(expressionObject, "typeName") ?? string.Empty;
+		string typeName = GetString(expressionObject, TypeNameProperty) ?? string.Empty;
 		string type = GetString(expressionObject, "type") ?? string.Empty;
 		string? uId = GetString(expressionObject, "uId");
 		if (string.Equals(typeName, BusinessRuleAttributeExpressionTypeName, StringComparison.Ordinal)
@@ -188,7 +191,7 @@ internal static class FullToSimpleBusinessRuleConverter {
 		if (string.Equals(typeName, BusinessRuleValueExpressionTypeName, StringComparison.Ordinal)
 			|| string.Equals(typeName, BusinessRuleEmptyValueExpressionTypeName, StringComparison.Ordinal)
 			|| string.Equals(type, ConstExpressionType, StringComparison.OrdinalIgnoreCase)) {
-			return new BusinessRuleExpression(ConstExpressionType, value: ToJsonElement(expressionObject["value"])) {
+			return new BusinessRuleExpression(ConstExpressionType, value: ToJsonElement(expressionObject[ValueProperty])) {
 				UId = uId
 			};
 		}
@@ -198,7 +201,7 @@ internal static class FullToSimpleBusinessRuleConverter {
 	}
 
 	private static BusinessRuleAction ConvertAction(JsonObject actionObject, IReadOnlyList<JsonObject> childRules) {
-		string typeName = GetString(actionObject, "typeName") ?? string.Empty;
+		string typeName = GetString(actionObject, TypeNameProperty) ?? string.Empty;
 		string? uId = GetString(actionObject, "uId");
 		switch (typeName) {
 			case BusinessRuleEditableElementTypeName:
@@ -253,7 +256,7 @@ internal static class FullToSimpleBusinessRuleConverter {
 	private static ApplyStaticFilterBusinessRuleAction ConvertApplyStaticFilterAction(JsonObject actionObject, string? uId) {
 		JsonObject expression = actionObject["expression"] as JsonObject
 			?? throw new InvalidOperationException("apply-static-filter action has no expression.");
-		string? esqEnvelope = GetString(actionObject["value"] as JsonObject, "value");
+		string? esqEnvelope = GetString(actionObject[ValueProperty] as JsonObject, ValueProperty);
 		JsonNode filter = Clio.Command.BusinessRules.Filters.Esq.FullToSimpleFilterConverter.Decompile(esqEnvelope!);
 		return new ApplyStaticFilterBusinessRuleAction(
 			GetString(expression, "path") ?? string.Empty,
@@ -300,7 +303,7 @@ internal static class FullToSimpleBusinessRuleConverter {
 				itemObject["expression"] as JsonObject
 				?? throw new InvalidOperationException("set-values item has no expression."));
 			BusinessRuleExpression value = ConvertExpression(
-				itemObject["value"] as JsonObject
+				itemObject[ValueProperty] as JsonObject
 				?? throw new InvalidOperationException("set-values item has no value."));
 			items.Add(new BusinessRuleSetValueItem(expression, value) {
 				UId = GetString(itemObject, "uId")

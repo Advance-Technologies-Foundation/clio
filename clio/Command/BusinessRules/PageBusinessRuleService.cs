@@ -48,6 +48,8 @@ internal sealed class PageBusinessRuleService(
 	IPageBusinessRuleValidator pageBusinessRuleValidator)
 	: BaseBusinessRuleService(packageResolver, businessRuleAddonService), IPageBusinessRuleService {
 
+	private const string PageSchemaNameField = "page-schema-name";
+
 	public BusinessRuleCreateResult Create(BusinessRuleCreateRequest request) {
 		ArgumentNullException.ThrowIfNull(request);
 		ValidateCreateRequest(request);
@@ -71,7 +73,7 @@ internal sealed class PageBusinessRuleService(
 	public IReadOnlyList<BusinessRuleBatchItemResult> Create(BusinessRulesBatchRequest request) {
 		ArgumentNullException.ThrowIfNull(request);
 		BusinessRuleBatchValidation.RequireBatchFields(
-			request.PackageName, request.SchemaName, "page-schema-name", request.Rules);
+			request.PackageName, request.SchemaName, PageSchemaNameField, request.Rules);
 
 		Guid packageUId = PackageResolver.ResolveUId(request.PackageName);
 		PageBusinessRuleSchemaContext pageContext = schemaProvider.GetSchema(request.SchemaName, packageUId);
@@ -91,7 +93,7 @@ internal sealed class PageBusinessRuleService(
 
 	public IReadOnlyList<BusinessRule> Read(BusinessRulesReadRequest request) {
 		ArgumentNullException.ThrowIfNull(request);
-		RequireSchemaFields(request.PackageName, request.SchemaName, "page-schema-name");
+		RequireSchemaFields(request.PackageName, request.SchemaName, PageSchemaNameField);
 
 		Guid packageUId = PackageResolver.ResolveUId(request.PackageName);
 		PageBusinessRuleSchemaContext pageContext = schemaProvider.GetSchema(request.SchemaName, packageUId);
@@ -101,7 +103,7 @@ internal sealed class PageBusinessRuleService(
 	public IReadOnlyList<BusinessRuleBatchItemResult> Update(BusinessRulesBatchRequest request) {
 		ArgumentNullException.ThrowIfNull(request);
 		BusinessRuleBatchValidation.RequireBatchFields(
-			request.PackageName, request.SchemaName, "page-schema-name", request.Rules);
+			request.PackageName, request.SchemaName, PageSchemaNameField, request.Rules);
 
 		Guid packageUId = PackageResolver.ResolveUId(request.PackageName);
 		PageBusinessRuleSchemaContext pageContext = schemaProvider.GetSchema(request.SchemaName, packageUId);
@@ -121,7 +123,7 @@ internal sealed class PageBusinessRuleService(
 
 	public IReadOnlyList<BusinessRuleBatchItemResult> Delete(BusinessRulesDeleteRequest request) {
 		ArgumentNullException.ThrowIfNull(request);
-		RequireSchemaFields(request.PackageName, request.SchemaName, "page-schema-name");
+		RequireSchemaFields(request.PackageName, request.SchemaName, PageSchemaNameField);
 
 		Guid packageUId = PackageResolver.ResolveUId(request.PackageName);
 		PageBusinessRuleSchemaContext pageContext = schemaProvider.GetSchema(request.SchemaName, packageUId);

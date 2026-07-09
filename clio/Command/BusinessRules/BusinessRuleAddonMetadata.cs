@@ -22,8 +22,9 @@ internal static class BusinessRuleAddonMetadata {
 			}
 		}
 
-		foreach (BusinessRuleMetadataDto createdRule in createdRules) {
-			if (!string.IsNullOrWhiteSpace(createdRule.Name) && !names.Add(createdRule.Name)) {
+		foreach (BusinessRuleMetadataDto createdRule in createdRules
+			.Where(createdRule => !string.IsNullOrWhiteSpace(createdRule.Name))) {
+			if (!names.Add(createdRule.Name)) {
 				throw new InvalidOperationException(
 					$"Business rule name '{createdRule.Name}' already exists on the target schema. " +
 					"Rule names must be unique; use the update tool to change an existing rule.");

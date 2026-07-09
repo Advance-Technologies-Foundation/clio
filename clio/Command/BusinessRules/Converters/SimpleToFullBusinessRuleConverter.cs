@@ -667,31 +667,24 @@ internal static class SimpleToFullBusinessRuleConverter {
 		BusinessRuleAction action,
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap) {
 		if (!string.Equals(action.ActionType, SetValuesActionTypeName, StringComparison.OrdinalIgnoreCase)) {
-			yield break;
+			return [];
 		}
-		foreach (var item in action.SetValueItems) {
-			if (!BusinessRuleFormulaBuilder.IsFormulaExpression(item.Value)) {
-				continue;
-			}
-			foreach (var path in BusinessRuleFormulaBuilder.GetFormulaSourcePaths(
+
+		return action.SetValueItems
+			.Where(item => BusinessRuleFormulaBuilder.IsFormulaExpression(item.Value))
+			.SelectMany(item => BusinessRuleFormulaBuilder.GetFormulaSourcePaths(
 				BusinessRuleFormulaBuilder.GetRequiredFormulaText(item.Value),
-				attributeMap)) {
-				yield return path;
-			}
-		}
+				attributeMap));
 	}
 
 	private static IEnumerable<string> EnumerateSetValuesAttributeSourceTriggerNames(BusinessRuleAction action) {
 		if (!string.Equals(action.ActionType, SetValuesActionTypeName, StringComparison.OrdinalIgnoreCase)) {
-			yield break;
+			return [];
 		}
 
-		foreach (BusinessRuleSetValueItem item in action.SetValueItems) {
-			if (IsAttributeValueExpression(item.Value)
-				&& !string.IsNullOrWhiteSpace(item.Value.Path)) {
-				yield return GetRootAttributePath(item.Value.Path);
-			}
-		}
+		return action.SetValueItems
+			.Where(item => IsAttributeValueExpression(item.Value) && !string.IsNullOrWhiteSpace(item.Value.Path))
+			.Select(item => GetRootAttributePath(item.Value.Path));
 	}
 
 	private static bool IsAttributeValueExpression(BusinessRuleExpression? expression) =>

@@ -100,10 +100,9 @@ internal abstract class BaseBusinessRuleService(
 					metadataRules.Add(BusinessRuleAddonMetadata.SerializeCreatedRule(child));
 				}
 
-				foreach (BusinessRuleMetadataDto generatedRule in generated) {
-					if (!string.IsNullOrWhiteSpace(generatedRule.Caption)) {
-						BusinessRuleAddonMetadata.UpsertCaptionResource(resources, generatedRule.UId, generatedRule.Caption.Trim());
-					}
+				foreach (BusinessRuleMetadataDto generatedRule in generated
+					.Where(generatedRule => !string.IsNullOrWhiteSpace(generatedRule.Caption))) {
+					BusinessRuleAddonMetadata.UpsertCaptionResource(resources, generatedRule.UId, generatedRule.Caption.Trim());
 				}
 
 				pending.Add((index, name));

@@ -51,6 +51,8 @@ internal sealed class EntityBusinessRuleService(
 	IStaticFilterContextFactory staticFilterContextFactory)
 	: BaseBusinessRuleService(packageResolver, businessRuleAddonService), IEntityBusinessRuleService {
 
+	private const string EntitySchemaNameField = "entity-schema-name";
+
 	public BusinessRuleCreateResult Create(BusinessRuleCreateRequest request) {
 		ArgumentNullException.ThrowIfNull(request);
 		ValidateCreateRequest(request);
@@ -83,7 +85,7 @@ internal sealed class EntityBusinessRuleService(
 	public IReadOnlyList<BusinessRuleBatchItemResult> Create(BusinessRulesBatchRequest request) {
 		ArgumentNullException.ThrowIfNull(request);
 		BusinessRuleBatchValidation.RequireBatchFields(
-			request.PackageName, request.SchemaName, "entity-schema-name", request.Rules);
+			request.PackageName, request.SchemaName, EntitySchemaNameField, request.Rules);
 
 		Guid packageUId = PackageResolver.ResolveUId(request.PackageName);
 		EntityBusinessRuleAttributeContext attributeContext = attributeProvider.GetAttributes(
@@ -116,7 +118,7 @@ internal sealed class EntityBusinessRuleService(
 
 	public IReadOnlyList<BusinessRule> Read(BusinessRulesReadRequest request) {
 		ArgumentNullException.ThrowIfNull(request);
-		RequireSchemaFields(request.PackageName, request.SchemaName, "entity-schema-name");
+		RequireSchemaFields(request.PackageName, request.SchemaName, EntitySchemaNameField);
 
 		Guid packageUId = PackageResolver.ResolveUId(request.PackageName);
 		EntityBusinessRuleAttributeContext attributeContext = attributeProvider.GetAttributes(
@@ -128,7 +130,7 @@ internal sealed class EntityBusinessRuleService(
 	public IReadOnlyList<BusinessRuleBatchItemResult> Update(BusinessRulesBatchRequest request) {
 		ArgumentNullException.ThrowIfNull(request);
 		BusinessRuleBatchValidation.RequireBatchFields(
-			request.PackageName, request.SchemaName, "entity-schema-name", request.Rules);
+			request.PackageName, request.SchemaName, EntitySchemaNameField, request.Rules);
 
 		Guid packageUId = PackageResolver.ResolveUId(request.PackageName);
 		EntityBusinessRuleAttributeContext attributeContext = attributeProvider.GetAttributes(
@@ -159,7 +161,7 @@ internal sealed class EntityBusinessRuleService(
 
 	public IReadOnlyList<BusinessRuleBatchItemResult> Delete(BusinessRulesDeleteRequest request) {
 		ArgumentNullException.ThrowIfNull(request);
-		RequireSchemaFields(request.PackageName, request.SchemaName, "entity-schema-name");
+		RequireSchemaFields(request.PackageName, request.SchemaName, EntitySchemaNameField);
 
 		Guid packageUId = PackageResolver.ResolveUId(request.PackageName);
 		EntityBusinessRuleAttributeContext attributeContext = attributeProvider.GetAttributes(
