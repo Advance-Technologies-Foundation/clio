@@ -146,5 +146,3 @@ package — this is why rule and block uIds must be preserved.
 
 - Feature overview: [business-rules-spec.md](./business-rules-spec.md)
 - Architecture: [business-rules-architecture.md](./business-rules-architecture.md)
-- Implementation plan: [business-rules-crud-plan.md](./business-rules-crud-plan.md)
-- Testing checklist: [business-rules-crud-testing-checklist.md](./business-rules-crud-testing-checklist.md)

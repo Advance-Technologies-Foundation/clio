@@ -16,7 +16,7 @@ internal static class FullToSimpleBusinessRuleConverter {
 			.GroupBy(pair => pair.Value)
 			.ToDictionary(group => group.Key, group => group.First().Key);
 
-	internal static IReadOnlyList<BusinessRule> Read(
+	internal static IReadOnlyList<BusinessRule> Convert(
 		JsonArray rules,
 		IReadOnlyList<AddonResourceDto> resources) {
 		Dictionary<string, List<JsonObject>> childRulesByParentUId = new(StringComparer.OrdinalIgnoreCase);
@@ -45,13 +45,13 @@ internal static class FullToSimpleBusinessRuleConverter {
 			string uId = GetString(ruleObject, "uId") ?? string.Empty;
 			IReadOnlyList<JsonObject> childRules =
 				childRulesByParentUId.TryGetValue(uId, out List<JsonObject>? children) ? children : [];
-			models.Add(ReadRule(ruleObject, resources, childRules));
+			models.Add(ConvertParentRule(ruleObject, resources, childRules));
 		}
 
 		return models;
 	}
 
-	private static BusinessRule ReadRule(
+	private static BusinessRule ConvertParentRule(
 		JsonObject ruleObject,
 		IReadOnlyList<AddonResourceDto> resources,
 		IReadOnlyList<JsonObject> childRules) {
@@ -202,19 +202,19 @@ internal static class FullToSimpleBusinessRuleConverter {
 		string? uId = GetString(actionObject, "uId");
 		switch (typeName) {
 			case BusinessRuleEditableElementTypeName:
-				return new MakeEditableBusinessRuleAction(ReadItemNames(actionObject)) { UId = uId };
+				return new MakeEditableBusinessRuleAction(GetItemNames(actionObject)) { UId = uId };
 			case BusinessRuleReadonlyElementTypeName:
-				return new MakeReadOnlyBusinessRuleAction(ReadItemNames(actionObject)) { UId = uId };
+				return new MakeReadOnlyBusinessRuleAction(GetItemNames(actionObject)) { UId = uId };
 			case BusinessRuleRequiredElementTypeName:
-				return new MakeRequiredBusinessRuleAction(ReadItemNames(actionObject)) { UId = uId };
+				return new MakeRequiredBusinessRuleAction(GetItemNames(actionObject)) { UId = uId };
 			case BusinessRuleOptionalElementTypeName:
-				return new MakeOptionalBusinessRuleAction(ReadItemNames(actionObject)) { UId = uId };
+				return new MakeOptionalBusinessRuleAction(GetItemNames(actionObject)) { UId = uId };
 			case BusinessRuleHideElementTypeName:
-				return new HideElementBusinessRuleAction(ReadItemNames(actionObject)) { UId = uId };
+				return new HideElementBusinessRuleAction(GetItemNames(actionObject)) { UId = uId };
 			case BusinessRuleShowElementTypeName:
-				return new ShowElementBusinessRuleAction(ReadItemNames(actionObject)) { UId = uId };
+				return new ShowElementBusinessRuleAction(GetItemNames(actionObject)) { UId = uId };
 			case BusinessRuleSetValuesElementTypeName:
-				return new SetValuesBusinessRuleAction(ReadSetValueItems(actionObject)) { UId = uId };
+				return new SetValuesBusinessRuleAction(ConvertSetValueItems(actionObject)) { UId = uId };
 			case BusinessRuleFilterLookupElementTypeName:
 				return ConvertApplyFilterAction(actionObject, uId, childRules);
 			case BusinessRuleSetFilterElementTypeName:
@@ -238,9 +238,9 @@ internal static class FullToSimpleBusinessRuleConverter {
 			|| HasChildRuleWithNameSuffix(childRules, "_PopulateValue");
 		return new ApplyFilterBusinessRuleAction(
 			GetString(leftExpression, "path") ?? string.Empty,
-			ReadFilterExpression(leftExpression) ?? string.Empty,
+			GetFilterExpression(leftExpression) ?? string.Empty,
 			GetString(rightExpression, "path") ?? string.Empty,
-			ReadFilterExpression(rightExpression),
+			GetFilterExpression(rightExpression),
 			clearValue,
 			populateValue) { UId = uId };
 	}
@@ -262,7 +262,7 @@ internal static class FullToSimpleBusinessRuleConverter {
 		};
 	}
 
-	private static string? ReadFilterExpression(JsonObject filterLookupExpression) {
+	private static string? GetFilterExpression(JsonObject filterLookupExpression) {
 		string? filterExpression = GetString(filterLookupExpression, "filterExpression");
 		return string.IsNullOrWhiteSpace(filterExpression)
 			|| string.Equals(filterExpression, "null", StringComparison.OrdinalIgnoreCase)
@@ -270,7 +270,7 @@ internal static class FullToSimpleBusinessRuleConverter {
 			: filterExpression;
 	}
 
-	private static List<string> ReadItemNames(JsonObject actionObject) {
+	private static List<string> GetItemNames(JsonObject actionObject) {
 		JsonNode? items = actionObject["items"];
 		return items switch {
 			null => [],
@@ -286,7 +286,7 @@ internal static class FullToSimpleBusinessRuleConverter {
 		};
 	}
 
-	private static List<BusinessRuleSetValueItem> ReadSetValueItems(JsonObject actionObject) {
+	private static List<BusinessRuleSetValueItem> ConvertSetValueItems(JsonObject actionObject) {
 		if (actionObject["items"] is not JsonArray itemNodes) {
 			throw new InvalidOperationException("set-values action has no items array.");
 		}

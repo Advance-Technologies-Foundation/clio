@@ -80,7 +80,7 @@ internal sealed class BusinessRuleAddonService(
 		JsonObject metadata = BusinessRuleAddonMetadata.ParseMetadata(schema.MetaData);
 		JsonArray rules = BusinessRuleAddonMetadata.GetOrCreateRules(metadata);
 		List<AddonResourceDto> resources = BusinessRuleAddonMetadata.NormalizeResourceKeys(schema.Resources.ToList());
-		return FullToSimpleBusinessRuleConverter.Read(rules, resources);
+		return FullToSimpleBusinessRuleConverter.Convert(rules, resources);
 	}
 
 	public AddonSchemaDto GetSchema(AddonGetRequestDto request) {

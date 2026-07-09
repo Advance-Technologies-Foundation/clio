@@ -58,7 +58,7 @@ public sealed class FullToSimpleBusinessRuleConverterTests {
 		JsonArray rules = [JsonSerializer.SerializeToNode(metadata, BusinessRuleConstants.JsonOptions)];
 
 		// Act
-		IReadOnlyList<BusinessRule> models = FullToSimpleBusinessRuleConverter.Read(rules, []);
+		IReadOnlyList<BusinessRule> models = FullToSimpleBusinessRuleConverter.Convert(rules, []);
 
 		// Assert
 		models.Should().ContainSingle(because: "one persisted parent rule yields one friendly rule");
@@ -148,7 +148,7 @@ public sealed class FullToSimpleBusinessRuleConverterTests {
 		}
 
 		// Act
-		IReadOnlyList<BusinessRule> models = FullToSimpleBusinessRuleConverter.Read(rules, []);
+		IReadOnlyList<BusinessRule> models = FullToSimpleBusinessRuleConverter.Convert(rules, []);
 
 		// Assert
 		generatedRules.Should().HaveCount(3,
@@ -222,7 +222,7 @@ public sealed class FullToSimpleBusinessRuleConverterTests {
 			""");
 
 		// Act
-		IReadOnlyList<BusinessRule> models = FullToSimpleBusinessRuleConverter.Read(rules, []);
+		IReadOnlyList<BusinessRule> models = FullToSimpleBusinessRuleConverter.Convert(rules, []);
 
 		// Assert
 		models.Should().ContainSingle(because: "the single persisted rule yields one friendly rule");
@@ -278,7 +278,7 @@ public sealed class FullToSimpleBusinessRuleConverterTests {
 			""");
 
 		// Act
-		Action act = () => FullToSimpleBusinessRuleConverter.Read(rules, []);
+		Action act = () => FullToSimpleBusinessRuleConverter.Convert(rules, []);
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>()
@@ -311,7 +311,7 @@ public sealed class FullToSimpleBusinessRuleConverterTests {
 			""");
 
 		// Act
-		Action act = () => FullToSimpleBusinessRuleConverter.Read(rules, []);
+		Action act = () => FullToSimpleBusinessRuleConverter.Convert(rules, []);
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>()
@@ -360,7 +360,7 @@ public sealed class FullToSimpleBusinessRuleConverterTests {
 			""");
 
 		// Act
-		Action act = () => FullToSimpleBusinessRuleConverter.Read(rules, []);
+		Action act = () => FullToSimpleBusinessRuleConverter.Convert(rules, []);
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>()
@@ -402,7 +402,7 @@ public sealed class FullToSimpleBusinessRuleConverterTests {
 		];
 
 		// Act
-		IReadOnlyList<BusinessRule> models = FullToSimpleBusinessRuleConverter.Read(rules, resources);
+		IReadOnlyList<BusinessRule> models = FullToSimpleBusinessRuleConverter.Convert(rules, resources);
 
 		// Assert
 		models.Should().ContainSingle(because: "the single persisted rule yields one friendly rule");
@@ -465,7 +465,7 @@ public sealed class FullToSimpleBusinessRuleConverterTests {
 			""");
 
 		// Act
-		IReadOnlyList<BusinessRule> models = FullToSimpleBusinessRuleConverter.Read(rules, []);
+		IReadOnlyList<BusinessRule> models = FullToSimpleBusinessRuleConverter.Convert(rules, []);
 
 		// Assert
 		models.Should().ContainSingle(because: "the single persisted rule yields one friendly rule");
@@ -543,7 +543,7 @@ public sealed class FullToSimpleBusinessRuleConverterTests {
 			""");
 
 		// Act
-		IReadOnlyList<BusinessRule> models = FullToSimpleBusinessRuleConverter.Read(rules, []);
+		IReadOnlyList<BusinessRule> models = FullToSimpleBusinessRuleConverter.Convert(rules, []);
 
 		// Assert
 		models.Should().ContainSingle(because: "the single persisted rule yields one friendly rule");
@@ -606,7 +606,7 @@ public sealed class FullToSimpleBusinessRuleConverterTests {
 			""");
 
 		// Act
-		IReadOnlyList<BusinessRule> models = FullToSimpleBusinessRuleConverter.Read(rules, []);
+		IReadOnlyList<BusinessRule> models = FullToSimpleBusinessRuleConverter.Convert(rules, []);
 
 		// Assert
 		BusinessRule model = models.Should().ContainSingle(
@@ -661,7 +661,7 @@ public sealed class FullToSimpleBusinessRuleConverterTests {
 			""");
 
 		// Act
-		IReadOnlyList<BusinessRule> models = FullToSimpleBusinessRuleConverter.Read(rules, []);
+		IReadOnlyList<BusinessRule> models = FullToSimpleBusinessRuleConverter.Convert(rules, []);
 
 		// Assert
 		BusinessRule model = models.Should().ContainSingle(
@@ -733,7 +733,7 @@ public sealed class FullToSimpleBusinessRuleConverterTests {
 			""");
 
 		// Act
-		IReadOnlyList<BusinessRule> models = FullToSimpleBusinessRuleConverter.Read(rules, []);
+		IReadOnlyList<BusinessRule> models = FullToSimpleBusinessRuleConverter.Convert(rules, []);
 
 		// Assert
 		BusinessRule model = models.Should().ContainSingle(
@@ -780,7 +780,7 @@ public sealed class FullToSimpleBusinessRuleConverterTests {
 			""");
 
 		// Act
-		Action act = () => FullToSimpleBusinessRuleConverter.Read(rules, []);
+		Action act = () => FullToSimpleBusinessRuleConverter.Convert(rules, []);
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>()
