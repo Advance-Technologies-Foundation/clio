@@ -102,6 +102,7 @@ cliogate must be installed on the target Creatio environment.
 
 ## Notes
 
+- A `modify` operation on an **inherited** column may override only its caption/description (`title-localizations`/`description-localizations`); changing its name, type, or flags is rejected and stops the batch on that operation.
 - `--operation` payloads can include structured `default-value-config`.
 - For `SystemValue`, clio resolves Guid/alias/caption to canonical Guid before save.
 - For `Settings`, clio resolves code/name/id to canonical setting code before save.
