@@ -37,10 +37,10 @@ public sealed class CreateRelatedPageAddonTool(
 			return new CreateRelatedPageAddonResponse { Success = false, Error = RelatedPageAddonMessages.PackageNameRequired };
 		}
 		if (args.Pages is null) {
-			return new CreateRelatedPageAddonResponse { Success = false, Error = "pages is required (send an empty list to clear all bindings / reset to inline)" };
+			return new CreateRelatedPageAddonResponse { Success = false, Error = RelatedPageAddonMessages.PagesRequired };
 		}
 		if (args.Pages.Any(page => page is null)) {
-			return new CreateRelatedPageAddonResponse { Success = false, Error = "each entry in pages is required (a null pages entry was provided)" };
+			return new CreateRelatedPageAddonResponse { Success = false, Error = RelatedPageAddonMessages.PagesEntryRequired };
 		}
 
 		CreateRelatedPageAddonOptions options = new() {

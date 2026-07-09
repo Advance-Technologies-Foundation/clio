@@ -140,8 +140,7 @@ internal sealed class RelatedPageAddonService(
 			throw new ArgumentException(RelatedPageAddonMessages.PackageNameRequired);
 		}
 		if (request.Pages is null) {
-			throw new ArgumentException(
-				"pages is required (send an empty list to clear all bindings / reset to inline).");
+			throw new ArgumentException(RelatedPageAddonMessages.PagesRequired);
 		}
 		if (request.Pages.Count == 0) {
 			// An explicitly empty page set is a deliberate reset-to-inline: it clears every related-page binding.

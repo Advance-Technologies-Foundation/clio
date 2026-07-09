@@ -38,14 +38,10 @@ public static class RelatedPageSpecBuilder {
 			return explicitPages;
 		}
 		if (!string.IsNullOrWhiteSpace(addPage) && string.IsNullOrWhiteSpace(defaultPage)) {
-			throw new ArgumentException(
-				"--add-page requires --default-page: the internal audience needs a default page to open a record, "
-				+ "not just an add page.");
+			throw new ArgumentException(RelatedPageAddonMessages.AddPageRequiresDefaultPage);
 		}
 		if (!string.IsNullOrWhiteSpace(portalAddPage) && string.IsNullOrWhiteSpace(portalDefaultPage)) {
-			throw new ArgumentException(
-				"--portal-add-page requires --portal-default-page: the portal audience needs a default page to open a "
-				+ "record, not just an add page.");
+			throw new ArgumentException(RelatedPageAddonMessages.PortalAddPageRequiresPortalDefaultPage);
 		}
 		var built = new List<RelatedPageSpec>();
 		// The base (general) set is scoped to "All employees", matching the designer; the portal set is layered on
@@ -54,10 +50,7 @@ public static class RelatedPageSpecBuilder {
 		AddAudiencePages(built, defaultPage, addPage, EmployeesRoleName);
 		AddAudiencePages(built, portalDefaultPage, portalAddPage, PortalRoleName);
 		if (built.Count == 0) {
-			throw new ArgumentException(
-				"No pages specified. Provide --default-page (optionally with --add-page, --portal-default-page, "
-				+ "or --portal-add-page). To clear all bindings (reset to inline), call the MCP tool with an empty "
-				+ "pages list.");
+			throw new ArgumentException(RelatedPageAddonMessages.NoPageOptionsSpecified);
 		}
 		return built;
 	}
