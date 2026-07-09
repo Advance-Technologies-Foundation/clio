@@ -126,4 +126,50 @@ internal sealed class EntitySchemaDesignerSupportTests {
 		reference.UId.Should().Be(new Guid("93986bfe-2dbd-46bc-9bf9-d03dfefbf3b8"),
 			because: "the SysImage reference UId must match the platform schema so the server persists the link");
 	}
+
+	[TestCase("Color", 18)]
+	[TestCase("color", 18)]
+	[Description("Resolves the named Color token (case-insensitive) to the platform Color data value type 18.")]
+	public void TryResolveDataValueType_Should_Resolve_Color_Type_Name(string typeName, int expectedValue) {
+		// Arrange
+
+		// Act
+		bool resolved = EntitySchemaDesignerSupport.TryResolveDataValueType(typeName, out int dataValueType);
+
+		// Assert
+		resolved.Should().BeTrue(
+			because: "the named Color token should resolve through the shared type registry so Color columns can be modeled");
+		dataValueType.Should().Be(expectedValue,
+			because: "the Color token should map to the platform Color data value type 18");
+	}
+
+	[Description("Formats the Color runtime type id (18) into the named Color token for schema readback.")]
+	[Test]
+	public void GetFriendlyTypeName_Should_Format_Color_As_Named_Token() {
+		// Arrange
+
+		// Act
+		string typeName = EntitySchemaDesignerSupport.GetFriendlyTypeName(18);
+
+		// Assert
+		typeName.Should().Be("Color",
+			because: "readback must report data value type 18 as the named Color token, not the raw number");
+	}
+
+	[Description("Confirms Color (18) is not classified as text-like, so text-only options never apply to a Color column.")]
+	[Test]
+	public void IsTextLikeDataValueType_Should_Return_False_For_Color() {
+		// Arrange
+
+		// Act
+		bool colorIsTextLike = EntitySchemaDesignerSupport.IsTextLikeDataValueType(18);
+		bool colorIsBinaryLike = EntitySchemaDesignerSupport.IsBinaryLikeDataValueType(18);
+		bool colorIsDateTimeLike = EntitySchemaDesignerSupport.IsDateTimeLikeDataValueType(18);
+
+		// Assert
+		colorIsTextLike.Should().BeFalse(
+			because: "Color derives from text server-side but must not be text-like here, or multiline/accent/format-validated/masked would wrongly apply");
+		colorIsBinaryLike.Should().BeFalse(because: "Color is not a binary-like type");
+		colorIsDateTimeLike.Should().BeFalse(because: "Color is not a date/time type");
+	}
 }

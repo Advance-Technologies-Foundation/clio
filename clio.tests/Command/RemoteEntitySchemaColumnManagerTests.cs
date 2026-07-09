@@ -161,6 +161,60 @@ internal class RemoteEntitySchemaColumnManagerTests
 	}
 
 	[Test]
+	[Description("Adds a Color column as data value type 18 and does not treat it as the primary display column (Color is not text-like).")]
+	public void ModifyColumn_AddsColorColumn_WhenTypeIsColor() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)], primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "add",
+			ColumnName = "Highlight",
+			Type = "Color",
+			Title = "Highlight color"
+		};
+
+		// Act
+		_manager.ModifyColumn(options);
+
+		// Assert
+		_savedSchema.Should().NotBeNull(because: "adding a Color column should save the adjusted schema");
+		EntitySchemaColumnDto addedColumn = _savedSchema.Columns.Single(column => column.Name == "Highlight");
+		addedColumn.DataValueType.Should().Be(18,
+			because: "the Color token must map to the platform Color data value type 18");
+		_savedSchema.PrimaryDisplayColumn.Should().BeNull(
+			because: "a Color column is not text-like, so it must not be auto-assigned as the primary display column");
+	}
+
+	[Test]
+	[Description("Rejects text-only options on a Color column because Color is not a text-like type.")]
+	public void ModifyColumn_Throws_WhenColorColumnUsesTextOnlyOption() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)], primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "add",
+			ColumnName = "Highlight",
+			Type = "Color",
+			Title = "Highlight color",
+			Masked = true
+		};
+
+		// Act
+		Action act = () => _manager.ModifyColumn(options);
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>()
+			.WithMessage("*Masked*",
+				because: "text-only options like masked must not be accepted on a Color column");
+		_designerClient.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(),
+			Arg.Any<Clio.Command.RemoteCommandOptions>());
+	}
+
+	[Test]
 	[Description("Publishes the configuration and requests the OData entities rebuild after saving a column, in that order, so the column is reachable over OData.")]
 	public void ModifyColumn_PublishesAndRequestsODataRebuild_AfterSaving() {
 		// Arrange — capture the order the designer client is called in.
@@ -606,18 +660,47 @@ internal class RemoteEntitySchemaColumnManagerTests
 	}
 
 	[Test]
-	[Description("Rejects modifications of inherited columns because v1 supports mutations for own columns only.")]
-	public void ModifyColumn_Throws_WhenColumnIsInherited() {
+	[Description("Overrides an inherited column's caption in place on InheritedColumns, leaving uId/name/type unchanged and not moving it to own columns.")]
+	public void ModifyColumn_ShouldOverrideInheritedCaptionInPlace_WhenModifyIsCaptionOnly() {
 		// Arrange
 		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)],
-			inheritedColumns: [CreateTextColumn("Name", NameColumnUId)]);
+			inheritedColumns: [CreateTextColumn("Symptoms", NameColumnUId)], primaryDisplayColumn: null);
 		SetupLoadedSchema();
 		var options = new ModifyEntitySchemaColumnOptions {
 			Package = "UsrPkg",
-			SchemaName = "UsrVehicle",
+			SchemaName = "UsrTickets",
 			Action = "modify",
-			ColumnName = "Name",
-			Title = "Vehicle name"
+			ColumnName = "Symptoms",
+			Title = "Description"
+		};
+
+		// Act
+		_manager.ModifyColumn(options);
+
+		// Assert
+		_savedSchema.Should().NotBeNull(because: "a caption override of an inherited column should save the schema");
+		_savedSchema.Columns.Should().NotContain(column => column.Name == "Symptoms",
+			because: "the inherited column must not be redefined as an own column");
+		EntitySchemaColumnDto inheritedColumn = _savedSchema.InheritedColumns.Single(column => column.Name == "Symptoms");
+		inheritedColumn.UId.Should().Be(NameColumnUId, because: "the inherited column's uId must stay unchanged");
+		inheritedColumn.DataValueType.Should().Be(1, because: "the inherited column's type must stay unchanged");
+		EntitySchemaDesignerSupport.GetLocalizableValue(inheritedColumn.Caption, "en-US").Should().Be("Description",
+			because: "the caption override must be applied in place on the inherited column");
+	}
+
+	[Test]
+	[Description("Rejects a non-caption change to an inherited column and does not save the schema.")]
+	public void ModifyColumn_ShouldThrow_WhenInheritedColumnMutationIsNotCaptionOnly() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)],
+			inheritedColumns: [CreateTextColumn("Symptoms", NameColumnUId)], primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrTickets",
+			Action = "modify",
+			ColumnName = "Symptoms",
+			Required = true
 		};
 
 		// Act
@@ -625,10 +708,74 @@ internal class RemoteEntitySchemaColumnManagerTests
 
 		// Assert
 		act.Should().Throw<EntitySchemaDesignerException>()
-			.WithMessage("*inherited and read-only*",
-				because: "inherited columns are explicitly out of scope for v1 mutations");
+			.WithMessage("*inherited; only its caption and description can be overridden*",
+				because: "name, type, and flags of an inherited column stay read-only");
 		_designerClient.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(),
 			Arg.Any<Clio.Command.RemoteCommandOptions>());
+	}
+
+	[Test]
+	[Description("Rejects removing an inherited column with a clear error and does not save the schema.")]
+	public void ModifyColumn_ShouldThrow_WhenRemovingInheritedColumn() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)],
+			inheritedColumns: [CreateTextColumn("Symptoms", NameColumnUId)], primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrTickets",
+			Action = "remove",
+			ColumnName = "Symptoms"
+		};
+
+		// Act
+		Action act = () => _manager.ModifyColumn(options);
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>()
+			.WithMessage("*inherited and cannot be removed*",
+				because: "an inherited column cannot be removed from a child schema");
+		_designerClient.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(),
+			Arg.Any<Clio.Command.RemoteCommandOptions>());
+	}
+
+	[Test]
+	[Description("Turns a silent no-op into a clear error when an inherited caption override is not reflected on readback.")]
+	public void ModifyColumn_ShouldThrow_WhenInheritedCaptionOverrideNotPersisted() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)],
+			inheritedColumns: [CreateTextColumn("Symptoms", NameColumnUId)], primaryDisplayColumn: null);
+		// Simulate a server that ignores the inherited caption override: the reloaded inherited column keeps
+		// its original caption, which the readback verification must catch.
+		_designerClient.SaveSchema(Arg.Any<EntityDesignSchemaDto>(), Arg.Any<Clio.Command.RemoteCommandOptions>())
+			.Returns(callInfo => {
+				_savedSchema = callInfo.ArgAt<EntityDesignSchemaDto>(0);
+				EntitySchemaColumnDto inherited = _savedSchema.InheritedColumns.Single(column => column.Name == "Symptoms");
+				inherited.Caption = [new Clio.Command.EntitySchemaDesigner.LocalizableStringDto {
+					CultureName = "en-US",
+					Value = "Symptoms"
+				}];
+				return new Clio.Command.EntitySchemaDesigner.SaveDesignItemDesignerResponse {
+					Success = true,
+					SchemaUId = _savedSchema.UId
+				};
+			});
+		SetupLoadedSchema();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrTickets",
+			Action = "modify",
+			ColumnName = "Symptoms",
+			Title = "Description"
+		};
+
+		// Act
+		Action act = () => _manager.ModifyColumn(options);
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>()
+			.WithMessage("*was not persisted*",
+				because: "a caption override that the server did not persist must surface as a clear failure");
 	}
 
 	[Test]
@@ -1960,6 +2107,135 @@ internal class RemoteEntitySchemaColumnManagerTests
 
 		// Assert
 		_dependencyResolver.DidNotReceive().TryAutoResolve(Arg.Any<string>(), Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("Sets the primary-display column to an own column resolved by name and matched by its uId.")]
+	public void SetSchemaProperties_ShouldSetPrimaryDisplayColumn_WhenColumnIsOwn() {
+		// Arrange
+		EntitySchemaColumnDto captionColumn = CreateTextColumn("Caption", NameColumnUId);
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId), captionColumn],
+			primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		var options = new SetEntitySchemaPropertiesOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			PrimaryDisplayColumn = "Caption"
+		};
+
+		// Act
+		_manager.SetSchemaProperties(options);
+
+		// Assert
+		_savedSchema.Should().NotBeNull(because: "setting a schema property should save the schema");
+		_savedSchema.PrimaryDisplayColumn.Should().NotBeNull(
+			because: "the resolved own column should be assigned as the primary display column");
+		_savedSchema.PrimaryDisplayColumn!.Name.Should().Be("Caption",
+			because: "the primary-display column should be the column named in the request");
+		_savedSchema.PrimaryDisplayColumn.UId.Should().Be(NameColumnUId,
+			because: "the modern designer contract matches the primary-display column by its uId");
+	}
+
+	[Test]
+	[Description("Resolves the primary-display target against inherited columns when it is not an own column.")]
+	public void SetSchemaProperties_ShouldSetPrimaryDisplayColumn_WhenColumnIsInherited() {
+		// Arrange
+		EntitySchemaColumnDto subjectColumn = CreateTextColumn("Subject", NameColumnUId);
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)],
+			inheritedColumns: [subjectColumn], primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		var options = new SetEntitySchemaPropertiesOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			PrimaryDisplayColumn = "Subject"
+		};
+
+		// Act
+		_manager.SetSchemaProperties(options);
+
+		// Assert
+		_savedSchema.PrimaryDisplayColumn!.Name.Should().Be("Subject",
+			because: "an inherited column is a valid primary-display target and is resolved after own columns");
+		_savedSchema.PrimaryDisplayColumn.UId.Should().Be(NameColumnUId,
+			because: "the inherited column must be matched by its uId so the server links the right column");
+	}
+
+	[Test]
+	[Description("Throws and does not save when the named primary-display column does not exist on the schema.")]
+	public void SetSchemaProperties_ShouldThrow_WhenColumnNotFound() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)], primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		var options = new SetEntitySchemaPropertiesOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			PrimaryDisplayColumn = "Ghost"
+		};
+
+		// Act
+		Action act = () => _manager.SetSchemaProperties(options);
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>()
+			.WithMessage("*was not found in schema*",
+				because: "naming a column absent from the schema must be rejected");
+		_designerClient.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(),
+			Arg.Any<Clio.Command.RemoteCommandOptions>());
+	}
+
+	[Test]
+	[Description("Throws before any load or save when no settable schema property is supplied.")]
+	public void SetSchemaProperties_ShouldThrow_WhenNoPropertyIsSupplied() {
+		// Arrange
+		var options = new SetEntitySchemaPropertiesOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			PrimaryDisplayColumn = null
+		};
+
+		// Act
+		Action act = () => _manager.SetSchemaProperties(options);
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>()
+			.WithMessage("*No schema property to set*",
+				because: "the setter must reject a no-op request that would set nothing");
+		_designerClient.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(),
+			Arg.Any<Clio.Command.RemoteCommandOptions>());
+	}
+
+	[Test]
+	[Description("Turns a silent server no-op into a clear error when the primary-display column is not persisted on readback.")]
+	public void SetSchemaProperties_ShouldThrow_WhenReadbackDoesNotReflectPrimaryDisplayColumn() {
+		// Arrange
+		EntitySchemaColumnDto captionColumn = CreateTextColumn("Caption", NameColumnUId);
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId), captionColumn],
+			primaryDisplayColumn: null);
+		// Simulate a target version that ignores the primary-display set: the saved+reloaded schema comes
+		// back with no primary-display column, which the readback verification must catch.
+		_designerClient.SaveSchema(Arg.Any<EntityDesignSchemaDto>(), Arg.Any<Clio.Command.RemoteCommandOptions>())
+			.Returns(callInfo => {
+				_savedSchema = callInfo.ArgAt<EntityDesignSchemaDto>(0);
+				_savedSchema.PrimaryDisplayColumn = null;
+				return new Clio.Command.EntitySchemaDesigner.SaveDesignItemDesignerResponse {
+					Success = true,
+					SchemaUId = _savedSchema.UId
+				};
+			});
+		SetupLoadedSchema();
+		var options = new SetEntitySchemaPropertiesOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			PrimaryDisplayColumn = "Caption"
+		};
+
+		// Act
+		Action act = () => _manager.SetSchemaProperties(options);
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>()
+			.WithMessage("*was not persisted*",
+				because: "a silent no-op on an unsupported target must surface as a clear failure, not a false success");
 	}
 
 	private void SetupLoadedSchema() {

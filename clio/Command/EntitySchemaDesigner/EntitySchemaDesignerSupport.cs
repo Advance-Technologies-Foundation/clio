@@ -56,6 +56,11 @@ internal static class EntitySchemaDesignerSupport
 			[DateTimeTypeName] = 7,
 			["lookup"] = 10,
 			["boolean"] = 12,
+			// Color (ColorDataValueType, GUID {DAFB71F9-EE9F-4E0B-A4D7-37AA15987155}) derives from
+			// TextDataValueType and stores a hex string, but it is deliberately NOT registered in the
+			// text-like sets below: enabling text-only options (multiline / accent / format-validated /
+			// masked) on a Color column would produce a malformed column (ENG-93040 FR-07).
+			["color"] = 18,
 			["decimal0"] = 47,
 			["decimal1"] = 31,
 			["decimal2"] = 32,
@@ -417,6 +422,7 @@ internal static class EntitySchemaDesignerSupport
 			13 => "Binary",
 			14 => "Image",
 			16 => "ImageLookup",
+			18 => "Color",
 			24 => "SecureText",
 			25 => "File",
 			45 => "Email",

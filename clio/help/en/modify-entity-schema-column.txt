@@ -41,6 +41,7 @@ DESCRIPTION
     - Boolean
     - Date, DateTime, Time
     - Lookup (requires --reference-schema)
+    - Color (stores a hex color string such as #RRGGBB; not a text column — the text-only options multiline/accent-insensitive/format-validated/masked do not apply)
 
     For image/photo fields rendered with the crt.ImageInput Freedom UI component, use the
     ImageLookup ("Image link") type. The binary Image type does not work with crt.ImageInput.
@@ -97,8 +98,13 @@ EXAMPLES
     # Remove an own column
     clio modify-entity-schema-column -e dev --package Custom --schema-name UsrVehicle --action remove --column-name LegacyCode
 
+    # Override the caption of an inherited column on a replacing/child schema
+    clio modify-entity-schema-column -e dev --package Custom --schema-name UsrTickets --action modify --column-name Symptoms --title "Description"
+
 NOTES
-    - v1 allows mutations for own columns only; inherited columns are read-only
+    - own columns support all mutations; an INHERITED column can have only its caption/description
+      overridden (--title/title-localizations, --description/description-localizations) on a
+      replacing/child schema — its name, type, and flags stay read-only, and it cannot be removed
     - remove clears schema-level references to the deleted column and validates required fallbacks locally
     - unspecified modify options are preserved as-is in the saved payload
     - MCP callers can also send structured default-value-config with source

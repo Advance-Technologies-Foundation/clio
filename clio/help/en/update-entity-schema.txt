@@ -63,6 +63,9 @@ EXAMPLES
 
 NOTES
     - operations are applied in order
+    - a modify on an INHERITED column may override only its caption/description
+      (title-localizations/description-localizations); changing its name, type, or
+      flags is rejected, and stops the batch on that operation
     - execution stops on the first failed operation
     - the batch is saved and materialized once after all operations are applied
     - operation JSON can also use structured default-value-config; legacy

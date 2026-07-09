@@ -36,6 +36,7 @@ DESCRIPTION
     - Boolean
     - Date, DateTime, Time
     - Lookup (requires --reference-schema)
+    - Color (stores a hex color string such as #RRGGBB; not a text column — the text-only options multiline/accent-insensitive/format-validated/masked do not apply)
 
     For image/photo fields rendered with the crt.ImageInput Freedom UI component, use the
     ImageLookup ("Image link") type. The binary Image type does not work with crt.ImageInput.
