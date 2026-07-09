@@ -557,6 +557,23 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="loadlicense"></a>
 - [`upload-license`](docs/commands/upload-license.md) - Load license to selected environment, `license`, `load-license`, `loadlicense`
 
+## Theming
+
+<a id="build-theme"></a>
+- [`build-theme`](docs/commands/build-theme.md) - Build the artifacts of a Creatio theme from brand colours and fonts
+<a id="clear-themes-cache"></a>
+<a id="flush-themes"></a>
+- [`clear-themes-cache`](docs/commands/clear-themes-cache.md) - Refresh the Creatio theme cache, `flush-themes`
+<a id="create-theme"></a>
+- [`create-theme`](docs/commands/create-theme.md) - Create a custom Creatio theme on an environment
+<a id="delete-theme"></a>
+- [`delete-theme`](docs/commands/delete-theme.md) - Delete a custom Creatio theme from an environment
+<a id="list-themes"></a>
+<a id="get-themes"></a>
+- [`list-themes`](docs/commands/list-themes.md) - List the custom Creatio themes available on an environment, `get-themes`
+<a id="update-theme"></a>
+- [`update-theme`](docs/commands/update-theme.md) - Overwrite an existing custom Creatio theme on an environment
+
 ## Integrations & Tools
 
 <a id="delete-toolkit"></a>

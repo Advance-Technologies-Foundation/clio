@@ -18,6 +18,7 @@ check-nuget-update:check-nuget-update,check
 check-windows-features:check-windows-features,cf,checkf,checks,checkw
 clear-local-env:clear-local-env,clear-env
 clear-redis-db:clear-redis-db,flushdb
+clear-themes-cache:clear-themes-cache,flush-themes
 clone-env:clone-env,clone,clone-environment
 compare-web-farm-node:compare-web-farm-node,check-farm,check-web-farm-node,cwf,farm-check
 compile-configuration:compile-configuration,cc,compile-remote
@@ -67,6 +68,11 @@ generate-source-code:generate-source-code,gsc
 get-app-hash:get-app-hash
 get-app-info:get-app-info
 list-apps:list-apps,get-app-list,app-list,apps,apps-list,lia
+build-theme:build-theme
+list-themes:list-themes,get-themes
+create-theme:create-theme
+update-theme:update-theme
+delete-theme:delete-theme
 get-build-info:get-build-info,bi,buildinfo
 get-client-unit-schema:get-client-unit-schema,client-unit-schema-get
 get-entity-schema-column-properties:get-entity-schema-column-properties

@@ -2,6 +2,7 @@ using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
 using Clio.Command;
+using Clio.Command.McpServer.Resources;
 using Clio.Command.McpServer.Resources.ProcessDesigner;
 using Clio.Command.McpServer.Tools;
 using FluentAssertions;
@@ -112,6 +113,69 @@ public sealed class GuidanceGetToolTests {
 			because: "successful guidance lookups should return the resolved article");
 		result.Article!.Uri.Should().Be("docs://mcp/guides/esq-filters",
 			because: "the guidance tool should preserve the canonical esq-filters guide URI in the response");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the canonical theming guidance article when the caller requests theming: a single entry point that builds the theme CSS with the native build-theme tool and routes the agent to the right flow rather than embedding the token catalog.")]
+	public async Task GuidanceGet_Should_Return_Theming_Article() {
+		// Arrange
+		GuidanceGetTool tool = new(_featureToggleService);
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("theming"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "theming is a registered guidance name");
+		result.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article");
+		result.Article!.Uri.Should().Be("docs://mcp/guides/theming",
+			because: "the guidance tool should preserve the canonical theming guide URI in the response");
+		result.Article.Text.Should().Contain("clio MCP custom-theme guide",
+			because: "the guidance tool should return the canonical theming article text");
+		result.Article.Text.Should().Contain("Which flow",
+			because: "theming is the single entry point — the article must help the agent pick the workspace/dev vs no-code/server flow");
+		result.Article.Text.Should().NotContain("@creatio/theming",
+			because: "the npm package is retired — theme CSS is built by the native build-theme tool");
+		result.Article.Text.Should().NotContain("AI_GUIDES_INDEX.md",
+			because: "the npm package index is retired; the guide no longer routes through it");
+		result.Article.Text.Should().Contain("push-workspace",
+			because: "the workspace/dev flow must direct deployment through push-workspace");
+		result.Article.Text.Should().Contain("No-code / server flow",
+			because: "the no-code/server flow is now available and must be described, not marked unavailable");
+		result.Article.Text.Should().NotContain("not yet available",
+			because: "the server flow shipped, so the guide must no longer say it is unavailable");
+		result.Article.Text.Should().Contain("create-theme",
+			because: "the server flow must route the agent to the create-theme MCP tool");
+		result.Article.Text.Should().Contain("update-theme",
+			because: "the server flow must route the agent to the update-theme MCP tool");
+		result.Article.Text.Should().Contain("delete-theme",
+			because: "the server flow must route the agent to the delete-theme MCP tool");
+		result.Article.Text.Should().NotContain("-by-environment",
+			because: "the guide routes to theming tools by their canonical names only");
+		result.Article.Text.Should().NotContain("-by-credentials",
+			because: "the guide routes to theming tools by their canonical names only");
+		result.Article.Text.Should().Contain("build-theme",
+			because: "the guide must route theme-CSS building to the native build-theme tool rather than hand-computing colors");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Keeps the theming guidance a thin pointer (CM-03): it names the --crt-* token namespace at most once without restating the token catalog.")]
+	public async Task GuidanceGet_Should_Not_Restate_Token_Catalog_When_Topic_Is_Theming() {
+		// Arrange
+		GuidanceGetTool tool = new(_featureToggleService);
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("theming"));
+
+		// Assert
+		result.Article.Should().NotBeNull(
+			because: "theming is a registered guidance name that resolves to an article");
+		int tokenNamespaceMentions = result.Article!.Text.Split("--crt").Length - 1;
+		tokenNamespaceMentions.Should().BeLessThanOrEqualTo(1,
+			because: "the guide may name the --crt-* token namespace once as a pointer, but must not restate the --crt-* token catalog (CM-03 — single source of truth)");
 	}
 
 	[Test]

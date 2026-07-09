@@ -13,6 +13,7 @@ internal enum HelpGroupId {
 	Development,
 	DeploymentAndInfrastructure,
 	LocalInstanceManagement,
+	Theming,
 	IntegrationsAndTools,
 	General
 }
@@ -47,6 +48,7 @@ internal sealed class CommandHelpCatalog {
 		new(HelpGroupId.Development, "Development"),
 		new(HelpGroupId.DeploymentAndInfrastructure, "Deployment & Infrastructure"),
 		new(HelpGroupId.LocalInstanceManagement, "Local Instance Management"),
+		new(HelpGroupId.Theming, "Theming"),
 		new(HelpGroupId.IntegrationsAndTools, "Integrations & Tools"),
 		new(HelpGroupId.General, "General")
 	];
@@ -231,6 +233,16 @@ internal sealed class CommandHelpCatalog {
 			"turn-fsm",
 			"uninstall-creatio",
 			"upload-license"
+		];
+
+	private static readonly HashSet<string> ThemingCommands =
+		[
+			"build-theme",
+			"clear-themes-cache",
+			"create-theme",
+			"delete-theme",
+			"list-themes",
+			"update-theme"
 		];
 
 	private static readonly HashSet<string> IntegrationCommands =
@@ -461,6 +473,9 @@ internal sealed class CommandHelpCatalog {
 		}
 		if (LocalInstanceCommands.Contains(canonicalName)) {
 			return HelpGroupId.LocalInstanceManagement;
+		}
+		if (ThemingCommands.Contains(canonicalName)) {
+			return HelpGroupId.Theming;
 		}
 		if (IntegrationCommands.Contains(canonicalName)) {
 			return HelpGroupId.IntegrationsAndTools;
