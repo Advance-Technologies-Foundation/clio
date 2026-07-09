@@ -79,7 +79,7 @@ public sealed class RelatedPageBindingGuidanceResource {
 		         portal default page). When any portal page is given on the CLI, the `--default-page` / `--add-page`
 		         set is scoped to the "All employees" role — the general base default — and the portal pages are layered on top as the "All external users" override.
 		       Only these two audiences are supported: "All employees" and "All external users". A custom role (by name or UId) is REJECTED — the designer offers no other audience, and runtime support for an arbitrary role in a related-page set is unverified, so it is not written. Within each (audience, type) cell there may be at most ONE is-default page and ONE is-add page (the same page may be both).
-		       Omitting the role entirely binds a single set that applies to all users. A general base default (is-default, no type-column-value, scoped to "All employees" or no role) is REQUIRED in every configuration — the page opened for a record and the fallback for any type or audience with no dedicated set; the default page also serves record creation, so add a separate is-add page only for a DIFFERENT add page. Portal ("All external users") and type-specific sets are layered on top. A portal-only (or other audience-scoped-only) binding is rejected — it would leave the general audience with no page to open.
+		       Omitting the role entirely binds a single set that applies to all users. A general base default (is-default, no type-column-value, scoped to "All employees" or no role) is REQUIRED in every configuration — the page opened for a record and the fallback for any record TYPE with no dedicated set; the default page also serves record creation, so add a separate is-add page only for a DIFFERENT add page. Portal ("All external users") and type-specific sets are layered on top; the general base is the INTERNAL audience, so add an explicit "All external users" default whenever portal users open the record — the internal base is not a verified portal fallback. A portal-only (or other audience-scoped-only) binding is rejected — it would leave the general audience with no page to open.
 
 		       Typed pages — a different page set per record type
 		       A page set can also be scoped to a record TYPE, on top of (or instead of) the audience. Two pieces:
@@ -120,7 +120,7 @@ public sealed class RelatedPageBindingGuidanceResource {
 		         type-specific sets you must include the existing entries too. For a fresh object a single default
 		         (and usually add) page is enough. To reset the object to inline editing (dedicated pages no longer wanted), send an EMPTY pages list: it clears every entry and is the effective delete (the platform has no add-on delete; an unconfigured object likewise reports an empty set).
 		       - Existing page and object schemas are NOT modified; only the object's related-page add-on metadata is
-		         written, so other configurations are unaffected.
+		         written, so other configurations are unaffected. This tool manages the object's DESKTOP related-page add-on only — mobile pages (the SchemaGroup.MobilePage set) are a SEPARATE add-on, neither read nor written here, so a desktop write (including an empty-clear reset) never affects the object's mobile page configuration.
 		       """
 	};
 

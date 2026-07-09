@@ -73,3 +73,6 @@ clio create-related-page-addon -e dev --entity-schema-name UsrRequest --package-
   `page-schema-uid` is accepted and used as-is — so a page whose name no longer reverse-resolves still
   round-trips instead of being silently dropped. `page-schema-uid` wins over `page-schema-name` when both
   are present. (`page-schema-uid` is an MCP-only field; the scalar CLI resolves by page name.)
+- This tool manages the **desktop** related-page add-on only. Mobile pages (the `SchemaGroup.MobilePage` set)
+  are a separate add-on and are neither read nor written here, so a desktop write — including an empty-clear
+  reset — never affects the object's mobile page configuration.

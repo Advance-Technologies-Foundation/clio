@@ -84,3 +84,7 @@ NOTES
     resolves still round-trips instead of being silently dropped. `page-schema-uid` wins over
     `page-schema-name` when both are present (`page-schema-uid` is an MCP-only field; the scalar CLI
     resolves by page name).
+
+    This tool manages the DESKTOP related-page add-on only. Mobile pages (the SchemaGroup.MobilePage set)
+    are a separate add-on and are neither read nor written here, so a desktop write - including an empty
+    reset - never affects the object's mobile page configuration.
