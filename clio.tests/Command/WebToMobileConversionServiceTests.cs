@@ -762,7 +762,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("insert mobileValues carries the type, the field label, and every source property the mobile component supports; web-only props and the value binding are not carried.")]
+	[Description("insert mobileValues carries the type, the field label, and every source property verbatim — including one the mobile registry does not declare (registry is incomplete, ENG-91859); only the value binding is left out.")]
 	public void Analyze_FieldInsert_MobileValues_CarriesSupportedPropsAndLabel() {
 		PageBundleInfo bundle = Bundle(
 			viewConfigJson: """
@@ -789,7 +789,8 @@ public sealed class WebToMobileConversionServiceTests {
 		var mobileByType = new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase) {
 			["crt.Input"] = crtInput
 		};
-		// The web registry declares usrWebOnly (and not the mobile one) — that is what makes it droppable.
+		// The web registry declares usrWebOnly and the mobile one does not — under the old rule this made it
+		// "web-only" and dropped; now it is carried verbatim (no registry-membership pruning).
 		var webByType = new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase) {
 			["crt.FlexContainer"] = new ComponentRegistryEntry { ComponentType = "crt.FlexContainer", Container = true },
 			["crt.Input"] = new ComponentRegistryEntry {
@@ -804,15 +805,100 @@ public sealed class WebToMobileConversionServiceTests {
 		leadVals["type"]!.GetValue<string>().Should().Be("crt.Input");
 		// Caption present → label references the registered <name>_caption resource.
 		leadVals["label"]!.GetValue<string>().Should().Be("$Resources.Strings.LeadName_caption");
-		// Every source property the mobile component supports is carried verbatim …
-		leadVals.ContainsKey("readonly").Should().BeTrue(because: "readonly is a supported mobile input");
-		leadVals.ContainsKey("placeholder").Should().BeTrue(because: "placeholder is a supported mobile input");
-		// … a web-registry-specific prop the mobile component lacks is dropped, and the value binding is left out.
-		leadVals.ContainsKey("usrWebOnly").Should().BeFalse(because: "the web registry declares it and mobile does not");
+		// Every source property is carried verbatim …
+		leadVals.ContainsKey("readonly").Should().BeTrue(because: "readonly is carried");
+		leadVals.ContainsKey("placeholder").Should().BeTrue(because: "placeholder is carried");
+		// … including one the mobile registry does not declare (no registry-membership pruning while the
+		// registry is incomplete — ENG-91859); only the value binding is left out.
+		leadVals.ContainsKey("usrWebOnly").Should().BeTrue(because: "registry-absent props are no longer dropped");
 		leadVals.ContainsKey("control").Should().BeFalse(because: "the value binding is added by the caller, not prebuilt");
 
 		// No caption but bound to PDS.JobTitle → auto-provided column-code label.
 		Element(guide, "JobTitle").MobileValues!.AsObject()["label"]!.GetValue<string>().Should().Be("$Resources.Strings.JobTitle");
+	}
+
+	[Test]
+	[Description("When the mobile registry declares NO inputs for the type (empty/untrustworthy contract — ENG-91859), pruning is skipped: every source property (e.g. entityName) is carried verbatim even when the web registry declares it.")]
+	public void Analyze_Insert_EmptyMobileContract_CarriesAllSourceProps() {
+		PageBundleInfo bundle = Bundle(
+			viewConfigJson: """
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "ProgressBar", "type": "crt.EntityStageProgressBar",
+				  "entityName": "Lead", "shape": "rounded", "control": "$Stage" } ] } ]
+			""");
+		// Mobile registry entry EXISTS but declares no inputs (the registry-generation gap).
+		var mobileByType = new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase) {
+			["crt.EntityStageProgressBar"] = new ComponentRegistryEntry { ComponentType = "crt.EntityStageProgressBar" }
+		};
+		// The web registry DOES declare entityName — under the old rule this made it web-only and dropped.
+		var webByType = new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase) {
+			["crt.FlexContainer"] = new ComponentRegistryEntry { ComponentType = "crt.FlexContainer", Container = true },
+			["crt.EntityStageProgressBar"] = new ComponentRegistryEntry {
+				ComponentType = "crt.EntityStageProgressBar",
+				Inputs = new Dictionary<string, JsonElement> {
+					["entityName"] = JsonSerializer.SerializeToElement(new { }),
+					["shape"] = JsonSerializer.SerializeToElement(new { })
+				}
+			}
+		};
+		// crt.EntityStageProgressBar is supported on mobile (so the leaf inserts) but its registry entry
+		// carries no inputs — the exact ENG-91859 shape.
+		var mobileTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "crt.EntityStageProgressBar" };
+
+		MobilePageConversionGuide guide = WebToMobileAnalysisService.Analyze(
+			bundle, mobileTypes, WebTypes, webByType, mobileByType,
+			Rules, templateRule: null,
+			sourcePage: "UsrApp_FormPage", sourceTemplate: "PageWithTabsFreedomTemplate",
+			suggestedTarget: "UsrApp_MobileFormPage", containerNameMap: null);
+
+		JsonObject vals = Element(guide, "ProgressBar").MobileValues!.AsObject();
+		vals["type"]!.GetValue<string>().Should().Be("crt.EntityStageProgressBar");
+		vals["entityName"]!.GetValue<string>().Should().Be("Lead", because: "an empty mobile contract must not drop any property");
+		vals["shape"]!.GetValue<string>().Should().Be("rounded");
+		// Structural keys / the value binding are still excluded regardless of the contract.
+		vals.ContainsKey("control").Should().BeFalse(because: "the value binding is always excluded");
+	}
+
+	[Test]
+	[Description("crt.Feed carries dataSourceName + entitySchemaName even though the mobile registry declares only primaryColumnValue (partial contract) — dataSourceName is no longer excluded and a registry-absent required prop (entitySchemaName) is not dropped.")]
+	public void Analyze_Insert_PartialMobileContract_CarriesRequiredDataSourceProps() {
+		PageBundleInfo bundle = Bundle(
+			viewConfigJson: """
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "Feed", "type": "crt.Feed",
+				  "dataSourceName": "PDS", "entitySchemaName": "Opportunity", "primaryColumnValue": "$Id" } ] } ]
+			""");
+		// Mobile registry declares ONLY primaryColumnValue — the incomplete-registry shape reported for crt.Feed.
+		var mobileByType = new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase) {
+			["crt.Feed"] = new ComponentRegistryEntry {
+				ComponentType = "crt.Feed",
+				Inputs = new Dictionary<string, JsonElement> { ["primaryColumnValue"] = JsonSerializer.SerializeToElement(new { }) }
+			}
+		};
+		var webByType = new Dictionary<string, ComponentRegistryEntry>(StringComparer.OrdinalIgnoreCase) {
+			["crt.FlexContainer"] = new ComponentRegistryEntry { ComponentType = "crt.FlexContainer", Container = true },
+			["crt.Feed"] = new ComponentRegistryEntry {
+				ComponentType = "crt.Feed",
+				Inputs = new Dictionary<string, JsonElement> {
+					["dataSourceName"] = JsonSerializer.SerializeToElement(new { }),
+					["entitySchemaName"] = JsonSerializer.SerializeToElement(new { }),
+					["primaryColumnValue"] = JsonSerializer.SerializeToElement(new { })
+				}
+			}
+		};
+		var mobileTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "crt.Feed" };
+
+		MobilePageConversionGuide guide = WebToMobileAnalysisService.Analyze(
+			bundle, mobileTypes, WebTypes, webByType, mobileByType,
+			Rules, templateRule: null,
+			sourcePage: "UsrApp_FormPage", sourceTemplate: "PageWithTabsFreedomTemplate",
+			suggestedTarget: "UsrApp_MobileFormPage", containerNameMap: null);
+
+		JsonObject vals = Element(guide, "Feed").MobileValues!.AsObject();
+		vals["type"]!.GetValue<string>().Should().Be("crt.Feed");
+		vals["dataSourceName"]!.GetValue<string>().Should().Be("PDS", because: "dataSourceName is required by crt.Feed and is no longer excluded");
+		vals["entitySchemaName"]!.GetValue<string>().Should().Be("Opportunity", because: "a registry-absent required prop must not be dropped");
+		vals["primaryColumnValue"]!.GetValue<string>().Should().Be("$Id");
 	}
 
 	[Test]
@@ -1308,8 +1394,8 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("A property in NEITHER registry (system/framework prop, e.g. layoutConfig) is carried verbatim; a property the WEB registry declares but the MOBILE registry lacks is dropped; a mobile-supported property is carried.")]
-	public void Analyze_SystemProp_Carried_WebSpecificProp_Dropped() {
+	[Description("Every property is carried verbatim: a system/framework prop (layoutConfig), a mobile-supported prop (readonly), AND a prop the web registry declares but the mobile registry lacks — the last is no longer dropped (no registry-membership pruning while the mobile registry is incomplete, ENG-91859).")]
+	public void Analyze_AllProps_CarriedIncludingWebSpecific() {
 		PageBundleInfo bundle = Bundle("""
 			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
 				{ "name": "Widget", "type": "crt.Input",
@@ -1339,7 +1425,7 @@ public sealed class WebToMobileConversionServiceTests {
 		JsonObject values = Element(guide, "Widget").MobileValues!.AsObject();
 		values.Should().ContainKey("layoutConfig", "layoutConfig is declared by neither registry — a system property");
 		values.Should().ContainKey("readonly", "the mobile registry declares it");
-		values.Should().NotContainKey("webOnlyProp", "the web registry declares it and the mobile registry does not");
+		values.Should().ContainKey("webOnlyProp", "registry-absent props are no longer dropped while the mobile registry is incomplete");
 	}
 
 	#endregion

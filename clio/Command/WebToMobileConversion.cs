@@ -1290,34 +1290,36 @@ public static class WebToMobileAnalysisService {
 
 	/// <summary>
 	/// Source-node properties never copied into the prebuilt mobile <c>values</c>: the element identity/type
-	/// (<c>name</c>/<c>type</c>), the web-only data-source router (<c>dataSourceName</c>), and the value
-	/// binding (<c>control</c>/<c>value</c>) — the binding is a type-specific rename (e.g. a mobile ComboBox
-	/// must bind via <c>value</c>; <c>control</c> needs <c>items</c> or it crashes) and is left to the caller
-	/// to add. NOTE: <c>items</c> is NOT here — it is excluded only when it is an ARRAY of child view elements
-	/// (structural, handled by the tree walk); as a STRING it is a real collection binding (e.g.
-	/// <c>crt.CommunicationOptions</c>/<c>crt.List</c> <c>items: "$Attr"</c>) and is carried like any other
-	/// property. Everything else the mobile component supports is carried verbatim.
+	/// (<c>name</c>/<c>type</c>) and the value binding (<c>control</c>/<c>value</c>) — the binding is a
+	/// type-specific rename (e.g. a mobile ComboBox must bind via <c>value</c>; <c>control</c> needs
+	/// <c>items</c> or it crashes) and is left to the caller to add. <c>dataSourceName</c> is NOT excluded:
+	/// a surviving element only ever references the primary data source (foreign-DS elements are dropped
+	/// wholesale), so its <c>dataSourceName</c> is the valid primary DS and some components require it (e.g.
+	/// <c>crt.Feed</c> needs <c>dataSourceName</c> + <c>entitySchemaName</c>). NOTE: <c>items</c> is NOT here
+	/// — it is excluded only when it is an ARRAY of child view elements (structural, handled by the tree
+	/// walk); as a STRING it is a real collection binding (e.g. <c>crt.CommunicationOptions</c>/<c>crt.List</c>
+	/// <c>items: "$Attr"</c>) and is carried like any other property. Everything else is carried verbatim.
 	/// </summary>
 	private static readonly HashSet<string> ExcludedSourceProps = new(StringComparer.OrdinalIgnoreCase) {
-		"name", "type", "dataSourceName", "control", "value"
+		"name", "type", "control", "value"
 	};
 
 	/// <summary>
-	/// Builds the prebuilt, ready-to-paste mobile <c>values</c> for an inserted component. Copy rule (no
-	/// hardcoded property list): a source property is carried when the MOBILE registry declares it OR when
-	/// NEITHER the web nor the mobile registry declares it — the latter are framework/system properties
-	/// (e.g. <c>caption</c>, <c>layoutConfig</c>) that no component contract lists but the client resolves
-	/// via a preprocessor, so they must survive. A property is DROPPED only when it is web-registry-specific
-	/// and absent from the mobile registry (a genuine web-only component property). Structural keys and the
-	/// value binding are always excluded (see <see cref="ExcludedSourceProps"/>); <c>type</c> is set and, for
-	/// field components, <c>label</c> is synthesized. Returns null for an unknown mobile type.
+	/// Builds the prebuilt, ready-to-paste mobile <c>values</c> for an inserted component. Copy rule: carry
+	/// EVERY source property verbatim, dropping only the element identity/type and the value binding (see
+	/// <see cref="ExcludedSourceProps"/>) and event bindings (converted separately). A property is NOT dropped
+	/// because the mobile registry fails to declare it: the generated mobile registry is currently incomplete
+	/// (missing <c>inputs</c> for several components, e.g. <c>crt.Feed</c>, <c>crt.EntityStageProgressBar</c> —
+	/// ENG-91859), so pruning against it would discard required, genuinely-supported properties (e.g. Feed's
+	/// <c>dataSourceName</c>/<c>entitySchemaName</c>). The registry is still consulted for SHAPE, not
+	/// membership: <see cref="CoerceToDeclaredShape"/> reshapes a property the registry does describe
+	/// (e.g. crt.List <c>itemLayout</c> array→object). <c>type</c> is set and, for field components,
+	/// <c>label</c> is synthesized. Returns null for an unknown mobile type.
 	/// </summary>
 	private static JsonNode BuildMobileValues(ElementMapContext ctx, JObject node, string mobileName, string mobileType, CaptionResource caption) {
 		if (string.IsNullOrEmpty(mobileType)) {
 			return null;
 		}
-		HashSet<string> allowed = AllowedProps(ctx.MobileByType, mobileType);
-		HashSet<string> webAllowed = AllowedProps(ctx.WebByType, node["type"]?.ToString());
 		var values = new JObject { ["type"] = mobileType };
 		foreach (JProperty prop in node.Properties()) {
 			// `items` as an ARRAY is the child view-element collection — structural, emitted by the tree
@@ -1329,21 +1331,15 @@ public static class WebToMobileAnalysisService {
 			if (ExcludedSourceProps.Contains(prop.Name)) {
 				continue;
 			}
-			// Event bindings (clicked / valueChange / updated …) carry a request — they are NOT plain
-			// registry props (they are request-binding outputs, absent from allowed) and are converted
+			// Event bindings (clicked / valueChange / updated …) carry a request — they are converted
 			// deliberately by ProcessEventBindings below, so skip them here.
 			if (IsEventBinding(prop.Value)) {
 				continue;
 			}
-			// Carry when the mobile component supports the property, OR when NEITHER registry declares it
-			// (a system/framework property — e.g. caption, layoutConfig — the client resolves itself).
-			// Drop only a web-registry-specific property the mobile component does not support.
-			if (allowed.Contains(prop.Name) || !webAllowed.Contains(prop.Name)) {
-				// Coerce the carried value to the shape the MOBILE registry declares for this input
-				// (e.g. crt.List `itemLayout` is a single object on mobile but the web node carries a
-				// one-element array). Registry-driven, so no property names are hardcoded.
-				values[prop.Name] = CoerceToDeclaredShape(ctx, mobileType, prop.Name, prop.Value.DeepClone());
-			}
+			// Carry the property verbatim. Do NOT prune against the mobile registry — while it is incomplete
+			// (ENG-91859) a registry-absent property is treated as supported, not web-only. CoerceToDeclaredShape
+			// only reshapes (object vs array) a property the registry DOES describe; otherwise it is a no-op.
+			values[prop.Name] = CoerceToDeclaredShape(ctx, mobileType, prop.Name, prop.Value.DeepClone());
 		}
 		// Re-key the carried caption token ONLY when the source references a key different from this element's
 		// unique key (the collision case, e.g. OverviewTab carrying GeneralInfoTab_caption): emit a plain
@@ -1371,17 +1367,6 @@ public static class WebToMobileAnalysisService {
 		} catch {
 			return null;
 		}
-	}
-
-	/// <summary>The set of property/input names a registry declares for a component type (empty when unknown).</summary>
-	private static HashSet<string> AllowedProps(IReadOnlyDictionary<string, ComponentRegistryEntry> registry, string type) {
-		var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-		if (!string.IsNullOrEmpty(type) && registry.TryGetValue(type, out ComponentRegistryEntry entry)) {
-			foreach (string prop in BuildAllowedPropertyNames(entry)) {
-				allowed.Add(prop);
-			}
-		}
-		return allowed;
 	}
 
 	/// <summary>
