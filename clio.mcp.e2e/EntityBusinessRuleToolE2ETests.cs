@@ -763,7 +763,7 @@ public sealed class EntityBusinessRuleToolE2ETests : McpContractFixtureBase {
 	[AllureTag(UpdateEntityBusinessRuleTool.ToolName)]
 	[AllureTag(DeleteEntityBusinessRuleTool.ToolName)]
 	[AllureName("Entity business-rule MCP tools complete the CRUD lifecycle")]
-	[AllureDescription("Requires a reachable sandbox environment and destructive opt-in. Creates a Contact rule with an explicit name, reads it back with block uIds, updates its constant value in a batch that also carries an unknown-name and a missing-name rule (asserting per-rule isolation and uId survival), disables the rule, deletes it in a batch that also carries an unknown name, and verifies the rule is gone on the final read.")]
+	[AllureDescription("Requires a reachable sandbox environment and destructive opt-in. Creates an AutoTestClioMcp rule with an explicit name, reads it back with block uIds, updates its constant value in a batch that also carries an unknown-name and a missing-name rule (asserting per-rule isolation and uId survival), disables the rule, deletes it in a batch that also carries an unknown name, and verifies the rule is gone on the final read.")]
 	public async Task BusinessRules_Should_Complete_Entity_Rule_Crud_Lifecycle_In_Creatio() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -777,7 +777,7 @@ public sealed class EntityBusinessRuleToolE2ETests : McpContractFixtureBase {
 		string suffix = Guid.NewGuid().ToString("N");
 		string ruleName = $"UsrMcpE2ERule{suffix}";
 		string unknownRuleName = $"UsrMcpE2EMissing{suffix}";
-		string caption = $"MCP E2E Contact CRUD {suffix}";
+		string caption = $"MCP E2E AutoTestClioMcp CRUD {suffix}";
 
 		// Act - create a rule with an explicit caller-supplied name and enabled true
 		CallToolResult createResult = await arrangeContext.Session.CallToolAsync(
@@ -786,7 +786,7 @@ public sealed class EntityBusinessRuleToolE2ETests : McpContractFixtureBase {
 				["args"] = new Dictionary<string, object?> {
 					["environment-name"] = environmentName,
 					["package-name"] = packageName,
-					["entity-schema-name"] = "Contact",
+					["entity-schema-name"] = "AutoTestClioMcp",
 					["rules"] = new object[] { CreateNamedContactConstRule(caption, ruleName, "Alpha") }
 				}
 			},
@@ -795,9 +795,9 @@ public sealed class EntityBusinessRuleToolE2ETests : McpContractFixtureBase {
 
 		// Assert - create
 		createResult.IsError.Should().NotBeTrue(
-			because: "a valid named Contact rule should return the structured batch-create response, not an MCP error");
+			because: "a valid named AutoTestClioMcp rule should return the structured batch-create response, not an MCP error");
 		createResponse.Succeeded.Should().Be(1,
-			because: "the single named Contact rule should be created in the configured Creatio sandbox");
+			because: "the single named AutoTestClioMcp rule should be created in the configured Creatio sandbox");
 		createResponse.Failed.Should().Be(0,
 			because: "no rule in the batch should fail when the payload is valid");
 		createResponse.Results.Should().ContainSingle(result => result.Success && result.RuleName == ruleName,
@@ -805,7 +805,7 @@ public sealed class EntityBusinessRuleToolE2ETests : McpContractFixtureBase {
 
 		// Act - read after create
 		BusinessRulesReadResponse readAfterCreate = await ReadEntityRulesAsync(
-			arrangeContext.Session, environmentName, packageName, arrangeContext.CancellationTokenSource.Token);
+			arrangeContext.Session, environmentName, packageName, "AutoTestClioMcp", arrangeContext.CancellationTokenSource.Token);
 
 		// Assert - read returns the rule in contract shape with block uIds
 		BusinessRule createdModel = GetRuleByName(readAfterCreate, ruleName);
@@ -844,7 +844,7 @@ public sealed class EntityBusinessRuleToolE2ETests : McpContractFixtureBase {
 				["args"] = new Dictionary<string, object?> {
 					["environment-name"] = environmentName,
 					["package-name"] = packageName,
-					["entity-schema-name"] = "Contact",
+					["entity-schema-name"] = "AutoTestClioMcp",
 					["rules"] = new object[] {
 						CreateContactConstRuleUpdate(caption, ruleName, "Beta", blockIds, enabled: null),
 						CreateContactConstRuleUpdate(caption, unknownRuleName, "Gamma", null, enabled: null),
@@ -878,7 +878,7 @@ public sealed class EntityBusinessRuleToolE2ETests : McpContractFixtureBase {
 
 		// Act - read after update
 		BusinessRulesReadResponse readAfterUpdate = await ReadEntityRulesAsync(
-			arrangeContext.Session, environmentName, packageName, arrangeContext.CancellationTokenSource.Token);
+			arrangeContext.Session, environmentName, packageName, "AutoTestClioMcp", arrangeContext.CancellationTokenSource.Token);
 
 		// Assert - the constant changed, the caller-supplied uIds survived, enabled stayed true
 		BusinessRule updatedModel = GetRuleByName(readAfterUpdate, ruleName);
@@ -907,7 +907,7 @@ public sealed class EntityBusinessRuleToolE2ETests : McpContractFixtureBase {
 				["args"] = new Dictionary<string, object?> {
 					["environment-name"] = environmentName,
 					["package-name"] = packageName,
-					["entity-schema-name"] = "Contact",
+					["entity-schema-name"] = "AutoTestClioMcp",
 					["rules"] = new object[] {
 						CreateContactConstRuleUpdate(caption, ruleName, "Beta", blockIds, enabled: false)
 					}
@@ -923,7 +923,7 @@ public sealed class EntityBusinessRuleToolE2ETests : McpContractFixtureBase {
 		disableResponse.Failed.Should().Be(0,
 			because: "no rule in the disable batch should fail");
 		BusinessRulesReadResponse readAfterDisable = await ReadEntityRulesAsync(
-			arrangeContext.Session, environmentName, packageName, arrangeContext.CancellationTokenSource.Token);
+			arrangeContext.Session, environmentName, packageName, "AutoTestClioMcp", arrangeContext.CancellationTokenSource.Token);
 		GetRuleByName(readAfterDisable, ruleName).Enabled.Should().BeFalse(
 			because: "the update with enabled false should deactivate the rule");
 
@@ -934,7 +934,7 @@ public sealed class EntityBusinessRuleToolE2ETests : McpContractFixtureBase {
 				["args"] = new Dictionary<string, object?> {
 					["environment-name"] = environmentName,
 					["package-name"] = packageName,
-					["entity-schema-name"] = "Contact",
+					["entity-schema-name"] = "AutoTestClioMcp",
 					["rule-names"] = new object[] { ruleName, unknownRuleName }
 				}
 			},
@@ -960,7 +960,7 @@ public sealed class EntityBusinessRuleToolE2ETests : McpContractFixtureBase {
 
 		// Act - read after delete
 		BusinessRulesReadResponse readAfterDelete = await ReadEntityRulesAsync(
-			arrangeContext.Session, environmentName, packageName, arrangeContext.CancellationTokenSource.Token);
+			arrangeContext.Session, environmentName, packageName, "AutoTestClioMcp", arrangeContext.CancellationTokenSource.Token);
 
 		// Assert - the deleted rule is gone
 		readAfterDelete.Rules.Should().NotContain(
@@ -1265,7 +1265,7 @@ public sealed class EntityBusinessRuleToolE2ETests : McpContractFixtureBase {
 
 		// Act - read back the created rule
 		BusinessRulesReadResponse readResponse = await ReadEntityRulesAsync(
-			arrangeContext.Session, environmentName, packageName, arrangeContext.CancellationTokenSource.Token);
+			arrangeContext.Session, environmentName, packageName, "Contact", arrangeContext.CancellationTokenSource.Token);
 		BusinessRule model = readResponse.Rules.Single(rule =>
 			string.Equals(rule.Name, ruleName, StringComparison.OrdinalIgnoreCase));
 
@@ -1301,6 +1301,7 @@ public sealed class EntityBusinessRuleToolE2ETests : McpContractFixtureBase {
 		McpServerSession session,
 		string environmentName,
 		string packageName,
+		string entitySchemaName,
 		CancellationToken cancellationToken) {
 		CallToolResult readResult = await session.CallToolAsync(
 			ReadEntityBusinessRuleTool.ToolName,
@@ -1308,7 +1309,7 @@ public sealed class EntityBusinessRuleToolE2ETests : McpContractFixtureBase {
 				["args"] = new Dictionary<string, object?> {
 					["environment-name"] = environmentName,
 					["package-name"] = packageName,
-					["entity-schema-name"] = "Contact"
+					["entity-schema-name"] = entitySchemaName
 				}
 			},
 			cancellationToken);

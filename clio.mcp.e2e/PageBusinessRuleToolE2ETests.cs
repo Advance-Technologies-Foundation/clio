@@ -679,8 +679,12 @@ public sealed class PageBusinessRuleToolE2ETests : McpContractFixtureBase {
 		McpServerSession session,
 		CancellationToken cancellationToken,
 		string environmentName) {
-		// Base-Contact names first (real CRM stands), then any seeded custom form page.
-		List<string> candidates = ["Contacts_FormPage", "Contact_FormPage"];
+		// Seeded AutoTestClioMcp_FormPage first — present on the clio MCP e2e stands including bare
+		// Studio (its schema lives in a file-installed package, which the page-rule add-on flow now
+		// handles by resolving the add-on in the requested writable package). Then base-Contact names
+		// for CRM stands, then any other seeded custom form page. The target attribute and element are
+		// resolved from the page bundle below, so no columns or controls are assumed on the page.
+		List<string> candidates = ["AutoTestClioMcp_FormPage", "Contacts_FormPage", "Contact_FormPage"];
 
 		CallToolResult listResult = await session.CallToolAsync(
 			PageListTool.ToolName,

@@ -62,8 +62,11 @@ public sealed class PageBusinessRuleServiceTests {
 		addonService.Received(1).AppendRule(
 			Arg.Is<AddonGetRequestDto>(request =>
 				request.AddonName == "BusinessRule"
-				&& request.TargetSchemaUId == Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
-				&& request.TargetParentSchemaUId == Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc")
+				// The page is sent as the PARENT so the add-on resolves in the requested writable
+				// package; the target is an unresolvable placeholder, not the page's committed uId.
+				&& request.TargetParentSchemaUId == Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
+				&& request.TargetSchemaUId != Guid.Empty
+				&& request.TargetSchemaUId != Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
 				&& request.TargetPackageUId == packageUId
 				&& request.TargetSchemaManagerName == "ClientUnitSchemaManager"
 				&& request.UseFullHierarchy),
@@ -304,8 +307,9 @@ public sealed class PageBusinessRuleServiceTests {
 		addonService.Received(1).ReadRules(
 			Arg.Is<AddonGetRequestDto>(request =>
 				request.AddonName == "BusinessRule"
-				&& request.TargetSchemaUId == Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
-				&& request.TargetParentSchemaUId == Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc")
+				&& request.TargetParentSchemaUId == Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
+				&& request.TargetSchemaUId != Guid.Empty
+				&& request.TargetSchemaUId != Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
 				&& request.TargetPackageUId == Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
 				&& request.TargetSchemaManagerName == "ClientUnitSchemaManager"
 				&& request.UseFullHierarchy));

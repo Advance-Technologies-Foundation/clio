@@ -149,8 +149,13 @@ internal sealed class PageBusinessRuleService(
 		Guid packageUId) =>
 		new() {
 			AddonName = BusinessRuleAddonName,
-			TargetSchemaUId = Guid.Parse(pageContext.SchemaUId),
-			TargetParentSchemaUId = pageContext.ParentSchemaUId,
+			// The page is passed as the PARENT, not the target: passing the committed page uId as
+			// TargetSchemaUId makes the backend pin the add-on to the page's own package (locked for
+			// file-installed pages). An unresolvable target + the real page as parent takes the
+			// backend's "resolve via parent, keep requested package" path, so the add-on lands in the
+			// requested writable package. Mirrors the entity add-on flow (see spec business-rules).
+			TargetSchemaUId = Guid.NewGuid(),
+			TargetParentSchemaUId = Guid.Parse(pageContext.SchemaUId),
 			TargetPackageUId = packageUId,
 			TargetSchemaManagerName = ClientUnitSchemaManagerName,
 			UseFullHierarchy = true
