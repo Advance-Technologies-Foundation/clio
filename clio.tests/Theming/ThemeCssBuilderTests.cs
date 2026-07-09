@@ -88,6 +88,48 @@ public sealed class ThemeCssBuilderTests {
 	}
 
 	[Test]
+	[Description("Build imports only the customized family when just the heading font is overridden — the untouched default body font is not fetched from Google Fonts.")]
+	public void Build_ShouldImportOnlyHeadingFamily_WhenOnlyHeadingFontOverridden() {
+		// Act
+		string css = Builder().Build(
+			Template(),
+			new BuildThemeInput {
+				Primary = "#004fd6",
+				ThemeCssClass = "T",
+				Fonts = new FontsInput("Playfair Display", null),
+			});
+
+		// Assert
+		css.Should().Contain("family=Playfair+Display", because: "the customized heading family is imported");
+		css.Should().NotContain("family=Montserrat", because: "the untouched default body family must not be fetched from Google Fonts");
+		css.Should().Contain("--crt-font-family-heading: 'Playfair Display', sans-serif;",
+			because: "the heading family is rewritten to the custom font");
+		css.Should().Contain("--crt-font-family-body: 'Montserrat', sans-serif;",
+			because: "the body family stays on the platform default");
+	}
+
+	[Test]
+	[Description("Build imports only the customized family when just the body font is overridden — the untouched default heading font is not fetched from Google Fonts.")]
+	public void Build_ShouldImportOnlyBodyFamily_WhenOnlyBodyFontOverridden() {
+		// Act
+		string css = Builder().Build(
+			Template(),
+			new BuildThemeInput {
+				Primary = "#004fd6",
+				ThemeCssClass = "T",
+				Fonts = new FontsInput(null, "Inter"),
+			});
+
+		// Assert
+		css.Should().Contain("family=Inter", because: "the customized body family is imported");
+		css.Should().NotContain("family=Montserrat", because: "the untouched default heading family must not be fetched from Google Fonts");
+		css.Should().Contain("--crt-font-family-body: 'Inter', sans-serif;",
+			because: "the body family is rewritten to the custom font");
+		css.Should().Contain("--crt-font-family-heading: 'Montserrat', sans-serif;",
+			because: "the heading family stays on the platform default");
+	}
+
+	[Test]
 	[Description("Build throws the documented validation errors for missing/invalid primary, class, and font family.")]
 	public void Build_ShouldThrow_ForTheDocumentedInvalidInputs() {
 		// Act / Assert

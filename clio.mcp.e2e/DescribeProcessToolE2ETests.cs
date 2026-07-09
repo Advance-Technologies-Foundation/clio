@@ -86,8 +86,8 @@ public sealed class DescribeProcessToolE2ETests {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		ProcessDesignerE2EGate.SkipIfFeatureDisabled(settings);
-		string environmentName = settings.Sandbox.EnvironmentName;
-		string processCode = settings.Sandbox.ProcessCode;
+		string? environmentName = settings.Sandbox.EnvironmentName;
+		string? processCode = settings.Sandbox.ProcessCode;
 		if (requireReachableEnvironment) {
 			if (string.IsNullOrWhiteSpace(environmentName) || string.IsNullOrWhiteSpace(processCode)) {
 				Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName and McpE2E:Sandbox:ProcessCode (a process that exists on the stand) to run describe-business-process MCP E2E.");

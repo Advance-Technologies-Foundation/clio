@@ -2,7 +2,6 @@ using System;
 using System.IO;
 using System.Linq;
 using Clio.Common;
-using Clio.Theming;
 
 namespace Clio.Command.Theming;
 
@@ -29,18 +28,6 @@ public interface IThemeTemplateProvider {
 	/// <returns>The resolved bundled version as a string (e.g. <c>10.0</c>).</returns>
 	/// <exception cref="ArgumentException">The version is malformed or older than the lowest bundled template.</exception>
 	string ResolveCompatibleVersion(string creatioVersion);
-
-	/// <summary>
-	/// Reads the system palette default (-500) for <paramref name="role"/> (<c>success</c> or <c>error</c>) from
-	/// the version-matched bundled <c>theme.css</c> template. Scoped to those two role names only — the brand
-	/// palette lines in the template are placeholder tokens, not literal hexes.
-	/// </summary>
-	/// <param name="creatioVersion">Target Creatio version; the highest bundled template is used when null/empty.</param>
-	/// <param name="role">The system role: <c>success</c> or <c>error</c>.</param>
-	/// <param name="hex">The literal <c>#rrggbb</c> default on success; otherwise <c>null</c>.</param>
-	/// <returns><c>true</c> when the default was found; <c>false</c> for an unknown role or a missing line.</returns>
-	/// <exception cref="ArgumentException">The version is malformed or older than the lowest bundled template.</exception>
-	bool TryGetPaletteDefault(string creatioVersion, string role, out string hex);
 }
 
 /// <summary>Reads the version-pinned theme templates from the bundled <c>tpl/themes/{version}/</c> folders.</summary>
@@ -73,15 +60,6 @@ public sealed class ThemeTemplateProvider : IThemeTemplateProvider {
 	public string ResolveCompatibleVersion(string creatioVersion) {
 		string themesRoot = Path.Combine(_workingDirectoriesProvider.TemplateDirectory, ThemesFolder);
 		return ResolveCompatibleVersion(themesRoot, creatioVersion).ToString();
-	}
-
-	/// <inheritdoc />
-	public bool TryGetPaletteDefault(string creatioVersion, string role, out string hex) {
-		hex = null;
-		if (role is not ("success" or "error")) {
-			return false;
-		}
-		return ThemeTemplateDefaults.TryGetPaletteBase(GetCssTemplate(creatioVersion), role, out hex);
 	}
 
 	private string ReadTemplate(string fileName, string creatioVersion) {

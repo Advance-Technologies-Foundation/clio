@@ -249,11 +249,12 @@ public sealed class ThemePaletteAdvisor : IThemePaletteAdvisor {
 		catch (ArgumentException) {
 			return Failure($"VERSION_NOT_SUPPORTED: \"{version}\"");
 		}
-		SystemColorResolution successColor = ResolveSystemColor(version, resolvedVersion, ThemeRole.Success, success);
+		string templateCss = LoadTemplateCss(resolvedVersion, success, error);
+		SystemColorResolution successColor = ResolveSystemColor(templateCss, resolvedVersion, ThemeRole.Success, success);
 		if (!successColor.Resolved) {
 			return Failure(successColor.FailureMessage);
 		}
-		SystemColorResolution errorColor = ResolveSystemColor(version, resolvedVersion, ThemeRole.Error, error);
+		SystemColorResolution errorColor = ResolveSystemColor(templateCss, resolvedVersion, ThemeRole.Error, error);
 		if (!errorColor.Resolved) {
 			return Failure(errorColor.FailureMessage);
 		}
@@ -301,7 +302,19 @@ public sealed class ThemePaletteAdvisor : IThemePaletteAdvisor {
 		return baseResult with { Verdict = VerdictPass };
 	}
 
-	private SystemColorResolution ResolveSystemColor(string version, string resolvedVersion, ThemeRole role, string overrideValue) {
+	private string LoadTemplateCss(string resolvedVersion, string success, string error) {
+		if (!string.IsNullOrWhiteSpace(success) && !string.IsNullOrWhiteSpace(error)) {
+			return null;
+		}
+		try {
+			return _templateProvider.GetCssTemplate(resolvedVersion);
+		}
+		catch (InvalidOperationException) {
+			return null;
+		}
+	}
+
+	private static SystemColorResolution ResolveSystemColor(string templateCss, string resolvedVersion, ThemeRole role, string overrideValue) {
 		if (!string.IsNullOrWhiteSpace(overrideValue)) {
 			if (!ColorNormalizer.TryNormalize(overrideValue, out string overrideHex, out string rejectionCode)) {
 				return new SystemColorResolution { Resolved = false, FailureMessage = $"{rejectionCode}: \"{overrideValue}\"" };
@@ -315,18 +328,7 @@ public sealed class ThemePaletteAdvisor : IThemePaletteAdvisor {
 				Converted = WasConverted(overrideValue, overrideHex)
 			};
 		}
-		string hex = null;
-		bool found;
-		try {
-			found = _templateProvider.TryGetPaletteDefault(version, RoleToWire(role), out hex);
-		}
-		catch (ArgumentException) {
-			return new SystemColorResolution { Resolved = false, FailureMessage = $"VERSION_NOT_SUPPORTED: \"{version}\"" };
-		}
-		catch (InvalidOperationException) {
-			found = false;
-		}
-		if (!found) {
+		if (templateCss == null || !ThemeTemplateDefaults.TryGetPaletteBase(templateCss, RoleToWire(role), out string hex)) {
 			return new SystemColorResolution { Resolved = false, FailureMessage = $"TEMPLATE_DEFAULT_MISSING: \"{RoleToWire(role)}@{resolvedVersion}\"" };
 		}
 		return new SystemColorResolution { Resolved = true, Hex = hex, Source = TemplateDefaultSource };

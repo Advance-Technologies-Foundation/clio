@@ -164,8 +164,11 @@ internal sealed class ThemeCssBuilder : IThemeCssBuilder {
 		if (headingFamily == DefaultFontFamily && bodyFamily == DefaultFontFamily) {
 			return css;
 		}
-		List<FontFamilyEntry> families = new() { new FontFamilyEntry(headingFamily, fonts?.Weights) };
-		if (bodyFamily != headingFamily) {
+		List<FontFamilyEntry> families = new();
+		if (headingFamily != DefaultFontFamily) {
+			families.Add(new FontFamilyEntry(headingFamily, fonts?.Weights));
+		}
+		if (bodyFamily != DefaultFontFamily && bodyFamily != headingFamily) {
 			families.Add(new FontFamilyEntry(bodyFamily, fonts?.Weights));
 		}
 		string importRule = FontImportBuilder.BuildRule(families);

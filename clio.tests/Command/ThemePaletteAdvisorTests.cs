@@ -220,10 +220,21 @@ public sealed class ThemePaletteAdvisorTests {
 
 		// Assert
 		result.SuggestedCandidates.Should().HaveCount(3, because: "three candidates are generated at +135/180/225");
-		result.ValidCandidateCount.Should().BeGreaterThan(0, because: "at least one candidate is valid for the calibration primary");
+		result.ValidCandidateCount.Should().Be(1, because: "only the +135 candidate clears both the 3:1 contrast and 0.07 distance gates for #004fd6");
 		result.BestCandidateHex.Should().Be("#f94e11", because: "the +135 candidate is the most distinct valid accent");
 		result.SuggestedCandidates!.Should().ContainSingle(candidate => candidate.IsBest, because: "exactly one candidate is marked best");
-		result.PrimaryAsAccentAvailable.Should().Be(result.ValidCandidateCount <= 1, because: "the primary-as-accent fallback is offered only when at most one candidate is valid");
+		result.PrimaryAsAccentAvailable.Should().BeTrue(because: "with a single valid candidate the primary-as-accent fallback is offered");
+	}
+
+	[Test]
+	[Description("SuggestAccents withholds the primary-as-accent fallback when more than one candidate is valid.")]
+	public void SuggestAccents_ShouldWithholdPrimaryAsAccent_WhenMultipleCandidatesValid() {
+		// Act
+		ThemePaletteAdvisorResult result = _advisor.SuggestAccents("#2e7d32");
+
+		// Assert
+		result.ValidCandidateCount.Should().BeGreaterThan(1, because: "the green primary yields multiple candidates that clear both gates");
+		result.PrimaryAsAccentAvailable.Should().BeFalse(because: "the primary-as-accent fallback is withheld when more than one candidate is valid");
 	}
 
 	[Test]
@@ -305,8 +316,7 @@ public sealed class ThemePaletteAdvisorTests {
 	public void Preview_ShouldFail_WhenTemplateDefaultMissing() {
 		// Arrange
 		_templateProvider.ResolveCompatibleVersion(Arg.Any<string>()).Returns("10.0");
-		string missing;
-		_templateProvider.TryGetPaletteDefault(Arg.Any<string>(), "success", out missing).Returns(false);
+		_templateProvider.GetCssTemplate(Arg.Any<string>()).Returns("--crt-palette-error-500: #d2310d;\n");
 
 		// Act
 		ThemePaletteAdvisorResult result = _advisor.Preview("#004fd6", "#0d2e4e", "#f94e11", success: null, error: null, version: "10.0", fullStops: false);
@@ -331,11 +341,7 @@ public sealed class ThemePaletteAdvisorTests {
 
 	private void GivenTemplateDefaults(string version = "10.0", string success = "#0b8500", string error = "#d2310d") {
 		_templateProvider.ResolveCompatibleVersion(Arg.Any<string>()).Returns(version);
-		string successOut;
-		_templateProvider.TryGetPaletteDefault(Arg.Any<string>(), "success", out successOut)
-			.Returns(callInfo => { callInfo[2] = success; return true; });
-		string errorOut;
-		_templateProvider.TryGetPaletteDefault(Arg.Any<string>(), "error", out errorOut)
-			.Returns(callInfo => { callInfo[2] = error; return true; });
+		_templateProvider.GetCssTemplate(Arg.Any<string>()).Returns(
+			$"--crt-palette-success-500: {success};\n--crt-palette-error-500: {error};\n");
 	}
 }

@@ -96,13 +96,7 @@ internal static class ColorMetrics {
 		if (candidates is null || candidates.Count == 0) {
 			throw new ArgumentException("At least one accent candidate is required.", nameof(candidates));
 		}
-		List<ScoredAccentCandidate> enriched = candidates
-			.Select(candidate => new ScoredAccentCandidate(
-				candidate.Hex,
-				candidate.Offset,
-				ContrastRatio(candidate.Hex, White),
-				DistanceOklab(primaryHex, candidate.Hex)))
-			.ToList();
+		List<ScoredAccentCandidate> enriched = ScoreCandidates(primaryHex, candidates);
 		List<ScoredAccentCandidate> valid = enriched
 			.Where(candidate => candidate.ContrastOnWhite >= MinContrastOnWhite)
 			.ToList();
@@ -146,13 +140,7 @@ internal static class ColorMetrics {
 		IReadOnlyList<AccentCandidate> candidates,
 		out int validCount,
 		out IReadOnlyList<ScoredAccentCandidate> scored) {
-		List<ScoredAccentCandidate> enriched = candidates
-			.Select(candidate => new ScoredAccentCandidate(
-				candidate.Hex,
-				candidate.Offset,
-				ContrastRatio(candidate.Hex, White),
-				DistanceOklab(primaryHex, candidate.Hex)))
-			.ToList();
+		List<ScoredAccentCandidate> enriched = ScoreCandidates(primaryHex, candidates);
 		scored = enriched;
 		List<ScoredAccentCandidate> valid = enriched
 			.Where(candidate => IsValidAccent(candidate.ContrastOnWhite, candidate.DistanceFromPrimary))
@@ -161,6 +149,16 @@ internal static class ColorMetrics {
 		return valid
 			.OrderByDescending(candidate => candidate.DistanceFromPrimary)
 			.FirstOrDefault();
+	}
+
+	private static List<ScoredAccentCandidate> ScoreCandidates(string primaryHex, IReadOnlyList<AccentCandidate> candidates) {
+		return candidates
+			.Select(candidate => new ScoredAccentCandidate(
+				candidate.Hex,
+				candidate.Offset,
+				ContrastRatio(candidate.Hex, White),
+				DistanceOklab(primaryHex, candidate.Hex)))
+			.ToList();
 	}
 
 	/// <summary>

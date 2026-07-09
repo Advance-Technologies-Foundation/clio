@@ -294,7 +294,8 @@ authoritative contract for this tool is this ADR (Area D); the earlier standalon
 (3:1 contrast, 0.10/0.07 OKLab similarity) lives in clio; the LLM never compares to a threshold.
 
 **D-D3 — Stateless + offline + read-only.** `ReadOnly=true/Destructive=false/Idempotent=true/OpenWorld=false`,
-`[FeatureToggle("theming")]`, flat `ComponentInfoTool`-style, action-dispatched by an `operation` arg. No
+`[FeatureToggle("theming")]` (superseded at go-live — the toggle was removed with the rest of the theming
+surface, see Status), flat `ComponentInfoTool`-style, action-dispatched by an `operation` arg. No
 `environmentName` (would force a network call, breaking `OpenWorld=false`); `preview` takes an offline
 `version` only. The skill holds all conversation state and re-passes the full input set each call.
 
@@ -315,7 +316,9 @@ the stricter 4.5:1 text contrast stays a build-time concern in `TextTokenResolve
 adapted-primary outcome carrying original contrast; a `MeetsMinContrastOnWhite` predicate; accent
 similarity thresholds + `ClassifySimilarityBand`; a `SelectBestValidAccent` filtering on both gates (the
 existing `ChooseBestAccent` filters contrast-only with a degenerate fallback — must not be reused);
-`IThemeTemplateProvider.TryGetPaletteDefault`; a public offline `ResolveCompatibleVersion(string)`.
+`IThemeTemplateProvider.TryGetPaletteDefault` (superseded — the advisor now loads the template once via
+`GetCssTemplate` and reads the defaults directly, so the provider member was removed); a public offline
+`ResolveCompatibleVersion(string)`.
 Verdict/warning-code types are tool-owned, not engine.
 
 ---

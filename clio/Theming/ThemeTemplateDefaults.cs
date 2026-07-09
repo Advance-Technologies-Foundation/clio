@@ -6,7 +6,7 @@ namespace Clio.Theming;
 /// <summary>
 /// The single home for reading a palette's base (-500) declaration from a theme CSS template, so the
 /// template token contract is encoded once for every consumer (the CSS builder's system-colour defaults
-/// and the template provider's advisor preview).
+/// and the palette advisor's preview).
 /// </summary>
 internal static class ThemeTemplateDefaults {
 
@@ -24,7 +24,7 @@ internal static class ThemeTemplateDefaults {
 		hex = null;
 		Match match = Regex.Match(
 			templateCss,
-			$@"--crt-palette-{role}-500\s*:\s*(#[0-9a-fA-F]{{6}})",
+			$@"--crt-palette-{Regex.Escape(role)}-500\s*:\s*(#[0-9a-fA-F]{{6}})",
 			RegexOptions.IgnoreCase,
 			RegexTimeout);
 		if (!match.Success) {

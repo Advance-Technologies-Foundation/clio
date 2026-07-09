@@ -5336,3 +5336,10 @@ Discovery: Finding "delete-package always exits 0 (IApplicationPackageListProvid
 Fix: sanitize list-themes MCP result fields via SanitizeForDisplay (mirrors CLI printer); add 6 missing theming-tool AddTransient registrations; cache parameterized regexes in ThemeCssBuilder (ConcurrentDictionary); merge duplicate IOException/UnauthorizedAccessException catch pairs via `when` filter (ThemeRequestBuilder, BuildThemeCommand).
 Files: clio/Command/McpServer/Tools/ListThemesTool.cs, clio/BindingsModule.cs, clio/Theming/ThemeCssBuilder.cs, clio/Command/Theming/ThemeRequestBuilder.cs, clio/Command/Theming/BuildThemeCommand.cs, clio.tests/Command/McpServer/ListThemesToolTests.cs
 Impact: rebuttal evidence recorded for rejected findings (RC-1, RC-3, RC-5, RC-7, RC-9); full unit suite green on net8.0+net10.0.
+
+## 2026-07-09 11:33 – PR #748 round-2 review fixes (theming)
+Context: 15 unresolved review threads validated against HEAD 1cfce425; 7 confirmed worth fixing, 7 rejected with evidence, 1 covered by documented caveat.
+Decision: keep ChooseBestAccent selection intact (npm-parity contract) — added a CollectWarnings advisory instead, firing exactly when the advisor's validCandidateCount==0; removed IThemeTemplateProvider.TryGetPaletteDefault after Preview() switched to one GetCssTemplate read + direct TryGetPaletteBase (Regex.Escape added on role).
+Discovery: origin/master merges silently reverted master's `string?` fix (71157d66) in 4 process-designer e2e fixtures — branch commits 5a843e4f/ecb457b7 touched the adjacent gate line, so conflict resolution took the branch hunk; PR diff showed it as our change.
+Files: clio/Theming/ThemeCssBuilder.cs, clio/Theming/ColorMetrics.cs, clio/Theming/ThemeTemplateDefaults.cs, clio/Command/Theming/BuildThemeCommand.cs, clio/Command/Theming/ThemePaletteAdvisor.cs, clio/Command/Theming/ThemeTemplateProvider.cs, docs/McpCapabilityMap.md
+Impact: single-role font override no longer imports Montserrat; degenerate auto-accent is loud on CLI+MCP; advisor preview reads the template once; tautological PrimaryAsAccentAvailable assert replaced with calibrated literals (#004fd6→1 valid, #2e7d32→3, #7b1fa2→0).

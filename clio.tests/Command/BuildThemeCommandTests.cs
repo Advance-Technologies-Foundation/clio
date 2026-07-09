@@ -194,6 +194,37 @@ public class BuildThemeCommandTests : BaseCommandTests<BuildThemeOptions>
 	}
 
 	[Test, Category("Unit")]
+	[Description("Warns and still builds the theme when --accent is omitted and no generated candidate clears the accessibility gates (the degenerate fallback is advisory, not fatal).")]
+	public void Execute_ShouldWarn_WhenAutoAccentFailsAccessibilityGates() {
+		// Arrange — for #7b1fa2 none of the generated accent candidates clears both the 3:1 contrast and 0.07 distance gates.
+		BuildThemeOptions options = ValidOptions();
+		options.Primary = "#7b1fa2";
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "a degenerate auto-accent is a non-fatal advisory, not an error");
+		_logger.Received(1).WriteWarning(Arg.Is<string>(m => m.Contains("auto-selected accent")));
+	}
+
+	[Test, Category("Unit")]
+	[Description("Emits no auto-accent warning when --accent is supplied explicitly, even for a primary whose generated candidates all fail the gates.")]
+	public void Execute_ShouldNotWarnAboutAccent_WhenAccentProvidedExplicitly() {
+		// Arrange
+		BuildThemeOptions options = ValidOptions();
+		options.Primary = "#7b1fa2";
+		options.Accent = "#f94e11";
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "an explicit accent skips the auto-selection entirely");
+		_logger.DidNotReceive().WriteWarning(Arg.Any<string>());
+	}
+
+	[Test, Category("Unit")]
 	[Description("Passes an explicit --version straight to the template provider without touching any environment.")]
 	public void Execute_ShouldUseExplicitVersion_WhenCreatioVersionProvided() {
 		// Arrange

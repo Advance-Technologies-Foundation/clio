@@ -42,7 +42,8 @@ Optional. CSS class applied when the theme is active (^[A-Za-z][A-Za-z0-9_-]*$, 
 Optional. Secondary colour; derived from the primary when omitted.
 
 --accent COLOUR
-Optional. Accent colour; chosen from the primary when omitted.
+Optional. Accent colour; chosen from the primary when omitted (with a warning when no
+generated candidate meets the accessibility gates).
 
 --success COLOUR
 Optional. Success colour; the platform default when omitted.

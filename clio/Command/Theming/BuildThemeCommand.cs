@@ -316,7 +316,22 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 		if (FontWeightsWithoutFamily(options)) {
 			warnings.Add("build-theme: font weights were ignored — they apply only to a custom heading or body font.");
 		}
+		if (string.IsNullOrEmpty(options.Accent)) {
+			AddAutoAccentWarning(options, warnings);
+		}
 		return warnings;
+	}
+
+	private static void AddAutoAccentWarning(BuildThemeOptions options, List<string> warnings) {
+		if (!ColorNormalizer.TryNormalize(options.Primary, out string primary, out _)) {
+			return;
+		}
+		ScoredAccentCandidate accent = ColorMetrics.ChooseBestAccent(primary, PaletteGenerator.GenerateAccentCandidates(primary));
+		if (!ColorMetrics.IsValidAccent(accent.ContrastOnWhite, accent.DistanceFromPrimary)) {
+			warnings.Add($"build-theme: the auto-selected accent {accent.Hex} does not meet the accessibility gates "
+				+ "(readability on white and distinctness from the primary). "
+				+ "Pass --accent to choose one explicitly, or reuse the primary as the accent.");
+		}
 	}
 
 	private static bool FontWeightsWithoutFamily(BuildThemeOptions options) {

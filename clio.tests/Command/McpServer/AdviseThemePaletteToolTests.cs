@@ -261,13 +261,7 @@ public sealed class AdviseThemePaletteToolTests {
 	[Description("preview emits only the base -500 for all five roles and sources success/error from the template default when no override is given.")]
 	public void Advise_ShouldBuildPreview_WhenOperationPreview() {
 		// Arrange
-		_templateProvider.ResolveCompatibleVersion(Arg.Any<string>()).Returns("10.0");
-		string successDefault;
-		_templateProvider.TryGetPaletteDefault(Arg.Any<string>(), "success", out successDefault)
-			.Returns(callInfo => { callInfo[2] = "#0b8500"; return true; });
-		string errorDefault;
-		_templateProvider.TryGetPaletteDefault(Arg.Any<string>(), "error", out errorDefault)
-			.Returns(callInfo => { callInfo[2] = "#d2310d"; return true; });
+		GivenTemplateDefaults();
 
 		// Act
 		ThemePaletteAdvisorResult result = _tool.Advise(new AdviseThemePaletteArgs(
@@ -286,13 +280,7 @@ public sealed class AdviseThemePaletteToolTests {
 	[Description("preview emits the full 12-stop scale per role when full-stops is true, anchored on the supplied -500 values.")]
 	public void Advise_ShouldBuildFullStopPreview_WhenFullStopsRequested() {
 		// Arrange
-		_templateProvider.ResolveCompatibleVersion(Arg.Any<string>()).Returns("10.0");
-		string successDefault;
-		_templateProvider.TryGetPaletteDefault(Arg.Any<string>(), "success", out successDefault)
-			.Returns(callInfo => { callInfo[2] = "#0b8500"; return true; });
-		string errorDefault;
-		_templateProvider.TryGetPaletteDefault(Arg.Any<string>(), "error", out errorDefault)
-			.Returns(callInfo => { callInfo[2] = "#d2310d"; return true; });
+		GivenTemplateDefaults();
 
 		// Act
 		ThemePaletteAdvisorResult result = _tool.Advise(new AdviseThemePaletteArgs(
@@ -343,8 +331,7 @@ public sealed class AdviseThemePaletteToolTests {
 	public void Advise_ShouldFailPreview_WhenTemplateDefaultMissing() {
 		// Arrange
 		_templateProvider.ResolveCompatibleVersion(Arg.Any<string>()).Returns("10.0");
-		string missing;
-		_templateProvider.TryGetPaletteDefault(Arg.Any<string>(), "success", out missing).Returns(false);
+		_templateProvider.GetCssTemplate(Arg.Any<string>()).Returns("--crt-palette-error-500: #d2310d;\n");
 
 		// Act
 		ThemePaletteAdvisorResult result = _tool.Advise(new AdviseThemePaletteArgs(
@@ -370,5 +357,11 @@ public sealed class AdviseThemePaletteToolTests {
 		// Assert
 		result.Success.Should().BeFalse(because: "an unsupported version cannot source system defaults");
 		result.Error.Should().Contain("VERSION_NOT_SUPPORTED", because: "the version failure maps to a stable code");
+	}
+
+	private void GivenTemplateDefaults() {
+		_templateProvider.ResolveCompatibleVersion(Arg.Any<string>()).Returns("10.0");
+		_templateProvider.GetCssTemplate(Arg.Any<string>()).Returns(
+			"--crt-palette-success-500: #0b8500;\n--crt-palette-error-500: #d2310d;\n");
 	}
 }

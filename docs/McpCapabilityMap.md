@@ -11,7 +11,7 @@ The document is source-driven. It is based on the current assembly registration 
 - `clio/Command/McpServer/Prompts`
 - `clio/Command/McpServer/Resources`
 
-Snapshot date: `2026-06-10`
+Snapshot date: `2026-07-09`
 
 ## One-sentence summary
 
@@ -29,10 +29,8 @@ From MCP discovery, the surface currently exposes:
 Important shape of the surface:
 
 - Transport is stdio only.
-- Registration is assembly-wide via `WithToolsFromAssembly`, `WithPromptsFromAssembly`, and `WithResourcesFromAssembly`.
-- The tool layer is mixed-generation:
-  - newer tools are strongly typed and usually expose `ReadOnly`, `Destructive`, `Idempotent`, and `OpenWorld`
-  - older lifecycle tools still expose valid MCP tools, but without the same metadata richness
+- Discovery returns only the enabled surface: feature-gated tools, prompts, and resources are omitted while their feature flag is off, so the advertised counts reflect the default flag state.
+- Every tool declares explicit `ReadOnly` / `Destructive` / `Idempotent` safety metadata, so a client can rely on those flags when deciding what is safe to invoke.
 
 ## What This MCP Fundamentally Is
 
@@ -544,7 +542,7 @@ Companion surfaces (see the `theming` guidance):
 
 ## Prompt Layer: What The AI Gets Beyond Raw Tools
 
-The `50` prompts do not add new execution power, but they materially change how an external AI can reason about the surface.
+The prompt layer does not add new execution power, but it materially changes how an external AI can reason about the surface.
 
 The prompt layer acts as embedded operating guidance:
 
