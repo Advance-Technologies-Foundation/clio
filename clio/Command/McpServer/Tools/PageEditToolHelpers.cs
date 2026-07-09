@@ -34,19 +34,19 @@ internal static class PageEditToolHelpers {
 
 public abstract record PageEditToolArgs {
 	[JsonPropertyName("environment-name")]
-	[Description("Registered clio environment name, e.g. 'local'. Preferred for normal MCP work.")]
+	[Description(McpToolDescriptions.EnvironmentName)]
 	public string? EnvironmentName { get; init; }
 
 	[JsonPropertyName("uri")]
-	[Description("Direct Creatio URL. Emergency fallback only.")]
+	[Description(McpToolDescriptions.Uri)]
 	public string? Uri { get; init; }
 
 	[JsonPropertyName("login")]
-	[Description("Direct Creatio login paired with uri. Emergency fallback only.")]
+	[Description(McpToolDescriptions.Login)]
 	public string? Login { get; init; }
 
 	[JsonPropertyName("password")]
-	[Description("Direct Creatio password paired with uri. Emergency fallback only.")]
+	[Description(McpToolDescriptions.Password)]
 	public string? Password { get; init; }
 
 	[JsonPropertyName("resources")]

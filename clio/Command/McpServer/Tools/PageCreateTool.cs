@@ -18,9 +18,10 @@ public sealed class PageCreateTool(
 
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[Description("Create a new Freedom UI page schema from a supported template. Use `list-page-templates` first to discover valid template values. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows. " +
+		"To create a DASHBOARD, use `template` `BaseDashboardTemplate` and pass its link-back properties through `optional-properties` (DashboardsEntitySchemaName / DashboardsElementName / DashboardsClientUnitSchemaUId) — call get-guidance with name `dashboard-creation` FIRST to learn how to retrieve each value (including the root-schema UId rule). " +
 		"Page business rules (conditional visibility/editability/required) are separate artifacts — call get-guidance with name business-rules to learn more.")]
 	public PageCreateResponse CreatePage(
-		[Description("Parameters: schema-name, template, package-name (required); caption, description, entity-schema-name (optional); environment-name preferred; uri/login/password emergency fallback only.")]
+		[Description("Parameters: schema-name, template, package-name (required); caption, description, entity-schema-name, optional-properties (optional); environment-name preferred; uri/login/password emergency fallback only.")]
 		[Required] PageCreateArgs args) {
 		PageCreateOptions options = new() {
 			SchemaName = args.SchemaName,
@@ -33,7 +34,8 @@ public sealed class PageCreateTool(
 			Uri = args.Uri,
 			Login = args.Login,
 			Password = args.Password,
-			CaptionCulture = args.CaptionCulture
+			CaptionCulture = args.CaptionCulture,
+			OptionalProperties = args.OptionalProperties
 		};
 		if (string.IsNullOrWhiteSpace(options.SchemaName)) {
 			return new PageCreateResponse {
@@ -52,7 +54,7 @@ public sealed class PageCreateTool(
 			try {
 				resolvedCommand = ResolveCommand<PageCreateCommand>(options);
 			} catch (Exception ex) {
-				return new PageCreateResponse { Success = false, Error = ex.Message };
+				return new PageCreateResponse { Success = false, Error = SensitiveErrorTextRedactor.Redact(ex.Message) };
 			}
 			resolvedCommand.TryCreatePage(options, out PageCreateResponse response);
 			if (response is { Success: true }) {
@@ -96,22 +98,26 @@ public sealed record PageCreateArgs(
 	string? EntitySchemaName,
 
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Registered clio environment name, e.g. 'local'. Preferred for normal MCP work.")]
+	[property: Description(McpToolDescriptions.EnvironmentName)]
 	string? EnvironmentName,
 
 	[property: JsonPropertyName("uri")]
-	[property: Description("Direct Creatio URL. Use only when bootstrap is broken or before the environment can be registered through reg-web-app.")]
+	[property: Description(McpToolDescriptions.Uri)]
 	string? Uri,
 
 	[property: JsonPropertyName("login")]
-	[property: Description("Direct Creatio login paired with `uri`. Emergency fallback only.")]
+	[property: Description(McpToolDescriptions.Login)]
 	string? Login,
 
 	[property: JsonPropertyName("password")]
-	[property: Description("Direct Creatio password paired with `uri`. Emergency fallback only.")]
+	[property: Description(McpToolDescriptions.Password)]
 	string? Password,
 
 	[property: JsonPropertyName("caption-culture")]
 	[property: Description("Optional culture override for the page caption (e.g. 'en-US', 'uk-UA'). Precedence: caption-culture > detected profile culture > en-US. Skips the profile-culture lookup.")]
-	string? CaptionCulture = null
+	string? CaptionCulture = null,
+
+	[property: JsonPropertyName("optional-properties")]
+	[property: Description("Optional JSON array of {key, value} objects to seed into the new schema optionalProperties, e.g. '[{\"key\":\"DashboardsEntitySchemaName\",\"value\":\"UsrMyEntity\"}]'. Used to create a dashboard (template BaseDashboardTemplate): set DashboardsEntitySchemaName, DashboardsElementName, DashboardsClientUnitSchemaUId — read get-guidance name `dashboard-creation` for how to obtain each value.")]
+	string? OptionalProperties = null
 );

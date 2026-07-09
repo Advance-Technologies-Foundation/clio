@@ -3,6 +3,7 @@ add-data-binding-row:add-data-binding-row
 add-item:add-item,create
 add-package:add-package,ap
 add-package-dependency:add-package-dependency,add-pkg-dependency,add-pkg-dep
+remove-package-dependency:remove-package-dependency,remove-pkg-dependency,remove-pkg-dep
 add-schema:add-schema
 add-user-task:add-user-task
 alm-deploy:alm-deploy,deploy
@@ -106,6 +107,7 @@ link-to-repository:link-to-repository,l2r,link2repo
 listen:listen
 lock-package:lock-package,lp
 manage-windows-features:manage-windows-features,mng-win-features,mwf
+mcp-http:mcp-http
 mcp-server:mcp-server,mcp
 merge-workspaces:merge-workspaces,mergew
 mock-data:mock-data,data-mock

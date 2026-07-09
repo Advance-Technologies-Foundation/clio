@@ -8,6 +8,7 @@
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 		<IsPackable>false</IsPackable>
+		<RunSettingsFilePath>$(MSBuildProjectDirectory)/clio.mcp.e2e.runsettings</RunSettingsFilePath>
 	</PropertyGroup>
 
 	<ItemGroup>

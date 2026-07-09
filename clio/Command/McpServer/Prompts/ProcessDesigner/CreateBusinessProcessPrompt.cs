@@ -22,20 +22,14 @@ public static class CreateBusinessProcessPrompt {
 		[Description("Optional target package name (overrides the descriptor's packageName)")]
 		string packageName = null) =>
 		$"""
-		 Build a business process on Creatio environment `{environmentName}` using the
-		 `create-business-process` tool. Supply a JSON descriptor object with these fields:
-		 - `name` (unique schema code), `caption`, `packageName`{(string.IsNullOrWhiteSpace(packageName) ? "" : $" (override: `{packageName}`)")}
-		 - `elements`: array of items with `name` (the element handle/local code), `type`, `caption`,
-		   optional `userTaskName`; `type` is `startEvent` | `signalStart` | `endEvent` | `userTask`
-		   (aliases `readData`, `performTask`).
-		   For `signalStart` add a `signal` object with `entity` (the object name) and `on` =
-		   `added` | `modified` | `deleted` — the platform-native "run a process when a record is
-		   saved/added/deleted" trigger.
-		 - `flows`: array of `source`/`target` pairs referencing element names (start → tasks → end).
-		 - `parameters`: array of `name`/`type`/`direction`/`caption` (process inputs / variables).
-		 - `mappings`: array binding `elementName` + `elementParameter` to one of
-		   `processParameter` (bind to a process parameter), `value` (constant), or `expression` (formula).
-		 First call `list-user-tasks` for `{environmentName}` to discover valid `userTaskName` values, then
-		 confirm the target package with the user before building.
+		 Build a business process on Creatio environment `{environmentName}` with the `create-business-process` tool.
+		 Steps: (1) call `list-user-tasks` for `{environmentName}` to discover valid `userTaskName` values;
+		 (2) read `get-guidance name=process-modeling` for the full descriptor contract — element types, flows,
+		 parameters (incl. `typeFromElement` to copy an element parameter's exact type, and a constant `value`
+		 default), the `mappings` target/source contract, signal triggers, and the type-compatibility rule;
+		 (3) supply a JSON descriptor with `name`
+		 (unique schema code), `caption`, `packageName`{(string.IsNullOrWhiteSpace(packageName) ? "" : $" (override: `{packageName}`)")} and the `elements` / `flows` / `parameters` / `mappings` arrays.
+		 To run the process when a record is added/changed/deleted, use a `signalStart` element (the platform-native
+		 trigger), not a page save handler. Confirm the target package with the user before building.
 		 """;
 }

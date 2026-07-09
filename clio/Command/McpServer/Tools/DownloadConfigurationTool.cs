@@ -103,7 +103,7 @@ public class DownloadConfigurationTool(
 /// </summary>
 public sealed record DownloadConfigurationByEnvironmentArgs(
 	[property: JsonPropertyName("environment-name")]
-	[Description("Registered clio environment name")]
+	[Description(McpToolDescriptions.EnvironmentName)]
 	[Required]
 	string EnvironmentName,
 

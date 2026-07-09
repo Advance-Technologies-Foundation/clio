@@ -59,7 +59,7 @@ public sealed class PageModificationComponentsGuidanceResource {
 		                   {
 		                       request: "usr.MyClickRequest",
 		                       handler: async (request) => {
-		                           alert("My button clicked");
+		                           // run custom logic here. To show a user-facing message (confirmation/info), dispatch crt.ShowDialogRequest - see page-schema-handlers. NEVER use alert()/window.alert()/confirm()/prompt().
 		                           return request.next?.handle(request);
 		                       }
 		                   }
@@ -75,6 +75,7 @@ public sealed class PageModificationComponentsGuidanceResource {
 		       - Every `viewConfigDiff` entry whose `values.clicked.request` is `usr.*` (or any custom namespace) MUST have a matching `handler` entry with the same `request` string.
 		       - Always end custom handlers with `return request.next?.handle(request);` to propagate to the default pipeline. Omitting it breaks page lifecycle events.
 		       - Built-in requests (`crt.*`) already have default handlers — don't duplicate them unless you intend to override.
+		       - To show a user-facing message (confirmation/info/success/error) from a handler, dispatch `crt.ShowDialogRequest` (message/actions under `dialogConfig.data`); this needs `@creatio-devkit/common` in `SCHEMA_DEPS` and the `sdk` alias in `SCHEMA_ARGS` (see `page-schema-handlers`). NEVER use `alert(...)`, `window.alert(...)`, `confirm(...)`, or `prompt(...)`.
 		       (For non-trivial handler logic — business orchestration, SDK service calls, attribute-change handling — read `page-schema-handlers`.)
 
 		       Rules for viewConfigDiff

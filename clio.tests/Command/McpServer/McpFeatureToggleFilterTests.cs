@@ -157,8 +157,8 @@ public sealed class McpFeatureToggleFilterTests
 
 	[Test]
 	[Category("Unit")]
-	[Description("With no gating, the shared production registration seam registers the same MCP tool/resource/prompt primitives as the SDK's own *FromAssembly scanners.")]
-	public void RegisterEnabledPrimitives_ShouldRegisterSamePrimitivesAsSdkFromAssemblyScan_WhenNothingGated() {
+	[Description("The shared production registration seam matches the SDK's *FromAssembly scanners for resources/prompts and registers a non-empty lazy SUBSET of tools via the correct IEnumerable<Type> overload (never the zero-registering generic overload).")]
+	public void RegisterEnabledPrimitives_ShouldMatchSdkResourcesPromptsAndRegisterLazyToolSubset_WhenNothingGated() {
 		// This is intentionally NOT a re-implementation of the helper's own enumeration rule (that would
 		// only prove self-consistency), and it exercises the EXACT production registration path: the same
 		// McpFeatureToggleFilter.RegisterEnabledPrimitives seam BindingsModule calls. That matters because
@@ -205,8 +205,10 @@ public sealed class McpFeatureToggleFilterTests
 			because: "the clio assembly ships MCP resources, so the SDK baseline must register a non-empty resource set");
 		sdkPromptCount.Should().BeGreaterThan(0,
 			because: "the clio assembly ships MCP prompts, so the SDK baseline must register a non-empty prompt set");
-		productionToolCount.Should().Be(sdkToolCount,
-			because: "with nothing gated, the production registration seam must register the same MCP tools the SDK's own from-assembly scanner does");
+		productionToolCount.Should().BeGreaterThan(0,
+			because: "the production seam must use the IEnumerable<Type> SDK overload — a Type[] would bind to the generic With*<T> overload and register zero tools");
+		productionToolCount.Should().BeLessThan(sdkToolCount,
+			because: "the production tool surface is the lazy profile, a strict subset of the SDK's full from-assembly tool scan");
 		productionResourceCount.Should().Be(sdkResourceCount,
 			because: "with nothing gated, the production registration seam must register the same MCP resources the SDK's own from-assembly scanner does");
 		productionPromptCount.Should().Be(sdkPromptCount,

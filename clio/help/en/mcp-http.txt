@@ -1,0 +1,62 @@
+COMMAND TYPE
+    AI integration commands
+
+NAME
+    mcp-http - start MCP server in HTTP transport mode
+
+DESCRIPTION
+    Starts a Model Context Protocol (MCP) server that communicates over
+    HTTP using the Streamable HTTP transport (JSON-RPC 2.0 over POST).
+    This server exposes the same clio tools available in stdio mode to
+    AI agents and platforms that connect over HTTP.
+
+    The server runs until the process is terminated (Ctrl+C or SIGTERM).
+
+PREREQUISITES
+    mcp-http hosts the MCP endpoint on ASP.NET Core, so clio requires the
+    ASP.NET Core shared runtime (Microsoft.AspNetCore.App) in addition to the
+    base .NET runtime. The .NET SDK bundles it; runtime-only installs that ship
+    only Microsoft.NETCore.App are not supported.
+
+SECURITY
+    The HTTP transport validates the Host header (restricted to the bound host)
+    and the Origin header (restricted to the bound host / loopback) to prevent
+    DNS-rebinding and cross-origin abuse; disallowed requests are rejected with
+    HTTP 400 / 403. Native MCP clients send no Origin header and are unaffected.
+    There is no built-in authentication — use --host 0.0.0.0 only on trusted
+    networks.
+
+OPTIONS
+    --port <port>
+        Port to listen on.
+        Default: 8005
+
+    --host <host>
+        Host address to bind to.
+        Default: 127.0.0.1
+
+    --path <path>
+        MCP endpoint path.
+        Default: /mcp
+
+EXAMPLES
+    Start with default settings (port 8005, localhost):
+        clio mcp-http
+
+    Start on a custom port:
+        clio mcp-http --port 9000
+
+    Listen on all network interfaces (no authentication — use only on trusted networks):
+        clio mcp-http --host 0.0.0.0
+
+    Custom endpoint path:
+        clio mcp-http --path /api/mcp
+
+ENVIRONMENT VARIABLES
+    CLIO_MCP_RESPECT_AMBIENT_PROXY
+        When set to "true" or "1", the HTTP MCP server does NOT neutralize
+        ambient proxy environment variables. Default behavior (absent or
+        any other value) bypasses all inherited proxies.
+
+SEE ALSO
+    mcp-server    Start MCP server in stdio mode

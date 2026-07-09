@@ -56,7 +56,8 @@ public class PageToolsTests
 		PageCreateArgs args = new(
 			"UsrDemo_BlankPage", "BlankPageTemplate", "Custom",
 			"Demo page", "Demo description", "UsrDemoEntity",
-			"sandbox", null, null, null);
+			"sandbox", null, null, null,
+			OptionalProperties: """[{"key":"DashboardsEntitySchemaName","value":"Contact"}]""");
 
 		string json = System.Text.Json.JsonSerializer.Serialize(args);
 
@@ -65,8 +66,10 @@ public class PageToolsTests
 		json.Should().Contain("\"package-name\":\"Custom\"");
 		json.Should().Contain("\"entity-schema-name\":\"UsrDemoEntity\"");
 		json.Should().Contain("\"environment-name\":\"sandbox\"");
+		json.Should().Contain("\"optional-properties\"");
 		json.Should().NotContain("\"schemaName\"");
 		json.Should().NotContain("\"packageName\"");
+		json.Should().NotContain("\"optionalProperties\":");
 		json.Should().NotContain("\"dry-run\"");
 		json.Should().NotContain("\"dryRun\"");
 	}
@@ -318,7 +321,7 @@ public class PageToolsTests
 	}
 
 	[Test]
-	[Description("get-page tool description routes callers to the canonical validator guide so they read it before authoring validators.")]
+	[Description("get-page tool description routes callers to the page-modification guide (whose pre-edit checklist owns the specialized handler/validator/lookup-routing rules) before they edit the body.")]
 	public void PageGetTool_Description_Should_Contain_Validator_Binding_Location_Guidance() {
 		// Arrange
 		var method = typeof(PageGetTool).GetMethod(nameof(PageGetTool.GetPage))!;
@@ -330,24 +333,16 @@ public class PageToolsTests
 		string description = descAttr.Description;
 
 		// Assert
-		description.Should().Contain("SCHEMA_HANDLERS",
-			because: "get-page description should surface the handler section name so callers know which guide to read before editing");
-		description.Should().Contain("call get-guidance with name `page-schema-handlers`",
-			because: "get-page description should route callers to the dedicated handler guide through get-guidance");
-		description.Should().Contain("SCHEMA_VALIDATORS",
-			because: "get-page description should surface the section name so callers know which guide to read before editing");
-		description.Should().Contain("call get-guidance with name `page-schema-validators`",
-			because: "get-page description should route callers to the dedicated validator guide through get-guidance");
-		description.Should().Contain("get-guidance with name `page-modification`",
-			because: "get-page description should route callers to the general page modification guide before body edits");
+		description.Should().Contain("get-guidance `page-modification`",
+			because: "get-page description should route callers to the general page modification guide before body edits (the detailed handler/validator/lookup routing now lives in that guide's pre-edit checklist, not inline)");
 		description.Should().Contain("pre-edit checklist",
-			because: "get-page description should leave specialized guide selection to the general page modification guide");
+			because: "get-page description should defer specialized guide selection to the page-modification pre-edit checklist instead of duplicating it inline");
+		description.Should().Contain("mobile-page-modification",
+			because: "get-page description must still route mobile pages to the mobile-specific guide");
 		description.Should().NotContain("page-schema-resources",
 			because: "get-page should point at the general page-modification router instead of a localizable-string leaf guide");
-		description.Should().Contain("classify the mechanism, not the wording",
-			because: "get-page must teach lookup-restriction routing by constraint mechanism, not by memorized business phrases");
-		description.Should().Contain("not crt.InitRequest",
-			because: "get-page handler routing must carve out lookup record-set restriction so no constraint mechanism misroutes to crt.InitRequest");
+		description.Should().NotContain("crt.InitRequest",
+			because: "the verbose lookup-vs-handler routing prose is moved into the page-modification guide GATE table — it must not be re-inlined on get-page");
 	}
 
 	[Test]
@@ -378,7 +373,7 @@ public class PageToolsTests
 	}
 
 	[Test]
-	[Description("update-page tool description routes validator authoring to the dedicated guidance resource instead of duplicating validator rules inline.")]
+	[Description("update-page tool description routes page-body authoring to the page-modification guide instead of duplicating section rules inline, while keeping its load-bearing conflict-detection and Designer Presence behaviour.")]
 	public void PageUpdateTool_Description_Should_Contain_Validator_Section_Authoring_Rules() {
 		// Arrange
 		var method = typeof(PageUpdateTool).GetMethod(nameof(PageUpdateTool.UpdatePage))!;
@@ -390,32 +385,20 @@ public class PageToolsTests
 		string description = descAttr.Description;
 
 		// Assert
-		description.Should().Contain("SCHEMA_HANDLERS",
-			because: "update-page description should surface the handler section name as part of body authoring rules");
-		description.Should().Contain("call get-guidance with name `page-schema-handlers` first",
-			because: "update-page description should make handler guidance a mandatory precondition before handler authoring");
+		description.Should().Contain("get-guidance `page-modification`",
+			because: "update-page description should route page-body edits through the general page modification guide (the per-section handler/validator/converter routing now lives in that guide's pre-edit checklist, not inline)");
+		description.Should().Contain("pre-edit checklist",
+			because: "update-page description should defer specialized guide selection to the page-modification pre-edit checklist instead of duplicating it inline");
 		description.Should().Contain("Designer Presence",
 			because: "update-page should disclose the best-effort live designer notification behaviour in its MCP description");
-		description.Should().Contain("forms-auth",
-			because: "update-page should disclose the forms-auth prerequisite for the live notification path");
-		description.Should().Contain("SCHEMA_VALIDATORS",
-			because: "update-page description should surface the validator section name as part of body authoring rules");
-		description.Should().Contain("call get-guidance with name `page-schema-validators` first",
-			because: "update-page description should make validator guidance a mandatory precondition before validator authoring");
-		description.Should().Contain("call get-guidance with name `page-modification`",
-			because: "update-page description should route broad page edits through the general page modification guide");
-		description.Should().Contain("page-schema-resources",
-			because: "update-page must surface the resources guidance trigger inline because routing through page-modification alone was empirically insufficient \u2014 agents skipped the leaf guide when adding localizable strings");
-		description.Should().Contain("$Resources.Strings.*",
-			because: "update-page description should expose the syntactic trigger ($Resources.Strings.*) so agents can detect resource-related edits without semantic classification");
-		description.Should().Contain("`#ResourceString(",
-			because: "update-page description should expose the macro syntactic trigger (#ResourceString(...)#) alongside the binding trigger");
-		description.Should().Contain("do NOT register localizable strings",
-			because: "update-page description should inline a directive forbidding speculative resource registration before the guidance has been read");
-		description.Should().Contain("classify the mechanism, not the wording",
-			because: "update-page must teach lookup-restriction routing by constraint mechanism, not by memorized business phrases");
-		description.Should().Contain("not crt.InitRequest",
-			because: "update-page handler routing must carve out lookup record-set restriction so no constraint mechanism misroutes to crt.InitRequest");
+		description.Should().Contain("CONFLICT DETECTION",
+			because: "update-page must keep the checksum-baseline conflict-detection contract in its description \u2014 it is behaviour, not duplicated guidance");
+		description.Should().Contain("force=true",
+			because: "update-page must keep the explicit conflict-override instruction so a model does not blindly retry the same body");
+		description.Should().Contain("INSERTED-FIELD CONTRACT",
+			because: "update-page must keep the inserted-field contract summary, which is the authoritative write-time contract reused across tools");
+		description.Should().Contain("`run-process-button`",
+			because: "update-page should still name the run-process-button guide so process-button work resolves codes via get-process-signature first");
 	}
 
 	[Test]
@@ -662,6 +645,8 @@ public class PageToolsTests
 		var command = new PageListCommand(applicationClient, serviceUrlBuilder, logger);
 		var options = new PageListOptions { PackageName = "MyPackage", Limit = 50 };
 		command.TryListPages(options, out PageListResponse response);
+		// The data query returns zero rows (count 0 < limit 50), so the page is provably complete and
+		// the supplementary count round-trip is skipped — only the single data query carries the filter.
 		applicationClient.Received(1).ExecutePostRequest(
 			Arg.Any<string>(),
 			Arg.Is<string>(body => body.Contains("SysPackage.Name") && body.Contains("MyPackage")),
@@ -709,6 +694,8 @@ public class PageToolsTests
 		response.Success.Should().BeTrue("because the page query succeeded after package resolution");
 		response.Pages.Should().ContainSingle("because one page row was returned");
 		response.Pages[0].SchemaName.Should().Be("UsrTodo_FormPage");
+		// app lookup + GetApplicationPackages + the single page data query = 3 calls. The page returns
+		// one row (1 < limit 50), so it is provably complete and the supplementary count query is skipped.
 		applicationClient.Received(3).ExecutePostRequest(
 			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 		applicationClient.Received(1).ExecutePostRequest(
@@ -774,6 +761,290 @@ public class PageToolsTests
 		result.Should().BeFalse("because an exception occurred during execution");
 		response.Success.Should().BeFalse("because the operation failed with an exception");
 		response.Error.Should().Be("Connection refused", "because the exception message should be propagated");
+	}
+
+	[Test]
+	[Description("TryListPages reports total and truncated=true when the full match count exceeds the returned page")]
+	public void TryListPages_WhenMoreMatchesThanLimit_ReportsTotalAndTruncated() {
+		// Arrange — the data query returns a capped page; the follow-up count query reports the full total
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns("http://test/url");
+		var dataResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray {
+				new JObject { ["Name"] = "Page1", ["UId"] = "uid-1", ["PackageName"] = "Pkg", ["ParentSchemaName"] = "BasePage" },
+				new JObject { ["Name"] = "Page2", ["UId"] = "uid-2", ["PackageName"] = "Pkg", ["ParentSchemaName"] = "BasePage" }
+			}
+		};
+		var countResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray { new JObject { ["RecordCount"] = 3232 } }
+		};
+		applicationClient.ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(dataResponse.ToString(), countResponse.ToString());
+		var command = new PageListCommand(applicationClient, serviceUrlBuilder, logger);
+		var options = new PageListOptions { Limit = 2 };
+
+		// Act
+		bool result = command.TryListPages(options, out PageListResponse response);
+
+		// Assert
+		result.Should().BeTrue("because the listing query itself succeeded");
+		response.Count.Should().Be(2, "because the capped page returned two rows");
+		response.Total.Should().Be(3232, "because the count query reports the full number of matching pages");
+		response.Truncated.Should().BeTrue(
+			"because total exceeds count, so a caller must be able to detect the result is incomplete");
+	}
+
+	[Test]
+	[Description("TryListPages reports truncated=false when the full match count equals the returned count")]
+	public void TryListPages_WhenAllMatchesReturned_ReportsNotTruncated() {
+		// Arrange
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns("http://test/url");
+		var dataResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray {
+				new JObject { ["Name"] = "Page1", ["UId"] = "uid-1", ["PackageName"] = "Pkg", ["ParentSchemaName"] = "BasePage" }
+			}
+		};
+		var countResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray { new JObject { ["RecordCount"] = 1 } }
+		};
+		applicationClient.ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(dataResponse.ToString(), countResponse.ToString());
+		var command = new PageListCommand(applicationClient, serviceUrlBuilder, logger);
+		var options = new PageListOptions { Limit = 50 };
+
+		// Act
+		bool result = command.TryListPages(options, out PageListResponse response);
+
+		// Assert
+		result.Should().BeTrue("because the listing query succeeded");
+		response.Count.Should().Be(1, "because a single page matched");
+		response.Total.Should().Be(1, "because the count query confirms only one page matches");
+		response.Truncated.Should().BeFalse(
+			"because total equals count, so the result is complete");
+	}
+
+	[Test]
+	[Description("TryListPages issues the supplementary count query and reports truncated=true only when the page is capped (count == effectiveLimit) and the count succeeds")]
+	public void TryListPages_WhenPageIsCappedAndCountSucceeds_ReportsTotalAndTruncated() {
+		// Arrange — Limit equals the row count, so the page is provably capped and the count query runs
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns("http://test/url");
+		var dataResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray {
+				new JObject { ["Name"] = "Page1", ["UId"] = "uid-1", ["PackageName"] = "Pkg", ["ParentSchemaName"] = "BasePage" },
+				new JObject { ["Name"] = "Page2", ["UId"] = "uid-2", ["PackageName"] = "Pkg", ["ParentSchemaName"] = "BasePage" }
+			}
+		};
+		var countResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray { new JObject { ["RecordCount"] = 42 } }
+		};
+		applicationClient.ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(dataResponse.ToString(), countResponse.ToString());
+		var command = new PageListCommand(applicationClient, serviceUrlBuilder, logger);
+		var options = new PageListOptions { Limit = 2 };
+
+		// Act
+		bool result = command.TryListPages(options, out PageListResponse response);
+
+		// Assert
+		result.Should().BeTrue("because the capped listing query itself succeeded");
+		response.Total.Should().Be(42, "because the count query reports the full number of matching pages");
+		response.Truncated.Should().BeTrue(
+			"because the page was capped and the count proves more pages match than were returned");
+		applicationClient.Received(2).ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("TryListPages skips the supplementary count round-trip when the page is provably complete (count < effectiveLimit) and reports truncated=false")]
+	public void TryListPages_WhenPageIsNotCapped_SkipsCountQueryAndReportsNotTruncated() {
+		// Arrange — only one row returned for a limit of 50, so the result is provably complete
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns("http://test/url");
+		var dataResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray {
+				new JObject { ["Name"] = "Page1", ["UId"] = "uid-1", ["PackageName"] = "Pkg", ["ParentSchemaName"] = "BasePage" }
+			}
+		};
+		applicationClient.ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(dataResponse.ToString());
+		var command = new PageListCommand(applicationClient, serviceUrlBuilder, logger);
+		var options = new PageListOptions { Limit = 50 };
+
+		// Act
+		bool result = command.TryListPages(options, out PageListResponse response);
+
+		// Assert
+		result.Should().BeTrue("because the listing query succeeded");
+		response.Total.Should().Be(1, "because a short page is complete, so total equals the returned count");
+		response.Truncated.Should().BeFalse("because a page shorter than the limit cannot be truncated");
+		applicationClient.Received(1).ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("TryListPages reports truncated=true when the page is capped but the supplementary count query returns success:false, because completeness is unprovable on a capped page")]
+	public void TryListPages_WhenPageIsCappedAndCountReturnsUnsuccessful_ReportsTruncated() {
+		// Arrange — capped page, count query responds success:false
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns("http://test/url");
+		var dataResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray {
+				new JObject { ["Name"] = "Page1", ["UId"] = "uid-1", ["PackageName"] = "Pkg", ["ParentSchemaName"] = "BasePage" }
+			}
+		};
+		var countResponse = new JObject { ["success"] = false };
+		applicationClient.ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(dataResponse.ToString(), countResponse.ToString());
+		var command = new PageListCommand(applicationClient, serviceUrlBuilder, logger);
+		var options = new PageListOptions { Limit = 1 };
+
+		// Act
+		bool result = command.TryListPages(options, out PageListResponse response);
+
+		// Assert
+		result.Should().BeTrue("because the data query succeeded even though the count query failed");
+		response.Total.Should().Be(1, "because a failed count falls back to the returned count");
+		response.Truncated.Should().BeTrue(
+			"because a capped page whose count cannot be confirmed must be reported as possibly incomplete");
+	}
+
+	[Test]
+	[Description("TryListPages reports truncated=true when the page is capped but the supplementary count query returns malformed JSON, because completeness is unprovable on a capped page")]
+	public void TryListPages_WhenPageIsCappedAndCountReturnsMalformedJson_ReportsTruncated() {
+		// Arrange — capped page, count query responds with unparseable JSON (JsonException branch)
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns("http://test/url");
+		var dataResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray {
+				new JObject { ["Name"] = "Page1", ["UId"] = "uid-1", ["PackageName"] = "Pkg", ["ParentSchemaName"] = "BasePage" }
+			}
+		};
+		applicationClient.ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(dataResponse.ToString(), "{ this is not valid json ");
+		var command = new PageListCommand(applicationClient, serviceUrlBuilder, logger);
+		var options = new PageListOptions { Limit = 1 };
+
+		// Act
+		bool result = command.TryListPages(options, out PageListResponse response);
+
+		// Assert
+		result.Should().BeTrue("because the malformed count body must never fail the whole listing");
+		response.Total.Should().Be(1, "because an unparseable count falls back to the returned count");
+		response.Truncated.Should().BeTrue(
+			"because a capped page whose count could not be parsed must be reported as possibly incomplete");
+	}
+
+	[Test]
+	[Description("TryListPages rejects a negative limit instead of disabling the cap and returning every page")]
+	public void TryListPages_WhenLimitNegative_ReturnsFailureWithoutQuerying() {
+		// Arrange
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		var command = new PageListCommand(applicationClient, serviceUrlBuilder, logger);
+		var options = new PageListOptions { Limit = -5 };
+
+		// Act
+		bool result = command.TryListPages(options, out PageListResponse response);
+
+		// Assert
+		result.Should().BeFalse("because a negative limit is invalid and must not run an unbounded query");
+		response.Success.Should().BeFalse("because the negative limit is rejected before any request");
+		response.Error.Should().Contain("limit must be zero or greater",
+			because: "the failure should explain why the negative limit was rejected");
+		applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!, default, default, default);
+	}
+
+	[Test]
+	[Description("TryListPages treats limit=0 as 'use the default' and sends the default rowCount to the server")]
+	public void TryListPages_WhenLimitZero_UsesDefaultRowCount() {
+		// Arrange
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns("http://test/url");
+		var dataResponse = new JObject { ["success"] = true, ["rows"] = new JArray() };
+		applicationClient.ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(dataResponse.ToString());
+		var command = new PageListCommand(applicationClient, serviceUrlBuilder, logger);
+		var options = new PageListOptions { Limit = 0 };
+
+		// Act
+		bool result = command.TryListPages(options, out PageListResponse response);
+
+		// Assert
+		result.Should().BeTrue("because limit=0 is a valid request that falls back to the default cap");
+		response.Success.Should().BeTrue("because the default-capped query succeeded");
+		applicationClient.Received(1).ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rowCount\":50")),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("TryListPages honors a small valid limit and sends it as the server rowCount")]
+	public void TryListPages_WhenSmallValidLimit_SendsThatRowCount() {
+		// Arrange
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns("http://test/url");
+		var dataResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray {
+				new JObject { ["Name"] = "Page1", ["UId"] = "uid-1", ["PackageName"] = "Pkg", ["ParentSchemaName"] = "BasePage" }
+			}
+		};
+		var countResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray { new JObject { ["RecordCount"] = 1 } }
+		};
+		applicationClient.ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(dataResponse.ToString(), countResponse.ToString());
+		var command = new PageListCommand(applicationClient, serviceUrlBuilder, logger);
+		var options = new PageListOptions { Limit = 5 };
+
+		// Act
+		bool result = command.TryListPages(options, out PageListResponse response);
+
+		// Assert
+		result.Should().BeTrue("because a small valid limit is honored");
+		response.Count.Should().Be(1, "because one row was returned");
+		applicationClient.Received(1).ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rowCount\":5")),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
 	[Test]
@@ -3234,6 +3505,77 @@ public class PageToolsTests
 				because: "the designer sends inherited template localizable strings on first save");
 		savedDto["body"].ToString().Should().Be(validBody,
 			because: "the body passed to update-page must be written into the new replacing schema DTO");
+	}
+
+	[Test]
+	[Description("TryUpdatePage materializes the parent schema caption onto a newly created replacing schema so its runtime title is not lost")]
+	public void TryUpdatePage_WhenCreatingReplacing_PreservesParentCaption() {
+		// Arrange
+		var applicationClient = Substitute.For<IApplicationClient>();
+		var serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		var logger = Substitute.For<ILogger>();
+		var hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		const string originalUId = "f537fd79-9bdc-43ea-a9ce-b068c29d0b22";
+		const string originalPackageUId = "2ecba2bd-b810-47a5-a1b1-08c888529d6c";
+		const string virtualDesignPackageUId = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(ci => "http://test" + ci.ArgAt<string>(0));
+		hierarchyClient.GetDesignPackageUId(originalUId).Returns(virtualDesignPackageUId);
+		hierarchyClient.GetParentSchemas(originalUId, virtualDesignPackageUId).Returns(new List<PageDesignerHierarchySchema> {
+			new() { UId = originalUId, Name = "Accounts_ListPage", PackageUId = originalPackageUId, PackageName = "CrtCustomer360App" }
+		});
+		string validBody = "define(\"Accounts_ListPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		var parentCaption = new JArray {
+			new JObject { ["cultureName"] = "en-US", ["value"] = "Accounts list" },
+			new JObject { ["cultureName"] = "uk-UA", ["value"] = "Список контрагентів" }
+		};
+		var metadataResponse = new JObject {
+			["success"] = true,
+			["rows"] = new JArray { new JObject { ["UId"] = originalUId } }
+		};
+		var getSchemaResponse = new JObject {
+			["success"] = true,
+			["schema"] = new JObject {
+				["uId"] = originalUId,
+				["name"] = "Accounts_ListPage",
+				["schemaType"] = 9,
+				["schemaVersion"] = 1,
+				["body"] = "original body",
+				["caption"] = parentCaption.DeepClone(),
+				["localizableStrings"] = new JArray(),
+				["package"] = new JObject { ["uId"] = originalPackageUId, ["name"] = "CrtCustomer360App" },
+				["parent"] = new JObject { ["uId"] = "b7b898d0-8c77-4953-c097-23fa6800da02", ["name"] = "ListPageV3Template" },
+				["isReadOnly"] = true,
+				["optionalProperties"] = new JArray()
+			}
+		};
+		var saveResponse = new JObject { ["success"] = true };
+		var noRowsResponse = new JObject { ["success"] = true, ["rows"] = new JArray() };
+		string lastSavePayload = null;
+		int callIndex = 0;
+		applicationClient.ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(ci => {
+				callIndex++;
+				if (callIndex == 1) return metadataResponse.ToString();
+				if (callIndex == 2) return noRowsResponse.ToString();
+				if (callIndex == 3) return getSchemaResponse.ToString();
+				if (callIndex == 4) { lastSavePayload = ci.ArgAt<string>(1); return saveResponse.ToString(); }
+				return new JObject { ["success"] = true }.ToString();
+			});
+
+		// Act
+		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), hierarchyClient);
+		bool ok = command.TryUpdatePage(new PageUpdateOptions { SchemaName = "Accounts_ListPage", Body = validBody, DryRun = false }, out PageUpdateResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: "the create-replacing save should succeed; error: " + response.Error);
+		var savedDto = JObject.Parse(lastSavePayload);
+		savedDto["extendParent"].Value<bool>().Should().BeTrue(
+			because: "a create-replacing DTO must extend its parent");
+		savedDto["caption"].Should().NotBeNull(
+			because: "the replacing schema must carry a caption so its runtime title (e.g. a dashboard tab) is not lost");
+		JToken.DeepEquals(savedDto["caption"], parentCaption).Should().BeTrue(
+			because: "the parent schema caption must be materialized verbatim onto the replacing schema, mirroring the platform designer and CreateDesignSchema");
 	}
 
 	[Test]

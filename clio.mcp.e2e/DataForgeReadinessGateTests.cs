@@ -202,4 +202,49 @@ public sealed class DataForgeReadinessGateTests {
 		result.Should().BeTrue(
 			because: "once the deadline is passed the gate must fail the DataForge tests gracefully rather than continue polling");
 	}
+
+	private static DataForgeMaintenanceResponse MaintenanceResponse(bool success) =>
+		new(success, "test", string.Empty, [], null, new DataForgeMaintenanceStatusResult(success, "Scheduled", null));
+
+	[Test]
+	[Description("Reports initialization as accepted when dataforge-initialize returned a successful structured maintenance payload, so the readiness poll may run.")]
+	public void WasInitializationAccepted_ShouldReturnTrue_WhenInitializeSucceeded() {
+		// Arrange
+		DataForgeMaintenanceResponse response = MaintenanceResponse(success: true);
+
+		// Act
+		bool result = DataForgeReadinessGate.WasInitializationAccepted(response);
+
+		// Assert
+		result.Should().BeTrue(
+			because: "an accepted (Success=true) initialize schedules maintenance work, so the gate should proceed to poll for readiness");
+	}
+
+	[Test]
+	[Description("Reports initialization as not accepted when dataforge-initialize returned a structured Success=false payload, so the gate should not poll and the per-read guard decides skip-vs-fail.")]
+	public void WasInitializationAccepted_ShouldReturnFalse_WhenInitializeReportedFailure() {
+		// Arrange
+		DataForgeMaintenanceResponse response = MaintenanceResponse(success: false);
+
+		// Act
+		bool result = DataForgeReadinessGate.WasInitializationAccepted(response);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "a Success=false initialize means the stand is not wired to a DataForge tier, an environment precondition rather than an accepted warm-up");
+	}
+
+	[Test]
+	[Description("Reports initialization as not accepted when no dataforge-initialize payload was returned (unreadable or timed-out call).")]
+	public void WasInitializationAccepted_ShouldReturnFalse_WhenResponseIsNull() {
+		// Arrange
+		DataForgeMaintenanceResponse? response = null;
+
+		// Act
+		bool result = DataForgeReadinessGate.WasInitializationAccepted(response);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "the absence of an initialize payload must be treated as not-accepted rather than assuming the warm-up started");
+	}
 }

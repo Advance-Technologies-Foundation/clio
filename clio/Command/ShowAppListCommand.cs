@@ -65,12 +65,55 @@ public class AppListOptions{
 	[Option("raw", Required = false, HelpText = "Raw output (no formatting) - shorthand for --format raw")]
 	public bool Raw { get; set; }
 
+	[Option("json", Required = false, HelpText =
+		"Emit the unified command envelope {schemaVersion, ok, command, data, error}. Takes precedence " +
+		"over --format; sensitive fields are masked. Without --json the legacy --format paths are unchanged.")]
+	public bool? Json { get; set; }
+
 	#endregion
 }
 
-public class ShowAppListCommand(ISettingsRepository settingsRepository, ILogger logger) : Command<AppListOptions>{
+public class ShowAppListCommand(ISettingsRepository settingsRepository, ILogger logger,
+	IJsonResponseFormater jsonResponseFormater) : Command<AppListOptions>{
+
+	#region Constants: Private
+
+	/// <summary>Canonical kebab-case command name, emitted in the unified <c>--json</c> envelope.</summary>
+	private const string ListEnvironmentsCommandName = "list-environments";
+
+	#endregion
 
 	#region Methods: Private
+
+	/// <summary>
+	///     Emits the unified BL-1 <c>--json</c> envelope through <see cref="ILogger"/> (never directly to
+	///     <c>Console.Out</c>), with sensitive fields masked. Takes precedence over <c>--format</c>.
+	/// </summary>
+	private int ExecuteJson(AppListOptions options) {
+		string environmentName = string.IsNullOrEmpty(options.Name) ? options.Env : options.Name;
+		if (!string.IsNullOrEmpty(environmentName)) {
+			EnvironmentSettings environment = settingsRepository.FindEnvironment(environmentName);
+			if (environment == null) {
+				logger.WriteLine(jsonResponseFormater.FormatEnvelope(ListEnvironmentsCommandName,
+					CommandErrorCodes.EnvironmentNotFound, $"Environment '{environmentName}' not found"));
+				return CommandErrorCodes.ToExitCode(CommandErrorCodes.EnvironmentNotFound);
+			}
+			string actualEnvironmentName = settingsRepository.GetActualEnvironmentName(environmentName) ?? environmentName;
+			ShowWebAppSettingsResult data = BuildEnvironmentResult(environment, actualEnvironmentName, maskSensitiveData: true);
+			logger.WriteLine(jsonResponseFormater.FormatEnvelope(ListEnvironmentsCommandName, data));
+			return 0;
+		}
+
+		IReadOnlyList<ShowWebAppSettingsResult> allEnvironments = GetAllWebAppSettings(maskSensitiveData: true);
+		if (allEnvironments == null || allEnvironments.Count == 0) {
+			logger.WriteLine(jsonResponseFormater.FormatEnvelope(ListEnvironmentsCommandName,
+				CommandErrorCodes.NoEnvironmentsRegistered,
+				"No environments registered. Run 'clio reg-web-app' to add one."));
+			return CommandErrorCodes.ToExitCode(CommandErrorCodes.NoEnvironmentsRegistered);
+		}
+		logger.WriteLine(jsonResponseFormater.FormatEnvelope(ListEnvironmentsCommandName, allEnvironments));
+		return 0;
+	}
 
 	/// <summary>
 	///     Get all environments using a reflection pattern (similar to StartCommand/StopCommand)
@@ -258,6 +301,12 @@ public class ShowAppListCommand(ISettingsRepository settingsRepository, ILogger 
 #pragma warning disable CLIO002
 			Console.OutputEncoding = Encoding.UTF8;
 #pragma warning restore CLIO002
+
+			// --json emits the unified envelope through ILogger and takes precedence over the legacy
+			// --format paths. Without --json, behavior below is unchanged (byte-for-byte).
+			if (options.Json == true) {
+				return ExecuteJson(options);
+			}
 
 			string format = options.Raw ? "raw" : options.Format ?? "json";
 			string environmentName = string.IsNullOrEmpty(options.Name) ? options.Env : options.Name;

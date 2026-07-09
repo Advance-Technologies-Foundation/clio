@@ -469,24 +469,27 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		         | `crt.CloseSidebarRequest` | config | `containerName?` | direct request |
 		         | `crt.GetSidebarStateRequest` | config | `sidebarCode` | direct request |
 		       - Dialog and special cases:
+		       - To show ANY user-facing message from a handler - a short confirmation, info, success, or error popup such as "Approved." or "Saved." - dispatch `crt.ShowDialogRequest` (shape below). "just show a short confirmation message" is a `crt.ShowDialogRequest`, NOT a browser dialog. This needs `@creatio-devkit/common` in `SCHEMA_DEPS` and the `sdk` alias in `SCHEMA_ARGS`. NEVER use `alert(...)`, `window.alert(...)`, `confirm(...)`, or `prompt(...)`: they are raw browser primitives, not the Freedom UI dialog, and are not acceptable in deployed page-body handlers.
 		         | User-visible name | Source reality | Params | Notes |
 		         | --- | --- | --- | --- |
-		         | `crt.ShowDialog` | source request is `crt.ShowDialogRequest`, handled by `crt.ShowDialogHandler` | `dialogConfig` with `message`, `actions`, optional `title` | in code author `type: "crt.ShowDialogRequest"`; `crt.ShowDialog` is the user-visible catalog label |
-		       - Minimal `dialogConfig` shape:
+		         | `crt.ShowDialog` | source request is `crt.ShowDialogRequest`, handled by `crt.ShowDialogHandler` | `dialogConfig.data` with `message`, `actions`, optional `title` | in code author `type: "crt.ShowDialogRequest"`; `crt.ShowDialog` is the user-visible catalog label |
+		       - Minimal `dialogConfig` shape - `message`, `actions`, and `title` go under `dialogConfig.data`, NOT directly on `dialogConfig` (it is a `MessageDialogConfig`; the platform renders `dialogConfig.data.message` / `dialogConfig.data.actions`). Placing them on `dialogConfig` directly opens an empty dialog with only the default OK button:
 		         await sdk.HandlerChainService.instance.process({
 		           type: "crt.ShowDialogRequest",
 		           dialogConfig: {
-		             title: "<OptionalTitle>",
-		             message: "<MessageText>",
-		             actions: [
-		               {
-		                 key: "ok",
-		                 config: {
-		                   color: "primary",
-		                   caption: "OK"
+		             data: {
+		               title: "<OptionalTitle>",
+		               message: "<MessageText>",
+		               actions: [
+		                 {
+		                   key: "ok",
+		                   config: {
+		                     color: "primary",
+		                     caption: "OK"
+		                   }
 		                 }
-		               }
-		             ]
+		               ]
+		             }
 		           },
 		           $context: request.$context,
 		           scopes: [...request.scopes]
@@ -507,6 +510,7 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		       - Do NOT choose raw `fetch(...)` to a platform endpoint before checking `page-schema-creatio-devkit-common` for a canonical `crt.*Request`, SDK service, or `sdk.Model` pattern.
 		       - Do NOT invent placeholder SDK services such as `<Service>.subscribe(...)`; when SDK-based subscriptions are required, use a concrete service such as `sdk.MessageChannelService` and keep `SCHEMA_DEPS` / `SCHEMA_ARGS` aligned.
 		       - Do NOT write `type: "crt.ShowDialog"` in imperative request code; use `type: "crt.ShowDialogRequest"`.
+		       - Do NOT use `alert(...)`, `window.alert(...)`, `confirm(...)`, or `prompt(...)` to show a message from a handler; dispatch `crt.ShowDialogRequest` instead (message/actions under `dialogConfig.data`).
 		       - Do NOT use `request.viewModel`, `request.sender`, `.$get(...)`, `.$set(...)`, or `request.$context.get(...)` in deployed page-body handlers.
 		       - Do NOT omit `$context` or `scopes` when forwarding a request from one handler into another page-scoped handler chain.
 		       - Do NOT mutate unrelated request fields; only use documented control flags such as `preventAttributeChangeRequest` when that request type explicitly supports them.

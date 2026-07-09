@@ -4,7 +4,6 @@ using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
-using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E;
@@ -18,39 +17,50 @@ namespace Clio.Mcp.E2E;
 [NonParallelizable]
 public sealed class ODataWriteToolsE2ETests : McpContractFixtureBase {
 	[Test]
-	[Description("Advertises odata-create as a non-read-only, non-destructive MCP tool.")]
+	[Description("Exposes odata-create via the get-tool-contract compact index with a non-destructive safety flag on the lazy tool surface.")]
 	[AllureTag(ODataCreateTool.ToolName)]
-	[AllureName("odata-create MCP tool is advertised")]
+	[AllureName("odata-create MCP tool is discoverable on the lazy surface")]
 	public async Task ODataCreate_Should_Be_Advertised() {
 		await using var arrange = Arrange(TimeSpan.FromMinutes(3));
-		IList<McpClientTool> tools = await arrange.Session.ListToolsAsync(arrange.CancellationTokenSource.Token);
-		McpClientTool tool = tools.Single(t => t.Name == ODataCreateTool.ToolName);
-		tool.ProtocolTool.Annotations!.ReadOnlyHint.Should().BeFalse();
-		tool.ProtocolTool.Annotations.DestructiveHint.Should().BeFalse();
+		// The lazy surface exposes hidden tools only through the compact discovery index, which carries the
+		// destructive flag; the read-only hint is no longer observable for non-resident tools.
+		IReadOnlyList<ToolContractIndexEntry> index =
+			await arrange.Session.GetToolContractIndexAsync(arrange.CancellationTokenSource.Token);
+		ToolContractIndexEntry entry = index.Should().ContainSingle(entry => entry.Name == ODataCreateTool.ToolName,
+			because: "odata-create must be discoverable via the get-tool-contract compact index on the lazy surface")
+			.Which;
+		entry.Destructive.Should().NotBe(true,
+			because: "odata-create only inserts new rows and must not be flagged destructive");
 	}
 
 	[Test]
-	[Description("Advertises odata-update as a destructive MCP tool.")]
+	[Description("Exposes odata-update via the get-tool-contract compact index with a destructive safety flag on the lazy tool surface.")]
 	[AllureTag(ODataUpdateTool.ToolName)]
-	[AllureName("odata-update MCP tool is advertised")]
+	[AllureName("odata-update MCP tool is discoverable on the lazy surface")]
 	public async Task ODataUpdate_Should_Be_Advertised() {
 		await using var arrange = Arrange(TimeSpan.FromMinutes(3));
-		IList<McpClientTool> tools = await arrange.Session.ListToolsAsync(arrange.CancellationTokenSource.Token);
-		McpClientTool tool = tools.Single(t => t.Name == ODataUpdateTool.ToolName);
-		tool.ProtocolTool.Annotations!.ReadOnlyHint.Should().BeFalse();
-		tool.ProtocolTool.Annotations.DestructiveHint.Should().BeTrue();
+		IReadOnlyList<ToolContractIndexEntry> index =
+			await arrange.Session.GetToolContractIndexAsync(arrange.CancellationTokenSource.Token);
+		ToolContractIndexEntry entry = index.Should().ContainSingle(entry => entry.Name == ODataUpdateTool.ToolName,
+			because: "odata-update must be discoverable via the get-tool-contract compact index on the lazy surface")
+			.Which;
+		entry.Destructive.Should().BeTrue(
+			because: "odata-update overwrites existing record data and must be flagged destructive");
 	}
 
 	[Test]
-	[Description("Advertises odata-delete as a destructive MCP tool.")]
+	[Description("Exposes odata-delete via the get-tool-contract compact index with a destructive safety flag on the lazy tool surface.")]
 	[AllureTag(ODataDeleteTool.ToolName)]
-	[AllureName("odata-delete MCP tool is advertised")]
+	[AllureName("odata-delete MCP tool is discoverable on the lazy surface")]
 	public async Task ODataDelete_Should_Be_Advertised() {
 		await using var arrange = Arrange(TimeSpan.FromMinutes(3));
-		IList<McpClientTool> tools = await arrange.Session.ListToolsAsync(arrange.CancellationTokenSource.Token);
-		McpClientTool tool = tools.Single(t => t.Name == ODataDeleteTool.ToolName);
-		tool.ProtocolTool.Annotations!.ReadOnlyHint.Should().BeFalse();
-		tool.ProtocolTool.Annotations.DestructiveHint.Should().BeTrue();
+		IReadOnlyList<ToolContractIndexEntry> index =
+			await arrange.Session.GetToolContractIndexAsync(arrange.CancellationTokenSource.Token);
+		ToolContractIndexEntry entry = index.Should().ContainSingle(entry => entry.Name == ODataDeleteTool.ToolName,
+			because: "odata-delete must be discoverable via the get-tool-contract compact index on the lazy surface")
+			.Which;
+		entry.Destructive.Should().BeTrue(
+			because: "odata-delete removes records and must be flagged destructive");
 	}
 
 	[Test]

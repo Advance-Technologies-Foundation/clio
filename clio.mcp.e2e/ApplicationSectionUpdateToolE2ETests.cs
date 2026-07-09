@@ -25,68 +25,6 @@ public sealed class ApplicationSectionUpdateToolE2ETests {
 	private const string SectionDeleteToolName = ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName;
 	private const string ApplicationCode = "AutoTestClioMcp";
 
-	[Category("McpE2E.NoEnvironment")]
-	[Test]
-	[Description("Advertises update-app-section in the MCP tool list so callers can discover the existing-section update tool.")]
-	[AllureFeature(SectionUpdateToolName)]
-	[AllureTag(SectionUpdateToolName)]
-	[AllureName("Application section update tool is advertised by the MCP server")]
-	[AllureDescription("Starts the real clio MCP server and verifies that update-app-section appears in the advertised tool manifest.")]
-	public async Task ApplicationSectionUpdate_Should_Be_Listed_By_Mcp_Server() {
-		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-
-		// Act
-		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationTokenSource.Token);
-		IEnumerable<string> toolNames = tools.Select(tool => tool.Name);
-
-		// Assert
-		toolNames.Should().Contain(SectionUpdateToolName,
-			because: "update-app-section must be advertised so MCP callers can discover the existing-section update tool");
-	}
-
-	[Category("McpE2E.NoEnvironment")]
-	[Test]
-	[Description("Starts the real clio MCP server, invokes update-app-section with an invalid environment, and verifies that the failure remains human-readable.")]
-	[AllureFeature(SectionUpdateToolName)]
-	[AllureTag(SectionUpdateToolName)]
-	[AllureName("Application section update reports invalid environment failures")]
-	[AllureDescription("Uses the real clio MCP server to call update-app-section with an unknown environment name and verifies that the tool returns a structured readable error envelope.")]
-	public async Task ApplicationSectionUpdate_Should_Report_Invalid_Environment_Failure() {
-		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
-		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		string invalidEnvironmentName = $"missing-section-update-env-{Guid.NewGuid():N}";
-
-		// Act
-		CallToolResult callResult = await session.CallToolAsync(
-			SectionUpdateToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["environment-name"] = invalidEnvironmentName,
-					["application-code"] = "UsrMissingApp",
-					["section-code"] = "UsrMissingSection",
-					["caption"] = "Orders"
-				}
-			},
-			cancellationTokenSource.Token);
-		ApplicationSectionUpdateContextResponseEnvelope response = ApplicationResultParser.ExtractSectionUpdate(callResult);
-
-		// Assert
-		callResult.IsError.Should().NotBeTrue(
-			because: $"structured update-app-section failures should be returned in the payload instead of as MCP invocation errors. Actual result: {JsonSerializer.Serialize(new { callResult.IsError, callResult.StructuredContent, callResult.Content })}");
-		response.Success.Should().BeFalse(
-			because: "update-app-section should fail when the requested environment does not exist");
-		response.Error.Should().MatchRegex(
-			$"(?is)({Regex.Escape(invalidEnvironmentName)}|environment.*not.*found|not found)",
-			because: "the failure should explain that the requested environment is missing");
-	}
-
 	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Starts the real clio MCP server, invokes update-app-section without mutable fields, and verifies that the tool returns a clear validation failure.")]

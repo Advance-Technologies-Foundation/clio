@@ -32,10 +32,22 @@ public class ModifyBusinessProcessTool(
 		 + "'op': addElement (with an 'element' descriptor: name (the element handle/local code), type, caption, "
 		 + "userTaskName?, signal?), removeElement (with 'elementName' = the element's local name or UId), addFlow "
 		 + "/ removeFlow (with 'source' and 'target' element names), addParameter (with a 'parameter': name, type "
-		 + "e.g. Text/Integer/Guid, direction?, caption?, or referenceSchema for a Lookup to an object e.g. City), "
-		 + "addMapping (with a 'mapping': elementName, elementParameter, and exactly one of processParameter | "
-		 + "value | expression). Operations apply in order; any failure aborts the edit (nothing is saved). "
-		 + "Use describe-business-process to inspect the current elements/names first. May remove elements — destructive.")]
+		 + "one of Text/Long text/Integer/Float/Money/Boolean/Date/Date-time/Time/Guid (other types are rejected), "
+		 + "direction?, caption?, description?, optional value (a literal constant, not a formula), or "
+		 + "referenceSchema for a Lookup to an object e.g. City, or typeFromElement + typeFromElementParameter to "
+		 + "copy an element parameter's exact type), addMapping (with a 'mapping': target {elementName, "
+		 + "elementParameter} or {targetProcessParameter}, and one source of {sourceElement, sourceElementParameter} "
+		 + "| processParameter | value | expression; parameter-to-parameter mappings require compatible types; "
+		 + "re-mapping an already-bound target overwrites it in place — there is no removeMapping/clear op), "
+		 + "setParameter (with 'parameterName' = the target parameter by name/UId and 'parameterUpdate' = any of "
+		 + "caption/description/code/direction/referenceSchema (re-targets an existing Lookup only)/value, updated "
+		 + "in place — a data-type change is rejected), removeParameter (with 'parameterName'; blocked when another "
+		 + "parameter or an element mapping "
+		 + "still references it). Operations apply in order; any failure aborts the edit (nothing is saved). "
+		 + "Use describe-business-process to inspect the current elements/names first. May remove elements — destructive. "
+		 + "Removals are NOT structurally validated (a broken graph can still be saved) and every edit re-lays-out the "
+		 + "whole diagram — read the 'Modifying an existing process' rules in get-guidance name=process-modeling "
+		 + "first. Requires the ProcessDesignService (clioprocessbuilder) package on the target environment.")]
 	public CommandExecutionResult ModifyBusinessProcess(
 		[Description("modify-business-process parameters")] [Required] ModifyBusinessProcessArgs args
 	) {

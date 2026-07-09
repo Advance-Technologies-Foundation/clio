@@ -508,10 +508,14 @@ public sealed class McpGuidanceResourceE2ETests : McpContractFixtureBase {
 			because: "the handler guide should expose the runtime payload for attribute-change handlers");
 		article.Text.Should().Contain("| User-visible name | Source reality | Params | Notes |",
 			because: "the handler guide should isolate user-visible and source-runtime mismatches in a dedicated AI-readable table");
-		article.Text.Should().Contain("| `crt.ShowDialog` | source request is `crt.ShowDialogRequest`, handled by `crt.ShowDialogHandler` | `dialogConfig` with `message`, `actions`, optional `title` | in code author `type: \"crt.ShowDialogRequest\"`; `crt.ShowDialog` is the user-visible catalog label |",
+		article.Text.Should().Contain("| `crt.ShowDialog` | source request is `crt.ShowDialogRequest`, handled by `crt.ShowDialogHandler` | `dialogConfig.data` with `message`, `actions`, optional `title` | in code author `type: \"crt.ShowDialogRequest\"`; `crt.ShowDialog` is the user-visible catalog label |",
 			because: "the handler guide should disambiguate the user-visible dialog label from the actual source request type with an explicit authoring rule");
-		article.Text.Should().Contain("Minimal `dialogConfig` shape:",
-			because: "the handler guide should show a concrete minimal dialog payload instead of only naming the config field");
+		article.Text.Should().Contain("`message`, `actions`, and `title` go under `dialogConfig.data`, NOT directly on `dialogConfig`",
+			because: "the handler guide must steer authors to nest the dialog payload under dialogConfig.data so the message renders (ENG-91748)");
+		article.Text.Should().Contain("\"just show a short confirmation message\" is a `crt.ShowDialogRequest`, NOT a browser dialog",
+			because: "the handler guide must route a short confirmation message to crt.ShowDialogRequest so the agent does not fall back to alert() (ENG-91748)");
+		article.Text.Should().Contain("Do NOT use `alert(...)`, `window.alert(...)`, `confirm(...)`, or `prompt(...)` to show a message from a handler",
+			because: "the handler guide must forbid raw browser dialog primitives in deployed page-body handlers (ENG-91748)");
 		article.Text.Should().Contain("Do NOT create a custom handler when a direct request already matches the requirement",
 			because: "the handler guide should explicitly prevent unnecessary custom handlers for simple actions");
 		article.Text.Should().Contain("Multiple handlers in one page-body array",
@@ -703,6 +707,10 @@ public sealed class McpGuidanceResourceE2ETests : McpContractFixtureBase {
 			because: "the guide should make the dialog stop-rule explicit for request-dispatching handlers");
 		article.Text.Should().Contain("sdk.HandlerChainService.instance.process",
 			because: "the guide should include the SDK-oriented handler-chain dispatch pattern");
+		article.Text.Should().MatchRegex(@"dialogConfig:\s*\{\s*data:\s*\{\s*message:",
+			because: "the crt.ShowDialogRequest example must nest message/actions under dialogConfig.data, locking the ENG-91748 fix against a flat-shape regression");
+		article.Text.Should().Contain("wraps that same config one level deeper under `dialogConfig.data`",
+			because: "the guide must keep the MessageDialogConfig contrast rule distinguishing crt.ShowDialogRequest (data-wrapped) from the flat DialogService.open shape (ENG-91748)");
 		article.Text.Should().Contain("Inner handler/body snippet only: ProcessEngineService with model query helpers:",
 			because: "fragment-only sdk snippets should say they are not standalone schema modules");
 		article.Text.Should().Contain("Inner handler/body snippet only: DialogService from SDK code:",

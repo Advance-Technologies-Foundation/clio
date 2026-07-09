@@ -10,8 +10,15 @@
 		<Authors>creatio rnd team</Authors>
 		<PackageTags>cli ATF clio creatio</PackageTags>
 		<NeutralLanguage>en</NeutralLanguage>
-		<!-- Fallback for environments without git tags; overridden by SetVersionFromGitTag target or CI /p:AssemblyVersion -->
-		<AssemblyVersion Condition="'$(AssemblyVersion)' == ''">8.1.0.64</AssemblyVersion>
+		<!-- Capture whether the CALLER explicitly supplied a version (e.g. /p:Version, /p:AssemblyVersion,
+		     /p:FileVersion, or release scripts) BEFORE the sentinel defaults below overwrite the empties.
+		     SetVersionFromGitTag consults these so an explicit override is never clobbered by the git tag. -->
+		<_CallerSuppliedAssemblyVersion Condition="'$(AssemblyVersion)' != ''">true</_CallerSuppliedAssemblyVersion>
+		<_CallerSuppliedFileVersion Condition="'$(FileVersion)' != ''">true</_CallerSuppliedFileVersion>
+		<_CallerSuppliedVersion Condition="'$(Version)' != ''">true</_CallerSuppliedVersion>
+		<!-- Fallback sentinel; SetVersionFromGitTag target replaces it with the latest git tag for local
+		     builds where the caller supplied nothing. CI overrides via /p:AssemblyVersion (or /p:Version). -->
+		<AssemblyVersion Condition="'$(AssemblyVersion)' == ''">0.0.0.0</AssemblyVersion>
 		<FileVersion Condition="'$(FileVersion)' == ''">$(AssemblyVersion)</FileVersion>
 		<Version Condition="'$(Version)' == ''">$(AssemblyVersion)</Version>
 		<Description>CLI interface for Creatio</Description>
@@ -125,6 +132,10 @@
 		                  ReferenceOutputAssembly="false" />
 	</ItemGroup>
 
+	<ItemGroup Label="ASP.NET Core hosting for MCP HTTP transport">
+		<FrameworkReference Include="Microsoft.AspNetCore.App" />
+	</ItemGroup>
+
 	<ItemGroup Label="Centrally Managed Package Versions">
 		<PackageReference Include="creatio.client" />
 		<PackageReference Include="ATF.Repository" />
@@ -149,6 +160,7 @@
 		<PackageReference Include="ErrorOr" />
 		<PackageReference Include="System.IO.Abstractions" />
 		<PackageReference Include="ModelContextProtocol" />
+		<PackageReference Include="ModelContextProtocol.AspNetCore" />
 		<PackageReference Include="Microsoft.Extensions.DependencyInjection" />
 		<PackageReference Include="Microsoft.Extensions.Http" />
 		<PackageReference Include="Microsoft.Extensions.Configuration" />
@@ -164,10 +176,16 @@
 	  <Folder Include="tpl\workspace\.codex\skills\" />
 	</ItemGroup>
 
-	<!-- Reads the latest X.Y.Z.W git tag for local builds. Skipped when CI provides /p:AssemblyVersion. -->
+	<!-- Reads the latest X.Y.Z.W git tag for local builds where the caller supplied NO version. Skipped
+	     when the caller explicitly provides any of /p:Version, /p:AssemblyVersion, or /p:FileVersion (CI,
+	     dotnet pack -p:Version=..., release scripts) so an explicit override is never clobbered by the tag.
+	     The sentinel check keeps the tag path active for the normal no-input local build. -->
 	<Target Name="SetVersionFromGitTag"
-	        BeforeTargets="GenerateAssemblyInfo;GenerateNuspec"
-	        Condition="'$(AssemblyVersion)' == '0.0.0.0'">
+	        BeforeTargets="GetAssemblyVersion;GenerateNuspec"
+	        Condition="'$(AssemblyVersion)' == '0.0.0.0'
+	                   and '$(_CallerSuppliedVersion)' != 'true'
+	                   and '$(_CallerSuppliedAssemblyVersion)' != 'true'
+	                   and '$(_CallerSuppliedFileVersion)' != 'true'">
 		<Exec Command="git describe --tags --abbrev=0 --match &quot;[0-9]*.[0-9]*.[0-9]*.[0-9]*&quot;"
 		      ConsoleToMSBuild="true"
 		      IgnoreExitCode="true">

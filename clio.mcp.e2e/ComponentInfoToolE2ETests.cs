@@ -424,7 +424,7 @@ public sealed class ComponentInfoToolE2ETests : McpContractFixtureBase {
 				because: "the composite declares no docs, so documentationUnavailable is omitted rather than signalling a fetch failure");
 		}
 		finally {
-			File.Delete(fixturePath);
+			TryDeleteFixture(fixturePath);
 		}
 	}
 
@@ -474,7 +474,81 @@ public sealed class ComponentInfoToolE2ETests : McpContractFixtureBase {
 				because: "the matched composite is surfaced for the caller to fetch over the wire");
 		}
 		finally {
-			File.Delete(fixturePath);
+			TryDeleteFixture(fixturePath);
+		}
+	}
+
+	[Test]
+	[Description("Rejects the wrong-WORD selector 'component-name' over the wire with a rename hint to 'component-type', instead of silently dropping it and degrading the request into the full catalog list.")]
+	[AllureTag(ToolName)]
+	[AllureName("get-component-info rejects the component-name alias with a rename hint")]
+	[AllureDescription("Starts the real clio MCP server, passes 'component-name', and verifies it is rejected with a hint pointing at 'component-type'.")]
+	public async Task ComponentInfoTool_Should_Reject_ComponentName_Alias_Over_The_Wire() {
+		// Arrange
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act — 'component-name' is not a bound parameter; the deserializer routes it into the
+		// args overflow bag where the tool rejects it instead of falling through to list mode.
+		ComponentInfoResponse response = await CallComponentInfoAsync(
+			arrangeContext.Session,
+			arrangeContext.CancellationTokenSource.Token,
+			new Dictionary<string, object?> { ["component-name"] = "crt.CommunicationOptions" });
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a 'component-name' selector must be rejected, not silently degraded into the full catalog list");
+		response.Error.Should().Contain("component-name",
+			because: "the rename hint must name the offending field");
+		response.Error.Should().Contain("component-type",
+			because: "the rename hint must point the caller at the canonical 'component-type' parameter");
+	}
+
+	[Test]
+	[Description("Detail of a compositeOnly component over the wire carries compositeOnly:true plus the decision-rule hint (prefer the composite that assembles it; otherwise build directly only when its applicability allows). Points the real clio process at a local registry fixture that ships a compositeOnly component, since the live CDN catalog may not.")]
+	[AllureTag(ToolName)]
+	[AllureName("get-component-info surfaces the compositeOnly decision-rule hint over the wire")]
+	[AllureDescription("Starts the real clio MCP server pointed at a local registry fixture with one compositeOnly component, requests its detail, and verifies compositeOnly:true plus the applicability-gated fallback hint.")]
+	public async Task ComponentInfoTool_CompositeOnly_Detail_Should_Carry_DecisionRule_Hint_Over_The_Wire() {
+		// Arrange — a registry fixture that ships a compositeOnly component; the Tier-0 local-file
+		// override keeps the assertion deterministic regardless of what the live CDN catalog ships.
+		string fixturePath = Path.Combine(Path.GetTempPath(), $"clio-e2e-composite-only-{Guid.NewGuid():N}.json");
+		const string registryJson = """
+		{
+		  "components": [
+		    { "componentType": "crt.NextSteps", "category": "widgets", "description": "Next steps widget.", "compositeOnly": true, "properties": {} }
+		  ]
+		}
+		""";
+		await File.WriteAllTextAsync(fixturePath, registryJson);
+		try {
+			McpE2ESettings settings = TestConfiguration.Load();
+			settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+			settings.ProcessEnvironmentVariables["CLIO_COMPONENT_REGISTRY_LOCAL_FILE"] = fixturePath;
+			using CancellationTokenSource compositeOnlyCts = new(TimeSpan.FromMinutes(3));
+			await using McpServerSession compositeOnlySession = await McpServerSession.StartAsync(settings, compositeOnlyCts.Token);
+
+			// Act
+			ComponentInfoResponse response = await CallComponentInfoAsync(
+				compositeOnlySession,
+				compositeOnlyCts.Token,
+				new Dictionary<string, object?> { ["component-type"] = "crt.NextSteps" });
+
+			// Assert
+			response.Success.Should().BeTrue(
+				because: "the compositeOnly component resolves in the local registry fixture");
+			response.Mode.Should().Be("detail",
+				because: "a component-type lookup returns the detail contract");
+			response.CompositeOnly.Should().BeTrue(
+				because: "the fixture marks crt.NextSteps compositeOnly and the flag must round-trip over the wire");
+			response.CompositeOnlyHint.Should().NotBeNullOrWhiteSpace(
+				because: "a compositeOnly detail must carry the actionable decision-rule hint");
+			response.CompositeOnlyHint!.Should().Contain("composite=",
+				because: "the hint steers the agent to confirm composite membership first");
+			response.CompositeOnlyHint.Should().Contain("appliesToCustomEntities",
+				because: "the fallback must defer to the component's applicability constraints");
+		}
+		finally {
+			TryDeleteFixture(fixturePath);
 		}
 	}
 
@@ -492,6 +566,19 @@ public sealed class ComponentInfoToolE2ETests : McpContractFixtureBase {
 		callResult.IsError.Should().NotBeTrue(
 			because: "get-component-info should return structured responses instead of top-level MCP failures");
 		return EntitySchemaStructuredResultParser.Extract<ComponentInfoResponse>(callResult);
+	}
+
+	// Best-effort teardown: the spawned clio process releases the fixture handle on its own shutdown,
+	// but on Windows that release can lag briefly — swallow the IOException so it never masks the real
+	// test result. The temp file is Guid-named, so a rare leaked file is harmless.
+	private static void TryDeleteFixture(string fixturePath) {
+		try {
+			if (File.Exists(fixturePath)) {
+				File.Delete(fixturePath);
+			}
+		}
+		catch (IOException) {
+		}
 	}
 
 }
