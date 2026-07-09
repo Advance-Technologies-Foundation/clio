@@ -99,6 +99,26 @@ public sealed class ThemeParameterValidatorTests {
 	}
 
 	[Test]
+	[Description("TryValidateCssClassName accepts a valid name and reports the field-specific message for empty, over-long, and pattern-violating names — sharing the pass/fail decision with IsValidCssClassName.")]
+	public void TryValidateCssClassName_ShouldMirrorSharedRule_ForEachFailureKind() {
+		// Act
+		bool okValid = ThemeParameterValidator.TryValidateCssClassName("MyTheme", out string validError);
+		bool okEmpty = ThemeParameterValidator.TryValidateCssClassName("  ", out string emptyError);
+		bool okLong = ThemeParameterValidator.TryValidateCssClassName("a" + new string('b', 100), out string longError);
+		bool okPattern = ThemeParameterValidator.TryValidateCssClassName("1bad", out string patternError);
+
+		// Assert
+		okValid.Should().BeTrue(because: "a name satisfying the shared rule passes");
+		validError.Should().BeNull(because: "success carries no error");
+		okEmpty.Should().BeFalse(because: "a blank css-class-name is rejected");
+		emptyError.Should().Contain("required", because: "the message must say the field is required");
+		okLong.Should().BeFalse(because: "a 101-character name exceeds the shared length limit");
+		longError.Should().Contain("at most 100", because: "the message must state the shared length limit");
+		okPattern.Should().BeFalse(because: "a name starting with a digit violates the shared character rule");
+		patternError.Should().Contain("hyphen, underscore only", because: "the message must spell out the full character rule, matching TryResolveCssClassName");
+	}
+
+	[Test]
 	[Description("TryResolveCssClassName rejects an explicit css-class-name that could escape the theme directory or otherwise violate the identifier rule, because the resolved value becomes a filesystem path segment.")]
 	[TestCase("../evil", TestName = "TryResolveCssClassName rejects a parent-directory traversal css-class-name")]
 	[TestCase("a/b", TestName = "TryResolveCssClassName rejects a forward-slash css-class-name")]

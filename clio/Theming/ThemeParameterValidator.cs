@@ -157,12 +157,11 @@ internal static class ThemeParameterValidator {
 			error = "css-class-name is required.";
 			return false;
 		}
-		if (cssClassName.Length > MaxCssClassNameLength) {
-			error = $"css-class-name must be at most {MaxCssClassNameLength} characters.";
-			return false;
-		}
-		if (!IsMatchSafe(CssClassNamePattern, cssClassName)) {
-			error = "css-class-name must match ^[A-Za-z][A-Za-z0-9_-]*$ (start with a letter).";
+		if (!IsValidCssClassName(cssClassName)) {
+			error = cssClassName.Length > MaxCssClassNameLength
+				? $"css-class-name must be at most {MaxCssClassNameLength} characters."
+				: "css-class-name must match ^[A-Za-z][A-Za-z0-9_-]*$ (start with a letter; letters, digits, "
+					+ "hyphen, underscore only).";
 			return false;
 		}
 		return true;
