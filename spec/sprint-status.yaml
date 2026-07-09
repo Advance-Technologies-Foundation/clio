@@ -770,7 +770,7 @@ stories:
     title: "Mode-gated plaintext-arg policy (FR-19) + up-front required-arg validation (FR-13)"
     feature: "mcp-http-credential-passthrough"
     size: M
-    status: ready-for-dev
+    status: review
     file: spec/stories/story-mcp-http-credential-passthrough-10.md
     prd: spec/prd/prd-mcp-http-credential-passthrough.md
     adr: spec/adr/adr-mcp-http-credential-passthrough.md

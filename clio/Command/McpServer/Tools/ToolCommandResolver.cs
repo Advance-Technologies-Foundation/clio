@@ -89,6 +89,22 @@ public class ToolCommandResolver(
 		// request; every other caller falls through to the unchanged registry / explicit-URI path.
 		CredentialContext credentialContext = credentialContextAccessor.Current;
 		if (credentialContext is not null) {
+			// FR-19 (ENG-93208): on the multi-tenant HTTP edge with passthrough mode ON, the credential
+			// arrives EXCLUSIVELY in the X-Integration-Credentials header (which produced this context).
+			// Plaintext credential/environment tool-args on that edge are a smuggling vector: they would be
+			// SILENTLY dropped (the passthrough branch below ignores `options` entirely and resolves from the
+			// header). Reject them explicitly so the caller learns the correct channel instead of having
+			// their input quietly ignored. The check is mode-scoped — it reads Transport + PassthroughModeEnabled
+			// from the per-request context, so stdio and default-HTTP (Current == null, unreachable here) keep
+			// honoring args exactly as 8.1.0.72 (AC-02/AC-03). The message names NO supplied value (AC-ERR/FR-11).
+			if (credentialContext.Transport == McpTransport.Http
+				&& credentialContext.PassthroughModeEnabled
+				&& HasExplicitCredentialArgs(options)) {
+				throw new EnvironmentResolutionException(
+					"Explicit credential or environment arguments (uri/login/password/client-id/client-secret/environment) "
+					+ "are not accepted when credential passthrough is enabled over HTTP. Supply the target environment "
+					+ "and credentials via the X-Integration-Credentials header, not tool arguments.");
+			}
 			return ResolvePassthrough<TCommand>(credentialContext);
 		}
 
@@ -238,6 +254,20 @@ public class ToolCommandResolver(
 		}
 		return settings;
 	}
+
+	// FR-19: true when the caller supplied any EXPLICIT credential/environment argument that the
+	// passthrough path would otherwise drop silently. The five auth args (uri/login/password/client-id/
+	// client-secret) are the Creatio-auth axis passthrough replaces; the environment NAME is included
+	// because on the passthrough branch it is ignored today (the header context wins), so leaving it
+	// unflagged would let a caller believe a named environment took effect when it did not. Chained
+	// booleans (no nested ternary, S3358); the values themselves are never read into any message.
+	private static bool HasExplicitCredentialArgs(EnvironmentOptions options) =>
+		!string.IsNullOrWhiteSpace(options.Uri)
+		|| !string.IsNullOrWhiteSpace(options.Login)
+		|| !string.IsNullOrWhiteSpace(options.Password)
+		|| !string.IsNullOrWhiteSpace(options.ClientId)
+		|| !string.IsNullOrWhiteSpace(options.ClientSecret)
+		|| !string.IsNullOrWhiteSpace(options.Environment);
 
 	private static bool HasUsableAuth(CredentialMaterial auth) =>
 		auth?.Kind switch {
