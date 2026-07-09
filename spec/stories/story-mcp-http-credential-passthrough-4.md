@@ -59,18 +59,24 @@ Targeted run: `dotnet test clio.tests/clio.tests.csproj --filter "Category=Unit&
 
 ## Definition of Done
 
-- [ ] Code compiles with no new `CLIO*` warnings in modified files (CLIO001–CLIO005 clean)
-- [ ] `--credentials-header-name` (and any new flag) is kebab-case (CLIO001)
-- [ ] Services registered in `BindingsModule` (accessor singleton) — no MediatR; no raw `HttpClient`
-- [ ] No secret value in any parse error / exception / log (FR-11)
-- [ ] MCP surface + docs reviewed (FR-15) — header contract update deferred to Story 14; state review outcome
-- [ ] Unit tests `[Category("Unit")]`; AAA + `because` + `[Description]`
-- [ ] Targeted `dotnet test --filter "Category=Unit&Module=McpServer"` green before commit
-- [ ] PR description references this story file
+- [x] Code compiles with no new `CLIO*` warnings in modified files (CLIO001–CLIO005 clean)
+- [x] `--credentials-header-name` (and any new flag) is kebab-case (CLIO001)
+- [x] Services registered (accessor singleton) — no MediatR; no raw `HttpClient`. **Deviation:** registered in the `mcp-http` host (`McpHttpServerCommand.Run`), NOT the shared `BindingsModule`, per the architect's FINAL decision — the accessor depends on `IHttpContextAccessor`, which must not be pulled into the stdio graph. Flagged for Story 7 (see notes).
+- [x] No secret value in any parse error / exception / log (FR-11)
+- [x] MCP surface + docs reviewed (FR-15) — no MCP tool wraps the `mcp-http` host command; header-contract docs deferred to Story 14; `help/en/mcp-http.txt` needed no stub (no help/ReadmeChecker test regressed)
+- [x] Unit tests `[Category("Unit")]`; AAA + `because` + `[Description]`
+- [x] Targeted `dotnet test --filter "Category=Unit&Module=McpServer"` green before commit
+- [ ] PR description references this story file — N/A this pass (no commit/PR per work order)
 
 ## Dev Agent Record
 
-- Implementation started:
-- Implementation completed:
-- Tests passing:
+- Implementation started: 2026-07-09
+- Implementation completed: 2026-07-09
+- Tests passing: `dotnet test clio.tests/clio.tests.csproj --filter "Category=Unit&Module=McpServer" -f net10.0` → `Failed: 0, Passed: 1763, Skipped: 1, Total: 1764`
 - Notes:
+  - **Parser shape:** `ICredentialHeaderParser.TryParse` emits a pure `CredentialParseResult(Url, Auth)`; the middleware wraps it into the full `CredentialContext(Url, Auth, McpTransport.Http, passthroughEnabled)`. Parser has no `HttpContext` dependency (fully unit-testable). Transport/PassthroughModeEnabled are middleware-set, not parser-set.
+  - **Precedence:** `accessToken → cookie → login+password`; "present" = non-whitespace; login+password usable only when BOTH are non-whitespace (login-without-password falls through to `no usable auth material`).
+  - **Secret hygiene (FR-11):** all parse errors are fixed defect-only strings (`missing url`, `no usable auth material`, `credential header is not valid base64`, `credential header is not valid JSON`, `credential header is empty`). `JsonException`/`FormatException` messages are never surfaced.
+  - **PassthroughModeEnabled:** middleware reads `HttpContext.Items["clio.mcp.passthrough-enabled"]`, defaulting to `false`. Authoritative gate is Story 5 (FR-09); this middleware only carries the flag.
+  - **DI / auto-registration trap:** `BindingsModule.RegisterAssemblyInterfaceTypes` scans the assembly and auto-registers interface→impl as transient. It picked up `CredentialContextAccessor` (needs `IHttpContextAccessor`) and broke `ValidateOnBuild` in the stdio/tool graph (25 tests failed). Fix: both `ICredentialContextAccessor` and `ICredentialHeaderParser` are excluded from auto-registration and registered explicitly in the `mcp-http` host.
+  - **FLAG FOR STORY 7:** when the credential resolver consumes `ICredentialContextAccessor`, it must resolve in BOTH hosts. Options: move the three HTTP-host registrations (`AddHttpContextAccessor()` + accessor singleton + parser singleton) into `BindingsModule`, or make the stdio path tolerate a null accessor. A comment to this effect is in `McpHttpServerCommand.Run`.

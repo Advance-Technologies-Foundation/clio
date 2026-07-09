@@ -28,6 +28,10 @@ public class McpHttpServerCommandOptions : BaseCommandOptions
 
 	[Option("path", Default = "/mcp", Required = false, HelpText = "MCP endpoint path")]
 	public string Path { get; set; }
+
+	[Option("credentials-header-name", Default = "X-Integration-Credentials", Required = false,
+		HelpText = "Name of the request header carrying base64-encoded JSON per-request credentials")]
+	public string CredentialsHeaderName { get; set; }
 }
 
 /// <summary>
@@ -67,6 +71,16 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 		BindingsModule.RegisterMcpServer(builder.Services, settingsRepository)
 			.WithHttpTransport();
 
+		// Per-request credential-passthrough seam (Story 4). Registered in the HTTP host,
+		// NOT the shared BindingsModule, so IHttpContextAccessor is not pulled into the
+		// stdio graph. FLAG FOR STORY 7: when the credential resolver consumes
+		// ICredentialContextAccessor it must resolve in BOTH hosts — either move these
+		// registrations (plus AddHttpContextAccessor) into BindingsModule, or make the
+		// stdio path tolerate a null accessor.
+		builder.Services.AddHttpContextAccessor();
+		builder.Services.AddSingleton<ICredentialHeaderParser, CredentialHeaderParser>();
+		builder.Services.AddSingleton<ICredentialContextAccessor, CredentialContextAccessor>();
+
 		AspNetWebApplication app = builder.Build();
 
 		// DNS-rebinding / cross-origin protection. The MCP spec makes Origin/Host validation the
@@ -77,6 +91,14 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 		// Origin header and pass through unaffected.
 		app.UseHostFiltering();
 		app.Use((context, next) => ValidateOrigin(context, next, options.Host));
+
+		ICredentialHeaderParser credentialHeaderParser =
+			app.Services.GetRequiredService<ICredentialHeaderParser>();
+		ICredentialContextAccessor credentialContextAccessor =
+			app.Services.GetRequiredService<ICredentialContextAccessor>();
+		app.Use((context, next) => CaptureCredentialContext(
+			context, next, credentialHeaderParser, credentialContextAccessor,
+			options.CredentialsHeaderName));
 
 		app.MapMcp(options.Path);
 
@@ -108,6 +130,48 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 		}
 
 		return hosts.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+	}
+
+	/// <summary>
+	/// Item key used by Story 5's API-key gate middleware (which runs earlier) to signal
+	/// whether per-request credential passthrough is enabled. Absent ⇒ <see langword="false"/>.
+	/// </summary>
+	internal const string PassthroughEnabledItemKey = "clio.mcp.passthrough-enabled";
+
+	// Reads the configured credential header, parses it into a per-request CredentialContext,
+	// and publishes it via ICredentialContextAccessor. Absent header ⇒ no context (stdio /
+	// no-header path). Parse failure ⇒ HTTP 400 with a JSON body naming the defect (no secret).
+	private static async Task CaptureCredentialContext(
+		HttpContext context,
+		RequestDelegate next,
+		ICredentialHeaderParser parser,
+		ICredentialContextAccessor accessor,
+		string headerName) {
+		if (!context.Request.Headers.TryGetValue(headerName, out var headerValues)) {
+			// No credential header — nothing to capture; context stays null (AC-05).
+			await next(context);
+			return;
+		}
+
+		if (!parser.TryParse(headerValues.ToString(), out CredentialParseResult parsed, out string error)) {
+			context.Response.StatusCode = StatusCodes.Status400BadRequest;
+			context.Response.ContentType = "application/json";
+			// error is defect-only and never carries a secret value (FR-11).
+			await context.Response.WriteAsJsonAsync(new { error = $"Error: {error}" });
+			return;
+		}
+
+		// PassthroughModeEnabled is forward-compatible: the authoritative gate is Story 5
+		// (FR-09), which sets PassthroughEnabledItemKey in an earlier middleware. This
+		// middleware only carries the flag into the context; until Story 5 ships it is false.
+		bool passthroughEnabled =
+			context.Items.TryGetValue(PassthroughEnabledItemKey, out object flag)
+			&& flag is true;
+
+		accessor.Current = new CredentialContext(
+			parsed.Url, parsed.Auth, McpTransport.Http, passthroughEnabled);
+
+		await next(context);
 	}
 
 	private static Task ValidateOrigin(HttpContext context, RequestDelegate next, string boundHost) {

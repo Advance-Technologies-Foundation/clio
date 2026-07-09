@@ -653,7 +653,7 @@ stories:
     title: "Header + credential context — X-Integration-Credentials parse, precedence, context seam"
     feature: "mcp-http-credential-passthrough"
     size: M
-    status: ready-for-dev
+    status: in-progress
     file: spec/stories/story-mcp-http-credential-passthrough-4.md
     prd: spec/prd/prd-mcp-http-credential-passthrough.md
     adr: spec/adr/adr-mcp-http-credential-passthrough.md

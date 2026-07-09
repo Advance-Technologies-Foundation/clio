@@ -878,7 +878,14 @@ public class BindingsModule {
 					// CliogateHttpReadinessProbe takes runtime-only ctor args (an HttpClient, the
 					// attempt budget, and inter-attempt delays); it is constructed by the e2e
 					// readiness wait, not resolved from DI.
-					|| implementedInterface == typeof(ICliogateHttpReadinessProbe)) {
+					|| implementedInterface == typeof(ICliogateHttpReadinessProbe)
+					// The MCP credential-passthrough seam is registered explicitly in the
+					// mcp-http host only (McpHttpServerCommand.Run): the accessor depends on
+					// IHttpContextAccessor, which is not part of the stdio graph, and both are
+					// scoped to the HTTP transport. Auto-registering them here would fail
+					// ValidateOnBuild in the stdio/tool graph.
+					|| implementedInterface == typeof(ICredentialContextAccessor)
+					|| implementedInterface == typeof(ICredentialHeaderParser)) {
 					continue;
 				}
 				services.AddTransient(implementedInterface, type);
