@@ -70,6 +70,9 @@ OPTIONS
     --simple-lookup                Set simple-lookup flag (Lookup only)
     --cascade                      Set cascade-connection flag (Lookup only)
     --do-not-control-integrity     Set do-not-control-integrity flag (Lookup only)
+    --usage-type                   Column usage type: General (default), Advanced,
+                                   or None (case-insensitive; any column type). On
+                                   modify the stored value is left unchanged when omitted.
     --caption-culture              Override the culture for the written column
                                    caption/description (e.g. en-US, uk-UA).
                                    Precedence: override > profile culture > en-US.
@@ -93,6 +96,9 @@ EXAMPLES
 
     # Clear a previously configured default value
     clio modify-entity-schema-column -e dev --package Custom --schema-name UsrVehicle --action modify --column-name Status --default-value-source None
+
+    # Set a column's usage type
+    clio modify-entity-schema-column -e dev --package Custom --schema-name UsrVehicle --action modify --column-name Status --usage-type Advanced
 
     # Remove an own column
     clio modify-entity-schema-column -e dev --package Custom --schema-name UsrVehicle --action remove --column-name LegacyCode

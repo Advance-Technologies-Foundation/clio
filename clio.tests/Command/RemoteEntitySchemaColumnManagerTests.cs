@@ -299,6 +299,174 @@ internal class RemoteEntitySchemaColumnManagerTests
 	}
 
 	[Test]
+	[Description("Persists the requested UsageType ordinal when an add supplies usage-type Advanced.")]
+	public void ModifyColumn_ShouldPersistUsageTypeAdvanced_WhenAddSuppliesUsageType() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)], primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "add",
+			ColumnName = "Name",
+			Type = "Text",
+			UsageType = "Advanced"
+		};
+
+		// Act
+		_manager.ModifyColumn(options);
+
+		// Assert
+		EntitySchemaColumnDto addedColumn = _savedSchema.Columns.Single(column => column.Name == "Name");
+		addedColumn.UsageType.Should().Be(1,
+			because: "the friendly name Advanced must map to the backend UsageType ordinal 1 on add");
+	}
+
+	[Test]
+	[Description("Defaults UsageType to General (ordinal 0) when an add omits usage-type, matching the backend default.")]
+	public void ModifyColumn_ShouldPersistUsageTypeGeneral_WhenAddOmitsUsageType() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)], primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "add",
+			ColumnName = "Name",
+			Type = "Text"
+		};
+
+		// Act
+		_manager.ModifyColumn(options);
+
+		// Assert
+		EntitySchemaColumnDto addedColumn = _savedSchema.Columns.Single(column => column.Name == "Name");
+		addedColumn.UsageType.Should().Be(0,
+			because: "an add without usage-type must persist General (ordinal 0), matching the backend default");
+	}
+
+	[Test]
+	[Description("Accepts usage-type on a column of any type (Boolean + None) without type-gating.")]
+	public void ModifyColumn_ShouldAcceptUsageType_WhenColumnTypeIsNonTextNonDate() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)], primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "add",
+			ColumnName = "UsrActive",
+			Type = "Boolean",
+			UsageType = "None"
+		};
+
+		// Act
+		_manager.ModifyColumn(options);
+
+		// Assert
+		EntitySchemaColumnDto addedColumn = _savedSchema.Columns.Single(column => column.Name == "UsrActive");
+		addedColumn.UsageType.Should().Be(2,
+			because: "UsageType is type-independent and must apply to a Boolean column just like any other type");
+	}
+
+	[Test]
+	[Description("Leaves the stored UsageType unchanged when a modify changes only an unrelated property (starts from a non-General value).")]
+	public void ModifyColumn_ShouldPreserveUsageType_WhenModifyDoesNotSupplyUsageType() {
+		// Arrange
+		EntitySchemaColumnDto nameColumn = CreateTextColumn("Name", NameColumnUId);
+		nameColumn.UsageType = 2; // None — non-General so "preserved" cannot be confused with a reset to 0
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId), nameColumn]);
+		SetupLoadedSchema();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "modify",
+			ColumnName = "Name",
+			Title = "Vehicle name"
+		};
+
+		// Act
+		_manager.ModifyColumn(options);
+
+		// Assert
+		EntitySchemaColumnDto savedColumn = _savedSchema.Columns.Single(column => column.UId == NameColumnUId);
+		savedColumn.UsageType.Should().Be(2,
+			because: "a modify that does not supply usage-type must leave the stored value unchanged, not reset it to General");
+	}
+
+	[Test]
+	[Description("Updates the stored UsageType when a modify supplies only usage-type.")]
+	public void ModifyColumn_ShouldSetUsageType_WhenModifyOnlySuppliesUsageType() {
+		// Arrange
+		EntitySchemaColumnDto nameColumn = CreateTextColumn("Name", NameColumnUId);
+		nameColumn.UsageType = 0;
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId), nameColumn]);
+		SetupLoadedSchema();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "modify",
+			ColumnName = "Name",
+			UsageType = "None"
+		};
+
+		// Act
+		_manager.ModifyColumn(options);
+
+		// Assert
+		EntitySchemaColumnDto savedColumn = _savedSchema.Columns.Single(column => column.UId == NameColumnUId);
+		savedColumn.UsageType.Should().Be(2,
+			because: "a supplied usage-type must overwrite the stored value on modify");
+	}
+
+	[Test]
+	[Description("Throws a friendly error and saves nothing when usage-type is not one of General/Advanced/None.")]
+	public void ModifyColumn_ShouldThrowAndNotSave_WhenUsageTypeIsInvalid() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)], primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "add",
+			ColumnName = "Name",
+			Type = "Text",
+			UsageType = "Foo"
+		};
+
+		// Act
+		Action act = () => _manager.ModifyColumn(options);
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>()
+			.WithMessage("usage-type must be one of: General, Advanced, None.",
+				because: "an unrecognized usage-type must fail fast with the exact user-friendly message");
+		_designerClient.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(),
+			Arg.Any<Clio.Command.RemoteCommandOptions>());
+	}
+
+	[Test]
+	[Description("Surfaces UsageType on the structured read model as a friendly, round-trippable name.")]
+	public void GetColumnProperties_ShouldSurfaceUsageType_AsFriendlyName() {
+		// Arrange
+		EntitySchemaColumnDto nameColumn = CreateTextColumn("Name", NameColumnUId);
+		nameColumn.UsageType = 1;
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId), nameColumn]);
+		SetupLoadedSchema();
+
+		// Act
+		EntitySchemaColumnPropertiesInfo result = _manager.GetColumnProperties(new GetEntitySchemaColumnPropertiesOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			ColumnName = "Name"
+		});
+
+		// Assert
+		result.UsageType.Should().Be("Advanced",
+			because: "the read path must surface UsageType ordinal 1 as the friendly name Advanced for round-tripping");
+	}
+
+	[Test]
 	[Description("Falls back to the column name when add requests an empty title so caption is never persisted as empty.")]
 	public void ModifyColumn_AddsOwnColumn_UsesColumnName_WhenTitleIsEmpty() {
 		// Arrange

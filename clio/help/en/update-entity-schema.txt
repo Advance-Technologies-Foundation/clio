@@ -63,6 +63,8 @@ EXAMPLES
 
 NOTES
     - operations are applied in order
+    - each operation may set usage-type (General, Advanced, or None; any column
+      type); on modify the stored value is left unchanged when omitted
     - execution stops on the first failed operation
     - the batch is saved and materialized once after all operations are applied
     - operation JSON can also use structured default-value-config; legacy

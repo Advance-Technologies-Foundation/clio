@@ -351,7 +351,8 @@ public sealed class UpdateEntitySchemaTool(
 			["use-seconds"] = operation.UseSeconds,
 			["simple-lookup"] = operation.SimpleLookup,
 			["cascade"] = operation.Cascade,
-			["do-not-control-integrity"] = operation.DoNotControlIntegrity
+			["do-not-control-integrity"] = operation.DoNotControlIntegrity,
+			["usage-type"] = operation.UsageType
 		};
 	}
 }
@@ -537,7 +538,8 @@ public sealed class ModifyEntitySchemaColumnTool(ModifyEntitySchemaColumnCommand
 				SimpleLookup = args.SimpleLookup,
 				Cascade = args.Cascade,
 				DoNotControlIntegrity = args.DoNotControlIntegrity,
-				CaptionCulture = args.CaptionCulture
+				CaptionCulture = args.CaptionCulture,
+				UsageType = args.UsageType
 			};
 			return InternalExecute<ModifyEntitySchemaColumnCommand>(options);
 		} catch (Exception exception) {
@@ -983,6 +985,14 @@ public abstract record ColumnModificationArgsBase(
 	[property: JsonPropertyName("caption-culture")]
 	[property: Description("Optional culture override for the written column caption/description (e.g. 'en-US', 'uk-UA'). Precedence: caption-culture > detected profile culture > en-US. Skips the profile-culture lookup.")]
 	public string? CaptionCulture { get; init; }
+
+	/// <summary>
+	/// Gets the column usage type (General/Advanced/None). Type-independent; case-insensitive. On modify the
+	/// stored value is left unchanged when omitted.
+	/// </summary>
+	[property: JsonPropertyName("usage-type")]
+	[property: Description("Column usage type: General (default), Advanced, or None. Case-insensitive; applies to any column type. On modify, the stored value is left unchanged when omitted.")]
+	public string? UsageType { get; init; }
 }
 
 /// <summary>
