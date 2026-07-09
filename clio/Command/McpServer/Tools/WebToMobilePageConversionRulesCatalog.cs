@@ -48,9 +48,13 @@ public sealed class WebToMobilePageConversionRulesCatalog : IWebToMobilePageConv
 					return rules;
 				}
 			}
-		} catch {
+		} catch (Exception ex) when (
+			ex is ComponentRegistryUnavailableException
+			or System.Text.Json.JsonException
+			or IOException
+			or System.Net.Http.HttpRequestException) {
 			// CDN rules file not published yet / unreadable / parse error —
-			// fall back to the bundled rules shipped with clio.
+			// fall back to the bundled rules shipped with clio. Cancellation is not caught (it propagates).
 		}
 		return LoadBundled();
 	}

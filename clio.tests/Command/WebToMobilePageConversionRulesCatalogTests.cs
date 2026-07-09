@@ -97,7 +97,8 @@ public sealed class WebToMobilePageConversionRulesCatalogTests {
 	public async Task GetRulesAsync_WhenClientUnavailable_FallsBackToBundled() {
 		var client = Substitute.For<IWebToMobilePageConversionRulesRegistryClient>();
 		client.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-			.Returns(Task.FromException<ComponentRegistryFetchResult>(new InvalidOperationException("no CDN")));
+			.Returns(Task.FromException<ComponentRegistryFetchResult>(
+				new ComponentRegistryUnavailableException("latest", "https://cdn.example")));
 		var catalog = new WebToMobilePageConversionRulesCatalog(client);
 
 		WebToMobilePageConversionRules rules = await catalog.GetRulesAsync("latest");

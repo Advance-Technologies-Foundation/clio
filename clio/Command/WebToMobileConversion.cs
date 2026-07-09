@@ -782,7 +782,7 @@ public static class WebToMobileAnalysisService {
 		JObject modelConfig;
 		try {
 			modelConfig = JObject.Parse(bundle.ModelConfig.ToJsonString());
-		} catch {
+		} catch (Newtonsoft.Json.JsonException) {
 			return names;
 		}
 		if (modelConfig["dataSources"] is JObject dataSources) {
@@ -829,7 +829,7 @@ public static class WebToMobileAnalysisService {
 		JObject vmc;
 		try {
 			vmc = JObject.Parse(bundle.ViewModelConfig.ToJsonString());
-		} catch {
+		} catch (Newtonsoft.Json.JsonException) {
 			return null;
 		}
 		if (vmc["attributes"] is JObject attributes && attributes.Count > 0) {
@@ -850,7 +850,7 @@ public static class WebToMobileAnalysisService {
 		}
 		try {
 			return JsonNode.Parse(vmc.ToString());
-		} catch {
+		} catch (System.Text.Json.JsonException) {
 			return null;
 		}
 	}
@@ -1386,7 +1386,7 @@ public static class WebToMobileAnalysisService {
 		}
 		try {
 			return JsonNode.Parse(values.ToString(Newtonsoft.Json.Formatting.None));
-		} catch {
+		} catch (System.Text.Json.JsonException) {
 			return null;
 		}
 	}
@@ -1841,7 +1841,7 @@ public static class WebToMobileAnalysisService {
 		JObject vmc;
 		try {
 			vmc = JObject.Parse(bundle.ViewModelConfig.ToJsonString());
-		} catch {
+		} catch (Newtonsoft.Json.JsonException) {
 			return map;
 		}
 		if (vmc["attributes"] is JObject attributes) {
@@ -1865,7 +1865,7 @@ public static class WebToMobileAnalysisService {
 		JObject vmc;
 		try {
 			vmc = JObject.Parse(bundle.ViewModelConfig.ToJsonString());
-		} catch {
+		} catch (Newtonsoft.Json.JsonException) {
 			return map;
 		}
 		if (vmc["attributes"] is JObject attributes) {
@@ -1897,7 +1897,7 @@ public static class WebToMobileAnalysisService {
 	private static JObject ParseResources(PageBundleInfo bundle) {
 		try {
 			return bundle.Resources?.Strings is { } strings ? JObject.Parse(strings.ToJsonString()) : null;
-		} catch {
+		} catch (Newtonsoft.Json.JsonException) {
 			return null;
 		}
 	}
