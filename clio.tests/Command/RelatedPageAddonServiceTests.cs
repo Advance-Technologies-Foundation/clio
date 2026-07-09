@@ -28,6 +28,7 @@ public sealed class RelatedPageAddonServiceTests {
 	private IServiceUrlBuilder _serviceUrlBuilder;
 	private IAddonSchemaDesignerClient _addonSchemaDesignerClient;
 	private IRemoteEntitySchemaDesignerClient _entitySchemaDesignerClient;
+	private IPageSchemaResolver _pageSchemaResolver;
 	private ILogger _logger;
 	private RelatedPageAddonService _service;
 	private AddonSchemaDto _savedSchema;
@@ -39,6 +40,11 @@ public sealed class RelatedPageAddonServiceTests {
 		_addonSchemaDesignerClient = Substitute.For<IAddonSchemaDesignerClient>();
 		_entitySchemaDesignerClient = Substitute.For<IRemoteEntitySchemaDesignerClient>();
 		_logger = Substitute.For<ILogger>();
+		_pageSchemaResolver = Substitute.For<IPageSchemaResolver>();
+		// Default: resolve any page name to a single-schema hierarchy whose effective UId is deterministic by name
+		// (PageBUId for an add page, PageAUId otherwise) — mirrors the UIds the old flat lookup returned positionally.
+		_pageSchemaResolver.ResolveHierarchy(Arg.Any<string>(), Arg.Any<Guid>())
+			.Returns(callInfo => PageHierarchy(PageUIdForName(callInfo.Arg<string>())));
 		_serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns(SelectQueryUrl);
 		_addonSchemaDesignerClient.GetSchema(Arg.Any<AddonGetRequestDto>())
 			.Returns(new AddonSchemaDto { MetaData = """{"Pages":[],"TypeColumnUId":null}""" });
@@ -48,8 +54,19 @@ public sealed class RelatedPageAddonServiceTests {
 		// The object (entity schema) is resolved through the entity schema designer, not a SelectQuery.
 		StubEntitySchema(new EntityDesignSchemaDto { UId = Guid.Parse(EntityUId), Name = "UsrDeliveryItem" });
 		_service = new RelatedPageAddonService(
-			_applicationClient, _serviceUrlBuilder, _addonSchemaDesignerClient, _entitySchemaDesignerClient, _logger);
+			_applicationClient, _serviceUrlBuilder, _addonSchemaDesignerClient, _entitySchemaDesignerClient,
+			_pageSchemaResolver, _logger);
 	}
+
+	// Single-schema hierarchy whose effective (element [0]) UId is the given value — what the page resolver returns.
+	private static IReadOnlyList<PageDesignerHierarchySchema> PageHierarchy(string uId) =>
+		new[] { new PageDesignerHierarchySchema { UId = uId } };
+
+	// Deterministic name -> UId used by the default resolver stub (matches the positional UIds the old lookup gave).
+	private static string PageUIdForName(string pageName) =>
+		pageName != null && pageName.Trim().EndsWith("AddPage", StringComparison.OrdinalIgnoreCase)
+			? PageBUId
+			: PageAUId;
 
 	private void StubEntitySchema(EntityDesignSchemaDto schema) =>
 		_entitySchemaDesignerClient
@@ -213,8 +230,10 @@ public sealed class RelatedPageAddonServiceTests {
 	[Test]
 	[Description("Fails without saving when a page schema name cannot be resolved.")]
 	public void Create_ShouldThrowWithoutSaving_WhenPageNotFound() {
-		// Arrange — package + object resolve, then the page lookup returns no rows.
-		StubSelectQueue(Rows(PackageUId), """{"success": true, "rows": []}""");
+		// Arrange — package + object resolve, then the page resolver reports the page as not found.
+		StubSelectQueue(Rows(PackageUId));
+		_pageSchemaResolver.ResolveHierarchy("UsrMissingPage", Arg.Any<Guid>())
+			.Returns(_ => throw new InvalidOperationException("Page schema 'UsrMissingPage' not found."));
 
 		// Act
 		Action act = () => _service.Create(Request(new RelatedPageSpec("UsrMissingPage", IsDefault: true)));
@@ -449,6 +468,7 @@ public sealed class RelatedPageAddonServiceTests {
 			because: "the default entry uses the single resolved page UId");
 		pages[1]!["PageSchemaUId"]!.GetValue<string>().Should().Be(PageAUId,
 			because: "the add entry reuses the same resolved page UId without a second query");
+		_pageSchemaResolver.Received(1).ResolveHierarchy("UsrDeliveryItemFormPage", Arg.Any<Guid>());
 	}
 
 	[Test]
@@ -550,8 +570,10 @@ public sealed class RelatedPageAddonServiceTests {
 	[Test]
 	[Description("Rejects a resolved page UId that is present but not a GUID, without saving the add-on.")]
 	public void Create_ShouldThrow_WhenResolvedPageUidIsNotAGuid() {
-		// Arrange — package resolves, then the page query resolves a row whose UId is not a GUID.
-		StubSelectQueue(Rows(PackageUId), Rows("not-a-guid"));
+		// Arrange — the page resolver returns a schema whose UId is present but not a GUID.
+		StubSelectQueue(Rows(PackageUId));
+		_pageSchemaResolver.ResolveHierarchy("UsrDeliveryItemFormPage", Arg.Any<Guid>())
+			.Returns(PageHierarchy("not-a-guid"));
 
 		// Act
 		Action act = () => _service.Create(Request(new RelatedPageSpec("UsrDeliveryItemFormPage", IsDefault: true)));
@@ -1095,17 +1117,20 @@ public sealed class RelatedPageAddonServiceTests {
 	}
 
 	[Test]
-	[Description("A non-JSON page-name lookup response (e.g. an auth-redirect HTML page from an expired session) surfaces as a clean lookup failure, not a raw JSON parse exception — QuerySysSchemaRow now routes through the guarded ExecuteSelectQuery like every other lookup in the helper.")]
-	public void Create_ShouldFailCleanly_WhenPageNameLookupReturnsNonJson() {
-		// Arrange — package resolves, then the page-name SelectQuery returns an HTML login redirect.
-		StubSelectQueue(Rows(PackageUId), "<!DOCTYPE html><html><body>login</body></html>");
+	[Description("A page-resolution failure (e.g. the expired-session lookup error the page resolver surfaces from a non-JSON response — see PageSchemaResolverTests) propagates out of Create cleanly and without saving.")]
+	public void Create_ShouldSurfaceResolverFailure_WithoutSaving() {
+		// Arrange — the page resolver fails with a clean lookup error (the resolver itself turns an HTML / expired-
+		// session response into this via the guarded ExecuteSelectQuery; that conversion is covered by PageSchemaResolverTests).
+		StubSelectQueue(Rows(PackageUId));
+		_pageSchemaResolver.ResolveHierarchy(Arg.Any<string>(), Arg.Any<Guid>())
+			.Returns(_ => throw new InvalidOperationException("Failed to query schema metadata"));
 
 		// Act
 		Action act = () => _service.Create(Request(new RelatedPageSpec("UsrDeliveryItemFormPage", IsDefault: true)));
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>().WithMessage("*Failed to query schema metadata*",
-			because: "a non-JSON response must surface as a clean lookup failure, not a raw JObject.Parse exception");
+			because: "a page-resolution failure must surface cleanly from Create, without saving");
 		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().SaveSchema(default!);
 	}
 

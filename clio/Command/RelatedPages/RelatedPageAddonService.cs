@@ -93,6 +93,7 @@ internal sealed class RelatedPageAddonService(
 	IServiceUrlBuilder serviceUrlBuilder,
 	IAddonSchemaDesignerClient addonSchemaDesignerClient,
 	IRemoteEntitySchemaDesignerClient entitySchemaDesignerClient,
+	IPageSchemaResolver pageSchemaResolver,
 	ILogger logger)
 	: IRelatedPageAddonService {
 
@@ -338,7 +339,7 @@ internal sealed class RelatedPageAddonService(
 		string typeColumnWarning = ValidateTypeColumn(request.TypeColumnUId, entitySchema);
 
 		IReadOnlyDictionary<string, string> roleByName = ResolveRoleNames(request.Pages);
-		JsonArray pages = BuildPages(request.Pages, roleByName);
+		JsonArray pages = BuildPages(request.Pages, roleByName, packageId);
 
 		AddonGetRequestDto addonRequest = BuildAddonGetRequest(entitySchema, packageId);
 		AddonSchemaDto schema = addonSchemaDesignerClient.GetSchema(addonRequest);
@@ -628,8 +629,9 @@ internal sealed class RelatedPageAddonService(
 	/// </summary>
 	private JsonArray BuildPages(
 		IReadOnlyList<RelatedPageSpec> specs,
-		IReadOnlyDictionary<string, string> roleByName) {
-		IReadOnlyDictionary<string, string> pageUIdByName = ResolvePageSchemaUIds(specs);
+		IReadOnlyDictionary<string, string> roleByName,
+		Guid packageId) {
+		IReadOnlyDictionary<string, string> pageUIdByName = ResolvePageSchemaUIds(specs, packageId);
 		var pages = new JsonArray();
 		foreach (RelatedPageSpec spec in specs) {
 			string role = ResolvePageRole(spec, roleByName);
@@ -647,12 +649,14 @@ internal sealed class RelatedPageAddonService(
 	}
 
 	/// <summary>
-	/// Resolves every DISTINCT page-schema name to its <c>PageSchemaUId</c> once (case-insensitive), so a page
-	/// named by several specs — e.g. the same page used as both the default and the add page — is queried a
-	/// single time rather than per entry. Also enforces the non-empty page name and validates each resolved
-	/// UId as a GUID (symmetric with the role/package/type-column UId guards).
+	/// Resolves every DISTINCT page-schema name to its effective <c>PageSchemaUId</c> once (case-insensitive), so a
+	/// page named by several specs — e.g. the same page used as both the default and the add page — is resolved a
+	/// single time rather than per entry. Resolution is package-aware and replacement-aware (via
+	/// <see cref="IPageSchemaResolver"/>): a page replaced across packages resolves to the variant effective from
+	/// the ADDON's package, not an arbitrary SysSchema row. Also validates each resolved UId as a GUID (symmetric
+	/// with the role/package/type-column UId guards).
 	/// </summary>
-	private IReadOnlyDictionary<string, string> ResolvePageSchemaUIds(IReadOnlyList<RelatedPageSpec> specs) {
+	private IReadOnlyDictionary<string, string> ResolvePageSchemaUIds(IReadOnlyList<RelatedPageSpec> specs, Guid packageId) {
 		var resolved = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 		foreach (RelatedPageSpec spec in specs) {
 			// A spec with an explicit page-schema-uid is used verbatim (validated as a GUID in ValidateRequest), so
@@ -665,11 +669,9 @@ internal sealed class RelatedPageAddonService(
 			if (resolved.ContainsKey(pageName)) {
 				continue;
 			}
-			(string pageUId, string pageError) = PageSchemaMetadataHelper.QueryPageSchemaUId(
-				applicationClient, serviceUrlBuilder, pageName);
-			if (pageError != null) {
-				throw new InvalidOperationException(pageError);
-			}
+			// Resolve the effective page in the ADDON's package context (package-first + replacement hierarchy),
+			// not a flat by-name lookup — element [0] of the hierarchy is the effective (current) schema.
+			string pageUId = pageSchemaResolver.ResolveHierarchy(pageName, packageId)[0].UId;
 			if (!Guid.TryParse(pageUId, out _)) {
 				throw new InvalidOperationException(
 					$"Resolved page '{pageName}' UId '{pageUId}' is not a valid GUID.");
