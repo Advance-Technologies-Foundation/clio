@@ -241,15 +241,23 @@ public static class WebToMobileAnalysisService {
 		var dropped = new List<DroppedPageBusinessRule>();
 
 		foreach (SourcePageBusinessRule rule in probe.Rules ?? []) {
-			// A condition that mixes AND and OR across nested groups (e.g. A AND (B OR C)) cannot be represented
-			// by the flat single-operator condition input of create-page-business-rule. Flattening it would change
-			// when the rule fires, so drop the whole rule for manual recreation rather than emit wrong semantics.
-			if (rule.ConditionNotConvertible) {
+			// A condition that cannot be represented by the flat single-operator condition input of
+			// create-page-business-rule (mixed AND/OR, or an unrecognized comparison operator) would fire under
+			// different conditions if emitted. Drop the whole rule for manual recreation rather than emit wrong
+			// semantics.
+			if (rule.ConditionIssue != PageRuleConditionIssue.None) {
 				dropped.Add(new DroppedPageBusinessRule {
 					Caption = rule.Caption,
-					Reason = "Condition mixes AND and OR across nested groups; a mobile page rule supports only a "
-						+ "single flat condition group (one logical operator) and cannot represent this without "
-						+ "changing when the rule fires — recreate this rule manually."
+					Reason = rule.ConditionIssue switch {
+						PageRuleConditionIssue.MixedAndOr =>
+							"Condition mixes AND and OR across nested groups; a mobile page rule supports only a "
+							+ "single flat condition group (one logical operator) and cannot represent this without "
+							+ "changing when the rule fires — recreate this rule manually.",
+						PageRuleConditionIssue.UnrecognizedComparison =>
+							"Condition uses a comparison operator with no supported mobile equivalent; emitting it "
+							+ "would silently change the comparison — recreate this rule manually.",
+						_ => "Condition cannot be converted for the mobile page — recreate this rule manually."
+					}
 				});
 				continue;
 			}

@@ -129,11 +129,11 @@ public static class PageBusinessRuleProbe {
 				string caseCaption = cases.Count > 1 && !string.IsNullOrWhiteSpace(caption)
 					? $"{caption} (case {caseIndex})"
 					: caption;
-				JsonNode condition = ConvertCondition(ruleCase["condition"], out bool conditionConvertible);
+				JsonNode condition = ConvertCondition(ruleCase["condition"], out PageRuleConditionIssue conditionIssue);
 				result.Add(new SourcePageBusinessRule {
 					Caption = caseCaption,
 					Condition = condition,
-					ConditionNotConvertible = !conditionConvertible,
+					ConditionIssue = conditionIssue,
 					Actions = actions
 				});
 			}
@@ -172,10 +172,11 @@ public static class PageBusinessRuleProbe {
 	/// and FLATTENED — this is lossless as long as the tree uses a single logical operator. When the tree mixes
 	/// AND and OR across groups that each carry ≥2 real operands (e.g. <c>A AND (B OR C)</c>), flattening would
 	/// change when the rule fires; that cannot be represented in the flat input shape, so <paramref name="convertible"/>
-	/// is set to <c>false</c> and the caller drops the rule for manual recreation instead of emitting wrong semantics.
+	/// reports the reason via <paramref name="issue"/> and the caller drops the rule for manual recreation instead
+	/// of emitting wrong semantics.
 	/// </summary>
-	private static JsonNode ConvertCondition(JsonNode conditionNode, out bool convertible) {
-		convertible = true;
+	private static JsonNode ConvertCondition(JsonNode conditionNode, out PageRuleConditionIssue issue) {
+		issue = PageRuleConditionIssue.None;
 		if (conditionNode is not JsonObject group) {
 			return null;
 		}
@@ -186,7 +187,15 @@ public static class PageBusinessRuleProbe {
 		var activeIsOr = new HashSet<bool>();
 		CollectActiveGroupOperators(group, activeIsOr);
 		if (activeIsOr.Count > 1) {
-			convertible = false;
+			issue = PageRuleConditionIssue.MixedAndOr;
+			return null;
+		}
+
+		// A PRESENT comparison operator that maps to nothing supported would otherwise be silently rewritten to
+		// the "is-not-filled-in" default (which is only correct for a genuinely ABSENT comparison) — a
+		// plausible-but-wrong rule. Drop the rule instead.
+		if (HasUnrecognizedComparison(group)) {
+			issue = PageRuleConditionIssue.UnrecognizedComparison;
 			return null;
 		}
 
@@ -242,6 +251,24 @@ public static class PageBusinessRuleProbe {
 	}
 
 	/// <summary>
+	/// True when any leaf in the (possibly nested) group carries a PRESENT comparison operator that
+	/// <see cref="ResolveComparisonName"/> cannot map (numeric outside the supported set, or an unmapped name).
+	/// A genuinely absent comparison is fine (it becomes the Creatio default "is-not-filled-in").
+	/// </summary>
+	private static bool HasUnrecognizedComparison(JsonObject node) {
+		if (node["conditions"] is JsonArray inner) {
+			foreach (JsonNode child in inner) {
+				if (child is JsonObject childObj && HasUnrecognizedComparison(childObj)) {
+					return true;
+				}
+			}
+			return false;
+		}
+		bool isLeaf = node["leftExpression"] is not null || node["comparisonType"] is not null;
+		return isLeaf && ResolveComparisonName(node["comparisonType"]) is null;
+	}
+
+	/// <summary>
 	/// Recursively lifts every leaf condition out of a (possibly nested) condition group into
 	/// <paramref name="conditions"/>. A node with a <c>conditions</c> array is a group — recurse into each
 	/// child; otherwise it is a bare leaf (carries <c>leftExpression</c>/<c>comparisonType</c>) — convert and
@@ -282,30 +309,34 @@ public static class PageBusinessRuleProbe {
 
 	/// <summary>
 	/// Resolves the create-page-business-rule comparison name from a persisted condition. Creatio omits the
-	/// comparison for a bare "is (not) filled in" check, so an ABSENT/unrecognized value defaults to
-	/// <c>is-not-filled-in</c> (Creatio's default, enum 0) rather than dropping the condition — conditions must
-	/// always convert. Accepts the numeric enum value, an already-kebab supported name, or a PascalCase enum
-	/// name (e.g. <c>IsFilledIn</c>).
+	/// comparison for a bare "is (not) filled in" check, so a genuinely ABSENT value defaults to
+	/// <c>is-not-filled-in</c> (Creatio's default, enum 0). A PRESENT but unrecognized value (a numeric outside
+	/// the supported set, or an unmapped name) returns <c>null</c> — the caller drops the rule rather than
+	/// silently rewriting the comparison. Accepts the numeric enum value, an already-kebab supported name, or a
+	/// PascalCase enum name (e.g. <c>IsFilledIn</c>).
 	/// </summary>
 	private static string ResolveComparisonName(JsonNode comparisonNode) {
 		const string defaultComparison = "is-not-filled-in";
+		// Genuinely absent -> Creatio's default (bare "is (not) filled in").
 		if (comparisonNode is not JsonValue value) {
 			return defaultComparison;
 		}
-		if (value.TryGetValue(out int numeric) && ComparisonNameByValue.TryGetValue(numeric, out string byValue)) {
-			return byValue;
+		// A numeric value is definitive: mapped -> name; present but unknown -> null (do not fall through).
+		if (value.TryGetValue(out int numeric)) {
+			return ComparisonNameByValue.TryGetValue(numeric, out string byValue) ? byValue : null;
 		}
 		string text = value.ToString();
 		if (string.IsNullOrWhiteSpace(text)) {
 			return defaultComparison;
 		}
-		if (int.TryParse(text, out int parsed) && ComparisonNameByValue.TryGetValue(parsed, out string byParsed)) {
-			return byParsed;
+		if (int.TryParse(text, out int parsed)) {
+			return ComparisonNameByValue.TryGetValue(parsed, out string byParsed) ? byParsed : null;
 		}
 		if (SupportedComparisonTypeValues.ContainsKey(text)) {
 			return text; // already a supported kebab name (e.g. "is-filled-in").
 		}
-		return PascalEnumToKebab.TryGetValue(text, out string mapped) ? mapped : defaultComparison;
+		// Present PascalCase name: mapped -> kebab; otherwise unrecognized -> null.
+		return PascalEnumToKebab.TryGetValue(text, out string mapped) ? mapped : null;
 	}
 
 	// Creatio BusinessRuleComparisonType PascalCase enum names -> create-page-business-rule kebab names.

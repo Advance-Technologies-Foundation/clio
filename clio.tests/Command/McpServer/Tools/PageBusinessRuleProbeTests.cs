@@ -177,7 +177,45 @@ public sealed class PageBusinessRuleProbeTests {
 		List<SourcePageBusinessRule> rules = PageBusinessRuleProbe.ParseRules(Schema(meta));
 
 		rules.Should().HaveCount(1);
-		rules[0].ConditionNotConvertible.Should().BeTrue("A AND (B OR C) cannot be flattened into a single operator");
+		rules[0].ConditionIssue.Should().Be(PageRuleConditionIssue.MixedAndOr, "A AND (B OR C) cannot be flattened into a single operator");
+	}
+
+	[Test]
+	[Description("A PRESENT but unrecognized comparisonType (a numeric outside the supported set) is flagged not-convertible instead of being silently rewritten to the is-not-filled-in default.")]
+	public void ParseRules_UnrecognizedComparison_MarksNotConvertible() {
+		string meta = $$"""
+		{
+		  "typeName": "{{BusinessRulesMetadataTypeName}}",
+		  "rules": [
+		    {
+		      "typeName": "{{BusinessRuleTypeName}}",
+		      "uId": "rule-1",
+		      "caption": "Name begins with A",
+		      "cases": [
+		        {
+		          "typeName": "{{BusinessRuleCaseTypeName}}",
+		          "condition": {
+		            "typeName": "{{BusinessRuleGroupConditionTypeName}}",
+		            "logicalOperation": {{LogicalAnd}},
+		            "conditions": [
+		              { "typeName": "{{BusinessRuleConditionTypeName}}", "comparisonType": 4,
+		                "leftExpression": { "typeName": "{{BusinessRuleAttributeExpressionTypeName}}", "type": "AttributeValue", "path": "Name" },
+		                "rightExpression": { "typeName": "{{BusinessRuleAttributeExpressionTypeName}}", "type": "Const", "value": "A" } }
+		            ]
+		          },
+		          "actions": [ { "typeName": "{{BusinessRuleHideElementTypeName}}", "items": "Field1" } ]
+		        }
+		      ]
+		    }
+		  ]
+		}
+		""";
+
+		List<SourcePageBusinessRule> rules = PageBusinessRuleProbe.ParseRules(Schema(meta));
+
+		rules.Should().HaveCount(1);
+		rules[0].ConditionIssue.Should().Be(PageRuleConditionIssue.UnrecognizedComparison,
+			"comparisonType 4 maps to no supported comparison and must not silently become is-not-filled-in");
 	}
 
 	[Test]
@@ -220,7 +258,7 @@ public sealed class PageBusinessRuleProbeTests {
 		List<SourcePageBusinessRule> rules = PageBusinessRuleProbe.ParseRules(Schema(meta));
 
 		rules.Should().HaveCount(1);
-		rules[0].ConditionNotConvertible.Should().BeFalse();
+		rules[0].ConditionIssue.Should().Be(PageRuleConditionIssue.None);
 		rules[0].Condition!["logicalOperation"]!.GetValue<string>().Should().Be("AND");
 		var conditions = rules[0].Condition!["conditions"]!.AsArray();
 		conditions.Should().HaveCount(3, because: "same-operator nesting flattens losslessly");

@@ -654,14 +654,34 @@ internal sealed class SourcePageBusinessRule {
 	public JsonNode Condition { get; init; }
 
 	/// <summary>
-	/// True when the source condition mixes AND and OR across nested groups (e.g. <c>A AND (B OR C)</c>). The
-	/// create-page-business-rule input supports only a single flat condition group with one logical operator, so
-	/// such a condition cannot be represented without changing when the rule fires. The rule is dropped for manual
-	/// recreation rather than emitted with fabricated (flattened) semantics.
+	/// Why the source condition cannot be faithfully represented in the create-page-business-rule input (or
+	/// <see cref="PageRuleConditionIssue.None"/> when it can). Such a rule is dropped for manual recreation
+	/// rather than emitted with fabricated semantics. <see cref="PageRuleConditionIssue"/> for the cases.
 	/// </summary>
-	public bool ConditionNotConvertible { get; init; }
+	public PageRuleConditionIssue ConditionIssue { get; init; }
 
 	public List<SourcePageRuleAction> Actions { get; init; } = [];
+}
+
+/// <summary>
+/// Why a source page-rule condition cannot be converted losslessly into the flat, single-operator
+/// create-page-business-rule condition input. A non-<see cref="None"/> value drops the rule for manual recreation.
+/// </summary>
+internal enum PageRuleConditionIssue {
+	/// <summary>The condition converts faithfully (or there is no condition).</summary>
+	None = 0,
+
+	/// <summary>
+	/// The condition mixes AND and OR across nested groups (e.g. <c>A AND (B OR C)</c>); the flat single-operator
+	/// input cannot represent it without changing when the rule fires.
+	/// </summary>
+	MixedAndOr,
+
+	/// <summary>
+	/// A condition uses a present comparison operator that maps to no supported comparison (e.g. "begins with").
+	/// Emitting it would silently change the comparison, so the rule is dropped instead.
+	/// </summary>
+	UnrecognizedComparison
 }
 
 /// <summary>One action of a source page-level business rule. Page rules support only element actions.</summary>

@@ -1011,7 +1011,7 @@ public sealed class WebToMobileConversionServiceTests {
 	public void ConvertPageBusinessRules_MixedAndOrCondition_DropsRule() {
 		var rule = new SourcePageBusinessRule {
 			Caption = "Mixed A AND (B OR C)",
-			ConditionNotConvertible = true,
+			ConditionIssue = PageRuleConditionIssue.MixedAndOr,
 			Actions = { ElementAction("make-read-only", "UsrName") }
 		};
 		PageBusinessRuleProbeResult probe = ProbeOf(rule);
@@ -1023,6 +1023,25 @@ public sealed class WebToMobileConversionServiceTests {
 		result.DroppedRules.Should().HaveCount(1);
 		result.DroppedRules[0].Caption.Should().Be("Mixed A AND (B OR C)");
 		result.DroppedRules[0].Reason.Should().Contain("mixes AND and OR");
+	}
+
+	[Test]
+	[Description("A rule whose condition uses an unrecognized comparison operator is dropped rather than emitted with a silently rewritten comparison, even when its actions would otherwise survive.")]
+	public void ConvertPageBusinessRules_UnrecognizedComparison_DropsRule() {
+		var rule = new SourcePageBusinessRule {
+			Caption = "Name begins with A",
+			ConditionIssue = PageRuleConditionIssue.UnrecognizedComparison,
+			Actions = { ElementAction("hide-element", "UsrName") }
+		};
+		PageBusinessRuleProbeResult probe = ProbeOf(rule);
+		var elementMap = new List<ElementMapEntry> { El("UsrName", "merge", "AreaName") };
+
+		PageBusinessRuleConversionInfo result = WebToMobileAnalysisService.ConvertPageBusinessRules(probe, elementMap);
+
+		result.ConvertedRules.Should().BeEmpty();
+		result.DroppedRules.Should().HaveCount(1);
+		result.DroppedRules[0].Caption.Should().Be("Name begins with A");
+		result.DroppedRules[0].Reason.Should().Contain("comparison operator");
 	}
 
 	[Test]
