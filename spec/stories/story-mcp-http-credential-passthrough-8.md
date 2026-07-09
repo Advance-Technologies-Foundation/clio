@@ -71,7 +71,39 @@ Targeted run: `dotnet test clio.tests/clio.tests.csproj --filter "Category=Unit&
 
 ## Dev Agent Record
 
-- Implementation started:
-- Implementation completed:
-- Tests passing:
-- Notes:
+- Implementation started: 2026-07-09
+- Implementation completed: 2026-07-09
+- Tests passing: yes — full unit suite `dotnet test --filter "Category=Unit" -f net10.0` → 5120 passed, 0 failed, 35 skipped. Targeted `Category=Unit&Module=McpServer` → 1851 passed, 0 failed, 1 skipped.
+
+### FR-07 — cache-key token discrimination
+- `ToolCommandResolver.BuildCacheKey` now hashes `Login|Password|ClientId|AccessToken|AccessTokenType|Cookie|IsNetCore` (was `Login|Password|ClientId|IsNetCore`), so same-URL/different-token requests resolve to distinct containers (AC-01).
+- Factored a single `HashSecretMaterial` helper shared by `BuildCacheKey` and `BuildPassthroughCacheKey`; both SHA-256 hash the credential material before it enters the key (AC-02, FR-11).
+- **Deviation:** the legacy key no longer truncates the hash to 16 hex chars — it uses the FULL hash, matching `BuildPassthroughCacheKey`. Rationale: on this feature "same url, different token" is the norm, so a 64-bit prefix collision would be a cross-tenant credential crossover. No persisted format depends on the key.
+- `BuildCacheKey` was made `internal static` (was `private`) for unit testing via existing `InternalsVisibleTo("clio.tests")`.
+
+### FR-08 — ISessionContainerCache (replaced the static dictionary)
+- New `clio/Command/McpServer/SessionContainerCache.cs`: `ISessionContainerCache` + `SessionContainerCache` + `SessionContainerCacheDefaults`. The static `ConcurrentDictionary` on `ToolCommandResolver` was removed; the resolver now injects `ISessionContainerCache` (6th ctor param) and calls `Acquire` in BOTH the legacy and passthrough paths.
+- API: `Acquire(key, factory)` (get-or-create + bump lastAccessUtc + opportunistic eviction sweep), `MarkInUse(key)` / `MarkAvailable(key)` (in-flight guard). Deterministic `Func<DateTime>` clock seam injected for tests — no `Thread.Sleep`/wall-clock.
+- Idle-TTL eviction (default 5 min) + LRU capacity eviction (default 50, oldest `lastAccessUtc`). Eviction skips any entry with `inUseCount > 0` AND the just-added key; if all others are in-use, a temporary overshoot is allowed rather than evicting an in-use/just-requested container (AC-06).
+
+### AC-05 — disposal decision: OPTION (a), GC-safety proven
+- On eviction the child `IServiceProvider` is disposed; that is sufficient. **Evidence (decompiled `Creatio.Client` 1.0.38 netstandard2.0 via `ilspycmd`):** `class CreatioClient : ICreatioClient` — it does NOT implement `IDisposable`. Its only fields are `string`/`bool`, a `CookieContainer`, an `ICredentials` and a `RetryPolicy` — no long-lived per-instance `HttpClient`/`HttpClientHandler`/`ClientWebSocket`/socket. Every HTTP call creates and disposes its own `HttpClient(handler)` inside a `using` block (per-request; no shared static, no `IHttpClientFactory` pool). The only socket-bearing type, `WsListenerNetFramework : IWsListener, IDisposable` (owns a `ClientWebSocket` + 8 MB buffer), is a separate object created only inside `StartListening`; it is never a field of `CreatioClient` and is not touched by the request/response command path the cached containers use. `CreatioClientAdapter`/`IApplicationClient` are likewise not `IDisposable` and wrap nothing long-lived. Therefore an evicted container leaks no transport resource: provider dispose releases incidental IDisposables, and the adapter + client are then plain GC-collectable managed state. Option (b) (custom transport lifecycle) is NOT required. This is documented in the `SessionContainerCache` XML `<remarks>`.
+
+### AC-06 — in-flight guard scope: cache-level now, execution-boundary Release DEFERRED to Story 9
+- Per the coordinator ruling: `MarkInUse`/`MarkAvailable` are implemented and unit-tested at the cache level; `Acquire` does NOT hold a lingering in-use ref (get-or-create + bump lastAccess only), so production eviction is fully functional now (entries are not permanently pinned in-use). Wiring `MarkInUse`/`MarkAvailable` into the BaseTool execution boundary is DEFERRED to Story 9, which refactors the execution lifecycle + removes the global lock. TODAY the global `McpToolExecutionLock` serializes all tool execution, so a container of another tenant cannot be evicted mid-call; the cache-level guard is proven by unit tests (`Acquire_ShouldNotEvictInUseEntry_*`).
+
+### Options + cross-host DI
+- Added `--session-idle-ttl` (string, default `5m`) and `--max-sessions` (int, default 50) to `McpHttpServerCommandOptions` (kebab-case, CLIO001 clean).
+- `--session-idle-ttl` parsing (`SessionContainerCacheDefaults.ResolveIdleTtl`): accepts suffixed duration (`90s`/`5m`/`1h`/`1d`), bare seconds (`300`), or a `TimeSpan` string (`00:05:00`); null/blank/unparseable/non-positive → 5-minute default (never disables eviction).
+- Default singleton registered in shared `BindingsModule.RegisterInto`; run-time-configured instance registered in `McpHttpServerCommand.Run` AFTER the shared build (last-registration-wins). `ISessionContainerCache` added to the `RegisterAssemblyInterfaceTypes` skip-list (impl ctor takes primitive TimeSpan/int → would break stdio ValidateOnBuild). Both host graphs validate on build (confirmed by the green suite incl. `CredentialPassthroughDiRegistrationTests`).
+
+### MCP / docs
+- MCP: `mcp-http` is a host launcher, not an MCP tool — no tool/prompt/resource wraps it. MCP reviewed, no update required.
+- Docs: deferred to Story 14 per work order. No `ReadmeChecker`/doc test regressed (full suite green), so no `help/en/mcp-http.txt` stub was needed.
+
+### Tests added
+- `clio.tests/Command/McpServer/SessionContainerCacheTests.cs` — reuse/distinct providers, idle-TTL eviction + dispose, LRU eviction + dispose, in-use survival (capacity + idle), release-then-evict, ctor guards, `ResolveIdleTtl` parsing.
+- `clio.tests/Command/McpServer/ToolCommandResolverCacheKeyTests.cs` — same-URL/distinct-token → distinct legacy AND passthrough keys; secret-free (hashed) keys.
+- Updated `ToolCommandResolverTests.cs` / `ToolCommandResolverNoWriteTests.cs` for the new 6th ctor param.
+
+- Notes: DID NOT commit or push (per work order).

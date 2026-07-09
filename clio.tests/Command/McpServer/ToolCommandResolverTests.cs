@@ -20,7 +20,8 @@ public class ToolCommandResolverTests {
 		ISettingsRepository settingsRepository,
 		ISettingsBootstrapService settingsBootstrapService,
 		ICredentialContextAccessor credentialContextAccessor = null,
-		ITargetUrlValidator targetUrlValidator = null) =>
+		ITargetUrlValidator targetUrlValidator = null,
+		ISessionContainerCache sessionContainerCache = null) =>
 		new(
 			settingsRepository,
 			settingsBootstrapService,
@@ -28,7 +29,9 @@ public class ToolCommandResolverTests {
 			// A substitute accessor returns null Current by default → the non-passthrough (existing)
 			// path, matching the stdio host's null-object behavior.
 			credentialContextAccessor ?? Substitute.For<ICredentialContextAccessor>(),
-			targetUrlValidator ?? Substitute.For<ITargetUrlValidator>());
+			targetUrlValidator ?? Substitute.For<ITargetUrlValidator>(),
+			sessionContainerCache
+				?? new SessionContainerCache(SessionContainerCacheDefaults.IdleTtl, SessionContainerCacheDefaults.MaxSessions));
 
 	[Test]
 	[Description("Rejects unknown environment names instead of resolving MCP commands against default localhost settings.")]

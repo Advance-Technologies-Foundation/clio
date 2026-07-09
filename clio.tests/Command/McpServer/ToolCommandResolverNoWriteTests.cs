@@ -40,7 +40,8 @@ public class ToolCommandResolverNoWriteTests {
 			settingsBootstrapService,
 			new NonInteractiveConsole(),
 			accessor,
-			Substitute.For<ITargetUrlValidator>());
+			Substitute.For<ITargetUrlValidator>(),
+			new SessionContainerCache(SessionContainerCacheDefaults.IdleTtl, SessionContainerCacheDefaults.MaxSessions));
 
 		try {
 			// Act

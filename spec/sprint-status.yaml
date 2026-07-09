@@ -729,7 +729,7 @@ stories:
     title: "Cache-key discrimination + TTL/bounded eviction (with disposal/GC-safety decision)"
     feature: "mcp-http-credential-passthrough"
     size: L
-    status: ready-for-dev
+    status: in-progress
     note: "Carries the verified caveat: CreatioClient/CreatioClientAdapter/IApplicationClient are NOT IDisposable — provider disposal releases no transport resources. AC-05 must PROVE GC-safety under bounded churn OR add a real lifecycle; never claim 'dispose the provider' sufficient. Never evict in-flight."
     file: spec/stories/story-mcp-http-credential-passthrough-8.md
     prd: spec/prd/prd-mcp-http-credential-passthrough.md

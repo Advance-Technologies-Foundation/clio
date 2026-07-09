@@ -473,6 +473,14 @@ public class BindingsModule {
 		// auto-registration of BOTH the real and the null implementations (the skip is keyed on the interface).
 		services.AddSingleton<ICredentialContextAccessor, NullCredentialContextAccessor>();
 		services.AddSingleton<ITargetUrlValidator, NullTargetUrlValidator>();
+		// Shared DEFAULT session-container cache (FR-08). The mcp-http host re-registers a run-time
+		// configured instance AFTER this shared build (McpHttpServerCommand.Run) from --session-idle-ttl
+		// / --max-sessions, so last-registration-wins gives the configured cache in HTTP and this
+		// default everywhere else. It stays in the RegisterAssemblyInterfaceTypes skip-list: the impl
+		// ctor takes primitive TimeSpan/int args that cannot be auto-resolved, so an auto-registration
+		// would break ValidateOnBuild.
+		services.AddSingleton<ISessionContainerCache>(_ => new SessionContainerCache(
+			SessionContainerCacheDefaults.IdleTtl, SessionContainerCacheDefaults.MaxSessions));
 		services.AddTransient<IToolCommandResolver, ToolCommandResolver>();
 		services.AddTransient<IDataForgePlatformVersionGuard, DataForgePlatformVersionGuard>();
 		services.AddTransient<IDataForgeReadClient, DataForgeReadClient>();
@@ -925,7 +933,12 @@ public class BindingsModule {
 					// mcp-http host (McpHttpServerCommand.Run) because its policy (bound host +
 					// --allowed-base-urls allowlist) is resolved at Run time. Auto-registering the
 					// type here has no policy and pollutes the stdio graph.
-					|| implementedInterface == typeof(ITargetUrlValidator)) {
+					|| implementedInterface == typeof(ITargetUrlValidator)
+					// The session-container cache is registered explicitly (a DEFAULT singleton in the
+					// shared build, a run-time-configured instance in the mcp-http host). Its impl ctor
+					// takes primitive TimeSpan/int args that DI cannot resolve, so auto-registering the
+					// type here would fail ValidateOnBuild.
+					|| implementedInterface == typeof(ISessionContainerCache)) {
 					continue;
 				}
 				services.AddTransient(implementedInterface, type);

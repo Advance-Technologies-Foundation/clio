@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using Clio;
@@ -35,9 +34,8 @@ public class ToolCommandResolver(
 	ISettingsBootstrapService settingsBootstrapService,
 	IInteractiveConsole interactiveConsole,
 	ICredentialContextAccessor credentialContextAccessor,
-	ITargetUrlValidator targetUrlValidator) : IToolCommandResolver {
-
-	private static readonly ConcurrentDictionary<string, IServiceProvider> ContainerCache = new(StringComparer.OrdinalIgnoreCase);
+	ITargetUrlValidator targetUrlValidator,
+	ISessionContainerCache sessionContainerCache) : IToolCommandResolver {
 
 	/// <summary>
 	/// Resolves a command against an explicit environment or URI-based target.
@@ -91,8 +89,8 @@ public class ToolCommandResolver(
 			}
 		}
 		string cacheKey = BuildCacheKey(options, settings);
-		IServiceProvider container = ContainerCache.GetOrAdd(cacheKey,
-			_ => new BindingsModule().Register(settings));
+		IServiceProvider container = sessionContainerCache.Acquire(cacheKey,
+			() => new BindingsModule().Register(settings));
 		return container.GetRequiredService<TCommand>();
 	}
 
@@ -139,8 +137,8 @@ public class ToolCommandResolver(
 		string cacheKey = BuildPassthroughCacheKey(context);
 		// Nothing is persisted (AC-03): the ephemeral settings never touch the settings repository,
 		// disk, session, or appsettings.json — only this in-memory container cache.
-		IServiceProvider container = ContainerCache.GetOrAdd(cacheKey,
-			_ => new BindingsModule().Register(settings));
+		IServiceProvider container = sessionContainerCache.Acquire(cacheKey,
+			() => new BindingsModule().Register(settings));
 		return container.GetRequiredService<TCommand>();
 	}
 
@@ -202,8 +200,16 @@ public class ToolCommandResolver(
 			auth?.Cookie ?? string.Empty, "|",
 			auth?.Login ?? string.Empty, "|",
 			auth?.Password ?? string.Empty);
+		return $"passthrough:{context.Url}:{HashSecretMaterial(material)}";
+	}
+
+	// Single secret-hashing helper shared by both cache keys (FR-07/FR-11): the credential material is
+	// SHA-256 hashed so the discriminator is secret-free before it is placed in a key. The FULL hash is
+	// returned (never truncated): on this feature "same url, different token" is the norm, so a
+	// truncated-prefix collision would be a cross-tenant credential crossover.
+	private static string HashSecretMaterial(string material) {
 		byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(material));
-		return $"passthrough:{context.Url}:{Convert.ToHexString(hash)}";
+		return Convert.ToHexString(hash);
 	}
 
 	public TCommand ResolveWithoutEnvironment<TCommand>(EnvironmentOptions options) {
@@ -221,7 +227,11 @@ public class ToolCommandResolver(
 		return container.GetRequiredService<TCommand>();
 	}
 
-	private static string BuildCacheKey(EnvironmentOptions options, EnvironmentSettings settings) {
+	// FR-07: the hashed credential string now also includes AccessToken / AccessTokenType / Cookie so
+	// two requests to the SAME url/environment with DISTINCT tokens (empty login/password) resolve to
+	// distinct containers instead of colliding on a shared authenticated session. Secret material is
+	// SHA-256 hashed via the shared helper and never placed raw in the key (FR-11).
+	internal static string BuildCacheKey(EnvironmentOptions options, EnvironmentSettings settings) {
 		string identity = options.Environment
 			?? settings.Uri
 			?? "default";
@@ -229,9 +239,11 @@ public class ToolCommandResolver(
 			settings.Login ?? string.Empty, "|",
 			settings.Password ?? string.Empty, "|",
 			settings.ClientId ?? string.Empty, "|",
+			settings.AccessToken ?? string.Empty, "|",
+			settings.AccessTokenType ?? string.Empty, "|",
+			settings.Cookie ?? string.Empty, "|",
 			settings.IsNetCore.ToString());
-		byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(credentials));
-		return $"{identity}:{Convert.ToHexString(hash)[..16]}";
+		return $"{identity}:{HashSecretMaterial(credentials)}";
 	}
 
 	private string BuildEnvironmentNotFoundError(string missingEnvironmentName) =>

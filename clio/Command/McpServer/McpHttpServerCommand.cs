@@ -45,6 +45,17 @@ public class McpHttpServerCommandOptions : BaseCommandOptions
 			+ "list is rejected before any outbound call. When unset, only the always-on baseline "
 			+ "blocks (link-local / cloud-metadata / loopback) apply.")]
 	public string AllowedBaseUrls { get; set; }
+
+	[Option("session-idle-ttl", Default = "5m", Required = false,
+		HelpText = "Idle time after which an unused per-session container is evicted. Accepts a "
+			+ "suffixed duration ('90s', '5m', '1h', '1d'), a bare number of seconds ('300'), or a "
+			+ "TimeSpan ('00:05:00'). Defaults to 5 minutes.")]
+	public string SessionIdleTtl { get; set; }
+
+	[Option("max-sessions", Default = 50, Required = false,
+		HelpText = "Maximum number of per-session containers kept in memory. When exceeded, the "
+			+ "least-recently-used container is evicted. Defaults to 50.")]
+	public int MaxSessions { get; set; }
 }
 
 /// <summary>
@@ -113,6 +124,18 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 			AllowedBaseUrlsConfiguration.Resolve(options.AllowedBaseUrls);
 		builder.Services.AddSingleton<ITargetUrlValidator>(
 			new TargetUrlValidator(options.Host, allowedBaseUrls));
+
+		// Bounded, evictable per-session container cache (Story 8, FR-08). Configured at Run time from
+		// --session-idle-ttl / --max-sessions and registered as an instance AFTER the shared build, so
+		// last-registration-wins gives this configured cache in HTTP while stdio / ephemeral containers
+		// keep the shared default. HTTP-host-scoped like the gate/validator above; see the
+		// BindingsModule skip-list note.
+		TimeSpan sessionIdleTtl = SessionContainerCacheDefaults.ResolveIdleTtl(options.SessionIdleTtl);
+		int maxSessions = options.MaxSessions > 0
+			? options.MaxSessions
+			: SessionContainerCacheDefaults.MaxSessions;
+		builder.Services.AddSingleton<ISessionContainerCache>(
+			new SessionContainerCache(sessionIdleTtl, maxSessions));
 
 		AspNetWebApplication app = builder.Build();
 
