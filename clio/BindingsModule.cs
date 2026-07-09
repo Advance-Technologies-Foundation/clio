@@ -705,6 +705,7 @@ public class BindingsModule {
 		services.AddTransient<GetIdentityPublicJwkCommand>();
 		services.AddTransient<RegenerateIdentitySigningKeyCommand>();
 		services.AddTransient<CheckAuthCodeFlowCommand>();
+		services.AddTransient<RegisterSsoProviderCommand>();
 		services.AddTransient<IMssql, Mssql>();
 		services.AddTransient<IPostgres, Postgres>();
 		services.AddSingleton<CommandHelpCatalog>();

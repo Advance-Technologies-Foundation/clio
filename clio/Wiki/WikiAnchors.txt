@@ -183,3 +183,4 @@ get-identity-assertion:get-identity-assertion,identity-assertion
 get-identity-public-jwk:get-identity-public-jwk,identity-public-jwk
 regenerate-identity-signing-key:regenerate-identity-signing-key,identity-regenerate-key
 check-auth-code-flow:check-auth-code-flow,auth-code-flow
+register-sso-provider:register-sso-provider,sso-register-provider
