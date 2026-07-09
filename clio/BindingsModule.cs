@@ -297,13 +297,11 @@ public class BindingsModule {
 		services.AddTransient<IEntityBusinessRuleSchemaProvider, EntityBusinessRuleSchemaProvider>();
 		services.AddTransient<IEntityBusinessRuleAttributeProvider, EntityBusinessRuleAttributeProvider>();
 		services.AddTransient<IEntityBusinessRuleService, EntityBusinessRuleService>();
-		services.AddTransient<CreateEntityBusinessRuleCommand>();
 		services.AddTransient<IPageBusinessRuleSchemaProvider, PageBusinessRuleSchemaProvider>();
 		services.AddTransient<IPageBusinessRuleAttributeProvider, PageBusinessRuleAttributeProvider>();
 		services.AddTransient<IPageBusinessRuleElementProvider, PageBusinessRuleElementProvider>();
 		services.AddTransient<IPageBusinessRuleValidator, PageBusinessRuleValidator>();
 		services.AddTransient<IPageBusinessRuleService, PageBusinessRuleService>();
-		services.AddTransient<CreatePageBusinessRuleCommand>();
 		services.AddTransient<IFeatureToggleService, FeatureToggleService>();
 		services.AddTransient<IApplicationSectionDeleteService, ApplicationSectionDeleteService>();
 		services.AddTransient<DeleteAppSectionCommand>();

@@ -15,7 +15,7 @@ namespace Clio.Command.McpServer.Tools;
 public sealed class CreateEntityBusinessRuleTool(
 	IToolCommandResolver commandResolver,
 	ILogger logger)
-	: BaseTool<CreateEntityBusinessRuleOptions>(null, logger) {
+	: BaseTool<EnvironmentNameOptions>(null, logger) {
 
 	internal const string BusinessRuleCreateToolName = "create-entity-business-rules";
 
@@ -613,7 +613,7 @@ public sealed record PageMakeOptionalBusinessRuleActionMcpContract : PageElement
 public sealed class CreatePageBusinessRuleTool(
 	IToolCommandResolver commandResolver,
 	ILogger logger)
-	: BaseTool<CreatePageBusinessRuleOptions>(null, logger) {
+	: BaseTool<EnvironmentNameOptions>(null, logger) {
 
 	internal const string BusinessRuleCreateToolName = "create-page-business-rules";
 

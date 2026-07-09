@@ -16,14 +16,12 @@ flowchart LR
 
         subgraph Core["Business Rule Core"]
             subgraph EntityCore["Entity business rules"]
-                EntityCommand["CreateEntityBusinessRuleCommand"]
                 EntityService["EntityBusinessRuleService"]
                 EntitySchemaProvider["EntityBusinessRuleSchemaProvider"]
                 EntityAttributeProvider["EntityBusinessRuleAttributeProvider"]
             end
 
             subgraph PageCore["Page business rules"]
-                PageCommand["CreatePageBusinessRuleCommand"]
                 PageService["PageBusinessRuleService"]
                 PageSchemaProvider["PageBusinessRuleSchemaProvider"]
                 PageAttributeProvider["PageBusinessRuleAttributeProvider"]
@@ -46,16 +44,14 @@ flowchart LR
         Addon["AddonSchemaDesignerService.svc"]
     end
 
-    EntityTool -->|"options"| EntityCommand
-    EntityCommand -->|"request"| EntityService
+    EntityTool -->|"request"| EntityService
     EntityService -->|"schema name"| EntityAttributeProvider
     EntityAttributeProvider -->|"schema name"| EntitySchemaProvider
     EntityService -->|"rule + entity attributes"| Validator
     EntityService -->|"rule + entity attributes"| Converter
     EntityService -->|"converted dto"| AddonService
 
-    PageTool -->|"options"| PageCommand
-    PageCommand -->|"request"| PageService
+    PageTool -->|"request"| PageService
     PageService -->|"page schema name"| PageSchemaProvider
     PageService -->|"bundle"| PageAttributeProvider
     PageAttributeProvider -->|"datasource entity schema"| EntityAttributeProvider
@@ -251,7 +247,7 @@ add-on pipeline:
 ## Key Design Decisions
 
 - Persist business rules through `AddonSchemaDesignerService.svc`, not runtime business-rule endpoints.
-- Route MCP execution through `CreateEntityBusinessRuleCommand` so environment-specific dependencies are resolved per request through the standard command pipeline.
+- Route MCP execution straight to `EntityBusinessRuleService` / `PageBusinessRuleService` via `BusinessRuleToolExecutor`, which resolves the environment-specific service per request; there is no intermediate command wrapper.
 - Keep request-level preconditions in `EntityBusinessRuleService`, while `BusinessRuleValidator` owns complete rule validation including schema-aware checks.
 - Keep `SimpleToFullBusinessRuleConverter` isolated so MCP request DTOs do not become the persistence model.
 - Start with `CreateEntityBusinessRuleTool`, but keep the service structure extensible for additional tools later.
