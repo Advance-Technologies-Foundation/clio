@@ -885,7 +885,12 @@ public class BindingsModule {
 					// scoped to the HTTP transport. Auto-registering them here would fail
 					// ValidateOnBuild in the stdio/tool graph.
 					|| implementedInterface == typeof(ICredentialContextAccessor)
-					|| implementedInterface == typeof(ICredentialHeaderParser)) {
+					|| implementedInterface == typeof(ICredentialHeaderParser)
+					// The edge API-key gate is registered as an instance in the mcp-http host
+					// (McpHttpServerCommand.Run) because its key set is resolved at Run time from
+					// the CLI flag + env var. Auto-registering the type here has no key set and
+					// pollutes the stdio graph.
+					|| implementedInterface == typeof(IPlatformApiKeyGate)) {
 					continue;
 				}
 				services.AddTransient(implementedInterface, type);

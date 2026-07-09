@@ -27,12 +27,12 @@ a public/shared URL cannot be abused by an unauthenticated caller, and the defau
 
 ## Acceptance Criteria
 
-- [ ] **AC-01** — Given a configured platform API key and a request presenting a matching `Authorization: Bearer <key>` plus `X-Integration-Credentials`, when middleware runs, then `PassthroughModeEnabled=true` and the header credentials are honored (maps FR-09; AC-01).
-- [ ] **AC-02** — Given no platform API key configured (default), when a request carries `X-Integration-Credentials`, then the header is **not** honored (fail-closed) and the request falls back to pre-registered/loopback behavior — exactly 8.1.0.72 (maps FR-10; AC-08/AC-10).
-- [ ] **AC-03** — Given a configured API key, when a request omits or mismatches `Authorization: Bearer`, then header credentials are rejected and the request authenticates as **no** tenant (maps FR-09; AC-09).
-- [ ] **AC-04** — Given key comparison, when performed, then it uses `CryptographicOperations.FixedTimeEquals` (constant-time), and a comma-separated key set is accepted (any member matches) to support rotation (maps OQ-05).
-- [ ] **AC-05** — Given the key is configured via CLI flag `--platform-api-key` **or** env var `CLIO_MCP_HTTP_PLATFORM_API_KEY`, when either is set, then passthrough mode is considered enabled (maps OQ-05).
-- [ ] **AC-ERR** — Given a rejected request (missing/mismatched key with a header present), when rejected, then the response is a clean structured error and no secret material (key or credentials) is echoed (maps FR-11).
+- [x] **AC-01** — Given a configured platform API key and a request presenting a matching `Authorization: Bearer <key>` plus `X-Integration-Credentials`, when middleware runs, then `PassthroughModeEnabled=true` and the header credentials are honored (maps FR-09; AC-01).
+- [x] **AC-02** — Given no platform API key configured (default), when a request carries `X-Integration-Credentials`, then the header is **not** honored (fail-closed) and the request falls back to pre-registered/loopback behavior — exactly 8.1.0.72 (maps FR-10; AC-08/AC-10).
+- [x] **AC-03** — Given a configured API key, when a request omits or mismatches `Authorization: Bearer`, then header credentials are rejected and the request authenticates as **no** tenant (maps FR-09; AC-09).
+- [x] **AC-04** — Given key comparison, when performed, then it uses `CryptographicOperations.FixedTimeEquals` (constant-time), and a comma-separated key set is accepted (any member matches) to support rotation (maps OQ-05).
+- [x] **AC-05** — Given the key is configured via CLI flag `--platform-api-key` **or** env var `CLIO_MCP_HTTP_PLATFORM_API_KEY`, when either is set, then passthrough mode is considered enabled (maps OQ-05).
+- [x] **AC-ERR** — Given a rejected request (missing/mismatched key with a header present), when rejected, then the response is a clean structured error and no secret material (key or credentials) is echoed (maps FR-11).
 
 ## Implementation Notes
 
@@ -57,18 +57,24 @@ Targeted run: `dotnet test clio.tests/clio.tests.csproj --filter "Category=Unit&
 
 ## Definition of Done
 
-- [ ] Code compiles with no new `CLIO*` warnings in modified files (CLIO001–CLIO005 clean)
-- [ ] `--platform-api-key` is kebab-case (CLIO001); env-var name documented
-- [ ] Gate service registered in `BindingsModule` — no MediatR; no raw `HttpClient`
-- [ ] No secret (key or credentials) in errors/logs (FR-11)
-- [ ] MCP surface + docs reviewed (FR-15) — api-key gate doc update in Story 14; state outcome
-- [ ] Unit tests `[Category("Unit")]`; AAA + `because` + `[Description]`
-- [ ] Targeted `dotnet test --filter "Category=Unit&Module=McpServer"` green before commit
+- [x] Code compiles with no new `CLIO*` warnings in modified files (CLIO001–CLIO005 clean)
+- [x] `--platform-api-key` is kebab-case (CLIO001); env-var name documented (`CLIO_MCP_HTTP_PLATFORM_API_KEY`)
+- [x] Gate service registered — instance-registered in the `mcp-http` host (`McpHttpServerCommand.Run`) with the interface added to the `BindingsModule` auto-registration skip-list; no MediatR; no raw `HttpClient`
+- [x] No secret (key or credentials) in errors/logs (FR-11)
+- [x] MCP surface + docs reviewed (FR-15) — `mcp-http` is the MCP host itself, not a wrapped MCP tool, so no tool/prompt/resource to update; full CLI/GitHub docs for the gate deferred to Story 14. Stated outcome: MCP reviewed, no update required.
+- [x] Unit tests `[Category("Unit")]`; AAA + `because` + `[Description]`
+- [x] Targeted `dotnet test --filter "Category=Unit&Module=McpServer"` green before commit
 - [ ] PR description references this story file
 
 ## Dev Agent Record
 
-- Implementation started:
-- Implementation completed:
-- Tests passing:
+- Implementation started: 2026-07-09
+- Implementation completed: 2026-07-09
+- Tests passing: yes — `Category=Unit&Module=McpServer` = 1780 passed / 0 failed / 1 skipped; full `Category=Unit` (BindingsModule skip-list touched) = 5049 passed / 0 failed / 35 skipped (net10.0)
 - Notes:
+  - New: `clio/Command/McpServer/PlatformApiKeyGate.cs` — `IPlatformApiKeyGate` + `PlatformApiKeyGate` (constant-time `CryptographicOperations.FixedTimeEquals` over all keys, no early-out) + `PlatformApiKeyConfiguration.Resolve` (union of `--platform-api-key` flag + `CLIO_MCP_HTTP_PLATFORM_API_KEY` env, comma-split, trimmed, empties dropped).
+  - `--platform-api-key` option added to `McpHttpServerCommandOptions`.
+  - Gate middleware wired in `McpHttpServerCommand.Run` AFTER `ValidateOrigin` and BEFORE the Story-4 `CaptureCredentialContext`; sets `Items["clio.mcp.passthrough-enabled"]` (true only when a key is configured AND the credential header is present AND `Authorization: Bearer <key>` authorizes; false/absent otherwise; 401 on header-present-but-unauthorized).
+  - `CaptureCredentialContext` adjusted: only parses/acts when `passthrough-enabled == true`; otherwise ignores the credential header entirely (no 400) so an untrusted/no-key request behaves exactly as 8.1.0.72 (AC-02).
+  - `IPlatformApiKeyGate` added to the `BindingsModule` auto-registration skip-list.
+  - DEFERRED (not in Story 5 scope): ADR line 133 requires passthrough to be *doubly*-gated — the incubation feature flag `mcp-http-credential-passthrough` (via `IFeatureToggleService`/`ISettingsRepository.IsFeatureEnabled`) AND this API-key gate. Story 5 implements only the API-key gate. Which story owns the feature-toggle wire-up is an open architect decision.

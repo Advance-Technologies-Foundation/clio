@@ -32,6 +32,12 @@ public class McpHttpServerCommandOptions : BaseCommandOptions
 	[Option("credentials-header-name", Default = "X-Integration-Credentials", Required = false,
 		HelpText = "Name of the request header carrying base64-encoded JSON per-request credentials")]
 	public string CredentialsHeaderName { get; set; }
+
+	[Option("platform-api-key", Required = false,
+		HelpText = "Comma-separated platform API key(s). When at least one is set (here or via the "
+			+ "CLIO_MCP_HTTP_PLATFORM_API_KEY environment variable), per-request credential "
+			+ "passthrough is enabled and requests must present a matching 'Authorization: Bearer <key>'.")]
+	public string PlatformApiKey { get; set; }
 }
 
 /// <summary>
@@ -81,6 +87,15 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 		builder.Services.AddSingleton<ICredentialHeaderParser, CredentialHeaderParser>();
 		builder.Services.AddSingleton<ICredentialContextAccessor, CredentialContextAccessor>();
 
+		// Edge API-key gate (Story 5, FR-09/FR-10). Built from the CLI flag plus the
+		// CLIO_MCP_HTTP_PLATFORM_API_KEY env var at Run time and registered as an instance,
+		// so the key set is fixed for the lifetime of this host. HTTP-host-scoped like the
+		// parser/accessor above; see the BindingsModule skip-list note.
+		IReadOnlyList<string> platformApiKeys = PlatformApiKeyConfiguration.Resolve(
+			options.PlatformApiKey,
+			Environment.GetEnvironmentVariable(PlatformApiKeyConfiguration.EnvironmentVariableName));
+		builder.Services.AddSingleton<IPlatformApiKeyGate>(new PlatformApiKeyGate(platformApiKeys));
+
 		AspNetWebApplication app = builder.Build();
 
 		// DNS-rebinding / cross-origin protection. The MCP spec makes Origin/Host validation the
@@ -91,6 +106,13 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 		// Origin header and pass through unaffected.
 		app.UseHostFiltering();
 		app.Use((context, next) => ValidateOrigin(context, next, options.Host));
+
+		// Edge API-key gate (Story 5). Runs BEFORE the credential-capture middleware so a
+		// credential header is treated as trusted only after this gate authorizes the request.
+		IPlatformApiKeyGate platformApiKeyGate =
+			app.Services.GetRequiredService<IPlatformApiKeyGate>();
+		app.Use((context, next) => EnforcePlatformApiKeyGate(
+			context, next, platformApiKeyGate, options.CredentialsHeaderName));
 
 		ICredentialHeaderParser credentialHeaderParser =
 			app.Services.GetRequiredService<ICredentialHeaderParser>();
@@ -138,17 +160,72 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 	/// </summary>
 	internal const string PassthroughEnabledItemKey = "clio.mcp.passthrough-enabled";
 
+	// Story 5 edge API-key gate. Fail-closed and strictly additive: when no platform API
+	// key is configured (default) the request behaves exactly as 8.1.0.72 — the credential
+	// header is never treated as trusted (AC-02). When passthrough is enabled, a request
+	// carrying the credential header must present a matching 'Authorization: Bearer <key>';
+	// a missing/mismatched key short-circuits with HTTP 401 and no secret (AC-03/AC-ERR).
+	// The decision is published to the pipeline via PassthroughEnabledItemKey, which the
+	// credential-capture middleware honors.
+	private static async Task EnforcePlatformApiKeyGate(
+		HttpContext context,
+		RequestDelegate next,
+		IPlatformApiKeyGate gate,
+		string credentialHeaderName) {
+		if (!gate.PassthroughEnabled) {
+			// No key configured: fail-closed default. Downstream ignores the credential header.
+			context.Items[PassthroughEnabledItemKey] = false;
+			await next(context);
+			return;
+		}
+
+		if (!context.Request.Headers.ContainsKey(credentialHeaderName)) {
+			// Passthrough-capable server, but this request is not using passthrough
+			// (e.g. pre-registered -e). Still exactly 8.1.0.72 behavior.
+			context.Items[PassthroughEnabledItemKey] = false;
+			await next(context);
+			return;
+		}
+
+		string authorization = context.Request.Headers.Authorization.ToString();
+		if (!gate.IsAuthorized(authorization)) {
+			context.Items[PassthroughEnabledItemKey] = false;
+			context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+			context.Response.ContentType = "application/json";
+			// No secret (key or credentials) is echoed (FR-11).
+			await context.Response.WriteAsJsonAsync(
+				new { error = "Error: platform API key missing or invalid" });
+			return;
+		}
+
+		context.Items[PassthroughEnabledItemKey] = true;
+		await next(context);
+	}
+
 	// Reads the configured credential header, parses it into a per-request CredentialContext,
-	// and publishes it via ICredentialContextAccessor. Absent header ⇒ no context (stdio /
-	// no-header path). Parse failure ⇒ HTTP 400 with a JSON body naming the defect (no secret).
+	// and publishes it via ICredentialContextAccessor. Only acts when the earlier API-key gate
+	// enabled passthrough for this request (PassthroughEnabledItemKey == true). When the item is
+	// false/absent the credential header is ignored entirely — no parse, no 400 — so an
+	// untrusted/no-key request behaves exactly as 8.1.0.72 (AC-02). Parse failure inside the
+	// trusted path ⇒ HTTP 400 with a JSON body naming the defect (no secret).
 	private static async Task CaptureCredentialContext(
 		HttpContext context,
 		RequestDelegate next,
 		ICredentialHeaderParser parser,
 		ICredentialContextAccessor accessor,
 		string headerName) {
+		bool passthroughEnabled =
+			context.Items.TryGetValue(PassthroughEnabledItemKey, out object flag)
+			&& flag is true;
+
+		if (!passthroughEnabled) {
+			// Not a trusted passthrough request — ignore the credential header (AC-02).
+			await next(context);
+			return;
+		}
+
 		if (!context.Request.Headers.TryGetValue(headerName, out var headerValues)) {
-			// No credential header — nothing to capture; context stays null (AC-05).
+			// No credential header — nothing to capture; context stays null.
 			await next(context);
 			return;
 		}
@@ -160,13 +237,6 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 			await context.Response.WriteAsJsonAsync(new { error = $"Error: {error}" });
 			return;
 		}
-
-		// PassthroughModeEnabled is forward-compatible: the authoritative gate is Story 5
-		// (FR-09), which sets PassthroughEnabledItemKey in an earlier middleware. This
-		// middleware only carries the flag into the context; until Story 5 ships it is false.
-		bool passthroughEnabled =
-			context.Items.TryGetValue(PassthroughEnabledItemKey, out object flag)
-			&& flag is true;
 
 		accessor.Current = new CredentialContext(
 			parsed.Url, parsed.Auth, McpTransport.Http, passthroughEnabled);
