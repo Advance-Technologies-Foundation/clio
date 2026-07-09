@@ -1,0 +1,232 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Net;
+using System.Net.Sockets;
+
+namespace Clio.Command.McpServer;
+
+/// <summary>
+/// Egress guard for the caller-influenced per-request passthrough target URL (Story 6, FR-17).
+/// Blocks link-local / cloud-metadata / loopback targets <b>always</b> — regardless of any
+/// operator-configured allowlist — and, when an allowlist is configured, additionally requires
+/// the target origin to be on it. It is invoked in the credential-resolution path <b>before</b>
+/// any client is constructed or any credential is forwarded, so a hostile <c>url</c> cannot be
+/// used as a credential-redirection lever (CWE-918 SSRF).
+/// </summary>
+public interface ITargetUrlValidator
+{
+	/// <summary>
+	/// Validates a per-request passthrough target URL. Returns normally when the URL is allowed;
+	/// throws a caller-actionable <see cref="TargetUrlNotAllowedException"/> naming the reason
+	/// (blocked address class / not on allowlist) when it is rejected. No credential value is ever
+	/// passed to, or echoed by, this method — it sees only the URL (FR-11).
+	/// </summary>
+	/// <param name="url">The caller-supplied absolute target URL to validate.</param>
+	/// <exception cref="TargetUrlNotAllowedException">The URL is not an absolute http/https URL,
+	/// targets a blocked address class, or is not on the configured origin allowlist.</exception>
+	void EnsureAllowed(string url);
+}
+
+/// <summary>
+/// Thrown by <see cref="ITargetUrlValidator.EnsureAllowed"/> when a per-request passthrough
+/// target URL is rejected. The message names the rejection reason and never carries a credential.
+/// </summary>
+public sealed class TargetUrlNotAllowedException : Exception
+{
+	/// <summary>Initializes a new instance of the <see cref="TargetUrlNotAllowedException"/> class.</summary>
+	/// <param name="message">A caller-actionable message naming the rejection reason.</param>
+	public TargetUrlNotAllowedException(string message)
+		: base(message) {
+	}
+}
+
+/// <summary>
+/// Default <see cref="ITargetUrlValidator"/>. Constructed from the server's bound host and an
+/// already-resolved set of allowed base URLs, so it is free of option/config reading and fully
+/// unit-testable with literal hosts (no live DNS).
+/// </summary>
+/// <remarks>
+/// <para>
+/// The baseline address-class blocks apply only to <b>IP-literal</b> hosts (including
+/// IPv4-mapped IPv6 literals, which are normalized to their IPv4 form before the checks). A
+/// non-literal host is NOT DNS-resolved here: resolving it would (a) require live DNS in the hot
+/// path and (b) only shift, not close, the window — the client that ultimately dials the target
+/// does its own resolution, so a name that resolves to a blocked IP <em>after</em> this check
+/// (DNS-rebinding TOCTOU) is a documented residual that is <b>out of scope for v1</b>. The same
+/// residual covers alternative encodings that <see cref="Uri"/> classifies as a DNS host rather
+/// than an IP literal (e.g. a decimal/octal-encoded integer address): they are not treated as IP
+/// literals here and fall into the same v1 residual. See Story 14 docs.
+/// </para>
+/// </remarks>
+public sealed class TargetUrlValidator : ITargetUrlValidator
+{
+	private static readonly IPAddress CloudMetadataAddress = IPAddress.Parse("169.254.169.254");
+
+	private readonly bool _boundHostIsLoopback;
+	private readonly HashSet<string> _allowedOrigins;
+
+	/// <summary>
+	/// Initializes a new instance of the <see cref="TargetUrlValidator"/> class.
+	/// </summary>
+	/// <param name="boundHost">
+	/// The host the MCP HTTP server is bound to (<c>options.Host</c>). A loopback target is
+	/// permitted only when this bound host is itself loopback (local-dev scenario).
+	/// </param>
+	/// <param name="allowedBaseUrls">
+	/// The operator-configured allowed base URLs (already split, trimmed, non-empty). Each is
+	/// normalized to its origin (scheme+host+port). When empty, no allowlist check is applied —
+	/// the baseline address-class blocks still apply and any other reachable host is permitted.
+	/// </param>
+	public TargetUrlValidator(string boundHost, IEnumerable<string> allowedBaseUrls) {
+		_boundHostIsLoopback = IsLoopbackHost(boundHost);
+		_allowedOrigins = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		if (allowedBaseUrls is not null) {
+			foreach (string baseUrl in allowedBaseUrls) {
+				if (TryGetOrigin(baseUrl, out string origin)) {
+					_allowedOrigins.Add(origin);
+				}
+			}
+		}
+	}
+
+	/// <inheritdoc />
+	public void EnsureAllowed(string url) {
+		// Rule 1: absolute http/https required (AC-01).
+		if (!Uri.TryCreate(url, UriKind.Absolute, out Uri uri)
+			|| (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)) {
+			throw new TargetUrlNotAllowedException(
+				"Error: target url must be an absolute http/https URL");
+		}
+
+		// Rule 2: baseline address-class blocks (ALWAYS, regardless of allowlist). These apply
+		// only to IP-literal hosts. A non-IP hostname is not resolved here — see the class-level
+		// remarks for the documented DNS-rebinding TOCTOU residual (out of scope for v1).
+		if (TryGetIpLiteral(uri, out IPAddress ip)) {
+			EnsureIpNotBlocked(ip);
+		}
+
+		// Rule 3: optional origin allowlist. When configured, the target origin must be on it;
+		// when empty, this check is skipped (baseline blocks above still apply) (AC-03/AC-04).
+		if (_allowedOrigins.Count > 0) {
+			string origin = GetOrigin(uri);
+			if (!_allowedOrigins.Contains(origin)) {
+				throw new TargetUrlNotAllowedException(
+					"Error: target origin is not on the configured allowlist");
+			}
+		}
+	}
+
+	private void EnsureIpNotBlocked(IPAddress ip) {
+		if (ip.Equals(CloudMetadataAddress)) {
+			throw new TargetUrlNotAllowedException(
+				"Error: target url is blocked: cloud-metadata address (169.254.169.254)");
+		}
+
+		if (IsIpv4LinkLocal(ip)) {
+			throw new TargetUrlNotAllowedException(
+				"Error: target url is blocked: IPv4 link-local address (169.254.0.0/16)");
+		}
+
+		if (IsIpv6LinkLocal(ip)) {
+			throw new TargetUrlNotAllowedException(
+				"Error: target url is blocked: IPv6 link-local address (fe80::/10)");
+		}
+
+		if (IPAddress.IsLoopback(ip) && !_boundHostIsLoopback) {
+			throw new TargetUrlNotAllowedException(
+				"Error: target url is blocked: loopback address (allowed only when the server is bound to loopback)");
+		}
+	}
+
+	private static bool IsIpv4LinkLocal(IPAddress ip) {
+		if (ip.AddressFamily != AddressFamily.InterNetwork) {
+			return false;
+		}
+
+		byte[] bytes = ip.GetAddressBytes();
+		return bytes[0] == 169 && bytes[1] == 254;
+	}
+
+	private static bool IsIpv6LinkLocal(IPAddress ip) {
+		if (ip.AddressFamily != AddressFamily.InterNetworkV6) {
+			return false;
+		}
+
+		// fe80::/10 — first 10 bits are 1111 1110 10.
+		byte[] bytes = ip.GetAddressBytes();
+		return bytes[0] == 0xFE && (bytes[1] & 0xC0) == 0x80;
+	}
+
+	private static bool TryGetIpLiteral(Uri uri, out IPAddress ip) {
+		// DnsSafeHost strips the IPv6 brackets (and any scope id) so IPAddress.TryParse accepts it.
+		if (uri.HostNameType is UriHostNameType.IPv4 or UriHostNameType.IPv6
+			&& IPAddress.TryParse(uri.DnsSafeHost, out ip)) {
+			// Normalize IPv4-mapped IPv6 literals (e.g. ::ffff:169.254.169.254) down to their
+			// IPv4 form so the address-class checks below (metadata / link-local / loopback) see
+			// the real target and cannot be bypassed by the dual-stack encoding.
+			if (ip.IsIPv4MappedToIPv6) {
+				ip = ip.MapToIPv4();
+			}
+
+			return true;
+		}
+
+		ip = null;
+		return false;
+	}
+
+	private static bool IsLoopbackHost(string host) {
+		if (string.IsNullOrWhiteSpace(host)) {
+			return false;
+		}
+
+		string trimmed = host.Trim().Trim('[', ']');
+		if (string.Equals(trimmed, "localhost", StringComparison.OrdinalIgnoreCase)) {
+			return true;
+		}
+
+		return IPAddress.TryParse(trimmed, out IPAddress ip) && IPAddress.IsLoopback(ip);
+	}
+
+	private static bool TryGetOrigin(string url, out string origin) {
+		if (Uri.TryCreate(url, UriKind.Absolute, out Uri uri)
+			&& (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)) {
+			origin = GetOrigin(uri);
+			return true;
+		}
+
+		origin = null;
+		return false;
+	}
+
+	// scheme://host[:port] with the scheme's default port omitted, so origins compare cleanly
+	// (https://acme.creatio.com and https://acme.creatio.com:443 are the same origin).
+	private static string GetOrigin(Uri uri) => uri.GetLeftPart(UriPartial.Authority);
+}
+
+/// <summary>
+/// Resolves the origin allowlist for the MCP HTTP egress guard from the
+/// <c>--allowed-base-urls</c> CLI flag (a comma-separated set). Each entry is trimmed and
+/// empty entries are dropped; the raw entries are handed to <see cref="TargetUrlValidator"/>,
+/// which normalizes them to origins.
+/// </summary>
+public static class AllowedBaseUrlsConfiguration
+{
+	/// <summary>
+	/// Splits the comma-separated <c>--allowed-base-urls</c> value into a trimmed, non-empty list.
+	/// </summary>
+	/// <param name="flagValue">The <c>--allowed-base-urls</c> flag value (comma-separated set); may be <see langword="null"/>.</param>
+	/// <returns>The trimmed, non-empty entries (possibly empty).</returns>
+	public static IReadOnlyList<string> Resolve(string flagValue) {
+		if (string.IsNullOrWhiteSpace(flagValue)) {
+			return [];
+		}
+
+		return flagValue
+			.Split(',')
+			.Select(part => part.Trim())
+			.Where(part => part.Length > 0)
+			.ToList();
+	}
+}

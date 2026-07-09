@@ -890,7 +890,12 @@ public class BindingsModule {
 					// (McpHttpServerCommand.Run) because its key set is resolved at Run time from
 					// the CLI flag + env var. Auto-registering the type here has no key set and
 					// pollutes the stdio graph.
-					|| implementedInterface == typeof(IPlatformApiKeyGate)) {
+					|| implementedInterface == typeof(IPlatformApiKeyGate)
+					// The SSRF / egress target-url validator is registered as an instance in the
+					// mcp-http host (McpHttpServerCommand.Run) because its policy (bound host +
+					// --allowed-base-urls allowlist) is resolved at Run time. Auto-registering the
+					// type here has no policy and pollutes the stdio graph.
+					|| implementedInterface == typeof(ITargetUrlValidator)) {
 					continue;
 				}
 				services.AddTransient(implementedInterface, type);

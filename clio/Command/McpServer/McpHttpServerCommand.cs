@@ -38,6 +38,13 @@ public class McpHttpServerCommandOptions : BaseCommandOptions
 			+ "CLIO_MCP_HTTP_PLATFORM_API_KEY environment variable), per-request credential "
 			+ "passthrough is enabled and requests must present a matching 'Authorization: Bearer <key>'.")]
 	public string PlatformApiKey { get; set; }
+
+	[Option("allowed-base-urls", Required = false,
+		HelpText = "Comma-separated allowlist of origins (scheme+host+port) that a per-request "
+			+ "passthrough target url may target. When set, a target whose origin is not on the "
+			+ "list is rejected before any outbound call. When unset, only the always-on baseline "
+			+ "blocks (link-local / cloud-metadata / loopback) apply.")]
+	public string AllowedBaseUrls { get; set; }
 }
 
 /// <summary>
@@ -95,6 +102,16 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 			options.PlatformApiKey,
 			Environment.GetEnvironmentVariable(PlatformApiKeyConfiguration.EnvironmentVariableName));
 		builder.Services.AddSingleton<IPlatformApiKeyGate>(new PlatformApiKeyGate(platformApiKeys));
+
+		// SSRF / egress guard (Story 6, FR-17). Built at Run time from the bound host plus the
+		// parsed --allowed-base-urls flag and registered as an instance, so its policy is fixed
+		// for the lifetime of this host. HTTP-host-scoped like the gate above; Story 7 resolves
+		// it from the resolution path (which runs in the HTTP host) before client construction.
+		// See the BindingsModule skip-list note.
+		IReadOnlyList<string> allowedBaseUrls =
+			AllowedBaseUrlsConfiguration.Resolve(options.AllowedBaseUrls);
+		builder.Services.AddSingleton<ITargetUrlValidator>(
+			new TargetUrlValidator(options.Host, allowedBaseUrls));
 
 		AspNetWebApplication app = builder.Build();
 
