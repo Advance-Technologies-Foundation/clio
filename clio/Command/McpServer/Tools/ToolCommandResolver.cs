@@ -21,6 +21,30 @@ public interface IToolCommandResolver {
 	/// <returns>A command instance configured for the requested target.</returns>
 	TCommand Resolve<TCommand>(EnvironmentOptions options);
 	TCommand ResolveWithoutEnvironment<TCommand>(EnvironmentOptions options);
+
+	/// <summary>
+	/// The cache key the MOST RECENT <see cref="Resolve{TCommand}"/> call on the CURRENT async-flow
+	/// cached its container under. The BaseTool execution path reads this immediately after resolving a
+	/// command so it can lock / mark-in-use on the SAME key without recomputing it via
+	/// <see cref="GetTenantKey"/> (M2, ENG-93208 — eliminates the divergence window and the second
+	/// <c>settings.Fill</c> per invocation). Flow-local so concurrent tenants never read each other's
+	/// value; <see langword="null"/> before any <see cref="Resolve{TCommand}"/> call on the flow.
+	/// </summary>
+	string LastResolvedTenantKey { get; }
+
+	/// <summary>
+	/// Computes the credential-discriminating cache key for <paramref name="options"/> WITHOUT building
+	/// or acquiring a container. Runs the SAME branch as <see cref="Resolve{TCommand}"/> (per-request
+	/// credential context → passthrough key; otherwise the registry/URI key), so the returned value is
+	/// the SAME key <see cref="Resolve{TCommand}"/> caches the container under. Used by the per-tenant
+	/// execution lock (FR-05) and the session-container in-flight guard so both key off the exact
+	/// identity the command resolves into. Never throws for a bad environment: a resolution failure
+	/// yields a stable fallback key instead (the command itself will fail, and there is no shared
+	/// session to protect).
+	/// </summary>
+	/// <param name="options">Environment options that identify the execution target.</param>
+	/// <returns>The cache key the command for these options resolves under.</returns>
+	string GetTenantKey(EnvironmentOptions options);
 }
 
 /// <summary>
@@ -43,6 +67,16 @@ public class ToolCommandResolver(
 	/// <typeparam name="TCommand">The command type to resolve.</typeparam>
 	/// <param name="options">Environment options that identify the execution target.</param>
 	/// <returns>A command instance configured for the requested target.</returns>
+	// M2 (ENG-93208): the key the last Resolve on this flow cached under, exposed via
+	// LastResolvedTenantKey so the BaseTool execution path can lock on the exact same key without
+	// recomputing it (a second settings.Fill) via GetTenantKey. AsyncLocal so concurrent tenants never
+	// read each other's value; the resolve + the immediately-following read are on the same flow.
+	private readonly System.Threading.AsyncLocal<string> _lastResolvedTenantKey = new();
+
+	/// <inheritdoc />
+	public string LastResolvedTenantKey => _lastResolvedTenantKey.Value;
+
+	/// <inheritdoc />
 	public TCommand Resolve<TCommand>(EnvironmentOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
 
@@ -58,13 +92,44 @@ public class ToolCommandResolver(
 			return ResolvePassthrough<TCommand>(credentialContext);
 		}
 
+		(EnvironmentSettings settings, string cacheKey) = ResolveSettingsAndKey(options);
+		_lastResolvedTenantKey.Value = cacheKey;
+		IServiceProvider container = sessionContainerCache.Acquire(cacheKey,
+			() => new BindingsModule().Register(settings));
+		return container.GetRequiredService<TCommand>();
+	}
+
+	/// <inheritdoc />
+	public string GetTenantKey(EnvironmentOptions options) {
+		ArgumentNullException.ThrowIfNull(options);
+		// Read Current FIRST so this mirrors Resolve's branch selection exactly: a per-request
+		// credential context yields the same passthrough key Resolve caches the container under.
+		CredentialContext credentialContext = credentialContextAccessor.Current;
+		if (credentialContext is not null) {
+			return BuildPassthroughCacheKey(credentialContext);
+		}
+		try {
+			return ResolveSettingsAndKey(options).CacheKey;
+		}
+		catch (EnvironmentResolutionException) {
+			// The key only selects an execution lock / cache marker; when the environment cannot be
+			// resolved the command itself fails and there is no shared authenticated session to protect.
+			// Return a stable fallback derived from the requested identity so same-target failing calls
+			// still serialize and different targets do not — and no exception escapes the lock-key path.
+			return $"unresolved:{options.Environment ?? options.Uri ?? "default"}";
+		}
+	}
+
+	// Shared settings-resolution + cache-key builder used by BOTH Resolve (which then acquires the
+	// container) and GetTenantKey (which returns only the key). Keeping them on one path guarantees the
+	// per-tenant lock keys off the exact identity the container is cached under. The four throws are
+	// EXPECTED, caller-actionable resolution failures (unknown environment, missing URI, broken settings
+	// bootstrap) → EnvironmentResolutionException, which BaseTool maps to exit code 1. Unexpected
+	// failures (settings.Fill, BindingsModule.Register, GetRequiredService) stay plain exceptions →
+	// exit code -1, so a real DI/wiring bug remains distinguishable from a bad environment name.
+	private (EnvironmentSettings Settings, string CacheKey) ResolveSettingsAndKey(EnvironmentOptions options) {
 		SettingsBootstrapReport bootstrapReport = settingsBootstrapService.GetReport();
 		EnvironmentSettings settings;
-		// These four throws are EXPECTED, caller-actionable resolution failures (unknown environment,
-		// missing URI, broken settings bootstrap) → EnvironmentResolutionException, which BaseTool maps
-		// to exit code 1. Unexpected failures below (settings.Fill, BindingsModule.Register,
-		// GetRequiredService) stay plain exceptions → exit code -1, so a real DI/wiring bug remains
-		// distinguishable from a bad environment name.
 		if (!string.IsNullOrWhiteSpace(options.Environment)) {
 			if (!bootstrapReport.CanExecuteEnvTools) {
 				throw new EnvironmentResolutionException(
@@ -88,10 +153,7 @@ public class ToolCommandResolver(
 					"Either a configured environment name or an explicit URI is required for MCP command execution. Prefer a registered environment name; use explicit URI credentials only as a bootstrap or emergency fallback.");
 			}
 		}
-		string cacheKey = BuildCacheKey(options, settings);
-		IServiceProvider container = sessionContainerCache.Acquire(cacheKey,
-			() => new BindingsModule().Register(settings));
-		return container.GetRequiredService<TCommand>();
+		return (settings, BuildCacheKey(options, settings));
 	}
 
 	// Resolves a command from a per-request credential context. The SSRF/egress guard runs FIRST
@@ -135,6 +197,7 @@ public class ToolCommandResolver(
 
 		EnvironmentSettings settings = BuildEphemeralSettings(context);
 		string cacheKey = BuildPassthroughCacheKey(context);
+		_lastResolvedTenantKey.Value = cacheKey;
 		// Nothing is persisted (AC-03): the ephemeral settings never touch the settings repository,
 		// disk, session, or appsettings.json — only this in-memory container cache.
 		IServiceProvider container = sessionContainerCache.Acquire(cacheKey,

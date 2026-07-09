@@ -193,7 +193,7 @@ public sealed class CreateLookupTool : BaseTool<CreateEntitySchemaOptions> {
 				options.TitleLocalizations!,
 				$"Lookup '{args.SchemaName}'");
 			int exitCode = -1;
-			lock (CommandExecutionSyncRoot) {
+			return ExecuteUnderTenantLock(options, () => {
 				bool previousPreserveMessages = _logger.PreserveMessages;
 				_logger.PreserveMessages = true;
 				try {
@@ -224,7 +224,7 @@ public sealed class CreateLookupTool : BaseTool<CreateEntitySchemaOptions> {
 				finally {
 					_logger.PreserveMessages = previousPreserveMessages;
 				}
-			}
+			});
 		} catch (Exception exception) {
 			return new CommandExecutionResult(1, [new ErrorMessage(SensitiveErrorTextRedactor.Redact(exception.Message))], null, dataForge);
 		}

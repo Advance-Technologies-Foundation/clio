@@ -18,8 +18,6 @@ public sealed class CompileCreatioTool(
 	ILogger logger,
 	IToolCommandResolver commandResolver)
 {
-	private static readonly object CommandExecutionLock = new();
-
 	/// <summary>
 	/// Stable MCP tool name for compilation operations.
 	/// </summary>
@@ -70,8 +68,14 @@ public sealed class CompileCreatioTool(
 	private CommandExecutionResult Execute<TOptions>(Command<TOptions> command, TOptions options)
 	{
 		int exitCode = -1;
-		lock (CommandExecutionLock)
+		// FR-05: per-tenant lock keyed by the environment this compilation resolves under (replaces the
+		// former tool-local static lock that serialized compile-creatio across ALL tenants).
+		string tenantKey = options is EnvironmentOptions environmentOptions
+			? commandResolver.GetTenantKey(environmentOptions)
+			: McpToolExecutionLock.SharedFallbackKey;
+		lock (McpToolExecutionLock.GetLock(tenantKey))
 		{
+			McpToolExecutionLock.MarkInUse(tenantKey);
 			// CompileCreatioTool builds its result from logger.LogMessages, which ConsoleLogger only
 			// populates while PreserveMessages is true. Set/restore it locally (like BaseTool,
 			// SchemaSyncTool, EntitySchemaTool, AddItemModelTool) so compilation output is captured
@@ -97,6 +101,7 @@ public sealed class CompileCreatioTool(
 			finally
 			{
 				logger.PreserveMessages = previousPreserveMessages;
+				McpToolExecutionLock.MarkAvailable(tenantKey);
 			}
 		}
 	}

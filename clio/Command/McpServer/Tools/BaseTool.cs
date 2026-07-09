@@ -12,29 +12,74 @@ public abstract class BaseTool<T>(
 	ILogger logger,
 	IToolCommandResolver commandResolver = null,
 	IDbOperationLogContextAccessor dbOperationLogContextAccessor = null) {
-	private static readonly object CommandExecutionLock = McpToolExecutionLock.SyncRoot;
 
-	private protected static object CommandExecutionSyncRoot => CommandExecutionLock;
+	// FR-05 (ENG-93208): resolves the per-tenant execution-lock key for the given options. Runs the
+	// SAME identity branch the command resolves under (credential passthrough / registry / URI) so the
+	// lock keys off the exact session the command shares. Environment-less commands and a null resolver
+	// fall back to the single shared key (no per-tenant session to protect).
+	private protected string ResolveTenantLockKey(EnvironmentOptions options) {
+		if (commandResolver is not null && options is not null
+			&& !EnvironmentScopedCommandExecutor.UsesEnvironmentlessResolution(options)) {
+			return commandResolver.GetTenantKey(options);
+		}
+		return McpToolExecutionLock.SharedFallbackKey;
+	}
 
 	/// <summary>
-	/// Runs <paramref name="executor"/> under the shared MCP execution lock and drains the
-	/// process-wide <see cref="ConsoleLogger.LogMessages"/> buffer on exit. Use this from
-	/// tools that return a typed response (and therefore cannot go through
-	/// <see cref="InternalExecute(Clio.Common.Command{T}, T)"/>) so that log lines produced
-	/// inside <paramref name="executor"/> do not leak into the next tool invocation's
-	/// <c>execution-log-messages</c> — see DeleteSchemaTool integration trace where create-page
-	/// steps surfaced inside an unrelated delete-schema response.
+	/// Returns the per-tenant execution lock for <paramref name="options"/>. Tools that lock directly
+	/// (rather than through <see cref="ExecuteWithCleanLog{TResponse}(EnvironmentOptions, Func{TResponse})"/>)
+	/// acquire it so DIFFERENT tenants no longer serialize against each other.
 	/// </summary>
-	private protected TResponse ExecuteWithCleanLog<TResponse>(Func<TResponse> executor) {
-		lock (CommandExecutionLock) {
+	private protected object GetTenantExecutionLock(EnvironmentOptions options) =>
+		McpToolExecutionLock.GetLock(ResolveTenantLockKey(options));
+
+	// Runs body under the per-tenant execution lock (FR-05) and marks the session-container entry
+	// in-use for the duration (FR-08 in-flight guard) so eviction cannot dispose the container mid-call
+	// now that different tenants are no longer serialized by a single global lock.
+	private protected TResult ExecuteUnderTenantLock<TResult>(EnvironmentOptions options, Func<TResult> body) {
+		string tenantKey = ResolveTenantLockKey(options);
+		lock (McpToolExecutionLock.GetLock(tenantKey)) {
+			McpToolExecutionLock.MarkInUse(tenantKey);
+			try {
+				return body();
+			}
+			finally {
+				McpToolExecutionLock.MarkAvailable(tenantKey);
+			}
+		}
+	}
+
+	/// <summary>
+	/// Runs <paramref name="executor"/> under the per-tenant MCP execution lock for
+	/// <paramref name="options"/> and clears the flow-local capture buffer on exit. Use this from tools
+	/// that return a typed response (and therefore cannot go through
+	/// <see cref="InternalExecute(Clio.Common.Command{T}, T)"/>) so that log lines produced inside
+	/// <paramref name="executor"/> do not leak into the next tool invocation's <c>execution-log-messages</c>.
+	/// </summary>
+	private protected TResponse ExecuteWithCleanLog<TResponse>(EnvironmentOptions options, Func<TResponse> executor) =>
+		ExecuteUnderTenantLock(options, () => {
+			// Establish a FRESH per-flow capture buffer for this scope (FIX 6, ENG-93208), matching
+			// InternalExecute. Setting PreserveMessages = true resets the flow-local buffer, so log lines
+			// this executor produces are isolated from the process-wide MCP-mode flag (Program.cs) and any
+			// parent-flow context rather than merely being cleared on exit. Saved/restored in finally.
+			bool previousPreserveMessages = logger.PreserveMessages;
+			logger.PreserveMessages = true;
 			try {
 				return executor();
 			}
 			finally {
 				logger.ClearMessages();
+				logger.PreserveMessages = previousPreserveMessages;
 			}
-		}
-	}
+		});
+
+	/// <summary>
+	/// Environment-less overload of <see cref="ExecuteWithCleanLog{TResponse}(EnvironmentOptions, Func{TResponse})"/>
+	/// for callers that carry no per-tenant identity (e.g. a pre-computed result). Uses the shared
+	/// fallback lock; must NOT be used to execute a per-tenant command (that would serialize tenants).
+	/// </summary>
+	private protected TResponse ExecuteWithCleanLog<TResponse>(Func<TResponse> executor) =>
+		ExecuteWithCleanLog(null, executor);
 
 	private protected CommandExecutionResult InternalExecute(T options) {
 		if (command is null) {
@@ -47,6 +92,9 @@ public abstract class BaseTool<T>(
 	private protected CommandExecutionResult InternalExecute<TCommand>(T options,
 		Action<TCommand> configureCommand = null) where TCommand : Command<T> {
 		TCommand resolvedCommand;
+		// M2 (ENG-93208): capture the SAME cache key the container was acquired under so the execution
+		// lock / in-flight guard key off it directly — no second settings.Fill via GetTenantKey.
+		string tenantKey;
 		try {
 			// ResolveCommand resolves the env-scoped command AND enforces this options type's
 			// [RequiresPackage] declarations against the per-call target environment. The gate lives
@@ -55,7 +103,7 @@ public abstract class BaseTool<T>(
 			// PackageRequirementException; an environment/argument failure as an
 			// EnvironmentResolutionException; both become a caller-actionable failed result (exit 1)
 			// below, so the command never runs when its preconditions are not satisfied.
-			resolvedCommand = ResolveCommand<TCommand>(options);
+			resolvedCommand = ResolveCommand<TCommand>(options, out tenantKey);
 		} catch (PackageRequirementException ex) {
 			// Surface the actionable install hint verbatim, without the exception-chain decoration.
 			return CommandExecutionResult.FromError(ex.Message);
@@ -81,7 +129,8 @@ public abstract class BaseTool<T>(
 		}
 
 		configureCommand?.Invoke(resolvedCommand);
-		return InternalExecute(resolvedCommand, options);
+		// Use the key threaded from ResolveCommand (M2) rather than recomputing it via ResolveTenantLockKey.
+		return ExecuteLocked(resolvedCommand, options, tenantKey);
 	}
 
 	/// <summary>
@@ -97,8 +146,15 @@ public abstract class BaseTool<T>(
 	/// <see cref="PackageRequirementException"/> (unmet requirement) and any other verification failure
 	/// both propagate to the caller.
 	/// </remarks>
-	private protected TCommand ResolveCommand<TCommand>(T options) where TCommand : Command<T> {
-		TCommand resolvedCommand = ResolveFromCallContainer<TCommand>(options);
+	private protected TCommand ResolveCommand<TCommand>(T options) where TCommand : Command<T> =>
+		ResolveCommand<TCommand>(options, out _);
+
+	/// <summary>
+	/// Overload of <see cref="ResolveCommand{TCommand}(T)"/> that also outputs the cache key the command's
+	/// container was acquired under, so the execution path locks / marks-in-use on that exact key (M2).
+	/// </summary>
+	private protected TCommand ResolveCommand<TCommand>(T options, out string tenantKey) where TCommand : Command<T> {
+		TCommand resolvedCommand = ResolveFromCallContainer<TCommand>(options, out tenantKey);
 		EnforcePackageRequirements(options);
 		return resolvedCommand;
 	}
@@ -156,7 +212,10 @@ public abstract class BaseTool<T>(
 	// gate's checker is bound to the exact container the command runs in (cached by env key in
 	// ToolCommandResolver), not the MCP startup/bootstrap container. The IToolCommandResolver methods are
 	// unconstrained, so this works for IRequiredPackageChecker as well as Command<T>.
-	private TService ResolveFromCallContainer<TService>(T options) {
+	private TService ResolveFromCallContainer<TService>(T options) =>
+		ResolveFromCallContainer<TService>(options, out _);
+
+	private TService ResolveFromCallContainer<TService>(T options, out string tenantKey) {
 		if (options is not EnvironmentOptions) {
 			throw new InvalidOperationException(
 				$"{GetType().Name} can only resolve commands for options derived from EnvironmentOptions.");
@@ -176,9 +235,19 @@ public abstract class BaseTool<T>(
 		// (EnvironmentScopedCommandExecutor.UsesEnvironmentlessResolution), so the four current
 		// flat tools and the generic executor resolve identically — no behavioral drift.
 		// Optional environment properties are intentionally not consulted for the env-less types.
-		return EnvironmentScopedCommandExecutor.UsesEnvironmentlessResolution(environmentOptions)
-			? commandResolver.ResolveWithoutEnvironment<TService>(environmentOptions)
-			: commandResolver.Resolve<TService>(environmentOptions);
+		if (EnvironmentScopedCommandExecutor.UsesEnvironmentlessResolution(environmentOptions)) {
+			// Env-less commands build a fresh container per call (no session cache, no per-tenant
+			// identity), so the lock keys off the single shared fallback — matching ResolveTenantLockKey.
+			tenantKey = McpToolExecutionLock.SharedFallbackKey;
+			return commandResolver.ResolveWithoutEnvironment<TService>(environmentOptions);
+		}
+		// M2: read the key the resolve just cached under (flow-local) instead of recomputing it via
+		// GetTenantKey (a second settings.Fill). Captured immediately, before any later checker resolve
+		// on this flow overwrites it. A test double / mock that does not track the key yields null →
+		// normalized to the shared fallback by GetLock (the lock key is not asserted in unit tests).
+		TService resolved = commandResolver.Resolve<TService>(environmentOptions);
+		tenantKey = commandResolver.LastResolvedTenantKey ?? McpToolExecutionLock.SharedFallbackKey;
+		return resolved;
 	}
 
 
@@ -188,10 +257,26 @@ public abstract class BaseTool<T>(
 		// about; that path runs the gate (EnforcePackageRequirements) before reaching this method. The
 		// env-INsensitive injected-command path does not carry a target environment, so a package
 		// requirement would be meaningless there.
+		// The env-SENSITIVE path (InternalExecute<TCommand>) threads the key from ResolveCommand into
+		// ExecuteLocked directly (M2); this injected/direct entry computes it here (no prior resolve).
+		string tenantKey = options is EnvironmentOptions environmentOptions
+			? ResolveTenantLockKey(environmentOptions)
+			: McpToolExecutionLock.SharedFallbackKey;
+		return ExecuteLocked(command, options, tenantKey);
+	}
+
+	// Runs command.Execute under the per-tenant execution lock for tenantKey (FR-05), with the
+	// session-container in-flight guard marked for the call duration (FR-08). tenantKey is supplied by
+	// the caller — the container-resolution key from ResolveCommand on the env-sensitive path (M2), or
+	// the computed key on the injected/direct path — so the lock keys off the exact shared session.
+	private CommandExecutionResult ExecuteLocked(Command<T> command, T options, string tenantKey) {
 		string correlationId = Guid.NewGuid().ToString("N")[..12];
 		CommandExecutionResult executionResult;
 		IReadOnlyList<LogMessage> messagesToForward;
-		lock (CommandExecutionLock) {
+		lock (McpToolExecutionLock.GetLock(tenantKey)) {
+			// FR-08 in-flight guard: keep the session container from being evicted/disposed mid-call now
+			// that a different tenant's Acquire can trigger eviction while this call runs.
+			McpToolExecutionLock.MarkInUse(tenantKey);
 			dbOperationLogContextAccessor?.ClearLastCompletedPath();
 			bool previousPreserveMessages = logger.PreserveMessages;
 			logger.PreserveMessages = true;
@@ -214,6 +299,7 @@ public abstract class BaseTool<T>(
 			}
 			finally {
 				logger.PreserveMessages = previousPreserveMessages;
+				McpToolExecutionLock.MarkAvailable(tenantKey);
 			}
 		}
 		// Forward log notifications OUTSIDE the execution lock to avoid blocking other

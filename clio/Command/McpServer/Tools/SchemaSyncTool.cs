@@ -76,7 +76,11 @@ public sealed class SchemaSyncTool(
 			}
 		}
 		var results = new List<SchemaSyncOperationResult>();
-		lock (McpToolExecutionLock.SyncRoot) {
+		// FR-05: serialize on the per-tenant lock keyed by the environment the batch's schema commands
+		// resolve under, so different tenants run concurrently instead of behind one global lock.
+		string tenantKey = commandResolver.GetTenantKey(new EnvironmentOptions { Environment = args.EnvironmentName });
+		lock (McpToolExecutionLock.GetLock(tenantKey)) {
+			McpToolExecutionLock.MarkInUse(tenantKey);
 			bool previousPreserveMessages = logger.PreserveMessages;
 			logger.PreserveMessages = true;
 			try {
@@ -103,6 +107,7 @@ public sealed class SchemaSyncTool(
 			} finally {
 				logger.ClearMessages();
 				logger.PreserveMessages = previousPreserveMessages;
+				McpToolExecutionLock.MarkAvailable(tenantKey);
 			}
 		}
 		return new SchemaSyncResponse {

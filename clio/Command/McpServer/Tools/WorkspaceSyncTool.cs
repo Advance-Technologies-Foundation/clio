@@ -19,7 +19,8 @@ public abstract class WorkspaceCommandToolBase<TOptions>(
 	: BaseTool<TOptions>(command, logger, commandResolver)
 	where TOptions : EnvironmentOptions {
 
-	protected CommandExecutionResult ExecuteInWorkspace(string workspacePath, Func<CommandExecutionResult> execute) {
+	protected CommandExecutionResult ExecuteInWorkspace(
+		string workspacePath, TOptions options, Func<CommandExecutionResult> execute) {
 		if (string.IsNullOrWhiteSpace(workspacePath)) {
 			return CreateFailureResult("Workspace path is required.");
 		}
@@ -36,16 +37,23 @@ public abstract class WorkspaceCommandToolBase<TOptions>(
 			return CreateFailureResult($"Workspace path not found: {workspacePath}");
 		}
 
-		lock (CommandExecutionSyncRoot) {
-			string originalDirectory = fileSystem.Directory.GetCurrentDirectory();
-			try {
-				fileSystem.Directory.SetCurrentDirectory(workspacePath);
-				return execute();
+		// The working-directory pin mutates PROCESS-WIDE cwd, so it must hold the single global CwdLock
+		// (H1), NOT a per-tenant lock. Lock ordering is per-tenant → CwdLock: acquire the per-tenant lock
+		// FIRST via ExecuteUnderTenantLock(options) — with the SAME key the inner execute()'s
+		// InternalExecute<TCommand> resolves under, so that inner acquire is a reentrant no-op and no new
+		// CwdLock→per-tenant edge is created — THEN take CwdLock around the pin/execute/restore region.
+		return ExecuteUnderTenantLock(options, () => {
+			lock (McpToolExecutionLock.CwdLock) {
+				string originalDirectory = fileSystem.Directory.GetCurrentDirectory();
+				try {
+					fileSystem.Directory.SetCurrentDirectory(workspacePath);
+					return execute();
+				}
+				finally {
+					fileSystem.Directory.SetCurrentDirectory(originalDirectory);
+				}
 			}
-			finally {
-				fileSystem.Directory.SetCurrentDirectory(originalDirectory);
-			}
-		}
+		});
 	}
 
 	private static CommandExecutionResult CreateFailureResult(string message) =>
@@ -99,7 +107,7 @@ public sealed class PushWorkspaceTool(
 			UseApplicationInstaller = true,
 			SkipBackup = args.SkipBackup
 		};
-		return ExecuteInWorkspace(args.WorkspacePath, () => InternalExecute<PushWorkspaceCommand>(options));
+		return ExecuteInWorkspace(args.WorkspacePath, options, () => InternalExecute<PushWorkspaceCommand>(options));
 	}
 }
 
@@ -127,7 +135,7 @@ public sealed class RestoreWorkspaceTool(
 		RestoreWorkspaceOptions options = new() {
 			Environment = args.EnvironmentName
 		};
-		return ExecuteInWorkspace(args.WorkspacePath, () => InternalExecute<RestoreWorkspaceCommand>(options));
+		return ExecuteInWorkspace(args.WorkspacePath, options, () => InternalExecute<RestoreWorkspaceCommand>(options));
 	}
 }
 

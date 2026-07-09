@@ -21,7 +21,6 @@ public sealed class AddItemModelTool(
 	ILogger logger,
 	IToolCommandResolver commandResolver,
 	IFileSystem fileSystem) {
-	private static readonly object CommandExecutionLock = new();
 
 	/// <summary>
 	/// Stable MCP tool name for all-model generation.
@@ -65,7 +64,11 @@ public sealed class AddItemModelTool(
 
 	private CommandExecutionResult Execute(AddItemCommand command, AddItemOptions options, string outputFolderPath) {
 		int exitCode = -1;
-		lock (CommandExecutionLock) {
+		// FR-05: per-tenant lock keyed by the environment the model generation resolves under (replaces
+		// the former tool-local static lock that serialized add-item model across ALL tenants).
+		string tenantKey = commandResolver.GetTenantKey(options);
+		lock (McpToolExecutionLock.GetLock(tenantKey)) {
+			McpToolExecutionLock.MarkInUse(tenantKey);
 			bool previousPreserveMessages = logger.PreserveMessages;
 			logger.PreserveMessages = true;
 			try {
@@ -83,6 +86,7 @@ public sealed class AddItemModelTool(
 			}
 			finally {
 				logger.PreserveMessages = previousPreserveMessages;
+				McpToolExecutionLock.MarkAvailable(tenantKey);
 			}
 		}
 	}

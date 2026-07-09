@@ -33,7 +33,7 @@ public sealed class GetClientUnitSchemaTool(
 			Login = args.Login,
 			Password = args.Password
 		};
-		return ExecuteWithCleanLog(() => {
+		return ExecuteWithCleanLog(options, () => {
 			GetClientUnitSchemaCommand resolvedCommand;
 			try {
 				resolvedCommand = ResolveCommand<GetClientUnitSchemaCommand>(options);

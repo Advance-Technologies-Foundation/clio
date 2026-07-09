@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using Clio.UserEnvironment;
 using CommandLine;
@@ -138,6 +139,14 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 			new SessionContainerCache(sessionIdleTtl, maxSessions));
 
 		AspNetWebApplication app = builder.Build();
+
+		// FR-05/FR-08 (ENG-93208): wire the tool-execution-lock facade to this host's DI-registered
+		// per-tenant lock provider and the run-time-configured session-container cache, so per-tenant
+		// serialization and the in-flight eviction guard operate on the SAME instances the resolution
+		// path (ToolCommandResolver) uses in the HTTP host.
+		McpToolExecutionLock.Configure(
+			app.Services.GetRequiredService<ITenantExecutionLockProvider>(),
+			app.Services.GetRequiredService<ISessionContainerCache>());
 
 		// DNS-rebinding / cross-origin protection. The MCP spec makes Origin/Host validation the
 		// host's responsibility (ModelContextProtocol.AspNetCore does not do it automatically), and

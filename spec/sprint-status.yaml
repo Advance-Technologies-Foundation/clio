@@ -750,7 +750,7 @@ stories:
     title: "De-globalize the execution lock + isolate the capture it guards (FR-06 -> FR-05, COUPLED)"
     feature: "mcp-http-credential-passthrough"
     size: L
-    status: ready-for-dev
+    status: review
     note: "COUPLED design unit, STRICT ORDER FR-06 (isolate capture) BEFORE FR-05 (narrow lock). Full lock inventory: 9a shared-root (BaseTool, PageEditToolHelpers, PageSyncTool, SchemaSyncTool) AND 9b tool-local static (CompileCreatioTool, AddItemModelTool). Concurrency-isolation proof is story 15c."
     file: spec/stories/story-mcp-http-credential-passthrough-9.md
     prd: spec/prd/prd-mcp-http-credential-passthrough.md

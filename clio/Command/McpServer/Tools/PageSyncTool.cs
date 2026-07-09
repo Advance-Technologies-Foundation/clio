@@ -236,27 +236,35 @@ public sealed class PageSyncTool(
 		// failure replaces only the pending placeholders, leaving already-
 		// materialised pre-pass failures untouched.
 		bool verify = args.Verify ?? false;
-		lock (McpToolExecutionLock.SyncRoot) {
-			if (!TryResolveEnvironmentCommands(args, verify, out PageUpdateCommand updateCommand,
-					out PageGetCommand getCommand, out string envError)) {
-				FillPendingWithError(results, pendingIndices, pages, envError);
-				return results;
-			}
-			var ctx = new PageSyncBatchContext(
-				updateCommand,
-				getCommand,
-				args.Validate ?? true,
-				verify,
-				args.OutputDirectory,
-				prePass,
-				samplingResults) { EnvironmentName = args.EnvironmentName };
+		// FR-05: serialize on the per-tenant lock keyed by the same environment identity the batch's
+		// commands resolve under (see TryResolveEnvironmentCommands), so different tenants run concurrently.
+		string tenantKey = commandResolver.GetTenantKey(new PageUpdateOptions { Environment = args.EnvironmentName });
+		lock (McpToolExecutionLock.GetLock(tenantKey)) {
+			McpToolExecutionLock.MarkInUse(tenantKey);
 			try {
-				foreach (int idx in pendingIndices) {
-					results[idx] = ProcessPendingPage(pages[idx], idx, ctx);
+				if (!TryResolveEnvironmentCommands(args, verify, out PageUpdateCommand updateCommand,
+						out PageGetCommand getCommand, out string envError)) {
+					FillPendingWithError(results, pendingIndices, pages, envError);
+					return results;
 				}
-				Thread.Sleep(500);
-			} catch (Exception ex) {
-				FillPendingWithError(results, pendingIndices, pages, SensitiveErrorTextRedactor.Redact(ex.Message));
+				var ctx = new PageSyncBatchContext(
+					updateCommand,
+					getCommand,
+					args.Validate ?? true,
+					verify,
+					args.OutputDirectory,
+					prePass,
+					samplingResults) { EnvironmentName = args.EnvironmentName };
+				try {
+					foreach (int idx in pendingIndices) {
+						results[idx] = ProcessPendingPage(pages[idx], idx, ctx);
+					}
+					Thread.Sleep(500);
+				} catch (Exception ex) {
+					FillPendingWithError(results, pendingIndices, pages, SensitiveErrorTextRedactor.Redact(ex.Message));
+				}
+			} finally {
+				McpToolExecutionLock.MarkAvailable(tenantKey);
 			}
 		}
 		return results;
@@ -677,12 +685,19 @@ public sealed class PageSyncTool(
 		if (body is null) {
 			return null;
 		}
-		string anchor = PageOutputDirectoryResolver.ResolveAnchor(
-			fileSystem,
-			fileSystem.Directory.GetCurrentDirectory(),
-			Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-			ClioRuntimePaths.Home,
-			outputDirectory);
+		// H1: reading the process-global cwd to anchor output must serialize against the workspace tools
+		// that PIN cwd, else a concurrent tenant's cwd pin could place this page under the wrong root.
+		// This runs while ExecuteSyncBatch holds the per-tenant lock, so the ordering is per-tenant →
+		// CwdLock (never the reverse) — no deadlock.
+		string anchor;
+		lock (McpToolExecutionLock.CwdLock) {
+			anchor = PageOutputDirectoryResolver.ResolveAnchor(
+				fileSystem,
+				fileSystem.Directory.GetCurrentDirectory(),
+				Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+				ClioRuntimePaths.Home,
+				outputDirectory);
+		}
 		string schemaDir = fileSystem.Path.Combine(anchor, ".clio-pages", schemaName);
 		fileSystem.Directory.CreateDirectory(schemaDir);
 		string bodyFile = fileSystem.Path.Combine(schemaDir, "body.js");

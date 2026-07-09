@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Threading;
 
 namespace Clio.Common;
 
@@ -55,35 +56,33 @@ public interface IDbOperationLogSession : IDisposable {
 /// Tracks the active database-operation log session for the current process.
 /// </summary>
 public sealed class DbOperationLogContextAccessor : IDbOperationLogContextAccessor {
-	private readonly object _syncRoot = new();
+	// FR-06 (ENG-93208): the active session and last-completed path are per async-flow so concurrent
+	// MCP tool invocations never overwrite each other's db-operation context. Static AsyncLocal because
+	// BindingsModule registers this as a process-wide singleton; the isolation must live in flow-local
+	// storage, not instance fields. AsyncLocal reads/writes are individually thread-safe, so the prior
+	// instance lock is no longer needed — each flow mutates only its own slot.
+	private static readonly AsyncLocal<IDbOperationLogSession?> CurrentSessionLocal = new();
+	private static readonly AsyncLocal<string?> LastCompletedPathLocal = new();
 
 	/// <inheritdoc />
-	public IDbOperationLogSession? CurrentSession { get; private set; }
+	public IDbOperationLogSession? CurrentSession => CurrentSessionLocal.Value;
 
 	/// <inheritdoc />
-	public string? LastCompletedPath { get; private set; }
+	public string? LastCompletedPath => LastCompletedPathLocal.Value;
 
 	/// <inheritdoc />
-	public void ClearLastCompletedPath() {
-		lock (_syncRoot) {
-			LastCompletedPath = null;
-		}
-	}
+	public void ClearLastCompletedPath() => LastCompletedPathLocal.Value = null;
 
 	internal void SetCurrent(IDbOperationLogSession session) {
-		lock (_syncRoot) {
-			CurrentSession = session;
-			LastCompletedPath = null;
-		}
+		CurrentSessionLocal.Value = session;
+		LastCompletedPathLocal.Value = null;
 	}
 
 	internal void Complete(IDbOperationLogSession session, string logFilePath) {
-		lock (_syncRoot) {
-			if (ReferenceEquals(CurrentSession, session)) {
-				CurrentSession = null;
-			}
-			LastCompletedPath = logFilePath;
+		if (ReferenceEquals(CurrentSessionLocal.Value, session)) {
+			CurrentSessionLocal.Value = null;
 		}
+		LastCompletedPathLocal.Value = logFilePath;
 	}
 }
 

@@ -28,7 +28,7 @@ public sealed class PageTemplatesListTool(
 			Login = args.Login,
 			Password = args.Password
 		};
-		return ExecuteWithCleanLog(() => {
+		return ExecuteWithCleanLog(options, () => {
 			// Validate the schema-type filter (a pure-input check) BEFORE resolving the environment so a
 			// bad schema-type is reported as a schema-type error instead of being masked by an
 			// environment-resolution failure (ENG-91825 env-validation order).

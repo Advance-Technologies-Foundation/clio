@@ -32,7 +32,7 @@ public sealed class PageGetTool(
 			Login = args.Login,
 			Password = args.Password
 		};
-		return ExecuteWithCleanLog(() => {
+		return ExecuteWithCleanLog(options, () => {
 			PageGetCommand resolvedCommand;
 			try {
 				resolvedCommand = ResolveCommand<PageGetCommand>(options);

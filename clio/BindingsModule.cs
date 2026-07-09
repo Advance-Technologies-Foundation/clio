@@ -481,6 +481,10 @@ public class BindingsModule {
 		// would break ValidateOnBuild.
 		services.AddSingleton<ISessionContainerCache>(_ => new SessionContainerCache(
 			SessionContainerCacheDefaults.IdleTtl, SessionContainerCacheDefaults.MaxSessions));
+		// Per-tenant execution lock provider (FR-05). The process-wide shared instance so the SAME
+		// tenant serializes on the SAME lock regardless of which container (root or per-session
+		// ephemeral) the call flows through, while DIFFERENT tenants use distinct locks.
+		services.AddSingleton<ITenantExecutionLockProvider>(TenantExecutionLockProvider.Shared);
 		services.AddTransient<IToolCommandResolver, ToolCommandResolver>();
 		services.AddTransient<IDataForgePlatformVersionGuard, DataForgePlatformVersionGuard>();
 		services.AddTransient<IDataForgeReadClient, DataForgeReadClient>();
@@ -938,7 +942,12 @@ public class BindingsModule {
 					// shared build, a run-time-configured instance in the mcp-http host). Its impl ctor
 					// takes primitive TimeSpan/int args that DI cannot resolve, so auto-registering the
 					// type here would fail ValidateOnBuild.
-					|| implementedInterface == typeof(ISessionContainerCache)) {
+					|| implementedInterface == typeof(ISessionContainerCache)
+					// The per-tenant execution lock provider (FR-05) is registered explicitly as the
+					// process-wide shared instance. Its impl ctor is private (locks must be shared across
+					// every container the host builds), so auto-registering the type would fail
+					// ValidateOnBuild.
+					|| implementedInterface == typeof(ITenantExecutionLockProvider)) {
 					continue;
 				}
 				services.AddTransient(implementedInterface, type);

@@ -58,7 +58,7 @@ public sealed class PageUpdateTool(
 		if (earlyFailure != null)
 			return earlyFailure;
 		(string metaFilePath, bool baselineArmed) = pageBaselineGuard.TryArm(options, args.OutputDirectory);
-		PageUpdateResponse response = ExecuteWithCleanLog(() => {
+		PageUpdateResponse response = ExecuteWithCleanLog(options, () => {
 			PageUpdateCommand resolvedCommand;
 			try {
 				resolvedCommand = ResolveCommand<PageUpdateCommand>(options);
@@ -414,7 +414,7 @@ public sealed class PageUpdateTool(
 		// lock (no network inside) so they do not leak into the next tool response.
 		(PageUpdateResponse Failure, IReadOnlyList<string> Warnings) result =
 			ValidateRunProcessButtonsAgainstSignatures(options, configs);
-		return ExecuteWithCleanLog(() => result);
+		return ExecuteWithCleanLog(options, () => result);
 	}
 
 	internal (PageUpdateResponse Failure, IReadOnlyList<string> Warnings) ValidateRunProcessButtonsAgainstSignatures(
