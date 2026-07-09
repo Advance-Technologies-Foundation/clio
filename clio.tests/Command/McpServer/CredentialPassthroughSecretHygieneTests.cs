@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Text;
 using Clio.Command;
 using Clio.Command.McpServer;
@@ -14,14 +16,28 @@ using NUnit.Framework;
 namespace Clio.Tests.Command.McpServer;
 
 /// <summary>
-/// Story 13 (ENG-93208, FR-11) secret-hygiene pins. A single DISTINCTIVE secret literal is seeded as
-/// the accessToken / cookie / password across every sink the credential-passthrough path touches — the
-/// header-parse error, the FR-19 / FR-12 resolution errors, the cache keys, the MCP
-/// <see cref="CommandExecutionResult"/> for a failing passthrough resolve, the exception messages, the
-/// shared error-text redactor, and <see cref="EnvironmentSettings"/> serialization — and each test
-/// asserts the seeded literal is ABSENT from that sink's output. Mirrors the
-/// <c>Common/BrowserSession/CreatioAuthClient</c> "names only, never values" discipline. The exhaustive
-/// cross-sink matrix is Story 15b; this fixture pins the sinks Story 13 audits.
+/// Story 13 + Story 15b (ENG-93208, FR-11/FR-16) secret-hygiene matrix. A single DISTINCTIVE secret
+/// literal is seeded as the accessToken / cookie / password across every sink the
+/// credential-passthrough path touches, and each test asserts the seeded literal is ABSENT from that
+/// sink's output. Story 13 pinned the per-sink audits (header-parse error, FR-19 / FR-12 resolution
+/// errors, cache keys, the MCP <see cref="CommandExecutionResult"/> for a failing passthrough resolve,
+/// the shared error-text redactor, and <see cref="EnvironmentSettings"/> serialization). Story 15b
+/// completes the EXHAUSTIVE cross-sink matrix by adding the sinks Story 13 left open:
+/// <list type="bullet">
+/// <item><description>the MCP tool response + <c>execution-log-messages</c> for a command whose
+/// <c>Execute</c> THROWS an exception carrying the seeded secret — the <c>--debug</c> /
+/// <see cref="CommandExecutionResult.FromException"/> catch-all path that
+/// <see cref="Clio.Command.McpServer.McpToolErrorFilter"/> never sees because the envelope is RETURNED,
+/// not thrown (Story 13 flagged this gap; it leaked and is now closed at source in
+/// <see cref="CommandExecutionResult.FromException"/>);</description></item>
+/// <item><description>the inner-exception-chain variant of the same path (FormatExceptionChain walks up
+/// to depth 5);</description></item>
+/// <item><description>CLI stdout — the <c>ShowSettingsTo</c> serializer configuration used to dump the
+/// settings file.</description></item>
+/// </list>
+/// Mirrors the <c>Common/BrowserSession/CreatioAuthClient</c> "names only, never values" discipline.
+/// Console-log / file-log absence and the no-write-to-disk contract are authoritatively covered by
+/// <c>ToolCommandResolverNoWriteTests</c> and <c>Common/EnvironmentSettingsTests</c> respectively.
 /// </summary>
 [TestFixture]
 [Category("Unit")]
@@ -284,5 +300,107 @@ public sealed class CredentialPassthroughSecretHygieneTests {
 		// Assert
 		json.Should().NotContain(Secret,
 			because: "[Newtonsoft.Json.JsonIgnore] keeps AccessToken/Cookie out of any settings dump (AC-04, FR-11)");
+	}
+
+	// ---- Sink 8: CLI stdout — ShowSettingsTo dump (AC-04, FR-11) ----------------------------------
+
+	[Test]
+	[Description("The ShowSettingsTo serializer configuration used to dump settings to CLI stdout never emits the seeded passthrough access token or cookie (AC-04, FR-11).")]
+	public void ShowSettingsSerializer_ShouldOmitSecret_WhenSettingsCarrySeededCredentials() {
+		// Arrange — mirror the exact JsonSerializer configuration ShowSettingsTo uses to write settings to
+		// a TextWriter (CLI stdout), so this pins the real CLI dump path, not a bespoke serialization. Only
+		// the transient passthrough-injected secrets (AccessToken / Cookie) are seeded: those carry
+		// [Newtonsoft.Json.JsonIgnore] so they never reach the dump. Password is a deliberately-persisted
+		// field (it round-trips to appsettings.json) and is out of scope for the passthrough matrix.
+		EnvironmentSettings settings = new() { Uri = Url, AccessToken = Secret, Cookie = Secret };
+		JsonSerializer serializer = new() {
+			Formatting = Formatting.Indented,
+			NullValueHandling = NullValueHandling.Ignore
+		};
+		StringWriter writer = new();
+
+		// Act
+		serializer.Serialize(writer, settings);
+		string stdout = writer.ToString();
+
+		// Assert
+		stdout.Should().NotContain(Secret,
+			because: "the CLI 'show-settings' dump omits [Newtonsoft.Json.JsonIgnore]-marked AccessToken/Cookie, so no seeded passthrough secret reaches stdout (AC-04, FR-11)");
+	}
+
+	// ---- Sink 9: MCP tool response + execution-log-messages via the FromException catch-all --------
+	// Story 13 flagged that the -1 FromException envelope (BaseTool's ExecuteLocked catch-all, and the
+	// --debug path) is NOT run through the redactor and McpToolErrorFilter never sees it (the envelope is
+	// RETURNED, not thrown). Story 15b reproduces the leak with a command whose Execute throws an
+	// exception carrying the seeded secret on a passthrough request, and pins that the secret reaches
+	// NEITHER the serialized MCP response NOR its execution-log-messages. Closed at source in
+	// CommandExecutionResult.FromException.
+
+	[Test]
+	[Description("A command whose Execute throws an exception carrying the seeded secret does not leak it into the MCP response or execution-log-messages (FR-11, Story 15b FromException gap).")]
+	public void InternalExecute_ShouldNotLeakSecret_WhenCommandExecuteThrowsWithSecret() {
+		// Arrange — the seeded secret rides inside a REDACTABLE shape (target URI + Bearer token) exactly
+		// as an inner-most HTTP/data-layer failure would surface it on a passthrough request.
+		ILogger logger = CreateSilentLogger();
+		Exception thrown = new InvalidOperationException(
+			$"POST {Url}/0/ServiceModel/EntitySchemaService.svc failed — Authorization: Bearer {Secret}");
+		SecretLeakToolHarness tool = new(new ThrowingCommand(thrown), logger);
+
+		// Act
+		CommandExecutionResult result = tool.Execute(new SecretLeakToolOptions());
+		string json = System.Text.Json.JsonSerializer.Serialize(result);
+
+		// Assert
+		result.ExitCode.Should().Be(-1,
+			because: "an unanticipated command exception surfaces on the -1 FromException catch-all");
+		json.Should().NotContain(Secret,
+			because: "the -1 FromException envelope is now redacted before it crosses the MCP boundary (FR-11, Story 15b)");
+		foreach (LogMessage message in result.Output) {
+			(message.Value?.ToString() ?? string.Empty).Should().NotContain(Secret,
+				because: "no execution-log message in the returned envelope may carry the seeded secret (FR-11)");
+		}
+	}
+
+	[Test]
+	[Description("A command exception whose INNER exception carries the seeded secret does not leak it through the FormatExceptionChain walk into the MCP response (FR-11, Story 15b).")]
+	public void InternalExecute_ShouldNotLeakSecret_WhenInnerExceptionCarriesSecret() {
+		// Arrange — the secret rides on the inner exception (chain depth 2) in a credential-pair shape.
+		ILogger logger = CreateSilentLogger();
+		Exception inner = new InvalidOperationException($"auth handshake rejected password={Secret}");
+		Exception outer = new InvalidOperationException("command failed while contacting the environment", inner);
+		SecretLeakToolHarness tool = new(new ThrowingCommand(outer), logger);
+
+		// Act
+		CommandExecutionResult result = tool.Execute(new SecretLeakToolOptions());
+		string json = System.Text.Json.JsonSerializer.Serialize(result);
+
+		// Assert
+		json.Should().NotContain(Secret,
+			because: "FromException redacts the full formatted exception chain, so a secret on any inner exception is scrubbed (FR-11, Story 15b)");
+	}
+
+	// A logger that satisfies BaseTool's ExecuteLocked contract without touching the shared
+	// ConsoleLogger.Instance singleton, so this fixture stays parallelizable. FlushAndSnapshotMessages is
+	// an extension over ILogger.LogMessages, so the substitute must return a non-null empty collection
+	// there (SanitizeForSerialization iterates the snapshot it produces).
+	private static ILogger CreateSilentLogger() {
+		ILogger logger = Substitute.For<ILogger>();
+		logger.LogMessages.Returns(new List<LogMessage>());
+		return logger;
+	}
+
+	// Options with no environment identity, so BaseTool keeps to the injected-command direct path
+	// (InternalExecute → ExecuteLocked) and locks on the shared fallback key — no resolver needed.
+	private sealed class SecretLeakToolOptions : EnvironmentOptions { }
+
+	private sealed class ThrowingCommand(Exception toThrow) : Command<SecretLeakToolOptions> {
+		public override int Execute(SecretLeakToolOptions options) => throw toThrow;
+	}
+
+	// Minimal BaseTool subclass exercising the injected-command execution path (InternalExecute →
+	// ExecuteLocked), whose catch-all builds the -1 FromException envelope under test.
+	private sealed class SecretLeakToolHarness(Command<SecretLeakToolOptions> command, ILogger logger)
+		: BaseTool<SecretLeakToolOptions>(command, logger) {
+		public CommandExecutionResult Execute(SecretLeakToolOptions options) => InternalExecute(options);
 	}
 }

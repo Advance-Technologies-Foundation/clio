@@ -71,7 +71,52 @@ Targeted run: `dotnet test clio.tests/clio.tests.csproj --filter "Category=Unit&
 
 ## Dev Agent Record
 
-- Implementation started:
-- Implementation completed:
-- Tests passing:
-- Notes:
+- Implementation started: 2026-07-10
+- Implementation completed: 2026-07-10
+- Tests passing: full Unit suite `net10.0` 5178 passed / 0 failed / 35 skipped; new Integration `McpHttpTransportDefaultsTests` 2 passed; `clio.mcp.e2e` compiles (0 errors).
+
+### 15a — unit coverage completeness (AC-01): coverage map, no gaps filled
+
+Audited the existing passthrough unit tests. Every AC-01 dimension already has coverage; NO duplicate tests were added (the one genuine gap was 15b, below).
+
+| Dimension | File(s) |
+|---|---|
+| Header parse / precedence | `CredentialHeaderParserTests.cs` |
+| Ephemeral settings build + no-write | `ToolCommandResolverTests.cs`, `ToolCommandResolverNoWriteTests.cs`, `CredentialPassthroughDiTests.cs`, `CredentialPassthroughDiRegistrationTests.cs` |
+| Cache-key discrimination by token/cookie | `ToolCommandResolverCacheKeyTests.cs`, `TenantKeyEquivalenceTests.cs` |
+| TTL / LRU eviction | `SessionContainerCacheTests.cs`, `TenantExecutionLockProviderTests.cs`, `TenantLockConcurrencyTests.cs` |
+| API-key gate (honored/ignored, fixed-time) | `PlatformApiKeyGateTests.cs`, `PassthroughIncubationGateTests.cs` |
+| SSRF validator (baseline blocks + allowlist) | `TargetUrlValidatorTests.cs` |
+| FR-12 / FR-13 / FR-19 | `ToolCommandResolverTests.cs`, `RequiredArgValidationTests.cs`, `TransportArgPolicyTests.cs` |
+| Middleware capture / api-key gate wiring | `CredentialPassthroughMiddlewareTests.cs`, `McpHttpServerCommandTests.cs`, `McpHttpServerCommandOptionsTests.cs` |
+| Client identity (per-tenant) | `CredentialPassthroughClientIdentityTests.cs`, `CredentialContextAccessorTests.cs` |
+| cwd / scoped-sink isolation (H1) | `CwdConcurrencyIsolationTests.cs` |
+
+### 15b — exhaustive secret-leak matrix (AC-02): FromException gap LEAKED and FIXED
+
+Extended `CredentialPassthroughSecretHygieneTests.cs` into the full cross-sink matrix. Result of the `FromException` / `--debug` catch-all probe: **it LEAKED, and was fixed at source.**
+
+- **Evidence (RED):** a command whose `Execute` throws an exception carrying the seeded secret in a Bearer/URI shape produced the MCP envelope `{"exit-code":-1,"execution-log-messages":[{"Value":"[InvalidOperationException] POST https://tenant.creatio.com/... Authorization: Bearer SUPER-SECRET-TOKEN-9c3f2a"}]}` — the secret reached the MCP response verbatim. `BaseTool.ExecuteLocked`'s catch builds `CommandExecutionResult.FromException` and RETURNS it; `McpToolErrorFilter` only redacts THROWN exceptions, so it never saw this envelope.
+- **Fix (source):** `CommandExecutionResult.FromException` now runs the formatted exception chain through `SensitiveErrorTextRedactor.Redact` before it crosses the MCP boundary. Scoped to the -1 path only — the exit-1 caller-actionable messages (`FromResolverError`/`FromValidationError`) are deliberately secret-free and left intact. Same redactor also closes the two sibling -1 catch-alls (resolve + version) in `BaseTool`.
+- **New matrix sinks (all GREEN after fix):** MCP tool response + `execution-log-messages` (command-throw), inner-exception-chain variant (FormatExceptionChain depth-walk), CLI stdout (`ShowSettingsTo` serializer config — AccessToken/Cookie `[JsonIgnore]`). Console-log / file-log / no-write-to-disk remain authoritatively covered by `ToolCommandResolverNoWriteTests` + `Common/EnvironmentSettingsTests`. Scope note: a command that *logs* a secret before throwing is `priorLogs` (log-sink territory, Story 9/13), out of 15b's exception scope.
+
+### 15e — transport-default assertion + PIN (AC-06)
+
+`McpHttpServerCommand` now pins the transport via a shared `internal static ConfigureHttpTransport(HttpServerTransportOptions)` lambda passed to `.WithHttpTransport(...)`: `EnableLegacySse=false`, `PerSessionExecutionContext=false`, `Stateless=false` (all three exist and default false in ModelContextProtocol.AspNetCore 1.4.0). `McpHttpTransportDefaultsTests.cs` `[Category("Integration")]` resolves `IOptions<HttpServerTransportOptions>` from a real `AddMcpServer().WithHttpTransport(ConfigureHttpTransport)` provider and asserts all three flags (plus a direct-lambda assertion), so the production wiring and the assertion share one lambda and cannot diverge. `EnableLegacySse` is `[Obsolete]` (MCP9004) because ENABLING it is unsafe — reading/setting it to the SAFE value is suppressed with a scoped, justified `#pragma` at both sites. RISK #1: `PerSessionExecutionContext=false` keeps handlers on the REQUEST ExecutionContext, which is what lets the per-request credential context flow into the tool handler.
+
+### e2e (15c / 15d / AC-07): authored, MANUAL, NOT in CI
+
+New support helper `clio.mcp.e2e/Support/Mcp/McpHttpServerSession.cs` spawns one `clio mcp-http` process on a free loopback port and connects Streamable-HTTP `McpClient`s carrying `Authorization: Bearer <key>` + `X-Integration-Credentials`. `McpHttpPassthroughStand.cs` reads the live-stand config from `CLIO_MCP_HTTP_E2E_*` env vars and calls `Assert.Ignore(...)` first when they are absent — the compile-but-skip contract.
+
+- **15c** `McpHttpConcurrencyIsolationE2ETests.cs`: two concurrent different-credential passthrough calls on one process → distinct tenants, no cross-tenant response bleed (the beyond-logger artifact-isolation probe), completed concurrently without global-lock serialization.
+- **15d** `McpHttpNoRegressionE2ETests.cs`: stdio server still advertises resident tools; `mcp-http` with NO platform key serves a pre-registered environment unchanged (gated on `CLIO_MCP_HTTP_E2E_REGISTERED_ENV`).
+- **AC-07** `McpHttpMultiTenantE2ETests.cs`: one process, zero pre-registered environments, two distinct tenants served in one run via only `X-Integration-Credentials`.
+- All `[Category("E2E")]`, AAA + `because` + `[Description]`. **Deviation:** existing e2e fixtures use `[Category("McpE2E.NoEnvironment")]` + Allure attributes; per the work order these use `[Category("E2E")]` and are NOT wired into the `McpE2E.*` harness filters. They require a live stand + a clio build with the `mcp-http-credential-passthrough` incubation flag enabled and are run manually.
+
+### MCP / docs
+
+MCP reviewed, no update required — `mcp-http` is a host verb, not an MCP tool (no tool/prompt/resource exists for it); the change is a transport-option pin + tests only.
+
+### Notes
+
+Full Unit suite required because `McpHttpServerCommand.cs` (host wiring) changed; both host graphs still pass `ValidateOnBuild`. No new `CLIO*` warnings; MCP9004 suppressed with justification; no nested ternaries; no raw `HttpClient` in production paths. NOT committed/pushed per work order.

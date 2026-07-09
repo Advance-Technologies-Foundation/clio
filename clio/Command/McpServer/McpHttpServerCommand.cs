@@ -13,6 +13,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using ModelContextProtocol;
+using ModelContextProtocol.AspNetCore;
 using AspNetWebApplication = Microsoft.AspNetCore.Builder.WebApplication;
 using AspNetWebApplicationBuilder = Microsoft.AspNetCore.Builder.WebApplicationBuilder;
 
@@ -94,7 +95,7 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 		ISettingsRepository settingsRepository =
 			bindingsModule.RegisterInto(builder.Services);
 		BindingsModule.RegisterMcpServer(builder.Services, settingsRepository)
-			.WithHttpTransport();
+			.WithHttpTransport(ConfigureHttpTransport);
 
 		// Per-request credential-passthrough seam (Story 4). Registered in the HTTP host,
 		// NOT the shared BindingsModule, so IHttpContextAccessor is not pulled into the
@@ -199,6 +200,37 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 			$"MCP HTTP server listening on http://{options.Host}:{options.Port}{options.Path}");
 		app.Run();
 		return 0;
+	}
+
+	/// <summary>
+	/// Pins the MCP HTTP transport options that the credential-passthrough edge depends on, so a future
+	/// SDK default change cannot silently drift them (ADR RISK #1, Story 15e). The single shared lambda is
+	/// applied both here (via <c>WithHttpTransport</c>) and in
+	/// <c>McpHttpTransportDefaultsTests</c>, so the assertion and the production wiring can never diverge.
+	/// <list type="bullet">
+	/// <item><description><see cref="HttpServerTransportOptions.PerSessionExecutionContext"/> = <see langword="false"/>:
+	/// tool handlers run on the REQUEST's <see cref="System.Threading.ExecutionContext"/>, which is what
+	/// lets the per-request credential context set by the capture middleware flow into the handler. If this
+	/// flipped to <see langword="true"/> the handler would run on the session's captured context and
+	/// passthrough would silently break.</description></item>
+	/// <item><description><see cref="HttpServerTransportOptions.EnableLegacySse"/> = <see langword="false"/>:
+	/// only the modern Streamable HTTP endpoint is exposed; the legacy request/response-split SSE endpoints
+	/// (/sse, /message) are not mapped.</description></item>
+	/// <item><description><see cref="HttpServerTransportOptions.Stateless"/> = <see langword="false"/>:
+	/// the server tracks per-session state (the per-session container cache keys off it).</description></item>
+	/// </list>
+	/// </summary>
+	/// <param name="options">The transport options instance the SDK is configuring.</param>
+	internal static void ConfigureHttpTransport(HttpServerTransportOptions options) {
+		// MCP9004: EnableLegacySse is [Obsolete] because ENABLING legacy SSE is unsafe. We are pinning it
+		// to the SAFE value (false) precisely to keep the legacy endpoints disabled and guard against a
+		// future SDK default flip — the obsolete member is used only to assert that safe state, never to
+		// enable it. Suppression is scoped to this single assignment.
+#pragma warning disable MCP9004
+		options.EnableLegacySse = false;
+#pragma warning restore MCP9004
+		options.PerSessionExecutionContext = false;
+		options.Stateless = false;
 	}
 
 	private static void ConfigureHostFiltering(IServiceCollection services, string boundHost) {

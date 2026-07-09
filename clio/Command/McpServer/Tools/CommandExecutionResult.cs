@@ -117,7 +117,15 @@ public record CommandExecutionResult(
 		if (priorLogs != null) {
 			messages.AddRange(priorLogs);
 		}
-		messages.Add(new ErrorMessage(FormatExceptionChain(exception)));
+		// FR-11 (ENG-93208, Story 15b): the -1 catch-all envelope surfaces an unanticipated exception
+		// verbatim to the MCP client, and an inner-most data/HTTP/DB message on a credential-passthrough
+		// request routinely carries the target URI, host, or a Bearer/cookie/password value. Unlike the
+		// per-tool error paths (which redact at each call site) and the McpToolErrorFilter (which only
+		// redacts EXCEPTIONS that propagate — this envelope is RETURNED, so the filter never sees it),
+		// this chain was previously unredacted. Scrub it through the shared redactor before it crosses the
+		// MCP boundary. Only the -1/FromException path is redacted; the exit-1 caller-actionable messages
+		// (FromResolverError/FromValidationError) are deliberately secret-free and left intact.
+		messages.Add(new ErrorMessage(SensitiveErrorTextRedactor.Redact(FormatExceptionChain(exception))));
 		return new CommandExecutionResult(-1, messages, CorrelationId: correlationId);
 	}
 

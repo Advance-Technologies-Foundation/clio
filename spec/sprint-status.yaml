@@ -865,8 +865,8 @@ stories:
     title: "Tests — unit, secret-leak matrix, concurrency-isolation e2e, no-regression, transport-default assertion"
     feature: "mcp-http-credential-passthrough"
     size: L
-    status: ready-for-dev
-    note: "FR-16 5 sub-deliverables (15a-15e). clio.mcp.e2e is NOT in CI — concurrency-isolation (15c) and multi-tenant (SM-01) cases run MANUALLY against a live stand. 15d no-regression is a core contract, not folded into 'tests'. 15e pins EnableLegacySse=false/PerSessionExecutionContext=false so RISK #1 cannot drift."
+    status: review
+    note: "FR-16 5 sub-deliverables (15a-15e). IMPLEMENTED 2026-07-10 (awaiting PR). MCP e2e is NOT in CI — 15c concurrency-isolation, 15d no-regression AND AC-07 multi-tenant (SM-01) run MANUALLY against a live stand (authored + compile-verified in clio.mcp.e2e, skip via Assert.Ignore/McpHttpPassthroughStand when CLIO_MCP_HTTP_E2E_* env vars absent). 15a: coverage audited, no unit gaps (map in story Dev Agent Record); the one genuine gap was 15b. 15b: exhaustive secret-leak matrix — FromException (-1 catch-all) LEAKED (McpToolErrorFilter never sees the RETURNED envelope) and is now FIXED at source (SensitiveErrorTextRedactor.Redact in CommandExecutionResult.FromException). 15e pins EnableLegacySse=false/PerSessionExecutionContext=false/Stateless=false via shared ConfigureHttpTransport lambda + McpHttpTransportDefaultsTests [Integration] so RISK #1 cannot drift. Full Unit suite net10.0 green (5178 pass); clio.mcp.e2e compiles."
     file: spec/stories/story-mcp-http-credential-passthrough-15.md
     prd: spec/prd/prd-mcp-http-credential-passthrough.md
     adr: spec/adr/adr-mcp-http-credential-passthrough.md
