@@ -275,9 +275,8 @@ internal static class FullToSimpleBusinessRuleConverter {
 		return items switch {
 			null => [],
 			JsonValue value when value.TryGetValue(out string? text) =>
-				(text ?? string.Empty)
-				.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-				.ToList(),
+				text.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+					.ToList(),
 			JsonArray array => array
 				.Select(entry => entry?.GetValue<string>() ?? string.Empty)
 				.Where(entry => !string.IsNullOrWhiteSpace(entry))
