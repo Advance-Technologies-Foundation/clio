@@ -225,7 +225,9 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			  its condition and only the actions that survive on mobile. Page rules carry ONLY element
 			  actions — hide / show / make-editable / read-only / required / optional — and an action
 			  survives only for the referenced elements whose component converts (set-values / apply-filter /
-			  apply-static-filter do not exist at page level). Recreate each convertedRules[] entry by
+			  apply-static-filter do not exist at page level). The condition ALWAYS converts verbatim — every
+			  operand type is supported in a mobile page-rule condition (attribute, const, formula, system-value,
+			  system-setting). Recreate each convertedRules[] entry by
 			  passing its `rule` VERBATIM to create-page-business-rule on the MOBILE page (after approval).
 			  droppedRules[] did not convert (every referenced element drops) — report them.
 			  OBJECT-/entity-level business rules are shared across web and mobile — do NOT re-create or touch them.

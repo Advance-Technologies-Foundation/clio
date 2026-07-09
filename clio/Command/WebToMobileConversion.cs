@@ -203,8 +203,10 @@ public static class WebToMobileAnalysisService {
 	/// optional). An action converts only for the referenced elements that survive on mobile (elementMap
 	/// operation merge/insert), with their names remapped web→mobile and only the survivors kept. A rule
 	/// with no surviving action is dropped together with its condition; otherwise the condition is carried
-	/// with each operand's attribute path remapped from the source DS column path to the mobile viewModel
-	/// attribute name, so the rule is ready for create-page-business-rule. Returns null when no probe ran.
+	/// verbatim — EVERY operand type is supported in a mobile page-rule condition (attribute, const, formula,
+	/// system-value, system-setting) — with each operand's attribute path remapped from the source DS column
+	/// path to the mobile viewModel attribute name, so the rule is ready for create-page-business-rule. Returns
+	/// null when no probe ran.
 	/// </summary>
 	internal static PageBusinessRuleConversionInfo ConvertPageBusinessRules(
 		PageBusinessRuleProbeResult probe,
@@ -262,6 +264,10 @@ public static class WebToMobileAnalysisService {
 				continue;
 			}
 
+			// The condition ALWAYS converts, verbatim — every operand type (attribute, const, formula,
+			// system-value, system-setting …) is supported in a mobile page-rule condition. Only actions are
+			// filtered (by surviving components, above). Operand attribute paths are remapped from the source
+			// DS column path to the mobile viewModel attribute name.
 			JsonNode conditionClone = rule.Condition?.DeepClone();
 			RemapConditionAttributePaths(conditionClone, pathResolver);
 			converted.Add(new ConvertedPageBusinessRule {

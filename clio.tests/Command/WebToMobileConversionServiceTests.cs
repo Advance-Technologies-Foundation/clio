@@ -989,6 +989,37 @@ public sealed class WebToMobileConversionServiceTests {
 		WebToMobileAnalysisService.ConvertPageBusinessRules(null, new List<ElementMapEntry>()).Should().BeNull();
 	}
 
+	[Test]
+	[Description("A condition operand of ANY type — including SysSetting (compare against a system setting) — converts verbatim; SysSetting is supported in a mobile page-rule condition, so the rule is never dropped for its condition.")]
+	public void ConvertPageBusinessRules_SysSettingCondition_ConvertsVerbatim() {
+		var probe = new PageBusinessRuleProbeResult {
+			ProbeOk = true,
+			Rules = [
+				new SourcePageBusinessRule {
+					Caption = "Show new analytics when setting on",
+					Condition = JsonNode.Parse("""
+						{ "logicalOperation": "AND", "conditions": [
+							{ "leftExpression": { "type": "SysSetting" }, "comparisonType": "equal",
+							  "rightExpression": { "type": "AttributeValue", "value": "1" } } ] }
+						"""),
+					Actions = [ElementAction("show-element", "OverviewNewAnalyticsContainer")]
+				}
+			]
+		};
+		var elementMap = new List<ElementMapEntry> {
+			El("OverviewNewAnalyticsContainer", "insert", "OverviewNewAnalyticsContainer")
+		};
+
+		PageBusinessRuleConversionInfo result = WebToMobileAnalysisService.ConvertPageBusinessRules(probe, elementMap);
+
+		result.DroppedRules.Should().BeEmpty();
+		result.ConvertedRules.Should().HaveCount(1);
+		JsonArray conditions = result.ConvertedRules[0].Rule!["condition"]!["conditions"]!.AsArray();
+		conditions.Should().HaveCount(1);
+		conditions[0]!["leftExpression"]!["type"]!.GetValue<string>().Should().Be("SysSetting",
+			because: "the SysSetting operand is carried verbatim");
+	}
+
 	#endregion
 
 	#region Template component pruning (read-time exclusion of inherited web-template chrome)
