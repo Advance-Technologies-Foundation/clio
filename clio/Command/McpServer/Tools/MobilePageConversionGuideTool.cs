@@ -7,6 +7,7 @@ using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using Clio.Common;
+using Clio.UserEnvironment;
 using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
@@ -30,18 +31,24 @@ public sealed class MobilePageConversionGuideTool {
 	private readonly IMobileComponentInfoCatalog _mobileCatalog;
 	private readonly IComponentInfoCatalog _webCatalog;
 	private readonly IWebToMobilePageConversionRulesCatalog _rulesCatalog;
+	private readonly IPlatformVersionResolverFactory _versionResolverFactory;
+	private readonly ISettingsRepository _settingsRepository;
 
 	public MobilePageConversionGuideTool(
 		IToolCommandResolver commandResolver,
 		ILogger logger,
 		IMobileComponentInfoCatalog mobileCatalog,
 		IComponentInfoCatalog webCatalog,
-		IWebToMobilePageConversionRulesCatalog rulesCatalog) {
+		IWebToMobilePageConversionRulesCatalog rulesCatalog,
+		IPlatformVersionResolverFactory versionResolverFactory,
+		ISettingsRepository settingsRepository) {
 		_commandResolver = commandResolver;
 		_logger = logger;
 		_mobileCatalog = mobileCatalog;
 		_webCatalog = webCatalog;
 		_rulesCatalog = rulesCatalog;
+		_versionResolverFactory = versionResolverFactory;
+		_settingsRepository = settingsRepository;
 	}
 
 	internal const string ToolName = "get-mobile-page-conversion-guide";
@@ -119,9 +126,15 @@ public sealed class MobilePageConversionGuideTool {
 			return sourceTypeRejection;
 		}
 
-		string version = string.IsNullOrWhiteSpace(args.Version)
-			? ComponentRegistryClient.LatestVersion
-			: args.Version.Trim();
+		// Resolve the component-registry version against the TARGET environment (mirrors get-component-info):
+		// explicit version wins; else probe the environment's platform version; else degrade to "latest" and
+		// flag it so the caller confirms with the user (a "latest" superset may list components absent from the
+		// target Creatio version). AC: use only mobile components available in the target Creatio version.
+		PlatformVersionResolution versionResolution =
+			await ResolveVersionAsync(args, cancellationToken).ConfigureAwait(false);
+		string version = versionResolution.ResolvedVersion;
+		string resolvedFrom = ComponentInfoResolution.MapResolvedFrom(
+			versionResolution.Source, versionResolution.ResolvedVersion, versionResolution.ResolvedVersion);
 		IReadOnlyList<ComponentRegistryEntry> mobileEntries =
 			await _mobileCatalog.GetAllAsync(version, cancellationToken).ConfigureAwait(false) ?? [];
 		IReadOnlyList<ComponentRegistryEntry> webEntries =
@@ -199,8 +212,36 @@ public sealed class MobilePageConversionGuideTool {
 			Success = true,
 			SourceSchemaName = args.SchemaName,
 			SourceType = sourceType,
-			Guide = guide
+			Guide = guide,
+			ResolvedTargetVersion = version,
+			ResolvedFrom = resolvedFrom,
+			VersionWarning = ComponentInfoResolution.GetVersionWarning(resolvedFrom),
+			RequiresVersionConfirmation = ComponentInfoResolution.RequiresVersionConfirmation(resolvedFrom),
+			ResolvedFromReason = ComponentInfoResolution.GetFallbackReason(resolvedFrom, versionResolution.Reason)
 		};
+	}
+
+	/// <summary>
+	/// Resolves the component-registry version from the per-call arguments, mirroring get-component-info so
+	/// the guide is scoped to the target Creatio version: an explicit <c>version</c> is authoritative; an
+	/// <c>environment-name</c>/<c>uri</c> is probed for its platform version; neither degrades to <c>latest</c>
+	/// on the fallback tier (surfaced as <c>latest-fallback</c> so the caller confirms with the user).
+	/// </summary>
+	private Task<PlatformVersionResolution> ResolveVersionAsync(
+		MobilePageConversionGuideArgs args, CancellationToken cancellationToken) {
+		if (!string.IsNullOrWhiteSpace(args.Version)) {
+			return Task.FromResult(new PlatformVersionResolution(args.Version.Trim(), VersionResolutionSource.Environment));
+		}
+		if (!string.IsNullOrWhiteSpace(args.EnvironmentName) || !string.IsNullOrWhiteSpace(args.Uri)) {
+			EnvironmentSettings settings = _settingsRepository.GetEnvironment(new EnvironmentOptions {
+				Environment = args.EnvironmentName,
+				Uri = args.Uri,
+				Login = args.Login,
+				Password = args.Password
+			});
+			return _versionResolverFactory.Create(settings).ResolveAsync(cancellationToken);
+		}
+		return Task.FromResult(ComponentInfoResolution.CreateNoActiveEnvironmentFallback());
 	}
 
 	/// <summary>

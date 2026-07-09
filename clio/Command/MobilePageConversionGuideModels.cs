@@ -480,6 +480,31 @@ public sealed class MobilePageConversionGuideResponse {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public MobilePageConversionGuide Guide { get; init; }
 
+	/// <summary>The component-registry / rules version the guide was built against (a concrete version or "latest").</summary>
+	[JsonPropertyName("resolvedTargetVersion")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string ResolvedTargetVersion { get; init; }
+
+	/// <summary>How the version was resolved: "environment", "environment-superset", or "latest-fallback".</summary>
+	[JsonPropertyName("resolvedFrom")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string ResolvedFrom { get; init; }
+
+	/// <summary>Caveat when the catalog is approximate or the target version is unknown; null when the version is exact.</summary>
+	[JsonPropertyName("versionWarning")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string VersionWarning { get; init; }
+
+	/// <summary>True only on "latest-fallback": the target version is unknown, so the caller must confirm with the user before acting on the guide.</summary>
+	[JsonPropertyName("requiresVersionConfirmation")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+	public bool RequiresVersionConfirmation { get; init; }
+
+	/// <summary>Stable kebab-case reason on the "latest-fallback" tier (e.g. "no-active-environment", "probe-error"); null otherwise.</summary>
+	[JsonPropertyName("resolvedFromReason")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string ResolvedFromReason { get; init; }
+
 	[JsonPropertyName("error")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string Error { get; init; }
