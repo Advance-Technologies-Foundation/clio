@@ -27,7 +27,7 @@ public sealed class CreateEntityBusinessRuleCommand(
 		ArgumentNullException.ThrowIfNull(options);
 		try {
 			Validate(options);
-			BusinessRuleCreateResult result = businessRuleService.Create(new EntityBusinessRuleCreateRequest(
+			BusinessRuleCreateResult result = businessRuleService.Create(new BusinessRuleCreateRequest(
 				options.PackageName,
 				options.EntitySchemaName,
 				options.Rule));

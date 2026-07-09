@@ -47,7 +47,7 @@ public sealed class BusinessRuleToolTests {
 		IEntityBusinessRuleService service = Substitute.For<IEntityBusinessRuleService>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<IEntityBusinessRuleService>(Arg.Any<EnvironmentOptions>()).Returns(service);
-		service.Create(Arg.Any<EntityBusinessRulesBatchRequest>())
+		service.Create(Arg.Any<BusinessRulesBatchRequest>())
 			.Returns(new List<BusinessRuleBatchItemResult> {
 				new("Require owner for drafts", true, "BusinessRule_1234567", null)
 			});
@@ -77,7 +77,7 @@ public sealed class BusinessRuleToolTests {
 		});
 
 		// Assert
-		response.Created.Should().Be(1, because: "the single rule was created");
+		response.Succeeded.Should().Be(1, because: "the single rule was created");
 		response.Failed.Should().Be(0);
 		response.Results.Single().Name.Should().Be("Require owner for drafts");
 		response.Results.Single().Success.Should().BeTrue();
@@ -86,9 +86,9 @@ public sealed class BusinessRuleToolTests {
 		commandResolver.Received(1).Resolve<IEntityBusinessRuleService>(Arg.Is<EnvironmentOptions>(options =>
 			options.Environment == "dev"));
 		service.Received(1).Create(
-			Arg.Is<EntityBusinessRulesBatchRequest>(request =>
+			Arg.Is<BusinessRulesBatchRequest>(request =>
 				request.PackageName == "UsrPkg"
-				&& request.EntitySchemaName == "UsrOrder"
+				&& request.SchemaName == "UsrOrder"
 				&& request.Rules.Count == 1
 				&& request.Rules[0].Caption == "Require owner for drafts"
 				&& request.Rules[0].Condition.LogicalOperation == "AND"
@@ -107,7 +107,7 @@ public sealed class BusinessRuleToolTests {
 		IEntityBusinessRuleService service = Substitute.For<IEntityBusinessRuleService>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<IEntityBusinessRuleService>(Arg.Any<EnvironmentOptions>()).Returns(service);
-		service.Create(Arg.Any<EntityBusinessRulesBatchRequest>())
+		service.Create(Arg.Any<BusinessRulesBatchRequest>())
 			.Returns(new List<BusinessRuleBatchItemResult> {
 				new("Rule A", true, "BusinessRule_A", null),
 				new("Rule B", true, "BusinessRule_B", null)
@@ -128,8 +128,8 @@ public sealed class BusinessRuleToolTests {
 		});
 
 		// Assert
-		response.Created.Should().Be(2);
-		service.Received(1).Create(Arg.Is<EntityBusinessRulesBatchRequest>(request => request.Rules.Count == 2));
+		response.Succeeded.Should().Be(2);
+		service.Received(1).Create(Arg.Is<BusinessRulesBatchRequest>(request => request.Rules.Count == 2));
 	}
 
 	[Test]
@@ -153,8 +153,8 @@ public sealed class BusinessRuleToolTests {
 		// Assert
 		response.Error.Should().Contain("rules is required",
 			because: "an empty batch should be rejected before any remote work");
-		response.Created.Should().Be(0);
-		service.DidNotReceiveWithAnyArgs().Create(default(EntityBusinessRulesBatchRequest)!);
+		response.Succeeded.Should().Be(0);
+		service.DidNotReceiveWithAnyArgs().Create(default(BusinessRulesBatchRequest)!);
 	}
 
 	[Test]
@@ -165,7 +165,7 @@ public sealed class BusinessRuleToolTests {
 		IEntityBusinessRuleService service = Substitute.For<IEntityBusinessRuleService>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<IEntityBusinessRuleService>(Arg.Any<EnvironmentOptions>()).Returns(service);
-		service.Create(Arg.Any<EntityBusinessRulesBatchRequest>())
+		service.Create(Arg.Any<BusinessRulesBatchRequest>())
 			.Returns(new List<BusinessRuleBatchItemResult> {
 				new("Good rule", true, "BusinessRule_OK", null),
 				new("Bad rule", false, null, "Unknown attribute")
@@ -186,7 +186,7 @@ public sealed class BusinessRuleToolTests {
 		});
 
 		// Assert
-		response.Created.Should().Be(1);
+		response.Succeeded.Should().Be(1);
 		response.Failed.Should().Be(1);
 		response.Results.Should().Contain(result => result.Name == "Bad rule" && !result.Success && result.Error == "Unknown attribute");
 	}
@@ -199,7 +199,7 @@ public sealed class BusinessRuleToolTests {
 		IEntityBusinessRuleService service = Substitute.For<IEntityBusinessRuleService>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<IEntityBusinessRuleService>(Arg.Any<EnvironmentOptions>()).Returns(service);
-		service.Create(Arg.Any<EntityBusinessRulesBatchRequest>())
+		service.Create(Arg.Any<BusinessRulesBatchRequest>())
 			.Returns(_ => throw new System.InvalidOperationException("entity-schema-name not found."));
 		CreateEntityBusinessRuleTool tool = new(commandResolver, ConsoleLogger.Instance);
 
@@ -601,7 +601,7 @@ public sealed class BusinessRuleToolTests {
 		IPageBusinessRuleService service = Substitute.For<IPageBusinessRuleService>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<IPageBusinessRuleService>(Arg.Any<EnvironmentOptions>()).Returns(service);
-		service.Create(Arg.Any<PageBusinessRulesBatchRequest>())
+		service.Create(Arg.Any<BusinessRulesBatchRequest>())
 			.Returns(new List<BusinessRuleBatchItemResult> {
 				new("Show escalation when priority is high", true, "BusinessRule_7654321", null)
 			});
@@ -630,14 +630,14 @@ public sealed class BusinessRuleToolTests {
 		});
 
 		// Assert
-		response.Created.Should().Be(1);
+		response.Succeeded.Should().Be(1);
 		response.Results.Single().RuleName.Should().Be("BusinessRule_7654321");
 		commandResolver.Received(1).Resolve<IPageBusinessRuleService>(Arg.Is<EnvironmentOptions>(options =>
 			options.Environment == "dev"));
 		service.Received(1).Create(
-			Arg.Is<PageBusinessRulesBatchRequest>(request =>
+			Arg.Is<BusinessRulesBatchRequest>(request =>
 				request.PackageName == "UsrPkg"
-				&& request.PageSchemaName == "UsrCase_FormPage"
+				&& request.SchemaName == "UsrCase_FormPage"
 				&& request.Rules.Count == 1
 				&& request.Rules[0].Caption == "Show escalation when priority is high"
 				&& request.Rules[0].Actions[0].ActionType == "show-element"
@@ -664,7 +664,7 @@ public sealed class BusinessRuleToolTests {
 
 		// Assert
 		response.Error.Should().Contain("rules is required");
-		service.DidNotReceiveWithAnyArgs().Create(default(PageBusinessRulesBatchRequest)!);
+		service.DidNotReceiveWithAnyArgs().Create(default(BusinessRulesBatchRequest)!);
 	}
 
 	[Test]

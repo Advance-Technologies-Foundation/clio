@@ -2614,38 +2614,6 @@ internal static class ToolContractCatalog {
 			]);
 	}
 
-	private static ToolOutputContract BusinessRuleUpdateBatchOutput() {
-		return new ToolOutputContract(
-			"business-rule-update-batch-result",
-			null,
-			[
-				"failed > 0",
-				"error != null"
-			],
-			[
-				Field("updated", NumberType, "Number of rules updated."),
-				Field("failed", NumberType, "Number of rules that failed."),
-				Field("results", ArrayType, "Per-rule outcomes in input order; each item has name (the match key), success, ruleName, and error."),
-				Field("error", StringType, "Request-level error that prevented the whole batch from running. Note: when the requested environment cannot be resolved (unknown/unreachable), the tool instead returns the standard command-execution envelope rather than this batch shape.")
-			]);
-	}
-
-	private static ToolOutputContract BusinessRuleDeleteBatchOutput() {
-		return new ToolOutputContract(
-			"business-rule-delete-batch-result",
-			null,
-			[
-				"failed > 0",
-				"error != null"
-			],
-			[
-				Field("deleted", NumberType, "Number of rules deleted."),
-				Field("failed", NumberType, "Number of rule names that failed."),
-				Field("results", ArrayType, "Per-name outcomes in input order; each item has name, success, and error."),
-				Field("error", StringType, "Request-level error that prevented the whole batch from running. Note: when the requested environment cannot be resolved (unknown/unreachable), the tool instead returns the standard command-execution envelope rather than this batch shape.")
-			]);
-	}
-
 	private static ToolContractDefinition BuildEntityBusinessRuleRead() {
 		return new ToolContractDefinition(
 			ReadEntityBusinessRuleTool.ToolName,
@@ -2738,7 +2706,8 @@ internal static class ToolContractCatalog {
 					.. BusinessRuleConditionValidators(),
 					.. EntityBusinessRuleActionValidators()
 				]),
-			BusinessRuleUpdateBatchOutput(),
+			BusinessRuleBatchOutput(
+				"Per-rule outcomes in input order; each item has name (the match key), success, ruleName, and error."),
 			CommonErrorContract,
 			[],
 			[],
@@ -2874,7 +2843,8 @@ internal static class ToolContractCatalog {
 					.. BusinessRuleConditionValidators(),
 					.. PageBusinessRuleActionValidators()
 				]),
-			BusinessRuleUpdateBatchOutput(),
+			BusinessRuleBatchOutput(
+				"Per-rule outcomes in input order; each item has name (the match key), success, ruleName, and error."),
 			CommonErrorContract,
 			[],
 			[],
@@ -2980,7 +2950,8 @@ internal static class ToolContractCatalog {
 					Field(EntitySchemaNameFieldName, StringType, "Target entity schema name."),
 					Field(RuleNamesFieldName, ArrayType, "Internal rule names to delete (from read-entity-business-rules), NOT captions. An unknown name fails only that entry; the remaining names still delete.")
 				]),
-			BusinessRuleDeleteBatchOutput(),
+			BusinessRuleBatchOutput(
+				"Per-name outcomes in input order; each item has name, success, and error."),
 			CommonErrorContract,
 			[],
 			[],
@@ -3018,7 +2989,8 @@ internal static class ToolContractCatalog {
 					Field(PageSchemaNameFieldName, StringType, "Target Freedom UI page schema name."),
 					Field(RuleNamesFieldName, ArrayType, "Internal rule names to delete (from read-page-business-rules), NOT captions. An unknown name fails only that entry; the remaining names still delete.")
 				]),
-			BusinessRuleDeleteBatchOutput(),
+			BusinessRuleBatchOutput(
+				"Per-name outcomes in input order; each item has name, success, and error."),
 			CommonErrorContract,
 			[],
 			[],
@@ -5260,7 +5232,8 @@ internal static class ToolContractCatalog {
 			]);
 	}
 
-	private static ToolOutputContract BusinessRuleBatchOutput() {
+	private static ToolOutputContract BusinessRuleBatchOutput(string resultsDescription =
+		"Per-rule outcomes in input order; each item has name, success, ruleName, and error.") {
 		return new ToolOutputContract(
 			"business-rule-batch-result",
 			null,
@@ -5269,9 +5242,9 @@ internal static class ToolContractCatalog {
 				"error != null"
 			],
 			[
-				Field("created", NumberType, "Number of rules created."),
-				Field("failed", NumberType, "Number of rules that failed."),
-				Field("results", ArrayType, "Per-rule outcomes in input order; each item has name, success, ruleName, and error."),
+				Field("succeeded", NumberType, "Number of items that succeeded."),
+				Field("failed", NumberType, "Number of items that failed."),
+				Field("results", ArrayType, resultsDescription),
 				Field("error", StringType, "Request-level error that prevented the whole batch from running. Note: when the requested environment cannot be resolved (unknown/unreachable), the tool instead returns the standard command-execution envelope (exit-code 1 with execution-log-messages referencing the environment) rather than this batch shape.")
 			]);
 	}

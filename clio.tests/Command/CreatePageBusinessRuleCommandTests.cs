@@ -25,7 +25,7 @@ public sealed class CreatePageBusinessRuleCommandTests {
 			PageSchemaName = "UsrOrder_FormPage",
 			Rule = CreateRule()
 		};
-		pageBusinessRuleService.Create(Arg.Any<PageBusinessRuleCreateRequest>())
+		pageBusinessRuleService.Create(Arg.Any<BusinessRuleCreateRequest>())
 			.Returns(new BusinessRuleCreateResult("BusinessRule_7654321"));
 
 		// Act
@@ -35,9 +35,9 @@ public sealed class CreatePageBusinessRuleCommandTests {
 		result.Should().Be(0,
 			because: "successful page business-rule creation should return the standard success exit code");
 		pageBusinessRuleService.Received(1).Create(
-			Arg.Is<PageBusinessRuleCreateRequest>(request =>
+			Arg.Is<BusinessRuleCreateRequest>(request =>
 				request.PackageName == "UsrPkg"
-				&& request.PageSchemaName == "UsrOrder_FormPage"
+				&& request.SchemaName == "UsrOrder_FormPage"
 				&& request.Rule.Caption == "Hide warning when status is filled"
 				&& request.Rule.Actions.Count == 1
 				&& request.Rule.Actions[0].ActionType == "hide-element"
@@ -76,7 +76,7 @@ public sealed class CreatePageBusinessRuleCommandTests {
 		// Assert
 		result.Should().Be(1,
 			because: "the command should fail fast when required execution input is missing");
-		pageBusinessRuleService.DidNotReceiveWithAnyArgs().Create(default(PageBusinessRuleCreateRequest)!);
+		pageBusinessRuleService.DidNotReceiveWithAnyArgs().Create(default(BusinessRuleCreateRequest)!);
 		logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains(expectedMessage)));
 	}
 
@@ -88,7 +88,7 @@ public sealed class CreatePageBusinessRuleCommandTests {
 		IPageBusinessRuleService pageBusinessRuleService = Substitute.For<IPageBusinessRuleService>();
 		ILogger logger = Substitute.For<ILogger>();
 		CreatePageBusinessRuleCommand command = new(pageBusinessRuleService, logger);
-		pageBusinessRuleService.Create(Arg.Any<PageBusinessRuleCreateRequest>())
+		pageBusinessRuleService.Create(Arg.Any<BusinessRuleCreateRequest>())
 			.Returns(_ => throw new InvalidOperationException("Page schema 'UsrMissing_FormPage' was not found."));
 
 		// Act

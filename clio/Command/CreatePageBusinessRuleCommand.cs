@@ -37,7 +37,7 @@ public sealed class CreatePageBusinessRuleCommand(
 		ArgumentNullException.ThrowIfNull(options);
 		try {
 			Validate(options);
-			BusinessRuleCreateResult result = pageBusinessRuleService.Create(new PageBusinessRuleCreateRequest(
+			BusinessRuleCreateResult result = pageBusinessRuleService.Create(new BusinessRuleCreateRequest(
 				options.PackageName,
 				options.PageSchemaName,
 				options.Rule));

@@ -338,7 +338,7 @@ public sealed class EntityBusinessRuleToolE2ETests : McpContractFixtureBase {
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
 			because: "a valid Contact entity rule should return the structured batch-create response, not an MCP error");
-		batchResponse.Created.Should().Be(1,
+		batchResponse.Succeeded.Should().Be(1,
 			because: "the single Contact rule should be created in the configured Creatio sandbox");
 		batchResponse.Failed.Should().Be(0,
 			because: "no rule in the batch should fail when the payload is valid");
@@ -392,7 +392,7 @@ public sealed class EntityBusinessRuleToolE2ETests : McpContractFixtureBase {
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
 			because: "a valid Contact system-variable rule should return the structured batch-create response, not an MCP error");
-		batchResponse.Created.Should().Be(1,
+		batchResponse.Succeeded.Should().Be(1,
 			because: "the single Contact system-variable rule should be created in the configured Creatio sandbox");
 		batchResponse.Failed.Should().Be(0,
 			because: "no rule in the batch should fail when the payload is valid");
@@ -447,7 +447,7 @@ public sealed class EntityBusinessRuleToolE2ETests : McpContractFixtureBase {
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
 			because: "a valid Contact role-gate rule should return the structured batch-create response, not an MCP error");
-		batchResponse.Created.Should().Be(1,
+		batchResponse.Succeeded.Should().Be(1,
 			because: "the single Contact role-gate rule should be created in the configured Creatio sandbox");
 		batchResponse.Failed.Should().Be(0,
 			because: "no rule in the batch should fail when the payload is valid");
@@ -502,7 +502,7 @@ public sealed class EntityBusinessRuleToolE2ETests : McpContractFixtureBase {
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
 			because: "a valid Contact apply-filter rule should return the structured batch-create response, not an MCP error");
-		batchResponse.Created.Should().Be(1,
+		batchResponse.Succeeded.Should().Be(1,
 			because: "the single apply-filter parent rule should be created in the configured Creatio sandbox (clear/populate children are generated server-side and are not separate batch items)");
 		batchResponse.Failed.Should().Be(0,
 			because: "no rule in the batch should fail when the apply-filter payload is valid");
@@ -656,8 +656,8 @@ public sealed class EntityBusinessRuleToolE2ETests : McpContractFixtureBase {
 				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
-		BusinessRuleUpdateBatchResponse response =
-			EntitySchemaStructuredResultParser.Extract<BusinessRuleUpdateBatchResponse>(callResult);
+		BusinessRuleBatchResponse response =
+			EntitySchemaStructuredResultParser.Extract<BusinessRuleBatchResponse>(callResult);
 
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
@@ -666,7 +666,7 @@ public sealed class EntityBusinessRuleToolE2ETests : McpContractFixtureBase {
 			because: "the request-level error should explain that the rules array must not be empty");
 		response.Error.Should().Contain("rules",
 			because: "the request-level error should reference the offending 'rules' argument");
-		response.Updated.Should().Be(0,
+		response.Succeeded.Should().Be(0,
 			because: "no per-rule work should be attempted when the request-level validation fails");
 	}
 
@@ -692,8 +692,8 @@ public sealed class EntityBusinessRuleToolE2ETests : McpContractFixtureBase {
 				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
-		BusinessRuleDeleteBatchResponse response =
-			EntitySchemaStructuredResultParser.Extract<BusinessRuleDeleteBatchResponse>(callResult);
+		BusinessRuleBatchResponse response =
+			EntitySchemaStructuredResultParser.Extract<BusinessRuleBatchResponse>(callResult);
 
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
@@ -702,7 +702,7 @@ public sealed class EntityBusinessRuleToolE2ETests : McpContractFixtureBase {
 			because: "the request-level error should explain that the rule-names array must not be empty");
 		response.Error.Should().Contain("rule-names",
 			because: "the request-level error should reference the offending 'rule-names' argument");
-		response.Deleted.Should().Be(0,
+		response.Succeeded.Should().Be(0,
 			because: "no per-name work should be attempted when the request-level validation fails");
 	}
 
@@ -796,7 +796,7 @@ public sealed class EntityBusinessRuleToolE2ETests : McpContractFixtureBase {
 		// Assert - create
 		createResult.IsError.Should().NotBeTrue(
 			because: "a valid named Contact rule should return the structured batch-create response, not an MCP error");
-		createResponse.Created.Should().Be(1,
+		createResponse.Succeeded.Should().Be(1,
 			because: "the single named Contact rule should be created in the configured Creatio sandbox");
 		createResponse.Failed.Should().Be(0,
 			because: "no rule in the batch should fail when the payload is valid");
@@ -853,13 +853,13 @@ public sealed class EntityBusinessRuleToolE2ETests : McpContractFixtureBase {
 				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
-		BusinessRuleUpdateBatchResponse updateResponse =
-			EntitySchemaStructuredResultParser.Extract<BusinessRuleUpdateBatchResponse>(updateResult);
+		BusinessRuleBatchResponse updateResponse =
+			EntitySchemaStructuredResultParser.Extract<BusinessRuleBatchResponse>(updateResult);
 
 		// Assert - per-rule isolation: the valid rule saves, the two invalid rules fail individually
 		updateResult.IsError.Should().NotBeTrue(
 			because: "a partially failing update batch should return the structured batch response, not an MCP error");
-		updateResponse.Updated.Should().Be(1,
+		updateResponse.Succeeded.Should().Be(1,
 			because: "only the existing named rule should be updated; the unknown and missing names fail individually");
 		updateResponse.Failed.Should().Be(2,
 			because: "the unknown-name and missing-name rules should each fail as isolated batch entries");
@@ -914,11 +914,11 @@ public sealed class EntityBusinessRuleToolE2ETests : McpContractFixtureBase {
 				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
-		BusinessRuleUpdateBatchResponse disableResponse =
-			EntitySchemaStructuredResultParser.Extract<BusinessRuleUpdateBatchResponse>(disableResult);
+		BusinessRuleBatchResponse disableResponse =
+			EntitySchemaStructuredResultParser.Extract<BusinessRuleBatchResponse>(disableResult);
 
 		// Assert - disable
-		disableResponse.Updated.Should().Be(1,
+		disableResponse.Succeeded.Should().Be(1,
 			because: "the disable update targets the existing rule by name and should save");
 		disableResponse.Failed.Should().Be(0,
 			because: "no rule in the disable batch should fail");
@@ -939,13 +939,13 @@ public sealed class EntityBusinessRuleToolE2ETests : McpContractFixtureBase {
 				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
-		BusinessRuleDeleteBatchResponse deleteResponse =
-			EntitySchemaStructuredResultParser.Extract<BusinessRuleDeleteBatchResponse>(deleteResult);
+		BusinessRuleBatchResponse deleteResponse =
+			EntitySchemaStructuredResultParser.Extract<BusinessRuleBatchResponse>(deleteResult);
 
 		// Assert - per-name isolation: the existing rule deletes, the unknown name fails individually
 		deleteResult.IsError.Should().NotBeTrue(
 			because: "a partially failing delete batch should return the structured batch response, not an MCP error");
-		deleteResponse.Deleted.Should().Be(1,
+		deleteResponse.Succeeded.Should().Be(1,
 			because: "only the existing rule name should be deleted; the unknown name fails individually");
 		deleteResponse.Failed.Should().Be(1,
 			because: "the unknown rule name should fail as an isolated batch entry");
@@ -1260,7 +1260,7 @@ public sealed class EntityBusinessRuleToolE2ETests : McpContractFixtureBase {
 		BusinessRuleBatchResponse createResponse = McpCommandExecutionParser.ExtractBusinessRuleBatchResponse(createResult);
 
 		// Assert - create
-		createResponse.Created.Should().Be(1,
+		createResponse.Succeeded.Should().Be(1,
 			because: "the apply-filter rule with both flags true should be created in the configured Creatio sandbox");
 
 		// Act - read back the created rule
@@ -1289,11 +1289,11 @@ public sealed class EntityBusinessRuleToolE2ETests : McpContractFixtureBase {
 				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
-		BusinessRuleDeleteBatchResponse deleteResponse =
-			EntitySchemaStructuredResultParser.Extract<BusinessRuleDeleteBatchResponse>(deleteResult);
+		BusinessRuleBatchResponse deleteResponse =
+			EntitySchemaStructuredResultParser.Extract<BusinessRuleBatchResponse>(deleteResult);
 
 		// Assert - delete
-		deleteResponse.Deleted.Should().Be(1,
+		deleteResponse.Succeeded.Should().Be(1,
 			because: "the round-trip rule should be removed so the sandbox stays clean");
 	}
 

@@ -59,7 +59,7 @@ public sealed class BusinessRuleReadUpdateDeleteToolTests {
 			Name = "BusinessRule_1",
 			Enabled = true
 		};
-		service.Read(Arg.Any<EntityBusinessRulesReadRequest>()).Returns([model]);
+		service.Read(Arg.Any<BusinessRulesReadRequest>()).Returns([model]);
 		ReadEntityBusinessRuleTool tool = new(commandResolver, ConsoleLogger.Instance);
 
 		// Act
@@ -76,9 +76,9 @@ public sealed class BusinessRuleReadUpdateDeleteToolTests {
 		response.Error.Should().BeNull(because: "a successful read carries no request-level error");
 		commandResolver.Received(1).Resolve<IEntityBusinessRuleService>(Arg.Is<EnvironmentOptions>(options =>
 			options.Environment == "dev"));
-		service.Received(1).Read(Arg.Is<EntityBusinessRulesReadRequest>(request =>
+		service.Received(1).Read(Arg.Is<BusinessRulesReadRequest>(request =>
 			request.PackageName == "UsrPkg"
-			&& request.EntitySchemaName == "UsrOrder"));
+			&& request.SchemaName == "UsrOrder"));
 	}
 
 	[Test]
@@ -89,7 +89,7 @@ public sealed class BusinessRuleReadUpdateDeleteToolTests {
 		IPageBusinessRuleService service = Substitute.For<IPageBusinessRuleService>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<IPageBusinessRuleService>(Arg.Any<EnvironmentOptions>()).Returns(service);
-		service.Read(Arg.Any<PageBusinessRulesReadRequest>())
+		service.Read(Arg.Any<BusinessRulesReadRequest>())
 			.Returns([
 				new BusinessRule("Page rule", new BusinessRuleConditionGroup("AND", []), []) {
 					Name = "BusinessRule_pg",
@@ -109,9 +109,9 @@ public sealed class BusinessRuleReadUpdateDeleteToolTests {
 		response.Count.Should().Be(1, because: "one persisted page rule was read");
 		response.Rules.Single().Name.Should().Be("BusinessRule_pg",
 			because: "the page rules are passed through to the response unchanged");
-		service.Received(1).Read(Arg.Is<PageBusinessRulesReadRequest>(request =>
+		service.Received(1).Read(Arg.Is<BusinessRulesReadRequest>(request =>
 			request.PackageName == "UsrPkg"
-			&& request.PageSchemaName == "UsrOrder_FormPage"));
+			&& request.SchemaName == "UsrOrder_FormPage"));
 	}
 
 	[Test]
@@ -174,7 +174,7 @@ public sealed class BusinessRuleReadUpdateDeleteToolTests {
 		IEntityBusinessRuleService service = Substitute.For<IEntityBusinessRuleService>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<IEntityBusinessRuleService>(Arg.Any<EnvironmentOptions>()).Returns(service);
-		service.Read(Arg.Any<EntityBusinessRulesReadRequest>())
+		service.Read(Arg.Any<BusinessRulesReadRequest>())
 			.Returns(_ => throw new InvalidOperationException("Package 'UsrPkg' was not found."));
 		ReadEntityBusinessRuleTool tool = new(commandResolver, ConsoleLogger.Instance);
 
@@ -199,7 +199,7 @@ public sealed class BusinessRuleReadUpdateDeleteToolTests {
 		IEntityBusinessRuleService service = Substitute.For<IEntityBusinessRuleService>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<IEntityBusinessRuleService>(Arg.Any<EnvironmentOptions>()).Returns(service);
-		service.Update(Arg.Any<EntityBusinessRulesBatchRequest>())
+		service.Update(Arg.Any<BusinessRulesBatchRequest>())
 			.Returns(new List<BusinessRuleBatchItemResult> {
 				new("BusinessRule_1", true, "BusinessRule_1", null),
 				new("BusinessRule_missing", false, null, "Business rule 'BusinessRule_missing' was not found.")
@@ -220,7 +220,7 @@ public sealed class BusinessRuleReadUpdateDeleteToolTests {
 		};
 
 		// Act
-		BusinessRuleUpdateBatchResponse response = (BusinessRuleUpdateBatchResponse)tool.BusinessRulesUpdate(
+		BusinessRuleBatchResponse response = (BusinessRuleBatchResponse)tool.BusinessRulesUpdate(
 			new UpdateEntityBusinessRulesArgs {
 				EnvironmentName = "dev",
 				PackageName = "UsrPkg",
@@ -229,16 +229,16 @@ public sealed class BusinessRuleReadUpdateDeleteToolTests {
 			});
 
 		// Assert
-		response.Updated.Should().Be(1, because: "one rule of the batch was updated");
+		response.Succeeded.Should().Be(1, because: "one rule of the batch was updated");
 		response.Failed.Should().Be(1, because: "the unknown name fails only its own entry");
 		response.Results.Should().HaveCount(2, because: "every input rule gets a result entry in input order");
 		response.Results[1].Error.Should().Contain("BusinessRule_missing",
 			because: "the per-rule failure must name the missing rule");
 		commandResolver.Received(1).Resolve<IEntityBusinessRuleService>(Arg.Is<EnvironmentOptions>(options =>
 			options.Environment == "dev"));
-		service.Received(1).Update(Arg.Is<EntityBusinessRulesBatchRequest>(request =>
+		service.Received(1).Update(Arg.Is<BusinessRulesBatchRequest>(request =>
 			request.PackageName == "UsrPkg"
-			&& request.EntitySchemaName == "UsrOrder"
+			&& request.SchemaName == "UsrOrder"
 			&& request.Rules.Count == 2
 			&& request.Rules[0].Name == "BusinessRule_1"
 			&& request.Rules[0].Enabled == false
@@ -256,7 +256,7 @@ public sealed class BusinessRuleReadUpdateDeleteToolTests {
 		UpdateEntityBusinessRuleTool tool = new(commandResolver, ConsoleLogger.Instance);
 
 		// Act
-		BusinessRuleUpdateBatchResponse response = (BusinessRuleUpdateBatchResponse)tool.BusinessRulesUpdate(
+		BusinessRuleBatchResponse response = (BusinessRuleBatchResponse)tool.BusinessRulesUpdate(
 			new UpdateEntityBusinessRulesArgs {
 				EnvironmentName = "dev",
 				PackageName = "UsrPkg",
@@ -267,7 +267,7 @@ public sealed class BusinessRuleReadUpdateDeleteToolTests {
 		// Assert
 		response.Error.Should().Contain("rules is required",
 			because: "an empty batch is rejected before any environment or remote work");
-		response.Updated.Should().Be(0, because: "nothing was updated for a rejected request");
+		response.Succeeded.Should().Be(0, because: "nothing was updated for a rejected request");
 		commandResolver.DidNotReceive().Resolve<IEntityBusinessRuleService>(Arg.Any<EnvironmentOptions>());
 	}
 
@@ -279,12 +279,12 @@ public sealed class BusinessRuleReadUpdateDeleteToolTests {
 		IEntityBusinessRuleService service = Substitute.For<IEntityBusinessRuleService>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<IEntityBusinessRuleService>(Arg.Any<EnvironmentOptions>()).Returns(service);
-		service.Update(Arg.Any<EntityBusinessRulesBatchRequest>())
+		service.Update(Arg.Any<BusinessRulesBatchRequest>())
 			.Returns(_ => throw new InvalidOperationException("entity-schema-name not found."));
 		UpdateEntityBusinessRuleTool tool = new(commandResolver, ConsoleLogger.Instance);
 
 		// Act
-		BusinessRuleUpdateBatchResponse response = (BusinessRuleUpdateBatchResponse)tool.BusinessRulesUpdate(
+		BusinessRuleBatchResponse response = (BusinessRuleBatchResponse)tool.BusinessRulesUpdate(
 			new UpdateEntityBusinessRulesArgs {
 				EnvironmentName = "dev",
 				PackageName = "UsrPkg",
@@ -298,7 +298,7 @@ public sealed class BusinessRuleReadUpdateDeleteToolTests {
 		// Assert
 		response.Error.Should().Be("entity-schema-name not found.",
 			because: "a request-level operation failure folds into the typed error response");
-		response.Updated.Should().Be(0, because: "nothing was updated when the whole request failed");
+		response.Succeeded.Should().Be(0, because: "nothing was updated when the whole request failed");
 	}
 
 	[Test]
@@ -309,7 +309,7 @@ public sealed class BusinessRuleReadUpdateDeleteToolTests {
 		IPageBusinessRuleService service = Substitute.For<IPageBusinessRuleService>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<IPageBusinessRuleService>(Arg.Any<EnvironmentOptions>()).Returns(service);
-		service.Update(Arg.Any<PageBusinessRulesBatchRequest>())
+		service.Update(Arg.Any<BusinessRulesBatchRequest>())
 			.Returns(new List<BusinessRuleBatchItemResult> {
 				new("BusinessRule_pg", true, "BusinessRule_pg", null)
 			});
@@ -323,7 +323,7 @@ public sealed class BusinessRuleReadUpdateDeleteToolTests {
 		};
 
 		// Act
-		BusinessRuleUpdateBatchResponse response = (BusinessRuleUpdateBatchResponse)tool.BusinessRulesUpdate(
+		BusinessRuleBatchResponse response = (BusinessRuleBatchResponse)tool.BusinessRulesUpdate(
 			new UpdatePageBusinessRulesArgs {
 				EnvironmentName = "dev",
 				PackageName = "UsrPkg",
@@ -332,11 +332,11 @@ public sealed class BusinessRuleReadUpdateDeleteToolTests {
 			});
 
 		// Assert
-		response.Updated.Should().Be(1, because: "the single page rule was updated");
+		response.Succeeded.Should().Be(1, because: "the single page rule was updated");
 		response.Failed.Should().Be(0, because: "no page rule failed");
-		service.Received(1).Update(Arg.Is<PageBusinessRulesBatchRequest>(request =>
+		service.Received(1).Update(Arg.Is<BusinessRulesBatchRequest>(request =>
 			request.PackageName == "UsrPkg"
-			&& request.PageSchemaName == "UsrOrder_FormPage"
+			&& request.SchemaName == "UsrOrder_FormPage"
 			&& request.Rules.Count == 1
 			&& request.Rules[0].Name == "BusinessRule_pg"
 			&& request.Rules[0].Enabled == true
@@ -383,7 +383,7 @@ public sealed class BusinessRuleReadUpdateDeleteToolTests {
 		IEntityBusinessRuleService service = Substitute.For<IEntityBusinessRuleService>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<IEntityBusinessRuleService>(Arg.Any<EnvironmentOptions>()).Returns(service);
-		service.Delete(Arg.Any<EntityBusinessRulesDeleteRequest>())
+		service.Delete(Arg.Any<BusinessRulesDeleteRequest>())
 			.Returns(new List<BusinessRuleBatchItemResult> {
 				new("BusinessRule_1", true, "BusinessRule_1", null),
 				new("BusinessRule_missing", false, null, "Business rule 'BusinessRule_missing' was not found.")
@@ -391,7 +391,7 @@ public sealed class BusinessRuleReadUpdateDeleteToolTests {
 		DeleteEntityBusinessRuleTool tool = new(commandResolver, ConsoleLogger.Instance);
 
 		// Act
-		BusinessRuleDeleteBatchResponse response = (BusinessRuleDeleteBatchResponse)tool.BusinessRulesDelete(
+		BusinessRuleBatchResponse response = (BusinessRuleBatchResponse)tool.BusinessRulesDelete(
 			new DeleteEntityBusinessRulesArgs {
 				EnvironmentName = "dev",
 				PackageName = "UsrPkg",
@@ -400,16 +400,16 @@ public sealed class BusinessRuleReadUpdateDeleteToolTests {
 			});
 
 		// Assert
-		response.Deleted.Should().Be(1, because: "one rule of the batch was deleted");
+		response.Succeeded.Should().Be(1, because: "one rule of the batch was deleted");
 		response.Failed.Should().Be(1, because: "the unknown name fails only its own entry");
 		response.Results.Should().HaveCount(2, because: "every input name gets a result entry in input order");
 		response.Results[1].Error.Should().Contain("BusinessRule_missing",
 			because: "the per-name failure must name the missing rule");
 		commandResolver.Received(1).Resolve<IEntityBusinessRuleService>(Arg.Is<EnvironmentOptions>(options =>
 			options.Environment == "dev"));
-		service.Received(1).Delete(Arg.Is<EntityBusinessRulesDeleteRequest>(request =>
+		service.Received(1).Delete(Arg.Is<BusinessRulesDeleteRequest>(request =>
 			request.PackageName == "UsrPkg"
-			&& request.EntitySchemaName == "UsrOrder"
+			&& request.SchemaName == "UsrOrder"
 			&& request.RuleNames.Count == 2
 			&& request.RuleNames[0] == "BusinessRule_1"
 			&& request.RuleNames[1] == "BusinessRule_missing"));
@@ -424,7 +424,7 @@ public sealed class BusinessRuleReadUpdateDeleteToolTests {
 		DeleteEntityBusinessRuleTool tool = new(commandResolver, ConsoleLogger.Instance);
 
 		// Act
-		BusinessRuleDeleteBatchResponse response = (BusinessRuleDeleteBatchResponse)tool.BusinessRulesDelete(
+		BusinessRuleBatchResponse response = (BusinessRuleBatchResponse)tool.BusinessRulesDelete(
 			new DeleteEntityBusinessRulesArgs {
 				EnvironmentName = "dev",
 				PackageName = "UsrPkg",
@@ -435,7 +435,7 @@ public sealed class BusinessRuleReadUpdateDeleteToolTests {
 		// Assert
 		response.Error.Should().Contain("rule-names is required",
 			because: "an empty name list is rejected before any environment or remote work");
-		response.Deleted.Should().Be(0, because: "nothing was deleted for a rejected request");
+		response.Succeeded.Should().Be(0, because: "nothing was deleted for a rejected request");
 		commandResolver.DidNotReceive().Resolve<IEntityBusinessRuleService>(Arg.Any<EnvironmentOptions>());
 	}
 
@@ -472,12 +472,12 @@ public sealed class BusinessRuleReadUpdateDeleteToolTests {
 		IEntityBusinessRuleService service = Substitute.For<IEntityBusinessRuleService>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<IEntityBusinessRuleService>(Arg.Any<EnvironmentOptions>()).Returns(service);
-		service.Delete(Arg.Any<EntityBusinessRulesDeleteRequest>())
+		service.Delete(Arg.Any<BusinessRulesDeleteRequest>())
 			.Returns(_ => throw new InvalidOperationException("Package 'UsrPkg' was not found."));
 		DeleteEntityBusinessRuleTool tool = new(commandResolver, ConsoleLogger.Instance);
 
 		// Act
-		BusinessRuleDeleteBatchResponse response = (BusinessRuleDeleteBatchResponse)tool.BusinessRulesDelete(
+		BusinessRuleBatchResponse response = (BusinessRuleBatchResponse)tool.BusinessRulesDelete(
 			new DeleteEntityBusinessRulesArgs {
 				EnvironmentName = "dev",
 				PackageName = "UsrPkg",
@@ -488,7 +488,7 @@ public sealed class BusinessRuleReadUpdateDeleteToolTests {
 		// Assert
 		response.Error.Should().Be("Package 'UsrPkg' was not found.",
 			because: "a request-level operation failure folds into the typed error response");
-		response.Deleted.Should().Be(0, because: "nothing was deleted when the whole request failed");
+		response.Succeeded.Should().Be(0, because: "nothing was deleted when the whole request failed");
 	}
 
 	[Test]
@@ -499,14 +499,14 @@ public sealed class BusinessRuleReadUpdateDeleteToolTests {
 		IPageBusinessRuleService service = Substitute.For<IPageBusinessRuleService>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<IPageBusinessRuleService>(Arg.Any<EnvironmentOptions>()).Returns(service);
-		service.Delete(Arg.Any<PageBusinessRulesDeleteRequest>())
+		service.Delete(Arg.Any<BusinessRulesDeleteRequest>())
 			.Returns(new List<BusinessRuleBatchItemResult> {
 				new("BusinessRule_pg", true, "BusinessRule_pg", null)
 			});
 		DeletePageBusinessRuleTool tool = new(commandResolver, ConsoleLogger.Instance);
 
 		// Act
-		BusinessRuleDeleteBatchResponse response = (BusinessRuleDeleteBatchResponse)tool.BusinessRulesDelete(
+		BusinessRuleBatchResponse response = (BusinessRuleBatchResponse)tool.BusinessRulesDelete(
 			new DeletePageBusinessRulesArgs {
 				EnvironmentName = "dev",
 				PackageName = "UsrPkg",
@@ -515,11 +515,11 @@ public sealed class BusinessRuleReadUpdateDeleteToolTests {
 			});
 
 		// Assert
-		response.Deleted.Should().Be(1, because: "the single page rule was deleted");
+		response.Succeeded.Should().Be(1, because: "the single page rule was deleted");
 		response.Failed.Should().Be(0, because: "no page rule name failed");
-		service.Received(1).Delete(Arg.Is<PageBusinessRulesDeleteRequest>(request =>
+		service.Received(1).Delete(Arg.Is<BusinessRulesDeleteRequest>(request =>
 			request.PackageName == "UsrPkg"
-			&& request.PageSchemaName == "UsrOrder_FormPage"
+			&& request.SchemaName == "UsrOrder_FormPage"
 			&& request.RuleNames.Count == 1
 			&& request.RuleNames[0] == "BusinessRule_pg"));
 	}
@@ -533,7 +533,7 @@ public sealed class BusinessRuleReadUpdateDeleteToolTests {
 		DeletePageBusinessRuleTool tool = new(commandResolver, ConsoleLogger.Instance);
 
 		// Act
-		BusinessRuleDeleteBatchResponse response = (BusinessRuleDeleteBatchResponse)tool.BusinessRulesDelete(
+		BusinessRuleBatchResponse response = (BusinessRuleBatchResponse)tool.BusinessRulesDelete(
 			new DeletePageBusinessRulesArgs {
 				EnvironmentName = "dev",
 				PackageName = "UsrPkg",
@@ -556,7 +556,7 @@ public sealed class BusinessRuleReadUpdateDeleteToolTests {
 		UpdatePageBusinessRuleTool tool = new(commandResolver, ConsoleLogger.Instance);
 
 		// Act
-		BusinessRuleUpdateBatchResponse response = (BusinessRuleUpdateBatchResponse)tool.BusinessRulesUpdate(
+		BusinessRuleBatchResponse response = (BusinessRuleBatchResponse)tool.BusinessRulesUpdate(
 			new UpdatePageBusinessRulesArgs {
 				EnvironmentName = "dev",
 				PackageName = "UsrPkg",

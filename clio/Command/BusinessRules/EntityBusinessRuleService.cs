@@ -18,12 +18,12 @@ public interface IEntityBusinessRuleService {
 	/// </summary>
 	/// <remarks>
 	/// This single-rule overload backs the <c>create-entity-business-rule</c> CLI command; the MCP tool
-	/// uses the batch <see cref="Create(EntityBusinessRulesBatchRequest)"/> overload exclusively (a
+	/// uses the batch <see cref="Create(BusinessRulesBatchRequest)"/> overload exclusively (a
 	/// single MCP rule is sent as a one-element batch).
 	/// </remarks>
 	/// <param name="request">Business-rule creation input.</param>
 	/// <returns>Generated metadata about the created rule.</returns>
-	BusinessRuleCreateResult Create(EntityBusinessRuleCreateRequest request);
+	BusinessRuleCreateResult Create(BusinessRuleCreateRequest request);
 
 	/// <summary>
 	/// Creates multiple business rules on the same package and entity schema in a single
@@ -33,43 +33,14 @@ public interface IEntityBusinessRuleService {
 	/// </summary>
 	/// <param name="request">Batch business-rule creation input.</param>
 	/// <returns>Per-rule outcomes, one entry per input rule, in input order.</returns>
-	IReadOnlyList<BusinessRuleBatchItemResult> Create(EntityBusinessRulesBatchRequest request);
+	IReadOnlyList<BusinessRuleBatchItemResult> Create(BusinessRulesBatchRequest request);
 
-	IReadOnlyList<BusinessRule> Read(EntityBusinessRulesReadRequest request);
+	IReadOnlyList<BusinessRule> Read(BusinessRulesReadRequest request);
 
-	IReadOnlyList<BusinessRuleBatchItemResult> Update(EntityBusinessRulesBatchRequest request);
+	IReadOnlyList<BusinessRuleBatchItemResult> Update(BusinessRulesBatchRequest request);
 
-	IReadOnlyList<BusinessRuleBatchItemResult> Delete(EntityBusinessRulesDeleteRequest request);
+	IReadOnlyList<BusinessRuleBatchItemResult> Delete(BusinessRulesDeleteRequest request);
 }
-
-/// <summary>
-/// Describes the package, entity schema, and business-rule definition to create.
-/// </summary>
-public sealed record EntityBusinessRuleCreateRequest(
-	string PackageName,
-	string EntitySchemaName,
-	BusinessRule Rule
-);
-
-/// <summary>
-/// Describes the package, entity schema, and business-rule definitions to create in one batch.
-/// </summary>
-public sealed record EntityBusinessRulesBatchRequest(
-	string PackageName,
-	string EntitySchemaName,
-	IReadOnlyList<BusinessRule> Rules
-);
-
-public sealed record EntityBusinessRulesReadRequest(
-	string PackageName,
-	string EntitySchemaName
-);
-
-public sealed record EntityBusinessRulesDeleteRequest(
-	string PackageName,
-	string EntitySchemaName,
-	IReadOnlyList<string> RuleNames
-);
 
 internal sealed class EntityBusinessRuleService(
 	IBusinessRulePackageResolver packageResolver,
@@ -80,13 +51,13 @@ internal sealed class EntityBusinessRuleService(
 	IStaticFilterContextFactory staticFilterContextFactory)
 	: BaseBusinessRuleService(packageResolver, businessRuleAddonService), IEntityBusinessRuleService {
 
-	public BusinessRuleCreateResult Create(EntityBusinessRuleCreateRequest request) {
+	public BusinessRuleCreateResult Create(BusinessRuleCreateRequest request) {
 		ArgumentNullException.ThrowIfNull(request);
 		ValidateCreateRequest(request);
 
 		Guid packageUId = PackageResolver.ResolveUId(request.PackageName);
 		EntityBusinessRuleAttributeContext attributeContext = attributeProvider.GetAttributes(
-			request.EntitySchemaName,
+			request.SchemaName,
 			packageUId);
 
 		BusinessRule rule = BusinessRuleHelpers.StripBlockUIds(request.Rule);
@@ -109,14 +80,14 @@ internal sealed class EntityBusinessRuleService(
 			createdRules);
 	}
 
-	public IReadOnlyList<BusinessRuleBatchItemResult> Create(EntityBusinessRulesBatchRequest request) {
+	public IReadOnlyList<BusinessRuleBatchItemResult> Create(BusinessRulesBatchRequest request) {
 		ArgumentNullException.ThrowIfNull(request);
 		BusinessRuleBatchValidation.RequireBatchFields(
-			request.PackageName, request.EntitySchemaName, "entity-schema-name", request.Rules);
+			request.PackageName, request.SchemaName, "entity-schema-name", request.Rules);
 
 		Guid packageUId = PackageResolver.ResolveUId(request.PackageName);
 		EntityBusinessRuleAttributeContext attributeContext = attributeProvider.GetAttributes(
-			request.EntitySchemaName,
+			request.SchemaName,
 			packageUId);
 
 		// One static-filter context is shared across the whole batch: its schema/lookup caches then
@@ -143,25 +114,25 @@ internal sealed class EntityBusinessRuleService(
 			});
 	}
 
-	public IReadOnlyList<BusinessRule> Read(EntityBusinessRulesReadRequest request) {
+	public IReadOnlyList<BusinessRule> Read(BusinessRulesReadRequest request) {
 		ArgumentNullException.ThrowIfNull(request);
-		RequireSchemaFields(request.PackageName, request.EntitySchemaName, "entity-schema-name");
+		RequireSchemaFields(request.PackageName, request.SchemaName, "entity-schema-name");
 
 		Guid packageUId = PackageResolver.ResolveUId(request.PackageName);
 		EntityBusinessRuleAttributeContext attributeContext = attributeProvider.GetAttributes(
-			request.EntitySchemaName,
+			request.SchemaName,
 			packageUId);
 		return ReadCore(BuildAddonSchemaRequest(attributeContext.EntitySchema, packageUId));
 	}
 
-	public IReadOnlyList<BusinessRuleBatchItemResult> Update(EntityBusinessRulesBatchRequest request) {
+	public IReadOnlyList<BusinessRuleBatchItemResult> Update(BusinessRulesBatchRequest request) {
 		ArgumentNullException.ThrowIfNull(request);
 		BusinessRuleBatchValidation.RequireBatchFields(
-			request.PackageName, request.EntitySchemaName, "entity-schema-name", request.Rules);
+			request.PackageName, request.SchemaName, "entity-schema-name", request.Rules);
 
 		Guid packageUId = PackageResolver.ResolveUId(request.PackageName);
 		EntityBusinessRuleAttributeContext attributeContext = attributeProvider.GetAttributes(
-			request.EntitySchemaName,
+			request.SchemaName,
 			packageUId);
 		StaticFilterContext? batchStaticFilterContext = null;
 
@@ -186,13 +157,13 @@ internal sealed class EntityBusinessRuleService(
 			});
 	}
 
-	public IReadOnlyList<BusinessRuleBatchItemResult> Delete(EntityBusinessRulesDeleteRequest request) {
+	public IReadOnlyList<BusinessRuleBatchItemResult> Delete(BusinessRulesDeleteRequest request) {
 		ArgumentNullException.ThrowIfNull(request);
-		RequireSchemaFields(request.PackageName, request.EntitySchemaName, "entity-schema-name");
+		RequireSchemaFields(request.PackageName, request.SchemaName, "entity-schema-name");
 
 		Guid packageUId = PackageResolver.ResolveUId(request.PackageName);
 		EntityBusinessRuleAttributeContext attributeContext = attributeProvider.GetAttributes(
-			request.EntitySchemaName,
+			request.SchemaName,
 			packageUId);
 		return DeleteCore(
 			BuildAddonSchemaRequest(attributeContext.EntitySchema, packageUId),
@@ -214,12 +185,12 @@ internal sealed class EntityBusinessRuleService(
 		}
 	}
 
-	private static void ValidateCreateRequest(EntityBusinessRuleCreateRequest request) {
+	private static void ValidateCreateRequest(BusinessRuleCreateRequest request) {
 		if (string.IsNullOrWhiteSpace(request.PackageName)) {
 			throw new ArgumentException("package-name is required.");
 		}
 
-		if (string.IsNullOrWhiteSpace(request.EntitySchemaName)) {
+		if (string.IsNullOrWhiteSpace(request.SchemaName)) {
 			throw new ArgumentException("entity-schema-name is required.");
 		}
 

@@ -24,7 +24,7 @@ public sealed class CreateEntityBusinessRuleTool(
 	/// </summary>
 	/// <remarks>
 	/// The declared return type is <see cref="object"/> because the method returns one of two shapes:
-	/// a <see cref="BusinessRuleBatchResponse"/> with per-rule <c>created</c>/<c>failed</c>/<c>results</c>
+	/// a <see cref="BusinessRuleBatchResponse"/> with per-rule <c>succeeded</c>/<c>failed</c>/<c>results</c>
 	/// on the normal (resolved-environment) path, or a <see cref="CommandExecutionResult"/> envelope when
 	/// the environment cannot be resolved. The typed values are always delivered through the MCP text
 	/// Content channel; schema-strict clients should not rely on a single SDK-derived output schema.
@@ -46,35 +46,20 @@ public sealed class CreateEntityBusinessRuleTool(
 			return BusinessRuleBatchResponse.RequestError("rules is required and must contain at least one rule.");
 		}
 
-		EnvironmentOptions options = new() { Environment = args.EnvironmentName };
-		IEntityBusinessRuleService service;
-		try {
-			// Resolve the environment BEFORE projecting/saving rules so an unknown or unreachable
-			// environment surfaces as the standard command-execution envelope (exit code 1) referencing
-			// the requested environment, instead of being folded into per-rule batch results that would
-			// serialize with an implicit success exit code (ENG-91830 / ENG-91825).
-			service = commandResolver.Resolve<IEntityBusinessRuleService>(options);
-		} catch (EnvironmentResolutionException exception) {
-			return CommandExecutionResult.FromResolverError(exception);
-		} catch (Exception exception) {
-			// Unexpected resolve/bootstrap failure → exit code -1 envelope (mirrors
-			// BaseTool.InternalExecute) so a real bug is not swallowed by the MCP SDK generic error.
-			return CommandExecutionResult.FromException(exception);
-		}
-
-		try {
-			IReadOnlyList<BusinessRuleBatchItemResult> results = service.Create(new EntityBusinessRulesBatchRequest(
+		return BusinessRuleToolExecutor.Execute<IEntityBusinessRuleService>(
+			commandResolver,
+			args.EnvironmentName,
+			service => BusinessRuleBatchResponse.From(service.Create(new BusinessRulesBatchRequest(
 				args.PackageName,
 				args.EntitySchemaName,
 				// A null array element must not collapse the whole batch: keep it as a null entry so the
 				// service isolates it as a single failed item instead of throwing during the projection.
-				args.Rules.Select(rule => rule?.ToBusinessRule()!).ToList()));
-			return BusinessRuleBatchResponse.From(results);
-		} catch (Exception exception) {
-			return BusinessRuleBatchResponse.From(args.Rules
-				.Select(rule => new BusinessRuleBatchItemResult(rule?.Caption ?? string.Empty, false, null, exception.Message))
-				.ToList());
-		}
+				args.Rules.Select(rule => rule?.ToBusinessRule()!).ToList()))),
+			// A create-time failure is reported per-rule (not as a request-level error) so a batch-wide
+			// exception still lands as one failed item per input rule.
+			message => BusinessRuleBatchResponse.From(args.Rules
+				.Select(rule => new BusinessRuleBatchItemResult(rule?.Caption ?? string.Empty, false, null, message))
+				.ToList()));
 	}
 }
 
@@ -637,7 +622,7 @@ public sealed class CreatePageBusinessRuleTool(
 	/// </summary>
 	/// <remarks>
 	/// The declared return type is <see cref="object"/> because the method returns one of two shapes:
-	/// a <see cref="BusinessRuleBatchResponse"/> with per-rule <c>created</c>/<c>failed</c>/<c>results</c>
+	/// a <see cref="BusinessRuleBatchResponse"/> with per-rule <c>succeeded</c>/<c>failed</c>/<c>results</c>
 	/// on the normal (resolved-environment) path, or a <see cref="CommandExecutionResult"/> envelope when
 	/// the environment cannot be resolved. The typed values are always delivered through the MCP text
 	/// Content channel; schema-strict clients should not rely on a single SDK-derived output schema.
@@ -656,35 +641,20 @@ public sealed class CreatePageBusinessRuleTool(
 			return BusinessRuleBatchResponse.RequestError("rules is required and must contain at least one rule.");
 		}
 
-		EnvironmentOptions options = new() { Environment = args.EnvironmentName };
-		IPageBusinessRuleService service;
-		try {
-			// Resolve the environment BEFORE projecting/saving rules so an unknown or unreachable
-			// environment surfaces as the standard command-execution envelope (exit code 1) referencing
-			// the requested environment, instead of being folded into per-rule batch results that would
-			// serialize with an implicit success exit code (ENG-91830 / ENG-91825).
-			service = commandResolver.Resolve<IPageBusinessRuleService>(options);
-		} catch (EnvironmentResolutionException exception) {
-			return CommandExecutionResult.FromResolverError(exception);
-		} catch (Exception exception) {
-			// Unexpected resolve/bootstrap failure → exit code -1 envelope (mirrors
-			// BaseTool.InternalExecute) so a real bug is not swallowed by the MCP SDK generic error.
-			return CommandExecutionResult.FromException(exception);
-		}
-
-		try {
-			IReadOnlyList<BusinessRuleBatchItemResult> results = service.Create(new PageBusinessRulesBatchRequest(
+		return BusinessRuleToolExecutor.Execute<IPageBusinessRuleService>(
+			commandResolver,
+			args.EnvironmentName,
+			service => BusinessRuleBatchResponse.From(service.Create(new BusinessRulesBatchRequest(
 				args.PackageName,
 				args.PageSchemaName,
 				// A null array element must not collapse the whole batch: keep it as a null entry so the
 				// service isolates it as a single failed item instead of throwing during the projection.
-				args.Rules.Select(rule => rule?.ToBusinessRule()!).ToList()));
-			return BusinessRuleBatchResponse.From(results);
-		} catch (Exception exception) {
-			return BusinessRuleBatchResponse.From(args.Rules
-				.Select(rule => new BusinessRuleBatchItemResult(rule?.Caption ?? string.Empty, false, null, exception.Message))
-				.ToList());
-		}
+				args.Rules.Select(rule => rule?.ToBusinessRule()!).ToList()))),
+			// A create-time failure is reported per-rule (not as a request-level error) so a batch-wide
+			// exception still lands as one failed item per input rule.
+			message => BusinessRuleBatchResponse.From(args.Rules
+				.Select(rule => new BusinessRuleBatchItemResult(rule?.Caption ?? string.Empty, false, null, message))
+				.ToList()));
 	}
 }
 
@@ -728,6 +698,15 @@ public sealed record CreatePageBusinessRulesArgs
 
 internal static class BusinessRuleToolExecutor {
 
+	/// <summary>
+	/// Shared resolve-then-execute path for every business-rule tool. The environment is resolved BEFORE
+	/// <paramref name="execute"/> runs so an unknown or unreachable environment surfaces as the standard
+	/// command-execution envelope (exit code 1) referencing the requested environment, instead of being
+	/// folded into per-rule batch results that would serialize with an implicit success exit code
+	/// (ENG-91830 / ENG-91825). A failure inside <paramref name="execute"/> is turned into a response by
+	/// <paramref name="requestError"/> — the tool decides whether that is a request-level error or a
+	/// per-item batch failure.
+	/// </summary>
 	internal static object Execute<TService>(
 		IToolCommandResolver commandResolver,
 		string environmentName,
@@ -740,6 +719,8 @@ internal static class BusinessRuleToolExecutor {
 		} catch (EnvironmentResolutionException exception) {
 			return CommandExecutionResult.FromResolverError(exception);
 		} catch (Exception exception) {
+			// Unexpected resolve/bootstrap failure → exit code -1 envelope (mirrors
+			// BaseTool.InternalExecute) so a real bug is not swallowed by the MCP SDK generic error.
 			return CommandExecutionResult.FromException(exception);
 		}
 
@@ -773,7 +754,7 @@ public sealed class ReadEntityBusinessRuleTool(
 			commandResolver,
 			args.EnvironmentName,
 			service => BusinessRulesReadResponse.From(service.Read(
-				new EntityBusinessRulesReadRequest(args.PackageName, args.EntitySchemaName))),
+				new BusinessRulesReadRequest(args.PackageName, args.EntitySchemaName))),
 			BusinessRulesReadResponse.RequestError));
 }
 
@@ -816,7 +797,7 @@ public sealed class ReadPageBusinessRuleTool(
 			commandResolver,
 			args.EnvironmentName,
 			service => BusinessRulesReadResponse.From(service.Read(
-				new PageBusinessRulesReadRequest(args.PackageName, args.PageSchemaName))),
+				new BusinessRulesReadRequest(args.PackageName, args.PageSchemaName))),
 			BusinessRulesReadResponse.RequestError));
 }
 
@@ -861,17 +842,17 @@ public sealed class UpdateEntityBusinessRuleTool(
 
 	private object UpdateRules(UpdateEntityBusinessRulesArgs args) {
 		if (args.Rules is not { Count: > 0 }) {
-			return BusinessRuleUpdateBatchResponse.RequestError("rules is required and must contain at least one rule.");
+			return BusinessRuleBatchResponse.RequestError("rules is required and must contain at least one rule.");
 		}
 
 		return BusinessRuleToolExecutor.Execute<IEntityBusinessRuleService>(
 			commandResolver,
 			args.EnvironmentName,
-			service => BusinessRuleUpdateBatchResponse.From(service.Update(new EntityBusinessRulesBatchRequest(
+			service => BusinessRuleBatchResponse.From(service.Update(new BusinessRulesBatchRequest(
 				args.PackageName,
 				args.EntitySchemaName,
 				args.Rules.Select(rule => rule?.ToBusinessRule()!).ToList()))),
-			BusinessRuleUpdateBatchResponse.RequestError);
+			BusinessRuleBatchResponse.RequestError);
 	}
 }
 
@@ -921,17 +902,17 @@ public sealed class UpdatePageBusinessRuleTool(
 
 	private object UpdateRules(UpdatePageBusinessRulesArgs args) {
 		if (args.Rules is not { Count: > 0 }) {
-			return BusinessRuleUpdateBatchResponse.RequestError("rules is required and must contain at least one rule.");
+			return BusinessRuleBatchResponse.RequestError("rules is required and must contain at least one rule.");
 		}
 
 		return BusinessRuleToolExecutor.Execute<IPageBusinessRuleService>(
 			commandResolver,
 			args.EnvironmentName,
-			service => BusinessRuleUpdateBatchResponse.From(service.Update(new PageBusinessRulesBatchRequest(
+			service => BusinessRuleBatchResponse.From(service.Update(new BusinessRulesBatchRequest(
 				args.PackageName,
 				args.PageSchemaName,
 				args.Rules.Select(rule => rule?.ToBusinessRule()!).ToList()))),
-			BusinessRuleUpdateBatchResponse.RequestError);
+			BusinessRuleBatchResponse.RequestError);
 	}
 }
 
@@ -980,18 +961,18 @@ public sealed class DeleteEntityBusinessRuleTool(
 
 	private object DeleteRules(DeleteEntityBusinessRulesArgs args) {
 		if (args.RuleNames is not { Count: > 0 }) {
-			return BusinessRuleDeleteBatchResponse.RequestError(
+			return BusinessRuleBatchResponse.RequestError(
 				"rule-names is required and must contain at least one rule name.");
 		}
 
 		return BusinessRuleToolExecutor.Execute<IEntityBusinessRuleService>(
 			commandResolver,
 			args.EnvironmentName,
-			service => BusinessRuleDeleteBatchResponse.From(service.Delete(new EntityBusinessRulesDeleteRequest(
+			service => BusinessRuleBatchResponse.From(service.Delete(new BusinessRulesDeleteRequest(
 				args.PackageName,
 				args.EntitySchemaName,
 				args.RuleNames))),
-			BusinessRuleDeleteBatchResponse.RequestError);
+			BusinessRuleBatchResponse.RequestError);
 	}
 }
 
@@ -1040,18 +1021,18 @@ public sealed class DeletePageBusinessRuleTool(
 
 	private object DeleteRules(DeletePageBusinessRulesArgs args) {
 		if (args.RuleNames is not { Count: > 0 }) {
-			return BusinessRuleDeleteBatchResponse.RequestError(
+			return BusinessRuleBatchResponse.RequestError(
 				"rule-names is required and must contain at least one rule name.");
 		}
 
 		return BusinessRuleToolExecutor.Execute<IPageBusinessRuleService>(
 			commandResolver,
 			args.EnvironmentName,
-			service => BusinessRuleDeleteBatchResponse.From(service.Delete(new PageBusinessRulesDeleteRequest(
+			service => BusinessRuleBatchResponse.From(service.Delete(new BusinessRulesDeleteRequest(
 				args.PackageName,
 				args.PageSchemaName,
 				args.RuleNames))),
-			BusinessRuleDeleteBatchResponse.RequestError);
+			BusinessRuleBatchResponse.RequestError);
 	}
 }
 

@@ -54,7 +54,7 @@ public sealed class PageBusinessRuleServiceTests {
 			new PageBusinessRuleValidator(new BusinessRuleValidator(lookupReferenceValidator)));
 
 		// Act
-		BusinessRuleCreateResult result = service.Create(new PageBusinessRuleCreateRequest("UsrPkg", "UsrPage", rule));
+		BusinessRuleCreateResult result = service.Create(new BusinessRuleCreateRequest("UsrPkg", "UsrPage", rule));
 
 		// Assert
 		result.RuleName.Should().Be("BusinessRule_1234567",
@@ -114,7 +114,7 @@ public sealed class PageBusinessRuleServiceTests {
 			new PageBusinessRuleValidator(new BusinessRuleValidator(lookupReferenceValidator)));
 
 		// Act
-		Action act = () => service.Create(new PageBusinessRuleCreateRequest("UsrPkg", "UsrPage", rule));
+		Action act = () => service.Create(new BusinessRuleCreateRequest("UsrPkg", "UsrPage", rule));
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
@@ -162,7 +162,7 @@ public sealed class PageBusinessRuleServiceTests {
 			new PageBusinessRuleValidator(new BusinessRuleValidator(lookupReferenceValidator)));
 
 		// Act
-		Action act = () => service.Create(new PageBusinessRuleCreateRequest("UsrPkg", "UsrPage", rule));
+		Action act = () => service.Create(new BusinessRuleCreateRequest("UsrPkg", "UsrPage", rule));
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
@@ -177,7 +177,7 @@ public sealed class PageBusinessRuleServiceTests {
 	public void Create_Batch_Should_Save_All_Rules_With_A_Single_Addon_RoundTrip() {
 		// Arrange
 		PageBusinessRuleService service = BuildBatchService(out IBusinessRuleAddonService addonService);
-		PageBusinessRulesBatchRequest request = new(
+		BusinessRulesBatchRequest request = new(
 			"UsrPkg",
 			"UsrPage",
 			[CreatePageRule(caption: "Rule A"), CreatePageRule(caption: "Rule B")]);
@@ -199,7 +199,7 @@ public sealed class PageBusinessRuleServiceTests {
 	public void Create_Batch_Should_Isolate_Per_Rule_Validation_Failure() {
 		// Arrange
 		PageBusinessRuleService service = BuildBatchService(out IBusinessRuleAddonService addonService);
-		PageBusinessRulesBatchRequest request = new(
+		BusinessRulesBatchRequest request = new(
 			"UsrPkg",
 			"UsrPage",
 			[
@@ -229,7 +229,7 @@ public sealed class PageBusinessRuleServiceTests {
 		addonService
 			.When(addon => addon.AppendRules(Arg.Any<AddonGetRequestDto>(), Arg.Any<IReadOnlyList<BusinessRuleMetadataDto>>()))
 			.Do(_ => throw new InvalidOperationException("Add-on save failed."));
-		PageBusinessRulesBatchRequest request = new(
+		BusinessRulesBatchRequest request = new(
 			"UsrPkg",
 			"UsrPage",
 			[CreatePageRule(caption: "Rule A"), CreatePageRule(caption: "Rule B")]);
@@ -255,7 +255,7 @@ public sealed class PageBusinessRuleServiceTests {
 		string expectedMessage) {
 		// Arrange
 		PageBusinessRuleService service = BuildBatchService(out _);
-		PageBusinessRulesBatchRequest request = new(packageName, pageSchemaName, [CreatePageRule()]);
+		BusinessRulesBatchRequest request = new(packageName, pageSchemaName, [CreatePageRule()]);
 
 		// Act
 		Action act = () => service.Create(request);
@@ -271,7 +271,7 @@ public sealed class PageBusinessRuleServiceTests {
 	public void Create_Batch_Should_Reject_When_Rules_Empty() {
 		// Arrange
 		PageBusinessRuleService service = BuildBatchService(out _);
-		PageBusinessRulesBatchRequest request = new("UsrPkg", "UsrPage", []);
+		BusinessRulesBatchRequest request = new("UsrPkg", "UsrPage", []);
 
 		// Act
 		Action act = () => service.Create(request);
@@ -295,7 +295,7 @@ public sealed class PageBusinessRuleServiceTests {
 		addonService.ReadRules(Arg.Any<AddonGetRequestDto>()).Returns([model]);
 
 		// Act
-		IReadOnlyList<BusinessRule> models = service.Read(new PageBusinessRulesReadRequest("UsrPkg", "UsrPage"));
+		IReadOnlyList<BusinessRule> models = service.Read(new BusinessRulesReadRequest("UsrPkg", "UsrPage"));
 
 		// Assert
 		models.Should().ContainSingle(because: "the add-on service returned one rule");
@@ -323,7 +323,7 @@ public sealed class PageBusinessRuleServiceTests {
 		PageBusinessRuleService service = BuildBatchService(out IBusinessRuleAddonService addonService);
 
 		// Act
-		Action act = () => service.Read(new PageBusinessRulesReadRequest(packageName, pageSchemaName));
+		Action act = () => service.Read(new BusinessRulesReadRequest(packageName, pageSchemaName));
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
@@ -338,7 +338,7 @@ public sealed class PageBusinessRuleServiceTests {
 	public void Update_Should_Fail_Per_Rule_When_Name_Is_Missing() {
 		// Arrange
 		PageBusinessRuleService service = BuildBatchService(out IBusinessRuleAddonService addonService);
-		PageBusinessRulesBatchRequest request = new(
+		BusinessRulesBatchRequest request = new(
 			"UsrPkg",
 			"UsrPage",
 			[CreatePageRule(caption: "No name")]);
@@ -368,7 +368,7 @@ public sealed class PageBusinessRuleServiceTests {
 		addonService
 			.When(addon => addon.SaveSchema(Arg.Any<AddonSchemaDto>()))
 			.Do(callInfo => saved = callInfo.Arg<AddonSchemaDto>());
-		PageBusinessRulesBatchRequest request = new(
+		BusinessRulesBatchRequest request = new(
 			"UsrPkg",
 			"UsrPage",
 			[
@@ -414,7 +414,7 @@ public sealed class PageBusinessRuleServiceTests {
 		PageBusinessRuleService service = BuildBatchService(out IBusinessRuleAddonService addonService);
 		addonService.GetSchema(Arg.Any<AddonGetRequestDto>())
 			.Returns(BuildPageAddonSchema(("BusinessRule_good", "good"), ("BusinessRule_bad", "bad")));
-		PageBusinessRulesBatchRequest request = new(
+		BusinessRulesBatchRequest request = new(
 			"UsrPkg",
 			"UsrPage",
 			[
@@ -441,7 +441,7 @@ public sealed class PageBusinessRuleServiceTests {
 	public void Delete_Should_Reject_When_RuleNames_Are_Missing(bool useNullList) {
 		// Arrange
 		PageBusinessRuleService service = BuildBatchService(out IBusinessRuleAddonService addonService);
-		PageBusinessRulesDeleteRequest request = new(
+		BusinessRulesDeleteRequest request = new(
 			"UsrPkg",
 			"UsrPage",
 			useNullList ? null! : []);
@@ -467,7 +467,7 @@ public sealed class PageBusinessRuleServiceTests {
 
 		// Act
 		IReadOnlyList<BusinessRuleBatchItemResult> results = service.Delete(
-			new PageBusinessRulesDeleteRequest("UsrPkg", "UsrPage", ["BusinessRule_pg"]));
+			new BusinessRulesDeleteRequest("UsrPkg", "UsrPage", ["BusinessRule_pg"]));
 
 		// Assert
 		results.Should().ContainSingle(because: "the add-on service reported one outcome");
@@ -498,7 +498,7 @@ public sealed class PageBusinessRuleServiceTests {
 		};
 
 		// Act
-		service.Create(new PageBusinessRuleCreateRequest("UsrPkg", "UsrPage", rule));
+		service.Create(new BusinessRuleCreateRequest("UsrPkg", "UsrPage", rule));
 
 		// Assert
 		addonService.Received(1).AppendRule(
@@ -524,7 +524,7 @@ public sealed class PageBusinessRuleServiceTests {
 		BusinessRule rule = CreatePageRule();
 
 		// Act
-		service.Create(new PageBusinessRuleCreateRequest("UsrPkg", "UsrPage", rule));
+		service.Create(new BusinessRuleCreateRequest("UsrPkg", "UsrPage", rule));
 
 		// Assert
 		addonService.Received(1).AppendRule(

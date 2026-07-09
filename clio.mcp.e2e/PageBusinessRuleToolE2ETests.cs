@@ -378,7 +378,7 @@ public sealed class PageBusinessRuleToolE2ETests : McpContractFixtureBase {
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
 			because: "a valid Contact page show/hide rule should return the structured batch-create response, not an MCP error");
-		batchResponse.Created.Should().Be(1,
+		batchResponse.Succeeded.Should().Be(1,
 			because: "the single Contact page rule should be created in the configured Creatio sandbox");
 		batchResponse.Failed.Should().Be(0,
 			because: "no rule in the batch should fail when the payload is valid");
@@ -442,7 +442,7 @@ public sealed class PageBusinessRuleToolE2ETests : McpContractFixtureBase {
 		// Assert - create
 		createResult.IsError.Should().NotBeTrue(
 			because: "a valid named page hide-element rule should return the structured batch-create response, not an MCP error");
-		createResponse.Created.Should().Be(1,
+		createResponse.Succeeded.Should().Be(1,
 			because: "the single named page rule should be created in the configured Creatio sandbox");
 		createResponse.Failed.Should().Be(0,
 			because: "no rule in the batch should fail when the payload is valid");
@@ -501,13 +501,13 @@ public sealed class PageBusinessRuleToolE2ETests : McpContractFixtureBase {
 				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
-		BusinessRuleUpdateBatchResponse updateResponse =
-			EntitySchemaStructuredResultParser.Extract<BusinessRuleUpdateBatchResponse>(updateResult);
+		BusinessRuleBatchResponse updateResponse =
+			EntitySchemaStructuredResultParser.Extract<BusinessRuleBatchResponse>(updateResult);
 
 		// Assert - update
 		updateResult.IsError.Should().NotBeTrue(
 			because: "a valid page rule update should return the structured batch response, not an MCP error");
-		updateResponse.Updated.Should().Be(1,
+		updateResponse.Succeeded.Should().Be(1,
 			because: "the update targets the existing page rule by name and should save");
 		updateResponse.Failed.Should().Be(0,
 			because: "no rule in the update batch should fail");
@@ -559,11 +559,11 @@ public sealed class PageBusinessRuleToolE2ETests : McpContractFixtureBase {
 				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
-		BusinessRuleUpdateBatchResponse disableResponse =
-			EntitySchemaStructuredResultParser.Extract<BusinessRuleUpdateBatchResponse>(disableResult);
+		BusinessRuleBatchResponse disableResponse =
+			EntitySchemaStructuredResultParser.Extract<BusinessRuleBatchResponse>(disableResult);
 
 		// Assert - disable
-		disableResponse.Updated.Should().Be(1,
+		disableResponse.Succeeded.Should().Be(1,
 			because: "the disable update targets the existing page rule by name and should save");
 		disableResponse.Failed.Should().Be(0,
 			because: "no rule in the disable batch should fail");
@@ -588,13 +588,13 @@ public sealed class PageBusinessRuleToolE2ETests : McpContractFixtureBase {
 				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
-		BusinessRuleDeleteBatchResponse deleteResponse =
-			EntitySchemaStructuredResultParser.Extract<BusinessRuleDeleteBatchResponse>(deleteResult);
+		BusinessRuleBatchResponse deleteResponse =
+			EntitySchemaStructuredResultParser.Extract<BusinessRuleBatchResponse>(deleteResult);
 
 		// Assert - delete
 		deleteResult.IsError.Should().NotBeTrue(
 			because: "a valid page rule delete should return the structured batch response, not an MCP error");
-		deleteResponse.Deleted.Should().Be(1,
+		deleteResponse.Succeeded.Should().Be(1,
 			because: "the single existing page rule should be deleted");
 		deleteResponse.Failed.Should().Be(0,
 			because: "no name in the delete batch should fail");
