@@ -140,11 +140,14 @@ public sealed class ProcessModelingGuidanceResource {
 			  filter (Read/Add/Modify/Delete data) — which is not end-to-end buildable yet (see below), so in practice a
 			  buildable filter today uses value / macro / datePart only.
 			- `datePart` (optional, LEFT-hand modifier — NOT a right-hand source): extract a calendar/clock part from a
-			  Date/DateTime `column` and compare that integer instead of the whole date. `Year` | `Month` | `Day` |
-			  `Week` | `Weekday` | `Hour`. Pair it with an integer `value` (or a `processParameter`): e.g.
+			  Date/DateTime `column` and compare that part instead of the whole date. `Year` | `Month` | `Day` |
+			  `Week` | `Weekday` | `Hour` extract an INTEGER — pair with an integer `value` (or a `processParameter`):
 			  `{ "column": "CreatedOn", "datePart": "Year", "comparison": "equal", "value": "2026" }` reads
-			  `Year(CreatedOn) = 2026`. Combines with any comparison (`greaterOrEqual`, …); it modifies the left side, so
-			  it is independent of the right-hand source choice (but do not use it with a `macro`).
+			  `Year(CreatedOn) = 2026`. `HourMinute` is the exception — it extracts the TIME-OF-DAY and compares it to a
+			  `value` in `HH:mm[:ss]` form: `{ "column": "CreatedOn", "datePart": "HourMinute", "comparison": "equal",
+			  "value": "14:30" }` reads `HourMinute(CreatedOn) = 14:30`. Combines with any comparison (`greaterOrEqual`,
+			  …); it modifies the left side, so it is independent of the right-hand source choice (but do not use it with
+			  a `macro`).
 			- Groups nest to any depth: A AND (B OR C) = conditions:[A] + groups:[{ "logicalOperation":"or",
 			  conditions:[B, C] }].
 			- A `filter` on a data task (Read/Add/Modify/Delete data) is serialized too, but those tasks' target

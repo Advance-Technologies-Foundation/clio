@@ -329,7 +329,7 @@ public sealed class CreateBusinessProcessToolE2ETests {
 	}
 
 	[Test]
-	[Description("Over the real MCP path, create-business-process builds a signalStart filter using a relative-date macro (Today) AND a left-hand date-part (Year(CreatedOn) = 2026), and describe-business-process reads both the macro and the date-part back (round-trip of the extended filter vocabulary).")]
+	[Description("Over the real MCP path, create-business-process builds a signalStart filter using a relative-date macro (Today), an integer date-part (Year(CreatedOn) = 2026) and a Time-of-day date-part (HourMinute(CreatedOn) = 14:30), and describe-business-process reads the macro and both date-parts back (round-trip of the extended filter vocabulary).")]
 	[AllureTag(ToolName)]
 	[AllureName("create-business-process builds a macro + date-part filter and describe reads them back")]
 	public async Task CreateBusinessProcess_Should_BuildSignalStartFilterWithMacroAndDatePart_AndReadItBack() {
@@ -360,6 +360,8 @@ public sealed class CreateBusinessProcessToolE2ETests {
 			because: "the left-hand date-part modifier round-trips: describe decodes the DatePart function and surfaces the datePart field");
 		describeJson.Should().Contain("Year",
 			because: "the date-part name round-trips on read-back (Year(CreatedOn) = 2026)");
+		describeJson.Should().Contain("HourMinute",
+			because: "the Time-valued date-part round-trips on read-back (time-of-day comparison HourMinute(CreatedOn) = 14:30)");
 	}
 
 	// A signal-start process whose EntityFilters carry a distinctive constant value, so the describe read-back can
@@ -386,8 +388,9 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		""";
 
 	// A signal-start filter exercising the extended vocabulary over the real MCP path: a relative-date MACRO
-	// (CreatedOn = Today, a right-hand Macros function) AND a left-hand DATE-PART (Year(CreatedOn) = 2026). CreatedOn
-	// is a base DateTime column on every entity, so this runs on any stand. Both conditions must survive the
+	// (CreatedOn = Today, a right-hand Macros function), an integer DATE-PART (Year(CreatedOn) = 2026) and a
+	// Time-of-day DATE-PART (HourMinute(CreatedOn) = 14:30, compared against a Time value). CreatedOn is a base
+	// DateTime column on every entity, so this runs on any stand. All conditions must survive the
 	// build-serialize -> describe-decode round-trip on BOTH the package and clio descriptor DTOs.
 	private static string BuildMacroAndDatePartFilteredDescriptor(string processName) =>
 		$$"""
@@ -400,7 +403,8 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		      "filter": { "object": "Contact", "logicalOperation": "and",
 		        "conditions": [
 		          { "column": "CreatedOn", "comparison": "equal", "macro": "Today" },
-		          { "column": "CreatedOn", "comparison": "equal", "datePart": "Year", "value": "2026" }
+		          { "column": "CreatedOn", "comparison": "equal", "datePart": "Year", "value": "2026" },
+		          { "column": "CreatedOn", "comparison": "equal", "datePart": "HourMinute", "value": "14:30" }
 		        ] } },
 		    { "name": "task1", "type": "performTask" },
 		    { "name": "EndEvent1", "type": "endEvent" }

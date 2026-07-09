@@ -305,7 +305,8 @@ public sealed class DescribedFilterCondition {
 	/// <summary>
 	/// A calendar/clock part extracted from a Date/DateTime <see cref="Column"/> before comparing (for example
 	/// <c>Year</c>, <c>Month</c>, <c>Day</c>, <c>Weekday</c>): the condition reads <c>Year(CreatedOn) = 2026</c>. A
-	/// left-hand modifier of the column, not a right-hand source — pairs with an integer <see cref="Value"/>.
+	/// left-hand modifier of the column, not a right-hand source — the integer parts pair with an integer
+	/// <see cref="Value"/>, while <c>HourMinute</c> extracts the time-of-day and reads back a <c>HH:mm:ss</c> value.
 	/// </summary>
 	[JsonPropertyName("datePart")]
 	public string DatePart { get; set; }
