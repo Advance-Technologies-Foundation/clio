@@ -829,7 +829,7 @@ stories:
     title: "Secret-hygiene sweep — url-only logging across every sink"
     feature: "mcp-http-credential-passthrough"
     size: M
-    status: ready-for-dev
+    status: review
     file: spec/stories/story-mcp-http-credential-passthrough-13.md
     prd: spec/prd/prd-mcp-http-credential-passthrough.md
     adr: spec/adr/adr-mcp-http-credential-passthrough.md
