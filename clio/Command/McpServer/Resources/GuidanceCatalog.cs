@@ -178,6 +178,10 @@ internal static class GuidanceCatalog {
 				""",
 				ProcessModelingGuidanceResource.Guide,
 				featureGateType: typeof(ProcessModelingGuidanceResource)),
+			["theming"] = Create(
+				"theming",
+				"Canonical MCP guidance for managing custom Creatio themes with clio — create, restyle, delete, list, and set the default — and shipping them to a Creatio environment.",
+				ThemingGuidanceResource.Guide),
 			["run-process-button"] = Create(
 				"run-process-button",
 				"""

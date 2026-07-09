@@ -43,6 +43,7 @@ public sealed class RoutingGuidanceResource {
 		         - environment inspection (version / db engine / framework / product / license) -> name=describe-environment
 		         - executing an approved plan -> name=agent-execution
 		         - identity assertion / Identity Service V3 -> name=identity-assertion
+		       - Theming & branding: brand colours / fonts / custom themes (create, restyle, delete, list, set the default) -> name=theming
 		       """
 	};
 

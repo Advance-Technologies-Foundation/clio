@@ -1,0 +1,59 @@
+COMMAND TYPE
+    Theming commands
+
+NAME
+    create-theme - create a custom Creatio theme on an environment
+
+DESCRIPTION
+    create-theme creates a new custom theme on the target environment by calling
+    the native ThemeService.svc/CreateTheme endpoint. The theme CSS is supplied
+    as text, inline or from a file.
+
+    Requires the CanCustomizeBranding license and the CanManageThemes system
+    operation. When --id is omitted, an auto-generated UUID is used and printed
+    back. When --caption is omitted, it is derived from --css-class-name. When
+    --package-name is omitted, the environment's CurrentPackageId system setting
+    owns the new theme.
+
+    Provide the CSS through exactly one of --css-content (inline) or
+    --css-content-file (a UTF-8 file). Prefer --css-content-file for large or
+    multi-line CSS.
+
+SYNOPSIS
+    clio create-theme [options]
+
+OPTIONS
+    --id                            Theme id (^[A-Za-z0-9_-]+$, max 100); an auto-generated UUID when omitted
+
+    --caption                       Human-readable theme caption, max 250; derived from --css-class-name when omitted
+
+    --css-class-name                CSS class applied when active (^[A-Za-z][A-Za-z0-9_-]*$, max 100); derived from --caption (lowercased and hyphenated) when omitted. At least one of --caption or --css-class-name is required.
+
+    --css-content                   Inline theme CSS, max 1 MiB (mutually exclusive with --css-content-file)
+
+    --css-content-file              Path to a UTF-8 CSS file (mutually exclusive with --css-content)
+
+    --package-name                  Owning package name; the CurrentPackageId system setting when omitted
+
+    --uri               -u          Application uri
+
+    --Password          -p          User password
+
+    --Login             -l          User login (administrator permission required)
+
+    --Environment       -e          Environment name
+
+    --Maintainer        -m          Maintainer name
+
+EXAMPLE
+    clio create-theme --caption "Ocean" --css-class-name ocean-theme --css-content ".ocean-theme{color:#06c}" -e myapp
+        create a theme with inline CSS on the environment registered as myapp
+
+    clio create-theme --caption "Ocean" --css-class-name ocean-theme --css-content-file ./theme.css -e myapp
+        create a theme reading the CSS from a file
+
+NOTES
+    - To make a theme the default for all users, set the DefaultTheme system setting to the theme id with 'clio set-syssetting'.
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
+using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
@@ -414,6 +416,10 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "the verification rule must route the agent to get-component-info as the authoritative component catalog");
 		response.Article.Text.Should().Contain("ASK THE USER",
 			because: "the web page guide must tell the agent to ask the user (existing component vs custom) when no OOTB component matches");
+		response.Article.Text.Should().Contain("its content slot MUST be initialized",
+			because: "the web page guide must center the new-container rule on initializing the content slot, the verified root cause (ENG-91555, PR #789 review)");
+		response.Article.Text.Should().Contain("is not a container for other items",
+			because: "the web page guide must name the exact runtime error a slot-less container raises so the agent recognizes it");
 		response.Article.Text.Should().Contain("showing a user-facing message/confirmation/info/success/error popup",
 			because: "the gate table must route a 'show a confirmation message' requirement into page-schema-handlers so the agent uses crt.ShowDialogRequest (ENG-91748)");
 		response.Article.Text.Should().Contain("NEVER use `alert(...)`, `window.alert(...)`, `confirm(...)`, or `prompt(...)`",
@@ -584,6 +590,46 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "successful guidance lookups should return the resolved article payload");
 		response.Article!.Uri.Should().Be("docs://mcp/guides/esq-filters",
 			because: "the canonical resource URI should still be visible in the tool response");
+	}
+
+	[Test]
+	[AllureTag(GuidanceGetTool.ToolName)]
+	[AllureName("get-guidance returns the canonical theming orchestration guide")]
+	[Description("Verifies get-guidance returns the theming article that builds the theme CSS with the native build-theme tool and routes the no-code flow to create-theme.")]
+	public async Task GuidanceGet_Should_Return_Theming_Guide() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
+		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+
+		// Act
+		GuidanceGetResponse response = await CallAsync(
+			session,
+			cancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["name"] = "theming"
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "theming is a registered guidance name");
+		response.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article payload");
+		response.Article!.Uri.Should().Be("docs://mcp/guides/theming",
+			because: "the canonical resource URI should still be visible in the tool response");
+		response.Article.Text.Should().NotContain("@creatio/theming",
+			because: "the npm package is retired — theme CSS is built by the native build-theme tool");
+		response.Article.Text.Should().Contain("push-workspace",
+			because: "the theming guide must route deployment through push-workspace");
+		response.Article.Text.Should().Contain("create-theme",
+			because: "the theming guide must route the no-code/server flow to the create-theme MCP tool");
+		response.Article.Text.Should().NotContain("-by-environment",
+			because: "the theming guide must reference the theming tools by their single clean names");
+		response.Article.Text.Should().NotContain("-by-credentials",
+			because: "the theming guide must reference the theming tools by their single clean names");
+		response.Article.Text.Should().Contain("build-theme",
+			because: "the no-code/server flow's primary path is the native build-theme tool, not hand-computed colors");
 	}
 
 	[Test]
