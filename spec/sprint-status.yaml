@@ -583,8 +583,8 @@ stories:
     title: "[SPIKE] Per-request context flow (RISK #1)"
     feature: "mcp-http-credential-passthrough"
     size: S
-    status: ready-for-dev
-    note: "BLOCKING SPIKE. Confirms singleton ICredentialContextAccessor over IHttpContextAccessor is readable inside tool execution under ValidateOnBuild+ValidateScopes, and probes the FR-06 independent-async-flow prerequisite. If it fails: fall back to the SDK per-request DI scope and re-target stories 4/7/10."
+    status: review
+    note: "BLOCKING SPIKE RESOLVED — GO. Singleton ICredentialContextAccessor over IHttpContextAccessor is readable inside tool execution under ValidateOnBuild+ValidateScopes (runtime-verified + SDK-source-decisive, MCP AspNetCore/Core 1.4.0). FR-06 independent-async-flow prerequisite CONFIRMED: AsyncLocal-on-singleton OK (scope opened inside BaseTool.InternalExecute, not middleware). Findings: spec/mcp-http-credential-passthrough/context-flow-spike-findings.md. Downstream stories 3-15 UNBLOCKED. Remaining: orchestrator to apply the recommended ADR RISK #1/OQ-04 update text; no fallback needed."
     file: spec/stories/story-mcp-http-credential-passthrough-1.md
     prd: spec/prd/prd-mcp-http-credential-passthrough.md
     adr: spec/adr/adr-mcp-http-credential-passthrough.md
@@ -610,7 +610,7 @@ stories:
     title: "[SPIKE] Token/cookie client feasibility (OQ-01 / bearer vs cookie leg)"
     feature: "mcp-http-credential-passthrough"
     size: S
-    status: ready-for-dev
+    status: review
     note: "BLOCKING SPIKE. Bearer leg (COMMITTED): confirm CreatioClient(appUrl, bearerToken, isNetCore) attaches Authorization: Bearer on a POST with no auto-Login(). Cookie leg (AT-RISK/CONDITIONAL): only non-public InitAuthCookie/AddCsrfToken found — DROP cookie leg from v1 if no supported injection path exists. If bearer also fails, degrade to {url, login, password}-only."
     file: spec/stories/story-mcp-http-credential-passthrough-2.md
     prd: spec/prd/prd-mcp-http-credential-passthrough.md

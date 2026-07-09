@@ -29,23 +29,23 @@ the ADR's "reuse `CreatioClient(appUrl, bearerToken, isNetCore)` ctor + `Creatio
 ## Spike Questions (answer all)
 
 ### Bearer leg (committed scope — must confirm)
-- [ ] **Q1** — Construct `new CreatioClient(appUrl, bearerToken, isNetCore)` (the public ctor confirmed to exist in `~/.nuget/packages/creatio.client/1.0.38/lib/netstandard2.0/Creatio.Client.dll`). Does an authenticated **write (POST)** actually attach `Authorization: Bearer <token>` on the outbound request?
-- [ ] **Q2** — Does that ctor **suppress any auto-`Login()`** on the first call (it may be gated on an internal "useOAuth" flag)? Confirm no login round-trip occurs. *ADR "could-not-verify": the ctor exists but its outbound POST behavior was not decompiled/run — this spike must prove it.*
-- [ ] **Q3** — Wrapping the pre-authenticated `CreatioClient` via the public `CreatioClientAdapter(CreatioClient)` ctor (`clio/Common/CreatioClientAdapter.cs:55-59`) + a `NoReauthExecutor` (never calls `Login()`), does an existing tool's write path work end-to-end against a live env?
+- [x] **Q1** — Construct `new CreatioClient(appUrl, bearerToken, isNetCore)` (the public ctor confirmed to exist in `~/.nuget/packages/creatio.client/1.0.38/lib/netstandard2.0/Creatio.Client.dll`). Does an authenticated **write (POST)** actually attach `Authorization: Bearer <token>` on the outbound request? **YES (body-verified)** — every write verb (`ExecutePost/Delete/Patch`, uploads, `CallConfigurationService`) attaches `Authorization: Bearer <token>` via the `if (_oauthToken != null)` branch. See findings note Q1.
+- [x] **Q2** — Does that ctor **suppress any auto-`Login()`** on the first call (it may be gated on an internal "useOAuth" flag)? Confirm no login round-trip occurs. **YES (body-verified)** — flag is `_oauthToken`; `InitAuthCookie` short-circuits on a non-empty token and the bearer branch never touches cookie/CSRF/`AuthCookie`, so no `Login()`/ping. ADR "could-not-verify" discharged. See findings note Q2.
+- [~] **Q3** — Wrapping the pre-authenticated `CreatioClient` via the public `CreatioClientAdapter(CreatioClient)` ctor (`clio/Common/CreatioClientAdapter.cs:55-59`) + a `NoReauthExecutor` (never calls `Login()`), does an existing tool's write path work end-to-end against a live env? **DEFERRED to Story 3** — mechanism proven statically at the `CreatioClient` layer; not constructible end-to-end today (no live env AND `NoReauthExecutor` does not exist / `IReauthExecutor` internal / public adapter ctor defaults to a `Login()`-based reauth wrong for opaque material). See findings note Q3.
 
 ### Cookie leg (AT-RISK / CONDITIONAL scope — determine and possibly drop)
-- [ ] **Q4** — Is there **any supported public path** to inject an externally supplied cookie into `CreatioClient`? Reflection found **only non-public** `InitAuthCookie(int)` and `AddCsrfToken(HttpWebRequest|HttpClient)`; there are **no** public cookie/token setters on `CreatioClient` (the `set_AccessToken`/`set_CookieContainer`-style setters live on the DTOs `Dto.TokenResponse`/`NegotiateResponse`, not on the client). Confirm this on the inspected surface.
-- [ ] **Q5** — If a supported path exists: does it attach `BPMCSRF` on POST? If **no supported path exists**, record the verdict: **DROP the cookie leg from v1** (Alternative A — a from-scratch `TokenCreatioClient` — is reconsidered only if the cookie leg is later required).
+- [x] **Q4** — Is there **any supported public path** to inject an externally supplied cookie into `CreatioClient`? **NO (body-verified)** — `_authCookie` private, `AuthCookie` internal getter-only, `InitAuthCookie`/`AddCsrfToken` private; no ctor accepts a `CookieContainer`; the `set_AccessToken`/`CookieContainer` setters live on DTOs, not the client. Confirmed on the inspected surface. See findings note Q4.
+- [x] **Q5** — If a supported path exists: does it attach `BPMCSRF` on POST? **No supported path exists → verdict: DROP the cookie leg from v1** (Alternative A — from-scratch `TokenCreatioClient` — reconsidered only if the cookie leg is later required). See findings note Q5.
 
 ### Fallback
-- [ ] **Q6** — If the **bearer** spike (Q1/Q2) also fails: record the degradation to `{url, login, password}`-only for v1 (still valuable, still nothing-persisted) and re-plan token/cookie.
+- [x] **Q6** — If the **bearer** spike (Q1/Q2) also fails: record the degradation to `{url, login, password}`-only for v1 and re-plan token/cookie. **NOT TRIGGERED** — bearer leg is GO, so degradation is not exercised. See findings note Q6.
 
 ## Deliverables
 
-- [ ] A findings note (ADR OQ-01 section or `spec/mcp-http-credential-passthrough/token-cookie-client-spike-findings.md`) answering Q1–Q6 with evidence (a captured outbound POST showing the auth header, and a live authenticated write, or decompiled ctor behavior).
-- [ ] **Bearer leg verdict**: GO (build the factory branch in Story 3) or NO-GO (degrade to login/password).
-- [ ] **Cookie leg verdict** — explicitly one of: (a) supported injection path found → conditional GO with the exact API/contract; or (b) **no supported path → DROPPED from v1** (recorded as an at-risk scope item that did not ship, not a committed deliverable).
-- [ ] Update OQ-01 / A-01 status in the PRD to RESOLVED with the outcome; update the ADR OQ-01 verdict if the empirical result differs from the reflection-based prediction.
+- [x] A findings note answering Q1–Q6 with evidence (decompiled ctor + write-path bodies): [`spec/mcp-http-credential-passthrough/token-cookie-client-spike-findings.md`](../mcp-http-credential-passthrough/token-cookie-client-spike-findings.md). Evidence is decompiled method bodies (ilspycmd on the real 1.0.38 assembly); live-env capture deferred to Story 3.
+- [x] **Bearer leg verdict**: **GO** — build the factory branch in Story 3.
+- [x] **Cookie leg verdict**: **(b) no supported path → DROPPED from v1** (recorded as an at-risk scope item that did not ship, not a committed deliverable).
+- [~] Update OQ-01 / A-01 status in the PRD to RESOLVED with the outcome. **Recommended status text is in the findings note ("Recommended OQ-01 / A-01 status text" section) for the orchestrator to apply — not self-edited here.** Empirical result matches the reflection-based ADR prediction; no reconciliation delta.
 
 ## Implementation Notes
 
@@ -55,15 +55,20 @@ the ADR's "reuse `CreatioClient(appUrl, bearerToken, isNetCore)` ctor + `Creatio
 
 ## Definition of Done
 
-- [ ] Q1–Q6 answered with evidence from the real assembly / a live env
-- [ ] Bearer-leg GO/NO-GO recorded; cookie-leg CONFIRMED or **explicitly DROPPED from v1**
-- [ ] If bearer fails, the `{url, login, password}`-only degradation is recorded and downstream scope re-planned
-- [ ] OQ-01 / A-01 marked resolved in the PRD; ADR verdict reconciled with the empirical result
-- [ ] No production client-seam code merged from this spike beyond a verified scaffold
+- [x] Q1–Q6 answered with evidence from the real assembly (Q3 live-env leg deferred to Story 3, mechanism proven statically)
+- [x] Bearer-leg **GO** recorded; cookie-leg **explicitly DROPPED from v1**
+- [x] Bearer did not fail → degradation N/A (recorded as not-triggered)
+- [~] OQ-01 / A-01 resolution recorded in findings note with recommended PRD/ADR text; PRD/ADR edit left to orchestrator (empirical result matches ADR prediction — no reconciliation delta)
+- [x] No production client-seam code written from this spike (investigation only)
 
 ## Dev Agent Record
 
-- Implementation started:
-- Implementation completed:
-- Tests passing:
+- Implementation started: 2026-07-09
+- Implementation completed: 2026-07-09
+- Tests passing: N/A — investigation spike, no code written
 - Notes:
+  - Decompiled `Creatio.Client` 1.0.38 (`~/.nuget/packages/creatio.client/1.0.38/lib/netstandard2.0/Creatio.Client.dll`; version confirmed in `Directory.Packages.props:36`) with `ilspycmd` 10.1.0 — **full method bodies**, not signatures. All bearer/cookie answers are body-verified.
+  - **Bearer GO (body-verified):** public ctor `CreatioClient(appUrl, bearerToken, isNetCore)` sets `_oauthToken = StripBearerPrefix(bearerToken)`; every write verb attaches `Authorization: Bearer <token>` under `if (_oauthToken != null)`; `InitAuthCookie` (only `Login()` caller) short-circuits on a non-empty token and the bearer branch never touches cookie/CSRF → no login/ping round-trip.
+  - **Cookie DROPPED (body-verified):** no public/internal cookie-injection API — `_authCookie` private, `AuthCookie` internal getter-only, `InitAuthCookie`/`AddCsrfToken` private, no ctor takes a `CookieContainer`.
+  - **Q3 blind spot for Story 3:** end-to-end adapter path not constructible today — `NoReauthExecutor` does not exist, `IReauthExecutor` is internal, and the public `CreatioClientAdapter(CreatioClient)` ctor (`clio/Common/CreatioClientAdapter.cs:55`) defaults to `new ReauthExecutor(() => _lazyClient.Value.Login())` (line 37), which is wrong for opaque bearer material (no credentials). Story 3 must add `NoReauthExecutor` + a supported injection path and reject null/blank tokens at the factory boundary.
+  - Findings note: `spec/mcp-http-credential-passthrough/token-cookie-client-spike-findings.md`.
