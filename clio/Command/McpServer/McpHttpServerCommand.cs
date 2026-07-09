@@ -165,7 +165,7 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 		}
 
 		List<string> hosts = [boundHost];
-		if (IsLoopbackHost(boundHost)) {
+		if (IsLoopbackAlias(boundHost)) {
 			hosts.AddRange(LoopbackHostAliases);
 		}
 
@@ -185,7 +185,7 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 	// a missing/mismatched key short-circuits with HTTP 401 and no secret (AC-03/AC-ERR).
 	// The decision is published to the pipeline via PassthroughEnabledItemKey, which the
 	// credential-capture middleware honors.
-	private static async Task EnforcePlatformApiKeyGate(
+	internal static async Task EnforcePlatformApiKeyGate(
 		HttpContext context,
 		RequestDelegate next,
 		IPlatformApiKeyGate gate,
@@ -226,7 +226,7 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 	// false/absent the credential header is ignored entirely — no parse, no 400 — so an
 	// untrusted/no-key request behaves exactly as 8.1.0.72 (AC-02). Parse failure inside the
 	// trusted path ⇒ HTTP 400 with a JSON body naming the defect (no secret).
-	private static async Task CaptureCredentialContext(
+	internal static async Task CaptureCredentialContext(
 		HttpContext context,
 		RequestDelegate next,
 		ICredentialHeaderParser parser,
@@ -282,7 +282,7 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 		}
 
 		string originHost = originUri.Host;
-		if (IsLoopbackHost(originHost)) {
+		if (IsLoopbackAlias(originHost)) {
 			return true;
 		}
 
@@ -290,7 +290,12 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 			&& string.Equals(originHost, boundHost, StringComparison.OrdinalIgnoreCase);
 	}
 
-	private static bool IsLoopbackHost(string host) =>
+	// Membership test against the fixed loopback ALIAS literals (localhost / 127.0.0.1 / ::1).
+	// Deliberately NARROWER than TargetUrlValidator.IsLoopbackIpOrLocalhost (which parses any
+	// 127.0.0.0/8 address as loopback): this gates Host-header allow-listing and Origin filtering,
+	// where only the exact bound/alias hostnames are legitimate — e.g. 127.0.0.2 is NOT a valid
+	// Host/Origin here. The two predicates guard different controls and are intentionally divergent.
+	private static bool IsLoopbackAlias(string host) =>
 		LoopbackHostAliases.Contains(host, StringComparer.OrdinalIgnoreCase);
 
 	private static bool IsWildcardHost(string host) =>

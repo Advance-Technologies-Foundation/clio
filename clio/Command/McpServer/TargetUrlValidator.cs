@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 
@@ -49,14 +48,21 @@ public sealed class TargetUrlNotAllowedException : Exception
 /// <remarks>
 /// <para>
 /// The baseline address-class blocks apply only to <b>IP-literal</b> hosts (including
-/// IPv4-mapped IPv6 literals, which are normalized to their IPv4 form before the checks). A
-/// non-literal host is NOT DNS-resolved here: resolving it would (a) require live DNS in the hot
-/// path and (b) only shift, not close, the window — the client that ultimately dials the target
-/// does its own resolution, so a name that resolves to a blocked IP <em>after</em> this check
-/// (DNS-rebinding TOCTOU) is a documented residual that is <b>out of scope for v1</b>. The same
-/// residual covers alternative encodings that <see cref="Uri"/> classifies as a DNS host rather
-/// than an IP literal (e.g. a decimal/octal-encoded integer address): they are not treated as IP
-/// literals here and fall into the same v1 residual. See Story 14 docs.
+/// IPv4-mapped IPv6 literals, which are normalized to their IPv4 form before the checks).
+/// Alternative encodings that <see cref="Uri"/> <em>canonicalizes</em> to a dotted-quad literal —
+/// decimal (<c>http://2130706433/</c>), hex (<c>http://0x7f000001/</c>), and octal
+/// (<c>http://0177.0.0.1/</c>) integer addresses — are classified as <see cref="UriHostNameType.IPv4"/>
+/// and therefore covered by the baseline blocks. A single trailing dot (e.g.
+/// <c>http://169.254.169.254./</c>) makes <see cref="Uri"/> classify the host as
+/// <see cref="UriHostNameType.Dns"/>; <see cref="TryGetIpLiteral"/> strips exactly one trailing dot
+/// and re-attempts the literal parse so that class is blocked too, without relying on
+/// <see cref="Uri"/>'s per-version host classification.
+/// </para>
+/// <para>
+/// A genuinely non-literal host is NOT DNS-resolved here: resolving it would (a) require live DNS in
+/// the hot path and (b) only shift, not close, the window — the client that ultimately dials the
+/// target does its own resolution, so a name that resolves to a blocked IP <em>after</em> this check
+/// (DNS-rebinding TOCTOU) is a documented residual that is <b>out of scope for v1</b>. See Story 14 docs.
 /// </para>
 /// </remarks>
 public sealed class TargetUrlValidator : ITargetUrlValidator
@@ -79,7 +85,7 @@ public sealed class TargetUrlValidator : ITargetUrlValidator
 	/// the baseline address-class blocks still apply and any other reachable host is permitted.
 	/// </param>
 	public TargetUrlValidator(string boundHost, IEnumerable<string> allowedBaseUrls) {
-		_boundHostIsLoopback = IsLoopbackHost(boundHost);
+		_boundHostIsLoopback = IsLoopbackIpOrLocalhost(boundHost);
 		_allowedOrigins = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		if (allowedBaseUrls is not null) {
 			foreach (string baseUrl in allowedBaseUrls) {
@@ -159,16 +165,25 @@ public sealed class TargetUrlValidator : ITargetUrlValidator
 	}
 
 	private static bool TryGetIpLiteral(Uri uri, out IPAddress ip) {
-		// DnsSafeHost strips the IPv6 brackets (and any scope id) so IPAddress.TryParse accepts it.
+		// Primary path: Uri already classified the host as an IP literal. This covers dotted-quad,
+		// bracketed IPv6, and the integer/hex/octal encodings Uri canonicalizes to a dotted-quad
+		// (HostNameType == IPv4). DnsSafeHost strips the IPv6 brackets (and any scope id) so
+		// IPAddress.TryParse accepts it.
 		if (uri.HostNameType is UriHostNameType.IPv4 or UriHostNameType.IPv6
 			&& IPAddress.TryParse(uri.DnsSafeHost, out ip)) {
-			// Normalize IPv4-mapped IPv6 literals (e.g. ::ffff:169.254.169.254) down to their
-			// IPv4 form so the address-class checks below (metadata / link-local / loopback) see
-			// the real target and cannot be bypassed by the dual-stack encoding.
-			if (ip.IsIPv4MappedToIPv6) {
-				ip = ip.MapToIPv4();
-			}
+			ip = NormalizeIpv4Mapped(ip);
+			return true;
+		}
 
+		// Fallback path: a single trailing dot (e.g. "169.254.169.254." / "127.0.0.1.") makes Uri
+		// classify the host as Dns, so the primary path misses it — a real SSRF bypass in
+		// no-allowlist mode. Strip EXACTLY one trailing dot (not TrimEnd, which would eat several)
+		// and re-attempt the literal parse so the baseline blocks still apply. This closes the class
+		// without depending on Uri's per-version host classification.
+		string host = uri.Host;
+		if (host.Length > 0 && host[^1] == '.'
+			&& IPAddress.TryParse(host[..^1], out ip)) {
+			ip = NormalizeIpv4Mapped(ip);
 			return true;
 		}
 
@@ -176,7 +191,18 @@ public sealed class TargetUrlValidator : ITargetUrlValidator
 		return false;
 	}
 
-	private static bool IsLoopbackHost(string host) {
+	// Normalize IPv4-mapped IPv6 literals (e.g. ::ffff:169.254.169.254) down to their IPv4 form so
+	// the address-class checks (metadata / link-local / loopback) see the real target and cannot be
+	// bypassed by the dual-stack encoding.
+	private static IPAddress NormalizeIpv4Mapped(IPAddress ip) =>
+		ip.IsIPv4MappedToIPv6 ? ip.MapToIPv4() : ip;
+
+	// Loopback test for the SERVER'S BOUND HOST: the literal "localhost" OR any string that parses
+	// to a loopback IP (127.0.0.0/8, ::1). Deliberately BROADER than McpHttpServerCommand's
+	// IsLoopbackAlias (which matches only a fixed alias set): this gate decides whether an outbound
+	// loopback TARGET is permitted, so it must recognize e.g. 127.0.0.2 as loopback. The two guard
+	// different security controls and are intentionally NOT the same predicate.
+	private static bool IsLoopbackIpOrLocalhost(string host) {
 		if (string.IsNullOrWhiteSpace(host)) {
 			return false;
 		}
@@ -218,15 +244,5 @@ public static class AllowedBaseUrlsConfiguration
 	/// </summary>
 	/// <param name="flagValue">The <c>--allowed-base-urls</c> flag value (comma-separated set); may be <see langword="null"/>.</param>
 	/// <returns>The trimmed, non-empty entries (possibly empty).</returns>
-	public static IReadOnlyList<string> Resolve(string flagValue) {
-		if (string.IsNullOrWhiteSpace(flagValue)) {
-			return [];
-		}
-
-		return flagValue
-			.Split(',')
-			.Select(part => part.Trim())
-			.Where(part => part.Length > 0)
-			.ToList();
-	}
+	public static IReadOnlyList<string> Resolve(string flagValue) => CommaSet.Split(flagValue);
 }

@@ -93,7 +93,7 @@ internal class ApplicationClientFactory : IApplicationClientFactory{
 		}
 
 		if (!string.IsNullOrEmpty(settings.AccessTokenType)
-			&& !string.Equals(settings.AccessTokenType, "Bearer", StringComparison.OrdinalIgnoreCase)) {
+			&& !string.Equals(settings.AccessTokenType, AuthenticationScheme.Bearer, StringComparison.OrdinalIgnoreCase)) {
 			throw new NotSupportedException(
 				$"Access-token type '{settings.AccessTokenType}' is not supported; " +
 				"only 'Bearer' is supported in v1.");

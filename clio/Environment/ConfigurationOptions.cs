@@ -121,7 +121,7 @@ namespace Clio
 		[Newtonsoft.Json.JsonIgnore]
 		public string AccessTokenType {
 			get; set;
-		} = "Bearer";
+		} = Clio.Common.AuthenticationScheme.Bearer;
 
 		[YamlIgnore]
 		[Newtonsoft.Json.JsonIgnore]

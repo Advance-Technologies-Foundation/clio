@@ -102,10 +102,16 @@ public class ToolCommandResolver(
 	// EnsureAllowed precedes every settings/container/client construction by construction.
 	private TCommand ResolvePassthrough<TCommand>(CredentialContext context) {
 		// AC-04 / FR-17: validate the caller-influenced target url BEFORE building any settings,
-		// container, or client. A rejection surfaces as a caller-actionable TargetUrlNotAllowedException
-		// that names the reason and never carries a secret (FR-11). This also names the real missing
-		// piece when the url itself is absent/invalid (FR-12) rather than an "environment not found".
-		targetUrlValidator.EnsureAllowed(context.Url);
+		// container, or client. A rejection is caller-actionable (fix your input), so surface it as an
+		// EnvironmentResolutionException — consistent with the cookie / missing-auth / non-Bearer
+		// rejections below — so BaseTool maps it to exit code 1, not -1 ("clio bug"). The validator's
+		// message names the reason and never carries a secret (FR-11); it is preserved verbatim.
+		try {
+			targetUrlValidator.EnsureAllowed(context.Url);
+		}
+		catch (TargetUrlNotAllowedException ex) {
+			throw new EnvironmentResolutionException(ex.Message, ex);
+		}
 
 		// FR-12 / AC-05: name the real missing piece. Cookie auth is caller-actionable (exit code 1),
 		// so intercept it here as an EnvironmentResolutionException rather than letting the deep
@@ -124,7 +130,7 @@ public class ToolCommandResolver(
 		// secret. The parser (Story 4) forwards the caller-supplied type verbatim, so this is reachable.
 		if (context.Auth?.Kind == CredentialKind.AccessToken
 			&& !string.IsNullOrWhiteSpace(context.Auth.AccessTokenType)
-			&& !string.Equals(context.Auth.AccessTokenType, "Bearer", StringComparison.OrdinalIgnoreCase)) {
+			&& !string.Equals(context.Auth.AccessTokenType, AuthenticationScheme.Bearer, StringComparison.OrdinalIgnoreCase)) {
 			throw new EnvironmentResolutionException(
 				$"Access-token type '{context.Auth.AccessTokenType}' is not supported for credential passthrough; only 'Bearer' is supported.");
 		}
@@ -183,9 +189,11 @@ public class ToolCommandResolver(
 	// Dedicated passthrough cache key that INCLUDES the credential discriminator (kind + token /
 	// cookie / login+password), unlike BuildCacheKey which hashes only Login|Password|ClientId|IsNetCore
 	// and would collide two different bearer tokens on the same url (cross-tenant reuse). The secret
-	// material is SHA-256 hashed, never placed raw in the key. Full FR-07 key unification and FR-08
-	// TTL / eviction are Story 8 — this only prevents the cross-tenant collision.
-	private static string BuildPassthroughCacheKey(CredentialContext context) {
+	// material is SHA-256 hashed, never placed raw in the key. The FULL hash is used (not a 64-bit
+	// truncation): on this feature "same url, different token" is the norm, so a truncation collision
+	// would be a credential crossover. Full FR-07 key unification and FR-08 TTL / eviction are
+	// Story 8 — this only prevents the cross-tenant collision.
+	internal static string BuildPassthroughCacheKey(CredentialContext context) {
 		CredentialMaterial auth = context.Auth;
 		string material = string.Concat(
 			((int)(auth?.Kind ?? CredentialKind.AccessToken)).ToString(), "|",
@@ -195,7 +203,7 @@ public class ToolCommandResolver(
 			auth?.Login ?? string.Empty, "|",
 			auth?.Password ?? string.Empty);
 		byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(material));
-		return $"passthrough:{context.Url}:{Convert.ToHexString(hash)[..16]}";
+		return $"passthrough:{context.Url}:{Convert.ToHexString(hash)}";
 	}
 
 	public TCommand ResolveWithoutEnvironment<TCommand>(EnvironmentOptions options) {

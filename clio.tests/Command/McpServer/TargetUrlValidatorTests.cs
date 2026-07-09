@@ -280,6 +280,120 @@ public sealed class TargetUrlValidatorTests
 	}
 
 	[Test]
+	[Description("A trailing-dot cloud-metadata host (169.254.169.254.) is blocked even though Uri classifies it as a DNS host, not an IP literal (SSRF trailing-dot bypass).")]
+	public void EnsureAllowed_ShouldReject_WhenTargetIsTrailingDotCloudMetadata() {
+		// Arrange
+		ITargetUrlValidator sut = CreateValidator();
+
+		// Act
+		Action act = () => sut.EnsureAllowed("http://169.254.169.254./");
+
+		// Assert
+		act.Should().Throw<TargetUrlNotAllowedException>(
+			because: "a single trailing dot must not slip the metadata address past the baseline block (SSRF)");
+	}
+
+	[Test]
+	[Description("A trailing-dot loopback host (127.0.0.1.) is blocked when the server is NOT bound to loopback, closing the trailing-dot DNS-classification bypass.")]
+	public void EnsureAllowed_ShouldReject_WhenTargetIsTrailingDotLoopbackAndBoundHostIsNotLoopback() {
+		// Arrange
+		ITargetUrlValidator sut = CreateValidator(boundHost: NonLoopbackBoundHost);
+
+		// Act
+		Action act = () => sut.EnsureAllowed("http://127.0.0.1./");
+
+		// Assert
+		act.Should().Throw<TargetUrlNotAllowedException>(
+				because: "a single trailing dot must not slip a loopback target past the baseline block (SSRF)")
+			.Which.Message.Should().Contain("loopback",
+				because: "the rejection names the blocked address class after the trailing dot is stripped (AC-ERR)");
+	}
+
+	[Test]
+	[Description("A decimal-encoded loopback integer (http://2130706433/) is blocked because Uri canonicalizes it to the 127.0.0.1 IPv4 literal (SSRF alternative-encoding).")]
+	public void EnsureAllowed_ShouldReject_WhenTargetIsDecimalEncodedLoopback() {
+		// Arrange
+		ITargetUrlValidator sut = CreateValidator(boundHost: NonLoopbackBoundHost);
+
+		// Act
+		Action act = () => sut.EnsureAllowed("http://2130706433/");
+
+		// Assert
+		act.Should().Throw<TargetUrlNotAllowedException>(
+			because: "2130706433 canonicalizes to 127.0.0.1 and must hit the loopback baseline block (SSRF)");
+	}
+
+	[Test]
+	[Description("A hex-encoded loopback integer (http://0x7f000001/) is blocked because Uri canonicalizes it to the 127.0.0.1 IPv4 literal (SSRF alternative-encoding).")]
+	public void EnsureAllowed_ShouldReject_WhenTargetIsHexEncodedLoopback() {
+		// Arrange
+		ITargetUrlValidator sut = CreateValidator(boundHost: NonLoopbackBoundHost);
+
+		// Act
+		Action act = () => sut.EnsureAllowed("http://0x7f000001/");
+
+		// Assert
+		act.Should().Throw<TargetUrlNotAllowedException>(
+			because: "0x7f000001 canonicalizes to 127.0.0.1 and must hit the loopback baseline block (SSRF)");
+	}
+
+	[Test]
+	[Description("An octal-encoded loopback host (http://0177.0.0.1/) is blocked because Uri canonicalizes it to the 127.0.0.1 IPv4 literal (SSRF alternative-encoding).")]
+	public void EnsureAllowed_ShouldReject_WhenTargetIsOctalEncodedLoopback() {
+		// Arrange
+		ITargetUrlValidator sut = CreateValidator(boundHost: NonLoopbackBoundHost);
+
+		// Act
+		Action act = () => sut.EnsureAllowed("http://0177.0.0.1/");
+
+		// Assert
+		act.Should().Throw<TargetUrlNotAllowedException>(
+			because: "0177.0.0.1 canonicalizes to 127.0.0.1 and must hit the loopback baseline block (SSRF)");
+	}
+
+	[Test]
+	[Description("A decimal-encoded cloud-metadata integer (http://2852039166/) is blocked because Uri canonicalizes it to 169.254.169.254 (SSRF alternative-encoding).")]
+	public void EnsureAllowed_ShouldReject_WhenTargetIsDecimalEncodedCloudMetadata() {
+		// Arrange
+		ITargetUrlValidator sut = CreateValidator();
+
+		// Act
+		Action act = () => sut.EnsureAllowed("http://2852039166/");
+
+		// Assert
+		act.Should().Throw<TargetUrlNotAllowedException>(
+			because: "2852039166 canonicalizes to 169.254.169.254 and must hit the cloud-metadata baseline block (SSRF)");
+	}
+
+	[Test]
+	[Description("An RFC1918 private address (http://10.0.0.5/) is PERMITTED when no allowlist is set — documenting the deliberate v1 residual so a future baseline tightening fails this test.")]
+	public void EnsureAllowed_ShouldPermit_WhenTargetIsRfc1918TenAndAllowlistUnset() {
+		// Arrange
+		ITargetUrlValidator sut = CreateValidator(boundHost: NonLoopbackBoundHost);
+
+		// Act
+		Action act = () => sut.EnsureAllowed("http://10.0.0.5/");
+
+		// Assert
+		act.Should().NotThrow(
+			because: "RFC1918 10.0.0.0/8 is intentionally NOT part of the v1 baseline blocks (allowlist is the operator's tool)");
+	}
+
+	[Test]
+	[Description("An RFC1918 private address (http://192.168.1.10/) is PERMITTED when no allowlist is set — documenting the deliberate v1 residual.")]
+	public void EnsureAllowed_ShouldPermit_WhenTargetIsRfc1918OneNineTwoAndAllowlistUnset() {
+		// Arrange
+		ITargetUrlValidator sut = CreateValidator(boundHost: NonLoopbackBoundHost);
+
+		// Act
+		Action act = () => sut.EnsureAllowed("http://192.168.1.10/");
+
+		// Assert
+		act.Should().NotThrow(
+			because: "RFC1918 192.168.0.0/16 is intentionally NOT part of the v1 baseline blocks (allowlist is the operator's tool)");
+	}
+
+	[Test]
 	[Description("A rejection message contains only the reason and no unexpected data such as the path or query.")]
 	public void EnsureAllowed_ShouldNotLeakUnexpectedData_WhenRejecting() {
 		// Arrange

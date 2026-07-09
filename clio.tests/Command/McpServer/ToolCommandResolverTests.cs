@@ -182,7 +182,7 @@ public class ToolCommandResolverTests {
 	}
 
 	[Test]
-	[Description("Validates the target URL before any settings/container are built, and does not consult the settings repository on the passthrough path.")]
+	[Description("Validates the target URL before any settings/container are built, surfaces a blocked URL as an EnvironmentResolutionException (exit code 1), and does not consult the settings repository on the passthrough path.")]
 	[Category("Unit")]
 	public void Resolve_Should_Validate_Target_Url_Before_Resolution_When_Passthrough_Context_Present() {
 		// Arrange
@@ -206,11 +206,58 @@ public class ToolCommandResolverTests {
 		Action act = () => resolver.Resolve<CreateEntitySchemaCommand>(new EnvironmentOptions());
 
 		// Assert
-		act.Should().Throw<TargetUrlNotAllowedException>(
-			because: "the SSRF/egress guard must reject a blocked passthrough URL before any client is built (AC-04)");
+		act.Should().Throw<EnvironmentResolutionException>(
+				because: "a blocked passthrough URL is caller-actionable and must map to exit code 1, not a -1 'clio bug' (SSRF egress guard, AC-04)")
+			.Which.Message.Should().Contain("loopback",
+				because: "the validator's secret-free reason must be preserved verbatim on the wrapped exception");
 		validator.Received(1).EnsureAllowed("https://blocked.internal");
 		settingsRepository.DidNotReceive().IsEnvironmentExists(Arg.Any<string>());
 		settingsRepository.DidNotReceive().FindEnvironment(Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("Two different access tokens on the SAME target URL produce different passthrough cache keys, so a bearer session is never crossed between tenants (does not depend on hash truncation).")]
+	[Category("Unit")]
+	public void BuildPassthroughCacheKey_Should_Differ_When_Tokens_Differ_On_Same_Url() {
+		// Arrange
+		CredentialContext contextA = new(
+			"https://acme.creatio.com",
+			CredentialMaterial.FromAccessToken("tenant-a-token", "Bearer"),
+			McpTransport.Http,
+			true);
+		CredentialContext contextB = new(
+			"https://acme.creatio.com",
+			CredentialMaterial.FromAccessToken("tenant-b-token", "Bearer"),
+			McpTransport.Http,
+			true);
+
+		// Act
+		string keyA = ToolCommandResolver.BuildPassthroughCacheKey(contextA);
+		string keyB = ToolCommandResolver.BuildPassthroughCacheKey(contextB);
+
+		// Assert
+		keyA.Should().NotBe(keyB,
+			because: "same URL, different token is the norm for passthrough, so the credential discriminator must produce distinct keys — a collision would reuse another tenant's session");
+	}
+
+	[Test]
+	[Description("The passthrough cache key embeds the FULL SHA-256 hex hash (64 chars), not a 64-bit truncation, to minimize the credential-crossover collision surface.")]
+	[Category("Unit")]
+	public void BuildPassthroughCacheKey_Should_Use_Full_Sha256_Hash() {
+		// Arrange
+		CredentialContext context = new(
+			"https://acme.creatio.com",
+			CredentialMaterial.FromAccessToken("tenant-a-token", "Bearer"),
+			McpTransport.Http,
+			true);
+
+		// Act
+		string key = ToolCommandResolver.BuildPassthroughCacheKey(context);
+
+		// Assert
+		string hashSegment = key[(key.LastIndexOf(':') + 1)..];
+		hashSegment.Length.Should().Be(64,
+			because: "a full SHA-256 render is 64 hex chars; a truncated 16-char key would widen the credential-crossover collision surface");
 	}
 
 	[Test]

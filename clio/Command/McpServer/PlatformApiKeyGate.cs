@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Security.Cryptography;
 using System.Text;
+using Clio.Common;
 
 namespace Clio.Command.McpServer;
 
@@ -43,7 +44,7 @@ public interface IPlatformApiKeyGate
 /// </summary>
 public sealed class PlatformApiKeyGate : IPlatformApiKeyGate
 {
-	private const string BearerScheme = "Bearer";
+	private const string BearerScheme = AuthenticationScheme.Bearer;
 
 	private readonly byte[][] _keyBytes;
 
@@ -120,22 +121,11 @@ public static class PlatformApiKeyConfiguration
 	/// <param name="environmentValue">The <c>CLIO_MCP_HTTP_PLATFORM_API_KEY</c> value (comma-separated set); may be <see langword="null"/>.</param>
 	/// <returns>The resolved, trimmed, non-empty key set (possibly empty).</returns>
 	public static IReadOnlyList<string> Resolve(string flagValue, string environmentValue) {
+		// Union both sources verbatim (no cross-source de-duplication): each is split/trimmed the
+		// same way via the shared CommaSet helper, and duplicate keys are harmless to the gate.
 		List<string> keys = [];
-		AddKeys(keys, flagValue);
-		AddKeys(keys, environmentValue);
+		keys.AddRange(CommaSet.Split(flagValue));
+		keys.AddRange(CommaSet.Split(environmentValue));
 		return keys;
-	}
-
-	private static void AddKeys(List<string> keys, string commaSet) {
-		if (string.IsNullOrWhiteSpace(commaSet)) {
-			return;
-		}
-
-		foreach (string part in commaSet.Split(',')) {
-			string trimmed = part.Trim();
-			if (trimmed.Length > 0) {
-				keys.Add(trimmed);
-			}
-		}
 	}
 }
