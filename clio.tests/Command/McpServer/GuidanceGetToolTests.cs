@@ -2,6 +2,7 @@ using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
 using Clio.Command;
+using Clio.Command.McpServer.Resources;
 using Clio.Command.McpServer.Resources.ProcessDesigner;
 using Clio.Command.McpServer.Tools;
 using FluentAssertions;
@@ -793,5 +794,75 @@ public sealed class GuidanceGetToolTests {
 			because: "app-modeling carries no feature gate and must resolve even while process-designer is off");
 		result.Article!.Uri.Should().Be("docs://mcp/guides/app-modeling",
 			because: "the ungated guide must return its canonical article URI");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Hides freedom-page-web-to-mobile-conversion from availableGuides when the mobile-page-converter feature gate is disabled.")]
+	public void GuidanceGet_Should_Hide_FreedomToMobile_From_AvailableGuides_When_Gate_Disabled() {
+		// Arrange — bare substitute: IsEnabled(...) returns false, so the gated guide is disabled.
+		GuidanceGetTool tool = new(_featureToggleService);
+
+		// Act
+		GuidanceGetResponse result = tool.GetGuidance(new GuidanceGetArgs("not-a-guide")).Result;
+
+		// Assert
+		result.AvailableGuides.Should().NotContain("freedom-page-web-to-mobile-conversion",
+			because: "the conversion guide is gated behind the disabled mobile-page-converter flag and must not leak through get-guidance");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Treats freedom-page-web-to-mobile-conversion as an unknown guide when the mobile-page-converter feature gate is disabled.")]
+	public void GuidanceGet_Should_Reject_FreedomToMobile_As_Unknown_When_Gate_Disabled() {
+		// Arrange
+		GuidanceGetTool tool = new(_featureToggleService);
+
+		// Act
+		GuidanceGetResponse result = tool.GetGuidance(new GuidanceGetArgs("freedom-page-web-to-mobile-conversion")).Result;
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "a gated guide must resolve as unknown while its feature flag is off");
+		result.Article.Should().BeNull(
+			because: "a disabled gated guide must not return its article");
+		result.Error.Should().Contain("Unknown guidance 'freedom-page-web-to-mobile-conversion'",
+			because: "the failure must name the rejected guide so the disabled gate is indistinguishable from a non-existent guide");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Lists and resolves freedom-page-web-to-mobile-conversion when the mobile-page-converter feature gate is enabled.")]
+	public async Task GuidanceGet_Should_List_And_Resolve_FreedomToMobile_When_Gate_Enabled() {
+		// Arrange
+		_featureToggleService.IsEnabled(typeof(FreedomToMobileConversionGuidanceResource)).Returns(true);
+		GuidanceGetTool tool = new(_featureToggleService);
+
+		// Act
+		GuidanceGetResponse listing = tool.GetGuidance(new GuidanceGetArgs("not-a-guide")).Result;
+		GuidanceGetResponse guide = await tool.GetGuidance(new GuidanceGetArgs("freedom-page-web-to-mobile-conversion"));
+
+		// Assert
+		listing.AvailableGuides.Should().Contain("freedom-page-web-to-mobile-conversion",
+			because: "the conversion guide must be listed when the mobile-page-converter gate is enabled");
+		guide.Success.Should().BeTrue(
+			because: "the conversion guide must resolve when the mobile-page-converter gate is enabled");
+		guide.Article!.Uri.Should().Be("docs://mcp/guides/freedom-page-web-to-mobile-conversion",
+			because: "the enabled conversion guide must return its canonical article URI");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Attribute lock-in: both MCP surfaces of the converter carry [FeatureToggle(\"mobile-page-converter\")] so a refactor cannot silently un-gate the incomplete feature.")]
+	public void MobilePageConverter_McpTypes_CarryFeatureToggle() {
+		FeatureToggleAttribute toolToggle = typeof(MobilePageConversionGuideTool)
+			.GetCustomAttribute<FeatureToggleAttribute>(inherit: false);
+		FeatureToggleAttribute resourceToggle = typeof(FreedomToMobileConversionGuidanceResource)
+			.GetCustomAttribute<FeatureToggleAttribute>(inherit: false);
+
+		toolToggle.Should().NotBeNull(because: "get-mobile-page-conversion-guide must stay gated");
+		toolToggle!.FeatureName.Should().Be("mobile-page-converter");
+		resourceToggle.Should().NotBeNull(because: "the conversion guidance resource must stay gated");
+		resourceToggle!.FeatureName.Should().Be("mobile-page-converter");
 	}
 }
