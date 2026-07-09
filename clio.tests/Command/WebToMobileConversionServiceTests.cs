@@ -1007,6 +1007,25 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
+	[Description("A rule whose condition mixes AND and OR across nested groups is dropped (the flat single-operator condition input cannot represent it), even when its actions would otherwise survive.")]
+	public void ConvertPageBusinessRules_MixedAndOrCondition_DropsRule() {
+		var rule = new SourcePageBusinessRule {
+			Caption = "Mixed A AND (B OR C)",
+			ConditionNotConvertible = true,
+			Actions = { ElementAction("make-read-only", "UsrName") }
+		};
+		PageBusinessRuleProbeResult probe = ProbeOf(rule);
+		var elementMap = new List<ElementMapEntry> { El("UsrName", "merge", "AreaName") };
+
+		PageBusinessRuleConversionInfo result = WebToMobileAnalysisService.ConvertPageBusinessRules(probe, elementMap);
+
+		result.ConvertedRules.Should().BeEmpty();
+		result.DroppedRules.Should().HaveCount(1);
+		result.DroppedRules[0].Caption.Should().Be("Mixed A AND (B OR C)");
+		result.DroppedRules[0].Reason.Should().Contain("mixes AND and OR");
+	}
+
+	[Test]
 	[Description("A multi-element action keeps only the surviving elements (web→mobile) and drops the rest.")]
 	public void ConvertPageBusinessRules_MultiElementAction_KeepsSurvivingOnly() {
 		PageBusinessRuleProbeResult probe = ProbeOf(

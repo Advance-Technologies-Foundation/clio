@@ -129,9 +129,11 @@ public static class PageBusinessRuleProbe {
 				string caseCaption = cases.Count > 1 && !string.IsNullOrWhiteSpace(caption)
 					? $"{caption} (case {caseIndex})"
 					: caption;
+				JsonNode condition = ConvertCondition(ruleCase["condition"], out bool conditionConvertible);
 				result.Add(new SourcePageBusinessRule {
 					Caption = caseCaption,
-					Condition = ConvertCondition(ruleCase["condition"]),
+					Condition = condition,
+					ConditionNotConvertible = !conditionConvertible,
 					Actions = actions
 				});
 			}
@@ -148,13 +150,15 @@ public static class PageBusinessRuleProbe {
 			if (actionNode is not JsonObject action) {
 				continue;
 			}
+			// Page-level business rules carry ONLY element actions (hide/show + make-editable/read-only/
+			// required/optional): the probe reads strictly the page's ClientUnitSchema BusinessRule add-on,
+			// while object-level rules live on the EntitySchema (a different schema manager) and never reach
+			// here. So every action type maps; there is no need to filter by action type. An unmapped typeName
+			// is a data anomaly that surfaces loudly (the probe degrades to ProbeOk=false) rather than being
+			// silently dropped.
 			string typeName = StringOf(action["typeName"]);
-			if (string.IsNullOrWhiteSpace(typeName)
-				|| !ActionShortByTypeName.TryGetValue(typeName, out string shortType)) {
-				continue; // not a page-level element action (e.g. set-values) — skip; it never converts.
-			}
 			actions.Add(new SourcePageRuleAction {
-				ActionType = shortType,
+				ActionType = ActionShortByTypeName[typeName],
 				ElementItems = SplitItems(action["items"])
 			});
 		}
@@ -162,25 +166,79 @@ public static class PageBusinessRuleProbe {
 	}
 
 	/// <summary>
-	/// Reverse-maps a persisted condition group into the create-page-business-rule input shape. A condition
-	/// is NEVER dropped: leaf conditions are collected recursively so nested groups (which Creatio persists
-	/// for UI-authored rules) do not empty the result. The create-page-business-rule input supports only a
-	/// single flat <c>conditions</c> array, so nested groups are FLATTENED (their inner leaf conditions are
-	/// lifted); the outer group's logical operator is kept.
+	/// Reverse-maps a persisted condition group into the create-page-business-rule input shape, which supports
+	/// only a single flat <c>conditions</c> array under ONE logical operator. Creatio persists UI-authored rules
+	/// wrapped in nested groups (even a single condition is wrapped), so leaf conditions are collected recursively
+	/// and FLATTENED — this is lossless as long as the tree uses a single logical operator. When the tree mixes
+	/// AND and OR across groups that each carry ≥2 real operands (e.g. <c>A AND (B OR C)</c>), flattening would
+	/// change when the rule fires; that cannot be represented in the flat input shape, so <paramref name="convertible"/>
+	/// is set to <c>false</c> and the caller drops the rule for manual recreation instead of emitting wrong semantics.
 	/// </summary>
-	private static JsonNode ConvertCondition(JsonNode conditionNode) {
+	private static JsonNode ConvertCondition(JsonNode conditionNode, out bool convertible) {
+		convertible = true;
 		if (conditionNode is not JsonObject group) {
+			return null;
+		}
+
+		// A flat single-operator representation is faithful iff every group with ≥2 leaf-bearing operands shares
+		// one operator. Wrapper groups with 0/1 operand are pass-through — their operator is irrelevant. Two or
+		// more distinct "active" operators means genuinely mixed AND/OR that cannot be flattened losslessly.
+		var activeIsOr = new HashSet<bool>();
+		CollectActiveGroupOperators(group, activeIsOr);
+		if (activeIsOr.Count > 1) {
+			convertible = false;
 			return null;
 		}
 
 		var conditions = new JsonArray();
 		CollectLeafConditions(group, conditions);
 
-		string logicalOperation = IntOf(group["logicalOperation"]) == LogicalOr ? "OR" : "AND";
+		// Emit the single active operator when present (it governs all leaves); otherwise (0 or 1 leaf, all
+		// operators vacuous) fall back to the outer group's operator.
+		bool isOr = activeIsOr.Count == 1 ? activeIsOr.First() : IntOf(group["logicalOperation"]) == LogicalOr;
 		return new JsonObject {
-			["logicalOperation"] = logicalOperation,
+			["logicalOperation"] = isOr ? "OR" : "AND",
 			["conditions"] = conditions
 		};
+	}
+
+	/// <summary>
+	/// Collects the logical operator (true = OR, false = AND) of every group that has ≥2 leaf-bearing operands —
+	/// i.e. every group whose operator actually governs more than one operand. Groups that contribute 0 or 1 leaf
+	/// are wrappers whose operator is vacuous and are ignored. If the resulting set has more than one entry, the
+	/// condition mixes AND and OR and cannot be flattened without changing its meaning.
+	/// </summary>
+	private static void CollectActiveGroupOperators(JsonObject group, HashSet<bool> activeIsOr) {
+		if (group["conditions"] is not JsonArray inner) {
+			return;
+		}
+		int operands = 0;
+		foreach (JsonNode child in inner) {
+			if (child is not JsonObject childObj) {
+				continue;
+			}
+			if (CountLeaves(childObj) > 0) {
+				operands++;
+			}
+			CollectActiveGroupOperators(childObj, activeIsOr); // no-op for leaf nodes (no "conditions" array)
+		}
+		if (operands >= 2) {
+			activeIsOr.Add(IntOf(group["logicalOperation"]) == LogicalOr);
+		}
+	}
+
+	/// <summary>Counts leaf conditions (nodes carrying leftExpression/comparisonType) under a node, recursing into groups.</summary>
+	private static int CountLeaves(JsonObject node) {
+		if (node["conditions"] is JsonArray inner) {
+			int sum = 0;
+			foreach (JsonNode child in inner) {
+				if (child is JsonObject childObj) {
+					sum += CountLeaves(childObj);
+				}
+			}
+			return sum;
+		}
+		return node["leftExpression"] is null && node["comparisonType"] is null ? 0 : 1;
 	}
 
 	/// <summary>

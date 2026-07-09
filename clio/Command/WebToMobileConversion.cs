@@ -202,11 +202,12 @@ public static class WebToMobileAnalysisService {
 	/// Page rules carry only element actions (hide / show / make-editable / read-only / required /
 	/// optional). An action converts only for the referenced elements that survive on mobile (elementMap
 	/// operation merge/insert), with their names remapped web→mobile and only the survivors kept. A rule
-	/// with no surviving action is dropped together with its condition; otherwise the condition is carried
-	/// verbatim — EVERY operand type is supported in a mobile page-rule condition (attribute, const, formula,
-	/// system-value, system-setting) — with each operand's attribute path remapped from the source DS column
-	/// path to the mobile viewModel attribute name, so the rule is ready for create-page-business-rule. Returns
-	/// null when no probe ran.
+	/// with no surviving action is dropped together with its condition. A rule whose condition mixes AND and OR
+	/// across nested groups is also dropped (the flat single-operator condition input cannot represent it without
+	/// changing when the rule fires). Otherwise the condition is carried verbatim — EVERY operand type is supported
+	/// in a mobile page-rule condition (attribute, const, formula, system-value, system-setting) — with each
+	/// operand's attribute path remapped from the source DS column path to the mobile viewModel attribute name, so
+	/// the rule is ready for create-page-business-rule. Returns null when no probe ran.
 	/// </summary>
 	internal static PageBusinessRuleConversionInfo ConvertPageBusinessRules(
 		PageBusinessRuleProbeResult probe,
@@ -240,6 +241,19 @@ public static class WebToMobileAnalysisService {
 		var dropped = new List<DroppedPageBusinessRule>();
 
 		foreach (SourcePageBusinessRule rule in probe.Rules ?? []) {
+			// A condition that mixes AND and OR across nested groups (e.g. A AND (B OR C)) cannot be represented
+			// by the flat single-operator condition input of create-page-business-rule. Flattening it would change
+			// when the rule fires, so drop the whole rule for manual recreation rather than emit wrong semantics.
+			if (rule.ConditionNotConvertible) {
+				dropped.Add(new DroppedPageBusinessRule {
+					Caption = rule.Caption,
+					Reason = "Condition mixes AND and OR across nested groups; a mobile page rule supports only a "
+						+ "single flat condition group (one logical operator) and cannot represent this without "
+						+ "changing when the rule fires — recreate this rule manually."
+				});
+				continue;
+			}
+
 			var actions = new JsonArray();
 			foreach (SourcePageRuleAction action in rule.Actions ?? []) {
 				List<string> mobileItems = (action.ElementItems ?? [])

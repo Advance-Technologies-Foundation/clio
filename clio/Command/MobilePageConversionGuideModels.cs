@@ -653,6 +653,14 @@ internal sealed class SourcePageBusinessRule {
 	/// <summary>Condition group in create-page-business-rule input shape ({logicalOperation, conditions}); may be null.</summary>
 	public JsonNode Condition { get; init; }
 
+	/// <summary>
+	/// True when the source condition mixes AND and OR across nested groups (e.g. <c>A AND (B OR C)</c>). The
+	/// create-page-business-rule input supports only a single flat condition group with one logical operator, so
+	/// such a condition cannot be represented without changing when the rule fires. The rule is dropped for manual
+	/// recreation rather than emitted with fabricated (flattened) semantics.
+	/// </summary>
+	public bool ConditionNotConvertible { get; init; }
+
 	public List<SourcePageRuleAction> Actions { get; init; } = [];
 }
 
