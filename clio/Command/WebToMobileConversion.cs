@@ -1632,8 +1632,9 @@ public static class WebToMobileAnalysisService {
 
 	/// <summary>
 	/// Captures per element the data the adaptive pass needs: its web <c>layoutConfig</c> (grid placement,
-	/// keyed by element name) and, for a grid container (a node carrying <c>columns</c>), its web column
-	/// count (keyed by the container name — the mobile parent its children are placed under).
+	/// keyed by element name) and, for a grid container (a node carrying <c>columns</c>), its web column count
+	/// (keyed by the WEB container name; <see cref="BuildAdaptiveLayout"/> translates it to the mobile parent
+	/// name via the element map, since a merge twin / relocated wrapper may rename the container).
 	/// </summary>
 	private static void CaptureSource(ElementMapContext ctx, string name, JObject node) {
 		if (node["layoutConfig"] is JObject layout) {
@@ -1657,13 +1658,28 @@ public static class WebToMobileAnalysisService {
 		List<ElementMapEntry> elementMap,
 		IReadOnlyDictionary<string, JObject> sourceLayouts,
 		IReadOnlyDictionary<string, int> gridContainerColumns) {
+		// Grid-container column counts are captured under the WEB container name, but children carry the MOBILE
+		// parent name in their element-map entries — a merge twin or relocated wrapper renames the container
+		// (e.g. GeneralInfoTabContainer -> GeneralTabContainer, SideAreaProfileContainer -> AreaProfileContainer).
+		// Translate each count to the container's mobile name via its element-map entry so the lookup below
+		// matches renamed pairs; keep the web name as a fallback for containers that are not renamed.
+		var colsByMobileParent = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+		foreach (ElementMapEntry e in elementMap) {
+			if (e.WebName is { Length: > 0 } && gridContainerColumns.TryGetValue(e.WebName, out int cols)) {
+				colsByMobileParent[string.IsNullOrEmpty(e.MobileName) ? e.WebName : e.MobileName] = cols;
+			}
+		}
+		foreach (KeyValuePair<string, int> kv in gridContainerColumns) {
+			colsByMobileParent.TryAdd(kv.Key, kv.Value);
+		}
+
 		// Children (any type) of a captured grid container, grouped by mobile parent in tree (= elementMap) order.
 		var byContainer = new Dictionary<string, List<ElementMapEntry>>(StringComparer.OrdinalIgnoreCase);
 		var order = new List<string>();
 		foreach (ElementMapEntry e in elementMap) {
 			if (!string.Equals(e.Operation, "insert", StringComparison.Ordinal) ||
 				string.IsNullOrEmpty(e.ParentName) || e.MobileValues is not JsonObject ||
-				!gridContainerColumns.ContainsKey(e.ParentName)) {
+				!colsByMobileParent.ContainsKey(e.ParentName)) {
 				continue;
 			}
 			if (!byContainer.TryGetValue(e.ParentName, out List<ElementMapEntry> list)) {
@@ -1676,7 +1692,7 @@ public static class WebToMobileAnalysisService {
 
 		var groups = new List<AdaptiveLayoutGroup>();
 		foreach (string container in order) {
-			int webCols = gridContainerColumns[container];
+			int webCols = colsByMobileParent[container];
 			if (webCols <= 1) {
 				continue; // single-column grid — the mobile client works with the non-adaptive config
 			}

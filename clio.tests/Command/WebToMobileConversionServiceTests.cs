@@ -1414,6 +1414,36 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
+	[Description("A multi-column grid container renamed by the template map (merge twin, e.g. GeneralInfoTabContainer -> GeneralTabContainer) still gets the phone one-column collapse: the column count captured under the WEB name is matched to children that carry the MOBILE parent name.")]
+	public void Analyze_MultiColumnGrid_RenamedTwin_ConvertsSmallToOneColumn() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "GeneralInfoTabContainer", "type": "crt.GridContainer",
+			    "columns": [ "minmax(32px, 1fr)", "minmax(32px, 1fr)" ], "items": [
+				{ "name": "Name", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 1, "colSpan": 1, "rowSpan": 1 } },
+				{ "name": "CreatedOn", "type": "crt.Input", "layoutConfig": { "column": 2, "row": 1, "colSpan": 1, "rowSpan": 1 } } ] } ]
+			""");
+		var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+			["GeneralInfoTabContainer"] = "GeneralTabContainer"
+		};
+
+		MobilePageConversionGuide guide = Analyze(bundle,
+			webByType: Reg(("crt.GridContainer", true), ("crt.Input", false)),
+			containerNameMap: map);
+
+		AdaptiveLayoutGroup group = guide.AdaptiveLayout!.Single();
+		group.ContainerName.Should().Be("GeneralTabContainer",
+			because: "the adaptive group is keyed by the mobile (renamed) container name");
+
+		// The renamed lookup matched: the 2nd child stacks on phone (col 1, row 2) and keeps the web 2-column
+		// cell (col 2, row 1) on tablet/desktop. Before the fix its layoutConfig kept the web 2-column form.
+		JsonObject co = AdaptiveOf(guide, "CreatedOn");
+		co["small"]!["column"]!.GetValue<int>().Should().Be(1);
+		co["small"]!["row"]!.GetValue<int>().Should().Be(2);
+		co["medium"]!["column"]!.GetValue<int>().Should().Be(2);
+		co["medium"]!["row"]!.GetValue<int>().Should().Be(1);
+	}
+
+	[Test]
 	[Description("A single-column crt.GridContainer gets NO adaptive (the mobile client renders the plain config); its children keep the carried base layoutConfig, not an adaptive one.")]
 	public void Analyze_SingleColumnGrid_NoAdaptive() {
 		PageBundleInfo bundle = Bundle("""
