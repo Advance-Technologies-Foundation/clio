@@ -789,7 +789,7 @@ stories:
     title: "Incubation feature-flag gate on the passthrough behavior"
     feature: "mcp-http-credential-passthrough"
     size: S
-    status: ready-for-dev
+    status: review
     note: "Gate the BEHAVIOR via IsFeatureEnabled('mcp-http-credential-passthrough') in McpHttpServerCommand.Run — NOT [FeatureToggle] on the options class (that hides the shipped verb and regresses FR-10/AC-10). Doubly-gated: incubation flag AND api-key gate."
     file: spec/stories/story-mcp-http-credential-passthrough-11.md
     prd: spec/prd/prd-mcp-http-credential-passthrough.md
