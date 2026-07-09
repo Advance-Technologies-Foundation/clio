@@ -66,9 +66,19 @@ internal sealed class AddonSchemaDesignerClient(
 	/// making saved schema changes available immediately without a full reload.
 	/// </summary>
 	public void ResetClientScriptCache() {
-		applicationClient.ExecutePostRequest(
-			serviceUrlBuilder.Build("/rest/WorkplaceService/ResetScriptCache"),
-			string.Empty);
+		// Best-effort, like BuildConfiguration: this runs AFTER the schema is already saved (both the related-page
+		// and business-rule Create/Append paths call it post-save), so a transient failure — e.g. an expired-session
+		// redirect between the save and the reset — must NOT fail an already-committed operation. Log it and move on;
+		// the save stands and the cache reset can be retried.
+		try {
+			applicationClient.ExecutePostRequest(
+				serviceUrlBuilder.Build("/rest/WorkplaceService/ResetScriptCache"),
+				string.Empty);
+		} catch (Exception exception) {
+			logger.WriteWarning(
+				"Client script-cache reset failed after the schema was already saved: " + exception.Message
+				+ ". The change is persisted; the cache reset can be retried.");
+		}
 	}
 
 	/// <summary>

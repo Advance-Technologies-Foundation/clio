@@ -300,6 +300,13 @@ internal sealed class RelatedPageAddonService(
 	private static string NormalizeGuid(string value) =>
 		Guid.TryParse(value?.Trim(), out Guid parsed) ? parsed.ToString("D") : value?.Trim();
 
+	// One normalization for the type-column value — used BOTH as the per-(audience, type) uniqueness key
+	// (AudienceTypeCell) AND as the stored value (BuildPages), so the grouping key can never diverge from what is
+	// persisted. NormalizeGuid canonicalizes a GUID (lower-case "D") regardless of input case/format; a blank value
+	// is null (untyped) and a non-GUID value is returned trimmed as-is.
+	private static string NormalizeTypeColumnValue(string typeColumnValue) =>
+		string.IsNullOrWhiteSpace(typeColumnValue) ? null : NormalizeGuid(typeColumnValue);
+
 	// A page's audience is recognized when it is the general audience (role-less / "All employees") or the portal
 	// audience ("All external users") — the only two the designer produces. Anything else is a custom role, which
 	// is not supported (see ValidateRequest).
@@ -308,14 +315,13 @@ internal sealed class RelatedPageAddonService(
 
 	// Normalizes a page to its (audience, type) cell for the uniqueness guard. The general audience (role-less or
 	// "All employees") collapses to one bucket — two untyped general defaults would both match an employee — and
-	// the portal audience to another. The type key uses the SAME normalization as the stored value
-	// (NormalizeGuid — canonical "D", lower-cased), so a lookup GUID that differs only in letter case OR format
-	// (brace "{…}" / dash-less "N") is treated as one cell. Keying on the raw value here while BuildPages stores the
-	// normalized value would let a brace/N variant slip past as a distinct cell yet be written as the same value —
-	// two defaults for one cell. Only recognized audiences reach here (ValidateRequest rejects the rest first).
+	// the portal audience to another. The type key uses NormalizeTypeColumnValue — the SAME helper BuildPages uses
+	// for the stored value — so the grouping key is byte-identical to what is persisted, and a lookup GUID that
+	// differs only in letter case OR format (brace "{…}" / dash-less "N") is treated as one cell (it cannot slip
+	// past as a distinct cell yet be written as the same value). Only recognized audiences reach here (ValidateRequest
+	// rejects the rest first).
 	private static (string audience, string type) AudienceTypeCell(RelatedPageSpec page) =>
-		(AudienceKey(page),
-			string.IsNullOrWhiteSpace(page.TypeColumnValue) ? null : NormalizeGuid(page.TypeColumnValue)?.ToLowerInvariant());
+		(AudienceKey(page), NormalizeTypeColumnValue(page.TypeColumnValue));
 
 	// Parses the add-on's existing MetaData into a mutable object so the write can PRESERVE any top-level field
 	// this tool does not model (see Create — keeps us safe against a future platform field added without a tool
@@ -337,7 +343,11 @@ internal sealed class RelatedPageAddonService(
 
 		(string packageUId, Guid packageId, EntityDesignSchemaDto entitySchema) =
 			ResolveTarget(request.PackageName, request.EntitySchemaName);
-		string typeColumnWarning = ValidateTypeColumn(request.TypeColumnUId, entitySchema);
+		// Skip the type-column verification for a reset-to-inline (empty pages): the TypeColumnUId is dropped below
+		// for an empty set (it can key no typed pages), so an ignored, stray value must not block the clear.
+		string typeColumnWarning = request.Pages.Count == 0
+			? null
+			: ValidateTypeColumn(request.TypeColumnUId, entitySchema);
 
 		IReadOnlyDictionary<string, string> roleByName = ResolveRoleNames(request.Pages);
 		JsonArray pages = BuildPages(request.Pages, roleByName, packageId);
@@ -643,7 +653,7 @@ internal sealed class RelatedPageAddonService(
 				["IsSspDefault"] = spec.IsSspDefault,
 				["Actions"] = new JsonObject { ["Add"] = spec.IsAdd },
 				["Role"] = string.IsNullOrWhiteSpace(role) ? null : role,
-				["TypeColumnValue"] = string.IsNullOrWhiteSpace(spec.TypeColumnValue) ? null : NormalizeGuid(spec.TypeColumnValue)
+				["TypeColumnValue"] = NormalizeTypeColumnValue(spec.TypeColumnValue)
 			});
 		}
 		return pages;

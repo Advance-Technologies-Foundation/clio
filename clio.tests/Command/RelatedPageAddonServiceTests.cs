@@ -1300,4 +1300,30 @@ public sealed class RelatedPageAddonServiceTests {
 			because: "a bind needs the owning package; a blank one must fail fast");
 		_addonSchemaDesignerClient.DidNotReceiveWithAnyArgs().GetSchema(default!);
 	}
+
+	[Test]
+	[Description("An intentional reset-to-inline (empty pages) is NOT blocked by a stray type-column-uid that is not a column of the object — the value is dropped for an empty set, so the type-column verification is skipped and the clear succeeds.")]
+	public void Create_ShouldResetToInline_WhenEmptyPagesWithStrayTypeColumnUid() {
+		// Arrange — the object resolves WITH a column, but the supplied type-column-uid matches none of them; pages
+		// is empty. Without the empty-set skip, ValidateTypeColumn would throw and block the reset.
+		StubEntitySchema(new EntityDesignSchemaDto {
+			UId = Guid.Parse(EntityUId),
+			Name = "Case",
+			Columns = new[] {
+				new EntitySchemaColumnDto { UId = Guid.Parse("af280321-e749-41dd-98e5-383906747e29"), Name = "Category" }
+			}
+		});
+		StubSelectQueue(Rows(PackageUId));
+
+		// Act — empty pages + a well-formed GUID that is NOT a column of the object.
+		RelatedPageAddonResult result = _service.Create(new RelatedPageAddonRequest("Custom", "Case",
+			Array.Empty<RelatedPageSpec>(), "12341234-1234-1234-1234-123412341234"));
+
+		// Assert
+		result.PageCount.Should().Be(0,
+			because: "an intentional reset-to-inline must not be blocked by a stray type-column-uid that is dropped anyway");
+		JsonNode.Parse(_savedSchema.MetaData)!["TypeColumnUId"].Should().BeNull(
+			because: "the empty-clear drops the type-column-uid");
+		_addonSchemaDesignerClient.Received(1).SaveSchema(Arg.Any<AddonSchemaDto>());
+	}
 }

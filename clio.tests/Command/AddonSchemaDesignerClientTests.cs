@@ -137,6 +137,23 @@ public sealed class AddonSchemaDesignerClientTests {
 	}
 
 	[Test]
+	[Description("ResetClientScriptCache is best-effort: it runs AFTER the schema is already saved, so a POST failure is logged as a warning and swallowed (not thrown) — a transient cache-reset failure must not fail an already-committed operation.")]
+	public void ResetClientScriptCache_ShouldWarnNotThrow_WhenPostFails() {
+		// Arrange — the reset POST fails (e.g. a transient / expired-session error after the save committed).
+		_applicationClient.ExecutePostRequest("http://local/rest/WorkplaceService/ResetScriptCache",
+				string.Empty, Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(_ => throw new InvalidOperationException("reset boom"));
+
+		// Act
+		Action act = () => _client.ResetClientScriptCache();
+
+		// Assert
+		act.Should().NotThrow(
+			because: "a post-save cache-reset failure must not fail an already-committed operation");
+		_logger.Received(1).WriteWarning(Arg.Is<string>(message => message.Contains("reset boom")));
+	}
+
+	[Test]
 	[Description("Triggers the static-content rebuild and completes when the server reports a successful build.")]
 	public void BuildConfiguration_PostsAndAcceptsSuccessfulRebuild() {
 		// Arrange
