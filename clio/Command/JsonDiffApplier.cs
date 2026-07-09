@@ -306,7 +306,7 @@ public class JsonDiffApplier {
 
 	// ----- change-position (remove / insert / move) pipeline -----
 
-	private void ApplyChangePositionOperationGroup(List<JObject> removes, List<JObject> inserts, List<JObject> moves) {
+	private void ApplyChangePositionOperationGroup(List<JObject> removes, List<JObject> inserts, List<JObject> moves, int previousUnsuccessfulCount = int.MaxValue) {
 		moves = FilterMoveOperation(removes, moves);
 		var removesAndMoves = new List<JObject>(removes);
 		removesAndMoves.AddRange(moves);
@@ -337,11 +337,11 @@ public class JsonDiffApplier {
 		allInserts = GetOperationsSequenceByPath(allInserts, isAsc: true);
 		List<JObject> unsuccessful = ApplyOperationGroup(op => Insert(op), allInserts);
 		if (unsuccessful.Count > 0) {
-			ApplyUnsuccessfulInsertOperationGroup(unsuccessful);
+			ApplyUnsuccessfulInsertOperationGroup(unsuccessful, previousUnsuccessfulCount);
 		}
 	}
 
-	private void ApplyUnsuccessfulInsertOperationGroup(List<JObject> unsuccessful) {
+	private void ApplyUnsuccessfulInsertOperationGroup(List<JObject> unsuccessful, int previousUnsuccessfulCount = int.MaxValue) {
 		// Mirror the TS forEach+splice (mutating during iteration): setting operation='move' on each, dropping
 		// entries whose parent is still missing. The index does not rewind after a removal — matching forEach.
 		for (int index = 0; index < unsuccessful.Count; index++) {
@@ -351,7 +351,14 @@ public class JsonDiffApplier {
 			}
 		}
 		if (unsuccessful.Count > 0) {
-			ApplyChangePositionOperationGroup([], [], unsuccessful);
+			// No-progress guard: if this retry set is not strictly smaller than the previous pass, the remaining
+			// operations can never place — e.g. a move of an element into its own descendant, whose parent is
+			// always found (nothing is dropped) yet the insert always fails. Stop instead of recursing forever
+			// (which would StackOverflow and crash the MCP server process). Valid diffs always shrink each pass.
+			if (unsuccessful.Count >= previousUnsuccessfulCount) {
+				return;
+			}
+			ApplyChangePositionOperationGroup([], [], unsuccessful, unsuccessful.Count);
 		}
 	}
 
@@ -428,16 +435,16 @@ public class JsonDiffApplier {
 		return result;
 	}
 
-	private string GetOperationItemRelativePath(string name, Dictionary<string, (string ParentName, string PropertyName)> hierarchy, string resultOut) {
+	private string GetOperationItemRelativePath(string name, Dictionary<string, (string ParentName, string PropertyName)> hierarchy, string resultOut, HashSet<string> visited) {
 		string result = resultOut;
 		if (name is not null && hierarchy.TryGetValue(name, out (string ParentName, string PropertyName) entry)) {
 			result = entry.ParentName + "=" + entry.PropertyName + "==" + result;
-			result = GetOperationItemPath(entry.ParentName, hierarchy, result);
+			result = GetOperationItemPath(entry.ParentName, hierarchy, result, visited);
 		}
 		return result;
 	}
 
-	private string GetOperationItemFullPath(string name, Dictionary<string, (string ParentName, string PropertyName)> hierarchy, string resultOut) {
+	private string GetOperationItemFullPath(string name, Dictionary<string, (string ParentName, string PropertyName)> hierarchy, string resultOut, HashSet<string> visited) {
 		string result = resultOut;
 		string parentName;
 		string propertyName;
@@ -454,16 +461,24 @@ public class JsonDiffApplier {
 		}
 		if (!string.IsNullOrEmpty(parentName)) {
 			result = parentName + "=" + propertyName + "==" + result;
-			result = GetOperationItemPath(parentName, hierarchy, result);
+			result = GetOperationItemPath(parentName, hierarchy, result, visited);
 		}
 		return result;
 	}
 
-	private string GetOperationItemPath(string name, Dictionary<string, (string ParentName, string PropertyName)> hierarchy, string resultOut = "") {
-		if (!_disableApplyMoveIfIndirectParentMoved && (_operationsOptions?.ApplyMoveIfIndirectParentMoved ?? false)) {
-			return GetOperationItemFullPath(name, hierarchy, resultOut);
+	private string GetOperationItemPath(string name, Dictionary<string, (string ParentName, string PropertyName)> hierarchy, string resultOut = "", HashSet<string> visited = null) {
+		// A cyclic parentName chain (e.g. A parented to B and B parented to A) would recurse forever and
+		// throw StackOverflowException — uncatchable in .NET, killing the whole MCP server process. Track the
+		// names visited on the current chain; revisiting one is a cycle, surfaced as the existing catchable
+		// LoopDependency error (a deliberate divergence from the TS clone, which also never terminates here).
+		visited ??= new HashSet<string>(StringComparer.Ordinal);
+		if (name is not null && !visited.Add(name)) {
+			throw new JsonDiffApplierException(Format(JsonDiffApplierResources.LoopDependency, name));
 		}
-		return GetOperationItemRelativePath(name, hierarchy, resultOut);
+		if (!_disableApplyMoveIfIndirectParentMoved && (_operationsOptions?.ApplyMoveIfIndirectParentMoved ?? false)) {
+			return GetOperationItemFullPath(name, hierarchy, resultOut, visited);
+		}
+		return GetOperationItemRelativePath(name, hierarchy, resultOut, visited);
 	}
 
 	private List<JObject> GetOperationsSequenceByPath(List<JObject> operations, bool isAsc) {

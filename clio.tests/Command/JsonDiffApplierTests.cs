@@ -153,6 +153,36 @@ public sealed class JsonDiffApplierTests {
 			because: "the feature flag forces relative-path ordering, so the indirect-parent move is not applied");
 	}
 
+	// ----- cycle guards (do not StackOverflow the MCP server process) -----
+
+	[Test]
+	[Description("A 2-cycle insert diff (A parented to B, B parented to A) surfaces the catchable LoopDependency error instead of recursing forever in path ordering (StackOverflow).")]
+	public void Apply_CyclicInsertParentChain_ThrowsLoopDependency() {
+		var applier = new JsonDiffApplier();
+		Action act = () => applier.Apply(new JArray(), Arr("""
+			[ { "operation": "insert", "name": "A", "parentName": "B", "propertyName": "items", "values": { "type": "x" } },
+			  { "operation": "insert", "name": "B", "parentName": "A", "propertyName": "items", "values": { "type": "y" } } ]
+			"""));
+
+		act.Should().Throw<JsonDiffApplierException>().WithMessage("*Cyclic dependency*");
+	}
+
+	[Test]
+	[Description("Moving an element into its own descendant terminates (the insert-retry pipeline stops when its unsuccessful set stops shrinking) instead of looping forever and crashing the process.")]
+	public void Apply_MoveIntoOwnDescendant_Terminates() {
+		var applier = new JsonDiffApplier();
+		JToken source = applier.Apply(new JArray(), Arr("""
+			[ { "operation": "insert", "name": "A", "propertyName": "items", "values": { "type": "x", "items": [] } },
+			  { "operation": "insert", "name": "B", "parentName": "A", "propertyName": "items", "values": { "type": "y", "items": [] } } ]
+			"""));
+
+		Action act = () => applier.Apply(source, Arr("""
+			[ { "operation": "move", "name": "A", "parentName": "B", "propertyName": "items" } ]
+			"""));
+
+		act.Should().NotThrow();
+	}
+
 	private static JObject LoadFixtureCase(string group, int index) {
 		string path = Path.Combine(AppContext.BaseDirectory, "Command/McpServer/Fixtures/JsonDiffApplierMock.json");
 		var fixture = JObject.Parse(File.ReadAllText(path));
