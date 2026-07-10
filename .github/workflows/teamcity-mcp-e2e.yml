@@ -1,0 +1,106 @@
+---
+# ENG-92669 — surface the TeamCity MCP e2e result on clio PRs.
+#
+# TeamCity is internal (teamcity-rnd.bpmonline.com) and clio lives on public
+# github.com, so we cannot rely on TeamCity's native "Pull Requests" auto-
+# discovery: the Team_Atf_ClioMcpE2eTests config checks out its branch from the
+# `BranchNameClio` parameter (root branch = refs/heads/%BranchNameClio%), not via
+# TeamCity branch-tracking. Instead, this workflow — running on the self-hosted
+# runner that already lives inside the corporate network — triggers the TeamCity
+# build for the PR head branch. TeamCity's Commit Status Publisher (GitHub App
+# "TeamCity ATF") then posts pending/success/failure back onto the PR head SHA as
+# a commit status, so the result shows in the PR checks list.
+#
+# Phase 1 is advisory (non-blocking) — the status is informational and is NOT a
+# required check. The unit-tests config (Team_Atf_ClioUnitTests) uses a different
+# branch model and is handled as a fast-follow, not here.
+#
+# Prerequisites (one-time, outside this repo):
+#   1. TeamCity: Commit Status Publisher build feature on Team_Atf_ClioMcpE2eTests
+#      using the "TeamCity ATF" GitHub App connection (mirrors the one already on
+#      Team_Atf_ClioUnitTests).
+#   2. GitHub repo secret TEAMCITY_TOKEN — a *least-privilege* TeamCity access
+#      token that can only trigger the ATF clio build(s). Keep it minimal: a
+#      same-repo PR can edit this workflow, so the token must not grant more than
+#      queueing these builds.
+name: TeamCity MCP e2e
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [master]
+    paths:
+      - 'clio/**'
+      - 'clio.mcp.e2e/**'
+      - 'cliogate/**'
+      - 'Directory.Packages.props'
+  # Manual retrigger for a specific clio branch (e.g. re-run e2e after a flaky
+  # failure, or validate the trigger). Only usable once the workflow is on the
+  # default branch — a GitHub constraint.
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'clio branch to run MCP e2e on'
+        required: true
+        default: master
+
+# One in-flight trigger per PR; a new commit cancels the previous trigger step.
+# Manual runs key off run_id so they don't cancel each other.
+concurrency:
+  group: teamcity-mcp-e2e-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  trigger-e2e:
+    name: Trigger TeamCity MCP e2e
+    runs-on: self-hosted
+    # SECURITY: this job runs on an in-network self-hosted runner. On a public
+    # repo, a fork PR still fires `pull_request` and would run the fork-controlled
+    # workflow body on that runner (a network-pivot surface) — so restrict to
+    # same-repo PRs and manual dispatch. This in-file guard is defense-in-depth;
+    # the authoritative control is the repo setting Actions → "Require approval
+    # for all external contributors" (must be enabled).
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - name: Queue TeamCity build for the PR branch
+        shell: powershell
+        env:
+          TC_URL: https://teamcity-rnd.bpmonline.com
+          TC_TOKEN: ${{ secrets.TEAMCITY_TOKEN }}
+          BUILD_TYPE: Team_Atf_ClioMcpE2eTests
+          # pull_request → PR head branch; workflow_dispatch → the chosen branch.
+          HEAD_REF: ${{ github.event.pull_request.head.ref || inputs.branch }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
+          PR_NUMBER: ${{ github.event.pull_request.number || '(manual)' }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ([string]::IsNullOrWhiteSpace($env:TC_TOKEN)) {
+            throw 'TEAMCITY_TOKEN secret is not set — cannot trigger TeamCity.'
+          }
+
+          # The e2e config resolves its checkout from BranchNameClio
+          # (root branch = refs/heads/%BranchNameClio%). This works for same-repo
+          # PR heads (they exist as refs/heads/<head.ref>); fork PRs are filtered
+          # out by the job-level `if:` above, so BranchNameClio is always a branch
+          # that exists in the main repo.
+          $shaSuffix = if ([string]::IsNullOrWhiteSpace($env:HEAD_SHA)) { '' } else { " @ $env:HEAD_SHA" }
+          $body = @{
+            buildType  = @{ id = $env:BUILD_TYPE }
+            properties = @{ property = @(
+              @{ name = 'BranchNameClio';                        value = $env:HEAD_REF }
+              @{ name = 'DeployCreatioBuild';                    value = 'true' }
+              @{ name = 'env.McpE2E__AllowDestructiveMcpTests';  value = 'true' }
+              @{ name = 'ProductName';                           value = 'Studio' }
+            ) }
+            comment    = @{ text = "clio PR #$env:PR_NUMBER ($env:HEAD_REF$shaSuffix) — MCP e2e via GitHub Actions" }
+          } | ConvertTo-Json -Depth 6
+
+          $resp = Invoke-RestMethod -Method Post -Uri "$env:TC_URL/app/rest/buildQueue" `
+            -Headers @{ Authorization = "Bearer $env:TC_TOKEN"; Accept = 'application/json' } `
+            -ContentType 'application/json' -Body $body
+
+          Write-Host "Queued TeamCity build #$($resp.id) on BranchNameClio=$env:HEAD_REF"
+          Write-Host "Build: $($resp.webUrl)"
+          Write-Host "TeamCity's Commit Status Publisher will post the result onto the PR head commit."
