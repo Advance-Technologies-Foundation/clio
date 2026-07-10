@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Text.Json.Nodes;
 using Clio.Command.AddonSchemaDesigner;
@@ -17,6 +18,8 @@ namespace Clio.Command.McpServer.Tools;
 /// Any failure degrades gracefully to <see cref="PageBusinessRuleProbeResult.ProbeOk"/> = false with
 /// a note; it never throws so the conversion guide can always be returned. It writes nothing.
 /// </summary>
+[SuppressMessage("Critical Code Smell", "S3776:Cognitive Complexity of methods should not be too high", Justification = "ParseRules is a tolerant metadata parser; its branchy shape mirrors the persisted business-rule structure and splitting it would obscure that mapping.")]
+[SuppressMessage("Minor Code Smell", "S1192:String literals should not be duplicated", Justification = "Persisted business-rule JSON keys (conditions/leftExpression/comparisonType) read more clearly inline in this parser.")]
 public static class PageBusinessRuleProbe {
 
 	private static readonly IReadOnlyDictionary<int, string> ComparisonNameByValue =

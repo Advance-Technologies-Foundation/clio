@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Text.Json.Serialization;
 using System.Threading;
@@ -25,6 +26,8 @@ namespace Clio.Command.McpServer.Tools;
 /// </summary>
 [McpServerToolType]
 [FeatureToggle("mobile-page-converter")]
+[SuppressMessage("Major Code Smell", "S1168:Empty arrays and collections should be returned instead of null", Justification = "The best-effort probe helpers return null to signal 'not read' (distinct from 'read, empty'); the caller treats null as skip.")]
+[SuppressMessage("Minor Code Smell", "S3267:Loops should be simplified with LINQ", Justification = "Explicit loops that build registry maps with side effects read more clearly than a LINQ rewrite here.")]
 public sealed class MobilePageConversionGuideTool {
 	private readonly IToolCommandResolver _commandResolver;
 	private readonly ILogger _logger;

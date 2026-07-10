@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Text.Json;
 using Clio.Common;
@@ -14,6 +15,7 @@ namespace Clio.Command.McpServer.Tools;
 /// (Gate S). Any query failure degrades gracefully to <see cref="SectionRegistrationInfo.ProbeOk"/> =
 /// false with a note; it never throws so the conversion guide can always be returned.
 /// </summary>
+[SuppressMessage("Critical Code Smell", "S3776:Cognitive Complexity of methods should not be too high", Justification = "The probe threads several best-effort OData reads with graceful degradation; keeping them in one flow preserves the never-throws contract.")]
 public static class MobileSectionRegistrationProbe {
 
 	private const string EmptyGuid = "00000000-0000-0000-0000-000000000000";

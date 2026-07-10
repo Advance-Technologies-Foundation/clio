@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -11,6 +12,7 @@ namespace Clio.Command.McpServer.Resources;
 /// </summary>
 [McpServerResourceType]
 [FeatureToggle("mobile-page-converter")]
+[SuppressMessage("Major Code Smell", "S1118:Utility classes should not have public constructors", Justification = "MCP discovers [McpServerResourceType] classes by type; mirrors the other guidance-resource classes, which are non-static for the same reason.")]
 public sealed class FreedomToMobileConversionGuidanceResource {
 	private const string DocsScheme = "docs";
 	private const string ResourcePath = "mcp/guides/freedom-page-web-to-mobile-conversion";

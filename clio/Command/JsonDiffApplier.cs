@@ -2,6 +2,7 @@ namespace Clio.Command;
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Linq;
 using Newtonsoft.Json.Linq;
@@ -17,6 +18,17 @@ using Newtonsoft.Json.Linq;
 /// Data model is Newtonsoft <see cref="JToken"/>; tokens moved into the tree are deep-cloned to avoid the
 /// single-parent constraint (result-identical to the TS reference-assignment).
 /// </summary>
+// This type is a deliberate 1:1 port of the client TS JsonApplierService. Its method complexity, member
+// visibility, string keys and control flow mirror the reference so the clone stays verifiable against it;
+// refactoring them (extracting methods, encapsulating fields, LINQ-ifying loops) would diverge from the
+// source of truth this validator exists to reproduce. Maintainability smells are suppressed for that reason.
+[SuppressMessage("Critical Code Smell", "S3776:Cognitive Complexity of methods should not be too high", Justification = "1:1 clone of the client TS JsonApplierService — structure mirrors the reference for fidelity.")]
+[SuppressMessage("Minor Code Smell", "S1104:Fields should not have public accessibility", Justification = "1:1 clone of the client TS JsonApplierService — mirrors the reference's item-info shape.")]
+[SuppressMessage("Minor Code Smell", "S2325:Methods and properties that don't access instance data should be static", Justification = "1:1 clone of the client TS JsonApplierService — instance methods mirror the reference and are overridden by JsonPathDiffApplier.")]
+[SuppressMessage("Minor Code Smell", "S1192:String literals should not be duplicated", Justification = "1:1 clone of the client TS JsonApplierService — operation/property keys mirror the reference verbatim.")]
+[SuppressMessage("Major Code Smell", "S3358:Ternary operators should not be nested", Justification = "1:1 clone of the client TS JsonApplierService — expression mirrors the reference.")]
+[SuppressMessage("Minor Code Smell", "S3267:Loops should be simplified with LINQ", Justification = "1:1 clone of the client TS JsonApplierService — explicit loops mirror the reference control flow.")]
+[SuppressMessage("Major Code Smell", "S1168:Empty arrays and collections should be returned instead of null", Justification = "1:1 clone of the client TS JsonApplierService — null returns mirror the reference semantics.")]
 public class JsonDiffApplier {
 
 	private readonly bool _disableApplyMoveIfIndirectParentMoved;

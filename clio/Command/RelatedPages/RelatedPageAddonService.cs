@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -18,6 +19,7 @@ internal interface IRelatedPageAddonService {
 	void UpsertRelatedPage(AddonGetRequestDto request, Guid pageSchemaUId, bool isDefault);
 }
 
+[SuppressMessage("Minor Code Smell", "S1192:String literals should not be duplicated", Justification = "The 'IsDefault' add-on metadata key reads more clearly inline than behind a constant in this small upsert.")]
 internal sealed class RelatedPageAddonService(
 	IAddonSchemaDesignerClient addonSchemaDesignerClient)
 	: IRelatedPageAddonService {

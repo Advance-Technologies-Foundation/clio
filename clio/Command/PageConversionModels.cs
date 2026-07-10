@@ -6,8 +6,8 @@ using Clio.Command.McpServer.Tools;
 
 // Shared, converter-agnostic page-conversion contract.
 // Reused by every page converter (Freedom web -> mobile today; classic web -> Freedom web later).
-// Converter-specific logic lives in the per-converter files (e.g. WebToMobileConversion.cs);
-// these types are intentionally general so a second converter can return the same report shape.
+// Converter-specific logic lives in the per-converter files, for example WebToMobileConversion.
+// These types are intentionally general so a second converter can return the same report shape.
 
 /// <summary>
 /// Classification of a source component when converting a page (ENG-89620 §3.2 five categories).

@@ -2,6 +2,7 @@ namespace Clio.Command;
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -639,6 +640,7 @@ public static class SchemaValidationService
 	/// </summary>
 	/// <param name="body">Plain-JSON mobile page body.</param>
 	/// <returns>A <see cref="SchemaValidationResult"/> that is invalid when an inserted field has no label.</returns>
+	[SuppressMessage("Critical Code Smell", "S3776:Cognitive Complexity of methods should not be too high", Justification = "A single-pass walk over the diff that only flags labelless top-level field inserts; splitting the guard conditions would obscure the exact rule.")]
 	public static SchemaValidationResult ValidateMobileInsertedFieldLabels(string body) {
 		var result = new SchemaValidationResult { IsValid = true };
 		if (string.IsNullOrWhiteSpace(body)) {

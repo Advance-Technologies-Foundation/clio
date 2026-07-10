@@ -1,6 +1,7 @@
 namespace Clio.Command;
 
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using Newtonsoft.Json.Linq;
 
@@ -12,6 +13,10 @@ using Newtonsoft.Json.Linq;
 /// <c>get</c>), does NOT enforce per-operation required parameters, deep-merges values (arrays replaced by the
 /// incoming value), and tracks a parent <c>path</c> during traversal so removals can locate the grandparent.
 /// </summary>
+// Deliberate 1:1 port of the client TS JsonPathApplierService — method complexity and casts mirror the
+// reference for fidelity; refactoring would diverge from the source of truth this validator reproduces.
+[SuppressMessage("Critical Code Smell", "S3776:Cognitive Complexity of methods should not be too high", Justification = "1:1 clone of the client TS JsonPathApplierService — structure mirrors the reference for fidelity.")]
+[SuppressMessage("Minor Code Smell", "S3247:Duplicate casts should not be used", Justification = "1:1 clone of the client TS JsonPathApplierService — mirrors the reference's dynamic narrowing.")]
 public sealed class JsonPathDiffApplier : JsonDiffApplier {
 
 	public JsonPathDiffApplier(bool disableApplyMoveIfIndirectParentMoved = false)

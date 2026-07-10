@@ -2,6 +2,7 @@ namespace Clio.Command;
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -17,8 +18,8 @@ using JsonObject = System.Text.Json.Nodes.JsonObject;
 // and produces a deterministic MobilePageConversionGuide: source structure, the recommended mobile
 // template + container correspondence, per-type component suggestions, and inline mobile
 // component contracts. An LLM uses the guide to build the mobile page body itself.
-// The shared, converter-agnostic category enum/DTOs live in PageConversionModels.cs;
-// the guide contract lives in MobilePageConversionGuideModels.cs.
+// The shared, converter-agnostic category enum and DTOs live in PageConversionModels, and
+// the guide contract lives in MobilePageConversionGuideModels.
 
 /// <summary>
 /// Deterministic Freedom UI WEB -> Freedom UI MOBILE conversion analyzer. Pure (no Creatio I/O,
@@ -26,6 +27,18 @@ using JsonObject = System.Text.Json.Nodes.JsonObject;
 /// registries, and the version-resolved <see cref="WebToMobilePageConversionRules"/>; the service
 /// returns a <see cref="MobilePageConversionGuide"/> the model executes.
 /// </summary>
+// First-stage deterministic converter. The per-element tree walk and the guide assembly are inherently
+// branchy; splitting them to hit the cognitive-complexity threshold risks behavior on a hot path, so that
+// (and the wide analyzer signatures / repeated JSON keys) is accepted here rather than refactored (ENG-91228).
+[SuppressMessage("Critical Code Smell", "S3776:Cognitive Complexity of methods should not be too high", Justification = "Deterministic conversion walk; refactoring the branchy per-element logic risks behavior. Accepted for the first-stage converter (ENG-91228).")]
+[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters", Justification = "The analysis entry points thread the resolved registries/rules/maps explicitly; a parameter object would obscure the pure-function contract.")]
+[SuppressMessage("Major Code Smell", "S1168:Empty arrays and collections should be returned instead of null", Justification = "null is a meaningful 'section absent' signal in the guide model (JsonIgnore omits it); an empty collection would change the emitted shape.")]
+[SuppressMessage("Minor Code Smell", "S1192:String literals should not be duplicated", Justification = "Freedom UI JSON keys (items/merge/insert/request/…) read more clearly inline than behind constants in this converter.")]
+[SuppressMessage("Minor Code Smell", "S3267:Loops should be simplified with LINQ", Justification = "Explicit loops with side effects (element-map emission, ref accumulation) are clearer than a LINQ rewrite here.")]
+[SuppressMessage("Major Code Smell", "S125:Sections of code should not be commented out", Justification = "The flagged lines are explanatory design notes, not commented-out code.")]
+[SuppressMessage("Info Code Smell", "S1135:Track uses of TODO tags", Justification = "The TODO tracks ENG-93027 (dynamic mobile-request set) and is intentionally retained as a pointer.")]
+[SuppressMessage("Major Code Smell", "S3358:Ternary operators should not be nested", Justification = "The nested ternaries express a compact fallback chain that reads clearly in context.")]
+[SuppressMessage("Major Code Smell", "S2589:Boolean expressions should not be gratuitous", Justification = "The flagged null checks guard values the analyzer cannot prove non-null across the Newtonsoft/STJ boundary; removing them would risk an NRE on malformed bundles.")]
 public static class WebToMobileAnalysisService {
 
 	private const string ComponentInfoHint =
