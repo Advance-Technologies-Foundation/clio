@@ -565,7 +565,8 @@ public sealed class ApplicationSectionCreateServiceTests {
 			_applicationInfoService,
 			_ => _sysSettingsManager,
 			_logger,
-			resolver);
+			resolver,
+			new SectionCreateSerializationGuard(_logger));
 	}
 
 	[Test]
@@ -597,8 +598,8 @@ public sealed class ApplicationSectionCreateServiceTests {
 	}
 
 	[Test]
-	[Description("Replaces the opaque 'InsertQuery failed.' fallback with an actionable message when the server rejects a reused-entity insert without a message.")]
-	public void CreateSection_Should_Throw_Actionable_Error_When_Insert_Fails_Without_Server_Message_For_Reused_Entity() {
+	[Description("Classifies a detail-less reused-entity insert rejection as a retryable contention failure (ENG-93089) rather than a terminal server error, with serialize/retry guidance and section-created=null when the post-failure verification could not run.")]
+	public void CreateSection_Should_Classify_DetailLess_Reused_Entity_Rejection_As_Contention() {
 		// Arrange
 		SetUpInsertFailureMocks("""{"success":false}""");
 		StubExistingEntitySchema("Contact");
@@ -612,23 +613,23 @@ public sealed class ApplicationSectionCreateServiceTests {
 				EntitySchemaName: "Contact"));
 
 		// Assert
-		InvalidOperationException exception = action.Should().Throw<InvalidOperationException>(
-			because: "a rejected section insert must surface as a readable failure").Which;
-		exception.Message.Should().NotBe("InsertQuery failed.",
-			because: "the opaque legacy fallback must be replaced with a diagnostic message");
-		exception.Message.Should().Contain("Failed to create section",
-			because: "the message should clearly state the operation that failed");
-		exception.Message.Should().Contain("Contact",
-			because: "the message should name the reused entity even when the server returns no detail");
+		ApplicationSectionCreateException exception = action.Should().Throw<ApplicationSectionCreateException>(
+			because: "a detail-less rejection is the contention signature and must surface as a classified failure").Which;
+		exception.FailureClass.Should().Be(ApplicationSectionCreateFailureClass.Contention,
+			because: "a detail-less 'InsertQuery failed' rejection is contention (retryable), not a terminal server error");
+		exception.SectionCreated.Should().BeNull(
+			because: "the verification readback was not configured here, so the section state is unknown, not proven absent");
+		exception.RetryGuidance.Should().Contain("one at a time",
+			because: "contention guidance must tell the agent to create sections sequentially, not in parallel");
+		exception.RetryGuidance.Should().Contain("list-app-sections",
+			because: "the guidance should point the agent at the verification command before a manual retry");
 		exception.Message.Should().NotContain("already bound to an existing section",
 			because: "Creatio allows several sections per entity, so the message must not assert the false entity-binding cause");
-		exception.Message.Should().Contain("may already exist",
-			because: "the detail-less rejection should suggest the section-code collision recovery path");
 	}
 
 	[Test]
-	[Description("Attributes a new-object insert rejection to a duplicate section code without referencing entity binding when no entity-schema-name was supplied.")]
-	public void CreateSection_Should_Throw_Actionable_Error_When_Insert_Fails_For_New_Object_Without_Server_Message() {
+	[Description("Classifies a detail-less new-object insert rejection as a retryable contention failure (ENG-93089), naming the generated section code and not the (unset) entity binding.")]
+	public void CreateSection_Should_Classify_DetailLess_New_Object_Rejection_As_Contention() {
 		// Arrange
 		SetUpInsertFailureMocks("""{"success":false}""");
 
@@ -640,10 +641,10 @@ public sealed class ApplicationSectionCreateServiceTests {
 				Caption: "Orders"));
 
 		// Assert
-		InvalidOperationException exception = action.Should().Throw<InvalidOperationException>(
-			because: "a rejected section insert must surface as a readable failure").Which;
-		exception.Message.Should().Contain("section with code",
-			because: "the new-object path should attribute the failure to a duplicate section code");
+		ApplicationSectionCreateException exception = action.Should().Throw<ApplicationSectionCreateException>(
+			because: "a detail-less new-object rejection is the contention signature and must surface as a classified failure").Which;
+		exception.FailureClass.Should().Be(ApplicationSectionCreateFailureClass.Contention,
+			because: "a detail-less rejection is contention (retryable), not a terminal server error");
 		exception.Message.Should().Contain("UsrOrders",
 			because: "the message should include the generated section code derived from the caption");
 		exception.Message.Should().NotContain("bound to entity",
@@ -715,8 +716,8 @@ public sealed class ApplicationSectionCreateServiceTests {
 	}
 
 	[Test]
-	[Description("Uses the fallback message and omits 'Server error:' when the server returns an empty error message.")]
-	public void CreateSection_Should_Use_Fallback_When_Server_Returns_Empty_Error_Message() {
+	[Description("Treats an empty server error message as detail-less and classifies it as a retryable contention failure (ENG-93089) rather than a terminal server error.")]
+	public void CreateSection_Should_Classify_Empty_Error_Message_Rejection_As_Contention() {
 		// Arrange
 		SetUpInsertFailureMocks("""{"success":false,"errorInfo":{"message":""}}""");
 
@@ -728,12 +729,98 @@ public sealed class ApplicationSectionCreateServiceTests {
 				Caption: "Orders"));
 
 		// Assert
-		InvalidOperationException exception = action.Should().Throw<InvalidOperationException>(
-			because: "a rejected insert with an empty error message should use the fallback text").Which;
-		exception.Message.Should().Contain("The server rejected the section insert",
-			because: "the fallback message should appear when errorInfo.message is empty");
-		exception.Message.Should().NotContain("Server error:",
-			because: "the 'Server error:' prefix must only appear when there is a non-empty server message");
+		ApplicationSectionCreateException exception = action.Should().Throw<ApplicationSectionCreateException>(
+			because: "an empty error message is detail-less and must be treated as contention").Which;
+		exception.FailureClass.Should().Be(ApplicationSectionCreateFailureClass.Contention,
+			because: "an empty errorInfo.message is the same detail-less rejection as a bare 'InsertQuery failed'");
+		exception.RetryGuidance.Should().Contain("one at a time",
+			because: "contention guidance must steer the agent to sequential section creation");
+	}
+
+	[Test]
+	[Description("A detailed rejection (a real server message) stays a terminal server-error, not contention, so genuine failures are never masked by the retry path (ENG-93089 AC-02).")]
+	public void CreateSection_Should_Keep_Detailed_Rejection_As_ServerError_Not_Contention() {
+		// Arrange
+		SetUpInsertFailureMocks("""{"success":false,"errorInfo":{"message":"Section with this code already exists"}}""");
+
+		// Act
+		Action action = () => _sut.CreateSection(
+			"sandbox",
+			new ApplicationSectionCreateRequest(ApplicationCode: "UsrOrdersApp", Caption: "Orders"));
+
+		// Assert
+		ApplicationSectionCreateException exception = action.Should().Throw<ApplicationSectionCreateException>(
+			because: "a detailed rejection must still surface as a classified failure").Which;
+		exception.FailureClass.Should().Be(ApplicationSectionCreateFailureClass.ServerError,
+			because: "a rejection that carries a real server message is a genuine error, not detail-less contention");
+		exception.SectionCreated.Should().BeFalse(
+			because: "an explicit detailed rejection guarantees the section was not created");
+		exception.Message.Should().Contain("Section with this code already exists",
+			because: "the detailed server message must be propagated so the agent sees the real cause");
+	}
+
+	[Test]
+	[Description("On a detail-less contention rejection whose section is nonetheless already committed, verification by the generated id short-circuits to the readback and issues NO second insert — no duplicate (ENG-93089 AC-03).")]
+	public void CreateSection_Should_Not_Retry_And_Return_Readback_When_Contention_Section_Is_Visible() {
+		// Arrange
+		SetUpDetailLessInsertWithReadback(sectionVisibleOnVerify: true);
+
+		// Act
+		ApplicationSectionCreateResult result = _sut.CreateSection("sandbox", CreateReuseEntityRequest());
+
+		// Assert
+		result.Section.Code.Should().Be("UsrOrders",
+			because: "a section that committed despite the aborted response must be returned via readback, not re-created");
+		_applicationClient.Received(1).ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal)
+				&& body.Contains("\"columnValues\"", StringComparison.Ordinal)
+				&& !body.Contains("\"filters\"", StringComparison.Ordinal)),
+			Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("On a detail-less contention rejection with the section verified absent, clio retries the insert exactly once and returns the recovered section (ENG-93089 AC-04).")]
+	public void CreateSection_Should_Retry_Once_And_Recover_When_Contention_Section_Is_Absent() {
+		// Arrange
+		SetUpDetailLessThenSuccessfulInsertWithReadback();
+
+		// Act
+		ApplicationSectionCreateResult result = _sut.CreateSection("sandbox", CreateReuseEntityRequest());
+
+		// Assert
+		result.Section.Code.Should().Be("UsrOrders",
+			because: "the retry after a verified-absent contention rejection should recover and return the created section");
+		_applicationClient.Received(2).ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal)
+				&& body.Contains("\"columnValues\"", StringComparison.Ordinal)
+				&& !body.Contains("\"filters\"", StringComparison.Ordinal)),
+			Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("When the single retry after a verified-absent contention rejection also aborts detail-lessly, clio stops (bounded to one retry — no unbounded loop) and throws the classified contention failure with section-created=false (ENG-93089 AC-06).")]
+	public void CreateSection_Should_Stop_After_One_Retry_When_Contention_Persists() {
+		// Arrange
+		SetUpDetailLessInsertWithReadback(sectionVisibleOnVerify: false);
+
+		// Act
+		Action action = () => _sut.CreateSection("sandbox", CreateReuseEntityRequest());
+
+		// Assert
+		ApplicationSectionCreateException exception = action.Should().Throw<ApplicationSectionCreateException>(
+			because: "a persistent detail-less rejection must surface as a classified contention failure").Which;
+		exception.FailureClass.Should().Be(ApplicationSectionCreateFailureClass.Contention,
+			because: "a persistent detail-less rejection is still contention, not a terminal server error");
+		exception.SectionCreated.Should().BeFalse(
+			because: "the section was verified absent before the retry, so it was never created");
+		_applicationClient.Received(2).ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal)
+				&& body.Contains("\"columnValues\"", StringComparison.Ordinal)
+				&& !body.Contains("\"filters\"", StringComparison.Ordinal)),
+			Arg.Any<int>());
 	}
 
 	[Test]
@@ -1172,6 +1259,23 @@ public sealed class ApplicationSectionCreateServiceTests {
 			because: "the agent should inspect existing sections instead of blind-retrying a rejected insert");
 	}
 
+	[Test]
+	[Description("Maps the Contention failure class to the kebab-case 'contention' wire value while the other classes keep their existing wire values (ENG-93089 AC-07).")]
+	[TestCase(ApplicationSectionCreateFailureClass.Contention, "contention")]
+	[TestCase(ApplicationSectionCreateFailureClass.Transport, "transport")]
+	[TestCase(ApplicationSectionCreateFailureClass.CreatioTimeout, "creatio-timeout")]
+	[TestCase(ApplicationSectionCreateFailureClass.ServerError, "server-error")]
+	public void ToWireValue_ShouldReturnKebabCaseWireValue_ForEveryFailureClass(
+		ApplicationSectionCreateFailureClass failureClass,
+		string expectedWireValue) {
+		// Act
+		string wireValue = failureClass.ToWireValue();
+
+		// Assert
+		wireValue.Should().Be(expectedWireValue,
+			because: "each failure class must surface a stable kebab-case error-class on the MCP envelope");
+	}
+
 	private int? _capturedInsertTimeout;
 
 	private static ApplicationSectionCreateRequest CreateReuseEntityRequest() =>
@@ -1366,6 +1470,90 @@ public sealed class ApplicationSectionCreateServiceTests {
 				!body.Contains("\"filters\"", StringComparison.Ordinal)),
 			Arg.Any<int>())
 			.Returns(insertResponseJson);
+	}
+
+	// Insert always returns the detail-less contention rejection; the section readback either shows the
+	// section (verified visible → recovered via readback, no retry) or is empty (verified absent → one retry,
+	// which also stays detail-less → classified contention). Used by the ENG-93089 AC-03/AC-06 tests.
+	private void SetUpDetailLessInsertWithReadback(bool sectionVisibleOnVerify) {
+		SetUpCommonReadMocks();
+		_capturedInsertBody = null;
+		_applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+					body.Contains("\"columnValues\"", StringComparison.Ordinal) &&
+					!body.Contains("\"filters\"", StringComparison.Ordinal)),
+				Arg.Any<int>())
+			.Returns(callInfo => {
+				_capturedInsertBody = callInfo.ArgAt<string>(1);
+				return """{"success":false}""";
+			});
+		_applicationInfoService.GetApplicationInfo("sandbox", null, "UsrOrdersApp")
+			.Returns(CreateBeforeInfo(), CreateBeforeInfo());
+		if (sectionVisibleOnVerify) {
+			_applicationClient.ExecutePostRequest(
+					Arg.Any<string>(),
+					Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+						body.Contains("\"SectionSchemaUId\"", StringComparison.Ordinal)),
+					Arg.Any<int>())
+				.Returns(_ => $$"""{"success":true,"rows":[{"Id":"{{ExtractGeneratedSectionId()}}","ApplicationId":"app-id","Caption":"Orders","Code":"UsrOrders","Description":"Order workspace","EntitySchemaName":"UsrOrders","PackageId":"pkg-uid","SectionSchemaUId":"section-schema-uid","LogoId":"icon-id","IconBackground":null,"ClientTypeId":null}]}""");
+			_applicationClient.ExecutePostRequest(
+					Arg.Any<string>(),
+					Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+						body.Contains("\"columnValues\"", StringComparison.Ordinal) &&
+						body.Contains("\"IconBackground\"", StringComparison.Ordinal) &&
+						body.Contains("\"filters\"", StringComparison.Ordinal)),
+					Arg.Any<int>())
+				.Returns("""{"success":true}""");
+		} else {
+			_applicationClient.ExecutePostRequest(
+					Arg.Any<string>(),
+					Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+						body.Contains("\"SectionSchemaUId\"", StringComparison.Ordinal)),
+					Arg.Any<int>())
+				.Returns("""{"success":true,"rows":[]}""");
+		}
+	}
+
+	// First insert returns the detail-less contention rejection; verification finds the section absent, so
+	// clio retries once and the second insert succeeds, then the readback returns the created section.
+	// Used by the ENG-93089 AC-04 recovery test.
+	private void SetUpDetailLessThenSuccessfulInsertWithReadback() {
+		SetUpCommonReadMocks();
+		_capturedInsertBody = null;
+		_applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+					body.Contains("\"columnValues\"", StringComparison.Ordinal) &&
+					!body.Contains("\"filters\"", StringComparison.Ordinal)),
+				Arg.Any<int>())
+			.Returns(
+				callInfo => {
+					_capturedInsertBody = callInfo.ArgAt<string>(1);
+					return """{"success":false}""";
+				},
+				callInfo => {
+					_capturedInsertBody = callInfo.ArgAt<string>(1);
+					return """{"success":true}""";
+				});
+		_applicationInfoService.GetApplicationInfo("sandbox", null, "UsrOrdersApp")
+			.Returns(CreateBeforeInfo(), CreateBeforeInfo());
+		_applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+					body.Contains("\"SectionSchemaUId\"", StringComparison.Ordinal)),
+				Arg.Any<int>())
+			.Returns(
+				_ => """{"success":true,"rows":[]}""",
+				_ => $$"""{"success":true,"rows":[{"Id":"{{ExtractGeneratedSectionId()}}","ApplicationId":"app-id","Caption":"Orders","Code":"UsrOrders","Description":"Order workspace","EntitySchemaName":"UsrOrders","PackageId":"pkg-uid","SectionSchemaUId":"section-schema-uid","LogoId":"icon-id","IconBackground":null,"ClientTypeId":null}]}""");
+		_applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+					body.Contains("\"columnValues\"", StringComparison.Ordinal) &&
+					body.Contains("\"IconBackground\"", StringComparison.Ordinal) &&
+					body.Contains("\"filters\"", StringComparison.Ordinal)),
+				Arg.Any<int>())
+			.Returns("""{"success":true}""");
 	}
 
 	private void SetUpPrefixTestMocks(string expectedCode) {

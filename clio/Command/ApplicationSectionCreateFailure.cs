@@ -23,7 +23,15 @@ public enum ApplicationSectionCreateFailureClass {
 	/// Creatio responded with an error (HTTP error status, non-JSON body, or a rejected insert).
 	/// Retrying the same arguments will most likely fail again.
 	/// </summary>
-	ServerError
+	ServerError,
+
+	/// <summary>
+	/// Creatio aborted the insert with a detail-less <c>InsertQuery failed</c> rejection — the signature of
+	/// lock/contention when several sections are created in one application at once (ENG-93089). No section
+	/// was created, so the operation is safe to retry once the creations are serialized; clio verifies by the
+	/// generated section id and auto-retries once before surfacing this class.
+	/// </summary>
+	Contention
 }
 
 /// <summary>
@@ -34,11 +42,12 @@ public static class ApplicationSectionCreateFailureClassExtensions {
 	/// Maps the failure class to the kebab-case value carried by the MCP error envelope.
 	/// </summary>
 	/// <param name="failureClass">Failure class to map.</param>
-	/// <returns><c>transport</c>, <c>creatio-timeout</c>, or <c>server-error</c>.</returns>
+	/// <returns><c>transport</c>, <c>creatio-timeout</c>, <c>contention</c>, or <c>server-error</c>.</returns>
 	public static string ToWireValue(this ApplicationSectionCreateFailureClass failureClass) =>
 		failureClass switch {
 			ApplicationSectionCreateFailureClass.Transport => "transport",
 			ApplicationSectionCreateFailureClass.CreatioTimeout => "creatio-timeout",
+			ApplicationSectionCreateFailureClass.Contention => "contention",
 			_ => "server-error"
 		};
 }
