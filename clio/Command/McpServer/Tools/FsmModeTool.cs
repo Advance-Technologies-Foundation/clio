@@ -33,7 +33,7 @@ public sealed class FsmModeTool(
 	[McpServerTool(Name = GetFsmModeToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description("Detects whether a registered Creatio environment is currently in FSM mode on or off. Use `set-fsm-mode` to activate or deactivate FSM mode when needed.")]
 	public FsmModeStatusResult GetFsmMode(
-		[Description("Registered clio environment name")] [Required] string environmentName)
+		[Description(McpToolDescriptions.EnvironmentName)] [Required] string environmentName)
 	{
 		return fsmModeStatusService.GetStatus(environmentName);
 	}
@@ -60,7 +60,7 @@ public sealed class FsmModeTool(
 /// </summary>
 public sealed record SetFsmModeArgs(
 	[property: JsonPropertyName("environment-name")]
-	[Description("Registered clio environment name")]
+	[Description(McpToolDescriptions.EnvironmentName)]
 	[Required]
 	string EnvironmentName,
 

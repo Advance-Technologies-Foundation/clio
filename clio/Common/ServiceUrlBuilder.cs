@@ -177,7 +177,42 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		/// <summary>
 		///     Edits an existing business process (add/remove elements, flows, …) via the ProcessDesignService package.
 		/// </summary>
-		ModifyProcess = 52
+		ModifyProcess = 52,
+
+		/// <summary>
+		///     Lists the custom themes available on the environment via the native ThemeService.
+		/// </summary>
+		GetAvailableThemes = 53,
+
+		/// <summary>
+		///     Refreshes the Creatio theme catalog cache via the native ThemeService.
+		/// </summary>
+		ClearThemesCache = 54,
+
+		/// <summary>
+		///     Creates a custom theme on the environment via the native ThemeService.
+		/// </summary>
+		CreateTheme = 55,
+
+		/// <summary>
+		///     Updates an existing custom theme via the native ThemeService.
+		/// </summary>
+		UpdateTheme = 56,
+
+		/// <summary>
+		///     Deletes a custom theme via the native ThemeService.
+		/// </summary>
+		DeleteTheme = 57,
+
+		/// <summary>
+		///     Checks whether the current user can execute a named system operation via the native RightsService.
+		/// </summary>
+		RightsGetCanExecuteOperation = 58,
+
+		/// <summary>
+		///     Reads the status of named license operations for the current user via the native LicenseService.
+		/// </summary>
+		LicenseGetLicOperationStatuses = 59
 
 	}
 
@@ -243,6 +278,13 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.ListUserTasks, "/rest/ProcessDesignService/ListUserTasks"},
 		{KnownRoute.DescribeProcess, "/rest/ProcessDesignService/DescribeProcess"},
 		{KnownRoute.ModifyProcess, "/rest/ProcessDesignService/ModifyProcess"},
+		{KnownRoute.GetAvailableThemes, "ServiceModel/ThemeService.svc/GetAvailableThemes"},
+		{KnownRoute.ClearThemesCache, "ServiceModel/ThemeService.svc/ClearThemesCache"},
+		{KnownRoute.CreateTheme, "ServiceModel/ThemeService.svc/CreateTheme"},
+		{KnownRoute.UpdateTheme, "ServiceModel/ThemeService.svc/UpdateTheme"},
+		{KnownRoute.DeleteTheme, "ServiceModel/ThemeService.svc/DeleteTheme"},
+		{KnownRoute.RightsGetCanExecuteOperation, "/rest/RightsService/GetCanExecuteOperation"},
+		{KnownRoute.LicenseGetLicOperationStatuses, "ServiceModel/LicenseService.svc/GetLicOperationStatuses"},
 	};
 
 	private EnvironmentSettings _environmentSettings;

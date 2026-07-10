@@ -38,18 +38,18 @@ public sealed class GetBrowserSessionTool(IToolCommandResolver commandResolver) 
 				.ConfigureAwait(false).GetAwaiter().GetResult();
 			return new GetBrowserSessionResult(true, sessionFilePath);
 		} catch (CreatioAuthenticationException ex) {
-			return new GetBrowserSessionResult(false, null, ex.Message);
+			return new GetBrowserSessionResult(false, null, SensitiveErrorTextRedactor.Redact(ex.Message));
 		} catch (SafeEnvironmentConfirmationRequiredException ex) {
 			// A Safe-flagged environment in a non-interactive (MCP) context fails closed here
 			// instead of deadlocking — surface a structured error, never hang.
-			return new GetBrowserSessionResult(false, null, ex.Message);
+			return new GetBrowserSessionResult(false, null, SensitiveErrorTextRedactor.Redact(ex.Message));
 		} catch (InvalidOperationException ex) {
 			// Unknown environment / broken settings bootstrap — the message is safe to surface.
-			return new GetBrowserSessionResult(false, null, ex.Message);
+			return new GetBrowserSessionResult(false, null, SensitiveErrorTextRedactor.Redact(ex.Message));
 		} catch (OperationCanceledException) {
 			throw;
 		} catch (Exception ex) {
-			return new GetBrowserSessionResult(false, null, $"Failed to obtain the browser session: {ex.Message}");
+			return new GetBrowserSessionResult(false, null, SensitiveErrorTextRedactor.Redact($"Failed to obtain the browser session: {ex.Message}"));
 		}
 	}
 }
@@ -57,7 +57,7 @@ public sealed class GetBrowserSessionTool(IToolCommandResolver commandResolver) 
 /// <summary>MCP arguments for the <c>get-browser-session</c> tool.</summary>
 public sealed record GetBrowserSessionArgs(
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Registered clio environment name, e.g. 'local'")]
+	[property: Description(McpToolDescriptions.EnvironmentName)]
 	[property: Required]
 	string EnvironmentName,
 	[property: JsonPropertyName("force-refresh")]

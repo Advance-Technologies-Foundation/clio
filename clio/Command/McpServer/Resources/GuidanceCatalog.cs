@@ -67,10 +67,30 @@ internal static class GuidanceCatalog {
 				"page-schema-validators",
 				"Canonical MCP guidance for creating and editing Freedom UI page validators inside raw page schema bodies.",
 				PageSchemaValidatorsGuidanceResource.Guide),
+			["page-creation"] = Create(
+				"page-creation",
+				"Canonical MCP guidance for creating Freedom UI pages from supported templates via create-page: the list-page-templates -> create-page -> get-page flow, the supported web/mobile template catalog, required and optional inputs, validation/failure modes, and designer-type mapping.",
+				PageCreationGuidanceResource.Guide),
 			["page-modification"] = Create(
 				"page-modification",
-				"Canonical MCP guidance for Freedom UI page modification: replacing-schema concept, bundle.json structure, update-page write modes, multi-app target-package-uid resolution, and container selection.",
+				"Entry guidance for Freedom UI page modification: the mandatory pre-edit GATE checklist and canonical flow, routing the detailed mechanics to the page-modification-overview / -field-contract / -containers / -components sub-guides (each kept small so one get-guidance response fits the agent token limit).",
 				PageModificationGuidanceResource.Guide),
+			["page-modification-overview"] = Create(
+				"page-modification-overview",
+				"Page-body save-lifecycle sub-guide of the page-modification family: canonical get-page/update-page/sync-pages flow, replacing-schema concept, design-package resolution, write modes (replace/append/diff), do-not-resend-full-body, external-modification conflicts, body formatting, and known limitations.",
+				PageModificationOverviewGuidanceResource.Guide),
+			["page-modification-field-contract"] = Create(
+				"page-modification-field-contract",
+				"Inserted-field contract sub-guide of the page-modification family: viewModelConfigDiff attribute binding, the label/resource rule, static-vs-diff body forms, the canonical NumberInput payload, data-source declaration, and the validation diagnostics emitted on contract violation.",
+				PageModificationFieldContractGuidanceResource.Guide),
+			["page-modification-containers"] = Create(
+				"page-modification-containers",
+				"Container-discovery sub-guide of the page-modification family: bundle.json top-level shape, jq recipes for walking viewConfig/containers, and how to pick a valid parentName from bundle.containers for a new component.",
+				PageModificationContainersGuidanceResource.Guide),
+			["page-modification-components"] = Create(
+				"page-modification-components",
+				"viewConfigDiff-composition sub-guide of the page-modification family: adding a button with a click handler, the handlers/viewConfigDiff section rules, the column-type-to-control mapping, the canonical add-button flow, and how to read a get-component-info detail response.",
+				PageModificationComponentsGuidanceResource.Guide),
 			["esq"] = Create(
 				"esq",
 				"Canonical MCP guidance for EntitySchemaQuery authoring: the DataService SelectQuery envelope, columns/select, expression building blocks, forward/backward reference column-path grammar, aggregations, and master enum tables.",
@@ -89,8 +109,16 @@ internal static class GuidanceCatalog {
 				ChartWidgetGuidanceResource.Guide),
 			["dashboards"] = Create(
 				"dashboards",
-				"Canonical MCP guidance for placing, sizing, grouping, and styling Freedom UI analytical widgets (metrics and charts) on dashboards: the 12-column grid, the metric-band-then-chart-grid skeleton, section grouping, per-widget-type default sizes, and the plain-white default card style.",
+				"The clio MCP dashboards router: a names-only index that routes dashboard work to dashboard-creation (create the page), dashboard-design (widget layout/sizing/styling), and indicator-widget / chart-widget (per-widget payload).",
 				DashboardGuidanceResource.Guide),
+			["dashboard-creation"] = Create(
+				"dashboard-creation",
+				"Canonical MCP guidance for creating a Freedom UI dashboard page via create-page with BaseDashboardTemplate, and resolving the DashboardsEntitySchemaName / DashboardsElementName / DashboardsClientUnitSchemaUId optional properties (including the root-schema UId rule).",
+				DashboardCreationGuidanceResource.Guide),
+			["dashboard-design"] = Create(
+				"dashboard-design",
+				"Canonical MCP guidance for placing, sizing, grouping, and styling Freedom UI analytical widgets (metrics and charts) on dashboards: the 12-column grid, the metric-band-then-chart-grid skeleton, section grouping, per-widget-type default sizes, the plain-white default card style, and the DashboardDS data source widgets filter by.",
+				DashboardDesignGuidanceResource.Guide),
 			["related-list"] = Create(
 				"related-list",
 				"Canonical MCP guidance for adding a Freedom UI related/child list and filtering it by the current page record (master-detail \"filter by page data\"): the declarative, dependencies-based scoping — no handler. Fetch the 'Expanded list' composite structure via get-component-info.",
@@ -150,6 +178,10 @@ internal static class GuidanceCatalog {
 				""",
 				ProcessModelingGuidanceResource.Guide,
 				featureGateType: typeof(ProcessModelingGuidanceResource)),
+			["theming"] = Create(
+				"theming",
+				"Canonical MCP guidance for managing custom Creatio themes with clio — create, restyle, delete, list, and set the default — and shipping them to a Creatio environment.",
+				ThemingGuidanceResource.Guide),
 			["run-process-button"] = Create(
 				"run-process-button",
 				"""

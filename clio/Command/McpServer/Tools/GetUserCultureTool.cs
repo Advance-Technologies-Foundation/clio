@@ -75,7 +75,7 @@ public sealed class GetUserCultureTool(
 				: GetUserCultureResponse.Failure(resolution.FailureReason);
 		}
 		catch (Exception ex) {
-			return GetUserCultureResponse.Failure(ex.Message);
+			return GetUserCultureResponse.Failure(SensitiveErrorTextRedactor.Redact(ex.Message));
 		}
 	}
 
@@ -99,15 +99,15 @@ public sealed record GetUserCultureArgs(
 	string? EnvironmentName = null,
 
 	[property: JsonPropertyName("uri")]
-	[property: Description("Emergency fallback only: direct application URI when no environment is registered.")]
+	[property: Description(McpToolDescriptions.Uri)]
 	string? Uri = null,
 
 	[property: JsonPropertyName("login")]
-	[property: Description("Emergency fallback only: login paired with 'uri'.")]
+	[property: Description(McpToolDescriptions.Login)]
 	string? Login = null,
 
 	[property: JsonPropertyName("password")]
-	[property: Description("Emergency fallback only: password paired with 'uri'.")]
+	[property: Description(McpToolDescriptions.Password)]
 	string? Password = null
 ) {
 	/// <summary>

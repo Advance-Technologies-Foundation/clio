@@ -58,7 +58,6 @@ namespace Clio.Command
 
 	[Verb("restore-workspace", Aliases = ["restorew", "pullw", "pull-workspace"],
 		HelpText = "Restore clio workspace")]
-	[RequiresPackage("cliogate", "2.0.0.0", Hint = "Run 'clio install-gate -e <environment>' (or call the install-gate MCP tool) to install/update cliogate.")]
 	public class RestoreWorkspaceOptions : WorkspaceOptions
 	{
 

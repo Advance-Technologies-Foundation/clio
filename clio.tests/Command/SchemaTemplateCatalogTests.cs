@@ -57,10 +57,59 @@ public sealed class SchemaTemplateCatalogTests {
 	public void GetTemplates_Web_Returns_Parsed_Items() {
 		var templates = _catalog.GetTemplates(PageSchemaType.Web);
 
-		templates.Should().HaveCount(3);
+		templates.Should().HaveCount(4,
+			because: "the 3 endpoint items plus the injected BaseDashboardTemplate are returned");
 		templates[0].Name.Should().Be("PageWithTabsAndProgressBarTemplate");
 		templates[0].SchemaType.Should().Be(9);
 		templates[0].GroupName.Should().Be("Page");
+	}
+
+	[Test]
+	[Description("Injects BaseDashboardTemplate into the web catalog because the platform template endpoint omits it.")]
+	public void GetTemplates_Web_Injects_BaseDashboardTemplate_When_Endpoint_Omits_It() {
+		// Act
+		var templates = _catalog.GetTemplates(PageSchemaType.Web);
+
+		// Assert
+		PageTemplateInfo dashboard = templates.SingleOrDefault(t => t.Name == "BaseDashboardTemplate");
+		dashboard.Should().NotBeNull(because: "the dashboard template must be reachable even though schema.template.api omits it");
+		dashboard!.UId.Should().Be("eb4d4a67-25d8-fcfa-7851-c4c91efb7b9c",
+			because: "create-page uses this UId as the dashboard parent; it is the CrtUIPlatform base-schema GUID");
+		dashboard.GroupName.Should().Be("DashboardPage",
+			because: "create-page stamps this as the schema group, and SysFreedomDashboardQueryExecutor lists a dashboard only when its group is exactly 'DashboardPage'");
+		dashboard.SchemaType.Should().Be(9, because: "BaseDashboardTemplate is a web page template");
+	}
+
+	[Test]
+	[Description("Resolves the injected BaseDashboardTemplate through FindTemplate so create-page can use it.")]
+	public void FindTemplate_Resolves_Injected_BaseDashboardTemplate() {
+		// Act
+		PageTemplateInfo result = _catalog.FindTemplate("BaseDashboardTemplate");
+
+		// Assert
+		result.Should().NotBeNull(because: "create-page resolves the template through the same catalog");
+		result!.UId.Should().Be("eb4d4a67-25d8-fcfa-7851-c4c91efb7b9c",
+			because: "the resolved template must carry the platform dashboard UId");
+	}
+
+	[Test]
+	[Description("Does not duplicate BaseDashboardTemplate when the endpoint already advertises it.")]
+	public void GetTemplates_Web_Does_Not_Duplicate_Dashboard_Template_When_Endpoint_Provides_It() {
+		// Arrange — an environment whose endpoint DOES advertise BaseDashboardTemplate.
+		_applicationClient.ExecuteGetRequest("http://test/rest/schema.template.api/templates?schemaType=9")
+			.Returns("""
+			{ "items": [
+			    { "groupName": "Dashboard", "title": "Dashboard", "uId": "eb4d4a67-25d8-fcfa-7851-c4c91efb7b9c", "name": "BaseDashboardTemplate" }
+			], "success": true, "errorInfo": null }
+			""");
+		SchemaTemplateCatalog catalog = new(_applicationClient, _serviceUrlBuilder);
+
+		// Act
+		var templates = catalog.GetTemplates(PageSchemaType.Web);
+
+		// Assert
+		templates.Count(t => t.Name == "BaseDashboardTemplate").Should().Be(1,
+			because: "the injection must be deduped when the endpoint already returns the dashboard template");
 	}
 
 	[Test]
@@ -76,8 +125,9 @@ public sealed class SchemaTemplateCatalogTests {
 	public void GetTemplates_Default_Returns_Web_And_Mobile_Combined() {
 		var templates = _catalog.GetTemplates();
 
-		templates.Should().HaveCount(4);
-		templates.Select(t => t.Name).Should().Contain(["BlankPageTemplate", "BlankMobilePageTemplate"]);
+		templates.Should().HaveCount(5,
+			because: "3 web endpoint items + injected BaseDashboardTemplate + 1 mobile item");
+		templates.Select(t => t.Name).Should().Contain(["BlankPageTemplate", "BlankMobilePageTemplate", "BaseDashboardTemplate"]);
 	}
 
 	[Test]

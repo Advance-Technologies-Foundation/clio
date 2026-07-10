@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
+using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
@@ -229,6 +231,32 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 
 	[Test]
 	[AllureTag(GuidanceGetTool.ToolName)]
+	[AllureName("get-guidance page-modification pins the anti-bundle-reverse-engineering rule")]
+	public async Task GuidanceGet_Should_Pin_AntiBundleReverseEngineering_ForPageModification() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		GuidanceGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["name"] = "page-modification"
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "page-modification is a registered guidance name");
+		response.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article payload");
+		response.Article!.Uri.Should().Be("docs://mcp/guides/page-modification",
+			because: "the canonical page-modification resource URI should still be visible in the tool response");
+		response.Article.Text.Should().Contain("reverse-engineering one is NOT a substitute",
+			because: "the anti-bundle-reverse-engineering guidance is a core ENG-91953 deliverable and must survive over the real MCP wire");
+	}
+
+	[Test]
+	[AllureTag(GuidanceGetTool.ToolName)]
 	[AllureName("get-guidance returns the canonical configuration web-service guide")]
 	public async Task GuidanceGet_Should_Return_Configuration_WebService_Guide() {
 		// Arrange
@@ -388,10 +416,130 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "the verification rule must route the agent to get-component-info as the authoritative component catalog");
 		response.Article.Text.Should().Contain("ASK THE USER",
 			because: "the web page guide must tell the agent to ask the user (existing component vs custom) when no OOTB component matches");
+		response.Article.Text.Should().Contain("its content slot MUST be initialized",
+			because: "the web page guide must center the new-container rule on initializing the content slot, the verified root cause (ENG-91555, PR #789 review)");
+		response.Article.Text.Should().Contain("is not a container for other items",
+			because: "the web page guide must name the exact runtime error a slot-less container raises so the agent recognizes it");
 		response.Article.Text.Should().Contain("showing a user-facing message/confirmation/info/success/error popup",
 			because: "the gate table must route a 'show a confirmation message' requirement into page-schema-handlers so the agent uses crt.ShowDialogRequest (ENG-91748)");
 		response.Article.Text.Should().Contain("NEVER use `alert(...)`, `window.alert(...)`, `confirm(...)`, or `prompt(...)`",
 			because: "the web page guide must forbid raw browser dialog primitives in page-body handlers so the agent stops emitting alert() (ENG-91748)");
+	}
+
+	[Test]
+	[AllureTag(GuidanceGetTool.ToolName)]
+	[AllureName("get-guidance returns the page-modification-overview sub-guide")]
+	[Description("Verifies get-guidance returns the page-modification-overview sub-guide created by the ENG-91556 split, carrying the relocated body save-lifecycle content.")]
+	public async Task GuidanceGet_Should_Return_Page_Modification_Overview_Guide() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		GuidanceGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["name"] = "page-modification-overview"
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "page-modification-overview is a registered guidance name after the split");
+		response.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article payload");
+		response.Article!.Uri.Should().Be("docs://mcp/guides/page-modification-overview",
+			because: "the canonical resource URI for the overview sub-guide should be stable");
+		response.Article.Text.Should().Contain("clio MCP page modification overview guide",
+			because: "the guidance tool should return the canonical overview sub-guide text");
+		response.Article.Text.Should().Contain("do NOT resend the full raw.body",
+			because: "the do-not-resend rule moved into the overview sub-guide");
+	}
+
+	[Test]
+	[AllureTag(GuidanceGetTool.ToolName)]
+	[AllureName("get-guidance returns the page-modification-field-contract sub-guide")]
+	[Description("Verifies get-guidance returns the page-modification-field-contract sub-guide created by the ENG-91556 split, carrying the relocated inserted-field contract content.")]
+	public async Task GuidanceGet_Should_Return_Page_Modification_Field_Contract_Guide() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		GuidanceGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["name"] = "page-modification-field-contract"
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "page-modification-field-contract is a registered guidance name after the split");
+		response.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article payload");
+		response.Article!.Uri.Should().Be("docs://mcp/guides/page-modification-field-contract",
+			because: "the canonical resource URI for the field-contract sub-guide should be stable");
+		response.Article.Text.Should().Contain("clio MCP page modification field-contract guide",
+			because: "the guidance tool should return the canonical field-contract sub-guide text");
+		response.Article.Text.Should().Contain("Inserted-field contract for a new data-bound field control",
+			because: "the inserted-field contract section moved into the field-contract sub-guide");
+	}
+
+	[Test]
+	[AllureTag(GuidanceGetTool.ToolName)]
+	[AllureName("get-guidance returns the page-modification-containers sub-guide")]
+	[Description("Verifies get-guidance returns the page-modification-containers sub-guide created by the ENG-91556 split, carrying the relocated bundle.json / parentName content.")]
+	public async Task GuidanceGet_Should_Return_Page_Modification_Containers_Guide() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		GuidanceGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["name"] = "page-modification-containers"
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "page-modification-containers is a registered guidance name after the split");
+		response.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article payload");
+		response.Article!.Uri.Should().Be("docs://mcp/guides/page-modification-containers",
+			because: "the canonical resource URI for the containers sub-guide should be stable");
+		response.Article.Text.Should().Contain("clio MCP page modification containers guide",
+			because: "the guidance tool should return the canonical containers sub-guide text");
+		response.Article.Text.Should().Contain("Finding a container for a new component",
+			because: "the container-selection section moved into the containers sub-guide");
+	}
+
+	[Test]
+	[AllureTag(GuidanceGetTool.ToolName)]
+	[AllureName("get-guidance returns the page-modification-components sub-guide")]
+	[Description("Verifies get-guidance returns the page-modification-components sub-guide created by the ENG-91556 split, carrying the relocated viewConfigDiff/handler/get-component-info content.")]
+	public async Task GuidanceGet_Should_Return_Page_Modification_Components_Guide() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		GuidanceGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["name"] = "page-modification-components"
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "page-modification-components is a registered guidance name after the split");
+		response.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article payload");
+		response.Article!.Uri.Should().Be("docs://mcp/guides/page-modification-components",
+			because: "the canonical resource URI for the components sub-guide should be stable");
+		response.Article.Text.Should().Contain("clio MCP page modification components guide",
+			because: "the guidance tool should return the canonical components sub-guide text");
+		response.Article.Text.Should().Contain("Adding a button with a click handler",
+			because: "the button+handler section moved into the components sub-guide");
 	}
 
 	[Test]
@@ -442,6 +590,46 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "successful guidance lookups should return the resolved article payload");
 		response.Article!.Uri.Should().Be("docs://mcp/guides/esq-filters",
 			because: "the canonical resource URI should still be visible in the tool response");
+	}
+
+	[Test]
+	[AllureTag(GuidanceGetTool.ToolName)]
+	[AllureName("get-guidance returns the canonical theming orchestration guide")]
+	[Description("Verifies get-guidance returns the theming article that builds the theme CSS with the native build-theme tool and routes the no-code flow to create-theme.")]
+	public async Task GuidanceGet_Should_Return_Theming_Guide() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
+		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+
+		// Act
+		GuidanceGetResponse response = await CallAsync(
+			session,
+			cancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["name"] = "theming"
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "theming is a registered guidance name");
+		response.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article payload");
+		response.Article!.Uri.Should().Be("docs://mcp/guides/theming",
+			because: "the canonical resource URI should still be visible in the tool response");
+		response.Article.Text.Should().NotContain("@creatio/theming",
+			because: "the npm package is retired — theme CSS is built by the native build-theme tool");
+		response.Article.Text.Should().Contain("push-workspace",
+			because: "the theming guide must route deployment through push-workspace");
+		response.Article.Text.Should().Contain("create-theme",
+			because: "the theming guide must route the no-code/server flow to the create-theme MCP tool");
+		response.Article.Text.Should().NotContain("-by-environment",
+			because: "the theming guide must reference the theming tools by their single clean names");
+		response.Article.Text.Should().NotContain("-by-credentials",
+			because: "the theming guide must reference the theming tools by their single clean names");
+		response.Article.Text.Should().Contain("build-theme",
+			because: "the no-code/server flow's primary path is the native build-theme tool, not hand-computed colors");
 	}
 
 	[Test]

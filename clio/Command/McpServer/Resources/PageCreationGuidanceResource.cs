@@ -14,15 +14,12 @@ public sealed class PageCreationGuidanceResource {
 	private const string ResourceUri = DocsScheme + "://" + ResourcePath;
 
 	/// <summary>
-	/// Returns the canonical guidance article for `create-page` and `list-page-templates`.
+	/// Canonical guidance article accessible by name through <c>get-guidance</c>.
 	/// </summary>
-	[McpServerResource(UriTemplate = ResourceUri, Name = "page-creation-guidance")]
-	[Description("Returns canonical MCP guidance for creating Freedom UI pages from supported templates via create-page.")]
-	public ResourceContents GetGuide() =>
-		new TextResourceContents {
-			Uri = ResourceUri,
-			MimeType = "text/plain",
-			Text = """
+	internal static readonly TextResourceContents Guide = new() {
+		Uri = ResourceUri,
+		MimeType = "text/plain",
+		Text = """
 			       clio MCP page-creation guide
 
 			       Canonical flow
@@ -84,5 +81,12 @@ public sealed class PageCreationGuidanceResource {
 			       - Do not assume `create-page` creates an app section. Use `create-app-section` when the requested outcome is "add a new section" rather than "add a standalone Freedom UI page".
 			       - Do not construct a browser designer URL after `create-page` without checking `templateName` in the response. Using the Homepage designer URL for non-homepage pages (or vice versa) opens the wrong designer.
 			       """
-		};
+	};
+
+	/// <summary>
+	/// Returns the canonical guidance article for `create-page` and `list-page-templates`.
+	/// </summary>
+	[McpServerResource(UriTemplate = ResourceUri, Name = "page-creation-guidance")]
+	[Description("Returns canonical MCP guidance for creating Freedom UI pages from supported templates via create-page.")]
+	public ResourceContents GetGuide() => Guide;
 }

@@ -48,7 +48,7 @@ public sealed class GuidanceGetTool {
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description("Returns a named clio MCP guidance article, or lists all available guide names when "
 		+ "the requested name is unknown. Known names include clio guides such as app-modeling, "
-		+ "page-modification, and page-schema-handlers plus composable-app skill "
+		+ "page-modification, theming, and page-schema-handlers plus composable-app skill "
 		+ "guides such as atf-repository-dev, feature-toggle, sys-setting, configuration-webservice, "
 		+ "and their test guides. Always read the availableGuides list for the authoritative set.")]
 	public Task<GuidanceGetResponse> GetGuidance(
@@ -94,7 +94,7 @@ public sealed class GuidanceGetTool {
 		} catch (Exception ex) {
 			return Task.FromResult(new GuidanceGetResponse {
 				Success = false,
-				Error = $"get-guidance failed: {ex.Message}. Expected args: {{\"name\": \"<guide>\"}}.",
+				Error = SensitiveErrorTextRedactor.Redact($"get-guidance failed: {ex.Message}. Expected args: {{\"name\": \"<guide>\"}}."),
 				AvailableGuides = GuidanceCatalog.GetNames(_featureToggleService).ToList()
 			});
 		}

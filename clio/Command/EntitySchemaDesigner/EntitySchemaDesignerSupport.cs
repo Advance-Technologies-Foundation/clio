@@ -154,7 +154,8 @@ internal static class EntitySchemaDesignerSupport
 
 	internal static IReadOnlyDictionary<string, string>? NormalizeLocalizationMap(
 		IReadOnlyDictionary<string, string>? values,
-		string fieldName) {
+		string fieldName,
+		bool requireDefaultCulture = true) {
 		if (values == null) {
 			return null;
 		}
@@ -177,7 +178,7 @@ internal static class EntitySchemaDesignerSupport
 			throw new EntitySchemaDesignerException($"{fieldName} must contain at least one localization.");
 		}
 
-		if (!normalizedValues.ContainsKey(DefaultCultureName)) {
+		if (requireDefaultCulture && !normalizedValues.ContainsKey(DefaultCultureName)) {
 			throw new EntitySchemaDesignerException(
 				$"{fieldName} must contain a non-empty '{DefaultCultureName}' value.");
 		}

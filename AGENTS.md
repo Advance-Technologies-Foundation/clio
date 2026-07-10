@@ -253,6 +253,7 @@ Before committing any change, run only the tests for affected modules — do not
 | `Query` | `clio/Query/` |
 | `Requests` | `clio/Requests/` |
 | `Validators` | `clio/Validators/` |
+| `Theming` | `clio/Theming/` |
 
 ## Selection rules
 
@@ -348,10 +349,53 @@ Impact: <how this helps future tasks>
 
 # Code review
 
-Use multiple agents in parallel to review code for
+Agentic code review is **mandatory** and runs on multiple parallel agents covering:
 - code quality and maintainability
 - performance and correctness
 - security and best practices
+
+## When review is required (gates)
+
+1. **Before opening a PR — ALWAYS (comprehensive).** Run a full parallel review over the
+   PR's complete diff against the base branch. Resolve every Blocker/High finding before
+   opening. No PR is opened without this gate.
+2. **On every new commit pushed to an already-open PR (scoped, incremental).** Each new
+   commit is reviewed — but scoped to *that commit's diff only*, not the whole PR, so the
+   cost stays proportional to the change (see "Keeping it fast" below).
+3. **Before marking a PR ready-to-merge — ALWAYS (comprehensive).** The authoritative final
+   gate: one comprehensive adversarial review over the *entire* PR diff (status
+   `review` → `done` in `spec/sprint-status.yaml`, or clearing draft). This is the real
+   quality bar — the per-commit reviews are cheap early warning, this is the end-of-cycle
+   gate every contribution must pass.
+
+## Keeping it fast (do NOT review pointlessly)
+
+The per-commit gate (2) must not slow development. Triage each post-open commit and pick the
+cheapest sufficient review — escalate, never default to the full fan-out:
+
+- **Skip entirely** (log "review skipped: <reason>") when the commit touches only zero-risk
+  paths: docs (`*.md`, `help/**`, `docs/**`), comments/whitespace only, generated artifacts
+  (`*.gz`, lockfiles, baselines), or test fixtures/data.
+- **Single combined lens** for a small code diff (roughly < 50 changed lines in one module):
+  one reviewer pass, not three.
+- **Full 3-lens fan-out** only when the commit is substantive: multiple modules, > ~50 lines,
+  security-sensitive code, or it touches shared infrastructure (`clio/Common/**`,
+  `BindingsModule.cs`, `Program.cs`).
+- **Severity gate:** only Blocker/High findings block the commit/PR; Medium/Low are advisory
+  comments to address before the final gate (3).
+
+State which tier ran (and why) in the PR thread / change summary so the scope is auditable.
+
+## How to run it / automation path
+
+- **Now (agent-driven):** the implementing agent runs the gates locally via the `Agent` tool
+  (parallel reviewer subagents) — pre-PR and final gates use the full fan-out; per-commit uses
+  the triage above.
+- **End state (CI-enforced, so *all* contributions are reviewed):** a GitHub Actions workflow on
+  `pull_request: [opened, ready_for_review, synchronize]` runs the reviewer headlessly and posts
+  findings as a PR review. `opened`/`ready_for_review` → comprehensive (gates 1 and 3);
+  `synchronize` → scoped incremental with the triage skip (gate 2). This moves the guarantee
+  off the honor system without adding a lengthy review to every push.
 
 
 ## Nuget Management

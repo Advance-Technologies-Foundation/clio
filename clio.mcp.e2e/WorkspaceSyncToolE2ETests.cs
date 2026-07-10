@@ -269,9 +269,10 @@ public sealed class WorkspaceSyncToolE2ETests {
 		string toolName,
 		string workspacePath) {
 		return await AllureApi.Step("Act by invoking workspace-sync tool through MCP", async () => {
-			IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-			tools.Select(tool => tool.Name).Should().Contain(toolName,
-				because: "the requested workspace-sync MCP tool must be advertised before the end-to-end call can be executed");
+			IReadOnlyCollection<string> toolNames =
+				await arrangeContext.Session.ListReachableToolNamesAsync(arrangeContext.CancellationTokenSource.Token);
+			toolNames.Should().Contain(toolName,
+				because: "the requested workspace-sync MCP tool must be discoverable via the get-tool-contract compact index before the end-to-end call can be executed");
 
 			CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
 				toolName,
@@ -379,37 +380,10 @@ public sealed class WorkspaceSyncToolE2ETests {
 			because: "with a reachable environment the gate must verify requirements cleanly rather than surfacing a verification failure");
 	}
 
-	[AllureStep("Assert discovered MCP tool is marked as destructive")]
-	private static void AssertToolIsAdvertisedAsDestructive(IList<McpClientTool> tools, string toolName) {
-		McpClientTool tool = tools.Single(tool => tool.Name == toolName);
-
-		tool.ProtocolTool.Annotations.Should().NotBeNull(
-			because: "the MCP server should expose tool annotations for clients that apply safety policies");
-		tool.ProtocolTool.Annotations!.DestructiveHint.Should().BeTrue(
-			because: "workspace-sync tools mutate local workspace state and/or the target environment");
-	}
-
-	[AllureStep("Assert push-workspace MCP schema advertises optional skip-backup argument")]
-	private static void AssertPushWorkspaceToolAdvertisesSkipBackup(IList<McpClientTool> tools) {
-		McpClientTool tool = tools.Single(tool => tool.Name == PushToolName);
-		JsonElement inputSchema = JsonSerializer.SerializeToElement(tool.ProtocolTool.InputSchema);
-		JsonElement argsSchema = inputSchema.GetProperty("properties").GetProperty("args");
-		JsonElement argsProperties = argsSchema.GetProperty("properties");
-		string[] requiredArgs = argsSchema.GetProperty("required").EnumerateArray()
-			.Select(item => item.GetString()!)
-			.ToArray();
-
-		argsProperties.TryGetProperty("skip-backup", out JsonElement skipBackupProperty).Should().BeTrue(
-			because: "push-workspace callers need an explicit way to disable backup without changing the default behavior");
-		JsonElement skipBackupType = skipBackupProperty.GetProperty("type");
-		IEnumerable<string> declaredTypes = skipBackupType.ValueKind == JsonValueKind.Array
-			? skipBackupType.EnumerateArray().Select(item => item.GetString()!)
-			: [skipBackupType.GetString()!];
-		declaredTypes.Should().Contain("boolean",
-			because: "skip-backup should be modeled as a boolean MCP input (an optional nullable boolean may also advertise 'null')");
-		requiredArgs.Should().NotContain("skip-backup",
-			because: "backup skipping must remain opt-in and the default behavior should still create backups when the argument is omitted");
-	}
+	// The destructive-metadata and skip-backup-schema advertisement asserts moved to
+	// WorkspaceSyncContractToolE2ETests, where they read the get-tool-contract compact index / full
+	// contract (the lazy-surface replacement for tools/list annotations and input schemas). The stale
+	// tools/list-based helper copies that previously lived here were unreferenced and were removed.
 
 	[AllureStep("Assert list-packages returns the pushed package")]
 	private static void AssertPackageWasPublished(PackageListActResult actResult, PackageMetadata? expectedPackage) {

@@ -49,7 +49,7 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver) {
 			client = commandResolver.Resolve<IApplicationClient>(options);
 			urlBuilder = commandResolver.Resolve<IServiceUrlBuilder>(options);
 		} catch (Exception ex) {
-			return ODataCreateBatchResponse.RequestError(ex.Message);
+			return ODataCreateBatchResponse.RequestError(SensitiveErrorTextRedactor.Redact(ex.Message));
 		}
 
 		string url = urlBuilder.Build(ODataKeyFormatter.CollectionPath(args.Entity));
@@ -78,7 +78,7 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver) {
 			string responseJson = client.ExecutePostRequest(url, row.GetRawText(), 30_000);
 			return ParseCreated(responseJson, index);
 		} catch (Exception ex) {
-			return new ODataRowResult { Index = index, Success = false, Error = ex.Message };
+			return new ODataRowResult { Index = index, Success = false, Error = SensitiveErrorTextRedactor.Redact(ex.Message) };
 		}
 	}
 
@@ -122,7 +122,7 @@ public sealed record ODataCreateArgs {
 
 	/// <summary>Registered clio environment name.</summary>
 	[JsonPropertyName("environment-name")]
-	[Description("Registered clio environment name, e.g. 'dev_5001'.")]
+	[Description(McpToolDescriptions.EnvironmentName)]
 	[Required]
 	public required string EnvironmentName { get; init; }
 }
