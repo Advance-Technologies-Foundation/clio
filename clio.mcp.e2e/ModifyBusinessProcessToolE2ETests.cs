@@ -168,6 +168,40 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			because: "clearFilter removed the signalStart filter, so its distinctive value must be gone on read-back");
 	}
 
+	[Test]
+	[Description("Over the real MCP path: setFilter with a date-only `equal` on a DateTime column (Contact.CreatedOn), then describe reads the value back as the BARE date (2026-05-01), not a full ISO midnight. Proves the whole-day-trim round-trip fix end-to-end. Self-diagnosing: a full-ISO (…T00:00:00) read-back means an older clioprocessbuilder package is deployed on the stand.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process setFilter date-only equal round-trips as a bare date")]
+	public async Task ModifyBusinessProcess_Should_RoundTripDateOnlyFilterAsBareDate() {
+		// Arrange — a signal-start process with NO filter yet.
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpDateTrimE2e{Guid.NewGuid():N}";
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildSignalStartDescriptor(processName)
+		});
+
+		// Act — setFilter: CreatedOn (a DateTime column) equal a BARE date (no time).
+		CallToolResult setResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = BuildSetDateOnlyFilterOperations()
+		});
+
+		// Assert — the date-only value round-trips through describe as a bare date, not a full ISO midnight.
+		setResult.IsError.Should().NotBeTrue(
+			because: "setFilter with a date-only value on a DateTime column must apply without a transport error");
+		string afterSet = JsonSerializer.Serialize(await CallToolAsync(context, DescribeProcessTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName
+			}));
+		afterSet.Should().Contain("2026-05-01",
+			because: "the date-only filter value round-trips through describe");
+		afterSet.Should().NotContain("2026-05-01T00:00:00",
+			because: "a whole-day-trimmed date-only equal reads back as the BARE date (2026-05-01), NOT a full ISO midnight — proving today's reader round-trip fix is on the stand; a full-ISO read-back means an older clioprocessbuilder package is deployed");
+	}
+
 	// A signal-start process with NO filter — the base for the setFilter/clearFilter e2e (setFilter targets a
 	// signalStart or a DataSourceFilters-exposing data element). Contact.Name is a base column on every stand.
 	private static string BuildSignalStartDescriptor(string processName) =>
@@ -201,6 +235,17 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		"""
 		[
 		  { "op": "clearFilter", "elementName": "SignalStart1" }
+		]
+		""";
+
+	// A date-only equal on Contact.CreatedOn (a base DateTime column on every stand). The server sets
+	// trimDateTimeParameterToDate so the whole day matches; describe must read the value back as the bare date.
+	private static string BuildSetDateOnlyFilterOperations() =>
+		"""
+		[
+		  { "op": "setFilter", "elementName": "SignalStart1",
+		    "filter": { "object": "Contact", "logicalOperation": "and",
+		      "conditions": [ { "column": "CreatedOn", "comparison": "equal", "value": "2026-05-01" } ] } }
 		]
 		""";
 
