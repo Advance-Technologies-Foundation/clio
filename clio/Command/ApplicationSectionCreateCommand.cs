@@ -139,6 +139,15 @@ public sealed class ApplicationSectionCreateService(
 	private const int DefaultInsertTimeoutMs = 90_000;
 	private const int VerificationTimeoutMs = 30_000;
 
+	// Upper bound for how long a queued caller waits for the per-application serialization lock before
+	// degrading to best-effort. Decoupled from the (up to 600 s) MCP insert budget on purpose: the guard
+	// wait runs synchronously on a background thread-pool worker, so tying it to the full insert budget
+	// could park a worker for ~10 min under a same-app burst. Capping the wait means a deep queue degrades
+	// to best-effort within this window (any residual contention is recovered by the verify/retry path)
+	// instead of pinning a thread. It still comfortably covers a normal insert→readback span (~90–130 s),
+	// so serialization holds under ordinary load; the CLI path never contends (one command per process).
+	private const int MaxSerializationWaitMs = 180_000;
+
 	private const string TransportRetryGuidance =
 		"The request never reached Creatio, so no section was created and retrying is safe. "
 		+ "Verify the environment URL and connectivity first (clio ping -e <env> / clio get-info -e <env>), "
@@ -267,7 +276,7 @@ public sealed class ApplicationSectionCreateService(
 		return sectionCreateSerializationGuard.Run(
 			environmentName,
 			request.ApplicationCode,
-			TimeSpan.FromMilliseconds(insertTimeoutMs),
+			TimeSpan.FromMilliseconds(Math.Min(insertTimeoutMs, MaxSerializationWaitMs)),
 			() => InsertWithContentionRecovery(
 				environmentName,
 				beforeInfo,
@@ -326,7 +335,7 @@ public sealed class ApplicationSectionCreateService(
 		// Verified absent → safe to retry exactly once (Jira "once") after a short fixed backoff.
 		logger.WriteInfo(
 			$"Section insert was aborted without detail (contention); retrying once for section '{resolvedRequest.SectionCode}'...");
-		System.Threading.Thread.Sleep(PollDelay);
+		Thread.Sleep(PollDelay);
 		ApplicationSectionCreateResult? retryAttempt = TryInsertAttempt(
 			environmentName, beforeInfo, resolvedRequest, requestBody, client, environmentSettings,
 			effectiveCultureName, insertTimeoutMs, readbackTimeoutMs);

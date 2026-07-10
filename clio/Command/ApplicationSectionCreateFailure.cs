@@ -43,12 +43,18 @@ public static class ApplicationSectionCreateFailureClassExtensions {
 	/// </summary>
 	/// <param name="failureClass">Failure class to map.</param>
 	/// <returns><c>transport</c>, <c>creatio-timeout</c>, <c>contention</c>, or <c>server-error</c>.</returns>
+	/// <exception cref="ArgumentOutOfRangeException">
+	/// Thrown when a new failure class is added without a wire mapping — a compile-safe reminder to keep the
+	/// MCP <c>error-class</c> contract in sync, rather than silently serializing the new value as another class.
+	/// </exception>
 	public static string ToWireValue(this ApplicationSectionCreateFailureClass failureClass) =>
 		failureClass switch {
 			ApplicationSectionCreateFailureClass.Transport => "transport",
 			ApplicationSectionCreateFailureClass.CreatioTimeout => "creatio-timeout",
 			ApplicationSectionCreateFailureClass.Contention => "contention",
-			_ => "server-error"
+			ApplicationSectionCreateFailureClass.ServerError => "server-error",
+			_ => throw new ArgumentOutOfRangeException(nameof(failureClass), failureClass,
+				"Unmapped ApplicationSectionCreateFailureClass has no MCP error-class wire value.")
 		};
 }
 
