@@ -926,3 +926,81 @@ stories:
       - story-mcp-http-credential-passthrough-11
       - story-mcp-http-credential-passthrough-13
     blocks: []
+
+  # --- ENG-93386: standard MCP authorization (OAuth 2.1 Resource Server) ---
+  # ADR: spec/adr/adr-mcp-http-standard-authorization.md · PRD: spec/prd/prd-mcp-http-standard-authorization.md
+  # Order: 1 (spike, BLOCKING) -> 2 -> 3 -> 4,5 -> 6 -> 7 -> 8
+  # Branch off umbrella claude/clio-mcp-multi-tenant-73a807, NOT master.
+  - id: story-mcp-http-standard-authorization-1
+    title: "Spike: confirm identity-platform M2M capability (OQ-B) [BLOCKING]"
+    feature: "mcp-http-standard-authorization"
+    size: S
+    status: ready-for-dev
+    depends_on: []
+    blocks: [story-mcp-http-standard-authorization-2, story-mcp-http-standard-authorization-3, story-mcp-http-standard-authorization-6]
+    file: spec/stories/story-mcp-http-standard-authorization-1.md
+    prd: spec/prd/prd-mcp-http-standard-authorization.md
+    adr: spec/adr/adr-mcp-http-standard-authorization.md
+
+  - id: story-mcp-http-standard-authorization-2
+    title: "Auth configuration options (issuer/audience/scopes) + OIDC discovery"
+    feature: "mcp-http-standard-authorization"
+    size: S
+    status: ready-for-dev
+    depends_on: [story-mcp-http-standard-authorization-1]
+    blocks: [story-mcp-http-standard-authorization-3, story-mcp-http-standard-authorization-4, story-mcp-http-standard-authorization-5]
+    file: spec/stories/story-mcp-http-standard-authorization-2.md
+
+  - id: story-mcp-http-standard-authorization-3
+    title: "JWT bearer Resource-Server validation (AddJwtBearer)"
+    feature: "mcp-http-standard-authorization"
+    size: M
+    status: ready-for-dev
+    depends_on: [story-mcp-http-standard-authorization-1, story-mcp-http-standard-authorization-2]
+    blocks: [story-mcp-http-standard-authorization-4, story-mcp-http-standard-authorization-5]
+    file: spec/stories/story-mcp-http-standard-authorization-3.md
+
+  - id: story-mcp-http-standard-authorization-4
+    title: "Protected Resource Metadata + WWW-Authenticate (SDK handler)"
+    feature: "mcp-http-standard-authorization"
+    size: S
+    status: ready-for-dev
+    depends_on: [story-mcp-http-standard-authorization-2, story-mcp-http-standard-authorization-3]
+    blocks: [story-mcp-http-standard-authorization-5]
+    file: spec/stories/story-mcp-http-standard-authorization-4.md
+
+  - id: story-mcp-http-standard-authorization-5
+    title: "Protect whole endpoint (RequireAuthorization) + fail-safe + public-bind guard"
+    feature: "mcp-http-standard-authorization"
+    size: M
+    status: ready-for-dev
+    depends_on: [story-mcp-http-standard-authorization-3, story-mcp-http-standard-authorization-4]
+    blocks: [story-mcp-http-standard-authorization-6]
+    file: spec/stories/story-mcp-http-standard-authorization-5.md
+
+  - id: story-mcp-http-standard-authorization-6
+    title: "Back-door hardening: header strip, gateway->tenant authZ, no-token-passthrough invariant"
+    feature: "mcp-http-standard-authorization"
+    size: M
+    status: ready-for-dev
+    depends_on: [story-mcp-http-standard-authorization-1, story-mcp-http-standard-authorization-5]
+    blocks: [story-mcp-http-standard-authorization-7]
+    file: spec/stories/story-mcp-http-standard-authorization-6.md
+
+  - id: story-mcp-http-standard-authorization-7
+    title: "Retire/gate --platform-api-key + unified auth error taxonomy"
+    feature: "mcp-http-standard-authorization"
+    size: M
+    status: ready-for-dev
+    depends_on: [story-mcp-http-standard-authorization-5]
+    blocks: [story-mcp-http-standard-authorization-8]
+    file: spec/stories/story-mcp-http-standard-authorization-7.md
+
+  - id: story-mcp-http-standard-authorization-8
+    title: "Per-tool authorization filters (optional), docs, e2e"
+    feature: "mcp-http-standard-authorization"
+    size: M
+    status: ready-for-dev
+    depends_on: [story-mcp-http-standard-authorization-7]
+    blocks: []
+    file: spec/stories/story-mcp-http-standard-authorization-8.md
