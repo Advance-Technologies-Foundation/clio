@@ -29,24 +29,24 @@ routed against the header tenant, closing the leak the ADR's verification #4 fou
 
 ## Acceptance Criteria
 
-- [ ] **AC-01** — Given `ICaptionCultureResolver.Resolve(EnvironmentSettings settings, string
+- [x] **AC-01** — Given `ICaptionCultureResolver.Resolve(EnvironmentSettings settings, string
   overrideCulture)` is called, when it executes, then it resolves culture **without** calling
   `ISettingsRepository.GetEnvironment` or `FindEnvironment` at all (ADR "Key interfaces / contracts";
   closes the nested twin of Security mode ii found in `CaptionCultureResolver.cs:54`).
-- [ ] **AC-02** — Given `IApplicationInfoService.GetApplicationInfo(EnvironmentSettings environmentSettings,
+- [x] **AC-02** — Given `IApplicationInfoService.GetApplicationInfo(EnvironmentSettings environmentSettings,
   string? id, string? code)` is called, when it executes, then it resolves the application info against the
   supplied settings object directly, without a name-based `ISettingsRepository` lookup.
-- [ ] **AC-03** — Given `IApplicationInfoService.FindApplicationId(EnvironmentSettings environmentSettings,
+- [x] **AC-03** — Given `IApplicationInfoService.FindApplicationId(EnvironmentSettings environmentSettings,
   string code)` is called, when it executes, then it behaves identically to the existing name-based overload
   except it never calls `ISettingsRepository.FindEnvironment`.
-- [ ] **AC-04** — **Observable parity for the existing name-based overloads.** Given
+- [x] **AC-04** — **Observable parity for the existing name-based overloads.** Given
   `Resolve(EnvironmentOptions, string)`, `GetApplicationInfo(string, string?, string?)`, and
   `FindApplicationId(string, string)` are called from CLI/stdio callers, when they run, then their behavior
   is observably unchanged: same results for the same inputs, same factory/repository call sequence
   (verifiable via NSubstitute `Received` checks), and **all existing named tests for these members pass
   without modification** (PRD AC-09 / SM-03 — this story adds overloads, it does not modify existing
   signatures or bodies).
-- [ ] **AC-ERR** — Given a settings-based overload is called with a **null** `EnvironmentSettings` argument,
+- [x] **AC-ERR** — Given a settings-based overload is called with a **null** `EnvironmentSettings` argument,
   when it executes, then it throws `ArgumentNullException` from a guard clause **before** any factory
   invocation (`IApplicationClientFactory.CreateEnvironmentClient` etc. is never entered with null settings)
   — covered by a named unit test per overload.
@@ -99,17 +99,25 @@ Test naming: `MethodName_ShouldBehavior_WhenCondition`
 
 ## Definition of Done
 
-- [ ] All `CLIO*` diagnostics clean in changed files — including CLIO005 (FR-10)
-- [ ] Targeted tests green before commit: `dotnet test clio.tests/clio.tests.csproj --filter
+- [x] All `CLIO*` diagnostics clean in changed files — including CLIO005 (FR-10)
+- [x] Targeted tests green before commit: `dotnet test clio.tests/clio.tests.csproj --filter
   "Category=Unit&Module=Command" --no-build` (changed files live under `clio/Command/`) (ADR slice 9)
-- [ ] All new CLI flags are kebab-case (no new CLI flags in this story)
-- [ ] Unit tests added with `[Category("Unit")]` — never `[Category("UnitTests")]`
+- [x] All new CLI flags are kebab-case (no new CLI flags in this story)
+- [x] Unit tests added with `[Category("Unit")]` — never `[Category("UnitTests")]`
 - [ ] PR description references this story file
 
 ## Dev Agent Record
 
-{Left blank — filled by dev agent during implementation}
-- Implementation started:
-- Implementation completed:
-- Tests passing:
-- Notes:
+- Implementation started: 2026-07-11
+- Implementation completed: 2026-07-11
+- Tests passing: `Category=Unit&Module=Command` — 2062 passed / 0 failed / 29 skipped;
+  `Category=Unit&Module=McpServer` — 2035 passed / 0 failed / 1 skipped (net10.0)
+- Notes: Settings-based overloads added to `ICaptionCultureResolver.Resolve` and
+  `IApplicationInfoService.{GetApplicationInfo,FindApplicationId}`; shared internals extracted
+  (`NormalizeOverrideCulture`/`ResolveProfileCulture`/`WarnAndFallBack`, `GetApplicationInfoCore`/
+  `FindApplicationIdCore`) so no settings-based path touches `ISettingsRepository`. One unavoidable
+  compile-level deviation from AC-04's "without modification": 10 pre-existing test call sites used the
+  untyped literal `GetApplicationInfo(default!, default, default)` inside `DidNotReceiveWithAnyArgs()`
+  checks, which became ambiguous once the second overload existed (CS0121); they were disambiguated to
+  `default(string)!`, preserving the exact overload binding and semantics they had before. No assertion,
+  arrangement, or expected behavior changed.

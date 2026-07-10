@@ -342,7 +342,7 @@ public sealed class ApplicationToolTests {
 			because: "the MCP tool contract should mention the supported identifier names");
 		result.Error.Should().Match("*code*",
 			because: "the MCP tool contract should mention the supported identifier names");
-		applicationInfoService.DidNotReceiveWithAnyArgs().GetApplicationInfo(default!, default, default);
+		applicationInfoService.DidNotReceiveWithAnyArgs().GetApplicationInfo(default(string)!, default, default);
 	}
 
 	[Test]
@@ -777,7 +777,7 @@ public sealed class ApplicationToolTests {
 			because: "tool validation failures should now be returned as structured error payloads");
 		result.Error.Should().Match("*exactly one*",
 			because: "the MCP tool contract should reject ambiguous get-info requests that pass both identifiers");
-		applicationInfoService.DidNotReceiveWithAnyArgs().GetApplicationInfo(default!, default, default);
+		applicationInfoService.DidNotReceiveWithAnyArgs().GetApplicationInfo(default(string)!, default, default);
 	}
 
 	[Test]

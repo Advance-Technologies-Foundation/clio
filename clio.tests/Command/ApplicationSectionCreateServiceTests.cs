@@ -523,7 +523,7 @@ public sealed class ApplicationSectionCreateServiceTests {
 			.Which.Message.Should().Contain("en-US",
 				because: "the error must name the effective culture so the caller can fix the language");
 		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!);
-		_applicationInfoService.DidNotReceiveWithAnyArgs().GetApplicationInfo(default!, default, default);
+		_applicationInfoService.DidNotReceiveWithAnyArgs().GetApplicationInfo(default(string)!, default, default);
 	}
 
 	[Test]
@@ -551,7 +551,7 @@ public sealed class ApplicationSectionCreateServiceTests {
 			.Which.Message.Should().Contain("en-US",
 				because: "the guard must validate against the resolved profile culture, not the readback override");
 		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!);
-		_applicationInfoService.DidNotReceiveWithAnyArgs().GetApplicationInfo(default!, default, default);
+		_applicationInfoService.DidNotReceiveWithAnyArgs().GetApplicationInfo(default(string)!, default, default);
 	}
 
 	private ApplicationSectionCreateService CreateSutWithResolver(ICaptionCultureResolver resolver) {

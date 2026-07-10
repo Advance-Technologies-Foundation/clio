@@ -252,7 +252,7 @@ public sealed class ApplicationSectionUpdateServiceTests {
 		action.Should().Throw<ArgumentException>()
 			.WithMessage("*At least one mutable field*",
 				because: "the update flow should fail fast when there is nothing to change");
-		_applicationInfoService.DidNotReceiveWithAnyArgs().GetApplicationInfo(default!, default, default);
+		_applicationInfoService.DidNotReceiveWithAnyArgs().GetApplicationInfo(default(string)!, default, default);
 	}
 
 	[Test]
@@ -268,7 +268,7 @@ public sealed class ApplicationSectionUpdateServiceTests {
 		action.Should().Throw<ArgumentException>()
 			.WithMessage("*Freedom UI palette*",
 				because: "non-palette hex colors render as a white tile in the app manager UI");
-		_applicationInfoService.DidNotReceiveWithAnyArgs().GetApplicationInfo(default!, default, default);
+		_applicationInfoService.DidNotReceiveWithAnyArgs().GetApplicationInfo(default(string)!, default, default);
 	}
 
 	[Test]
@@ -284,6 +284,6 @@ public sealed class ApplicationSectionUpdateServiceTests {
 		action.Should().Throw<ArgumentException>()
 			.WithMessage("*#RRGGBB format*",
 				because: "non-hex strings are never valid palette values");
-		_applicationInfoService.DidNotReceiveWithAnyArgs().GetApplicationInfo(default!, default, default);
+		_applicationInfoService.DidNotReceiveWithAnyArgs().GetApplicationInfo(default(string)!, default, default);
 	}
 }

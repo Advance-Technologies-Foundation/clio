@@ -427,7 +427,7 @@ public sealed class ApplicationCreateServiceTests {
 		action.Should().Throw<InvalidOperationException>()
 			.WithMessage("*invalid application identifier*",
 				because: "the create flow must validate the returned app id before reading application info");
-		_applicationInfoService.DidNotReceiveWithAnyArgs().GetApplicationInfo(default!, default, default);
+		_applicationInfoService.DidNotReceiveWithAnyArgs().GetApplicationInfo(default(string)!, default, default);
 	}
 
 	[Test]
