@@ -124,6 +124,11 @@ jobs:
             -Headers @{ Authorization = "Bearer $env:TC_TOKEN"; Accept = 'application/json' } `
             -ContentType 'application/json' -Body $body -TimeoutSec 60
 
+          # A 2xx with an unexpected body must not read as success — require a build id.
+          if (-not $resp.id) {
+            throw "TeamCity accepted the request but returned no build id — the trigger likely failed."
+          }
+
           Write-Host "Queued TeamCity build #$($resp.id) on BranchNameClio=$env:HEAD_REF"
           Write-Host "Build: $($resp.webUrl)"
           Write-Host "TeamCity's Commit Status Publisher will post the result onto the PR head commit."
