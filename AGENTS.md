@@ -149,6 +149,7 @@ Review MCP artifacts whenever any of the following is changed:
 - Authentication/requirements/dependencies for command execution
 - Workspace ownership/validation behavior
 - Command output, progress reporting, or destructive behavior
+- The MCP tool-surface model (resident vs long-tail membership in `McpCoreToolProfile`, tool renames/removals, the compatibility catalog, executor/dispatch behavior) — this class of change invalidates SHIPPED agent guidance, not just per-command artifacts
 
 ## Required MCP targets
 
@@ -158,6 +159,7 @@ For every touched command, verify and update all relevant files:
 - `clio\clio\Command\McpServer\Resources\*.cs`
 - `clio.tests\Command\McpServer\*.cs`
 - `clio.mcp.e2e\*.cs`
+- `clio\tpl\**` — the shipped workspace/ui-project agent-instruction templates (`AGENTS.md`, `CLAUDE.md`, `.mcp.json`). Stamped verbatim into every user/partner repo by `create-workspace` and guarded by `clio.tests\Command\McpServer\WorkspaceTemplateGuidanceDriftTests.cs` (resident-or-bridged oracle): a tool named imperatively in a template must be resident or routed through `clio-run`/`get-tool-contract`. When renaming or removing an MCP tool, add a `McpToolCompatibilityCatalog` entry instead of leaving the old name dangling.
 
 ## Update rules
 
@@ -198,6 +200,7 @@ For every touched command, verify and update all relevant files:
 - `clio\help\en\<command>.txt` (CLI `-H` help)
 - `clio\docs\commands\<command>.md` (detailed GitHub docs)
 - `clio\Commands.md` (overview/index and command section)
+- `clio\tpl\workspace\AGENTS.md` / `clio\tpl\ui-project*\AGENTS.md` — when the change affects a workflow those shipped templates describe (deploy/FSM flow, tool names, discovery model)
 
 ## Update rules
 

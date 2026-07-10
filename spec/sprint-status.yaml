@@ -651,7 +651,7 @@ stories:
     title: "Drift-guard test + maintenance-target ownership for tpl"
     feature: "mcp-durable-invocation"
     size: M
-    status: ready-for-dev
+    status: in-progress
     file: spec/stories/story-mcp-durable-invocation-3.md
     prd: spec/prd/prd-mcp-durable-invocation.md
     adr: spec/adr/adr-mcp-durable-invocation.md
@@ -666,7 +666,7 @@ stories:
     title: "Fix workspace AGENTS.md template (delegate to live channel) + strip BOM"
     feature: "mcp-durable-invocation"
     size: S
-    status: ready-for-dev
+    status: in-progress
     file: spec/stories/story-mcp-durable-invocation-4.md
     prd: spec/prd/prd-mcp-durable-invocation.md
     adr: spec/adr/adr-mcp-durable-invocation.md
