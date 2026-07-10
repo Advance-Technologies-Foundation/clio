@@ -60,6 +60,8 @@ public class DeleteThemeToolTests {
 		FakeDeleteThemeCommand resolvedCommand = new();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<DeleteThemeCommand>(Arg.Any<DeleteThemeOptions>()).Returns(resolvedCommand);
+		commandResolver.Resolve<ICreatioVersionChecker>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ICreatioVersionChecker>());
 		DeleteThemeTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
@@ -197,6 +199,40 @@ public class DeleteThemeToolTests {
 			because: "environmentName is not a declared wire name, so it must not bind");
 		camel.ExtensionData.Should().ContainKey("environmentName",
 			because: "the unbound camelCase spelling must land in the overflow bag so the tool can return a rename hint");
+	}
+
+	[Test]
+	[Description("Returns the distinct version exit code with the version-requirement message and never deletes the theme when the target environment does not satisfy the Creatio version floor.")]
+	[Category("Unit")]
+	public void DeleteTheme_ShouldReturnVersionExitCode_WhenCreatioVersionRequirementIsUnmet() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeDeleteThemeCommand defaultCommand = new();
+		FakeDeleteThemeCommand resolvedCommand = new();
+		ICreatioVersionChecker versionChecker = Substitute.For<ICreatioVersionChecker>();
+		versionChecker
+			.When(c => c.EnsureRequirements(Arg.Any<object>()))
+			.Do(_ => throw new CreatioVersionRequirementException(
+				"This command requires Creatio 10.0.0 or later. The target environment runs 8.1.5. Update Creatio and retry.",
+				CreatioVersionRequirementException.VersionTooOldCode));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<DeleteThemeCommand>(Arg.Any<DeleteThemeOptions>()).Returns(resolvedCommand);
+		commandResolver.Resolve<ICreatioVersionChecker>(Arg.Any<EnvironmentOptions>()).Returns(versionChecker);
+		DeleteThemeTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.DeleteTheme(new DeleteThemeArgs(
+			EnvironmentName: "docker_fix2", Id: "ocean-theme"));
+		string[] messageValues = result.Output.Select(message => message.Value?.ToString() ?? string.Empty).ToArray();
+
+		// Assert
+		result.ExitCode.Should().Be(Clio.Program.CreatioVersionRequirementExitCode,
+			because: "an unmet Creatio version requirement must refuse the delete with the distinct version exit code, mirroring the CLI gate");
+		messageValues.Should().Contain(value => value.Contains("requires Creatio 10.0.0 or later"),
+			because: "the version-requirement message must be surfaced to the MCP caller");
+		resolvedCommand.CapturedOptions.Should().BeNull(
+			because: "the theme must never be deleted when the environment does not satisfy the version floor");
+		ConsoleLogger.Instance.ClearMessages();
 	}
 
 	private sealed class FakeDeleteThemeCommand : DeleteThemeCommand {

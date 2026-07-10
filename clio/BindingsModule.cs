@@ -574,6 +574,7 @@ public class BindingsModule {
 		services.AddTransient<CreateThemeCommand>();
 		services.AddTransient<UpdateThemeCommand>();
 		services.AddTransient<DeleteThemeCommand>();
+		services.AddTransient<CheckThemingAccessCommand>();
 		services.AddTransient<ICreatioRightsClient, CreatioRightsClient>();
 		services.AddTransient<ICreatioLicenseClient, CreatioLicenseClient>();
 		services.AddTransient<IFsmModeStatusService, FsmModeStatusService>();

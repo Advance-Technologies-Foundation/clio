@@ -563,16 +563,16 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`build-theme`](docs/commands/build-theme.md) - Build the artifacts of a Creatio theme from brand colours and fonts
 <a id="clear-themes-cache"></a>
 <a id="flush-themes"></a>
-- [`clear-themes-cache`](docs/commands/clear-themes-cache.md) - Refresh the Creatio theme cache, `flush-themes`
+- [`clear-themes-cache`](docs/commands/clear-themes-cache.md) - Refresh the Creatio theme cache (Creatio 10.0.0+), `flush-themes`
 <a id="create-theme"></a>
-- [`create-theme`](docs/commands/create-theme.md) - Create a custom Creatio theme on an environment
+- [`create-theme`](docs/commands/create-theme.md) - Create a custom Creatio theme on an environment (Creatio 10.0.0+)
 <a id="delete-theme"></a>
-- [`delete-theme`](docs/commands/delete-theme.md) - Delete a custom Creatio theme from an environment
+- [`delete-theme`](docs/commands/delete-theme.md) - Delete a custom Creatio theme from an environment (Creatio 10.0.0+)
 <a id="list-themes"></a>
 <a id="get-themes"></a>
-- [`list-themes`](docs/commands/list-themes.md) - List the custom Creatio themes available on an environment, `get-themes`
+- [`list-themes`](docs/commands/list-themes.md) - List the custom Creatio themes available on an environment (Creatio 10.0.0+), `get-themes`
 <a id="update-theme"></a>
-- [`update-theme`](docs/commands/update-theme.md) - Overwrite an existing custom Creatio theme on an environment
+- [`update-theme`](docs/commands/update-theme.md) - Overwrite an existing custom Creatio theme on an environment (Creatio 10.0.0+)
 
 ## Integrations & Tools
 

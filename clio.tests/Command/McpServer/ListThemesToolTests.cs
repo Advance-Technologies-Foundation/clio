@@ -64,6 +64,8 @@ public class ListThemesToolTests {
 		FakeListThemesCommand resolvedCommand = new(themes);
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<ListThemesCommand>(Arg.Any<ListThemesOptions>()).Returns(resolvedCommand);
+		commandResolver.Resolve<ICreatioVersionChecker>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ICreatioVersionChecker>());
 		ListThemesTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
@@ -112,6 +114,8 @@ public class ListThemesToolTests {
 		FakeListThemesCommand resolvedCommand = new(themes: Array.Empty<ThemeDescriptor>());
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<ListThemesCommand>(Arg.Any<ListThemesOptions>()).Returns(resolvedCommand);
+		commandResolver.Resolve<ICreatioVersionChecker>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ICreatioVersionChecker>());
 		ListThemesTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
@@ -144,6 +148,8 @@ public class ListThemesToolTests {
 		FakeListThemesCommand resolvedCommand = new(themes);
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<ListThemesCommand>(Arg.Any<ListThemesOptions>()).Returns(resolvedCommand);
+		commandResolver.Resolve<ICreatioVersionChecker>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ICreatioVersionChecker>());
 		ListThemesTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
@@ -174,6 +180,8 @@ public class ListThemesToolTests {
 		FakeListThemesCommand resolvedCommand = new(themes: null, success: false, error: "no permission");
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<ListThemesCommand>(Arg.Any<ListThemesOptions>()).Returns(resolvedCommand);
+		commandResolver.Resolve<ICreatioVersionChecker>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ICreatioVersionChecker>());
 		ListThemesTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
@@ -254,6 +262,40 @@ public class ListThemesToolTests {
 			because: "environmentName is not a declared wire name, so it must not bind");
 		camel.ExtensionData.Should().ContainKey("environmentName",
 			because: "the unbound camelCase spelling must land in the overflow bag so the tool can return a rename hint");
+	}
+
+	[Test]
+	[Description("Returns a structured failure carrying the version-requirement message and never reads the catalog when the target environment does not satisfy the Creatio version floor.")]
+	[Category("Unit")]
+	public void ListThemes_ShouldReturnFailure_WhenCreatioVersionRequirementIsUnmet() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeListThemesCommand defaultCommand = new();
+		FakeListThemesCommand resolvedCommand = new();
+		ICreatioVersionChecker versionChecker = Substitute.For<ICreatioVersionChecker>();
+		versionChecker
+			.When(c => c.EnsureRequirements(Arg.Any<object>()))
+			.Do(_ => throw new CreatioVersionRequirementException(
+				"This command requires Creatio 10.0.0 or later. The target environment runs 8.1.5. Update Creatio and retry.",
+				CreatioVersionRequirementException.VersionTooOldCode));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<ListThemesCommand>(Arg.Any<ListThemesOptions>()).Returns(resolvedCommand);
+		commandResolver.Resolve<ICreatioVersionChecker>(Arg.Any<EnvironmentOptions>()).Returns(versionChecker);
+		ListThemesTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		ListThemesResult result = tool.ListThemes(new ListThemesArgs(EnvironmentName: "docker_fix2"));
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "an unmet Creatio version requirement must refuse the read on the MCP surface exactly as the CLI gate does");
+		result.Error.Should().Contain("requires Creatio 10.0.0 or later",
+			because: "the version-requirement message must be surfaced to the MCP caller");
+		result.Error.Should().Contain($"[{CreatioVersionRequirementException.VersionTooOldCode}]",
+			because: "the typed result carries no exit code, so the stable machine-readable ErrorCode must travel in the error message");
+		resolvedCommand.CapturedOptions.Should().BeNull(
+			because: "the catalog must never be queried when the environment does not satisfy the version floor");
+		ConsoleLogger.Instance.ClearMessages();
 	}
 
 	private sealed class FakeListThemesCommand : ListThemesCommand {
