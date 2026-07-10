@@ -96,7 +96,7 @@ public sealed class ProcessModelingGuidanceResource {
 			  acceptable BEFORE building.
 			- To fire the trigger ONLY for records matching a condition (e.g. only when Name = "Start"), add a
 			  `filter` to the signalStart element (full shape in "Data source filters" below):
-			    { "id": "Start1", "type": "signalStart",
+			    { "name": "Start1", "type": "signalStart",
 			      "signal": { "entity": "UsrTestRunButton", "on": "modified" },
 			      "filter": { "object": "UsrTestRunButton",
 			        "conditions": [ { "column": "UsrName", "comparison": "equal", "value": "Start" } ] } }
@@ -146,7 +146,8 @@ public sealed class ProcessModelingGuidanceResource {
 			  buildable filter today uses value / macro / datePart only.
 			- `datePart` (optional, LEFT-hand modifier — NOT a right-hand source): extract a calendar/clock part from a
 			  Date/DateTime `column` and compare that part instead of the whole date. `Year` | `Month` | `Day` |
-			  `Week` | `Weekday` | `Hour` extract an INTEGER — pair with an integer `value` (or a `processParameter`):
+			  `Week` | `Weekday` | `Hour` extract an INTEGER — pair with an integer `value` (a signalStart filter
+			  allows only a constant `value`/`macro`/`datePart`, never a `processParameter` — see the restriction above):
 			  `{ "column": "CreatedOn", "datePart": "Year", "comparison": "equal", "value": "2026" }` reads
 			  `Year(CreatedOn) = 2026`. `HourMinute` is the exception — it extracts the TIME-OF-DAY and compares it to a
 			  `value` in `HH:mm[:ss]` form: `{ "column": "CreatedOn", "datePart": "HourMinute", "comparison": "equal",

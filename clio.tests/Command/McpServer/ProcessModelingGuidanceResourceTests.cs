@@ -203,6 +203,24 @@ public sealed class ProcessModelingGuidanceResourceTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The guidance carries the data source filter section: the signalStart filter, the signal-start right-hand-side restriction (value/macro/datePart only), the datePart/macro vocabulary, and the setFilter/clearFilter modify ops.")]
+	public void GetGuide_ShouldCarryDataSourceFilterGuidance_WhenRead() {
+		// Act
+		string text = new ProcessModelingGuidanceResource().GetGuide().Should().BeOfType<TextResourceContents>().Subject.Text;
+
+		// Assert
+		text.Should().Contain("Data source filters",
+			because: "the filter section documents how to restrict which records fire a signalStart trigger");
+		text.Should().Contain("SIGNAL-START RESTRICTION",
+			because: "the agent must know a signalStart filter allows only value/macro/datePart, not process/element parameter references");
+		text.Should().Contain("HourMinute",
+			because: "the datePart vocabulary (incl. the time-of-day HourMinute part) must be documented for filter conditions");
+		text.Should().Contain("setFilter",
+			because: "the modify-business-process setFilter/clearFilter ops must be documented for editing a filter on an existing process");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("GuidanceCatalog exposes process-modeling so get-guidance can return it by canonical name.")]
 	public void GuidanceCatalog_ShouldIncludeProcessModelingEntry_WhenQueried() {
 		// Act
