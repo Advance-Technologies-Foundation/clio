@@ -97,6 +97,10 @@ public sealed class PageUpdateTool(
 				Error = "Either 'body' or 'body-file' must provide page body content."
 			}, null, null, null);
 		}
+		PageUpdateResponse appendFormFailure = TryValidateAppendBodyForm(options);
+		if (appendFormFailure != null) {
+			return (appendFormFailure, null, null, null);
+		}
 		PageUpdateResponse syntaxFailure = TryValidateBodySyntax(options, out Script parsedAst);
 		if (syntaxFailure != null) {
 			return (ResolveSyntaxFailure(options, syntaxFailure), null, null, null);
@@ -116,6 +120,27 @@ public sealed class PageUpdateTool(
 		(PageUpdateResponse samplingFailure, PageSamplingReview samplingReview) =
 			await TryRunSamplingAsync(options, args, server, cancellationToken);
 		return (samplingFailure, validationWarnings, lintWarnings, samplingReview);
+	}
+
+	// Up-front (offline, no server round-trip) guard for append mode. `append` requires the incoming
+	// body to be in diff form; a full-config body (web: SCHEMA_VIEW_MODEL_CONFIG / SCHEMA_MODEL_CONFIG,
+	// mobile: viewModelConfig / modelConfig) cannot be merged. The merger already refuses such a CURRENT
+	// server body after fetching it, but detecting the same shape in the INCOMING body here prevents a
+	// wasted fetch+merge attempt and surfaces the precise corrective hint before execution (ENG-93090).
+	// Replace mode is unaffected — a full-config body is a legitimate verbatim replacement.
+	private static PageUpdateResponse TryValidateAppendBodyForm(PageUpdateOptions options) {
+		if (!string.Equals(options.Mode, "append", StringComparison.OrdinalIgnoreCase)) {
+			return null;
+		}
+		if (!PageBodyMerger.UsesUnsupportedFullConfigForm(options.Body, out string message)) {
+			return null;
+		}
+		return new PageUpdateResponse {
+			Success = false,
+			Error = "Append merge cannot use this body: " + message
+				+ " [hint: send ONLY the new diff-form operations (viewConfigDiff/handlers) for append, "
+				+ "or set mode='replace' to save this full-config body verbatim. See docs://mcp/guides/page-modification.]"
+		};
 	}
 
 	private static PageUpdateResponse TryValidateBodySyntax(PageUpdateOptions options, out Script parsedAst) {
@@ -574,7 +599,7 @@ public sealed record PageUpdateArgs(
 	string SchemaName,
 
 	[property: JsonPropertyName("body")]
-	[property: Description("Full JavaScript page body with markers. Pass either `body` (inline string) or `body-file` (path); one is required. WARNING: do NOT send the full get-page `raw.body` back verbatim — that re-applies existing merges and fails server-side with 'Object vs Array'. Send ONLY the new viewConfigDiff/handlers operations plus the required marker envelope.")]
+	[property: Description("Full JavaScript page body with markers, passed as a RAW STRING (not a JSON object/dict) — the schema source text with its /**MARKER*/ pairs. Pass either `body` (inline string) or `body-file` (path); one is required. WARNING: do NOT send the full get-page `raw.body` back verbatim — that re-applies existing merges and fails server-side with 'Object vs Array'. Send ONLY the new viewConfigDiff/handlers operations plus the required marker envelope. APPEND mode additionally requires the diff form (SCHEMA_VIEW_MODEL_CONFIG_DIFF / SCHEMA_MODEL_CONFIG_DIFF); a full-config body is rejected up-front — use mode='replace' for a full-config body.")]
 	string? Body,
 
 	[property: JsonPropertyName("resources")]
@@ -611,7 +636,7 @@ public sealed record PageUpdateArgs(
 	[property: Description("Absolute path to a file containing the page body. Used when `body` is empty. Enables passing large bodies without inline JSON escaping.")]
 	string? BodyFile = null,
 	[property: JsonPropertyName("mode")]
-	[property: Description("Write mode. 'replace' (default) saves the body verbatim. 'append' merges the incoming body fragment with the schema's current body on the server — viewConfigDiff entries dedupe by `name` (incoming wins), handlers dedupe by `request`. Use 'append' when adding a component without clobbering existing customizations.")]
+	[property: Description("Write mode. 'replace' (default) saves the body verbatim. 'append' merges the incoming body fragment with the schema's current body on the server — viewConfigDiff entries dedupe by `name` (incoming wins), handlers dedupe by `request`. Use 'append' when adding a component without clobbering existing customizations. Append requires the diff form; a full-config body (SCHEMA_VIEW_MODEL_CONFIG / SCHEMA_MODEL_CONFIG, or mobile viewModelConfig / modelConfig) is rejected up-front — use 'replace' for those.")]
 	string? Mode = null,
 	[property: JsonPropertyName("target-package-uid")]
 	[property: Description("Explicit target package UId for the replacing schema. Overrides automatic design-package resolution. Required when multiple apps replace the same platform page and automatic resolution would land the edit in the wrong app's design package.")]

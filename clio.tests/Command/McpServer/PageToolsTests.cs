@@ -4539,6 +4539,118 @@ public class PageToolsTests
 			.WithMessage("*SCHEMA_MODEL_CONFIG*");
 	}
 
+	[Test]
+	[Description("UsesUnsupportedFullConfigForm: a web body with the full SCHEMA_VIEW_MODEL_CONFIG marker is flagged with the web message (ENG-93090)")]
+	public void UsesUnsupportedFullConfigForm_ShouldReturnTrueWithWebMessage_WhenWebBodyUsesFullViewModelConfig() {
+		// Arrange
+		string body = "define(\"UsrX_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"viewModelConfig: /**SCHEMA_VIEW_MODEL_CONFIG*/{}/**SCHEMA_VIEW_MODEL_CONFIG*/, " +
+			"modelConfig: /**SCHEMA_MODEL_CONFIG*/{}/**SCHEMA_MODEL_CONFIG*/ }; });";
+
+		// Act
+		bool result = PageBodyMerger.UsesUnsupportedFullConfigForm(body, out string message);
+
+		// Assert
+		result.Should().BeTrue(because: "a web body carrying the full SCHEMA_VIEW_MODEL_CONFIG marker cannot be append-merged");
+		message.Should().Contain("SCHEMA_VIEW_MODEL_CONFIG", because: "the web message must name the unsupported marker so the caller can act");
+		message.Should().Contain("replace", because: "the message must point the caller at the working alternative (replace mode)");
+	}
+
+	[Test]
+	[Description("UsesUnsupportedFullConfigForm: a web body with only the *_DIFF markers is not flagged (ENG-93090)")]
+	public void UsesUnsupportedFullConfigForm_ShouldReturnFalse_WhenWebBodyIsDiffFormOnly() {
+		// Arrange
+		string body = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/";
+
+		// Act
+		bool result = PageBodyMerger.UsesUnsupportedFullConfigForm(body, out string message);
+
+		// Assert
+		result.Should().BeFalse(because: "a diff-form body is exactly what append merge supports and must never be flagged");
+		message.Should().BeNull(because: "no message is produced when the body is acceptable");
+	}
+
+	[Test]
+	[Description("UsesUnsupportedFullConfigForm: a mobile body with the full viewModelConfig object is flagged with the mobile message (ENG-93090)")]
+	public void UsesUnsupportedFullConfigForm_ShouldReturnTrueWithMobileMessage_WhenMobileBodyUsesFullViewModelConfig() {
+		// Arrange
+		string body = "{\"viewModelConfig\":{\"attributes\":{}},\"viewConfigDiff\":[]}";
+
+		// Act
+		bool result = PageBodyMerger.UsesUnsupportedFullConfigForm(body, out string message);
+
+		// Assert
+		result.Should().BeTrue(because: "a mobile body carrying the full viewModelConfig object cannot be append-merged");
+		message.Should().Contain("viewModelConfig", because: "the mobile message must name the unsupported key so the caller can act");
+		message.Should().Contain("replace", because: "the message must point the caller at the working alternative (replace mode)");
+	}
+
+	[Test]
+	[Description("UsesUnsupportedFullConfigForm: a mobile body with only *Diff arrays is not flagged (ENG-93090)")]
+	public void UsesUnsupportedFullConfigForm_ShouldReturnFalse_WhenMobileBodyIsDiffFormOnly() {
+		// Arrange
+		string body = "{\"viewConfigDiff\":[],\"viewModelConfigDiff\":[],\"modelConfigDiff\":[]}";
+
+		// Act
+		bool result = PageBodyMerger.UsesUnsupportedFullConfigForm(body, out string message);
+
+		// Assert
+		result.Should().BeFalse(because: "a diff-form mobile body is supported by append merge and must not be flagged");
+		message.Should().BeNull(because: "no message is produced when the body is acceptable");
+	}
+
+	[Test]
+	[Description("UsesUnsupportedFullConfigForm: null/blank and unparseable-mobile bodies fail open so the merge surfaces the precise error (ENG-93090)")]
+	public void UsesUnsupportedFullConfigForm_ShouldFailOpen_WhenBodyIsBlankOrUnparseable() {
+		// Act
+		bool blank = PageBodyMerger.UsesUnsupportedFullConfigForm("   ", out string blankMessage);
+		bool badJson = PageBodyMerger.UsesUnsupportedFullConfigForm("{ not valid json", out string badJsonMessage);
+
+		// Assert
+		blank.Should().BeFalse(because: "a blank body is not our concern here — the empty-body check owns that error");
+		blankMessage.Should().BeNull(because: "no message is produced when the guard fails open");
+		badJson.Should().BeFalse(because: "an unparseable mobile body must fail open so the merge/JSON validators surface the precise parse error");
+		badJsonMessage.Should().BeNull(because: "no message is produced when the guard fails open");
+	}
+
+	[Test]
+	[Description("update-page append: a full-config incoming body is rejected up-front with an actionable hint and no server round-trip (ENG-93090)")]
+	public async System.Threading.Tasks.Task UpdatePage_ShouldRejectAppendUpFront_WhenIncomingBodyIsFullConfigForm() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>());
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog,
+			Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
+		string fullConfigBody = "define(\"UsrX_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"viewModelConfig: /**SCHEMA_VIEW_MODEL_CONFIG*/{}/**SCHEMA_VIEW_MODEL_CONFIG*/, " +
+			"modelConfig: /**SCHEMA_MODEL_CONFIG*/{}/**SCHEMA_MODEL_CONFIG*/, " +
+			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+			"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		PageUpdateArgs args = new("UsrX_FormPage", fullConfigBody, null, false, "dev", null, null, null, SkipSampling: true, Mode: "append");
+
+		// Act
+		PageUpdateResponse response = await tool.UpdatePage(args, null);
+
+		// Assert
+		response.Success.Should().BeFalse(because: "append cannot merge a full-config body and must fail rather than silently drop the change");
+		response.Error.Should().Contain("Append merge cannot use this body", because: "the up-front guard message must identify the append/full-config problem");
+		response.Error.Should().Contain("replace", because: "the hint must route the caller to replace mode as the corrective action");
+		applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
 	private static IPageDesignerHierarchyClient CreateHierarchyClientFor(string schemaUId, string packageUId = "test-pkg-uid") {
 		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
 		hierarchyClient.GetDesignPackageUId(schemaUId).Returns(packageUId);

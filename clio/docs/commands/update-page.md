@@ -109,6 +109,19 @@ can report a conflict against a page that has not actually changed. This edge fa
 (it blocks the save rather than overwriting), but if you mix the two, keep
 `--expected-checksum` current or omit it and let the on-disk baseline drive the check.
 
+## Write modes
+
+`--mode replace` (default) saves the body verbatim. `--mode append` loads the current
+schema body from the server and merges your incoming fragment into it — `viewConfigDiff`
+entries dedupe by `name` (incoming wins), handlers dedupe by `request`.
+
+Append requires the **diff form**. A full-config body — the `SCHEMA_VIEW_MODEL_CONFIG` /
+`SCHEMA_MODEL_CONFIG` markers (mobile: top-level `viewModelConfig` / `modelConfig`) instead
+of the `*_DIFF` markers — cannot be merged. Such a body is rejected up front with an
+actionable hint (before any server round-trip); use `--mode replace` to save it verbatim.
+Note the `--body` value is always a raw string with `/**MARKER*/` pairs, never a structured
+object.
+
 ## Synopsis
 
 ```bash
@@ -120,7 +133,16 @@ clio update-page [options]
 ```bash
 --schema-name                      Page schema name to update
 
---body                             Full raw JavaScript schema body
+--body                             Full raw JavaScript schema body (a string
+with /**MARKER*/ pairs, not a structured object)
+
+--body-file                        Path to a file containing the body.
+Alternative to --body for large bodies
+
+--mode                             Write mode: 'replace' (default) or 'append'
+(merge with the current body). Append requires the
+diff form; a full-config body is rejected up front —
+use 'replace' for such a body
 
 --dry-run                          Validate only and do not save
 

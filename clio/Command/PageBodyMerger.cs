@@ -17,6 +17,70 @@ internal static class PageBodyMerger {
 	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(5);
 
 	/// <summary>
+	/// Actionable message emitted when a WEB page body uses the full-config form
+	/// (<c>SCHEMA_VIEW_MODEL_CONFIG</c> / <c>SCHEMA_MODEL_CONFIG</c> markers) that append merge cannot process.
+	/// Shared between the merge-time throw (current server body) and the up-front pre-execution guard (incoming body).
+	/// </summary>
+	internal const string WebFullConfigNotSupportedMessage =
+		"Web append merge does not support bodies that use the full 'SCHEMA_VIEW_MODEL_CONFIG' or 'SCHEMA_MODEL_CONFIG' form. " +
+		"Use 'replace' mode, or convert the body to the diff form (SCHEMA_VIEW_MODEL_CONFIG_DIFF / SCHEMA_MODEL_CONFIG_DIFF) before append.";
+
+	/// <summary>
+	/// Actionable message emitted when a MOBILE page body uses the full-config form
+	/// (<c>viewModelConfig</c> / <c>modelConfig</c>) that append merge cannot process.
+	/// Shared between the merge-time throw (current server body) and the up-front pre-execution guard (incoming body).
+	/// </summary>
+	internal const string MobileFullConfigNotSupportedMessage =
+		"Mobile append merge does not support bodies that use the full 'viewModelConfig' or 'modelConfig' form. " +
+		"Use 'replace' mode, or convert the body to the diff form (viewModelConfigDiff / modelConfigDiff) before append.";
+
+	/// <summary>
+	/// Detects whether <paramref name="body"/> uses the full-config form that append merge cannot process
+	/// (web: <c>SCHEMA_VIEW_MODEL_CONFIG</c> / <c>SCHEMA_MODEL_CONFIG</c> markers; mobile: top-level
+	/// <c>viewModelConfig</c> / <c>modelConfig</c> objects). Enables callers to surface an actionable,
+	/// corrective message BEFORE attempting the merge (and, for the tool, before any server round-trip),
+	/// rather than discovering the incompatibility only after <see cref="Merge"/> throws.
+	/// </summary>
+	/// <param name="body">The page body to inspect (incoming fragment or current server body).</param>
+	/// <param name="message">
+	/// On <see langword="true"/>, the surface-specific corrective message
+	/// (<see cref="WebFullConfigNotSupportedMessage"/> or <see cref="MobileFullConfigNotSupportedMessage"/>);
+	/// otherwise <see langword="null"/>.
+	/// </param>
+	/// <returns>
+	/// <see langword="true"/> when the body uses the unsupported full-config form. Fail-open
+	/// (<see langword="false"/>) for a null/blank body or an unparseable mobile JSON body — those cases are
+	/// left to the downstream <see cref="Merge"/> call, which surfaces the precise parse/empty-body error.
+	/// </returns>
+	public static bool UsesUnsupportedFullConfigForm(string body, out string message) {
+		message = null;
+		if (string.IsNullOrWhiteSpace(body)) {
+			return false;
+		}
+		if (PageSchemaTypeExtensions.FromBody(body) == PageSchemaType.Mobile) {
+			JObject parsed;
+			try {
+				parsed = JObject.Parse(body);
+			} catch (Newtonsoft.Json.JsonException) {
+				// Fail-open: an unparseable mobile body is not our concern here — the merge (or the
+				// upstream JSON/syntax validators) will surface the precise parse error.
+				return false;
+			}
+			if (parsed["viewModelConfig"] is JObject || parsed["modelConfig"] is JObject) {
+				message = MobileFullConfigNotSupportedMessage;
+				return true;
+			}
+			return false;
+		}
+		if (ReadRawSection(body, "SCHEMA_VIEW_MODEL_CONFIG") != null ||
+			ReadRawSection(body, "SCHEMA_MODEL_CONFIG") != null) {
+			message = WebFullConfigNotSupportedMessage;
+			return true;
+		}
+		return false;
+	}
+
+	/// <summary>
 	/// Returns a merged body string that combines <paramref name="currentBody"/> (the schema's
 	/// existing body on the server) with <paramref name="incomingBody"/> (the new fragment the
 	/// caller wants to add). The returned string has the same marker envelope as the current
@@ -54,9 +118,7 @@ internal static class PageBodyMerger {
 		// marker is missing from the current body.
 		if (ReadRawSection(currentBody, "SCHEMA_VIEW_MODEL_CONFIG") != null ||
 			ReadRawSection(currentBody, "SCHEMA_MODEL_CONFIG") != null) {
-			throw new InvalidOperationException(
-				"Web append merge does not support bodies that use the full 'SCHEMA_VIEW_MODEL_CONFIG' or 'SCHEMA_MODEL_CONFIG' form. " +
-				"Use 'replace' mode, or convert the body to the diff form (SCHEMA_VIEW_MODEL_CONFIG_DIFF / SCHEMA_MODEL_CONFIG_DIFF) before append.");
+			throw new InvalidOperationException(WebFullConfigNotSupportedMessage);
 		}
 		JArray mergedViewConfigDiff = MergeArrayByName(
 			ReadJsonArray(currentBody, "SCHEMA_VIEW_CONFIG_DIFF"),
@@ -108,9 +170,7 @@ internal static class PageBodyMerger {
 		// are not the default and are not handled here. Refuse rather than
 		// silently producing a body that mixes full-config and *Diff siblings.
 		if (current["viewModelConfig"] is JObject || current["modelConfig"] is JObject) {
-			throw new InvalidOperationException(
-				"Mobile append merge does not support bodies that use the full 'viewModelConfig' or 'modelConfig' form. " +
-				"Use 'replace' mode, or convert the body to the diff form (viewModelConfigDiff / modelConfigDiff) before append.");
+			throw new InvalidOperationException(MobileFullConfigNotSupportedMessage);
 		}
 
 		JArray mergedViewConfigDiff = MergeArrayByName(
