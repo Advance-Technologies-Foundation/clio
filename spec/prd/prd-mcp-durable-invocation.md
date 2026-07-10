@@ -70,16 +70,33 @@ invariant.
 
 - **FR-1 (resolve-by-name fallback).** When `tools/call` names a tool absent from the
   resident `tools/list`, the server MUST resolve the name against the full tool
-  catalog (canonical + alias) using the same registry `clio-run` uses.
+  catalog (canonical + alias) using the same registry `clio-run` uses. The eligible set
+  is the **pre-#743 standalone tool set** (every tool that was a first-class advertised
+  tool before the lazy split) — the goal is to *restore* that invocation contract.
 - **FR-2 (transparent execution, non-destructive).** A resolved **non-destructive**
-  long-tail tool MUST be executed via the shared `clio-run` invocation path and its
-  result returned, plus a lightweight `_meta` advisory note recommending
+  tool MUST be executed via a **native-shape** shared invocation path (no argument
+  double-wrapping; request `_meta` / progress token / task metadata preserved and
+  `Params`/`MatchedPrimitive` restored afterwards), and its result returned plus an
+  advisory note **in `Content`** (model-visible; not `_meta`) recommending
   `clio-run <canonical>` / resident tools next time.
-- **FR-3 (destructive safeguard).** A resolved **destructive** tool MUST NOT be
-  silently executed. The server MUST return a structured `confirmation-required`
-  result carrying a ready-to-retry `clio-run-destructive` call shape. Destructiveness
-  is determined by `IMcpToolInvokerRegistry.IsDestructive`, which fails **closed**
+- **FR-3 (destructive safeguard = reproduce the pre-#743 gate).** A resolved
+  **destructive** tool MUST NOT be silently executed. The server MUST return a
+  structured `confirmation-required` result carrying a ready-to-retry
+  `clio-run-destructive` call shape — reproducing the destructive prompt the host used
+  to raise when the tool was advertised. Destructiveness is the tool's own
+  `Destructive` flag via `IMcpToolInvokerRegistry.IsDestructive`, which fails **closed**
   (unknown ⇒ treated as destructive).
+- **FR-3a (annotation correctness).** Audit the `Destructive` flag of high-impact write
+  tools and correct any genuinely privileged/destructive tool mis-flagged
+  `Destructive=false`; a completeness test MUST classify every registry tool
+  (execute-silently vs confirmation-required) and fail when a new tool lands
+  unclassified.
+- **FR-8 (transport boundary).** The forgiving handler MUST be registered on the
+  **stdio** transport only (not the transport-neutral `RegisterMcpServer`), so it does
+  not ship on the unreleased `mcp-http` transport.
+- **FR-9 (correlation + filter safety).** Every handler outcome MUST carry a correlation
+  ID and be **returned** (never thrown) so it survives `McpToolErrorFilter` with its
+  structured code intact.
 - **FR-4 (compatibility/alias catalog).** A single source of truth maps legacy /
   renamed / deprecated tool names to their canonical name (case-insensitive, emitted
   canonically). Collisions (duplicate canonical or alias) MUST fail startup and tests.
@@ -113,7 +130,7 @@ invariant.
 ## 5. Acceptance criteria
 
 - AC-1: Direct `tools/call get-fsm-mode` in a fresh workspace **executes** and returns
-  the FSM mode plus the advisory note (FR-1/FR-2).
+  the FSM mode plus the advisory note **in `Content`** (FR-1/FR-2).
 - AC-2: Direct `tools/call` of a destructive long-tail tool (e.g.
   `restart-by-environment-name`) returns `confirmation-required` with a retry shape
   and does **not** restart (FR-3).

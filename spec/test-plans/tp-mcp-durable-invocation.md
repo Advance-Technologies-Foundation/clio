@@ -41,6 +41,14 @@ regressed / double-executed; (3) `tools/list` surface accidentally changed
 | TC-U-13 | 3 | Drift scan **fails** on a fixture naming `` `not-a-tool` `` imperatively. |
 | TC-U-14 | 3 | Drift scan passes when every referenced MCP/CLI/guide token resolves; external allowlist honored. |
 | TC-U-15 | 4 | `tpl/workspace/*` text files have no UTF-8 BOM. |
+| TC-U-16 | 1 | Synthetic duplicate canonical/alias throws at **startup** (host construction), not first resolution. |
+| TC-U-17 | 1 | Catalog alias takes precedence over a raw registry hit for the same name. |
+| TC-U-18 | 1/2 | Feature-disabled target ⇒ discriminated `Disabled` ⇒ handler returns `feature-disabled` (≠ `unknown-tool`). |
+| TC-U-19 | 2 | Native-arg-shape matrix (no-arg / scalar / multi-scalar / complex-record / malformed) executes without `{"args":{"args":…}}` double-wrap. |
+| TC-U-20 | 2 | Progress token / `_meta` / task metadata survive fallback; `Params`/`MatchedPrimitive` restored in `finally`. |
+| TC-U-21 | 2 | Advisory note is in `Content` (model-visible), not only `_meta`. |
+| TC-U-22 | 2 | Per-tool gate **completeness**: every registry tool classified execute-silently vs confirmation-required; audited high-impact write tools flagged correctly. |
+| TC-U-23 | 2 | Every handler outcome carries a correlation ID and survives the `McpToolErrorFilter` pipeline with its structured code intact (not flattened to text). |
 
 ## Integration / surface test cases
 
@@ -48,6 +56,8 @@ regressed / double-executed; (3) `tools/list` surface accidentally changed
 |---|---|---|
 | TC-I-01 | 2 | `tools/list` returns the same 27 resident tools before/after the change (reuse/extend `McpProfileGatingTests` budget). |
 | TC-I-02 | 4 | `clio createw` produces a valid workspace; existing `CreateWorkspaceCommand.Tests` green. |
+| TC-I-03 | 2 | `mcp-http` registration path is unchanged — the durable handler is registered only at the stdio call-site (assert HTTP builder does not carry it). |
+| TC-I-04 | 2 | Handler behavior verified **through `RegisterMcpServer` + filter pipeline** (not an isolated substitute): execute, confirm, and error outcomes keep their codes end-to-end. |
 
 ## E2E test cases (`clio.mcp.e2e/DurableInvocationToolE2ETests.cs`)
 
@@ -71,4 +81,8 @@ Run in a fresh `clio createw` workspace, feed JSON-RPC (initialize → notificat
 
 ## Traceability
 
-FR-1→TC-U-06/TC-E-01 · FR-2→TC-U-07 · FR-3→TC-U-08/09/TC-E-02 · FR-4→TC-U-01..05/TC-E-03 · FR-5→TC-U-10/11/TC-E-04 · FR-6→TC-U-13/14 · FR-7→TC-U-15/TC-I-02 · NFR-1→TC-I-01/TC-E-05.
+FR-1→TC-U-06/TC-E-01 · FR-2→TC-U-07/21 · FR-3→TC-U-08/09/22/TC-E-02 · FR-4→TC-U-01..05/16..18/TC-E-03 · FR-5→TC-U-10/11/18/23/TC-E-04 · FR-6→TC-U-13/14 (resident-or-bridged oracle) · FR-7→TC-U-15/TC-I-02 · NFR-1→TC-I-01/TC-E-05 · NFR-2→TC-U-19/20/TC-I-04 · NFR (transport)→TC-I-03.
+
+## Round-1 review deltas (Codex `task-mrf28k5r-naq2pv`)
+
+Added/changed vs the first draft: per-tool `Destructive` gate + annotation audit + completeness test (B1 → TC-U-22); native-arg-shape dispatch (B2 → TC-U-19); stdio-only registration (B3 → TC-I-03); **drift oracle rewritten to resident-or-bridged** — existence is no longer the check (B4 → TC-U-13/14); context preservation (H5 → TC-U-20); advisory in `Content` (H6 → TC-U-21); startup-eager collision (H9 → TC-U-16); returned-not-thrown + correlation-id through the real filter (M10/M12 → TC-U-23/TC-I-04); discriminated feature-disabled (H8 → TC-U-18).
