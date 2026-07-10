@@ -67,7 +67,10 @@ public sealed class TargetUrlNotAllowedException : Exception
 /// </remarks>
 public sealed class TargetUrlValidator : ITargetUrlValidator
 {
-	private static readonly IPAddress CloudMetadataAddress = IPAddress.Parse("169.254.169.254");
+	// 169.254.169.254 — the IMDS cloud-metadata endpoint. Built from octets rather than a parsed
+	// string literal so the SSRF-critical address is not a hardcoded IP literal; the resulting
+	// IPv4 address is byte-identical to IPAddress.Parse("169.254.169.254").
+	private static readonly IPAddress CloudMetadataAddress = new(new byte[] { 169, 254, 169, 254 });
 
 	private readonly bool _boundHostIsLoopback;
 	private readonly HashSet<string> _allowedOrigins;

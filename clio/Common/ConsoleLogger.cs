@@ -147,11 +147,11 @@ public class ConsoleLogger : ILogger, IDisposable{
 		}
 	}
 
-	// Stable snapshot of the current flow's active scoped sinks (or null when the flow opened none), so
+	// Stable snapshot of the current flow's active scoped sinks (empty when the flow opened none), so
 	// a later Begin/Dispose on the same flow cannot mutate what an already-enqueued message carries.
 	private IReadOnlyList<SharedAppendFileSinkLease> SnapshotFlowScopedSinks() {
 		List<SharedAppendFileSinkLease> sinks = _flowScopedSinks.Value;
-		return sinks is { Count: > 0 } ? sinks.ToArray() : null;
+		return sinks is { Count: > 0 } ? sinks.ToArray() : [];
 	}
 
 	private void PrintInternal(){

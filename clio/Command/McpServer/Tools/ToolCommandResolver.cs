@@ -68,6 +68,10 @@ public class ToolCommandResolver(
 	/// </summary>
 	internal const string PassthroughKeyPrefix = "passthrough:";
 
+	// Placeholder identity/login used when no explicit environment, URI, or login is available: the
+	// unresolved cache-key fallback (GetTenantKey) and the environment-less default settings.
+	private const string DefaultIdentifier = "default";
+
 	/// <summary>
 	/// Resolves a command against an explicit environment or URI-based target.
 	/// </summary>
@@ -139,7 +143,7 @@ public class ToolCommandResolver(
 			// resolved the command itself fails and there is no shared authenticated session to protect.
 			// Return a stable fallback derived from the requested identity so same-target failing calls
 			// still serialize and different targets do not — and no exception escapes the lock-key path.
-			return $"unresolved:{options.Environment ?? options.Uri ?? "default"}";
+			return $"unresolved:{options.Environment ?? options.Uri ?? DefaultIdentifier}";
 		}
 	}
 
@@ -316,11 +320,11 @@ public class ToolCommandResolver(
 		ArgumentNullException.ThrowIfNull(options);
 		EnvironmentSettings settings = string.IsNullOrWhiteSpace(options.Environment)
 			? new EnvironmentSettings {
-				Login = "default"
+				Login = DefaultIdentifier
 			}
 			: settingsRepository.FindEnvironment(options.Environment)
 				?? new EnvironmentSettings {
-					Login = "default"
+					Login = DefaultIdentifier
 				};
 		settings = settings.Fill(options, interactiveConsole);
 		IServiceProvider container = new BindingsModule().Register(settings);
@@ -334,7 +338,7 @@ public class ToolCommandResolver(
 	internal static string BuildCacheKey(EnvironmentOptions options, EnvironmentSettings settings) {
 		string identity = options.Environment
 			?? settings.Uri
-			?? "default";
+			?? DefaultIdentifier;
 		string credentials = string.Concat(
 			settings.Login ?? string.Empty, "|",
 			settings.Password ?? string.Empty, "|",

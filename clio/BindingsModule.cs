@@ -771,6 +771,10 @@ public class BindingsModule {
 		return settingsRepository;
 	}
 
+	// Fallback base address for the no-credential local bootstrap case only (never a multi-tenant
+	// target): used when the environment supplies no explicit Uri.
+	private const string DefaultLocalhostUri = "http://localhost";
+
 	// Builds an ATF RemoteDataProvider for the environment. Bearer-first: an AccessToken is
 	// consumed via the dedicated bearer ctor and must never reach the login/password path
 	// (multi-tenant safety, ENG-93208 B1). Login/password are passed as-is (no Supervisor default).
@@ -790,10 +794,10 @@ public class BindingsModule {
 	// The Supervisor/localhost default stays reachable ONLY for the no-credential bootstrap case.
 	private static CreatioClient BuildCreatioClient(EnvironmentSettings settings) {
 		if (!string.IsNullOrEmpty(settings.AccessToken)) {
-			return new CreatioClient(settings.Uri ?? "http://localhost", settings.AccessToken, settings.IsNetCore);
+			return new CreatioClient(settings.Uri ?? DefaultLocalhostUri, settings.AccessToken, settings.IsNetCore);
 		}
 		if (string.IsNullOrEmpty(settings.ClientId)) {
-			return new CreatioClient(settings.Uri ?? "http://localhost", settings.Login ?? "Supervisor",
+			return new CreatioClient(settings.Uri ?? DefaultLocalhostUri, settings.Login ?? "Supervisor",
 				settings.Password ?? "Supervisor", true, settings.IsNetCore);
 		}
 		return CreatioClient.CreateOAuth20Client(settings.Uri, settings.AuthAppUri,
