@@ -63,7 +63,10 @@ public sealed class McpDurableCallToolHandler(
 		CancellationToken cancellationToken) {
 		ArgumentNullException.ThrowIfNull(request);
 		string correlationId = Guid.NewGuid().ToString();
-		string requestedName = request.Params?.Name?.Trim();
+		// Sanitized for prose reflection: an arbitrary caller-supplied name is later interpolated into
+		// model-visible Content, so control characters are stripped and the length capped — a
+		// newline/instruction-bearing "tool name" must not be able to inject trusted-looking text.
+		string requestedName = SanitizeName(request.Params?.Name);
 		if (string.IsNullOrWhiteSpace(requestedName)) {
 			return UnknownToolResult(string.Empty, [], correlationId);
 		}
@@ -88,7 +91,7 @@ public sealed class McpDurableCallToolHandler(
 		// pre-lazy), destructive is never silently executed and returns a ready-to-retry
 		// clio-run-destructive shape instead (the advertised, host-gated executor).
 		if (toolRegistry.IsDestructive(canonicalName)) {
-			return ConfirmationRequiredResult(requestedName, canonicalName, tool, request.Params?.Arguments, correlationId);
+			return ConfirmationRequiredResult(requestedName, canonicalName, request.Params?.Arguments, correlationId);
 		}
 
 		CallToolResult result = await executor
@@ -156,55 +159,35 @@ public sealed class McpDurableCallToolHandler(
 		return result;
 	}
 
+	// The retry shape deliberately carries NO argument VALUES: the caller already holds its own
+	// arguments (it just sent them), while echoing them back would create a second credential-bearing
+	// copy in the response (e.g. restart-by-credentials would reflect the password into the transcript).
+	// Only the argument NAMES are listed so the agent knows which keys to re-supply under `args`.
 	private static CallToolResult ConfirmationRequiredResult(
 		string requestedName,
 		string canonicalName,
-		McpServerTool tool,
 		IDictionary<string, JsonElement> nativeArguments,
 		string correlationId) {
 		JsonObject retryArguments = new() {
 			["command"] = canonicalName
 		};
-		JsonNode retryArgs = BuildRetryArgs(tool, nativeArguments);
-		if (retryArgs is not null) {
-			retryArguments["args"] = retryArgs;
-		}
 		string text =
 			$"Tool '{canonicalName}' is destructive and was NOT executed: it is not advertised in tools/list, " +
 			"so the host cannot show its own confirmation prompt. To proceed, call the advertised executor " +
-			$"`clio-run-destructive` with {{\"command\":\"{canonicalName}\",\"args\":{{…}}}} — the host gates that call.";
+			$"`clio-run-destructive` with {{\"command\":\"{canonicalName}\",\"args\":{{…}}}} (re-supply your " +
+			"own arguments under `args`) — the host gates that call.";
 		return StructuredOutcome(CodeConfirmationRequired, text, correlationId, payload => {
 			payload["requested-name"] = requestedName;
 			payload["canonical-name"] = canonicalName;
 			payload["destructive"] = true;
+			if (nativeArguments is { Count: > 0 }) {
+				payload["argument-names"] = ToJsonArray(nativeArguments.Keys.ToArray());
+			}
 			payload["retry"] = new JsonObject {
 				["tool"] = ClioRunDestructiveTool.ToolName,
 				["arguments"] = retryArguments
 			};
 		});
-	}
-
-	// Converts the native call's SDK-bound arguments into the payload `clio-run`'s `args` parameter
-	// expects: for the common single-complex-parameter tool shape the native arguments carry the record
-	// under the parameter name (clio-run re-wraps it on dispatch), so that inner object IS the args
-	// payload; scalar/multi-parameter tools pass their arguments object through as-is. Returns null when
-	// the caller sent no arguments.
-	private static JsonNode BuildRetryArgs(
-		McpServerTool tool,
-		IDictionary<string, JsonElement> nativeArguments) {
-		if (nativeArguments is null || nativeArguments.Count == 0) {
-			return null;
-		}
-		if (ClioRunExecutor.ExpectsSingleComplexArgsParameter(tool, out string parameterName)
-			&& nativeArguments.Count == 1
-			&& nativeArguments.TryGetValue(parameterName, out JsonElement record)) {
-			return JsonNode.Parse(record.GetRawText());
-		}
-		JsonObject args = new();
-		foreach (KeyValuePair<string, JsonElement> argument in nativeArguments) {
-			args[argument.Key] = JsonNode.Parse(argument.Value.GetRawText());
-		}
-		return args;
 	}
 
 	private CallToolResult DeprecatedAliasResult(
@@ -289,6 +272,22 @@ public sealed class McpDurableCallToolHandler(
 			Content = [new TextContentBlock { Text = text }],
 			StructuredContent = JsonSerializer.SerializeToElement(payload)
 		};
+	}
+
+	// Strips control characters and caps the length of a caller-supplied name before it is reflected
+	// into model-visible prose. Tool names are short kebab-case tokens; anything longer or containing
+	// non-printable characters is not a plausible name and only serves injection/noise.
+	private static string SanitizeName(string rawName) {
+		if (string.IsNullOrWhiteSpace(rawName)) {
+			return rawName?.Trim();
+		}
+		const int maxLength = 64;
+		string trimmed = rawName.Trim();
+		char[] printable = trimmed
+			.Where(character => !char.IsControl(character))
+			.Take(maxLength)
+			.ToArray();
+		return new string(printable);
 	}
 
 	private static JsonArray ToJsonArray(IReadOnlyList<string> values) {

@@ -257,8 +257,9 @@ public sealed record ToolContractGetResponse(
 /// <param name="ContractAvailable">Whether a full curated contract is reachable by naming this tool.</param>
 /// <param name="Resident">
 /// Whether the tool is present in <c>tools/list</c> and therefore called natively (<c>true</c>), or hidden
-/// from <c>tools/list</c> and reachable only through <c>clio-run</c> / <c>clio-run-destructive</c>
-/// (<c>false</c>). Derived from <see cref="McpCoreToolProfile.IsResident"/>, independent of whether an
+/// from <c>tools/list</c> (<c>false</c>). A non-resident tool is reachable through <c>clio-run</c> /
+/// <c>clio-run-destructive</c>, and on the stdio transport also via forgiving direct invocation
+/// (the durable unmatched-name handler). Derived from <see cref="McpCoreToolProfile.IsResident"/>, independent of whether an
 /// invoker registry is supplied. Never wrap a resident tool in <c>clio-run</c>.
 /// </param>
 /// <param name="Destructive">

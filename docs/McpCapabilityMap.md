@@ -32,7 +32,7 @@ is discovered through `get-tool-contract`, not `tools/list`:
 
 Important shape of the surface:
 
-- Transport is stdio only.
+- Transports: stdio (the shipped default) and an HTTP host (`mcp-http`, not yet released). The durable unmatched-name handling described below is registered on the stdio transport only.
 - Discovery returns only the enabled surface: feature-gated tools, prompts, and resources are omitted while their feature flag is off, so the advertised counts reflect the default flag state.
 - Every tool declares explicit `ReadOnly` / `Destructive` / `Idempotent` safety metadata, so a client can rely on those flags when deciding what is safe to invoke.
 

@@ -96,6 +96,18 @@ public sealed class ClioRunExecutor(
 		}
 		string toolName = command.Trim();
 
+		// Durable-name resolution FIRST: when the literal name misses the registry, consult the
+		// compatibility catalog — a deprecated/renamed alias resolves to its canonical tool so guidance
+		// written against the old name keeps working. The catalog is the single source of truth for such
+		// renames (the MCP analogue of the CLI's hidden-alias policy). Canonicalizing BEFORE the
+		// executor guard below means the guard always sees the final dispatch target, so a
+		// (mis-)declared alias could never smuggle an executor past it; the catalog constructor
+		// additionally rejects executor names outright.
+		if (!toolRegistry.TryGetTool(toolName, out McpServerTool _)
+			&& compatibilityCatalog.TryResolveAlias(toolName, out string canonicalAlias, out McpToolCompatibilityEntry _)) {
+			toolName = canonicalAlias;
+		}
+
 		// Reject dispatch to the executors themselves (self- or cross-dispatch). The registry
 		// contains clio-run / clio-run-destructive, so without this guard a client could nest
 		// clio-run -> clio-run -> ... and recurse until cancellation/resource exhaustion (DoS).
@@ -106,15 +118,6 @@ public sealed class ClioRunExecutor(
 			return Error(
 				$"Error: '{toolName}' cannot be a clio-run target (self/cross-dispatch is not allowed). " +
 				"Pass a concrete clio MCP tool name as 'command'.");
-		}
-
-		// Durable-name resolution: when the literal name misses the registry, consult the compatibility
-		// catalog — a deprecated/renamed alias resolves to its canonical tool so guidance written against
-		// the old name keeps working. The catalog is the single source of truth for such renames (the MCP
-		// analogue of the CLI's hidden-alias policy).
-		if (!toolRegistry.TryGetTool(toolName, out McpServerTool _)
-			&& compatibilityCatalog.TryResolveAlias(toolName, out string canonicalAlias, out McpToolCompatibilityEntry _)) {
-			toolName = canonicalAlias;
 		}
 
 		if (!toolRegistry.TryGetTool(toolName, out McpServerTool tool)) {
@@ -537,29 +540,6 @@ public sealed class ClioRunExecutor(
 			.ToArray();
 	}
 
-	/// <summary>
-	/// Reports whether <paramref name="tool"/> binds a single complex args-record parameter (the common
-	/// clio tool shape) and, when it does, that parameter's name. The durable handler uses this to build
-	/// an accurate <c>clio-run</c> retry shape from a native call's arguments: for a single-complex tool
-	/// the native <c>arguments[parameterName]</c> object IS the <c>clio-run</c> <c>args</c> payload
-	/// (<c>BuildChildParams</c> re-wraps it under the parameter name on dispatch), while scalar/multi-
-	/// parameter tools pass their arguments object through as-is.
-	/// </summary>
-	internal static bool ExpectsSingleComplexArgsParameter(McpServerTool tool, out string parameterName) {
-		parameterName = null;
-		MethodInfo method = tool?.Metadata.OfType<MethodInfo>().FirstOrDefault();
-		if (method is null) {
-			return false;
-		}
-		IReadOnlyList<ParameterInfo> boundParameters = method.GetParameters()
-			.Where(IsBindableToolParameter)
-			.ToArray();
-		if (boundParameters.Count == 1 && IsComplexArgsParameter(boundParameters[0].ParameterType)) {
-			parameterName = boundParameters[0].Name;
-			return true;
-		}
-		return false;
-	}
 
 	private static CallToolResult Error(string message) =>
 		new() {

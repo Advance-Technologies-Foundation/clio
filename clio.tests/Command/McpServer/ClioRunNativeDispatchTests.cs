@@ -135,22 +135,71 @@ public sealed class ClioRunNativeDispatchTests {
 			because: "the original (unmatched) MatchedPrimitive must be restored after dispatch");
 	}
 
+
+	// A real SDK-built tool whose method throws, so the exception-path restore can be asserted.
+	[McpServerToolType]
+	private static class NativeThrowingToolType {
+		[McpServerTool(Name = "native-throwing-tool", Destructive = false)]
+		[System.ComponentModel.Description("Always throws a recoverable exception.")]
+		public static string Throw([System.ComponentModel.Description("payload")] string value) =>
+			throw new InvalidOperationException("native boom");
+	}
+
+	// A real SDK-built tool that honours cooperative cancellation, so the cancellation-path restore can
+	// be asserted.
+	[McpServerToolType]
+	private static class NativeCancellingToolType {
+		[McpServerTool(Name = "native-cancelling-tool", Destructive = false)]
+		[System.ComponentModel.Description("Throws OperationCanceledException for its token.")]
+		public static string Cancel(CancellationToken cancellationToken) =>
+			throw new OperationCanceledException(cancellationToken);
+	}
+
 	[Test]
 	[Category("Unit")]
-	[Description("Identifies the single-complex-args tool shape and its parameter name for building accurate clio-run retry shapes.")]
-	public void ExpectsSingleComplexArgsParameter_ShouldReportParameterName_WhenToolHasSingleComplexParameter() {
+	[Description("Restores the request context after a RECOVERABLE tool exception: the failure is returned as an error result and the original Params/MatchedPrimitive come back (TC-U-20 exception variant).")]
+	public async Task InvokeResolvedAsync_ShouldRestoreContextAndReturnError_WhenToolThrows() {
 		// Arrange
-		McpServerTool complexTool = BuildTool(typeof(ComplexToolType), nameof(ComplexToolType.Run));
-		McpServerTool scalarTool = BuildTool(typeof(EchoToolType), nameof(EchoToolType.Echo));
+		McpServerTool tool = BuildTool(typeof(NativeThrowingToolType), nameof(NativeThrowingToolType.Throw));
+		Dictionary<string, JsonElement> arguments = new() {
+			["value"] = JsonSerializer.SerializeToElement("hi")
+		};
+		RequestContext<CallToolRequestParams> context = CallContext("native-throwing-tool", arguments);
+		CallToolRequestParams originalParams = context.Params;
 
 		// Act
-		bool complexResult = ClioRunExecutor.ExpectsSingleComplexArgsParameter(complexTool, out string complexName);
-		bool scalarResult = ClioRunExecutor.ExpectsSingleComplexArgsParameter(scalarTool, out string scalarName);
+		CallToolResult result = await _sut.InvokeResolvedAsync(tool, "native-throwing-tool", context, CancellationToken.None);
 
 		// Assert
-		complexResult.Should().BeTrue(because: "the tool binds exactly one complex args record");
-		complexName.Should().Be("args", because: "the parameter name drives the retry-shape unwrapping");
-		scalarResult.Should().BeFalse(because: "a scalar parameter is not a complex args record");
-		scalarName.Should().BeNull(because: "no parameter name applies to the scalar shape");
+		result.IsError.Should().BeTrue(
+			because: "a recoverable tool exception surfaces as a structured error result, not a throw");
+		context.Params.Should().BeSameAs(originalParams,
+			because: "the original request params must be restored even when the tool throws");
+		context.MatchedPrimitive.Should().BeNull(
+			because: "the original (unmatched) MatchedPrimitive must be restored even when the tool throws");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Restores the request context on COOPERATIVE CANCELLATION: the OperationCanceledException propagates (the host sees a cancellation) and the original Params/MatchedPrimitive come back (TC-U-20 cancellation variant).")]
+	public async Task InvokeResolvedAsync_ShouldRestoreContext_WhenDispatchIsCancelled() {
+		// Arrange
+		McpServerTool tool = BuildTool(typeof(NativeCancellingToolType), nameof(NativeCancellingToolType.Cancel));
+		RequestContext<CallToolRequestParams> context = CallContext("native-cancelling-tool", []);
+		CallToolRequestParams originalParams = context.Params;
+		using CancellationTokenSource cts = new();
+		cts.Cancel();
+
+		// Act
+		Func<Task> act = async () =>
+			await _sut.InvokeResolvedAsync(tool, "native-cancelling-tool", context, cts.Token);
+
+		// Assert
+		await act.Should().ThrowAsync<OperationCanceledException>(
+			because: "cooperative cancellation must propagate so the host observes a cancellation, not a masked error");
+		context.Params.Should().BeSameAs(originalParams,
+			because: "the original request params must be restored even on cancellation");
+		context.MatchedPrimitive.Should().BeNull(
+			because: "the original (unmatched) MatchedPrimitive must be restored even on cancellation");
 	}
 }

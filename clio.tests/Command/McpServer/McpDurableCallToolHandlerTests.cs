@@ -133,6 +133,12 @@ public sealed class McpDurableCallToolHandlerTests {
 				because: "the retry command is the canonical tool name");
 		payload.GetProperty("correlation-id").GetString().Should().NotBeNullOrWhiteSpace(
 			because: "every handler outcome carries a correlation id");
+		JsonSerializer.Serialize(payload).Should().NotContain("dev04",
+			because: "the retry shape must never echo caller argument VALUES — a credential-bearing " +
+				"argument (e.g. restart-by-credentials password) would otherwise be reflected into the transcript");
+		payload.GetProperty("argument-names").EnumerateArray().Select(name => name.GetString())
+			.Should().Contain("environmentName",
+				because: "the caller is told WHICH keys to re-supply, without their values");
 	}
 
 	[Test]

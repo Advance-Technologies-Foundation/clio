@@ -70,8 +70,11 @@ public interface IMcpToolCompatibilityCatalog {
 /// <summary>
 /// Default <see cref="IMcpToolCompatibilityCatalog"/> built from a static seed of known compatibility
 /// entries. The constructor validates the whole catalog for internal consistency and throws on any
-/// collision, so a malformed catalog fails fast at DI build time (the container is built with
-/// <c>ValidateOnBuild = true</c>) rather than on first resolution.
+/// collision; the MCP host build (<c>BindingsModule.Register</c> with <c>registerMcpHost: true</c>)
+/// resolves the catalog eagerly right after the container is built, so a malformed catalog aborts
+/// host startup rather than surfacing on the first resolution. (<c>ValidateOnBuild</c> alone verifies
+/// the DI graph but does not instantiate services — the explicit eager resolve is what makes the
+/// validation actually fail fast.)
 /// </summary>
 public sealed class McpToolCompatibilityCatalog : IMcpToolCompatibilityCatalog {
 
@@ -146,6 +149,12 @@ public sealed class McpToolCompatibilityCatalog : IMcpToolCompatibilityCatalog {
 	// ambiguous. Cross-checking that each canonical is a real registered tool is enforced separately by a
 	// unit test (kept out of the constructor to avoid coupling the catalog to the heavy tool registry and
 	// to feature-gating).
+	// The generic executors must never be a compatibility target: an alias resolving to clio-run /
+	// clio-run-destructive would enter the executors under its alias spelling, sidestep their
+	// self-dispatch guard, and allow recursive dispatch (DoS). Rejected at construction so the mistake
+	// cannot ship.
+	private static readonly string[] ExecutorToolNames = ["clio-run", "clio-run-destructive"];
+
 	private static IReadOnlyDictionary<string, (string, McpToolCompatibilityEntry)> BuildValidatedAliasIndex(
 		IReadOnlyList<McpToolCompatibilityEntry> entries) {
 		HashSet<string> canonicals = new(StringComparer.OrdinalIgnoreCase);
@@ -155,6 +164,11 @@ public sealed class McpToolCompatibilityCatalog : IMcpToolCompatibilityCatalog {
 			}
 			if (string.IsNullOrWhiteSpace(entry.CanonicalName)) {
 				throw new InvalidOperationException("Compatibility catalog contains an entry with an empty canonical name.");
+			}
+			if (ExecutorToolNames.Contains(entry.CanonicalName.Trim(), StringComparer.OrdinalIgnoreCase)) {
+				throw new InvalidOperationException(
+					$"Compatibility catalog must not target the executor tool '{entry.CanonicalName}' — " +
+					"an alias resolving to an executor would bypass its self-dispatch guard.");
 			}
 			if (!canonicals.Add(entry.CanonicalName.Trim())) {
 				throw new InvalidOperationException(
@@ -166,6 +180,11 @@ public sealed class McpToolCompatibilityCatalog : IMcpToolCompatibilityCatalog {
 			new(StringComparer.OrdinalIgnoreCase);
 		foreach (McpToolCompatibilityEntry entry in entries) {
 			foreach (string alias in entry.Aliases ?? Array.Empty<string>()) {
+				if (!string.IsNullOrWhiteSpace(alias)
+					&& ExecutorToolNames.Contains(alias.Trim(), StringComparer.OrdinalIgnoreCase)) {
+					throw new InvalidOperationException(
+						$"Compatibility catalog must not declare the executor tool name '{alias}' as an alias.");
+				}
 				if (string.IsNullOrWhiteSpace(alias)) {
 					throw new InvalidOperationException(
 						$"Compatibility catalog entry for canonical '{entry.CanonicalName}' declares an empty alias.");

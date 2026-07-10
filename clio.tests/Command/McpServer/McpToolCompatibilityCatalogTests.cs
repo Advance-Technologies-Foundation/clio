@@ -164,6 +164,40 @@ public sealed class McpToolCompatibilityCatalogTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("An entry whose canonical name targets a generic executor throws at construction — an alias resolving to clio-run would bypass the executor's self-dispatch guard (recursion DoS).")]
+	public void Constructor_ShouldThrow_WhenCanonicalTargetsExecutor() {
+		// Arrange
+		List<McpToolCompatibilityEntry> entries = [
+			Entry("clio-run", "legacy-run")
+		];
+
+		// Act
+		Action act = () => _ = new McpToolCompatibilityCatalog(entries);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+			because: "the executors must never be a compatibility target — a resolved alias would re-enter dispatch recursively");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An entry declaring an executor name as an alias throws at construction.")]
+	public void Constructor_ShouldThrow_WhenAliasIsExecutorName() {
+		// Arrange
+		List<McpToolCompatibilityEntry> entries = [
+			Entry("tool-a", "clio-run-destructive")
+		];
+
+		// Act
+		Action act = () => _ = new McpToolCompatibilityCatalog(entries);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+			because: "an executor name declared as an alias would shadow the executor on the resolution path");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("The production catalog builds without throwing, proving the shipped seed is internally consistent.")]
 	public void Constructor_ShouldBuildProductionSeed_WithoutThrowing() {
 		// Arrange & Act

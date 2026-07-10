@@ -116,8 +116,9 @@ public sealed class McpToolInvokerRegistry : IMcpToolInvokerRegistry {
 				// [McpServerTool] methods advertising the same name make dispatch ambiguous and would let a
 				// rename land as a silent second definition instead of a catalog alias. There are no
 				// duplicate names in the production catalog today (verified), so this only fires on a
-				// genuine authoring mistake — and because the registry is constructed during the
-				// ValidateOnBuild container build, that mistake surfaces at startup, not on first dispatch.
+				// genuine authoring mistake — and because the MCP host resolves the registry EAGERLY right
+				// after the container is built (BindingsModule.Register, registerMcpHost path; ValidateOnBuild
+				// alone does not instantiate services), that mistake aborts host startup, not first dispatch.
 				if (_tools.ContainsKey(toolName)) {
 					throw new InvalidOperationException(
 						$"Duplicate MCP tool name '{toolName}' is declared by more than one [McpServerTool] method. " +

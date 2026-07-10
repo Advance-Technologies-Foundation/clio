@@ -281,3 +281,31 @@ handler substitutes). E2E in `clio.mcp.e2e`. See
 - **M11** drift tokenization under-specified → **D6** explicit markers/grammar + feature baseline + fixtures.
 - **M12** missing correlation-id / full-pipeline tests → **D5** correlation-id on all outcomes; verification through `RegisterMcpServer`.
 - **L13** SDK seam / precedence / no current duplicate keys → confirmed; D1/D4 wording corrected accordingly.
+
+## Review round 2 (Codex pre-PR comprehensive, `task-mrfh2sj4-8t07r1`, 2026-07-11) — finding → resolution
+
+Verdict on the implemented branch was NO-GO with 0 Blockers / 3 Highs; all Highs + cheap Mediums/Lows
+fixed before opening the PR:
+
+- **H1 credential echo** — `confirmation-required` no longer echoes argument VALUES (a
+  `restart-by-credentials` call would have reflected the password); the retry shape carries the
+  canonical command + `argument-names` only. Test asserts no value echo.
+- **H2 eager validation was not eager** — `ValidateOnBuild` verifies the DI graph but does NOT
+  instantiate services (round-1 assumption corrected). The MCP host build now explicitly resolves the
+  catalog + registry right after container build, so a malformed surface aborts startup; pinned by
+  `McpHostStartupValidationTests` (TC-U-16).
+- **H3 per-call registry rebuild** — the invoker registry (full reflection scan + SDK tool build per
+  construction) and the catalog are now host-lifetime SINGLETONS on the MCP host; the unmatched path no
+  longer rebuilds the registry twice per call. Singleton-ness pinned by test.
+- **M alias→executor recursion (latent)** — catalog construction rejects executor names as canonical or
+  alias; `clio-run` canonicalizes aliases BEFORE its self-dispatch guard so the guard always sees the
+  final target.
+- **M docs** — capability map no longer claims "stdio only" transport; `Resident` XML doc lists all
+  reachability paths.
+- **L prose reflection** — caller-supplied names are control-char-stripped and length-capped before
+  interpolation into model-visible Content.
+- **M test gaps (partially addressed)** — added: synthetic duplicate-registry test (TC-U-05),
+  cancellation + exception context-restore tests (TC-U-20 variants), catalog executor-rejection tests,
+  host-build validation tests (TC-U-16). Remaining advisory (tracked for the final ready-to-merge gate,
+  not blocking per policy): TC-I-04 full filter-pipeline composition, TC-U-11 foreign-command, exact
+  27-count e2e pin, typed e2e assertions.
