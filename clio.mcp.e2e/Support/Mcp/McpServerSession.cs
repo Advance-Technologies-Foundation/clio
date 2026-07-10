@@ -120,6 +120,19 @@ internal sealed class McpServerSession : IAsyncDisposable {
 	}
 
 	/// <summary>
+	/// Invokes a tool by its BARE name with NO resident-vs-<c>clio-run</c> routing — the raw wire call
+	/// an agent following static guidance would make. This is the entry point for testing the durable
+	/// (forgiving) unmatched-name handler (ENG-93370), which must observe the unrouted name itself; the
+	/// routed <see cref="CallToolAsync(string, IReadOnlyDictionary{string, object?}, CancellationToken)"/>
+	/// would mask it behind <c>clio-run</c>.
+	/// </summary>
+	public async Task<CallToolResult> CallToolRawAsync(
+		string toolName,
+		IReadOnlyDictionary<string, object?> arguments,
+		CancellationToken cancellationToken) =>
+		await Client.CallToolAsync(toolName, arguments, cancellationToken: cancellationToken);
+
+	/// <summary>
 	/// True when <paramref name="toolName"/> is advertised in <c>tools/list</c> (a resident tool on the
 	/// lazy surface). The advertised set is fetched once per session — tool registration is fixed at
 	/// server-process start, so the cache cannot go stale.

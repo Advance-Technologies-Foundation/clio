@@ -619,13 +619,13 @@ stories:
     title: "Compatibility/alias catalog + fail-fast collisions"
     feature: "mcp-durable-invocation"
     size: M
-    status: in-progress
+    status: review
     file: spec/stories/story-mcp-durable-invocation-1.md
     prd: spec/prd/prd-mcp-durable-invocation.md
     adr: spec/adr/adr-mcp-durable-invocation.md
     fr: [FR-4]
     ac: [AC-01, AC-02, AC-03, AC-04, AC-05]
-    status_detail: "Implemented + green locally 2026-07-10 (9 new catalog tests). Registry fail-fast added. Legacy restart method removed in Story 2 as planned. Not yet in a PR."
+    status_detail: "All 5 stories implemented + green 2026-07-10 (unit 5371+, e2e 5/5 vs real server, live JSON-RPC proof). Not yet in a PR."
     depends_on: []
     blocks:
       - story-mcp-durable-invocation-2
@@ -635,7 +635,7 @@ stories:
     title: "Forgiving unmatched-name handler (execute / confirm / actionable error)"
     feature: "mcp-durable-invocation"
     size: L
-    status: in-progress
+    status: review
     file: spec/stories/story-mcp-durable-invocation-2.md
     prd: spec/prd/prd-mcp-durable-invocation.md
     adr: spec/adr/adr-mcp-durable-invocation.md
@@ -651,7 +651,7 @@ stories:
     title: "Drift-guard test + maintenance-target ownership for tpl"
     feature: "mcp-durable-invocation"
     size: M
-    status: in-progress
+    status: review
     file: spec/stories/story-mcp-durable-invocation-3.md
     prd: spec/prd/prd-mcp-durable-invocation.md
     adr: spec/adr/adr-mcp-durable-invocation.md
@@ -666,7 +666,7 @@ stories:
     title: "Fix workspace AGENTS.md template (delegate to live channel) + strip BOM"
     feature: "mcp-durable-invocation"
     size: S
-    status: in-progress
+    status: review
     file: spec/stories/story-mcp-durable-invocation-4.md
     prd: spec/prd/prd-mcp-durable-invocation.md
     adr: spec/adr/adr-mcp-durable-invocation.md
@@ -680,7 +680,7 @@ stories:
     title: "MCP e2e coverage + docs/MCP-surface review"
     feature: "mcp-durable-invocation"
     size: M
-    status: ready-for-dev
+    status: review
     file: spec/stories/story-mcp-durable-invocation-5.md
     prd: spec/prd/prd-mcp-durable-invocation.md
     adr: spec/adr/adr-mcp-durable-invocation.md
