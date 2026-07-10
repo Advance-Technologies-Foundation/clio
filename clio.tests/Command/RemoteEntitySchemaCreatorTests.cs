@@ -209,6 +209,50 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 	}
 
 	[Test]
+	[Description("Creates an entity schema with a Color column through create-entity-schema, persisting it as data value type 18.")]
+	public void Create_CreatesSchema_WithColorColumn()
+	{
+		// Arrange
+		string saveBody = null;
+		SetupApplicationClient((url, body) => {
+			if (url.Contains("CreateNewSchema", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
+			}
+			if (url.Contains("CheckUniqueSchemaName", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":true}";
+			}
+			if (url.Contains("SaveSchema", StringComparison.Ordinal)) {
+				saveBody = body;
+				return "{\"success\":true,\"schemaUid\":\"22222222-2222-2222-2222-222222222222\"}";
+			}
+			if (url.Contains("SchemaDesignerRequest", StringComparison.Ordinal)) {
+				return "{\"success\":true}";
+			}
+			if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"UsrVehicle\"}}";
+			}
+			throw new InvalidOperationException($"Unexpected url {url}");
+		});
+
+		// Act
+		_creator.Create(new CreateEntitySchemaOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Title = "Vehicle",
+			Columns = ["Name:Text:Vehicle name", "UsrHighlight:Color:Highlight color"]
+		});
+
+		// Assert
+		JObject json = JObject.Parse(saveBody);
+		JToken colorColumn = json["columns"]!.Single(column => column["name"]!.Value<string>() == "UsrHighlight");
+		colorColumn["type"]!.Value<int>().Should().Be(18,
+			because: "a Color column must persist as the platform Color data value type 18");
+		JToken colorReferenceSchema = colorColumn["referenceSchema"];
+		(colorReferenceSchema is null || colorReferenceSchema.Type == JTokenType.Null).Should().BeTrue(
+			because: "a Color column is a plain value column and must not carry a reference schema");
+	}
+
+	[Test]
 	[Description("Falls back to the legacy Id primary column name when SchemaNamePrefix is empty.")]
 	public void Create_CreatesSchemaWithoutParent_AndFallsBackToLegacyPrimaryColumnName_WhenSchemaNamePrefixIsEmpty()
 	{

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Net.Http;
+using System.Reflection;
 using Clio.Command;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
@@ -686,6 +687,206 @@ internal class RemoteEntitySchemaColumnManagerTests
 		inheritedColumn.DataValueType.Should().Be(1, because: "the inherited column's type must stay unchanged");
 		EntitySchemaDesignerSupport.GetLocalizableValue(inheritedColumn.Caption, "en-US").Should().Be("Description",
 			because: "the caption override must be applied in place on the inherited column");
+	}
+
+	[Test]
+	[Description("Fails closed: every non-caption settable option on ModifyEntitySchemaColumnOptions must be rejected on an inherited column, so a newly added option cannot silently bypass the inherited read-only guard.")]
+	public void ModifyColumn_ShouldRejectEveryNonCaptionOption_OnInheritedColumn() {
+		// Arrange — the identity/target/culture and caption/description fields that are NOT column mutations.
+		HashSet<string> allowedNonMutationOptions = new(StringComparer.Ordinal) {
+			nameof(ModifyEntitySchemaColumnOptions.Package),
+			nameof(ModifyEntitySchemaColumnOptions.PackageNameAlias),
+			nameof(ModifyEntitySchemaColumnOptions.SchemaName),
+			nameof(ModifyEntitySchemaColumnOptions.Action),
+			nameof(ModifyEntitySchemaColumnOptions.ColumnName),
+			nameof(ModifyEntitySchemaColumnOptions.CaptionCulture),
+			nameof(ModifyEntitySchemaColumnOptions.Title),
+			nameof(ModifyEntitySchemaColumnOptions.TitleLocalizations),
+			nameof(ModifyEntitySchemaColumnOptions.Description),
+			nameof(ModifyEntitySchemaColumnOptions.DescriptionLocalizations)
+		};
+		PropertyInfo[] mutationProperties = typeof(ModifyEntitySchemaColumnOptions)
+			.GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+			.Where(property => property.CanWrite && !allowedNonMutationOptions.Contains(property.Name))
+			.ToArray();
+		mutationProperties.Should().NotBeEmpty(
+			because: "the drift test must actually exercise the non-caption mutation options");
+
+		foreach (PropertyInfo property in mutationProperties) {
+			_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)],
+				inheritedColumns: [CreateTextColumn("Symptoms", NameColumnUId)], primaryDisplayColumn: null);
+			SetupLoadedSchema();
+			_designerClient.ClearReceivedCalls();
+			var options = new ModifyEntitySchemaColumnOptions {
+				Package = "UsrPkg",
+				SchemaName = "UsrTickets",
+				Action = "modify",
+				ColumnName = "Symptoms"
+			};
+			property.SetValue(options, CreateRepresentativeMutationValue(property.PropertyType, property.Name));
+
+			// Act
+			Action act = () => _manager.ModifyColumn(options);
+
+			// Assert
+			act.Should().Throw<EntitySchemaDesignerException>(
+					because: $"the non-caption option '{property.Name}' must be rejected on an inherited column so a new option cannot silently bypass the guard")
+				.WithMessage("*inherited; only its caption and description can be overridden*");
+			_designerClient.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(),
+				Arg.Any<Clio.Command.RemoteCommandOptions>());
+		}
+	}
+
+	[Test]
+	[Description("Verifies the inherited-caption readback against the effective-culture (non-en-US) entry of title-localizations, exercising ResolveExpectedCaption/FindCultureValue.")]
+	public void ModifyColumn_ShouldVerifyInheritedCaptionOverride_ForNonEnUsEffectiveCulture() {
+		// Arrange
+		_captionCultureResolver.ResolveEffectiveCulture(Arg.Any<EnvironmentOptions>(), Arg.Any<string?>())
+			.Returns("uk-UA");
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)],
+			inheritedColumns: [CreateTextColumn("Symptoms", NameColumnUId)], primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrTickets",
+			Action = "modify",
+			ColumnName = "Symptoms",
+			TitleLocalizations = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+				["en-US"] = "Description",
+				["uk-UA"] = "Опис"
+			}
+		};
+
+		// Act
+		_manager.ModifyColumn(options);
+
+		// Assert
+		EntitySchemaColumnDto inheritedColumn = _savedSchema.InheritedColumns.Single(column => column.Name == "Symptoms");
+		EntitySchemaDesignerSupport.GetLocalizableValue(inheritedColumn.Caption, "uk-UA").Should().Be("Опис",
+			because: "the effective-culture (uk-UA) caption override must be applied and pass readback verification");
+		EntitySchemaDesignerSupport.GetLocalizableValue(inheritedColumn.Caption, "en-US").Should().Be("Description",
+			because: "the en-US localization must also be persisted");
+	}
+
+	[Test]
+	[Description("Verifies the inherited-caption readback falls back to the en-US title-localization when the effective culture is absent from the map, exercising the ResolveExpectedCaption fallback tier.")]
+	public void ModifyColumn_ShouldVerifyInheritedCaptionOverride_ViaEnUsFallback_WhenEffectiveCultureAbsent() {
+		// Arrange
+		_captionCultureResolver.ResolveEffectiveCulture(Arg.Any<EnvironmentOptions>(), Arg.Any<string?>())
+			.Returns("de-DE");
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)],
+			inheritedColumns: [CreateTextColumn("Symptoms", NameColumnUId)], primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrTickets",
+			Action = "modify",
+			ColumnName = "Symptoms",
+			TitleLocalizations = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+				["en-US"] = "Description"
+			}
+		};
+
+		// Act
+		_manager.ModifyColumn(options);
+
+		// Assert
+		EntitySchemaColumnDto inheritedColumn = _savedSchema.InheritedColumns.Single(column => column.Name == "Symptoms");
+		EntitySchemaDesignerSupport.GetLocalizableValue(inheritedColumn.Caption, "en-US").Should().Be("Description",
+			because: "with no de-DE entry, the readback verification must fall back to the en-US localization");
+	}
+
+	[Test]
+	[Description("Overriding an inherited column caption saves only the child schema; the parent schema is never saved, so the parent's own caption is left untouched (AC-03 at the unit level).")]
+	public void ModifyColumn_ShouldSaveOnlyChildSchema_WhenOverridingInheritedCaption() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)],
+			inheritedColumns: [CreateTextColumn("Symptoms", NameColumnUId)], primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "modify",
+			ColumnName = "Symptoms",
+			Title = "Registered on"
+		};
+
+		// Act
+		_manager.ModifyColumn(options);
+
+		// Assert
+		_designerClient.Received(1).SaveSchema(
+			Arg.Is<EntityDesignSchemaDto>(schema => schema.Name == "UsrVehicle"),
+			Arg.Any<Clio.Command.RemoteCommandOptions>());
+		_designerClient.DidNotReceive().SaveSchema(
+			Arg.Is<EntityDesignSchemaDto>(schema => schema.Name != "UsrVehicle"),
+			Arg.Any<Clio.Command.RemoteCommandOptions>());
+	}
+
+	[Test]
+	[Description("Allows a description-only override of an inherited column (no title), applied in place on InheritedColumns.")]
+	public void ModifyColumn_ShouldOverrideInheritedDescriptionOnly_WhenNoTitleSupplied() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)],
+			inheritedColumns: [CreateTextColumn("Symptoms", NameColumnUId)], primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrTickets",
+			Action = "modify",
+			ColumnName = "Symptoms",
+			Description = "Reported symptoms"
+		};
+
+		// Act
+		_manager.ModifyColumn(options);
+
+		// Assert
+		EntitySchemaColumnDto inheritedColumn = _savedSchema.InheritedColumns.Single(column => column.Name == "Symptoms");
+		EntitySchemaDesignerSupport.GetLocalizableValue(inheritedColumn.Description, "en-US").Should().Be("Reported symptoms",
+			because: "a description-only override of an inherited column is allowed and applied in place");
+	}
+
+	[Test]
+	[Description("Rejects the text-only multiline option on a Color column because Color is not a text-like type.")]
+	public void ModifyColumn_ShouldThrow_WhenColorColumnUsesMultilineTextOption() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)], primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "add",
+			ColumnName = "Highlight",
+			Type = "Color",
+			Title = "Highlight color",
+			MultilineText = true
+		};
+
+		// Act
+		Action act = () => _manager.ModifyColumn(options);
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>()
+			.WithMessage("*Text-specific options*",
+				because: "text-only options like multiline must not be accepted on a Color column");
+		_designerClient.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(),
+			Arg.Any<Clio.Command.RemoteCommandOptions>());
+	}
+
+	private static object CreateRepresentativeMutationValue(Type propertyType, string propertyName) {
+		if (propertyType == typeof(string)) {
+			return "changed";
+		}
+		if (propertyType == typeof(bool?)) {
+			return true;
+		}
+		if (propertyType == typeof(EntitySchemaDefaultValueConfig)) {
+			return new EntitySchemaDefaultValueConfig { Source = "Const", Value = "x" };
+		}
+		throw new InvalidOperationException(
+			$"Drift test cannot build a representative value for the new option '{propertyName}' of type '{propertyType}'. " +
+			"Add a case here (and ensure HasNonCaptionInheritedMutation covers the option) so the inherited guard stays fail-closed.");
 	}
 
 	[Test]
@@ -2198,8 +2399,8 @@ internal class RemoteEntitySchemaColumnManagerTests
 
 		// Assert
 		act.Should().Throw<EntitySchemaDesignerException>()
-			.WithMessage("*No schema property to set*",
-				because: "the setter must reject a no-op request that would set nothing");
+			.WithMessage("*At least one schema property to set is required*",
+				because: "the setter must reject a no-op request that would set nothing, with the shared message");
 		_designerClient.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(),
 			Arg.Any<Clio.Command.RemoteCommandOptions>());
 	}

@@ -54,6 +54,28 @@ internal class SetEntitySchemaPropertiesCommandTests : BaseCommandTests<SetEntit
 	}
 
 	[Test]
+	[Description("Maps the hidden --package-name and --name aliases to the canonical Package/SchemaName options so an alias-only invocation is accepted and delegated.")]
+	public void Execute_ShouldMapHiddenAliases_WhenOnlyAliasOptionsAreProvided() {
+		// Arrange
+		SetEntitySchemaPropertiesOptions options = new() {
+			PackageNameAlias = "UsrPkg",
+			SchemaNameAlias = "UsrVehicle",
+			PrimaryDisplayColumn = "UsrName"
+		};
+
+		// Assert — the aliases delegate to the canonical properties
+		options.Package.Should().Be("UsrPkg", because: "--package-name must map to the canonical Package option");
+		options.SchemaName.Should().Be("UsrVehicle", because: "--name must map to the canonical SchemaName option");
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert — an alias-only invocation is accepted and delegates to the manager
+		result.Should().Be(0, because: "an alias-only invocation should pass validation and delegate to the manager");
+		_columnManager.Received(1).SetSchemaProperties(options);
+	}
+
+	[Test]
 	[Description("Returns a failure exit code and logs the error when the package is missing.")]
 	public void Execute_ShouldReturnFailure_WhenPackageIsMissing() {
 		// Arrange

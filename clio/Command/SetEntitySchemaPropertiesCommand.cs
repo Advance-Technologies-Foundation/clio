@@ -16,6 +16,14 @@ namespace Clio.Command;
 [Verb("set-entity-schema-properties", HelpText = "Set schema-level properties on a remote Creatio entity schema")]
 public class SetEntitySchemaPropertiesOptions : RemoteCommandOptions
 {
+	/// <summary>
+	/// Single source of truth for the "no settable property supplied" error, shared by the command-level
+	/// <see cref="SetEntitySchemaPropertiesCommand.ValidateOptions"/> pre-check and the manager-level defensive
+	/// re-check so the two layers cannot drift.
+	/// </summary>
+	internal const string NoPropertyToSetError =
+		"At least one schema property to set is required (for example --primary-display-column).";
+
 	// Required is enforced in ValidateOptions (not via CommandLineParser's Required=true) so the hidden
 	// --package-name / --name aliases work when used standalone — the parser enforces Required on the
 	// canonical token's presence, which would reject an alias-only invocation. Mirrors ModifyEntitySchemaColumnOptions.
@@ -83,9 +91,7 @@ public class SetEntitySchemaPropertiesCommand : Command<SetEntitySchemaPropertie
 			throw new ArgumentException("Schema name is required.", nameof(options));
 		}
 		if (string.IsNullOrWhiteSpace(options.PrimaryDisplayColumn)) {
-			throw new ArgumentException(
-				"At least one schema property to set is required (for example --primary-display-column).",
-				nameof(options));
+			throw new ArgumentException(SetEntitySchemaPropertiesOptions.NoPropertyToSetError, nameof(options));
 		}
 	}
 }

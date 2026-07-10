@@ -165,7 +165,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	public void SetSchemaProperties(SetEntitySchemaPropertiesOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
 		if (string.IsNullOrWhiteSpace(options.PrimaryDisplayColumn)) {
-			throw new EntitySchemaDesignerException("No schema property to set.");
+			throw new EntitySchemaDesignerException(SetEntitySchemaPropertiesOptions.NoPropertyToSetError);
 		}
 		PackageInfo package = ResolvePackage(options.Package);
 		EntityDesignSchemaDto schema = LoadSchema(options.SchemaName, package.Descriptor.UId,
