@@ -60,6 +60,8 @@ public class UpdateThemeToolTests {
 		FakeUpdateThemeCommand resolvedCommand = new();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<UpdateThemeCommand>(Arg.Any<UpdateThemeOptions>()).Returns(resolvedCommand);
+		commandResolver.Resolve<ICreatioVersionChecker>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ICreatioVersionChecker>());
 		UpdateThemeTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
@@ -282,6 +284,41 @@ public class UpdateThemeToolTests {
 			because: "cssClassName is not a declared wire name, so it must not bind");
 		camel.ExtensionData.Should().ContainKey("cssClassName",
 			because: "the unbound camelCase spelling must land in the overflow bag so the tool can return a rename hint");
+	}
+
+	[Test]
+	[Description("Returns the distinct version exit code with the version-requirement message and never overwrites the theme when the target environment does not satisfy the Creatio version floor.")]
+	[Category("Unit")]
+	public void UpdateTheme_ShouldReturnVersionExitCode_WhenCreatioVersionRequirementIsUnmet() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeUpdateThemeCommand defaultCommand = new();
+		FakeUpdateThemeCommand resolvedCommand = new();
+		ICreatioVersionChecker versionChecker = Substitute.For<ICreatioVersionChecker>();
+		versionChecker
+			.When(c => c.EnsureRequirements(Arg.Any<object>()))
+			.Do(_ => throw new CreatioVersionRequirementException(
+				"This command requires Creatio 10.0.0 or later. The target environment runs 8.1.5. Update Creatio and retry.",
+				CreatioVersionRequirementException.VersionTooOldCode));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateThemeCommand>(Arg.Any<UpdateThemeOptions>()).Returns(resolvedCommand);
+		commandResolver.Resolve<ICreatioVersionChecker>(Arg.Any<EnvironmentOptions>()).Returns(versionChecker);
+		UpdateThemeTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.UpdateTheme(new UpdateThemeArgs(
+			EnvironmentName: "docker_fix2", Id: "ocean-theme", Caption: "Ocean",
+			CssClassName: "ocean-theme", CssContent: ".ocean-theme{}"));
+		string[] messageValues = result.Output.Select(message => message.Value?.ToString() ?? string.Empty).ToArray();
+
+		// Assert
+		result.ExitCode.Should().Be(Clio.Program.CreatioVersionRequirementExitCode,
+			because: "an unmet Creatio version requirement must refuse the overwrite with the distinct version exit code, mirroring the CLI gate");
+		messageValues.Should().Contain(value => value.Contains("requires Creatio 10.0.0 or later"),
+			because: "the version-requirement message must be surfaced to the MCP caller");
+		resolvedCommand.CapturedOptions.Should().BeNull(
+			because: "the theme must never be overwritten when the environment does not satisfy the version floor");
+		ConsoleLogger.Instance.ClearMessages();
 	}
 
 	private sealed class FakeUpdateThemeCommand : UpdateThemeCommand {
