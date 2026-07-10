@@ -282,15 +282,28 @@ public sealed class DescribedFilterCondition {
 	[JsonPropertyName("displayValue")]
 	public string DisplayValue { get; set; }
 
-	/// <summary>Referenced process parameter (by name); null otherwise.</summary>
+	/// <summary>
+	/// RESERVED (forward-compat) — NOT populated by the current server. The decoder surfaces every parameter
+	/// reference (process- or element-level) as the raw meta-path <see cref="Expression"/> token only, so a described
+	/// reference always arrives in <see cref="Expression"/>, never here. Kept to mirror the write-side descriptor
+	/// (which does accept a by-name process parameter) so a symbolic read-back would bind without a DTO change if a
+	/// future server emits one. Do not assume references round-trip structurally today.
+	/// </summary>
 	[JsonPropertyName("processParameter")]
 	public string ProcessParameter { get; set; }
 
-	/// <summary>Referenced element output parameter; null otherwise.</summary>
+	/// <summary>
+	/// RESERVED (forward-compat) — NOT populated by the current server; see <see cref="ProcessParameter"/>. An
+	/// element-parameter reference is surfaced as the raw <see cref="Expression"/> token, not this structured shape.
+	/// </summary>
 	[JsonPropertyName("elementParameter")]
 	public DescribedFilterElementRef ElementParameter { get; set; }
 
-	/// <summary>Raw meta-path expression token; the read-back surfaces a parameter reference here.</summary>
+	/// <summary>
+	/// Raw meta-path expression token. The read-back surfaces EVERY parameter reference here (both process- and
+	/// element-parameter references), which is why <see cref="ProcessParameter"/> / <see cref="ElementParameter"/>
+	/// stay null on a real describe.
+	/// </summary>
 	[JsonPropertyName("expression")]
 	public string Expression { get; set; }
 

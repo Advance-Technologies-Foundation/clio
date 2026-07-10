@@ -1,7 +1,7 @@
 # Capture — "Read data" element with Data source filters (designer-built)
 
 > Source: designer-built process `UsrClioBpInitParams1` (schema UId `1a0fe978-c3c1-42c2-9879-962c56e61c9e`)
-> on krestov-test, pasted into the ENG-91842 session. This is the authoritative reference for the
+> on a live test stand, pasted into the ENG-91842 session. This is the authoritative reference for the
 > `DataSourceFilters` serialization. Screenshot showed: Read data → Contact, filtered by
 > `Account = Perform task.Account AND Address = 2222 AND Age = 333`, sorted by Full name Ascending.
 

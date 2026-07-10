@@ -227,6 +227,24 @@ public sealed class ProcessModelingGuidanceResourceTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The guidance pins the relative-date/system macro vocabulary — CurrentHalfYear (which an agent doubted existed) and the recurring DayOfYearToday — and keeps the argument-requiring macros correct: the NDaysOfYear macros need a macroArgument and only DayOfYearToday takes none.")]
+	public void GetGuide_ShouldPinMacroVocabulary_WhenRead() {
+		// Act
+		string text = new ProcessModelingGuidanceResource().GetGuide().Should().BeOfType<TextResourceContents>().Subject.Text;
+
+		// Assert
+		text.Should().Contain("CurrentHalfYear",
+			because: "the half-year macro was added specifically because an agent doubted it existed; an unpinned enumeration was already lost to a merge once on this branch");
+		text.Should().Contain("DayOfYearToday",
+			because: "the recurring 'every year' macro must stay documented");
+		text.Should().Contain("NextNDaysOfYear",
+			because: "the NDaysOfYear macros require an integer macroArgument and must be listed among the argument-requiring macros, or an agent following the guide verbatim sends a rejected payload");
+		text.Should().Contain("the ONLY DayOfYear macro that takes NO argument",
+			because: "only DayOfYearToday is argument-free; the guide must not let the three DateArg 'every year' macros drift back into the no-argument list");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("GuidanceCatalog exposes process-modeling so get-guidance can return it by canonical name.")]
 	public void GuidanceCatalog_ShouldIncludeProcessModelingEntry_WhenQueried() {
 		// Act

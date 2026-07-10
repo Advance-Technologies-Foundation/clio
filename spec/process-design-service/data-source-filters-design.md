@@ -185,7 +185,7 @@ service-per-concern architecture; injected via the composition root). Plus small
    wrapper builder (both reps), column-type resolution, constant + process-param + element-param sources,
    AND/OR, the common comparisons; apply to `signalStart.EntityFilters`; describe read-back; server tests.
 2. **Read data filters** (+ the minimal target-object wiring from §3): apply to `DataSourceFilters`;
-   end-to-end verify on krestov-test; tests.
+   end-to-end verify on the test stand; tests.
 3. **Modify/Delete/Add data**: same `DataSourceFilters` mechanism per element (mostly element plumbing).
 4. **clio surface**: guidance/prompt/docs/describe-DTO/e2e.
 
@@ -237,5 +237,5 @@ shipped feature differs as follows (see `.codex/workspace-diary.md` for the blow
   fields (`className` / `dateValue` / `displayValue`) absent from `Terrasoft.Nui.ServiceModel.DataContract.Filters`.
 - **Scope today:** only the `signalStart` filter is end-to-end usable; data-task filters (Read / Add / Modify /
   Delete) serialize but their target-object config is not buildable yet (Tier 3 / ENG-91850).
-- **Status:** implemented; unit + MCP e2e covered; live-verified on krestov-test (dates, macros, date-parts,
+- **Status:** implemented; unit + MCP e2e covered; live-verified on the test stand (dates, macros, date-parts,
   signal guard).

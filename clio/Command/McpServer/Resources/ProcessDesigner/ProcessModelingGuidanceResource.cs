@@ -133,9 +133,10 @@ public sealed class ProcessModelingGuidanceResource {
 			  macro catalog, never silently accepted): **relative periods** `Yesterday` | `Today` | `Tomorrow`, plus
 			  `Previous`/`Current`/`Next` for each of `Week` | `Month` | `Quarter` | `HalfYear` | `Year` | `Hour`
 			  (so `CurrentHalfYear`, `NextWeek`, `PreviousQuarter`, `CurrentHour`, … are ALL valid); **argument macros**
-			  `NextNDays` | `PreviousNDays` | `NextNHours` | `PreviousNHours` (require an integer `macroArgument`);
-			  **recurring "every year"** `DayOfYearToday` | `DayOfYearTodayPlusDaysOffset` | `NextNDaysOfYear` |
-			  `PreviousNDaysOfYear`; **system / lookup** `CurrentUser` | `CurrentUserContact`.
+			  (require an integer `macroArgument`) `NextNDays` | `PreviousNDays` | `NextNHours` | `PreviousNHours` |
+			  `NextNDaysOfYear` | `PreviousNDaysOfYear` | `DayOfYearTodayPlusDaysOffset`; **recurring "every year"**
+			  `DayOfYearToday` (the ONLY DayOfYear macro that takes NO argument); **system / lookup** `CurrentUser` |
+			  `CurrentUserContact`.
 			- SIGNAL-START RESTRICTION (important): on a `signalStart` filter the right-hand side may ONLY be a constant
 			  `value`, a `macro`, a `datePart`, or isNull/isNotNull — NOT `processParameter` / `elementParameter` /
 			  `expression`. The signal is evaluated to decide WHICH records start the process, BEFORE any process
