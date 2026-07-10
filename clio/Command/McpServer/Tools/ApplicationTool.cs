@@ -11,10 +11,19 @@ using ModelContextProtocol.Server;
 namespace Clio.Command.McpServer.Tools;
 
 /// <summary>
-/// MCP tool surface for installed-application discovery.
+/// MCP tool surface for installed-application discovery. Resolves the target environment per request
+/// through <see cref="IToolCommandResolver"/> so the tool honors the mcp-http credential-passthrough
+/// header (<c>X-Integration-Credentials</c>) as well as registered-environment / stdio targets, and
+/// executes under the per-tenant lock and in-flight guard (FR-05, ENG-93347).
 /// </summary>
 [McpServerToolType]
-public sealed class ApplicationGetListTool(IApplicationListService applicationListService) {
+public sealed class ApplicationGetListTool(
+	ILogger logger,
+	IToolCommandResolver commandResolver,
+	IApplicationListService applicationListService)
+	: BaseTool<EnvironmentOptions>(null, logger, commandResolver) {
+
+	private readonly IToolCommandResolver _commandResolver = commandResolver;
 
 	/// <summary>
 	/// Stable MCP tool name for listing installed applications.
@@ -28,21 +37,27 @@ public sealed class ApplicationGetListTool(IApplicationListService applicationLi
 		OpenWorld = false)]
 	[Description("Gets list of all applications from Creatio through backend MCP.")]
 	public ApplicationListResponse ApplicationGetList(
-		[Description("Parameters: environment-name (required)")]
+		[Description("Parameters: environment-name (required unless credential passthrough supplies the tenant)")]
 		[Required]
 		ApplicationGetListArgs args) {
-		try {
-			return ApplicationToolHelper.CreateListResponse(
-				applicationListService.GetApplications(args.EnvironmentName!, null, null)
-					.Select(application => new ApplicationListItemResult(
-						application.Id.ToString(),
-						application.Name,
-						application.Code,
-						application.Version))
-					.ToList());
-		} catch (Exception ex) {
-			return ApplicationToolHelper.CreateListErrorResponse(SensitiveErrorTextRedactor.Redact(ex.Message));
-		}
+		EnvironmentOptions options = new() { Environment = args.EnvironmentName };
+		// ExecuteWithCleanLog(options, ...) — the OPTIONS-AWARE overload — keys the execution lock and
+		// the session-container in-flight guard off THIS call's tenant (FR-05), not the shared fallback.
+		return ExecuteWithCleanLog(options, () => {
+			try {
+				EnvironmentSettings settings = _commandResolver.Resolve<EnvironmentSettings>(options);
+				return ApplicationToolHelper.CreateListResponse(
+					applicationListService.GetApplications(settings, null, null)
+						.Select(application => new ApplicationListItemResult(
+							application.Id.ToString(),
+							application.Name,
+							application.Code,
+							application.Version))
+						.ToList());
+			} catch (Exception ex) {
+				return ApplicationToolHelper.CreateListErrorResponse(SensitiveErrorTextRedactor.Redact(ex.Message));
+			}
+		});
 	}
 }
 

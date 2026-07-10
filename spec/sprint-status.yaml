@@ -984,7 +984,7 @@ stories:
     title: "list-apps — route through the resolver (class c1)"
     feature: "mcp-passthrough-tool-parity"
     size: M
-    status: ready-for-dev
+    status: in-progress
     note: "First in the SERIALIZED c1 chain 3->4->5->6->7->8->9 (shared ApplicationTool.cs / ApplicationToolArgs.cs). Owns the IApplicationListService settings-based overload (ADR slice 6c) — Story 2 provides only the two shared interfaces."
     file: spec/stories/story-mcp-passthrough-tool-parity-3.md
     prd: spec/prd/prd-mcp-passthrough-tool-parity.md

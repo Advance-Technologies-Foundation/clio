@@ -2107,9 +2107,10 @@ internal static class ToolContractCatalog {
 			ApplicationGetListTool.ApplicationGetListToolName,
 			"Lists installed applications from the target Creatio environment so the caller can discover the right existing app first.",
 			new ToolInputSchemaContract(
-				[EnvironmentNameFieldName],
+				[],
 				[
-					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription)
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription
+						+ " Required on stdio / registered-environment transports; omit under credential passthrough — the X-Integration-Credentials header supplies the target tenant.")
 				]),
 			EnvelopeOutput(
 				SuccessFieldName,

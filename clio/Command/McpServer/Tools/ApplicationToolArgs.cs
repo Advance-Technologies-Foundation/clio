@@ -6,12 +6,15 @@ using System.Text.Json.Serialization;
 namespace Clio.Command.McpServer.Tools;
 
 /// <summary>
-/// MCP arguments for the <c>list-apps</c> tool.
+/// MCP arguments for the <c>list-apps</c> tool. <c>environment-name</c> is schema-optional (FR-05a,
+/// ENG-93347): under credential passthrough the target tenant comes from the
+/// <c>X-Integration-Credentials</c> header, while on non-passthrough transports runtime requiredness
+/// is enforced by the resolver (<see cref="EnvironmentResolutionException"/> when no environment or
+/// URI is resolvable).
 /// </summary>
 public sealed record ApplicationGetListArgs(
 	[property: JsonPropertyName("environment-name")]
-	[property: Description(McpToolDescriptions.EnvironmentName)]
-	[property: Required]
+	[property: Description(McpToolDescriptions.EnvironmentName + " Optional under credential passthrough.")]
 	string? EnvironmentName = null
 );
 

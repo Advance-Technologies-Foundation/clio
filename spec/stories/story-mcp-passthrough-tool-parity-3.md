@@ -129,18 +129,35 @@ Test naming: `MethodName_ShouldBehavior_WhenCondition`
 
 ## Definition of Done
 
-- [ ] All `CLIO*` diagnostics clean in changed files — including CLIO005 for the new
+- [x] All `CLIO*` diagnostics clean in changed files — including CLIO005 for the new
   `IApplicationListService` overload wiring (FR-10)
-- [ ] Targeted tests green before commit: `dotnet test clio.tests/clio.tests.csproj --filter
+- [x] Targeted tests green before commit: `dotnet test clio.tests/clio.tests.csproj --filter
   "Category=Unit&(Module=McpServer|Module=Command)" --no-build` (ADR slice 9)
-- [ ] All new/changed MCP arguments stay kebab-case (relaxing `[Required]` does not rename `environment-name`)
-- [ ] Unit tests added with `[Category("Unit")]` — never `[Category("UnitTests")]`
+- [x] All new/changed MCP arguments stay kebab-case (relaxing `[Required]` does not rename `environment-name`)
+- [x] Unit tests added with `[Category("Unit")]` — never `[Category("UnitTests")]`
 - [ ] PR description references this story file
 
 ## Dev Agent Record
 
-{Left blank — filled by dev agent during implementation}
-- Implementation started:
-- Implementation completed:
-- Tests passing:
+- Implementation started: 2026-07-11
+- Implementation completed: 2026-07-11
+- Tests passing: `Category=Unit&Module=McpServer` → 2042 passed / 0 failed / 1 skipped;
+  `Category=Unit&Module=Command` → 2066 passed / 0 failed / 29 skipped (net10.0)
 - Notes:
+  - `IApplicationListService.GetApplications(EnvironmentSettings, ...)` added per ADR slice 6c; the
+    name-based overload and the settings-based overload converge on a private `GetApplicationsCore`
+    that never touches `ISettingsRepository` (Story-2 pattern).
+  - `ApplicationGetListTool` now derives from `BaseTool<EnvironmentOptions>(null, logger,
+    commandResolver)` and wraps the body in the options-aware `ExecuteWithCleanLog(options, ...)`
+    (FR-05 per-tenant lock + in-flight guard). Mixed-input rejection stays in the resolver
+    (`HasExplicitCredentialArgs`) — no new code.
+  - `[Required]` removed from `ApplicationGetListArgs.EnvironmentName` (FR-05a); no parameter
+    reordering was needed (single, already-defaulted parameter). The curated `get-tool-contract`
+    entry for `list-apps` was aligned (required list emptied, conditional-requiredness description).
+  - Description additions were deliberately terse: the `tools/list` serialized-size ratchet
+    (`McpProfileGatingTests`, 34 KiB) had only ~120 bytes of headroom. Stories 4-9 will hit the
+    same ceiling and must either stay terse or consciously raise the ratchet.
+  - AC-05 concurrency isolation is satisfied by construction (per-request `IToolCommandResolver`
+    resolution + per-tenant lock); the E2E proof is owned by Story 15 as stated in the AC.
+  - E2E (`clio.mcp.e2e`) coverage: owned by Story 15 per the test table; existing
+    `ApplicationToolE2ETests` exercise the unchanged registered-env path.

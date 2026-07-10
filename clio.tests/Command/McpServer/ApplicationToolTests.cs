@@ -48,21 +48,26 @@ public sealed class ApplicationToolTests {
 	public void ApplicationGetList_Should_Call_List_Service_Without_Filters_And_Return_Success_Envelope() {
 		// Arrange
 		IApplicationListService applicationListService = Substitute.For<IApplicationListService>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		EnvironmentSettings resolvedSettings = new() { Uri = "https://sandbox.example.com" };
+		commandResolver.Resolve<EnvironmentSettings>(
+				Arg.Is<EnvironmentOptions>(options => options.Environment == "sandbox"))
+			.Returns(resolvedSettings);
 		Guid betaId = Guid.NewGuid();
 		Guid alphaId = Guid.NewGuid();
 		IReadOnlyList<InstalledApplicationListItem> installedApplications = [
 			new InstalledApplicationListItem(betaId, "Beta", "BETA", "2.0.0", "Beta description"),
 			new InstalledApplicationListItem(alphaId, "Alpha", "ALPHA", "1.0.0", "Alpha description")
 		];
-		applicationListService.GetApplications("sandbox", null, null).Returns([.. installedApplications]);
-		ApplicationGetListTool tool = new(applicationListService);
+		applicationListService.GetApplications(resolvedSettings, null, null).Returns([.. installedApplications]);
+		ApplicationGetListTool tool = new(Substitute.For<ILogger>(), commandResolver, applicationListService);
 
 		// Act
 		ApplicationListResponse result = tool.ApplicationGetList(new ApplicationGetListArgs(
 			EnvironmentName: "sandbox"));
 
 		// Assert
-		applicationListService.Received(1).GetApplications("sandbox", null, null);
+		applicationListService.Received(1).GetApplications(resolvedSettings, null, null);
 		result.Success.Should().BeTrue(
 			because: "a successful list call should be wrapped in a core-style success envelope");
 		result.Error.Should().BeNull(
@@ -87,8 +92,13 @@ public sealed class ApplicationToolTests {
 	public void ApplicationGetList_Should_Return_Empty_Success_Envelope_When_No_Applications_Exist() {
 		// Arrange
 		IApplicationListService applicationListService = Substitute.For<IApplicationListService>();
-		applicationListService.GetApplications("sandbox", null, null).Returns([]);
-		ApplicationGetListTool tool = new(applicationListService);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		EnvironmentSettings resolvedSettings = new() { Uri = "https://sandbox.example.com" };
+		commandResolver.Resolve<EnvironmentSettings>(
+				Arg.Is<EnvironmentOptions>(options => options.Environment == "sandbox"))
+			.Returns(resolvedSettings);
+		applicationListService.GetApplications(resolvedSettings, null, null).Returns([]);
+		ApplicationGetListTool tool = new(Substitute.For<ILogger>(), commandResolver, applicationListService);
 
 		// Act
 		ApplicationListResponse result = tool.ApplicationGetList(new ApplicationGetListArgs(
@@ -109,9 +119,11 @@ public sealed class ApplicationToolTests {
 	public void ApplicationGetList_Should_Return_Error_Envelope_When_Environment_Resolution_Fails() {
 		// Arrange
 		IApplicationListService applicationListService = Substitute.For<IApplicationListService>();
-		applicationListService.GetApplications("missing-env", null, null)
-			.Returns(_ => throw new InvalidOperationException("Environment with key 'missing-env' not found."));
-		ApplicationGetListTool tool = new(applicationListService);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<EnvironmentSettings>(
+				Arg.Is<EnvironmentOptions>(options => options.Environment == "missing-env"))
+			.Returns(_ => throw new EnvironmentResolutionException("Environment with key 'missing-env' not found."));
+		ApplicationGetListTool tool = new(Substitute.For<ILogger>(), commandResolver, applicationListService);
 
 		// Act
 		ApplicationListResponse result = tool.ApplicationGetList(new ApplicationGetListArgs(
