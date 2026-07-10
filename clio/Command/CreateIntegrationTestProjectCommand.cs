@@ -92,6 +92,7 @@ public class CreateIntegrationTestProjectCommand(
 
 /// <summary>Validates integration-test project creation options.</summary>
 public class CreateIntegrationTestProjectOptionsValidator : AbstractValidator<CreateIntegrationTestProjectOptions> {
+	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
 	private static readonly HashSet<string> CSharpKeywords = new(StringComparer.Ordinal) {
 		"abstract", "as", "base", "bool", "break", "byte", "case", "catch", "char", "checked",
 		"class", "const", "continue", "decimal", "default", "delegate", "do", "double", "else", "enum",
@@ -103,8 +104,9 @@ public class CreateIntegrationTestProjectOptionsValidator : AbstractValidator<Cr
 		"unsafe", "ushort", "using", "virtual", "void", "volatile", "while"
 	};
 	private static readonly Regex PackageNamePattern = new(
-		"^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*$", RegexOptions.CultureInvariant);
-	private static readonly Regex TargetFrameworkPattern = new("^net(?:[0-9]{3}|[0-9]+\\.[0-9]+)$", RegexOptions.CultureInvariant);
+		"^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*$", RegexOptions.CultureInvariant, RegexTimeout);
+	private static readonly Regex TargetFrameworkPattern = new(
+		"^net(?:[0-9]{3}|[0-9]+\\.[0-9]+)$", RegexOptions.CultureInvariant, RegexTimeout);
 
 	/// <summary>Creates the validator.</summary>
 	public CreateIntegrationTestProjectOptionsValidator() {

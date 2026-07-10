@@ -7,7 +7,9 @@ namespace Clio.Command.McpServer.Resources;
 /// <summary>Guidance for authoring portable Creatio integration tests.</summary>
 [McpServerResourceType]
 public sealed class IntegrationTestingGuidanceResource {
-	private const string ResourceUri = "docs://mcp/guides/integration-testing";
+	private const string DocsScheme = "docs";
+	private const string ResourcePath = "mcp/guides/integration-testing";
+	private const string ResourceUri = DocsScheme + "://" + ResourcePath;
 
 	/// <summary>Canonical integration-testing guidance.</summary>
 	internal static readonly TextResourceContents Guide = new() {
