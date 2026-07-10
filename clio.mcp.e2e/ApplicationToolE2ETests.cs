@@ -355,6 +355,65 @@ public sealed class ApplicationToolE2ETests {
 
 	[Category("McpE2E.Sandbox")]
 	[Test]
+	[Description("Starts the real clio MCP server, invokes create-app through the progress-capable overload, and verifies the client observes the per-phase stage markers 'creating application package' and 'loading application metadata' (ENG-93087).")]
+	[AllureFeature(CreateToolName)]
+	[AllureTag(CreateToolName)]
+	[AllureName("Application create streams per-phase progress markers")]
+	[AllureDescription("Uses the real clio MCP server to call create-app with an IProgress sink and asserts the client observed the service-level stage markers 'creating application package' and 'loading application metadata', proving the per-phase progress path is wired end to end (ENG-93087).")]
+	public async Task ApplicationCreate_Should_Stream_PerPhase_Progress_Markers() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("Set McpE2E:AllowDestructiveMcpTests=true to run create-app progress-marker end-to-end tests.");
+		}
+
+		TestConfiguration.EnsureSandboxIsConfigured(settings);
+		await using ApplicationArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(10));
+		string suffix = Guid.NewGuid().ToString("N")[..8];
+		string createdApplicationCode = $"UsrCodex{suffix}";
+		string applicationName = $"Codex E2E {suffix}";
+		MessageCollectingProgress progress = new();
+		IReadOnlyCollection<string> reachableToolNames =
+			await arrangeContext.Session.ListReachableToolNamesAsync(arrangeContext.CancellationTokenSource.Token);
+		reachableToolNames.Should().Contain(CreateToolName,
+			because: "the create-app MCP tool must be discoverable via the get-tool-contract compact index before the progress-marker call can run");
+
+		// Act — invoke create-app through the progress-capable overload so the client observes the
+		// service-level stage markers the tool streams as notifications/progress.
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			CreateToolName,
+			new Dictionary<string, object?> {
+				["args"] = BuildCreateArgs(
+					arrangeContext.EnvironmentName,
+					applicationName,
+					createdApplicationCode,
+					description: null,
+					ApplicationTemplateCode,
+					ApplicationIconId,
+					ApplicationIconBackground,
+					optionalTemplateDataJson: null)
+			},
+			progress,
+			arrangeContext.CancellationTokenSource.Token);
+
+		// Diagnostic: surface the exact progress stream the client received so a failure shows the markers.
+		foreach (string progressMessage in progress.Messages) {
+			TestContext.Out.WriteLine($"[progress] {progressMessage}");
+		}
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: $"a valid create-app request should return structured application metadata. Actual result: {DescribeCallResult(callResult)}");
+		progress.Messages.Should().Contain(
+			message => message.Contains("creating application package", StringComparison.Ordinal),
+			because: "create-app must stream the 'creating application package' stage marker so the client can show the package-creation phase (ENG-93087)");
+		progress.Messages.Should().Contain(
+			message => message.Contains("loading application metadata", StringComparison.Ordinal),
+			because: "create-app must stream the 'loading application metadata' stage marker so the client can show the metadata-load phase (ENG-93087)");
+	}
+
+	[Category("McpE2E.Sandbox")]
+	[Test]
 	[Description("Starts the real clio MCP server, invokes create-app with with-mobile-pages=false, and verifies the created application has no main entity mobile pages while keeping its web pages.")]
 	[AllureFeature(CreateToolName)]
 	[AllureTag(CreateToolName)]
@@ -1112,6 +1171,7 @@ public sealed class ApplicationToolE2ETests {
 			Content = callResult.Content
 		});
 	}
+
 
 	private sealed record ApplicationArrangeContext(
 		string EnvironmentName,

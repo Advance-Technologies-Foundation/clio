@@ -105,11 +105,13 @@ internal static class McpProgressHeartbeat {
 		Func<TResult> work,
 		CancellationToken cancellationToken = default,
 		TimeSpan? interval = null) {
-		TimeSpan effectiveInterval = interval ?? DefaultInterval;
-		Func<int, Task> beat = server is null || progressToken is null
-			? null
-			: BuildServerBeat(server, progressToken.Value, operationName, effectiveInterval);
-		return RunWithBeatAsync(beat, work, cancellationToken, effectiveInterval);
+		ArgumentNullException.ThrowIfNull(work);
+		// A Func<TResult> is a reporter that ignores its arg. The explicit Action<string> parameter
+		// steers overload resolution to the reporter overload (a parameterless lambda would bind back
+		// to this same overload and recurse); on the no-marker path the ProgressChannel counter
+		// increments exactly like the old per-beat counter, so this is behavior-preserving.
+		return RunWithProgressAsync(
+			server, progressToken, operationName, (Action<string> _) => work(), cancellationToken, interval);
 	}
 
 	/// <summary>
@@ -158,7 +160,7 @@ internal static class McpProgressHeartbeat {
 	/// </remarks>
 	/// <exception cref="McpResponseDeadlineExceededException">The work did not complete within <paramref name="deadline"/> and the request was not cancelled.</exception>
 	/// <exception cref="OperationCanceledException">The request (or server shutdown) cancelled <paramref name="cancellationToken"/> before the work completed — the detached work does not outlive the process, so this is reported distinctly from a deadline.</exception>
-	internal static async Task<TResult> RunWithProgressAndDeadlineAsync<TResult>(
+	internal static Task<TResult> RunWithProgressAndDeadlineAsync<TResult>(
 		ModelContextProtocol.Server.McpServer server,
 		ProgressToken? progressToken,
 		string operationName,
@@ -167,21 +169,141 @@ internal static class McpProgressHeartbeat {
 		CancellationToken cancellationToken = default,
 		TimeSpan? interval = null) {
 		ArgumentNullException.ThrowIfNull(work);
+		// See the non-deadline overload: the explicit Action<string> parameter routes to the reporter
+		// overload and the ProgressChannel counter reproduces the old per-beat counter unchanged.
+		return RunWithProgressAndDeadlineAsync(
+			server, progressToken, operationName, (Action<string> _) => work(), deadline, cancellationToken, interval);
+	}
+
+	private static void ObserveInBackground<TResult>(Task<TResult> task, string operationName) {
+		_ = task.ContinueWith(
+			t => {
+				// Reading t.Exception observes the fault so it never surfaces as an
+				// UnobservedTaskException; writing it to stderr turns the otherwise-silent
+				// post-deadline background failure into a diagnostic trail.
+				AggregateException exception = t.Exception;
+				if (exception is null) {
+					return;
+				}
+
+				try {
+					Console.Error.WriteLine(
+						$"[{operationName}] background operation faulted after the response deadline: {exception.GetBaseException()}");
+				}
+				catch {
+					// stderr diagnostics are best-effort: a closed/redirected stream must never
+					// resurface as an UnobservedTaskException from the very continuation that
+					// exists to suppress one.
+				}
+			},
+			CancellationToken.None,
+			TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+			TaskScheduler.Default);
+	}
+
+	/// <summary>
+	/// Reporter-aware overload of <see cref="RunWithProgressAsync{TResult}(ModelContextProtocol.Server.McpServer, ProgressToken?, string, Func{TResult}, CancellationToken, TimeSpan?)"/>:
+	/// <paramref name="work"/> receives an <see cref="Action{String}"/> to push stage markers, which share
+	/// one monotonic counter with the timer heartbeats. No-op reporter and inline run when there is no token.
+	/// </summary>
+	internal static Task<TResult> RunWithProgressAsync<TResult>(
+		ModelContextProtocol.Server.McpServer server,
+		ProgressToken? progressToken,
+		string operationName,
+		Func<Action<string>, TResult> work,
+		CancellationToken cancellationToken = default,
+		TimeSpan? interval = null) {
+		return RunWithProgressAsync(
+			CreateChannel(server, progressToken), operationName, work, cancellationToken, interval);
+	}
+
+	/// <summary>
+	/// Reporter-aware overload of
+	/// <see cref="RunWithProgressAndDeadlineAsync{TResult}(ModelContextProtocol.Server.McpServer, ProgressToken?, string, Func{TResult}, TimeSpan?, CancellationToken, TimeSpan?)"/>:
+	/// same deadline semantics, plus a stage reporter passed to <paramref name="work"/>.
+	/// </summary>
+	internal static Task<TResult> RunWithProgressAndDeadlineAsync<TResult>(
+		ModelContextProtocol.Server.McpServer server,
+		ProgressToken? progressToken,
+		string operationName,
+		Func<Action<string>, TResult> work,
+		TimeSpan? deadline = null,
+		CancellationToken cancellationToken = default,
+		TimeSpan? interval = null) {
+		return RunWithProgressAndDeadlineAsync(
+			CreateChannel(server, progressToken), operationName, work, deadline, cancellationToken, interval);
+	}
+
+	/// <summary>
+	/// Core, transport-agnostic heartbeat loop. Runs <paramref name="work"/> on the calling thread,
+	/// passing it a stage reporter, while a background task beats through <paramref name="channel"/>
+	/// every <paramref name="interval"/>. A <see langword="null"/> <paramref name="channel"/> means "no
+	/// progress token": <paramref name="work"/> runs inline with a no-op reporter. Exceptions from
+	/// <paramref name="work"/> propagate unchanged; the heartbeat is always stopped (success, throw, or
+	/// cancellation). Exposed as <c>internal</c> so unit tests can drive the cadence with a fake sink
+	/// channel (the transport-injection seam that replaced the old <c>RunWithBeatAsync</c>).
+	/// </summary>
+	internal static async Task<TResult> RunWithProgressAsync<TResult>(
+		ProgressChannel channel,
+		string operationName,
+		Func<Action<string>, TResult> work,
+		CancellationToken cancellationToken = default,
+		TimeSpan? interval = null) {
+		ArgumentNullException.ThrowIfNull(work);
+		Action<string> reportStage = BuildStageReporter(channel);
+		if (channel is null) {
+			return work(reportStage);
+		}
+
+		TimeSpan effectiveInterval = interval ?? DefaultInterval;
+		using CancellationTokenSource heartbeatCts =
+			CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+		// Pump on a background task so its timer continuations never depend on the calling
+		// thread, which blocks inside the synchronous work() below.
+		Task pump = Task.Run(
+			() => PumpChannelAsync(channel, operationName, effectiveInterval, heartbeatCts.Token), CancellationToken.None);
+		try {
+			return work(reportStage);
+		}
+		finally {
+			await heartbeatCts.CancelAsync().ConfigureAwait(false);
+			try {
+				await pump.ConfigureAwait(false);
+			}
+			catch (OperationCanceledException) {
+				// Expected when the pump observes cancellation on stop.
+			}
+		}
+	}
+
+	/// <summary>
+	/// Deadline-bounded twin of <see cref="RunWithProgressAsync{TResult}(ProgressChannel, string, Func{Action{String}, TResult}, CancellationToken, TimeSpan?)"/>:
+	/// <paramref name="work"/> is started detached on the thread pool so it outlives both the deadline and
+	/// a client disconnect, and the response is bounded by <paramref name="deadline"/>. Exposed as
+	/// <c>internal</c> so unit tests can drive it with a fake sink channel. A <see langword="null"/>
+	/// <paramref name="channel"/> still detaches the work (only the heartbeat pump is skipped).
+	/// </summary>
+	internal static async Task<TResult> RunWithProgressAndDeadlineAsync<TResult>(
+		ProgressChannel channel,
+		string operationName,
+		Func<Action<string>, TResult> work,
+		TimeSpan? deadline = null,
+		CancellationToken cancellationToken = default,
+		TimeSpan? interval = null) {
+		ArgumentNullException.ThrowIfNull(work);
 		TimeSpan effectiveInterval = interval ?? DefaultInterval;
 		TimeSpan effectiveDeadline = deadline ?? DefaultResponseDeadline;
-		Func<int, Task> beat = server is null || progressToken is null
-			? null
-			: BuildServerBeat(server, progressToken.Value, operationName, effectiveInterval);
+		Action<string> reportStage = BuildStageReporter(channel);
 
-		// Start the work detached from the request lifetime: it must outlive both the response
-		// deadline and a client disconnect so the backend operation can still complete server-side.
-		Task<TResult> workTask = Task.Run(work, CancellationToken.None);
+		// Start the work detached from the request lifetime so it can outlive both the deadline and a
+		// client disconnect (see the McpServer deadline overload's remarks).
+		Task<TResult> workTask = Task.Run(() => work(reportStage), CancellationToken.None);
 
 		using CancellationTokenSource heartbeatCts =
 			CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-		Task pump = beat is null
+		Task pump = channel is null
 			? Task.CompletedTask
-			: Task.Run(() => PumpAsync(beat, effectiveInterval, heartbeatCts.Token), CancellationToken.None);
+			: Task.Run(() => PumpChannelAsync(channel, operationName, effectiveInterval, heartbeatCts.Token), CancellationToken.None);
 		try {
 			// The delay shares heartbeatCts so the finally below cancels the surviving timer when
 			// work wins the race — no 150 s timer lingers after a fast completion.
@@ -215,74 +337,54 @@ internal static class McpProgressHeartbeat {
 		}
 	}
 
-	private static void ObserveInBackground<TResult>(Task<TResult> task, string operationName) {
-		_ = task.ContinueWith(
-			t => {
-				// Reading t.Exception observes the fault so it never surfaces as an
-				// UnobservedTaskException; writing it to stderr turns the otherwise-silent
-				// post-deadline background failure into a diagnostic trail.
-				AggregateException exception = t.Exception;
-				if (exception is null) {
-					return;
-				}
+	private static ProgressChannel CreateChannel(
+		ModelContextProtocol.Server.McpServer server, ProgressToken? progressToken) {
+		if (server is null || progressToken is null) {
+			return null;
+		}
 
-				try {
-					Console.Error.WriteLine(
-						$"[{operationName}] background operation faulted after the response deadline: {exception.GetBaseException()}");
-				}
-				catch {
-					// stderr diagnostics are best-effort: a closed/redirected stream must never
-					// resurface as an UnobservedTaskException from the very continuation that
-					// exists to suppress one.
-				}
-			},
-			CancellationToken.None,
-			TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
-			TaskScheduler.Default);
+		ProgressToken token = progressToken.Value;
+		return new ProgressChannel(value => server.SendNotificationAsync(
+			"notifications/progress",
+			new ProgressNotificationParams {
+				ProgressToken = token,
+				Progress = value
+			}));
 	}
 
 	/// <summary>
-	/// Core, transport-agnostic heartbeat loop. Runs <paramref name="work"/> on the calling
-	/// thread while invoking <paramref name="beat"/> every <paramref name="interval"/> on a
-	/// background task. A <see langword="null"/> <paramref name="beat"/> means "no heartbeat":
-	/// <paramref name="work"/> runs inline. Exceptions from <paramref name="work"/> propagate
-	/// unchanged; the heartbeat is always stopped (success, throw, or cancellation). Beat
-	/// failures are swallowed so keep-alive never breaks tool execution. Exposed as
-	/// <c>internal</c> so unit tests can drive the cadence with a fake sink.
+	/// Builds the stage-marker reporter handed to <paramref name="work"/>. A <see langword="null"/>
+	/// <paramref name="channel"/> (no progress token) yields an inert no-op. Exposed as <c>internal</c> so
+	/// unit tests can drive the reporter directly against a fake sink channel.
 	/// </summary>
-	internal static async Task<TResult> RunWithBeatAsync<TResult>(
-		Func<int, Task> beat,
-		Func<TResult> work,
-		CancellationToken cancellationToken = default,
-		TimeSpan? interval = null) {
-		ArgumentNullException.ThrowIfNull(work);
-		if (beat is null) {
-			return work();
+	internal static Action<string> BuildStageReporter(ProgressChannel channel) {
+		if (channel is null) {
+			return static _ => { };
 		}
 
-		TimeSpan effectiveInterval = interval ?? DefaultInterval;
-		using CancellationTokenSource heartbeatCts =
-			CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-		// Pump on a background task so its timer continuations never depend on the calling
-		// thread, which blocks inside the synchronous work() below.
-		Task pump = Task.Run(
-			() => PumpAsync(beat, effectiveInterval, heartbeatCts.Token), CancellationToken.None);
+		return message => {
+			if (!string.IsNullOrWhiteSpace(message)) {
+				// Fire-and-forget: markers are not ordered or flushed against each other, so callers must
+				// have real work between successive reportStage calls (all current callers do).
+				_ = SafeSendAsync(channel, message);
+			}
+		};
+	}
+
+	private static async Task SafeSendAsync(ProgressChannel channel, string message) {
 		try {
-			return work();
+			await channel.SendAsync(message).ConfigureAwait(false);
 		}
-		finally {
-			await heartbeatCts.CancelAsync().ConfigureAwait(false);
-			try {
-				await pump.ConfigureAwait(false);
-			}
-			catch (OperationCanceledException) {
-				// Expected when the pump observes cancellation on stop.
-			}
+		catch {
+			// Best-effort: a broken progress channel must never surface from the tool.
 		}
 	}
 
-	private static async Task PumpAsync(Func<int, Task> beat, TimeSpan interval, CancellationToken cancellationToken) {
-		int beatNumber = 0;
+	private static async Task PumpChannelAsync(
+		ProgressChannel channel, string operationName, TimeSpan interval, CancellationToken cancellationToken) {
+		int intervalSeconds = Math.Max(1, (int)Math.Round(interval.TotalSeconds));
+		string label = string.IsNullOrWhiteSpace(operationName) ? "operation" : operationName;
+		int tick = 0;
 		while (!cancellationToken.IsCancellationRequested) {
 			try {
 				await Task.Delay(interval, cancellationToken).ConfigureAwait(false);
@@ -291,32 +393,47 @@ internal static class McpProgressHeartbeat {
 				return;
 			}
 
-			beatNumber++;
+			tick++;
 			try {
-				await beat(beatNumber).ConfigureAwait(false);
+				await channel.SendAsync($"{label} is still running… (~{tick * intervalSeconds}s elapsed)").ConfigureAwait(false);
 			}
 			catch {
-				// Keep-alive is best-effort: a disconnected client or serialization error
-				// must never surface from the tool. Mirrors McpLogNotifier's policy.
+				// Keep-alive is best-effort; a broken channel must never surface from the tool.
 			}
 		}
 	}
 
-	private static Func<int, Task> BuildServerBeat(
-		ModelContextProtocol.Server.McpServer server,
-		ProgressToken progressToken,
-		string operationName,
-		TimeSpan interval) {
-		int intervalSeconds = Math.Max(1, (int)Math.Round(interval.TotalSeconds));
-		string label = string.IsNullOrWhiteSpace(operationName) ? "operation" : operationName;
-		return beatNumber => server.SendNotificationAsync(
-			"notifications/progress",
-			new ProgressNotificationParams {
-				ProgressToken = progressToken,
-				Progress = new ModelContextProtocol.ProgressNotificationValue {
-					Progress = beatNumber,
-					Message = $"{label} is still running… (~{beatNumber * intervalSeconds}s elapsed)"
-				}
-			});
+	/// <summary>
+	/// Serializes progress sends for one request so heartbeats and stage markers share a single
+	/// monotonic <c>Progress</c> counter. Transport is injected so tests can drive it with a fake sink.
+	/// </summary>
+	internal sealed class ProgressChannel {
+		private readonly Func<ModelContextProtocol.ProgressNotificationValue, Task> _send;
+
+		// Intentionally NOT disposed: AvailableWaitHandle is never accessed, so no OS handle is allocated,
+		// and late fire-and-forget marker sends may run after the enclosing method returns — disposing
+		// here would risk an ObjectDisposedException on those trailing sends.
+		private readonly SemaphoreSlim _sendGate = new(1, 1);
+		private int _sequence;
+
+		/// <summary>Creates a channel that serializes sends through the injected transport (a fake sink in tests).</summary>
+		internal ProgressChannel(Func<ModelContextProtocol.ProgressNotificationValue, Task> send) {
+			_send = send ?? throw new ArgumentNullException(nameof(send));
+		}
+
+		/// <summary>Sends <paramref name="message"/> under the next gap-free monotonic <c>Progress</c> value; sends are serialized so the counter never regresses.</summary>
+		internal async Task SendAsync(string message) {
+			await _sendGate.WaitAsync().ConfigureAwait(false);
+			try {
+				int sequence = ++_sequence;
+				await _send(new ModelContextProtocol.ProgressNotificationValue {
+					Progress = sequence,
+					Message = message
+				}).ConfigureAwait(false);
+			}
+			finally {
+				_sendGate.Release();
+			}
+		}
 	}
 }

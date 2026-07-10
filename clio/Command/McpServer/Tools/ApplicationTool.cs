@@ -128,7 +128,8 @@ public sealed class ApplicationCreateTool(
 				server,
 				requestContext?.Params?.ProgressToken,
 				ApplicationCreateToolName,
-				() => {
+				reportStage => {
+					reportStage("enriching application model");
 					ApplicationDataForgeResult forge = enrichmentService.Enrich(
 						args,
 						optionalTemplateData,
@@ -144,7 +145,8 @@ public sealed class ApplicationCreateTool(
 							args.IconBackground,
 							args.ClientTypeId,
 							optionalTemplateData,
-							args.WithMobilePages));
+							args.WithMobilePages),
+							reportStage);
 					return (forge, created);
 				},
 				cancellationToken).ConfigureAwait(false);
@@ -247,19 +249,22 @@ public sealed class ApplicationSectionCreateTool(IApplicationSectionCreateServic
 				server,
 				requestContext?.Params?.ProgressToken,
 				ApplicationSectionCreateToolName,
-				() => applicationSectionCreateService.CreateSection(
-					args.EnvironmentName,
-					new ApplicationSectionCreateRequest(
-						args.ApplicationCode,
-						args.Caption,
-						args.Description,
-						args.EntitySchemaName,
-						args.WithMobilePages,
-						resolvedIconBackground,
-						args.CaptionCulture,
-						args.Code),
-					BackgroundInsertTimeoutMs,
-					BackgroundReadbackTimeoutMs),
+				reportStage => {
+					return applicationSectionCreateService.CreateSection(
+						args.EnvironmentName,
+						new ApplicationSectionCreateRequest(
+							args.ApplicationCode,
+							args.Caption,
+							args.Description,
+							args.EntitySchemaName,
+							args.WithMobilePages,
+							resolvedIconBackground,
+							args.CaptionCulture,
+							args.Code),
+						BackgroundInsertTimeoutMs,
+						BackgroundReadbackTimeoutMs,
+						reportStage);
+				},
 				deadline: null,
 				cancellationToken: cancellationToken).ConfigureAwait(false);
 			return ApplicationToolHelper.CreateSectionContextResponse(ApplicationToolResultMapper.Map(result));

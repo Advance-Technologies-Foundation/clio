@@ -5,9 +5,11 @@ using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading;
 using System.Threading.Tasks;
 using Clio.Common;
 using Clio.Common.DataForge;
+using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
@@ -41,10 +43,28 @@ public sealed class SchemaSyncTool(
 		"For update-entity, column field names match the get-app-info read shape (read-shape aliases " +
 		"name/data-value-type/reference-schema/is-required/caption are accepted), so a column read from " +
 		"get-app-info can be sent back without field translation — add an 'action' verb for modify/remove, " +
-		"or drop read/create-shape columns into a 'columns' array for an implicit add-batch.")]
+		"or drop read/create-shape columns into a 'columns' array for an implicit add-batch. " +
+		"Long-running: streams notifications/progress (a per-operation stage marker before each op) while " +
+		"working — await completion and do not retry on a perceived timeout.")]
 	public async Task<SchemaSyncResponse> SchemaSync(
 		[Description("Parameters: environment-name, package-name (required); operations array (required)")]
-		[Required] SchemaSyncArgs args) {
+		[Required] SchemaSyncArgs args,
+		global::ModelContextProtocol.Server.McpServer server,
+		RequestContext<CallToolRequestParams> requestContext,
+		CancellationToken cancellationToken = default) {
+		return await McpProgressHeartbeat.RunWithProgressAsync(
+			server,
+			requestContext?.Params?.ProgressToken,
+			ToolName,
+			reportStage => ExecuteBatch(args, reportStage),
+			cancellationToken).ConfigureAwait(false);
+	}
+
+	/// <summary>
+	/// Runs the batch synchronously, pushing a stage marker through <paramref name="reportStage"/> before
+	/// each operation (and its seed step) so a long publish sequence shows per-operation progress.
+	/// </summary>
+	internal SchemaSyncResponse ExecuteBatch(SchemaSyncArgs args, Action<string> reportStage) {
 		// Data Forge enrichment is DIAGNOSTIC ONLY — it never gates the schema operations below. The
 		// builder already degrades gracefully (an unhealthy dataforge subsystem, e.g. 'baseUri: Value
 		// cannot be null', is caught and surfaced as a warning rather than thrown). This outer guard is
@@ -75,12 +95,17 @@ public sealed class SchemaSyncTool(
 					ContextSummary: new ApplicationDataForgeContextSummary([], [], [], []));
 			}
 		}
+		IReadOnlyList<SchemaSyncOperation> operations =
+			args.Operations as IReadOnlyList<SchemaSyncOperation> ?? args.Operations.ToList();
+		int total = operations.Count;
 		var results = new List<SchemaSyncOperationResult>();
 		lock (McpToolExecutionLock.SyncRoot) {
 			bool previousPreserveMessages = logger.PreserveMessages;
 			logger.PreserveMessages = true;
 			try {
-				foreach ((SchemaSyncOperation op, int index) in args.Operations.Select((operation, operationIndex) => (operation, operationIndex))) {
+				for (int index = 0; index < total; index++) {
+					SchemaSyncOperation op = operations[index];
+					reportStage($"{index + 1}/{total}: {GetReportedOperationType(op)} {op.SchemaName}");
 					logger.ClearMessages();
 					if (TryValidateSeedRows(op, index, out SchemaSyncOperationResult? seedValidationFailure)) {
 						results.Add(seedValidationFailure);
@@ -92,6 +117,7 @@ public sealed class SchemaSyncTool(
 						break;
 					}
 					if (op.SeedRows?.Any() == true) {
+						reportStage($"{index + 1}/{total}: seed-data {op.SchemaName}");
 						logger.ClearMessages();
 						SchemaSyncOperationResult seedResult = ExecuteSeedData(op, args);
 						results.Add(seedResult);

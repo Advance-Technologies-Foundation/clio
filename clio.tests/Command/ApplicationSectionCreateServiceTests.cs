@@ -183,6 +183,22 @@ public sealed class ApplicationSectionCreateServiceTests {
 	}
 
 	[Test]
+	[Description("Emits fine-grained stage markers in execution order on the successful section-create path when a reportStage callback is supplied.")]
+	public void CreateSection_Should_Report_Stage_Markers_In_Order_When_Callback_Provided() {
+		// Arrange
+		List<string> markers = [];
+		SetUpSuccessfulCreateWithReadbackCapture();
+
+		// Act
+		_ = _sut.CreateSection("sandbox", CreateReuseEntityRequest(), reportStage: markers.Add);
+
+		// Assert
+		markers.Should().ContainInOrder(
+			["loading application info", "creating section", "loading created section"],
+			because: "the happy path must emit each stage marker in execution order (load info, insert, readback)");
+	}
+
+	[Test]
 	[Description("Creates an existing-entity section with mobile pages and omits the web-only client type selector from the insert payload.")]
 	public void CreateSection_Should_Create_Existing_Entity_Section_With_Mobile_Pages() {
 		// Arrange

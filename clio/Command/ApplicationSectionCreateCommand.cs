@@ -86,9 +86,15 @@ public interface IApplicationSectionCreateService {
 	/// When <see langword="null"/> (the synchronous CLI path) the readback keeps its
 	/// <see cref="Timeout.Infinite"/> default; non-positive values fall through to that default too.
 	/// </param>
+	/// <param name="reportStage">
+	/// Optional callback invoked with a short human-readable marker at each internal stage boundary
+	/// (load application info, create section, load created section). Additive and side-effect-free;
+	/// when <see langword="null"/> no markers are emitted, so CLI callers are unaffected.
+	/// </param>
 	/// <returns>Structured data for the created section, entity, and pages.</returns>
 	ApplicationSectionCreateResult CreateSection(string environmentName, ApplicationSectionCreateRequest request,
-		int? insertTimeoutMsOverride = null, int? readbackTimeoutMsOverride = null);
+		int? insertTimeoutMsOverride = null, int? readbackTimeoutMsOverride = null,
+		Action<string>? reportStage = null);
 }
 
 /// <summary>
@@ -181,7 +187,8 @@ public sealed class ApplicationSectionCreateService(
 
 	/// <inheritdoc />
 	public ApplicationSectionCreateResult CreateSection(string environmentName, ApplicationSectionCreateRequest request,
-		int? insertTimeoutMsOverride = null, int? readbackTimeoutMsOverride = null) {
+		int? insertTimeoutMsOverride = null, int? readbackTimeoutMsOverride = null,
+		Action<string>? reportStage = null) {
 		if (string.IsNullOrWhiteSpace(environmentName)) {
 			throw new ArgumentException("Environment name is required.", nameof(environmentName));
 		}
@@ -216,6 +223,7 @@ public sealed class ApplicationSectionCreateService(
 		try {
 			string schemaNamePrefix = SysSettingCodes.ReadSchemaNamePrefix(sysSettingsManager);
 			logger.WriteInfo($"Loading application info for '{request.ApplicationCode}'...");
+			reportStage?.Invoke("loading application info");
 			beforeInfo = applicationInfoService.GetApplicationInfo(
 				environmentName,
 				null,
@@ -246,6 +254,7 @@ public sealed class ApplicationSectionCreateService(
 		int insertTimeoutMs = ResolveInsertTimeoutMilliseconds(insertTimeoutMsOverride);
 		string responseBody;
 		try {
+			reportStage?.Invoke("creating section");
 			responseBody = client.ExecutePostRequest(
 				serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Insert, environmentSettings),
 				requestBody,
@@ -278,6 +287,7 @@ public sealed class ApplicationSectionCreateService(
 		// The CLI path leaves readbackTimeoutMsOverride null and keeps the patient Timeout.Infinite
 		// default; the MCP/background path passes a finite per-request budget so a wedged readback
 		// cannot hold a thread + HTTP connection for the life of the server process (ENG-91316).
+		reportStage?.Invoke("loading created section");
 		return LoadCreatedSection(
 			environmentName,
 			beforeInfo,

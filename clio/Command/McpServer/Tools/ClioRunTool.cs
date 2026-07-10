@@ -123,6 +123,9 @@ public sealed class ClioRunExecutor(IMcpToolInvokerRegistry toolRegistry) : ICli
 		// resolved tool and its arguments. Reusing the caller's context — rather than constructing a new
 		// one — carries the live MCP server forward so the SDK's InvokeAsync can build and run the real
 		// tool, and avoids the RequestContext constructor's non-null-server guard.
+		// Carry the caller's _meta (progress token) onto the child params so a dispatched lazy tool's
+		// notifications/progress reach the client instead of being dropped.
+		childParams.Meta = callContext.Params?.Meta;
 		callContext.Params = childParams;
 		callContext.MatchedPrimitive = tool;
 		try {

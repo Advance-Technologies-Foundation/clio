@@ -1351,6 +1351,77 @@ public sealed class SchemaSyncToolTests {
 			because: "a programming defect must not be hidden as a benign dataforge: degradation");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Streams a per-operation stage marker before each operation and before the seed step, in batch order (ENG-93087).")]
+	public void ExecuteBatch_Should_Stream_Ordered_Stage_Markers_When_Operations_Succeed() {
+		// Arrange
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		var fakeSeedCommand = new FakeCreateDataBindingDbCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreateCommand);
+		commandResolver.Resolve<CreateDataBindingDbCommand>(Arg.Any<CreateDataBindingDbOptions>())
+			.Returns(fakeSeedCommand);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(registrationService);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[
+				new SchemaSyncOperation("create-entity", "UsrAlpha",
+					TitleLocalizations: Localizations("Alpha"),
+					SeedRows: [
+						new SchemaSyncSeedRow(new Dictionary<string, System.Text.Json.JsonElement> {
+							["Name"] = ToJsonElement("New")
+						})
+					]),
+				new SchemaSyncOperation("create-lookup", "UsrBeta", TitleLocalizations: Localizations("Beta"))
+			]);
+		var markers = new List<string>();
+
+		// Act
+		SchemaSyncResponse response = tool.ExecuteBatch(args, markers.Add);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "every operation in the batch returned exit code 0");
+		markers.Should().Equal(
+			["1/2: create-entity UsrAlpha", "1/2: seed-data UsrAlpha", "2/2: create-lookup UsrBeta"],
+			because: "sync-schemas must stream one marker per operation plus one before the seed step, in batch order");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Does not stream a marker for a later operation when an earlier operation fails (stop-on-failure).")]
+	public void ExecuteBatch_Should_Not_Stream_Later_Marker_When_Earlier_Operation_Fails() {
+		// Arrange
+		var failingCreateCommand = new FakeCreateEntitySchemaCommand(exitCode: 1);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(failingCreateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[
+				new SchemaSyncOperation("create-entity", "UsrAlpha", TitleLocalizations: Localizations("Alpha")),
+				new SchemaSyncOperation("create-lookup", "UsrBeta", TitleLocalizations: Localizations("Beta"))
+			]);
+		var markers = new List<string>();
+
+		// Act
+		SchemaSyncResponse response = tool.ExecuteBatch(args, markers.Add);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "the first operation returned a non-zero exit code");
+		markers.Should().Contain("1/2: create-entity UsrAlpha",
+			because: "the first operation's marker is streamed before it runs");
+		markers.Should().NotContain(marker => marker.Contains("2/2", StringComparison.Ordinal),
+			because: "sync-schemas must stop on the first failure and never announce a later operation");
+	}
+
 	private static System.Text.Json.JsonElement ToJsonElement(string value) {
 		return System.Text.Json.JsonDocument.Parse($"\"{value}\"").RootElement.Clone();
 	}

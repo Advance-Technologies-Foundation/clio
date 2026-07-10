@@ -405,6 +405,27 @@ public sealed class ClioRunDispatchTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Forwards the caller's request _meta (which carries the progress token) onto the retargeted child params, so a dispatched long-tail tool hidden from tools/list can stream notifications/progress under the token the client is listening on.")]
+	public async Task RunAsync_ShouldForwardMetaToDispatchedTool_WhenToolIsDispatched() {
+		// Arrange
+		RegisterTool("echo-tool", BuildEchoTool(), destructive: false);
+		System.Text.Json.Nodes.JsonObject meta = new() { ["progressToken"] = "tok-1" };
+		RequestContext<CallToolRequestParams> callContext = CallContext();
+		callContext.Params = new CallToolRequestParams { Name = ClioRunTool.ToolName, Meta = meta };
+		JsonElement args = JsonDocument.Parse("{\"value\":\"hi\"}").RootElement;
+
+		// Act
+		await _sut.RunAsync("echo-tool", args, destructiveSurface: false, callContext, CancellationToken.None);
+
+		// Assert
+		callContext.Params.Name.Should().Be("echo-tool",
+			because: "dispatch retargets the request context at the resolved tool");
+		callContext.Params.Meta.Should().BeSameAs(meta,
+			because: "clio-run must forward the caller's _meta (carrying the progress token) to the dispatched tool so a lazy tool's notifications/progress reach the client");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Records the dispatched tool name and its resolved destructiveness into the result's out-of-band _meta, so a host that auto-allows clio-run still has an audit trail of the concrete (possibly destructive) tool it ran.")]
 	public async Task RunAsync_ShouldEchoResolvedDestructivenessIntoMeta_WhenToolIsDispatched() {
 		// Arrange

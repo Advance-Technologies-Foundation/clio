@@ -23,8 +23,16 @@ public interface IApplicationCreateService
 	/// </summary>
 	/// <param name="environmentName">Registered clio environment name.</param>
 	/// <param name="request">Application creation request payload.</param>
+	/// <param name="reportStage">
+	/// Optional callback invoked with a short human-readable marker at each internal stage boundary.
+	/// The happy path emits "creating application package" then "loading application metadata"; a
+	/// "waiting for application to be ready" marker is emitted only when the create request times out
+	/// and polling begins. Additive and side-effect-free; when <see langword="null"/> no markers are
+	/// emitted, so CLI callers are unaffected.
+	/// </param>
 	/// <returns>The created application's structured metadata.</returns>
-	ApplicationInfoResult CreateApplication(string environmentName, ApplicationCreateRequest request);
+	ApplicationInfoResult CreateApplication(string environmentName, ApplicationCreateRequest request,
+		Action<string>? reportStage = null);
 }
 
 /// <summary>
@@ -63,7 +71,8 @@ public sealed class ApplicationCreateService(
 	};
 
 	/// <inheritdoc />
-	public ApplicationInfoResult CreateApplication(string environmentName, ApplicationCreateRequest request)
+	public ApplicationInfoResult CreateApplication(string environmentName, ApplicationCreateRequest request,
+		Action<string>? reportStage = null)
 	{
 		if (string.IsNullOrWhiteSpace(environmentName))
 		{
@@ -101,12 +110,14 @@ public sealed class ApplicationCreateService(
 		string responseBody;
 		try
 		{
+			reportStage?.Invoke("creating application package");
 			responseBody = client.ExecutePostRequest(requestUrl, requestBody);
 		}
 		catch (Exception exception) when (IsTimeout(exception))
 		{
 			logger.EndSpinner(false);
 			logger.WriteInfo($"Request timed out, polling for application '{resolvedRequest.Code}'...");
+			reportStage?.Invoke("waiting for application to be ready");
 			return PollApplicationInfo(environmentName, resolvedRequest.Code, exception, schemaNamePrefix);
 		}
 		catch
@@ -129,6 +140,7 @@ public sealed class ApplicationCreateService(
 		}
 
 		logger.EndSpinner(true);
+		reportStage?.Invoke("loading application metadata");
 		return LoadCreatedApplication(environmentName, resolvedRequest.Code, response.Value, schemaNamePrefix);
 	}
 
