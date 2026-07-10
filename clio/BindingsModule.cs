@@ -591,6 +591,8 @@ public class BindingsModule {
 		services.AddTransient<CheckWindowsFeaturesCommand>();
 		services.AddTransient<ManageWindowsFeaturesCommand>();
 		services.AddTransient<CreateTestProjectCommand>();
+		services.AddTransient<CreateIntegrationTestProjectCommand>();
+		services.AddTransient<IValidator<CreateIntegrationTestProjectOptions>, CreateIntegrationTestProjectOptionsValidator>();
 		services.AddTransient<ListenCommand>();
 		services.AddTransient<ShowPackageFileContentCommand>();
 		services.AddTransient<CompilePackageCommand>();

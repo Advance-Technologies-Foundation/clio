@@ -397,6 +397,10 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="create-test-project"></a>
 <a id="unit-test"></a>
 - [`new-test-project`](docs/commands/new-test-project.md) - Create a new test project, `create-test-project`, `unit-test`
+
+<a id="new-integration-test-project"></a>
+<a id="integration-test"></a>
+- [`new-integration-test-project`](docs/commands/new-integration-test-project.md) - Create a portable Creatio integration-test project, `integration-test`
 <a id="new-ui-project"></a>
 <a id="create-ui-project"></a>
 <a id="createup"></a>
