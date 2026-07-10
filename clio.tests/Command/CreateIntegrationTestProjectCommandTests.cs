@@ -89,4 +89,29 @@ public class CreateIntegrationTestProjectCommandTests {
 		templates.DidNotReceiveWithAnyArgs().CopyTemplateFolder(default, default, default(Dictionary<string, string>));
 		infrastructure.DidNotReceiveWithAnyArgs().EnsureDirectoryExists(default);
 	}
+
+	[Test]
+	[Description("Preserves an existing customized integration-test project instead of overwriting its generated infrastructure.")]
+	public void Execute_Should_Reject_Existing_Project_Before_Template_Copy() {
+		// Arrange
+		IValidator<CreateIntegrationTestProjectOptions> validator = Substitute.For<IValidator<CreateIntegrationTestProjectOptions>>();
+		validator.Validate(Arg.Any<CreateIntegrationTestProjectOptions>()).Returns(new ValidationResult());
+		ICreateTestProjectContext context = Substitute.For<ICreateTestProjectContext>();
+		context.IsWorkspace.Returns(true);
+		context.ProjectsTestsFolderPath.Returns("tests");
+		ITemplateProvider templates = Substitute.For<ITemplateProvider>();
+		ICreateTestProjectInfrastructure infrastructure = Substitute.For<ICreateTestProjectInfrastructure>();
+		infrastructure.Combine(Arg.Any<string[]>()).Returns(call => string.Join("/", call.Arg<string[]>()));
+		infrastructure.ExistsDirectory("tests/Acme.IntegrationTests").Returns(true);
+		CreateIntegrationTestProjectCommand command = new(validator, context, templates, infrastructure,
+			Substitute.For<ILogger>(), Substitute.For<ISolutionCreator>());
+
+		// Act
+		int exitCode = command.Execute(new CreateIntegrationTestProjectOptions { PackageName = "Acme" });
+
+		// Assert
+		exitCode.Should().Be(1, "because rerunning the scaffold must not destroy project customizations");
+		templates.DidNotReceiveWithAnyArgs().CopyTemplateFolder(default, default, default(Dictionary<string, string>));
+		infrastructure.DidNotReceiveWithAnyArgs().WriteAllText(default, default);
+	}
 }

@@ -59,6 +59,11 @@ public class CreateIntegrationTestProjectCommand(
 		try {
 			string projectDirectory = infrastructure.Combine(TestsPath, $"{options.PackageName}.IntegrationTests");
 			string projectFileName = $"{options.PackageName}.IntegrationTests.csproj";
+			string projectPath = infrastructure.Combine(projectDirectory, projectFileName);
+			if (infrastructure.ExistsDirectory(projectDirectory)) {
+				logger.WriteError($"Integration-test project directory already exists: {projectDirectory}. Existing files were not changed.");
+				return 1;
+			}
 			Dictionary<string, string> macros = new() {
 				["{{packageName}}"] = options.PackageName,
 				["{{targetFramework}}"] = options.TargetFramework
@@ -71,7 +76,6 @@ public class CreateIntegrationTestProjectCommand(
 				infrastructure.Combine(TestsPath, "IntegrationTests.slnx"),
 				[new SolutionProject(projectFileName, relativeProjectPath)]);
 
-			string projectPath = infrastructure.Combine(projectDirectory, projectFileName);
 			string relativeToRoot = infrastructure.GetRelativePath(context.RootPath, projectPath);
 			solutionCreator.AddProjectToSolution(
 				infrastructure.Combine(context.RootPath, "MainSolution.slnx"),
