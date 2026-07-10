@@ -1,7 +1,9 @@
 # Story 1 — Spike: confirm identity-platform M2M capability (OQ-B) [BLOCKING]
 
 **Feature**: mcp-http-standard-authorization · **Jira**: ENG-93386 · **Size**: S · **Status**: ready-for-dev
-**Depends on**: — · **Blocks**: 2, 3, 6
+**Depends on**: — · **Blocks**: 2, 3, 6 · **Status: DONE (RESOLVED 2026-07-10)**
+
+> **RESOLVED via metarepo investigation** → [identity-platform-spike-findings.md](../mcp-http-standard-authorization/identity-platform-spike-findings.md). Verdicts: `client_credentials` **GO**; RFC 8707 `resource` **NO-GO** (scope-derived `aud`); `private_key_jwt` **NO-GO** (client secret only); issuer/JWKS/RS256 **GO**. Design corrected in ADR/PRD; follow `feature-flag-service`/`control-plane` RS precedent + `IdentityPlatformAuth__*` config; `aud` = `creatio_ai_api` or a new `clio_mcp_api`. Remaining sub-decision (OQ-C): reuse vs register the audience/scope — confirm with the platform team.
 
 ## As a / I want / So that
 As the implementer, I want to confirm what the AI-Platform `identity-platform` Authorization Server actually supports, so the issuer/audience/grant contract is frozen on facts, not assumptions.

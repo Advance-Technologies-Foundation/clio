@@ -80,7 +80,9 @@ Replace the bespoke `PlatformApiKeyGate` front door with **standard MCP OAuth 2.
 ## Design Decisions
 
 ### D-1 — Front-door authentication: ASP.NET JWT bearer, whole endpoint
-- `AddAuthentication` + `AddJwtBearer("Bearer", …)` with `Authority = <identity-platform issuer>`, `Audience = <clio-mcp canonical URI>`, and `TokenValidationParameters` validating issuer, audience, lifetime, and signing key (JWKS via OIDC discovery).
+- `AddAuthentication` + `AddJwtBearer("Bearer", …)` with `Authority = <identity-platform issuer>`, `Audience = <scope-derived audience string, e.g. creatio_ai_api or clio_mcp_api>`, and `TokenValidationParameters` validating issuer, audience, lifetime, and signing key (JWKS via OIDC discovery, **RS256**).
+- **Issuer split (spike):** the token `iss` is the **public** authority while internal pods reach the IdP over **internal** K8s DNS — accept **both** the discovery-doc issuer and the configured `Authority`, trailing-slash-normalized (mirror control-plane `IdentityPlatformTokenValidator.cs:141-157`).
+- **Precedent to copy:** `creatio-ai-feature-flag-service Program.cs:405-425` (clean `AddJwtBearer` against `IdentityPlatformAuth__{Authority,Audience,RequireHttpsMetadata}`); richer manual-JWKS variant in control-plane `IdentityPlatformTokenValidator.cs`.
 - `AddAuthorization` with a scope policy (e.g. `RequireClaim("scope", "mcp:tools")`).
 - `app.MapMcp(path).RequireAuthorization(<policy>)` after `UseAuthentication()/UseAuthorization()` — **every** request (passthrough AND `-e`/stored) now needs a valid token. This closes the "gates only passthrough" gap.
 - Evaluate `.AddAuthorizationFilters()` for per-tool `[Authorize]`/scope enforcement; endpoint-level auth alone protects the transport but does not filter individual tools/prompts/resources.
@@ -89,11 +91,12 @@ Replace the bespoke `PlatformApiKeyGate` front door with **standard MCP OAuth 2.
 - Register the SDK MCP authentication scheme (`.AddMcp("Mcp", …)` with `ForwardAuthenticate = "Bearer"`) and a `ResourceMetadata { Resource = <canonical URI>, AuthorizationServers = [<identity-platform>], ScopesSupported = [<scopes>] }`.
 - `McpAuthenticationHandler` serves `/.well-known/oauth-protected-resource` and augments the `401` with the `resource_metadata` URI automatically — do not hand-roll these.
 
-### D-3 — Grant type: client credentials (pre-registered confidential client)
-- The gateway is a **pre-registered confidential client** at identity-platform (DCR is `MAY` and unnecessary — the relationship is known).
-- Prefer **`private_key_jwt` (RFC 7523)** client authentication over a reusable client secret. A client secret is a documented fallback only.
-- The gateway requests a **short-lived** token: `grant_type=client_credentials`, `resource=<clio-mcp canonical URI>`, least-privilege `scope`.
-- Negotiate `io.modelcontextprotocol/oauth-client-credentials` where the client supports it.
+### D-3 — Grant type: client credentials (pre-registered confidential client) — CORRECTED by Story-1 spike
+- The gateway is a **pre-registered confidential client** at identity-platform (DCR is `MAY` and unnecessary — the relationship is known). ✅ `AllowClientCredentialsFlow()` confirmed (`DependencyInjection.cs:452`).
+- **Client authentication = client secret** (❌ `private_key_jwt`/RFC 7523 is NOT available on this OpenIddict IdP — spike NO-GO). The earlier "prefer private_key_jwt" is dropped.
+- The gateway requests a **short-lived** token via `grant_type=client_credentials` with a least-privilege **`scope`** whose registered resource is clio's audience. **No RFC 8707 `resource` parameter** — the IdP calls `DisableResourceValidation()` and derives `aud` from the scope (see D-2/D-4). 
+- clio (RS) validates issuer, **scope-derived audience**, expiry, scopes.
+- Negotiate `io.modelcontextprotocol/oauth-client-credentials` where the client supports it (advisory; not required by this IdP).
 
 ### D-4 — Configuration (issuer/audience/scope), OIDC-discovery based, provider-swappable
 - New options (kebab-case per CLIO001), each with an env-var counterpart, e.g. `--auth-issuer` / `CLIO_MCP_HTTP_AUTH_ISSUER`, `--auth-audience`, `--auth-required-scopes`. Exact names finalized in stories.
@@ -140,7 +143,7 @@ Replace the bespoke `PlatformApiKeyGate` front door with **standard MCP OAuth 2.
 ## Open Questions (for the PRD/stories phase)
 
 - **OQ-A:** Final option/env-var names for issuer/audience/scopes, and whether a public bind with no issuer **refuses to start** vs warns.
-- **OQ-B:** Does identity-platform support the `client_credentials` grant with RFC 8707 `resource` and `private_key_jwt`? (Needs confirmation with the platform team — a spike.)
+- **OQ-B — RESOLVED (Story-1 spike, metarepo evidence; see [identity-platform-spike-findings.md](../mcp-http-standard-authorization/identity-platform-spike-findings.md)):** identity-platform = OpenIddict 7.5.0. `client_credentials` **GO**; RFC 8707 `resource` **NO-GO** (IdP `DisableResourceValidation()`, `aud` is scope-derived); `private_key_jwt` **NO-GO** (client **secret** only); issuer/JWKS/RS256 **GO**. **Design deviation from the MCP-spec letter (accepted for platform interop):** clio validates `aud` against a scope-derived audience string (`creatio_ai_api` or a new `clio_mcp_api`), not against its canonical URI, and does not require the client to send `resource`. Every existing platform RS (feature-flag-service, control-plane) already does exactly this. Remaining sub-decision → OQ-C: reuse `creatio_ai_api` vs register a dedicated `clio_mcp_api` scope.
 - **OQ-C:** Exact `ResourceMetadata`/scope shape identity-platform expects, and the canonical URI form for clio-mcp behind the K8s service / ingress.
 - **OQ-D:** Retire `--platform-api-key` outright, or keep it as an opt-in dev fallback? (D-6.)
 - **OQ-E:** Raw tenant credentials in the header vs an opaque reference resolved server-side (D-5).

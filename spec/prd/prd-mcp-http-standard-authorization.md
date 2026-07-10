@@ -31,9 +31,9 @@ We need to replace the front door with the **standard MCP OAuth 2.1 Resource-Ser
 - [ ] **Goal 4 — No regression to stdio / dev.** stdio and unconfigured-auth local use behave as today.
   - **SM-04**: `clio mcp` (stdio) unchanged; `clio mcp-http` with no issuer configured behaves exactly as pre-auth (fail-safe-off) — but a public bind (`--host 0.0.0.0`) with no issuer emits a loud warning (or refuses to start, per OQ-A).
 
-## Blocking Prerequisite
+## Blocking Prerequisite — RESOLVED (Story-1 spike, 2026-07-10)
 
-**The Authorization Server capability is unconfirmed.** The design assumes AI-Platform `identity-platform` can issue tokens to a **pre-registered confidential client** via `grant_type=client_credentials` with an RFC 8707 `resource` parameter and (preferably) `private_key_jwt` client auth. This MUST be confirmed with the platform team before the issuer/audience/scope contract is frozen (ADR OQ-B, Story 1 spike). If unsupported, fall back options (client secret; a different grant; a documented service token) must be re-planned.
+Investigated against the AI-Platform metarepo ([identity-platform-spike-findings.md](../mcp-http-standard-authorization/identity-platform-spike-findings.md)). identity-platform = OpenIddict 7.5.0. **`client_credentials` GO** (client **secret**, not `private_key_jwt`); **RFC 8707 `resource` NO-GO** — the IdP `DisableResourceValidation()` and derives `aud` from the requested **scope**; issuer/JWKS/RS256 **GO**. Design corrected: clio validates a **scope-derived audience** (reuse `creatio_ai_api` or register `clio_mcp_api`), not a canonical URI, and accepts both the public issuer and the internal-DNS `Authority` — mirroring the existing platform RSs (`feature-flag-service`, `control-plane`). One sub-decision remains (OQ-C): reuse `creatio_ai_api` vs register a dedicated `clio_mcp_api` scope — confirm with the platform team.
 
 ## Non-goals
 
@@ -57,7 +57,7 @@ We need to replace the front door with the **standard MCP OAuth 2.1 Resource-Ser
 
 | ID | Requirement | Priority |
 |----|------------|---------|
-| FR-01 | Validate an OAuth 2.1 bearer JWT on every `/mcp` request as a Resource Server: signature (JWKS via OIDC discovery), issuer, audience/`resource` (RFC 8707), lifetime. Reject with `401` otherwise. | Must |
+| FR-01 | Validate an OAuth 2.1 bearer JWT on every `/mcp` request as a Resource Server: signature (JWKS via OIDC discovery, **RS256**), issuer (accept both public-iss and internal-DNS `Authority`), **scope-derived audience** (`creatio_ai_api` or a dedicated `clio_mcp_api` — the IdP does NOT honor RFC 8707 `resource`, per Story-1 spike), lifetime. Reject with `401` otherwise. | Must |
 | FR-02 | Serve Protected Resource Metadata (RFC 9728) at `/.well-known/oauth-protected-resource` with `resource`, `authorization_servers`, `scopes_supported`; enrich the `401` `WWW-Authenticate` with the `resource_metadata` URI (via the SDK `McpAuthenticationHandler`). | Must |
 | FR-03 | Protect the whole endpoint: `app.MapMcp(path).RequireAuthorization(<scope policy>)` after `UseAuthentication/UseAuthorization`. Passthrough AND `-e`/stored paths both require a token. | Must |
 | FR-04 | Configurable issuer/audience/required-scopes via kebab-case flags + env vars (e.g. `--auth-issuer`/`CLIO_MCP_HTTP_AUTH_ISSUER`, `--auth-audience`, `--auth-required-scopes`); issuer resolved by OIDC discovery so the provider is swappable. | Must |

@@ -935,9 +935,10 @@ stories:
     title: "Spike: confirm identity-platform M2M capability (OQ-B) [BLOCKING]"
     feature: "mcp-http-standard-authorization"
     size: S
-    status: ready-for-dev
+    status: done
     depends_on: []
     blocks: [story-mcp-http-standard-authorization-2, story-mcp-http-standard-authorization-3, story-mcp-http-standard-authorization-6]
+    note: "RESOLVED 2026-07-10 via metarepo investigation. GO: client_credentials, issuer/JWKS/RS256. NO-GO: RFC 8707 resource (aud is scope-derived), private_key_jwt (client secret only). Follow feature-flag-service/control-plane RS precedent + IdentityPlatformAuth__* config; aud=creatio_ai_api|clio_mcp_api. Findings: spec/mcp-http-standard-authorization/identity-platform-spike-findings.md"
     file: spec/stories/story-mcp-http-standard-authorization-1.md
     prd: spec/prd/prd-mcp-http-standard-authorization.md
     adr: spec/adr/adr-mcp-http-standard-authorization.md
