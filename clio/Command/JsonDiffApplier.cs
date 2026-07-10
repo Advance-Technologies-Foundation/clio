@@ -600,7 +600,9 @@ public class JsonDiffApplier {
 			int itemIndex = IsEmpty(config["index"]) ? length : config["index"]!.Value<int>();
 			itemIndex = NormalizeSpliceStart(itemIndex, length);
 			parentArray.Insert(itemIndex, item);
-		} else if (parent is JObject) {
+		} else if (parent is JObject && itemInfo is not null) {
+			// parent is a JObject only when it came from itemInfo.Item[propertyName] (a null itemInfo yields the
+			// root _sourceObject, a JArray), so itemInfo is never null here — the guard makes that explicit.
 			itemInfo.Item[config.Value<string>("propertyName")] = item;
 		} else {
 			throw new JsonDiffApplierException(Format(JsonDiffApplierResources.NotContainerItemInsertException, parentName));
@@ -639,9 +641,12 @@ public class JsonDiffApplier {
 		bool parentExists = !IsEmpty(itemInfo);
 		if (parentExists) {
 			var values = (JObject)config["values"];
+			if (values is null) {
+				return parentExists; // a merge with no values object is a no-op
+			}
 			foreach (JProperty property in ((JObject)itemInfo.Item).Properties().ToList()) {
 				JToken firstChild = property.Value is JArray arr ? (arr.Count > 0 ? arr[0] : null) : property.Value;
-				if (IsItemConfig(firstChild) && values is not null && values[property.Name] is not null) {
+				if (IsItemConfig(firstChild) && values[property.Name] is not null) {
 					// ItemWithItemsPropertyMergeException (warn-and-drop, no throw)
 					values.Remove(property.Name);
 				}

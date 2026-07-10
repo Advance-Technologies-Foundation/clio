@@ -263,6 +263,7 @@ public static class WebToMobileAnalysisService {
 			}
 
 			var actions = new JsonArray();
+			bool anyActionConverted = false;
 			foreach (SourcePageRuleAction action in rule.Actions ?? []) {
 				List<string> mobileItems = (action.ElementItems ?? [])
 					.Where(survivors.ContainsKey)
@@ -274,11 +275,12 @@ public static class WebToMobileAnalysisService {
 						["type"] = action.ActionType,
 						["items"] = new JsonArray(mobileItems.Select(i => (JsonNode)i).ToArray())
 					});
+					anyActionConverted = true;
 				}
 				// else: every referenced element drops → this action does not convert.
 			}
 
-			if (actions.Count == 0) {
+			if (!anyActionConverted) {
 				dropped.Add(new DroppedPageBusinessRule {
 					Caption = rule.Caption,
 					Reason = "No action converts to mobile: every referenced element is dropped or unsupported on mobile."
@@ -883,8 +885,11 @@ public static class WebToMobileAnalysisService {
 		}
 	}
 
+	// Bound every regex execution so a pathological input cannot hang the MCP server (Sonar S6444).
+	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(5);
+
 	private static readonly Regex ResourceStringsRefPattern =
-		new(@"\$Resources\.Strings\.([A-Za-z_][A-Za-z0-9_]*)", RegexOptions.Compiled);
+		new(@"\$Resources\.Strings\.([A-Za-z_][A-Za-z0-9_]*)", RegexOptions.Compiled, RegexTimeout);
 
 	/// <summary>
 	/// Every viewModelConfig attribute a node references — both plain <c>$Attr</c> bindings AND
@@ -900,7 +905,7 @@ public static class WebToMobileAnalysisService {
 		foreach (Match match in ResourceStringsRefPattern.Matches(json)) {
 			yield return match.Groups[1].Value;
 		}
-		foreach (Match match in Regex.Matches(json, @"\$([A-Za-z_][A-Za-z0-9_]*)")) {
+		foreach (Match match in Regex.Matches(json, @"\$([A-Za-z_][A-Za-z0-9_]*)", RegexOptions.None, RegexTimeout)) {
 			yield return match.Groups[1].Value;
 		}
 	}
@@ -1202,7 +1207,7 @@ public static class WebToMobileAnalysisService {
 		var clone = (JObject)node.DeepClone();
 		clone.Remove("items");
 		string json = clone.ToString(Newtonsoft.Json.Formatting.None);
-		foreach (Match match in Regex.Matches(json, @"\$([A-Za-z_][A-Za-z0-9_]*)")) {
+		foreach (Match match in Regex.Matches(json, @"\$([A-Za-z_][A-Za-z0-9_]*)", RegexOptions.None, RegexTimeout)) {
 			yield return match.Groups[1].Value;
 		}
 	}
