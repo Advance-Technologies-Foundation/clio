@@ -133,21 +133,25 @@ Phase 1 scoped to **e2e** (`Team_Atf_ClioMcpE2eTests`, the confirmed `BranchName
 **Dual credential:** `TEAMCITY_TOKEN` authenticates Actions→TeamCity (GitHub secret, least-privilege);
 the GitHub App authenticates TeamCity→GitHub (status posting).
 
-### Remaining prerequisites for e2e Phase 1
+### e2e Phase 1 prerequisites — status
 
-1. **TeamCity (UI):** add **Commit Status Publisher** to `Team_Atf_ClioMcpE2eTests` (Publisher=GitHub,
-   Auth=GitHub App access token → Generate new, connection **TeamCity ATF**, URL `api.github.com`) —
-   mirror the one already on `Team_Atf_ClioUnitTests`.
-2. **GitHub secret `TEAMCITY_TOKEN`:** a least-privilege TeamCity token (a same-repo PR can edit the
-   workflow, so scope the token to only queueing these builds). Done — token `clio-pr-trigger`
-   (scope: Run build + View project on ATF), added as repo secret `TEAMCITY_TOKEN`.
-3. **Repo Actions setting (security prerequisite):** the workflow runs on an in-network self-hosted
-   runner, so a fork PR firing `pull_request` would otherwise run fork-controlled workflow code on
-   that runner. The workflow has a job-level `if:` (same-repo PRs + manual only) as defense-in-depth,
-   but the authoritative control is **Settings → Actions → General → "Fork pull request workflows
-   from outside collaborators" → Require approval for all external contributors**. Enable it.
-4. Validate the workflow itself (link 1: Actions → TeamCity auth) after merge via `workflow_dispatch`,
-   or on the first real code PR; confirm the check appears.
+1. **TeamCity Commit Status Publisher** on `Team_Atf_ClioMcpE2eTests` — **DONE** (`BUILD_EXT_77`,
+   GitHub App connection **TeamCity ATF**, `api.github.com`); validated against PR #651.
+2. **GitHub secret `TEAMCITY_TOKEN`** — **DONE**. Least-privilege token `clio-pr-trigger`
+   (scope: Run build + View project on ATF; deliberately cannot cancel/stop builds), added as the
+   repo secret `TEAMCITY_TOKEN`.
+3. **Cost control (concurrent full-Creatio deploys)** — **DONE**. GitHub `concurrency` only de-dupes
+   the sub-second trigger runs (the token can't cancel builds), so concurrency is bounded on the
+   TeamCity side: `Team_Atf_ClioMcpE2eTests` → `maximumNumberOfBuilds = 1` (serializes deploys,
+   prevents shared-stand corruption).
+4. **Repo Actions setting (fork security, to confirm by a repo admin):** the in-file job `if:`
+   (same-repo PRs + manual only) is defense-in-depth; the authoritative control is **Settings →
+   Actions → General → "Require approval for all external contributors"**. Neither author nor
+   assignee has repo-admin to read/set it; GitHub's default already gates first-time/outside
+   contributors, so this is hardening, not a merge blocker.
+5. **Validate the workflow itself** (link 1: Actions → TeamCity auth) **post-merge** via
+   `workflow_dispatch` (GitHub only exposes the manual trigger once the workflow is on `master`),
+   or on the first real code PR; confirm the check appears. Required post-merge step.
 
 ### Fast-follow: unit-tests (`Team_Atf_ClioUnitTests`)
 
