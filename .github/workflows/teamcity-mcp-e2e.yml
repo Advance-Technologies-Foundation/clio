@@ -95,8 +95,6 @@ jobs:
           BUILD_TYPE: Team_Atf_ClioMcpE2eTests
           # pull_request -> PR head branch; workflow_dispatch -> the chosen branch.
           HEAD_REF: ${{ github.event.pull_request.head.ref || inputs.branch }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
-          PR_NUMBER: ${{ github.event.pull_request.number || '(manual)' }}
         run: |
           $ErrorActionPreference = 'Stop'
           if ([string]::IsNullOrWhiteSpace($env:TC_TOKEN)) {
@@ -108,7 +106,9 @@ jobs:
           # PR heads (they exist as refs/heads/<head.ref>); fork PRs are filtered
           # out by the job-level `if:` above, so BranchNameClio is always a branch
           # that exists in the main repo.
-          $shaSuffix = if ([string]::IsNullOrWhiteSpace($env:HEAD_SHA)) { '' } else { " @ $env:HEAD_SHA" }
+          # No `comment` field: adding a build comment needs the "Comment build"
+          # permission, which the least-privilege token intentionally lacks. The
+          # branch is already captured in the build number (%counter%_%BranchNameClio%).
           $body = @{
             buildType  = @{ id = $env:BUILD_TYPE }
             properties = @{ property = @(
@@ -117,7 +117,6 @@ jobs:
               @{ name = 'env.McpE2E__AllowDestructiveMcpTests';  value = 'true' }
               @{ name = 'ProductName';                           value = 'Studio' }
             ) }
-            comment    = @{ text = "clio PR #$env:PR_NUMBER ($env:HEAD_REF$shaSuffix) - MCP e2e via GitHub Actions" }
           } | ConvertTo-Json -Depth 6
 
           $resp = Invoke-RestMethod -Method Post -Uri "$env:TC_URL/app/rest/buildQueue" `
