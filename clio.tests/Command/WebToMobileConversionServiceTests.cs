@@ -1330,11 +1330,37 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("A component with an unknown/custom request (not in the supported set and not remapped) is DROPPED.")]
-	public void Analyze_UnknownRequest_ComponentDropped() {
+	[Description("A BUTTON with an unknown/custom request (not in the supported set and not remapped) is DROPPED — a dead button has no purpose on mobile.")]
+	public void Analyze_UnknownRequest_ButtonDropped() {
 		MobilePageConversionGuide guide = AnalyzeRequests(ButtonBundle("CustomButton", "usr.MyCustomRequest"));
 
 		Element(guide, "CustomButton").Operation.Should().Be("drop");
+	}
+
+	[Test]
+	[Description("A NON-button component whose event-binding request is not in the supported set is NOT dropped — only buttons are dropped for an unsupported request. Some components legitimately use a system request absent from the list; it is kept verbatim and flagged.")]
+	public void Analyze_NonButtonUnsupportedRequest_ComponentKept() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "Progress", "type": "crt.EntityStageProgressBar", "caption": "P",
+				  "updated": { "request": "usr.SomeSystemRequest", "params": {} } } ] } ]
+			""");
+		var mobileTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+			"crt.FlexContainer", "crt.EntityStageProgressBar"
+		};
+
+		MobilePageConversionGuide guide = WebToMobileAnalysisService.Analyze(
+			bundle, mobileTypes, WebTypes,
+			webByType: Reg(("crt.FlexContainer", true)),
+			mobileByType: null,
+			RequestRules, templateRule: null,
+			sourcePage: "UsrApp_FormPage", sourceTemplate: null,
+			suggestedTarget: "UsrApp_MobileFormPage", containerNameMap: null);
+
+		Element(guide, "Progress").Operation.Should().NotBe("drop",
+			because: "a non-button component is not dropped for an unsupported (likely system) request");
+		guide.RequestConversions!.FlaggedRequests.Should().ContainSingle(r =>
+			r.ElementName == "Progress" && r.Request == "usr.SomeSystemRequest");
 	}
 
 	[Test]

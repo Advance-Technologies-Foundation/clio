@@ -232,9 +232,11 @@ public sealed class FreedomToMobileConversionGuidanceResource {
 			  droppedRules[] did not convert (every referenced element drops) — report them.
 			  OBJECT-/entity-level business rules are shared across web and mobile — do NOT re-create or touch them.
 			- REQUESTS (actions) on component event bindings (a button's `clicked`, a field's `valueChange`/`updated`)
-			  ARE handled for you. A component whose request the Creatio Mobile app does NOT support (and that does
-			  not remap to a supported one) is DROPPED entirely (elementMap operation `drop`, reason names the
-			  request) — a component with a dead action is not shipped. A supported request is kept in
+			  ARE handled for you. ONLY a `crt.Button` whose request the Creatio Mobile app does NOT support (and
+			  that does not remap to a supported one) is DROPPED (elementMap operation `drop`, reason names the
+			  request) — a dead button is not shipped. Other component types are NOT dropped for an unsupported
+			  request (some legitimately use a system request absent from the list): their binding is kept verbatim
+			  and flagged. A supported request is kept in
 			  elementMap[].mobileValues (remapped when the mobile name differs) — paste mobileValues verbatim.
 			  guide.requestConversions is the advisory summary (convertedRequests / flaggedRequests); dropped
 			  components appear in elementMap as `drop`. Tell the user which action components were removed.

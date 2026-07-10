@@ -1065,11 +1065,14 @@ public static class WebToMobileAnalysisService {
 			// column count — the adaptive pass reads both to build the per-breakpoint mobile layout.
 			CaptureSource(ctx, name, node);
 
-			// 0. drop — the element triggers a request the Creatio Mobile app does not support (e.g. a button
-			//    whose clicked request is web-only). Such a component would be non-functional on mobile, so it
-			//    is removed rather than shipped with a dead action.
-			if (UnsupportedRequestOf(ctx, node) is { } unsupportedRequest) {
-				ctx.Out.Add(Drop(name, type, $"uses request '{unsupportedRequest}' not supported on the Creatio Mobile app"));
+			// 0. drop — ONLY a crt.Button whose clicked request the Creatio Mobile app does not support: it would
+			//    be a dead button, so it is removed. Other component types are NOT dropped for an unsupported
+			//    request — some components legitimately use a SYSTEM request that is absent from the supported
+			//    list, and dropping the whole component over it loses valid UI. Their bindings are handled when
+			//    the component is built (ProcessEventBindings keeps/flags an unknown request rather than dropping).
+			if (string.Equals(type, "crt.Button", StringComparison.OrdinalIgnoreCase)
+				&& UnsupportedRequestOf(ctx, node) is { } unsupportedRequest) {
+				ctx.Out.Add(Drop(name, type, $"button uses request '{unsupportedRequest}' not supported on the Creatio Mobile app"));
 				continue;
 			}
 
