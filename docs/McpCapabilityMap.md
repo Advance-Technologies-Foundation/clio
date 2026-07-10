@@ -11,7 +11,7 @@ The document is source-driven. It is based on the current assembly registration 
 - `clio/Command/McpServer/Prompts`
 - `clio/Command/McpServer/Resources`
 
-Snapshot date: `2026-06-10`
+Snapshot date: `2026-07-09`
 
 ## One-sentence summary
 
@@ -21,16 +21,15 @@ An external AI sees `clio` MCP not as a generic system shell, but as a curated C
 
 From MCP discovery, the surface currently exposes:
 
-- `63` tools
-- `50` prompts
-- `4` resources
-- `56` tools with explicit safety metadata
-- `7` legacy operational tools without explicit `ReadOnly` / `Destructive` / `Idempotent` flags
+- `137` tools
+- `67` prompts
+- `92` resources
+- `1` resource template
 
 Important shape of the surface:
 
 - Two transports: **stdio** (`clio mcp` / `mcp-server`) and **Streamable HTTP** (`clio mcp-http`), sharing the same tool surface. The HTTP host additionally offers the credential-passthrough edge (see the targeting-mode note above).
-- Registration goes through `McpFeatureToggleFilter.RegisterEnabledPrimitives` (feature-toggle-aware; `IEnumerable<Type>` into `WithTools`/`WithPrompts`/`WithResources`) — the assembly-wide `*FromAssembly` helpers are no longer used.
+- Registration goes through `McpFeatureToggleFilter.RegisterEnabledPrimitives` (feature-toggle-aware; `IEnumerable<Type>` into `WithTools`/`WithPrompts`/`WithResources`) — the assembly-wide `*FromAssembly` helpers are no longer used. Discovery returns only the enabled surface: feature-gated tools, prompts, and resources are omitted while their feature flag is off, so the advertised counts reflect the default flag state.
 - The tool layer is mixed-generation:
   - newer tools are strongly typed and usually expose `ReadOnly`, `Destructive`, `Idempotent`, and `OpenWorld`
   - older lifecycle tools still expose valid MCP tools, but without the same metadata richness
@@ -525,9 +524,40 @@ Companion surfaces (see the `process-modeling` guidance):
 - `get-guidance name=process-modeling` — the BPMN element catalog, connection rules, and the validate-then-drive recipe.
 - `generate-process-model` — reads an existing process into a C# model (existing tool).
 
+### 12. Theming
+
+These tools brand a Creatio app: build a custom theme from brand colours and fonts, apply it to an environment, and manage the theme catalog. `build-theme` and `advise-theme-palette` run offline; the rest act on a registered environment (`environment-name`) via the native ThemeService. All theming tools take a single `args` object with kebab-case fields.
+
+- `build-theme`
+  Render a theme's `theme.css` (and, in workspace mode, `theme.json`) from a primary colour, optional secondary/accent/system colours, and fonts, over a bundled version-pinned template. Writes into a workspace package when given `workspace-directory` + `package-name`, otherwise returns the CSS. Never mutates an environment.
+- `advise-theme-palette`
+  Stateless offline advisor that scores brand-colour choices (readability on white, accent similarity) and returns a verdict per operation, so the agent never judges a colour by eye.
+- `create-theme`
+  Create a theme on the environment from inline `css-content` plus a caption.
+- `update-theme`
+  Full overwrite of an existing theme by id (caption, CSS class name, CSS content).
+- `delete-theme`
+  Delete a theme by id; deleting an unknown id is an error.
+- `list-themes`
+  List custom themes (id, caption, CSS class name, CSS file path). An empty list means no themes or no `CanCustomizeBranding` license.
+- `clear-themes-cache`
+  Refresh the theme catalog cache; needed only when theme files change on the environment outside a clio install.
+- `check-theming-access`
+  Report whether the caller has the `CanManageThemes` operation and `CanCustomizeBranding` license, to gate authoring on a real permission check.
+
+What an external AI can practically do here:
+
+- build a theme offline (`build-theme`) with `advise-theme-palette` driving the palette, then commit it to a workspace package and push, or apply it directly with `create-theme`
+- restyle, remove, and confirm themes on an environment
+- precheck theming permissions before authoring, and set the default via the `DefaultTheme` system setting (see the theming guidance)
+
+Companion surfaces (see the `theming` guidance):
+
+- `get-guidance name=theming` — the palette conversation, the build step, and the workspace/dev vs no-code/server delivery flows.
+
 ## Prompt Layer: What The AI Gets Beyond Raw Tools
 
-The `50` prompts do not add new execution power, but they materially change how an external AI can reason about the surface.
+The prompt layer does not add new execution power, but it materially changes how an external AI can reason about the surface.
 
 The prompt layer acts as embedded operating guidance:
 
@@ -556,6 +586,8 @@ The MCP resource surface is still small, but it now has one MCP-native guidance 
   Dedicated help resource for Redis flush help
 - `docs://mcp/guides/app-modeling`
   Canonical modeling guide for DB-first app creation, lookup behavior, default semantics, and batch-first page/schema workflows
+- `docs://mcp/guides/theming`
+  Canonical MCP guidance for managing custom Creatio themes with clio — create, restyle, delete, list, and set the default — and shipping them to a Creatio environment
 
 How an external AI should interpret resources:
 
@@ -638,6 +670,12 @@ All lifecycle tools now declare explicit safety metadata (`ReadOnly`, `Destructi
 - `restart-by-credentials`
 - `clear-redis-db-by-environment`
 - `clear-redis-db-by-credentials`
+- `clear-themes-cache`
+- `list-themes`
+- `create-theme`
+- `update-theme`
+- `delete-theme`
+- `check-theming-access`
 
 ### 4. Mixed response shapes
 

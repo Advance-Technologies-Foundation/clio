@@ -136,9 +136,14 @@ public class PageGetCommand : Command<PageGetOptions> {
 
 			PageDesignerHierarchySchema currentSchema = hierarchy[0];
 
+			// Keep every hierarchy schema — including a freshly-created own schema that has no body
+			// yet — so schema-level metadata (optionalProperties, parameters, resources) and the
+			// bundle identity resolve from the actual page, not the first body-bearing ancestor. A
+			// body-less schema contributes an empty parsed body, whose empty diffs merge to no-ops.
 			var parts = hierarchy
-				.Where(schema => schema.Body != null)
-				.Select(schema => new PageSchemaBundlePart(schema, _bodyParser.Parse(schema.Body)))
+				.Select(schema => new PageSchemaBundlePart(
+					schema,
+					schema.Body != null ? _bodyParser.Parse(schema.Body) : new PageParsedSchemaBody()))
 				.ToList();
 			PageBundleInfo bundle = _bundleBuilder.Build(parts);
 			var schemaChain = hierarchy
