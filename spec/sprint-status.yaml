@@ -948,7 +948,7 @@ stories:
     title: "Credential-Passthrough Tool Guard + link-from-repository Fail-Fast (class c3)"
     feature: "mcp-passthrough-tool-parity"
     size: M
-    status: ready-for-dev
+    status: in-progress
     file: spec/stories/story-mcp-passthrough-tool-parity-1.md
     prd: spec/prd/prd-mcp-passthrough-tool-parity.md
     adr: spec/adr/adr-mcp-passthrough-tool-parity.md
@@ -963,7 +963,7 @@ stories:
     title: "Shared c1 dependencies — settings-based ICaptionCultureResolver + IApplicationInfoService overloads"
     feature: "mcp-passthrough-tool-parity"
     size: M
-    status: ready-for-dev
+    status: in-progress
     file: spec/stories/story-mcp-passthrough-tool-parity-2.md
     prd: spec/prd/prd-mcp-passthrough-tool-parity.md
     adr: spec/adr/adr-mcp-passthrough-tool-parity.md

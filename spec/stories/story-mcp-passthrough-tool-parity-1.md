@@ -123,13 +123,13 @@ Test naming: `MethodName_ShouldBehavior_WhenCondition`
 
 ## Definition of Done
 
-- [ ] All `CLIO*` diagnostics clean in changed files — **including CLIO005** for the new
+- [x] All `CLIO*` diagnostics clean in changed files — **including CLIO005** for the new
   `ICredentialPassthroughToolGuard` DI registration (registered + consumed in this same slice) (FR-10)
-- [ ] Targeted tests green before commit: `dotnet test clio.tests/clio.tests.csproj --filter
+- [x] Targeted tests green before commit: `dotnet test clio.tests/clio.tests.csproj --filter
   "Category=Unit&Module=McpServer" --no-build` — **and the full unit suite**, because this story touches
   `clio/BindingsModule.cs` (repo full-suite trigger rule 4) (ADR slice 9)
-- [ ] All new CLI flags are kebab-case (no new CLI flags introduced by this story; MCP args stay kebab-case)
-- [ ] Unit tests added with `[Category("Unit")]` — never `[Category("UnitTests")]`
+- [x] All new CLI flags are kebab-case (no new CLI flags introduced by this story; MCP args stay kebab-case)
+- [x] Unit tests added with `[Category("Unit")]` — never `[Category("UnitTests")]`
 - [ ] PR description references this story file
 
 ## Dev Agent Record
