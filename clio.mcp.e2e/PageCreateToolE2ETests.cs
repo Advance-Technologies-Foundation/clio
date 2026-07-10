@@ -252,9 +252,15 @@ public sealed class PageCreateToolE2ETests : McpContractFixtureBase {
 		getResponse.Success.Should().BeTrue(because: "the freshly created dashboard must be readable through get-page");
 		getResponse.Page.ParentSchemaName.Should().Be("BaseDashboardTemplate",
 			because: "create-page must wire the dashboard to the BaseDashboardTemplate parent");
-		getResponse.Bundle.Should().NotBeNull(
-			because: "get-page must return the merged bundle for the created dashboard");
-		Dictionary<string, string?> persistedOptionalProperties = getResponse.Bundle.OptionalProperties
+		getResponse.Files.Should().NotBeNull(
+			because: "the MCP get-page wrapper compacts the response to file paths and writes the merged bundle to bundle.json");
+		File.Exists(getResponse.Files.BundleFile).Should().BeTrue(
+			because: "get-page must materialize the merged bundle for the created dashboard on disk");
+		JsonObject bundle = JsonNode.Parse(
+				await File.ReadAllTextAsync(getResponse.Files.BundleFile, arrangeContext.CancellationTokenSource.Token))!
+			.AsObject();
+		JsonArray bundleOptionalProperties = bundle["optionalProperties"]?.AsArray() ?? [];
+		Dictionary<string, string?> persistedOptionalProperties = bundleOptionalProperties
 			.OfType<JsonNode>()
 			.ToDictionary(node => node["key"]?.ToString() ?? string.Empty, node => node["value"]?.ToString());
 		persistedOptionalProperties.Should().ContainKey("DashboardsEntitySchemaName",
