@@ -116,13 +116,18 @@ public class ResolveMigrationUnitCommand : Command<ResolveMigrationUnitOptions> 
 				};
 			}).ToList();
 
+			bool empty = sections.Count == 0 && editPages.Count == 0;
 			response = new ResolveMigrationUnitResponse {
 				Success = true,
 				Entity = options.EntityName,
 				EntityUId = entityUId,
 				Sections = sections,
 				EditPages = editPages,
-				Note = "One level only. Details on each card and Freedom counterparts are read from the card body/page model " +
+				Note = (empty
+						? "No SysModule sections or SysModuleEdit pages matched this entity — it may have no Classic UI " +
+						  "section, or the entity name/UId is off. This is NOT the same as 'nothing to migrate'; verify before skipping. "
+						: "") +
+					"One level only. Details on each card and Freedom counterparts are read from the card body/page model " +
 					"(pure merge module); recurse into detail entities by calling resolve-migration-unit per detail entity."
 			};
 			return true;

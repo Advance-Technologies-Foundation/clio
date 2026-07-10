@@ -44,6 +44,8 @@ public sealed class ListSchemaLayersTool(
 				return new ListSchemaLayersResponse { Success = false, Error = SensitiveErrorTextRedactor.Redact(ex.Message) };
 			}
 			resolvedCommand.TryListLayers(options, out ListSchemaLayersResponse response);
+			if (!response.Success && !string.IsNullOrEmpty(response.Error))
+				response.Error = SensitiveErrorTextRedactor.Redact(response.Error);
 			return response;
 		});
 	}

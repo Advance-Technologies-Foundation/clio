@@ -43,6 +43,8 @@ public sealed class ResolveMigrationUnitTool(
 				return new ResolveMigrationUnitResponse { Success = false, Error = SensitiveErrorTextRedactor.Redact(ex.Message) };
 			}
 			resolvedCommand.TryResolve(options, out ResolveMigrationUnitResponse response);
+			if (!response.Success && !string.IsNullOrEmpty(response.Error))
+				response.Error = SensitiveErrorTextRedactor.Redact(response.Error);
 			return response;
 		});
 	}

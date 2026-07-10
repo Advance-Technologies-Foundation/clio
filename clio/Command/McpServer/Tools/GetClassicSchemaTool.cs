@@ -43,6 +43,8 @@ public sealed class GetClassicSchemaTool(
 				return new GetClassicSchemaResponse { Success = false, Error = SensitiveErrorTextRedactor.Redact(ex.Message) };
 			}
 			resolvedCommand.TryGetSchema(options, out GetClassicSchemaResponse response);
+			if (!response.Success && !string.IsNullOrEmpty(response.Error))
+				response.Error = SensitiveErrorTextRedactor.Redact(response.Error);
 			return response;
 		});
 	}
