@@ -42,10 +42,32 @@ public interface IClioRunExecutor {
 		bool destructiveSurface,
 		RequestContext<CallToolRequestParams> callContext,
 		CancellationToken cancellationToken);
+
+	/// <summary>
+	/// Dispatches an ALREADY-RESOLVED tool with the caller's NATIVE <c>tools/call</c> arguments — the
+	/// entry point for the durable (forgiving) call-tool handler. Unlike <see cref="RunAsync"/>, the
+	/// request's <see cref="CallToolRequestParams.Arguments"/> are forwarded verbatim (they are already
+	/// in the SDK's bound shape, keyed by parameter name), so a single-complex-parameter tool is never
+	/// re-wrapped into <c>{"args":{"args":{…}}}</c>. Request metadata (<c>_meta</c>, progress token,
+	/// task metadata) is preserved on the retargeted params, and the original
+	/// <c>Params</c>/<c>MatchedPrimitive</c> are restored after the call.
+	/// </summary>
+	/// <param name="tool">The resolved target tool (from <see cref="IMcpToolInvokerRegistry"/>).</param>
+	/// <param name="canonicalName">The canonical tool name the dispatch is recorded under.</param>
+	/// <param name="callContext">The original unmatched request's context (native arguments intact).</param>
+	/// <param name="cancellationToken">Cancellation token for the dispatched invocation.</param>
+	/// <returns>The target tool's <see cref="CallToolResult"/> (failure text redacted), or a structured error result.</returns>
+	ValueTask<CallToolResult> InvokeResolvedAsync(
+		McpServerTool tool,
+		string canonicalName,
+		RequestContext<CallToolRequestParams> callContext,
+		CancellationToken cancellationToken);
 }
 
 /// <inheritdoc />
-public sealed class ClioRunExecutor(IMcpToolInvokerRegistry toolRegistry) : IClioRunExecutor {
+public sealed class ClioRunExecutor(
+	IMcpToolInvokerRegistry toolRegistry,
+	IMcpToolCompatibilityCatalog compatibilityCatalog) : IClioRunExecutor {
 
 	/// <inheritdoc />
 	public async ValueTask<CallToolResult> RunAsync(
@@ -86,6 +108,15 @@ public sealed class ClioRunExecutor(IMcpToolInvokerRegistry toolRegistry) : ICli
 				"Pass a concrete clio MCP tool name as 'command'.");
 		}
 
+		// Durable-name resolution: when the literal name misses the registry, consult the compatibility
+		// catalog — a deprecated/renamed alias resolves to its canonical tool so guidance written against
+		// the old name keeps working. The catalog is the single source of truth for such renames (the MCP
+		// analogue of the CLI's hidden-alias policy).
+		if (!toolRegistry.TryGetTool(toolName, out McpServerTool _)
+			&& compatibilityCatalog.TryResolveAlias(toolName, out string canonicalAlias, out McpToolCompatibilityEntry _)) {
+			toolName = canonicalAlias;
+		}
+
 		if (!toolRegistry.TryGetTool(toolName, out McpServerTool tool)) {
 			// The long tail clio-run targets is hidden from tools/list, so agents frequently GUESS the
 			// name and miss by a typo. Append a "did you mean" shortlist of the nearest REAL tool names so
@@ -119,15 +150,63 @@ public sealed class ClioRunExecutor(IMcpToolInvokerRegistry toolRegistry) : ICli
 			return Error(SensitiveErrorTextRedactor.Redact($"Error: {ex.Message}"));
 		}
 
-		// Dispatch within the SAME request context (same server/session/services), retargeting it at the
-		// resolved tool and its arguments. Reusing the caller's context — rather than constructing a new
-		// one — carries the live MCP server forward so the SDK's InvokeAsync can build and run the real
-		// tool, and avoids the RequestContext constructor's non-null-server guard.
+		CallToolResult dispatched = await DispatchAsync(tool, toolName, childParams, callContext, cancellationToken)
+			.ConfigureAwait(false);
+		return AttachDispatchAudit(dispatched, toolName);
+	}
+
+	/// <inheritdoc />
+	public async ValueTask<CallToolResult> InvokeResolvedAsync(
+		McpServerTool tool,
+		string canonicalName,
+		RequestContext<CallToolRequestParams> callContext,
+		CancellationToken cancellationToken) {
+		ArgumentNullException.ThrowIfNull(tool);
+		ArgumentNullException.ThrowIfNull(callContext);
+
+		// The native call's Arguments are ALREADY in the SDK's bound shape (keyed by parameter name), so
+		// they are forwarded verbatim — running them through BuildChildParams would re-wrap a
+		// single-complex-parameter tool's record under its parameter name a second time
+		// ({"args":{"args":{…}}}) and break deserialization. Protocol `_meta` is copied onto the
+		// retargeted params; the SDK derives the progress token FROM `Meta`
+		// (RequestParams.ProgressToken is read-only), so copying Meta preserves progress reporting for
+		// progress-aware tools exactly as on a direct advertised call.
+		CallToolRequestParams originalParams = callContext.Params;
+		CallToolRequestParams childParams = new() {
+			Name = canonicalName,
+			Arguments = originalParams?.Arguments,
+			Meta = originalParams?.Meta,
+#pragma warning disable MCPEXP001 // Task-augmentation metadata is SDK-experimental; copied verbatim so a
+			// task-augmented direct call keeps its task identity through the forgiving dispatch. If the SDK
+			// removes/renames the property this assignment is the single line to update.
+			Task = originalParams?.Task
+#pragma warning restore MCPEXP001
+		};
+		CallToolResult result = await DispatchAsync(tool, canonicalName, childParams, callContext, cancellationToken)
+			.ConfigureAwait(false);
+		RedactFailureContent(result);
+		return result;
+	}
+
+	// Dispatches within the SAME request context (same server/session/services), retargeting it at the
+	// resolved tool and its arguments. Reusing the caller's context — rather than constructing a new
+	// one — carries the live MCP server forward so the SDK's InvokeAsync can build and run the real
+	// tool, and avoids the RequestContext constructor's non-null-server guard. The original
+	// Params/MatchedPrimitive are restored in `finally`, so the outer pipeline (filters, logging) always
+	// observes the caller's own request — not the retargeted child — regardless of success, failure, or
+	// cancellation.
+	private static async ValueTask<CallToolResult> DispatchAsync(
+		McpServerTool tool,
+		string toolName,
+		CallToolRequestParams childParams,
+		RequestContext<CallToolRequestParams> callContext,
+		CancellationToken cancellationToken) {
+		CallToolRequestParams originalParams = callContext.Params;
+		IMcpServerPrimitive originalPrimitive = callContext.MatchedPrimitive;
 		callContext.Params = childParams;
 		callContext.MatchedPrimitive = tool;
 		try {
-			CallToolResult result = await tool.InvokeAsync(callContext, cancellationToken).ConfigureAwait(false);
-			return AttachDispatchAudit(result, toolName);
+			return await tool.InvokeAsync(callContext, cancellationToken).ConfigureAwait(false);
 		}
 		catch (OperationCanceledException) {
 			// Honour cooperative cancellation/timeout — let it propagate so the host sees a cancellation,
@@ -144,6 +223,10 @@ public sealed class ClioRunExecutor(IMcpToolInvokerRegistry toolRegistry) : ICli
 			// propagates to the top-level request boundary (McpToolErrorFilter).
 			return Error($"Error: tool '{toolName}' failed: {SensitiveErrorTextRedactor.Redact(GetInnermostMessage(ex))}");
 		}
+		finally {
+			callContext.Params = originalParams;
+			callContext.MatchedPrimitive = originalPrimitive;
+		}
 	}
 
 	// Records WHAT was actually dispatched and its resolved destructiveness into the result's out-of-band
@@ -156,36 +239,44 @@ public sealed class ClioRunExecutor(IMcpToolInvokerRegistry toolRegistry) : ICli
 		if (result is null) {
 			return result;
 		}
-		// Many clio tools catch internally and RETURN a structured failure rather than throwing, so the
-		// throw-path redaction (the catch block above) never sees them. clio-run is now the primary
-		// surfacing path for the long tail hidden from tools/list, so it must be the backstop that scrubs
-		// surfaced failure text here too. Three shapes leak:
-		//   1. CallToolResult { IsError = true } carrying raw text (e.g. ODataWriteResponse-style throws
-		//      re-wrapped by a tool, or tools that build the error result by hand).
-		//   2. A typed POCO envelope { success: false, error: "<raw IApplicationClient message>" } that the
-		//      SDK serialises into a JSON TextContentBlock WITHOUT setting IsError — the long-tail default.
-		//   3. The same POCO surfaced via StructuredContent when a tool opts into structured output.
-		// Only failure content is touched; a successful payload is never scrubbed (it could carry legitimate
-		// host/path data). SensitiveErrorTextRedactor is the single redaction rule.
-		JsonNode structured = ToMutableNode(result.StructuredContent);
-		if (IsFailureResult(result, structured)) {
-			if (result.Content is not null) {
-				foreach (TextContentBlock textBlock in result.Content.OfType<TextContentBlock>()) {
-					textBlock.Text = SensitiveErrorTextRedactor.Redact(textBlock.Text);
-				}
-			}
-			if (structured is not null && RedactStructuredErrorFields(structured)) {
-				// StructuredContent is an immutable JsonElement, so write the scrubbed graph back as a fresh
-				// element. Only done when something was actually redacted, so a clean payload is untouched.
-				result.StructuredContent = JsonSerializer.SerializeToElement(structured);
-			}
-		}
+		RedactFailureContent(result);
 		result.Meta ??= new JsonObject();
 		result.Meta["clio-run"] = new JsonObject {
 			["dispatchedTool"] = toolName,
 			["destructive"] = toolRegistry.IsDestructive(toolName)
 		};
 		return result;
+	}
+
+	// Failure-content redaction backstop shared by the clio-run path and the durable (forgiving)
+	// handler's native dispatch path. Many clio tools catch internally and RETURN a structured failure
+	// rather than throwing, so the throw-path redaction (the DispatchAsync catch block) never sees them.
+	// Three shapes leak:
+	//   1. CallToolResult { IsError = true } carrying raw text (e.g. ODataWriteResponse-style throws
+	//      re-wrapped by a tool, or tools that build the error result by hand).
+	//   2. A typed POCO envelope { success: false, error: "<raw IApplicationClient message>" } that the
+	//      SDK serialises into a JSON TextContentBlock WITHOUT setting IsError — the long-tail default.
+	//   3. The same POCO surfaced via StructuredContent when a tool opts into structured output.
+	// Only failure content is touched; a successful payload is never scrubbed (it could carry legitimate
+	// host/path data). SensitiveErrorTextRedactor is the single redaction rule.
+	internal static void RedactFailureContent(CallToolResult result) {
+		if (result is null) {
+			return;
+		}
+		JsonNode structured = ToMutableNode(result.StructuredContent);
+		if (!IsFailureResult(result, structured)) {
+			return;
+		}
+		if (result.Content is not null) {
+			foreach (TextContentBlock textBlock in result.Content.OfType<TextContentBlock>()) {
+				textBlock.Text = SensitiveErrorTextRedactor.Redact(textBlock.Text);
+			}
+		}
+		if (structured is not null && RedactStructuredErrorFields(structured)) {
+			// StructuredContent is an immutable JsonElement, so write the scrubbed graph back as a fresh
+			// element. Only done when something was actually redacted, so a clean payload is untouched.
+			result.StructuredContent = JsonSerializer.SerializeToElement(structured);
+		}
 	}
 
 	// Converts the SDK's immutable StructuredContent (JsonElement?) into a mutable JsonNode graph so error
@@ -428,8 +519,13 @@ public sealed class ClioRunExecutor(IMcpToolInvokerRegistry toolRegistry) : ICli
 	// set — the registry's invokable names (the hidden long tail clio-run targets) unioned with the
 	// reflection catalog — deduped case-insensitively. The executor names themselves are excluded so a
 	// near-miss never suggests re-entering clio-run / clio-run-destructive.
-	private IReadOnlyList<string> BuildSuggestions(string requestedName) {
-		return toolRegistry.ToolNames
+	private IReadOnlyList<string> BuildSuggestions(string requestedName) =>
+		BuildSuggestions(requestedName, toolRegistry);
+
+	// Static form shared with the durable (forgiving) call-tool handler, so both callers rank the same
+	// candidate set with the same algorithm and never drift apart.
+	internal static IReadOnlyList<string> BuildSuggestions(string requestedName, IMcpToolInvokerRegistry registry) {
+		return registry.ToolNames
 			.Concat(McpToolSchemaCatalog.RegisteredToolNames)
 			.Where(name => !string.IsNullOrWhiteSpace(name)
 				&& !string.Equals(name, ClioRunTool.ToolName, StringComparison.OrdinalIgnoreCase)
@@ -439,6 +535,30 @@ public sealed class ClioRunExecutor(IMcpToolInvokerRegistry toolRegistry) : ICli
 			.ThenBy(name => name, StringComparer.OrdinalIgnoreCase)
 			.Take(3)
 			.ToArray();
+	}
+
+	/// <summary>
+	/// Reports whether <paramref name="tool"/> binds a single complex args-record parameter (the common
+	/// clio tool shape) and, when it does, that parameter's name. The durable handler uses this to build
+	/// an accurate <c>clio-run</c> retry shape from a native call's arguments: for a single-complex tool
+	/// the native <c>arguments[parameterName]</c> object IS the <c>clio-run</c> <c>args</c> payload
+	/// (<c>BuildChildParams</c> re-wraps it under the parameter name on dispatch), while scalar/multi-
+	/// parameter tools pass their arguments object through as-is.
+	/// </summary>
+	internal static bool ExpectsSingleComplexArgsParameter(McpServerTool tool, out string parameterName) {
+		parameterName = null;
+		MethodInfo method = tool?.Metadata.OfType<MethodInfo>().FirstOrDefault();
+		if (method is null) {
+			return false;
+		}
+		IReadOnlyList<ParameterInfo> boundParameters = method.GetParameters()
+			.Where(IsBindableToolParameter)
+			.ToArray();
+		if (boundParameters.Count == 1 && IsComplexArgsParameter(boundParameters[0].ParameterType)) {
+			parameterName = boundParameters[0].Name;
+			return true;
+		}
+		return false;
 	}
 
 	private static CallToolResult Error(string message) =>

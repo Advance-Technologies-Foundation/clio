@@ -29,7 +29,9 @@ public sealed class ClioRunDispatchTests {
 	[SetUp]
 	public void SetUp() {
 		_registry = Substitute.For<IMcpToolInvokerRegistry>();
-		_sut = new ClioRunExecutor(_registry);
+		// An inert catalog substitute: TryResolveAlias defaults to false, so alias resolution never
+		// interferes with the direct-name dispatch behavior these tests pin.
+		_sut = new ClioRunExecutor(_registry, Substitute.For<IMcpToolCompatibilityCatalog>());
 	}
 
 	// A real SDK-built tool over a static echo method, so InvokeAsync executes without a live server.

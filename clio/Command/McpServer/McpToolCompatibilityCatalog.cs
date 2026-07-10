@@ -87,6 +87,20 @@ public sealed class McpToolCompatibilityCatalog : IMcpToolCompatibilityCatalog {
 			Owner: McpToolSurfaceOwner.Clio)
 	};
 
+	/// <summary>
+	/// Alias names per canonical tool, derived from the built-in seed — for STATIC consumers (the
+	/// <c>get-tool-contract</c> compact index, which is built by static code the same way its curated
+	/// name list is). Runtime resolution goes through the DI-registered instance; both views derive from
+	/// the same <see cref="SeedEntries"/>, so they can never disagree.
+	/// </summary>
+	internal static IReadOnlyDictionary<string, IReadOnlyList<string>> SeedAliasesByCanonical { get; } =
+		SeedEntries
+			.Where(entry => entry.Kind == McpToolCompatibilityKind.DeprecatedAlias)
+			.ToDictionary(
+				entry => entry.CanonicalName,
+				entry => entry.Aliases,
+				StringComparer.OrdinalIgnoreCase);
+
 	private readonly IReadOnlyList<McpToolCompatibilityEntry> _entries;
 	private readonly IReadOnlyDictionary<string, (string Canonical, McpToolCompatibilityEntry Entry)> _aliasIndex;
 

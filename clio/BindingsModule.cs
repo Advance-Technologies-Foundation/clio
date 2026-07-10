@@ -135,7 +135,16 @@ public class BindingsModule {
 		ISettingsRepository settingsRepository = RegisterInto(services, settings, profile, applyBootstrapRepairs);
 		if (registerMcpHost) {
 			services.AddTransient<McpServerCommand>();
-			RegisterMcpServer(services, settingsRepository).WithStdioServerTransport();
+			// The durable (forgiving) unmatched-name handler is registered HERE — at the stdio call-site —
+			// and deliberately NOT inside the transport-neutral RegisterMcpServer, which the unreleased
+			// mcp-http host also calls (McpHttpServerCommand): the forgiving invocation contract is scoped
+			// to the stdio transport only (ADR adr-mcp-durable-invocation, D1). The SDK invokes the handler
+			// only on a ToolCollection miss, so advertised (resident) tools are never shadowed.
+			RegisterMcpServer(services, settingsRepository)
+				.WithStdioServerTransport()
+				.WithCallToolHandler(static (request, cancellationToken) =>
+					request.Services.GetRequiredService<Command.McpServer.IMcpDurableCallToolHandler>()
+						.HandleAsync(request, cancellationToken));
 		}
 		additionalRegistrations?.Invoke(services);
 		return services.BuildServiceProvider(new ServiceProviderOptions {
