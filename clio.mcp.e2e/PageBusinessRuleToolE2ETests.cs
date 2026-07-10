@@ -138,6 +138,41 @@ public sealed class PageBusinessRuleToolE2ETests : McpContractFixtureBase {
 
 	[Category("McpE2E.NoEnvironment")]
 	[Test]
+	[Description("Binds a data-source-scoped condition payload (a '<dataSource>.<column>' path) through the real MCP server and reports an invalid environment failure from command execution.")]
+	[AllureTag(ToolName)]
+	[AllureName("Page business-rule MCP tool binds data-source-scoped condition paths")]
+	[AllureDescription("Starts the real clio MCP server, calls create-page-business-rules with a condition comparing two '<dataSource>.<column>' paths and an intentionally missing environment, then verifies the scoped payload binds and reaches command execution instead of failing MCP payload binding.")]
+	public async Task BusinessRuleCreate_Should_Bind_Datasource_Scoped_Condition_Payload_And_Report_Invalid_Environment() {
+		// Arrange
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+		string invalidEnvironmentName = $"missing-page-scoped-env-{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = invalidEnvironmentName,
+					["package-name"] = "UsrPkg",
+					["page-schema-name"] = "UsrCase_FormPage",
+					["rules"] = new object[] { CreateDatasourceScopedConditionRule() }
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a condition using '<dataSource>.<column>' paths should bind and return the standard command execution envelope");
+		execution.ExitCode.Should().NotBe(0,
+			because: "the intentionally missing environment should fail during command execution");
+		execution.Output.Should().Contain(message =>
+				ContainsText(message.Value, invalidEnvironmentName),
+			because: "the failure should come from resolving the requested environment, not from deserializing the data-source-scoped page payload");
+	}
+
+	[Category("McpE2E.NoEnvironment")]
+	[Test]
 	[Description("Binds a multi-rule page batch payload through the real MCP server and reports an invalid environment failure for the whole batch.")]
 	[AllureTag(ToolName)]
 	[AllureName("Page business-rule MCP tool binds a multi-rule batch")]
@@ -897,6 +932,27 @@ public sealed class PageBusinessRuleToolE2ETests : McpContractFixtureBase {
 				new Dictionary<string, object?> {
 					["type"] = "hide-element",
 					["items"] = new object[] { "ReminderLabel" }
+				}
+			}
+		};
+
+	private static IReadOnlyDictionary<string, object?> CreateDatasourceScopedConditionRule() =>
+		new Dictionary<string, object?> {
+			["caption"] = "Show name when modified after created",
+			["condition"] = new Dictionary<string, object?> {
+				["logicalOperation"] = "AND",
+				["conditions"] = new object[] {
+					new Dictionary<string, object?> {
+						["leftExpression"] = CreateAttributeExpression("PDS.ModifiedOn"),
+						["comparisonType"] = "greater-than",
+						["rightExpression"] = CreateAttributeExpression("PDS.CreatedOn")
+					}
+				}
+			},
+			["actions"] = new object[] {
+				new Dictionary<string, object?> {
+					["type"] = "show-element",
+					["items"] = new object[] { "Name" }
 				}
 			}
 		};

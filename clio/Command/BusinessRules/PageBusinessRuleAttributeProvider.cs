@@ -41,7 +41,34 @@ internal sealed class PageBusinessRuleAttributeProvider(
 			};
 		}
 
+		AddDatasourceScopedAttributes(result, dataSources, entityAttributeMaps, packageUId);
 		return result;
+	}
+
+	private void AddDatasourceScopedAttributes(
+		IDictionary<string, BusinessRuleAttributeDescriptor> result,
+		JsonObject dataSources,
+		IDictionary<string, IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor>> entityAttributeMaps,
+		Guid packageUId) {
+		foreach ((string datasourceName, JsonNode? _) in dataSources) {
+			if (string.IsNullOrWhiteSpace(datasourceName)
+				|| !TryResolveEntitySchemaName(dataSources, datasourceName, out string? entitySchemaName)) {
+				continue;
+			}
+
+			IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> entityAttributes =
+				GetEntityAttributes(entityAttributeMaps, entitySchemaName, packageUId);
+			foreach (string columnName in entityAttributes.Keys) {
+				if (!TryGetSupportedAttribute(entityAttributes, columnName, out BusinessRuleAttributeDescriptor? descriptor)) {
+					continue;
+				}
+
+				result[$"{datasourceName}.{columnName}"] = descriptor with {
+					Path = columnName,
+					ScopeName = datasourceName
+				};
+			}
+		}
 	}
 
 	private IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> GetEntityAttributes(

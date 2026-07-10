@@ -245,7 +245,8 @@ internal static class SimpleToFullBusinessRuleConverter {
 			Type = "AttributeValue",
 			DataValueTypeName = dataValueTypeName ?? descriptor.DataValueTypeName,
 			ReferenceSchemaName = includeAttributeReferenceSchemaName ? descriptor.ReferenceSchemaName : null,
-			Path = path,
+			Path = descriptor.IsScoped ? descriptor.Path : path,
+			ScopeId = descriptor.ScopeName,
 		};
 	}
 
@@ -384,25 +385,65 @@ internal static class SimpleToFullBusinessRuleConverter {
 			: rule.Actions.SelectMany(action => EnumerateFormulaTriggerNames(action, attributeMap));
 		IEnumerable<string> attributeValueSourceTriggers =
 			rule.Actions.SelectMany(EnumerateSetValuesAttributeSourceTriggerNames);
-		List<BusinessRuleTriggerMetadataDto> triggers = conditionTriggers
-			.Concat(formulaTriggers)
-			.Concat(attributeValueSourceTriggers)
-			.Distinct(StringComparer.OrdinalIgnoreCase)
-			.Select(triggerName => new BusinessRuleTriggerMetadataDto {
+
+		HashSet<string> scopes = new(StringComparer.OrdinalIgnoreCase);
+		bool hasUnscopedTrigger = false;
+		List<BusinessRuleTriggerMetadataDto> triggers = [];
+		foreach (string triggerName in conditionTriggers
+			         .Concat(formulaTriggers)
+			         .Concat(attributeValueSourceTriggers)
+			         .Distinct(StringComparer.OrdinalIgnoreCase)) {
+			string? scope = ResolveTriggerScope(attributeMap, triggerName, out string emittedName);
+			if (string.IsNullOrEmpty(scope)) {
+				hasUnscopedTrigger = true;
+			} else {
+				scopes.Add(scope);
+			}
+
+			triggers.Add(new BusinessRuleTriggerMetadataDto {
 				TypeName = BusinessRuleTriggerTypeName,
 				UId = Guid.NewGuid().ToString(),
-				Name = triggerName,
-				Type = ChangeAttributeValueTriggerType
-			})
-			.ToList();
-		triggers.Add(new BusinessRuleTriggerMetadataDto {
-			TypeName = BusinessRuleTriggerTypeName,
-			UId = Guid.NewGuid().ToString(),
-			Name = string.Empty,
-			Type = DataLoadedTriggerType
-		});
+				Name = emittedName,
+				Type = ChangeAttributeValueTriggerType,
+				ScopeId = scope
+			});
+		}
+
+		foreach (string scope in scopes) {
+			triggers.Add(new BusinessRuleTriggerMetadataDto {
+				TypeName = BusinessRuleTriggerTypeName,
+				UId = Guid.NewGuid().ToString(),
+				Name = scope,
+				Type = DataLoadedTriggerType,
+				ScopeId = string.Empty
+			});
+		}
+
+		if (hasUnscopedTrigger || scopes.Count == 0) {
+			triggers.Add(new BusinessRuleTriggerMetadataDto {
+				TypeName = BusinessRuleTriggerTypeName,
+				UId = Guid.NewGuid().ToString(),
+				Name = string.Empty,
+				Type = DataLoadedTriggerType
+			});
+		}
+
 		identity?.ApplyTriggerIdentities(triggers);
 		return triggers;
+	}
+
+	private static string? ResolveTriggerScope(
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
+		string triggerName,
+		out string emittedName) {
+		if (attributeMap.TryGetValue(triggerName, out BusinessRuleAttributeDescriptor? descriptor)
+			&& descriptor.IsScoped) {
+			emittedName = descriptor.Path;
+			return descriptor.ScopeName;
+		}
+
+		emittedName = triggerName;
+		return null;
 	}
 
 	private static IReadOnlyList<BusinessRuleMetadataDto> BuildApplyFilterRules(
@@ -799,7 +840,7 @@ internal static class SimpleToFullBusinessRuleConverter {
 	}
 
 	private sealed class ExistingRuleIdentity {
-		private readonly List<(string Name, int Type, string UId)> _unconsumedTriggers;
+		private readonly List<(string Name, int Type, string ScopeId, string UId)> _unconsumedTriggers;
 
 		public ExistingRuleIdentity(JsonObject existingRule) {
 			RuleUId = GetString(existingRule, "uId")
@@ -818,7 +859,8 @@ internal static class SimpleToFullBusinessRuleConverter {
 			foreach (BusinessRuleTriggerMetadataDto trigger in triggers) {
 				int matchIndex = _unconsumedTriggers.FindIndex(candidate =>
 					candidate.Type == trigger.Type
-					&& string.Equals(candidate.Name, trigger.Name ?? string.Empty, StringComparison.OrdinalIgnoreCase));
+					&& string.Equals(candidate.Name, trigger.Name ?? string.Empty, StringComparison.OrdinalIgnoreCase)
+					&& string.Equals(candidate.ScopeId, trigger.ScopeId ?? string.Empty, StringComparison.OrdinalIgnoreCase));
 				if (matchIndex < 0) {
 					continue;
 				}
@@ -847,7 +889,7 @@ internal static class SimpleToFullBusinessRuleConverter {
 				string.IsNullOrWhiteSpace(groupUId) ? null : groupUId);
 		}
 
-		private static List<(string Name, int Type, string UId)> ReadTriggers(JsonObject existingRule) =>
+		private static List<(string Name, int Type, string ScopeId, string UId)> ReadTriggers(JsonObject existingRule) =>
 			existingRule["triggers"] is not JsonArray triggers
 				? []
 				: triggers
@@ -855,6 +897,7 @@ internal static class SimpleToFullBusinessRuleConverter {
 					.Select(trigger => (
 						Name: GetString(trigger, "name") ?? string.Empty,
 						Type: GetInt(trigger, "type", ChangeAttributeValueTriggerType),
+						ScopeId: GetString(trigger, "scopeId") ?? string.Empty,
 						UId: GetString(trigger, "uId") ?? string.Empty))
 					.Where(trigger => !string.IsNullOrWhiteSpace(trigger.UId))
 					.ToList();

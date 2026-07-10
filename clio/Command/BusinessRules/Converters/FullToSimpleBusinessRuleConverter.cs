@@ -167,7 +167,9 @@ internal static class FullToSimpleBusinessRuleConverter {
 		string? uId = GetString(expressionObject, "uId");
 		if (string.Equals(typeName, BusinessRuleAttributeExpressionTypeName, StringComparison.Ordinal)
 			|| string.Equals(type, AttributeValueExpressionType, StringComparison.OrdinalIgnoreCase)) {
-			return new BusinessRuleExpression(AttributeValueExpressionType, path: GetString(expressionObject, "path")) {
+			return new BusinessRuleExpression(
+				AttributeValueExpressionType,
+				path: ResolveAttributePath(expressionObject)) {
 				UId = uId
 			};
 		}
@@ -332,6 +334,14 @@ internal static class FullToSimpleBusinessRuleConverter {
 
 	private static JsonElement? ToJsonElement(JsonNode? node) =>
 		node is null ? null : JsonSerializer.SerializeToElement(node);
+
+	private static string? ResolveAttributePath(JsonObject expressionObject) {
+		string? path = GetString(expressionObject, "path");
+		string? scopeId = GetString(expressionObject, "scopeId");
+		return string.IsNullOrEmpty(scopeId) || string.IsNullOrEmpty(path)
+			? path
+			: $"{scopeId}.{path}";
+	}
 
 	private static string? GetString(JsonObject? source, string propertyName) =>
 		source?[propertyName] is JsonValue value && value.TryGetValue(out string? text) ? text : null;

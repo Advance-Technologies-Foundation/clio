@@ -486,6 +486,75 @@ public sealed class FullToSimpleBusinessRuleConverterTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Rebuilds the '<dataSource>.<column>' friendly path from a persisted data-source-scoped attribute expression scopeId.")]
+	public void Read_Should_Rebuild_Datasource_Scoped_Path_From_ScopeId() {
+		// Arrange
+		JsonArray rules = ParseRules($$"""
+			[
+			  {
+			    "typeName": "{{BusinessRuleConstants.BusinessRuleTypeName}}",
+			    "uId": "cdcdcdcd-0000-0000-0000-000000000001",
+			    "name": "BusinessRule_scoped",
+			    "enabled": true,
+			    "caption": "Scoped condition",
+			    "cases": [
+			      {
+			        "typeName": "{{BusinessRuleConstants.BusinessRuleCaseTypeName}}",
+			        "uId": "cdcdcdcd-0000-0000-0000-000000000002",
+			        "condition": {
+			          "typeName": "{{BusinessRuleConstants.BusinessRuleGroupConditionTypeName}}",
+			          "uId": "cdcdcdcd-0000-0000-0000-000000000003",
+			          "logicalOperation": 1,
+			          "conditions": [
+			            {
+			              "typeName": "{{BusinessRuleConstants.BusinessRuleConditionTypeName}}",
+			              "uId": "cdcdcdcd-0000-0000-0000-000000000004",
+			              "comparisonType": 7,
+			              "leftExpression": {
+			                "typeName": "{{BusinessRuleConstants.BusinessRuleAttributeExpressionTypeName}}",
+			                "uId": "cdcdcdcd-0000-0000-0000-000000000005",
+			                "type": "AttributeValue",
+			                "path": "ModifiedOn",
+			                "scopeId": "PDS"
+			              },
+			              "rightExpression": {
+			                "typeName": "{{BusinessRuleConstants.BusinessRuleAttributeExpressionTypeName}}",
+			                "uId": "cdcdcdcd-0000-0000-0000-000000000006",
+			                "type": "AttributeValue",
+			                "path": "CreatedOn",
+			                "scopeId": "PDS"
+			              }
+			            }
+			          ]
+			        },
+			        "actions": [
+			          {
+			            "typeName": "{{BusinessRuleConstants.BusinessRuleShowElementTypeName}}",
+			            "uId": "cdcdcdcd-0000-0000-0000-000000000007",
+			            "enabled": true,
+			            "items": "Name"
+			          }
+			        ]
+			      }
+			    ],
+			    "triggers": []
+			  }
+			]
+			""");
+
+		// Act
+		IReadOnlyList<BusinessRule> models = FullToSimpleBusinessRuleConverter.Convert(rules, []);
+
+		// Assert
+		BusinessRuleCondition condition = models.Single().Condition.Conditions.Single();
+		condition.LeftExpression.Path.Should().Be("PDS.ModifiedOn",
+			because: "a persisted scopeId is folded back into the '<dataSource>.<column>' friendly path so the rule round-trips");
+		condition.RightExpression!.Path.Should().Be("PDS.CreatedOn",
+			because: "the right-side scoped attribute path is rebuilt the same way as the left side");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Maps a persisted formula set-value source to a friendly Formula expression carrying the expressionSchema.expression text as a best effort.")]
 	public void Read_Should_Map_Formula_SetValue_Source_To_Formula_Expression_With_Schema_Text() {
 		// Arrange

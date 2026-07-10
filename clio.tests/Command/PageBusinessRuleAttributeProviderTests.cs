@@ -50,14 +50,21 @@ public sealed class PageBusinessRuleAttributeProviderTests {
 			Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"));
 
 		// Assert
-		result.Keys.Should().BeEquivalentTo(["PDS_Text", "PDS_Text2", "PDS_Lookup"],
-			because: "page conditions should only expose declared datasource-bound attributes whose entity columns can be resolved");
+		result.Keys.Should().BeEquivalentTo(
+			["PDS_Text", "PDS_Text2", "PDS_Lookup", "PDS.UsrText", "PDS.UsrText2", "PDS.UsrLookupCountry"],
+			because: "page conditions expose declared on-page attributes plus every supported data source column addressed by '<dataSource>.<column>'");
 		result["PDS_Text"].Should().Be(
 			new BusinessRuleAttributeDescriptor("PDS_Text", "Text", null),
-			because: "page descriptors should use the declared page attribute name as the metadata path");
+			because: "on-page descriptors should use the declared page attribute name as the metadata path and carry no scope");
 		result["PDS_Lookup"].Should().Be(
 			new BusinessRuleAttributeDescriptor("PDS_Lookup", "Lookup", "Country"),
 			because: "page lookup descriptors should keep the referenced entity schema from the datasource column");
+		result["PDS.UsrText"].Should().Be(
+			new BusinessRuleAttributeDescriptor("UsrText", "Text", null, "PDS"),
+			because: "data-source-scoped descriptors use the entity column as the metadata path and carry the data source name as scope");
+		result["PDS.UsrLookupCountry"].Should().Be(
+			new BusinessRuleAttributeDescriptor("UsrLookupCountry", "Lookup", "Country", "PDS"),
+			because: "scoped lookup descriptors keep the referenced entity schema and the data source scope");
 		entityAttributeProvider.Received(1).GetAttributes(
 			"UsrTestBR",
 			Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"));
