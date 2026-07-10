@@ -254,7 +254,12 @@ public sealed class ApplicationToolTests {
 	public void ApplicationGetInfo_Should_Return_Structured_Success_Envelope() {
 		// Arrange
 		IApplicationInfoService applicationInfoService = Substitute.For<IApplicationInfoService>();
-		applicationInfoService.GetApplicationInfo("sandbox", "app-id", null).Returns(
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		EnvironmentSettings resolvedSettings = new() { Uri = "https://sandbox.example.com" };
+		commandResolver.Resolve<EnvironmentSettings>(
+				Arg.Is<EnvironmentOptions>(options => options.Environment == "sandbox"))
+			.Returns(resolvedSettings);
+		applicationInfoService.GetApplicationInfo(resolvedSettings, "app-id", null).Returns(
 			new ApplicationInfoResult(
 				"pkg-uid",
 				"UsrVehicle",
@@ -287,7 +292,7 @@ public sealed class ApplicationToolTests {
 				ApplicationCode: "UsrVehicleApp",
 				ApplicationVersion: "8.3.0",
 				SchemaNamePrefix: "Usr"));
-		ApplicationGetInfoTool tool = new(applicationInfoService);
+		ApplicationGetInfoTool tool = new(Substitute.For<ILogger>(), commandResolver, applicationInfoService);
 
 		// Act
 		ApplicationContextResponse result = tool.ApplicationGetInfo(new ApplicationGetInfoArgs(
@@ -296,7 +301,7 @@ public sealed class ApplicationToolTests {
 			Code: null));
 
 		// Assert
-		applicationInfoService.Received(1).GetApplicationInfo("sandbox", "app-id", null);
+		applicationInfoService.Received(1).GetApplicationInfo(resolvedSettings, "app-id", null);
 		result.Success.Should().BeTrue(
 			because: "a successful info call should be wrapped in a core-style success envelope");
 		result.Error.Should().BeNull(
@@ -337,7 +342,8 @@ public sealed class ApplicationToolTests {
 	public void ApplicationGetInfo_Should_Return_Error_When_Identifiers_Are_Missing() {
 		// Arrange
 		IApplicationInfoService applicationInfoService = Substitute.For<IApplicationInfoService>();
-		ApplicationGetInfoTool tool = new(applicationInfoService);
+		ApplicationGetInfoTool tool = new(
+			Substitute.For<ILogger>(), Substitute.For<IToolCommandResolver>(), applicationInfoService);
 
 		// Act
 		ApplicationContextResponse result = tool.ApplicationGetInfo(new ApplicationGetInfoArgs(
@@ -355,6 +361,8 @@ public sealed class ApplicationToolTests {
 		result.Error.Should().Match("*code*",
 			because: "the MCP tool contract should mention the supported identifier names");
 		applicationInfoService.DidNotReceiveWithAnyArgs().GetApplicationInfo(default(string)!, default, default);
+		applicationInfoService.DidNotReceiveWithAnyArgs()
+			.GetApplicationInfo(default(EnvironmentSettings)!, default, default);
 	}
 
 	[Test]
@@ -776,7 +784,8 @@ public sealed class ApplicationToolTests {
 	public void ApplicationGetInfo_Should_Return_Error_When_Both_Identifiers_Are_Provided() {
 		// Arrange
 		IApplicationInfoService applicationInfoService = Substitute.For<IApplicationInfoService>();
-		ApplicationGetInfoTool tool = new(applicationInfoService);
+		ApplicationGetInfoTool tool = new(
+			Substitute.For<ILogger>(), Substitute.For<IToolCommandResolver>(), applicationInfoService);
 
 		// Act
 		ApplicationContextResponse result = tool.ApplicationGetInfo(new ApplicationGetInfoArgs(
@@ -790,6 +799,8 @@ public sealed class ApplicationToolTests {
 		result.Error.Should().Match("*exactly one*",
 			because: "the MCP tool contract should reject ambiguous get-info requests that pass both identifiers");
 		applicationInfoService.DidNotReceiveWithAnyArgs().GetApplicationInfo(default(string)!, default, default);
+		applicationInfoService.DidNotReceiveWithAnyArgs()
+			.GetApplicationInfo(default(EnvironmentSettings)!, default, default);
 	}
 
 	[Test]
@@ -798,9 +809,14 @@ public sealed class ApplicationToolTests {
 	public void ApplicationGetInfo_Should_Return_Error_When_Backend_Fails() {
 		// Arrange
 		IApplicationInfoService applicationInfoService = Substitute.For<IApplicationInfoService>();
-		applicationInfoService.GetApplicationInfo("sandbox", null, "missing-app")
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		EnvironmentSettings resolvedSettings = new() { Uri = "https://sandbox.example.com" };
+		commandResolver.Resolve<EnvironmentSettings>(
+				Arg.Is<EnvironmentOptions>(options => options.Environment == "sandbox"))
+			.Returns(resolvedSettings);
+		applicationInfoService.GetApplicationInfo(resolvedSettings, null, "missing-app")
 			.Returns(_ => throw new InvalidOperationException("Application 'missing-app' not found."));
-		ApplicationGetInfoTool tool = new(applicationInfoService);
+		ApplicationGetInfoTool tool = new(Substitute.For<ILogger>(), commandResolver, applicationInfoService);
 
 		// Act
 		ApplicationContextResponse result = tool.ApplicationGetInfo(new ApplicationGetInfoArgs(

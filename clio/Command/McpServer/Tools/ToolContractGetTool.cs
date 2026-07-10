@@ -2053,9 +2053,10 @@ internal static class ToolContractCatalog {
 			ApplicationGetInfoTool.ApplicationGetInfoToolName,
 			"Returns installed application identity plus current package and entity metadata so callers can inspect the right app before mutating it.",
 			new ToolInputSchemaContract(
-				[EnvironmentNameFieldName],
+				[],
 				[
-					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription
+						+ " Required on stdio / registered-environment transports; omit under credential passthrough — the X-Integration-Credentials header supplies the target tenant."),
 					Field(SelectorIdFieldName, StringType, "Application GUID."),
 					Field(SelectorCodeFieldName, StringType, "Application code.")
 				],

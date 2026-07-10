@@ -84,17 +84,37 @@ Test naming: `MethodName_ShouldBehavior_WhenCondition`
 
 ## Definition of Done
 
-- [ ] All `CLIO*` diagnostics clean in changed files — including CLIO005 (FR-10)
-- [ ] Targeted tests green before commit: `dotnet test clio.tests/clio.tests.csproj --filter
+- [x] All `CLIO*` diagnostics clean in changed files — including CLIO005 (FR-10)
+- [x] Targeted tests green before commit: `dotnet test clio.tests/clio.tests.csproj --filter
   "Category=Unit&(Module=McpServer|Module=Command)" --no-build` (ADR slice 9)
-- [ ] All new/changed MCP arguments stay kebab-case (relaxing `[Required]` does not rename `environment-name`)
-- [ ] Unit tests added with `[Category("Unit")]` — never `[Category("UnitTests")]`
+- [x] All new/changed MCP arguments stay kebab-case (relaxing `[Required]` does not rename `environment-name`)
+- [x] Unit tests added with `[Category("Unit")]` — never `[Category("UnitTests")]`
 - [ ] PR description references this story file
 
 ## Dev Agent Record
 
-{Left blank — filled by dev agent during implementation}
-- Implementation started:
-- Implementation completed:
-- Tests passing:
+- Implementation started: 2026-07-11
+- Implementation completed: 2026-07-11
+- Tests passing: `Category=Unit&Module=McpServer` → 2049 passed / 0 failed / 1 skipped;
+  `Category=Unit&Module=Command` → 2066 passed / 0 failed / 29 skipped (net10.0)
 - Notes:
+  - `ApplicationGetInfoTool` now derives from `BaseTool<EnvironmentOptions>(null, logger,
+    commandResolver)`; the Story-2 settings-based `IApplicationInfoService.GetApplicationInfo`
+    overload is consumed as-is (no service changes). The options-aware
+    `ExecuteWithCleanLog(options, ...)` (FR-05 per-tenant lock + in-flight guard) runs INSIDE the
+    `McpProgressHeartbeat` work delegate so the tenant lock is held on the worker thread for the
+    whole synchronous backend call and never across an await — the heartbeat/deadline behavior and
+    the exactly-one-of id/code validation are unchanged.
+  - `[Required]` removed from `ApplicationGetInfoArgs.EnvironmentName` (FR-05a); the parameter
+    became nullable-with-default, so no reordering was needed (all following parameters already
+    have defaults) and all call sites use named arguments. The curated `get-tool-contract` entry
+    for `get-app-info` was aligned (required list emptied, conditional-requiredness description).
+  - **`tools/list` size ratchet (34 KiB, `McpProfileGatingTests`) is effectively exhausted.**
+    Story 3's exact parameter-description wording ("required unless credential passthrough supplies
+    the tenant") tripped the ratchet by 25 bytes; the limit was NOT raised — instead this story's
+    method-parameter description uses the terser "required unless passthrough" (the FR-05a args-record
+    suffix "Optional under credential passthrough." is verbatim per the pattern). Remaining headroom
+    is ~7 bytes: **Stories 5-9 cannot add any tools/list-visible text without an explicit decision
+    to raise the ratchet.**
+  - E2E (`clio.mcp.e2e`) coverage: owned by Story 15 per the test table; existing
+    `ApplicationToolE2ETests` exercise the unchanged registered-env path.

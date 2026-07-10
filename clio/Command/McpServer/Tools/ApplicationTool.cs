@@ -62,10 +62,20 @@ public sealed class ApplicationGetListTool(
 }
 
 /// <summary>
-/// MCP tool surface for application context reads.
+/// MCP tool surface for application context reads. Resolves the target environment per request
+/// through <see cref="IToolCommandResolver"/> so the tool honors the mcp-http credential-passthrough
+/// header (<c>X-Integration-Credentials</c>) as well as registered-environment / stdio targets, and
+/// executes under the per-tenant lock and in-flight guard (FR-05, ENG-93347).
 /// </summary>
 [McpServerToolType]
-public sealed class ApplicationGetInfoTool(IApplicationInfoService applicationInfoService) {
+public sealed class ApplicationGetInfoTool(
+	ILogger logger,
+	IToolCommandResolver commandResolver,
+	IApplicationInfoService applicationInfoService)
+	: BaseTool<EnvironmentOptions>(null, logger, commandResolver) {
+
+	private readonly IToolCommandResolver _commandResolver = commandResolver;
+
 	/// <summary>
 	/// Stable MCP tool name for reading structured application info.
 	/// </summary>
@@ -81,7 +91,7 @@ public sealed class ApplicationGetInfoTool(IApplicationInfoService applicationIn
 		+ "no field renaming needed, and no separate get-tool-contract call is required to learn the write shape. "
 		+ "Long-running: streams notifications/progress while working — await completion and do not retry on a perceived timeout.")]
 	public async Task<ApplicationContextResponse> ApplicationGetInfo(
-		[Description("Parameters: environment-name (required), id or code (exactly one required)")]
+		[Description("Parameters: environment-name (required unless passthrough), id or code (exactly one required)")]
 		[Required]
 		ApplicationGetInfoArgs args,
 		global::ModelContextProtocol.Server.McpServer server,
@@ -94,14 +104,19 @@ public sealed class ApplicationGetInfoTool(IApplicationInfoService applicationIn
 				throw new ArgumentException("Provide exactly one identifier: id or code.");
 			}
 
+			EnvironmentOptions options = new() { Environment = args.EnvironmentName };
+			// ExecuteWithCleanLog(options, ...) — the OPTIONS-AWARE overload — keys the execution lock and
+			// the session-container in-flight guard off THIS call's tenant (FR-05), not the shared fallback.
+			// It runs INSIDE the heartbeat work delegate so the lock is held on the worker thread for the
+			// whole synchronous backend call and never across an await.
 			ApplicationInfoResult result = await McpProgressHeartbeat.RunWithProgressAsync(
 				server,
 				requestContext?.Params?.ProgressToken,
 				ApplicationGetInfoToolName,
-				() => applicationInfoService.GetApplicationInfo(
-					args.EnvironmentName,
-					args.Id,
-					args.Code),
+				() => ExecuteWithCleanLog(options, () => {
+					EnvironmentSettings settings = _commandResolver.Resolve<EnvironmentSettings>(options);
+					return applicationInfoService.GetApplicationInfo(settings, args.Id, args.Code);
+				}),
 				cancellationToken).ConfigureAwait(false);
 			return ApplicationToolHelper.CreateContextResponse(ApplicationToolResultMapper.Map(result));
 		} catch (Exception ex) {

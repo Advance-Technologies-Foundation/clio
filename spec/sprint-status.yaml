@@ -1001,7 +1001,7 @@ stories:
     title: "get-app-info — route through the resolver (class c1)"
     feature: "mcp-passthrough-tool-parity"
     size: S
-    status: ready-for-dev
+    status: in-progress
     note: "Serialized c1 chain: starts after story 3 merges (shared ApplicationTool.cs)."
     file: spec/stories/story-mcp-passthrough-tool-parity-4.md
     prd: spec/prd/prd-mcp-passthrough-tool-parity.md
