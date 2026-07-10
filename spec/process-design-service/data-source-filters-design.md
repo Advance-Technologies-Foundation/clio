@@ -107,7 +107,7 @@ unambiguous for an AI to author (leaves → `conditions`, subgroups → `groups`
   "object": "Contact",          // root object (required for data elements; defaults to signal.entity for signalStart)
   "logicalOperation": "and",    // "and" | "or" (default "and")
   "conditions": [               // leaf conditions at THIS level
-    { "column": "Account",      "comparison": "equal", "elementParameter": { "elementId": "task1", "parameter": "Account" } },
+    { "column": "Account",      "comparison": "equal", "elementParameter": { "elementName": "task1", "parameter": "Account" } },
     { "column": "Address",      "comparison": "equal", "value": "2222" },
     { "column": "Age",          "comparison": "greater", "value": 333 },
     { "column": "Account.Code", "comparison": "equal", "value": "1" },   // lookup-traversal path (see below)
@@ -122,7 +122,7 @@ unambiguous for an AI to author (leaves → `conditions`, subgroups → `groups`
 }
 ```
 Per condition, exactly one right-hand source: **`value`** (constant), **`processParameter`** (by name),
-**`elementParameter`** (`{elementId, parameter}` — e.g. a preceding element's output), or **`expression`**
+**`elementParameter`** (`{elementName, parameter}` — e.g. a preceding element's output), or **`expression`**
 (raw `[#…#]` token, advanced); `isNull`/`isNotNull` take no right side. `comparison` token →
 `ComparisonType` (equal/notEqual/greater/greaterOrEqual/less/lessOrEqual/contains/startWith/endWith/
 isNull/isNotNull).
@@ -140,7 +140,7 @@ with `Account.Code = "1"`, `dataValueType:1` text, `filterType:1` Compare.)
 
 ### Where it attaches
 - **Build:** `ProcessElementDescriptor.Filter` (a data element or a `signalStart` element carries `filter`).
-- **Modify:** a new op **`setFilter`** `{ op, elementId, filter }` (and `clearFilter` `{ op, elementId }`).
+- **Modify:** a new op **`setFilter`** `{ op, elementName, filter }` (and `clearFilter` `{ op, elementName }`).
 - clio forwards the descriptor as **opaque JSON** (it already does — `CreateBusinessProcessCommand`
   parses to `JsonObject` and forwards), so **no new clio DTOs for build/modify** — only guidance/prompt/docs
   + the `describe` read-back DTO.

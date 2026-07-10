@@ -327,9 +327,9 @@ public sealed class DescribedFilterCondition {
 
 /// <summary>An element-parameter reference used as a filter's right-hand value.</summary>
 public sealed class DescribedFilterElementRef {
-	/// <summary>Local name of the element that owns the parameter.</summary>
-	[JsonPropertyName("elementId")]
-	public string ElementId { get; set; }
+	/// <summary>Name (local handle) of the element that owns the parameter — the element's <c>Name</c>, not a GUID.</summary>
+	[JsonPropertyName("elementName")]
+	public string ElementName { get; set; }
 
 	/// <summary>Name of the parameter on that element.</summary>
 	[JsonPropertyName("parameter")]

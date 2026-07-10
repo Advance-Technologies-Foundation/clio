@@ -270,7 +270,7 @@ public sealed class ServerProcessDescriberTests {
 			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
 			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"read1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"usertask\","
 			+ "\"filter\":{\"object\":\"Contact\",\"logicalOperation\":\"and\",\"conditions\":["
-			+ "{\"column\":\"Account\",\"comparison\":\"equal\",\"elementParameter\":{\"elementId\":\"task1\",\"parameter\":\"Account\"}}]}}],"
+			+ "{\"column\":\"Account\",\"comparison\":\"equal\",\"elementParameter\":{\"elementName\":\"task1\",\"parameter\":\"Account\"}}]}}],"
 			+ "\"flows\":[],\"parameters\":[]}}");
 		ServerProcessDescriber describer = CreateDescriber(client);
 
@@ -282,8 +282,8 @@ public sealed class ServerProcessDescriberTests {
 		DescribedFilterCondition condition = result.Value.Elements[0].Filter.Conditions[0];
 		condition.ElementParameter.Should().NotBeNull(
 			because: "the reserved elementParameter field must still deserialize a structured ref for forward-compat, even though the current server does not emit this shape");
-		condition.ElementParameter.ElementId.Should().Be("task1",
-			because: "the structured reference's element id binds when present");
+		condition.ElementParameter.ElementName.Should().Be("task1",
+			because: "the structured reference's element name binds when present");
 		condition.ElementParameter.Parameter.Should().Be("Account",
 			because: "the structured reference's parameter name binds when present");
 	}

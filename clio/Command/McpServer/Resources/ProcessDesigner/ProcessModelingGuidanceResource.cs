@@ -127,7 +127,7 @@ public sealed class ProcessModelingGuidanceResource {
 			- The right-hand value of a condition is exactly ONE of: `value` (a constant as a string — the server
 			  types it by the column; for a Date/DateTime/Time column pass ISO-8601, e.g. `2026-05-01` or
 			  `2026-05-01T12:00:00Z`), `processParameter` (a process parameter by name), `elementParameter`
-			  ({ elementId, parameter } — another element's output), `expression` (a raw token), or `macro` (a
+			  ({ elementName, parameter } — another element's output), `expression` (a raw token), or `macro` (a
 			  relative-date / system macro — the complete set is in the next bullet). isNull/isNotNull take none.
 			- `macro` vocabulary (COMPLETE set — an unknown name is rejected at BUILD, validated against the platform
 			  macro catalog, never silently accepted): **relative periods** `Yesterday` | `Today` | `Tomorrow`, plus
