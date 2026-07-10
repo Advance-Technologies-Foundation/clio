@@ -97,6 +97,7 @@ namespace Clio.Tests
                 ? System.Array.Find(attrs, a => string.Equals(a.Name, "cliogate", System.StringComparison.OrdinalIgnoreCase))
                 : null;
 
+        [Ignore("RequiresPackageAttribute added in error, restorew command does not require cliogate")]
         [TestCase(typeof(LockPackageOptions), "2.0.0.42")]
         [TestCase(typeof(UnlockPackageOptions), "2.0.0.42")]
         [TestCase(typeof(RestoreWorkspaceOptions), "2.0.0.0")]

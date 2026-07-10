@@ -22,6 +22,7 @@ using Clio.Command.PackageCommand;
 using Clio.Command.ProcessModel;
 using Clio.Command.RelatedPages;
 using Clio.Command.SqlScriptCommand;
+using Clio.Command.Theming;
 using Clio.Command.TIDE;
 using Clio.Command.Update;
 using Clio.Common;
@@ -45,6 +46,7 @@ using Clio.Project.NuGet;
 using Clio.Query;
 using Clio.Requests;
 using Clio.Requests.Validators;
+using Clio.Theming;
 using Clio.Utilities;
 using Clio.Command.McpServer.Tools;
 using Clio.Command.McpServer.Tools.ProcessDesigner;
@@ -283,6 +285,7 @@ public class BindingsModule {
 		services.AddTransient<InstallSkillsCommand>();
 		services.AddTransient<UpdateSkillCommand>();
 		services.AddTransient<DeleteSkillCommand>();
+		services.AddTransient<BuildThemeCommand>();
 		services.AddTransient<PushPackageCommand>();
 		services.AddTransient<InstallApplicationCommand>();
 		services.AddTransient<IApplicationSectionCreateService, ApplicationSectionCreateService>();
@@ -374,9 +377,9 @@ public class BindingsModule {
 		services.AddSingleton<IComponentRegistryDocsClient, ComponentRegistryDocsClient>();
 		services.AddSingleton<IComponentInfoCatalog, ComponentInfoCatalog>();
 		services.AddSingleton<IMobileComponentInfoCatalog, MobileComponentInfoCatalog>();
-		// Page-conversion rules reuse the same versioned local→cache→CDN pipeline as the registries,
-		// with their own cache subdirectory + CDN file + local-override env var. The CDN file is not
-		// published yet, so the catalog falls back to the bundled rules shipped with clio.
+		services.AddSingleton<IThemeCssBuilder, ThemeCssBuilder>();
+		services.AddSingleton<IThemeTemplateProvider, ThemeTemplateProvider>();
+		services.AddSingleton<IThemePaletteAdvisor, ThemePaletteAdvisor>();
 		services.AddSingleton<IWebToMobilePageConversionRulesRegistryClient>(sp => new WebToMobilePageConversionRulesRegistryClient(
 			sp.GetRequiredService<IHttpClientFactory>(),
 			ComponentRegistryCacheStore.WithSubdirectory(
@@ -459,6 +462,14 @@ public class BindingsModule {
 		services.AddSingleton<IPageBodySamplingService, PageBodySamplingServiceImpl>();
 		services.AddTransient<GuidanceGetTool>();
 		services.AddTransient<ComponentInfoTool>();
+		services.AddTransient<BuildThemeTool>();
+		services.AddTransient<AdviseThemePaletteTool>();
+		services.AddTransient<ClearThemesCacheTool>();
+		services.AddTransient<ListThemesTool>();
+		services.AddTransient<CreateThemeTool>();
+		services.AddTransient<UpdateThemeTool>();
+		services.AddTransient<DeleteThemeTool>();
+		services.AddTransient<CheckThemingAccessTool>();
 		services.AddTransient<GetUserCultureTool>();
 		services.AddTransient<PackageHotfixTool>();
 		services.AddTransient<AddPackageDependencyTool>();
@@ -573,6 +584,13 @@ public class BindingsModule {
 		services.AddTransient<StopCommand>();
 		services.AddTransient<HostsCommand>();
 		services.AddTransient<RedisCommand>();
+		services.AddTransient<ClearThemesCacheCommand>();
+		services.AddTransient<ListThemesCommand>();
+		services.AddTransient<CreateThemeCommand>();
+		services.AddTransient<UpdateThemeCommand>();
+		services.AddTransient<DeleteThemeCommand>();
+		services.AddTransient<ICreatioRightsClient, CreatioRightsClient>();
+		services.AddTransient<ICreatioLicenseClient, CreatioLicenseClient>();
 		services.AddTransient<IFsmModeStatusService, FsmModeStatusService>();
 		services.AddTransient<SetFsmConfigCommand>();
 		services.AddTransient<TurnFsmCommand>();
@@ -723,6 +741,7 @@ public class BindingsModule {
 		services.AddTransient<GetIdentityPublicJwkCommand>();
 		services.AddTransient<RegenerateIdentitySigningKeyCommand>();
 		services.AddTransient<CheckAuthCodeFlowCommand>();
+		services.AddTransient<RegisterSsoProviderCommand>();
 		services.AddTransient<IMssql, Mssql>();
 		services.AddTransient<IPostgres, Postgres>();
 		services.AddSingleton<CommandHelpCatalog>();
