@@ -1338,11 +1338,17 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("The authoritative mobile-supported set overrides an optimistic rules DirectMapping: a request the rules map keeps 1:1 but that is NOT actually supported on mobile still drops the component.")]
-	public void Analyze_OptimisticDirectMappingNotSupportedOnMobile_ComponentDropped() {
+	[Description("The versioned rules file is authoritative: a request it maps 1:1 (crt.QuickFilterRequest) that the bundled offline constant does NOT list is KEPT, not dropped — so a CDN rules update can enable a request without a clio release.")]
+	public void Analyze_VersionedRuleEnablesRequestBeyondConstant_Kept() {
 		MobilePageConversionGuide guide = AnalyzeRequests(ButtonBundle("FilterButton", "crt.QuickFilterRequest"));
 
-		Element(guide, "FilterButton").Operation.Should().Be("drop");
+		Element(guide, "FilterButton").Operation.Should().NotBe("drop",
+			because: "the versioned rules file maps crt.QuickFilterRequest, so it is supported even though the offline constant omits it");
+		JsonObject clicked = ClickedOf(guide, "FilterButton")["clicked"]!.AsObject();
+		clicked["request"]!.GetValue<string>().Should().Be("crt.QuickFilterRequest");
+		guide.RequestConversions!.ConvertedRequests.Should().ContainSingle(r =>
+			r.ElementName == "FilterButton" && r.WebRequest == "crt.QuickFilterRequest"
+			&& r.MobileRequest == "crt.QuickFilterRequest");
 	}
 
 	[Test]

@@ -1483,10 +1483,13 @@ public static class WebToMobileAnalysisService {
 	}
 
 	/// <summary>
-	/// Requests the Creatio Mobile app supports (from the monorepo <c>@CrtInterfaceDesignerMobileRequest</c>
-	/// decorators). A converted component whose event-binding request does not resolve to one of these is
-	/// dropped. TODO(ENG-93027): source this list dynamically (like the versioned component registries)
-	/// instead of hardcoding it — https://creatio.atlassian.net/browse/ENG-93027.
+	/// OFFLINE-FALLBACK set of requests the Creatio Mobile app supports (from the monorepo
+	/// <c>@CrtInterfaceDesignerMobileRequest</c> decorators). The AUTHORITATIVE source is the versioned rules
+	/// file's <c>requests</c> section (<see cref="ElementMapContext.RequestMap"/>): an entry with a mobile
+	/// target is supported, an entry that clears the target is unsupported. This constant is consulted only for
+	/// a request the versioned file does not cover, so a CDN rules update can enable/disable a request without a
+	/// clio release. TODO(ENG-93027): fold this constant into the versioned file —
+	/// https://creatio.atlassian.net/browse/ENG-93027.
 	/// </summary>
 	private static readonly HashSet<string> MobileSupportedRequests = new(StringComparer.OrdinalIgnoreCase) {
 		"crt.AddCommunicationOptionsRequest",
@@ -1506,11 +1509,12 @@ public static class WebToMobileAnalysisService {
 	};
 
 	/// <summary>
-	/// The first event-binding request on the node whose EFFECTIVE mobile request the Creatio Mobile app does
-	/// not support (or null when every binding is supported). "Effective" honours the rules remap: a request
-	/// the rules map renames to a supported one (e.g. → crt.OpenPageRequest) is fine; an unknown request, or
-	/// one the rules explicitly mark unsupported, resolves to itself and is checked against
-	/// <see cref="MobileSupportedRequests"/>.
+	/// The first event-binding request on the node the Creatio Mobile app does not support (or null when every
+	/// binding is supported). Support is decided by the versioned rules file first
+	/// (<see cref="ElementMapContext.RequestMap"/>): an entry with a mobile target is supported (direct/rename),
+	/// an entry that clears the target is explicitly unsupported. A request the versioned file does not cover
+	/// falls back to the bundled <see cref="MobileSupportedRequests"/> constant. Keeping one authoritative
+	/// source (the versioned file) prevents dropping a common request the file already maps.
 	/// </summary>
 	private static string UnsupportedRequestOf(ElementMapContext ctx, JObject node) {
 		foreach (JProperty prop in node.Properties()) {
@@ -1518,11 +1522,16 @@ public static class WebToMobileAnalysisService {
 				continue;
 			}
 			string webRequest = ((JObject)prop.Value)["request"].ToString();
-			string effective = ctx.RequestMap.TryGetValue(webRequest, out RequestMappingRule rule)
-				&& !string.IsNullOrWhiteSpace(rule.Mobile)
-					? rule.Mobile
-					: webRequest;
-			if (!MobileSupportedRequests.Contains(effective)) {
+			if (ctx.RequestMap.TryGetValue(webRequest, out RequestMappingRule rule)) {
+				// Authoritative: a non-empty mobile target is supported (effective = rule.Mobile); an entry that
+				// explicitly clears the mobile target marks the request unsupported.
+				if (string.IsNullOrWhiteSpace(rule.Mobile)) {
+					return webRequest;
+				}
+				continue;
+			}
+			// Not covered by the versioned file — fall back to the bundled offline set.
+			if (!MobileSupportedRequests.Contains(webRequest)) {
 				return webRequest;
 			}
 		}
