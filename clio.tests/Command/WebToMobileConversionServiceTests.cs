@@ -1265,6 +1265,41 @@ public sealed class WebToMobileConversionServiceTests {
 		guide.ComponentSuggestions.Should().Contain(s => s.SourceType == "crt.DataGrid");
 	}
 
+	[Test]
+	[Description("The web folder tree is provided by the list template (chrome). Mapping web FolderTree → mobile FolderTreeActions in the template's components block keeps it through baseline subtraction and records it as a merge-by-name twin with NO prebuilt values — the model transfers/reconciles the values per the root components rule (surfaced in componentSuggestions[crt.FolderTree]). The secondary web FolderTreeActions element is not mapped and is pruned.")]
+	public void Analyze_TemplateComponentTwin_FolderTree_IsKeptAndMergedByName() {
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "ListContainer", "type": "crt.FlexContainer", "items": [
+				{ "name": "FolderTree", "type": "crt.FolderTree", "sourceSchemaName": "LeadFolder", "rootSchemaName": "Lead" },
+				{ "name": "FolderTreeActions", "type": "crt.FolderTreeActions" } ] } ]
+			""");
+		var web = Reg(("crt.FlexContainer", true), ("crt.FolderTree", false), ("crt.FolderTreeActions", false));
+		var containerNameMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["ListContainer"] = "ListContainer" };
+		var componentNameMap = new Dictionary<string, ComponentMappingRule>(StringComparer.OrdinalIgnoreCase) {
+			["FolderTree"] = new ComponentMappingRule { Web = "FolderTree", Mobile = "FolderTreeActions", Note = "Section folder tree." }
+		};
+		// Both folder-tree elements are provided by the web list template (baseline). The mapping keeps the
+		// primary web FolderTree (which carries the entity binding) so the model can transfer it onto the
+		// mobile FolderTreeActions; the secondary web FolderTreeActions element is not mapped → pruned.
+		IReadOnlySet<string> templateNames = Names("ListContainer", "FolderTree", "FolderTreeActions");
+
+		MobilePageConversionGuide guide = Analyze(
+			bundle, webByType: web, containerNameMap: containerNameMap,
+			templateComponentNames: templateNames, componentNameMap: componentNameMap);
+
+		ElementMapEntry twin = guide.ElementMap.Single(e => e.WebName == "FolderTree");
+		twin.Operation.Should().Be("merge");
+		twin.MobileName.Should().Be("FolderTreeActions");
+		// No prebuilt values — the model transfers/reconciles them per the root components rule.
+		twin.MobileValues.Should().BeNull();
+		twin.Reason.Should().Contain("Section folder tree.").And.Contain("componentSuggestions");
+		// componentSuggestions carries the root FolderTree→FolderTreeActions conversion rule for the model.
+		guide.ComponentSuggestions.Should().Contain(s => s.SourceType == "crt.FolderTree");
+		// The secondary web FolderTreeActions element is chrome (not mapped) → pruned.
+		guide.ElementMap.Should().NotContain(e => e.WebName == "FolderTreeActions");
+		guide.SourceStructure.Should().NotContain(s => s.Name == "FolderTreeActions");
+	}
+
 	#endregion
 
 	#region Request (action) conversion

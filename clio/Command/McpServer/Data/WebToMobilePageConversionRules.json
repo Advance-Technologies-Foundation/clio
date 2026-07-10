@@ -12,7 +12,8 @@
         { "web": "ListContainer", "mobile": "ListContainer", "note": "List area; web crt.DataTable maps to mobile crt.List." }
       ],
       "components": [
-        { "web": "DataTable", "mobile": "List", "note": "Primary list component." }
+        { "web": "DataTable", "mobile": "List", "note": "Primary list component." },
+        { "web": "FolderTree", "mobile": "FolderTreeActions", "note": "Section folder tree (primary web element that carries the entity binding)." }
       ]
     },
     {

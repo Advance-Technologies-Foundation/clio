@@ -62,10 +62,10 @@ public sealed class TemplateMappingRule {
 	/// <summary>
 	/// Named CONTENT-component correspondence between the web template and the mobile template
 	/// (analogous to <see cref="Containers"/>, but for components rather than layout containers).
-	/// A web element listed here is NOT removed as inherited template chrome; instead its <c>merge</c>
-	/// is converted to mobile properties on the mapped mobile element (configured by merge-by-name).
-	/// For a grid (e.g. the list template's <c>DataTable</c>), set <see cref="ComponentMappingRule.Row"/>
-	/// so the grid columns build the mobile list row.
+	/// A web element listed here is NOT removed as inherited template chrome; instead it is kept and
+	/// recorded as a merge-by-name twin onto the mapped mobile element. HOW to convert / reconcile its
+	/// values is type-driven and comes from the general components rule (surfaced in
+	/// <c>componentSuggestions</c>) — the model transfers them; clio prebuilds no values here.
 	/// </summary>
 	[JsonPropertyName("components")]
 	public IReadOnlyList<ComponentMappingRule> Components { get; init; } = [];
