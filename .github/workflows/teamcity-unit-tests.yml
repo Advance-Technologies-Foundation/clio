@@ -1,0 +1,110 @@
+---
+# ENG-92669 - surface the TeamCity Unit Tests result on clio PRs.
+#
+# Companion to teamcity-mcp-e2e.yml, for the second TeamCity plan
+# (Team_Atf_ClioUnitTests). Same model: TeamCity is internal and clio lives on
+# public github.com, and the plan checks out its branch from the BranchNameClio
+# parameter (root branch = refs/heads/%BranchNameClio%), not TeamCity
+# branch-tracking. This workflow - on the in-network self-hosted runner -
+# triggers the build for the PR branch; TeamCity's Commit Status Publisher
+# (GitHub App "TeamCity ATF") posts the result back onto the PR head as a commit
+# status. Advisory / non-blocking.
+#
+# The unit plan is cheap (dotnet test, no full-Creatio deploy), so it gates a
+# broader set of paths than the e2e workflow and passes no deploy parameters.
+#
+# Prerequisites (shared with teamcity-mcp-e2e.yml):
+#   1. TeamCity: Commit Status Publisher on Team_Atf_ClioUnitTests (GitHub App
+#      connection "TeamCity ATF") - DONE.
+#   2. GitHub repo secret TEAMCITY_TOKEN - scoped TeamCity token (Run build +
+#      View project + Comment build) on the ATF project.
+#   3. Repo setting Actions -> "Require approval for all external contributors"
+#      (authoritative fork control; the in-file `if:` guard is defense-in-depth).
+name: TeamCity Unit Tests
+
+# GITHUB_TOKEN is unused here; drop all scopes.
+permissions: {}
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [master]
+    # Unit tests are cheap, so gate a broad set of source/test paths, but skip
+    # docs-only PRs (command docs live under clio/).
+    paths:
+      - 'clio/**'
+      - '!clio/docs/**'
+      - '!clio/help/**'
+      - '!clio/Commands.md'
+      - 'clio.tests/**'
+      - 'Clio.Analyzers/**'
+      - 'Clio.Analyzers.Tests/**'
+      - 'Directory.Packages.props'
+  # Manual retrigger for a specific clio branch. Only usable once the workflow is
+  # on the default branch - a GitHub constraint.
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'clio branch to run unit tests on'
+        required: true
+        default: master
+
+# De-dupes rapid GitHub trigger runs per PR (the sub-second POST job only).
+# Manual runs key off run_id so they don't cancel each other.
+concurrency:
+  group: teamcity-unit-tests-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  trigger-unit:
+    name: Trigger TeamCity Unit Tests
+    runs-on: self-hosted
+    # Never pin a shared self-hosted runner if TeamCity is unreachable/stalled.
+    timeout-minutes: 10
+    # SECURITY: in-network self-hosted runner. On a public repo a fork PR still
+    # fires `pull_request` and would run the fork-controlled workflow body on the
+    # runner - so restrict to same-repo PRs and manual dispatch (defense-in-depth;
+    # the authoritative control is the repo "Require approval for all external
+    # contributors" setting).
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - name: Queue TeamCity build for the PR branch
+        shell: powershell
+        env:
+          TC_URL: https://teamcity-rnd.bpmonline.com
+          TC_TOKEN: ${{ secrets.TEAMCITY_TOKEN }}
+          BUILD_TYPE: Team_Atf_ClioUnitTests
+          # pull_request -> PR head branch; workflow_dispatch -> the chosen branch.
+          HEAD_REF: ${{ github.event.pull_request.head.ref || inputs.branch }}
+          PR_NUMBER: ${{ github.event.pull_request.number || '(manual)' }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ([string]::IsNullOrWhiteSpace($env:TC_TOKEN)) {
+            throw 'TEAMCITY_TOKEN secret is not set - cannot trigger TeamCity.'
+          }
+
+          # The unit plan resolves its checkout from BranchNameClio
+          # (root branch = refs/heads/%BranchNameClio%). Same-repo PR heads exist
+          # as refs/heads/<head.ref>; fork PRs are filtered out by the job `if:`.
+          $body = @{
+            buildType  = @{ id = $env:BUILD_TYPE }
+            properties = @{ property = @(
+              @{ name = 'BranchNameClio'; value = $env:HEAD_REF }
+            ) }
+            comment    = @{ text = "clio PR #$env:PR_NUMBER ($env:HEAD_REF) - Unit Tests via GitHub Actions" }
+          } | ConvertTo-Json -Depth 6
+
+          $resp = Invoke-RestMethod -Method Post -Uri "$env:TC_URL/app/rest/buildQueue" `
+            -Headers @{ Authorization = "Bearer $env:TC_TOKEN"; Accept = 'application/json' } `
+            -ContentType 'application/json' -Body $body -TimeoutSec 60
+
+          # A 2xx with an unexpected body must not read as success - require a build id.
+          if (-not $resp.id) {
+            throw "TeamCity accepted the request but returned no build id - the trigger likely failed."
+          }
+
+          Write-Host "Queued TeamCity build #$($resp.id) on BranchNameClio=$env:HEAD_REF"
+          Write-Host "Build: $($resp.webUrl)"
+          Write-Host "TeamCity's Commit Status Publisher will post the result onto the PR head commit."
