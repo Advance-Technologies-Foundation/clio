@@ -48,7 +48,7 @@ every host that can reach the machine on the LAN — use it only on trusted netw
 | `--port` | `8005` | Port to listen on |
 | `--host` | `127.0.0.1` | Host address to bind to |
 | `--path` | `/mcp` | MCP endpoint path |
-| `--platform-api-key` | _(unset)_ | Comma-separated platform API key set (also read from `CLIO_MCP_HTTP_PLATFORM_API_KEY`). Setting at least one key **enables** per-request credential passthrough. See [Credential passthrough](#credential-passthrough-multi-tenant-edge). |
+| `--platform-api-key` | _(unset)_ | Comma-separated platform API key set (also read from `CLIO_MCP_HTTP_PLATFORM_API_KEY`). Setting at least one key **enables** per-request credential passthrough; with no key set the credential header is ignored (fail-closed, off by default). See [Credential passthrough](#credential-passthrough-multi-tenant-edge). |
 | `--allowed-base-urls` | _(unset)_ | Comma-separated SSRF allowlist of origins a passthrough target `url` may reach. Each entry **must include a scheme** (e.g. `https://tenant.creatio.com`). |
 | `--session-idle-ttl` | `5m` | Idle time after which an unused per-session container is evicted. Accepts `90s` / `5m` / `1h` / `1d`, bare seconds (`300`), or a `TimeSpan` (`00:05:00`). |
 | `--max-sessions` | `50` | Maximum per-session containers kept in memory; the least-recently-used one is evicted when exceeded. |
@@ -62,25 +62,13 @@ gateway target a **different Creatio tenant on each request** — the target URL
 credentials ride the request header instead of clio settings. This is aimed at AI-platform
 gateways that broker many tenants through one clio process.
 
-### Double gate (off by default)
+### Platform-API-key gate (off by default, fail-closed)
 
-Passthrough is honored only when **both** gates are satisfied:
-
-1. **Incubation feature flag** `mcp-http-credential-passthrough`, enabled with:
-
-   ```shell
-   clio experimental --name mcp-http-credential-passthrough --enable
-   ```
-
-   It is deliberately **not** a `[FeatureToggle]` on the verb — that would hide `mcp-http`
-   entirely. Only the passthrough leg is gated; the verb, stdio mode, and `-e <env>`
-   targeting remain **always available**.
-
-2. **Platform API key** — at least one key set via `--platform-api-key` or the
-   `CLIO_MCP_HTTP_PLATFORM_API_KEY` environment variable.
-
-When **either** gate is off, the credential header is ignored and the server behaves exactly
-as the pre-passthrough release.
+Passthrough is gated **solely** by the platform API key: at least one key set via
+`--platform-api-key` or the `CLIO_MCP_HTTP_PLATFORM_API_KEY` environment variable turns it on.
+With **no** key configured (the default) the gate fail-closes — the credential header is
+ignored and the server behaves exactly as the pre-passthrough release. The verb, stdio mode,
+and `-e <env>` targeting remain **always available** regardless of the key.
 
 > **The platform API key gates ONLY the passthrough leg.** It does **not** protect
 > pre-registered `-e <env>` or explicit-URI access — those paths use credentials already
@@ -148,7 +136,8 @@ clio stores **no** passthrough credential. Each request builds an **ephemeral**
 `EnvironmentSettings` directly from the header — never written to settings, disk, or
 `appsettings.json`. Per-tenant containers are **pooled in memory** and evicted by idle-TTL
 (`--session-idle-ttl`) and an LRU cap (`--max-sessions`), so a rotating stream of tokens
-stays memory-bounded.
+stays memory-bounded. The bounded cache also auto-recovers stale sessions: an evicted
+container is transparently rebuilt from the request on the next call after the idle window.
 
 ### Arg policy (mode-gated)
 
@@ -184,10 +173,9 @@ Custom endpoint path:
 clio mcp-http --path /api/mcp
 ```
 
-Enable the multi-tenant credential-passthrough edge:
+Enable the multi-tenant credential-passthrough edge (setting a platform API key turns it on):
 
 ```shell
-clio experimental --name mcp-http-credential-passthrough --enable
 clio mcp-http --host 0.0.0.0 \
   --platform-api-key <platform-api-key> \
   --allowed-base-urls https://tenant.creatio.com

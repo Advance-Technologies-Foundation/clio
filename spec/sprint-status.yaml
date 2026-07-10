@@ -830,7 +830,7 @@ stories:
     feature: "mcp-http-credential-passthrough"
     size: S
     status: review
-    note: "Gate the BEHAVIOR via IsFeatureEnabled('mcp-http-credential-passthrough') in McpHttpServerCommand.Run — NOT [FeatureToggle] on the options class (that hides the shipped verb and regresses FR-10/AC-10). Doubly-gated: incubation flag AND api-key gate."
+    note: "REVERTED 2026-07-10 (ENG-93208 cleanup): the incubation feature flag was removed. mcp-http is not yet used in prod, so the second gate was redundant given the fail-closed platform-API-key gate. Passthrough is now SINGLE-gated by the platform API key (no key configured => header ignored, off by default). ShouldEnablePassthrough + CredentialPassthroughFeatureName const + the StandaloneFeatureKeys entry + PassthroughIncubationGateTests were deleted; the passthrough middleware is now wired unconditionally (inert without a key)."
     file: spec/stories/story-mcp-http-credential-passthrough-11.md
     prd: spec/prd/prd-mcp-http-credential-passthrough.md
     adr: spec/adr/adr-mcp-http-credential-passthrough.md
@@ -906,7 +906,7 @@ stories:
     feature: "mcp-http-credential-passthrough"
     size: L
     status: review
-    note: "FR-16 5 sub-deliverables (15a-15e). IMPLEMENTED 2026-07-10 (awaiting PR). MCP e2e is NOT in CI — 15c concurrency-isolation, 15d no-regression AND AC-07 multi-tenant (SM-01) run MANUALLY against a live stand (authored + compile-verified in clio.mcp.e2e, skip via Assert.Ignore/McpHttpPassthroughStand when CLIO_MCP_HTTP_E2E_* env vars absent). 15a: coverage audited, no unit gaps (map in story Dev Agent Record); the one genuine gap was 15b. 15b: exhaustive secret-leak matrix — FromException (-1 catch-all) LEAKED (McpToolErrorFilter never sees the RETURNED envelope) and is now FIXED at source (SensitiveErrorTextRedactor.Redact in CommandExecutionResult.FromException). 15e pins EnableLegacySse=false/PerSessionExecutionContext=false/Stateless=false via shared ConfigureHttpTransport lambda + McpHttpTransportDefaultsTests [Integration] so RISK #1 cannot drift. Full Unit suite net10.0 green (5178 pass); clio.mcp.e2e compiles."
+    note: "FR-16 5 sub-deliverables (15a-15e). IMPLEMENTED 2026-07-10 (awaiting PR). MCP e2e is NOT in CI — 15c concurrency-isolation, 15d no-regression AND AC-07 multi-tenant (SM-01) run MANUALLY against a live stand (authored + compile-verified in clio.mcp.e2e, skip via Assert.Ignore/McpHttpPassthroughStand when CLIO_MCP_HTTP_E2E_* env vars absent). 15a: coverage audited, no unit gaps (map in story Dev Agent Record); the one genuine gap was 15b. 15b: exhaustive secret-leak matrix — FromException (-1 catch-all) LEAKED (McpToolErrorFilter never sees the RETURNED envelope). REVISED 2026-07-10 (ENG-93208 cleanup): redaction is now SCOPED to passthrough via FromException(redactSensitive:) keyed off the passthrough tenant key in BaseTool.ExecuteLocked; the trusted stdio/CLI/-e -1 stays full-fidelity (no diagnosability regression). Boundary pinned by CredentialPassthroughSecretHygieneTests (passthrough -1 redacted + non-passthrough -1 preserved). 15e pins EnableLegacySse=false/PerSessionExecutionContext=false/Stateless=false via shared ConfigureHttpTransport lambda + McpHttpTransportDefaultsTests [Integration] so RISK #1 cannot drift. Full Unit suite net10.0 green (5178 pass); clio.mcp.e2e compiles."
     file: spec/stories/story-mcp-http-credential-passthrough-15.md
     prd: spec/prd/prd-mcp-http-credential-passthrough.md
     adr: spec/adr/adr-mcp-http-credential-passthrough.md

@@ -15,8 +15,8 @@ namespace Clio.Mcp.E2E;
 /// collision), each response must carry ONLY its own tenant's data (no cross-tenant bleed), they must
 /// run on independent async flows, and they must NOT be serialized by a single global lock.
 /// <para>
-/// MANUAL — NOT in CI. Needs a live stand with two distinct tenants and a clio build whose
-/// <c>mcp-http-credential-passthrough</c> incubation flag is enabled; skipped via
+/// MANUAL — NOT in CI. Needs a live stand with two distinct tenants and a clio mcp-http process
+/// started with <c>--platform-api-key</c> (the sole passthrough gate); skipped via
 /// <see cref="McpHttpPassthroughStand.RequireOrIgnore"/> when the live-stand env vars are absent.
 /// </para>
 /// </summary>

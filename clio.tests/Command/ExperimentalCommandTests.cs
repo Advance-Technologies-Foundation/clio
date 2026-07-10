@@ -151,38 +151,6 @@ public sealed class ExperimentalCommandTests : BaseCommandTests<ExperimentalOpti
 	}
 
 	[Test]
-	[Description("Lists the attribute-less mcp-http credential-passthrough incubation key so it is discoverable via clio experimental.")]
-	public void Execute_ShouldListMcpHttpPassthroughStandaloneKey_WhenNoArgumentsSupplied() {
-		// Arrange
-		const string passthroughKey = "mcp-http-credential-passthrough";
-		_featureToggleService.IsFeatureEnabled(passthroughKey).Returns(false);
-		ExperimentalOptions options = new();
-
-		// Act
-		int result = _sut.Execute(options);
-
-		// Assert
-		result.Should().Be(0, because: "listing feature flags always succeeds");
-		_featureToggleService.Received().IsFeatureEnabled(passthroughKey);
-	}
-
-	[Test]
-	[Description("Toggling the mcp-http credential-passthrough key does not warn it is unknown because it is a recognized standalone feature key.")]
-	public void Execute_ShouldNotWarnUnknownKey_WhenTogglingMcpHttpPassthroughKey() {
-		// Arrange
-		const string passthroughKey = "mcp-http-credential-passthrough";
-		ExperimentalOptions options = new() { Name = passthroughKey, Enable = true };
-
-		// Act
-		int result = _sut.Execute(options);
-
-		// Assert
-		result.Should().Be(0, because: "enabling a recognized standalone key succeeds");
-		_settingsRepository.Received(1).SetFeature(passthroughKey, true);
-		_logger.DidNotReceive().WriteWarning(Arg.Any<string>());
-	}
-
-	[Test]
 	[Description("Lists an orphan flag stored in settings that no command references.")]
 	public void Execute_ShouldListOrphanFlag_WhenSettingsKeyHasNoAttribute() {
 		// Arrange

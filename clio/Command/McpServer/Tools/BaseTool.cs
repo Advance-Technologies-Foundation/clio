@@ -300,7 +300,10 @@ public abstract class BaseTool<T>(
 					logger.FlushAndSnapshotMessages(clearMessages: true))];
 				RedactForPassthrough(priorLogs, tenantKey);
 				messagesToForward = priorLogs;
-				executionResult = CommandExecutionResult.FromException(e, priorLogs, correlationId);
+				// FR-11 (ENG-93208): scrub the exception chain ONLY on a passthrough request (same tenant-key
+				// signal RedactForPassthrough uses). The trusted stdio / -e path keeps full-fidelity -1 text.
+				executionResult = CommandExecutionResult.FromException(
+					e, priorLogs, correlationId, redactSensitive: IsPassthroughKey(tenantKey));
 			}
 			finally {
 				logger.PreserveMessages = previousPreserveMessages;

@@ -71,16 +71,15 @@ OPTIONS
 
 CREDENTIAL PASSTHROUGH (multi-tenant edge)
     Per-request credential passthrough lets a gateway target a different Creatio
-    tenant on each request instead of a pre-registered environment. It is
-    DOUBLY gated and off by default:
+    tenant on each request instead of a pre-registered environment. It is gated
+    SOLELY by the platform API key and off by default (fail-closed):
 
-      1. Incubation feature flag 'mcp-http-credential-passthrough'
-         (clio experimental --name mcp-http-credential-passthrough --enable).
-      2. A platform API key (--platform-api-key / CLIO_MCP_HTTP_PLATFORM_API_KEY).
+      - Set a platform API key (--platform-api-key / CLIO_MCP_HTTP_PLATFORM_API_KEY)
+        to enable it.
 
-    When either gate is off, the credential header is ignored and the server
+    With no key configured, the credential header is ignored and the server
     behaves exactly as before — the verb, stdio mode, and '-e <env>' targeting
-    are always available.
+    are always available regardless of the key.
 
     When enabled, an authorized request carries credentials in the header:
 
@@ -120,8 +119,7 @@ EXAMPLES
     Custom endpoint path:
         clio mcp-http --path /api/mcp
 
-    Enable the multi-tenant credential-passthrough edge:
-        clio experimental --name mcp-http-credential-passthrough --enable
+    Enable the multi-tenant credential-passthrough edge (a platform API key turns it on):
         clio mcp-http --host 0.0.0.0 \
             --platform-api-key <platform-api-key> \
             --allowed-base-urls https://tenant.creatio.com

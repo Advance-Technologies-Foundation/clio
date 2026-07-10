@@ -158,41 +158,28 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 		app.UseHostFiltering();
 		app.Use((context, next) => ValidateOrigin(context, next, options.Host));
 
-		// Incubation gate (Story 11, OQ-03/FR-10). The per-request credential-passthrough leg is
-		// wired ONLY when the incubation feature flag is enabled — NOT via a [FeatureToggle] on the
-		// verb, which would hide mcp-http entirely and regress FR-10. When the flag is off (default)
-		// the passthrough middleware is not wired, the credential header is fully ignored, and the
-		// verb / stdio / -e <env> behave exactly as 8.1.0.72. When on, the leg is wired and remains
-		// additionally gated at request time by the Story 5 api-key gate (doubly-gated, AC-04).
-		IFeatureToggleService featureToggleService =
-			app.Services.GetRequiredService<IFeatureToggleService>();
-		if (ShouldEnablePassthrough(featureToggleService)) {
-			// Edge API-key gate (Story 5). Runs BEFORE the credential-capture middleware so a
-			// credential header is treated as trusted only after this gate authorizes the request.
-			IPlatformApiKeyGate platformApiKeyGate =
-				app.Services.GetRequiredService<IPlatformApiKeyGate>();
-			app.Use((context, next) => EnforcePlatformApiKeyGate(
-				context, next, platformApiKeyGate, options.CredentialsHeaderName));
+		// Per-request credential-passthrough leg (Story 5/4). Always wired: it is gated SOLELY by the
+		// platform API-key gate, which fail-closes when no key is configured. With no key set (the
+		// default) the gate publishes PassthroughEnabledItemKey=false, the credential-capture middleware
+		// ignores the credential header, and the verb / stdio / -e <env> behave exactly as 8.1.0.72 — so
+		// wiring the middleware unconditionally does NOT expose passthrough by default. A key is what
+		// turns it on. (The former incubation feature flag was removed: mcp-http is not yet used in prod,
+		// so the second gate was redundant given the fail-closed api-key gate.)
+		//
+		// The edge API-key gate runs BEFORE the credential-capture middleware so a credential header is
+		// treated as trusted only after this gate authorizes the request.
+		IPlatformApiKeyGate platformApiKeyGate =
+			app.Services.GetRequiredService<IPlatformApiKeyGate>();
+		app.Use((context, next) => EnforcePlatformApiKeyGate(
+			context, next, platformApiKeyGate, options.CredentialsHeaderName));
 
-			ICredentialHeaderParser credentialHeaderParser =
-				app.Services.GetRequiredService<ICredentialHeaderParser>();
-			ICredentialContextAccessor credentialContextAccessor =
-				app.Services.GetRequiredService<ICredentialContextAccessor>();
-			app.Use((context, next) => CaptureCredentialContext(
-				context, next, credentialHeaderParser, credentialContextAccessor,
-				options.CredentialsHeaderName));
-
-			ConsoleLogger.Instance.WriteInfo(
-				$"MCP HTTP per-request credential passthrough is ENABLED "
-				+ $"(incubation flag '{CredentialPassthroughFeatureName}'); the leg remains additionally "
-				+ "gated by the platform API-key gate.");
-		}
-		else {
-			ConsoleLogger.Instance.WriteInfo(
-				$"MCP HTTP per-request credential passthrough is DISABLED "
-				+ $"(incubation flag '{CredentialPassthroughFeatureName}' off); the credential header is "
-				+ "ignored and the server behaves as pre-passthrough.");
-		}
+		ICredentialHeaderParser credentialHeaderParser =
+			app.Services.GetRequiredService<ICredentialHeaderParser>();
+		ICredentialContextAccessor credentialContextAccessor =
+			app.Services.GetRequiredService<ICredentialContextAccessor>();
+		app.Use((context, next) => CaptureCredentialContext(
+			context, next, credentialHeaderParser, credentialContextAccessor,
+			options.CredentialsHeaderName));
 
 		app.MapMcp(options.Path);
 
@@ -262,31 +249,6 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 	/// whether per-request credential passthrough is enabled. Absent ⇒ <see langword="false"/>.
 	/// </summary>
 	internal const string PassthroughEnabledItemKey = "clio.mcp.passthrough-enabled";
-
-	/// <summary>
-	/// Incubation feature-flag key gating the per-request credential-passthrough behavior
-	/// (Story 11 / OQ-03). Deliberately NOT a <c>[FeatureToggle]</c> on the options class: the
-	/// verb, stdio, and <c>-e &lt;env&gt;</c> stay always-available (FR-10); only the passthrough
-	/// leg is gated. Compared case-insensitively by the settings repository. Lift when ENG-92869
-	/// stabilizes.
-	/// </summary>
-	internal const string CredentialPassthroughFeatureName = "mcp-http-credential-passthrough";
-
-	/// <summary>
-	/// Decides, at middleware-wiring time, whether the per-request credential-passthrough leg
-	/// should be wired. This is the FIRST of the two gates guarding passthrough: the incubation
-	/// feature flag. The SECOND gate is the request-time platform API-key gate (Story 5), which
-	/// still applies to the wired leg — so honoring a passed credential requires BOTH the flag
-	/// enabled AND a matching api-key (doubly-gated, AC-04).
-	/// </summary>
-	/// <param name="featureToggleService">The feature-toggle service resolved from the host DI graph.</param>
-	/// <returns>
-	/// <see langword="true"/> when the incubation flag is enabled and the passthrough middleware
-	/// should be wired; otherwise <see langword="false"/> (the credential header is ignored).
-	/// </returns>
-	internal static bool ShouldEnablePassthrough(IFeatureToggleService featureToggleService) =>
-		featureToggleService is not null
-		&& featureToggleService.IsFeatureEnabled(CredentialPassthroughFeatureName);
 
 	// Story 5 edge API-key gate. Fail-closed and strictly additive: when no platform API
 	// key is configured (default) the request behaves exactly as 8.1.0.72 — the credential

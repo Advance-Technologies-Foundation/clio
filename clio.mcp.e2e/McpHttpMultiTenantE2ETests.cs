@@ -13,8 +13,8 @@ namespace Clio.Mcp.E2E;
 /// pre-registered environments serves tool calls against two distinct Creatio URLs/users in one run,
 /// using ONLY per-request <c>X-Integration-Credentials</c> headers, and both succeed.
 /// <para>
-/// MANUAL — NOT in CI. Needs a live stand with two distinct tenants and a clio build whose
-/// <c>mcp-http-credential-passthrough</c> incubation flag is enabled; skipped via
+/// MANUAL — NOT in CI. Needs a live stand with two distinct tenants and a clio mcp-http process
+/// started with <c>--platform-api-key</c> (the sole passthrough gate); skipped via
 /// <see cref="McpHttpPassthroughStand.RequireOrIgnore"/> when the live-stand env vars are absent.
 /// </para>
 /// </summary>

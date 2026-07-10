@@ -593,7 +593,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="lps"></a>
 - [`link-package-store`](docs/commands/link-package-store.md) - Link PackageStore packages into an environment, `lps`
 <a id="mcp-http"></a>
-- [`mcp-http`](docs/commands/mcp-http.md) - Start the MCP server over HTTP (Streamable HTTP), with an optional multi-tenant per-request credential-passthrough edge (incubation flag + platform-api-key gated)
+- [`mcp-http`](docs/commands/mcp-http.md) - Start the MCP server over HTTP (Streamable HTTP), with an optional multi-tenant per-request credential-passthrough edge (platform-api-key gated, off by default)
 <a id="mcp-server"></a>
 <a id="mcp"></a>
 - [`mcp-server`](docs/commands/mcp-server.md) - Start the MCP server over stdio, `mcp`

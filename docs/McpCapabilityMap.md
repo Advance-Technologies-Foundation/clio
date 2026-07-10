@@ -92,18 +92,17 @@ Typical examples:
 - `show-webApp-list`
 - `find-empty-iis-port`
 
-### 4. HTTP credential-passthrough edge (multi-tenant, incubation)
+### 4. HTTP credential-passthrough edge (multi-tenant)
 
 The `mcp-http` HTTP host adds a fourth, opt-in targeting mode: **per-request credential
 passthrough**. Instead of a pre-registered environment, a gateway supplies the target tenant
 URL and credentials on each request via an `X-Integration-Credentials: <base64 JSON>` header,
 gated by an `Authorization: Bearer <platform-api-key>`. The same registered tool surface then
 executes against an **ephemeral, in-memory** per-tenant container (nothing persisted; pooled
-with idle-TTL / LRU eviction). It is doubly gated — the `mcp-http-credential-passthrough`
-incubation feature flag **and** a configured platform API key — and off by default; when
-either is off the header is ignored and `mcp-http` behaves as stdio-parity. See
-[`docs/commands/mcp-http.md`](../clio/docs/commands/mcp-http.md) for the full contract
-(header shapes, SSRF allowlist, and the mode-gated plaintext-arg policy).
+with idle-TTL / LRU eviction). It is gated **solely by the platform API key** (fail-closed and
+off by default): with no key configured the header is ignored and `mcp-http` behaves as
+stdio-parity. See [`docs/commands/mcp-http.md`](../clio/docs/commands/mcp-http.md) for the full
+contract (header shapes, SSRF allowlist, and the mode-gated plaintext-arg policy).
 
 ## What An AI Learns About Execution Semantics
 

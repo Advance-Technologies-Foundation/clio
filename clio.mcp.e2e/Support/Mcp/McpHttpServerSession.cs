@@ -18,8 +18,8 @@ namespace Clio.Mcp.E2E.Support.Mcp;
 /// <c>Authorization: Bearer &lt;platform-api-key&gt;</c> and per-request <c>X-Integration-Credentials</c>
 /// header — the multi-tenant passthrough scenario.
 /// <para>
-/// NOT run in CI. These fixtures need a live Creatio stand and a running clio build with the
-/// <c>mcp-http-credential-passthrough</c> incubation flag enabled; when the live-stand env vars are
+/// NOT run in CI. These fixtures need a live Creatio stand and a running clio mcp-http process
+/// started with <c>--platform-api-key</c> (the sole passthrough gate); when the live-stand env vars are
 /// absent the fixtures <c>Assert.Ignore</c> before this helper is touched. See
 /// <see cref="McpHttpPassthroughStand"/> for the required configuration.
 /// </para>

@@ -25,11 +25,12 @@ namespace Clio.Tests.Command.McpServer;
 /// completes the EXHAUSTIVE cross-sink matrix by adding the sinks Story 13 left open:
 /// <list type="bullet">
 /// <item><description>the MCP tool response + <c>execution-log-messages</c> for a command whose
-/// <c>Execute</c> THROWS an exception carrying the seeded secret — the <c>--debug</c> /
+/// <c>Execute</c> THROWS an exception carrying the seeded secret — the
 /// <see cref="CommandExecutionResult.FromException"/> catch-all path that
 /// <see cref="Clio.Command.McpServer.McpToolErrorFilter"/> never sees because the envelope is RETURNED,
-/// not thrown (Story 13 flagged this gap; it leaked and is now closed at source in
-/// <see cref="CommandExecutionResult.FromException"/>);</description></item>
+/// not thrown. Redaction here is scoped to PASSTHROUGH requests (FIX B, ENG-93208): the passthrough
+/// tenant-key signal drives <c>redactSensitive</c>, so the passthrough -1 is scrubbed while the trusted
+/// stdio / -e -1 stays full-fidelity;</description></item>
 /// <item><description>the inner-exception-chain variant of the same path (FormatExceptionChain walks up
 /// to depth 5);</description></item>
 /// <item><description>CLI stdout — the <c>ShowSettingsTo</c> serializer configuration used to dump the
@@ -329,54 +330,74 @@ public sealed class CredentialPassthroughSecretHygieneTests {
 	}
 
 	// ---- Sink 9: MCP tool response + execution-log-messages via the FromException catch-all --------
-	// Story 13 flagged that the -1 FromException envelope (BaseTool's ExecuteLocked catch-all, and the
-	// --debug path) is NOT run through the redactor and McpToolErrorFilter never sees it (the envelope is
-	// RETURNED, not thrown). Story 15b reproduces the leak with a command whose Execute throws an
-	// exception carrying the seeded secret on a passthrough request, and pins that the secret reaches
-	// NEITHER the serialized MCP response NOR its execution-log-messages. Closed at source in
-	// CommandExecutionResult.FromException.
+	// The -1 FromException envelope (BaseTool's ExecuteLocked catch-all) is NOT run through the redactor
+	// by McpToolErrorFilter — the envelope is RETURNED, not thrown, so the filter never sees it. The
+	// redaction is scoped to PASSTHROUGH requests only (FIX B, ENG-93208): the same tenant-key signal
+	// RedactForPassthrough uses. On a passthrough request a command exception carrying the seeded secret
+	// reaches NEITHER the serialized MCP response NOR its execution-log-messages; on the trusted
+	// stdio / -e path the -1 text is preserved full-fidelity (no diagnosability regression).
 
 	[Test]
-	[Description("A command whose Execute throws an exception carrying the seeded secret does not leak it into the MCP response or execution-log-messages (FR-11, Story 15b FromException gap).")]
-	public void InternalExecute_ShouldNotLeakSecret_WhenCommandExecuteThrowsWithSecret() {
+	[Description("On a PASSTHROUGH request, a command whose Execute throws an exception carrying the seeded secret does not leak it into the MCP response or execution-log-messages (FR-11, FIX B).")]
+	public void ExecuteLocked_ShouldRedactException_WhenPassthroughRequest() {
 		// Arrange — the seeded secret rides inside a REDACTABLE shape (target URI + Bearer token) exactly
-		// as an inner-most HTTP/data-layer failure would surface it on a passthrough request.
-		ILogger logger = CreateSilentLogger();
+		// as an inner-most HTTP/data-layer failure would surface it, resolved under a PASSTHROUGH tenant key.
 		Exception thrown = new InvalidOperationException(
 			$"POST {Url}/0/ServiceModel/EntitySchemaService.svc failed — Authorization: Bearer {Secret}");
-		SecretLeakToolHarness tool = new(new ThrowingCommand(thrown), logger);
+		ThrowingEnvToolHarness tool = ThrowingEnvToolHarness.WithTenantKey(
+			$"{ToolCommandResolver.PassthroughKeyPrefix}{Url}:ABC123", thrown);
 
 		// Act
-		CommandExecutionResult result = tool.Execute(new SecretLeakToolOptions());
+		CommandExecutionResult result = tool.Execute(new PassthroughLogToolOptions { Uri = Url });
 		string json = System.Text.Json.JsonSerializer.Serialize(result);
 
 		// Assert
 		result.ExitCode.Should().Be(-1,
 			because: "an unanticipated command exception surfaces on the -1 FromException catch-all");
 		json.Should().NotContain(Secret,
-			because: "the -1 FromException envelope is now redacted before it crosses the MCP boundary (FR-11, Story 15b)");
+			because: "on a passthrough request the -1 FromException envelope is redacted before it crosses the MCP boundary (FR-11, FIX B)");
 		foreach (LogMessage message in result.Output) {
 			(message.Value?.ToString() ?? string.Empty).Should().NotContain(Secret,
-				because: "no execution-log message in the returned envelope may carry the seeded secret (FR-11)");
+				because: "no execution-log message in the returned passthrough envelope may carry the seeded secret (FR-11)");
 		}
 	}
 
 	[Test]
-	[Description("A command exception whose INNER exception carries the seeded secret does not leak it through the FormatExceptionChain walk into the MCP response (FR-11, Story 15b).")]
-	public void InternalExecute_ShouldNotLeakSecret_WhenInnerExceptionCarriesSecret() {
-		// Arrange — the secret rides on the inner exception (chain depth 2) in a credential-pair shape.
-		ILogger logger = CreateSilentLogger();
+	[Description("On a PASSTHROUGH request, a command exception whose INNER exception carries the seeded secret does not leak it through the FormatExceptionChain walk into the MCP response (FR-11, FIX B).")]
+	public void ExecuteLocked_ShouldRedactInnerException_WhenPassthroughRequest() {
+		// Arrange — the secret rides on the inner exception (chain depth 2) in a credential-pair shape,
+		// resolved under a PASSTHROUGH tenant key.
 		Exception inner = new InvalidOperationException($"auth handshake rejected password={Secret}");
 		Exception outer = new InvalidOperationException("command failed while contacting the environment", inner);
-		SecretLeakToolHarness tool = new(new ThrowingCommand(outer), logger);
+		ThrowingEnvToolHarness tool = ThrowingEnvToolHarness.WithTenantKey(
+			$"{ToolCommandResolver.PassthroughKeyPrefix}{Url}:DEF456", outer);
 
 		// Act
-		CommandExecutionResult result = tool.Execute(new SecretLeakToolOptions());
+		CommandExecutionResult result = tool.Execute(new PassthroughLogToolOptions { Uri = Url });
 		string json = System.Text.Json.JsonSerializer.Serialize(result);
 
 		// Assert
 		json.Should().NotContain(Secret,
-			because: "FromException redacts the full formatted exception chain, so a secret on any inner exception is scrubbed (FR-11, Story 15b)");
+			because: "on a passthrough request FromException redacts the full formatted exception chain, so a secret on any inner exception is scrubbed (FR-11, FIX B)");
+	}
+
+	[Test]
+	[Description("On a NON-passthrough (registry/stdio) request the -1 exception chain carrying the same secret text is preserved verbatim — no redaction, no diagnosability regression (FIX B boundary).")]
+	public void ExecuteLocked_ShouldPreserveException_WhenNotPassthroughRequest() {
+		// Arrange — identical secret-bearing exception, but resolved under a REGISTRY key (not passthrough).
+		Exception thrown = new InvalidOperationException(
+			$"POST {Url}/0/ServiceModel/EntitySchemaService.svc failed — Authorization: Bearer {Secret}");
+		ThrowingEnvToolHarness tool = ThrowingEnvToolHarness.WithTenantKey("registry-env-key", thrown);
+
+		// Act
+		CommandExecutionResult result = tool.Execute(new PassthroughLogToolOptions { Uri = Url });
+		string json = System.Text.Json.JsonSerializer.Serialize(result);
+
+		// Assert
+		result.ExitCode.Should().Be(-1,
+			because: "an unanticipated command exception surfaces on the -1 FromException catch-all");
+		json.Should().Contain(Secret,
+			because: "the trusted stdio/-e path keeps full-fidelity -1 exception text; redaction is scoped to passthrough keys only (FIX B)");
 	}
 
 	// ---- Sink 10: passthrough log-channel redaction boundary (FIX 2, ENG-93208) ------------------
@@ -430,31 +451,6 @@ public sealed class CredentialPassthroughSecretHygieneTests {
 			because: "the trusted stdio/-e path keeps full-fidelity logs; redaction is scoped to passthrough keys only (FIX 2)");
 	}
 
-	// A logger that satisfies BaseTool's ExecuteLocked contract without touching the shared
-	// ConsoleLogger.Instance singleton, so this fixture stays parallelizable. FlushAndSnapshotMessages is
-	// an extension over ILogger.LogMessages, so the substitute must return a non-null empty collection
-	// there (SanitizeForSerialization iterates the snapshot it produces).
-	private static ILogger CreateSilentLogger() {
-		ILogger logger = Substitute.For<ILogger>();
-		logger.LogMessages.Returns(new List<LogMessage>());
-		return logger;
-	}
-
-	// Options with no environment identity, so BaseTool keeps to the injected-command direct path
-	// (InternalExecute → ExecuteLocked) and locks on the shared fallback key — no resolver needed.
-	private sealed class SecretLeakToolOptions : EnvironmentOptions { }
-
-	private sealed class ThrowingCommand(Exception toThrow) : Command<SecretLeakToolOptions> {
-		public override int Execute(SecretLeakToolOptions options) => throw toThrow;
-	}
-
-	// Minimal BaseTool subclass exercising the injected-command execution path (InternalExecute →
-	// ExecuteLocked), whose catch-all builds the -1 FromException envelope under test.
-	private sealed class SecretLeakToolHarness(Command<SecretLeakToolOptions> command, ILogger logger)
-		: BaseTool<SecretLeakToolOptions>(command, logger) {
-		public CommandExecutionResult Execute(SecretLeakToolOptions options) => InternalExecute(options);
-	}
-
 	// ---- FIX 2 boundary harness -------------------------------------------------------------------
 	// Options with a URI so the env-SENSITIVE path is taken (UsesEnvironmentlessResolution → false),
 	// which threads the resolver's LastResolvedTenantKey into ExecuteLocked — the passthrough signal.
@@ -462,6 +458,35 @@ public sealed class CredentialPassthroughSecretHygieneTests {
 
 	private sealed class NoopCommand : Command<PassthroughLogToolOptions> {
 		public override int Execute(PassthroughLogToolOptions options) => 0;
+	}
+
+	// A command whose Execute throws, so ExecuteLocked's catch-all builds the -1 FromException envelope
+	// under test on the env-sensitive path.
+	private sealed class ThrowingEnvCommand(Exception toThrow) : Command<PassthroughLogToolOptions> {
+		public override int Execute(PassthroughLogToolOptions options) => throw toThrow;
+	}
+
+	// FIX B boundary harness for the -1 catch-all. Exercises the env-sensitive
+	// InternalExecute<TCommand> → ExecuteLocked path with a substitute resolver whose LastResolvedTenantKey
+	// decides passthrough vs registry — the SAME signal FromException's redactSensitive keys off — and a
+	// throwing command so the catch-all produces the -1 envelope. The logger is silent (empty LogMessages)
+	// so the only channel for the seeded secret is the thrown exception chain.
+	private sealed class ThrowingEnvToolHarness(
+		Command<PassthroughLogToolOptions> command, ILogger logger, IToolCommandResolver resolver)
+		: BaseTool<PassthroughLogToolOptions>(command, logger, resolver) {
+
+		public CommandExecutionResult Execute(PassthroughLogToolOptions options) =>
+			InternalExecute<ThrowingEnvCommand>(options);
+
+		public static ThrowingEnvToolHarness WithTenantKey(string tenantKey, Exception toThrow) {
+			ThrowingEnvCommand command = new(toThrow);
+			ILogger logger = Substitute.For<ILogger>();
+			logger.LogMessages.Returns(new List<LogMessage>());
+			IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+			resolver.Resolve<ThrowingEnvCommand>(Arg.Any<EnvironmentOptions>()).Returns(command);
+			resolver.LastResolvedTenantKey.Returns(tenantKey);
+			return new ThrowingEnvToolHarness(command, logger, resolver);
+		}
 	}
 
 	// Exercises the env-sensitive InternalExecute<TCommand> → ExecuteLocked path with a substitute resolver

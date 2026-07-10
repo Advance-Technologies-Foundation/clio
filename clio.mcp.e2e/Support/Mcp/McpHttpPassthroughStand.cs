@@ -5,7 +5,7 @@ namespace Clio.Mcp.E2E.Support.Mcp;
 /// <summary>
 /// Live-stand configuration + skip-gate for the <c>clio mcp-http</c> credential-passthrough e2e
 /// fixtures (ENG-93208, Story 15c/15d/AC-07). These tests are MANUAL — they need a live Creatio stand,
-/// a clio build whose <c>mcp-http-credential-passthrough</c> incubation flag is enabled, and two tenant
+/// a clio build started with a <c>--platform-api-key</c> (the sole passthrough gate), and two tenant
 /// credential sets — so they are NOT part of the CI suite. When the required environment variables are
 /// absent, <see cref="RequireOrIgnore"/> calls <see cref="Assert.Ignore(string)"/> so the fixture is
 /// skipped rather than failed, mirroring the <c>McpE2E:Sandbox</c> guard in the other e2e fixtures.
@@ -52,7 +52,7 @@ internal sealed class McpHttpPassthroughStand {
 				"clio mcp-http credential-passthrough e2e is MANUAL (not in CI). Set "
 				+ "CLIO_MCP_HTTP_E2E_PLATFORM_API_KEY, CLIO_MCP_HTTP_E2E_TENANT1_URL/_TOKEN and "
 				+ "CLIO_MCP_HTTP_E2E_TENANT2_URL/_TOKEN (two DISTINCT live tenants) to run it against a "
-				+ "live stand whose clio build has the 'mcp-http-credential-passthrough' incubation flag enabled.");
+				+ "live stand, starting clio mcp-http with --platform-api-key (the sole passthrough gate).");
 		}
 
 		return new McpHttpPassthroughStand {
