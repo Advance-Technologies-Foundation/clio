@@ -815,6 +815,11 @@ internal class RemoteEntitySchemaColumnManagerTests
 		_manager.ModifyColumn(options);
 
 		// Assert
+		_savedSchema.Should().NotBeNull(because: "the caption override must save the child schema");
+		_savedSchema.Name.Should().Be("UsrVehicle",
+			because: "only the child schema is ever saved — the parent schema is never loaded or saved");
+		_savedSchema.InheritedColumns.Should().ContainSingle(column => column.Name == "Symptoms",
+			because: "the override is applied in place on the child's inherited column, not on the parent");
 		_designerClient.Received(1).SaveSchema(
 			Arg.Is<EntityDesignSchemaDto>(schema => schema.Name == "UsrVehicle"),
 			Arg.Any<Clio.Command.RemoteCommandOptions>());
