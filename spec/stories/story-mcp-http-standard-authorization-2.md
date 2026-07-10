@@ -1,7 +1,9 @@
 # Story 2 — Auth configuration options (issuer/audience/scopes) + OIDC discovery
 
 **Feature**: mcp-http-standard-authorization · **Jira**: ENG-93386 · **Size**: S · **Status**: ready-for-dev
-**Depends on**: 1 · **Blocks**: 3, 4, 5
+**Depends on**: 1 · **Blocks**: 3, 4, 5 · **Status: DONE (2026-07-11)**
+
+> Implemented as `AuthConfiguration` + `AuthEnvironment` with 5 `--auth-*` options (`--auth-authority`, `--auth-audience`, `--auth-required-scopes`, `--auth-issuer`, `--auth-allow-insecure-metadata`) and `CLIO_MCP_HTTP_AUTH_*` env counterparts. Enabled iff `--auth-authority` is set. Models discovery-authority + valid-issuers + audiences + required-scopes + `RequireHttpsMetadata` (per Story-1 spike: public-iss vs internal-DNS split, HTTP metadata opt-out). 12 unit tests.
 
 ## As a / I want / So that
 As an operator, I want to configure the Authorization Server the edge trusts, so clio-as-RS validates tokens from the right issuer/audience without hard-coding a provider.

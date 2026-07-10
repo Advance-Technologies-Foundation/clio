@@ -1,7 +1,9 @@
 # Story 3 — JWT bearer Resource-Server validation (AddJwtBearer)
 
 **Feature**: mcp-http-standard-authorization · **Jira**: ENG-93386 · **Size**: M · **Status**: ready-for-dev
-**Depends on**: 1, 2 · **Blocks**: 4, 5
+**Depends on**: 1, 2 · **Blocks**: 4, 5 · **Status: DONE (2026-07-11)**
+
+> **Scope note (agreed):** the HTTP `401`/`403` accept-reject *matrix* requires endpoint enforcement, which is **Story 5** (`RequireAuthorization`). Story 3 delivers + unit-tests the validation configuration: `TokenValidationParameters` (issuer/audience/RS256+PS256/lifetime), the `mcp` scope policy (lambda assertion over `scope`/`scp`), `MapInboundClaims=false`, issuer trailing-slash normalization, and DI composition. `UseAuthentication`/`UseAuthorization` are wired only when enabled (hermetic fail-safe off). Implemented in `McpHttpAuthentication` + wired in `McpHttpServerCommand.Run`. JwtBearer pinned per-TFM (10.0.9 net10 / 8.0.11 net8).
 
 ## As a / I want / So that
 As a public MCP edge, I want to validate incoming bearer JWTs as an OAuth 2.1 Resource Server, so only tokens issued for me by the trusted AS are accepted.

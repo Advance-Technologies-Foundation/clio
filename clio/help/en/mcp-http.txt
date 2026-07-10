@@ -69,6 +69,35 @@ OPTIONS
         Name of the request header carrying the base64-encoded JSON credentials.
         Default: X-Integration-Credentials
 
+    --auth-authority <url>
+        OIDC authority (discovery/JWKS base URL) of the OAuth 2.1 Authorization
+        Server whose access tokens this edge accepts (also CLIO_MCP_HTTP_AUTH_AUTHORITY).
+        Setting it ENABLES standard bearer-JWT authorization; unset => off (as before).
+
+    --auth-audience <auds>
+        Comma-separated accepted audience(s) validated against the token 'aud'
+        (also CLIO_MCP_HTTP_AUTH_AUDIENCE).
+
+    --auth-required-scopes <scopes>
+        Comma-separated scope(s) every request must carry, all required, checked
+        against the 'scope'/'scp' claim (also CLIO_MCP_HTTP_AUTH_REQUIRED_SCOPES).
+
+    --auth-issuer <issuers>
+        Comma-separated accepted issuer(s) for the token 'iss' (also
+        CLIO_MCP_HTTP_AUTH_ISSUER). Optional; when unset the issuer is validated
+        against the discovery document. Use when the public token 'iss' differs
+        from the internal --auth-authority discovery URL.
+
+    --auth-allow-insecure-metadata
+        Allow OIDC metadata/JWKS over plain HTTP (also a truthy
+        CLIO_MCP_HTTP_AUTH_ALLOW_INSECURE_METADATA). Default is HTTPS-only; use
+        only for an internal-DNS HTTP authority on a trusted network.
+
+    NOTE: full authorization model (OAuth 2.1 Resource Server, .well-known
+    discovery, 401 challenge, endpoint enforcement) is documented as it lands
+    across ENG-93386. Story 2/3 add token validation config; endpoint enforcement
+    arrives in a later story.
+
 CREDENTIAL PASSTHROUGH (multi-tenant edge)
     Per-request credential passthrough lets a gateway target a different Creatio
     tenant on each request instead of a pre-registered environment. It is gated

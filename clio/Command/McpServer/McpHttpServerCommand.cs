@@ -58,6 +58,36 @@ public class McpHttpServerCommandOptions : BaseCommandOptions
 		HelpText = "Maximum number of per-session containers kept in memory. When exceeded, the "
 			+ "least-recently-used container is evicted. Defaults to 50.")]
 	public int MaxSessions { get; set; }
+
+	[Option("auth-authority", Required = false,
+		HelpText = "OIDC authority (discovery/JWKS base URL) of the OAuth 2.1 Authorization Server "
+			+ "whose access tokens this edge accepts. Setting it (here or via CLIO_MCP_HTTP_AUTH_AUTHORITY) "
+			+ "ENABLES standard bearer-JWT authorization on the whole endpoint. Unset (default) => "
+			+ "authorization is off and the edge behaves exactly as before.")]
+	public string AuthAuthority { get; set; }
+
+	[Option("auth-audience", Required = false,
+		HelpText = "Comma-separated accepted audience(s) the token must be issued for (also read from "
+			+ "CLIO_MCP_HTTP_AUTH_AUDIENCE). Validated against the token 'aud' claim.")]
+	public string AuthAudience { get; set; }
+
+	[Option("auth-required-scopes", Required = false,
+		HelpText = "Comma-separated scope(s) every request must carry, all required (also read from "
+			+ "CLIO_MCP_HTTP_AUTH_REQUIRED_SCOPES). Checked against the token 'scope'/'scp' claim.")]
+	public string AuthRequiredScopes { get; set; }
+
+	[Option("auth-issuer", Required = false,
+		HelpText = "Comma-separated accepted issuer(s) for the token 'iss' claim (also read from "
+			+ "CLIO_MCP_HTTP_AUTH_ISSUER). Optional: when unset, the issuer is validated against the "
+			+ "discovery document's issuer. Use it when the token 'iss' (public authority) differs from "
+			+ "--auth-authority (internal discovery URL).")]
+	public string AuthIssuer { get; set; }
+
+	[Option("auth-allow-insecure-metadata", Required = false,
+		HelpText = "Allow OIDC metadata/JWKS to be fetched over plain HTTP (also enabled by a truthy "
+			+ "CLIO_MCP_HTTP_AUTH_ALLOW_INSECURE_METADATA). Default is HTTPS-only; set this only for an "
+			+ "internal-DNS HTTP authority on a trusted network.")]
+	public bool AuthAllowInsecureMetadata { get; set; }
 }
 
 /// <summary>
@@ -139,6 +169,16 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 		builder.Services.AddSingleton<ISessionContainerCache>(
 			new SessionContainerCache(sessionIdleTtl, maxSessions));
 
+		// Standard OAuth 2.1 Resource-Server authorization (ENG-93386, Story 2/3). Resolved from the
+		// --auth-* flags plus the CLIO_MCP_HTTP_AUTH_* env vars. Enabled iff an authority is configured;
+		// when disabled we register NOTHING here and add no authN/authZ middleware below (a
+		// UseAuthentication with no registered scheme throws) — the edge then behaves exactly as before.
+		AuthConfiguration authConfiguration =
+			AuthConfiguration.Resolve(options, AuthEnvironment.FromProcessEnvironment());
+		if (authConfiguration.Enabled) {
+			McpHttpAuthentication.ConfigureServices(builder.Services, authConfiguration);
+		}
+
 		AspNetWebApplication app = builder.Build();
 
 		// FR-05/FR-08 (ENG-93208): wire the tool-execution-lock facade to this host's DI-registered
@@ -157,6 +197,16 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 		// Origin header and pass through unaffected.
 		app.UseHostFiltering();
 		app.Use((context, next) => ValidateOrigin(context, next, options.Host));
+
+		// Standard OAuth 2.1 authentication/authorization (ENG-93386, Story 3). Added ONLY when
+		// authorization is enabled (an authority is configured); adding UseAuthentication with no
+		// registered scheme would throw. Endpoint enforcement (RequireAuthorization) + the fail-safe /
+		// public-bind guard land in Story 5 — here the pipeline only authenticates and authorizes so the
+		// principal is available to the credential-capture middleware below (Story 6 gates on it).
+		if (authConfiguration.Enabled) {
+			app.UseAuthentication();
+			app.UseAuthorization();
+		}
 
 		// Per-request credential-passthrough leg (Story 5/4). Always wired: it is gated SOLELY by the
 		// platform API-key gate, which fail-closes when no key is configured. With no key set (the

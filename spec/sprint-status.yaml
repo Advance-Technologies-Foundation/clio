@@ -947,18 +947,20 @@ stories:
     title: "Auth configuration options (issuer/audience/scopes) + OIDC discovery"
     feature: "mcp-http-standard-authorization"
     size: S
-    status: ready-for-dev
+    status: done
     depends_on: [story-mcp-http-standard-authorization-1]
     blocks: [story-mcp-http-standard-authorization-3, story-mcp-http-standard-authorization-4, story-mcp-http-standard-authorization-5]
+    note: "DONE 2026-07-11. AuthConfiguration + AuthEnvironment (5 --auth-* flags + CLIO_MCP_HTTP_AUTH_* env); enabled iff --auth-authority set; models discovery-authority + valid-issuers + audiences + required-scopes + RequireHttpsMetadata (allow-insecure opt-out). 12 unit tests. Validated: dotnet test --filter Category=Unit&Module=McpServer."
     file: spec/stories/story-mcp-http-standard-authorization-2.md
 
   - id: story-mcp-http-standard-authorization-3
     title: "JWT bearer Resource-Server validation (AddJwtBearer)"
     feature: "mcp-http-standard-authorization"
     size: M
-    status: ready-for-dev
+    status: done
     depends_on: [story-mcp-http-standard-authorization-1, story-mcp-http-standard-authorization-2]
     blocks: [story-mcp-http-standard-authorization-4, story-mcp-http-standard-authorization-5]
+    note: "DONE 2026-07-11. McpHttpAuthentication: AddJwtBearer (issuer/audience/RS256+PS256/lifetime, MapInboundClaims=false, iss trailing-slash normalization) + AddAuthorization 'mcp' policy via RequireAssertion lambda scope-check (scope/scp, NOT a handler class -> avoids assembly-scan/ValidateOnBuild trap). Wired in Run() behind Enabled gate + UseAuthentication/UseAuthorization (hermetic fail-safe off). JwtBearer pkg per-TFM (10.0.9 net10 / 8.0.11 net8). 12 unit tests. NOTE: endpoint enforcement (RequireAuthorization) + full HTTP 401/403 matrix are Story 5; here validation-params + scope-policy + DI-compose are unit-tested."
     file: spec/stories/story-mcp-http-standard-authorization-3.md
 
   - id: story-mcp-http-standard-authorization-4

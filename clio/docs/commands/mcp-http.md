@@ -53,6 +53,13 @@ every host that can reach the machine on the LAN — use it only on trusted netw
 | `--session-idle-ttl` | `5m` | Idle time after which an unused per-session container is evicted. Accepts `90s` / `5m` / `1h` / `1d`, bare seconds (`300`), or a `TimeSpan` (`00:05:00`). |
 | `--max-sessions` | `50` | Maximum per-session containers kept in memory; the least-recently-used one is evicted when exceeded. |
 | `--credentials-header-name` | `X-Integration-Credentials` | Name of the request header carrying the base64-encoded JSON credentials. |
+| `--auth-authority` | _(unset)_ | OIDC authority (discovery/JWKS base URL) of the OAuth 2.1 Authorization Server whose access tokens this edge accepts (also `CLIO_MCP_HTTP_AUTH_AUTHORITY`). Setting it **enables** standard bearer-JWT authorization; unset ⇒ off, behaves as before. |
+| `--auth-audience` | _(unset)_ | Comma-separated accepted audience(s) validated against the token `aud` (also `CLIO_MCP_HTTP_AUTH_AUDIENCE`). |
+| `--auth-required-scopes` | _(unset)_ | Comma-separated scope(s) every request must carry, checked against the `scope`/`scp` claim (also `CLIO_MCP_HTTP_AUTH_REQUIRED_SCOPES`). |
+| `--auth-issuer` | _(unset)_ | Comma-separated accepted issuer(s) for the token `iss` (also `CLIO_MCP_HTTP_AUTH_ISSUER`). Optional; defaults to the discovery document's issuer. Use when the public token `iss` differs from the internal `--auth-authority`. |
+| `--auth-allow-insecure-metadata` | `false` | Allow OIDC metadata/JWKS over plain HTTP (also a truthy `CLIO_MCP_HTTP_AUTH_ALLOW_INSECURE_METADATA`). Default HTTPS-only; use only for an internal-DNS HTTP authority on a trusted network. |
+
+> **Note:** the full authorization model (OAuth 2.1 Resource Server, `.well-known/oauth-protected-resource` discovery, 401 `WWW-Authenticate` challenge, whole-endpoint enforcement) lands across ENG-93386. Story 2/3 add the token-validation configuration and JWT bearer validation; endpoint enforcement arrives in a later story.
 
 ## Credential passthrough (multi-tenant edge)
 
