@@ -278,7 +278,29 @@ internal class Program {
 			result = normalizedArgs;
 		}
 
+		result = NormalizeGetSysSettingArgs(result);
 		return NormalizeJsonFlagArgs(result);
+	}
+
+	// The `get-syssetting` alias shares the `set-syssetting` verb and its options, and read mode
+	// is gated solely by the --get flag. Without normalization `clio get-syssetting <code>` falls
+	// through to the write path and overwrites the setting with an empty string (silent data loss).
+	// Inject --get when the command is invoked through the get-syssetting alias so the "get" name
+	// actually reads, matching its help ("Get or set a system setting value").
+	internal static string[] NormalizeGetSysSettingArgs(string[] args) {
+		if (args is null || args.Length == 0
+			|| !string.Equals(args[0], "get-syssetting", StringComparison.OrdinalIgnoreCase)) {
+			return args;
+		}
+		bool alreadyHasGetFlag = args.Any(token =>
+			string.Equals(token, "--get", StringComparison.OrdinalIgnoreCase));
+		if (alreadyHasGetFlag) {
+			return args;
+		}
+		var output = new List<string>(args.Length + 1);
+		output.AddRange(args);
+		output.Add("--get");
+		return output.ToArray();
 	}
 
 	// The --json option is declared as bool? (its established public form is `--json true|false`).
