@@ -54,6 +54,7 @@ public sealed class DurableInvocationGateCompletenessTests {
 		"get-page",
 		"install-gate",
 		"install-toolkit",
+		"new-integration-test-project",
 		"new-test-project",
 		"new-ui-project",
 		"odata-create",
