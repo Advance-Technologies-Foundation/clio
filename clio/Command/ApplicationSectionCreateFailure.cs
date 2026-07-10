@@ -26,10 +26,12 @@ public enum ApplicationSectionCreateFailureClass {
 	ServerError,
 
 	/// <summary>
-	/// Creatio aborted the insert with a detail-less <c>InsertQuery failed</c> rejection — the signature of
-	/// lock/contention when several sections are created in one application at once (ENG-93089). No section
-	/// was created, so the operation is safe to retry once the creations are serialized; clio verifies by the
-	/// generated section id and auto-retries once before surfacing this class.
+	/// Creatio aborted the insert with a detail-less <c>InsertQuery failed</c> rejection (empty or opaque
+	/// server message). This is the signature of lock/contention when sections are created in one application
+	/// in parallel — but, because the server returns no distinguishing detail, it can equally be a server-side
+	/// rejection unrelated to concurrency (ENG-93089). No section was created (verified by the generated
+	/// section id), so it is safe for clio to auto-retry once; a persistent failure is surfaced with guidance
+	/// that covers both the serialize-and-retry and the server-side diagnosis paths.
 	/// </summary>
 	Contention
 }

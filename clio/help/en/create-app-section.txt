@@ -109,13 +109,17 @@ TIMEOUT AND FAILURE DIAGNOSTICS
                       few minutes, run "clio list-app-sections", and retry
                       only if the section is still absent.
 
-    contention        The insert was aborted without a detailed reason because
-                      sections were created in the same application at once. No
-                      section was created. clio serializes creations per
-                      application and auto-retries this once with verification;
-                      create sections one at a time. If it recurs, wait a few
-                      seconds, run "clio list-app-sections" to confirm the
-                      section is absent, then retry.
+    contention        The insert was aborted without a detailed reason. The
+                      server gives no detail, so this may be parallel creation
+                      in the same application OR a server-side rejection
+                      unrelated to concurrency. No section was created
+                      (verified). clio serializes creations per application and
+                      auto-retries this once. Run "clio list-app-sections" to
+                      confirm the section is absent; create sections one at a
+                      time if you were creating them concurrently. If a single
+                      sequential create still fails, treat it as a server-side
+                      issue - check "clio healthcheck -e <env>" and the Creatio
+                      server logs before retrying.
 
     server-error      Creatio rejected the operation with a real reason (HTTP
                       error, non-JSON response, or a detailed rejected insert).
@@ -153,14 +157,16 @@ TROUBLESHOOTING
         or underscore.
 
     Detail-less "Failed to create section ..." (contention) rejection
-        Creatio aborted the insert without details - the signature of
-        contention when several sections are created in one application at
-        once. No section was created. clio serializes creations per application
-        and retries this once automatically after verifying the section is
-        absent. Create sections sequentially; if it recurs, wait a few seconds,
-        run "clio list-app-sections" to confirm the section is absent, then
-        retry create-app-section. A detailed server rejection (a real message)
-        is reported separately as "server-error" and should not be blind-retried.
+        Creatio aborted the insert without details. Because the server returns
+        no detail, this may be contention from creating sections in parallel OR
+        a server-side rejection unrelated to concurrency. No section was created
+        (verified). clio serializes creations per application and retries this
+        once automatically. Run "clio list-app-sections" to confirm the section
+        is absent; if you were creating sections concurrently, create them one
+        at a time. If a single sequential create still fails, it is almost
+        certainly a server-side issue - check "clio healthcheck -e <env>" and
+        the Creatio server logs rather than retrying. A detailed server
+        rejection (a real message) is reported separately as "server-error".
 
     When the underlying Creatio insert returns its own error text, that
     message is surfaced after "Server error:" so the root cause is visible

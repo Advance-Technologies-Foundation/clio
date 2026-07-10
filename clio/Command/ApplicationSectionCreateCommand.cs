@@ -176,11 +176,14 @@ public sealed class ApplicationSectionCreateService(
 		+ "then retry create-app-section.";
 
 	private const string ContentionRetryGuidance =
-		"Creatio aborted the section insert without a detailed reason, which is what happens when several "
-		+ "sections are created in the same application at once. No section was created (verified). Create "
-		+ "sections in this application one at a time (sequentially, not in parallel); clio also retries this "
-		+ "once automatically. If it recurs, wait a few seconds, run list-app-sections to confirm the section "
-		+ "is absent, then retry create-app-section.";
+		"Creatio aborted the section insert without a detailed reason. This can happen when sections are "
+		+ "created in the same application in parallel, but a detail-less rejection can equally be a "
+		+ "server-side failure unrelated to concurrency — the server returned no detail to tell them apart. "
+		+ "No section was created (verified). Do not blindly retry: first run list-app-sections to confirm "
+		+ "the section is absent. If you were creating sections concurrently, create them one at a time "
+		+ "(clio serializes and retries once automatically). If a single sequential create still fails, treat "
+		+ "it as a server-side issue — check environment health (clio healthcheck -e <env>) and the Creatio "
+		+ "server logs before retrying.";
 
 	private static readonly TimeSpan PollDelay = TimeSpan.FromSeconds(2);
 	private static readonly Regex CodeWordRegex = new(
@@ -683,8 +686,9 @@ public sealed class ApplicationSectionCreateService(
 				.Append('\'');
 		}
 
-		builder.Append(": Creatio aborted the section insert without a detailed reason (InsertQuery failed) — "
-			+ "the signature of contention when several sections are created in one application at once.");
+		builder.Append(": Creatio aborted the section insert without a detailed reason (InsertQuery failed). "
+			+ "This may be contention from creating sections in parallel, or a server-side rejection unrelated "
+			+ "to concurrency — the server returned no detail to distinguish them.");
 		return new ApplicationSectionCreateException(
 			builder.ToString(),
 			ApplicationSectionCreateFailureClass.Contention,

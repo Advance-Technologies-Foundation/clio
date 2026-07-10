@@ -90,6 +90,8 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide must tell agents to create sections one at a time to avoid the contention InsertQuery failure (ENG-93089)");
 		article.Text.Should().Contain("contention",
 			because: "the guide must document the retryable contention error-class so agents recover by serializing instead of abandoning");
+		article.Text.Should().Contain("server-side",
+			because: "the contention guidance must acknowledge a detail-less rejection may be a server-side failure, not only parallel creation (ENG-93089 C4)");
 	}
 
 	[Test]
@@ -183,6 +185,8 @@ public sealed class McpGuidanceResourceTests {
 			because: "the maintenance guide must tell agents to create sections one at a time to avoid the contention InsertQuery failure (ENG-93089)");
 		article.Text.Should().Contain("contention",
 			because: "the maintenance guide must document the retryable contention error-class so agents recover by serializing instead of abandoning");
+		article.Text.Should().Contain("server-side",
+			because: "the contention guidance must acknowledge a detail-less rejection may be a server-side failure, not only parallel creation (ENG-93089 C4)");
 	}
 
 	[Test]

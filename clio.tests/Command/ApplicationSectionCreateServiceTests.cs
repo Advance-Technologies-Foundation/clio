@@ -623,6 +623,8 @@ public sealed class ApplicationSectionCreateServiceTests {
 			because: "contention guidance must tell the agent to create sections sequentially, not in parallel");
 		exception.RetryGuidance.Should().Contain("list-app-sections",
 			because: "the guidance should point the agent at the verification command before a manual retry");
+		exception.RetryGuidance.Should().Contain("server-side",
+			because: "a detail-less rejection may be a server-side failure unrelated to concurrency, so the guidance must not claim contention as the only cause (ENG-93089 C4)");
 		exception.Message.Should().NotContain("already bound to an existing section",
 			because: "Creatio allows several sections per entity, so the message must not assert the false entity-binding cause");
 	}
