@@ -203,7 +203,7 @@ public sealed class ProcessModelingGuidanceResourceTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The guidance carries the data source filter section: the signalStart filter, the signal-start right-hand-side restriction (value/macro/datePart only), the datePart/macro vocabulary, and the setFilter/clearFilter modify ops.")]
+	[Description("The guidance carries the data source filter section: the signalStart filter, the signal-start right-hand-side restriction (value/macro/datePart only), the datePart/macro vocabulary, and the setFilter/clearFilter modify ops. Also pins the two corrections: the signalStart example is name-keyed (not id) and the datePart integer bullet forbids a processParameter.")]
 	public void GetGuide_ShouldCarryDataSourceFilterGuidance_WhenRead() {
 		// Act
 		string text = new ProcessModelingGuidanceResource().GetGuide().Should().BeOfType<TextResourceContents>().Subject.Text;
@@ -217,6 +217,12 @@ public sealed class ProcessModelingGuidanceResourceTests {
 			because: "the datePart vocabulary (incl. the time-of-day HourMinute part) must be documented for filter conditions");
 		text.Should().Contain("setFilter",
 			because: "the modify-business-process setFilter/clearFilter ops must be documented for editing a filter on an existing process");
+		text.Should().Contain("\"name\": \"Start1\"",
+			because: "elements are name-keyed: the signalStart filter example must use `name` so an agent copying it emits a valid element handle");
+		text.Should().NotContain("\"id\": \"Start1\"",
+			because: "the signalStart filter example must not regress to the id-keyed form, which produces an invalid element handle");
+		text.Should().Contain("never a `processParameter`",
+			because: "the datePart integer bullet must keep the signalStart restriction (a datePart value pairs with a constant, never a processParameter), not the earlier contradictory wording");
 	}
 
 	[Test]
