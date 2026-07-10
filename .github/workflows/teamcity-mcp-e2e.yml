@@ -18,10 +18,11 @@
 # Prerequisites (one-time, outside this repo) - all in place at merge time:
 #   1. TeamCity: Commit Status Publisher on Team_Atf_ClioMcpE2eTests (GitHub App
 #      connection "TeamCity ATF") - DONE; validated against PR #651.
-#   2. GitHub repo secret TEAMCITY_TOKEN - a *least-privilege* TeamCity token that
-#      can only trigger (Run build) these ATF builds. A same-repo PR can edit this
-#      workflow, so the token must not grant more than queueing builds; it
-#      deliberately cannot cancel/stop builds.
+#   2. GitHub repo secret TEAMCITY_TOKEN - a scoped TeamCity token with exactly:
+#      Run build + View project + Comment build (build comment) + Reorder builds
+#      in queue (moveToTop). Nothing more (a same-repo PR can edit this workflow).
+#      Prefer minting it as a dedicated technical user so builds are attributed to
+#      a CI account rather than a person.
 #   3. Repo setting Actions -> "Require approval for all external contributors"
 #      (authoritative fork control; the in-file `if:` guard below is only
 #      defense-in-depth). To be confirmed by a repo admin.
@@ -120,7 +121,9 @@ jobs:
             comment    = @{ text = "clio PR #$env:PR_NUMBER ($env:HEAD_REF$shaSuffix) - MCP e2e via GitHub Actions" }
           } | ConvertTo-Json -Depth 6
 
-          $resp = Invoke-RestMethod -Method Post -Uri "$env:TC_URL/app/rest/buildQueue" `
+          # moveToTop: jump the queue so the advisory e2e starts promptly rather
+          # than waiting behind unrelated builds (needs "Reorder builds in queue").
+          $resp = Invoke-RestMethod -Method Post -Uri "$env:TC_URL/app/rest/buildQueue?moveToTop=true" `
             -Headers @{ Authorization = "Bearer $env:TC_TOKEN"; Accept = 'application/json' } `
             -ContentType 'application/json' -Body $body -TimeoutSec 60
 
