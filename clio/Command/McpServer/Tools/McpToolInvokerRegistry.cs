@@ -109,8 +109,20 @@ public sealed class McpToolInvokerRegistry : IMcpToolInvokerRegistry {
 			foreach (MethodInfo method in EnumerateToolMethods(toolType)) {
 				McpServerTool tool = CreateTool(method, toolType, serviceProvider, createOptions);
 				string toolName = tool.ProtocolTool.Name;
-				if (string.IsNullOrWhiteSpace(toolName) || _tools.ContainsKey(toolName)) {
+				if (string.IsNullOrWhiteSpace(toolName)) {
 					continue;
+				}
+				// Fail fast on a duplicate tool NAME rather than silently keeping the first one: two
+				// [McpServerTool] methods advertising the same name make dispatch ambiguous and would let a
+				// rename land as a silent second definition instead of a catalog alias. There are no
+				// duplicate names in the production catalog today (verified), so this only fires on a
+				// genuine authoring mistake — and because the registry is constructed during the
+				// ValidateOnBuild container build, that mistake surfaces at startup, not on first dispatch.
+				if (_tools.ContainsKey(toolName)) {
+					throw new InvalidOperationException(
+						$"Duplicate MCP tool name '{toolName}' is declared by more than one [McpServerTool] method. " +
+						"Tool names must be unique; represent a renamed/legacy name as an entry in " +
+						$"{nameof(IMcpToolCompatibilityCatalog)} instead of a second [McpServerTool] method.");
 				}
 				_tools[toolName] = tool;
 				_destructive[toolName] = tool.ProtocolTool.Annotations?.DestructiveHint ?? true;

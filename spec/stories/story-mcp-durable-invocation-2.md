@@ -21,7 +21,7 @@ guidance written against the pre-#743 surface self-heals rather than dead-ending
 ## Design
 - New `clio/Command/McpServer/McpDurableCallToolHandler.cs`, registered via `WithCallToolHandler` **at the stdio call-site only** (`BindingsModule.cs:129`, next to `WithStdioServerTransport`) — **not** in the transport-neutral `RegisterMcpServer`, so it does not ship on `mcp-http` (B3).
 - Runs only on `ToolCollection` miss (`context.MatchedPrimitive is null && name not empty`). Pulls `IClioRunExecutor` + `IMcpToolCompatibilityCatalog` from `context.Services`.
-- Resolution order per ADR D2 (catalog-alias precedence; discriminated result).
+- Resolution order per ADR D2 (catalog-alias precedence; discriminated result `Resolved|Disabled|Unknown|Foreign|Ambiguous`). **Remove RestartTool's `RestartInstanceByNameLegacy` (`restart-by-environmentName`) `[McpServerTool]` method here — atomically with wiring catalog consumption** (H7), so the alias is served by the catalog from the same commit that stops registering it as a duplicate method.
 - **Authorization gate = per-tool `Destructive` over the pre-#743 set** (B1):
   - `Destructive==false` → execute via the native-call path (D2b) and return the result + advisory note **in `Content`** (H6: not `_meta`) recommending `clio-run <canonical>` / resident tools.
   - `Destructive==true` or `IsDestructive` fail-closed unknown → **do not execute**; return `confirmation-required` with a ready-to-retry `clio-run-destructive` shape.
