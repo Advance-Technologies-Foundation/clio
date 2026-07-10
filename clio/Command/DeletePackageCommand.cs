@@ -65,7 +65,7 @@
 				CommandSuccess = false;
 
 			} catch (JsonException) {
-				Logger.WriteError($"Unexpected response from server: {response}");
+				Logger.WriteError($"Unexpected response from server: {TextUtilities.SanitizeForDisplay(response)}");
 				CommandSuccess = false;
 			}
 		}

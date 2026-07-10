@@ -35,7 +35,9 @@ public sealed class McpGuidanceForcingTests {
 	// Guide names referenced by the always-on instructions (routing), the routing map, and/or the touched
 	// tool descriptions. Drift guard: every one must resolve in GuidanceCatalog.
 	private static readonly string[] ReferencedGuideNames = [
-		"core-rules", "routing", "page-modification", "business-rules", "business-rule-filters", "dashboards", "dashboard-creation", "dashboard-design", "indicator-widget",
+		"core-rules", "routing", "page-modification",
+		"page-modification-overview", "page-modification-field-contract", "page-modification-containers", "page-modification-components",
+		"business-rules", "business-rule-filters", "dashboards", "dashboard-creation", "dashboard-design", "indicator-widget",
 		"app-modeling", "esq", "esq-filters", "data-bindings"
 	];
 
@@ -225,6 +227,24 @@ public sealed class McpGuidanceForcingTests {
 				because: $"a trigger references get-guidance name={name}; a rename without updating the trigger must fail this test");
 			entry.Article.Text.Should().NotBeNullOrWhiteSpace(
 				because: $"the {name} guide must carry content");
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Companion drift guard (ENG-91556 review follow-up): every page-modification family guide name embedded as a textual cross-reference inside ANY registered guide body must resolve in GuidanceCatalog, so renaming or removing a split sub-guide cannot silently leave a stale prose cross-reference that the name-only ReferencedGuideNames guard would miss.")]
+	public void PageModificationFamilyCrossReferences_InGuideBodies_ShouldAllResolve() {
+		// Arrange: family tokens are lowercase-hyphen, optionally prefixed with `mobile-`.
+		Regex familyToken = new(@"(?:mobile-)?page-modification(?:-[a-z]+)*", RegexOptions.Compiled);
+
+		// Act / Assert: scan every registered guide's article body for family cross-references.
+		foreach (string guideName in GuidanceCatalog.GetNames()) {
+			GuidanceCatalog.TryGet(guideName, out GuidanceCatalogEntry entry).Should().BeTrue(
+				because: $"{guideName} is returned by GetNames so it must resolve in the catalog");
+			foreach (Match match in familyToken.Matches(entry.Article.Text)) {
+				GuidanceCatalog.TryGet(match.Value, out _).Should().BeTrue(
+					because: $"guide '{guideName}' cross-references '{match.Value}' in its text, so that name must exist in GuidanceCatalog — a renamed or removed sub-guide must not leave a stale prose cross-reference");
+			}
 		}
 	}
 
