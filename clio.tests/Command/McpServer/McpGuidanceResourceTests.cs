@@ -244,6 +244,8 @@ public sealed class McpGuidanceResourceTests {
 			because: "handler guidance should state the SCHEMA_HANDLERS container shape directly");
 		article.Text.Should().Contain("Decision tree",
 			because: "handler guidance should front-load the main branching decisions for AI consumers");
+		article.Text.Should().Contain("Do NOT toggle a bound `visible` attribute from a handler",
+			because: "the handler decision tree must route 'hide/show an element until a field is filled' to a page business rule (is-filled-in/is-not-filled-in) and forbid the visible-bound-attribute handler anti-pattern from ENG-92154");
 		article.Text.Should().Contain("Direct request decision table",
 			because: "handler guidance should teach AI callers when direct request wiring is enough");
 		article.Text.Should().Contain("This table covers direct triggers from page config.",
@@ -1438,6 +1440,12 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide must teach lookup-restriction routing as a mechanism taxonomy, not a list of memorized business phrases");
 		article.Text.Should().Contain("never a handler/crt.InitRequest",
 			because: "the guide must steer every lookup-restriction mechanism away from handlers/crt.InitRequest");
+		article.Text.Should().Contain("is-filled-in",
+			because: "the guide must bridge 'hide/show an element until a field is entered' to the is-filled-in condition token (ENG-92154)");
+		article.Text.Should().Contain("is-not-filled-in",
+			because: "the guide must offer the inverse is-not-filled-in token so callers model both directions of a show/hide-until-filled rule");
+		article.Text.Should().Contain("Do NOT toggle element visibility from a handler",
+			because: "the guide must name the visible-bound-attribute-toggled-from-a-handler anti-pattern from ENG-92154 and keep element visibility on a business rule");
 	}
 
 	[Test]
