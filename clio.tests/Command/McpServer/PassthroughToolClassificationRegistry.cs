@@ -532,11 +532,11 @@ internal static class PassthroughToolClassificationRegistry {
 
 		// --- sync-pages (version-probe) ---
 		new("sync-pages", "version-probe", PassthroughScenario.HeaderOnly, typeof(PageSyncToolTests),
-			nameof(PageSyncToolTests.SyncPages_WhenEnvironmentNameIsBlank_ReachesVersionProbeThroughResolver)),
+			nameof(PageSyncToolTests.SyncPages_ShouldReachVersionProbeThroughResolver_WhenEnvironmentNameIsBlank)),
 		new("sync-pages", "version-probe", PassthroughScenario.MixedInput, typeof(PageSyncToolTests),
-			nameof(PageSyncToolTests.SyncPages_WhenVersionProbeResolverRejectsMixedInput_FailsSoftWithoutBypassingResolver)),
+			nameof(PageSyncToolTests.SyncPages_ShouldFailSoftWithoutBypassingResolver_WhenVersionProbeResolverRejectsMixedInput)),
 		new("sync-pages", "version-probe", PassthroughScenario.RegisteredEnvStdio, typeof(PageSyncToolTests),
-			nameof(PageSyncToolTests.SyncPages_WhenEnvironmentResolvesVersion_ScopesChartCatalogToResolvedVersion)),
+			nameof(PageSyncToolTests.SyncPages_ShouldScopeChartCatalogToResolvedVersion_WhenEnvironmentResolvesVersion)),
 		new("sync-pages", "version-probe", PassthroughScenario.RegisteredEnvStdio, typeof(McpHttpNoRegressionE2ETests),
 			nameof(McpHttpNoRegressionE2ETests.Stdio_ShouldExposeTouchedTool_WhenPassthroughUnused)),
 

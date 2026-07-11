@@ -91,7 +91,7 @@ public sealed class PageSyncToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Scopes the registry-driven chart-widget batch validation to the platform version resolved from the target environment")]
-	public async Task SyncPages_WhenEnvironmentResolvesVersion_ScopesChartCatalogToResolvedVersion() {
+	public async Task SyncPages_ShouldScopeChartCatalogToResolvedVersion_WhenEnvironmentResolvesVersion() {
 		// Arrange
 		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommand();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
@@ -1120,7 +1120,7 @@ public sealed class PageSyncToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("AC-01/AC-02 regression guard: a header-only passthrough call (blank/null environment-name) must REACH the platform-version resolver through IToolCommandResolver.Resolve<EnvironmentSettings> and resolve against the header tenant — not merely return a version. Before this fix, ResolvePlatformVersionAsync returned null on a blank name without ever invoking the resolver; asserting only 'a version came back' would not catch that regression, so this test asserts the resolver call was actually received.")]
-	public async Task SyncPages_WhenEnvironmentNameIsBlank_ReachesVersionProbeThroughResolver() {
+	public async Task SyncPages_ShouldReachVersionProbeThroughResolver_WhenEnvironmentNameIsBlank() {
 		// Arrange
 		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommand();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
@@ -1165,7 +1165,7 @@ public sealed class PageSyncToolTests {
 	[Test]
 	[Category("Unit")]
 	[Description("AC-04 mixed input (header AND an explicit environment-name naming a different registered environment): the version probe's settings lookup is rejected by the resolver's passthrough guard BEFORE any named-tenant lookup can run, and fails SOFT to 'latest' without ever touching the named environment's stored credentials — proved structurally by asserting the resolver-factory's Create(settings) (which would start an authenticated probe against a resolved environment) was never reached.")]
-	public async Task SyncPages_WhenVersionProbeResolverRejectsMixedInput_FailsSoftWithoutBypassingResolver() {
+	public async Task SyncPages_ShouldFailSoftWithoutBypassingResolver_WhenVersionProbeResolverRejectsMixedInput() {
 		// Arrange
 		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommand();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
