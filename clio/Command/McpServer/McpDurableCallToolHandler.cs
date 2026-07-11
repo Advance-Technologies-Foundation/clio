@@ -52,6 +52,9 @@ public sealed class McpDurableCallToolHandler(
 	internal const string CodeConfirmationRequired = "confirmation-required";
 	internal const string CodeFeatureDisabled = "feature-disabled";
 
+	// StructuredContent payload key shared by every outcome that echoes the caller's requested name.
+	private const string RequestedNameKey = "requested-name";
+
 	// Every CLI [Verb] name and alias in the assembly, for classifying a requested name that is a real
 	// clio CLI verb but has no MCP tool. Deliberately unfiltered by feature toggles: the classification
 	// message only says "this is a CLI verb, not an MCP tool", which is true either way.
@@ -150,7 +153,7 @@ public sealed class McpDurableCallToolHandler(
 		result.Content = content;
 		result.Meta ??= new JsonObject();
 		result.Meta["durable-invocation"] = new JsonObject {
-			["requested-name"] = requestedName,
+			[RequestedNameKey] = requestedName,
 			["dispatched-tool"] = canonicalName,
 			["via-alias"] = viaAlias,
 			["destructive"] = false,
@@ -177,7 +180,7 @@ public sealed class McpDurableCallToolHandler(
 			$"`clio-run-destructive` with {{\"command\":\"{canonicalName}\",\"args\":{{…}}}} (re-supply your " +
 			"own arguments under `args`) — the host gates that call.";
 		return StructuredOutcome(CodeConfirmationRequired, text, correlationId, payload => {
-			payload["requested-name"] = requestedName;
+			payload[RequestedNameKey] = requestedName;
 			payload["canonical-name"] = canonicalName;
 			payload["destructive"] = true;
 			if (nativeArguments is { Count: > 0 }) {
@@ -201,7 +204,7 @@ public sealed class McpDurableCallToolHandler(
 			$"'{requestedName}' is a deprecated name; its replacement is '{replacement}', which is not " +
 			$"currently invokable. {ToolContractGetTool.DiscoveryHint}";
 		return StructuredOutcome(CodeDeprecatedToolAlias, text, correlationId, payload => {
-			payload["requested-name"] = requestedName;
+			payload[RequestedNameKey] = requestedName;
 			payload["replacement"] = replacement;
 			payload["candidates"] = ToJsonArray(suggestions);
 		});
@@ -233,12 +236,12 @@ public sealed class McpDurableCallToolHandler(
 			$"'{requestedName}' is not a clio tool (owner: {aliasEntry.Owner}). " +
 			$"{ToolContractGetTool.DiscoveryHint}";
 		return StructuredOutcome(CodeForeignCommand, text, correlationId, payload => {
-			payload["requested-name"] = requestedName;
+			payload[RequestedNameKey] = requestedName;
 			payload["owner"] = aliasEntry.Owner.ToString();
 		});
 	}
 
-	private CallToolResult UnknownToolResult(
+	private static CallToolResult UnknownToolResult(
 		string requestedName,
 		IReadOnlyList<string> suggestions,
 		string correlationId) {
@@ -249,7 +252,7 @@ public sealed class McpDurableCallToolHandler(
 			$"Unknown tool '{requestedName}'. It is not a registered clio MCP tool.{didYouMean} " +
 			ToolContractGetTool.DiscoveryHint;
 		return StructuredOutcome(CodeUnknownTool, text, correlationId, payload => {
-			payload["requested-name"] = requestedName;
+			payload[RequestedNameKey] = requestedName;
 			payload["candidates"] = ToJsonArray(suggestions);
 		});
 	}
@@ -306,10 +309,8 @@ public sealed class McpDurableCallToolHandler(
 				continue;
 			}
 			names.Add(verb.Name);
-			foreach (string alias in verb.Aliases ?? []) {
-				if (!string.IsNullOrWhiteSpace(alias)) {
-					names.Add(alias);
-				}
+			foreach (string alias in (verb.Aliases ?? []).Where(alias => !string.IsNullOrWhiteSpace(alias))) {
+				names.Add(alias);
 			}
 		}
 		return names;

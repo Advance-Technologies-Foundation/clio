@@ -157,6 +157,14 @@ public sealed class McpToolCompatibilityCatalog : IMcpToolCompatibilityCatalog {
 
 	private static IReadOnlyDictionary<string, (string, McpToolCompatibilityEntry)> BuildValidatedAliasIndex(
 		IReadOnlyList<McpToolCompatibilityEntry> entries) {
+		HashSet<string> canonicals = ValidateAndCollectCanonicals(entries);
+		return BuildAliasIndex(entries, canonicals);
+	}
+
+	// Validates every entry's canonical name (non-null, non-empty, not an executor name, not a
+	// duplicate) and returns the collected set — split out from BuildValidatedAliasIndex to keep each
+	// validation pass independently readable (cognitive-complexity budget).
+	private static HashSet<string> ValidateAndCollectCanonicals(IReadOnlyList<McpToolCompatibilityEntry> entries) {
 		HashSet<string> canonicals = new(StringComparer.OrdinalIgnoreCase);
 		foreach (McpToolCompatibilityEntry entry in entries) {
 			if (entry is null) {
@@ -175,25 +183,21 @@ public sealed class McpToolCompatibilityCatalog : IMcpToolCompatibilityCatalog {
 					$"Compatibility catalog declares canonical name '{entry.CanonicalName}' more than once.");
 			}
 		}
+		return canonicals;
+	}
 
+	// Validates every entry's aliases (non-empty, not an executor name, not colliding with a canonical,
+	// not duplicated) against the already-validated canonical set and builds the alias -> canonical
+	// lookup.
+	private static Dictionary<string, (string, McpToolCompatibilityEntry)> BuildAliasIndex(
+		IReadOnlyList<McpToolCompatibilityEntry> entries,
+		HashSet<string> canonicals) {
 		Dictionary<string, (string, McpToolCompatibilityEntry)> aliasIndex =
 			new(StringComparer.OrdinalIgnoreCase);
 		foreach (McpToolCompatibilityEntry entry in entries) {
 			foreach (string alias in entry.Aliases ?? Array.Empty<string>()) {
-				if (!string.IsNullOrWhiteSpace(alias)
-					&& ExecutorToolNames.Contains(alias.Trim(), StringComparer.OrdinalIgnoreCase)) {
-					throw new InvalidOperationException(
-						$"Compatibility catalog must not declare the executor tool name '{alias}' as an alias.");
-				}
-				if (string.IsNullOrWhiteSpace(alias)) {
-					throw new InvalidOperationException(
-						$"Compatibility catalog entry for canonical '{entry.CanonicalName}' declares an empty alias.");
-				}
+				ValidateAlias(alias, entry, canonicals);
 				string trimmedAlias = alias.Trim();
-				if (canonicals.Contains(trimmedAlias)) {
-					throw new InvalidOperationException(
-						$"Compatibility catalog alias '{alias}' collides with a canonical tool name.");
-				}
 				if (!aliasIndex.TryAdd(trimmedAlias, (entry.CanonicalName.Trim(), entry))) {
 					throw new InvalidOperationException(
 						$"Compatibility catalog declares alias '{alias}' more than once.");
@@ -201,5 +205,23 @@ public sealed class McpToolCompatibilityCatalog : IMcpToolCompatibilityCatalog {
 			}
 		}
 		return aliasIndex;
+	}
+
+	private static void ValidateAlias(
+		string alias,
+		McpToolCompatibilityEntry entry,
+		HashSet<string> canonicals) {
+		if (string.IsNullOrWhiteSpace(alias)) {
+			throw new InvalidOperationException(
+				$"Compatibility catalog entry for canonical '{entry.CanonicalName}' declares an empty alias.");
+		}
+		if (ExecutorToolNames.Contains(alias.Trim(), StringComparer.OrdinalIgnoreCase)) {
+			throw new InvalidOperationException(
+				$"Compatibility catalog must not declare the executor tool name '{alias}' as an alias.");
+		}
+		if (canonicals.Contains(alias.Trim())) {
+			throw new InvalidOperationException(
+				$"Compatibility catalog alias '{alias}' collides with a canonical tool name.");
+		}
 	}
 }
