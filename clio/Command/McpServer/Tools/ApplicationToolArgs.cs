@@ -215,18 +215,17 @@ public sealed record ApplicationSectionDeleteArgs(
 );
 
 /// <summary>
-/// MCP arguments for the <c>application-section-get-list</c> tool.
+/// MCP arguments for the <c>list-app-sections</c> tool.
 /// </summary>
 public sealed record ApplicationSectionGetListArgs(
-	[property: JsonPropertyName("environment-name")]
-	[property: Description(McpToolDescriptions.EnvironmentName)]
-	[property: Required]
-	string EnvironmentName,
-
 	[property: JsonPropertyName("application-code")]
 	[property: Description("Installed application code.")]
 	[property: Required]
-	string ApplicationCode
+	string ApplicationCode,
+
+	[property: JsonPropertyName("environment-name")]
+	[property: Description(McpToolDescriptions.EnvironmentName + " Optional under credential passthrough.")]
+	string? EnvironmentName = null
 );
 
 /// <summary>

@@ -543,10 +543,22 @@ public sealed class ApplicationSectionDeleteTool(
 }
 
 /// <summary>
-/// MCP tool surface for listing sections of an existing Creatio application.
+/// MCP tool surface for listing sections of an existing Creatio application. Resolves the target
+/// environment per request through <see cref="IToolCommandResolver"/> so the tool honors the
+/// mcp-http credential-passthrough header (<c>X-Integration-Credentials</c>) as well as
+/// registered-environment / stdio targets, and executes under the per-tenant lock and in-flight
+/// guard (FR-05, ENG-93347). The settings-based <see cref="IApplicationSectionGetListService"/>
+/// overload routes the nested <c>FindApplicationId</c> call to the resolved tenant.
 /// </summary>
 [McpServerToolType]
-public sealed class ApplicationSectionGetListTool(IApplicationSectionGetListService applicationSectionGetListService) {
+public sealed class ApplicationSectionGetListTool(
+	ILogger logger,
+	IToolCommandResolver commandResolver,
+	IApplicationSectionGetListService applicationSectionGetListService)
+	: BaseTool<EnvironmentOptions>(null, logger, commandResolver) {
+
+	private readonly IToolCommandResolver _commandResolver = commandResolver;
+
 	/// <summary>
 	/// Stable MCP tool name for listing sections of existing Creatio applications.
 	/// </summary>
@@ -559,7 +571,7 @@ public sealed class ApplicationSectionGetListTool(IApplicationSectionGetListServ
 		OpenWorld = false)]
 	[Description("Gets the list of sections inside an existing application in Creatio through backend MCP and returns structured section list data. Long-running: streams notifications/progress while working — await completion and do not retry on a perceived timeout.")]
 	public async Task<ApplicationSectionListContextResponse> ApplicationSectionGetList(
-		[Description("Parameters: environment-name, application-code (both required)")]
+		[Description("Parameters: application-code (required); environment-name (required unless passthrough)")]
 		[Required]
 		ApplicationSectionGetListArgs args,
 		global::ModelContextProtocol.Server.McpServer server,
@@ -570,13 +582,23 @@ public sealed class ApplicationSectionGetListTool(IApplicationSectionGetListServ
 				throw new ArgumentException("application-code is required.");
 			}
 
+			EnvironmentOptions options = new() { Environment = args.EnvironmentName };
+			// ExecuteWithCleanLog(options, ...) — the OPTIONS-AWARE overload — keys the execution lock and
+			// the session-container in-flight guard off THIS call's tenant (FR-05), not the shared fallback.
+			// It runs INSIDE the heartbeat work delegate so the lock is held on the worker thread for the
+			// whole synchronous backend call and never across an await.
 			ApplicationSectionGetListResult result = await McpProgressHeartbeat.RunWithProgressAsync(
 				server,
 				requestContext?.Params?.ProgressToken,
 				ApplicationSectionGetListToolName,
-				() => applicationSectionGetListService.GetSections(
-					args.EnvironmentName,
-					new ApplicationSectionGetListRequest(args.ApplicationCode)),
+				() => ExecuteWithCleanLog(options, () => {
+					// Resolve the tenant FIRST: mixed header + environment-name input is rejected here by
+					// the resolver's transport policy before ANY Creatio-reaching call (AC-04).
+					EnvironmentSettings settings = _commandResolver.Resolve<EnvironmentSettings>(options);
+					return applicationSectionGetListService.GetSections(
+						settings,
+						new ApplicationSectionGetListRequest(args.ApplicationCode));
+				}),
 				cancellationToken).ConfigureAwait(false);
 			return ApplicationToolHelper.CreateSectionListContextResponse(ApplicationToolResultMapper.Map(result));
 		} catch (Exception ex) {

@@ -1453,7 +1453,12 @@ public sealed class ApplicationToolTests {
 	public void ApplicationSectionGetList_Should_Return_Structured_Success_Envelope() {
 		// Arrange
 		IApplicationSectionGetListService applicationSectionGetListService = Substitute.For<IApplicationSectionGetListService>();
-		applicationSectionGetListService.GetSections("sandbox", Arg.Any<ApplicationSectionGetListRequest>())
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		EnvironmentSettings resolvedSettings = new() { Uri = "https://sandbox.example.com" };
+		commandResolver.Resolve<EnvironmentSettings>(
+				Arg.Is<EnvironmentOptions>(options => options.Environment == "sandbox"))
+			.Returns(resolvedSettings);
+		applicationSectionGetListService.GetSections(resolvedSettings, Arg.Any<ApplicationSectionGetListRequest>())
 			.Returns(new ApplicationSectionGetListResult(
 				"pkg-uid",
 				"UsrOrdersApp",
@@ -1474,16 +1479,17 @@ public sealed class ApplicationToolTests {
 						"#A6DE00",
 						null)
 				]));
-		ApplicationSectionGetListTool tool = new(applicationSectionGetListService);
+		ApplicationSectionGetListTool tool = new(
+			Substitute.For<ILogger>(), commandResolver, applicationSectionGetListService);
 
 		// Act
 		ApplicationSectionListContextResponse result = tool.ApplicationSectionGetList(new ApplicationSectionGetListArgs(
-			EnvironmentName: "sandbox",
-			ApplicationCode: "UsrOrdersApp"));
+			ApplicationCode: "UsrOrdersApp",
+			EnvironmentName: "sandbox"));
 
 		// Assert
 		applicationSectionGetListService.Received(1).GetSections(
-			"sandbox",
+			resolvedSettings,
 			Arg.Is<ApplicationSectionGetListRequest>(request =>
 				request.ApplicationCode == "UsrOrdersApp"));
 		result.Success.Should().BeTrue(
@@ -1504,19 +1510,21 @@ public sealed class ApplicationToolTests {
 	public void ApplicationSectionGetList_Should_Return_Error_When_ApplicationCode_Is_Missing() {
 		// Arrange
 		IApplicationSectionGetListService applicationSectionGetListService = Substitute.For<IApplicationSectionGetListService>();
-		ApplicationSectionGetListTool tool = new(applicationSectionGetListService);
+		ApplicationSectionGetListTool tool = new(
+			Substitute.For<ILogger>(), Substitute.For<IToolCommandResolver>(), applicationSectionGetListService);
 
 		// Act
 		ApplicationSectionListContextResponse result = tool.ApplicationSectionGetList(new ApplicationSectionGetListArgs(
-			EnvironmentName: "sandbox",
-			ApplicationCode: null!));
+			ApplicationCode: null!,
+			EnvironmentName: "sandbox"));
 
 		// Assert
 		result.Success.Should().BeFalse(
 			because: "tool validation failures should be returned as structured error payloads");
 		result.Error.Should().Match("*application-code is required*",
 			because: "the tool should explain that application-code is the required selector for section discovery");
-		applicationSectionGetListService.DidNotReceiveWithAnyArgs().GetSections(default!, default!);
+		applicationSectionGetListService.DidNotReceiveWithAnyArgs().GetSections(default(string)!, default!);
+		applicationSectionGetListService.DidNotReceiveWithAnyArgs().GetSections(default(EnvironmentSettings)!, default!);
 	}
 
 	[Test]
@@ -2073,7 +2081,10 @@ public sealed class ApplicationToolTests {
 	public async Task ApplicationSectionGetList_ShouldReturnStructuredResult_AndCallServiceOnce_WhenInvokedThroughHeartbeatContract() {
 		// Arrange
 		IApplicationSectionGetListService applicationSectionGetListService = Substitute.For<IApplicationSectionGetListService>();
-		applicationSectionGetListService.GetSections("sandbox", Arg.Any<ApplicationSectionGetListRequest>())
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		EnvironmentSettings resolvedSettings = new() { Uri = "https://sandbox.example.com" };
+		commandResolver.Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>()).Returns(resolvedSettings);
+		applicationSectionGetListService.GetSections(resolvedSettings, Arg.Any<ApplicationSectionGetListRequest>())
 			.Returns(new ApplicationSectionGetListResult(
 				"pkg-uid",
 				"UsrOrdersApp",
@@ -2086,18 +2097,19 @@ public sealed class ApplicationToolTests {
 						"section-id", "UsrOrders", "Orders", "Order workspace", "UsrOrder",
 						"pkg-uid", "section-schema-uid", "icon-id", "#A6DE00", null)
 				]));
-		ApplicationSectionGetListTool tool = new(applicationSectionGetListService);
+		ApplicationSectionGetListTool tool = new(
+			Substitute.For<ILogger>(), commandResolver, applicationSectionGetListService);
 
 		// Act — full signature: a null server means no progress token, so the heartbeat runs the work inline.
 		ApplicationSectionListContextResponse result = await tool.ApplicationSectionGetList(
-			new ApplicationSectionGetListArgs(EnvironmentName: "sandbox", ApplicationCode: "UsrOrdersApp"),
+			new ApplicationSectionGetListArgs(ApplicationCode: "UsrOrdersApp", EnvironmentName: "sandbox"),
 			server: null,
 			requestContext: null,
 			cancellationToken: default);
 
 		// Assert
 		applicationSectionGetListService.Received(1).GetSections(
-			"sandbox",
+			resolvedSettings,
 			Arg.Is<ApplicationSectionGetListRequest>(request => request.ApplicationCode == "UsrOrdersApp"));
 		result.Success.Should().BeTrue(
 			because: "the heartbeat wrapper must be transparent and must not alter a successful section-list response");

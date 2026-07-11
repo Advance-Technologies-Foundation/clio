@@ -1531,9 +1531,10 @@ internal static class ToolContractCatalog {
 			ApplicationSectionGetListTool.ApplicationSectionGetListToolName,
 			"Returns the list of sections of an existing installed application and their metadata.",
 			new ToolInputSchemaContract(
-				[EnvironmentNameFieldName, ApplicationCodeFieldName],
+				[ApplicationCodeFieldName],
 				[
-					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription
+						+ " Required on stdio / registered-environment transports; omit under credential passthrough — the X-Integration-Credentials header supplies the target tenant."),
 					Field(ApplicationCodeFieldName, StringType, InstalledApplicationCodeDescription)
 				]),
 			EnvelopeOutput(

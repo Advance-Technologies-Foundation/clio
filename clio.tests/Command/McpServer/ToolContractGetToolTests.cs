@@ -1160,6 +1160,30 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Returns the canonical existing-app section-list contract with environment-name schema-optional (FR-05a, ENG-93347).")]
+	public void ToolContractGet_Should_Return_ApplicationSectionGetList_Contract() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
+			ApplicationSectionGetListTool.ApplicationSectionGetListToolName
+		]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "get-tool-contract should expose the list-app-sections contract");
+		ToolContractDefinition contract = result.Tools!.Single();
+		contract.Name.Should().Be(ApplicationSectionGetListTool.ApplicationSectionGetListToolName,
+			because: "the requested tool contract should be returned verbatim");
+		contract.InputSchema.Required.Should().Contain(["application-code"],
+			because: "section-list requires application-code as the selector payload");
+		contract.InputSchema.Required.Should().NotContain("environment-name",
+			because: "environment-name is schema-optional (FR-05a, ENG-93347): passthrough supplies the tenant via the X-Integration-Credentials header, while non-passthrough requiredness is enforced by the resolver at runtime");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Returns the full canonical entity-schema contract surface with authoritative flows and metadata from clio.")]
 	public void ToolContractGet_Should_Return_Canonical_EntitySchema_Surface() {
 		// Arrange

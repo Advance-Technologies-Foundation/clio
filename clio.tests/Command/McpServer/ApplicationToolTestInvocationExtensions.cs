@@ -75,4 +75,10 @@ internal static class ApplicationToolTestInvocationExtensions {
 		this ApplicationSectionGetListTool tool, ApplicationSectionGetListArgs args) =>
 		tool.ApplicationSectionGetList(args, server: null, requestContext: null, cancellationToken: default)
 			.GetAwaiter().GetResult();
+
+	public static Task<ApplicationSectionListContextResponse> ApplicationSectionGetList(
+		this ApplicationSectionGetListTool tool,
+		ApplicationSectionGetListArgs args,
+		global::ModelContextProtocol.Server.McpServer server) =>
+		tool.ApplicationSectionGetList(args, server, requestContext: null, cancellationToken: default);
 }

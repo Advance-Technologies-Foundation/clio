@@ -1086,7 +1086,7 @@ stories:
     title: "list-app-sections — route through the resolver, including nested FindApplicationId (class c1)"
     feature: "mcp-passthrough-tool-parity"
     size: S
-    status: ready-for-dev
+    status: in-progress
     note: "Serialized c1 chain: LAST — starts after story 8 merges (shared ApplicationTool.cs)."
     file: spec/stories/story-mcp-passthrough-tool-parity-9.md
     prd: spec/prd/prd-mcp-passthrough-tool-parity.md
