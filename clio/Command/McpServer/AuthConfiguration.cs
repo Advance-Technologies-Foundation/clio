@@ -13,14 +13,16 @@ namespace Clio.Command.McpServer;
 /// <param name="RequiredScopes">Value of <see cref="AuthConfiguration.RequiredScopesEnvironmentVariableName"/>.</param>
 /// <param name="Issuer">Value of <see cref="AuthConfiguration.IssuerEnvironmentVariableName"/>.</param>
 /// <param name="AllowInsecureMetadata">Value of <see cref="AuthConfiguration.AllowInsecureMetadataEnvironmentVariableName"/>.</param>
+/// <param name="Resource">Value of <see cref="AuthConfiguration.ResourceEnvironmentVariableName"/>.</param>
 public sealed record AuthEnvironment(
 	string Authority,
 	string Audience,
 	string RequiredScopes,
 	string Issuer,
-	string AllowInsecureMetadata)
+	string AllowInsecureMetadata,
+	string Resource = null)
 {
-	/// <summary>Reads the five auth environment variables from the process environment.</summary>
+	/// <summary>Reads the auth environment variables from the process environment.</summary>
 	/// <returns>An <see cref="AuthEnvironment"/> populated from the current process environment.</returns>
 	public static AuthEnvironment FromProcessEnvironment() =>
 		new(
@@ -28,7 +30,8 @@ public sealed record AuthEnvironment(
 			Environment.GetEnvironmentVariable(AuthConfiguration.AudienceEnvironmentVariableName),
 			Environment.GetEnvironmentVariable(AuthConfiguration.RequiredScopesEnvironmentVariableName),
 			Environment.GetEnvironmentVariable(AuthConfiguration.IssuerEnvironmentVariableName),
-			Environment.GetEnvironmentVariable(AuthConfiguration.AllowInsecureMetadataEnvironmentVariableName));
+			Environment.GetEnvironmentVariable(AuthConfiguration.AllowInsecureMetadataEnvironmentVariableName),
+			Environment.GetEnvironmentVariable(AuthConfiguration.ResourceEnvironmentVariableName));
 }
 
 /// <summary>
@@ -61,6 +64,12 @@ public sealed record AuthConfiguration
 	public const string AllowInsecureMetadataEnvironmentVariableName =
 		"CLIO_MCP_HTTP_AUTH_ALLOW_INSECURE_METADATA";
 
+	/// <summary>
+	/// Environment variable carrying an explicit Protected Resource Metadata "resource" override
+	/// (single value; optional).
+	/// </summary>
+	public const string ResourceEnvironmentVariableName = "CLIO_MCP_HTTP_AUTH_RESOURCE";
+
 	private AuthConfiguration() { }
 
 	/// <summary>The OIDC discovery authority JwtBearer fetches metadata / JWKS from. Empty ⇒ disabled.</summary>
@@ -83,6 +92,15 @@ public sealed record AuthConfiguration
 	/// <see langword="false"/> only for an internal-DNS HTTP authority (via the allow-insecure flag/env).
 	/// </summary>
 	public bool RequireHttpsMetadata { get; private init; } = true;
+
+	/// <summary>
+	/// An explicit Protected Resource Metadata "resource" (canonical MCP endpoint URI) override.
+	/// Empty by default: the SDK's <c>McpAuthenticationHandler</c> then derives it per-request from the
+	/// incoming scheme/host/path, which is correct behind any ingress that forwards the Host header
+	/// (the common case) without clio needing to know its own externally-visible URL. Set only when
+	/// auto-derivation is wrong for a specific deployment (e.g. a path-rewriting proxy).
+	/// </summary>
+	public string Resource { get; private init; } = string.Empty;
 
 	/// <summary>
 	/// Whether OAuth Resource-Server authorization is enabled. Enabled iff a discovery
@@ -119,12 +137,15 @@ public sealed record AuthConfiguration
 		bool allowInsecure = options.AuthAllowInsecureMetadata
 			|| IsTruthy(environment.AllowInsecureMetadata);
 
+		string resource = FirstNonBlank(options.AuthResource, environment.Resource)?.Trim() ?? string.Empty;
+
 		return new AuthConfiguration {
 			Authority = authority,
 			Issuers = issuers,
 			Audiences = audiences,
 			RequiredScopes = scopes,
-			RequireHttpsMetadata = !allowInsecure
+			RequireHttpsMetadata = !allowInsecure,
+			Resource = resource
 		};
 	}
 

@@ -16,13 +16,15 @@ public sealed class AuthConfigurationTests
 		string audience = null,
 		string requiredScopes = null,
 		string issuer = null,
-		bool allowInsecureMetadata = false) =>
+		bool allowInsecureMetadata = false,
+		string resource = null) =>
 		new() {
 			AuthAuthority = authority,
 			AuthAudience = audience,
 			AuthRequiredScopes = requiredScopes,
 			AuthIssuer = issuer,
-			AuthAllowInsecureMetadata = allowInsecureMetadata
+			AuthAllowInsecureMetadata = allowInsecureMetadata,
+			AuthResource = resource
 		};
 
 	[Test]
@@ -163,6 +165,44 @@ public sealed class AuthConfigurationTests
 		// Assert
 		sut.RequireHttpsMetadata.Should().BeFalse(
 			because: "a truthy env value ('1') opts into plain-HTTP metadata");
+	}
+
+	[Test]
+	[Description("Resource is empty by default so the SDK derives it per-request.")]
+	public void Resolve_ShouldLeaveResourceEmpty_ByDefault() {
+		// Arrange
+		AuthConfiguration sut = AuthConfiguration.Resolve(
+			Options(authority: "https://id.example"), NoEnvironment);
+
+		// Act & Assert
+		sut.Resource.Should().BeEmpty(
+			because: "no explicit override means per-request auto-derivation is used");
+	}
+
+	[Test]
+	[Description("An explicit --auth-resource flag overrides the empty default.")]
+	public void Resolve_ShouldUseFlagResource_WhenSet() {
+		// Arrange
+		AuthConfiguration sut = AuthConfiguration.Resolve(
+			Options(authority: "https://id.example", resource: "https://mcp.example.com/mcp"), NoEnvironment);
+
+		// Act & Assert
+		sut.Resource.Should().Be("https://mcp.example.com/mcp",
+			because: "an explicit override is carried through verbatim (trimmed)");
+	}
+
+	[Test]
+	[Description("The resource env var is used when the flag is blank.")]
+	public void Resolve_ShouldUseEnvResource_WhenFlagBlank() {
+		// Arrange
+		AuthEnvironment env = new(null, null, null, null, null, "https://env.mcp.example.com/mcp");
+
+		// Act
+		AuthConfiguration sut = AuthConfiguration.Resolve(Options(authority: "https://id.example"), env);
+
+		// Assert
+		sut.Resource.Should().Be("https://env.mcp.example.com/mcp",
+			because: "the env var is the fallback source for the single-valued resource override");
 	}
 
 	[Test]

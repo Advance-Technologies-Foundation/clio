@@ -967,9 +967,10 @@ stories:
     title: "Protected Resource Metadata + WWW-Authenticate (SDK handler)"
     feature: "mcp-http-standard-authorization"
     size: S
-    status: ready-for-dev
+    status: done
     depends_on: [story-mcp-http-standard-authorization-2, story-mcp-http-standard-authorization-3]
     blocks: [story-mcp-http-standard-authorization-5]
+    note: "DONE 2026-07-11. OQ-F resolved by decompiling pinned SDK 1.4.0: AddMcp() default ForwardAuthenticate=\"Bearer\" matches JwtBearerDefaults; DefaultChallengeScheme=McpAuth routes 401 through McpAuthenticationHandler (RFC 9728 resource_metadata challenge); handler is IAuthenticationRequestHandler so .well-known is served unconditionally+anonymously, no endpoint mapping needed. ProtectedResourceMetadata ships in transitive ModelContextProtocol.Core, no new package. OQ-C resolved by design (Resource left null -> per-request auto-derivation from Host header; --auth-resource override available). Verified with REAL TestServer pipeline (McpHttpAuthenticationPipelineTests): 401+WWW-Authenticate, anonymous .well-known, valid->200, wrong-aud/expired->401, missing-scope->403. 11 new tests."
     file: spec/stories/story-mcp-http-standard-authorization-4.md
 
   - id: story-mcp-http-standard-authorization-5

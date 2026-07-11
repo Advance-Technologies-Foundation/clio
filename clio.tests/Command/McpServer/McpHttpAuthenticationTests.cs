@@ -22,14 +22,16 @@ public sealed class McpHttpAuthenticationTests
 		string audience = "creatio_ai_api",
 		string requiredScopes = null,
 		string issuer = null,
-		bool allowInsecureMetadata = false) =>
+		bool allowInsecureMetadata = false,
+		string resource = null) =>
 		AuthConfiguration.Resolve(
 			new McpHttpServerCommandOptions {
 				AuthAuthority = authority,
 				AuthAudience = audience,
 				AuthRequiredScopes = requiredScopes,
 				AuthIssuer = issuer,
-				AuthAllowInsecureMetadata = allowInsecureMetadata
+				AuthAllowInsecureMetadata = allowInsecureMetadata,
+				AuthResource = resource
 			},
 			new AuthEnvironment(null, null, null, null, null));
 
@@ -178,6 +180,66 @@ public sealed class McpHttpAuthenticationTests
 		// Act & Assert
 		McpHttpAuthentication.HasRequiredScopes(null, ["mcp:tools"]).Should().BeFalse(
 			because: "an absent principal cannot carry any scope");
+	}
+
+	[Test]
+	[Description("Resource metadata advertises the explicit issuer set as the authorization server(s).")]
+	public void BuildResourceMetadata_ShouldAdvertiseExplicitIssuers() {
+		// Arrange & Act
+		ModelContextProtocol.Authentication.ProtectedResourceMetadata metadata =
+			McpHttpAuthentication.BuildResourceMetadata(Config(issuer: "https://id.example"));
+
+		// Assert
+		metadata.AuthorizationServers.Should().ContainSingle().Which.Should().Be("https://id.example",
+			because: "the explicit issuer set is advertised as the authorization server");
+	}
+
+	[Test]
+	[Description("Resource metadata falls back to the discovery authority when no explicit issuer is configured.")]
+	public void BuildResourceMetadata_ShouldFallBackToAuthority_WhenNoIssuerConfigured() {
+		// Arrange & Act
+		ModelContextProtocol.Authentication.ProtectedResourceMetadata metadata =
+			McpHttpAuthentication.BuildResourceMetadata(Config(authority: "https://id.example", issuer: null));
+
+		// Assert
+		metadata.AuthorizationServers.Should().ContainSingle().Which.Should().Be("https://id.example",
+			because: "with no explicit issuer, the discovery authority is the best-known authorization server");
+	}
+
+	[Test]
+	[Description("Resource metadata advertises the configured required scopes.")]
+	public void BuildResourceMetadata_ShouldAdvertiseRequiredScopes() {
+		// Arrange & Act
+		ModelContextProtocol.Authentication.ProtectedResourceMetadata metadata =
+			McpHttpAuthentication.BuildResourceMetadata(Config(requiredScopes: "mcp:tools,mcp:admin"));
+
+		// Assert
+		metadata.ScopesSupported.Should().BeEquivalentTo(["mcp:tools", "mcp:admin"],
+			because: "the configured required scopes are advertised to clients");
+	}
+
+	[Test]
+	[Description("Resource is left null by default so the SDK derives it per-request from the incoming URL.")]
+	public void BuildResourceMetadata_ShouldLeaveResourceNull_ByDefault() {
+		// Arrange & Act
+		ModelContextProtocol.Authentication.ProtectedResourceMetadata metadata =
+			McpHttpAuthentication.BuildResourceMetadata(Config());
+
+		// Assert
+		metadata.Resource.Should().BeNull(
+			because: "no explicit override means the handler auto-derives Resource per-request");
+	}
+
+	[Test]
+	[Description("An explicit Resource override is carried through to the metadata document.")]
+	public void BuildResourceMetadata_ShouldUseExplicitResource_WhenConfigured() {
+		// Arrange & Act
+		ModelContextProtocol.Authentication.ProtectedResourceMetadata metadata =
+			McpHttpAuthentication.BuildResourceMetadata(Config(resource: "https://mcp.example.com/mcp"));
+
+		// Assert
+		metadata.Resource.Should().Be("https://mcp.example.com/mcp",
+			because: "an explicit override must win over per-request auto-derivation");
 	}
 
 	[Test]

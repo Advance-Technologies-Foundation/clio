@@ -88,6 +88,13 @@ public class McpHttpServerCommandOptions : BaseCommandOptions
 			+ "CLIO_MCP_HTTP_AUTH_ALLOW_INSECURE_METADATA). Default is HTTPS-only; set this only for an "
 			+ "internal-DNS HTTP authority on a trusted network.")]
 	public bool AuthAllowInsecureMetadata { get; set; }
+
+	[Option("auth-resource", Required = false,
+		HelpText = "Explicit Protected Resource Metadata 'resource' (canonical MCP endpoint URI) override "
+			+ "(also CLIO_MCP_HTTP_AUTH_RESOURCE). Unset (default) => derived per-request from the "
+			+ "incoming scheme/host/path, which is correct behind any ingress that forwards the Host "
+			+ "header. Set only when auto-derivation is wrong for this deployment.")]
+	public string AuthResource { get; set; }
 }
 
 /// <summary>

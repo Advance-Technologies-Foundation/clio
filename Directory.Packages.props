@@ -34,6 +34,11 @@ See docs: https://devblogs.microsoft.com/dotnet/introducing-central-package-mana
                     Condition="'$(TargetFramework)' == 'net10.0'" />
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.11"
                     Condition="'$(TargetFramework)' != 'net10.0'" />
+    <!-- Test-only in-memory ASP.NET Core pipeline (ENG-93386); same per-TFM split as JwtBearer above. -->
+    <PackageVersion Include="Microsoft.AspNetCore.TestHost" Version="$(MsPackageVersion)"
+                    Condition="'$(TargetFramework)' == 'net10.0'" />
+    <PackageVersion Include="Microsoft.AspNetCore.TestHost" Version="8.0.11"
+                    Condition="'$(TargetFramework)' != 'net10.0'" />
     <PackageVersion Include="System.Security.Cryptography.Xml" Version="$(MsPackageVersion)" />
     <PackageVersion Include="System.IO.Abstractions" Version="$(SIOVersion)" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="5.3.0" />

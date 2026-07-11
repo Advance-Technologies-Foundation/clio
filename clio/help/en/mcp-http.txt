@@ -93,10 +93,21 @@ OPTIONS
         CLIO_MCP_HTTP_AUTH_ALLOW_INSECURE_METADATA). Default is HTTPS-only; use
         only for an internal-DNS HTTP authority on a trusted network.
 
-    NOTE: full authorization model (OAuth 2.1 Resource Server, .well-known
-    discovery, 401 challenge, endpoint enforcement) is documented as it lands
-    across ENG-93386. Story 2/3 add token validation config; endpoint enforcement
-    arrives in a later story.
+    --auth-resource <uri>
+        Explicit Protected Resource Metadata 'resource' (canonical MCP endpoint
+        URI) override (also CLIO_MCP_HTTP_AUTH_RESOURCE). Unset (default) =>
+        derived per-request from the incoming scheme/host/path, correct behind
+        any ingress that forwards the Host header.
+
+    When authorization is enabled, the edge serves Protected Resource Metadata
+    (RFC 9728) anonymously at /.well-known/oauth-protected-resource, and an
+    unauthenticated/invalid-token request receives 401 with a WWW-Authenticate
+    header naming that discovery URL.
+
+    NOTE: full authorization model (OAuth 2.1 Resource Server, whole-endpoint
+    enforcement) is documented as it lands across ENG-93386. Story 2/3/4 add
+    token validation, scope policy, and RFC 9728 discovery; wiring the policy
+    onto the /mcp endpoint itself arrives in Story 5.
 
 CREDENTIAL PASSTHROUGH (multi-tenant edge)
     Per-request credential passthrough lets a gateway target a different Creatio

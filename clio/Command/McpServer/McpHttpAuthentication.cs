@@ -5,20 +5,37 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
+using ModelContextProtocol.Authentication;
+using McpAspNetAuthentication = ModelContextProtocol.AspNetCore.Authentication;
 
 namespace Clio.Command.McpServer;
 
 /// <summary>
 /// Wires standard OAuth 2.1 Resource-Server authorization for the <c>mcp-http</c> edge (ENG-93386,
-/// Story 3): JWT bearer validation of tokens issued by the configured Authorization Server, plus a
-/// scope authorization policy. Only registered when <see cref="AuthConfiguration.Enabled"/> is true;
+/// Story 3/4): JWT bearer validation of tokens issued by the configured Authorization Server, the SDK's
+/// Protected Resource Metadata (RFC 9728) discovery + <c>WWW-Authenticate</c> challenge enrichment, and
+/// a scope authorization policy. Only registered when <see cref="AuthConfiguration.Enabled"/> is true;
 /// when disabled the caller must NOT add the authentication/authorization middleware (a
 /// <c>UseAuthentication</c> with no registered scheme throws at runtime — fail-safe off).
 /// </summary>
 /// <remarks>
+/// <para>
 /// The scope check is a lambda <c>RequireAssertion</c> policy — deliberately NOT an
 /// <c>IAuthorizationHandler</c>/<c>IAuthorizationRequirement</c> class: clio's assembly-scan DI
 /// registration plus <c>ValidateOnBuild=true</c> would otherwise try to construct such a class.
+/// </para>
+/// <para>
+/// Discovery composition (verified against the decompiled <c>ModelContextProtocol.AspNetCore</c> 1.4.0
+/// <c>McpAuthenticationHandler</c>): its <c>ForwardAuthenticate</c> defaults to <c>"Bearer"</c>, matching
+/// <see cref="JwtBearerDefaults.AuthenticationScheme"/>, so token validation is delegated to the JWT
+/// bearer scheme with no extra wiring. <c>DefaultChallengeScheme</c> is set to the MCP scheme
+/// (<c>McpAuthenticationDefaults.AuthenticationScheme</c>) so a <c>401</c> goes through
+/// <c>McpAuthenticationHandler.HandleChallengeAsync</c>, which appends
+/// <c>WWW-Authenticate: Bearer resource_metadata="..."</c>. The MCP scheme also implements
+/// <c>IAuthenticationRequestHandler</c>, so ASP.NET Core's authentication middleware serves
+/// <c>/.well-known/oauth-protected-resource</c> automatically and unconditionally (before routing /
+/// authorization run) — no extra endpoint mapping is needed.
+/// </para>
 /// </remarks>
 public static class McpHttpAuthentication
 {
@@ -44,14 +61,42 @@ public static class McpHttpAuthentication
 		ArgumentNullException.ThrowIfNull(config);
 
 		services
-			.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-			.AddJwtBearer(options => ConfigureJwtBearer(options, config));
+			.AddAuthentication(options => {
+				// Token validation happens on the JwtBearer scheme; the MCP scheme is the CHALLENGE
+				// scheme so a 401 goes through McpAuthenticationHandler (adds the RFC 9728
+				// resource_metadata WWW-Authenticate parameter) instead of JwtBearer's bare challenge.
+				options.DefaultScheme = JwtBearerDefaults.AuthenticationScheme;
+				options.DefaultChallengeScheme = McpAspNetAuthentication.McpAuthenticationDefaults.AuthenticationScheme;
+			})
+			.AddJwtBearer(options => ConfigureJwtBearer(options, config))
+			.AddMcp(options => options.ResourceMetadata = BuildResourceMetadata(config));
 
 		services.AddAuthorization(options =>
 			options.AddPolicy(PolicyName, policy => {
 				policy.RequireAuthenticatedUser();
 				policy.RequireAssertion(context => HasRequiredScopes(context.User, config.RequiredScopes));
 			}));
+	}
+
+	/// <summary>
+	/// Builds the Protected Resource Metadata (RFC 9728) document: the accepted authorization server(s)
+	/// (the explicit issuer set when configured, else the discovery authority) and supported scopes.
+	/// <see cref="ProtectedResourceMetadata.Resource"/> is left unset unless <see cref="AuthConfiguration.Resource"/>
+	/// is explicitly configured, so the SDK derives it per-request from the incoming scheme/host/path
+	/// (correct behind any Host-forwarding ingress without clio needing to know its own external URL).
+	/// </summary>
+	/// <param name="config">The resolved auth configuration.</param>
+	/// <returns>The resource metadata document for the MCP authentication scheme.</returns>
+	internal static ProtectedResourceMetadata BuildResourceMetadata(AuthConfiguration config) {
+		List<string> authorizationServers = config.Issuers.Count > 0
+			? [.. config.Issuers]
+			: [config.Authority];
+
+		return new ProtectedResourceMetadata {
+			Resource = string.IsNullOrWhiteSpace(config.Resource) ? null : config.Resource,
+			AuthorizationServers = authorizationServers,
+			ScopesSupported = config.RequiredScopes.Count > 0 ? [.. config.RequiredScopes] : null
+		};
 	}
 
 	/// <summary>Applies the resolved configuration to a <see cref="JwtBearerOptions"/> instance.</summary>

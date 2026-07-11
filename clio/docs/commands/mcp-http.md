@@ -58,8 +58,11 @@ every host that can reach the machine on the LAN — use it only on trusted netw
 | `--auth-required-scopes` | _(unset)_ | Comma-separated scope(s) every request must carry, checked against the `scope`/`scp` claim (also `CLIO_MCP_HTTP_AUTH_REQUIRED_SCOPES`). |
 | `--auth-issuer` | _(unset)_ | Comma-separated accepted issuer(s) for the token `iss` (also `CLIO_MCP_HTTP_AUTH_ISSUER`). Optional; defaults to the discovery document's issuer. Use when the public token `iss` differs from the internal `--auth-authority`. |
 | `--auth-allow-insecure-metadata` | `false` | Allow OIDC metadata/JWKS over plain HTTP (also a truthy `CLIO_MCP_HTTP_AUTH_ALLOW_INSECURE_METADATA`). Default HTTPS-only; use only for an internal-DNS HTTP authority on a trusted network. |
+| `--auth-resource` | _(unset)_ | Explicit Protected Resource Metadata `resource` (canonical MCP endpoint URI) override (also `CLIO_MCP_HTTP_AUTH_RESOURCE`). Unset ⇒ derived per-request from the incoming scheme/host/path — correct behind any Host-forwarding ingress. |
 
-> **Note:** the full authorization model (OAuth 2.1 Resource Server, `.well-known/oauth-protected-resource` discovery, 401 `WWW-Authenticate` challenge, whole-endpoint enforcement) lands across ENG-93386. Story 2/3 add the token-validation configuration and JWT bearer validation; endpoint enforcement arrives in a later story.
+When authorization is enabled, the edge serves Protected Resource Metadata (RFC 9728) **anonymously** at `/.well-known/oauth-protected-resource`, and an unauthenticated or invalid-token request receives `401` with a `WWW-Authenticate: Bearer resource_metadata="…"` header naming that discovery URL — powered by the `ModelContextProtocol.AspNetCore` SDK's `McpAuthenticationHandler` (no hand-rolled discovery/challenge code).
+
+> **Note:** the full authorization model (OAuth 2.1 Resource Server, whole-endpoint enforcement) lands across ENG-93386. Story 2/3/4 add the token-validation configuration, JWT bearer validation, and RFC 9728 discovery; wiring the `mcp` authorization policy onto the `/mcp` endpoint itself is Story 5.
 
 ## Credential passthrough (multi-tenant edge)
 
