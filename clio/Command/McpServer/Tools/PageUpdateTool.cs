@@ -270,7 +270,7 @@ public sealed class PageUpdateTool(
 			return null;
 		}
 		try {
-			EnvironmentSettings settings = settingsRepository.GetEnvironment(new EnvironmentOptions {
+			EnvironmentSettings settings = commandResolver.Resolve<EnvironmentSettings>(new EnvironmentOptions {
 				Environment = options.Environment,
 				Uri = options.Uri,
 				Login = options.Login,
