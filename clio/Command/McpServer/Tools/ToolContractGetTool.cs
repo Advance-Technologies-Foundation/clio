@@ -1470,9 +1470,10 @@ internal static class ToolContractCatalog {
 			ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName,
 			"Deletes a section from an existing installed application and returns structured readback of the deleted section.",
 			new ToolInputSchemaContract(
-				[EnvironmentNameFieldName, ApplicationCodeFieldName, SectionCodeFieldName],
+				[ApplicationCodeFieldName, SectionCodeFieldName],
 				[
-					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription
+						+ " Required on stdio / registered-environment transports; omit under credential passthrough — the X-Integration-Credentials header supplies the target tenant."),
 					Field(ApplicationCodeFieldName, StringType, InstalledApplicationCodeDescription),
 					Field(SectionCodeFieldName, StringType, "Existing section code inside the installed application."),
 					Field(DeleteEntitySchemaFieldName, BooleanType,

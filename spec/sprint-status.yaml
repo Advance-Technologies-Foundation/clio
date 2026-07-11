@@ -1069,7 +1069,7 @@ stories:
     title: "delete-app-section — route through the resolver, including nested FindApplicationId (class c1)"
     feature: "mcp-passthrough-tool-parity"
     size: S
-    status: ready-for-dev
+    status: in-progress
     note: "Serialized c1 chain: starts after story 7 merges (shared ApplicationTool.cs)."
     file: spec/stories/story-mcp-passthrough-tool-parity-8.md
     prd: spec/prd/prd-mcp-passthrough-tool-parity.md

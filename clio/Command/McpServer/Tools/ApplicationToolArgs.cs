@@ -195,11 +195,6 @@ public sealed record ApplicationSectionCreateArgs(
 /// MCP arguments for the <c>delete-app-section</c> tool.
 /// </summary>
 public sealed record ApplicationSectionDeleteArgs(
-	[property: JsonPropertyName("environment-name")]
-	[property: Description(McpToolDescriptions.EnvironmentName)]
-	[property: Required]
-	string EnvironmentName,
-
 	[property: JsonPropertyName("application-code")]
 	[property: Description("Installed application code.")]
 	[property: Required]
@@ -210,9 +205,13 @@ public sealed record ApplicationSectionDeleteArgs(
 	[property: Required]
 	string SectionCode,
 
+	[property: JsonPropertyName("environment-name")]
+	[property: Description(McpToolDescriptions.EnvironmentName + " Optional under credential passthrough.")]
+	string? EnvironmentName = null,
+
 	[property: JsonPropertyName("delete-entity-schema")]
 	[property: Description("When true, also deletes the entity schema record. Requires explicit opt-in. WARNING: destructive and irreversible.")]
-	bool? DeleteEntitySchema
+	bool? DeleteEntitySchema = null
 );
 
 /// <summary>

@@ -1525,7 +1525,12 @@ public sealed class ApplicationToolTests {
 	public void ApplicationSectionDelete_Should_Return_Structured_Success_Envelope() {
 		// Arrange
 		IApplicationSectionDeleteService applicationSectionDeleteService = Substitute.For<IApplicationSectionDeleteService>();
-		applicationSectionDeleteService.DeleteSection("sandbox", Arg.Any<ApplicationSectionDeleteRequest>())
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		EnvironmentSettings resolvedSettings = new() { Uri = "https://sandbox.example.com" };
+		commandResolver.Resolve<EnvironmentSettings>(
+				Arg.Is<EnvironmentOptions>(options => options.Environment == "sandbox"))
+			.Returns(resolvedSettings);
+		applicationSectionDeleteService.DeleteSection(resolvedSettings, Arg.Any<ApplicationSectionDeleteRequest>())
 			.Returns(new ApplicationSectionDeleteResult(
 				null,
 				null,
@@ -1544,18 +1549,19 @@ public sealed class ApplicationToolTests {
 					"icon-id",
 					"#A6DE00",
 					null)));
-		ApplicationSectionDeleteTool tool = new(applicationSectionDeleteService);
+		ApplicationSectionDeleteTool tool = new(
+			Substitute.For<ILogger>(), commandResolver, applicationSectionDeleteService);
 
 		// Act
 		ApplicationSectionDeleteContextResponse result = tool.ApplicationSectionDelete(new ApplicationSectionDeleteArgs(
-			EnvironmentName: "sandbox",
 			ApplicationCode: "UsrOrdersApp",
 			SectionCode: "UsrOrders",
+			EnvironmentName: "sandbox",
 			DeleteEntitySchema: false));
 
 		// Assert
 		applicationSectionDeleteService.Received(1).DeleteSection(
-			"sandbox",
+			resolvedSettings,
 			Arg.Is<ApplicationSectionDeleteRequest>(request =>
 				request.ApplicationCode == "UsrOrdersApp" &&
 				request.SectionCode == "UsrOrders" &&
@@ -1578,13 +1584,14 @@ public sealed class ApplicationToolTests {
 	public void ApplicationSectionDelete_Should_Return_Error_When_SectionCode_Is_Missing() {
 		// Arrange
 		IApplicationSectionDeleteService applicationSectionDeleteService = Substitute.For<IApplicationSectionDeleteService>();
-		ApplicationSectionDeleteTool tool = new(applicationSectionDeleteService);
+		ApplicationSectionDeleteTool tool = new(
+			Substitute.For<ILogger>(), Substitute.For<IToolCommandResolver>(), applicationSectionDeleteService);
 
 		// Act
 		ApplicationSectionDeleteContextResponse result = tool.ApplicationSectionDelete(new ApplicationSectionDeleteArgs(
-			EnvironmentName: "sandbox",
 			ApplicationCode: "UsrOrdersApp",
 			SectionCode: " ",
+			EnvironmentName: "sandbox",
 			DeleteEntitySchema: false));
 
 		// Assert
@@ -1592,7 +1599,8 @@ public sealed class ApplicationToolTests {
 			because: "tool validation failures should be returned as structured error payloads");
 		result.Error.Should().Match("*section-code is required*",
 			because: "the tool should explain that section-code identifies the section to remove");
-		applicationSectionDeleteService.DidNotReceiveWithAnyArgs().DeleteSection(default!, default!);
+		applicationSectionDeleteService.DidNotReceiveWithAnyArgs().DeleteSection(default(string)!, default!);
+		applicationSectionDeleteService.DidNotReceiveWithAnyArgs().DeleteSection(default(EnvironmentSettings)!, default!);
 	}
 
 	[Test]

@@ -468,10 +468,22 @@ public sealed class ApplicationSectionUpdateTool(
 }
 
 /// <summary>
-/// MCP tool surface for deleting a section from an existing application.
+/// MCP tool surface for deleting a section from an existing application. Resolves the target
+/// environment per request through <see cref="IToolCommandResolver"/> so the tool honors the
+/// mcp-http credential-passthrough header (<c>X-Integration-Credentials</c>) as well as
+/// registered-environment / stdio targets, and executes under the per-tenant lock and in-flight
+/// guard (FR-05, ENG-93347). The settings-based <see cref="IApplicationSectionDeleteService"/>
+/// overload routes the nested <c>FindApplicationId</c> call to the resolved tenant.
 /// </summary>
 [McpServerToolType]
-public sealed class ApplicationSectionDeleteTool(IApplicationSectionDeleteService applicationSectionDeleteService) {
+public sealed class ApplicationSectionDeleteTool(
+	ILogger logger,
+	IToolCommandResolver commandResolver,
+	IApplicationSectionDeleteService applicationSectionDeleteService)
+	: BaseTool<EnvironmentOptions>(null, logger, commandResolver) {
+
+	private readonly IToolCommandResolver _commandResolver = commandResolver;
+
 	/// <summary>
 	/// Stable MCP tool name for deleting sections from existing Creatio applications.
 	/// </summary>
@@ -484,7 +496,7 @@ public sealed class ApplicationSectionDeleteTool(IApplicationSectionDeleteServic
 		OpenWorld = false)]
 	[Description("Deletes a section from an existing application in Creatio through backend MCP and returns structured deleted-section readback data. Long-running: streams notifications/progress while working — await completion and do not retry on a perceived timeout.")]
 	public async Task<ApplicationSectionDeleteContextResponse> ApplicationSectionDelete(
-		[Description("Parameters: environment-name, application-code, section-code (all required)")]
+		[Description("Parameters: environment-name (required unless passthrough), application-code, section-code (all required)")]
 		[Required]
 		ApplicationSectionDeleteArgs args,
 		global::ModelContextProtocol.Server.McpServer server,
@@ -492,16 +504,26 @@ public sealed class ApplicationSectionDeleteTool(IApplicationSectionDeleteServic
 		CancellationToken cancellationToken = default) {
 		try {
 			ValidateSectionDeleteArgs(args);
+			EnvironmentOptions options = new() { Environment = args.EnvironmentName };
+			// ExecuteWithCleanLog(options, ...) — the OPTIONS-AWARE overload — keys the execution lock and
+			// the session-container in-flight guard off THIS call's tenant (FR-05), not the shared fallback.
+			// It runs INSIDE the heartbeat work delegate so the lock is held on the worker thread for the
+			// whole synchronous backend call and never across an await.
 			ApplicationSectionDeleteResult result = await McpProgressHeartbeat.RunWithProgressAsync(
 				server,
 				requestContext?.Params?.ProgressToken,
 				ApplicationSectionDeleteToolName,
-				() => applicationSectionDeleteService.DeleteSection(
-					args.EnvironmentName,
-					new ApplicationSectionDeleteRequest(
-						args.ApplicationCode,
-						args.SectionCode,
-						args.DeleteEntitySchema ?? false)),
+				() => ExecuteWithCleanLog(options, () => {
+					// Resolve the tenant FIRST: mixed header + environment-name input is rejected here by
+					// the resolver's transport policy before ANY Creatio-reaching call (AC-04).
+					EnvironmentSettings settings = _commandResolver.Resolve<EnvironmentSettings>(options);
+					return applicationSectionDeleteService.DeleteSection(
+						settings,
+						new ApplicationSectionDeleteRequest(
+							args.ApplicationCode,
+							args.SectionCode,
+							args.DeleteEntitySchema ?? false));
+				}),
 				cancellationToken).ConfigureAwait(false);
 			return ApplicationToolHelper.CreateSectionDeleteContextResponse(ApplicationToolResultMapper.Map(result));
 		} catch (Exception ex) {

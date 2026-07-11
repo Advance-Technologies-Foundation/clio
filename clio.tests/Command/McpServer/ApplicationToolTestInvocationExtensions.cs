@@ -65,6 +65,12 @@ internal static class ApplicationToolTestInvocationExtensions {
 		tool.ApplicationSectionDelete(args, server: null, requestContext: null, cancellationToken: default)
 			.GetAwaiter().GetResult();
 
+	public static Task<ApplicationSectionDeleteContextResponse> ApplicationSectionDelete(
+		this ApplicationSectionDeleteTool tool,
+		ApplicationSectionDeleteArgs args,
+		global::ModelContextProtocol.Server.McpServer server) =>
+		tool.ApplicationSectionDelete(args, server, requestContext: null, cancellationToken: default);
+
 	public static ApplicationSectionListContextResponse ApplicationSectionGetList(
 		this ApplicationSectionGetListTool tool, ApplicationSectionGetListArgs args) =>
 		tool.ApplicationSectionGetList(args, server: null, requestContext: null, cancellationToken: default)
