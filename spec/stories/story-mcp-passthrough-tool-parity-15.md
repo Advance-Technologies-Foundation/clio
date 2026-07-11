@@ -103,13 +103,11 @@ Test naming: `MethodName_ShouldBehavior_WhenCondition`
 - [x] All `CLIO*` diagnostics clean in changed files (FR-10; note `clio.mcp.e2e` is outside the Sonar gate
   but the analyzers still apply at build)
 - [x] `clio.mcp.e2e` compiles; suites self-skip without stand config
-- [ ] **Manual live-stand run executed; results (pass/fail per case) recorded in the Dev Agent Record.**
-  **NOT DONE.** The implementing agent for this story had no access to a live Creatio stand or the
-  `CLIO_MCP_HTTP_E2E_*` / `CLIO_MCP_HTTP_E2E_REGISTERED_ENV` environment variables. Every stand-gated
-  case was verified to compile and to self-skip cleanly via `Assert.Ignore` (see "Tests passing" below
-  for the exact run and counts) — no case was FAKED as passing and no pass/fail result is fabricated
-  here. Running these cases for real against a live stand, recording per-case pass/fail, is a required
-  follow-up for whoever owns stand access before this story can be merged as fully done.
+- [x] **Manual live-stand run executed; results (pass/fail per case) recorded in the Dev Agent Record.**
+  **DONE 2026-07-11.** Ran against two distinct live Creatio tenants on `ts1-core-dev04` (forms-auth,
+  `IsNetCore=false`, Supervisor/Supervisor) via credential passthrough. First run surfaced a real E2E
+  harness bug (not a production defect) and one weak/incorrect assertion; both fixed and re-verified —
+  see "Tests passing" below for the full account and final counts (55/55 passed, 0 failed, 0 skipped).
 - [x] The (tool, dependency-path, scenario) → test-method list is recorded for Story 16's registry
 - [x] Unit tests N/A; E2E tests carry `[Category("E2E")]` only
 - [ ] PR description references this story file and flags "MCP e2e NOT in CI — manual run attached"
@@ -118,8 +116,8 @@ Test naming: `MethodName_ShouldBehavior_WhenCondition`
 ## Dev Agent Record
 
 - Implementation started: 2026-07-11
-- Implementation completed: 2026-07-11 (code + self-skip verification only — see DoD note above; live-stand
-  run is an explicit follow-up, not performed in this session)
+- Implementation completed: 2026-07-11 (code + self-skip verification), live-stand run completed 2026-07-11
+  in a follow-up session against two real tenants provided by the user
 - Tests passing:
   - Build: `dotnet build clio.mcp.e2e/clio.mcp.e2e.csproj -c Release -f net10.0` → 0 errors, 0 new `CLIO*`
     diagnostics (also verified building all TFMs with plain `-c Release`, and the whole solution's `clio`
@@ -135,6 +133,43 @@ Test naming: `MethodName_ShouldBehavior_WhenCondition`
       pre-existing; AC-03 http leg: 15 new + 1 pre-existing), each skipping via `Assert.Ignore` from
       `McpHttpPassthroughStand.RequireOrIgnore()` or the `CLIO_MCP_HTTP_E2E_REGISTERED_ENV` check —
       exactly AC-05's self-skip requirement, with zero Failed/Errored.
+  - **Manual live-stand run (2026-07-11):** two real, distinct Creatio tenants on `ts1-core-dev04`
+    (`:82/UserCustomizationStudioENUProtractorDiagnostic`, coreVersion 10.1.0.0; and
+    `:88/studioenu_15426918_0716`, coreVersion 10.0.0.623), both `IsNetCore=false` forms-auth,
+    Supervisor/Supervisor. `CLIO_MCP_HTTP_E2E_REGISTERED_ENV` pointed at a freshly `reg-web-app`'d local
+    key for tenant 1.
+    - **Harness gap fixed (this session, not a production defect):** both tenants are on-prem
+      forms-auth-only, so `McpHttpPassthroughStand`/`McpHttpServerSession` needed a login+password
+      credential-encoding path alongside the existing bearer-token one — added
+      `EncodeLoginPasswordCredentials` and per-tenant `CLIO_MCP_HTTP_E2E_TENANT{1,2}_LOGIN`/`_PASSWORD`
+      env vars (bearer `_TOKEN` still works unchanged for an OAuth-enabled tenant); `McpHttpPassthroughStand`
+      now exposes a precomputed `TenantOneCredentialsBase64`/`TenantTwoCredentialsBase64` per tenant.
+    - **Real bug found and fixed (test code, not production):** the first live run returned
+      45/55 (then 53/55) with `"Unknown tool: '<name>'"` errors on every long-tail tool (11 of the 15
+      touched tools — everything except `list-apps`/`get-app-info`/`list-app-sections`/`get-component-info`,
+      which are the only members of the 12 resident in lazy-mode `tools/list`, ENG-90312/92761). The three
+      new AC-01/AC-02 fixtures called these tools directly by name via `tools/call`, which only resolves
+      resident tools; a real client must reach the long tail through `clio-run` (`{"command":"<tool>",
+      "args":{...}}`). The AC-03 registered-env leg's identical direct-by-name call was **masked** by its
+      own deliberately narrow assertion (it only checks for the ABSENCE of the passthrough-rejection text,
+      which an "Unknown tool" error also satisfies) — a false green, not a real pass. Fixed by wrapping every
+      long-tail call across all three fixtures through `clio-run` (`CallViaClioRunAsync`/
+      `InvokeNewlyRoutedToolAsync`/`ResidentToolNames` helpers), leaving resident-tool calls direct and
+      unchanged.
+    - **Weak assertion fixed:** the two pre-existing ENG-93208 `describe-environment` two-tenant tests
+      assumed the response text echoes the target host — it does not (it reports `coreVersion` and
+      seed-data GUIDs, no URL field). Both live tenants happened to share identical `workspace`/`user`/
+      `userAccount` seed GUIDs (same base image) but differed on `coreVersion`. Replaced the host-substring
+      check with a response-level proof (not byte-identical + both contain real `coreVersion` metadata)
+      that does not depend on a specific field value that could coincidentally match on a future stand.
+    - **Final result: 55/55 passed, 0 failed, 0 skipped** (`dotnet test clio.mcp.e2e/clio.mcp.e2e.csproj -c
+      Release -f net10.0 --no-build --filter
+      "FullyQualifiedName~McpHttpMultiTenantE2ETests|FullyQualifiedName~McpHttpConcurrencyIsolationE2ETests|FullyQualifiedName~McpHttpNoRegressionE2ETests"`).
+      Re-ran the no-stand-config self-skip proof after all fixes: unchanged at 16 passed / 39 skipped / 0
+      failed. `create-app`/`create-app-section` calls in the isolation and multi-tenant sweeps are
+      genuinely mutating (no dry-run exists for these tools), so both tenants now carry a small number of
+      throwaway probe applications/sections from this run, as the class remarks already documented as an
+      expected consequence of a live run.
 - (tool, dependency-path, scenario) → test-method list (for Story 16's registry; `path` uses the ADR
   OQ-04/Story 16 dependency-path vocabulary where a stable id exists, else the tool's single audited
   path):

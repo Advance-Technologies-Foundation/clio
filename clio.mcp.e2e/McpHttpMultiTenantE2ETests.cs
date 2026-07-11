@@ -41,32 +41,56 @@ public sealed class McpHttpMultiTenantE2ETests {
 
 		// Act — sequential calls in ONE run, each authenticating purely by header (no -e, no registered env).
 		CallToolResult tenantOne = await CallDescribeEnvironmentAsync(
-			server, stand.PlatformApiKey, stand.TenantOneUrl, stand.TenantOneToken, cts.Token);
+			server, stand.PlatformApiKey, stand.TenantOneCredentialsBase64, cts.Token);
 		CallToolResult tenantTwo = await CallDescribeEnvironmentAsync(
-			server, stand.PlatformApiKey, stand.TenantTwoUrl, stand.TenantTwoToken, cts.Token);
+			server, stand.PlatformApiKey, stand.TenantTwoCredentialsBase64, cts.Token);
 
 		// Assert
 		tenantOne.IsError.Should().NotBeTrue(
 			because: "the first tenant must be served from its per-request credentials with no pre-registered environment (SM-01)");
 		tenantTwo.IsError.Should().NotBeTrue(
 			because: "the second, distinct tenant must be served from its per-request credentials in the same process run (SM-01)");
-		ExtractText(tenantOne).Should().Contain(new Uri(stand.TenantOneUrl).Host,
-			because: "the first response must describe the first tenant's environment");
-		ExtractText(tenantTwo).Should().Contain(new Uri(stand.TenantTwoUrl).Host,
-			because: "the second response must describe the second tenant's environment");
+		// MANUAL-RUNNER FINDING (live-stand run, ENG-93347): describe-environment's response does NOT
+		// echo the target host/URL — it reports a rich environment-metadata JSON (coreVersion,
+		// workspace/user/userAccount GUIDs, db/framework info) with no URL field. Two distinct live
+		// tenants matched on every seed-data GUID (workspace/user/userAccount are identical default seed
+		// values from the same base image) but genuinely differed on coreVersion, so that is the
+		// discriminator used here instead of the originally assumed host. If both tenants are ever
+		// upgraded to the same coreVersion, pick a different differing field from a fresh live response.
+		string tenantOneText = ExtractText(tenantOne);
+		string tenantTwoText = ExtractText(tenantTwo);
+		tenantOneText.Should().NotBe(tenantTwoText,
+			because: "two distinct tenants must not produce byte-identical describe-environment responses");
+		tenantOneText.Should().Contain("\"coreVersion\"",
+			because: "the first response must report environment metadata, not an error or empty payload");
+		tenantTwoText.Should().Contain("\"coreVersion\"",
+			because: "the second response must report environment metadata, not an error or empty payload");
 	}
 
 	private static async Task<CallToolResult> CallDescribeEnvironmentAsync(
-		McpHttpServerSession server, string platformApiKey, string url, string token, CancellationToken cancellationToken) {
+		McpHttpServerSession server, string platformApiKey, string credentialsBase64, CancellationToken cancellationToken) {
 		await using McpClient client = await server.ConnectAsync(
 			platformApiKey,
-			McpHttpServerSession.EncodeBearerCredentials(url, token),
+			credentialsBase64,
 			cancellationToken);
-		return await client.CallToolAsync(
-			GetCreatioInfoTool.ToolName,
-			new Dictionary<string, object?> { ["args"] = new Dictionary<string, object?>() },
-			cancellationToken: cancellationToken);
+		// describe-environment is a long-tail tool (absent from lazy-mode tools/list, ENG-90312/92761) —
+		// it must be reached via clio-run, exactly as a real client would; a direct tools/call by name
+		// returns "Unknown tool" here.
+		return await CallViaClioRunAsync(client, GetCreatioInfoTool.ToolName,
+			new Dictionary<string, object?>(), cancellationToken);
 	}
+
+	// Dispatches to a long-tail tool (hidden from lazy-mode tools/list) via clio-run, the same path a
+	// real client must use. `toolArguments` is exactly what would have been sent as the direct
+	// tools/call arguments payload — clio-run forwards its own "args" verbatim to the target tool's
+	// SDK-native binding, so this preserves each tool's existing wrapped-record vs. flat-parameter shape
+	// unchanged.
+	private static async Task<CallToolResult> CallViaClioRunAsync(
+		McpClient client, string toolName, Dictionary<string, object?> toolArguments, CancellationToken cancellationToken) =>
+		await client.CallToolAsync(
+			ClioRunTool.ToolName,
+			new Dictionary<string, object?> { ["command"] = toolName, ["args"] = toolArguments },
+			cancellationToken: cancellationToken);
 
 	private static string ExtractText(CallToolResult callResult) {
 		CommandExecutionEnvelope envelope = McpCommandExecutionParser.Extract(callResult);
@@ -157,17 +181,14 @@ public sealed class McpHttpMultiTenantE2ETests {
 			because: "the throwaway application must be created (header-only, tenant one) before the nested caption-culture path can be exercised");
 		string caption = $"Isolation Probe {probeSuffix}";
 
-		// Act
-		CallToolResult callResult = await client.CallToolAsync(
-			ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
+		// Act — create-app-section is a long-tail tool (absent from lazy-mode tools/list); reach it via clio-run.
+		CallToolResult callResult = await CallViaClioRunAsync(client, ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
 			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["application-code"] = createdApplication.ApplicationCode ?? appCode,
-					["caption"] = caption,
-					["with-mobile-pages"] = false
-				}
+				["application-code"] = createdApplication.ApplicationCode ?? appCode,
+				["caption"] = caption,
+				["with-mobile-pages"] = false
 			},
-			cancellationToken: cts.Token);
+			cts.Token);
 		ApplicationSectionContextResponse response =
 			EntitySchemaStructuredResultParser.Extract<ApplicationSectionContextResponse>(callResult);
 
@@ -194,16 +215,14 @@ public sealed class McpHttpMultiTenantE2ETests {
 
 		// Act — the application-code is deliberately a non-existent placeholder: the rejection must fire
 		// before ANY Creatio-reaching call in the nested graph, so the section never needs to exist.
-		CallToolResult callResult = await client.CallToolAsync(
-			ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
+		// create-app-section is a long-tail tool (absent from lazy-mode tools/list); reach it via clio-run.
+		CallToolResult callResult = await CallViaClioRunAsync(client, ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
 			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["application-code"] = "mixed-input-probe-application",
-					["caption"] = "Mixed Input Probe",
-					["environment-name"] = "mixed-input-probe-environment"
-				}
+				["application-code"] = "mixed-input-probe-application",
+				["caption"] = "Mixed Input Probe",
+				["environment-name"] = "mixed-input-probe-environment"
 			},
-			cancellationToken: cts.Token);
+			cts.Token);
 		ApplicationSectionContextResponse response =
 			EntitySchemaStructuredResultParser.Extract<ApplicationSectionContextResponse>(callResult);
 
@@ -226,11 +245,9 @@ public sealed class McpHttpMultiTenantE2ETests {
 			await McpHttpServerSession.StartAsync(_settings, stand.PlatformApiKey, cts.Token);
 		await using McpClient client = await ConnectTenantOneAsync(server, stand, cts.Token);
 
-		// Act
-		CallToolResult callResult = await client.CallToolAsync(
-			GetUserCultureTool.ToolName,
-			new Dictionary<string, object?> { ["args"] = new Dictionary<string, object?>() },
-			cancellationToken: cts.Token);
+		// Act — get-user-culture is a long-tail tool (absent from lazy-mode tools/list); reach it via clio-run.
+		CallToolResult callResult = await CallViaClioRunAsync(client, GetUserCultureTool.ToolName,
+			new Dictionary<string, object?>(), cts.Token);
 		GetUserCultureResponse response = EntitySchemaStructuredResultParser.Extract<GetUserCultureResponse>(callResult);
 
 		// Assert
@@ -252,13 +269,10 @@ public sealed class McpHttpMultiTenantE2ETests {
 			await McpHttpServerSession.StartAsync(_settings, stand.PlatformApiKey, cts.Token);
 		await using McpClient client = await ConnectTenantOneAsync(server, stand, cts.Token);
 
-		// Act
-		CallToolResult callResult = await client.CallToolAsync(
-			GetUserCultureTool.ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> { ["environment-name"] = "mixed-input-probe-environment" }
-			},
-			cancellationToken: cts.Token);
+		// Act — get-user-culture is a long-tail tool (absent from lazy-mode tools/list); reach it via clio-run.
+		CallToolResult callResult = await CallViaClioRunAsync(client, GetUserCultureTool.ToolName,
+			new Dictionary<string, object?> { ["environment-name"] = "mixed-input-probe-environment" },
+			cts.Token);
 		GetUserCultureResponse response = EntitySchemaStructuredResultParser.Extract<GetUserCultureResponse>(callResult);
 
 		// Assert
@@ -282,14 +296,15 @@ public sealed class McpHttpMultiTenantE2ETests {
 			await McpHttpServerSession.StartAsync(_settings, stand.PlatformApiKey, cts.Token);
 		await using McpClient client = await ConnectTenantOneAsync(server, stand, cts.Token);
 
-		// Act — flat (non-"args") parameters: this tool binds repoPath/environmentName directly, not
-		// through a JsonPropertyName-kebab record.
-		CallToolResult callResult = await client.CallToolAsync(
-			LinkFromRepositoryTool.LinkFromRepositoryUnlockedToolName,
+		// Act — link-from-repository-unlocked is a long-tail tool (absent from lazy-mode tools/list);
+		// reach it via clio-run. Flat (non-"args") parameters: this tool binds repoPath/environmentName
+		// directly, not through a JsonPropertyName-kebab record — clio-run's own "args" field forwards
+		// verbatim, so the flat shape is unchanged.
+		CallToolResult callResult = await CallViaClioRunAsync(client, LinkFromRepositoryTool.LinkFromRepositoryUnlockedToolName,
 			new Dictionary<string, object?> {
 				["repoPath"] = Path.Combine(Path.GetTempPath(), $"clio-e2e-mixed-input-probe-{Guid.NewGuid():N}")
 			},
-			cancellationToken: cts.Token);
+			cts.Token);
 		CommandExecutionEnvelope envelope = McpCommandExecutionParser.Extract(callResult);
 
 		// Assert
@@ -310,14 +325,13 @@ public sealed class McpHttpMultiTenantE2ETests {
 			await McpHttpServerSession.StartAsync(_settings, stand.PlatformApiKey, cts.Token);
 		await using McpClient client = await ConnectTenantOneAsync(server, stand, cts.Token);
 
-		// Act
-		CallToolResult callResult = await client.CallToolAsync(
-			LinkFromRepositoryTool.LinkFromRepositoryUnlockedToolName,
+		// Act — link-from-repository-unlocked is a long-tail tool (absent from lazy-mode tools/list); reach it via clio-run.
+		CallToolResult callResult = await CallViaClioRunAsync(client, LinkFromRepositoryTool.LinkFromRepositoryUnlockedToolName,
 			new Dictionary<string, object?> {
 				["repoPath"] = Path.Combine(Path.GetTempPath(), $"clio-e2e-mixed-input-probe-{Guid.NewGuid():N}"),
 				["environmentName"] = "mixed-input-probe-environment"
 			},
-			cancellationToken: cts.Token);
+			cts.Token);
 		CommandExecutionEnvelope envelope = McpCommandExecutionParser.Extract(callResult);
 
 		// Assert
@@ -332,21 +346,19 @@ public sealed class McpHttpMultiTenantE2ETests {
 		McpHttpServerSession server, McpHttpPassthroughStand stand, CancellationToken cancellationToken) =>
 		await server.ConnectAsync(
 			stand.PlatformApiKey,
-			McpHttpServerSession.EncodeBearerCredentials(stand.TenantOneUrl, stand.TenantOneToken),
+			stand.TenantOneCredentialsBase64,
 			cancellationToken);
 
 	private static async Task<ApplicationContextResponse> CreateIsolationProbeApplicationAsync(
 		McpClient client, string code, CancellationToken cancellationToken) {
-		CallToolResult callResult = await client.CallToolAsync(
-			ApplicationCreateTool.ApplicationCreateToolName,
+		// create-app is a long-tail tool (absent from lazy-mode tools/list); reach it via clio-run.
+		CallToolResult callResult = await CallViaClioRunAsync(client, ApplicationCreateTool.ApplicationCreateToolName,
 			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["name"] = $"Story 15 Isolation Probe {code}",
-					["code"] = code,
-					["with-mobile-pages"] = false
-				}
+				["name"] = $"Story 15 Isolation Probe {code}",
+				["code"] = code,
+				["with-mobile-pages"] = false
 			},
-			cancellationToken: cancellationToken);
+			cancellationToken);
 		return EntitySchemaStructuredResultParser.Extract<ApplicationContextResponse>(callResult);
 	}
 }

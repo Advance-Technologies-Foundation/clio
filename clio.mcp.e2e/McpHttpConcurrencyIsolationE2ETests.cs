@@ -43,9 +43,9 @@ public sealed class McpHttpConcurrencyIsolationE2ETests {
 			await McpHttpServerSession.StartAsync(_settings, stand.PlatformApiKey, cts.Token);
 
 		string tenantOneCredentials =
-			McpHttpServerSession.EncodeBearerCredentials(stand.TenantOneUrl, stand.TenantOneToken);
+			stand.TenantOneCredentialsBase64;
 		string tenantTwoCredentials =
-			McpHttpServerSession.EncodeBearerCredentials(stand.TenantTwoUrl, stand.TenantTwoToken);
+			stand.TenantTwoCredentialsBase64;
 
 		await using McpClient tenantOneClient =
 			await server.ConnectAsync(stand.PlatformApiKey, tenantOneCredentials, cts.Token);
@@ -54,15 +54,12 @@ public sealed class McpHttpConcurrencyIsolationE2ETests {
 
 		// Act — fire both passthrough calls concurrently (independent async flows on one process). The
 		// tool carries NO environment argument, so each request resolves purely from its own
-		// X-Integration-Credentials header.
-		Task<CallToolResult> tenantOneCall = tenantOneClient.CallToolAsync(
-			GetCreatioInfoTool.ToolName,
-			new Dictionary<string, object?> { ["args"] = new Dictionary<string, object?>() },
-			cancellationToken: cts.Token).AsTask();
-		Task<CallToolResult> tenantTwoCall = tenantTwoClient.CallToolAsync(
-			GetCreatioInfoTool.ToolName,
-			new Dictionary<string, object?> { ["args"] = new Dictionary<string, object?>() },
-			cancellationToken: cts.Token).AsTask();
+		// X-Integration-Credentials header. describe-environment is a long-tail tool (absent from
+		// lazy-mode tools/list, ENG-90312/92761); reach it via clio-run, exactly as a real client would.
+		Task<CallToolResult> tenantOneCall = CallViaClioRunAsync(
+			tenantOneClient, GetCreatioInfoTool.ToolName, new Dictionary<string, object?>(), cts.Token);
+		Task<CallToolResult> tenantTwoCall = CallViaClioRunAsync(
+			tenantTwoClient, GetCreatioInfoTool.ToolName, new Dictionary<string, object?>(), cts.Token);
 		CallToolResult[] results = await Task.WhenAll(tenantOneCall, tenantTwoCall);
 
 		string tenantOneText = ExtractText(results[0]);
@@ -74,19 +71,22 @@ public sealed class McpHttpConcurrencyIsolationE2ETests {
 		results[1].IsError.Should().NotBeTrue(
 			because: "tenant two's passthrough request must succeed on its own credentials");
 
-		// No cross-tenant bleed: each response references ONLY its own tenant's URL. This is the
-		// beyond-logger/db-context probe the ADR "Latent shared state" consequence demands — the observable
-		// signal of cross-tenant artifact contamination (the H1/scoped-sink surface Story 9 fixed).
-		// MANUAL-RUNNER ASSUMPTION: describe-environment echoes the target host in its output text. If a
-		// future output shape drops the host, switch the discriminator to another per-tenant field.
-		tenantOneText.Should().Contain(HostOf(stand.TenantOneUrl),
-			because: "tenant one's response must describe tenant one's environment");
-		tenantOneText.Should().NotContain(HostOf(stand.TenantTwoUrl),
-			because: "tenant one's response must NOT carry tenant two's data — no cross-tenant bleed");
-		tenantTwoText.Should().Contain(HostOf(stand.TenantTwoUrl),
-			because: "tenant two's response must describe tenant two's environment");
-		tenantTwoText.Should().NotContain(HostOf(stand.TenantOneUrl),
-			because: "tenant two's response must NOT carry tenant one's data — no cross-tenant bleed");
+		// No cross-tenant bleed: each response is genuine environment metadata and the two are not
+		// byte-identical. This is the beyond-logger/db-context probe the ADR "Latent shared state"
+		// consequence demands — the observable signal of cross-tenant artifact contamination (the
+		// H1/scoped-sink surface Story 9 fixed).
+		// MANUAL-RUNNER FINDING (live-stand run, ENG-93347): describe-environment's response does NOT
+		// echo the target host/URL (the originally assumed discriminator) — it reports coreVersion,
+		// workspace/user/userAccount GUIDs, db/framework info, with no URL field. Two distinct live
+		// tenants matched on every seed-data GUID (same base image) but differed on coreVersion, so the
+		// discriminator here is response-level: not-identical + both carry real metadata, rather than a
+		// specific field/value that could coincidentally match on a future stand.
+		tenantOneText.Should().NotBe(tenantTwoText,
+			because: "tenant one's and tenant two's responses must not be byte-identical — no cross-tenant bleed");
+		tenantOneText.Should().Contain("\"coreVersion\"",
+			because: "tenant one's response must report real environment metadata, not an error or empty payload");
+		tenantTwoText.Should().Contain("\"coreVersion\"",
+			because: "tenant two's response must report real environment metadata, not an error or empty payload");
 	}
 
 	[Test]
@@ -99,24 +99,21 @@ public sealed class McpHttpConcurrencyIsolationE2ETests {
 			await McpHttpServerSession.StartAsync(_settings, stand.PlatformApiKey, cts.Token);
 		await using McpClient tenantOneClient = await server.ConnectAsync(
 			stand.PlatformApiKey,
-			McpHttpServerSession.EncodeBearerCredentials(stand.TenantOneUrl, stand.TenantOneToken),
+			stand.TenantOneCredentialsBase64,
 			cts.Token);
 		await using McpClient tenantTwoClient = await server.ConnectAsync(
 			stand.PlatformApiKey,
-			McpHttpServerSession.EncodeBearerCredentials(stand.TenantTwoUrl, stand.TenantTwoToken),
+			stand.TenantTwoCredentialsBase64,
 			cts.Token);
 
 		// Act — both calls are launched before either is awaited; if a single global lock serialized
 		// distinct tenants the second would block behind the first. A generous window avoids a flaky
 		// wall-clock ratio while still proving both progress concurrently rather than being rejected/hung.
-		Task<CallToolResult> first = tenantOneClient.CallToolAsync(
-			GetCreatioInfoTool.ToolName,
-			new Dictionary<string, object?> { ["args"] = new Dictionary<string, object?>() },
-			cancellationToken: cts.Token).AsTask();
-		Task<CallToolResult> second = tenantTwoClient.CallToolAsync(
-			GetCreatioInfoTool.ToolName,
-			new Dictionary<string, object?> { ["args"] = new Dictionary<string, object?>() },
-			cancellationToken: cts.Token).AsTask();
+		// describe-environment is a long-tail tool (absent from lazy-mode tools/list); reach it via clio-run.
+		Task<CallToolResult> first = CallViaClioRunAsync(
+			tenantOneClient, GetCreatioInfoTool.ToolName, new Dictionary<string, object?>(), cts.Token);
+		Task<CallToolResult> second = CallViaClioRunAsync(
+			tenantTwoClient, GetCreatioInfoTool.ToolName, new Dictionary<string, object?>(), cts.Token);
 		Task completedBatch = Task.WhenAll(first, second);
 		Task winner = await Task.WhenAny(completedBatch, Task.Delay(TimeSpan.FromMinutes(2), cts.Token));
 
@@ -135,8 +132,6 @@ public sealed class McpHttpConcurrencyIsolationE2ETests {
 			.Select(message => message.Value ?? string.Empty);
 		return string.Join("\n", values);
 	}
-
-	private static string HostOf(string url) => new Uri(url).Host;
 
 	// ---------------------------------------------------------------------------------------------
 	// Story 15 AC-02 (ENG-93347, PRD AC-07): the same two-tenant isolation proof already established
@@ -174,6 +169,17 @@ public sealed class McpHttpConcurrencyIsolationE2ETests {
 		BuildThemeTool.ToolName
 	];
 
+	// The subset of NewlyRoutedToolNames that is resident in lazy-mode tools/list (ENG-90312/92761) and
+	// therefore directly callable by name. Every other tool in the set is long-tail and must be reached
+	// via clio-run, exactly as a real client would — calling a long-tail tool by name returns
+	// "Unknown tool", not an auth/business error.
+	private static readonly HashSet<string> ResidentToolNames = new(StringComparer.Ordinal) {
+		ApplicationGetListTool.ApplicationGetListToolName,
+		ApplicationGetInfoTool.ApplicationGetInfoToolName,
+		ApplicationSectionGetListTool.ApplicationSectionGetListToolName,
+		ComponentInfoTool.ToolName
+	};
+
 	// Tools with no natural per-call discriminating argument. Their isolation proof rests on the
 	// shared independent-completion + non-serialization assertions below (mirrors the
 	// MANUAL-RUNNER ASSUMPTION already recorded for describe-environment at lines 79-80).
@@ -194,11 +200,11 @@ public sealed class McpHttpConcurrencyIsolationE2ETests {
 			await McpHttpServerSession.StartAsync(_settings, stand.PlatformApiKey, cts.Token);
 		await using McpClient tenantOneClient = await server.ConnectAsync(
 			stand.PlatformApiKey,
-			McpHttpServerSession.EncodeBearerCredentials(stand.TenantOneUrl, stand.TenantOneToken),
+			stand.TenantOneCredentialsBase64,
 			cts.Token);
 		await using McpClient tenantTwoClient = await server.ConnectAsync(
 			stand.PlatformApiKey,
-			McpHttpServerSession.EncodeBearerCredentials(stand.TenantTwoUrl, stand.TenantTwoToken),
+			stand.TenantTwoCredentialsBase64,
 			cts.Token);
 
 		string probeId = Guid.NewGuid().ToString("N")[..8];
@@ -210,15 +216,10 @@ public sealed class McpHttpConcurrencyIsolationE2ETests {
 		// Act — fire both concurrently (independent async flows on one process); neither call carries an
 		// environment-name UNLESS the tool's mandated isolation scenario IS the mixed-input rejection
 		// (get-component-info), so every other request resolves purely from its own
-		// X-Integration-Credentials header.
-		Task<CallToolResult> tenantOneCall = tenantOneClient.CallToolAsync(
-			toolName,
-			new Dictionary<string, object?> { ["args"] = tenantOneArgs },
-			cancellationToken: cts.Token).AsTask();
-		Task<CallToolResult> tenantTwoCall = tenantTwoClient.CallToolAsync(
-			toolName,
-			new Dictionary<string, object?> { ["args"] = tenantTwoArgs },
-			cancellationToken: cts.Token).AsTask();
+		// X-Integration-Credentials header. Long-tail tools (absent from lazy-mode tools/list) are
+		// dispatched via clio-run; resident tools are called directly, exactly as a real client would.
+		Task<CallToolResult> tenantOneCall = InvokeNewlyRoutedToolAsync(tenantOneClient, toolName, tenantOneArgs, cts.Token);
+		Task<CallToolResult> tenantTwoCall = InvokeNewlyRoutedToolAsync(tenantTwoClient, toolName, tenantTwoArgs, cts.Token);
 		Task completedBatch = Task.WhenAll(tenantOneCall, tenantTwoCall);
 		Task winner = await Task.WhenAny(completedBatch, Task.Delay(TimeSpan.FromMinutes(4), cts.Token));
 
@@ -242,6 +243,26 @@ public sealed class McpHttpConcurrencyIsolationE2ETests {
 				because: $"tenant two's '{toolName}' response must NOT reference tenant one's per-call probe identifier — no cross-tenant bleed");
 		}
 	}
+
+	// Dispatches to a long-tail tool (hidden from lazy-mode tools/list) via clio-run, the same path a
+	// real client must use; calls a resident tool directly. `toolArguments` is exactly what would have
+	// been sent as the direct tools/call arguments payload — clio-run forwards its own "args" verbatim
+	// to the target tool's SDK-native binding, so the tool's existing shape is unchanged either way.
+	private static Task<CallToolResult> InvokeNewlyRoutedToolAsync(
+		McpClient client, string toolName, Dictionary<string, object?> toolArguments, CancellationToken cancellationToken) =>
+		ResidentToolNames.Contains(toolName)
+			? client.CallToolAsync(
+				toolName,
+				new Dictionary<string, object?> { ["args"] = toolArguments },
+				cancellationToken: cancellationToken).AsTask()
+			: CallViaClioRunAsync(client, toolName, toolArguments, cancellationToken);
+
+	private static async Task<CallToolResult> CallViaClioRunAsync(
+		McpClient client, string toolName, Dictionary<string, object?> toolArguments, CancellationToken cancellationToken) =>
+		await client.CallToolAsync(
+			ClioRunTool.ToolName,
+			new Dictionary<string, object?> { ["command"] = toolName, ["args"] = toolArguments },
+			cancellationToken: cancellationToken);
 
 	// Builds the minimal args shape each newly routed tool needs to be INVOKED (not necessarily to
 	// SUCCEED — see the class remarks above). `marker` is a distinct, per-tenant, per-run alphanumeric

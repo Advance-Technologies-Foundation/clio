@@ -130,6 +130,20 @@ internal sealed class McpHttpServerSession : IAsyncDisposable {
 		return Convert.ToBase64String(Encoding.UTF8.GetBytes(json));
 	}
 
+	/// <summary>
+	/// Base64-encodes the JSON <c>X-Integration-Credentials</c> payload for a forms-auth (on-prem,
+	/// <c>IsNetCore=false</c>) tenant that has no OAuth access token, in the exact shape
+	/// <c>CredentialHeaderParser</c> expects (<c>url</c> / <c>login</c> / <c>password</c>).
+	/// </summary>
+	public static string EncodeLoginPasswordCredentials(string url, string login, string password) {
+		string json = JsonSerializer.Serialize(new {
+			url,
+			login,
+			password
+		});
+		return Convert.ToBase64String(Encoding.UTF8.GetBytes(json));
+	}
+
 	private static int FindFreeLoopbackPort() {
 		TcpListener listener = new(IPAddress.Loopback, 0);
 		listener.Start();

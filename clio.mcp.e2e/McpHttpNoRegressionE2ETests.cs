@@ -67,9 +67,12 @@ public sealed class McpHttpNoRegressionE2ETests {
 			await server.ConnectAsync(platformApiKey: null, integrationCredentialsBase64: null, cts.Token);
 
 		// Act — resolve by the registered environment name, exactly as the pre-passthrough -e path.
+		// describe-environment is a long-tail tool (absent from lazy-mode tools/list, ENG-90312/92761);
+		// reach it via clio-run, exactly as a real client would.
 		CallToolResult result = await client.CallToolAsync(
-			GetCreatioInfoTool.ToolName,
+			ClioRunTool.ToolName,
 			new Dictionary<string, object?> {
+				["command"] = GetCreatioInfoTool.ToolName,
 				["args"] = new Dictionary<string, object?> { ["environment-name"] = registeredEnvironment }
 			},
 			cancellationToken: cts.Token);
@@ -112,6 +115,18 @@ public sealed class McpHttpNoRegressionE2ETests {
 		LinkFromRepositoryTool.LinkFromRepositoryUnlockedToolName
 	];
 
+	// The subset of TouchedToolNames that is resident in lazy-mode tools/list (ENG-90312/92761) and
+	// therefore directly callable by name. Every other tool in the set is long-tail and must be reached
+	// via clio-run, exactly as a real client would — calling a long-tail tool by name returns
+	// "Unknown tool", not a business-level outcome, which would otherwise silently pass this leg's
+	// deliberately narrow assertion (it checks only for the ABSENCE of the passthrough-rejection text).
+	private static readonly HashSet<string> ResidentToolNames = new(StringComparer.Ordinal) {
+		ApplicationGetListTool.ApplicationGetListToolName,
+		ApplicationGetInfoTool.ApplicationGetInfoToolName,
+		ApplicationSectionGetListTool.ApplicationSectionGetListToolName,
+		ComponentInfoTool.ToolName
+	};
+
 	[Test]
 	[Description("Every one of the 15 touched tools (7 c1 + get-user-culture + 3 link-from-repository-* + 4 matrix tools) remains reachable via the stdio clio MCP server exactly as the pre-passthrough build, proving the [Required] relaxations did not regress stdio tool discovery (Story 15 AC-03; PRD AC-09/SM-03).")]
 	public async Task Stdio_ShouldExposeTouchedTool_WhenPassthroughUnused(
@@ -146,11 +161,15 @@ public sealed class McpHttpNoRegressionE2ETests {
 		await using McpClient client =
 			await server.ConnectAsync(platformApiKey: null, integrationCredentialsBase64: null, cts.Token);
 
-		// Act
-		CallToolResult callResult = await client.CallToolAsync(
-			toolName,
-			BuildTouchedToolCallArguments(toolName, registeredEnvironment!),
-			cancellationToken: cts.Token);
+		// Act — long-tail tools (absent from lazy-mode tools/list) are dispatched via clio-run; resident
+		// tools are called directly, exactly as a real client would.
+		IReadOnlyDictionary<string, object?> callArguments = BuildTouchedToolCallArguments(toolName, registeredEnvironment!);
+		CallToolResult callResult = ResidentToolNames.Contains(toolName)
+			? await client.CallToolAsync(toolName, callArguments, cancellationToken: cts.Token)
+			: await client.CallToolAsync(
+				ClioRunTool.ToolName,
+				new Dictionary<string, object?> { ["command"] = toolName, ["args"] = callArguments },
+				cancellationToken: cts.Token);
 		string rawResponse = ExtractRawResponseJson(callResult);
 
 		// Assert — the [Required] relaxation must not have broken a registered-env caller: the
