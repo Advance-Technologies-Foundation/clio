@@ -38,8 +38,10 @@ host's responsibility):
   from any other origin are rejected (HTTP 403). Native MCP clients send no `Origin`
   header and are unaffected.
 
-There is **no built-in authentication**. `--host 0.0.0.0` still exposes the endpoint to
-every host that can reach the machine on the LAN — use it only on trusted networks.
+Standard OAuth 2.1 Resource-Server authorization is available (see
+[Whole-endpoint authorization](#whole-endpoint-authorization--public-bind-guard) below) but **off by
+default**. With it off, `--host 0.0.0.0` exposes the endpoint to every host that can reach the machine
+on the LAN with no credential check — use it only on trusted networks, or configure `--auth-authority`.
 
 ## Options
 
@@ -59,10 +61,17 @@ every host that can reach the machine on the LAN — use it only on trusted netw
 | `--auth-issuer` | _(unset)_ | Comma-separated accepted issuer(s) for the token `iss` (also `CLIO_MCP_HTTP_AUTH_ISSUER`). Optional; defaults to the discovery document's issuer. Use when the public token `iss` differs from the internal `--auth-authority`. |
 | `--auth-allow-insecure-metadata` | `false` | Allow OIDC metadata/JWKS over plain HTTP (also a truthy `CLIO_MCP_HTTP_AUTH_ALLOW_INSECURE_METADATA`). Default HTTPS-only; use only for an internal-DNS HTTP authority on a trusted network. |
 | `--auth-resource` | _(unset)_ | Explicit Protected Resource Metadata `resource` (canonical MCP endpoint URI) override (also `CLIO_MCP_HTTP_AUTH_RESOURCE`). Unset ⇒ derived per-request from the incoming scheme/host/path — correct behind any Host-forwarding ingress. |
+| `--allow-insecure-public` | `false` | Allow starting with a public/wildcard `--host` (e.g. `0.0.0.0`) while authorization is **off** (also a truthy `CLIO_MCP_HTTP_ALLOW_INSECURE_PUBLIC`). Without this flag, clio **refuses to start** in that combination — see [Whole-endpoint authorization](#whole-endpoint-authorization--public-bind-guard). |
 
-When authorization is enabled, the edge serves Protected Resource Metadata (RFC 9728) **anonymously** at `/.well-known/oauth-protected-resource`, and an unauthenticated or invalid-token request receives `401` with a `WWW-Authenticate: Bearer resource_metadata="…"` header naming that discovery URL — powered by the `ModelContextProtocol.AspNetCore` SDK's `McpAuthenticationHandler` (no hand-rolled discovery/challenge code).
+When authorization is enabled, **every** request to the MCP endpoint requires a valid token — pre-registered `-e <env>` / stored-credential access included, not just the credential-passthrough leg (`RequireAuthorization` on the `/mcp` endpoint). The edge serves Protected Resource Metadata (RFC 9728) **anonymously** at `/.well-known/oauth-protected-resource`, and an unauthenticated or invalid-token request receives `401` (insufficient scope ⇒ `403`) with a `WWW-Authenticate: Bearer resource_metadata="…"` header naming that discovery URL — powered by the `ModelContextProtocol.AspNetCore` SDK's `McpAuthenticationHandler` (no hand-rolled discovery/challenge code).
 
-> **Note:** the full authorization model (OAuth 2.1 Resource Server, whole-endpoint enforcement) lands across ENG-93386. Story 2/3/4 add the token-validation configuration, JWT bearer validation, and RFC 9728 discovery; wiring the `mcp` authorization policy onto the `/mcp` endpoint itself is Story 5.
+### Whole-endpoint authorization + public-bind guard
+
+With no `--auth-authority` configured (the default), authorization is off and the server behaves **exactly** as before this feature — stdio, `-e <env>`, and loopback binds are unaffected.
+
+**Exception (security-first default):** starting with a **public/wildcard** `--host` (e.g. `0.0.0.0`) while authorization is off is refused — an unauthenticated public bind would expose every registered environment's stored credentials to any caller that can reach the port. Configure `--auth-authority`, or pass `--allow-insecure-public` to start anyway (not recommended outside a fully trusted network; a loud warning is logged).
+
+> **Note:** the full authorization model (OAuth 2.1 Resource Server, whole-endpoint enforcement) landed across ENG-93386 Stories 2–5: token-validation configuration, JWT bearer validation, RFC 9728 discovery, the `mcp` authorization policy applied to `/mcp` via `RequireAuthorization`, and this public-bind guard.
 
 ## Credential passthrough (multi-tenant edge)
 

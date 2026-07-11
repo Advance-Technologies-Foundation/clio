@@ -95,6 +95,14 @@ public class McpHttpServerCommandOptions : BaseCommandOptions
 			+ "incoming scheme/host/path, which is correct behind any ingress that forwards the Host "
 			+ "header. Set only when auto-derivation is wrong for this deployment.")]
 	public string AuthResource { get; set; }
+
+	[Option("allow-insecure-public", Required = false,
+		HelpText = "Allow starting with a public/wildcard --host (e.g. 0.0.0.0) while authorization is "
+			+ "OFF (no --auth-authority configured) (also a truthy CLIO_MCP_HTTP_ALLOW_INSECURE_PUBLIC). "
+			+ "Without this flag, clio REFUSES TO START in that combination: an unauthenticated public "
+			+ "bind exposes every registered environment's stored credentials to anyone who can reach "
+			+ "the port. Not recommended outside a fully trusted network.")]
+	public bool AllowInsecurePublic { get; set; }
 }
 
 /// <summary>
@@ -186,6 +194,31 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 			McpHttpAuthentication.ConfigureServices(builder.Services, authConfiguration);
 		}
 
+		// Public-bind guard (Story 5, OQ-A: REFUSE, not just warn — security-first default). A wildcard
+		// --host with authorization OFF means every registered environment's stored credentials are
+		// reachable to anyone who can route to this port; that combination must not silently start.
+		bool allowInsecurePublic = options.AllowInsecurePublic
+			|| IsTruthyEnvironmentFlag("CLIO_MCP_HTTP_ALLOW_INSECURE_PUBLIC");
+		PublicBindGuardOutcome guardOutcome = EvaluatePublicBindGuard(
+			IsWildcardHost(options.Host), authConfiguration.Enabled, allowInsecurePublic);
+		switch (guardOutcome) {
+			case PublicBindGuardOutcome.Refuse:
+				ConsoleLogger.Instance.WriteError(
+					$"Refusing to start: --host {options.Host} is a public/wildcard bind with no "
+					+ "authorization configured (no --auth-authority). This would expose every "
+					+ "registered environment's stored credentials to anyone who can reach the port. "
+					+ "Configure --auth-authority, or pass --allow-insecure-public to start anyway "
+					+ "(not recommended).");
+				return 1;
+			case PublicBindGuardOutcome.Warn:
+				ConsoleLogger.Instance.WriteWarning(
+					$"mcp-http is bound to {options.Host} (public/wildcard) with NO authorization "
+					+ "configured; --allow-insecure-public was set. Every registered environment's "
+					+ "stored credentials are reachable to anyone who can reach this port. Use only on "
+					+ "a fully trusted network.");
+				break;
+		}
+
 		AspNetWebApplication app = builder.Build();
 
 		// FR-05/FR-08 (ENG-93208): wire the tool-execution-lock facade to this host's DI-registered
@@ -238,7 +271,14 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 			context, next, credentialHeaderParser, credentialContextAccessor,
 			options.CredentialsHeaderName));
 
-		app.MapMcp(options.Path);
+		// Whole-endpoint enforcement (ENG-93386, Story 5): when authorization is enabled, EVERY request
+		// to the MCP endpoint — passthrough AND pre-registered -e <env> / stored-credential access alike
+		// — requires a valid token. This closes the "gates only passthrough" gap the bespoke platform-API-
+		// key gate left open. When disabled, MapMcp carries no authorization requirement (today's behavior).
+		IEndpointConventionBuilder mcpEndpoint = app.MapMcp(options.Path);
+		if (authConfiguration.Enabled) {
+			mcpEndpoint.RequireAuthorization(McpHttpAuthentication.PolicyName);
+		}
 
 		ConsoleLogger.Instance.WriteInfo(
 			$"MCP HTTP server listening on http://{options.Host}:{options.Port}{options.Path}");
@@ -429,6 +469,37 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 
 	private static bool IsWildcardHost(string host) =>
 		host is "0.0.0.0" or "*" or "::" or "[::]";
+
+	/// <summary>The public-bind guard's decision (ENG-93386, Story 5, OQ-A).</summary>
+	internal enum PublicBindGuardOutcome
+	{
+		/// <summary>No conflict: either the bind is not public, or authorization is enabled.</summary>
+		Ok,
+
+		/// <summary>Public bind with authorization off, but the operator explicitly opted in; start with a loud warning.</summary>
+		Warn,
+
+		/// <summary>Public bind with authorization off and no explicit opt-in; refuse to start.</summary>
+		Refuse
+	}
+
+	/// <summary>
+	/// Decides whether a public/wildcard <c>--host</c> combined with authorization being off is allowed
+	/// to start. Security-first default: REFUSE, not merely warn — an unauthenticated public bind exposes
+	/// every registered environment's stored credentials to any caller that can reach the port. The
+	/// operator can explicitly override via <c>--allow-insecure-public</c> (or the matching env var).
+	/// </summary>
+	/// <param name="isWildcardHost">Whether <c>--host</c> is a public/wildcard bind.</param>
+	/// <param name="authorizationEnabled">Whether OAuth Resource-Server authorization is configured.</param>
+	/// <param name="allowInsecurePublic">Whether the operator explicitly opted into the insecure combination.</param>
+	/// <returns>The guard's decision.</returns>
+	internal static PublicBindGuardOutcome EvaluatePublicBindGuard(
+		bool isWildcardHost, bool authorizationEnabled, bool allowInsecurePublic) {
+		if (!isWildcardHost || authorizationEnabled) {
+			return PublicBindGuardOutcome.Ok;
+		}
+		return allowInsecurePublic ? PublicBindGuardOutcome.Warn : PublicBindGuardOutcome.Refuse;
+	}
 
 	private static bool IsTruthyEnvironmentFlag(string variableName) {
 		string value = Environment.GetEnvironmentVariable(variableName);

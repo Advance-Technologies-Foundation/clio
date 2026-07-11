@@ -977,9 +977,10 @@ stories:
     title: "Protect whole endpoint (RequireAuthorization) + fail-safe + public-bind guard"
     feature: "mcp-http-standard-authorization"
     size: M
-    status: ready-for-dev
+    status: done
     depends_on: [story-mcp-http-standard-authorization-3, story-mcp-http-standard-authorization-4]
     blocks: [story-mcp-http-standard-authorization-6]
+    note: "DONE 2026-07-11. OQ-A resolved: REFUSE security-first (EvaluatePublicBindGuard) -- public/wildcard host + auth off refuses to start (WriteError+exit1) unless --allow-insecure-public (+env), which starts with WriteWarning instead. MapMcp(path).RequireAuthorization(mcp) applied when enabled -> passthrough AND -e/stored both need a token, closing the ENG-93208 partial-coverage gap. Middleware ordering already correct from Story 3 (UseAuthorization short-circuits before EnforcePlatformApiKeyGate/CaptureCredentialContext). Verified: 4 guard-matrix unit tests + real TestServer pipeline test (auth-disabled reaches endpoint with no token, AC-04); all Story-4 401/403 cases re-verified with enforcement now on the endpoint itself. 5 new tests."
     file: spec/stories/story-mcp-http-standard-authorization-5.md
 
   - id: story-mcp-http-standard-authorization-6

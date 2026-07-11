@@ -22,12 +22,13 @@ using NUnit.Framework;
 namespace Clio.Tests.Command.McpServer;
 
 /// <summary>
-/// Real-pipeline (in-memory <see cref="TestServer"/>) coverage for ENG-93386 Story 4: the Protected
-/// Resource Metadata (RFC 9728) document and the enriched <c>WWW-Authenticate</c> 401 challenge. These
-/// tests mount ONLY the auth machinery (<see cref="McpHttpAuthentication.ConfigureServices"/> +
-/// <c>UseAuthentication</c>/<c>UseAuthorization</c>) against a minimal test endpoint carrying the
-/// <c>mcp</c> policy — mirroring, not touching, <c>McpHttpServerCommand.Run</c>. Mapping the policy onto
-/// the real <c>/mcp</c> endpoint is Story 5's scope.
+/// Real-pipeline (in-memory <see cref="TestServer"/>) coverage for ENG-93386 Story 4 (the Protected
+/// Resource Metadata / RFC 9728 document and the enriched <c>WWW-Authenticate</c> 401 challenge) and
+/// Story 5 (whole-endpoint enforcement via <c>RequireAuthorization</c>). These tests mount the auth
+/// machinery (<see cref="McpHttpAuthentication.ConfigureServices"/> + <c>UseAuthentication</c>/
+/// <c>UseAuthorization</c>) against a minimal test endpoint carrying the <c>mcp</c> policy — the same
+/// composition <c>McpHttpServerCommand.Run</c> applies to the real <c>/mcp</c> endpoint, without
+/// spinning up the full MCP transport.
 /// </summary>
 [TestFixture]
 [Category("Unit")]
@@ -52,30 +53,41 @@ public sealed class McpHttpAuthenticationPipelineTests
 		_host?.Dispose();
 	}
 
-	private async Task StartHostAsync(AuthConfiguration config) {
+	// Mirrors McpHttpServerCommand.Run's exact conditional pattern: auth service registration,
+	// UseAuthentication/UseAuthorization, and RequireAuthorization on the endpoint all apply ONLY
+	// when authEnabled — so the disabled path exercises the SAME "nothing added" wiring as production.
+	private async Task StartHostAsync(AuthConfiguration config, bool authEnabled = true) {
 		IHostBuilder builder = new HostBuilder()
 			.ConfigureWebHost(webBuilder => {
 				webBuilder.UseTestServer();
 				webBuilder.ConfigureServices(services => {
 					services.AddRouting();
-					McpHttpAuthentication.ConfigureServices(services, config);
-					// Test-only override: validate against our in-memory RSA key instead of a live JWKS
-					// endpoint, so the pipeline test needs no network access.
-					services.PostConfigure<Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerOptions>(
-						Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme,
-						options => {
-							options.Authority = null;
-							options.RequireHttpsMetadata = false;
-							options.TokenValidationParameters.IssuerSigningKey = _signingKey;
-						});
+					if (authEnabled) {
+						McpHttpAuthentication.ConfigureServices(services, config);
+						// Test-only override: validate against our in-memory RSA key instead of a live
+						// JWKS endpoint, so the pipeline test needs no network access.
+						services.PostConfigure<Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerOptions>(
+							Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme,
+							options => {
+								options.Authority = null;
+								options.RequireHttpsMetadata = false;
+								options.TokenValidationParameters.IssuerSigningKey = _signingKey;
+							});
+					}
 				});
 				webBuilder.Configure(app => {
 					app.UseRouting();
-					app.UseAuthentication();
-					app.UseAuthorization();
-					app.UseEndpoints(endpoints =>
-						endpoints.MapGet("/mcp", () => Results.Ok("ok"))
-							.RequireAuthorization(McpHttpAuthentication.PolicyName));
+					if (authEnabled) {
+						app.UseAuthentication();
+						app.UseAuthorization();
+					}
+					app.UseEndpoints(endpoints => {
+						Microsoft.AspNetCore.Builder.IEndpointConventionBuilder endpoint =
+							endpoints.MapGet("/mcp", () => Results.Ok("ok"));
+						if (authEnabled) {
+							endpoint.RequireAuthorization(McpHttpAuthentication.PolicyName);
+						}
+					});
 				});
 			});
 
@@ -210,5 +222,20 @@ public sealed class McpHttpAuthenticationPipelineTests
 		// Assert
 		response.StatusCode.Should().Be(HttpStatusCode.Forbidden,
 			because: "authentication succeeded but the required mcp:admin scope is absent");
+	}
+
+	[Test]
+	[Description("Story 5 AC-04: with authorization disabled, the endpoint is reachable with no token at all — behavior is unchanged from before this feature.")]
+	public async Task AuthorizationDisabled_ShouldReachEndpoint_WithNoToken() {
+		// Arrange
+		await StartHostAsync(Config(), authEnabled: false);
+
+		// Act
+		HttpResponseMessage response = await _client.GetAsync("/mcp");
+
+		// Assert
+		response.StatusCode.Should().Be(HttpStatusCode.OK,
+			because: "no --auth-authority is configured, so RequireAuthorization is never applied and "
+				+ "the endpoint behaves exactly as it did before ENG-93386 (fail-safe off)");
 	}
 }

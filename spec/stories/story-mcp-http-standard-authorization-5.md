@@ -1,7 +1,13 @@
 # Story 5 — Protect the whole endpoint (RequireAuthorization) + fail-safe + public-bind guard
 
 **Feature**: mcp-http-standard-authorization · **Jira**: ENG-93386 · **Size**: M · **Status**: ready-for-dev
-**Depends on**: 3, 4 · **Blocks**: 6
+**Depends on**: 3, 4 · **Blocks**: 6 · **Status: DONE (2026-07-11)**
+
+> **OQ-A resolved: REFUSE, security-first.** A public/wildcard `--host` with authorization off refuses to start (`EvaluatePublicBindGuard` → `Refuse`, `WriteError` + exit 1), unless `--allow-insecure-public` (+ `CLIO_MCP_HTTP_ALLOW_INSECURE_PUBLIC`) is explicitly set, in which case it starts with a loud `WriteWarning`. A non-wildcard host, or authorization enabled, is never gated. Implemented as `McpHttpServerCommand.EvaluatePublicBindGuard` (pure, unit-tested — 4/4 cases) called before `builder.Build()`.
+>
+> **Endpoint enforcement:** `app.MapMcp(options.Path)` now chains `.RequireAuthorization(McpHttpAuthentication.PolicyName)` when `authConfiguration.Enabled` — closing the "gates only passthrough" gap: passthrough AND `-e`/stored-credential access both now require a valid token. Middleware ordering (host/origin filtering → authN → authZ → credential-capture) was ALREADY correct from Story 3 — no reordering needed; verified because `UseAuthorization()` short-circuits before the ENG-93208 API-key-gate/credential-capture middleware ever runs.
+>
+> Verified with a **real in-memory `TestServer` pipeline** mirroring `Run()`'s exact conditional wiring (auth services + `UseAuthentication`/`UseAuthorization` + `RequireAuthorization` all applied only when enabled): auth-disabled path reaches the endpoint with no token (AC-04); all Story-4 401/403 cases still hold with enforcement now on the endpoint itself. 5 new tests (4 guard-matrix + 1 disabled-path pipeline).
 
 ## As a / I want / So that
 As a platform admin, I want every request to a public clio edge to require a valid token (not just the passthrough leg), so a public URL is never partially open.

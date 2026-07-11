@@ -23,8 +23,10 @@ SECURITY
     and the Origin header (restricted to the bound host / loopback) to prevent
     DNS-rebinding and cross-origin abuse; disallowed requests are rejected with
     HTTP 400 / 403. Native MCP clients send no Origin header and are unaffected.
-    There is no built-in authentication — use --host 0.0.0.0 only on trusted
-    networks.
+    Standard OAuth 2.1 Resource-Server authorization is available (see
+    --auth-authority below) but OFF by default. With it off, use --host 0.0.0.0
+    only on trusted networks (a public/wildcard --host with authorization off
+    refuses to start unless --allow-insecure-public is set).
 
 OPTIONS
     --port <port>
@@ -99,15 +101,24 @@ OPTIONS
         derived per-request from the incoming scheme/host/path, correct behind
         any ingress that forwards the Host header.
 
-    When authorization is enabled, the edge serves Protected Resource Metadata
-    (RFC 9728) anonymously at /.well-known/oauth-protected-resource, and an
-    unauthenticated/invalid-token request receives 401 with a WWW-Authenticate
-    header naming that discovery URL.
+    --allow-insecure-public
+        Allow starting with a public/wildcard --host (e.g. 0.0.0.0) while
+        authorization is OFF (also a truthy
+        CLIO_MCP_HTTP_ALLOW_INSECURE_PUBLIC). Without this flag, clio REFUSES TO
+        START in that combination: an unauthenticated public bind exposes every
+        registered environment's stored credentials to anyone who can reach the
+        port. Not recommended outside a fully trusted network.
 
-    NOTE: full authorization model (OAuth 2.1 Resource Server, whole-endpoint
-    enforcement) is documented as it lands across ENG-93386. Story 2/3/4 add
-    token validation, scope policy, and RFC 9728 discovery; wiring the policy
-    onto the /mcp endpoint itself arrives in Story 5.
+    When authorization is enabled, EVERY request to the MCP endpoint requires a
+    valid token — pre-registered '-e <env>' / stored-credential access included,
+    not just the credential-passthrough leg. The edge serves Protected Resource
+    Metadata (RFC 9728) anonymously at /.well-known/oauth-protected-resource, and
+    an unauthenticated/invalid-token/insufficient-scope request receives 401 (or
+    403 for scope) with a WWW-Authenticate header naming that discovery URL.
+
+    With no --auth-authority configured (default), authorization is off and the
+    server behaves exactly as before this feature — EXCEPT that a public/wildcard
+    --host with no authorization refuses to start (see --allow-insecure-public).
 
 CREDENTIAL PASSTHROUGH (multi-tenant edge)
     Per-request credential passthrough lets a gateway target a different Creatio
