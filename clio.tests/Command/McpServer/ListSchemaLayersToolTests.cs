@@ -158,6 +158,44 @@ public class ListSchemaLayersToolTests {
 		response.Warnings.Should().BeNull();
 	}
 
+	[Test]
+	[Category("Unit")]
+	// Pins the null-bucket partition: a base layer with an unknown (null) level must NOT be named in the
+	// unknown-bucket warning (base is always first). A regression to layers.Where(...) would name it.
+	public void DetectOrderingAmbiguity_Should_Exclude_Base_From_The_Null_Bucket() {
+		var layers = new System.Collections.Generic.List<SchemaLayerInfo> {
+			new() { Package = "NoLevelBase", IsBase = true, HierarchyLevel = null },
+			new() { Package = "NoLevelA", IsBase = false, HierarchyLevel = null },
+			new() { Package = "NoLevelB", IsBase = false, HierarchyLevel = null }
+		};
+		var w = ListSchemaLayersCommand.DetectOrderingAmbiguity(layers);
+		w.Should().HaveCount(1);
+		w[0].Should().Contain("NoLevelA").And.Contain("NoLevelB").And.NotContain("NoLevelBase");
+	}
+
+	[Test]
+	[Category("Unit")]
+	// Pins the name tiebreak (line 128): two non-base layers at the SAME HierarchyLevel order by package
+	// name. Input order is reversed (Zeta before Alpha) so removing the ThenBy(Package) breaks this test.
+	public void TryListLayers_Should_Break_Level_Ties_By_Package_Name() {
+		const string rows = @"{""rows"":[
+			{""Name"":""P"",""UId"":""u-b"",""ExtendParent"":false,""ParentName"":""B"",""PackageName"":""Base"",""Maintainer"":""Creatio"",""InstallType"":1,""HierarchyLevel"":100},
+			{""Name"":""P"",""UId"":""u-z"",""ExtendParent"":true,""ParentName"":""B"",""PackageName"":""Zeta"",""Maintainer"":""Creatio"",""InstallType"":1,""HierarchyLevel"":300},
+			{""Name"":""P"",""UId"":""u-a"",""ExtendParent"":true,""ParentName"":""B"",""PackageName"":""Alpha"",""Maintainer"":""Creatio"",""InstallType"":1,""HierarchyLevel"":300}
+		]}";
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>()).Returns(rows);
+		IServiceUrlBuilder url = Substitute.For<IServiceUrlBuilder>();
+		url.Build(Arg.Any<string>()).Returns("http://x/svc");
+		ListSchemaLayersCommand command = new(client, url, ConsoleLogger.Instance);
+
+		command.TryListLayers(new ListSchemaLayersOptions { SchemaName = "P" }, out ListSchemaLayersResponse response);
+
+		// Zeta and Alpha share level 300; input has Zeta first, but the name tiebreak puts Alpha first.
+		response.Layers.Select(l => l.Package).Should().Equal("Base", "Alpha", "Zeta");
+		response.Warnings.Should().NotBeNullOrEmpty(); // shared level → ambiguity warned
+	}
+
 	private sealed class FakeListSchemaLayersCommand : ListSchemaLayersCommand {
 		public ListSchemaLayersOptions CapturedOptions { get; private set; }
 
