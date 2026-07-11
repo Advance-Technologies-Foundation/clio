@@ -171,6 +171,29 @@ namespace cliogate.Files.cs
 			return result;
 		}
 
+		/// <summary>
+		/// Builds the value stored in the <c>SysPackage.Description</c> column when unlocking a package,
+		/// preserving the original maintainer marker. A null <paramref name="originalDescription"/>
+		/// (the column is nullable) is treated as an empty string.
+		/// </summary>
+		internal static string BuildUnlockDescription(string originalDescription, string originalMaintainer,
+			string splitMarker){
+			originalDescription = originalDescription ?? string.Empty;
+			return originalDescription.Contains(splitMarker)
+				? originalDescription
+				: originalDescription + splitMarker + originalMaintainer;
+		}
+
+		/// <summary>
+		/// Splits a stored <c>SysPackage.Description</c> value into its human description and the
+		/// preserved original maintainer marker when locking a package. A null
+		/// <paramref name="originalDescription"/> (the column is nullable) is treated as an empty string,
+		/// so the result is always a non-empty array.
+		/// </summary>
+		internal static string[] SplitLockDescription(string originalDescription, string splitMarker){
+			return (originalDescription ?? string.Empty).Split(new[] {splitMarker}, StringSplitOptions.None);
+		}
+
 		#endregion
 
 		#region Methods: Public
@@ -378,13 +401,13 @@ namespace cliogate.Files.cs
 			ResponseFormat = WebMessageFormat.Json)]
 		public bool LockPackages(string[] lockPackages = null){
 			CheckCanManageSolution();
-			_log.WarnFormat("Start LockPackages, packages: {0}", string.Join(", ", lockPackages));
+			_log.WarnFormat("Start LockPackages, packages: {0}", string.Join(", ", lockPackages ?? Array.Empty<string>()));
 			string maintainerCode = SysSettings.GetValue(UserConnection, "Maintainer", "NonImplemented");
 			if (lockPackages != null && lockPackages.Any()) {
 				foreach (string lockPackage in lockPackages) {
 					string originalMaintainer = GetPackageAttributeValue<string>("Maintainer", lockPackage);
-					string[] description = GetPackageAttributeValue<string>("Description", lockPackage)
-						.Split(new[] {splitName}, StringSplitOptions.None);
+					string[] description = SplitLockDescription(
+						GetPackageAttributeValue<string>("Description", lockPackage), splitName);
 					string maintainer = description.Length > 1 ? description.Last() : originalMaintainer;
 					Query query = new Update(UserConnection, "SysPackage")
 						.Set("InstallType", Column.Parameter(1))
@@ -444,15 +467,14 @@ namespace cliogate.Files.cs
 			ResponseFormat = WebMessageFormat.Json)]
 		public bool UnlockPackages(string[] unlockPackages = null){
 			CheckCanManageSolution();
-			_log.WarnFormat("Start UnlockPackages, packages: {0}", string.Join(", ", unlockPackages));
+			_log.WarnFormat("Start UnlockPackages, packages: {0}", string.Join(", ", unlockPackages ?? Array.Empty<string>()));
 			string maintainerCode = SysSettings.GetValue(UserConnection, "Maintainer", "NonImplemented");
 			_log.WarnFormat($"Maintainer code: {maintainerCode}");
 			if (unlockPackages != null && unlockPackages.Any()) {
 				foreach (string unlockPackage in unlockPackages) {
 					string originalMaintainer = GetPackageAttributeValue<string>("Maintainer", unlockPackage);
-					string originalDescription = GetPackageAttributeValue<string>("Description", unlockPackage);
-					string description = originalDescription.Contains(splitName) ? originalDescription
-						: originalDescription + splitName + originalMaintainer;
+					string description = BuildUnlockDescription(
+						GetPackageAttributeValue<string>("Description", unlockPackage), originalMaintainer, splitName);
 					Query query = new Update(UserConnection, "SysPackage")
 						.Set("InstallType", Column.Parameter(0))
 						.Set("Maintainer", Column.Parameter(maintainerCode))
