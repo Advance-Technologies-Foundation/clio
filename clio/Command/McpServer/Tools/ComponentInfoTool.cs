@@ -30,7 +30,7 @@ public sealed class ComponentInfoTool(
 	IMobileComponentInfoCatalog mobileCatalog,
 	IComponentRegistryDocsClient docsClient,
 	IPlatformVersionResolverFactory resolverFactory,
-	ISettingsRepository settingsRepository) {
+	IToolCommandResolver commandResolver) {
 
 	internal const string ToolName = "get-component-info";
 
@@ -272,9 +272,15 @@ public sealed class ComponentInfoTool(
 
 	/// <summary>
 	/// Builds the <see cref="EnvironmentSettings"/> for the cliogate probe from the per-call
-	/// arguments. Delegates to <see cref="ISettingsRepository.GetEnvironment(EnvironmentOptions)"/>
-	/// so the same registered-environment lookup, active-environment fallback, and explicit
-	/// uri/login/password fill the CLI verb uses also back the MCP tool.
+	/// arguments. Delegates to <see cref="IToolCommandResolver.Resolve{TCommand}(EnvironmentOptions)"/>
+	/// so this (the only <c>hasEnvironment</c>-supplied) branch shares the same ENG-93208
+	/// credential-passthrough seam every other resolver-routed tool uses: on an authorized HTTP
+	/// passthrough request the header tenant wins and an explicit <c>environment-name</c>/<c>uri</c>
+	/// is rejected before any named-registered-tenant lookup, instead of the root
+	/// <see cref="ISettingsRepository.GetEnvironment(EnvironmentOptions)"/> probing the named
+	/// environment's stored credentials directly. Stdio and registered-environment <c>mcp-http</c>
+	/// keep resolving exactly as before — the resolver falls through to the same
+	/// registered-environment lookup/fill when no credential context is active.
 	/// </summary>
 	private EnvironmentSettings ResolveEnvironmentSettings(ComponentInfoArgs args) {
 		EnvironmentOptions options = new() {
@@ -283,7 +289,7 @@ public sealed class ComponentInfoTool(
 			Login = args.Login,
 			Password = args.Password
 		};
-		return settingsRepository.GetEnvironment(options);
+		return commandResolver.Resolve<EnvironmentSettings>(options);
 	}
 
 	private static bool IsMobile(string? schemaType) =>
