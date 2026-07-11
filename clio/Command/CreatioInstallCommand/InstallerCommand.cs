@@ -11,6 +11,21 @@ namespace Clio.Command.CreatioInstallCommand;
 /// </summary>
 [Verb("deploy-creatio", Aliases = ["dc", "ic", "install-creatio"], HelpText = "Deploy Creatio from zip file")]
 public class PfInstallerOptions : EnvironmentNameOptions{
+	#region Constants: Public
+
+	/// <summary>
+	/// The default deployment method used by the <c>--deployment</c> option; treated as "not explicitly
+	/// chosen" so a configured default can override it.
+	/// </summary>
+	public const string AutoDeploymentMethod = "auto";
+
+	/// <summary>
+	/// The deployment methods accepted by the <c>--deployment</c> option.
+	/// </summary>
+	public static readonly string[] AllowedDeploymentMethods = [AutoDeploymentMethod, "iis", "dotnet"];
+
+	#endregion
+
 	#region Properties: Overrides
 
 	internal override bool RequiredEnvironment => false;
@@ -222,6 +237,7 @@ public class InstallerCommand : Command<PfInstallerOptions>{
 
 	private readonly ICreatioInstallerService _creatioInstallerService;
 	private readonly IDbOperationLogSessionFactory _dbOperationLogSessionFactory;
+	private readonly IDeployCreatioDefaultsResolver _deployCreatioDefaultsResolver;
 	private readonly IKubernetes _kubernetes;
 	private readonly ILogger _logger;
 
@@ -235,15 +251,18 @@ public class InstallerCommand : Command<PfInstallerOptions>{
 	/// <param name="creatioInstallerService">Service that performs deployment steps.</param>
 	/// <param name="logger">Logger used for user-facing output.</param>
 	/// <param name="kubernetes">Kubernetes client used to validate cluster availability.</param>
+	/// <param name="deployCreatioDefaultsResolver">Resolver that fills omitted options from persisted deploy-creatio defaults.</param>
 	/// <param name="dbOperationLogSessionFactory">Factory that creates per-invocation database operation log artifacts.</param>
 	public InstallerCommand(
 		ICreatioInstallerService creatioInstallerService,
 		ILogger logger,
 		IKubernetes kubernetes,
+		IDeployCreatioDefaultsResolver deployCreatioDefaultsResolver,
 		IDbOperationLogSessionFactory dbOperationLogSessionFactory = null) {
 		_creatioInstallerService = creatioInstallerService;
 		_logger = logger;
 		_kubernetes = kubernetes;
+		_deployCreatioDefaultsResolver = deployCreatioDefaultsResolver;
 		_dbOperationLogSessionFactory = dbOperationLogSessionFactory ?? NullDbOperationLogSessionFactory.Instance;
 	}
 
@@ -261,6 +280,11 @@ public class InstallerCommand : Command<PfInstallerOptions>{
 	public override int Execute(PfInstallerOptions options) {
 		using IDbOperationLogSession dbOperationLogSession = _dbOperationLogSessionFactory.BeginSession("deploy-creatio");
 		try {
+			// Fill options omitted on the command line from persisted `clio config` defaults BEFORE the
+			// Kubernetes-vs-local branch below, so a configured default db-server-name routes the plain
+			// Explorer context-menu deploy (which passes only --zip-file) to the local database.
+			_deployCreatioDefaultsResolver.ApplyDefaults(options);
+
 			if (_kubernetes is FakeKubernetes && string.IsNullOrEmpty(options.DbServerName)) {
 				_logger.WriteError(
 					"Could not detect kubectl config, and db server name (db-server-name) is not specified.");
