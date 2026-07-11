@@ -1177,7 +1177,7 @@ stories:
     title: "Consolidated E2E coverage — multi-tenant, concurrency isolation, and no-regression suites (FR-08)"
     feature: "mcp-passthrough-tool-parity"
     size: L
-    status: ready-for-dev
+    status: review
     note: "OWNS all FR-08/AC-07/AC-09 E2E: header-only + mixed-input multi-tenant for list-apps / create-app-section (incl. nested caption-culture) / get-user-culture / link-from-repository-unlocked; two-tenant isolation for EVERY newly routed tool (12); stdio + mcp-http -e no-regression for all 15 touched tools. MCP e2e NOT in CI — manual live-stand run is part of DoD; the (tool, dependency-path, scenario)->method list feeds story 16's registry."
     file: spec/stories/story-mcp-passthrough-tool-parity-15.md
     prd: spec/prd/prd-mcp-passthrough-tool-parity.md
