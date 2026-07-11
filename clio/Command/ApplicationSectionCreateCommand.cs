@@ -846,8 +846,11 @@ public sealed class ApplicationSectionCreateService(
 		EnvironmentSettings environmentSettings,
 		ResolvedApplicationSectionCreateRequest request) {
 		try {
+			// Neutral wording: this verification is shared by the timeout-recovery and the detail-less
+			// contention paths, so it must not claim the insert "timed out" (in the contention path the
+			// insert was rejected, not timed out).
 			logger.WriteInfo(
-				$"Insert timed out — verifying whether section '{request.SectionCode}' was created anyway...");
+				$"Verifying whether section '{request.SectionCode}' was created despite the failed insert response...");
 			ApplicationSectionSelectQueryResponseDto response =
 				SelectQueryHelper.ExecuteSelectQuery<ApplicationSectionSelectQueryResponseDto>(
 					client,
