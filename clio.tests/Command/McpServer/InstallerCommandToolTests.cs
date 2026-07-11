@@ -204,7 +204,7 @@ public sealed class InstallerCommandToolTests
 			TestLogger logger,
 			int exitCode,
 			IDbOperationLogSessionFactory dbOperationLogSessionFactory = null)
-			: base(Substitute.For<ICreatioInstallerService>(), logger, Substitute.For<IKubernetes>())
+			: base(Substitute.For<ICreatioInstallerService>(), logger, Substitute.For<IKubernetes>(), Substitute.For<IDeployCreatioDefaultsResolver>())
 		{
 			_logger = logger;
 			_exitCode = exitCode;

@@ -251,6 +251,65 @@ namespace Clio
 		public string IngestKey { get; set; }
 	}
 
+	/// <summary>
+	/// Default values applied to the <c>deploy-creatio</c> command when the corresponding option is not
+	/// supplied on the command line. Stored under the <c>deploy-creatio-defaults</c> settings key.
+	/// </summary>
+	/// <remarks>
+	/// These defaults let the Windows Explorer context-menu action ("clio: deploy Creatio"), which invokes
+	/// <c>clio deploy-creatio --zip-file "%1"</c> with no other arguments, target a local database and Redis
+	/// instead of falling back to a Kubernetes cluster. Explicit command-line options always take precedence.
+	/// </remarks>
+	public class DeployCreatioDefaults
+	{
+		/// <summary>
+		/// Gets or sets the default local database server name (a key in the <c>db</c> settings block)
+		/// used when <c>--db-server-name</c> is omitted.
+		/// </summary>
+		[JsonProperty("db-server-name")]
+		public string DbServerName { get; set; }
+
+		/// <summary>
+		/// Gets or sets the default local Redis server name (a key in the <c>redis</c> settings block)
+		/// used when <c>--redis-server-name</c> is omitted.
+		/// </summary>
+		[JsonProperty("redis-server-name")]
+		public string RedisServerName { get; set; }
+
+		/// <summary>
+		/// Gets or sets the default site name used when <c>--site-name</c> is omitted. When left empty the
+		/// site name is derived from the deployed zip file name.
+		/// </summary>
+		[JsonProperty("site-name")]
+		public string SiteName { get; set; }
+
+		/// <summary>
+		/// Gets or sets the default site port used when <c>--site-port</c> is omitted. A <c>null</c> value
+		/// means no default port is configured.
+		/// </summary>
+		[JsonProperty("site-port")]
+		public int? SitePort { get; set; }
+
+		/// <summary>
+		/// Gets or sets the default deployment method (<c>auto</c>, <c>iis</c>, or <c>dotnet</c>) used when
+		/// <c>--deployment</c> is omitted or left at its <c>auto</c> default.
+		/// </summary>
+		[JsonProperty("deployment")]
+		public string DeploymentMethod { get; set; }
+
+		/// <summary>
+		/// Determines whether every default value is empty, meaning no deploy-creatio defaults are configured.
+		/// </summary>
+		/// <returns><c>true</c> when no default is set; otherwise <c>false</c>.</returns>
+		[Newtonsoft.Json.JsonIgnore]
+		public bool IsEmpty =>
+			string.IsNullOrWhiteSpace(DbServerName)
+			&& string.IsNullOrWhiteSpace(RedisServerName)
+			&& string.IsNullOrWhiteSpace(SiteName)
+			&& !SitePort.HasValue
+			&& string.IsNullOrWhiteSpace(DeploymentMethod);
+	}
+
 	public class Settings
 	{
 		/// <summary>
@@ -340,6 +399,13 @@ namespace Clio
 		/// </summary>
 		[JsonProperty("telemetry")]
 		public TelemetrySettings Telemetry { get; set; }
+
+		/// <summary>
+		/// Gets or sets the default values applied to the <c>deploy-creatio</c> command when the matching
+		/// option is not supplied on the command line (used chiefly by the Explorer context-menu action).
+		/// </summary>
+		[JsonProperty("deploy-creatio-defaults")]
+		public DeployCreatioDefaults DeployCreatioDefaults { get; set; }
 
 		public EnvironmentSettings GetActiveEnvironment() {
 			if (string.IsNullOrEmpty(ActiveEnvironmentKey)
@@ -834,6 +900,15 @@ namespace Clio
 
 		public bool HasLocalRedisServersConfiguration() {
 			return _settings.LocalRedisServers is { Count: > 0 };
+		}
+
+		public DeployCreatioDefaults GetDeployCreatioDefaults() {
+			return _settings.DeployCreatioDefaults ?? new DeployCreatioDefaults();
+		}
+
+		public void SetDeployCreatioDefaults(DeployCreatioDefaults defaults) {
+			_settings.DeployCreatioDefaults = defaults is null || defaults.IsEmpty ? null : defaults;
+			Save();
 		}
 
 	}
