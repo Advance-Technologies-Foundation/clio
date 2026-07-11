@@ -51,7 +51,7 @@ public class PackageLockManagerTests {
 	}
 
 	[Test]
-	[Description("Caps the echoed response-body excerpt so a multi-kilobyte HTML error page does not flood the error message.")]
+	[Description("Caps the echoed response-body excerpt at 200 characters so a multi-kilobyte HTML error page does not flood the error message.")]
 	public void Unlock_ShouldTruncateEchoedBody_WhenNonJsonResponseIsLarge() {
 		// Arrange
 		(PackageLockManager manager, IApplicationClient applicationClient) = CreateManager();
@@ -64,8 +64,49 @@ public class PackageLockManagerTests {
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>(because: "a non-JSON body is a transport-level failure")
-			.Which.Message.Length.Should().BeLessThan(600,
-				because: "the echoed body excerpt is capped at 200 characters plus the diagnostic prefix");
+			.Which.Message.Should()
+				.Contain(new string('x', 200) + "...",
+					because: "the echoed body is capped at exactly 200 characters followed by an ellipsis")
+				.And.NotContain(new string('x', 201),
+					because: "no more than 200 characters of the raw body are echoed into the message");
+	}
+
+	[Test]
+	[Description("Wraps an empty gate response in a clear InvalidOperationException instead of surfacing a raw JSON parse error.")]
+	public void Unlock_ShouldThrowClearInvalidOperationException_WhenGateReturnsEmptyResponse() {
+		// Arrange
+		(PackageLockManager manager, IApplicationClient applicationClient) = CreateManager();
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(string.Empty);
+
+		// Act
+		Action act = () => manager.Unlock(new List<string>());
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+				because: "an empty gate response is a transport-level failure that must be reported clearly")
+			.WithMessage("*empty response*",
+				because: "the message must point the user at the Creatio logs / cliogate version");
+	}
+
+	[Test]
+	[Description("Wraps a null gate response in a clear InvalidOperationException rather than letting a raw ArgumentNullException escape the JSON parse.")]
+	public void Unlock_ShouldThrowClearInvalidOperationException_WhenGateReturnsNullResponse() {
+		// Arrange
+		(PackageLockManager manager, IApplicationClient applicationClient) = CreateManager();
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns((string)null);
+
+		// Act
+		Action act = () => manager.Unlock(new List<string>());
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+				because: "a null gate response must be guarded before JSON parsing, not surface as a raw ArgumentNullException")
+			.WithMessage("*empty response*",
+				because: "null and empty both indicate the gate returned no usable body");
 	}
 
 	[Test]
