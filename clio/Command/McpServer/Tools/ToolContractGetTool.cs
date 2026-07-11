@@ -1186,9 +1186,10 @@ internal static class ToolContractCatalog {
 			ApplicationCreateTool.ApplicationCreateToolName,
 			"Creates a Creatio application and returns installed application identity plus the created application context envelope and Data Forge enrichment diagnostics.",
 			new ToolInputSchemaContract(
-				[EnvironmentNameFieldName, "name", "code", TemplateCodeFieldName],
+				["name", "code", TemplateCodeFieldName],
 				[
-					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription
+						+ " Required on stdio / registered-environment transports; omit under credential passthrough — the X-Integration-Credentials header supplies the target tenant."),
 					Field("name", StringType, "Application display name."),
 					Field("code", StringType, "Application code (business-meaningful part; SchemaNamePrefix is auto-applied by clio)."),
 					Field(TemplateCodeFieldName, StringType, "Technical template code such as AppFreedomUI."),

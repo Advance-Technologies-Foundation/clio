@@ -40,14 +40,14 @@ public sealed record ApplicationGetInfoArgs(
 );
 
 /// <summary>
-/// MCP arguments for the <c>create-app</c> tool.
+/// MCP arguments for the <c>create-app</c> tool. <c>environment-name</c> is schema-optional (FR-05a,
+/// ENG-93347): under credential passthrough the target tenant comes from the
+/// <c>X-Integration-Credentials</c> header, while on non-passthrough transports runtime requiredness
+/// is enforced by the resolver (<see cref="EnvironmentResolutionException"/> when no environment or
+/// URI is resolvable). Declared after the required <c>name</c>/<c>code</c> parameters because C#
+/// optional parameters must follow required ones; every call site uses named arguments.
 /// </summary>
 public sealed record ApplicationCreateArgs(
-	[property: JsonPropertyName("environment-name")]
-	[property: Description(McpToolDescriptions.EnvironmentName)]
-	[property: Required]
-	string EnvironmentName,
-
 	[property: JsonPropertyName("name")]
 	[property: Description("Application display name, e.g. 'My App'")]
 	[property: Required]
@@ -63,6 +63,10 @@ public sealed record ApplicationCreateArgs(
 		"Creatio derives the package name, main entity schema name, and page schema names ({prefix}{code}_FormPage, {prefix}{code}_ListPage, etc.) directly from this code.")]
 	[property: Required]
 	string Code,
+
+	[property: JsonPropertyName("environment-name")]
+	[property: Description(McpToolDescriptions.EnvironmentName + " Optional under credential passthrough.")]
+	string? EnvironmentName = null,
 
 	[property: JsonPropertyName("template-code")]
 	[property: Description("Technical template name (NOT display name). Known values: AppFreedomUI, AppFreedomUIv2, AppWithHomePage, EmptyApp. Defaults to AppFreedomUI when omitted — use this default unless you have a specific reason to change it.")]

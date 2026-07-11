@@ -1018,7 +1018,7 @@ stories:
     title: "create-app — route through the resolver, including nested caption-culture and polling calls (class c1)"
     feature: "mcp-passthrough-tool-parity"
     size: L
-    status: ready-for-dev
+    status: in-progress
     note: "Serialized c1 chain: starts after story 4 merges (shared ApplicationTool.cs / ApplicationToolArgs.cs)."
     file: spec/stories/story-mcp-passthrough-tool-parity-5.md
     prd: spec/prd/prd-mcp-passthrough-tool-parity.md

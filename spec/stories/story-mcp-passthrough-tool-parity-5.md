@@ -125,17 +125,39 @@ Test naming: `MethodName_ShouldBehavior_WhenCondition`
 
 ## Definition of Done
 
-- [ ] All `CLIO*` diagnostics clean in changed files — including CLIO005 (FR-10)
-- [ ] Targeted tests green before commit: `dotnet test clio.tests/clio.tests.csproj --filter
+- [x] All `CLIO*` diagnostics clean in changed files — including CLIO005 (FR-10)
+- [x] Targeted tests green before commit: `dotnet test clio.tests/clio.tests.csproj --filter
   "Category=Unit&(Module=McpServer|Module=Command)" --no-build` (ADR slice 9)
-- [ ] All new/changed MCP arguments stay kebab-case (relaxing `[Required]` does not rename `environment-name`)
-- [ ] Unit tests added with `[Category("Unit")]` — never `[Category("UnitTests")]`
+- [x] All new/changed MCP arguments stay kebab-case (relaxing `[Required]` does not rename `environment-name`)
+- [x] Unit tests added with `[Category("Unit")]` — never `[Category("UnitTests")]`
 - [ ] PR description references this story file
 
 ## Dev Agent Record
 
-{Left blank — filled by dev agent during implementation}
-- Implementation started:
-- Implementation completed:
-- Tests passing:
+- Implementation started: 2026-07-11
+- Implementation completed: 2026-07-11
+- Tests passing: `Category=Unit&Module=McpServer` → 2058 passed / 0 failed;
+  `Category=Unit&Module=Command` → 2069 passed / 0 failed (net10.0)
 - Notes:
+  - `IApplicationCreateService` gained the settings-based `CreateApplication(EnvironmentSettings, ...)`
+    overload (ADR slice 6e). Both public overloads converge on a private `CreateApplicationCore` that
+    takes the nested calls as delegates: the name-based path keeps its pre-change name-based
+    caption-culture and `GetApplicationInfo(environmentName, ...)` calls byte-for-byte (AC-07), while
+    the settings-based path binds the Story-2 settings-based overloads (AC-03 culture at the guard,
+    AC-04 polling/readback in `LoadApplicationInfoWithRetry`) — no settings-based overload calls a
+    name-based one or `ISettingsRepository`.
+  - `ApplicationCreateTool` reworked onto `BaseTool<EnvironmentOptions>(null, logger, commandResolver)`
+    with the options-aware `ExecuteWithCleanLog` INSIDE the heartbeat work delegate (Story 4 pattern).
+    The tenant is resolved FIRST inside the locked body, so mixed input is rejected by
+    `HasExplicitCredentialArgs` before the enrichment probe or any Creatio-reaching call (AC-06).
+  - Enrichment path (`DataForgeEnrichmentBuilder`) confirmed class-(b) compliant and left untouched
+    (AC-05): it routes through `commandResolver.Resolve<IDataForgeContextService>` per request.
+  - `ApplicationCreateArgs.EnvironmentName` is schema-optional (FR-05a); the record parameter was moved
+    after the still-required `name`/`code` because C# optional parameters must follow required ones —
+    all call sites use named arguments, so no positional break. Curated `get-tool-contract` entry
+    aligned (required list + passthrough sentence).
+  - Ratchet (architect-approved): `McpProfileGatingTests.MaxLazyToolsSerializedBytes` raised
+    34816 → 35328; measured tools/list payload after this story: **34810 bytes**.
+  - Nested-path tests drive a REAL `ApplicationCreateService` from the tool fixture
+    (`ApplicationCreateToolPassthroughTests`) so AC-03/AC-04 are proven end-to-end, plus
+    settings-overload contract tests in `ApplicationCreateServiceTests`.

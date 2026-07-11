@@ -840,8 +840,13 @@ public sealed class ApplicationToolTests {
 		// Arrange
 		IApplicationCreateService applicationCreateService = Substitute.For<IApplicationCreateService>();
 		IApplicationCreateEnrichmentService enrichmentService = Substitute.For<IApplicationCreateEnrichmentService>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		EnvironmentSettings resolvedSettings = new() { Uri = "https://sandbox.example.com" };
+		commandResolver.Resolve<EnvironmentSettings>(
+				Arg.Is<EnvironmentOptions>(options => options.Environment == "sandbox"))
+			.Returns(resolvedSettings);
 		applicationCreateService.CreateApplication(
-				"sandbox",
+				resolvedSettings,
 				Arg.Any<ApplicationCreateRequest>())
 			.Returns(new ApplicationInfoResult(
 				"pkg-uid",
@@ -886,7 +891,8 @@ public sealed class ApplicationToolTests {
 					[new SimilarLookupResult("lookup-id", "ContactType", "Customer", 0.98m)],
 					["Contact->Account"],
 					[new ApplicationDataForgeColumnHint("Contact", 3, 1, 1)])));
-		ApplicationCreateTool tool = new(applicationCreateService, enrichmentService);
+		ApplicationCreateTool tool = new(
+			Substitute.For<ILogger>(), commandResolver, applicationCreateService, enrichmentService);
 
 		// Act
 		ApplicationContextResponse result = await tool.ApplicationCreate(new ApplicationCreateArgs(
@@ -904,7 +910,7 @@ public sealed class ApplicationToolTests {
 
 		// Assert
 		applicationCreateService.Received(1).CreateApplication(
-			"sandbox",
+			resolvedSettings,
 			Arg.Is<ApplicationCreateRequest>(request =>
 				request.Name == "Codex App" &&
 				request.Code == "UsrCodexApp" &&
@@ -1081,7 +1087,12 @@ public sealed class ApplicationToolTests {
 		// Arrange
 		IApplicationCreateService applicationCreateService = Substitute.For<IApplicationCreateService>();
 		IApplicationCreateEnrichmentService enrichmentService = Substitute.For<IApplicationCreateEnrichmentService>();
-		applicationCreateService.CreateApplication(Arg.Any<string>(), Arg.Any<ApplicationCreateRequest>())
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		EnvironmentSettings resolvedSettings = new() { Uri = "https://sandbox.example.com" };
+		commandResolver.Resolve<EnvironmentSettings>(
+				Arg.Is<EnvironmentOptions>(options => options.Environment == "sandbox"))
+			.Returns(resolvedSettings);
+		applicationCreateService.CreateApplication(Arg.Any<EnvironmentSettings>(), Arg.Any<ApplicationCreateRequest>())
 			.Returns(new ApplicationInfoResult(
 				PackageUId: "pkg-uid",
 				PackageName: "UsrCodexApp",
@@ -1091,7 +1102,8 @@ public sealed class ApplicationToolTests {
 			.Returns(new ApplicationDataForgeResult(
 				Used: false, Health: null, Status: null, Coverage: null,
 				Warnings: Array.Empty<string>(), ContextSummary: null));
-		ApplicationCreateTool tool = new(applicationCreateService, enrichmentService);
+		ApplicationCreateTool tool = new(
+			Substitute.For<ILogger>(), commandResolver, applicationCreateService, enrichmentService);
 
 		// Act
 		await tool.ApplicationCreate(new ApplicationCreateArgs(
@@ -1109,7 +1121,7 @@ public sealed class ApplicationToolTests {
 		// Assert
 		// with-mobile-pages=false must be forwarded so the create flow suppresses the main entity mobile pages
 		applicationCreateService.Received(1).CreateApplication(
-			"sandbox",
+			resolvedSettings,
 			Arg.Is<ApplicationCreateRequest>(request => !request.WithMobilePages));
 	}
 
@@ -1138,11 +1150,14 @@ public sealed class ApplicationToolTests {
 		// Arrange
 		Type argsType = typeof(ApplicationCreateArgs);
 		string[] requiredProperties = [
-			nameof(ApplicationCreateArgs.EnvironmentName),
 			nameof(ApplicationCreateArgs.Name),
 			nameof(ApplicationCreateArgs.Code)
 		];
 		string[] optionalProperties = [
+			// environment-name is schema-optional (FR-05a, ENG-93347): passthrough supplies the tenant
+			// via the X-Integration-Credentials header; non-passthrough requiredness is enforced by the
+			// resolver at runtime.
+			nameof(ApplicationCreateArgs.EnvironmentName),
 			nameof(ApplicationCreateArgs.TemplateCode),
 			nameof(ApplicationCreateArgs.IconBackground),
 			nameof(ApplicationCreateArgs.IconId),
@@ -1177,7 +1192,8 @@ public sealed class ApplicationToolTests {
 		// Arrange
 		IApplicationCreateService applicationCreateService = Substitute.For<IApplicationCreateService>();
 		IApplicationCreateEnrichmentService enrichmentService = Substitute.For<IApplicationCreateEnrichmentService>();
-		ApplicationCreateTool tool = new(applicationCreateService, enrichmentService);
+		ApplicationCreateTool tool = new(
+			Substitute.For<ILogger>(), Substitute.For<IToolCommandResolver>(), applicationCreateService, enrichmentService);
 
 		// Act
 		ApplicationContextResponse result = await tool.ApplicationCreate(new ApplicationCreateArgs(
@@ -1196,7 +1212,10 @@ public sealed class ApplicationToolTests {
 			because: "validation failures should now be returned as structured error payloads");
 		result.Error.Should().Match("*optional-template-data-json*",
 			because: "the create tool should reject malformed template data before calling the backend service");
-		applicationCreateService.DidNotReceiveWithAnyArgs().CreateApplication(default!, default!);
+		applicationCreateService.DidNotReceiveWithAnyArgs()
+			.CreateApplication(default(EnvironmentSettings)!, default!);
+		applicationCreateService.DidNotReceiveWithAnyArgs()
+			.CreateApplication(default(string)!, default!);
 		enrichmentService.DidNotReceiveWithAnyArgs().Enrich(default!, default!, default);
 	}
 
@@ -1207,7 +1226,8 @@ public sealed class ApplicationToolTests {
 		// Arrange
 		IApplicationCreateService applicationCreateService = Substitute.For<IApplicationCreateService>();
 		IApplicationCreateEnrichmentService enrichmentService = Substitute.For<IApplicationCreateEnrichmentService>();
-		ApplicationCreateTool tool = new(applicationCreateService, enrichmentService);
+		ApplicationCreateTool tool = new(
+			Substitute.For<ILogger>(), Substitute.For<IToolCommandResolver>(), applicationCreateService, enrichmentService);
 
 		// Act
 		ApplicationContextResponse result = await tool.ApplicationCreate(new ApplicationCreateArgs(
@@ -1229,7 +1249,10 @@ public sealed class ApplicationToolTests {
 			because: "create-app should reject localization maps before any enrichment or create side effect is attempted");
 		result.Error.Should().Match("*scalar-only*",
 			because: "the failure should explain that localization maps are forbidden on create-app");
-		applicationCreateService.DidNotReceiveWithAnyArgs().CreateApplication(default!, default!);
+		applicationCreateService.DidNotReceiveWithAnyArgs()
+			.CreateApplication(default(EnvironmentSettings)!, default!);
+		applicationCreateService.DidNotReceiveWithAnyArgs()
+			.CreateApplication(default(string)!, default!);
 		enrichmentService.DidNotReceiveWithAnyArgs().Enrich(default!, default!, default);
 	}
 
@@ -1240,7 +1263,8 @@ public sealed class ApplicationToolTests {
 		// Arrange
 		IApplicationCreateService applicationCreateService = Substitute.For<IApplicationCreateService>();
 		IApplicationCreateEnrichmentService enrichmentService = Substitute.For<IApplicationCreateEnrichmentService>();
-		ApplicationCreateTool tool = new(applicationCreateService, enrichmentService);
+		ApplicationCreateTool tool = new(
+			Substitute.For<ILogger>(), Substitute.For<IToolCommandResolver>(), applicationCreateService, enrichmentService);
 
 		// Act
 		ApplicationContextResponse result = await tool.ApplicationCreate(new ApplicationCreateArgs(
@@ -1261,7 +1285,10 @@ public sealed class ApplicationToolTests {
 			because: "validation failures should now be returned as structured error payloads");
 		result.Error.Should().Match("*useAiContentGeneration=true*",
 			because: "the create tool should match the core behavior that rejects AI-generated template content");
-		applicationCreateService.DidNotReceiveWithAnyArgs().CreateApplication(default!, default!);
+		applicationCreateService.DidNotReceiveWithAnyArgs()
+			.CreateApplication(default(EnvironmentSettings)!, default!);
+		applicationCreateService.DidNotReceiveWithAnyArgs()
+			.CreateApplication(default(string)!, default!);
 		enrichmentService.DidNotReceiveWithAnyArgs().Enrich(default!, default!, default);
 	}
 
@@ -1272,7 +1299,8 @@ public sealed class ApplicationToolTests {
 		// Arrange
 		IApplicationCreateService applicationCreateService = Substitute.For<IApplicationCreateService>();
 		IApplicationCreateEnrichmentService enrichmentService = Substitute.For<IApplicationCreateEnrichmentService>();
-		ApplicationCreateTool tool = new(applicationCreateService, enrichmentService);
+		ApplicationCreateTool tool = new(
+			Substitute.For<ILogger>(), Substitute.For<IToolCommandResolver>(), applicationCreateService, enrichmentService);
 
 		// Act
 		ApplicationContextResponse result = await tool.ApplicationCreate(new ApplicationCreateArgs(
@@ -1293,7 +1321,10 @@ public sealed class ApplicationToolTests {
 			because: "passing entitySchemaName without useExistingEntitySchema=true triggers a server-side NullReferenceException and must be blocked in clio");
 		result.Error.Should().Match("*useExistingEntitySchema=true*",
 			because: "the error message must tell the caller that entitySchemaName is only valid together with useExistingEntitySchema=true");
-		applicationCreateService.DidNotReceiveWithAnyArgs().CreateApplication(default!, default!);
+		applicationCreateService.DidNotReceiveWithAnyArgs()
+			.CreateApplication(default(EnvironmentSettings)!, default!);
+		applicationCreateService.DidNotReceiveWithAnyArgs()
+			.CreateApplication(default(string)!, default!);
 		enrichmentService.DidNotReceiveWithAnyArgs().Enrich(default!, default!, default);
 	}
 
@@ -1304,7 +1335,8 @@ public sealed class ApplicationToolTests {
 		// Arrange
 		IApplicationCreateService applicationCreateService = Substitute.For<IApplicationCreateService>();
 		IApplicationCreateEnrichmentService enrichmentService = Substitute.For<IApplicationCreateEnrichmentService>();
-		ApplicationCreateTool tool = new(applicationCreateService, enrichmentService);
+		ApplicationCreateTool tool = new(
+			Substitute.For<ILogger>(), Substitute.For<IToolCommandResolver>(), applicationCreateService, enrichmentService);
 
 		// Act
 		ApplicationContextResponse result = await tool.ApplicationCreate(new ApplicationCreateArgs(
@@ -1325,7 +1357,10 @@ public sealed class ApplicationToolTests {
 			because: "useExistingEntitySchema=true without entitySchemaName is an incomplete and unusable combination");
 		result.Error.Should().Match("*entitySchemaName*required*",
 			because: "the error message must tell the caller that entitySchemaName is required when useExistingEntitySchema=true");
-		applicationCreateService.DidNotReceiveWithAnyArgs().CreateApplication(default!, default!);
+		applicationCreateService.DidNotReceiveWithAnyArgs()
+			.CreateApplication(default(EnvironmentSettings)!, default!);
+		applicationCreateService.DidNotReceiveWithAnyArgs()
+			.CreateApplication(default(string)!, default!);
 		enrichmentService.DidNotReceiveWithAnyArgs().Enrich(default!, default!, default);
 	}
 
@@ -1336,7 +1371,12 @@ public sealed class ApplicationToolTests {
 		// Arrange
 		IApplicationCreateService applicationCreateService = Substitute.For<IApplicationCreateService>();
 		IApplicationCreateEnrichmentService enrichmentService = Substitute.For<IApplicationCreateEnrichmentService>();
-		applicationCreateService.CreateApplication("sandbox", Arg.Any<ApplicationCreateRequest>())
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		EnvironmentSettings resolvedSettings = new() { Uri = "https://sandbox.example.com" };
+		commandResolver.Resolve<EnvironmentSettings>(
+				Arg.Is<EnvironmentOptions>(options => options.Environment == "sandbox"))
+			.Returns(resolvedSettings);
+		applicationCreateService.CreateApplication(resolvedSettings, Arg.Any<ApplicationCreateRequest>())
 			.Returns(_ => throw new InvalidOperationException("Template dependency failed."));
 		enrichmentService.Enrich(Arg.Any<ApplicationCreateArgs>(), Arg.Any<ApplicationOptionalTemplateData?>(), default)
 			.Returns(new ApplicationDataForgeResult(
@@ -1346,7 +1386,8 @@ public sealed class ApplicationToolTests {
 				Coverage: new DataForgeCoverage(false, false, false, false, false),
 				Warnings: ["dataforge:unavailable"],
 				ContextSummary: new ApplicationDataForgeContextSummary([], [], [], [])));
-		ApplicationCreateTool tool = new(applicationCreateService, enrichmentService);
+		ApplicationCreateTool tool = new(
+			Substitute.For<ILogger>(), commandResolver, applicationCreateService, enrichmentService);
 
 		// Act
 		ApplicationContextResponse result = await tool.ApplicationCreate(new ApplicationCreateArgs(
@@ -1846,8 +1887,14 @@ public sealed class ApplicationToolTests {
 		// Arrange
 		IApplicationCreateService applicationCreateService = Substitute.For<IApplicationCreateService>();
 		IApplicationCreateEnrichmentService enrichmentService = Substitute.For<IApplicationCreateEnrichmentService>();
-		ApplicationCreateTool tool = new(applicationCreateService, enrichmentService);
-		applicationCreateService.CreateApplication(Arg.Any<string>(), Arg.Any<ApplicationCreateRequest>())
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		EnvironmentSettings resolvedSettings = new() { Uri = "https://sandbox.example.com" };
+		commandResolver.Resolve<EnvironmentSettings>(
+				Arg.Is<EnvironmentOptions>(options => options.Environment == "sandbox"))
+			.Returns(resolvedSettings);
+		ApplicationCreateTool tool = new(
+			Substitute.For<ILogger>(), commandResolver, applicationCreateService, enrichmentService);
+		applicationCreateService.CreateApplication(Arg.Any<EnvironmentSettings>(), Arg.Any<ApplicationCreateRequest>())
 			.Returns(new ApplicationInfoResult(
 				PackageUId: Guid.NewGuid().ToString(),
 				PackageName: "UsrCodexApp",
@@ -1874,7 +1921,7 @@ public sealed class ApplicationToolTests {
 		result.Success.Should().BeTrue(
 			because: "empty template-code should fall back to AppFreedomUI and succeed");
 		applicationCreateService.Received(1).CreateApplication(
-			"sandbox",
+			resolvedSettings,
 			Arg.Is<ApplicationCreateRequest>(r => r.TemplateCode == "AppFreedomUI"));
 	}
 
@@ -1885,12 +1932,13 @@ public sealed class ApplicationToolTests {
 		// Arrange
 		IApplicationCreateService applicationCreateService = Substitute.For<IApplicationCreateService>();
 		IApplicationCreateEnrichmentService enrichmentService = Substitute.For<IApplicationCreateEnrichmentService>();
-		applicationCreateService.CreateApplication(Arg.Any<string>(), Arg.Any<ApplicationCreateRequest>())
+		applicationCreateService.CreateApplication(Arg.Any<EnvironmentSettings>(), Arg.Any<ApplicationCreateRequest>())
 			.Returns(new ApplicationInfoResult("pkg-uid", "PrimaryPkg", []));
 		enrichmentService.Enrich(Arg.Any<ApplicationCreateArgs>(), Arg.Any<ApplicationOptionalTemplateData?>(), Arg.Any<CancellationToken>())
 			.Returns(new ApplicationDataForgeResult(Used: false, Health: null, Status: null, Coverage: null,
 				Warnings: Array.Empty<string>(), ContextSummary: null));
-		ApplicationCreateTool tool = new(applicationCreateService, enrichmentService);
+		ApplicationCreateTool tool = new(
+			Substitute.For<ILogger>(), Substitute.For<IToolCommandResolver>(), applicationCreateService, enrichmentService);
 
 		// Act
 		ApplicationContextResponse result = await tool.ApplicationCreate(new ApplicationCreateArgs(
@@ -1902,7 +1950,8 @@ public sealed class ApplicationToolTests {
 		// Assert
 		result.Success.Should().BeTrue(
 			because: "omitting icon-background is valid — the service assigns a random Freedom UI palette color");
-		applicationCreateService.ReceivedWithAnyArgs().CreateApplication(default!, default!);
+		applicationCreateService.ReceivedWithAnyArgs()
+			.CreateApplication(default(EnvironmentSettings)!, default!);
 	}
 
 	[Test]

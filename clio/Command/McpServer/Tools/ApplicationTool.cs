@@ -126,12 +126,23 @@ public sealed class ApplicationGetInfoTool(
 }
 
 /// <summary>
-/// MCP tool surface for application creation.
+/// MCP tool surface for application creation. Resolves the target environment per request
+/// through <see cref="IToolCommandResolver"/> so the tool honors the mcp-http credential-passthrough
+/// header (<c>X-Integration-Credentials</c>) as well as registered-environment / stdio targets, and
+/// executes under the per-tenant lock and in-flight guard (FR-05, ENG-93347). The settings-based
+/// <see cref="IApplicationCreateService"/> overload routes the WHOLE nested call graph — including
+/// the caption-culture resolution and the timeout/polling readback — to the resolved tenant.
 /// </summary>
 [McpServerToolType]
 public sealed class ApplicationCreateTool(
+	ILogger logger,
+	IToolCommandResolver commandResolver,
 	IApplicationCreateService applicationCreateService,
-	IApplicationCreateEnrichmentService enrichmentService) {
+	IApplicationCreateEnrichmentService enrichmentService)
+	: BaseTool<EnvironmentOptions>(null, logger, commandResolver) {
+
+	private readonly IToolCommandResolver _commandResolver = commandResolver;
+
 	/// <summary>
 	/// Stable MCP tool name for creating Creatio applications.
 	/// </summary>
@@ -144,7 +155,7 @@ public sealed class ApplicationCreateTool(
 		OpenWorld = false)]
 	[Description("Creates a new application in Creatio through backend MCP and returns installed application identity plus the created package and entity context. Long-running: streams notifications/progress while working — await completion and do not retry on a perceived timeout.")]
 	public async Task<ApplicationContextResponse> ApplicationCreate(
-		[Description("Parameters: environment-name, name, code (required); template-code (optional, defaults to AppFreedomUI — the stable recommended template); description, icon-background, icon-id, client-type-id, with-mobile-pages (optional, defaults to true; set false for a web-only app to skip mobile pages)")]
+		[Description("Parameters: environment-name (required unless passthrough); name, code (required); template-code (optional, defaults to AppFreedomUI — the stable recommended template); description, icon-background, icon-id, client-type-id, with-mobile-pages (optional, defaults to true; set false for a web-only app to skip mobile pages)")]
 		[Required]
 		ApplicationCreateArgs args,
 		global::ModelContextProtocol.Server.McpServer server,
@@ -154,17 +165,27 @@ public sealed class ApplicationCreateTool(
 			ValidateCreateArgs(args);
 			string effectiveTemplateCode = string.IsNullOrWhiteSpace(args.TemplateCode) ? "AppFreedomUI" : args.TemplateCode.Trim();
 			ApplicationOptionalTemplateData? optionalTemplateData = ApplicationToolHelper.ParseOptionalTemplateData(args.OptionalTemplateDataJson);
+			EnvironmentOptions options = new() { Environment = args.EnvironmentName };
+			// ExecuteWithCleanLog(options, ...) — the OPTIONS-AWARE overload — keys the execution lock and
+			// the session-container in-flight guard off THIS call's tenant (FR-05), not the shared fallback.
+			// It runs INSIDE the heartbeat work delegate so the lock is held on the worker thread for the
+			// whole synchronous backend call and never across an await.
 			(ApplicationDataForgeResult dataForge, ApplicationInfoResult result) = await McpProgressHeartbeat.RunWithProgressAsync(
 				server,
 				requestContext?.Params?.ProgressToken,
 				ApplicationCreateToolName,
-				() => {
+				() => ExecuteWithCleanLog(options, () => {
+					// Resolve the tenant FIRST: mixed header + environment-name input is rejected here by
+					// the resolver's transport policy before ANY Creatio-reaching call in the graph (AC-06),
+					// including the class-(b) Data Forge enrichment probe below (which routes itself through
+					// the resolver and stays unchanged — ENG-93347 AC-05).
+					EnvironmentSettings settings = _commandResolver.Resolve<EnvironmentSettings>(options);
 					ApplicationDataForgeResult forge = enrichmentService.Enrich(
 						args,
 						optionalTemplateData,
 						cancellationToken);
 					ApplicationInfoResult created = applicationCreateService.CreateApplication(
-						args.EnvironmentName,
+						settings,
 						new ApplicationCreateRequest(
 							args.Name,
 							args.Code,
@@ -176,7 +197,7 @@ public sealed class ApplicationCreateTool(
 							optionalTemplateData,
 							args.WithMobilePages));
 					return (forge, created);
-				},
+				}),
 				cancellationToken).ConfigureAwait(false);
 			return ApplicationToolHelper.CreateContextResponse(
 				ApplicationToolResultMapper.Map(result),
