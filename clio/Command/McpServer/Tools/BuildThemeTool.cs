@@ -33,9 +33,19 @@ namespace Clio.Command.McpServer.Tools;
 /// inside <see cref="BuildThemeCommand"/>, which must not race with concurrent tool invocations in a
 /// long-lived MCP server.
 /// </remarks>
+/// <remarks>
+/// Pattern B (ADR verification #5, ENG-93347): <see cref="BuildThemeOptions"/> is not
+/// <see cref="EnvironmentOptions"/>-derived, so this tool cannot route through
+/// <see cref="BaseTool{T}"/>'s <c>InternalExecute&lt;TCommand&gt;</c> environment-resolution path. Instead,
+/// when <c>version</c> is blank, the tool resolves <see cref="EnvironmentSettings"/> itself (via the
+/// optional <c>commandResolver</c> constructor dependency) and passes the result into the command's
+/// resolvedSettings-aware <c>TryBuildTheme</c> overloads, so the version probe reaches the correct — possibly
+/// header-derived, credential-passthrough — tenant instead of a header-blind name lookup.
+/// </remarks>
 public sealed class BuildThemeTool(
 	BuildThemeCommand command,
-	ILogger logger) : BaseTool<BuildThemeOptions>(command, logger) {
+	ILogger logger,
+	IToolCommandResolver commandResolver = null) : BaseTool<BuildThemeOptions>(command, logger) {
 
 	internal const string ToolName = "build-theme";
 
@@ -105,14 +115,33 @@ public sealed class BuildThemeTool(
 			Version = args.Version,
 			EnvironmentName = args.EnvironmentName
 		};
+		// Pattern B (ADR verification #5, ENG-93347): BuildThemeOptions is not EnvironmentOptions-derived, so
+		// this tool cannot route the version probe through BaseTool's InternalExecute<TCommand> environment
+		// resolution. Instead, when --version is blank, the TOOL resolves EnvironmentSettings itself (the same
+		// commandResolver every other matrix tool probes with) and passes the result into the command, which
+		// resolves the version against it directly — reaching the header tenant under credential passthrough
+		// instead of a header-blind name lookup. An explicit --version always wins and skips this attempt
+		// entirely (AC-07). Any resolution failure (unresolvable environment, or the mixed-input
+		// HasExplicitCredentialArgs rejection) is caught and fails soft to LatestFallback (AC-02/AC-03) — the
+		// same documented fallback marker the CLI's offline path produces.
+		EnvironmentSettings resolvedSettings = null;
+		if (string.IsNullOrWhiteSpace(args.Version) && commandResolver is not null) {
+			try {
+				resolvedSettings = commandResolver.Resolve<EnvironmentSettings>(
+					new EnvironmentOptions { Environment = args.EnvironmentName });
+			}
+			catch (Exception) {
+				resolvedSettings = null;
+			}
+		}
 		return ExecuteWithCleanLog(() => {
 			if (writeToPackage) {
-				if (!command.TryBuildTheme(options, args.WorkspaceDirectory, args.PackageName, out string writtenPath, out IReadOnlyList<string> writeWarnings, out string writeError)) {
+				if (!command.TryBuildTheme(options, resolvedSettings, args.WorkspaceDirectory, args.PackageName, out string writtenPath, out IReadOnlyList<string> writeWarnings, out string writeError)) {
 					return BuildThemeResult.Failure(writeError);
 				}
 				return BuildThemeResult.Written(writtenPath, writeWarnings);
 			}
-			if (!command.TryBuildTheme(options, out string css, out string descriptor, out IReadOnlyList<string> warnings, out string buildError)) {
+			if (!command.TryBuildTheme(options, resolvedSettings, out string css, out string descriptor, out IReadOnlyList<string> warnings, out string buildError)) {
 				return BuildThemeResult.Failure(buildError);
 			}
 			return BuildThemeResult.Successful(css, descriptor, warnings);
@@ -196,7 +225,8 @@ public sealed record BuildThemeArgs(
 	string? Version = null,
 
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Registered environment whose Creatio version the theme targets; mutually exclusive with version.")]
+	[property: Description("Registered environment whose Creatio version the theme targets; mutually exclusive with version. " +
+		"If the environment cannot be resolved or its version cannot be determined, the theme is still built — silently using the newest supported version — instead of failing.")]
 	string? EnvironmentName = null,
 
 	[property: JsonPropertyName("workspace-directory")]

@@ -195,6 +195,64 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 	}
 
 	/// <summary>
+	/// Like <see cref="TryBuildTheme(BuildThemeOptions, string, string, out string, out IReadOnlyList{string}, out string)"/>
+	/// but threads a caller-resolved <paramref name="resolvedSettings"/> through to version resolution instead of an
+	/// environment-name repository lookup. Used only by the <c>build-theme</c> MCP tool's workspace-write mode.
+	/// </summary>
+	/// <param name="options">The brand inputs and template-version selectors (its <c>CssClassName</c> names the theme subfolder).</param>
+	/// <param name="resolvedSettings">
+	/// Settings resolved by the caller for the target tenant; <see langword="null"/> falls back to
+	/// <see cref="VersionResolutionSource.LatestFallback"/>.
+	/// </param>
+	/// <param name="workspaceDirectory">The absolute root of the clio workspace.</param>
+	/// <param name="packageName">The package inside the workspace to write the theme into.</param>
+	/// <param name="outputPath">The written theme directory on success; otherwise <c>null</c>.</param>
+	/// <param name="warnings">Non-fatal advisories on success; an empty list when there are none.</param>
+	/// <param name="error">The diagnostic message on failure; otherwise <c>null</c>.</param>
+	/// <returns><c>true</c> when the artifacts were built and written; <c>false</c> when validation, build, or write fails.</returns>
+	public bool TryBuildTheme(BuildThemeOptions options, EnvironmentSettings resolvedSettings, string workspaceDirectory, string packageName,
+		out string outputPath, out IReadOnlyList<string> warnings, out string error) {
+		outputPath = null;
+		warnings = [];
+		error = null;
+		if (!ThemeParameterValidator.TryResolveCssClassName(options.CssClassName, options.Caption, out string resolvedClass, out error)) {
+			return false;
+		}
+		_workspacePathBuilder.RootPath = workspaceDirectory;
+		if (!_workspacePathBuilder.IsWorkspace) {
+			error = $"build-theme: '{workspaceDirectory}' is not a clio workspace "
+				+ "(missing .clio/workspaceSettings.json). Create it first with create-workspace.";
+			return false;
+		}
+		string packagePath = _workspacePathBuilder.BuildPackagePath(packageName);
+		if (!_fileSystem.ExistsDirectory(packagePath)) {
+			error = $"build-theme: package '{packageName}' does not exist in the workspace "
+				+ $"(expected at '{packagePath}'). Add it first with add-package.";
+			return false;
+		}
+		string themeDirectory = Path.Combine(packagePath, PackageFilesFolderName, ThemesFolderName, resolvedClass);
+		return TryBuildAndWrite(options, resolvedSettings, themeDirectory, out outputPath, out warnings, out error);
+	}
+
+	// Shared by the resolvedSettings-aware workspace-write overload above: builds the artifacts against
+	// resolvedSettings (rather than a by-name environment lookup) and writes them to outputDirectory. Kept
+	// private (not a public overload) — the two required new overloads are the ones the MCP tool calls
+	// directly; this is their shared plumbing, mirroring what the untouched name-based
+	// TryBuildTheme(options, outputDirectory, ...) overload does for the CLI path.
+	private bool TryBuildAndWrite(BuildThemeOptions options, EnvironmentSettings resolvedSettings, string outputDirectory,
+		out string outputPath, out IReadOnlyList<string> warnings, out string error) {
+		outputPath = null;
+		if (!TryBuildTheme(options, resolvedSettings, out string css, out string descriptor, out warnings, out error)) {
+			return false;
+		}
+		if (!TryWriteArtifacts(outputDirectory, css, descriptor, out error)) {
+			return false;
+		}
+		outputPath = outputDirectory;
+		return true;
+	}
+
+	/// <summary>
 	/// Builds the artifacts of a theme from <paramref name="options"/> and the bundled, version-matched
 	/// template — the <c>theme.css</c> and its <c>theme.json</c> descriptor. Shared by the CLI command and the
 	/// <c>build-theme</c> MCP tool so both surfaces resolve the version and map the inputs identically.
@@ -214,6 +272,51 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 		}
 		try {
 			PlatformVersionResolution resolution = ResolveVersion(normalizedOptions);
+			string templateVersion = resolution.Source == VersionResolutionSource.LatestFallback ? null : resolution.ResolvedVersion;
+			css = _themeCssBuilder.Build(_themeTemplateProvider.GetCssTemplate(templateVersion), ToBuilderOptions(normalizedOptions));
+			descriptor = BuildDescriptor(normalizedOptions, templateVersion);
+			warnings = CollectWarnings(normalizedOptions);
+			return true;
+		}
+		catch (ArgumentException ex) {
+			error = ex.Message;
+			return false;
+		}
+		catch (InvalidOperationException ex) {
+			error = ex.Message;
+			return false;
+		}
+	}
+
+	/// <summary>
+	/// Like <see cref="TryBuildTheme(BuildThemeOptions, out string, out string, out IReadOnlyList{string}, out string)"/>
+	/// but resolves the platform version from a caller-supplied <paramref name="resolvedSettings"/> instead of
+	/// resolving <c>--environment-name</c> by name against the settings repository. Used only by the
+	/// <c>build-theme</c> MCP tool, which resolves settings itself via
+	/// <see cref="Clio.Command.McpServer.Tools.IToolCommandResolver"/> so the version probe reaches the correct
+	/// (possibly header-derived, credential-passthrough) tenant; the CLI never calls this overload and its
+	/// by-name <see cref="ResolveVersion(BuildThemeOptions)"/> path stays unchanged.
+	/// </summary>
+	/// <param name="options">The brand inputs and template-version selectors.</param>
+	/// <param name="resolvedSettings">
+	/// Settings resolved by the caller for the target tenant; <see langword="null"/> (resolution was skipped or
+	/// failed) falls back to <see cref="VersionResolutionSource.LatestFallback"/> — the same marker the CLI's
+	/// offline path produces.
+	/// </param>
+	/// <param name="css">The built <c>theme.css</c> on success; otherwise <c>null</c>.</param>
+	/// <param name="descriptor">The built <c>theme.json</c> descriptor on success; otherwise <c>null</c>.</param>
+	/// <param name="warnings">Non-fatal advisories on success; an empty list when there are none.</param>
+	/// <param name="error">The diagnostic message on failure; otherwise <c>null</c>.</param>
+	/// <returns><c>true</c> when the artifacts were built; <c>false</c> when an input or template error is reported in <paramref name="error"/>.</returns>
+	public bool TryBuildTheme(BuildThemeOptions options, EnvironmentSettings resolvedSettings, out string css, out string descriptor, out IReadOnlyList<string> warnings, out string error) {
+		css = null;
+		descriptor = null;
+		warnings = [];
+		if (!TryNormalizeOptions(options, out BuildThemeOptions normalizedOptions, out error)) {
+			return false;
+		}
+		try {
+			PlatformVersionResolution resolution = ResolveVersion(normalizedOptions, resolvedSettings);
 			string templateVersion = resolution.Source == VersionResolutionSource.LatestFallback ? null : resolution.ResolvedVersion;
 			css = _themeCssBuilder.Build(_themeTemplateProvider.GetCssTemplate(templateVersion), ToBuilderOptions(normalizedOptions));
 			descriptor = BuildDescriptor(normalizedOptions, templateVersion);
@@ -268,6 +371,31 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 					+ "Pass --version to choose a template explicitly.");
 			}
 			return resolution;
+		}
+		return new PlatformVersionResolution(null, VersionResolutionSource.LatestFallback);
+	}
+
+	// Pattern B (ADR verification #5, ENG-93347): version resolution for the resolvedSettings-aware overloads.
+	// Explicit --version still wins first (and --version/--environment-name stay mutually exclusive, unchanged).
+	// Otherwise, when the CALLER (the build-theme MCP tool) already resolved EnvironmentSettings for the target
+	// tenant — via IToolCommandResolver, which may be the header tenant under credential passthrough, a
+	// registered environment, or null on resolution failure/rejection — resolve the version against it directly
+	// via _resolverFactory, with NO repository call (no by-name lookup happens here at all). When no settings
+	// were resolved (resolver threw, or commandResolver is null — the CLI never passes resolvedSettings), fall
+	// back to LatestFallback, byte-for-byte the CLI's existing offline default (fail-soft, matches the sibling
+	// matrix tools' probe shape).
+	private PlatformVersionResolution ResolveVersion(BuildThemeOptions options, EnvironmentSettings resolvedSettings) {
+		bool hasVersion = !string.IsNullOrWhiteSpace(options.Version);
+		bool hasEnvironment = !string.IsNullOrWhiteSpace(options.EnvironmentName);
+		if (hasVersion && hasEnvironment) {
+			throw new ArgumentException(
+				"build-theme: --version and --environment-name are mutually exclusive. Pass one or neither.");
+		}
+		if (hasVersion) {
+			return new PlatformVersionResolution(options.Version.Trim(), VersionResolutionSource.Environment);
+		}
+		if (resolvedSettings is not null) {
+			return _resolverFactory.Create(resolvedSettings).ResolveAsync(CancellationToken.None).GetAwaiter().GetResult();
 		}
 		return new PlatformVersionResolution(null, VersionResolutionSource.LatestFallback);
 	}
