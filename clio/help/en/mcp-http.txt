@@ -107,12 +107,23 @@ OPTIONS
         any ingress that forwards the Host header.
 
     --allow-insecure-public
-        Allow starting with a public/wildcard --host (e.g. 0.0.0.0) while
-        authorization is OFF (also a truthy
-        CLIO_MCP_HTTP_ALLOW_INSECURE_PUBLIC). Without this flag, clio REFUSES TO
-        START in that combination: an unauthenticated public bind exposes every
-        registered environment's stored credentials to anyone who can reach the
-        port. Not recommended outside a fully trusted network.
+        Allow starting with a public/wildcard --host (e.g. 0.0.0.0), OR any
+        other concrete non-loopback host/IP, while authorization is OFF (also a
+        truthy CLIO_MCP_HTTP_ALLOW_INSECURE_PUBLIC). Without this flag, clio
+        REFUSES TO START in that combination: an unauthenticated reachable bind
+        exposes every registered environment's stored credentials to anyone who
+        can reach the port. Not recommended outside a fully trusted network.
+
+    --auth-allow-any-audience
+        Allow enabling authorization (--auth-authority) with NEITHER
+        --auth-audience NOR --auth-required-scopes configured (also a truthy
+        CLIO_MCP_HTTP_AUTH_ALLOW_ANY_AUDIENCE). Without this flag, clio REFUSES
+        TO START in that combination: with no audience or scope restriction the
+        endpoint accepts ANY token the configured authority ever mints for ANY
+        client/resource -- a confused-deputy risk on a shared identity platform.
+        Configure --auth-audience and/or --auth-required-scopes instead
+        wherever possible; this is a documented escape hatch, not a
+        recommended posture.
 
     When authorization is enabled, EVERY request to the MCP endpoint requires a
     valid token — pre-registered '-e <env>' / stored-credential access included,
@@ -122,8 +133,11 @@ OPTIONS
     403 for scope) with a WWW-Authenticate header naming that discovery URL.
 
     With no --auth-authority configured (default), authorization is off and the
-    server behaves exactly as before this feature — EXCEPT that a public/wildcard
-    --host with no authorization refuses to start (see --allow-insecure-public).
+    server behaves exactly as before this feature — EXCEPT that a reachable
+    (public/wildcard or concrete non-loopback) --host with no authorization
+    refuses to start (see --allow-insecure-public), and enabling authorization
+    with no audience/scope restriction refuses to start too (see
+    --auth-allow-any-audience).
 
 CREDENTIAL PASSTHROUGH (multi-tenant edge)
     Per-request credential passthrough lets a gateway target a different Creatio

@@ -105,6 +105,17 @@ public class McpHttpServerCommandOptions : BaseCommandOptions
 			+ "bind exposes every registered environment's stored credentials to anyone who can reach "
 			+ "the port. Not recommended outside a fully trusted network.")]
 	public bool AllowInsecurePublic { get; set; }
+
+	[Option("auth-allow-any-audience", Required = false,
+		HelpText = "Allow enabling standard OAuth authorization (--auth-authority) with NEITHER "
+			+ "--auth-audience NOR --auth-required-scopes configured (also a truthy "
+			+ "CLIO_MCP_HTTP_AUTH_ALLOW_ANY_AUDIENCE). Without this flag, clio REFUSES TO START in that "
+			+ "combination: with no audience or scope restriction, the endpoint would accept ANY token "
+			+ "the configured --auth-authority ever mints for ANY client/resource, not just this one -- a "
+			+ "confused-deputy risk on a shared identity platform. Configure --auth-audience and/or "
+			+ "--auth-required-scopes instead wherever possible; this flag is a documented escape hatch, "
+			+ "not a recommended posture.")]
+	public bool AuthAllowAnyAudience { get; set; }
 }
 
 /// <summary>
@@ -215,7 +226,7 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 		bool allowInsecurePublic = options.AllowInsecurePublic
 			|| IsTruthyEnvironmentFlag("CLIO_MCP_HTTP_ALLOW_INSECURE_PUBLIC");
 		PublicBindGuardOutcome guardOutcome = EvaluatePublicBindGuard(
-			IsWildcardHost(options.Host), authConfiguration.Enabled, allowInsecurePublic);
+			IsPublicBind(options.Host), authConfiguration.Enabled, allowInsecurePublic);
 		switch (guardOutcome) {
 			case PublicBindGuardOutcome.Refuse:
 				ConsoleLogger.Instance.WriteError(
@@ -231,6 +242,35 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 					+ "configured; --allow-insecure-public was set. Every registered environment's "
 					+ "stored credentials are reachable to anyone who can reach this port. Use only on "
 					+ "a fully trusted network.");
+				break;
+		}
+
+		// Audience/scope guard (ENG-93386, Story 8 final-review fix; REFUSE, not just warn —
+		// security-first default, same posture as the public-bind guard above). Enabling authorization
+		// requires only --auth-authority; with NEITHER --auth-audience NOR --auth-required-scopes also
+		// configured, the JWT bearer handler accepts ANY token the shared issuer ever mints for ANY
+		// client/resource (ValidateAudience becomes false and the scope check is vacuously satisfied by
+		// an empty required-scope set) — a confused-deputy risk on a shared identity platform.
+		bool allowAnyAudience = options.AuthAllowAnyAudience
+			|| IsTruthyEnvironmentFlag("CLIO_MCP_HTTP_AUTH_ALLOW_ANY_AUDIENCE");
+		PublicBindGuardOutcome audienceGuardOutcome = EvaluateAudienceScopeGuard(
+			authConfiguration.Enabled, authConfiguration.Audiences.Count, authConfiguration.RequiredScopes.Count,
+			allowAnyAudience);
+		switch (audienceGuardOutcome) {
+			case PublicBindGuardOutcome.Refuse:
+				ConsoleLogger.Instance.WriteError(
+					"Refusing to start: --auth-authority is configured but neither --auth-audience nor "
+					+ "--auth-required-scopes is set. The endpoint would accept any token the configured "
+					+ "authority ever mints for any client or resource, not just this one. Configure "
+					+ "--auth-audience and/or --auth-required-scopes, or pass --auth-allow-any-audience "
+					+ "to start anyway (not recommended).");
+				return 1;
+			case PublicBindGuardOutcome.Warn:
+				ConsoleLogger.Instance.WriteWarning(
+					"Standard OAuth authorization is enabled with NEITHER --auth-audience NOR "
+					+ "--auth-required-scopes configured; --auth-allow-any-audience was set. The endpoint "
+					+ "accepts any token the configured authority mints for any client or resource. Use "
+					+ "only when the authority is exclusively dedicated to this deployment.");
 				break;
 		}
 
@@ -531,22 +571,61 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 	}
 
 	/// <summary>
-	/// Decides whether a public/wildcard <c>--host</c> combined with authorization being off is allowed
-	/// to start. Security-first default: REFUSE, not merely warn — an unauthenticated public bind exposes
-	/// every registered environment's stored credentials to any caller that can reach the port. The
-	/// operator can explicitly override via <c>--allow-insecure-public</c> (or the matching env var).
+	/// Decides whether a public/reachable <c>--host</c> combined with authorization being off is allowed
+	/// to start. Security-first default: REFUSE, not merely warn — an unauthenticated reachable bind
+	/// exposes every registered environment's stored credentials to any caller that can reach the port.
+	/// The operator can explicitly override via <c>--allow-insecure-public</c> (or the matching env var).
 	/// </summary>
-	/// <param name="isWildcardHost">Whether <c>--host</c> is a public/wildcard bind.</param>
+	/// <param name="isPublicBind">Whether <c>--host</c> is reachable by more than just this machine's own
+	/// loopback interface — a wildcard bind (<c>0.0.0.0</c>) or any concrete non-loopback address/hostname
+	/// (see <see cref="IsPublicBind"/>). Final-review fix (Story 8): originally this only covered the four
+	/// literal wildcard spellings, silently missing a bind to a concrete LAN/public IP or DNS name — the
+	/// exact "gates only the literal wildcard" gap this guard exists to close.</param>
 	/// <param name="authorizationEnabled">Whether OAuth Resource-Server authorization is configured.</param>
 	/// <param name="allowInsecurePublic">Whether the operator explicitly opted into the insecure combination.</param>
 	/// <returns>The guard's decision.</returns>
 	internal static PublicBindGuardOutcome EvaluatePublicBindGuard(
-		bool isWildcardHost, bool authorizationEnabled, bool allowInsecurePublic) {
-		if (!isWildcardHost || authorizationEnabled) {
+		bool isPublicBind, bool authorizationEnabled, bool allowInsecurePublic) {
+		if (!isPublicBind || authorizationEnabled) {
 			return PublicBindGuardOutcome.Ok;
 		}
 		return allowInsecurePublic ? PublicBindGuardOutcome.Warn : PublicBindGuardOutcome.Refuse;
 	}
+
+	/// <summary>
+	/// ENG-93386 Story 8 (final-review fix). Decides whether standard OAuth authorization being enabled
+	/// with NEITHER an accepted audience NOR a required scope configured is allowed to start. Security-first
+	/// default: REFUSE, not merely warn — with both empty, <see cref="McpHttpAuthentication.BuildTokenValidationParameters"/>
+	/// disables audience validation and the scope check is vacuously satisfied, so the endpoint accepts any
+	/// token the configured authority ever mints for any client or resource (a confused-deputy risk on a
+	/// shared identity platform). The operator can explicitly override via <c>--auth-allow-any-audience</c>
+	/// (or the matching env var). Reuses <see cref="PublicBindGuardOutcome"/> — an identical Ok/Warn/Refuse
+	/// shape for a distinct startup precondition.
+	/// </summary>
+	/// <param name="authorizationEnabled">Whether OAuth Resource-Server authorization is configured.</param>
+	/// <param name="audienceCount">Number of configured accepted audiences.</param>
+	/// <param name="requiredScopeCount">Number of configured required scopes.</param>
+	/// <param name="allowAnyAudience">Whether the operator explicitly opted into the unscoped combination.</param>
+	/// <returns>The guard's decision.</returns>
+	internal static PublicBindGuardOutcome EvaluateAudienceScopeGuard(
+		bool authorizationEnabled, int audienceCount, int requiredScopeCount, bool allowAnyAudience) {
+		if (!authorizationEnabled || audienceCount > 0 || requiredScopeCount > 0) {
+			return PublicBindGuardOutcome.Ok;
+		}
+		return allowAnyAudience ? PublicBindGuardOutcome.Warn : PublicBindGuardOutcome.Refuse;
+	}
+
+	/// <summary>
+	/// ENG-93386 Story 8 (final-review fix): <see langword="true"/> for any host reachable by more than
+	/// this machine's own loopback interface — i.e. everything except the fixed loopback alias literals.
+	/// Broader than <see cref="IsWildcardHost"/> (which only recognizes the literal wildcard spellings and
+	/// is used for Host-header allow-listing, a distinct concern): a bind to a concrete LAN/public IP or
+	/// DNS hostname is just as reachable to a remote caller as <c>0.0.0.0</c>, so the public-bind guard
+	/// must treat it the same way.
+	/// </summary>
+	/// <param name="host">The <c>--host</c> value.</param>
+	/// <returns><see langword="true"/> when the bind is not a recognized loopback alias.</returns>
+	internal static bool IsPublicBind(string host) => !IsLoopbackAlias(host);
 
 	/// <summary>
 	/// ENG-93386 Story 7 (FR-12/D-6): <see langword="true"/> when both standard OAuth authorization
@@ -560,8 +639,9 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 	internal static bool ShouldWarnPlatformApiKeyIgnored(bool authorizationEnabled, int platformApiKeyCount) =>
 		authorizationEnabled && platformApiKeyCount > 0;
 
-	private static bool IsTruthyEnvironmentFlag(string variableName) {
-		string value = Environment.GetEnvironmentVariable(variableName);
-		return string.Equals(value, "true", StringComparison.OrdinalIgnoreCase) || value == "1";
-	}
+	// ENG-93386 Story 8 (final-review fix): delegates the actual truthy-parsing rule to
+	// AuthConfiguration.IsTruthy so every mcp-http boolean env-var override (this one included) trims
+	// whitespace the same way — a review found this copy previously did not trim, unlike the other.
+	private static bool IsTruthyEnvironmentFlag(string variableName) =>
+		AuthConfiguration.IsTruthy(Environment.GetEnvironmentVariable(variableName));
 }

@@ -1,6 +1,6 @@
 # ADR: Clio MCP HTTP Standard Authorization — OAuth 2.1 Resource Server
 
-**Status**: Proposed
+**Status**: Accepted (all 8 stories implemented, final adversarial review passed 2026-07-11)
 **Author**: Architect (with Alex Kravchuk)
 **Jira**: ENG-93386 (sub-task of ENG-92790; follow-up to ENG-93208; layers on top of the credential-passthrough edge in [adr-mcp-http-credential-passthrough.md](./adr-mcp-http-credential-passthrough.md))
 **Umbrella branch**: `claude/clio-mcp-multi-tenant-73a807` (PR #830) — this work branches off it, not `master`
@@ -118,6 +118,13 @@ Replace the bespoke `PlatformApiKeyGate` front door with **standard MCP OAuth 2.
 ### D-7 — Unified auth error taxonomy
 - All authorization outcomes resolve at the **auth layer, before** the tool layer: `401` (missing/invalid/expired token, or wrong audience) with a spec-compliant `WWW-Authenticate`; `403` (insufficient scope / gateway not authorized for tenant); `400` (malformed request/header). No secret is ever echoed. This removes today's mix of 401/400/tool-level exit-code-1 for auth failures.
 
+### D-8 — Final-review fixes (Story 8 adversarial gate, 2026-07-11)
+Two Blocker/High-equivalent gaps surfaced by the mandatory final review (converged on independently by all three review lenses — quality, correctness/performance, security) were fixed before accepting this ADR:
+- **Audience/scope fail-open (High):** `--auth-authority` alone is enough to enable authorization; with neither `--auth-audience` nor `--auth-required-scopes` also configured, `ValidateAudience` becomes `false` and the scope check is vacuously satisfied — the endpoint would accept ANY token the configured (often shared, per Story 1's spike) identity-platform issuer ever mints for ANY client/resource. Fixed with a REFUSE-by-default startup guard (`EvaluateAudienceScopeGuard`, same Ok/Warn/Refuse shape as D-4's public-bind guard), overridable only via the explicit `--auth-allow-any-audience` escape hatch.
+- **Public-bind guard too narrow (Medium):** the guard from D-4 only recognized the four literal wildcard spellings (`0.0.0.0`/`*`/`::`/`[::]`); a bind to a concrete LAN/public IP or DNS hostname silently bypassed it despite being equally reachable. Broadened to treat any non-loopback host as public (`IsPublicBind`).
+
+Lower-severity findings (a duplicated/inconsistent truthy-env-var parser, stale doc wording, an unverified-but-authored E2E assertion) were also fixed or explicitly accepted as documented trade-offs; see the Story 8 file for the full list.
+
 ---
 
 ## Consequences
@@ -137,6 +144,7 @@ Replace the bespoke `PlatformApiKeyGate` front door with **standard MCP OAuth 2.
 - Interactive human/direct-client auth (auth-code+PKCE) — only if a non-gateway client mode is later required.
 - mTLS/workload-identity for the gateway↔clio hop — optional hardening, can be added independently (D-3/C).
 - The name-based-tool passthrough gap (ENG-93347) and the `IsNetCore` header gap (ENG-93348) are separate follow-ups, not part of this ADR.
+- **Per-tool `.AddAuthorizationFilters()` (D-1, Story 8):** not implemented — the identity-platform issues one undifferentiated scope for the gateway client, so a per-tool filter could only require the same baseline scope (a no-op, already enforced endpoint-wide) or an elevated scope the AS never issues (reject-all). Endpoint-level `RequireAuthorization` is the whole of the enforceable authorization surface until the AS can issue differentiated scopes.
 
 ---
 

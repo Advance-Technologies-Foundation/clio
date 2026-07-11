@@ -154,6 +154,16 @@ public sealed record AuthConfiguration
 		: !string.IsNullOrWhiteSpace(second) ? second
 		: null;
 
-	private static bool IsTruthy(string value) =>
+	/// <summary>
+	/// Parses a truthy flag value the same way across every mcp-http boolean env-var override
+	/// (<c>"true"</c>/<c>"1"</c>, case-insensitive, tolerant of surrounding whitespace). Internal so
+	/// <see cref="McpHttpServerCommand"/>'s env-var-driven boolean flags (e.g.
+	/// <c>CLIO_MCP_HTTP_ALLOW_INSECURE_PUBLIC</c>) share the exact same parsing rule instead of a
+	/// second, subtly different copy (a review found the two had drifted: this one trimmed, the other
+	/// did not).
+	/// </summary>
+	/// <param name="value">The raw string value (may be <see langword="null"/>).</param>
+	/// <returns><see langword="true"/> when the value is a recognized truthy spelling.</returns>
+	internal static bool IsTruthy(string value) =>
 		string.Equals(value?.Trim(), "true", StringComparison.OrdinalIgnoreCase) || value?.Trim() == "1";
 }
