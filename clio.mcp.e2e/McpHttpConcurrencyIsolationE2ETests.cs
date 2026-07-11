@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
@@ -136,4 +137,195 @@ public sealed class McpHttpConcurrencyIsolationE2ETests {
 	}
 
 	private static string HostOf(string url) => new Uri(url).Host;
+
+	// ---------------------------------------------------------------------------------------------
+	// Story 15 AC-02 (ENG-93347, PRD AC-07): the same two-tenant isolation proof already established
+	// above for describe-environment, extended to EVERY newly routed tool. Data-driven over the
+	// mandated 12-tool set via [TestCaseSource] so each tool still surfaces as an individually
+	// named/reportable case (NUnit renders each as
+	// "ConcurrentPassthroughRequests_ShouldIsolateNewlyRoutedTool_WhenTwoTenantsCallConcurrently(\"<tool>\")").
+	//
+	// Isolation does not require the call to SUCCEED (a "not found" on both tenants proves distinct
+	// authenticated containers just as well as two successes) — so most tool calls below deliberately
+	// carry non-existent, per-tenant-unique identifiers. For get-component-info the mandated scenario
+	// is specifically the mixed-input path (header + environment-name together), not a successful list
+	// call, so that one case supplies environment-name deliberately. The assertion below is
+	// deliberately the NEGATIVE cross-tenant-bleed check only (NotContain the OTHER tenant's marker),
+	// never a positive "response echoes its own marker/rejection text" check — whether a given tool's
+	// success/error text echoes anything about the request is tool-specific, unverified against a live
+	// stand, and for get-component-info specifically the mixed-input rejection message is documented to
+	// name NO supplied value while the tool itself is documented to fail SOFT to a latest-fallback
+	// success on any version-resolution failure. NotContain(other) holds regardless of which of those
+	// shapes a real stand produces.
+	// ---------------------------------------------------------------------------------------------
+
+	private static readonly string[] NewlyRoutedToolNames = [
+		ApplicationGetListTool.ApplicationGetListToolName,
+		ApplicationGetInfoTool.ApplicationGetInfoToolName,
+		ApplicationCreateTool.ApplicationCreateToolName,
+		ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
+		ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName,
+		ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName,
+		ApplicationSectionGetListTool.ApplicationSectionGetListToolName,
+		GetUserCultureTool.ToolName,
+		PageUpdateTool.ToolName,
+		PageSyncTool.ToolName,
+		ComponentInfoTool.ToolName,
+		BuildThemeTool.ToolName
+	];
+
+	// Tools with no natural per-call discriminating argument. Their isolation proof rests on the
+	// shared independent-completion + non-serialization assertions below (mirrors the
+	// MANUAL-RUNNER ASSUMPTION already recorded for describe-environment at lines 79-80).
+	private static readonly HashSet<string> NoDiscriminatorArgumentTools = new(StringComparer.Ordinal) {
+		ApplicationGetListTool.ApplicationGetListToolName,
+		GetUserCultureTool.ToolName,
+		BuildThemeTool.ToolName
+	};
+
+	[Test]
+	[Description("Two concurrent different-credential passthrough requests against one mcp-http process each isolate a newly routed tool to its OWN tenant, with no cross-tenant bleed and no global-lock serialization (Story 15 AC-02; PRD AC-07).")]
+	public async Task ConcurrentPassthroughRequests_ShouldIsolateNewlyRoutedTool_WhenTwoTenantsCallConcurrently(
+		[ValueSource(nameof(NewlyRoutedToolNames))] string toolName) {
+		// Arrange
+		McpHttpPassthroughStand stand = McpHttpPassthroughStand.RequireOrIgnore();
+		using CancellationTokenSource cts = new(TimeSpan.FromMinutes(5));
+		await using McpHttpServerSession server =
+			await McpHttpServerSession.StartAsync(_settings, stand.PlatformApiKey, cts.Token);
+		await using McpClient tenantOneClient = await server.ConnectAsync(
+			stand.PlatformApiKey,
+			McpHttpServerSession.EncodeBearerCredentials(stand.TenantOneUrl, stand.TenantOneToken),
+			cts.Token);
+		await using McpClient tenantTwoClient = await server.ConnectAsync(
+			stand.PlatformApiKey,
+			McpHttpServerSession.EncodeBearerCredentials(stand.TenantTwoUrl, stand.TenantTwoToken),
+			cts.Token);
+
+		string probeId = Guid.NewGuid().ToString("N")[..8];
+		string tenantOneMarker = $"isot1{probeId}";
+		string tenantTwoMarker = $"isot2{probeId}";
+		Dictionary<string, object?> tenantOneArgs = BuildNewlyRoutedToolArgs(toolName, tenantOneMarker);
+		Dictionary<string, object?> tenantTwoArgs = BuildNewlyRoutedToolArgs(toolName, tenantTwoMarker);
+
+		// Act — fire both concurrently (independent async flows on one process); neither call carries an
+		// environment-name UNLESS the tool's mandated isolation scenario IS the mixed-input rejection
+		// (get-component-info), so every other request resolves purely from its own
+		// X-Integration-Credentials header.
+		Task<CallToolResult> tenantOneCall = tenantOneClient.CallToolAsync(
+			toolName,
+			new Dictionary<string, object?> { ["args"] = tenantOneArgs },
+			cancellationToken: cts.Token).AsTask();
+		Task<CallToolResult> tenantTwoCall = tenantTwoClient.CallToolAsync(
+			toolName,
+			new Dictionary<string, object?> { ["args"] = tenantTwoArgs },
+			cancellationToken: cts.Token).AsTask();
+		Task completedBatch = Task.WhenAll(tenantOneCall, tenantTwoCall);
+		Task winner = await Task.WhenAny(completedBatch, Task.Delay(TimeSpan.FromMinutes(4), cts.Token));
+
+		// Assert
+		winner.Should().Be(completedBatch,
+			because: $"two distinct-tenant '{toolName}' passthrough requests must complete concurrently, not serialize behind one global lock (PRD AC-07)");
+		// Only the NEGATIVE cross-tenant-bleed check is asserted here — not a positive "response echoes
+		// its own marker" check. Whether a tool's success/error text echoes a supplied identifier is
+		// tool-specific and unverified against a live stand (e.g. update-page/sync-pages's marker-integrity
+		// failure has no reason to echo schema-name; get-component-info's mixed-input rejection message
+		// deliberately names NO supplied value, and the tool is documented to fail SOFT to a latest-fallback
+		// success on any version-resolution failure). NotContain(otherTenantMarker) is a real bleed check
+		// regardless of whether a tool echoes anything about itself, and cannot spuriously fail the way a
+		// positional "must contain its own marker" assertion could.
+		if (!NoDiscriminatorArgumentTools.Contains(toolName)) {
+			string tenantOneResponse = ExtractRawResponseJson(tenantOneCall.Result);
+			string tenantTwoResponse = ExtractRawResponseJson(tenantTwoCall.Result);
+			tenantOneResponse.Should().NotContain(tenantTwoMarker,
+				because: $"tenant one's '{toolName}' response must NOT reference tenant two's per-call probe identifier — no cross-tenant bleed");
+			tenantTwoResponse.Should().NotContain(tenantOneMarker,
+				because: $"tenant two's '{toolName}' response must NOT reference tenant one's per-call probe identifier — no cross-tenant bleed");
+		}
+	}
+
+	// Builds the minimal args shape each newly routed tool needs to be INVOKED (not necessarily to
+	// SUCCEED — see the class remarks above). `marker` is a distinct, per-tenant, per-run alphanumeric
+	// token embedded in whichever identifying field the tool exposes, so a business-level "not found"
+	// failure still lets the assertions above tell tenant one's response apart from tenant two's.
+	private static Dictionary<string, object?> BuildNewlyRoutedToolArgs(string toolName, string marker) {
+		if (toolName == ApplicationGetListTool.ApplicationGetListToolName
+			|| toolName == GetUserCultureTool.ToolName) {
+			return [];
+		}
+		if (toolName == ApplicationGetInfoTool.ApplicationGetInfoToolName) {
+			return new Dictionary<string, object?> { ["code"] = marker };
+		}
+		if (toolName == ApplicationCreateTool.ApplicationCreateToolName) {
+			return new Dictionary<string, object?> {
+				["name"] = $"Isolation Probe {marker}",
+				["code"] = marker,
+				["with-mobile-pages"] = false
+			};
+		}
+		if (toolName == ApplicationSectionCreateTool.ApplicationSectionCreateToolName) {
+			return new Dictionary<string, object?> {
+				["application-code"] = marker,
+				["caption"] = $"Isolation Probe {marker}",
+				["with-mobile-pages"] = false
+			};
+		}
+		if (toolName == ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName) {
+			return new Dictionary<string, object?> {
+				["application-code"] = marker,
+				["section-code"] = marker,
+				["caption"] = $"Isolation Probe {marker}"
+			};
+		}
+		if (toolName == ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName) {
+			return new Dictionary<string, object?> {
+				["application-code"] = marker,
+				["section-code"] = marker
+			};
+		}
+		if (toolName == ApplicationSectionGetListTool.ApplicationSectionGetListToolName) {
+			return new Dictionary<string, object?> { ["application-code"] = marker };
+		}
+		if (toolName == PageUpdateTool.ToolName) {
+			return new Dictionary<string, object?> {
+				["schema-name"] = $"Usr{marker}_FormPage",
+				["body"] = "({});",
+				["dry-run"] = true
+			};
+		}
+		if (toolName == PageSyncTool.ToolName) {
+			return new Dictionary<string, object?> {
+				["pages"] = new List<object?> {
+					new Dictionary<string, object?> {
+						["schema-name"] = $"Usr{marker}_FormPage",
+						["body"] = "({});"
+					}
+				}
+			};
+		}
+		if (toolName == ComponentInfoTool.ToolName) {
+			// Deliberate mixed input (header + environment-name): the mandated isolation scenario for
+			// this tool IS the guard rejection, not a successful list call (Story 15 AC-02).
+			return new Dictionary<string, object?> {
+				["component-type"] = "list",
+				["environment-name"] = $"mixed-input-probe-{marker}"
+			};
+		}
+		if (toolName == BuildThemeTool.ToolName) {
+			return new Dictionary<string, object?> { ["primary"] = "#0058EF" };
+		}
+		throw new ArgumentOutOfRangeException(nameof(toolName), toolName,
+			"No isolation-proof argument builder registered for this newly routed tool.");
+	}
+
+	// Concatenates BOTH the structured and the plain-content channels of a CallToolResult into one
+	// JSON string for a simple substring containment check. Reused, simplified sibling of the
+	// per-tool-shape parsers in Support/Results — the isolation proof only needs to know whether a
+	// literal marker string appears in a response, not the response's typed shape.
+	private static string ExtractRawResponseJson(CallToolResult callResult) {
+		string structured = callResult.StructuredContent is not null
+			? JsonSerializer.Serialize(callResult.StructuredContent)
+			: string.Empty;
+		string content = JsonSerializer.Serialize(callResult.Content ?? []);
+		return structured + "\n" + content;
+	}
 }
