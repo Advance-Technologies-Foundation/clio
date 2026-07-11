@@ -11,6 +11,7 @@ namespace Clio.Command.Theming;
 /// Options for the <c>create-theme</c> command.
 /// </summary>
 [Verb("create-theme", HelpText = "Create a custom Creatio theme directly on the target environment via the native ThemeService")]
+[RequiresCreatioVersion(ThemeServiceRequirement.MinVersion)]
 public class CreateThemeOptions : RemoteCommandOptions
 {
 	/// <summary>Theme id (<c>^[A-Za-z0-9_-]+$</c>, ≤100). When omitted, an auto-generated UUID v4 is used.</summary>

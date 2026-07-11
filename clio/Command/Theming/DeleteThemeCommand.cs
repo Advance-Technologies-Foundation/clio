@@ -10,6 +10,7 @@ namespace Clio.Command.Theming;
 /// Options for the <c>delete-theme</c> command.
 /// </summary>
 [Verb("delete-theme", HelpText = "Delete a custom Creatio theme from the target environment via the native ThemeService")]
+[RequiresCreatioVersion(ThemeServiceRequirement.MinVersion)]
 public class DeleteThemeOptions : RemoteCommandOptions
 {
 	/// <summary>Id of the theme to delete (required).</summary>

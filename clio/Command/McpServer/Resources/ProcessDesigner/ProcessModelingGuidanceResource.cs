@@ -51,10 +51,13 @@ public sealed class ProcessModelingGuidanceResource {
 			  cannot be set yet, so the step does nothing useful until a human configures it in the designer. Say so
 			  when you use it; do not present the result as a working data operation.
 			- Sequence flows; process-level parameters (with an optional constant default value); element-parameter mappings.
+			- A data source `filter` on a `signalStart` to restrict WHICH records fire the trigger (see the
+			  "Data source filters" section below).
 			- NOT yet buildable: gateways, conditional/default flows, timer/message start, intermediate events,
-			  sub-process, Read-data filters/column config, signal record FILTERS and tracked-change columns. Use the
-			  catalog below to reason about a solution and to READ existing processes (`describe-business-process`);
-			  don't expect to build those types in this increment.
+			  sub-process, the Read/Add/Modify/Delete-data target object + read config (so a `filter` on a data
+			  task is serialized but not end-to-end usable yet — only the `signalStart` filter is). Use the catalog
+			  below to reason about a solution and to READ existing processes (`describe-business-process`); don't
+			  expect to build those types in this increment.
 
 			== Descriptor (create-business-process) ==
 			{
@@ -86,12 +89,86 @@ public sealed class ProcessModelingGuidanceResource {
 			  wired Start1 -> activity -> end. (`entity` is the page's object, e.g. UsrTestRunButton.)
 			- `on` is a SINGLE event: "added" | "modified" | "deleted" (the designer has no combined
 			  "added or modified"). "On save" of a record edited on a page = "modified"; a brand-new record = "added".
-			- The trigger has NO record filter and NO tracked-column restriction yet: it fires for EVERY record of
-			  the object, and "modified" fires on ANY field change. If the request includes a condition ("only leads
-			  in status New", "only when Amount changes"), tell the user the condition cannot be built yet and
-			  confirm an unfiltered trigger is acceptable BEFORE building.
+			- A "modified" trigger fires on ANY field change. You CAN restrict WHICH records fire it (add a `filter`,
+			  next bullet), but you CANNOT restrict WHICH columns count as a change — tracked-change columns are not
+			  buildable yet. If the request limits the trigger to one field ("only when Amount changes"), tell the user
+			  that column-level restriction cannot be built yet and confirm a whole-record "modified" trigger is
+			  acceptable BEFORE building.
+			- To fire the trigger ONLY for records matching a condition (e.g. only when Name = "Start"), add a
+			  `filter` to the signalStart element (full shape in "Data source filters" below):
+			    { "name": "Start1", "type": "signalStart",
+			      "signal": { "entity": "UsrTestRunButton", "on": "modified" },
+			      "filter": { "object": "UsrTestRunButton",
+			        "conditions": [ { "column": "UsrName", "comparison": "equal", "value": "Start" } ] } }
+			  Use the entity COLUMN name (here `UsrName`), not the field caption ("Name").
 			- To convert an EXISTING process to start on a record event, use `modify-business-process`:
 			  removeElement the current start, addElement a `signalStart`, addFlow signalStart -> (first activity).
+
+			== Data source filters (signalStart trigger condition) ==
+			- A `filter` declares, high-level, WHICH records a filtered element acts on. The server serializes it to
+			  the platform Terrasoft.FilterGroup — you NEVER hand-write the escaped filter JSON.
+			- Usable today on a `signalStart` (restrict the record trigger). Shape:
+			    "filter": {
+			      "object": "<EntityName>",        // root object; defaults to the signal entity if omitted
+			      "logicalOperation": "and",       // "and" (default) | "or"
+			      "conditions": [
+			        { "column": "UsrName",      "comparison": "equal", "value": "Start" },
+			        { "column": "Account.Code", "comparison": "equal", "value": "1" }   // dot-path traverses a lookup
+			      ],
+			      "groups": [                       // optional nested groups, each with its own logicalOperation
+			        { "logicalOperation": "or", "conditions": [ /* ... */ ] }
+			      ]
+			    }
+			- `column` is the entity COLUMN name (e.g. `UsrName`, not the caption "Name") and may be a dot-path
+			  through lookups (`Account.Code`, `Account.Owner.Name`); the server resolves the column type from the
+			  object's schema (so you don't supply types).
+			- `comparison`: equal (default) | notEqual | greater | greaterOrEqual | less | lessOrEqual | contains |
+			  notContains | startWith | notStartWith | endWith | notEndWith | isNull | isNotNull.
+			- The right-hand value of a condition is exactly ONE of: `value` (a constant as a string — the server
+			  types it by the column; for a Date/DateTime/Time column pass ISO-8601, e.g. `2026-05-01` or
+			  `2026-05-01T12:00:00Z`), `processParameter` (a process parameter by name), `elementParameter`
+			  ({ elementName, parameter } — another element's output), `expression` (a raw token), or `macro` (a
+			  relative-date / system macro — the complete set is in the next bullet). isNull/isNotNull take none.
+			- `macro` vocabulary (COMPLETE set — an unknown name is rejected at BUILD, validated against the platform
+			  macro catalog, never silently accepted): **relative periods** `Yesterday` | `Today` | `Tomorrow`, plus
+			  `Previous`/`Current`/`Next` for each of `Week` | `Month` | `Quarter` | `HalfYear` | `Year` | `Hour`
+			  (so `CurrentHalfYear`, `NextWeek`, `PreviousQuarter`, `CurrentHour`, … are ALL valid); **argument macros**
+			  (require an integer `macroArgument`) `NextNDays` | `PreviousNDays` | `NextNHours` | `PreviousNHours` |
+			  `NextNDaysOfYear` | `PreviousNDaysOfYear` | `DayOfYearTodayPlusDaysOffset`; **recurring "every year"**
+			  `DayOfYearToday` (the ONLY DayOfYear macro that takes NO argument); **system / lookup** `CurrentUser` |
+			  `CurrentUserContact`.
+			- SIGNAL-START RESTRICTION (important): on a `signalStart` filter the right-hand side may ONLY be a constant
+			  `value`, a `macro`, a `datePart`, or isNull/isNotNull — NOT `processParameter` / `elementParameter` /
+			  `expression`. The signal is evaluated to decide WHICH records start the process, BEFORE any process
+			  instance exists, so a parameter / element output / meta-path reference has no value yet. The server
+			  REJECTS a parameter reference on a signal filter (the visual designer likewise hides the "select
+			  parameter" option for signal starts). Parameter references are valid only on a data-operation element
+			  filter (Read/Add/Modify/Delete data) — which is not end-to-end buildable yet (see below), so in practice a
+			  buildable filter today uses value / macro / datePart only.
+			- `datePart` (optional, LEFT-hand modifier — NOT a right-hand source): extract a calendar/clock part from a
+			  Date/DateTime `column` and compare that part instead of the whole date. `Year` | `Month` | `Day` |
+			  `Week` | `Weekday` | `Hour` extract an INTEGER — pair with an integer `value` (a signalStart filter
+			  allows only a constant `value`/`macro`/`datePart`, never a `processParameter` — see the restriction above):
+			  `{ "column": "CreatedOn", "datePart": "Year", "comparison": "equal", "value": "2026" }` reads
+			  `Year(CreatedOn) = 2026`. `HourMinute` is the exception — it extracts the TIME-OF-DAY and compares it to a
+			  `value` in `HH:mm[:ss]` form: `{ "column": "CreatedOn", "datePart": "HourMinute", "comparison": "equal",
+			  "value": "14:30" }` reads `HourMinute(CreatedOn) = 14:30`. Combines with any comparison (`greaterOrEqual`,
+			  …); it modifies the left side, so it is independent of the right-hand source choice (but do not use it with
+			  a `macro`).
+			- Groups nest to any depth: A AND (B OR C) = conditions:[A] + groups:[{ "logicalOperation":"or",
+			  conditions:[B, C] }].
+			- A `filter` on a data task (Read/Add/Modify/Delete data) is serialized too, but those tasks' target
+			  object / read config is not buildable yet, so data-task filters are NOT end-to-end usable in this
+			  increment — use the signalStart filter.
+			- On an EXISTING process, set/clear a filter via `modify-business-process` ops `setFilter`
+			  ({ op:"setFilter", elementName, filter }) and `clearFilter` ({ op:"clearFilter", elementName }).
+			  `setFilter` REPLACES the element's whole filter (there is no add-one-condition op); to add a condition,
+			  read the current filter first (below) and send the complete new filter.
+			- `describe-business-process` reads a filter back: an element carries a decoded `filter` (the same
+			  object / logicalOperation / conditions / groups shape) when it has one, so you can inspect it or
+			  round-trip it into a `setFilter`. A parameter reference comes back as its raw meta-path `expression`.
+			  A lookup value reads back as the raw id in `value` plus its resolved caption in `displayValue` (so
+			  `UsrStage` shows `Approved`, not a bare GUID); `displayValue` is read-only — omit it on `setFilter`.
 
 			== Build recipe (intent -> running process) ==
 			1. Translate the request into a graph: one start event, the activities, the sequence flows, one or
@@ -103,7 +180,7 @@ public sealed class ProcessModelingGuidanceResource {
 			   — an output you can map FROM has `isResult:true` or `direction:"Out"`; the signal trigger) /
 			   `execute-esq` (VwProcessLib by caption).
 			6. Change it later with `modify-business-process` (ops: addElement / removeElement / addFlow / removeFlow /
-			   addParameter / addMapping / setParameter / removeParameter — same parameter/mapping shapes as a build).
+			   addParameter / addMapping / setParameter / removeParameter / setFilter / clearFilter — same parameter/mapping/filter shapes as a build).
 			- File-design-mode caveat: on an FSD stand a built process is saved to the file system (the designer
 			  sees it) but is NOT runtime-active until it is loaded FS->DB and published — so a signal won't
 			  physically fire yet.
