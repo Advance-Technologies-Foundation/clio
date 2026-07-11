@@ -1206,7 +1206,7 @@ stories:
     title: "FR-06/OQ-04 guard — audited classification registry + discovery-completeness + exact (tool, dependency-path, scenario)->test mapping"
     feature: "mcp-passthrough-tool-parity"
     size: L
-    status: ready-for-dev
+    status: review
     note: "PassthroughCoverageEntry carries a stable DependencyPath id (outer / version-probe / write / caption-culture-* / app-info-* / preparation / unlocked-query ...) so the mapping is per audited PATH, not per tool. Consumes the exact unit-test names from stories 1-14 and the E2E names from story 15's Dev Agent Record."
     file: spec/stories/story-mcp-passthrough-tool-parity-16.md
     prd: spec/prd/prd-mcp-passthrough-tool-parity.md
