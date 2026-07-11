@@ -42,12 +42,17 @@ OPTIONS
         Default: /mcp
 
     --platform-api-key <keys>
+        Non-OAuth dev/offline fallback for per-request credential passthrough.
         Comma-separated set of platform API key(s) (also read from the
         CLIO_MCP_HTTP_PLATFORM_API_KEY environment variable). Setting at least
         one key ENABLES per-request credential passthrough; each request must
         then present a matching 'Authorization: Bearer <platform-api-key>'.
         Keys are compared in constant time; rotate by supplying the old and new
         key together in the comma-set. Unset (default) => passthrough disabled.
+        IGNORED ENTIRELY when --auth-authority is configured -- standard OAuth
+        is then the only front door and cannot be combined with this key on
+        the same Authorization header. Configuring both logs a startup warning
+        since the key becomes inert, not a security problem.
 
     --allowed-base-urls <urls>
         Comma-separated SSRF allowlist of origins a passthrough target url may
@@ -122,8 +127,9 @@ OPTIONS
 
 CREDENTIAL PASSTHROUGH (multi-tenant edge)
     Per-request credential passthrough lets a gateway target a different Creatio
-    tenant on each request instead of a pre-registered environment. It is gated
-    SOLELY by the platform API key and off by default (fail-closed):
+    tenant on each request instead of a pre-registered environment. When
+    --auth-authority is NOT configured (default), it is gated SOLELY by the
+    platform API key and off by default (fail-closed):
 
       - Set a platform API key (--platform-api-key / CLIO_MCP_HTTP_PLATFORM_API_KEY)
         to enable it.
@@ -131,6 +137,10 @@ CREDENTIAL PASSTHROUGH (multi-tenant edge)
     With no key configured, the credential header is ignored and the server
     behaves exactly as before — the verb, stdio mode, and '-e <env>' targeting
     are always available regardless of the key.
+
+    When --auth-authority IS configured, the platform API key is IGNORED
+    entirely (see --platform-api-key above) and passthrough eligibility comes
+    solely from the authenticated OAuth principal instead.
 
     Standard-auth header strip: when --auth-authority IS configured, the
     credential header is honored ONLY on an authenticated request (a valid

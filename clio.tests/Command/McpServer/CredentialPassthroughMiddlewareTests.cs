@@ -78,7 +78,7 @@ public sealed class CredentialPassthroughMiddlewareTests
 		(RequestDelegate next, Func<bool> wasCalled) = TrackingNext();
 
 		// Act
-		await McpHttpServerCommand.EnforcePlatformApiKeyGate(context, next, gate, HeaderName);
+		await McpHttpServerCommand.EnforcePlatformApiKeyGate(context, next, gate, HeaderName, authorizationEnabled: false);
 
 		// Assert
 		context.Items[McpHttpServerCommand.PassthroughEnabledItemKey].Should().Be(false,
@@ -98,7 +98,7 @@ public sealed class CredentialPassthroughMiddlewareTests
 		(RequestDelegate next, Func<bool> wasCalled) = TrackingNext();
 
 		// Act
-		await McpHttpServerCommand.EnforcePlatformApiKeyGate(context, next, gate, HeaderName);
+		await McpHttpServerCommand.EnforcePlatformApiKeyGate(context, next, gate, HeaderName, authorizationEnabled: false);
 
 		// Assert
 		context.Items[McpHttpServerCommand.PassthroughEnabledItemKey].Should().Be(false,
@@ -121,7 +121,7 @@ public sealed class CredentialPassthroughMiddlewareTests
 			McpHttpServerCommand.CaptureCredentialContext(ctx, terminal, parser, accessor, HeaderName, requireAuthenticatedPrincipal: false);
 
 		// Act
-		await McpHttpServerCommand.EnforcePlatformApiKeyGate(context, captureNext, gate, HeaderName);
+		await McpHttpServerCommand.EnforcePlatformApiKeyGate(context, captureNext, gate, HeaderName, authorizationEnabled: false);
 
 		// Assert
 		context.Items[McpHttpServerCommand.PassthroughEnabledItemKey].Should().Be(true,
@@ -148,7 +148,7 @@ public sealed class CredentialPassthroughMiddlewareTests
 		(RequestDelegate next, Func<bool> wasCalled) = TrackingNext();
 
 		// Act
-		await McpHttpServerCommand.EnforcePlatformApiKeyGate(context, next, gate, HeaderName);
+		await McpHttpServerCommand.EnforcePlatformApiKeyGate(context, next, gate, HeaderName, authorizationEnabled: false);
 
 		// Assert
 		context.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized,
@@ -179,7 +179,7 @@ public sealed class CredentialPassthroughMiddlewareTests
 			McpHttpServerCommand.CaptureCredentialContext(ctx, terminal, parser, accessor, HeaderName, requireAuthenticatedPrincipal: false);
 
 		// Act
-		await McpHttpServerCommand.EnforcePlatformApiKeyGate(context, captureNext, gate, HeaderName);
+		await McpHttpServerCommand.EnforcePlatformApiKeyGate(context, captureNext, gate, HeaderName, authorizationEnabled: false);
 
 		// Assert
 		context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest,

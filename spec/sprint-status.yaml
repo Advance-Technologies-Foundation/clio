@@ -997,9 +997,10 @@ stories:
     title: "Retire/gate --platform-api-key + unified auth error taxonomy"
     feature: "mcp-http-standard-authorization"
     size: M
-    status: ready-for-dev
+    status: done
     depends_on: [story-mcp-http-standard-authorization-5]
     blocks: [story-mcp-http-standard-authorization-8]
+    note: "DONE 2026-07-11. OQ-D resolved per ADR D-6: retired as default front door, kept as opt-in dev/offline fallback. EnforcePlatformApiKeyGate branches on authorizationEnabled -- when OAuth is configured, the legacy key check is bypassed entirely (not combined/ANDed/ORed -- the two schemes can't coexist on one Authorization header once JwtBearerHandler claims it) and PassthroughEnabledItemKey is derived solely from context.User.Identity.IsAuthenticated; when OAuth is off, unchanged pre-ENG-93386 behavior. New pure predicate ShouldWarnPlatformApiKeyIgnored triggers a startup warning when both are configured together (inert, not insecure, but flagged). Unified taxonomy (FR-11) was already substantially closed by Stories 5/6; this story removes the remaining two-Bearer-schemes ambiguity. CLI HelpText + help/en/mcp-http.txt + docs/commands/mcp-http.md updated to state the retired/fallback disposition. 7 new tests in PlatformApiKeyDispositionTests.cs."
     file: spec/stories/story-mcp-http-standard-authorization-7.md
 
   - id: story-mcp-http-standard-authorization-8

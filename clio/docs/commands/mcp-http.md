@@ -50,7 +50,7 @@ on the LAN with no credential check — use it only on trusted networks, or conf
 | `--port` | `8005` | Port to listen on |
 | `--host` | `127.0.0.1` | Host address to bind to |
 | `--path` | `/mcp` | MCP endpoint path |
-| `--platform-api-key` | _(unset)_ | Comma-separated platform API key set (also read from `CLIO_MCP_HTTP_PLATFORM_API_KEY`). Setting at least one key **enables** per-request credential passthrough; with no key set the credential header is ignored (fail-closed, off by default). See [Credential passthrough](#credential-passthrough-multi-tenant-edge). |
+| `--platform-api-key` | _(unset)_ | **Non-OAuth dev/offline fallback.** Comma-separated platform API key set (also read from `CLIO_MCP_HTTP_PLATFORM_API_KEY`). Setting at least one key **enables** per-request credential passthrough; with no key set the credential header is ignored (fail-closed, off by default). **IGNORED entirely when `--auth-authority` is configured** — see [Platform-API-key disposition](#platform-api-key-disposition-devoffline-fallback-only). See also [Credential passthrough](#credential-passthrough-multi-tenant-edge). |
 | `--allowed-base-urls` | _(unset)_ | Comma-separated SSRF allowlist of origins a passthrough target `url` may reach. Each entry **must include a scheme** (e.g. `https://tenant.creatio.com`). |
 | `--session-idle-ttl` | `5m` | Idle time after which an unused per-session container is evicted. Accepts `90s` / `5m` / `1h` / `1d`, bare seconds (`300`), or a `TimeSpan` (`00:05:00`). |
 | `--max-sessions` | `50` | Maximum per-session containers kept in memory; the least-recently-used one is evicted when exceeded. |
@@ -73,6 +73,24 @@ With no `--auth-authority` configured (the default), authorization is off and th
 
 > **Note:** the full authorization model (OAuth 2.1 Resource Server, whole-endpoint enforcement) landed across ENG-93386 Stories 2–5: token-validation configuration, JWT bearer validation, RFC 9728 discovery, the `mcp` authorization policy applied to `/mcp` via `RequireAuthorization`, and this public-bind guard.
 
+### Platform-API-key disposition (dev/offline fallback only)
+
+Once standard OAuth authorization is configured (`--auth-authority` set), `--platform-api-key` is
+**retired as a front door and bypassed entirely** — it is not combined with OAuth (D-6). This is
+not a design preference: `Authorization: Bearer …` can carry only one thing at a time, and once
+OAuth is enabled that header is claimed by the JWT bearer handler, so the old key check has nothing
+of its own left to read. Concretely:
+
+- **OAuth enabled:** passthrough eligibility comes solely from the authenticated principal that
+  `RequireAuthorization` already guaranteed for this request. A configured `--platform-api-key` is
+  never consulted — a request cannot use a valid key to bypass a missing/invalid OAuth token, and a
+  missing/wrong key never blocks an otherwise-valid OAuth request either.
+- **OAuth not configured (default):** `--platform-api-key` behaves exactly as before ENG-93386 —
+  the sole gate for the credential-passthrough leg, unaffected.
+- **Both configured together:** not a security problem (the key is simply inert), but clio logs a
+  loud startup warning so it is never a silent misconfiguration — remove `--platform-api-key` /
+  unset `CLIO_MCP_HTTP_PLATFORM_API_KEY` once OAuth is the standing front door.
+
 ## Credential passthrough (multi-tenant edge)
 
 By default `mcp-http` targets **pre-registered** environments (`-e <env>`) or explicit
@@ -81,13 +99,17 @@ gateway target a **different Creatio tenant on each request** — the target URL
 credentials ride the request header instead of clio settings. This is aimed at AI-platform
 gateways that broker many tenants through one clio process.
 
-### Platform-API-key gate (off by default, fail-closed)
+### Platform-API-key gate (off by default, fail-closed; dev/offline fallback only)
 
-Passthrough is gated **solely** by the platform API key: at least one key set via
-`--platform-api-key` or the `CLIO_MCP_HTTP_PLATFORM_API_KEY` environment variable turns it on.
-With **no** key configured (the default) the gate fail-closes — the credential header is
-ignored and the server behaves exactly as the pre-passthrough release. The verb, stdio mode,
-and `-e <env>` targeting remain **always available** regardless of the key.
+When `--auth-authority` is **not** configured (default), passthrough is gated **solely** by the
+platform API key: at least one key set via `--platform-api-key` or the
+`CLIO_MCP_HTTP_PLATFORM_API_KEY` environment variable turns it on. With **no** key configured
+(the default) the gate fail-closes — the credential header is ignored and the server behaves
+exactly as the pre-passthrough release. The verb, stdio mode, and `-e <env>` targeting remain
+**always available** regardless of the key.
+
+When `--auth-authority` **is** configured, this key is **ignored entirely** — see
+[Platform-API-key disposition](#platform-api-key-disposition-devoffline-fallback-only).
 
 > **The platform API key gates ONLY the passthrough leg.** It does **not** protect
 > pre-registered `-e <env>` or explicit-URI access — those paths use credentials already

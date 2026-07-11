@@ -36,9 +36,11 @@ public class McpHttpServerCommandOptions : BaseCommandOptions
 	public string CredentialsHeaderName { get; set; }
 
 	[Option("platform-api-key", Required = false,
-		HelpText = "Comma-separated platform API key(s). When at least one is set (here or via the "
-			+ "CLIO_MCP_HTTP_PLATFORM_API_KEY environment variable), per-request credential "
-			+ "passthrough is enabled and requests must present a matching 'Authorization: Bearer <key>'.")]
+		HelpText = "Non-OAuth dev/offline fallback for per-request credential passthrough. "
+			+ "Comma-separated platform API key(s) (here or via CLIO_MCP_HTTP_PLATFORM_API_KEY); "
+			+ "requests must present a matching 'Authorization: Bearer <key>'. IGNORED entirely "
+			+ "when --auth-authority is configured -- standard OAuth authorization is then the only "
+			+ "front door (it cannot be combined with this key on the same Authorization header).")]
 	public string PlatformApiKey { get; set; }
 
 	[Option("allowed-base-urls", Required = false,
@@ -194,6 +196,19 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 			McpHttpAuthentication.ConfigureServices(builder.Services, authConfiguration);
 		}
 
+		// ENG-93386 Story 7 (FR-12/D-6): --platform-api-key is retired as the default front door
+		// but retained as a dev/offline fallback for when OAuth is not configured. Once OAuth IS
+		// configured, the key is silently bypassed (see EnforcePlatformApiKeyGate) rather than
+		// combined with it — flag the now-inert configuration loudly so it is never a silent
+		// misconfiguration.
+		if (ShouldWarnPlatformApiKeyIgnored(authConfiguration.Enabled, platformApiKeys.Count)) {
+			ConsoleLogger.Instance.WriteWarning(
+				"Both --auth-authority and --platform-api-key are configured; --platform-api-key is "
+				+ "IGNORED while standard OAuth authorization is enabled — it cannot be combined with "
+				+ "OAuth on the same Authorization header (FR-12). Remove --platform-api-key / unset "
+				+ "CLIO_MCP_HTTP_PLATFORM_API_KEY if it is no longer needed.");
+		}
+
 		// Public-bind guard (Story 5, OQ-A: REFUSE, not just warn — security-first default). A wildcard
 		// --host with authorization OFF means every registered environment's stored credentials are
 		// reachable to anyone who can route to this port; that combination must not silently start.
@@ -248,20 +263,18 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 			app.UseAuthorization();
 		}
 
-		// Per-request credential-passthrough leg (Story 5/4). Always wired: it is gated SOLELY by the
-		// platform API-key gate, which fail-closes when no key is configured. With no key set (the
-		// default) the gate publishes PassthroughEnabledItemKey=false, the credential-capture middleware
-		// ignores the credential header, and the verb / stdio / -e <env> behave exactly as 8.1.0.72 — so
-		// wiring the middleware unconditionally does NOT expose passthrough by default. A key is what
-		// turns it on. (The former incubation feature flag was removed: mcp-http is not yet used in prod,
-		// so the second gate was redundant given the fail-closed api-key gate.)
+		// Per-request credential-passthrough leg (Story 5/4). Always wired. When OAuth is NOT
+		// configured (default, dev/offline), gated SOLELY by the platform API-key gate, which
+		// fail-closes when no key is configured — unchanged pre-ENG-93386 behavior. When OAuth IS
+		// configured, the legacy key gate is bypassed (FR-12/D-6, Story 7): passthrough eligibility
+		// comes solely from the authenticated principal RequireAuthorization already guaranteed.
 		//
-		// The edge API-key gate runs BEFORE the credential-capture middleware so a credential header is
-		// treated as trusted only after this gate authorizes the request.
+		// The gate runs BEFORE the credential-capture middleware so a credential header is treated
+		// as trusted only after this gate authorizes the request.
 		IPlatformApiKeyGate platformApiKeyGate =
 			app.Services.GetRequiredService<IPlatformApiKeyGate>();
 		app.Use((context, next) => EnforcePlatformApiKeyGate(
-			context, next, platformApiKeyGate, options.CredentialsHeaderName));
+			context, next, platformApiKeyGate, options.CredentialsHeaderName, authConfiguration.Enabled));
 
 		ICredentialHeaderParser credentialHeaderParser =
 			app.Services.GetRequiredService<ICredentialHeaderParser>();
@@ -354,11 +367,27 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 	// a missing/mismatched key short-circuits with HTTP 401 and no secret (AC-03/AC-ERR).
 	// The decision is published to the pipeline via PassthroughEnabledItemKey, which the
 	// credential-capture middleware honors.
+	//
+	// ENG-93386 Story 7 (FR-12/D-6): once standard OAuth is configured, this legacy gate is
+	// BYPASSED entirely rather than combined with it — the two schemes cannot coexist on the
+	// same 'Authorization' header (JwtBearerHandler already claims it for the JWT once OAuth is
+	// enabled), so an AND/OR combination is not even meaningful. Passthrough eligibility then
+	// comes solely from the authenticated principal that RequireAuthorization (Story 5) already
+	// guaranteed for this endpoint; CaptureCredentialContext's own authenticated-principal check
+	// (Story 6) independently re-verifies it. When OAuth is not configured (default, dev/offline),
+	// this gate behaves exactly as before ENG-93386 — --platform-api-key's retained fallback role.
 	internal static async Task EnforcePlatformApiKeyGate(
 		HttpContext context,
 		RequestDelegate next,
 		IPlatformApiKeyGate gate,
-		string credentialHeaderName) {
+		string credentialHeaderName,
+		bool authorizationEnabled) {
+		if (authorizationEnabled) {
+			context.Items[PassthroughEnabledItemKey] = context.User?.Identity?.IsAuthenticated == true;
+			await next(context);
+			return;
+		}
+
 		if (!gate.PassthroughEnabled) {
 			// No key configured: fail-closed default. Downstream ignores the credential header.
 			context.Items[PassthroughEnabledItemKey] = false;
@@ -518,6 +547,18 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 		}
 		return allowInsecurePublic ? PublicBindGuardOutcome.Warn : PublicBindGuardOutcome.Refuse;
 	}
+
+	/// <summary>
+	/// ENG-93386 Story 7 (FR-12/D-6): <see langword="true"/> when both standard OAuth authorization
+	/// and at least one legacy platform API key are configured together — a combination that is not
+	/// a security problem (OAuth supersedes the key entirely; see <see cref="EnforcePlatformApiKeyGate"/>)
+	/// but is worth a loud startup warning so an operator never assumes the key is still enforced.
+	/// </summary>
+	/// <param name="authorizationEnabled">Whether OAuth Resource-Server authorization is configured.</param>
+	/// <param name="platformApiKeyCount">Number of configured platform API keys.</param>
+	/// <returns><see langword="true"/> when the configured key is now inert and should be flagged.</returns>
+	internal static bool ShouldWarnPlatformApiKeyIgnored(bool authorizationEnabled, int platformApiKeyCount) =>
+		authorizationEnabled && platformApiKeyCount > 0;
 
 	private static bool IsTruthyEnvironmentFlag(string variableName) {
 		string value = Environment.GetEnvironmentVariable(variableName);
