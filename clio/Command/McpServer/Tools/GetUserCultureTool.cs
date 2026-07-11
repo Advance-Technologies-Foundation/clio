@@ -8,7 +8,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
-using Clio.UserEnvironment;
 using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
@@ -23,7 +22,7 @@ namespace Clio.Command.McpServer.Tools;
 [McpServerToolType]
 public sealed class GetUserCultureTool(
 	ICurrentUserCultureResolverFactory resolverFactory,
-	ISettingsRepository settingsRepository) {
+	IToolCommandResolver commandResolver) {
 
 	internal const string ToolName = "get-user-culture";
 	internal const string ResolvedFromEnvironment = "environment";
@@ -86,7 +85,7 @@ public sealed class GetUserCultureTool(
 			Login = args.Login,
 			Password = args.Password
 		};
-		return settingsRepository.GetEnvironment(options);
+		return commandResolver.Resolve<EnvironmentSettings>(options);
 	}
 }
 
