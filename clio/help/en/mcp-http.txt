@@ -132,6 +132,16 @@ CREDENTIAL PASSTHROUGH (multi-tenant edge)
     behaves exactly as before — the verb, stdio mode, and '-e <env>' targeting
     are always available regardless of the key.
 
+    Standard-auth header strip: when --auth-authority IS configured, the
+    credential header is honored ONLY on an authenticated request (a valid
+    bearer token) -- an unauthenticated request has it ignored outright, not
+    deferred. The inbound gateway/platform bearer token is never forwarded to
+    Creatio; the outbound credential comes solely from this header. Per-tenant
+    claim-based authorization (which gateway may assert which tenant) is not
+    implemented in v1 -- the platform's client-credentials token carries no
+    per-tenant claim yet; any authenticated caller is trusted for any tenant,
+    same trust boundary as the platform-api-key gate had.
+
     When enabled, an authorized request carries credentials in the header:
 
         Authorization: Bearer <platform-api-key>

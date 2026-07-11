@@ -987,9 +987,10 @@ stories:
     title: "Back-door hardening: header strip, gateway->tenant authZ, no-token-passthrough invariant"
     feature: "mcp-http-standard-authorization"
     size: M
-    status: ready-for-dev
+    status: done
     depends_on: [story-mcp-http-standard-authorization-1, story-mcp-http-standard-authorization-5]
     blocks: [story-mcp-http-standard-authorization-7]
+    note: "DONE 2026-07-11 (FR-08 scoped down, see ADR OQ-G). FR-07 header-strip: CaptureCredentialContext gained requireAuthenticatedPrincipal (threaded from authConfiguration.Enabled) -- when standard OAuth is configured, an unauthenticated request's X-Integration-Credentials is explicitly ignored, not just deferred by middleware order (covers a non-/mcp path too). Additive: OAuth-off mode unaffected. FR-09 invariant proven structurally + by test: ToolCommandResolver.BuildEphemeralSettings reads only the parsed CredentialContext, never Request.Headers.Authorization; grepped the whole outbound-client path (ApplicationClientFactory + child-container site) for confirmation. FR-13: combined-secrets test proves the existing SensitiveErrorTextRedactor already scrubs both planes (Creatio token + MCP JWT) in one message -- no new redaction pipeline needed. FR-08 (gateway->tenant authZ) explicitly NOT implemented: Story-1 spike found identity-platform's client_credentials token mints no per-tenant/org claim, so there is no real contract to enforce -- inventing one would be a fictional check. Filed as a platform-team follow-up (Jira comment); today any authenticated gateway may assert any tenant, same trust boundary as the retiring platform-api-key gate (not a regression). 5 new tests (CredentialPassthroughAuthHardeningTests.cs x4, SensitiveErrorTextRedactorTests.cs x1)."
     file: spec/stories/story-mcp-http-standard-authorization-6.md
 
   - id: story-mcp-http-standard-authorization-7

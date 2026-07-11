@@ -148,6 +148,7 @@ Replace the bespoke `PlatformApiKeyGate` front door with **standard MCP OAuth 2.
 - **OQ-D:** Retire `--platform-api-key` outright, or keep it as an opt-in dev fallback? (D-6.)
 - **OQ-E:** Raw tenant credentials in the header vs an opaque reference resolved server-side (D-5).
 - **OQ-F:** Pin which `ModelContextProtocol.AspNetCore` version exposes the `AddMcp`/`McpAuthenticationHandler`/`AddAuthorizationFilters` surface used here.
+- **OQ-G — SCOPED DOWN (Story 6, 2026-07-11):** D-5's "gateway→tenant authorization" (the authenticated principal's JWT claims must permit acting for the tenant asserted in `X-Integration-Credentials`) has **no real claim contract to enforce today**. The Story-1 spike confirmed identity-platform's `client_credentials` token authenticates the gateway as a whole (audience is scope-derived — `creatio_ai_api`/`clio_mcp_api`) and mints no per-tenant/org claim for that client type (`org_slug`/`org_id` exist only on control-plane's **user** tokens, a different flow). Inventing a claim name now would be a fictional check that authorizes nothing — worse than an honestly-documented gap. **Decision:** any request that clears the standard bearer-JWT check (Story 3/5) is trusted to assert any tenant via the header — identical to the trust boundary the retiring platform-API-key gate already had, so this is not a regression. Filed to the platform team as a follow-up (ENG-93386 Jira comment): define a per-tenant/org claim for the gateway's client_credentials token, then wire real enforcement here.
 
 ---
 

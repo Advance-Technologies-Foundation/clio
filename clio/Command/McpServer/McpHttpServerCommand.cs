@@ -269,7 +269,7 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 			app.Services.GetRequiredService<ICredentialContextAccessor>();
 		app.Use((context, next) => CaptureCredentialContext(
 			context, next, credentialHeaderParser, credentialContextAccessor,
-			options.CredentialsHeaderName));
+			options.CredentialsHeaderName, authConfiguration.Enabled));
 
 		// Whole-endpoint enforcement (ENG-93386, Story 5): when authorization is enabled, EVERY request
 		// to the MCP endpoint — passthrough AND pre-registered -e <env> / stored-credential access alike
@@ -395,18 +395,36 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 	// false/absent the credential header is ignored entirely — no parse, no 400 — so an
 	// untrusted/no-key request behaves exactly as 8.1.0.72 (AC-02). Parse failure inside the
 	// trusted path ⇒ HTTP 400 with a JSON body naming the defect (no secret).
+	//
+	// ENG-93386 Story 6 (FR-07 header-strip): when standard OAuth authorization is configured
+	// (requireAuthenticatedPrincipal == true), the header is honored ONLY on an authenticated
+	// request. Story 5's RequireAuthorization on the /mcp endpoint already makes this true for any
+	// request reaching this middleware via that endpoint — this check makes the invariant explicit
+	// and independently testable rather than an emergent property of middleware order, and also
+	// covers a request that reaches this globally-wired middleware via a path other than /mcp
+	// (where RequireAuthorization never ran). Additive: when authorization is not configured
+	// (requireAuthenticatedPrincipal == false), passthrough keeps working via the platform-API-key
+	// gate alone — unchanged, pre-ENG-93386 behavior; Story 7 decides that gate's ultimate fate.
 	internal static async Task CaptureCredentialContext(
 		HttpContext context,
 		RequestDelegate next,
 		ICredentialHeaderParser parser,
 		ICredentialContextAccessor accessor,
-		string headerName) {
+		string headerName,
+		bool requireAuthenticatedPrincipal) {
 		bool passthroughEnabled =
 			context.Items.TryGetValue(PassthroughEnabledItemKey, out object flag)
 			&& flag is true;
 
 		if (!passthroughEnabled) {
 			// Not a trusted passthrough request — ignore the credential header (AC-02).
+			await next(context);
+			return;
+		}
+
+		if (requireAuthenticatedPrincipal && context.User?.Identity?.IsAuthenticated != true) {
+			// FR-07: standard OAuth is configured but this request carries no valid principal —
+			// the credential header is stripped/ignored, not merely deferred (AC-03).
 			await next(context);
 			return;
 		}

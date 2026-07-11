@@ -94,6 +94,32 @@ and `-e <env>` targeting remain **always available** regardless of the key.
 > stored in clio settings and are reachable regardless of the API key. On a public bind,
 > host/origin filtering or a fronting proxy remains the control for stored-credential access.
 
+### Standard-auth header strip (when `--auth-authority` is configured)
+
+When standard OAuth authorization is enabled (`--auth-authority` set), the
+`X-Integration-Credentials` header is honored **only on an authenticated request** — a request
+whose bearer token failed or was absent has the header **ignored outright**, not merely
+deferred. This closes a back-door: a caller cannot smuggle a Creatio credential in through the
+passthrough header without first clearing the standard bearer-JWT check that already gates the
+whole `/mcp` endpoint (see [Whole-endpoint authorization](#whole-endpoint-authorization--public-bind-guard)
+above). With `--auth-authority` unset (default), this has no effect — passthrough keeps working
+via the platform-API-key gate alone, unchanged.
+
+The two credential planes never mix: the inbound gateway/platform bearer token (on
+`Authorization`) is never attached to any outbound Creatio request — the ephemeral
+`EnvironmentSettings` built for the tenant call is constructed **solely** from the parsed
+`X-Integration-Credentials` payload. clio is never a confused deputy that forwards its own
+inbound token upstream.
+
+> **Gateway→tenant authorization (out of scope for v1).** A finer control — the authenticated
+> gateway's JWT claims must explicitly permit acting for the tenant asserted in the header — is
+> **not implemented**: the identity-platform's `client_credentials` token authenticates the
+> gateway as a whole and mints no per-tenant/org claim for it (verified against the live
+> Authorization Server, not assumed). Today, any request that clears the standard bearer-JWT
+> check is trusted to assert any tenant via the header — the same trust boundary the
+> platform-API-key gate already had, so this is not a regression. Enforcing a real per-tenant
+> claim is deferred until the platform team defines that contract.
+
 ### Header contract
 
 An authorized passthrough request carries two headers:
