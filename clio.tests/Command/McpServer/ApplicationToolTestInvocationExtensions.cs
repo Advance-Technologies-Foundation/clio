@@ -50,6 +50,12 @@ internal static class ApplicationToolTestInvocationExtensions {
 	public static Task<ApplicationSectionUpdateContextResponse> ApplicationSectionUpdate(
 		this ApplicationSectionUpdateTool tool,
 		ApplicationSectionUpdateArgs args,
+		global::ModelContextProtocol.Server.McpServer server) =>
+		tool.ApplicationSectionUpdate(args, server, requestContext: null, cancellationToken: default);
+
+	public static Task<ApplicationSectionUpdateContextResponse> ApplicationSectionUpdate(
+		this ApplicationSectionUpdateTool tool,
+		ApplicationSectionUpdateArgs args,
 		global::ModelContextProtocol.Server.McpServer server,
 		CancellationToken cancellationToken) =>
 		tool.ApplicationSectionUpdate(args, server, requestContext: null, cancellationToken: cancellationToken);

@@ -669,7 +669,12 @@ public sealed class ApplicationToolTests {
 	public void ApplicationSectionUpdate_Should_Return_Structured_Success_Envelope() {
 		// Arrange
 		IApplicationSectionUpdateService applicationSectionUpdateService = Substitute.For<IApplicationSectionUpdateService>();
-		applicationSectionUpdateService.UpdateSection("sandbox", Arg.Any<ApplicationSectionUpdateRequest>())
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		EnvironmentSettings resolvedSettings = new() { Uri = "https://sandbox.example.com" };
+		commandResolver.Resolve<EnvironmentSettings>(
+				Arg.Is<EnvironmentOptions>(options => options.Environment == "sandbox"))
+			.Returns(resolvedSettings);
+		applicationSectionUpdateService.UpdateSection(resolvedSettings, Arg.Any<ApplicationSectionUpdateRequest>())
 			.Returns(new ApplicationSectionUpdateResult(
 				"pkg-uid",
 				"UsrOrdersApp",
@@ -699,13 +704,14 @@ public sealed class ApplicationToolTests {
 					"11111111-1111-1111-1111-111111111111",
 					"#A6DE00",
 					null)));
-		ApplicationSectionUpdateTool tool = new(applicationSectionUpdateService);
+		ApplicationSectionUpdateTool tool = new(
+			Substitute.For<ILogger>(), commandResolver, applicationSectionUpdateService);
 
 		// Act
 		ApplicationSectionUpdateContextResponse result = tool.ApplicationSectionUpdate(new ApplicationSectionUpdateArgs(
-			EnvironmentName: "sandbox",
 			ApplicationCode: "UsrOrdersApp",
 			SectionCode: "UsrOrders",
+			EnvironmentName: "sandbox",
 			Caption: "Orders",
 			Description: "New description",
 			IconId: "11111111-1111-1111-1111-111111111111",
@@ -713,7 +719,7 @@ public sealed class ApplicationToolTests {
 
 		// Assert
 		applicationSectionUpdateService.Received(1).UpdateSection(
-			"sandbox",
+			resolvedSettings,
 			Arg.Is<ApplicationSectionUpdateRequest>(request =>
 				request.ApplicationCode == "UsrOrdersApp" &&
 				request.SectionCode == "UsrOrders" &&
@@ -739,13 +745,14 @@ public sealed class ApplicationToolTests {
 	public void ApplicationSectionUpdate_Should_Return_Error_When_SectionCode_Is_Missing() {
 		// Arrange
 		IApplicationSectionUpdateService applicationSectionUpdateService = Substitute.For<IApplicationSectionUpdateService>();
-		ApplicationSectionUpdateTool tool = new(applicationSectionUpdateService);
+		ApplicationSectionUpdateTool tool = new(
+			Substitute.For<ILogger>(), Substitute.For<IToolCommandResolver>(), applicationSectionUpdateService);
 
 		// Act
 		ApplicationSectionUpdateContextResponse result = tool.ApplicationSectionUpdate(new ApplicationSectionUpdateArgs(
-			EnvironmentName: "sandbox",
 			ApplicationCode: "UsrOrdersApp",
 			SectionCode: null!,
+			EnvironmentName: "sandbox",
 			Caption: "Orders"), null, System.Threading.CancellationToken.None).GetAwaiter().GetResult();
 
 		// Assert
@@ -753,7 +760,8 @@ public sealed class ApplicationToolTests {
 			because: "tool validation failures should be returned as structured error payloads");
 		result.Error.Should().Match("*section-code is required*",
 			because: "the tool should explain that section-code is required for existing-section updates");
-		applicationSectionUpdateService.DidNotReceiveWithAnyArgs().UpdateSection(default!, default!);
+		applicationSectionUpdateService.DidNotReceiveWithAnyArgs().UpdateSection(default(string)!, default!);
+		applicationSectionUpdateService.DidNotReceiveWithAnyArgs().UpdateSection(default(EnvironmentSettings)!, default!);
 	}
 
 	[Test]
@@ -762,20 +770,22 @@ public sealed class ApplicationToolTests {
 	public void ApplicationSectionUpdate_Should_Return_Error_When_No_Mutable_Fields_Are_Provided() {
 		// Arrange
 		IApplicationSectionUpdateService applicationSectionUpdateService = Substitute.For<IApplicationSectionUpdateService>();
-		ApplicationSectionUpdateTool tool = new(applicationSectionUpdateService);
+		ApplicationSectionUpdateTool tool = new(
+			Substitute.For<ILogger>(), Substitute.For<IToolCommandResolver>(), applicationSectionUpdateService);
 
 		// Act
 		ApplicationSectionUpdateContextResponse result = tool.ApplicationSectionUpdate(new ApplicationSectionUpdateArgs(
-			EnvironmentName: "sandbox",
 			ApplicationCode: "UsrOrdersApp",
-			SectionCode: "UsrOrders"), null, System.Threading.CancellationToken.None).GetAwaiter().GetResult();
+			SectionCode: "UsrOrders",
+			EnvironmentName: "sandbox"), null, System.Threading.CancellationToken.None).GetAwaiter().GetResult();
 
 		// Assert
 		result.Success.Should().BeFalse(
 			because: "tool validation failures should stay inside the structured response payload");
 		result.Error.Should().Match("*at least one mutable field*",
 			because: "the tool should explain that section-update requires at least one field to change");
-		applicationSectionUpdateService.DidNotReceiveWithAnyArgs().UpdateSection(default!, default!);
+		applicationSectionUpdateService.DidNotReceiveWithAnyArgs().UpdateSection(default(string)!, default!);
+		applicationSectionUpdateService.DidNotReceiveWithAnyArgs().UpdateSection(default(EnvironmentSettings)!, default!);
 	}
 
 	[Test]
@@ -784,13 +794,14 @@ public sealed class ApplicationToolTests {
 	public void ApplicationSectionUpdate_Should_Reject_Localization_Map_Fields() {
 		// Arrange
 		IApplicationSectionUpdateService applicationSectionUpdateService = Substitute.For<IApplicationSectionUpdateService>();
-		ApplicationSectionUpdateTool tool = new(applicationSectionUpdateService);
+		ApplicationSectionUpdateTool tool = new(
+			Substitute.For<ILogger>(), Substitute.For<IToolCommandResolver>(), applicationSectionUpdateService);
 
 		// Act
 		ApplicationSectionUpdateContextResponse result = tool.ApplicationSectionUpdate(new ApplicationSectionUpdateArgs(
-			EnvironmentName: "sandbox",
 			ApplicationCode: "UsrOrdersApp",
 			SectionCode: "UsrOrders",
+			EnvironmentName: "sandbox",
 			Caption: "Orders",
 			TitleLocalizations: new Dictionary<string, string> {
 				["en-US"] = "Orders"
@@ -801,7 +812,8 @@ public sealed class ApplicationToolTests {
 			because: "update-app-section should reject localization maps before any update side effect is attempted");
 		result.Error.Should().Match("*scalar-only*",
 			because: "the failure should explain that localization maps are forbidden on update-app-section");
-		applicationSectionUpdateService.DidNotReceiveWithAnyArgs().UpdateSection(default!, default!);
+		applicationSectionUpdateService.DidNotReceiveWithAnyArgs().UpdateSection(default(string)!, default!);
+		applicationSectionUpdateService.DidNotReceiveWithAnyArgs().UpdateSection(default(EnvironmentSettings)!, default!);
 	}
 
 	[Test]

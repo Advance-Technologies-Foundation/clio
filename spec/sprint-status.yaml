@@ -1052,7 +1052,7 @@ stories:
     title: "update-app-section — route through the resolver, including nested caption-culture and app-info calls (class c1)"
     feature: "mcp-passthrough-tool-parity"
     size: M
-    status: ready-for-dev
+    status: in-progress
     note: "Serialized c1 chain: starts after story 6 merges (shared ApplicationTool.cs)."
     file: spec/stories/story-mcp-passthrough-tool-parity-7.md
     prd: spec/prd/prd-mcp-passthrough-tool-parity.md

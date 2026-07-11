@@ -18,6 +18,7 @@ public sealed class ApplicationSectionUpdateServiceTests {
 	private IApplicationClient _applicationClient = null!;
 	private IServiceUrlBuilder _serviceUrlBuilder = null!;
 	private IApplicationInfoService _applicationInfoService = null!;
+	private ICaptionCultureResolver _captionCultureResolver = null!;
 	private EnvironmentSettings _environmentSettings = null!;
 	private ApplicationSectionUpdateService _sut = null!;
 
@@ -38,14 +39,15 @@ public sealed class ApplicationSectionUpdateServiceTests {
 		_applicationClientFactory.CreateEnvironmentClient(_environmentSettings).Returns(_applicationClient);
 		_serviceUrlBuilder.Build(Arg.Any<string>(), Arg.Any<EnvironmentSettings>())
 			.Returns(callInfo => $"https://example.invalid/{callInfo.ArgAt<string>(0)}");
-		ICaptionCultureResolver captionCultureResolver = Substitute.For<ICaptionCultureResolver>();
-		captionCultureResolver.Resolve(Arg.Any<EnvironmentOptions>(), Arg.Any<string?>()).Returns("en-US");
+		_captionCultureResolver = Substitute.For<ICaptionCultureResolver>();
+		_captionCultureResolver.Resolve(Arg.Any<EnvironmentOptions>(), Arg.Any<string?>()).Returns("en-US");
+		_captionCultureResolver.Resolve(Arg.Any<EnvironmentSettings>(), Arg.Any<string?>()).Returns("en-US");
 		_sut = new ApplicationSectionUpdateService(
 			_settingsRepository,
 			_applicationClientFactory,
 			_serviceUrlBuilder,
 			_applicationInfoService,
-			captionCultureResolver);
+			_captionCultureResolver);
 	}
 
 	[Test]
@@ -284,6 +286,68 @@ public sealed class ApplicationSectionUpdateServiceTests {
 		action.Should().Throw<ArgumentException>()
 			.WithMessage("*#RRGGBB format*",
 				because: "non-hex strings are never valid palette values");
+		_applicationInfoService.DidNotReceiveWithAnyArgs().GetApplicationInfo(default(string)!, default, default);
+	}
+
+	[Test]
+	[Description("Settings-based overload (ENG-93347 Story 7): rejects a null EnvironmentSettings with ArgumentNullException before any client factory or remote call is attempted.")]
+	public void UpdateSection_ShouldThrowArgumentNullException_WhenEnvironmentSettingsAreNull() {
+		// Arrange
+		EnvironmentSettings environmentSettings = null!;
+		ApplicationSectionUpdateRequest request = new("UsrOrdersApp", "UsrOrders", Caption: "Orders");
+
+		// Act
+		Action action = () => _sut.UpdateSection(environmentSettings, request);
+
+		// Assert
+		action.Should().Throw<ArgumentNullException>(
+			because: "the settings-based overload must fail fast on a null tenant before any factory invocation");
+		_applicationClientFactory.DidNotReceiveWithAnyArgs().CreateEnvironmentClient(default!);
+	}
+
+	[Test]
+	[Description("Settings-based overload (ENG-93347 Story 7, AC-03/AC-04): updates the section against the supplied settings without ever consulting ISettingsRepository, and routes BOTH nested calls — the profile-culture resolution and the application-info read — through the settings-based overloads, never the name-based ones.")]
+	public void UpdateSection_ShouldUseSettingsBasedNestedCalls_WhenEnvironmentSettingsSupplied() {
+		// Arrange
+		_applicationInfoService.GetApplicationInfo(_environmentSettings, null, "UsrOrdersApp").Returns(
+			new ApplicationInfoResult(
+				"pkg-uid",
+				"UsrOrdersApp",
+				[],
+				[],
+				"app-id",
+				"Orders App",
+				"UsrOrdersApp",
+				"8.3.0"));
+		_applicationClient.ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+				body.Contains("\"Code\"", StringComparison.Ordinal)))
+			.Returns(
+				"""{"success":true,"rows":[{"Id":"section-id","ApplicationId":"app-id","Caption":"Orders","Code":"UsrOrders","Description":"Order workspace","EntitySchemaName":"UsrOrder","PackageId":"pkg-uid","SectionSchemaUId":"section-schema-uid","LogoId":"icon-old","IconBackground":"#111111","ClientTypeId":null}]}""",
+				"""{"success":true,"rows":[{"Id":"section-id","ApplicationId":"app-id","Caption":"Orders","Code":"UsrOrders","Description":"New description","EntitySchemaName":"UsrOrder","PackageId":"pkg-uid","SectionSchemaUId":"section-schema-uid","LogoId":"icon-old","IconBackground":"#111111","ClientTypeId":null}]}""");
+		_applicationClient.ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"columnValues\"", StringComparison.Ordinal) &&
+				body.Contains("\"Description\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true}""");
+
+		// Act
+		ApplicationSectionUpdateResult result = _sut.UpdateSection(
+			_environmentSettings,
+			new ApplicationSectionUpdateRequest(
+				"UsrOrdersApp",
+				"UsrOrders",
+				Description: "New description"));
+
+		// Assert
+		result.Section.Description.Should().Be("New description",
+			because: "the settings-based overload must complete the update end-to-end against the supplied settings");
+		_settingsRepository.DidNotReceiveWithAnyArgs().FindEnvironment(default);
+		_settingsRepository.DidNotReceiveWithAnyArgs().GetEnvironment(default(string));
+		_captionCultureResolver.Received(1).Resolve(_environmentSettings, null);
+		_captionCultureResolver.DidNotReceiveWithAnyArgs().Resolve(default(EnvironmentOptions)!, default);
+		_applicationInfoService.Received(1).GetApplicationInfo(_environmentSettings, null, "UsrOrdersApp");
 		_applicationInfoService.DidNotReceiveWithAnyArgs().GetApplicationInfo(default(string)!, default, default);
 	}
 }

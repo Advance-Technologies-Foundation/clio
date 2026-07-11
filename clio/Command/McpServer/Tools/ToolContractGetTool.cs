@@ -1379,9 +1379,10 @@ internal static class ToolContractCatalog {
 			ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName,
 			"Updates metadata of an existing installed application section and returns structured section readback data before and after the update.",
 			new ToolInputSchemaContract(
-				[EnvironmentNameFieldName, ApplicationCodeFieldName, SectionCodeFieldName],
+				[ApplicationCodeFieldName, SectionCodeFieldName],
 				[
-					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription
+						+ " Required on stdio / registered-environment transports; omit under credential passthrough — the X-Integration-Credentials header supplies the target tenant."),
 					Field(ApplicationCodeFieldName, StringType, InstalledApplicationCodeDescription),
 					Field(SectionCodeFieldName, StringType, "Existing section code inside the installed application."),
 					Field(CaptionFieldName, StringType, "Optional updated section caption."),

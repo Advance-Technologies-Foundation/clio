@@ -366,10 +366,23 @@ public sealed class ApplicationSectionCreateTool(
 }
 
 /// <summary>
-/// MCP tool surface for updating metadata of a section inside an existing application.
+/// MCP tool surface for updating metadata of a section inside an existing application. Resolves the
+/// target environment per request through <see cref="IToolCommandResolver"/> so the tool honors the
+/// mcp-http credential-passthrough header (<c>X-Integration-Credentials</c>) as well as
+/// registered-environment / stdio targets, and executes under the per-tenant lock and in-flight guard
+/// (FR-05, ENG-93347). The settings-based <see cref="IApplicationSectionUpdateService"/> overload
+/// routes the nested call graph — the profile-culture resolution and the application-info read — to
+/// the resolved tenant.
 /// </summary>
 [McpServerToolType]
-public sealed class ApplicationSectionUpdateTool(IApplicationSectionUpdateService applicationSectionUpdateService) {
+public sealed class ApplicationSectionUpdateTool(
+	ILogger logger,
+	IToolCommandResolver commandResolver,
+	IApplicationSectionUpdateService applicationSectionUpdateService)
+	: BaseTool<EnvironmentOptions>(null, logger, commandResolver) {
+
+	private readonly IToolCommandResolver _commandResolver = commandResolver;
+
 	/// <summary>
 	/// Stable MCP tool name for updating sections in existing Creatio applications.
 	/// </summary>
@@ -382,7 +395,7 @@ public sealed class ApplicationSectionUpdateTool(IApplicationSectionUpdateServic
 		OpenWorld = false)]
 	[Description("Updates metadata of a section inside an existing application in Creatio through backend MCP and returns structured section readback data before and after the update. Long-running: streams notifications/progress while working — await completion and do not retry on a perceived timeout.")]
 	public async Task<ApplicationSectionUpdateContextResponse> ApplicationSectionUpdate(
-		[Description("Parameters: environment-name, application-code, section-code (required); caption, description, icon-id, icon-background (optional partial update fields)")]
+		[Description("Parameters: environment-name (required unless passthrough), application-code, section-code (required); caption, description, icon-id, icon-background (optional partial update fields)")]
 		[Required]
 		ApplicationSectionUpdateArgs args,
 		global::ModelContextProtocol.Server.McpServer server,
@@ -397,19 +410,29 @@ public sealed class ApplicationSectionUpdateTool(IApplicationSectionUpdateServic
 				resolvedIconBackground = await SectionIconPalette.ResolveAsync(
 					server: null, args.IconBackground, args.Caption ?? args.SectionCode, cancellationToken).ConfigureAwait(false);
 			}
+			EnvironmentOptions options = new() { Environment = args.EnvironmentName };
+			// ExecuteWithCleanLog(options, ...) — the OPTIONS-AWARE overload — keys the execution lock and
+			// the session-container in-flight guard off THIS call's tenant (FR-05), not the shared fallback.
+			// It runs INSIDE the heartbeat work delegate so the lock is held on the worker thread for the
+			// whole synchronous backend call and never across an await.
 			ApplicationSectionUpdateResult result = await McpProgressHeartbeat.RunWithProgressAsync(
 				server,
 				requestContext?.Params?.ProgressToken,
 				ApplicationSectionUpdateToolName,
-				() => applicationSectionUpdateService.UpdateSection(
-					args.EnvironmentName,
-					new ApplicationSectionUpdateRequest(
-						args.ApplicationCode,
-						args.SectionCode,
-						args.Caption,
-						args.Description,
-						args.IconId,
-						resolvedIconBackground)),
+				() => ExecuteWithCleanLog(options, () => {
+					// Resolve the tenant FIRST: mixed header + environment-name input is rejected here by
+					// the resolver's transport policy before ANY Creatio-reaching call (AC-05).
+					EnvironmentSettings settings = _commandResolver.Resolve<EnvironmentSettings>(options);
+					return applicationSectionUpdateService.UpdateSection(
+						settings,
+						new ApplicationSectionUpdateRequest(
+							args.ApplicationCode,
+							args.SectionCode,
+							args.Caption,
+							args.Description,
+							args.IconId,
+							resolvedIconBackground));
+				}),
 				cancellationToken).ConfigureAwait(false);
 			return ApplicationToolHelper.CreateSectionUpdateContextResponse(ApplicationToolResultMapper.Map(result));
 		} catch (Exception ex) {
