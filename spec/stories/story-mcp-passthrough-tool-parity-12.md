@@ -28,31 +28,31 @@ routed rather than an undocumented always-latest fallback
 
 ## Acceptance Criteria
 
-- [ ] **AC-01** (PRD AC-04/AC-05, decision-matrix "Route — corrected") — Given authorized passthrough
+- [x] **AC-01** (PRD AC-04/AC-05, decision-matrix "Route — corrected") — Given authorized passthrough
   header-only, when `sync-pages` runs, then the version probe is **REACHED** — the pre-existing
   blank-`environmentName` early return in `ResolvePlatformVersionAsync` (today `:93`:
   `if (resolverFactory is null || settingsRepository is null || string.IsNullOrWhiteSpace(environmentName))
   return null;`) is removed so the guard only checks for absent dependencies, mirroring `PageUpdateTool`'s
   guard shape — **not** a blank name. This is the specific regression this story fixes; a test that merely
   asserts "returns a version" without asserting the resolver was actually invoked does not satisfy this AC.
-- [ ] **AC-02** — Given the probe is reached (AC-01), when it resolves settings, then it uses
+- [x] **AC-02** — Given the probe is reached (AC-01), when it resolves settings, then it uses
   `commandResolver.Resolve<EnvironmentSettings>(...)` and resolves against the **header** tenant (or fails
   soft to `latest` only if the resolver itself throws) — never a silent always-`latest` degrade that never
   touched the credential context.
-- [ ] **AC-03** (PRD AC-05, FR-05a) — Given authorized passthrough, when `sync-pages` is called, then its
+- [x] **AC-03** (PRD AC-05, FR-05a) — Given authorized passthrough, when `sync-pages` is called, then its
   `[Required]` `environment-name` MCP-schema attribute is relaxed to optional, so the call is **not**
   rejected at pre-tool binding, **and** the resolver's env-arg rejection (`ToolCommandResolver.cs:111-118`)
   does not make the tool uncallable — i.e. `environment-name` is conditionally required: forbidden under
   authorized passthrough, required/resolvable on stdio/registered-env paths via
   `ToolCommandResolver.ResolveSettingsAndKey`'s existing `EnvironmentResolutionException` throw (ADR OQ-03,
   "Resolver-ROUTED tools" — no new validation layer needed for this group).
-- [ ] **AC-04** — **Mixed input (PRD AC-06).** Given authorized passthrough with both the header and an
+- [x] **AC-04** — **Mixed input (PRD AC-06).** Given authorized passthrough with both the header and an
   explicit `environment-name` naming a different registered environment, when the version probe runs, then
   it is rejected by `HasExplicitCredentialArgs` before any named-tenant lookup — it never probes the named
   registered environment with stored credentials
   (`PageSyncTool.cs:74,97` today runs this probe **before** the resolver's `:283` rejection — this story
   fixes the ordering so the header-aware/rejecting path runs first).
-- [ ] **AC-05** (PRD AC-09 / SM-03) — Given stdio or registered-environment `mcp-http`, when `sync-pages` is
+- [x] **AC-05** (PRD AC-09 / SM-03) — Given stdio or registered-environment `mcp-http`, when `sync-pages` is
   called with `environment-name`, then behavior — including the version probe — matches the pre-change
   baseline exactly.
 - [ ] **AC-ERR** — **Error semantics respect the ENG-93208 middleware boundary (PRD AC-ERR).**
@@ -91,17 +91,54 @@ Test naming: `MethodName_ShouldBehavior_WhenCondition`
 
 ## Definition of Done
 
-- [ ] All `CLIO*` diagnostics clean in changed files — including CLIO005 (FR-10)
-- [ ] Targeted tests green before commit: `dotnet test clio.tests/clio.tests.csproj --filter
-  "Category=Unit&Module=McpServer" --no-build` (ADR slice 9)
-- [ ] All new/changed MCP arguments stay kebab-case (relaxing `[Required]` does not rename `environment-name`)
-- [ ] Unit tests added with `[Category("Unit")]` — never `[Category("UnitTests")]`
-- [ ] PR description references this story file
+- [x] All `CLIO*` diagnostics clean in changed files — including CLIO005 (FR-10)
+- [x] Targeted tests green before commit: `dotnet test clio.tests/clio.tests.csproj --filter
+  "Category=Unit&Module=McpServer" --no-build` (ADR slice 9) — see Notes for the one unrelated
+  in-flight failure observed on the shared worktree
+- [x] All new/changed MCP arguments stay kebab-case (relaxing `[Required]` does not rename `environment-name`)
+- [x] Unit tests added with `[Category("Unit")]` — never `[Category("UnitTests")]`
+- [ ] PR description references this story file (no PR opened by this dev-agent slice; left for the architect/integrator)
 
 ## Dev Agent Record
 
-{Left blank — filled by dev agent during implementation}
-- Implementation started:
-- Implementation completed:
-- Tests passing:
+- Implementation started: 2026-07-11
+- Implementation completed: 2026-07-11
+- Tests passing: `dotnet test clio.tests/clio.tests.csproj -c Release -f net10.0 --filter "Category=Unit&Module=McpServer&FullyQualifiedName~PageSyncTool" --no-build` → 40/40 passed (isolated re-run). The
+  broader `Category=Unit&Module=McpServer` filter (2116 tests) showed 1 failure —
+  `GetUserCultureTool_ShouldReturnRedactedFailure_WhenHeaderTenantOperationFails` — in
+  `GetUserCultureToolTests.cs`, which is Story 10's file, actively being edited by a parallel
+  coder agent on this same shared worktree at the time of the run (confirmed via `git status`/
+  `git diff --stat`, unrelated to any file touched by this story). No `PageSync*` test failed in
+  either run.
 - Notes:
+  - Removed the `ISettingsRepository? settingsRepository` constructor dependency entirely
+    (sanctioned deviation, not explicitly spelled out in the Implementation Notes): once
+    `ResolvePlatformVersionAsync` was swapped to `commandResolver.Resolve<EnvironmentSettings>(...)`
+    (Pattern-A), the direct `ISettingsRepository` lookup it replaced was the field's only remaining
+    consumer, so keeping the parameter (and a `settingsRepository is null` guard clause for a
+    dependency nothing else uses) would have been dead code. `PageSyncToolBaselineTests.cs` uses the
+    6-arg constructor and is unaffected; the one test that supplied `settingsRepository`
+    (`SyncPages_WhenEnvironmentResolvesVersion_ScopesChartCatalogToResolvedVersion`) was updated to
+    stub `commandResolver.Resolve<EnvironmentSettings>` instead.
+  - The AC-04 ordering fix required no reordering of the `ResolvePlatformVersionAsync` call relative
+    to `ExecuteSyncBatch` in `SyncPages`: the Pattern-A swap alone fixes the ordering, because
+    `IToolCommandResolver.Resolve<T>` performs the passthrough/mixed-input rejection
+    (`HasExplicitCredentialArgs`) BEFORE `ResolveSettingsAndKey`'s named-tenant lookup, for every
+    `TCommand` including `EnvironmentSettings`. `ResolvePlatformVersionAsync` remains the first
+    environment-touching call in `SyncPages`, now itself rejection-aware.
+  - AC-ERR left unchecked above: part (a) is out of scope by design (middleware, untouched); part
+    (b)'s non-passthrough "no resolvable environment → uniform message" half is covered by the new
+    `SyncPages_WhenEnvironmentIsUnresolvable_SurfacesEnvironmentResolutionExceptionPerPage` test, but
+    the "valid header whose target operation fails" half was not independently exercised with a new
+    test in this slice (the redaction mechanism — `SensitiveErrorTextRedactor.Redact` in
+    `TryResolveEnvironmentCommands`/`SyncSinglePage` — is pre-existing and untouched by this story's
+    diff, so it is not expected to have regressed, but it was not re-verified against a passthrough
+    scenario specifically).
+  - `docs/commands/sync-pages.md` (`Parameters` table, `environment-name` row) still documents
+    `environment-name` as `Required: Yes`; this is now stale after the FR-05a relax and should be
+    updated to reflect conditional requiredness. Left untouched per the explicit work-order scope
+    restriction (`PageSyncTool.cs` + `PageSyncToolTests.cs` only, to avoid collisions with 4 other
+    concurrent coder agents on this shared worktree) — flagged here for the architect/integrator to
+    action or assign.
+  - `docs/McpCapabilityMap.md` reviewed: `sync-pages` is only listed by name/one-line summary there,
+    no requiredness detail to correct — no update required.

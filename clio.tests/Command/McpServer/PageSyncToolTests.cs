@@ -98,9 +98,10 @@ public sealed class PageSyncToolTests {
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>())
 			.Returns(updateCommand);
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		// The target environment resolves to platform version 8.2.1 via the resolver factory.
-		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
-		settingsRepository.GetEnvironment(Arg.Any<EnvironmentOptions>()).Returns(new EnvironmentSettings());
+		// The target environment resolves to platform version 8.2.1 through the SAME
+		// IToolCommandResolver the tool uses for command resolution (Pattern-A) — no
+		// direct ISettingsRepository dependency anymore.
+		commandResolver.Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>()).Returns(new EnvironmentSettings());
 		IPlatformVersionResolver resolver = Substitute.For<IPlatformVersionResolver>();
 		resolver.ResolveAsync(Arg.Any<CancellationToken>())
 			.Returns(new PlatformVersionResolution("8.2.1", VersionResolutionSource.Environment));
@@ -108,7 +109,7 @@ public sealed class PageSyncToolTests {
 		resolverFactory.Create(Arg.Any<EnvironmentSettings>()).Returns(resolver);
 		PageSyncTool tool = new(commandResolver, new MockFileSystem(), Substitute.For<IMobileComponentInfoCatalog>(),
 			webCatalog, Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()),
-			resolverFactory, settingsRepository);
+			resolverFactory);
 		PageSyncArgs args = new(
 			"dev",
 			[new PageSyncPageInput("UsrTodo_FormPage", ValidPageBody)],
@@ -1104,5 +1105,152 @@ public sealed class PageSyncToolTests {
 			because: "a mobile body containing 'converters' must be rejected during validation");
 		response.Pages[0].Error.Should().Contain("converters",
 			because: "the error should describe the disallowed key that caused validation to fail");
+	}
+
+	// --- ENG-93347 Story 12: sync-pages passthrough-tool-parity tests ---
+	//
+	// These four tests pin the specific regression this story fixes: ResolvePlatformVersionAsync used to
+	// short-circuit to `null` on a blank environment-name BEFORE ever calling the resolver, so the version
+	// probe silently degraded to 'latest' without ever consulting the credential context. The fix routes the
+	// probe's settings lookup through IToolCommandResolver.Resolve<EnvironmentSettings> (Pattern-A) instead
+	// of a direct ISettingsRepository.GetEnvironment call, which is also what fixes the AC-04 ordering bug
+	// (the resolver's passthrough/mixed-input rejection now runs BEFORE any named-tenant settings lookup,
+	// because that rejection lives inside the same Resolve<T> call the probe now uses).
+
+	[Test]
+	[Category("Unit")]
+	[Description("AC-01/AC-02 regression guard: a header-only passthrough call (blank/null environment-name) must REACH the platform-version resolver through IToolCommandResolver.Resolve<EnvironmentSettings> and resolve against the header tenant — not merely return a version. Before this fix, ResolvePlatformVersionAsync returned null on a blank name without ever invoking the resolver; asserting only 'a version came back' would not catch that regression, so this test asserts the resolver call was actually received.")]
+	public async Task SyncPages_WhenEnvironmentNameIsBlank_ReachesVersionProbeThroughResolver() {
+		// Arrange
+		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>())
+			.Returns(updateCommand);
+		// Simulates ToolCommandResolver.Resolve<T>'s passthrough branch: with no explicit
+		// environment-name and an authorized HTTP credential-passthrough header active, the
+		// resolver resolves ephemeral settings from the header's credential context.
+		commandResolver.Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>())
+			.Returns(new EnvironmentSettings());
+		IPlatformVersionResolver resolver = Substitute.For<IPlatformVersionResolver>();
+		resolver.ResolveAsync(Arg.Any<CancellationToken>())
+			.Returns(new PlatformVersionResolution("8.2.1", VersionResolutionSource.Environment));
+		IPlatformVersionResolverFactory resolverFactory = Substitute.For<IPlatformVersionResolverFactory>();
+		resolverFactory.Create(Arg.Any<EnvironmentSettings>()).Returns(resolver);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog,
+			Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()), resolverFactory);
+		PageSyncArgs args = new(
+			null,
+			[new PageSyncPageInput("UsrTodo_FormPage", ValidPageBody)],
+			Validate: true,
+			SkipSampling: true);
+
+		// Act
+		PageSyncResponse response = await tool.SyncPages(args, null);
+
+		// Assert — the resolver call is the discriminator: the old blank-name guard returned null
+		// WITHOUT ever calling Resolve<EnvironmentSettings>, so this Received() assertion fails against
+		// the pre-fix code even though a "version" (null -> latest) would still come back.
+		commandResolver.Received(1).Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>());
+		response.Success.Should().BeTrue(
+			because: "the header-selected tenant resolves settings successfully so the batch save must proceed normally");
+		string requestedVersion = (string)webCatalog.ReceivedCalls()
+			.Single(c => c.GetMethodInfo().Name == nameof(IComponentInfoCatalog.LoadAsync))
+			.GetArguments()[0];
+		requestedVersion.Should().Be("8.2.1",
+			because: "the probe must resolve against the header tenant's platform version, not silently fall back to latest without ever consulting the credential context");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("AC-04 mixed input (header AND an explicit environment-name naming a different registered environment): the version probe's settings lookup is rejected by the resolver's passthrough guard BEFORE any named-tenant lookup can run, and fails SOFT to 'latest' without ever touching the named environment's stored credentials — proved structurally by asserting the resolver-factory's Create(settings) (which would start an authenticated probe against a resolved environment) was never reached.")]
+	public async Task SyncPages_WhenVersionProbeResolverRejectsMixedInput_FailsSoftWithoutBypassingResolver() {
+		// Arrange
+		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>())
+			.Returns(updateCommand);
+		// Simulates ToolCommandResolver.Resolve<T> under authorized HTTP credential passthrough: an
+		// explicit environment-name alongside a passthrough header is rejected via HasExplicitCredentialArgs
+		// BEFORE ResolveSettingsAndKey ever attempts a named-tenant lookup (ToolCommandResolver.cs:111-118).
+		commandResolver.Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>())
+			.Returns(_ => throw new EnvironmentResolutionException(
+				"Explicit credential or environment arguments (uri/login/password/client-id/client-secret/environment) "
+				+ "are not accepted when credential passthrough is enabled over HTTP. Supply the target environment "
+				+ "and credentials via the X-Integration-Credentials header, not tool arguments."));
+		IPlatformVersionResolverFactory resolverFactory = Substitute.For<IPlatformVersionResolverFactory>();
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog,
+			Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()), resolverFactory);
+		PageSyncArgs args = new(
+			"dev-named-registered-env",
+			[new PageSyncPageInput("UsrTodo_FormPage", ValidPageBody)],
+			Validate: true,
+			SkipSampling: true);
+
+		// Act
+		PageSyncResponse response = await tool.SyncPages(args, null);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "the resolver's mixed-input rejection during the version probe must fail SOFT to 'latest' and never block or crash the page save itself");
+		commandResolver.Received(1).Resolve<EnvironmentSettings>(
+			Arg.Is<EnvironmentOptions>(o => o.Environment == "dev-named-registered-env"));
+		resolverFactory.DidNotReceive().Create(Arg.Any<EnvironmentSettings>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("AC-03/FR-05a: environment-name must be schema-optional so an authorized passthrough call is not rejected at pre-tool MCP schema binding — asserts the property carries no [Required] attribute while its documented kebab-case JSON contract name is unchanged.")]
+	public void PageSyncArgs_EnvironmentName_ShouldBeSchemaOptional_ToSupportPassthrough() {
+		// Arrange
+		System.Reflection.PropertyInfo? property = typeof(PageSyncArgs).GetProperty(nameof(PageSyncArgs.EnvironmentName));
+
+		// Act
+		bool hasRequiredAttribute = property!
+			.GetCustomAttributes(typeof(System.ComponentModel.DataAnnotations.RequiredAttribute), inherit: false)
+			.Length > 0;
+		string? jsonName = property
+			.GetCustomAttributes(typeof(System.Text.Json.Serialization.JsonPropertyNameAttribute), inherit: false)
+			.Cast<System.Text.Json.Serialization.JsonPropertyNameAttribute>()
+			.SingleOrDefault()?.Name;
+
+		// Assert
+		hasRequiredAttribute.Should().BeFalse(
+			because: "environment-name must be schema-optional so an authorized HTTP passthrough call is not rejected at pre-tool MCP binding before the tool (and the resolver's own conditional requiredness) ever runs");
+		jsonName.Should().Be("environment-name",
+			because: "relaxing requiredness must not rename the kebab-case MCP argument contract");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("AC-05 non-passthrough regression guard: when the target environment is unresolvable on the stdio/registered-environment path (no active credential-passthrough context), IToolCommandResolver.Resolve<PageUpdateCommand> still throws EnvironmentResolutionException exactly as before this story — sync-pages surfaces the (redacted) message as a per-page error rather than crashing or silently succeeding. Pins that relaxing [Required] on environment-name removed only pre-tool schema rejection, not the resolver's runtime requiredness enforcement.")]
+	public async Task SyncPages_WhenEnvironmentIsUnresolvable_SurfacesEnvironmentResolutionExceptionPerPage() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>())
+			.Returns(_ => throw new EnvironmentResolutionException(
+				"Either a configured environment name or an explicit URI is required for MCP command execution. "
+				+ "Prefer a registered environment name; use explicit URI credentials only as a bootstrap or emergency fallback."));
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), mobileCatalog, webCatalog,
+			Substitute.For<IPageBodySamplingService>(), new PageBaselineGuard(new MockFileSystem()));
+		PageSyncArgs args = new(
+			null,
+			[new PageSyncPageInput("UsrTodo_FormPage", ValidPageBody)],
+			Validate: false,
+			SkipSampling: true);
+
+		// Act
+		PageSyncResponse response = await tool.SyncPages(args, null);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "an unresolvable environment on the non-passthrough path must fail the batch, matching the pre-change baseline");
+		response.Pages[0].Error.Should().Contain("environment name or an explicit URI is required",
+			because: "the resolver's existing EnvironmentResolutionException throw is the mechanism that still enforces requiredness on stdio/registered-environment paths — AC-05 must not regress this");
 	}
 }
