@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using Clio.Command.McpServer.Progress;
 using Clio.Common;
 using CommandLine;
 using k8s;
@@ -232,7 +233,7 @@ public class PfInstallerOptions : EnvironmentNameOptions{
 /// <summary>
 /// Executes Creatio deployment using validated command options.
 /// </summary>
-public class InstallerCommand : Command<PfInstallerOptions>{
+public class InstallerCommand : Command<PfInstallerOptions>, IStageEventSource{
 	#region Fields: Private
 
 	private readonly ICreatioInstallerService _creatioInstallerService;
@@ -264,6 +265,30 @@ public class InstallerCommand : Command<PfInstallerOptions>{
 		_kubernetes = kubernetes;
 		_deployCreatioDefaultsResolver = deployCreatioDefaultsResolver;
 		_dbOperationLogSessionFactory = dbOperationLogSessionFactory ?? NullDbOperationLogSessionFactory.Instance;
+	}
+
+	#endregion
+
+	#region Events: Public
+
+	/// <inheritdoc />
+	/// <remarks>
+	/// Bubbles the deploy stage-event seam up from <see cref="ICreatioInstallerService"/> (the service that
+	/// actually emits) so an MCP tool can subscribe to the resolved command instance via
+	/// <c>configureCommand</c> (story 4). Subscriptions delegate to the underlying service when it is an
+	/// <see cref="IStageEventSource"/>; otherwise they are inert.
+	/// </remarks>
+	public event EventHandler<ClioStageEvent> StageChanged {
+		add {
+			if (_creatioInstallerService is IStageEventSource source) {
+				source.StageChanged += value;
+			}
+		}
+		remove {
+			if (_creatioInstallerService is IStageEventSource source) {
+				source.StageChanged -= value;
+			}
+		}
 	}
 
 	#endregion
