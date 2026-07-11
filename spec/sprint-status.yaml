@@ -1236,7 +1236,7 @@ stories:
     title: "MCP surface + docs review — final consolidated step (FR-09)"
     feature: "mcp-passthrough-tool-parity"
     size: M
-    status: ready-for-dev
+    status: review
     file: spec/stories/story-mcp-passthrough-tool-parity-17.md
     prd: spec/prd/prd-mcp-passthrough-tool-parity.md
     adr: spec/adr/adr-mcp-passthrough-tool-parity.md

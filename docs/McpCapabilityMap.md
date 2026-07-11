@@ -89,7 +89,7 @@ Typical examples:
 
 - `component-info`
 - `create-workspace`
-- `show-webApp-list`
+- `list-environments`
 - `find-empty-iis-port`
 
 ### 4. HTTP credential-passthrough edge (multi-tenant)
@@ -97,12 +97,56 @@ Typical examples:
 The `mcp-http` HTTP host adds a fourth, opt-in targeting mode: **per-request credential
 passthrough**. Instead of a pre-registered environment, a gateway supplies the target tenant
 URL and credentials on each request via an `X-Integration-Credentials: <base64 JSON>` header,
-gated by an `Authorization: Bearer <platform-api-key>`. The same registered tool surface then
+gated by an `Authorization: Bearer <platform-api-key>`. Most of the registered tool surface then
 executes against an **ephemeral, in-memory** per-tenant container (nothing persisted; pooled
-with idle-TTL / LRU eviction). It is gated **solely by the platform API key** (fail-closed and
-off by default): with no key configured the header is ignored and `mcp-http` behaves as
-stdio-parity. See [`docs/commands/mcp-http.md`](../clio/docs/commands/mcp-http.md) for the full
-contract (header shapes, SSRF allowlist, and the mode-gated plaintext-arg policy).
+with idle-TTL / LRU eviction) — but not every tool honors the header yet: see "Per-tool
+passthrough support (ENG-93347)" immediately below for the audited exceptions. It is gated
+**solely by the platform API key** (fail-closed and off by default): with no key configured the
+header is ignored and `mcp-http` behaves as stdio-parity. See
+[`docs/commands/mcp-http.md`](../clio/docs/commands/mcp-http.md) for the full contract (header
+shapes, SSRF allowlist, and the mode-gated plaintext-arg policy).
+
+#### Per-tool passthrough support (ENG-93347)
+
+ENG-93347 audited every resident tool that reaches — or derives target-specific information
+from — a Creatio environment, and brought each into one of two states below. This is **not**
+the PRD's full out-of-scope audit; the remaining ~135 tools were already passthrough-capable
+before this feature (class a/b in the PRD's classification: they already resolve their
+target-scoped service per request through `IToolCommandResolver`) or are not
+environment-sensitive at all (telemetry, guidance, local infra, `list-environments`, etc.).
+
+**Passthrough-supported** — executes against the header tenant; `environment-name` (and, where
+the tool accepts them, `uri`/`login`/`password`) becomes optional, and supplying it **together**
+with an active passthrough header is rejected ("not accepted when credential passthrough is
+enabled") rather than silently honored:
+
+- `list-apps`, `get-app-info`, `create-app`, `create-app-section`, `update-app-section`,
+  `delete-app-section`, `list-app-sections` — the application-lifecycle family, including every
+  nested lookup each tool performs (caption-culture resolution, polling/readback).
+- `get-user-culture` — profile-culture lookup; previously the one real active-tenant data leak
+  in this audit (a header-only call with no active environment configured would silently read
+  the configured active environment's culture with its stored credentials), now closed.
+- `update-page`, `sync-pages` — the platform-version probe that scopes chart-widget/component
+  validation to the target's real version. Each tool's page-write path was already
+  passthrough-capable before this feature.
+- `get-component-info` — the `environment-name`/`uri` (mixed-input) path. The header-only,
+  no-argument path was already compliant before this feature (documented `latest-fallback`).
+- `build-theme` — the version-resolution probe only. Falls back **soft** (not an error) to the
+  newest bundled template when no header-derived tenant is available, and on mixed input (a
+  header plus an explicit `environment-name`) — never a header-blind name lookup.
+
+**Passthrough-unsupported** — fails fast with one uniform error naming the tool and the
+alternative (register the target environment and use the stdio path, or a non-passthrough
+`mcp-http` request), returned **before** any Creatio-reaching call:
+
+- `link-from-repository-by-environment`
+- `link-from-repository-unlocked`
+- `link-from-repository-by-env-package-path` — **except** its local-only `skip-preparation=true`
+  branch, which never reaches Creatio and is unaffected by passthrough.
+
+These three remain unsupported by design: the environment name doubles as a local
+package-directory selector with no passthrough equivalent, and routing was judged
+disproportionate for v1 (see the ADR's decision matrix for `link-from-repository-*`).
 
 ## What An AI Learns About Execution Semantics
 
@@ -390,7 +434,7 @@ This part is small but important because many other tools depend on it.
 
 - `reg-web-app`
   Register or update a local clio environment definition.
-- `show-webApp-list`
+- `list-environments`
   Return registered local environments and settings as structured JSON.
 - `get-pkg-list`
   Read remote package inventory from the selected environment.
@@ -419,7 +463,7 @@ What an external AI can practically do here:
 
 Important note:
 
-- `show-webApp-list` explicitly returns unmasked settings, which is powerful but sensitive
+- `list-environments` explicitly returns unmasked settings, which is powerful but sensitive
 
 ### 8. Deployment, Restore, And Infrastructure Preflight
 
@@ -639,7 +683,9 @@ This surface is powerful, but a third-party AI will still notice several inconsi
 All tool names now use strict kebab-case. Previous inconsistencies such as
 `restart-by-environmentName`, `StopAllCreatio`, and `show-webApp-list` have been
 corrected to `restart-by-environment-name`, `stop-all-creatio`, and
-`show-web-app-list` respectively.
+`show-web-app-list` respectively. The tool has since been renamed again to its current
+MCP name, `list-environments` (`show-web-app-list`/`show-web-app`/`env`/`envs` remain valid
+CLI-only aliases of the `list-environments` verb, per `Commands.md`).
 
 ### 2. Mixed argument styles
 

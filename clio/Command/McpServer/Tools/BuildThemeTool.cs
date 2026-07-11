@@ -226,7 +226,9 @@ public sealed record BuildThemeArgs(
 
 	[property: JsonPropertyName("environment-name")]
 	[property: Description("Registered environment whose Creatio version the theme targets; mutually exclusive with version. " +
-		"If the environment cannot be resolved or its version cannot be determined, the theme is still built — silently using the newest supported version — instead of failing.")]
+		"If the environment cannot be resolved or its version cannot be determined, the theme is still built — silently using the newest supported version — instead of failing. " +
+		"Always optional, including under credential passthrough: omit it so the header-supplied tenant's version is used; " +
+		"if both a passthrough header and environment-name are supplied, the mismatch is treated the same as an unresolvable environment (soft fallback to the newest version, never an error).")]
 	string? EnvironmentName = null,
 
 	[property: JsonPropertyName("workspace-directory")]

@@ -103,7 +103,8 @@ public sealed class ComponentInfoTool(
 		"If schema-type is omitted, defaults to the web component catalog (excludes mobile-only components such as crt.Toggle and crt.BarcodeScanner). " +
 		"Use schema-type: 'mobile' to retrieve mobile-specific components — the mobile registry is separate and excludes web-only types.")]
 	public async Task<ComponentInfoResponse> GetComponentInfo(
-		[Description("component-type (optional; omit or 'list' for the catalog of components AND composites), composite (optional; a composite Designer-element caption such as 'Expanded list' — returns its assembly docs, mutually exclusive with component-type), search (optional, filters both). schema-type 'web' (default) or 'mobile'. environment-name preferred (mutually exclusive with version). uri/login/password fallback only.")]
+		[Description("component-type (optional; omit or 'list' for the catalog of components AND composites), composite (optional; a composite Designer-element caption such as 'Expanded list' — returns its assembly docs, mutually exclusive with component-type), search (optional, filters both). schema-type 'web' (default) or 'mobile'. environment-name preferred (mutually exclusive with version). uri/login/password fallback only. " +
+			"Optional under credential passthrough: omitting environment-name/uri stays compliant (documented latest-fallback); supplying environment-name/uri together with an active passthrough header is rejected before any named-tenant probe, surfacing as a typed error response (success:false) rather than reading the named tenant's stored credentials.")]
 		[Required] ComponentInfoArgs args,
 		CancellationToken cancellationToken = default) {
 		string? legacyAliasError = McpToolArgumentSupport.BuildLegacyAliasError(

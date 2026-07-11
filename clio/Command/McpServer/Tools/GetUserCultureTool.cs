@@ -52,7 +52,9 @@ public sealed class GetUserCultureTool(
 		"in that case ASK the user which language to use; do NOT fall back to the host locale or a silent en-US.")]
 	public async Task<GetUserCultureResponse> GetUserCulture(
 		[Description("Parameters: environment-name (PREFERRED — the registered environment to read the profile culture from). " +
-			"uri/login/password: emergency fallback only when no environment is registered.")]
+			"uri/login/password: emergency fallback only when no environment is registered. " +
+			"Optional under credential passthrough — omit all four so the header-supplied tenant is used; " +
+			"supplying any of them together with an active passthrough header is rejected, not silently honored.")]
 		[Required] GetUserCultureArgs args,
 		CancellationToken cancellationToken = default) {
 		string? legacyAliasError = McpToolArgumentSupport.BuildLegacyAliasError(
