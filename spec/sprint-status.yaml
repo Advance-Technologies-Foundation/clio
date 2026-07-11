@@ -948,7 +948,7 @@ stories:
     title: "Credential-Passthrough Tool Guard + link-from-repository Fail-Fast (class c3)"
     feature: "mcp-passthrough-tool-parity"
     size: M
-    status: in-progress
+    status: review
     file: spec/stories/story-mcp-passthrough-tool-parity-1.md
     prd: spec/prd/prd-mcp-passthrough-tool-parity.md
     adr: spec/adr/adr-mcp-passthrough-tool-parity.md
@@ -963,7 +963,7 @@ stories:
     title: "Shared c1 dependencies — settings-based ICaptionCultureResolver + IApplicationInfoService overloads"
     feature: "mcp-passthrough-tool-parity"
     size: M
-    status: in-progress
+    status: review
     file: spec/stories/story-mcp-passthrough-tool-parity-2.md
     prd: spec/prd/prd-mcp-passthrough-tool-parity.md
     adr: spec/adr/adr-mcp-passthrough-tool-parity.md
@@ -984,7 +984,7 @@ stories:
     title: "list-apps — route through the resolver (class c1)"
     feature: "mcp-passthrough-tool-parity"
     size: M
-    status: in-progress
+    status: review
     note: "First in the SERIALIZED c1 chain 3->4->5->6->7->8->9 (shared ApplicationTool.cs / ApplicationToolArgs.cs). Owns the IApplicationListService settings-based overload (ADR slice 6c) — Story 2 provides only the two shared interfaces."
     file: spec/stories/story-mcp-passthrough-tool-parity-3.md
     prd: spec/prd/prd-mcp-passthrough-tool-parity.md
@@ -1001,7 +1001,7 @@ stories:
     title: "get-app-info — route through the resolver (class c1)"
     feature: "mcp-passthrough-tool-parity"
     size: S
-    status: in-progress
+    status: review
     note: "Serialized c1 chain: starts after story 3 merges (shared ApplicationTool.cs)."
     file: spec/stories/story-mcp-passthrough-tool-parity-4.md
     prd: spec/prd/prd-mcp-passthrough-tool-parity.md
@@ -1018,7 +1018,7 @@ stories:
     title: "create-app — route through the resolver, including nested caption-culture and polling calls (class c1)"
     feature: "mcp-passthrough-tool-parity"
     size: L
-    status: in-progress
+    status: review
     note: "Serialized c1 chain: starts after story 4 merges (shared ApplicationTool.cs / ApplicationToolArgs.cs)."
     file: spec/stories/story-mcp-passthrough-tool-parity-5.md
     prd: spec/prd/prd-mcp-passthrough-tool-parity.md
@@ -1035,7 +1035,7 @@ stories:
     title: "create-app-section — route through the resolver, including doubled nested caption-culture and app-info calls (class c1)"
     feature: "mcp-passthrough-tool-parity"
     size: L
-    status: in-progress
+    status: review
     note: "Serialized c1 chain: starts after story 5 merges (shared ApplicationTool.cs)."
     file: spec/stories/story-mcp-passthrough-tool-parity-6.md
     prd: spec/prd/prd-mcp-passthrough-tool-parity.md
@@ -1052,7 +1052,7 @@ stories:
     title: "update-app-section — route through the resolver, including nested caption-culture and app-info calls (class c1)"
     feature: "mcp-passthrough-tool-parity"
     size: M
-    status: in-progress
+    status: review
     note: "Serialized c1 chain: starts after story 6 merges (shared ApplicationTool.cs)."
     file: spec/stories/story-mcp-passthrough-tool-parity-7.md
     prd: spec/prd/prd-mcp-passthrough-tool-parity.md
@@ -1069,7 +1069,7 @@ stories:
     title: "delete-app-section — route through the resolver, including nested FindApplicationId (class c1)"
     feature: "mcp-passthrough-tool-parity"
     size: S
-    status: in-progress
+    status: review
     note: "Serialized c1 chain: starts after story 7 merges (shared ApplicationTool.cs)."
     file: spec/stories/story-mcp-passthrough-tool-parity-8.md
     prd: spec/prd/prd-mcp-passthrough-tool-parity.md
@@ -1086,7 +1086,7 @@ stories:
     title: "list-app-sections — route through the resolver, including nested FindApplicationId (class c1)"
     feature: "mcp-passthrough-tool-parity"
     size: S
-    status: in-progress
+    status: review
     note: "Serialized c1 chain: LAST — starts after story 8 merges (shared ApplicationTool.cs)."
     file: spec/stories/story-mcp-passthrough-tool-parity-9.md
     prd: spec/prd/prd-mcp-passthrough-tool-parity.md
@@ -1102,7 +1102,7 @@ stories:
     title: "get-user-culture — close the active-tenant data leak (class c2)"
     feature: "mcp-passthrough-tool-parity"
     size: S
-    status: ready-for-dev
+    status: review
     file: spec/stories/story-mcp-passthrough-tool-parity-10.md
     prd: spec/prd/prd-mcp-passthrough-tool-parity.md
     adr: spec/adr/adr-mcp-passthrough-tool-parity.md
@@ -1117,7 +1117,7 @@ stories:
     title: "update-page — header-aware platform-version probe (matrix tool)"
     feature: "mcp-passthrough-tool-parity"
     size: S
-    status: ready-for-dev
+    status: review
     file: spec/stories/story-mcp-passthrough-tool-parity-11.md
     prd: spec/prd/prd-mcp-passthrough-tool-parity.md
     adr: spec/adr/adr-mcp-passthrough-tool-parity.md
@@ -1132,7 +1132,7 @@ stories:
     title: "sync-pages — remove the blank-name short-circuit, route the probe, relax requiredness (matrix tool)"
     feature: "mcp-passthrough-tool-parity"
     size: M
-    status: ready-for-dev
+    status: review
     file: spec/stories/story-mcp-passthrough-tool-parity-12.md
     prd: spec/prd/prd-mcp-passthrough-tool-parity.md
     adr: spec/adr/adr-mcp-passthrough-tool-parity.md
@@ -1147,7 +1147,7 @@ stories:
     title: "get-component-info — guard the mixed-input path only (matrix tool, already header-only compliant)"
     feature: "mcp-passthrough-tool-parity"
     size: S
-    status: ready-for-dev
+    status: review
     file: spec/stories/story-mcp-passthrough-tool-parity-13.md
     prd: spec/prd/prd-mcp-passthrough-tool-parity.md
     adr: spec/adr/adr-mcp-passthrough-tool-parity.md
@@ -1162,7 +1162,7 @@ stories:
     title: "build-theme — Pattern B redesign (tool-resolved settings passed into a new command overload)"
     feature: "mcp-passthrough-tool-parity"
     size: L
-    status: ready-for-dev
+    status: review
     file: spec/stories/story-mcp-passthrough-tool-parity-14.md
     prd: spec/prd/prd-mcp-passthrough-tool-parity.md
     adr: spec/adr/adr-mcp-passthrough-tool-parity.md
