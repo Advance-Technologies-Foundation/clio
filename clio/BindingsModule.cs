@@ -228,6 +228,7 @@ public class BindingsModule {
 		services.AddTransient<ILocalRedisAssertion, LocalRedisAssertion>();
 		services.AddTransient<k8Commands>();
 		services.AddTransient<IInfrastructurePathProvider, InfrastructurePathProvider>();
+		services.AddTransient<IDeployCreatioDefaultsResolver, DeployCreatioDefaultsResolver>();
 		services.AddTransient<InstallerCommand>();
 		services.AddTransient<DeployIdentityCommand>();
 		services.AddTransient<IIdentityServiceArchiveResolver, IdentityServiceArchiveResolver>();
@@ -502,6 +503,7 @@ public class BindingsModule {
 		services.AddTransient<UpdateCliCommand>();
 		services.AddTransient<SetAutoupdateCommand>();
 		services.AddTransient<ExperimentalCommand>();
+		services.AddTransient<ConfigCommand>();
 		services.AddTransient<RegisterCommand>();
 		services.AddTransient<UnregisterCommand>();
 		

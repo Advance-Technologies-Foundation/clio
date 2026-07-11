@@ -27,6 +27,7 @@ component-registry-refresh:component-registry-refresh,component-registry
 get-component-info:get-component-info,component-info
 get-user-culture:get-user-culture,profile-language
 compressApp:compressApp,comp-app
+config:config
 create-app:create-app
 create-app-section:create-app-section
 create-data-binding:create-data-binding

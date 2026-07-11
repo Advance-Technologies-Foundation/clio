@@ -640,6 +640,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`healthcheck`](docs/commands/healthcheck.md) - Run Creatio health checks, `hc`
 <a id="register"></a>
 - [`register`](docs/commands/register.md) - Register clio shell integrations
+<a id="config"></a>
+- [`config`](docs/commands/config.md) - View and set clio configuration defaults (e.g. deploy-creatio defaults used by the Explorer context menu)
 <a id="set-app-icon"></a>
 <a id="ai"></a>
 <a id="appicon"></a>
