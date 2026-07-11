@@ -244,10 +244,23 @@ public sealed class ApplicationCreateTool(
 }
 
 /// <summary>
-/// MCP tool surface for creating a section inside an existing application.
+/// MCP tool surface for creating a section inside an existing application. Resolves the target
+/// environment per request through <see cref="IToolCommandResolver"/> so the tool honors the mcp-http
+/// credential-passthrough header (<c>X-Integration-Credentials</c>) as well as registered-environment
+/// / stdio targets, and executes under the per-tenant lock and in-flight guard (FR-05, ENG-93347).
+/// The settings-based <see cref="IApplicationSectionCreateService"/> overload routes the WHOLE nested
+/// call graph — including both caption-culture resolutions and both application-info reads — to the
+/// resolved tenant.
 /// </summary>
 [McpServerToolType]
-public sealed class ApplicationSectionCreateTool(IApplicationSectionCreateService applicationSectionCreateService) {
+public sealed class ApplicationSectionCreateTool(
+	ILogger logger,
+	IToolCommandResolver commandResolver,
+	IApplicationSectionCreateService applicationSectionCreateService)
+	: BaseTool<EnvironmentOptions>(null, logger, commandResolver) {
+
+	private readonly IToolCommandResolver _commandResolver = commandResolver;
+
 	/// <summary>
 	/// Stable MCP tool name for creating sections in existing Creatio applications.
 	/// </summary>
@@ -294,23 +307,33 @@ public sealed class ApplicationSectionCreateTool(IApplicationSectionCreateServic
 				resolvedIconBackground = await SectionIconPalette.ResolveAsync(
 					server: null, args.IconBackground, args.Caption, cancellationToken).ConfigureAwait(false);
 			}
+			EnvironmentOptions options = new() { Environment = args.EnvironmentName };
+			// ExecuteWithCleanLog(options, ...) — the OPTIONS-AWARE overload — keys the execution lock and
+			// the session-container in-flight guard off THIS call's tenant (FR-05), not the shared fallback.
+			// It runs INSIDE the heartbeat work delegate so the lock is held on the worker thread for the
+			// whole synchronous backend call and never across an await.
 			ApplicationSectionCreateResult result = await McpProgressHeartbeat.RunWithProgressAndDeadlineAsync(
 				server,
 				requestContext?.Params?.ProgressToken,
 				ApplicationSectionCreateToolName,
-				() => applicationSectionCreateService.CreateSection(
-					args.EnvironmentName,
-					new ApplicationSectionCreateRequest(
-						args.ApplicationCode,
-						args.Caption,
-						args.Description,
-						args.EntitySchemaName,
-						args.WithMobilePages,
-						resolvedIconBackground,
-						args.CaptionCulture,
-						args.Code),
-					BackgroundInsertTimeoutMs,
-					BackgroundReadbackTimeoutMs),
+				() => ExecuteWithCleanLog(options, () => {
+					// Resolve the tenant FIRST: mixed header + environment-name input is rejected here by
+					// the resolver's transport policy before ANY Creatio-reaching call in the graph (AC-07).
+					EnvironmentSettings settings = _commandResolver.Resolve<EnvironmentSettings>(options);
+					return applicationSectionCreateService.CreateSection(
+						settings,
+						new ApplicationSectionCreateRequest(
+							args.ApplicationCode,
+							args.Caption,
+							args.Description,
+							args.EntitySchemaName,
+							args.WithMobilePages,
+							resolvedIconBackground,
+							args.CaptionCulture,
+							args.Code),
+						BackgroundInsertTimeoutMs,
+						BackgroundReadbackTimeoutMs);
+				}),
 				deadline: null,
 				cancellationToken: cancellationToken).ConfigureAwait(false);
 			return ApplicationToolHelper.CreateSectionContextResponse(ApplicationToolResultMapper.Map(result));

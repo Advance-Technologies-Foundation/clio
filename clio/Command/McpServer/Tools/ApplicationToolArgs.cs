@@ -128,14 +128,14 @@ public sealed record ApplicationOptionalTemplateDataJsonArgs(
 	string? AppSectionDescription = null);
 
 /// <summary>
-/// MCP arguments for the <c>create-app-section</c> tool.
+/// MCP arguments for the <c>create-app-section</c> tool. <c>environment-name</c> is schema-optional (FR-05a,
+/// ENG-93347): under credential passthrough the target tenant comes from the
+/// <c>X-Integration-Credentials</c> header, while on non-passthrough transports runtime requiredness
+/// is enforced by the resolver (<see cref="EnvironmentResolutionException"/> when no environment or
+/// URI is resolvable). Declared after the required <c>application-code</c>/<c>caption</c> parameters
+/// because C# optional parameters must follow required ones; every call site uses named arguments.
 /// </summary>
 public sealed record ApplicationSectionCreateArgs(
-	[property: JsonPropertyName("environment-name")]
-	[property: Description(McpToolDescriptions.EnvironmentName)]
-	[property: Required]
-	string EnvironmentName,
-
 	[property: JsonPropertyName("application-code")]
 	[property: Description("Installed application code.")]
 	[property: Required]
@@ -144,7 +144,11 @@ public sealed record ApplicationSectionCreateArgs(
 	[property: JsonPropertyName("caption")]
 	[property: Description("Section caption, e.g. 'Orders'")]
 	[property: Required]
-	string Caption = "",
+	string Caption,
+
+	[property: JsonPropertyName("environment-name")]
+	[property: Description(McpToolDescriptions.EnvironmentName + " Optional under credential passthrough.")]
+	string? EnvironmentName = null,
 
 	[property: JsonPropertyName("description")]
 	[property: Description("Optional section description")]

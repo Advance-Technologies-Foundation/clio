@@ -371,7 +371,12 @@ public sealed class ApplicationToolTests {
 	public void ApplicationSectionCreate_Should_Return_Structured_Success_Envelope() {
 		// Arrange
 		IApplicationSectionCreateService applicationSectionCreateService = Substitute.For<IApplicationSectionCreateService>();
-		applicationSectionCreateService.CreateSection("sandbox", Arg.Any<ApplicationSectionCreateRequest>(), Arg.Any<int?>(), Arg.Any<int?>())
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		EnvironmentSettings resolvedSettings = new() { Uri = "https://sandbox.example.com" };
+		commandResolver.Resolve<EnvironmentSettings>(
+				Arg.Is<EnvironmentOptions>(options => options.Environment == "sandbox"))
+			.Returns(resolvedSettings);
+		applicationSectionCreateService.CreateSection(resolvedSettings, Arg.Any<ApplicationSectionCreateRequest>(), Arg.Any<int?>(), Arg.Any<int?>())
 			.Returns(new ApplicationSectionCreateResult(
 				"pkg-uid",
 				"UsrOrdersApp",
@@ -403,20 +408,21 @@ public sealed class ApplicationToolTests {
 						ParentSchemaName = "BasePage"
 					}
 				]));
-		ApplicationSectionCreateTool tool = new(applicationSectionCreateService);
+		ApplicationSectionCreateTool tool = new(
+			Substitute.For<ILogger>(), commandResolver, applicationSectionCreateService);
 
 		// Act
 		ApplicationSectionContextResponse result = tool.ApplicationSectionCreate(new ApplicationSectionCreateArgs(
-			EnvironmentName: "sandbox",
 			ApplicationCode: "UsrOrdersApp",
 			Caption: "Orders",
+			EnvironmentName: "sandbox",
 			Description: "Order workspace",
 			EntitySchemaName: "UsrOrder",
 			WithMobilePages: true), null, System.Threading.CancellationToken.None).GetAwaiter().GetResult();
 
 		// Assert
 		applicationSectionCreateService.Received(1).CreateSection(
-			"sandbox",
+			resolvedSettings,
 			Arg.Is<ApplicationSectionCreateRequest>(request =>
 				request.ApplicationCode == "UsrOrdersApp" &&
 				request.Caption == "Orders" &&
@@ -443,11 +449,11 @@ public sealed class ApplicationToolTests {
 	public void ApplicationSectionCreate_Should_Return_Error_When_ApplicationCode_Is_Missing() {
 		// Arrange
 		IApplicationSectionCreateService applicationSectionCreateService = Substitute.For<IApplicationSectionCreateService>();
-		ApplicationSectionCreateTool tool = new(applicationSectionCreateService);
+		ApplicationSectionCreateTool tool = new(
+			Substitute.For<ILogger>(), Substitute.For<IToolCommandResolver>(), applicationSectionCreateService);
 
 		// Act
 		ApplicationSectionContextResponse result = tool.ApplicationSectionCreate(new ApplicationSectionCreateArgs(
-			EnvironmentName: "sandbox",
 			ApplicationCode: null!,
 			Caption: "Orders"), null, System.Threading.CancellationToken.None).GetAwaiter().GetResult();
 
@@ -456,7 +462,8 @@ public sealed class ApplicationToolTests {
 			because: "tool validation failures should be returned as structured error payloads");
 		result.Error.Should().Match("*application-code is required*",
 			because: "the tool should explain that application-code is the supported target selector");
-		applicationSectionCreateService.DidNotReceiveWithAnyArgs().CreateSection(default!, default!);
+		applicationSectionCreateService.DidNotReceiveWithAnyArgs().CreateSection(default(string)!, default!);
+		applicationSectionCreateService.DidNotReceiveWithAnyArgs().CreateSection(default(EnvironmentSettings)!, default!);
 	}
 
 	[Test]
@@ -465,19 +472,24 @@ public sealed class ApplicationToolTests {
 	public void ApplicationSectionCreate_Should_Return_Classified_Error_Envelope_When_Service_Throws_Typed_Exception() {
 		// Arrange
 		IApplicationSectionCreateService applicationSectionCreateService = Substitute.For<IApplicationSectionCreateService>();
-		applicationSectionCreateService.CreateSection("sandbox", Arg.Any<ApplicationSectionCreateRequest>(), Arg.Any<int?>(), Arg.Any<int?>())
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		EnvironmentSettings resolvedSettings = new() { Uri = "https://sandbox.example.com" };
+		commandResolver.Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>())
+			.Returns(resolvedSettings);
+		applicationSectionCreateService.CreateSection(Arg.Any<EnvironmentSettings>(), Arg.Any<ApplicationSectionCreateRequest>(), Arg.Any<int?>(), Arg.Any<int?>())
 			.Returns(_ => throw new ApplicationSectionCreateException(
 				"Creatio did not respond within 90s while creating section 'Orders' (code 'UsrOrders').",
 				ApplicationSectionCreateFailureClass.CreatioTimeout,
 				sectionCreated: false,
 				"Do not retry immediately. Run list-app-sections first."));
-		ApplicationSectionCreateTool tool = new(applicationSectionCreateService);
+		ApplicationSectionCreateTool tool = new(
+			Substitute.For<ILogger>(), commandResolver, applicationSectionCreateService);
 
 		// Act
 		ApplicationSectionContextResponse result = tool.ApplicationSectionCreate(new ApplicationSectionCreateArgs(
-			EnvironmentName: "sandbox",
 			ApplicationCode: "UsrOrdersApp",
-			Caption: "Orders"), null, System.Threading.CancellationToken.None).GetAwaiter().GetResult();
+			Caption: "Orders",
+			EnvironmentName: "sandbox"), null, System.Threading.CancellationToken.None).GetAwaiter().GetResult();
 
 		// Assert
 		result.Success.Should().BeFalse(
@@ -529,18 +541,22 @@ public sealed class ApplicationToolTests {
 		// Arrange — substitute the service to throw the deadline exception the heartbeat wrapper
 		// raises when the work outlives the response budget, exercising the tool's deadline branch.
 		IApplicationSectionCreateService applicationSectionCreateService = Substitute.For<IApplicationSectionCreateService>();
-		applicationSectionCreateService.CreateSection("sandbox", Arg.Any<ApplicationSectionCreateRequest>(), Arg.Any<int?>(), Arg.Any<int?>())
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		EnvironmentSettings resolvedSettings = new() { Uri = "https://sandbox.example.com" };
+		commandResolver.Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>()).Returns(resolvedSettings);
+		applicationSectionCreateService.CreateSection(resolvedSettings, Arg.Any<ApplicationSectionCreateRequest>(), Arg.Any<int?>(), Arg.Any<int?>())
 			.Returns(_ => throw new McpResponseDeadlineExceededException(
 				ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
 				TimeSpan.FromSeconds(150)));
-		ApplicationSectionCreateTool tool = new(applicationSectionCreateService);
+		ApplicationSectionCreateTool tool = new(
+			Substitute.For<ILogger>(), commandResolver, applicationSectionCreateService);
 
 		// Act — server: null mirrors the existing heartbeat-contract tests; the deadline exception
 		// short-circuits the heartbeat wrapper and is caught by the tool itself.
 		ApplicationSectionContextResponse result = tool.ApplicationSectionCreate(new ApplicationSectionCreateArgs(
-			EnvironmentName: "sandbox",
 			ApplicationCode: "UsrTasksApp",
 			Caption: "Tasks",
+			EnvironmentName: "sandbox",
 			Code: "UsrTask"), null, System.Threading.CancellationToken.None).GetAwaiter().GetResult();
 
 		// Assert
@@ -562,19 +578,23 @@ public sealed class ApplicationToolTests {
 	public void ApplicationSectionCreate_Should_Report_Unknown_Section_State_When_Verification_Was_Not_Possible() {
 		// Arrange
 		IApplicationSectionCreateService applicationSectionCreateService = Substitute.For<IApplicationSectionCreateService>();
-		applicationSectionCreateService.CreateSection("sandbox", Arg.Any<ApplicationSectionCreateRequest>(), Arg.Any<int?>(), Arg.Any<int?>())
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		EnvironmentSettings resolvedSettings = new() { Uri = "https://sandbox.example.com" };
+		commandResolver.Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>()).Returns(resolvedSettings);
+		applicationSectionCreateService.CreateSection(resolvedSettings, Arg.Any<ApplicationSectionCreateRequest>(), Arg.Any<int?>(), Arg.Any<int?>())
 			.Returns(_ => throw new ApplicationSectionCreateException(
 				"Creatio did not respond and verification also failed.",
 				ApplicationSectionCreateFailureClass.CreatioTimeout,
 				sectionCreated: null,
 				"Check environment health before any retry."));
-		ApplicationSectionCreateTool tool = new(applicationSectionCreateService);
+		ApplicationSectionCreateTool tool = new(
+			Substitute.For<ILogger>(), commandResolver, applicationSectionCreateService);
 
 		// Act
 		ApplicationSectionContextResponse result = tool.ApplicationSectionCreate(new ApplicationSectionCreateArgs(
-			EnvironmentName: "sandbox",
 			ApplicationCode: "UsrOrdersApp",
-			Caption: "Orders"), null, System.Threading.CancellationToken.None).GetAwaiter().GetResult();
+			Caption: "Orders",
+			EnvironmentName: "sandbox"), null, System.Threading.CancellationToken.None).GetAwaiter().GetResult();
 
 		// Assert
 		result.SectionCreated.Should().Be("unknown",
@@ -589,15 +609,19 @@ public sealed class ApplicationToolTests {
 	public void ApplicationSectionCreate_Should_Return_Plain_Error_Envelope_When_Service_Throws_Plain_Exception() {
 		// Arrange
 		IApplicationSectionCreateService applicationSectionCreateService = Substitute.For<IApplicationSectionCreateService>();
-		applicationSectionCreateService.CreateSection("sandbox", Arg.Any<ApplicationSectionCreateRequest>(), Arg.Any<int?>(), Arg.Any<int?>())
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		EnvironmentSettings resolvedSettings = new() { Uri = "https://sandbox.example.com" };
+		commandResolver.Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>()).Returns(resolvedSettings);
+		applicationSectionCreateService.CreateSection(resolvedSettings, Arg.Any<ApplicationSectionCreateRequest>(), Arg.Any<int?>(), Arg.Any<int?>())
 			.Returns(_ => throw new InvalidOperationException("Application id was not returned by get-app-info."));
-		ApplicationSectionCreateTool tool = new(applicationSectionCreateService);
+		ApplicationSectionCreateTool tool = new(
+			Substitute.For<ILogger>(), commandResolver, applicationSectionCreateService);
 
 		// Act
 		ApplicationSectionContextResponse result = tool.ApplicationSectionCreate(new ApplicationSectionCreateArgs(
-			EnvironmentName: "sandbox",
 			ApplicationCode: "UsrOrdersApp",
-			Caption: "Orders"), null, System.Threading.CancellationToken.None).GetAwaiter().GetResult();
+			Caption: "Orders",
+			EnvironmentName: "sandbox"), null, System.Threading.CancellationToken.None).GetAwaiter().GetResult();
 
 		// Assert
 		result.Success.Should().BeFalse(
@@ -618,7 +642,8 @@ public sealed class ApplicationToolTests {
 	public void ApplicationSectionCreate_Should_Reject_Localization_Map_Fields() {
 		// Arrange
 		IApplicationSectionCreateService applicationSectionCreateService = Substitute.For<IApplicationSectionCreateService>();
-		ApplicationSectionCreateTool tool = new(applicationSectionCreateService);
+		ApplicationSectionCreateTool tool = new(
+			Substitute.For<ILogger>(), Substitute.For<IToolCommandResolver>(), applicationSectionCreateService);
 
 		// Act
 		ApplicationSectionContextResponse result = tool.ApplicationSectionCreate(new ApplicationSectionCreateArgs(
@@ -634,7 +659,8 @@ public sealed class ApplicationToolTests {
 			because: "create-app-section should reject localization maps before any create side effect is attempted");
 		result.Error.Should().Match("*scalar-only*",
 			because: "the failure should explain that localization maps are forbidden on create-app-section");
-		applicationSectionCreateService.DidNotReceiveWithAnyArgs().CreateSection(default!, default!);
+		applicationSectionCreateService.DidNotReceiveWithAnyArgs().CreateSection(default(string)!, default!);
+		applicationSectionCreateService.DidNotReceiveWithAnyArgs().CreateSection(default(EnvironmentSettings)!, default!);
 	}
 
 	[Test]
@@ -2067,7 +2093,10 @@ public sealed class ApplicationToolTests {
 	public async Task ApplicationSectionCreate_ShouldReturnStructuredResult_AndCallServiceOnce_WhenInvokedThroughHeartbeatContract() {
 		// Arrange
 		IApplicationSectionCreateService applicationSectionCreateService = Substitute.For<IApplicationSectionCreateService>();
-		applicationSectionCreateService.CreateSection("sandbox", Arg.Any<ApplicationSectionCreateRequest>(), Arg.Any<int?>(), Arg.Any<int?>())
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		EnvironmentSettings resolvedSettings = new() { Uri = "https://sandbox.example.com" };
+		commandResolver.Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>()).Returns(resolvedSettings);
+		applicationSectionCreateService.CreateSection(resolvedSettings, Arg.Any<ApplicationSectionCreateRequest>(), Arg.Any<int?>(), Arg.Any<int?>())
 			.Returns(new ApplicationSectionCreateResult(
 				"pkg-uid",
 				"UsrOrdersApp",
@@ -2087,21 +2116,22 @@ public sealed class ApplicationToolTests {
 						ParentSchemaName = "BasePage"
 					}
 				]));
-		ApplicationSectionCreateTool tool = new(applicationSectionCreateService);
+		ApplicationSectionCreateTool tool = new(
+			Substitute.For<ILogger>(), commandResolver, applicationSectionCreateService);
 
 		// Act — full signature: a null server means no progress token, so the heartbeat runs the work inline.
 		ApplicationSectionContextResponse result = await tool.ApplicationSectionCreate(
 			new ApplicationSectionCreateArgs(
-				EnvironmentName: "sandbox",
 				ApplicationCode: "UsrOrdersApp",
-				Caption: "Orders"),
+				Caption: "Orders",
+				EnvironmentName: "sandbox"),
 			server: null,
 			requestContext: null,
 			cancellationToken: default);
 
 		// Assert
 		applicationSectionCreateService.Received(1).CreateSection(
-			"sandbox",
+			resolvedSettings,
 			Arg.Is<ApplicationSectionCreateRequest>(request => request.ApplicationCode == "UsrOrdersApp"),
 			ApplicationSectionCreateTool.BackgroundInsertTimeoutMs,
 			ApplicationSectionCreateTool.BackgroundReadbackTimeoutMs);

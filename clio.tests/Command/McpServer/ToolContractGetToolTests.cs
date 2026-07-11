@@ -1044,8 +1044,10 @@ public sealed class ToolContractGetToolTests {
 		ToolContractDefinition contract = result.Tools!.Single();
 		contract.Name.Should().Be(ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
 			because: "the requested tool contract should be returned verbatim");
-		contract.InputSchema.Required.Should().Contain(["environment-name", "application-code", "caption"],
-			because: "section-create requires environment-name, application-code, and caption as the minimal payload");
+		contract.InputSchema.Required.Should().Contain(["application-code", "caption"],
+			because: "section-create requires application-code and caption as the minimal payload");
+		contract.InputSchema.Required.Should().NotContain("environment-name",
+			because: "environment-name is schema-optional (FR-05a, ENG-93347): passthrough supplies the tenant via the X-Integration-Credentials header, while non-passthrough requiredness is enforced by the resolver at runtime");
 		contract.InputSchema.AnyOf.Should().BeNullOrEmpty(
 			because: "section-create now uses a single required application-code selector");
 		contract.InputSchema.Validators.Should().Contain(validator =>

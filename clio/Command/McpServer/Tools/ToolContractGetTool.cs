@@ -1283,9 +1283,10 @@ internal static class ToolContractCatalog {
 			ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
 			"Creates a section inside an existing installed application and returns structured section, entity, and page readback data.",
 			new ToolInputSchemaContract(
-				[EnvironmentNameFieldName, ApplicationCodeFieldName, CaptionFieldName],
+				[ApplicationCodeFieldName, CaptionFieldName],
 				[
-					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription
+						+ " Required on stdio / registered-environment transports; omit under credential passthrough — the X-Integration-Credentials header supplies the target tenant."),
 					Field(ApplicationCodeFieldName, StringType, InstalledApplicationCodeDescription),
 					Field(CaptionFieldName, StringType, "Section caption."),
 					Field(DescriptionFieldName, StringType, "Optional section description."),

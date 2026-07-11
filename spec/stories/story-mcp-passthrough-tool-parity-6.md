@@ -33,40 +33,41 @@ Stories 3-9 all modify `clio/Command/McpServer/Tools/ApplicationTool.cs`, so the
 
 ## Acceptance Criteria
 
-- [ ] **AC-01** (PRD AC-02, decision-matrix "Route — full nested graph") — Given authorized passthrough and
+- [x] **AC-01** (PRD AC-02, decision-matrix "Route — full nested graph") — Given authorized passthrough and
   no `environment-name`, when `create-app-section` runs, then the section is created against the header
   tenant — never `Environment name is required.`.
-- [ ] **AC-02** — **Conditional requiredness (FR-05a) — blocking prerequisite for AC-01.** Given authorized
+- [x] **AC-02** — **Conditional requiredness (FR-05a) — blocking prerequisite for AC-01.** Given authorized
   passthrough, when `create-app-section` is called with no `environment-name`, then the MCP schema does
   **not** reject the call at pre-tool binding — `[Required]` is removed from `environment-name` on the
   corresponding `ApplicationSectionCreateArgs` record (ADR "CLI flag specification" table), making it
   schema-optional. On non-passthrough transports, runtime requiredness is enforced by the existing
   `IToolCommandResolver.ResolveSettingsAndKey`'s `EnvironmentResolutionException` throw (ADR OQ-03,
   "Resolver-ROUTED tools").
-- [ ] **AC-03** — **Nested caption-culture, readback site.** Given the same setup, when
+- [x] **AC-03** — **Nested caption-culture, readback site.** Given the same setup, when
   `ApplicationSectionCreateCommand`'s readback caption-culture call (today `:202`) runs, then it uses the
   settings-based `ICaptionCultureResolver.Resolve(EnvironmentSettings, ...)` overload and resolves the
   **header** tenant's culture.
-- [ ] **AC-04** — **Nested caption-culture, profile-validation site.** Given the same setup, when the
+- [x] **AC-04** — **Nested caption-culture, profile-validation site.** Given the same setup, when the
   profile-validation caption-culture call (today `:219`) runs, then it likewise uses the settings-based
   overload against the header tenant. (Both AC-03 and AC-04 must be independently tested — they are
   duplicated call sites, not one call reused twice in code.)
-- [ ] **AC-05** — **Nested `GetApplicationInfo`, validation site.** Given the same setup, when the
+- [x] **AC-05** — **Nested `GetApplicationInfo`, validation site.** Given the same setup, when the
   `:219`-region `applicationInfoService.GetApplicationInfo(environmentName, ...)` call runs, then it uses the
   settings-based overload against the header tenant.
-- [ ] **AC-06** — **Nested `GetApplicationInfo`, polling site.** Given the same setup, when the polling-loop
+- [x] **AC-06** — **Nested `GetApplicationInfo`, polling site.** Given the same setup, when the polling-loop
   call (today `:737`) runs, then it likewise uses the settings-based overload against the header tenant.
-- [ ] **AC-07** — **Mixed input (PRD AC-06).** Given authorized passthrough with both the header and an
+- [x] **AC-07** — **Mixed input (PRD AC-06).** Given authorized passthrough with both the header and an
   explicit `environment-name` naming a different registered environment, when `create-app-section` runs
   (outer call and all four nested call sites), then it is rejected by `HasExplicitCredentialArgs` before any
   Creatio-reaching call anywhere in the graph.
-- [ ] **AC-08** (PRD AC-09 / SM-03) — Given stdio or registered-environment `mcp-http`, when
+- [x] **AC-08** (PRD AC-09 / SM-03) — Given stdio or registered-environment `mcp-http`, when
   `create-app-section` is called with `environment-name`, then behavior — including all four nested call
   sites — matches the pre-change baseline exactly.
 - [ ] **AC-09** (PRD AC-07, concurrency isolation) — Given two concurrent `create-app-section` calls with
   different credentials, when both run, then each resolves a distinct authenticated container with no
-  cross-tenant bleed across any of the nested calls (E2E proof owned by Story 15).
-- [ ] **AC-ERR** — **Error semantics respect the ENG-93208 middleware boundary (PRD AC-ERR).**
+  cross-tenant bleed across any of the nested calls (E2E proof owned by Story 15). *Not in this story's
+  scope — E2E proof deferred to Story 15 per the row above.*
+- [x] **AC-ERR** — **Error semantics respect the ENG-93208 middleware boundary (PRD AC-ERR).**
   (a) A **malformed/unusable** header is out of scope: the middleware returns HTTP 400 **before** any tool
   is invoked (`McpHttpServerCommand.cs:317`) — the tool is never entered and must not add handling for it.
   (b) Given a **valid** header whose target operation fails, when the tool executes, then it returns the
@@ -108,17 +109,62 @@ Test naming: `MethodName_ShouldBehavior_WhenCondition`
 
 ## Definition of Done
 
-- [ ] All `CLIO*` diagnostics clean in changed files — including CLIO005 (FR-10)
-- [ ] Targeted tests green before commit: `dotnet test clio.tests/clio.tests.csproj --filter
+- [x] All `CLIO*` diagnostics clean in changed files — including CLIO005 (FR-10)
+- [x] Targeted tests green before commit: `dotnet test clio.tests/clio.tests.csproj --filter
   "Category=Unit&(Module=McpServer|Module=Command)" --no-build` (ADR slice 9)
-- [ ] All new/changed MCP arguments stay kebab-case (relaxing `[Required]` does not rename `environment-name`)
-- [ ] Unit tests added with `[Category("Unit")]` — never `[Category("UnitTests")]`
+- [x] All new/changed MCP arguments stay kebab-case (relaxing `[Required]` does not rename `environment-name`)
+- [x] Unit tests added with `[Category("Unit")]` — never `[Category("UnitTests")]`
 - [ ] PR description references this story file
 
 ## Dev Agent Record
 
-{Left blank — filled by dev agent during implementation}
-- Implementation started:
-- Implementation completed:
-- Tests passing:
+- Implementation started: 2026-07-10
+- Implementation completed: 2026-07-11
+- Tests passing: `dotnet test clio.tests/clio.tests.csproj -c Release --filter
+  "Category=Unit&(Module=McpServer|Module=Command)" --no-build` — 4141 passed / 0 failed / 30 skipped on
+  both net10.0 and net8.0 (2 x 4171 total). One unrelated pre-existing flake
+  (`SettingsRepositoryFeatureTests.SetFeature_ShouldUpsertExistingFlag_WhenCalledTwice`, shared on-disk
+  settings-file state across parallel tests) reproduced once on net8.0 and passed cleanly on isolated
+  rerun — not touched by this story.
 - Notes:
+  - Added `IApplicationSectionCreateService.CreateSection(EnvironmentSettings, ...)` settings-based
+    overload (`clio/Command/ApplicationSectionCreateCommand.cs`). Both public overloads converge on a
+    private `CreateSectionCore` taking `resolveCaptionCulture`/`loadApplicationInfo` delegates so the
+    name-based path stays byte-identical (AC-08) while the settings-based path threads
+    `EnvironmentSettings` through all FOUR nested call sites: readback caption-culture (AC-03),
+    profile-validation caption-culture (AC-04), pre-insert validation `GetApplicationInfo` (AC-05), and
+    the `LoadCreatedSection` polling-loop `GetApplicationInfo` (AC-06, reached both on the normal
+    success path and via `RecoverFromInsertTimeout`).
+  - `ApplicationSectionCreateTool` reworked onto `BaseTool<EnvironmentOptions>` with the same
+    `ExecuteWithCleanLog(options, ...)` + tenant-resolved-first pattern as Story 5's `ApplicationCreateTool`;
+    tenant resolution happens before any Creatio-reaching call so mixed input (AC-07) is rejected end to
+    end across the whole nested graph.
+  - `ApplicationSectionCreateArgs.EnvironmentName` relaxed to schema-optional (FR-05a): moved after the
+    required `application-code`/`caption` parameters (C# optional-after-required rule) and
+    `[Required]` removed; `ToolContractGetTool`'s curated `create-app-section` contract entry updated to
+    match (removed from `Required`, description now documents the passthrough-vs-transport boundary).
+  - New fixture `clio.tests/Command/McpServer/ApplicationSectionCreateToolPassthroughTests.cs` drives a
+    REAL `ApplicationSectionCreateService` (not a service substitute) through the tool so all four nested
+    call sites are exercised for real; 11 tests cover AC-01/02 (header-only + schema-optional reflection),
+    AC-03/04 (readback vs. profile-validation culture — independently asserted against distinct
+    `Resolve(settings, override)` call signatures), AC-05 (validation app-info, isolated by forcing a
+    later preparation-step failure so the polling site is never reached), AC-06 (polling app-info, proven
+    by the returned `application-version` coming from the second/`afterInfo` read), AC-07 (mixed input),
+    AC-08 (registered-env/stdio unchanged), AC-02 runtime-requiredness, AC-ERR(b) redacted envelope, and
+    FR-05 tenant-lock-key derivation.
+  - Added 3 settings-based-overload tests directly to `ApplicationSectionCreateServiceTests.cs`
+    (null-argument guard, all-four-nested-sites-use-settings-overloads, and timeout-recovery polling via
+    the settings overload — the last one captures the generated section id from the insert payload so
+    the post-timeout verification-select genuinely matches instead of short-circuiting on a fixed literal).
+  - Migrated all pre-existing `ApplicationSectionCreateTool`/`ApplicationSectionCreateService`-touching
+    tests in `ApplicationToolTests.cs`, `CaptionCultureArgMappingToolTests.cs`,
+    `CreateAppSectionCommandTests.cs`, and `ToolContractGetToolTests.cs` to the new constructor
+    signature / settings-based mock plumbing / reordered `ApplicationSectionCreateArgs` positional args.
+  - Gotcha discovered: `IApplicationClient.ExecutePostRequest` is a SINGLE method with a default
+    `requestTimeout` parameter (not two overloads) — because the tool always passes explicit
+    `BackgroundInsertTimeoutMs`/`BackgroundReadbackTimeoutMs` overrides, the section-readback-select and
+    icon-background-update calls run with an EXPLICIT (non-default) timeout, so their NSubstitute stubs
+    must configure the 3-arg call shape with `Arg.Any<int>()` — a 2-arg stub only matches the implicit
+    `Timeout.Infinite` default and silently returns `null` for the actual (explicit-timeout) call,
+    producing a downstream `NullReferenceException` that the tool's catch-all reports as an opaque
+    "Object reference not set" error instead of the intended failure.
