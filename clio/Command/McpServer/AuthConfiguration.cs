@@ -149,10 +149,12 @@ public sealed record AuthConfiguration
 		};
 	}
 
-	private static string FirstNonBlank(string first, string second) =>
-		!string.IsNullOrWhiteSpace(first) ? first
-		: !string.IsNullOrWhiteSpace(second) ? second
-		: null;
+	private static string FirstNonBlank(string first, string second) {
+		if (!string.IsNullOrWhiteSpace(first)) {
+			return first;
+		}
+		return !string.IsNullOrWhiteSpace(second) ? second : null;
+	}
 
 	/// <summary>
 	/// Parses a truthy flag value the same way across every mcp-http boolean env-var override

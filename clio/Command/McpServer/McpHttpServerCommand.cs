@@ -199,8 +199,9 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 
 		// Standard OAuth 2.1 Resource-Server authorization (ENG-93386, Story 2/3). Resolved from the
 		// --auth-* flags plus the CLIO_MCP_HTTP_AUTH_* env vars. Enabled iff an authority is configured;
-		// when disabled we register NOTHING here and add no authN/authZ middleware below (a
-		// UseAuthentication with no registered scheme throws) — the edge then behaves exactly as before.
+		// when disabled we register NOTHING here and add no authN/authZ middleware below — calling
+		// ASP.NET's UseAuthentication with no registered scheme throws, so skipping the whole block is
+		// required, not just cosmetic; the edge then behaves exactly as before.
 		AuthConfiguration authConfiguration =
 			AuthConfiguration.Resolve(options, AuthEnvironment.FromProcessEnvironment());
 		if (authConfiguration.Enabled) {
