@@ -112,4 +112,17 @@ public sealed class PublicBindGuardTests
 		// Assert
 		result.Should().BeFalse(because: $"'{host}' is only reachable from this machine itself");
 	}
+
+	[Test]
+	[Description("Codex review fix: IsPublicBind treats any other address in the loopback range (127.0.0.0/8) as NOT public too, not just the fixed 127.0.0.1 alias -- a first-pass fix using only the narrow alias check would have misclassified these as public and refused a harmless local bind.")]
+	[TestCase("127.0.0.2")]
+	[TestCase("127.255.255.254")]
+	public void IsPublicBind_ShouldReturnFalse_ForOtherLoopbackRangeAddresses(string host) {
+		// Arrange & Act
+		bool result = McpHttpServerCommand.IsPublicBind(host);
+
+		// Assert
+		result.Should().BeFalse(
+			because: $"'{host}' is within the 127.0.0.0/8 loopback range and is not reachable from outside this machine");
+	}
 }

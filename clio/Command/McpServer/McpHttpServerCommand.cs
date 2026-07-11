@@ -617,15 +617,18 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 
 	/// <summary>
 	/// ENG-93386 Story 8 (final-review fix): <see langword="true"/> for any host reachable by more than
-	/// this machine's own loopback interface — i.e. everything except the fixed loopback alias literals.
-	/// Broader than <see cref="IsWildcardHost"/> (which only recognizes the literal wildcard spellings and
-	/// is used for Host-header allow-listing, a distinct concern): a bind to a concrete LAN/public IP or
-	/// DNS hostname is just as reachable to a remote caller as <c>0.0.0.0</c>, so the public-bind guard
-	/// must treat it the same way.
+	/// this machine's own loopback interface. Broader than <see cref="IsWildcardHost"/> (which only
+	/// recognizes the literal wildcard spellings and is used for Host-header allow-listing, a distinct
+	/// concern): a bind to a concrete LAN/public IP or DNS hostname is just as reachable to a remote
+	/// caller as <c>0.0.0.0</c>, so the public-bind guard must treat it the same way. Deliberately reuses
+	/// <see cref="TargetUrlValidator.IsLoopbackIpOrLocalhost"/> (parses the FULL 127.0.0.0/8 / <c>::1</c>
+	/// loopback range), not the narrower <see cref="IsLoopbackAlias"/> — a second-pass adversarial-review
+	/// fix caught that the alias-only check misclassified a legitimate loopback address like
+	/// <c>127.0.0.2</c> as "public" and would have refused a harmless local bind.
 	/// </summary>
 	/// <param name="host">The <c>--host</c> value.</param>
-	/// <returns><see langword="true"/> when the bind is not a recognized loopback alias.</returns>
-	internal static bool IsPublicBind(string host) => !IsLoopbackAlias(host);
+	/// <returns><see langword="true"/> when the bind is not loopback.</returns>
+	internal static bool IsPublicBind(string host) => !TargetUrlValidator.IsLoopbackIpOrLocalhost(host);
 
 	/// <summary>
 	/// ENG-93386 Story 7 (FR-12/D-6): <see langword="true"/> when both standard OAuth authorization

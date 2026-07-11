@@ -222,10 +222,13 @@ public sealed class TargetUrlValidator : ITargetUrlValidator
 
 	// Loopback test for the SERVER'S BOUND HOST: the literal "localhost" OR any string that parses
 	// to a loopback IP (127.0.0.0/8, ::1). Deliberately BROADER than McpHttpServerCommand's
-	// IsLoopbackAlias (which matches only a fixed alias set): this gate decides whether an outbound
-	// loopback TARGET is permitted, so it must recognize e.g. 127.0.0.2 as loopback. The two guard
-	// different security controls and are intentionally NOT the same predicate.
-	private static bool IsLoopbackIpOrLocalhost(string host) {
+	// IsLoopbackAlias (which matches only a fixed alias set, used for Host-header/Origin filtering
+	// where an exact allowlist is intentional): this gate decides whether an outbound loopback
+	// TARGET is permitted, so it must recognize e.g. 127.0.0.2 as loopback. Internal (not private)
+	// so McpHttpServerCommand.IsPublicBind (ENG-93386 Story 8) can reuse the same broad check — that
+	// predicate's semantics ("is this genuinely unreachable from outside") match this one, not the
+	// narrower Host/Origin alias check.
+	internal static bool IsLoopbackIpOrLocalhost(string host) {
 		if (string.IsNullOrWhiteSpace(host)) {
 			return false;
 		}

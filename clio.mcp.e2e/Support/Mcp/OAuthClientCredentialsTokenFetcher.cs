@@ -21,7 +21,12 @@ internal static class OAuthClientCredentialsTokenFetcher {
 	/// <param name="authority">The identity-platform OIDC authority base URL.</param>
 	/// <param name="clientId">The pre-registered confidential client's identifier.</param>
 	/// <param name="clientSecret">The pre-registered confidential client's secret.</param>
-	/// <param name="scope">Optional space/comma-agnostic scope value to request (single string, as OpenIddict expects).</param>
+	/// <param name="scope">Optional scope(s) to request, in the SAME comma-separated form
+	/// <see cref="McpHttpOAuthStand.RequiredScopes"/> documents (matching the clio
+	/// <c>--auth-required-scopes</c> CLI convention). Normalized to the OAuth-standard
+	/// space-delimited <c>scope</c> form-field value before the request (RFC 6749 §3.3) — codex
+	/// review caught that sending the commas verbatim produced one invalid scope string instead of
+	/// several valid ones.</param>
 	/// <param name="cancellationToken">Cancellation token.</param>
 	/// <returns>The acquired access token.</returns>
 	public static async Task<string> AcquireAsync(
@@ -33,8 +38,9 @@ internal static class OAuthClientCredentialsTokenFetcher {
 			["client_id"] = clientId,
 			["client_secret"] = clientSecret
 		};
-		if (!string.IsNullOrWhiteSpace(scope)) {
-			form["scope"] = scope;
+		string spaceDelimitedScope = ToSpaceDelimitedScope(scope);
+		if (!string.IsNullOrWhiteSpace(spaceDelimitedScope)) {
+			form["scope"] = spaceDelimitedScope;
 		}
 		using FormUrlEncodedContent content = new(form);
 		using HttpResponseMessage response = await client.PostAsync(
@@ -51,5 +57,17 @@ internal static class OAuthClientCredentialsTokenFetcher {
 				$"Token endpoint at '{authority}' did not return an access_token: {body}");
 		}
 		return tokenElement.GetString()!;
+	}
+
+	/// <summary>
+	/// Converts a comma-separated scope list (this harness's documented input convention) to the
+	/// OAuth-standard space-delimited <c>scope</c> value. A single scope with no comma passes through
+	/// unchanged (trimmed).
+	/// </summary>
+	private static string ToSpaceDelimitedScope(string? scope) {
+		if (string.IsNullOrWhiteSpace(scope)) {
+			return string.Empty;
+		}
+		return string.Join(' ', scope.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
 	}
 }
