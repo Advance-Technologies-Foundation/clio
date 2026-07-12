@@ -115,6 +115,215 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			because: "a successful edit reports the edited schema name (run against an environment with the ProcessDesignService package and a 'City' object)");
 	}
 
+	[Test]
+	[Description("Over the real MCP path, builds a signal-start process then sets a data source filter via modify-business-process setFilter (describe confirms the distinctive value round-trips), then removes it via clearFilter (describe confirms it is gone). Covers the setFilter/clearFilter modify ops end-to-end (mandatory MCP e2e gate).")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process setFilter then clearFilter round-trips through describe")]
+	public async Task ModifyBusinessProcess_Should_SetThenClearSignalStartFilter() {
+		// Arrange — a signal-start process with NO filter yet.
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpSetFilterE2e{Guid.NewGuid():N}";
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildSignalStartDescriptor(processName)
+		});
+
+		// Act 1 — setFilter with a distinctive constant.
+		CallToolResult setResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = BuildSetFilterOperations()
+		});
+
+		// Assert 1 — set succeeds and describe reads the filter back (the distinctive value proves it was applied,
+		// not merely echoed — a server that returned success but serialized nothing is caught here).
+		setResult.IsError.Should().NotBeTrue(
+			because: "setFilter on a signalStart must apply without a transport error");
+		JsonSerializer.Serialize(setResult).Should().Contain(processName,
+			because: "a successful setFilter reports the edited schema name");
+		string afterSet = JsonSerializer.Serialize(await CallToolAsync(context, DescribeProcessTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName
+			}));
+		afterSet.Should().Contain("ClioModifyFilterProbe",
+			because: "setFilter serialized the signalStart EntityFilters and describe decodes the distinctive value back");
+
+		// Act 2 — clearFilter.
+		CallToolResult clearResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = BuildClearFilterOperations()
+		});
+
+		// Assert 2 — clear succeeds and the distinctive value is gone on read-back.
+		clearResult.IsError.Should().NotBeTrue(
+			because: "clearFilter must remove the filter without a transport error");
+		string afterClear = JsonSerializer.Serialize(await CallToolAsync(context, DescribeProcessTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName
+			}));
+		afterClear.Should().NotContain("ClioModifyFilterProbe",
+			because: "clearFilter removed the signalStart filter, so its distinctive value must be gone on read-back");
+	}
+
+	[Test]
+	[Description("Over the real MCP path: setFilter with a date-only `equal` on a DateTime column (Contact.CreatedOn), then describe reads the value back as the BARE date (2026-05-01), not a full ISO midnight. Proves the whole-day-trim round-trip fix end-to-end. Self-diagnosing: a full-ISO (…T00:00:00) read-back means an older clioprocessbuilder package is deployed on the stand.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process setFilter date-only equal round-trips as a bare date")]
+	public async Task ModifyBusinessProcess_Should_RoundTripDateOnlyFilterAsBareDate() {
+		// Arrange — a signal-start process with NO filter yet.
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpDateTrimE2e{Guid.NewGuid():N}";
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildSignalStartDescriptor(processName)
+		});
+
+		// Act — setFilter: CreatedOn (a DateTime column) equal a BARE date (no time).
+		CallToolResult setResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = BuildSetDateOnlyFilterOperations()
+		});
+
+		// Assert — the date-only value round-trips through describe as a bare date, not a full ISO midnight.
+		setResult.IsError.Should().NotBeTrue(
+			because: "setFilter with a date-only value on a DateTime column must apply without a transport error");
+		string afterSet = JsonSerializer.Serialize(await CallToolAsync(context, DescribeProcessTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName
+			}));
+		afterSet.Should().Contain("2026-05-01",
+			because: "the date-only filter value round-trips through describe");
+		afterSet.Should().NotContain("2026-05-01T00:00:00",
+			because: "a whole-day-trimmed date-only equal reads back as the BARE date (2026-05-01), NOT a full ISO midnight — proving today's reader round-trip fix is on the stand; a full-ISO read-back means an older clioprocessbuilder package is deployed");
+	}
+
+	[Test]
+	[Description("Over the real MCP path: setFilter on a signalStart REJECTS a condition whose right-hand side is a processParameter reference (a signal is evaluated before any process instance exists). Asserts the friendly rejection surfaces over MCP and that describe afterwards shows the signalStart still carries NO filter (the rejected edit was not persisted). Env-gated coverage for the promised negative case.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process rejects a parameter-reference filter on a signalStart")]
+	public async Task ModifyBusinessProcess_Should_RejectSignalStartParameterReferenceFilter() {
+		// Arrange — a signal-start process carrying a process parameter, so the filter references a REAL parameter and
+		// the ONLY reason for rejection is the signalStart restriction (not an unresolved parameter name).
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpSignalRefE2e{Guid.NewGuid():N}";
+		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildSignalStartWithParameterDescriptor(processName)
+		});
+
+		// Act — setFilter comparing Contact.Name to a process parameter on the signalStart (not allowed there).
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = BuildSignalStartParameterReferenceFilterOperations()
+		});
+
+		// Assert — the friendly rejection surfaces over MCP (same envelope pattern as the other reject tests).
+		string callResultJson = JsonSerializer.Serialize(callResult);
+		callResultJson.Should().Contain("process/element parameter",
+			because: "a signalStart filter cannot compare a column to a process/element parameter, and the friendly server message must surface over the real MCP path");
+		callResultJson.Should().Contain("SignalStart1",
+			because: "the rejection names the offending element so the agent can locate it");
+
+		// Readback: the rejected edit was discarded — the signalStart still carries NO filter (discriminating: the
+		// referenced parameter legitimately appears in the params list, so absence of the element filter is the proof).
+		DescribeProcessResult described = ParseDescribeResult(await CallToolAsync(context, DescribeProcessTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName
+			}));
+		DescribedElement signalStart = described.Elements.Single(element => element.Name == "SignalStart1");
+		signalStart.Filter.Should().BeNull(
+			because: "the rejected setFilter was discarded (any failure aborts the edit) — the signalStart carries no filter on read-back");
+	}
+
+	// A signal-start process with NO filter — the base for the setFilter/clearFilter e2e (setFilter targets a
+	// signalStart or a DataSourceFilters-exposing data element). Contact.Name is a base column on every stand.
+	private static string BuildSignalStartDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP SetFilter E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "SignalStart1", "type": "signalStart", "signal": { "entity": "Contact", "on": "modified" } },
+		    { "name": "task1", "type": "performTask" },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "SignalStart1", "target": "task1" },
+		    { "source": "task1", "target": "EndEvent1" }
+		  ]
+		}
+		""";
+
+	private static string BuildSetFilterOperations() =>
+		"""
+		[
+		  { "op": "setFilter", "elementName": "SignalStart1",
+		    "filter": { "object": "Contact", "logicalOperation": "and",
+		      "conditions": [ { "column": "Name", "comparison": "contains", "value": "ClioModifyFilterProbe" } ] } }
+		]
+		""";
+
+	private static string BuildClearFilterOperations() =>
+		"""
+		[
+		  { "op": "clearFilter", "elementName": "SignalStart1" }
+		]
+		""";
+
+	// A date-only equal on Contact.CreatedOn (a base DateTime column on every stand). The server sets
+	// trimDateTimeParameterToDate so the whole day matches; describe must read the value back as the bare date.
+	private static string BuildSetDateOnlyFilterOperations() =>
+		"""
+		[
+		  { "op": "setFilter", "elementName": "SignalStart1",
+		    "filter": { "object": "Contact", "logicalOperation": "and",
+		      "conditions": [ { "column": "CreatedOn", "comparison": "equal", "value": "2026-05-01" } ] } }
+		]
+		""";
+
+	// A signal-start process carrying a process parameter — the base for the negative test that a signalStart filter
+	// may NOT reference a parameter. The parameter exists so the rejection is unambiguously the signalStart
+	// restriction, not an unresolved parameter name.
+	private static string BuildSignalStartWithParameterDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP SignalRef E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "SignalStart1", "type": "signalStart", "signal": { "entity": "Contact", "on": "modified" } },
+		    { "name": "task1", "type": "performTask" },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "SignalStart1", "target": "task1" },
+		    { "source": "task1", "target": "EndEvent1" }
+		  ],
+		  "parameters": [
+		    { "name": "NameFilter", "type": "Text", "direction": "In", "caption": "Name filter" }
+		  ]
+		}
+		""";
+
+	// A signalStart setFilter whose right-hand side is a process parameter — not allowed on a signalStart (evaluated
+	// before a process instance exists); the server's FilterParameterGuard rejects it.
+	private static string BuildSignalStartParameterReferenceFilterOperations() =>
+		"""
+		[
+		  { "op": "setFilter", "elementName": "SignalStart1",
+		    "filter": { "object": "Contact", "logicalOperation": "and",
+		      "conditions": [ { "column": "Name", "comparison": "equal", "processParameter": "NameFilter" } ] } }
+		]
+		""";
+
 	private static string BuildDescriptor(string processName) =>
 		$$"""
 		{

@@ -86,6 +86,7 @@ Commands:
   modify-entity-schema-column          Add, modify, or remove a column in a remote Creatio entity schema
   modify-user-task-parameters          Add or remove parameters in a user task schema
   new-pkg                              Create a new package project, init
+  new-integration-test-project         Create a portable Creatio integration-test project, integration-test
   new-test-project                     Create a new test project, create-test-project, unit-test
   new-ui-project                       Create a new Freedom UI project, create-ui-project, createup, new-ui, ui, uiproject
   open-k8-files                        Open the Kubernetes manifests folder, cfg-k8, cfg-k8f, cfg-k8s

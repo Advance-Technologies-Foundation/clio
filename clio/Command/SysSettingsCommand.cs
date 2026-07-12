@@ -108,9 +108,25 @@ namespace Clio.Command
 
 		public override int Execute(SysSettingsOptions opts) {
 			if(opts.IsGet) {
+				if(opts.Value is not null) {
+					_logger.WriteWarning(
+						$"A value was supplied but 'get-syssetting'/--get only reads; the value is ignored. " +
+						$"Use 'clio set-syssetting {opts.Code} <value>' to write it.");
+				}
 				string value = _sysSettingsManager.GetSysSettingValueByCode(opts.Code);
 				_logger.WriteInfo($"SysSettings {opts.Code} : {value}");
 				return 0;
+			}
+
+			// A missing value must never overwrite an existing setting with an empty string.
+			// Bail out instead of silently clearing the value (e.g. `set-syssetting <code>` with no
+			// value, or a `get-syssetting` invocation that did not resolve to the read path).
+			if(opts.Value is null) {
+				_logger.WriteError(
+					$"No value provided for sys-setting '{opts.Code}'. " +
+					"Provide a value to set it (e.g. 'clio set-syssetting <code> <value>'), " +
+					"or use 'clio get-syssetting <code>' / 'clio set-syssetting <code> --get' to read it.");
+				return 1;
 			}
 
 			try {
