@@ -184,7 +184,7 @@ Now that clio source changes are authorized, clio can become the single source o
 
 ## Testing Strategy (pointer)
 
-Full plan: `spec/test-plans/tp-ring-guided-deploy.md` (to be authored by qa-planner).
+Full plan: `spec/ring-guided-deploy/test-plans/tp-ring-guided-deploy.md` (to be authored by qa-planner).
 
 | Layer | Framework | Coverage | Where |
 |-------|-----------|----------|-------|

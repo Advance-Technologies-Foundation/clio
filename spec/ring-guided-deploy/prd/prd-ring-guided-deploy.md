@@ -11,7 +11,7 @@
 
 This PRD was produced in autonomous mode (`--auto`); no user checkpoints were taken. Decisions made without pausing for confirmation:
 
-- **AD-01** — Feature name kept as `ring-guided-deploy` (per invocation). File saved as `spec/prd/prd-ring-guided-deploy.md`.
+- **AD-01** — Feature name kept as `ring-guided-deploy` (per invocation). File saved as `spec/ring-guided-deploy/prd/prd-ring-guided-deploy.md`.
 - **AD-02** — Treated the stakeholder brief as already signed off (per instruction); scope captured verbatim, not re-litigated. All 9 product requirements and the signed-off event contract are transcribed into FRs.
 - **AD-03** — Assigned FR/AC/SM/A/OQ IDs by grouping: guided UX (FR-01..07), typed event contract (FR-08..12), cross-repo clio changes (FR-13..16), logging/settings (FR-17..20), safety/non-initiation (FR-21..22).
 - **AD-04** — Classified the typed MCP event contract as a **Must** functional requirement (FR-08..12), because both the UI pipeline and the on-disk deployment receipt consume the same stream — the contract is the load-bearing interface, not an implementation detail.
@@ -20,7 +20,7 @@ This PRD was produced in autonomous mode (`--auto`); no user checkpoints were ta
 - **AD-07** — Captured cross-repo scope: `C:\Projects\clio` (typed events over MCP) + `C:\Projects\clio\clio-ring` (Ring UX, branch `spike/ring-clio-ipc`). No code written — PRD only.
 - **AD-08** — Feature touches the MCP surface (progress `_meta` envelope on deploy/uninstall tools); flagged `docs/McpCapabilityMap.md` and `clio.mcp.e2e` alignment per repo MCP maintenance policy.
 
-Recommended next step: `architect-agent spec/prd/prd-ring-guided-deploy.md --auto`.
+Recommended next step: `architect-agent spec/ring-guided-deploy/prd/prd-ring-guided-deploy.md --auto`.
 
 ---
 
@@ -170,5 +170,5 @@ This feature touches the MCP surface (deploy + uninstall tool progress). Keep `d
   - `C:\Projects\clio\clio-ring` — Ring guided UX, step pipeline, settings, logging (FR-01..07, FR-17..22), branch **`spike/ring-clio-ipc`**.
 - Depends on: the clio MCP tool progress transport carrying the typed `_meta` envelope (see OQ-03); an MCP client in the Ring app (A-07).
 - Depends on: existing deploy/uninstall stage logic remaining the source of truth (instrumented, not rewritten).
-- Blocks: ADR `spec/adr/adr-ring-guided-deploy.md`, stories `spec/stories/story-ring-guided-deploy-*.md`, and test plan `spec/test-plans/tp-ring-guided-deploy.md`.
+- Blocks: ADR `spec/ring-guided-deploy/adr/adr-ring-guided-deploy.md`, stories `spec/ring-guided-deploy/stories/story-ring-guided-deploy-*.md`, and test plan `spec/ring-guided-deploy/test-plans/tp-ring-guided-deploy.md`.
 - Related MCP maintenance: `docs/McpCapabilityMap.md`, deploy/uninstall command help + docs, and `clio.mcp.e2e` coverage must be updated alongside FR-13..16.
