@@ -65,7 +65,7 @@ public sealed class DeployUninstallProgressTests : McpContractFixtureBase {
 		IReadOnlyList<JsonNode> rawParams = await arrangeContext.Session.WaitForCapturedProgressAsync(
 			nodes => ExtractStageEvents(nodes).LastOrDefault()?.EventType
 				== ClioStageEventContract.EventTypes.RunCompleted,
-			TimeSpan.FromSeconds(5),
+			TimeSpan.FromSeconds(30),
 			arrangeContext.CancellationTokenSource.Token);
 		IReadOnlyList<ClioStageEvent> events = ExtractStageEvents(rawParams);
 

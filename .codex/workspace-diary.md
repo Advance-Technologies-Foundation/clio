@@ -5697,3 +5697,10 @@ Decision: Made the E2E session wait up to five seconds for the terminal typed pr
 Discovery: MCP tool completion and raw notification dispatch use independent SDK continuations; under full-suite load the response may complete before the notification handler drains, even though the server emitted the complete sequence.
 Files: clio.mcp.e2e/DeployUninstallProgressTests.cs, clio.mcp.e2e/Support/Mcp/McpServerSession.cs
 Impact: The test asserts the actual terminal contract without a timing race; five consecutive TeamCity-equivalent net8.0 Debug runs pass.
+
+## 2026-07-12 19:47 – Configure local MCP E2E sandbox and repair CI assertions
+Context: PR #851 needed a real local Creatio sandbox and TeamCity build 15717433 reported three MCP E2E failures.
+Decision: Deployed the approved 10.0.0.802 PostgreSQL build on port 40123, isolated its PostgreSQL/Redis configuration, persisted non-secret McpE2E sandbox coordinates, and aligned the three failing tests with CI timing and the split guidance ownership.
+Discovery: Restored PostgreSQL objects retained the template owner and blocked startup until ownership was transferred inside the sandbox database; the full destructive suite advances through real provisioning subprocesses but exceeds one hour, while the exact CI failures complete quickly and pass 3/3 on net8.0.
+Files: clio.mcp.e2e/DeployUninstallProgressTests.cs, clio.mcp.e2e/GuidanceGetToolE2ETests.cs
+Impact: This host now has a usable MCP E2E sandbox, and the next TeamCity run should tolerate delayed progress dispatch while validating the current page-guidance split.
