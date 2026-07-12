@@ -101,6 +101,33 @@ internal sealed class McpServerSession : IAsyncDisposable {
 	/// </summary>
 	public IReadOnlyList<JsonNode> CapturedProgressParams => [.. _capturedProgressParams];
 
+	/// <summary>
+	/// Waits for asynchronously dispatched progress notifications to satisfy <paramref name="condition"/>,
+	/// returning the latest snapshot when the condition is met or the timeout expires. Tool completion and
+	/// notification dispatch use independent SDK continuations, so a completed call does not guarantee that
+	/// the raw notification handler has drained its queue yet.
+	/// </summary>
+	public async Task<IReadOnlyList<JsonNode>> WaitForCapturedProgressAsync(
+		Func<IReadOnlyList<JsonNode>, bool> condition,
+		TimeSpan timeout,
+		CancellationToken cancellationToken) {
+		ArgumentNullException.ThrowIfNull(condition);
+		using CancellationTokenSource timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+		timeoutSource.CancelAfter(timeout);
+		IReadOnlyList<JsonNode> snapshot = CapturedProgressParams;
+		while (!condition(snapshot) && !timeoutSource.IsCancellationRequested) {
+			try {
+				await Task.Delay(TimeSpan.FromMilliseconds(20), timeoutSource.Token);
+			}
+			catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) {
+				break;
+			}
+			snapshot = CapturedProgressParams;
+		}
+		cancellationToken.ThrowIfCancellationRequested();
+		return snapshot;
+	}
+
 	public async Task<IList<McpClientTool>> ListToolsAsync(CancellationToken cancellationToken) =>
 		await Client.ListToolsAsync(cancellationToken: cancellationToken);
 

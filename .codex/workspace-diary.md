@@ -5690,3 +5690,10 @@ Decision: Fixed the actionable findings, added regex timeouts, retained NativeAO
 Discovery: Sonar classifies all new files on the imported companion as new code; the first PR therefore establishes the Ring quality baseline rather than comparing only the final integration commit.
 Files: clio-ring/ClioRing.Desktop/Program.cs, clio-ring/ClioRing/Views/RingView.axaml.cs, clio-ring/ClioRing/Interop/WindowsHotkey.cs, clio-ring/ClioRing/Services/ClioAdapter.cs, clio-ring/ClioRing/Services/WorkspaceService.cs, clio-ring/tools/ScreenshotTool/**, clio/Command/RingCommand.cs, clio/Command/McpServer/Progress/StageEventEmitter.cs
 Impact: Reliability/security findings are resolved or explicitly justified at the exact platform boundary; 88 Ring tests, the zero-warning Ring build, and 4056 Command/MCP tests per target framework pass.
+
+## 2026-07-12 18:00 – TeamCity typed-progress race fixed
+Context: PR 851's external TeamCity MCP E2E build failed only `DeployCreatio_Should_Stream_Typed_Stage_Events_Via_Progress_Meta_When_Archive_Is_Invalid` on net8.0 while focused local runs passed.
+Decision: Made the E2E session wait up to five seconds for the terminal typed progress event instead of snapshotting the raw notification queue immediately after the tool response.
+Discovery: MCP tool completion and raw notification dispatch use independent SDK continuations; under full-suite load the response may complete before the notification handler drains, even though the server emitted the complete sequence.
+Files: clio.mcp.e2e/DeployUninstallProgressTests.cs, clio.mcp.e2e/Support/Mcp/McpServerSession.cs
+Impact: The test asserts the actual terminal contract without a timing race; five consecutive TeamCity-equivalent net8.0 Debug runs pass.
