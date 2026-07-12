@@ -797,3 +797,14 @@ stories:
     ac: [AC-15]
     depends_on: []
     blocks: []
+  - id: story-clio-ring-companion-integration-1
+    title: "Integrate and deliver the clio-ring internal companion"
+    feature: "clio-ring-companion-integration"
+    repo: "clio"
+    size: L
+    status: in-progress
+    file: spec/stories/story-clio-ring-companion-integration-1.md
+    prd: spec/prd/spec-clio-ring-companion-integration.md
+    adr: spec/adr/adr-clio-ring-companion-integration.md
+    depends_on: []
+    blocks: []

@@ -1,0 +1,37 @@
+COMMAND TYPE
+    Integrations & tools (experimental)
+
+NAME
+    ring - Manage the experimental clio-ring desktop companion
+
+SYNOPSIS
+    ring [launch|install|update|version|status|uninstall]
+         [--manifest-url <https-url>]
+
+DESCRIPTION
+    Installs and runs the internal clio-ring Windows x64 desktop preview. Ring is
+    downloaded separately from GitHub Releases and is not bundled in the clio
+    dotnet tool. Release ZIPs are verified with SHA-256 before extraction.
+
+    Enable the preview first:
+        clio experimental --name ring --enable
+
+ARGUMENTS
+    action                         Lifecycle action. Default: launch.
+
+OPTIONS
+    --manifest-url <https-url>     HTTPS release manifest on a trusted GitHub
+                                   release host. Defaults to ring-latest here.
+
+EXAMPLES
+    clio ring install
+    clio ring
+    clio ring status
+    clio ring update
+    clio ring uninstall
+
+NOTES
+    - Windows x64 only.
+    - Internal 0.x preview; the POC may be removed.
+    - Installs under %LOCALAPPDATA%\Creatio\clio-ring.
+    - Does not collect telemetry.

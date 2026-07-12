@@ -1,0 +1,67 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup>
+		<TargetFramework>net10.0</TargetFramework>
+		<Nullable>enable</Nullable>
+		<LangVersion>latest</LangVersion>
+		<AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+		<PublishAot>true</PublishAot>
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+		<ClioRingVersion>0.1.0-spike</ClioRingVersion>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<AvaloniaResource Include="Assets\**"/>
+	</ItemGroup>
+
+	<!-- Build-identity: capture git short hash + UTC build time as compile-time constants
+	     (generated BuildInfo.g.cs). AOT-safe: no runtime git, no reflection. Falls back to
+	     "unknown" when git is missing / not a repo. The runtime channel comes from app-settings.json. -->
+	<Target Name="GenerateBuildInfo" BeforeTargets="CoreCompile">
+		<Exec Command="git -C &quot;$(MSBuildProjectDirectory)&quot; rev-parse --short HEAD"
+			  ConsoleToMSBuild="true" ContinueOnError="true"
+			  StandardOutputImportance="low" StandardErrorImportance="low">
+			<Output TaskParameter="ConsoleOutput" PropertyName="_GitHashRaw" />
+			<Output TaskParameter="ExitCode" PropertyName="_GitExit" />
+		</Exec>
+		<Exec Command="git -C &quot;$(MSBuildProjectDirectory)&quot; status --porcelain"
+			  ConsoleToMSBuild="true" ContinueOnError="true"
+			  StandardOutputImportance="low" StandardErrorImportance="low">
+			<Output TaskParameter="ConsoleOutput" PropertyName="_GitStatusRaw" />
+		</Exec>
+		<PropertyGroup>
+			<_GitHash>$(_GitHashRaw.Trim())</_GitHash>
+			<_GitHash Condition="'$(_GitExit)' != '0' or '$(_GitHash)' == ''">unknown</_GitHash>
+			<_GitDirty></_GitDirty>
+			<_GitDirty Condition="'$(_GitStatusRaw)' != '' and '$(_GitHash)' != 'unknown'">+dirty</_GitDirty>
+			<_BuildTimeUtc>$([System.DateTime]::UtcNow.ToString('yyyy-MM-dd HH:mm'))Z</_BuildTimeUtc>
+			<_BuildInfoFile>$(IntermediateOutputPath)BuildInfo.g.cs</_BuildInfoFile>
+		</PropertyGroup>
+		<ItemGroup>
+			<_BuildInfoLine Include="// &lt;auto-generated/&gt;" />
+			<_BuildInfoLine Include="namespace ClioLauncher.Diagnostics { public static partial class BuildInfo {" />
+			<_BuildInfoLine Include="public const string Version = &quot;$(ClioRingVersion)&quot;%3B" />
+			<_BuildInfoLine Include="public const string GitHash = &quot;$(_GitHash)$(_GitDirty)&quot;%3B" />
+			<_BuildInfoLine Include="public const string BuildTimeUtc = &quot;$(_BuildTimeUtc)&quot;%3B" />
+			<_BuildInfoLine Include="} }" />
+		</ItemGroup>
+		<WriteLinesToFile File="$(_BuildInfoFile)" Lines="@(_BuildInfoLine)" Overwrite="true" />
+		<ItemGroup>
+			<Compile Include="$(_BuildInfoFile)" />
+		</ItemGroup>
+	</Target>
+
+	<ItemGroup>
+		<PackageReference Include="Avalonia" />
+		<PackageReference Include="Avalonia.Themes.Fluent" />
+		<PackageReference Include="Avalonia.Fonts.Inter" />
+		<PackageReference Include="CommunityToolkit.Mvvm"/>
+		<PackageReference Include="Microsoft.Extensions.DependencyInjection"/>
+	</ItemGroup>
+
+	<ItemGroup>
+		<!-- EXPERIMENTAL clio MCP-over-stdio client (proof). Isolated, non-AOT project: keeps the MCP
+		     SDK's reflection-based JSON/DI out of this PublishAot project. This project consumes only
+		     its plain interface + record types, so no IL2026/IL3050 warnings leak in. -->
+		<ProjectReference Include="..\ClioLauncher.Ipc\ClioLauncher.Ipc.csproj" />
+	</ItemGroup>
+</Project>

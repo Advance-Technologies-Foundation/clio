@@ -1,0 +1,5 @@
+# The ClioStageEvent cross-repo contract fixture is mirrored byte-identically from clio
+# (clio.tests/Command/McpServer/Fixtures/ClioStageEvent.contract.ndjson) and is compared
+# byte-for-byte against System.Text.Json output by the parity test. Pin it to LF so the
+# anchor never depends on each machine's core.autocrlf (clio pins it the same way).
+ClioLauncher.Tests/Fixtures/ClioStageEvent.contract.ndjson text eol=lf

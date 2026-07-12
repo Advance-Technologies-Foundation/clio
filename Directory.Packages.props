@@ -18,6 +18,13 @@ See docs: https://devblogs.microsoft.com/dotnet/introducing-central-package-mana
     
   </PropertyGroup>
   <ItemGroup Label="Used in production">
+    <PackageVersion Include="Avalonia" Version="[12.1.0]" />
+    <PackageVersion Include="Avalonia.Desktop" Version="[12.1.0]" />
+    <PackageVersion Include="Avalonia.Fonts.Inter" Version="[12.1.0]" />
+    <PackageVersion Include="Avalonia.Headless" Version="[12.1.0]" />
+    <PackageVersion Include="Avalonia.Skia" Version="[12.1.0]" />
+    <PackageVersion Include="Avalonia.Themes.Fluent" Version="[12.1.0]" />
+    <PackageVersion Include="CommunityToolkit.Mvvm" Version="[8.4.2]" />
     <PackageVersion Include="ModelContextProtocol" Version="1.4.0" />
     <PackageVersion Include="ModelContextProtocol.AspNetCore" Version="1.4.0" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="$(MsPackageVersion)" />

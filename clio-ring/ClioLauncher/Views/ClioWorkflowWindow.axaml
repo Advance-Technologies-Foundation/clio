@@ -1,0 +1,126 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:ClioLauncher.ViewModels"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        x:Class="ClioLauncher.Views.ClioWorkflowWindow"
+        x:DataType="vm:ClioWorkflowViewModel"
+        Title="clio workflow (experimental)"
+        Icon="/Assets/clio-ring.ico"
+        Width="880" Height="680"
+        WindowStartupLocation="CenterScreen"
+        Background="#0E1117">
+
+    <Panel>
+        <Grid Margin="16" RowDefinitions="Auto,Auto,*,Auto">
+
+            <!-- Header: connection + selected env -->
+            <Border Grid.Row="0" CornerRadius="10" Padding="14" Background="#161C26" BorderBrush="#26FFFFFF" BorderThickness="1">
+                <Grid ColumnDefinitions="*,Auto">
+                    <StackPanel Grid.Column="0" Spacing="4">
+                        <TextBlock Text="clio workflow over MCP-over-stdio" FontSize="16" FontWeight="SemiBold" Foreground="#E6EDF3"/>
+                        <StackPanel Orientation="Horizontal" Spacing="16">
+                            <TextBlock Foreground="#8B949E" FontSize="12">
+                                <Run Text="State:"/><Run Text=" "/><Run Text="{Binding ConnectionState}"/>
+                            </TextBlock>
+                            <TextBlock Foreground="#58A6FF" FontSize="12" FontWeight="SemiBold" Text="{Binding ServerVersion}"/>
+                            <TextBlock Foreground="#C9D1D9" FontSize="12">
+                                <Run Text="Selected env:"/><Run Text=" "/><Run Text="{Binding SelectedEnvironment}"/>
+                            </TextBlock>
+                        </StackPanel>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                        <Button Content="Connect" Command="{Binding ConnectCommand}" IsEnabled="{Binding !IsBusy}"/>
+                        <Button Content="Tool catalog" Command="{Binding OpenCatalogCommand}"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- Command actions -->
+            <Border Grid.Row="1" CornerRadius="10" Padding="12" Margin="0,12,0,0" Background="#0B0E14" BorderBrush="#26FFFFFF" BorderThickness="1">
+                <StackPanel Spacing="10">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Grid.Column="0" Text="Commands (run against the selected environment)" Foreground="#C9D1D9" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                        <Button Grid.Column="1" Content="Deploy Creatio…" Classes="accent"
+                                Command="{Binding OpenDeployWizardCommand}"/>
+                    </Grid>
+                    <ItemsControl ItemsSource="{Binding Commands}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:WorkflowCommand">
+                                <Border Width="260" Margin="4" CornerRadius="8" Padding="10"
+                                        Background="#161C26" BorderBrush="#2A3140" BorderThickness="1">
+                                    <StackPanel Spacing="6">
+                                        <Grid ColumnDefinitions="*,Auto">
+                                            <TextBlock Grid.Column="0" Text="{Binding Title}" Foreground="#E6EDF3" FontWeight="SemiBold" FontFamily="Cascadia Code,Consolas,monospace"/>
+                                            <Border Grid.Column="1" CornerRadius="5" Padding="5,1" Background="#7A1F27" VerticalAlignment="Center"
+                                                    IsVisible="{Binding Destructive}">
+                                                <TextBlock Text="destructive" Foreground="#FFD7DA" FontSize="10"/>
+                                            </Border>
+                                        </Grid>
+                                        <TextBlock Text="{Binding Description}" Foreground="#8B949E" FontSize="11" TextWrapping="Wrap" Height="46"/>
+                                        <Button Content="Run" HorizontalAlignment="Left"
+                                                Command="{Binding $parent[ItemsControl].((vm:ClioWorkflowViewModel)DataContext).RunCommand}"
+                                                CommandParameter="{Binding}"/>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+
+            <!-- Output / results -->
+            <Border Grid.Row="2" CornerRadius="10" Padding="12" Margin="0,12,0,0" Background="#0B0E14" BorderBrush="#26FFFFFF" BorderThickness="1">
+                <Grid RowDefinitions="Auto,Auto,*">
+                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto">
+                        <TextBlock Grid.Column="0" Text="{Binding RunHeader}" Foreground="#C9D1D9" FontFamily="Cascadia Code,Consolas,monospace" VerticalAlignment="Center"/>
+                        <Border Grid.Column="1" CornerRadius="6" Padding="8,2" Margin="0,0,8,0" VerticalAlignment="Center"
+                                IsVisible="{Binding RunStateLabel, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                Background="#1F2937">
+                            <TextBlock Text="{Binding RunStateLabel}" Foreground="#E6EDF3" FontSize="11" FontWeight="SemiBold"/>
+                        </Border>
+                        <Button Grid.Column="2" Content="Cancel" Command="{Binding CancelRunCommand}" IsVisible="{Binding IsRunning}"/>
+                    </Grid>
+                    <ItemsControl Grid.Row="1" ItemsSource="{Binding ResultRows}" Margin="0,8,0,0">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="x:String">
+                                <TextBlock Text="{Binding}" Foreground="#C9D1D9" FontFamily="Cascadia Code,Consolas,monospace" FontSize="12" Margin="0,1"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <ScrollViewer Grid.Row="2" Margin="0,8,0,0">
+                        <SelectableTextBlock Text="{Binding Output}" Foreground="#8B949E"
+                                             FontFamily="Cascadia Code,Consolas,monospace" FontSize="12"/>
+                    </ScrollViewer>
+                </Grid>
+            </Border>
+
+            <TextBlock Grid.Row="3" Margin="2,10,0,0" Foreground="#6E7681" FontSize="11" TextWrapping="Wrap"
+                       Text="Read-only commands run immediately; destructive commands require a typed confirm. While running, a live heartbeat/activity indicator is shown (keep-alive beats, not incremental stdout); the command's output arrives with the final result. Cancel stops the ring waiting but cannot abort an in-flight clio operation."/>
+        </Grid>
+
+        <!-- Typed-confirm overlay for destructive commands -->
+        <Border IsVisible="{Binding ConfirmVisible}" Background="#CC000000">
+            <Border Width="460" CornerRadius="12" Padding="20" Background="#1A1010"
+                    BorderBrush="#F85149" BorderThickness="1"
+                    HorizontalAlignment="Center" VerticalAlignment="Center">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="{Binding ConfirmTitle}" Foreground="#F5B5B2" FontSize="16" FontWeight="SemiBold"/>
+                    <SelectableTextBlock Text="{Binding ConfirmDetail}" Foreground="#E6C4C2" TextWrapping="Wrap" FontSize="13"/>
+                    <TextBox Text="{Binding ConfirmInput}" PlaceholderText="{Binding ConfirmWord}"/>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+                        <Button Content="Cancel" Command="{Binding CancelConfirmCommand}"/>
+                        <Button Content="Run destructive command" Classes="accent"
+                                Command="{Binding ConfirmCommand}" IsEnabled="{Binding CanConfirm}"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Border>
+    </Panel>
+</Window>

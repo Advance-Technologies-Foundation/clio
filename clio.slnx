@@ -11,4 +11,10 @@
   <Project Path="cliogate.tests\cliogate.tests.csproj" />
   <Project Path="cliogate\cliogate.csproj" />
   <Project Path="clio\clio.csproj" />
+  <Folder Name="/clio-ring/">
+    <Project Path="clio-ring/ClioLauncher/ClioLauncher.csproj" />
+    <Project Path="clio-ring/ClioLauncher.Desktop/ClioLauncher.Desktop.csproj" />
+    <Project Path="clio-ring/ClioLauncher.Ipc/ClioLauncher.Ipc.csproj" />
+    <Project Path="clio-ring/ClioLauncher.Tests/ClioLauncher.Tests.csproj" />
+  </Folder>
 </Solution>

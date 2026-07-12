@@ -1,0 +1,90 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:ClioLauncher.ViewModels"
+             xmlns:svc="using:ClioLauncher.Services"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="920" d:DesignHeight="720"
+             x:Class="ClioLauncher.Views.UninstallView"
+             x:DataType="vm:UninstallFormViewModel"
+             x:CompileBindings="True"
+             FontFamily="Inter, Segoe UI, sans-serif"
+             Foreground="#E6EDF3">
+
+    <Grid Margin="16" ColumnDefinitions="400,*" Background="#0E1117">
+
+        <!-- ===== Left: pick a local environment, then Uninstall ===== -->
+        <ScrollViewer Grid.Column="0" Margin="0,0,12,0">
+            <StackPanel Spacing="12">
+
+                <!-- Header -->
+                <Border CornerRadius="10" Padding="14" Background="#161C26" BorderBrush="#26FFFFFF" BorderThickness="1">
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="Uninstall Creatio" FontSize="16" FontWeight="SemiBold" Foreground="#E6EDF3"/>
+                        <TextBlock Foreground="#8B949E" FontSize="12">
+                            <Run Text="Status:"/><Run Text=" "/><Run Text="{Binding ConnectionState}"/>
+                        </TextBlock>
+                    </StackPanel>
+                </Border>
+
+                <!-- Local environment picker -->
+                <Border CornerRadius="10" Padding="12" Background="#0B0E14" BorderBrush="#26FFFFFF" BorderThickness="1">
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="Local environment to remove" Foreground="#E6EDF3" FontWeight="SemiBold"/>
+                        <ComboBox ItemsSource="{Binding LocalEnvironments}" SelectedItem="{Binding SelectedEnvironment}" HorizontalAlignment="Stretch">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="svc:ClioEnvironment">
+                                    <TextBlock FontFamily="Cascadia Code,Consolas,monospace">
+                                        <Run Text="{Binding Name}"/><Run Text="  ·  "/><Run Text="{Binding Host}"/><Run Text="  ·  "/><Run Text="{Binding FrameworkLabel}"/>
+                                    </TextBlock>
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <TextBlock Text="{Binding EnvironmentsStatus}" Foreground="#8B949E" FontSize="11" TextWrapping="Wrap"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Validation notice (e.g. no environment picked) -->
+                <SelectableTextBlock Text="{Binding ValidationSummary}" Foreground="#F5B5B2" FontSize="12" TextWrapping="Wrap"
+                                     IsVisible="{Binding HasValidationSummary}"/>
+
+                <!-- Preview-gate notice (live uninstall not started in this build) -->
+                <Border CornerRadius="10" Padding="12" Background="#1A1410" BorderBrush="#F5A524" BorderThickness="1"
+                        IsVisible="{Binding HasPreviewNotice}">
+                    <SelectableTextBlock Text="{Binding PreviewNotice}" Foreground="#F5D9A8" FontSize="12" TextWrapping="Wrap"/>
+                </Border>
+
+                <!-- The Uninstall action: opens the simple Yes/No confirm (does NOT start anything) -->
+                <Button Content="Uninstall" HorizontalAlignment="Stretch"
+                        Command="{Binding RequestUninstallCommand}" IsEnabled="{Binding !IsBusy}"/>
+
+                <SelectableTextBlock Text="{Binding Output}" Foreground="#8B949E" FontSize="11"
+                                     FontFamily="Cascadia Code,Consolas,monospace" TextWrapping="Wrap"/>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- ===== Right: the live pipeline (the uninstall stages) ===== -->
+        <Border Grid.Column="1" CornerRadius="10" Background="#0B0E14" BorderBrush="#26FFFFFF" BorderThickness="1">
+            <ContentControl Content="{Binding Pipeline}"/>
+        </Border>
+
+        <!-- ===== Simple "Are you sure? Yes/No" confirm overlay ===== -->
+        <Border Grid.Column="0" Grid.ColumnSpan="2" Background="#CC0B0E14" IsVisible="{Binding IsConfirmVisible}">
+            <Border CornerRadius="12" Padding="20" MaxWidth="460" Margin="24"
+                    VerticalAlignment="Center" HorizontalAlignment="Center"
+                    Background="#161C26" BorderBrush="#F85149" BorderThickness="1">
+                <StackPanel Spacing="14">
+                    <TextBlock Text="{Binding ConfirmMessage}" FontSize="16" FontWeight="SemiBold"
+                               Foreground="#E6EDF3" TextWrapping="Wrap"/>
+                    <Border CornerRadius="8" Padding="12" Background="#2A1315" BorderBrush="#F85149" BorderThickness="1">
+                        <TextBlock Text="{Binding ConfirmConsequence}" Foreground="#F5B5B2" FontSize="12" TextWrapping="Wrap"/>
+                    </Border>
+                    <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Right">
+                        <Button Content="No" MinWidth="90" Command="{Binding CancelUninstallCommand}"/>
+                        <Button Content="Yes, uninstall" MinWidth="120" Command="{Binding ConfirmUninstallCommand}"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Border>
+    </Grid>
+</UserControl>

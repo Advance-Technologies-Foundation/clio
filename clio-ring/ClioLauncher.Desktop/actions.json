@@ -1,0 +1,135 @@
+{
+  "$schema": "./actions.schema.json",
+  "Actions": [
+    {
+      "Id": "clio-deploy-creatio",
+      "Title": "Deploy Creatio",
+      "ShortTitle": "Deploy",
+      "Icon": "package",
+      "Kind": "GuidedInstall",
+      "Parameters": [],
+      "Risk": "None"
+    },
+    {
+      "Id": "clio-env-info",
+      "Title": "Environment Info",
+      "ShortTitle": "Info",
+      "Icon": "info",
+      "Kind": "ClioCommand",
+      "ClioCommand": {
+        "Verb": "get-info",
+        "Args": [],
+        "EnvName": null
+      },
+      "Parameters": [
+        {
+          "Name": "env",
+          "ParameterType": "Env",
+          "Required": true,
+          "Default": null
+        }
+      ],
+      "Risk": "None"
+    },
+    {
+      "Id": "clio-version",
+      "Title": "clio Version",
+      "ShortTitle": "Version",
+      "Icon": "tag",
+      "Kind": "ClioCommand",
+      "ClioCommand": {
+        "Verb": "--version",
+        "Args": []
+      },
+      "Parameters": [],
+      "Risk": "None"
+    },
+    {
+      "Id": "clio-list-packages",
+      "Title": "List Packages",
+      "ShortTitle": "Packages",
+      "Icon": "package",
+      "Kind": "ClioCommand",
+      "ClioCommand": {
+        "Verb": "list-packages",
+        "Args": []
+      },
+      "Parameters": [
+        {
+          "Name": "env",
+          "ParameterType": "Env",
+          "Required": true,
+          "Default": null
+        }
+      ],
+      "Risk": "None"
+    },
+    {
+      "Id": "open-clio-docs",
+      "Title": "clio Docs",
+      "ShortTitle": "Docs",
+      "Icon": "docs",
+      "Kind": "OpenUrl",
+      "OpenUrl": {
+        "Url": "https://github.com/Advance-Technologies-Foundation/clio"
+      },
+      "Parameters": [],
+      "Risk": "None"
+    },
+    {
+      "Id": "open-workspaces",
+      "Title": "Workspaces Folder",
+      "ShortTitle": "Workspaces",
+      "Icon": "folder",
+      "Kind": "OpenPath",
+      "OpenPath": {
+        "Path": "C:\\Projects\\Workspaces"
+      },
+      "Parameters": [],
+      "Risk": "None"
+    },
+    {
+      "Id": "clio-restart",
+      "Title": "Restart App",
+      "ShortTitle": "Restart",
+      "Icon": "restart",
+      "Kind": "ClioCommand",
+      "ClioCommand": {
+        "Verb": "restart-web-app",
+        "Args": []
+      },
+      "Parameters": [
+        {
+          "Name": "env",
+          "ParameterType": "Env",
+          "Required": true,
+          "Default": null
+        }
+      ],
+      "Risk": "Destructive",
+      "ConfirmText": "Restart App will stop and relaunch the running clio site '{env}'. Continue?"
+    },
+    {
+      "Id": "clio-uninstall-creatio",
+      "Title": "Uninstall Creatio",
+      "ShortTitle": "Uninstall",
+      "Icon": "trash",
+      "Kind": "GuidedUninstall",
+      "Parameters": [],
+      "Risk": "None"
+    },
+    {
+      "Id": "clio-manage-envs",
+      "Title": "Manage Environments",
+      "ShortTitle": "Manage Envs",
+      "Icon": "globe",
+      "Kind": "ClioCommand",
+      "ClioCommand": {
+        "Verb": "show-web-app-list",
+        "Args": []
+      },
+      "Parameters": [],
+      "Risk": "None"
+    }
+  ]
+}
