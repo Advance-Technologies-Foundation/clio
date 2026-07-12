@@ -2,7 +2,12 @@
   <Folder Name="/Solution Items/">
     <File Path=".gitignore" />
     <File Path="README.md" />
+    <File Path="CONTRIBUTING.md" />
+    <File Path="RELEASE.md" />
     <File Path="clio/Commands.md" />
+    <File Path="AGENTS.md" />
+    <File Path="CLAUDE.md" />
+
   </Folder>
   <Project Path="clio.mcp.e2e/clio.mcp.e2e.csproj" />
   <Project Path="clio.tests\clio.tests.csproj" />

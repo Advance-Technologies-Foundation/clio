@@ -1,3 +1,9 @@
+# Authoritative agent instructions
+
+`AGENTS.md` is the single authoritative instruction file for all coding agents working in this repository.
+Read this file and `project-context.md` before doing any work. More specific nested `AGENTS.md` files, when present,
+may add rules for their subtree but must not duplicate or contradict this file.
+
 # ClioGate integration
 
 ClioGate is a Creatio package (in `cliogate/`) that acts as a privileged backend service.
@@ -198,6 +204,7 @@ For every touched command, verify and update all relevant files:
 - `clio\help\en\<command>.txt` (CLI `-H` help)
 - `clio\docs\commands\<command>.md` (detailed GitHub docs)
 - `clio\Commands.md` (overview/index and command section)
+- `clio\Wiki\WikiAnchors.txt` (canonical command and alias anchor mapping)
 
 ## Update rules
 
