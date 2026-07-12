@@ -671,7 +671,7 @@ stories:
     feature: "ring-guided-deploy"
     repo: "clio"
     size: L
-    status: ready-for-dev
+    status: in-progress
     note: "clio.mcp.e2e is NOT in CI — the manifest→stage→run-completed _meta assertion is a manual live-stand run."
     file: spec/stories/story-ring-guided-deploy-4.md
     prd: spec/prd/prd-ring-guided-deploy.md

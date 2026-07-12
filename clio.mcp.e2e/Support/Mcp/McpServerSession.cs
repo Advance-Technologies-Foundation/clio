@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+using System.Text.Json.Nodes;
 using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Results;
@@ -10,6 +12,8 @@ namespace Clio.Mcp.E2E.Support.Mcp;
 
 internal sealed class McpServerSession : IAsyncDisposable {
 	private readonly StdioClientTransport _transport;
+	private readonly ConcurrentQueue<JsonNode> _capturedProgressParams = new();
+	private bool _progressCaptureRegistered;
 	private HashSet<string>? _advertisedToolNames;
 	private IReadOnlyCollection<string>? _reachableToolNames;
 	private IReadOnlyList<ToolContractIndexEntry>? _toolContractIndex;
@@ -64,6 +68,35 @@ internal sealed class McpServerSession : IAsyncDisposable {
 
 		return new McpServerSession(client, transport);
 	}
+
+	/// <summary>
+	/// Registers a RAW <c>notifications/progress</c> handler that captures the full notification
+	/// <c>params</c> node (including <c>_meta</c>). The typed <see cref="IProgress{T}"/> overload of
+	/// <see cref="CallToolAsync(string, IReadOnlyDictionary{string, object?}, IProgress{ProgressNotificationValue}, CancellationToken)"/>
+	/// deserializes into <see cref="ProgressNotificationValue"/> and DROPS <c>_meta</c>, so a test that
+	/// needs the typed <c>_meta.clioStageEvent</c> envelope must read the raw params captured here.
+	/// Idempotent — registering more than once per session is a no-op.
+	/// </summary>
+	public void StartCapturingProgressNotifications() {
+		if (_progressCaptureRegistered) {
+			return;
+		}
+
+		_progressCaptureRegistered = true;
+		_ = Client.RegisterNotificationHandler(NotificationMethods.ProgressNotification, (notification, _) => {
+			if (notification.Params is JsonNode paramsNode) {
+				_capturedProgressParams.Enqueue(paramsNode);
+			}
+
+			return default;
+		});
+	}
+
+	/// <summary>
+	/// The raw <c>params</c> nodes of every <c>notifications/progress</c> captured since
+	/// <see cref="StartCapturingProgressNotifications"/> was called, in arrival order.
+	/// </summary>
+	public IReadOnlyList<JsonNode> CapturedProgressParams => [.. _capturedProgressParams];
 
 	public async Task<IList<McpClientTool>> ListToolsAsync(CancellationToken cancellationToken) =>
 		await Client.ListToolsAsync(cancellationToken: cancellationToken);
