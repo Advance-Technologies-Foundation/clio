@@ -5704,3 +5704,10 @@ Decision: Deployed the approved 10.0.0.802 PostgreSQL build on port 40123, isola
 Discovery: Restored PostgreSQL objects retained the template owner and blocked startup until ownership was transferred inside the sandbox database; the full destructive suite advances through real provisioning subprocesses but exceeds one hour, while the exact CI failures complete quickly and pass 3/3 on net8.0.
 Files: clio.mcp.e2e/DeployUninstallProgressTests.cs, clio.mcp.e2e/GuidanceGetToolE2ETests.cs
 Impact: This host now has a usable MCP E2E sandbox, and the next TeamCity run should tolerate delayed progress dispatch while validating the current page-guidance split.
+
+## 2026-07-12 20:45 – TeamCity progress E2E preflight made deterministic
+Context: PR #851 TeamCity build 15718038 still captured zero typed deploy progress events after a 30-second wait while focused local runs passed.
+Decision: Traced the real net8 MCP child with the dnSpy debugger and made the corrupt-archive request supply an explicit unused database-server name so it always crosses the environment-dependent installer preflight before failing at unzip.
+Discovery: The progress token reached `clio-run`, the retargeted `deploy-creatio` request, and `StageEventProgressForwarder.Subscribe` locally. TeamCity had no configured database server and used `FakeKubernetes`, so `InstallerCommand.Execute` returned before `CreatioInstallerService.Execute` emitted the manifest; waiting longer could never produce events.
+Files: clio.mcp.e2e/DeployUninstallProgressTests.cs
+Impact: The non-destructive progress contract test now reaches the same thrown-stage path on clean CI agents and on developer machines with or without persisted clio defaults; isolated-home and two-worker focused runs pass.

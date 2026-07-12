@@ -52,7 +52,10 @@ public sealed class DeployUninstallProgressTests : McpContractFixtureBase {
 					["args"] = new Dictionary<string, object?> {
 						["siteName"] = $"e2e-{Guid.NewGuid():N}",
 						["zipFile"] = corruptZipFile,
-						["sitePort"] = 5011
+						["sitePort"] = 5011,
+						// Cross the FakeKubernetes/no-defaults preflight on clean CI agents. The corrupt
+						// archive fails at unzip before this deliberately nonexistent server is resolved.
+						["dbServerName"] = "e2e-unused-before-unzip"
 					}
 				},
 				arrangeContext.CancellationTokenSource.Token);
