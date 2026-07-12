@@ -5746,3 +5746,17 @@ Decision: Preserved the tray/mutex lifetime roots with meaningful guards and spl
 Discovery: Sonar's Low Avalonia static-member suggestions are binding-hostile noise, while the High complexity findings exposed useful extraction boundaries. The updater version comparison retained its stable-over-prerelease and numeric-identifier rules.
 Files: clio-ring/ClioRing.Desktop/Program.cs, clio-ring/ClioRing.Ipc/DeployDiscovery.cs, clio-ring/ClioRing.Ipc/IpcProofRunner.cs, clio-ring/ClioRing/App.axaml.cs, clio-ring/ClioRing/Services/ClioAdapter.cs, clio-ring/ClioRing/SingleInstance.cs, clio/Command/RingCommand.cs
 Impact: Ring build completed with zero warnings, Ring tests passed 89/89, updater distribution tests passed 6/6, and Windows x64 NativeAOT publish succeeded.
+
+## 2026-07-12 23:15 – PR #851 final-review blocker remediation
+Context: The comprehensive pre-merge review found that same-version Ring updates could not repair missing supporting files and unresolved IIS uninstall targets falsely returned success.
+Decision: Made explicit Ring update/install always re-download and verify the selected release with transactional backup/swap/rollback, and made URI-to-IIS target resolution failure abort uninstall with exit code 1 plus a typed `uninstall-target-not-found` terminal event.
+Discovery: A fixture-only MCP environment with an unmatched loopback URI safely exercises the real uninstall failure envelope and progress stream without performing destructive cleanup.
+Files: clio/Command/RingCommand.cs, clio/Common/CreatioUninstaller.cs, clio.tests/Command/RingDistributionServiceTests.cs, clio.tests/Common/CreatioUninstallerTestFixture.cs, clio.mcp.e2e/DeployUninstallProgressTests.cs, clio/docs/commands/uninstall-creatio.md, clio/help/en/uninstall-creatio.txt
+Impact: Full net10 unit tests passed 5529/5554 with 25 skips, focused net8/net10 lifecycle tests passed 31/31 per framework, focused MCP E2E passed 2/2, Ring tests passed 89/89, and Windows x64 NativeAOT publish succeeded.
+
+## 2026-07-12 23:35 – PR #851 incremental review of 75ddb76b (Sonar High remediation)
+Context: Codex requested scoped review in the Visualizer room after clearing Sonar High findings.
+Decision: 0 Blocker/High regressions; all changes are behavior-preserving extractions (semver comparison parity in RingCommand kept downgrade guard intact; IpcProofRunner decomposed with same step order/exit codes; tray double-create + non-primary mutex listener guards; AOT-safe throughout).
+Discovery: MeasureRestartAsync now reads the stopwatch after the post-restart verification call, inflating the restart metric vs older ipc-proof reports (advisory only).
+Files: clio/Command/RingCommand.cs, clio-ring/ClioRing.Ipc/IpcProofRunner.cs, clio-ring/ClioRing/SingleInstance.cs, clio-ring/ClioRing/App.axaml.cs
+Impact: PR #851 still clear of Blocker/High; review trail complete in room codex-e2e-test-debugging-clio-mcp-e2e.

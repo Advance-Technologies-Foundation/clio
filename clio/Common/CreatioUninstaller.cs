@@ -62,8 +62,8 @@ public interface ICreatioUninstaller
 	///     so the operation can be retried.
 	/// </remarks>
 	/// <exception cref="CreatioUninstallAbortedException">
-	///     Thrown when the environment configuration cannot be read; the run is aborted before any
-	///     destructive step and the environment is left registered.
+	///     Thrown when the environment configuration cannot be read or no IIS site can be correlated with
+	///     the registered environment URI; the run is aborted before any destructive step.
 	/// </exception>
 	/// <seealso cref="UninstallByPath" />
 	public void UninstallByEnvironmentName(string environmentName);
@@ -270,21 +270,28 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 		Uri envUri = new(settings.Uri);
 
 		if (!AllSites.Any()) {
-			_logger.WriteWarning("IIS does not have any sites. Nothing to uninstall.");
-			return;
+			AbortUnresolvedTarget("IIS does not have any sites. The uninstall target could not be resolved.");
 		}
 		// A site name is user-controlled and is not sufficient authority for destructive cleanup.
 		// Correlate the registered clio environment URI with IIS before selecting its physical path.
 		string resolvedPath = AllSites.FirstOrDefault(all => all.Uris.Contains(envUri))?.siteBinding.path;
 		if (string.IsNullOrEmpty(resolvedPath)) {
-			_logger.WriteWarning($"Could not find IIS by environment name: {environmentName}");
-			return;
+			AbortUnresolvedTarget($"Could not correlate environment '{environmentName}' with an IIS site URI.");
 		}
 		_logger.WriteInfo($"Uninstalling Creatio from directory: {resolvedPath}");
 
 		// The environment name flows into the pipeline so unregister runs as the final stage and only
 		// after the destructive cleanup has succeeded (Correction C); a partial failure leaves it registered.
 		RunUninstall(resolvedPath, environmentName);
+	}
+
+	private void AbortUnresolvedTarget(string message) {
+		_logger.WriteError(message);
+		_stageEventEmitter.Begin(ClioStageEventContract.Operations.Uninstall,
+			BuildUninstallManifest(includeProfileStage: false), OnStageChanged);
+		_stageEventEmitter.CompleteFailure("Uninstall target resolution failed", message,
+			"uninstall-target-not-found");
+		throw new CreatioUninstallAbortedException(message);
 	}
 
 	public void UninstallByPath(string creatioDirectoryPath){

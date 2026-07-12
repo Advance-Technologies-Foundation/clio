@@ -62,7 +62,7 @@ public sealed class RingDistributionServiceTests {
 		launch.Success.Should().BeTrue(because: "the installed entry point should be launchable");
 		await processExecutor.Received(1).FireAndForgetAsync(
 			Arg.Is<ProcessExecutionOptions>(o => o.Program.EndsWith("clio-ring.exe", StringComparison.OrdinalIgnoreCase)));
-		update.Message.Should().Contain("already installed", because: "updating to the active version should be idempotent");
+		update.Message.Should().Contain("Installed", because: "same-version update should verify and repair the active release");
 		uninstall.Success.Should().BeTrue(because: "the installed companion should be removable");
 		Directory.Exists(_root).Should().BeFalse(because: "uninstall should remove only the isolated Ring root");
 	}
@@ -123,6 +123,97 @@ public sealed class RingDistributionServiceTests {
 		// Assert
 		result.Success.Should().BeTrue(because: "same-version update should repair an incomplete installation");
 		File.Exists(entryPoint).Should().BeTrue(because: "repair should restore the missing entry point");
+	}
+
+	[Test]
+	[Description("Repairs a same-version installation when a non-entrypoint release file is missing.")]
+	public async Task ExecuteAsync_ShouldRepairInstallation_WhenSupportingFileIsMissing() {
+		// Arrange
+		byte[] archive = CreateArchive(("clio-ring.exe", "ring"), ("actions.json", "{}"));
+		string hash = Convert.ToHexString(SHA256.HashData(archive));
+		string manifest = CreateManifest("0.2.0-preview.1", hash);
+		RingDistributionService sut = new(CreateFactory(manifest, archive), Substitute.For<IProcessExecutor>(), _root,
+			["example.test"]);
+		await sut.ExecuteAsync("install", "https://example.test/manifest.json", CancellationToken.None);
+		string supportingFile = Path.Combine(_root, "versions", "0.2.0-preview.1", "actions.json");
+		File.Delete(supportingFile);
+
+		// Act
+		RingDistributionResult result = await sut.ExecuteAsync("update", "https://example.test/manifest.json", CancellationToken.None);
+
+		// Assert
+		result.Success.Should().BeTrue(because: "same-version update is also an explicit repair operation");
+		File.Exists(supportingFile).Should().BeTrue(because: "repair should restore every release file, not only the entry point");
+	}
+
+	[Test]
+	[Description("Restores the complete active same-version installation when replacing it with the verified repair staging directory fails.")]
+	public async Task ExecuteAsync_ShouldRestoreActiveInstallation_WhenSameVersionSwapFails() {
+		// Arrange
+		byte[] originalArchive = CreateArchive(("clio-ring.exe", "original"), ("actions.json", "original-actions"));
+		string originalHash = Convert.ToHexString(SHA256.HashData(originalArchive));
+		string manifest = CreateManifest("0.2.0-preview.1", originalHash);
+		RingDistributionService installer = new(CreateFactory(manifest, originalArchive),
+			Substitute.For<IProcessExecutor>(), _root, ["example.test"]);
+		await installer.ExecuteAsync("install", "https://example.test/manifest.json", CancellationToken.None);
+
+		byte[] repairArchive = CreateArchive(("clio-ring.exe", "repair"), ("actions.json", "repair-actions"));
+		string repairManifest = CreateManifest("0.2.0-preview.1", Convert.ToHexString(SHA256.HashData(repairArchive)));
+		bool replacementMoveFailed = false;
+		void MoveWithInjectedFailure(string source, string destination) {
+			if (!replacementMoveFailed && source.Contains(".staging-", StringComparison.Ordinal)) {
+				replacementMoveFailed = true;
+				throw new IOException("Injected replacement move failure.");
+			}
+			Directory.Move(source, destination);
+		}
+		RingDistributionService sut = new(CreateFactory(repairManifest, repairArchive),
+			Substitute.For<IProcessExecutor>(), _root, ["example.test"], moveDirectory: MoveWithInjectedFailure);
+
+		// Act
+		Func<Task> action = () => sut.ExecuteAsync("update", "https://example.test/manifest.json", CancellationToken.None);
+
+		// Assert
+		await action.Should().ThrowAsync<IOException>(because: "the injected replacement failure must reach the caller");
+		File.ReadAllText(Path.Combine(_root, "versions", "0.2.0-preview.1", "clio-ring.exe"))
+			.Should().Be("original", because: "rollback must preserve the previously launchable entry point");
+		File.ReadAllText(Path.Combine(_root, "versions", "0.2.0-preview.1", "actions.json"))
+			.Should().Be("original-actions", because: "rollback must preserve every supporting file in the active release");
+	}
+
+	[Test]
+	[Description("Keeps the committed same-version replacement complete when cleanup of the old backup is blocked.")]
+	public async Task ExecuteAsync_ShouldKeepReplacement_WhenCommittedBackupCleanupFails() {
+		// Arrange
+		byte[] originalArchive = CreateArchive(("clio-ring.exe", "original"), ("actions.json", "original-actions"));
+		string manifest = CreateManifest("0.2.0-preview.1", Convert.ToHexString(SHA256.HashData(originalArchive)));
+		RingDistributionService installer = new(CreateFactory(manifest, originalArchive),
+			Substitute.For<IProcessExecutor>(), _root, ["example.test"]);
+		await installer.ExecuteAsync("install", "https://example.test/manifest.json", CancellationToken.None);
+
+		byte[] repairArchive = CreateArchive(("clio-ring.exe", "repair"), ("actions.json", "repair-actions"));
+		string repairManifest = CreateManifest("0.2.0-preview.1", Convert.ToHexString(SHA256.HashData(repairArchive)));
+		void DeleteWithInjectedBackupFailure(string path, bool recursive) {
+			if (path.Contains(".backup-", StringComparison.Ordinal)) {
+				throw new IOException("Injected locked backup failure.");
+			}
+			Directory.Delete(path, recursive);
+		}
+		RingDistributionService sut = new(CreateFactory(repairManifest, repairArchive),
+			Substitute.For<IProcessExecutor>(), _root, ["example.test"],
+			deleteDirectory: DeleteWithInjectedBackupFailure);
+
+		// Act
+		RingDistributionResult result = await sut.ExecuteAsync("update", "https://example.test/manifest.json", CancellationToken.None);
+
+		// Assert
+		result.Success.Should().BeTrue(because: "old-backup cleanup occurs after the verified replacement is committed");
+		File.ReadAllText(Path.Combine(_root, "versions", "0.2.0-preview.1", "clio-ring.exe"))
+			.Should().Be("repair", because: "cleanup failure must not discard the complete committed entry point");
+		File.ReadAllText(Path.Combine(_root, "versions", "0.2.0-preview.1", "actions.json"))
+			.Should().Be("repair-actions", because: "cleanup failure must not discard committed supporting files");
+		File.ReadAllText(Path.Combine(_root, "current.json"))
+			.Should().Contain("0.2.0-preview.1", because: "the pointer must continue to identify the committed replacement");
 	}
 
 	[Test]

@@ -149,6 +149,8 @@ public sealed class RingDistributionService : IRingDistributionService {
 	private readonly string _root;
 	private readonly HashSet<string> _trustedHosts;
 	private readonly bool _allowCustomRepository;
+	private readonly Action<string, string> _moveDirectory;
+	private readonly Action<string, bool> _deleteDirectory;
 
 	/// <summary>
 	/// Initializes a new instance of the <see cref="RingDistributionService"/> class.
@@ -159,12 +161,15 @@ public sealed class RingDistributionService : IRingDistributionService {
 			["github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com"], false) { }
 
 	internal RingDistributionService(IHttpClientFactory httpClientFactory, IProcessExecutor processExecutor, string root,
-		IEnumerable<string> trustedHosts = null, bool allowCustomRepository = true) {
+		IEnumerable<string> trustedHosts = null, bool allowCustomRepository = true,
+		Action<string, string> moveDirectory = null, Action<string, bool> deleteDirectory = null) {
 		_httpClientFactory = httpClientFactory;
 		_processExecutor = processExecutor;
 		_root = root;
 		_trustedHosts = new HashSet<string>(trustedHosts ?? ["github.com"], StringComparer.OrdinalIgnoreCase);
 		_allowCustomRepository = allowCustomRepository;
+		_moveDirectory = moveDirectory ?? Directory.Move;
+		_deleteDirectory = deleteDirectory ?? Directory.Delete;
 	}
 
 	/// <inheritdoc/>
@@ -205,11 +210,6 @@ public sealed class RingDistributionService : IRingDistributionService {
 			return new RingDistributionResult(false,
 				$"Refusing to downgrade clio-ring from {current.Version} to {manifest.Version}. Uninstall first to roll back explicitly.");
 		}
-		if (string.Equals(current?.Version, manifest.Version, StringComparison.Ordinal)
-			&& File.Exists(GetInstalledEntryPoint(current))) {
-			return new RingDistributionResult(true, $"clio-ring {manifest.Version} is already installed.");
-		}
-
 		byte[] archive = await DownloadBoundedAsync(client,
 			RequireTrustedHttpsUri(manifest.AssetUrl, "asset"), MaxArchiveBytes, cancellationToken);
 		string actualHash = Convert.ToHexString(SHA256.HashData(archive));
@@ -220,6 +220,7 @@ public sealed class RingDistributionService : IRingDistributionService {
 		string versionsRoot = Path.Combine(_root, "versions");
 		string destination = Path.Combine(versionsRoot, manifest.Version);
 		string staging = destination + ".staging-" + Guid.NewGuid().ToString("N");
+		string backup = destination + ".backup-" + Guid.NewGuid().ToString("N");
 		Directory.CreateDirectory(staging);
 		try {
 			ExtractArchive(archive, staging);
@@ -228,11 +229,8 @@ public sealed class RingDistributionService : IRingDistributionService {
 				throw new InvalidDataException($"Entry point '{manifest.EntryPoint}' is missing from the ZIP.");
 			}
 			Directory.CreateDirectory(versionsRoot);
-			if (Directory.Exists(destination)) {
-				Directory.Delete(destination, true);
-			}
-			Directory.Move(staging, destination);
-			WriteCurrent(new RingCurrentVersion(manifest.Version, manifest.EntryPoint));
+			ReplaceVersionDirectory(staging, destination, backup,
+				new RingCurrentVersion(manifest.Version, manifest.EntryPoint));
 		}
 		finally {
 			if (Directory.Exists(staging)) {
@@ -240,6 +238,47 @@ public sealed class RingDistributionService : IRingDistributionService {
 			}
 		}
 		return new RingDistributionResult(true, $"Installed clio-ring {manifest.Version}.");
+	}
+
+	private void ReplaceVersionDirectory(string staging, string destination, string backup,
+		RingCurrentVersion current) {
+		bool hasBackup = false;
+		bool replacementInstalled = false;
+		try {
+			if (Directory.Exists(destination)) {
+				_moveDirectory(destination, backup);
+				hasBackup = true;
+			}
+			_moveDirectory(staging, destination);
+			replacementInstalled = true;
+			WriteCurrent(current);
+		}
+		catch {
+			if (replacementInstalled && Directory.Exists(destination)) {
+				_deleteDirectory(destination, true);
+			}
+			if (hasBackup && Directory.Exists(backup)) {
+				_moveDirectory(backup, destination);
+			}
+			throw;
+		}
+		if (hasBackup) {
+			TryDeleteCommittedBackup(backup);
+		}
+	}
+
+	private void TryDeleteCommittedBackup(string backup) {
+		try {
+			_deleteDirectory(backup, true);
+		}
+		catch (IOException) {
+			// The verified replacement and pointer are already committed. A running Ring or scanner may
+			// keep the old backup locked; leaving it behind is safer than rolling back to partial content.
+		}
+		catch (UnauthorizedAccessException) {
+			// Treat cleanup as best effort after commit. A future lifecycle operation or user cleanup can
+			// remove the uniquely named stale backup without risking the active installation.
+		}
 	}
 
 	private RingDistributionResult Launch() {

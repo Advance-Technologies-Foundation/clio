@@ -141,31 +141,37 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 	#endregion
 
 	[Test]
-	[Description("UninstallByEnvironmentName should exit early and log warning when no IIS site matches the environment URL")]
+	[Description("UninstallByEnvironmentName aborts with an error when no IIS site matches the environment URL.")]
 	public void UninstallByEnvironmentName_Exits_WhenNoSiteFoundByUrl(){
 		//Arrange
 		MockStartedSite("https://google.ca");
 
 		//Act
-		_sut.UninstallByEnvironmentName(EnvironmentName);
+		Action act = () => _sut.UninstallByEnvironmentName(EnvironmentName);
 
 		//Assert
-		// The command should warn when the environment cannot be matched to any IIS site
-		_loggerMock.Received(1).WriteWarning($"Could not find IIS by environment name: {EnvironmentName}");
+		act.Should().Throw<CreatioUninstallAbortedException>(
+			because: "a URI mismatch must fail rather than report a successful uninstall of a same-named site");
+		_loggerMock.Received(1).WriteError($"Could not correlate environment '{EnvironmentName}' with an IIS site URI.");
 	}
 
 	[Test]
-	[Description("UninstallByEnvironmentName should exit early and log warning when IIS has no sites registered")]
+	[Description("UninstallByEnvironmentName aborts with a typed terminal failure when IIS has no sites registered.")]
 	public void UninstallByEnvironmentName_Exits_WhenNoSiteFoundInIIS(){
 		//Arrange
 		MockNoSitesFound();
+		List<ClioStageEvent> events = CaptureStageEvents();
 
 		//Act
-		_sut.UninstallByEnvironmentName(EnvironmentName);
+		Action act = () => _sut.UninstallByEnvironmentName(EnvironmentName);
 
 		//Assert
-		// The command should inform the user that there are no IIS sites to uninstall
-		_loggerMock.Received(1).WriteWarning("IIS does not have any sites. Nothing to uninstall.");
+		act.Should().Throw<CreatioUninstallAbortedException>(
+			because: "missing IIS state means the requested destructive target cannot be proven");
+		events.Last().RunCompleted!.Outcome.Should().Be(ClioStageEventContract.RunOutcomes.Failure,
+			because: "MCP progress consumers need an honest terminal failure event");
+		events.Last().RunCompleted!.ErrorCode.Should().Be("uninstall-target-not-found",
+			because: "the failure should be machine-classifiable");
 	}
 
 	[Test]

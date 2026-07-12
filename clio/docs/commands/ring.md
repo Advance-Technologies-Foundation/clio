@@ -21,7 +21,7 @@ The feature is off by default, collects no telemetry, and may be removed if the 
 
 - `launch` — starts the current version; this is the default action.
 - `install` — downloads and installs the current preview.
-- `update` — installs the current preview when it differs from the active version.
+- `update` — downloads and checksum-verifies the current preview, including the active version, so an incomplete same-version installation is repaired transactionally.
 - `version` — prints the active version.
 - `status` — reports whether the active installation is complete.
 - `uninstall` — removes Ring binaries only; clio environments and settings are untouched.

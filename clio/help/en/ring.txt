@@ -12,6 +12,8 @@ DESCRIPTION
     Installs and runs the internal clio-ring Windows x64 desktop preview. Ring is
     downloaded separately from GitHub Releases and is not bundled in the clio
     dotnet tool. Release ZIPs are verified with SHA-256 before extraction.
+    Install and update also repair the active version by replacing it only after
+    the complete ZIP has been downloaded, verified, and staged.
 
     Enable the preview first:
         clio experimental --name ring --enable

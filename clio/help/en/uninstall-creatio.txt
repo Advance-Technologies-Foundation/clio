@@ -105,8 +105,9 @@ COMMON ERRORS
         Solution: Run terminal as Administrator
 
     No IIS site found:
-        [WAR] - No IIS sites found matching environment URL
-        Solution: Use -d option with physical path instead
+        [ERR] - The registered environment URI could not be correlated with an IIS site
+        Result: The command exits with code 1 and performs no destructive cleanup
+        Solution: Correct the environment URI/IIS binding, or use -d with the verified physical path
 
 BEST PRACTICES
     Before uninstalling:
