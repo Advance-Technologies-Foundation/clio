@@ -108,7 +108,7 @@ public static class SingleInstance {
 
 	/// <summary>Starts a background listener that invokes <paramref name="onShowRequested"/> when a second launch of this build signals.</summary>
 	public static void StartShowListener(Action onShowRequested) {
-		if (!OperatingSystem.IsWindows()) {
+		if (!OperatingSystem.IsWindows() || _mutex is null) {
 			return;
 		}
 

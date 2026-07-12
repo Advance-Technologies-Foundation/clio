@@ -87,6 +87,9 @@ public partial class App : Application {
 	}
 
 	private void CreateTray(IClassicDesktopStyleApplicationLifetime desktop, RingViewModel vm) {
+		if (_tray is not null) {
+			return;
+		}
 		try {
 			var showItem = new NativeMenuItem("Show ring");
 			showItem.Click += (_, _) => _window?.ShowRing();

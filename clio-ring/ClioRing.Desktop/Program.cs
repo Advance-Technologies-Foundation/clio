@@ -19,51 +19,53 @@ sealed class Program {
 	// yet and stuff might break.
 	[STAThread]
 	public static void Main(string[] args) {
+		int? consoleExitCode = TryRunConsoleMode(args);
+		if (consoleExitCode.HasValue) {
+			Environment.Exit(consoleExitCode.Value);
+			return;
+		}
+
+		RunDesktop(args);
+	}
+
+	private static int? TryRunConsoleMode(string[] args) {
 		// EXPERIMENTAL clio IPC measurements harness. Runs the MCP-over-stdio proof as a pure console
 		// routine (NO Avalonia, no window) and exits with the harness result code. Time-boxed by the
 		// runner's own calls; safe to invoke headless.
 		if (args.Contains("--ipc-proof")) {
-			Environment.Exit(RunIpcProof(args));
-			return;
+			return RunIpcProof(args);
 		}
 
 		// Deploy-creatio dry-run: construct the clio-run request for Rancher + Local against real clio and
 		// run the read-only preflight, WITHOUT firing the destructive deploy. Verifies request/args.
 		if (args.Contains("--deploy-dryrun")) {
-			Environment.Exit(RunDeployDryRun().GetAwaiter().GetResult());
-			return;
+			return RunDeployDryRun().GetAwaiter().GetResult();
 		}
 
 		// Button-path debugger harness. Without --execute it performs discovery, selects the requested
 		// build/local infrastructure, and prints the exact plan without deploying. With --execute it calls
 		// the same generated InstallCommand as the Avalonia button.
 		if (args.Contains("--install-probe")) {
-			Environment.Exit(RunInstallProbe(args).GetAwaiter().GetResult());
-			return;
+			return RunInstallProbe(args).GetAwaiter().GetResult();
 		}
 		if (args.Contains("--uninstall-probe")) {
-			Environment.Exit(RunUninstallProbe(args).GetAwaiter().GetResult());
-			return;
+			return RunUninstallProbe(args).GetAwaiter().GetResult();
 		}
 		if (args.Contains("--pipeline-order-probe")) {
-			Environment.Exit(RunPipelineOrderProbe());
-			return;
+			return RunPipelineOrderProbe();
 		}
 		if (args.Contains("--env-refresh-probe")) {
-			Environment.Exit(RunEnvironmentRefreshProbe(args).GetAwaiter().GetResult());
-			return;
+			return RunEnvironmentRefreshProbe(args).GetAwaiter().GetResult();
 		}
 		if (args.Contains("--env-watch-probe")) {
-			Environment.Exit(RunEnvironmentWatchProbe());
-			return;
+			return RunEnvironmentWatchProbe();
 		}
 
 		// Single-instance identity proof (console, no Avalonia): distinct exe paths get distinct
 		// identities (coexist), the same path single-instances, and path normalization collapses
 		// casing/trailing-slash variants. Exits 0 on PASS.
 		if (args.Contains("--singleinstance-test")) {
-			Environment.Exit(RunSingleInstanceTest());
-			return;
+			return RunSingleInstanceTest();
 		}
 
 		// Console diagnostic: print any DIFFERENT clio-ring build detected running elsewhere, then exit.
@@ -72,10 +74,12 @@ sealed class Program {
 			Console.Error.WriteLine(other is null
 				? $"[detect-builds] id={SingleInstance.Id} dir={AppContext.BaseDirectory} other=none"
 				: $"[detect-builds] id={SingleInstance.Id} other={other.Describe()}");
-			Environment.Exit(other is null ? 0 : 10);
-			return;
+			return other is null ? 0 : 10;
 		}
+		return null;
+	}
 
+	private static void RunDesktop(string[] args) {
 		// Earliest managed stamp: the reference point for cold-start (process-start -> first-paint).
 		Metrics.ProcessStartTicks = Stopwatch.GetTimestamp();
 		LaunchOptions.Current = LaunchOptions.Parse(args);

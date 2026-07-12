@@ -14,7 +14,7 @@ namespace ClioRing.Ipc;
 /// <summary>
 /// Console/test-mode measurements harness for the clio MCP-over-stdio proof. Spawns one clio child,
 /// exercises the full read-only lifecycle (cold start, warm round-trip, catalog fetch, a trivial call,
-/// a representative env call, graceful shutdown, and a child-death → respawn recovery), and writes the
+/// a representative env call, graceful shutdown, and an explicit transport restart recovery), and writes the
 /// numbers to a Markdown report. Never touches the GUI. Invoked via <c>--ipc-proof</c>.
 /// </summary>
 public static class IpcProofRunner {
@@ -32,128 +32,16 @@ public static class IpcProofRunner {
 		log($"[ipc-proof] command: {settings.Command} {string.Join(' ', settings.Args)}");
 
 		var report = new StringBuilder();
-		var results = new List<(string Step, string Value, string Notes)>();
-		bool connectedOk = false;
-		bool catalogOk = false;
-		bool respawnOk = false;
-		int catalogCount = 0;
-		int destructiveCount = 0;
-		ClioServerHandshake? handshake = null;
+		var state = new ProofState();
 
 		var client = new ClioIpcClient(settings, log);
 
 		try {
-			// 1. Cold start: process spawn -> initialized (fused by the stdio transport).
-			var sw = Stopwatch.StartNew();
-			try {
-				handshake = await client.ConnectAsync(cancellationToken).ConfigureAwait(false);
-				sw.Stop();
-				connectedOk = true;
-				results.Add(("Cold start (spawn -> initialized)", Ms(sw), "First ConnectAsync; StdioClientTransport spawns + handshakes in one call."));
-				log($"[ipc-proof] cold start: {Ms(sw)} (server {handshake.ServerName} {handshake.ServerVersion})");
+			await ConnectAsync(client, state, log, cancellationToken).ConfigureAwait(false);
+			if (state.ConnectedOk) {
+				await RunConnectedProofAsync(client, state, candidateEnvNames, log, cancellationToken).ConfigureAwait(false);
 			}
-			catch (Exception ex) {
-				sw.Stop();
-				results.Add(("Cold start (spawn -> initialized)", "FAILED", Truncate(ex.Message, 200)));
-				log($"[ipc-proof] cold start FAILED: {ex.Message}");
-			}
-
-			if (connectedOk) {
-				// 2. Handshake capability record (proves version-pinning for a separate release cycle).
-				log($"[ipc-proof] capabilities: {string.Join(", ", handshake!.Capabilities)} protocol={handshake.ProtocolVersion ?? "n/a"}");
-
-				// 3. Warm protocol round-trip (ping) x5 -> closest measurable proxy for handshake RTT.
-				var pings = new List<double>();
-				for (int i = 0; i < 5; i++) {
-					var p = Stopwatch.StartNew();
-					try {
-						await client.PingAsync(cancellationToken).ConfigureAwait(false);
-						p.Stop();
-						pings.Add(p.Elapsed.TotalMilliseconds);
-					}
-					catch (Exception ex) {
-						log($"[ipc-proof] ping {i} failed: {ex.Message}");
-					}
-				}
-				string pingSummary = pings.Count > 0
-					? $"{pings.Min():F1}/{pings.Average():F1}/{pings.Max():F1} ms"
-					: "FAILED";
-				results.Add(("Handshake/warm protocol RTT (ping min/avg/max, n=5)", pingSummary,
-					"Bare MCP ping round-trip; stdio fuses spawn+initialize so this is the steady-state handshake-shaped RTT."));
-
-				// 4. Catalog fetch via get-tool-contract {} (the full ~140-tool surface).
-				var cat = Stopwatch.StartNew();
-				try {
-					IReadOnlyList<ClioCatalogEntry> catalog = await client.GetCatalogAsync(cancellationToken).ConfigureAwait(false);
-					cat.Stop();
-					catalogCount = catalog.Count;
-					destructiveCount = catalog.Count(e => e.Destructive);
-					bool modern = client.LastCatalogIsModern;
-					catalogOk = catalogCount > 0 && modern;
-					results.Add(("Catalog fetch (get-tool-contract {})", Ms(cat),
-						$"{catalogCount} tools ({destructiveCount} destructive, {catalog.Count(e => e.Resident)} resident); modernIndex={modern}{(modern ? "" : " -> INCOMPATIBLE clio (old/empty shape)")}."));
-					log($"[ipc-proof] catalog: {catalogCount} tools in {Ms(cat)} (modernIndex={modern})");
-				}
-				catch (Exception ex) {
-					cat.Stop();
-					results.Add(("Catalog fetch (get-tool-contract {})", "FAILED", Truncate(ex.Message, 200)));
-					log($"[ipc-proof] catalog FAILED: {ex.Message}");
-				}
-
-				// 5. Warm trivial call: list-environments.
-				List<string> envNames = new();
-				var le = Stopwatch.StartNew();
-				try {
-					ClioToolCallResult envs = await client.CallToolAsync("list-environments", "{}", cancellationToken).ConfigureAwait(false);
-					le.Stop();
-					envNames = ExtractEnvironmentNames(envs);
-					results.Add(("Warm trivial call (list-environments)", Ms(le),
-						$"isError={envs.IsError}; {envNames.Count} environments; structuredContent={envs.HasStructuredContent}."));
-					log($"[ipc-proof] list-environments: {envNames.Count} envs in {Ms(le)}");
-				}
-				catch (Exception ex) {
-					le.Stop();
-					results.Add(("Warm trivial call (list-environments)", "FAILED", Truncate(ex.Message, 200)));
-					log($"[ipc-proof] list-environments FAILED: {ex.Message}");
-				}
-
-				// 6. Representative call: env details against a reachable env, best-effort.
-				await MeasureEnvDetailAsync(client, candidateEnvNames, envNames, results, log, cancellationToken).ConfigureAwait(false);
-
-				// 7. Explicit transport restart recovery. The proof must not discover or kill a process by
-				// executable name; only the SDK transport owns the child process handle.
-				var respawn = Stopwatch.StartNew();
-				try {
-					ClioServerHandshake fresh = await client.RestartAsync(cancellationToken).ConfigureAwait(false);
-					respawn.Stop();
-					// Prove the fresh child actually serves calls.
-					ClioToolCallResult postCheck = await client.CallToolAsync("list-environments", "{}", cancellationToken).ConfigureAwait(false);
-					respawnOk = client.IsConnected && !postCheck.IsError;
-					results.Add(("Transport restart recovery", Ms(respawn),
-						$"postRestartCallOk={!postCheck.IsError}; server {fresh.ServerName} {fresh.ServerVersion}."));
-					log($"[ipc-proof] restart: {Ms(respawn)} (postCallOk={!postCheck.IsError})");
-				}
-				catch (Exception ex) {
-					respawn.Stop();
-					results.Add(("Transport restart recovery", "FAILED", Truncate(ex.Message, 200)));
-					log($"[ipc-proof] restart FAILED: {ex.Message}");
-				}
-			}
-
-			// 8. Graceful shutdown: stdin close -> child exit (client disposal closes stdin, transport waits).
-			var shut = Stopwatch.StartNew();
-			try {
-				await client.DisposeAsync().ConfigureAwait(false);
-				shut.Stop();
-				results.Add(("Bounded transport-owned shutdown", Ms(shut),
-					"DisposeAsync awaits the MCP SDK transport, which owns the exact child and applies its configured 750ms shutdown timeout."));
-				log($"[ipc-proof] shutdown: {Ms(shut)}");
-			}
-			catch (Exception ex) {
-				shut.Stop();
-				results.Add(("Graceful shutdown (stdin close -> exit)", "FAILED", Truncate(ex.Message, 200)));
-				log($"[ipc-proof] shutdown FAILED: {ex.Message}");
-			}
+			await ShutdownAsync(client, state.Results, log).ConfigureAwait(false);
 		}
 		finally {
 			try {
@@ -164,12 +52,135 @@ public static class IpcProofRunner {
 			}
 		}
 
-		WriteReport(report, settings, handshake, results, catalogCount, destructiveCount, connectedOk, catalogOk, respawnOk);
+		WriteReport(report, settings, state.Handshake, state.Results, state.CatalogCount, state.DestructiveCount,
+			state.ConnectedOk, state.CatalogOk, state.RespawnOk);
 		Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(outputPath))!);
 		await File.WriteAllTextAsync(outputPath, report.ToString(), cancellationToken).ConfigureAwait(false);
 		log($"[ipc-proof] wrote {outputPath}");
 
-		return connectedOk && catalogOk && respawnOk ? 0 : 1;
+		return state.ConnectedOk && state.CatalogOk && state.RespawnOk ? 0 : 1;
+	}
+
+	private static async Task ConnectAsync(ClioIpcClient client, ProofState state, Action<string> log,
+		CancellationToken cancellationToken) {
+		var stopwatch = Stopwatch.StartNew();
+		try {
+			state.Handshake = await client.ConnectAsync(cancellationToken).ConfigureAwait(false);
+			state.ConnectedOk = true;
+			state.Results.Add(("Cold start (spawn -> initialized)", Ms(stopwatch),
+				"First ConnectAsync; StdioClientTransport spawns + handshakes in one call."));
+			log($"[ipc-proof] cold start: {Ms(stopwatch)} (server {state.Handshake.ServerName} {state.Handshake.ServerVersion})");
+		}
+		catch (Exception ex) {
+			state.Results.Add(("Cold start (spawn -> initialized)", "FAILED", Truncate(ex.Message, 200)));
+			log($"[ipc-proof] cold start FAILED: {ex.Message}");
+		}
+		finally {
+			stopwatch.Stop();
+		}
+	}
+
+	private static async Task RunConnectedProofAsync(ClioIpcClient client, ProofState state,
+		IReadOnlyList<string> candidateEnvNames, Action<string> log, CancellationToken cancellationToken) {
+		log($"[ipc-proof] capabilities: {string.Join(", ", state.Handshake!.Capabilities)} protocol={state.Handshake.ProtocolVersion ?? "n/a"}");
+		await MeasurePingsAsync(client, state.Results, log, cancellationToken).ConfigureAwait(false);
+		await FetchCatalogAsync(client, state, log, cancellationToken).ConfigureAwait(false);
+		IReadOnlyList<string> envNames = await ListEnvironmentsAsync(client, state.Results, log, cancellationToken)
+			.ConfigureAwait(false);
+		await MeasureEnvDetailAsync(client, candidateEnvNames, envNames, state.Results, log, cancellationToken)
+			.ConfigureAwait(false);
+		await MeasureRestartAsync(client, state, log, cancellationToken).ConfigureAwait(false);
+	}
+
+	private static async Task MeasurePingsAsync(ClioIpcClient client,
+		ICollection<(string Step, string Value, string Notes)> results, Action<string> log,
+		CancellationToken cancellationToken) {
+		var pings = new List<double>();
+		for (int index = 0; index < 5; index++) {
+			var stopwatch = Stopwatch.StartNew();
+			try {
+				await client.PingAsync(cancellationToken).ConfigureAwait(false);
+				pings.Add(stopwatch.Elapsed.TotalMilliseconds);
+			}
+			catch (Exception ex) {
+				log($"[ipc-proof] ping {index} failed: {ex.Message}");
+			}
+		}
+		string summary = pings.Count > 0 ? $"{pings.Min():F1}/{pings.Average():F1}/{pings.Max():F1} ms" : "FAILED";
+		results.Add(("Handshake/warm protocol RTT (ping min/avg/max, n=5)", summary,
+			"Bare MCP ping round-trip; stdio fuses spawn+initialize so this is the steady-state handshake-shaped RTT."));
+	}
+
+	private static async Task FetchCatalogAsync(ClioIpcClient client, ProofState state, Action<string> log,
+		CancellationToken cancellationToken) {
+		var stopwatch = Stopwatch.StartNew();
+		try {
+			IReadOnlyList<ClioCatalogEntry> catalog = await client.GetCatalogAsync(cancellationToken).ConfigureAwait(false);
+			state.CatalogCount = catalog.Count;
+			state.DestructiveCount = catalog.Count(entry => entry.Destructive);
+			bool modern = client.LastCatalogIsModern;
+			state.CatalogOk = state.CatalogCount > 0 && modern;
+			state.Results.Add(("Catalog fetch (get-tool-contract {})", Ms(stopwatch),
+				$"{state.CatalogCount} tools ({state.DestructiveCount} destructive, {catalog.Count(entry => entry.Resident)} resident); modernIndex={modern}{(modern ? "" : " -> INCOMPATIBLE clio (old/empty shape)")}."));
+			log($"[ipc-proof] catalog: {state.CatalogCount} tools in {Ms(stopwatch)} (modernIndex={modern})");
+		}
+		catch (Exception ex) {
+			state.Results.Add(("Catalog fetch (get-tool-contract {})", "FAILED", Truncate(ex.Message, 200)));
+			log($"[ipc-proof] catalog FAILED: {ex.Message}");
+		}
+	}
+
+	private static async Task<IReadOnlyList<string>> ListEnvironmentsAsync(ClioIpcClient client,
+		ICollection<(string Step, string Value, string Notes)> results, Action<string> log,
+		CancellationToken cancellationToken) {
+		var stopwatch = Stopwatch.StartNew();
+		try {
+			ClioToolCallResult response = await client.CallToolAsync("list-environments", "{}", cancellationToken)
+				.ConfigureAwait(false);
+			List<string> names = ExtractEnvironmentNames(response);
+			results.Add(("Warm trivial call (list-environments)", Ms(stopwatch),
+				$"isError={response.IsError}; {names.Count} environments; structuredContent={response.HasStructuredContent}."));
+			log($"[ipc-proof] list-environments: {names.Count} envs in {Ms(stopwatch)}");
+			return names;
+		}
+		catch (Exception ex) {
+			results.Add(("Warm trivial call (list-environments)", "FAILED", Truncate(ex.Message, 200)));
+			log($"[ipc-proof] list-environments FAILED: {ex.Message}");
+			return [];
+		}
+	}
+
+	private static async Task MeasureRestartAsync(ClioIpcClient client, ProofState state, Action<string> log,
+		CancellationToken cancellationToken) {
+		var stopwatch = Stopwatch.StartNew();
+		try {
+			ClioServerHandshake fresh = await client.RestartAsync(cancellationToken).ConfigureAwait(false);
+			ClioToolCallResult postCheck = await client.CallToolAsync("list-environments", "{}", cancellationToken)
+				.ConfigureAwait(false);
+			state.RespawnOk = client.IsConnected && !postCheck.IsError;
+			state.Results.Add(("Transport restart recovery", Ms(stopwatch),
+				$"postRestartCallOk={!postCheck.IsError}; server {fresh.ServerName} {fresh.ServerVersion}."));
+			log($"[ipc-proof] restart: {Ms(stopwatch)} (postCallOk={!postCheck.IsError})");
+		}
+		catch (Exception ex) {
+			state.Results.Add(("Transport restart recovery", "FAILED", Truncate(ex.Message, 200)));
+			log($"[ipc-proof] restart FAILED: {ex.Message}");
+		}
+	}
+
+	private static async Task ShutdownAsync(ClioIpcClient client,
+		ICollection<(string Step, string Value, string Notes)> results, Action<string> log) {
+		var stopwatch = Stopwatch.StartNew();
+		try {
+			await client.DisposeAsync().ConfigureAwait(false);
+			results.Add(("Bounded transport-owned shutdown", Ms(stopwatch),
+				"DisposeAsync awaits the MCP SDK transport, which owns the exact child and applies its configured 750ms shutdown timeout."));
+			log($"[ipc-proof] shutdown: {Ms(stopwatch)}");
+		}
+		catch (Exception ex) {
+			results.Add(("Graceful shutdown (stdin close -> exit)", "FAILED", Truncate(ex.Message, 200)));
+			log($"[ipc-proof] shutdown FAILED: {ex.Message}");
+		}
 	}
 
 	private static async Task MeasureEnvDetailAsync(
@@ -283,13 +294,21 @@ public static class IpcProofRunner {
 		string verdict = connectedOk && catalogOk && respawnOk ? "PASS" : "PARTIAL/FAIL";
 		sb.AppendLine($"**Verdict: {verdict}** — connected={connectedOk}, catalog={catalogOk}, respawn={respawnOk}.");
 		sb.AppendLine();
+		AppendLaunch(sb, settings);
+		AppendHandshake(sb, handshake);
+		AppendMeasurements(sb, results);
+		AppendCatalog(sb, catalogCount, destructiveCount);
+	}
 
+	private static void AppendLaunch(StringBuilder sb, ClioIpcSettings settings) {
 		sb.AppendLine("## Launch");
 		sb.AppendLine();
 		sb.AppendLine($"- Command: `{settings.Command} {string.Join(' ', settings.Args)}`");
 		sb.AppendLine($"- Working directory: `{settings.WorkingDirectory ?? "(launcher dir)"}`");
 		sb.AppendLine();
+	}
 
+	private static void AppendHandshake(StringBuilder sb, ClioServerHandshake? handshake) {
 		sb.AppendLine("## Handshake (initialize)");
 		sb.AppendLine();
 		if (handshake is not null) {
@@ -302,7 +321,10 @@ public static class IpcProofRunner {
 			sb.AppendLine("- Handshake did not complete.");
 		}
 		sb.AppendLine();
+	}
 
+	private static void AppendMeasurements(StringBuilder sb,
+		IEnumerable<(string Step, string Value, string Notes)> results) {
 		sb.AppendLine("## Measurements");
 		sb.AppendLine();
 		sb.AppendLine("| Step | Value | Notes |");
@@ -311,7 +333,9 @@ public static class IpcProofRunner {
 			sb.AppendLine($"| {step} | {value} | {notes} |");
 		}
 		sb.AppendLine();
+	}
 
+	private static void AppendCatalog(StringBuilder sb, int catalogCount, int destructiveCount) {
 		sb.AppendLine("## Catalog");
 		sb.AppendLine();
 		sb.AppendLine($"- Total tools discovered via `get-tool-contract {{}}`: **{catalogCount}**");
@@ -325,4 +349,14 @@ public static class IpcProofRunner {
 
 	private static string Truncate(string value, int max) =>
 		value.Length <= max ? value : value[..max] + "…";
+
+	private sealed class ProofState {
+		public List<(string Step, string Value, string Notes)> Results { get; } = [];
+		public ClioServerHandshake? Handshake { get; set; }
+		public bool ConnectedOk { get; set; }
+		public bool CatalogOk { get; set; }
+		public bool RespawnOk { get; set; }
+		public int CatalogCount { get; set; }
+		public int DestructiveCount { get; set; }
+	}
 }

@@ -97,22 +97,8 @@ public static class DeployDiscovery {
 		if (TryRoot(json, out JsonElement root)) {
 			status = Str(root, "status") ?? status;
 			if (root.TryGetProperty("local", out JsonElement local) && local.ValueKind == JsonValueKind.Object) {
-				if (local.TryGetProperty("databases", out JsonElement dbArr) && dbArr.ValueKind == JsonValueKind.Array) {
-					foreach (JsonElement d in dbArr.EnumerateArray()) {
-						string? name = Str(d, "dbServerName") ?? Str(d, "name");
-						if (!string.IsNullOrEmpty(name)) {
-							dbs.Add(new InfraDb(name, Str(d, "engine") ?? string.Empty, Str(d, "host") ?? string.Empty, Int(d, "port")));
-						}
-					}
-				}
-				if (local.TryGetProperty("redisServers", out JsonElement rArr) && rArr.ValueKind == JsonValueKind.Array) {
-					foreach (JsonElement r in rArr.EnumerateArray()) {
-						string? name = Str(r, "redisServerName") ?? Str(r, "name");
-						if (!string.IsNullOrEmpty(name)) {
-							redis.Add(new InfraRedis(name, Str(r, "host") ?? string.Empty, Int(r, "port")));
-						}
-					}
-				}
+				ParseDatabases(local, dbs);
+				ParseRedisServers(local, redis);
 			}
 			if (root.TryGetProperty("recommendedDeployment", out JsonElement rec) && rec.ValueKind == JsonValueKind.Object) {
 				recDb = Str(rec, "dbServerName");
@@ -120,6 +106,31 @@ public static class DeployDiscovery {
 			}
 		}
 		return new PassingInfra(status, dbs, redis, recDb, recRedis);
+	}
+
+	private static void ParseDatabases(JsonElement local, ICollection<InfraDb> databases) {
+		if (!local.TryGetProperty("databases", out JsonElement items) || items.ValueKind != JsonValueKind.Array) {
+			return;
+		}
+		foreach (JsonElement item in items.EnumerateArray()) {
+			string? name = Str(item, "dbServerName") ?? Str(item, "name");
+			if (!string.IsNullOrEmpty(name)) {
+				databases.Add(new InfraDb(name, Str(item, "engine") ?? string.Empty,
+					Str(item, "host") ?? string.Empty, Int(item, "port")));
+			}
+		}
+	}
+
+	private static void ParseRedisServers(JsonElement local, ICollection<InfraRedis> servers) {
+		if (!local.TryGetProperty("redisServers", out JsonElement items) || items.ValueKind != JsonValueKind.Array) {
+			return;
+		}
+		foreach (JsonElement item in items.EnumerateArray()) {
+			string? name = Str(item, "redisServerName") ?? Str(item, "name");
+			if (!string.IsNullOrEmpty(name)) {
+				servers.Add(new InfraRedis(name, Str(item, "host") ?? string.Empty, Int(item, "port")));
+			}
+		}
 	}
 
 	/// <summary>Parses assert-infrastructure output (overall + per-section statuses).</summary>

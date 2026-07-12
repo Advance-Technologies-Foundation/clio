@@ -402,25 +402,38 @@ public sealed class RingDistributionService : IRingDistributionService {
 		if (coreComparison != 0) {
 			return coreComparison;
 		}
-		if (leftPreRelease.Length == 0 || rightPreRelease.Length == 0) {
-			return leftPreRelease.Length == rightPreRelease.Length ? 0 : leftPreRelease.Length == 0 ? 1 : -1;
-		}
-		for (int index = 0; index < Math.Max(leftPreRelease.Length, rightPreRelease.Length); index++) {
-			if (index >= leftPreRelease.Length || index >= rightPreRelease.Length) {
-				return leftPreRelease.Length.CompareTo(rightPreRelease.Length);
+		return ComparePreRelease(leftPreRelease, rightPreRelease);
+	}
+
+	private static int ComparePreRelease(string[] left, string[] right) {
+		if (left.Length == 0 || right.Length == 0) {
+			if (left.Length == right.Length) {
+				return 0;
 			}
-			bool leftNumeric = int.TryParse(leftPreRelease[index], out int leftNumber);
-			bool rightNumeric = int.TryParse(rightPreRelease[index], out int rightNumber);
-			int comparison = leftNumeric && rightNumeric
-				? leftNumber.CompareTo(rightNumber)
-				: leftNumeric != rightNumeric
-					? leftNumeric ? -1 : 1
-					: string.Compare(leftPreRelease[index], rightPreRelease[index], StringComparison.Ordinal);
+			return left.Length == 0 ? 1 : -1;
+		}
+		for (int index = 0; index < Math.Max(left.Length, right.Length); index++) {
+			if (index >= left.Length || index >= right.Length) {
+				return left.Length.CompareTo(right.Length);
+			}
+			int comparison = ComparePreReleaseIdentifier(left[index], right[index]);
 			if (comparison != 0) {
 				return comparison;
 			}
 		}
 		return 0;
+	}
+
+	private static int ComparePreReleaseIdentifier(string left, string right) {
+		bool leftNumeric = int.TryParse(left, out int leftNumber);
+		bool rightNumeric = int.TryParse(right, out int rightNumber);
+		if (leftNumeric && rightNumeric) {
+			return leftNumber.CompareTo(rightNumber);
+		}
+		if (leftNumeric != rightNumeric) {
+			return leftNumeric ? -1 : 1;
+		}
+		return string.Compare(left, right, StringComparison.Ordinal);
 	}
 
 	private static (Version Core, string[] PreRelease) ParseSemanticVersion(string value) {

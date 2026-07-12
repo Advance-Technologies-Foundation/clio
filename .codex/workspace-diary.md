@@ -5732,3 +5732,17 @@ Decision: Made post-manifest deployment completion total and idempotent, require
 Discovery: Process-name snapshots cannot prove child ownership when the command is `dotnet`; the SDK transport already owns the exact child and enforces its configured shutdown timeout. Sonar's 160 new issues are 0 security, 6 Medium reliability, and 154 maintainability findings.
 Files: clio/Command/CreatioInstallCommand/CreatioInstallerService.cs, clio/Command/McpServer/Progress/StageEventEmitter.cs, clio/Common/CreatioUninstaller.cs, clio-ring/ClioRing.Ipc/ClioIpcClient.cs, clio-ring/ClioRing.Ipc/IpcProofRunner.cs, clio-ring/ClioRing.Desktop/actions.json
 Impact: Targeted clio tests passed 2590/2593 with 3 skips, Ring tests passed 89/89, and Windows x64 NativeAOT publish succeeded without AOT warnings.
+
+## 2026-07-12 22:20 – PR #851 incremental review of 66e75844 (H1-H5 remediation)
+Context: Codex requested scoped review of the H1-H5 fix commit in the Visualizer room.
+Decision: 0 new Blocker/High; all five originals resolved (post-Begin try/catch + public CompleteFailure w/ CascadeSkip(-1); URI-only uninstall correlation; actions.json --json masked envelope; name-diff child-kill machinery deleted in favor of transport-owned shutdown; active-call guard on restart/dispose).
+Discovery: DisposeAsync now drains active calls UNBOUNDED (Ring exit hangs if child wedges mid-call); child-death detection is lazy (Exited hook removed); MarkDisconnected unconditional on call exceptions. All advisory-level.
+Files: clio/Command/CreatioInstallCommand/CreatioInstallerService.cs, clio/Command/McpServer/Progress/StageEventEmitter.cs, clio/Common/CreatioUninstaller.cs, clio-ring/ClioRing.Ipc/ClioIpcClient.cs, clio-ring/ClioRing.Desktop/actions.json
+Impact: PR #851 clear of Blocker/High from my side; advisories logged for fast-follow.
+
+## 2026-07-12 22:29 – PR #851 Sonar High remediation
+Context: SonarCloud reported 160 new issues on the ClioRing PR despite a passing quality gate; eight had High maintainability impact.
+Decision: Preserved the tray/mutex lifetime roots with meaningful guards and split six over-complex methods into focused launch, parsing, proof-step, report, and semantic-version helpers instead of suppressing rules.
+Discovery: Sonar's Low Avalonia static-member suggestions are binding-hostile noise, while the High complexity findings exposed useful extraction boundaries. The updater version comparison retained its stable-over-prerelease and numeric-identifier rules.
+Files: clio-ring/ClioRing.Desktop/Program.cs, clio-ring/ClioRing.Ipc/DeployDiscovery.cs, clio-ring/ClioRing.Ipc/IpcProofRunner.cs, clio-ring/ClioRing/App.axaml.cs, clio-ring/ClioRing/Services/ClioAdapter.cs, clio-ring/ClioRing/SingleInstance.cs, clio/Command/RingCommand.cs
+Impact: Ring build completed with zero warnings, Ring tests passed 89/89, updater distribution tests passed 6/6, and Windows x64 NativeAOT publish succeeded.

@@ -154,22 +154,7 @@ public sealed class ClioAdapter : IClioAdapter {
 			if (doc.RootElement.TryGetProperty("Environments", out JsonElement envs)
 				&& envs.ValueKind == JsonValueKind.Object) {
 				foreach (JsonProperty env in envs.EnumerateObject()) {
-					string? uri = null;
-					bool isNetCore = false;
-
-					if (env.Value.ValueKind == JsonValueKind.Object) {
-						if (env.Value.TryGetProperty("Uri", out JsonElement uriEl)
-							&& uriEl.ValueKind == JsonValueKind.String) {
-							uri = uriEl.GetString();
-						}
-
-						if (env.Value.TryGetProperty("IsNetCore", out JsonElement netCoreEl)
-							&& (netCoreEl.ValueKind == JsonValueKind.True || netCoreEl.ValueKind == JsonValueKind.False)) {
-							isNetCore = netCoreEl.GetBoolean();
-						}
-					}
-
-					environments.Add(new ClioEnvironment(env.Name, uri, isNetCore));
+					environments.Add(ParseEnvironment(env));
 				}
 			}
 		}
@@ -178,5 +163,19 @@ public sealed class ClioAdapter : IClioAdapter {
 		}
 
 		return environments;
+	}
+
+	private static ClioEnvironment ParseEnvironment(JsonProperty environment) {
+		if (environment.Value.ValueKind != JsonValueKind.Object) {
+			return new ClioEnvironment(environment.Name, null, false);
+		}
+		string? uri = environment.Value.TryGetProperty("Uri", out JsonElement uriElement)
+			&& uriElement.ValueKind == JsonValueKind.String
+				? uriElement.GetString()
+				: null;
+		bool isNetCore = environment.Value.TryGetProperty("IsNetCore", out JsonElement netCoreElement)
+			&& netCoreElement.ValueKind is JsonValueKind.True or JsonValueKind.False
+			&& netCoreElement.GetBoolean();
+		return new ClioEnvironment(environment.Name, uri, isNetCore);
 	}
 }
