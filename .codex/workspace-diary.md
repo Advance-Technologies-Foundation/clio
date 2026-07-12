@@ -5676,3 +5676,10 @@ Decision: Made provider-side Ring compatibility review mandatory for every consu
 Discovery: Decoupling is implementation and release independence, not absence of a governed wire contract. Ring call sites and its action catalog are the live consumer inventory, avoiding a duplicate static list in policy.
 Files: AGENTS.md, project-context.md
 Impact: Clio changes cannot silently break an independently released Ring, while neither product gains a project reference or atomic-upgrade requirement.
+
+## 2026-07-12 15:24 – ClioRing PR validation completed
+Context: The ClioRing integration branch was updated from master and prepared for its first repository PR.
+Decision: Kept the optional companion isolated, relocated active BMAD artifacts into the current feature-folder convention, and corrected the raw-progress E2E harness to retain its async notification registration and enter the real staged pipeline with an existing corrupt archive.
+Discovery: A nonexistent archive fails deploy preflight before the stage emitter begins, so it cannot prove typed manifest progress; an existing corrupt archive reaches the unzip stage, emits the complete failure sequence, and remains non-destructive.
+Files: clio.mcp.e2e/DeployUninstallProgressTests.cs, clio.mcp.e2e/Support/Mcp/McpServerSession.cs, spec/ring-guided-deploy/**, spec/clio-ring-companion-integration/**, spec/sprint-status.yaml
+Impact: Post-merge validation passes the real MCP progress path, 88 Ring tests, a zero-warning Ring solution build, full clio unit regression, YAML/solution checks, and NativeAOT publish (`clio-ring.exe` SHA-256 C80D7F3C98A356BC6DA0D29232A58A640384F072A23C64BCDD19DC4B78445349).

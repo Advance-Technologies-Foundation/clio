@@ -13,6 +13,7 @@ namespace Clio.Mcp.E2E.Support.Mcp;
 internal sealed class McpServerSession : IAsyncDisposable {
 	private readonly StdioClientTransport _transport;
 	private readonly ConcurrentQueue<JsonNode> _capturedProgressParams = new();
+	private IAsyncDisposable? _progressCaptureRegistration;
 	private bool _progressCaptureRegistered;
 	private HashSet<string>? _advertisedToolNames;
 	private IReadOnlyCollection<string>? _reachableToolNames;
@@ -83,8 +84,10 @@ internal sealed class McpServerSession : IAsyncDisposable {
 		}
 
 		_progressCaptureRegistered = true;
-		_ = Client.RegisterNotificationHandler(NotificationMethods.ProgressNotification, (notification, _) => {
-			if (notification.Params is JsonNode paramsNode) {
+		_progressCaptureRegistration = Client.RegisterNotificationHandler(
+			NotificationMethods.ProgressNotification, (notification, _) => {
+			JsonNode? paramsNode = notification.Params?.DeepClone();
+			if (paramsNode is not null) {
 				_capturedProgressParams.Enqueue(paramsNode);
 			}
 
@@ -149,6 +152,29 @@ internal sealed class McpServerSession : IAsyncDisposable {
 			ClioRunTool.ToolName,
 			BuildClioRunArguments(toolName, arguments),
 			progress: progress,
+			cancellationToken: cancellationToken);
+	}
+
+	/// <summary>
+	/// Invokes a tool with an explicit progress token while leaving the raw progress-notification
+	/// handler as the sole handler for <c>notifications/progress</c>. This mirrors ClioRing's call path
+	/// and preserves notification <c>_meta</c>, which the SDK's typed <c>progress:</c> overload drops.
+	/// </summary>
+	public async Task<CallToolResult> CallToolWithRawProgressAsync(
+		string toolName,
+		IReadOnlyDictionary<string, object?> arguments,
+		CancellationToken cancellationToken) {
+		RequestOptions options = new() {
+			ProgressToken = new ProgressToken($"clio-mcp-e2e-{Guid.NewGuid():N}")
+		};
+		if (await IsToolAdvertisedAsync(toolName, cancellationToken)) {
+			return await Client.CallToolAsync(
+				toolName, arguments, options: options, cancellationToken: cancellationToken);
+		}
+		return await Client.CallToolAsync(
+			ClioRunTool.ToolName,
+			BuildClioRunArguments(toolName, arguments),
+			options: options,
 			cancellationToken: cancellationToken);
 	}
 
@@ -230,6 +256,9 @@ internal sealed class McpServerSession : IAsyncDisposable {
 	}
 
 	public async ValueTask DisposeAsync() {
+		if (_progressCaptureRegistration is not null) {
+			await _progressCaptureRegistration.DisposeAsync();
+		}
 		await Client.DisposeAsync();
 	}
 }

@@ -18,7 +18,7 @@ namespace Clio.Mcp.E2E;
 /// </summary>
 /// <remarks>
 /// This fixture is NOT in CI — run manually against a live stand. It is deliberately non-destructive:
-/// deploy-creatio is invoked with a MISSING archive so the run fails at the <c>unzip</c> stage and
+/// deploy-creatio is invoked with an existing but corrupt archive so the run fails at the <c>unzip</c> stage and
 /// creates nothing. The result-based failure mode and the uninstall tool are unreachable without a real
 /// destructive operation, so they are covered at the unit level (StageEventProgressForwarderTests) and
 /// intentionally NOT attempted here.
@@ -32,7 +32,7 @@ public sealed class DeployUninstallProgressTests : McpContractFixtureBase {
 	private const string ToolName = InstallerCommandTool.DeployCreatioToolName;
 
 	[Test]
-	[Description("Invokes deploy-creatio with a missing archive over the real MCP server and verifies typed manifest→unzip-failed→run-completed(failure) events arrive mid-call in notifications/progress _meta.clioStageEvent, with no secret material on the wire and nothing deployed.")]
+	[Description("Invokes deploy-creatio with a corrupt archive over the real MCP server and verifies typed manifest→unzip-failed→run-completed(failure) events arrive mid-call in notifications/progress _meta.clioStageEvent, with no secret material on the wire and nothing deployed.")]
 	[AllureTag(ToolName)]
 	[AllureName("Deploy creatio streams typed stage events via progress _meta on the thrown-stage path")]
 	[AllureDescription("Registers a raw notifications/progress handler on the real clio MCP server, calls deploy-creatio with an invalid zip path, and asserts the mid-call _meta.clioStageEvent stream is the versioned ClioStageEvent contract (SchemaVersion=1) with the manifest, a failed unzip stage, and a terminal failure run-completed — non-destructively.")]
@@ -40,22 +40,26 @@ public sealed class DeployUninstallProgressTests : McpContractFixtureBase {
 		// Arrange
 		await using ArrangeContext arrangeContext = Arrange();
 		arrangeContext.Session.StartCapturingProgressNotifications();
-		string missingZipFile = Path.Combine(Path.GetTempPath(), $"missing-creatio-{Guid.NewGuid():N}.zip");
-		NoopProgress progress = new();
+		string corruptZipFile = Path.Combine(Path.GetTempPath(), $"corrupt-creatio-{Guid.NewGuid():N}.zip");
+		await File.WriteAllTextAsync(corruptZipFile, "not a zip archive", arrangeContext.CancellationTokenSource.Token);
 
-		// Act — a progress handler is supplied so the client attaches a ProgressToken to the request,
-		// which is what makes the server emit progress; the raw _meta is read from the captured params.
-		await arrangeContext.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["siteName"] = $"e2e-{Guid.NewGuid():N}",
-					["zipFile"] = missingZipFile,
-					["sitePort"] = 5011
-				}
-			},
-			progress,
-			arrangeContext.CancellationTokenSource.Token);
+		// Act — use the same explicit-token + raw-handler path as ClioRing. The SDK's typed progress
+		// overload installs a competing handler and drops _meta during deserialization.
+		try {
+			await arrangeContext.Session.CallToolWithRawProgressAsync(
+				ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["siteName"] = $"e2e-{Guid.NewGuid():N}",
+						["zipFile"] = corruptZipFile,
+						["sitePort"] = 5011
+					}
+				},
+				arrangeContext.CancellationTokenSource.Token);
+		}
+		finally {
+			File.Delete(corruptZipFile);
+		}
 
 		// Assert
 		IReadOnlyList<JsonNode> rawParams = arrangeContext.Session.CapturedProgressParams;
@@ -76,7 +80,7 @@ public sealed class DeployUninstallProgressTests : McpContractFixtureBase {
 			stageEvent => stageEvent.Stage != null
 				&& stageEvent.Stage.StageId == StageIds.Unzip
 				&& stageEvent.Stage.Status == ClioStageEventContract.StageStatuses.Failed,
-			because: "a missing archive must surface as a failed unzip stage");
+			because: "a corrupt archive must surface as a failed unzip stage");
 
 		ClioStageEvent terminal = events[^1];
 		terminal.EventType.Should().Be(ClioStageEventContract.EventTypes.RunCompleted,
@@ -108,9 +112,4 @@ public sealed class DeployUninstallProgressTests : McpContractFixtureBase {
 		return events;
 	}
 
-	// The IProgress<ProgressNotificationValue> overload drops _meta; this sink exists only to make the
-	// client attach a ProgressToken to the request. The typed _meta is read from the raw capture.
-	private sealed class NoopProgress : IProgress<ProgressNotificationValue> {
-		public void Report(ProgressNotificationValue value) { }
-	}
 }
