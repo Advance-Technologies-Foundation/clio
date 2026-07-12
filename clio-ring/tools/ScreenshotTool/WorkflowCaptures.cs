@@ -88,7 +88,7 @@ internal static class WorkflowCaptures {
 			if (rtb is null) {
 				continue;
 			}
-			string suffix = scale == 1.0 ? "@1x" : "@1.5x";
+			string suffix = Math.Abs(scale - 1.0) < 0.0001 ? "@1x" : "@1.5x";
 			string path = Path.Combine(outDir, $"{name}{suffix}.png");
 			rtb.Save(path, new PngBitmapEncoderOptions());
 			Console.WriteLine($"Saved {path} ({rtb.PixelSize.Width}x{rtb.PixelSize.Height})");
@@ -113,7 +113,7 @@ internal static class WorkflowCaptures {
 			if (rtb is null) {
 				continue;
 			}
-			string suffix = scale == 1.0 ? "@1x" : "@1.5x";
+			string suffix = Math.Abs(scale - 1.0) < 0.0001 ? "@1x" : "@1.5x";
 			string path = Path.Combine(outDir, $"{name}{suffix}.png");
 			rtb.Save(path, new PngBitmapEncoderOptions());
 			Console.WriteLine($"Saved {path} ({rtb.PixelSize.Width}x{rtb.PixelSize.Height})");
@@ -138,7 +138,7 @@ internal static class WorkflowCaptures {
 			if (rtb is null) {
 				continue;
 			}
-			string suffix = scale == 1.0 ? "@1x" : "@1.5x";
+			string suffix = Math.Abs(scale - 1.0) < 0.0001 ? "@1x" : "@1.5x";
 			string path = Path.Combine(outDir, $"{name}{suffix}.png");
 			rtb.Save(path, new PngBitmapEncoderOptions());
 			Console.WriteLine($"Saved {path} ({rtb.PixelSize.Width}x{rtb.PixelSize.Height})");

@@ -160,7 +160,7 @@ public class WorkspaceService
 		{
 			var processStartInfo = new ProcessStartInfo
 			{
-				FileName = "git",
+				FileName = "git", // NOSONAR: user-installed git is intentionally resolved via PATH
 				Arguments = $"-C \"{workspacePath}\" pull",
 				UseShellExecute = false,
 				RedirectStandardOutput = true,
@@ -212,7 +212,7 @@ public class WorkspaceService
 				}
 				: new ProcessStartInfo
 				{
-					FileName = "cmd.exe",
+					FileName = "cmd.exe", // NOSONAR: Windows system command host resolves from the protected system path
 					Arguments = $"/c code \"{workspacePath}\"",
 					UseShellExecute = false,
 					CreateNoWindow = true

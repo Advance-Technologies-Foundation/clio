@@ -5683,3 +5683,10 @@ Decision: Kept the optional companion isolated, relocated active BMAD artifacts 
 Discovery: A nonexistent archive fails deploy preflight before the stage emitter begins, so it cannot prove typed manifest progress; an existing corrupt archive reaches the unzip stage, emits the complete failure sequence, and remains non-destructive.
 Files: clio.mcp.e2e/DeployUninstallProgressTests.cs, clio.mcp.e2e/Support/Mcp/McpServerSession.cs, spec/ring-guided-deploy/**, spec/clio-ring-companion-integration/**, spec/sprint-status.yaml
 Impact: Post-merge validation passes the real MCP progress path, 88 Ring tests, a zero-warning Ring solution build, full clio unit regression, YAML/solution checks, and NativeAOT publish (`clio-ring.exe` SHA-256 C80D7F3C98A356BC6DA0D29232A58A640384F072A23C64BCDD19DC4B78445349).
+
+## 2026-07-12 15:38 – ClioRing Sonar reliability and security gate
+Context: PR 851 passed remote unit tests but Sonar rated new reliability and security C because newly analyzed Ring code included actionable async/null/comparison findings plus intentional Win32 and PATH-based tool execution.
+Decision: Fixed the actionable findings, added regex timeouts, retained NativeAOT Win32 function-pointer interop and user-installed PATH tool resolution with narrow inline justifications, and made screenshot fixtures use secure representative URLs.
+Discovery: Sonar classifies all new files on the imported companion as new code; the first PR therefore establishes the Ring quality baseline rather than comparing only the final integration commit.
+Files: clio-ring/ClioRing.Desktop/Program.cs, clio-ring/ClioRing/Views/RingView.axaml.cs, clio-ring/ClioRing/Interop/WindowsHotkey.cs, clio-ring/ClioRing/Services/ClioAdapter.cs, clio-ring/ClioRing/Services/WorkspaceService.cs, clio-ring/tools/ScreenshotTool/**, clio/Command/RingCommand.cs, clio/Command/McpServer/Progress/StageEventEmitter.cs
+Impact: Reliability/security findings are resolved or explicitly justified at the exact platform boundary; 88 Ring tests, the zero-warning Ring build, and 4056 Command/MCP tests per target framework pass.

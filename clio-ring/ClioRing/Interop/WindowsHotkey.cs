@@ -15,7 +15,8 @@ namespace ClioRing.Interop;
 /// (no runtime delegate marshalling). Registration failure is reported (not thrown) so the caller
 /// can surface a loud, non-fatal notice.
 /// </summary>
-public sealed unsafe class WindowsHotkey : IDisposable {
+// NativeAOT requires a function-pointer WndProc thunk; delegate marshalling would reintroduce dynamic code.
+public sealed unsafe class WindowsHotkey : IDisposable { // NOSONAR: narrowly scoped, required Win32 interop
 	private const int GwlpWndProc = -4;
 	private const uint WmHotkey = 0x0312;
 

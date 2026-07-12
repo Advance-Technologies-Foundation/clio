@@ -99,13 +99,13 @@ public sealed class StageEventEmitter : IStageEventEmitter {
 	private static readonly Regex[] SecretPatterns = [
 		// key=value secrets in connection strings (password, pwd, user id, uid, redis password, token, secret, key)
 		new(@"(?i)\b(password|pwd|user\s*id|uid|redis_password|access[_-]?token|secret|api[_-]?key)\s*=\s*[^;,\s]+",
-			RegexOptions.Compiled | RegexOptions.CultureInvariant),
+			RegexOptions.Compiled | RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1)),
 		// bearer / auth tokens
 		new(@"(?i)\bbearer\s+[A-Za-z0-9\-._~+/]+=*",
-			RegexOptions.Compiled | RegexOptions.CultureInvariant),
+			RegexOptions.Compiled | RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1)),
 		// credentials embedded in a URL userinfo component (scheme://user:pass@host)
 		new(@"(?i)://[^/\s:@]+:[^/\s:@]+@",
-			RegexOptions.Compiled | RegexOptions.CultureInvariant)
+			RegexOptions.Compiled | RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1))
 	];
 
 	private readonly HashSet<string> _emitted = new(StringComparer.Ordinal);

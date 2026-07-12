@@ -46,7 +46,7 @@ public sealed class ClioAdapter : IClioAdapter {
 		ArgumentNullException.ThrowIfNull(invocation);
 
 		var startInfo = new ProcessStartInfo {
-			FileName = ClioExecutable,
+			FileName = ClioExecutable, // NOSONAR: clio is a user-installed dotnet tool intentionally resolved via PATH
 			RedirectStandardOutput = true,
 			RedirectStandardError = true,
 			UseShellExecute = false,

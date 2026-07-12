@@ -136,6 +136,7 @@ public sealed record RingCurrentVersion(
 /// GitHub-backed implementation of the Ring distribution lifecycle.
 /// </summary>
 public sealed class RingDistributionService : IRingDistributionService {
+	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
 
 	private const int SupportedManifestSchema = 1;
 	private const string SupportedRid = "win-x64";
@@ -309,7 +310,8 @@ public sealed class RingDistributionService : IRingDistributionService {
 			|| string.IsNullOrWhiteSpace(manifest.Sha256)) {
 			throw new InvalidDataException("The manifest is missing required release fields.");
 		}
-		if (!Regex.IsMatch(manifest.Version, "^0\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?$", RegexOptions.CultureInvariant)) {
+		if (!Regex.IsMatch(manifest.Version, "^0\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?$",
+			RegexOptions.CultureInvariant, RegexTimeout)) {
 			throw new InvalidDataException("The manifest version is not a valid clio-ring 0.x preview version.");
 		}
 		if (Path.IsPathRooted(manifest.EntryPoint)
@@ -423,7 +425,8 @@ public sealed class RingDistributionService : IRingDistributionService {
 
 	private static (Version Core, string[] PreRelease) ParseSemanticVersion(string value) {
 		string[] parts = value.Split('-', 2);
-		if (!Regex.IsMatch(value, "^0\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?$", RegexOptions.CultureInvariant)
+		if (!Regex.IsMatch(value, "^0\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?$",
+			RegexOptions.CultureInvariant, RegexTimeout)
 			|| !Version.TryParse(parts[0], out Version version)) {
 			throw new InvalidDataException($"Invalid clio-ring version '{value}'.");
 		}

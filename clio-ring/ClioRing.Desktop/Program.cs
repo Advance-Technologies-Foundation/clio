@@ -346,12 +346,10 @@ sealed class Program {
 
 	// Proves the per-executable-path single-instance identity without a GUI.
 	private static int RunSingleInstanceTest() {
-		int failures = 0;
+		var checks = new List<bool>();
 		void Check(string label, bool ok) {
+			checks.Add(ok);
 			Console.Error.WriteLine($"[si-test] {(ok ? "PASS" : "FAIL")}: {label}");
-			if (!ok) {
-				failures++;
-			}
 		}
 
 		string dirA = @"C:\Tools\clio-ring-dev";
@@ -381,6 +379,7 @@ sealed class Program {
 		}
 
 		Console.Error.WriteLine($"[si-test] this build id={SingleInstance.Id} dir={AppContext.BaseDirectory}");
+		int failures = checks.Count(ok => !ok);
 		Console.Error.WriteLine(failures == 0 ? "[si-test] ALL PASS" : $"[si-test] {failures} FAILURE(S)");
 		return failures == 0 ? 0 : 1;
 	}

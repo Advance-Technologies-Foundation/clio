@@ -232,7 +232,7 @@ public partial class RingView : UserControl {
 			ApplyStateClasses(node, item);
 
 			if (EnableEntranceAnimation && !ReducedMotion) {
-				RunEntrance(node, index);
+				_ = RunEntranceAsync(node, index);
 			}
 
 			index++;
@@ -369,7 +369,8 @@ public partial class RingView : UserControl {
 	}
 
 	private void FocusCompletionCloseIfDone() {
-		if (_boundViewModel is null || _boundViewModel.IsBusy || !_boundViewModel.HasOutcomeBadge) {
+		RingViewModel? viewModel = _boundViewModel;
+		if (viewModel is null || viewModel.IsBusy || !viewModel.HasOutcomeBadge) {
 			return;
 		}
 
@@ -396,7 +397,7 @@ public partial class RingView : UserControl {
 	/// RenderTransform here so the style-driven hover/focus/running transforms keep working.
 	/// Fire-and-forget and fully guarded: an optional visual effect must never crash the app.
 	/// </summary>
-	private static async void RunEntrance(Border node, int index) {
+	private static async Task RunEntranceAsync(Border node, int index) {
 		try {
 			node.Opacity = 0; // set before first paint so it starts hidden, then fades to 1
 			await Task.Delay(20 + (index * 28)).ConfigureAwait(true);

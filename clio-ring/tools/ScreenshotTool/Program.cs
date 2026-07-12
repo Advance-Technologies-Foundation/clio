@@ -191,7 +191,7 @@ internal static class Program {
 		arrange(window);
 		Pump();
 
-		string suffix = scale == 1.0 ? "@1x" : "@1.5x";
+		string suffix = Math.Abs(scale - 1.0) < 0.0001 ? "@1x" : "@1.5x";
 		RenderTargetBitmap? rtb = RenderMatted(window, scale);
 		window.Close();
 		if (rtb is null) {
@@ -204,7 +204,7 @@ internal static class Program {
 
 		// Format-compatibility diagnostic: export the two states some viewers decoded as
 		// partial (focused, failure) at 1x also as JPEG + BMP. Not a UI decision.
-		if (scale == 1.0 && (name == "focused" || name == "failure")) {
+		if (Math.Abs(scale - 1.0) < 0.0001 && (name == "focused" || name == "failure")) {
 			string diag = Path.Combine(outDir, "diag");
 			Directory.CreateDirectory(diag);
 			rtb.Save(Path.Combine(diag, $"{name}.jpg"), new JpegBitmapEncoderOptions { Quality = 92 });
