@@ -370,7 +370,10 @@ public partial class RingView : UserControl {
 
 	private void FocusCompletionCloseIfDone() {
 		RingViewModel? viewModel = _boundViewModel;
-		if (viewModel is null || viewModel.IsBusy || !viewModel.HasOutcomeBadge) {
+		if (viewModel is null) {
+			return;
+		}
+		if (viewModel.IsBusy || !viewModel.HasOutcomeBadge) {
 			return;
 		}
 

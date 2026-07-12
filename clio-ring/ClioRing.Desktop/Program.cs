@@ -346,11 +346,11 @@ sealed class Program {
 
 	// Proves the per-executable-path single-instance identity without a GUI.
 	private static int RunSingleInstanceTest() {
-		var checks = new List<bool>();
-		void Check(string label, bool ok) {
-			checks.Add(ok);
+		static int Check(string label, bool ok) {
 			Console.Error.WriteLine($"[si-test] {(ok ? "PASS" : "FAIL")}: {label}");
+			return ok ? 0 : 1;
 		}
+		int failures = 0;
 
 		string dirA = @"C:\Tools\clio-ring-dev";
 		string dirB = @"C:\Tools\clio-ring-ipc-preview";
@@ -359,27 +359,26 @@ sealed class Program {
 		string idB = SingleInstance.ComputeInstanceId(dirB);
 
 		// 1. Different install directories -> distinct identities (they coexist, no cross-activation).
-		Check($"distinct paths -> distinct ids ({idA} != {idB})", idA != idB);
+		failures += Check($"distinct paths -> distinct ids ({idA} != {idB})", idA != idB);
 
 		// 2. Deterministic + normalized: casing and trailing slash variants collapse to one identity.
-		Check("same path is stable/deterministic", SingleInstance.ComputeInstanceId(dirA) == idA);
-		Check("path normalization (case-insensitive)", SingleInstance.ComputeInstanceId(dirA.ToUpperInvariant()) == idA);
-		Check("path normalization (trailing separator)", SingleInstance.ComputeInstanceId(dirA + @"\") == idA);
+		failures += Check("same path is stable/deterministic", SingleInstance.ComputeInstanceId(dirA) == idA);
+		failures += Check("path normalization (case-insensitive)", SingleInstance.ComputeInstanceId(dirA.ToUpperInvariant()) == idA);
+		failures += Check("path normalization (trailing separator)", SingleInstance.ComputeInstanceId(dirA + @"\") == idA);
 
 		// 3. Mutex behaviour: the SAME identity single-instances (second acquire is not new), while a
 		//    DIFFERENT identity acquires independently (coexists).
 		string nameA = $@"Local\clio-ring-{idA}-sitest";
 		string nameB = $@"Local\clio-ring-{idB}-sitest";
 		using (var mutexA1 = new Mutex(initiallyOwned: true, nameA, out bool a1New)) {
-			Check("first acquire of path A is primary", a1New);
+			failures += Check("first acquire of path A is primary", a1New);
 			using var mutexA2 = new Mutex(initiallyOwned: true, nameA, out bool a2New);
-			Check("second acquire of SAME path A single-instances (not new)", !a2New);
+			failures += Check("second acquire of SAME path A single-instances (not new)", !a2New);
 			using var mutexB = new Mutex(initiallyOwned: true, nameB, out bool bNew);
-			Check("acquire of DIFFERENT path B coexists (is new)", bNew);
+			failures += Check("acquire of DIFFERENT path B coexists (is new)", bNew);
 		}
 
 		Console.Error.WriteLine($"[si-test] this build id={SingleInstance.Id} dir={AppContext.BaseDirectory}");
-		int failures = checks.Count(ok => !ok);
 		Console.Error.WriteLine(failures == 0 ? "[si-test] ALL PASS" : $"[si-test] {failures} FAILURE(S)");
 		return failures == 0 ? 0 : 1;
 	}
