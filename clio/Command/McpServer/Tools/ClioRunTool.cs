@@ -256,7 +256,11 @@ public sealed class ClioRunExecutor(IMcpToolInvokerRegistry toolRegistry) : ICli
 				&& !success) {
 				return true;
 			}
-			if (IsErrorFieldName(property.Key)
+			// A normal successful discovery result commonly carries a non-empty `message` or `detail`.
+			// Those fields are redactable AFTER another failure signal is established, but their presence
+			// alone must never classify the entire payload as a failure (that turned real build paths into
+			// the literal `[redacted-path]` before the Ring could use them).
+			if (string.Equals(property.Key, "error", StringComparison.OrdinalIgnoreCase)
 				&& property.Value is JsonValue errorValue
 				&& errorValue.TryGetValue(out string errorText)
 				&& !string.IsNullOrWhiteSpace(errorText)) {

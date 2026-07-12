@@ -107,16 +107,17 @@ public sealed class ClioRunDispatchTests {
 
 	// A typed-POCO SUCCESS envelope whose data legitimately carries URI/path-shaped strings, returned as a
 	// plain record without IsError — the audit backstop must leave it completely untouched.
-	public sealed record PocoSuccessEnvelope(bool Success, string Url);
+	public sealed record PocoSuccessEnvelope(bool Success, string Message, string Url, string FullPath);
 
 	[McpServerToolType]
 	private static class PocoSuccessToolType {
 		internal const string LegitimateUrl = "https://legit-host:443/0/odata/Contact";
+		internal const string LegitimatePath = @"F:\CreatioBuilds\10.1.268\build.zip";
 
 		[McpServerTool(Name = "poco-success-tool", Destructive = false)]
 		[System.ComponentModel.Description("Returns a typed POCO success envelope carrying a URL field.")]
 		public static PocoSuccessEnvelope ReturnSuccess([System.ComponentModel.Description("payload")] string value) =>
-			new(Success: true, Url: LegitimateUrl);
+			new(Success: true, Message: "Found 36 builds.", Url: LegitimateUrl, FullPath: LegitimatePath);
 	}
 
 	private static McpServerTool BuildPocoSuccessTool() =>
@@ -545,6 +546,10 @@ public sealed class ClioRunDispatchTests {
 		string text = ErrorText(result);
 		text.Should().Contain(PocoSuccessToolType.LegitimateUrl,
 			because: "a successful payload's legitimate URL data must survive — the backstop only touches failure content");
+		using JsonDocument successPayload = JsonDocument.Parse(text);
+		successPayload.RootElement.GetProperty("FullPath").GetString().Should().Be(
+			PocoSuccessToolType.LegitimatePath,
+			because: "a successful discovery payload with a normal message must preserve its usable filesystem path exactly");
 		text.Should().NotContain("[redacted",
 			because: "no redaction placeholder may appear in a successful envelope");
 	}
