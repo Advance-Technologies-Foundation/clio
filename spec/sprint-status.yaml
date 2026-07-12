@@ -696,6 +696,18 @@ stories:
     depends_on: [story-ring-guided-deploy-4]
     blocks: []
 
+  - id: story-ring-guided-deploy-12
+    title: "Deploy honest-failure reporting — convert swallowed stage-result failures into pipeline failures"
+    feature: "ring-guided-deploy"
+    repo: "clio"
+    size: M
+    status: in-progress
+    note: "release-blocker for deploy integration. Story 2 was instrument-only: CreatioInstallerService.Execute swallowed the non-zero return of restore-db/deploy-app/configure-conn-strings/register-env (emitted done + run success + exit 0 over a failed action). Added int RunStage(string, Func<int>) to the emitter (non-zero return => failed + cascade skipped + failure run-completed, returns the code, no throw) and routed those four stages through it with an early nonzero return. wait-ready left soft (only warns today). thrown stages (stage-build/unzip/copy-files) unchanged."
+    prd: spec/prd/prd-ring-guided-deploy.md
+    adr: spec/adr/adr-ring-guided-deploy.md
+    depends_on: [story-ring-guided-deploy-2]
+    blocks: []
+
   - id: story-ring-guided-deploy-6
     title: "Ring ClioStageEvent mirror + raw _meta notification adapter in ClioLauncher.Ipc"
     feature: "ring-guided-deploy"

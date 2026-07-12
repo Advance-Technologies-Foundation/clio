@@ -234,4 +234,115 @@ public class StageEventEmitterTests {
 			.WithMessage("boom",
 				"because emission is observational: with no subscriber it neither swallows nor alters the stage exception");
 	}
+
+	// One case per deploy stage whose underlying action signals failure by a non-zero return (not a throw) and
+	// was previously swallowed by Execute: restore-db, deploy-app, configure-conn-strings, register-env. The
+	// second value is the stages that must be cascaded skipped after that stage fails.
+	private static IEnumerable<TestCaseData> SwallowedResultFailurePaths() {
+		yield return new TestCaseData(StageIds.RestoreDb,
+			new[] { StageIds.DeployApp, StageIds.ConfigureConnStrings, StageIds.RegisterEnv, StageIds.WaitReady })
+			.SetName("RunStage_ShouldFailCascadeAndReturnCode_WhenRestoreDbReturnsNonzero");
+		yield return new TestCaseData(StageIds.DeployApp,
+			new[] { StageIds.ConfigureConnStrings, StageIds.RegisterEnv, StageIds.WaitReady })
+			.SetName("RunStage_ShouldFailCascadeAndReturnCode_WhenDeployAppReturnsNonzero");
+		yield return new TestCaseData(StageIds.ConfigureConnStrings,
+			new[] { StageIds.RegisterEnv, StageIds.WaitReady })
+			.SetName("RunStage_ShouldFailCascadeAndReturnCode_WhenConfigureConnStringsReturnsNonzero");
+		yield return new TestCaseData(StageIds.RegisterEnv,
+			new[] { StageIds.WaitReady })
+			.SetName("RunStage_ShouldFailCascadeAndReturnCode_WhenRegisterEnvReturnsNonzero");
+	}
+
+	[Test]
+	[TestCaseSource(nameof(SwallowedResultFailurePaths))]
+	[Category("Unit")]
+	[Description("TC-U-16: a result-based deploy stage that returns a non-zero exit code is reported as an honest pipeline failure — the active stage is emitted failed, every remaining stage is cascaded skipped after-failure, the terminal run-completed carries outcome failure, and the real non-zero code is returned without throwing. This is the release-blocker guarantee: the guided pipeline can never show Done/Success over a failed underlying deploy action.")]
+	public void RunStage_ShouldFailCascadeAndReturnCode_WhenResultStageReturnsNonzero(string failingStageId,
+		string[] expectedSkippedStageIds) {
+		// Arrange
+		(StageEventEmitter emitter, List<ClioStageEvent> events) = CreateEmitter();
+		// Drive every stage before the failing one to a successful (zero) completion, mirroring the deploy path.
+		foreach (StageDescriptor descriptor in DeployManifest) {
+			if (descriptor.StageId == failingStageId) {
+				break;
+			}
+
+			emitter.RunStage(descriptor.StageId, () => 0);
+		}
+
+		int eventsBeforeFailure = events.Count;
+		const int nonzeroExitCode = 7;
+
+		// Act
+		int returned = emitter.RunStage(failingStageId, () => nonzeroExitCode);
+
+		// Assert
+		returned.Should().Be(nonzeroExitCode,
+			"because RunStage returns the real non-zero exit code (without throwing) so the deploy can stop with it");
+		List<ClioStageEvent> tail = events.Skip(eventsBeforeFailure).ToList();
+		ClioStageEvent failed = tail.Single(e => e.Stage?.Status == ClioStageEventContract.StageStatuses.Failed);
+		failed.Stage!.StageId.Should().Be(failingStageId,
+			"because the stage whose action returned non-zero is the one reported failed");
+		failed.Stage!.ErrorCode.Should().NotBeNullOrEmpty(
+			"because a failed stage carries a stable symbolic error code");
+		failed.Stage!.Detail.Should().Contain(nonzeroExitCode.ToString(),
+			"because the real exit code is surfaced as the failure detail");
+		List<ClioStageEvent> skipped = tail
+			.Where(e => e.Stage?.Status == ClioStageEventContract.StageStatuses.Skipped).ToList();
+		skipped.Select(e => e.Stage!.StageId).Should().Equal(expectedSkippedStageIds,
+			"because every stage after the failing one is cascaded skipped in manifest order");
+		skipped.Should().OnlyContain(e => e.Stage!.SkipReason == ClioStageEventContract.SkipReasons.AfterFailure,
+			"because a failure-cascade skip is tagged after-failure");
+		tail.Last().EventType.Should().Be(ClioStageEventContract.EventTypes.RunCompleted,
+			"because the terminal run-completed event closes the failure cascade");
+		tail.Last().RunCompleted!.Outcome.Should().Be(ClioStageEventContract.RunOutcomes.Failure,
+			"because a swallowed result-failure must now end the run in failure, not success");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("TC-U-17: a deploy whose every result-based stage returns zero still ends in success with no failed and no after-failure skip — the honest-failure fix does not regress a good deploy.")]
+	public void RunStage_ShouldEndInSuccess_WhenEveryResultStageReturnsZero() {
+		// Arrange
+		(StageEventEmitter emitter, List<ClioStageEvent> events) = CreateEmitter();
+
+		// Act
+		foreach (StageDescriptor descriptor in DeployManifest) {
+			emitter.RunStage(descriptor.StageId, () => 0);
+		}
+
+		emitter.CompleteSuccess("Deployment completed");
+
+		// Assert
+		events.Should().NotContain(e => e.Stage != null && e.Stage.Status == ClioStageEventContract.StageStatuses.Failed,
+			"because no stage failed when every result-based stage returned zero");
+		events.Should().NotContain(
+			e => e.Stage != null && e.Stage.SkipReason == ClioStageEventContract.SkipReasons.AfterFailure,
+			"because nothing is cascaded when no stage fails");
+		events.Last().EventType.Should().Be(ClioStageEventContract.EventTypes.RunCompleted,
+			"because a completed run emits a terminal event");
+		events.Last().RunCompleted!.Outcome.Should().Be(ClioStageEventContract.RunOutcomes.Success,
+			"because a fully successful deploy still ends in success");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("TC-U-18: a result-based stage that returns zero emits running then done and returns zero, exactly like the void success path.")]
+	public void RunStage_ShouldEmitDoneAndReturnZero_WhenResultStageReturnsZero() {
+		// Arrange
+		(StageEventEmitter emitter, List<ClioStageEvent> events) = CreateEmitter();
+
+		// Act
+		int returned = emitter.RunStage(StageIds.RestoreDb, () => 0);
+
+		// Assert
+		returned.Should().Be(0, "because a zero return is a successful stage");
+		List<ClioStageEvent> stageEvents = events
+			.Where(e => e.EventType == ClioStageEventContract.EventTypes.Stage).ToList();
+		stageEvents.Should().HaveCount(2, "because a successful stage emits running then done");
+		stageEvents[0].Stage!.Status.Should().Be(ClioStageEventContract.StageStatuses.Running,
+			"because the stage first transitions to running");
+		stageEvents[1].Stage!.Status.Should().Be(ClioStageEventContract.StageStatuses.Done,
+			"because a zero-returning stage transitions to done, not failed");
+	}
 }

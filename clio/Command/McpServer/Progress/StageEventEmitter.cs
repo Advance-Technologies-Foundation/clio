@@ -52,6 +52,21 @@ public interface IStageEventEmitter {
 	void RunStage(string stageId, Action stage);
 
 	/// <summary>
+	/// Wraps one real stage whose underlying action reports success/failure by an exit code: emits
+	/// <c>running</c>, runs <paramref name="stage"/>, then inspects its return value. A <b>zero</b> return
+	/// emits <c>done</c>; a <b>non-zero</b> return is an honest failure — it emits <c>failed</c> (with the
+	/// exit code as detail), cascades every remaining manifest stage as <c>skipped</c>
+	/// (<c>after-failure</c>), emits a failure <c>run-completed</c>, and returns the same non-zero code so
+	/// the caller can stop the run with the real exit code (it does <b>not</b> throw). If
+	/// <paramref name="stage"/> throws, it behaves exactly like <see cref="RunStage(string, Action)"/>:
+	/// <c>failed</c> + cascade + failure <c>run-completed</c>, then rethrows.
+	/// </summary>
+	/// <param name="stageId">The stage key; must be present in the manifest from <see cref="Begin"/>.</param>
+	/// <param name="stage">The real stage work to execute; its return value is the stage exit code.</param>
+	/// <returns>The stage exit code: <c>0</c> on success, otherwise the non-zero code the stage returned.</returns>
+	int RunStage(string stageId, Func<int> stage);
+
+	/// <summary>
 	/// Emits a <c>skipped</c> transition for a stage that is inert for the resolved inputs.
 	/// </summary>
 	/// <param name="stageId">The stage key; must be present in the manifest from <see cref="Begin"/>.</param>
@@ -72,6 +87,9 @@ public sealed class StageEventEmitter : IStageEventEmitter {
 
 	/// <summary>Stable symbolic error code emitted for a stage that threw. Never a secret or raw exception text.</summary>
 	private const string StageFailedErrorCode = "stage-execution-failed";
+
+	/// <summary>Stable symbolic error code emitted for a stage whose underlying action returned a non-zero exit code.</summary>
+	private const string StageReturnedErrorCode = "stage-returned-nonzero";
 
 	private const string RedactedToken = "[redacted]";
 
@@ -124,6 +142,15 @@ public sealed class StageEventEmitter : IStageEventEmitter {
 	/// <inheritdoc />
 	public void RunStage(string stageId, Action stage) {
 		ArgumentNullException.ThrowIfNull(stage);
+		RunStage(stageId, () => {
+			stage();
+			return 0;
+		});
+	}
+
+	/// <inheritdoc />
+	public int RunStage(string stageId, Func<int> stage) {
+		ArgumentNullException.ThrowIfNull(stage);
 		ClioStageManifestEntry entry = Find(stageId);
 
 		DateTimeOffset startedAtUtc = DateTimeOffset.UtcNow;
@@ -131,23 +158,39 @@ public sealed class StageEventEmitter : IStageEventEmitter {
 		EmitStage(entry, ClioStageEventContract.StageStatuses.Running, startedAtUtc: startedAtUtc,
 			message: entry.Name);
 
+		int exitCode;
 		try {
-			stage();
+			exitCode = stage();
 		}
 		catch (Exception ex) {
 			stopwatch.Stop();
-			_emitted.Add(entry.StageId);
-			EmitStage(entry, ClioStageEventContract.StageStatuses.Failed, durationMs: stopwatch.ElapsedMilliseconds,
-				message: $"{entry.Name} failed", detail: ex.Message, errorCode: StageFailedErrorCode);
-			CascadeSkip(entry.Index);
-			CompleteFailure($"{entry.Name} failed", ex.Message, StageFailedErrorCode);
+			FailAndCascade(entry, stopwatch.ElapsedMilliseconds, ex.Message, StageFailedErrorCode);
 			throw;
 		}
 
 		stopwatch.Stop();
+		if (exitCode != 0) {
+			// A non-zero exit code is a genuine stage failure that must be reported as honestly as a thrown
+			// stage: the run cannot end in success just because the failing action returned instead of threw.
+			FailAndCascade(entry, stopwatch.ElapsedMilliseconds, $"Stage exited with code {exitCode}",
+				StageReturnedErrorCode);
+			return exitCode;
+		}
+
 		_emitted.Add(entry.StageId);
 		EmitStage(entry, ClioStageEventContract.StageStatuses.Done, durationMs: stopwatch.ElapsedMilliseconds,
 			message: entry.Name);
+		return 0;
+	}
+
+	// Shared failure path for both the thrown-stage and non-zero-return cases: emit the active stage as
+	// failed, cascade every remaining manifest stage as skipped, then emit the terminal failure run-completed.
+	private void FailAndCascade(ClioStageManifestEntry entry, long durationMs, string detail, string errorCode) {
+		_emitted.Add(entry.StageId);
+		EmitStage(entry, ClioStageEventContract.StageStatuses.Failed, durationMs: durationMs,
+			message: $"{entry.Name} failed", detail: detail, errorCode: errorCode);
+		CascadeSkip(entry.Index);
+		CompleteFailure($"{entry.Name} failed", detail, errorCode);
 	}
 
 	/// <inheritdoc />

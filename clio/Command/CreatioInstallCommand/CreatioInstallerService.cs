@@ -1513,8 +1513,12 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			dbType = InstallerHelper.DatabaseType.Postgres;
 		}
 
+		// restore-db, deploy-app, configure-conn-strings and register-env each signal failure by a non-zero
+		// return, not by throwing. Route them through the Func<int> RunStage overload so a genuine failure is
+		// emitted as failed + cascade + failure run-completed and the deploy stops here with the real exit
+		// code — the pipeline can no longer report Done/Success over a failed underlying action.
 		int dbRestoreResult = 0;
-		_stageEventEmitter.RunStage(StageIds.RestoreDb, () => {
+		int dbRestoreExit = _stageEventEmitter.RunStage(StageIds.RestoreDb, () => {
 			// Check if the user specified a local database server
 			if (!string.IsNullOrEmpty(options.DbServerName)) {
 				_logger.WriteInfo($"[Database Restore Mode] - Local server: {options.DbServerName}");
@@ -1534,22 +1538,25 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			if (dbRestoreResult == 0) {
 				TryDisableForcedPasswordReset(options, dbType);
 			}
-		});
 
-		int deploySiteResult = 0;
-		_stageEventEmitter.RunStage(StageIds.DeployApp, () => {
-			deploySiteResult = dbRestoreResult switch {
-								   0 => DeployApplication(deploymentFolder, options),
-								   var _ => ExitWithErrorMessage("Database restore failed")
-							   };
+			return dbRestoreResult;
 		});
+		if (dbRestoreExit != 0) {
+			return dbRestoreExit;
+		}
 
-		_stageEventEmitter.RunStage(StageIds.ConfigureConnStrings, () => {
-			_ = deploySiteResult switch {
-					0 => UpdateConnectionString(deploymentFolder, options, dbType).GetAwaiter().GetResult(),
-					var _ => ExitWithErrorMessage("Failed to deploy application")
-				};
-		});
+		// The database restore succeeded (a failure would have returned above), so deploy the application.
+		int deployExit = _stageEventEmitter.RunStage(StageIds.DeployApp,
+			() => DeployApplication(deploymentFolder, options));
+		if (deployExit != 0) {
+			return deployExit;
+		}
+
+		int configureExit = _stageEventEmitter.RunStage(StageIds.ConfigureConnStrings,
+			() => UpdateConnectionString(deploymentFolder, options, dbType).GetAwaiter().GetResult());
+		if (configureExit != 0) {
+			return configureExit;
+		}
 
 		string uri = $"http://localhost:{options.SitePort}";
 		if (isIisDeployment) {
@@ -1557,16 +1564,17 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		}
 
 		bool isNetCore = InstallerHelper.DetectFrameworkByPath(deploymentFolder) == InstallerHelper.FrameworkType.NetCore;
-		_stageEventEmitter.RunStage(StageIds.RegisterEnv, () => {
-			_registerCommand.Execute(new RegAppOptions {
-				EnvironmentName = options.SiteName,
-				Login = "Supervisor",
-				Password = "Supervisor",
-				Uri = uri,
-				IsNetCore = isNetCore,
-				EnvironmentPath = deploymentFolder
-			});
-		});
+		int registerExit = _stageEventEmitter.RunStage(StageIds.RegisterEnv, () => _registerCommand.Execute(new RegAppOptions {
+			EnvironmentName = options.SiteName,
+			Login = "Supervisor",
+			Password = "Supervisor",
+			Uri = uri,
+			IsNetCore = isNetCore,
+			EnvironmentPath = deploymentFolder
+		}));
+		if (registerExit != 0) {
+			return registerExit;
+		}
 
 		_stageEventEmitter.RunStage(StageIds.WaitReady, () => {
 			// For DotNet deployments, wait for the server to become ready before proceeding. IIS
