@@ -5711,3 +5711,10 @@ Decision: Traced the real net8 MCP child with the dnSpy debugger and made the co
 Discovery: The progress token reached `clio-run`, the retargeted `deploy-creatio` request, and `StageEventProgressForwarder.Subscribe` locally. TeamCity had no configured database server and used `FakeKubernetes`, so `InstallerCommand.Execute` returned before `CreatioInstallerService.Execute` emitted the manifest; waiting longer could never produce events.
 Files: clio.mcp.e2e/DeployUninstallProgressTests.cs
 Impact: The non-destructive progress contract test now reaches the same thrown-stage path on clean CI agents and on developer machines with or without persisted clio defaults; isolated-home and two-worker focused runs pass.
+
+## 2026-07-12 21:05 – TeamCity deploy-progress fixture isolated from IIS root
+Context: TeamCity build 15718099 still emitted zero events after the explicit database-server argument crossed the Kubernetes preflight.
+Decision: Gave `DeployUninstallProgressTests` a fixture-scoped `CLIO_HOME` with a writable temporary `iis-clio-root-path`, leaving the production MCP contract unchanged.
+Discovery: Windows `auto` deployment selects IIS and creates the configured IIS root before `StageEventEmitter.Begin`; a clean CI identity can fail at the default `C:\inetpub\wwwroot\clio` before any progress event exists. The exact TeamCity SDK 9.0.315 plus net8.0 runtime 8.0.28 harness passes with the isolated root and two NUnit workers.
+Files: clio.mcp.e2e/DeployUninstallProgressTests.cs
+Impact: The corrupt-archive E2E now controls both pre-manifest environmental dependencies (database-server selection and IIS-root writability), so it deterministically reaches unzip without touching a real deployment target.

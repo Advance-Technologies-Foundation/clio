@@ -4,6 +4,7 @@ using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Progress;
 using Clio.Command.McpServer.Tools;
+using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using FluentAssertions;
 using ModelContextProtocol;
@@ -30,6 +31,18 @@ namespace Clio.Mcp.E2E;
 [Parallelizable(ParallelScope.Self)]
 public sealed class DeployUninstallProgressTests : McpContractFixtureBase {
 	private const string ToolName = InstallerCommandTool.DeployCreatioToolName;
+
+	/// <inheritdoc />
+	private protected override void ConfigureMcpServerSettings(McpE2ESettings settings) {
+		string iisRoot = CreateFixtureDirectory("deploy-progress-iis-root");
+		JsonObject appSettings = new() {
+			["Autoupdate"] = false,
+			["iis-clio-root-path"] = iisRoot
+		};
+		settings.ProcessEnvironmentVariables["CLIO_HOME"] = CreateIsolatedClioHome(
+			appSettings.ToJsonString(),
+			"deploy-progress-clio-home");
+	}
 
 	[Test]
 	[Description("Invokes deploy-creatio with a corrupt archive over the real MCP server and verifies typed manifest→unzip-failed→run-completed(failure) events arrive mid-call in notifications/progress _meta.clioStageEvent, with no secret material on the wire and nothing deployed.")]
