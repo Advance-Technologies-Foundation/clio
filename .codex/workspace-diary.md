@@ -5754,6 +5754,13 @@ Discovery: A fixture-only MCP environment with an unmatched loopback URI safely 
 Files: clio/Command/RingCommand.cs, clio/Common/CreatioUninstaller.cs, clio.tests/Command/RingDistributionServiceTests.cs, clio.tests/Common/CreatioUninstallerTestFixture.cs, clio.mcp.e2e/DeployUninstallProgressTests.cs, clio/docs/commands/uninstall-creatio.md, clio/help/en/uninstall-creatio.txt
 Impact: Full net10 unit tests passed 5529/5554 with 25 skips, focused net8/net10 lifecycle tests passed 31/31 per framework, focused MCP E2E passed 2/2, Ring tests passed 89/89, and Windows x64 NativeAOT publish succeeded.
 
+## 2026-07-13 00:45 – PR #851 final comprehensive correctness remediation
+Context: The authoritative full-PR merge-gate review found four additional honest-outcome failures after CI first became green.
+Decision: Fail closed for missing/invalid environment and physical uninstall targets, validate database configuration before stopping IIS, and make deploy readiness timeout fail the wait-ready stage and terminal run.
+Discovery: `GetEnvironment` creates empty settings for unknown names, so destructive lookup must use `FindEnvironment`; Ring's design-time uninstall pipeline must follow the provider manifest order exactly.
+Files: clio/Common/CreatioUninstaller.cs, clio/Command/CreatioInstallCommand/CreatioInstallerService.cs, clio/Command/McpServer/Tools/UninstallCreatioTool.cs, clio.tests/Common/CreatioUninstallerTestFixture.cs, clio.tests/CreatioInstallerServiceTests.cs, clio.tests/Command/McpServer/ClioStageEventContractTests.cs, clio-ring/ClioRing/ViewModels/UninstallFormViewModel.cs, clio/docs/commands/uninstall-creatio.md
+Impact: Full net10 unit tests passed 5531/5556 with 25 skips; focused net8 tests passed 45/45; MCP E2E passed 2/2; Ring passed 89/89; Windows x64 NativeAOT publish succeeded.
+
 ## 2026-07-12 23:35 – PR #851 incremental review of 75ddb76b (Sonar High remediation)
 Context: Codex requested scoped review in the Visualizer room after clearing Sonar High findings.
 Decision: 0 Blocker/High regressions; all changes are behavior-preserving extractions (semver comparison parity in RingCommand kept downgrade guard intact; IpcProofRunner decomposed with same step order/exit codes; tray double-create + non-primary mutex listener guards; AOT-safe throughout).

@@ -28,8 +28,8 @@ public class UninstallCreatioTool(
 	[Description("""
 				 uninstall-creatio command completely removes local Creatio instance from
 				 the machine, including the IIS site and application pool, database (both
-				 local and containerized), application files, and application pool user
-				 profile data.
+				 local and containerized), and application files. Application-pool profile
+				 data is currently left in place and reported as skipped/not-supported.
 
 				 The command reads the database connection string from ConnectionStrings.config
 				 in the Creatio installation directory and uses it to connect and drop the

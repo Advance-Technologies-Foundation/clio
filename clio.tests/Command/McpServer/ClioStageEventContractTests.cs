@@ -96,7 +96,7 @@ public class ClioStageEventContractTests {
 			"deploy-app", "configure-conn-strings", "register-env", "wait-ready"
 		];
 		string[] expectedUninstall = [
-			"stop-iis", "read-config", "delete-iis", "drop-db",
+			"read-config", "stop-iis", "delete-iis", "drop-db",
 			"delete-files", "unregister", "delete-apppool-profile"
 		];
 
@@ -106,7 +106,7 @@ public class ClioStageEventContractTests {
 			StageIds.DeployApp, StageIds.ConfigureConnStrings, StageIds.RegisterEnv, StageIds.WaitReady
 		];
 		string[] actualUninstall = [
-			StageIds.StopIis, StageIds.ReadConfig, StageIds.DeleteIis, StageIds.DropDb,
+			StageIds.ReadConfig, StageIds.StopIis, StageIds.DeleteIis, StageIds.DropDb,
 			StageIds.DeleteFiles, StageIds.Unregister, StageIds.DeleteApppoolProfile
 		];
 

@@ -291,6 +291,10 @@ public sealed class UninstallFlowViewModelTests {
 		// Assert — the Read configuration step is Failed and the run terminates as a failure.
 		PipelineStepViewModel readConfig = sut.Pipeline.Steps.First(s => s.Name == "Read configuration");
 		readConfig.IsFailed.Should().BeTrue(because: "clio's honest reporting surfaces the config-read failure as Failed");
+		sut.Pipeline.Steps.Select(step => step.StageId).Should().StartWith(["read-config", "stop-iis"],
+			because: "the Ring simulation must mirror clio's safety-critical manifest order");
+		PipelineStepViewModel stopIis = sut.Pipeline.Steps.First(s => s.StageId == "stop-iis");
+		stopIis.IsDone.Should().BeFalse(because: "a configuration failure must leave the IIS site running");
 		sut.Pipeline.IsFailed.Should().BeTrue(because: "the run terminates as a failure when configuration cannot be read");
 
 		// Assert — the environment is NOT shown as unregistered (that stage never completed).

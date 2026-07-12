@@ -455,7 +455,7 @@ live, GitHub-Actions-style step list instead of parsing log lines. The stream is
 
 Deploy stages: `stage-build` (network-source only; otherwise `skipped` `not-applicable`) →
 `unzip` → `copy-files` → `restore-db` → `deploy-app` → `configure-conn-strings` →
-`register-env` → `wait-ready`. Uninstall stages: `stop-iis` → `read-config` → `delete-iis` →
+`register-env` → `wait-ready`. Uninstall stages: `read-config` → `stop-iis` → `delete-iis` →
 `drop-db` → `delete-files` → `unregister` (final, only after cleanup succeeds), plus a
 conditional `delete-apppool-profile` reported `skipped` `not-supported` when a profile exists.
 Failure is honest: a stage that fails is emitted `failed`, the remaining stages `skipped`

@@ -29,7 +29,7 @@ the MCP tool subscribes to one uniform command instance for both operations, and
 
 ## Acceptance Criteria
 
-- [ ] **AC-01** — Given an uninstall run, when it begins, then a `manifest` event lists the uninstall stages in order (`stop-iis`→`read-config`→`delete-iis`→`drop-db`→`delete-files`→`unregister`), with `unregister` positioned as the final stage that runs only after cleanup succeeds.
+- [ ] **AC-01** — Given an uninstall run, when it begins, then a `manifest` event lists the uninstall stages in order (`read-config`→`stop-iis`→`delete-iis`→`drop-db`→`delete-files`→`unregister`), with configuration validated before IIS is stopped and `unregister` positioned as the final stage that runs only after cleanup succeeds.
 - [ ] **AC-02** — Given each uninstall stage runs, when it starts/completes, then `running`/`done` `stage` events are emitted in order with `index`/`total`/`durationMs`, identical envelope shape to deploy.
 - [ ] **AC-03** (correction 1) — Given reading configuration fails, when the `read-config` stage runs, then it is emitted `status=failed` (with `detail`/`errorCode`), the environment is **NOT** unregistered, the run is **NOT** reported success, and a `run-completed` with `outcome=failure` follows (safe abort — AC-07).
 - [ ] **AC-04** (correction 2) — Given an AppPool profile exists but deletion is unsupported, when the `delete-apppool-profile` stage runs, then it is emitted `status=skipped` with `skipReason=not-supported` — never silently succeeded (AC-08). When no profile exists the stage is absent from the manifest.
@@ -44,7 +44,7 @@ From ADR "files to modify" + D3 (uninstall half):
 
 - `clio/Command/UninstallCreatioCommand.cs` (modify) — implement `IStageEventSource`; own `runId`/`sequence`/manifest (reuse `StageEventEmitter` from story 2); re-raise events from `CreatioUninstaller`. Keeps the tool's subscription seam uniform (it always subscribes to the resolved *command* instance).
 - `clio/Common/CreatioUninstaller.cs` (modify) — add a lightweight internal stage callback the command wires; implement the two corrections: `read-config` failure ⇒ FAILED + safe abort (do not unregister, do not report success); `delete-apppool-profile` ⇒ skipped/not-supported only when a profile exists. Does **NOT** implement real profile deletion (PRD non-goal).
-- Uninstall stages per ADR fact 8: `stop-iis`→`read-config`→`delete-iis`→`drop-db`→`delete-files`→`unregister`.
+- Uninstall stages per ADR fact 8: `read-config`→`stop-iis`→`delete-iis`→`drop-db`→`delete-files`→`unregister`.
 - Redaction is inherited from the shared emitter (single boundary from story 2).
 - Behavior classes via DI; `ClioStageEvent` DTO may be `new`'d.
 

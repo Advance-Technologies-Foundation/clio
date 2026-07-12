@@ -34,7 +34,7 @@ Now that clio source changes are authorized, clio can become the single source o
    So a structured envelope can travel in `_meta` **alongside** the human `message`, with no SDK bump.
 6. **The SDK's `IProgress<ProgressNotificationValue>` callback drops `_meta`.** The client-side progress overload maps params → the thin `ProgressNotificationValue`, discarding `progressToken` and `_meta`. To read `_meta` the Ring must register a raw notification handler: `McpClient.RegisterNotificationHandler("notifications/progress", (JsonRpcNotification n, ct) => …)` (present in 1.4.0), reading `n.Params._meta`.
 7. **Deploy stages** (`CreatioInstallerService.Execute`): stage-build (network only) → unzip → copy-files → restore-db → deploy-app (IIS/dotnet) → configure-conn-strings (DB+Redis) → register-env → wait-ready. The service **is** the command (`Command<PfInstallerOptions>`) and already takes `ILogger` + collaborators via DI.
-8. **Uninstall stages** (`Common/CreatioUninstaller.cs`, invoked by `UninstallCreatioCommand`): stop-iis → read-config → delete-iis → drop-db → delete-files → unregister (final, only after cleanup succeeds).
+8. **Uninstall stages** (`Common/CreatioUninstaller.cs`, invoked by `UninstallCreatioCommand`): read-config → stop-iis → delete-iis → drop-db → delete-files → unregister (final, only after cleanup succeeds). Configuration is validated before IIS is stopped so a safe abort leaves the instance available.
 
 ---
 

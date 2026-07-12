@@ -110,7 +110,7 @@ All: `[Category("Unit")]`, NUnit 4 + FluentAssertions + NSubstitute, AAA + `beca
 
 | ID | Test | Expected | Story / FR / AC |
 |----|------|----------|-----------------|
-| TC-U-16 | `Execute_ShouldEmitManifestWithUnregisterLast_WhenUninstallBegins` | manifest order `stop-iis`→`read-config`→`delete-iis`→`drop-db`→`delete-files`→`unregister`; `unregister` positioned final | S3 / FR-07 / AC-10 |
+| TC-U-16 | `Execute_ShouldEmitManifestWithUnregisterLast_WhenUninstallBegins` | manifest order `read-config`→`stop-iis`→`delete-iis`→`drop-db`→`delete-files`→`unregister`; configuration validated before IIS is stopped; `unregister` positioned final | S3 / FR-07 / AC-10 |
 | TC-U-17 | `Execute_ShouldEmitRunningDoneWithSameEnvelopeShapeAsDeploy_WhenStagesRun` | `running`/`done` with `index`/`total`/`durationMs`; identical envelope shape to deploy | S3 / FR-07 / AC-10 |
 | TC-U-18 | `Execute_ShouldFailReadConfigAndSafeAbort_WhenConfigReadThrows` | **correction 1**: `read-config` `status=failed`; environment **NOT** unregistered; run **NOT** reported success; `run-completed outcome=failure` follows | S3 / FR-07,FR-14 / AC-07 |
 | TC-U-19 | `Execute_ShouldSkipProfileNotSupported_WhenAppPoolProfileExists` | **correction 2**: `delete-apppool-profile` `status=skipped skipReason=not-supported` when a profile exists; **absent from manifest** when none exists; never silently succeeded | S3 / FR-07,FR-14 / AC-08 |

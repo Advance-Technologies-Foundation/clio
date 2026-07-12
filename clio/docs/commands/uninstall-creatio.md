@@ -202,8 +202,8 @@ destroying the entire instance
     - one terminal "run-completed" event with outcome = success or failure
 
     Uninstall stages (in order):
-        stop-iis                Stop the IIS site / application pool
         read-config             Read the environment / connection configuration
+        stop-iis                Stop the IIS site / application pool
         delete-iis              Delete the IIS site / application pool
         drop-db                 Drop the application database
         delete-files            Delete the application files
@@ -213,8 +213,9 @@ destroying the entire instance
                                 profile exists; reported skipped / not-supported
                                 (profile deletion is not implemented today)
 
-    Honest failure: if read-config fails, the run aborts safely (the environment is
-    NOT unregistered and success is NOT reported), the stage is emitted failed, and
+    Honest failure: read-config runs before stop-iis. If it fails, the run aborts safely
+    (the site remains running, the environment is NOT unregistered, and success is NOT
+    reported), the stage is emitted failed, and
     the run ends run-completed / failure. Any stage failure emits failed, cascades
     the remaining stages to skipped (after-failure), and ends run-completed /
     failure. A non-zero stage result is never masked as success.

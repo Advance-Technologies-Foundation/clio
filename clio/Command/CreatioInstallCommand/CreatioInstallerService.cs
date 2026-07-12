@@ -1582,9 +1582,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			// deployments are ready once registered, so this stage completes immediately.
 			if (!isIisDeployment) {
 				_logger.WriteInfo("Waiting for server to become ready...");
-				if (!WaitForServerReady(uri, isNetCore)) {
-					_logger.WriteWarning("Server did not become ready within the timeout period.");
-				}
+				ThrowIfServerNotReady(WaitForServerReady(uri, isNetCore));
 			}
 		});
 
@@ -1601,6 +1599,12 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		}
 
 		return 0;
+	}
+
+	internal static void ThrowIfServerNotReady(bool isReady) {
+		if (!isReady) {
+			throw new TimeoutException("Server did not become ready within the timeout period.");
+		}
 	}
 
 	/// <inheritdoc />

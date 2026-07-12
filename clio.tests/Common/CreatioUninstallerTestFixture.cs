@@ -124,7 +124,7 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 			Password = ""
 		};
 		base.Setup();
-		_settingsRepositoryMock.GetEnvironment(EnvironmentName).Returns(EnvironmentSettings);
+		_settingsRepositoryMock.FindEnvironment(EnvironmentName).Returns(EnvironmentSettings);
 		
 		_k8CommandsMock.GetMssqlConnectionString().Returns(_cnpMs);
 		_k8CommandsMock.GetPostgresConnectionString().Returns(_cnpPg);
@@ -279,17 +279,40 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 	}
 
 	[Test]
-	[Description("UninstallByPath should log warning and exit early when the specified directory does not exist")]
-	public void UninstallByPath_Returns_When_DirectoryDoesNotExist(){
+	[Description("UninstallByPath aborts with a typed failure when the specified directory does not exist.")]
+	public void UninstallByPath_Aborts_When_DirectoryDoesNotExist(){
 		//Arrange
 		const string creatioDirectoryPath = @"C:\random_dir";
+		List<ClioStageEvent> events = CaptureStageEvents();
 
 		//Act
-		_sut.UninstallByPath(creatioDirectoryPath);
+		Action act = () => _sut.UninstallByPath(creatioDirectoryPath);
 
 		//Assert
-		// The command should warn the user when the specified directory does not exist
-		_loggerMock.Received(1).WriteWarning($"Directory {creatioDirectoryPath} does not exist.");
+		act.Should().Throw<CreatioUninstallAbortedException>(
+			because: "a missing physical target must not report a successful uninstall");
+		events.Last().RunCompleted!.ErrorCode.Should().Be("uninstall-target-not-found",
+			because: "MCP consumers need a stable missing-target failure classification");
+	}
+
+	[Test]
+	[Description("UninstallByEnvironmentName aborts with typed failure when the environment is not registered.")]
+	public void UninstallByEnvironmentName_Aborts_WhenEnvironmentIsMissing() {
+		// Arrange
+		_settingsRepositoryMock.FindEnvironment("missing").Returns((EnvironmentSettings)null);
+		List<ClioStageEvent> events = CaptureStageEvents();
+
+		// Act
+		Action act = () => _sut.UninstallByEnvironmentName("missing");
+
+		// Assert
+		act.Should().Throw<CreatioUninstallAbortedException>(
+			because: "an unregistered environment cannot authorize destructive cleanup");
+		events.First().EventType.Should().Be(ClioStageEventContract.EventTypes.Manifest,
+			because: "even lookup failures must emit the typed manifest first");
+		events.Last().RunCompleted!.Outcome.Should().Be(ClioStageEventContract.RunOutcomes.Failure,
+			because: "the typed stream must terminate honestly");
+		_iisScannerMock.DidNotReceive().FindAllCreatioSites();
 	}
 
 	[Test]
@@ -419,7 +442,7 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 		manifest.Operation.Should().Be(ClioStageEventContract.Operations.Uninstall,
 			"because this is an uninstall run");
 		manifest.Stages!.Select(s => s.StageId).Should().Equal(
-			[StageIds.StopIis, StageIds.ReadConfig, StageIds.DeleteIis, StageIds.DropDb, StageIds.DeleteFiles, StageIds.Unregister],
+			[StageIds.ReadConfig, StageIds.StopIis, StageIds.DeleteIis, StageIds.DropDb, StageIds.DeleteFiles, StageIds.Unregister],
 			"because the manifest must list the six uninstall stages in execution order with unregister last (AC-01)");
 		manifest.Stages.Select(s => s.Index).Should().Equal(Enumerable.Range(0, 6),
 			"because manifest indexes are zero-based and contiguous");
@@ -440,7 +463,7 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 		_sut.UninstallByPath(InstalledCreatioPath);
 
 		// Assert
-		foreach (string stageId in new[] { StageIds.StopIis, StageIds.ReadConfig, StageIds.DeleteIis, StageIds.DropDb, StageIds.DeleteFiles }) {
+		foreach (string stageId in new[] { StageIds.ReadConfig, StageIds.StopIis, StageIds.DeleteIis, StageIds.DropDb, StageIds.DeleteFiles }) {
 			StagesWithStatus(events, stageId).Select(s => s.Status).Should().Equal(
 				[ClioStageEventContract.StageStatuses.Running, ClioStageEventContract.StageStatuses.Done],
 				$"because stage '{stageId}' must transition running then done (AC-02)");
@@ -501,6 +524,9 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 			"because a config-read failure aborts the run safely");
 		StagesWithStatus(events, StageIds.ReadConfig).Should().Contain(s => s.Status == ClioStageEventContract.StageStatuses.Failed,
 			"because read-config failed (AC-03)");
+		StagesWithStatus(events, StageIds.StopIis).Should().Contain(
+			s => s.Status == ClioStageEventContract.StageStatuses.Skipped && s.SkipReason == ClioStageEventContract.SkipReasons.AfterFailure,
+			"because configuration must be validated before the working IIS site is stopped");
 		StagesWithStatus(events, StageIds.DropDb).Should().Contain(
 			s => s.Status == ClioStageEventContract.StageStatuses.Skipped && s.SkipReason == ClioStageEventContract.SkipReasons.AfterFailure,
 			"because the destructive drop-db stage must be skipped, not silently succeeded (AC-03)");

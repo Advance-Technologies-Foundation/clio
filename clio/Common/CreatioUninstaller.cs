@@ -264,10 +264,13 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 	#region Methods: Public
 
 	public void UninstallByEnvironmentName(string environmentName){
-		AllSites = _iisScanner.FindAllCreatioSites().ToList();
+		EnvironmentSettings settings = _settingsRepository.FindEnvironment(environmentName);
+		if (settings is null || !Uri.TryCreate(settings.Uri, UriKind.Absolute, out Uri envUri)) {
+			AbortUnresolvedTarget($"Environment '{environmentName}' is not registered with a valid absolute URI.");
+			return;
+		}
 
-		EnvironmentSettings settings = _settingsRepository.GetEnvironment(environmentName);
-		Uri envUri = new(settings.Uri);
+		AllSites = _iisScanner.FindAllCreatioSites().ToList();
 
 		if (!AllSites.Any()) {
 			AbortUnresolvedTarget("IIS does not have any sites. The uninstall target could not be resolved.");
@@ -316,8 +319,8 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 	/// </summary>
 	internal static IReadOnlyList<StageDescriptor> BuildUninstallManifest(bool includeProfileStage){
 		List<StageDescriptor> stages = [
-			new StageDescriptor(StageIds.StopIis, "Stop IIS site", false),
 			new StageDescriptor(StageIds.ReadConfig, "Read configuration", false),
+			new StageDescriptor(StageIds.StopIis, "Stop IIS site", false),
 			new StageDescriptor(StageIds.DeleteIis, "Delete IIS site", false),
 			new StageDescriptor(StageIds.DropDb, "Drop database", false),
 			new StageDescriptor(StageIds.DeleteFiles, "Delete application files", false)
@@ -335,8 +338,7 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 	// runs after a partial failure (Correction C). Emission is observational: with no subscriber it is a no-op.
 	private void RunUninstall(string creatioDirectoryPath, string environmentName){
 		if (string.IsNullOrEmpty(creatioDirectoryPath) || !_fileSystem.ExistsDirectory(creatioDirectoryPath)) {
-			_logger.WriteWarning($"Directory {creatioDirectoryPath} does not exist.");
-			return;
+			AbortUnresolvedTarget($"Directory '{creatioDirectoryPath}' does not exist. The uninstall target could not be resolved.");
 		}
 
 		bool hasEnvironment = !string.IsNullOrWhiteSpace(environmentName);
@@ -344,8 +346,6 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 
 		_stageEventEmitter.Begin(ClioStageEventContract.Operations.Uninstall,
 			BuildUninstallManifest(profileExists), OnStageChanged);
-
-		_stageEventEmitter.RunStage(StageIds.StopIis, () => StopIISSite(creatioDirectoryPath));
 
 		DbInfo dbInfo = null;
 		_stageEventEmitter.RunStage(StageIds.ReadConfig, () => {
@@ -360,6 +360,8 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 			dbInfo = info;
 			_logger.WriteInfo($"Found db: {info.DbName}, Server: {info.DbType}");
 		});
+
+		_stageEventEmitter.RunStage(StageIds.StopIis, () => StopIISSite(creatioDirectoryPath));
 
 		_stageEventEmitter.RunStage(StageIds.DeleteIis, () => DeleteIISSite(creatioDirectoryPath));
 

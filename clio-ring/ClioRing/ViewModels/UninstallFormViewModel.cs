@@ -36,8 +36,8 @@ public sealed partial class UninstallFormViewModel : ViewModelBase {
 	// The ordered uninstall manifest the ring renders for the pipeline. clio's own live stages (post-stories
 	// 3 + 4) flow through the same pipeline via the sink and reconcile against this manifest.
 	private static readonly (string Id, string Name)[] UninstallStages = {
-		("stop-iis", "Stop IIS site"),
 		("read-config", "Read configuration"),
+		("stop-iis", "Stop IIS site"),
 		("delete-iis", "Delete IIS site"),
 		("drop-db", "Drop database"),
 		("delete-files", "Delete files"),
@@ -325,10 +325,10 @@ public sealed partial class UninstallFormViewModel : ViewModelBase {
 		var runId = Guid.NewGuid();
 		int seq = 0;
 		Pipeline.Ingest(UninstallManifest(runId, seq++));
-		Pipeline.Ingest(StageEvent(runId, seq++, 0, ClioStageEventContract.StageStatuses.Done, "IIS site stopped", durationMs: 1200));
 
 		if (succeed) {
-			Pipeline.Ingest(StageEvent(runId, seq++, 1, ClioStageEventContract.StageStatuses.Done, "Configuration read", durationMs: 300));
+			Pipeline.Ingest(StageEvent(runId, seq++, 0, ClioStageEventContract.StageStatuses.Done, "Configuration read", durationMs: 300));
+			Pipeline.Ingest(StageEvent(runId, seq++, 1, ClioStageEventContract.StageStatuses.Done, "IIS site stopped", durationMs: 1200));
 			Pipeline.Ingest(StageEvent(runId, seq++, 2, ClioStageEventContract.StageStatuses.Done, "IIS site deleted", durationMs: 800));
 			Pipeline.Ingest(StageEvent(runId, seq++, 3, ClioStageEventContract.StageStatuses.Done, "Database dropped", durationMs: 5400));
 			Pipeline.Ingest(StageEvent(runId, seq++, 4, ClioStageEventContract.StageStatuses.Done, "Application files removed", durationMs: 2200));
@@ -338,7 +338,7 @@ public sealed partial class UninstallFormViewModel : ViewModelBase {
 		else {
 			// AC-ERR: the config-read stage fails; the run terminates as a failure and the environment is NOT
 			// unregistered (honest reporting end-to-end — the failure cascades and 'unregister' never runs).
-			Pipeline.Ingest(StageEvent(runId, seq++, 1, ClioStageEventContract.StageStatuses.Failed,
+			Pipeline.Ingest(StageEvent(runId, seq++, 0, ClioStageEventContract.StageStatuses.Failed,
 				"Could not read the environment configuration", durationMs: 200,
 				detail: "The configuration file for this environment could not be read.", errorCode: "CONFIG_READ_FAILED"));
 			Pipeline.Ingest(RunCompleted(runId, seq++, ClioStageEventContract.RunOutcomes.Failure,
