@@ -656,7 +656,7 @@ stories:
     feature: "ring-guided-deploy"
     repo: "clio"
     size: L
-    status: ready-for-dev
+    status: in-progress
     file: spec/stories/story-ring-guided-deploy-3.md
     prd: spec/prd/prd-ring-guided-deploy.md
     adr: spec/adr/adr-ring-guided-deploy.md
