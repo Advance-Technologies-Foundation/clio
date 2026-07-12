@@ -80,6 +80,16 @@ public interface IStageEventEmitter {
 	/// <param name="derivedUrl">Optional URL derived from the run (e.g. the deployed application URL).</param>
 	/// <param name="derivedPath">Optional path derived from the run (e.g. the install directory).</param>
 	void CompleteSuccess(string summary, string derivedUrl = null, string derivedPath = null);
+
+	/// <summary>
+	/// Completes a run that failed outside an individual stage wrapper. Any manifest stages that have not
+	/// already reached a terminal state are emitted as skipped before the single terminal failure event.
+	/// Repeated completion calls are ignored.
+	/// </summary>
+	/// <param name="summary">Short, non-secret human-readable failure summary.</param>
+	/// <param name="detail">Non-secret failure detail.</param>
+	/// <param name="errorCode">Stable symbolic error code.</param>
+	void CompleteFailure(string summary, string detail, string errorCode);
 }
 
 /// <inheritdoc cref="IStageEventEmitter" />
@@ -214,11 +224,13 @@ public sealed class StageEventEmitter : IStageEventEmitter {
 				DerivedUrl: derivedUrl, DerivedPath: derivedPath)));
 	}
 
-	private void CompleteFailure(string summary, string detail, string errorCode) {
+	/// <inheritdoc />
+	public void CompleteFailure(string summary, string detail, string errorCode) {
 		if (_completed) {
 			return;
 		}
 
+		CascadeSkip(-1);
 		_completed = true;
 		Emit(new ClioStageEvent(ClioStageEventContract.SchemaVersion, ClioStageEventContract.EventTypes.RunCompleted,
 			_runId, 0, _operation,

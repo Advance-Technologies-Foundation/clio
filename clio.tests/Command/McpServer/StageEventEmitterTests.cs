@@ -345,4 +345,29 @@ public class StageEventEmitterTests {
 		stageEvents[1].Stage!.Status.Should().Be(ClioStageEventContract.StageStatuses.Done,
 			"because a zero-returning stage transitions to done, not failed");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An exception outside a stage wrapper skips unfinished stages and emits exactly one terminal failure.")]
+	public void CompleteFailure_ShouldEmitExactlyOneTerminalFailure_WhenFailureOccursOutsideStageWrapper() {
+		// Arrange
+		(StageEventEmitter emitter, List<ClioStageEvent> events) = CreateEmitter();
+
+		// Act
+		emitter.CompleteFailure("Deployment failed", "Invalid deployment path", "deployment-execution-failed");
+		emitter.CompleteFailure("Deployment failed again", "Duplicate", "duplicate");
+
+		// Assert
+		events.Where(e => e.EventType == ClioStageEventContract.EventTypes.Stage)
+			.Should().OnlyContain(e => e.Stage!.Status == ClioStageEventContract.StageStatuses.Skipped,
+				because: "unfinished manifest stages are cascaded after an unwrapped failure");
+		List<ClioStageEvent> terminalEvents = events
+			.Where(e => e.EventType == ClioStageEventContract.EventTypes.RunCompleted).ToList();
+		terminalEvents.Should().ContainSingle(
+			because: "completion is idempotent even when multiple failure paths attempt to finish the run");
+		terminalEvents[0].RunCompleted!.Outcome.Should().Be(ClioStageEventContract.RunOutcomes.Failure,
+			because: "the exceptional exit cannot be reported as success");
+		terminalEvents[0].RunCompleted!.ErrorCode.Should().Be("deployment-execution-failed",
+			because: "the first terminal failure remains authoritative");
+	}
 }

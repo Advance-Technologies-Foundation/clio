@@ -126,7 +126,7 @@
       "Kind": "ClioCommand",
       "ClioCommand": {
         "Verb": "show-web-app-list",
-        "Args": []
+        "Args": ["--json"]
       },
       "Parameters": [],
       "Risk": "None"

@@ -27,12 +27,15 @@ public sealed class ClioIpcClient : IClioIpcClient {
 	private readonly ClioIpcSettings _settings;
 	private readonly Action<string>? _log;
 	private readonly SemaphoreSlim _gate = new(1, 1);
+	private readonly object _activeCallsSync = new();
 	private readonly Dictionary<string, ClioToolCallResult> _contractCache = new(StringComparer.OrdinalIgnoreCase);
 	private McpClient? _client;
-	private Process? _child;
 	private ClioServerHandshake? _handshake;
 	private string? _cacheKey;
 	private IReadOnlyList<ClioCatalogEntry>? _catalogCache;
+	private TaskCompletionSource<bool>? _activeCallsDrained;
+	private int _activeCalls;
+	private bool _lifecycleChanging;
 	private volatile bool _disposed;
 
 	/// <summary>
@@ -46,7 +49,7 @@ public sealed class ClioIpcClient : IClioIpcClient {
 	}
 
 	/// <inheritdoc />
-	public bool IsConnected => _client is not null && _child is { HasExited: false };
+	public bool IsConnected => _client is not null && _handshake is not null;
 
 	/// <inheritdoc />
 	public ClioServerHandshake? Handshake => _handshake;
@@ -71,8 +74,11 @@ public sealed class ClioIpcClient : IClioIpcClient {
 		ObjectDisposedException.ThrowIf(_disposed, this);
 		await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
 		try {
-			if (_client is not null && _child is { HasExited: false }) {
+			if (_client is not null && _handshake is not null) {
 				return _handshake!;
+			}
+			if (_client is not null) {
+				await TeardownLockedAsync().ConfigureAwait(false);
 			}
 			await SpawnAndHandshakeLockedAsync(cancellationToken).ConfigureAwait(false);
 			return _handshake!;
@@ -85,14 +91,27 @@ public sealed class ClioIpcClient : IClioIpcClient {
 	/// <inheritdoc />
 	public async Task<ClioServerHandshake> RestartAsync(CancellationToken cancellationToken = default) {
 		ObjectDisposedException.ThrowIf(_disposed, this);
-		await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+		lock (_activeCallsSync) {
+			if (_activeCalls != 0) {
+				throw new InvalidOperationException("clio MCP cannot restart while a tool call is active.");
+			}
+			_lifecycleChanging = true;
+		}
+		bool gateHeld = false;
 		try {
+			await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+			gateHeld = true;
 			await TeardownLockedAsync().ConfigureAwait(false);
 			await SpawnAndHandshakeLockedAsync(cancellationToken).ConfigureAwait(false);
 			return _handshake!;
 		}
 		finally {
-			_gate.Release();
+			if (gateHeld) {
+				_gate.Release();
+			}
+			lock (_activeCallsSync) {
+				_lifecycleChanging = false;
+			}
 		}
 	}
 
@@ -150,6 +169,8 @@ public sealed class ClioIpcClient : IClioIpcClient {
 			throw new ArgumentException("Tool name is required.", nameof(name));
 		}
 
+		BeginActiveCall();
+		try {
 		await ConnectAsync(cancellationToken).ConfigureAwait(false);
 		McpClient client = _client ?? throw new InvalidOperationException("clio MCP client is not connected.");
 		IReadOnlyDictionary<string, object?> arguments = ParseArguments(argumentsJson);
@@ -168,6 +189,10 @@ public sealed class ClioIpcClient : IClioIpcClient {
 			MarkDisconnected();
 			throw;
 		}
+		}
+		finally {
+			EndActiveCall();
+		}
 	}
 
 	/// <inheritdoc />
@@ -177,6 +202,8 @@ public sealed class ClioIpcClient : IClioIpcClient {
 			throw new ArgumentException("Tool name is required.", nameof(name));
 		}
 
+		BeginActiveCall();
+		try {
 		await ConnectAsync(cancellationToken).ConfigureAwait(false);
 		McpClient client = _client ?? throw new InvalidOperationException("clio MCP client is not connected.");
 		IReadOnlyDictionary<string, object?> arguments = ParseArguments(argumentsJson);
@@ -204,6 +231,10 @@ public sealed class ClioIpcClient : IClioIpcClient {
 
 		await using (registration.ConfigureAwait(false)) {
 			return await InvokeToolAsync(client, name, arguments, sdkProgress: null, options, cancellationToken).ConfigureAwait(false);
+		}
+		}
+		finally {
+			EndActiveCall();
 		}
 	}
 
@@ -244,6 +275,8 @@ public sealed class ClioIpcClient : IClioIpcClient {
 	/// <inheritdoc />
 	public async Task PingAsync(CancellationToken cancellationToken = default) {
 		ObjectDisposedException.ThrowIf(_disposed, this);
+		BeginActiveCall();
+		try {
 		await ConnectAsync(cancellationToken).ConfigureAwait(false);
 		McpClient client = _client ?? throw new InvalidOperationException("clio MCP client is not connected.");
 		try {
@@ -253,34 +286,15 @@ public sealed class ClioIpcClient : IClioIpcClient {
 			MarkDisconnected();
 			throw;
 		}
-	}
-
-	/// <summary>
-	/// Proof-harness only: forcibly kills the child process tree to simulate an unexpected crash, without
-	/// tearing down the client state (so the next call/restart observes the death the way it would in the
-	/// wild). Returns the killed child's PID, or null if there was no live child to kill.
-	/// </summary>
-	internal int? SimulateChildCrash() {
-		Process? child = _child;
-		if (child is null || child.HasExited) {
-			return null;
 		}
-		int pid = child.Id;
-		try {
-			child.Kill(entireProcessTree: true);
-			child.WaitForExit(5000);
+		finally {
+			EndActiveCall();
 		}
-		catch (Exception) {
-			// Race: it may have exited on its own.
-		}
-		return pid;
 	}
 
 	// ---- internals (all hold the gate unless noted) ----
 
 	private async Task SpawnAndHandshakeLockedAsync(CancellationToken cancellationToken) {
-		HashSet<int> before = SnapshotCandidatePids();
-
 		var transport = new StdioClientTransport(new StdioClientTransportOptions {
 			Command = _settings.Command,
 			Arguments = _settings.Args.ToArray(),
@@ -299,8 +313,6 @@ public sealed class ClioIpcClient : IClioIpcClient {
 			.ConfigureAwait(false);
 
 		_client = client;
-		_child = ResolveChildProcess(before);
-		HookChildExit(_child);
 
 		IReadOnlyList<string> caps = DescribeCapabilities(client.ServerCapabilities);
 		string version = client.ServerInfo?.Version ?? "unknown";
@@ -323,159 +335,26 @@ public sealed class ClioIpcClient : IClioIpcClient {
 		}
 	}
 
-	// Bounded, non-blocking teardown: start the SDK dispose (closes stdin -> graceful EOF), wait at most
-	// the grace window for the OWNED child to exit on its own, then force-terminate only that child.
-	// Records the outcome (graceful vs forced) + elapsed to the log sink. A Ring exit never blocks past
-	// the grace window.
+	// The transport owns the exact child it created. Awaiting client disposal delegates graceful shutdown
+	// and its bounded force-termination fallback to that owner; Ring must never infer ownership by process name.
 	private async Task TeardownLockedAsync() {
 		McpClient? client = _client;
-		Process? child = _child;
 		_client = null;
-		_child = null;
 		_handshake = null;
 
-		if (client is null && child is null) {
+		if (client is null) {
 			return;
 		}
 
 		var sw = Stopwatch.StartNew();
-		int? pid = TryGetPid(child);
-
-		// Fire the dispose (closes stdin); observe its exception without blocking on its full window.
-		if (client is not null) {
-			Task disposeTask = client.DisposeAsync().AsTask();
-			_ = disposeTask.ContinueWith(static t => { _ = t.Exception; }, TaskScheduler.Default);
-		}
-
-		bool graceful = false;
-		if (child is not null) {
-			try {
-				await Task.WhenAny(child.WaitForExitAsync(), Task.Delay(ShutdownGrace)).ConfigureAwait(false);
-			}
-			catch (Exception) {
-				// WaitForExitAsync can throw if the handle is gone; treated as exited below.
-			}
-			graceful = SafeHasExited(child);
-		}
-		else if (client is not null) {
-			// No owned child handle: bound the dispose wait directly.
-			graceful = true;
-		}
-
-		bool forced = false;
-		if (child is not null && !SafeHasExited(child)) {
-			KillProcessTree(child);
-			forced = true;
-		}
-		else {
-			child?.Dispose();
-		}
-
+		await client.DisposeAsync().ConfigureAwait(false);
 		sw.Stop();
-		_log?.Invoke($"ipc shutdown: outcome={(forced ? "forced" : "graceful")} elapsedMs={sw.ElapsedMilliseconds} pid={pid?.ToString() ?? "n/a"}");
-	}
-
-	private static int? TryGetPid(Process? p) {
-		try {
-			return p?.Id;
-		}
-		catch (Exception) {
-			return null;
-		}
-	}
-
-	private static bool SafeHasExited(Process p) {
-		try {
-			return p.HasExited;
-		}
-		catch (Exception) {
-			return true;
-		}
+		_log?.Invoke($"ipc shutdown: transport-owned elapsedMs={sw.ElapsedMilliseconds}");
 	}
 
 	private void MarkDisconnected() {
-		if (_child is { HasExited: true } || _client is null) {
-			Disconnected?.Invoke(this, EventArgs.Empty);
-		}
-	}
-
-	private void HookChildExit(Process? child) {
-		if (child is null) {
-			return;
-		}
-		try {
-			child.EnableRaisingEvents = true;
-			child.Exited += (_, _) => Disconnected?.Invoke(this, EventArgs.Empty);
-		}
-		catch (Exception) {
-			// The child may have exited between resolve and hook; call-time detection still covers it.
-		}
-	}
-
-	// Best-effort child PID resolution: diff the candidate-process snapshot taken before spawn against
-	// after. StdioClientTransport owns the process and exposes no handle, so this is how we get one for
-	// exit hooking / simulated-kill in the proof harness. Returns null if it cannot be isolated.
-	private HashSet<int> SnapshotCandidatePids() {
-		string procName = CandidateProcessName();
-		try {
-			return Process.GetProcessesByName(procName).Select(p => p.Id).ToHashSet();
-		}
-		catch (Exception) {
-			return new HashSet<int>();
-		}
-	}
-
-	private Process? ResolveChildProcess(HashSet<int> before) {
-		string procName = CandidateProcessName();
-		try {
-			Process[] now = Process.GetProcessesByName(procName);
-			Process? candidate = now
-				.Where(p => !before.Contains(p.Id))
-				.OrderBy(p => SafeStartTime(p))
-				.FirstOrDefault();
-			foreach (Process p in now) {
-				if (!ReferenceEquals(p, candidate)) {
-					p.Dispose();
-				}
-			}
-			return candidate;
-		}
-		catch (Exception) {
-			return null;
-		}
-	}
-
-	private string CandidateProcessName() {
-		string command = _settings.Command;
-		string baseName = System.IO.Path.GetFileNameWithoutExtension(command);
-		return string.IsNullOrEmpty(baseName) ? command : baseName;
-	}
-
-	private static DateTime SafeStartTime(Process p) {
-		try {
-			return p.StartTime;
-		}
-		catch (Exception) {
-			return DateTime.MaxValue;
-		}
-	}
-
-	private static void KillProcessTree(Process? child) {
-		if (child is null) {
-			return;
-		}
-		try {
-			if (!child.HasExited) {
-				child.Kill(entireProcessTree: true);
-				child.WaitForExit(5000);
-			}
-		}
-		catch (Exception) {
-			// Already exited / access race; nothing more to do.
-		}
-		finally {
-			child.Dispose();
-		}
+		_handshake = null;
+		Disconnected?.Invoke(this, EventArgs.Empty);
 	}
 
 	private static IReadOnlyList<string> DescribeCapabilities(ServerCapabilities? capabilities) {
@@ -584,12 +463,46 @@ public sealed class ClioIpcClient : IClioIpcClient {
 		return false;
 	}
 
+	private void BeginActiveCall() {
+		lock (_activeCallsSync) {
+			if (_lifecycleChanging || _disposed) {
+				throw new InvalidOperationException("clio MCP is restarting or shutting down.");
+			}
+			if (_activeCalls == 0) {
+				_activeCallsDrained = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+			}
+			_activeCalls++;
+		}
+	}
+
+	private void EndActiveCall() {
+		TaskCompletionSource<bool>? drained = null;
+		lock (_activeCallsSync) {
+			_activeCalls--;
+			if (_activeCalls == 0) {
+				drained = _activeCallsDrained;
+				_activeCallsDrained = null;
+			}
+		}
+		drained?.TrySetResult(true);
+	}
+
+	private Task WaitForActiveCallsAsync() {
+		lock (_activeCallsSync) {
+			return _activeCalls == 0 ? Task.CompletedTask : _activeCallsDrained!.Task;
+		}
+	}
+
 	/// <inheritdoc />
 	public async ValueTask DisposeAsync() {
 		if (_disposed) {
 			return;
 		}
 		_disposed = true;
+		lock (_activeCallsSync) {
+			_lifecycleChanging = true;
+		}
+		await WaitForActiveCallsAsync().ConfigureAwait(false);
 		await _gate.WaitAsync().ConfigureAwait(false);
 		try {
 			await TeardownLockedAsync().ConfigureAwait(false);

@@ -273,9 +273,9 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 			_logger.WriteWarning("IIS does not have any sites. Nothing to uninstall.");
 			return;
 		}
-		string directoryPath = AllSites.FirstOrDefault(all => all.Uris.Contains(envUri))?.siteBinding.path;
-		string directoryPath2 = AllSites.FirstOrDefault(all => all.siteBinding.name == environmentName)?.siteBinding.path;
-		string resolvedPath = string.IsNullOrEmpty(directoryPath) ? directoryPath2 : directoryPath;
+		// A site name is user-controlled and is not sufficient authority for destructive cleanup.
+		// Correlate the registered clio environment URI with IIS before selecting its physical path.
+		string resolvedPath = AllSites.FirstOrDefault(all => all.Uris.Contains(envUri))?.siteBinding.path;
 		if (string.IsNullOrEmpty(resolvedPath)) {
 			_logger.WriteWarning($"Could not find IIS by environment name: {environmentName}");
 			return;

@@ -39,10 +39,8 @@ public static class IpcProofRunner {
 		int catalogCount = 0;
 		int destructiveCount = 0;
 		ClioServerHandshake? handshake = null;
-		int childDeathSeen = 0;
 
 		var client = new ClioIpcClient(settings, log);
-		client.Disconnected += (_, _) => Interlocked.Increment(ref childDeathSeen);
 
 		try {
 			// 1. Cold start: process spawn -> initialized (fused by the stdio transport).
@@ -122,11 +120,8 @@ public static class IpcProofRunner {
 				// 6. Representative call: env details against a reachable env, best-effort.
 				await MeasureEnvDetailAsync(client, candidateEnvNames, envNames, results, log, cancellationToken).ConfigureAwait(false);
 
-				// 7. Child-death -> respawn recovery cycle.
-				int deathBefore = Volatile.Read(ref childDeathSeen);
-				int? killedPid = client.SimulateChildCrash();
-				await Task.Delay(300, cancellationToken).ConfigureAwait(false);
-				bool deathObserved = Volatile.Read(ref childDeathSeen) > deathBefore || !client.IsConnected;
+				// 7. Explicit transport restart recovery. The proof must not discover or kill a process by
+				// executable name; only the SDK transport owns the child process handle.
 				var respawn = Stopwatch.StartNew();
 				try {
 					ClioServerHandshake fresh = await client.RestartAsync(cancellationToken).ConfigureAwait(false);
@@ -134,14 +129,14 @@ public static class IpcProofRunner {
 					// Prove the fresh child actually serves calls.
 					ClioToolCallResult postCheck = await client.CallToolAsync("list-environments", "{}", cancellationToken).ConfigureAwait(false);
 					respawnOk = client.IsConnected && !postCheck.IsError;
-					results.Add(("Child-death -> respawn recovery", Ms(respawn),
-						$"killedPid={killedPid?.ToString(CultureInfo.InvariantCulture) ?? "n/a"}; deathObserved={deathObserved}; postRespawnCallOk={!postCheck.IsError}; server {fresh.ServerName} {fresh.ServerVersion}."));
-					log($"[ipc-proof] respawn: {Ms(respawn)} (deathObserved={deathObserved}, postCallOk={!postCheck.IsError})");
+					results.Add(("Transport restart recovery", Ms(respawn),
+						$"postRestartCallOk={!postCheck.IsError}; server {fresh.ServerName} {fresh.ServerVersion}."));
+					log($"[ipc-proof] restart: {Ms(respawn)} (postCallOk={!postCheck.IsError})");
 				}
 				catch (Exception ex) {
 					respawn.Stop();
-					results.Add(("Child-death -> respawn recovery", "FAILED", Truncate(ex.Message, 200)));
-					log($"[ipc-proof] respawn FAILED: {ex.Message}");
+					results.Add(("Transport restart recovery", "FAILED", Truncate(ex.Message, 200)));
+					log($"[ipc-proof] restart FAILED: {ex.Message}");
 				}
 			}
 
@@ -150,8 +145,8 @@ public static class IpcProofRunner {
 			try {
 				await client.DisposeAsync().ConfigureAwait(false);
 				shut.Stop();
-				results.Add(("Bounded shutdown (stdin close -> exit)", Ms(shut),
-					"DisposeAsync fires the SDK dispose (closes stdin), waits at most a 750ms grace for the owned child, then force-terminates only that child. Bounded so a Ring exit is never blocked; see the 'ipc shutdown: outcome=graceful|forced' log line. This SDK holds stdin until its own timeout, so the real shutdown reports 'forced' at ~750ms."));
+				results.Add(("Bounded transport-owned shutdown", Ms(shut),
+					"DisposeAsync awaits the MCP SDK transport, which owns the exact child and applies its configured 750ms shutdown timeout."));
 				log($"[ipc-proof] shutdown: {Ms(shut)}");
 			}
 			catch (Exception ex) {

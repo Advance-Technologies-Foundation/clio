@@ -1460,6 +1460,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		// subscriber attached the raising is a no-op and deploy behavior is unchanged.
 		bool isNetworkSource = IsNetworkDriveSource(options.ZipFile);
 		_stageEventEmitter.Begin(ClioStageEventContract.Operations.Deploy, BuildDeployManifest(), OnStageChanged);
+		try {
 
 		// stage-build: copying from a network drive to the local products folder is the only work this
 		// stage performs; for a non-network source it is inert (skipped, not-applicable).
@@ -1588,6 +1589,11 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		});
 
 		_stageEventEmitter.CompleteSuccess("Deployment completed", uri, deploymentFolder);
+		}
+		catch (Exception ex) {
+			_stageEventEmitter.CompleteFailure("Deployment failed", ex.Message, "deployment-execution-failed");
+			throw;
+		}
 
 		if (options.AutoRun == true) {
 			_logger.WriteInfo("[Auto-launching application]");

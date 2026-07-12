@@ -85,4 +85,24 @@ public sealed class ActionCatalogUninstallCreatioTests {
 		uninstall.RequireTypedConfirm.Should().BeFalse(
 			because: "story 9 replaces exact-name typing with a simple Yes/No confirm inside the guided flow");
 	}
+
+	[Test]
+	[Description("The Manage Environments action requests JSON so clio returns its masked environment projection.")]
+	public void Load_ShouldRequestMaskedJsonForManageEnvironments_WhenShippedActionsJsonIsUsed() {
+		// Arrange
+		var loader = new ActionCatalogLoader();
+
+		// Act
+		ActionCatalog catalog = loader.Load(ShippedCatalogPath);
+		RingAction manageEnvironments = catalog.Actions.First(a =>
+			string.Equals(a.Id, "clio-manage-envs", StringComparison.OrdinalIgnoreCase));
+
+		// Assert
+		manageEnvironments.ClioCommand.Should().NotBeNull(
+			because: "Manage Environments is a clio command action");
+		manageEnvironments.ClioCommand!.Verb.Should().Be("show-web-app-list",
+			because: "the action reads the clio-owned environment catalog");
+		manageEnvironments.ClioCommand.Args.Should().Equal(["--json"],
+			because: "JSON output uses clio's masked projection and must not expose stored credentials");
+	}
 }

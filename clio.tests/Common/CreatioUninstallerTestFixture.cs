@@ -144,7 +144,7 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 	[Description("UninstallByEnvironmentName should exit early and log warning when no IIS site matches the environment URL")]
 	public void UninstallByEnvironmentName_Exits_WhenNoSiteFoundByUrl(){
 		//Arrange
-		MockStartedSite("https://google.ca","fake");
+		MockStartedSite("https://google.ca");
 
 		//Act
 		_sut.UninstallByEnvironmentName(EnvironmentName);
