@@ -444,6 +444,32 @@ public sealed class ClioRunDispatchTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The caller's ProgressToken is preserved onto the rebuilt child params so a dispatched tool (e.g. deploy-creatio) can emit notifications/progress; without this the token is dropped and typed stage events are silently lost.")]
+	public async Task RunAsync_ShouldPreserveCallerProgressToken_WhenDispatchingTool() {
+		// Arrange — a valid dispatch whose incoming call carries a ProgressToken (as a real MCP progress-tracked
+		// call does). BuildChildParams rebuilds Params from Name+Arguments only, so the fix must copy the token.
+		RegisterTool("echo-tool", BuildEchoTool(), destructive: false);
+		JsonElement args = JsonDocument.Parse("{\"value\":\"hello\"}").RootElement;
+		// RequestParams exposes ProgressToken as a read-only view over Meta["progressToken"], so seed the token
+		// through _meta exactly as a progress-tracked MCP call arrives on the wire.
+		const string tokenValue = "ring-progress-token-1";
+		RequestContext<CallToolRequestParams> ctx = CallContext();
+		ctx.Params = new CallToolRequestParams {
+			Name = ClioRunTool.ToolName,
+			Meta = new System.Text.Json.Nodes.JsonObject { ["progressToken"] = tokenValue }
+		};
+
+		// Act — dispatch through clio-run, which rewrites ctx.Params to the child tool's params.
+		await _sut.RunAsync("echo-tool", args, destructiveSurface: false, ctx, CancellationToken.None);
+
+		// Assert — the rewritten child params still carry the caller's ProgressToken (via preserved _meta), so
+		// the dispatched tool's forwarder (which reads Params.ProgressToken) can send progress to the host.
+		ctx.Params!.ProgressToken.Should().Be(new ProgressToken(tokenValue),
+			because: "clio-run must carry the caller's ProgressToken onto the dispatched tool or progress is lost");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Surfaces the real failure message in a structured Error result (not a thrown exception or a generic message) when the dispatched tool fails (field-test defect #3).")]
 	public async Task RunAsync_ShouldReturnStructuredErrorWithRealMessage_WhenDispatchedToolThrows() {
 		// Arrange
