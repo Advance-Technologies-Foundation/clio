@@ -1,4 +1,4 @@
-$exe = "publish\win-x64\ClioLauncher.Desktop.exe"
+$exe = "publish\win-x64\ClioRing.Desktop.exe"
 $p = Start-Process -FilePath $exe -PassThru
 $t0 = Get-Date
 Start-Sleep -Seconds 60

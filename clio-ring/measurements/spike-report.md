@@ -70,9 +70,9 @@ expands into reserved space below and the confirm dialog is an overlay, so nothi
 
 ## 2. Build health on Avalonia 12.1.0 (JIT)
 
-`dotnet build ClioLauncher.sln -c Release` → **Build succeeded, 0 Warning(s), 0 Error(s)**
-(Debug likewise clean). Verified for all three projects: `ClioLauncher`,
-`ClioLauncher.Desktop`, `tools/ScreenshotTool`.
+`dotnet build ClioRing.sln -c Release` → **Build succeeded, 0 Warning(s), 0 Error(s)**
+(Debug likewise clean). Verified for all three projects: `ClioRing`,
+`ClioRing.Desktop`, `tools/ScreenshotTool`.
 
 ---
 
@@ -123,13 +123,13 @@ No CommunityToolkit.Mvvm 8.4.0 → 8.4.2 source-generator changes required.
 ## 5. What is implemented (delivered)
 
 - **Warnings→0 (AOT, 11.3.11 baseline):** explicit compiled `ViewLocator` map (was `Type.GetType`
-  reflection, IL2057); source-generated `LauncherJsonContext` for all config (was reflection
+  reflection, IL2057); source-generated `RingJsonContext` for all config (was reflection
   `JsonSerializer`, IL2026/IL3050); removed `DisableAvaloniaDataAnnotationValidation`
   (BindingPlugins.DataValidators, IL2026 ×2). Baseline `aot-publish.log` (5 distinct IL*) →
   `aot-publish-item1.log` (0 IL*). **Re-verify on 12.1.0 is part of the deferred AOT pass.**
-- **Closed-envelope action contract:** `ActionCatalog`/`LauncherAction` with `ActionKind`-tagged
+- **Closed-envelope action contract:** `ActionCatalog`/`RingAction` with `ActionKind`-tagged
   typed blocks (`ClioCommand`/`OpenUrl`/`OpenPath`), `ParameterDescriptor`, `Risk`; no
-  `object`/`JsonElement`/type-name discriminators; whole graph in `LauncherJsonContext`;
+  `object`/`JsonElement`/type-name discriminators; whole graph in `RingJsonContext`;
   `ActionCatalogLoader` validates kind↔block match and throws `ActionCatalogException`
   (never a partial object). Sample `actions.json` ships beside the exe.
 - **clio adapter (`IClioAdapter`/`ClioAdapter`, DI-registered):** async child process, event-driven
@@ -182,7 +182,7 @@ Per coordinator, the AOT measurement pass is out of scope for this cycle:
 :: from repo root — publishes NativeAOT self-contained win-x64
 call "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvars64.bat"
 set "PATH=%PATH%;C:\Program Files (x86)\Microsoft Visual Studio\Installer"
-dotnet publish ClioLauncher.Desktop\ClioLauncher.Desktop.csproj -c Release -r win-x64 ^
+dotnet publish ClioRing.Desktop\ClioRing.Desktop.csproj -c Release -r win-x64 ^
   --self-contained true -p:PublishAot=true -o publish\win-x64
 ```
 

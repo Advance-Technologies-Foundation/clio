@@ -5593,3 +5593,86 @@ Discovery: The K8s-vs-local branch keys solely off `options.DbServerName`, so in
 Files: clio/Command/ConfigCommand.cs, clio/Command/CreatioInstallCommand/DeployCreatioDefaultsResolver.cs, clio/Command/CreatioInstallCommand/InstallerCommand.cs (ctor + ApplyDefaults call + shared AllowedDeploymentMethods/AutoDeploymentMethod consts), clio/Environment/ConfigurationOptions.cs + ISettingsRepository.cs (DeployCreatioDefaults + get/set), clio/BindingsModule.cs, clio/Program.cs, clio/HelpSystem/CommandHelpCatalog.cs, docs (help/en/config.txt, docs/commands/config.md, Commands.md, Wiki/WikiAnchors.txt), tests (ConfigCommandTests, DeployCreatioDefaultsResolverTests, SettingsRepositoryDeployDefaultsTests + 2 updated InstallerCommand ctor call sites).
 MCP: reviewed — not applicable. `config` is a local-workstation config command with no agent value (writes appsettings.json). deploy-creatio's existing MCP tool contract is unchanged: defaults are applied inside InstallerCommand, the tool's arguments/descriptions/destructive flags are untouched.
 Impact: `clio config --deploy-db-server-name my-local-postgres --deploy-site-port 40018 --deploy-deployment iis` makes the right-click deploy target local DB+Redis with zero further args. Validated: full Unit tier 5475 passed (both net8.0/net10.0); Command+Core 2416 passed after 3-lens pre-PR review fixes (leading-digit/ASCII sanitization, explicit --show, site-port range validation, shared deployment-method constants).
+## 2026-07-11 11:26 – Started clio UI brainstorming room
+Context: User requested a new Visualizer room for multi-agent clio UI brainstorming with ongoing 1-minute monitoring.
+Decision: Created `clio-ui-crcle` through the AvSec-authenticated REST path because MCP chat is disabled; kept stable `agentId=codex`, posted a signed welcome, and created a 1-minute thread heartbeat using `avsec listen` with an agent-scoped cursor and ACK behavior.
+Discovery: Visualizer MCP `create_room` is gated off on the live server; `avsec api POST /api/rooms` is the supported creation fallback and `avsec status` establishes roster identity/presence.
+Files: .codex/workspace-diary.md, C:\Users\k.krylov\.creatio\rooms\clio-ui-crcle__codex.cursor
+Impact: Room is ready for additional agents; Codex will monitor and participate until explicitly stopped.
+
+## 2026-07-11 20:45 – clio-ring: deploy auto-defaults + uninstall-creatio on main ring (SHIPPED)
+Context: Kirill's 4 asks — explain slow AOT, source deploy db/redis from clio config or Rancher, pre-select port, add uninstall-creatio per env on the ring; keep C:\Tools clean (one final at C:\Tools\clio-ring).
+Decision: Deploy wizard auto-runs discovery on Window.Opened (InitializeAsync) — db/redis already come from clio config (show-passing-infrastructure→ISettingsRepository), so pre-filling on open satisfies "from config" + "port pre-selected"; both overridable. uninstall-creatio = default actions.json ClioCommand on the MAIN radial ring (shells `clio uninstall-creatio -e {env}` via IClioAdapter), hardened per codex review: RequireTypedConfirm (exact env name, no bypass) + resolved endpoint + ConsequenceText red line + destructive-only listed-env guard.
+Discovery: main ring executes actions via child-process shelling (IClioAdapter), NOT the experimental IPC window; show-passing-infrastructure reads clio's own infra config; uninstall-creatio has no interactive CLI prompt (safe to shell). AOT publish must be invoked as `cmd /c <abs path>` from PowerShell — `cmd //c relative.cmd` under Git-Bash silently no-ops. C:\Tools cleaned to a single clio-ring; staging moved OUTSIDE to C:\Projects\clio-ring-run\aot-stage.
+Files (clio-ring repo C:\Projects\clio-ring-spike-claude, branch spike/ring-clio-ipc): ClioLauncher/ViewModels/DeployWizardViewModel.cs, Views/DeployWizardWindow.axaml(.cs), ViewModels/RingViewModel.cs, Views/RingView.axaml, Views/RingIcons.cs, Models/ActionCatalog.cs, ClioLauncher.Desktop/actions.json+schema, new ClioLauncher.Tests/. Commits 595ebdd, aa8348e, 45e6551. Final AOT → C:\Tools\clio-ring (SHA-256 A9B3CE00…E5D263).
+Impact: no clio source touched. Ring now ships a per-env destructive uninstall with strong irreversible-op guards + a pre-populated deploy wizard. Pattern for future ring builds: JIT-iterate, AOT-final via aot-final.cmd, atomic promote in place, never spawn extra C:\Tools dirs.
+
+## 2026-07-11 21:10 – clio-ring: deploy diagnosis + structured receipt + atomic promote
+Context: Kirill ran a real deploy (dry-run off) via the ring wizard and asked where the new Creatio instance was.
+Decision: Diagnose inspection-only (no re-deploy, per codex). Build a structured redacted deploy receipt so future runs are diagnosable; fix promotion to be atomic.
+Discovery: NO instance was created (no new IIS site, no new instance dir after the run — proven). The wizard's output was UI-only/unpersisted, so the exact blocker was unrecoverable — "preflight blocked" is a hypothesis, not fact (don't overstate). The main-ring/deploy output had bare `Output +=` outcome writes that bypassed AppendLine (missed by any line-mirror log) — routed all through AppendLine. clio uninstall/deploy shell via IClioAdapter; deploy runs deploy-creatio via clio-run.
+Files (C:\Projects\clio-ring-spike-claude, branch spike/ring-clio-ipc): ClioLauncher/Diagnostics/DeployReceipt.cs (new, replaced DeployLog.cs), Startup.cs (DI), ViewModels/DeployWizardViewModel.cs (IDeployReceipt inject + Complete-in-finally + OpenDeployLog), Views/DeployWizardWindow.axaml (Open log button), ClioLauncher.Tests/DeployReceiptTests.cs + DeployWizardViewModelTests.cs (4 outcome receipts). Commits 2ce458a (interim), c30db39 (structured). Final AOT SHA FB610394…3B40.
+Also: promote-ring.cmd (C:\Projects\clio-ring-run) — atomic rename-into-place promotion (verified sibling tree outside C:\Tools → same-volume rename swap + rollback). AOT publish invoked via PowerShell `cmd /c <abs path>` (Git-Bash `cmd //c relative.cmd` silently no-ops).
+Impact: deploy runs now leave a redacted receipt (%LOCALAPPDATA%\clio-ring\deploy-<ts>.log) with clio-invoked flag + outcome + derived URL; releases can't leave a partial install; C:\Tools stays one clio-ring. Standing rule: agents never initiate deploys — Kirill triggers, I read the receipt.
+## 2026-07-12 10:25 – clio-ring out-of-order manifest fix + fresh JIT
+Context: Live MCP probing proved progress callbacks can enter the Ring concurrently and out of sequence (seq=2 before seq=1/0), causing max-sequence de-dup to discard the seq=0 manifest and leave the pipeline empty.
+Decision: Made ClioStageEventAdapter.Consume thread-safe and replaced monotonic max-sequence filtering with exact (runId, sequence) de-dup; distinct late events, especially the manifest, are forwarded. Kept the fix scoped to the Ring and did not initiate a deployment.
+Discovery: The prior contract assumption that a single MCP session dispatches notifications sequentially was false. Transport callback arrival order cannot be used as event identity or as proof that lower sequences are stale.
+Files: C:/Projects/clio-ring-spike-claude/ClioLauncher.Ipc/ClioStageEventAdapter.cs, C:/Projects/clio-ring-spike-claude/ClioLauncher.Ipc/ClioStageEvent.cs, C:/Projects/clio-ring-spike-claude/ClioLauncher.Tests/ClioStageEventAdapterTests.cs, C:/Tools/clio-ring-jit
+Impact: Commit 19b21c9; 82/82 Ring tests pass. Fresh framework-dependent JIT targets C:/Projects/clio/clio/bin/Debug/net10.0/clio.dll and includes the honest-failure envelope plus manifest preservation.
+
+## 2026-07-12 11:03 – Ring install happy-path: discovery redaction + callback ordering fixed
+Context: The Ring selected a real 10.1.268 build but clio reported the ZIP missing; the UI pipeline also remained empty/running despite the command finishing.
+Decision: Built reusable `--install-probe` and `--pipeline-order-probe` harnesses. Fixed clio-run failure classification so a successful payload's ordinary `message`/`detail` does not trigger redaction. Replaced Ring immediate progress forwarding with contiguous sequence buffering from seq=0.
+Discovery: The path was not accidentally trimmed or JSON-mangled. Successful `list-creatio-builds` returned `message="Found 36 builds"`; clio-run treated any `message` as failure and redacted the real full-path to the literal `[redacted-path]` (15 chars), which the Ring then faithfully sent. After the classifier fix the same record was 109 chars, existed, and fingerprinted B33020CC0A49EF8D. The real harness install created DB/site/app pool `semse`; concurrent callbacks still required ordered buffering for terminal UI state.
+Files: clio/Command/McpServer/Tools/ClioRunTool.cs, clio.tests/Command/McpServer/ClioRunDispatchTests.cs, C:/Projects/clio-ring-spike-claude/ClioLauncher.Ipc/ClioStageEventAdapter.cs, C:/Projects/clio-ring-spike-claude/ClioLauncher.Desktop/Program.cs, C:/Tools/clio-ring-jit
+Impact: clio commit 06c109a8; Ring commit 6ea2dd6. Real install succeeded at http://k-krylov-nb.tscrm.com:40001 (IIS site/app pool started); final JIT dry path probe and out-of-order pipeline replay both exit 0.
+
+## 2026-07-12 11:33 – Resident Ring environment catalog refresh
+Context: A new environment deployed after the Ring launched was absent from the cached inner orbit, so actions still targeted the prior selection.
+Decision: Refresh registered environments on every Ring summon, expose a `↻ Refresh` button in the environment picker, and refresh immediately after successful guided deploy/uninstall terminal events. Overlapping loads are coalesced in RingViewModel.
+Discovery: The requested `semse-t1` was not present in clio; the actual newly registered environment was `studio-t1` on port 40002. The installed JIT refresh harness found `studio-t1` on initial load and manual refresh (25 environments, exit 0).
+Files: C:/Projects/clio-ring-spike-claude/ClioLauncher/ViewModels/RingViewModel.cs, C:/Projects/clio-ring-spike-claude/ClioLauncher/Views/RingWindow.axaml.cs, C:/Projects/clio-ring-spike-claude/ClioLauncher/Views/RingView.axaml, C:/Projects/clio-ring-spike-claude/ClioLauncher/App.axaml.cs
+Impact: Ring commit a2a073e; 83/83 tests pass; fresh JIT at C:/Tools/clio-ring-jit with environment-refresh probe exit 0.
+
+## 2026-07-12 10:05 – Ring environment settings auto-refresh
+Context: Ring retained an environment after it was manually deleted from clio appsettings.json.
+Decision: Keep clio as the catalog source; watch its exact settings file with a debounced FileSystemWatcher and queue a final reload when changes race an active refresh.
+Discovery: The live settings file and fresh clio output already excluded the stale environment; the missing boundary was reliable invalidation in the open Ring, not a malformed path string.
+Files: C:/Projects/clio-ring-spike-claude/ClioLauncher/Services/EnvironmentSettingsWatcher.cs, C:/Projects/clio-ring-spike-claude/ClioLauncher/ViewModels/RingViewModel.cs, C:/Projects/clio-ring-spike-claude/ClioLauncher.Desktop/Program.cs
+Impact: Manual refresh still works, direct clio settings edits now refresh automatically, and overlapping notifications cannot drop the final catalog read. Commit d7cd0e7; JIT verified at C:/Tools/clio-ring-jit.
+
+## 2026-07-12 12:42 – Ring uninstall NativeAOT pipeline proven
+Context: The guided uninstall completed real cleanup but rendered an empty pipeline in the Ring.
+Decision: Added a destructive-button harness with explicit target confirmation and catalog postcondition; decoded ClioStageEvent and receipt payloads exclusively through source-generated System.Text.Json metadata under NativeAOT.
+Discovery: clio emitted correct progress (14 uninstall notifications), but the reflection-disabled desktop host made JsonNode.Deserialize<T> throw NotSupportedException; the adapter swallowed it by design, so zero events reached the pipeline. The issue was decoding, not clio progress or token forwarding.
+Files: C:/Projects/clio-ring-spike-claude/ClioLauncher.Ipc/ClioStageEvent.cs, C:/Projects/clio-ring-spike-claude/ClioLauncher.Ipc/ClioStageEventAdapter.cs, C:/Projects/clio-ring-spike-claude/ClioLauncher.Ipc/DeploymentReceipt.cs, C:/Projects/clio-ring-spike-claude/ClioLauncher/ViewModels/UninstallFormViewModel.cs, C:/Projects/clio-ring-spike-claude/ClioLauncher.Desktop/Program.cs
+Impact: Commit f2bf1eb. Real 10.0.0.802 deploy succeeded with 8 steps/17 events and uninstall succeeded with 6 steps/14 events; no false success without terminal, confirmed target is immutable, 88 tests pass, clean NativeAOT publish installed at C:/Tools/clio-ring-jit.
+
+## 2026-07-12 16:10 – clio-ring internal companion integrated
+Context: The proven Ring POC needed an intentionally reversible marriage to the clio monorepo and GitHub-hosted internal delivery, with no telemetry.
+Decision: Imported Ring commit f2bf1eb into an isolated clio-ring subtree; added a feature-gated Windows x64 `clio ring` lifecycle bootstrap, independently versioned GitHub ZIP/manifest releases, SHA-256 verification, trusted-host and archive bounds, side-by-side installs, downgrade refusal, repair, and safe uninstall preflight. GitHub Releases is the explicit internal-preview publisher trust root.
+Discovery: A disabled feature leaked through unknown-command suggestions; gated commands are now excluded from that recovery catalog. Final review also caught same-version repair, downgrade, release-race, locked-executable uninstall, and unbounded archive risks before delivery.
+Files: clio-ring/**, clio/Command/RingCommand.cs, clio/Program.cs, clio/BindingsModule.cs, clio.tests/Command/RingDistributionServiceTests.cs, .github/workflows/clio-ring-release.yml, clio.slnx, Directory.Packages.props, spec/*clio-ring-companion-integration*, clio/docs/commands/ring.md, clio/help/en/ring.txt
+Impact: Ring remains removable and independently releasable; clio core has no Avalonia/Ring assembly dependency. Validated 2155 Command tests, 88 Ring tests, lifecycle/security harnesses, YAML parse, and clean NativeAOT `clio-ring.exe` SHA-256 4124CE9FDF83266E1287D9D192EE8369AA0487C1DE386FF9AFF0D34B417266B2. MCP reviewed, no update required.
+
+## 2026-07-12 16:45 – ClioRing contributor architecture documented
+Context: The Ring POC is now in the clio repository, but its non-obvious safety and reversibility constraints were distributed across implementation history.
+Decision: Documented the product boundary, dependency direction, NativeAOT/IPC protocol rules, updater trust model, destructive-operation safety, privacy, validation, and deletion strategy for agents and human contributors.
+Discovery: Product/release identity is already ClioRing, while `ClioLauncher*` project paths and namespaces remain transitional migration debt; new contributions must not expand that legacy identity.
+Files: project-context.md, AGENTS.md, CONTRIBUTING.md
+Impact: Contributors have one architectural source of truth, a mandatory safety checklist, and executable current-path validation commands without mistaking POC names for the target design.
+
+## 2026-07-12 14:46 – ClioRing identity and AOT gates completed
+Context: The imported Ring projects still carried the ClioLauncher identity, and exact NuGet ranges prevented normal IDE dependency-upgrade discovery.
+Decision: Renamed directories, projects, solution, namespaces, Avalonia URIs, models, workflow paths, tooling, and specs atomically to ClioRing. Centralized the Avalonia family under `AvaloniaVersion`, removed exact-range brackets, and made warnings errors in all production Ring projects plus native-compiler warnings errors in the desktop host.
+Discovery: Avalonia 12.1.0 and CommunityToolkit.Mvvm 8.4.2 are the latest stable versions visible on both configured feeds; the version numbers were current, but the square-bracket exact ranges were unjustified. An intentional RequiresDynamicCode probe now fails as error IL3050, proving enforcement.
+Files: clio-ring/ClioRing/**, clio-ring/ClioRing.Desktop/**, clio-ring/ClioRing.Ipc/**, clio-ring/ClioRing.Tests/**, clio-ring/ClioRing.sln, Directory.Packages.props, .github/workflows/clio-ring-release.yml, clio.slnx, project-context.md, AGENTS.md, CONTRIBUTING.md, clio-ring/README.md
+Impact: No ClioLauncher naming debt remains; IDEs can discover package upgrades normally; 88 Ring tests, the zero-warning solution build, clio lifecycle tests on net8/net10, and the warnings-as-errors NativeAOT publish pass.
+
+## 2026-07-12 15:00 – Ring consumer-driven MCP compatibility gate
+Context: Clio and ClioRing release independently, but Ring depends on clio MCP tools, nested clio-run commands, typed progress, receipts, and error envelopes.
+Decision: Made provider-side Ring compatibility review mandatory for every consumed MCP/CLI contract change, including Ring tests, relevant harness/fixture checks, and NativeAOT publish; breaking evolution requires an explicit versioned transition supporting the previously released Ring.
+Discovery: Decoupling is implementation and release independence, not absence of a governed wire contract. Ring call sites and its action catalog are the live consumer inventory, avoiding a duplicate static list in policy.
+Files: AGENTS.md, project-context.md
+Impact: Clio changes cannot silently break an independently released Ring, while neither product gains a project reference or atomic-upgrade requirement.

@@ -50,7 +50,7 @@ Stdio has **no network surface** (no remote-auth concern). Still: validate the c
 ## Consequences
 
 - **Version is load-bearing:** stale clio (8.1.0.64) lacks the compact `get-tool-contract` index → 0 catalog; current (8.1.0.77) returns 150. Hence version-pin + capability-probe.
-- **AOT stays clean:** the reflection-heavy MCP SDK is isolated in a non-AOT `ClioLauncher.Ipc` project so the `PublishAot` app keeps 0 IL2026/IL3050.
+- **AOT stays clean:** the reflection-heavy MCP SDK is isolated in a non-AOT `ClioRing.Ipc` project so the `PublishAot` app keeps 0 IL2026/IL3050.
 - **Lifecycle:** one-server-per-client; keep one long-lived child (don't spawn per call); respawn on child death; bounded (~750 ms) non-blocking shutdown.
 
 ## Open production blockers (spike ≠ production)

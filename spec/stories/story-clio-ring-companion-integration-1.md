@@ -1,6 +1,6 @@
 # Story: Integrate and deliver the clio-ring internal companion
 
-**Status:** in-progress
+**Status:** review
 
 ## Scope
 

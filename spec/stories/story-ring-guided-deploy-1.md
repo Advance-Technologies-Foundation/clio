@@ -6,7 +6,7 @@
 **AC coverage**: AC-09 (event shapes), AC-11 (unknown-field tolerance contract), AC-12 (no-secret field contract)
 **PRD**: [prd-ring-guided-deploy.md](../prd/prd-ring-guided-deploy.md)
 **ADR**: [adr-ring-guided-deploy.md](../adr/adr-ring-guided-deploy.md) (D1, D2)
-**Status**: ready-for-dev
+**Status**: review
 **Size**: M (half day)
 **Depends on**: —
 **Blocks**: story-ring-guided-deploy-2, story-ring-guided-deploy-3, story-ring-guided-deploy-6

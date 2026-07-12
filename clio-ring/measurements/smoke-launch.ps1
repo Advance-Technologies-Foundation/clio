@@ -6,13 +6,13 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$exe = "C:\Projects\clio-ring-spike-claude\ClioLauncher.Desktop\bin\$Config\net10.0\ClioLauncher.Desktop.exe"
+$exe = "C:\Projects\clio\clio-ring\ClioRing.Desktop\bin\$Config\net10.0\ClioRing.Desktop.exe"
 $log = "$env:LOCALAPPDATA\clio-ring\startup.log"
 
 if (-not (Test-Path $exe)) { Write-Error "exe not found: $exe (build $Config first)"; exit 2 }
 
 function Invoke-Smoke([string]$label, [string[]]$modeArgs) {
-    Get-Process ClioLauncher.Desktop -ErrorAction SilentlyContinue | Stop-Process -Force
+    Get-Process ClioRing.Desktop -ErrorAction SilentlyContinue | Stop-Process -Force
     Start-Sleep -Milliseconds 500
     $args = @("--smoke") + $modeArgs
     $p = Start-Process $exe -ArgumentList $args -PassThru

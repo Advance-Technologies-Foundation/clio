@@ -612,7 +612,7 @@ stories:
 
   # --- ring-guided-deploy stories (cross-repo: clio typed MCP events + clio-ring guided UX) — added 2026-07-11 ---
   # CROSS-REPO feature. Foundation = C:\Projects\clio (typed MCP progress _meta events, stories 1-5).
-  # Consumption = C:\Projects\clio-ring-spike-claude, branch spike/ring-clio-ipc (guided UX, stories 6-11).
+  # Consumption = C:\Projects\clio\clio-ring, branch spike/ring-clio-ipc (guided UX, stories 6-11).
   # Ring-consumption stories DEPEND ON the clio-event stories (the events are the load-bearing interface).
   # Recommended order:
   #   clio:  1 -> (2 ∥ 3) -> 4 -> 5
@@ -624,7 +624,7 @@ stories:
     feature: "ring-guided-deploy"
     repo: "clio"
     size: M
-    status: in-progress
+    status: review
     file: spec/stories/story-ring-guided-deploy-1.md
     prd: spec/prd/prd-ring-guided-deploy.md
     adr: spec/adr/adr-ring-guided-deploy.md
@@ -641,7 +641,7 @@ stories:
     feature: "ring-guided-deploy"
     repo: "clio"
     size: L
-    status: in-progress
+    status: review
     file: spec/stories/story-ring-guided-deploy-2.md
     prd: spec/prd/prd-ring-guided-deploy.md
     adr: spec/adr/adr-ring-guided-deploy.md
@@ -656,7 +656,7 @@ stories:
     feature: "ring-guided-deploy"
     repo: "clio"
     size: L
-    status: in-progress
+    status: review
     file: spec/stories/story-ring-guided-deploy-3.md
     prd: spec/prd/prd-ring-guided-deploy.md
     adr: spec/adr/adr-ring-guided-deploy.md
@@ -671,7 +671,7 @@ stories:
     feature: "ring-guided-deploy"
     repo: "clio"
     size: L
-    status: in-progress
+    status: review
     note: "clio.mcp.e2e is NOT in CI — the manifest→stage→run-completed _meta assertion is a manual live-stand run."
     file: spec/stories/story-ring-guided-deploy-4.md
     prd: spec/prd/prd-ring-guided-deploy.md
@@ -687,7 +687,7 @@ stories:
     feature: "ring-guided-deploy"
     repo: "clio"
     size: S
-    status: in-progress
+    status: review
     file: spec/stories/story-ring-guided-deploy-5.md
     prd: spec/prd/prd-ring-guided-deploy.md
     adr: spec/adr/adr-ring-guided-deploy.md
@@ -701,7 +701,7 @@ stories:
     feature: "ring-guided-deploy"
     repo: "clio"
     size: M
-    status: in-progress
+    status: review
     note: "release-blocker for deploy integration. Story 2 was instrument-only: CreatioInstallerService.Execute swallowed the non-zero return of restore-db/deploy-app/configure-conn-strings/register-env (emitted done + run success + exit 0 over a failed action). Added int RunStage(string, Func<int>) to the emitter (non-zero return => failed + cascade skipped + failure run-completed, returns the code, no throw) and routed those four stages through it with an early nonzero return. wait-ready left soft (only warns today). thrown stages (stage-build/unzip/copy-files) unchanged."
     prd: spec/prd/prd-ring-guided-deploy.md
     adr: spec/adr/adr-ring-guided-deploy.md
@@ -709,11 +709,11 @@ stories:
     blocks: []
 
   - id: story-ring-guided-deploy-6
-    title: "Ring ClioStageEvent mirror + raw _meta notification adapter in ClioLauncher.Ipc"
+    title: "Ring ClioStageEvent mirror + raw _meta notification adapter in ClioRing.Ipc"
     feature: "ring-guided-deploy"
-    repo: "clio-ring-spike-claude (spike/ring-clio-ipc)"
+    repo: "clio (clio-ring/)"
     size: L
-    status: in-progress
+    status: review
     note: "CROSS-REPO dependency: mirror + contract test build against clio story 1's committed JSON fixture; live end-to-end verification needs clio story 4 to have landed. Unit/contract coverage does not."
     file: spec/stories/story-ring-guided-deploy-6.md
     prd: spec/prd/prd-ring-guided-deploy.md
@@ -728,9 +728,9 @@ stories:
   - id: story-ring-guided-deploy-7
     title: "DeployPipelineViewModel + GitHub-Actions step-list view"
     feature: "ring-guided-deploy"
-    repo: "clio-ring-spike-claude (spike/ring-clio-ipc)"
+    repo: "clio (clio-ring/)"
     size: L
-    status: ready-for-dev
+    status: review
     file: spec/stories/story-ring-guided-deploy-7.md
     prd: spec/prd/prd-ring-guided-deploy.md
     adr: spec/adr/adr-ring-guided-deploy.md
@@ -744,9 +744,9 @@ stories:
   - id: story-ring-guided-deploy-8
     title: "Guided Install form on the main ring + preflight as first pipeline step"
     feature: "ring-guided-deploy"
-    repo: "clio-ring-spike-claude (spike/ring-clio-ipc)"
+    repo: "clio (clio-ring/)"
     size: L
-    status: ready-for-dev
+    status: review
     file: spec/stories/story-ring-guided-deploy-8.md
     prd: spec/prd/prd-ring-guided-deploy.md
     adr: spec/adr/adr-ring-guided-deploy.md
@@ -758,9 +758,9 @@ stories:
   - id: story-ring-guided-deploy-9
     title: "Guided Uninstall on the main ring — local-env picker + Yes/No confirm + pipeline"
     feature: "ring-guided-deploy"
-    repo: "clio-ring-spike-claude (spike/ring-clio-ipc)"
+    repo: "clio (clio-ring/)"
     size: M
-    status: ready-for-dev
+    status: review
     file: spec/stories/story-ring-guided-deploy-9.md
     prd: spec/prd/prd-ring-guided-deploy.md
     adr: spec/adr/adr-ring-guided-deploy.md
@@ -772,9 +772,9 @@ stories:
   - id: story-ring-guided-deploy-10
     title: "Ring logging + NDJSON deployment receipt from the same event stream"
     feature: "ring-guided-deploy"
-    repo: "clio-ring-spike-claude (spike/ring-clio-ipc)"
+    repo: "clio (clio-ring/)"
     size: M
-    status: ready-for-dev
+    status: review
     file: spec/stories/story-ring-guided-deploy-10.md
     prd: spec/prd/prd-ring-guided-deploy.md
     adr: spec/adr/adr-ring-guided-deploy.md
@@ -786,9 +786,9 @@ stories:
   - id: story-ring-guided-deploy-11
     title: "Ring settings — default clio + dev-clio path override + visible connected-clio identity"
     feature: "ring-guided-deploy"
-    repo: "clio-ring-spike-claude (spike/ring-clio-ipc)"
+    repo: "clio (clio-ring/)"
     size: M
-    status: ready-for-dev
+    status: review
     note: "Ring settings + handshake identity; independent of the typed-event chain (stories 1-7) — can proceed in parallel."
     file: spec/stories/story-ring-guided-deploy-11.md
     prd: spec/prd/prd-ring-guided-deploy.md
@@ -802,7 +802,7 @@ stories:
     feature: "clio-ring-companion-integration"
     repo: "clio"
     size: L
-    status: in-progress
+    status: review
     file: spec/stories/story-clio-ring-companion-integration-1.md
     prd: spec/prd/spec-clio-ring-companion-integration.md
     adr: spec/adr/adr-clio-ring-companion-integration.md

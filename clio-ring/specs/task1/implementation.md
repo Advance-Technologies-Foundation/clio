@@ -1,7 +1,7 @@
-# Clio Workspace Launcher - Implementation Documentation
+# ClioRing Workspace Companion - Implementation Documentation
 
 ## Overview
-This document describes the implementation of the Clio Workspace Launcher, an Avalonia desktop application that helps users discover and launch Clio workspaces.
+This document describes the implementation of the ClioRing Workspace Companion, an Avalonia desktop application that helps users discover and launch Clio workspaces.
 
 ## Implementation Date
 November 10, 2025
@@ -12,7 +12,7 @@ The application follows the MVVM (Model-View-ViewModel) pattern using Avalonia U
 ## Files Created
 
 ### 1. Configuration
-**File**: `ClioLauncher.Desktop/app-settings.json`
+**File**: `ClioRing.Desktop/app-settings.json`
 ```json
 {
   "WorkspaceFolder": "C:\\Projects\\Workspaces"
@@ -21,17 +21,17 @@ The application follows the MVVM (Model-View-ViewModel) pattern using Avalonia U
 - Defines the root folder where workspaces are located
 - Can be modified to point to different workspace directories
 
-**Modified**: `ClioLauncher.Desktop/ClioLauncher.Desktop.csproj`
+**Modified**: `ClioRing.Desktop/ClioRing.Desktop.csproj`
 - Added configuration to copy `app-settings.json` to output directory
 
 ### 2. Models
 
-#### `ClioLauncher/Models/AppSettings.cs`
+#### `ClioRing/Models/AppSettings.cs`
 - Represents the application configuration
 - Properties:
   - `WorkspaceFolder`: Path to the workspace root directory
 
-#### `ClioLauncher/Models/Workspace.cs`
+#### `ClioRing/Models/Workspace.cs`
 - Represents a single workspace
 - Properties:
   - `Name`: Workspace name (from directory name)
@@ -42,7 +42,7 @@ The application follows the MVVM (Model-View-ViewModel) pattern using Avalonia U
 
 ### 3. Services
 
-#### `ClioLauncher/Services/WorkspaceService.cs`
+#### `ClioRing/Services/WorkspaceService.cs`
 Core service handling all workspace operations:
 
 **Methods**:
@@ -61,7 +61,7 @@ Core service handling all workspace operations:
 
 ### 4. ViewModels
 
-#### `ClioLauncher/ViewModels/WorkspaceViewModel.cs`
+#### `ClioRing/ViewModels/WorkspaceViewModel.cs`
 View model for individual workspace items:
 - Properties expose workspace data (Name, IconPath, script availability)
 - Commands:
@@ -69,7 +69,7 @@ View model for individual workspace items:
   - `OpenNetCoreCommand`: Executes .NET Core script
 - Uses CommunityToolkit.Mvvm for command and property binding
 
-#### `ClioLauncher/ViewModels/MainViewModel.cs`
+#### `ClioRing/ViewModels/MainViewModel.cs`
 Main application view model:
 - Properties:
   - `Workspaces`: ObservableCollection of WorkspaceViewModel instances
@@ -81,7 +81,7 @@ Main application view model:
 
 ### 5. Views
 
-#### `ClioLauncher/Views/MainView.axaml`
+#### `ClioRing/Views/MainView.axaml`
 Main UI layout featuring:
 - **Error Banner**: Displays at top when errors occur
 - **Loading Indicator**: Shows "Loading workspaces..." during initialization
@@ -98,9 +98,9 @@ Main UI layout featuring:
     - Rounded corners (8px radius)
     - Border and white background
 
-#### `ClioLauncher/Views/MainWindow.axaml`
+#### `ClioRing/Views/MainWindow.axaml`
 Application window:
-- Title: "Clio Workspace Launcher"
+- Title: "ClioRing Workspace Companion"
 - Size: 1000x600px
 - Contains MainView
 
@@ -162,20 +162,20 @@ C:\Projects\Workspaces\
 
 ## How to Run
 
-1. Ensure no instances of ClioLauncher.Desktop.exe are running
+1. Ensure no instances of ClioRing.Desktop.exe are running
 2. Build the solution:
    ```bash
    dotnet build
    ```
 3. Run the application:
    ```bash
-   dotnet run --project ClioLauncher.Desktop
+   dotnet run --project ClioRing.Desktop
    ```
 
 ## Configuration
 
 To change the workspace folder location:
-1. Edit `ClioLauncher.Desktop/app-settings.json`
+1. Edit `ClioRing.Desktop/app-settings.json`
 2. Update the `WorkspaceFolder` value to your desired path
 3. Rebuild and run the application
 

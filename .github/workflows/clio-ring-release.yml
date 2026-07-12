@@ -48,12 +48,12 @@ jobs:
           "value=$version" >> $env:GITHUB_OUTPUT
 
       - name: Test Ring
-        run: dotnet test clio-ring/ClioLauncher.Tests/ClioLauncher.Tests.csproj -c Release
+        run: dotnet test clio-ring/ClioRing.Tests/ClioRing.Tests.csproj -c Release
 
       - name: Publish NativeAOT
         shell: pwsh
         run: |
-          dotnet publish clio-ring/ClioLauncher.Desktop/ClioLauncher.Desktop.csproj `
+          dotnet publish clio-ring/ClioRing.Desktop/ClioRing.Desktop.csproj `
             -c Release -r $env:RID --self-contained true -p:PublishAot=true `
             -p:ClioRingVersion=${{ steps.version.outputs.value }} `
             -o artifacts/publish

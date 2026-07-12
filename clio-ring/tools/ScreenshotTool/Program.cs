@@ -10,10 +10,10 @@ using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
-using ClioLauncher;
-using ClioLauncher.Services;
-using ClioLauncher.ViewModels;
-using ClioLauncher.Views;
+using ClioRing;
+using ClioRing.Services;
+using ClioRing.ViewModels;
+using ClioRing.Views;
 
 namespace ScreenshotTool;
 
@@ -148,7 +148,7 @@ internal static class Program {
 		// 8) SETTINGS / HOTKEY panel (1x only).
 		count += Capture(outDir, "settings", 1.0, (window) => {
 			RingViewModel vm = Vm(window);
-			vm.SetHotkeyInfo("Ctrl+Alt+C", @"C:\Projects\clio-ring-spike-claude\ClioLauncher.Desktop\app-settings.json");
+			vm.SetHotkeyInfo("Ctrl+Alt+C", @"C:\Projects\clio\clio-ring\ClioRing.Desktop\app-settings.json");
 			vm.OpenSettingsCommand.Execute(null);
 		});
 
@@ -184,7 +184,7 @@ internal static class Program {
 
 	private static int Capture(string outDir, string name, double scale, Action<Window> arrange) {
 		RingViewModel vm = new(new SampleClioAdapter(), new ActionCatalogLoader(), new InMemoryEnvStateStore(), new NullActionCatalogWatcher());
-		var window = new RingWindow(vm, new LaunchOptions(), ClioLauncher.Interop.HotkeyGesture.Default, new InMemoryWindowPlacementStore());
+		var window = new RingWindow(vm, new LaunchOptions(), ClioRing.Interop.HotkeyGesture.Default, new InMemoryWindowPlacementStore());
 		window.Show();
 		Pump();
 

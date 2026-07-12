@@ -5,10 +5,10 @@ using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
-using ClioLauncher.Ipc;
-using ClioLauncher.Services;
-using ClioLauncher.ViewModels;
-using ClioLauncher.Views;
+using ClioRing.Ipc;
+using ClioRing.Services;
+using ClioRing.ViewModels;
+using ClioRing.Views;
 
 namespace ScreenshotTool;
 
@@ -125,7 +125,7 @@ internal static class WorkflowCaptures {
 	private static int Capture(string outDir, string name, Action<ClioWorkflowViewModel> arrange) {
 		int n = 0;
 		foreach (double scale in new[] { 1.0, 1.5 }) {
-			var vm = new ClioWorkflowViewModel(new StubIpcClient(), new InMemoryEnvStateStore(new ClioLauncher.Models.EnvState { Selected = "ve" }));
+			var vm = new ClioWorkflowViewModel(new StubIpcClient(), new InMemoryEnvStateStore(new ClioRing.Models.EnvState { Selected = "ve" }));
 			var window = new ClioWorkflowWindow(vm);
 			window.Show();
 			Program.Pump();

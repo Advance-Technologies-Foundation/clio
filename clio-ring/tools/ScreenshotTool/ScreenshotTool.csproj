@@ -18,12 +18,12 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<ProjectReference Include="..\..\ClioLauncher\ClioLauncher.csproj" />
+		<ProjectReference Include="..\..\ClioRing\ClioRing.csproj" />
 	</ItemGroup>
 
 	<ItemGroup>
 		<!-- Reuse the shipped sample catalog so the ring matches the real app. -->
-		<None Include="..\..\ClioLauncher.Desktop\actions.json" Link="actions.json">
+		<None Include="..\..\ClioRing.Desktop\actions.json" Link="actions.json">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</None>
 	</ItemGroup>
