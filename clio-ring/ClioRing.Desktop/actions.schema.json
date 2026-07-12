@@ -1,0 +1,196 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://advance-technologies-foundation.github.io/clio-ring/actions.schema.json",
+  "title": "clio ring action catalog",
+  "description": "Declarative catalog of ring actions. Each action runs a clio command, opens a URL, or opens a path. Edited by hand; validated at load time by clio ring.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [ "Actions" ],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "title": "Schema reference",
+      "description": "Path or URL to this JSON Schema (enables editor validation + hover help)."
+    },
+    "Actions": {
+      "type": "array",
+      "title": "Actions",
+      "description": "The outer-ring actions, in ring order.",
+      "items": { "$ref": "#/$defs/action" }
+    }
+  },
+  "$defs": {
+    "iconName": {
+      "type": "string",
+      "title": "Icon",
+      "description": "Name of a built-in stroke icon. One consistent family; colour encodes state, not the icon.",
+      "enum": [ "globe", "info", "tag", "package", "docs", "folder", "restart", "trash", "check", "close", "dot" ]
+    },
+    "kind": {
+      "type": "string",
+      "title": "Action kind",
+      "description": "Selects which typed block is active: ClioCommand | OpenUrl | OpenPath | GuidedInstall (opens the guided Creatio Install form; no typed block) | GuidedUninstall (opens the guided Creatio Uninstall flow; no typed block).",
+      "enum": [ "ClioCommand", "OpenUrl", "OpenPath", "GuidedInstall", "GuidedUninstall" ]
+    },
+    "risk": {
+      "type": "string",
+      "title": "Risk",
+      "description": "Confirmation gate. None runs immediately; Confirm/Destructive prompt first (Destructive is visually flagged).",
+      "enum": [ "None", "Confirm", "Destructive" ]
+    },
+    "parameterType": {
+      "type": "string",
+      "title": "Parameter type",
+      "description": "Runtime type used to render/validate a prompted parameter.",
+      "enum": [ "String", "Int", "Bool", "Env" ]
+    },
+    "parameter": {
+      "type": "object",
+      "title": "Parameter descriptor",
+      "additionalProperties": false,
+      "required": [ "Name", "ParameterType" ],
+      "properties": {
+        "Name": {
+          "type": "string",
+          "title": "Name",
+          "description": "Parameter name.",
+          "minLength": 1
+        },
+        "ParameterType": { "$ref": "#/$defs/parameterType" },
+        "Required": {
+          "type": "boolean",
+          "title": "Required",
+          "description": "Whether a value must be supplied."
+        },
+        "Default": {
+          "type": [ "string", "null" ],
+          "title": "Default",
+          "description": "Optional default value (string form, coerced by ParameterType)."
+        }
+      }
+    },
+    "clioCommand": {
+      "type": "object",
+      "title": "clio command",
+      "description": "Payload for Kind=ClioCommand.",
+      "additionalProperties": false,
+      "required": [ "Verb" ],
+      "properties": {
+        "Verb": {
+          "type": "string",
+          "title": "Verb",
+          "description": "clio verb, e.g. get-info (may also be a raw switch like --version).",
+          "minLength": 1
+        },
+        "Args": {
+          "type": "array",
+          "title": "Arguments",
+          "description": "Extra arguments appended verbatim after the verb.",
+          "items": { "type": "string" }
+        },
+        "EnvName": {
+          "type": [ "string", "null" ],
+          "title": "Environment",
+          "description": "Optional fixed environment. When null, the selected environment is used."
+        }
+      }
+    },
+    "openUrl": {
+      "type": "object",
+      "title": "Open URL",
+      "description": "Payload for Kind=OpenUrl.",
+      "additionalProperties": false,
+      "required": [ "Url" ],
+      "properties": {
+        "Url": {
+          "type": "string",
+          "title": "URL",
+          "description": "Absolute URL to open in the default browser.",
+          "format": "uri",
+          "minLength": 1
+        }
+      }
+    },
+    "openPath": {
+      "type": "object",
+      "title": "Open path",
+      "description": "Payload for Kind=OpenPath.",
+      "additionalProperties": false,
+      "required": [ "Path" ],
+      "properties": {
+        "Path": {
+          "type": "string",
+          "title": "Path",
+          "description": "File-system path to open with the OS shell.",
+          "minLength": 1
+        }
+      }
+    },
+    "action": {
+      "type": "object",
+      "title": "Action",
+      "additionalProperties": false,
+      "required": [ "Id", "Title", "Kind" ],
+      "properties": {
+        "Id": {
+          "type": "string",
+          "title": "Id",
+          "description": "Stable unique id for the action.",
+          "minLength": 1
+        },
+        "Title": {
+          "type": "string",
+          "title": "Title",
+          "description": "Full title (tooltip + accessible name).",
+          "minLength": 1
+        },
+        "ShortTitle": {
+          "type": "string",
+          "title": "Short title",
+          "description": "Optional concise label shown on the ring node (falls back to Title)."
+        },
+        "Icon": { "$ref": "#/$defs/iconName" },
+        "Kind": { "$ref": "#/$defs/kind" },
+        "ClioCommand": { "$ref": "#/$defs/clioCommand" },
+        "OpenUrl": { "$ref": "#/$defs/openUrl" },
+        "OpenPath": { "$ref": "#/$defs/openPath" },
+        "Parameters": {
+          "type": "array",
+          "title": "Parameters",
+          "description": "Parameters prompted for before execution.",
+          "items": { "$ref": "#/$defs/parameter" }
+        },
+        "Risk": { "$ref": "#/$defs/risk" },
+        "ConfirmText": {
+          "type": "string",
+          "title": "Confirmation text",
+          "description": "Confirmation copy naming the concrete consequence + target. Supports the {env} placeholder."
+        },
+        "RequireTypedConfirm": {
+          "type": "boolean",
+          "title": "Require typed confirmation",
+          "description": "When true, the confirm dialog also requires the user to type the exact selected environment name before running. Use for irreversible actions."
+        },
+        "ConsequenceText": {
+          "type": "string",
+          "title": "Consequence line",
+          "description": "Optional explicit consequence line shown prominently in the confirm dialog (distinct from ConfirmText), spelling out the concrete irreversible effect."
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "Kind": { "const": "ClioCommand" } } },
+          "then": { "required": [ "ClioCommand" ], "not": { "anyOf": [ { "required": [ "OpenUrl" ] }, { "required": [ "OpenPath" ] } ] } }
+        },
+        {
+          "if": { "properties": { "Kind": { "const": "OpenUrl" } } },
+          "then": { "required": [ "OpenUrl" ], "not": { "anyOf": [ { "required": [ "ClioCommand" ] }, { "required": [ "OpenPath" ] } ] } }
+        },
+        {
+          "if": { "properties": { "Kind": { "const": "OpenPath" } } },
+          "then": { "required": [ "OpenPath" ], "not": { "anyOf": [ { "required": [ "ClioCommand" ] }, { "required": [ "OpenUrl" ] } ] } }
+        }
+      ]
+    }
+  }
+}
