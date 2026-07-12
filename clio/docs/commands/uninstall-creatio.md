@@ -14,10 +14,13 @@ uc
 
 ## Description
 
-uninstall-creatio command completely removes a local Creatio instance from
-your machine, including the IIS site and application pool, database (both
-local and containerized), application files, and application pool user
-profile data.
+uninstall-creatio command removes a local Creatio instance from your machine,
+including the IIS site and application pool, database (both local and
+containerized), and application files.
+
+Note: deletion of the application pool user profile directory is NOT performed
+today. The step is surfaced as skipped / not-supported; real profile deletion
+is a separate future change.
 
 The command reads the database connection string from ConnectionStrings.config
 in the Creatio installation directory and uses it to connect and drop the
@@ -46,7 +49,11 @@ This operation cannot be undone.
         4. Parses connection parameters (host, port, username, password)
         5. Connects and drops the database (local or Kubernetes/Rancher)
         6. Deletes all files in installation directory
-        7. Removes application pool user profile directory
+        7. Unregisters the environment (final step, only after cleanup succeeds)
+
+    Note: an application pool user profile directory is NOT deleted. When a
+    profile exists the step is reported as skipped / not-supported; real
+    profile deletion is a separate future change.
 
 ## Synopsis
 
@@ -178,6 +185,40 @@ clio uninstall-creatio --physicalPath C:\inetpub\wwwroot\creatio-dev
 destroying the entire instance
 - The command does not modify clio environment registration - use
 'unreg-web-app' separately if needed
+
+## Progress and Stage Events (MCP)
+
+    When run as an MCP tool, uninstall-creatio emits a typed, versioned progress
+    stream over MCP notifications/progress in the _meta.clioStageEvent field, so a
+    GUI client can render a live step list instead of parsing log lines. This is
+    additive: CLI behavior, tool arguments, descriptions, and the Destructive flag
+    are unchanged.
+
+    The stream is:
+    - one "manifest" event up front listing every stage that will run, in order
+    - a "stage" event per transition (running -> done / failed / skipped, with
+      index / total / durationMs)
+    - one terminal "run-completed" event with outcome = success or failure
+
+    Uninstall stages (in order):
+        stop-iis                Stop the IIS site / application pool
+        read-config             Read the environment / connection configuration
+        delete-iis              Delete the IIS site / application pool
+        drop-db                 Drop the application database
+        delete-files            Delete the application files
+        unregister              Unregister the environment (final, only after
+                                cleanup succeeds)
+        delete-apppool-profile  Conditional: present only when an application pool
+                                profile exists; reported skipped / not-supported
+                                (profile deletion is not implemented today)
+
+    Honest failure: if read-config fails, the run aborts safely (the environment is
+    NOT unregistered and success is NOT reported), the stage is emitted failed, and
+    the run ends run-completed / failure. Any stage failure emits failed, cascades
+    the remaining stages to skipped (after-failure), and ends run-completed /
+    failure. A non-zero stage result is never masked as success.
+
+    The envelope carries a schemaVersion field (currently 1) and is forward-compatible.
 
 ## Related Commands
 

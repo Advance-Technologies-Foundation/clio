@@ -443,6 +443,28 @@ How the AI should think about this area:
 - it is a local-host and target-environment control surface
 - destructive power is high, especially for restore and uninstall flows
 
+**Typed stage-event progress contract (`deploy-creatio` / `uninstall-creatio`).** Both tools
+emit a versioned, typed progress stream over MCP `notifications/progress` in the
+`_meta.clioStageEvent` field, so a GUI consumer (the clio-ring guided-deploy UX) can render a
+live, GitHub-Actions-style step list instead of parsing log lines. The stream is:
+
+- one `manifest` event up front listing every stage that will run, in order;
+- a `stage` event per transition (`running` → `done` / `failed` / `skipped`, carrying
+  `index` / `total` / `durationMs`);
+- one terminal `run-completed` event with `outcome` = `success` / `failure`.
+
+Deploy stages: `stage-build` (network-source only; otherwise `skipped` `not-applicable`) →
+`unzip` → `copy-files` → `restore-db` → `deploy-app` → `configure-conn-strings` →
+`register-env` → `wait-ready`. Uninstall stages: `stop-iis` → `read-config` → `delete-iis` →
+`drop-db` → `delete-files` → `unregister` (final, only after cleanup succeeds), plus a
+conditional `delete-apppool-profile` reported `skipped` `not-supported` when a profile exists.
+Failure is honest: a stage that fails is emitted `failed`, the remaining stages `skipped`
+(`after-failure`), and the run ends `run-completed` `failure` — a non-zero stage result is
+never masked as success. The envelope is stamped with `schemaVersion` (currently `1`), is
+purely additive (tool arguments, descriptions, and `Destructive` flags are unchanged), and is
+forward-compatible: an unknown field or a bumped schema version does not break a mirrored
+consumer.
+
 ### 9. Runtime Control And Maintenance
 
 These tools are operational rather than design-oriented.
