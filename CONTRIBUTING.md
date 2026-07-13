@@ -212,12 +212,23 @@ When creating the issue:
 
 When opening the pull request:
 
+- Open the pull request as a draft. Keep it in draft while implementation, validation,
+  documentation, or the project's external review process is still in progress.
 - Reference at least one issue in the pull request description. Prefer a closing keyword such as
   `Fixes #123` or `Closes #123` when the pull request fully resolves the issue.
 - Assign the pull request to yourself. If your GitHub permissions do not allow this, ask a
   maintainer to assign it to you before review.
 - Keep the pull request scope aligned with the referenced issue. Update the issue before expanding
   or materially changing that scope.
+
+When the work is complete:
+
+- Confirm the implementation, required tests, documentation, and external review are complete and
+  that no known blocking feedback remains.
+- Mark the pull request as ready for review.
+- After the pull request is ready, a contributor or agent with permission may enable auto-merge
+  when appropriate. Do not enable auto-merge while the pull request is a draft or before the work
+  is ready.
 
 ```bash
 # Check PR status and CI results

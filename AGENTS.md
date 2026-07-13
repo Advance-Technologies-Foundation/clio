@@ -17,6 +17,10 @@ Use ClioGate endpoints whenever:
 - The existing DataService ESQ path fails with `SecurityException: Current user does not have permissions for the "X" object`.
 - The operation needs to run with elevated permissions that can't be granted at the schema level.
 
+Read-only name→UId schema resolution is the exception: looking up a schema's UId by name uses
+DataService ESQ by convention across clio, not ClioGate. (Trade-off: the caller needs DataService
+read access to the schema tables — accepted for consistency.)
+
 ## ClioGate URL pattern
 
 All ClioGate methods are served at:

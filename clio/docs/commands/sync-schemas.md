@@ -53,8 +53,11 @@ Creates an entity schema with an optional parent.
 | `title-localizations` | Yes | Schema title localizations. Must include `en-US` |
 | `parent-schema-name` | No | Parent schema name |
 | `extend-parent` | No | Create a replacement schema (default: false) |
+| `is-virtual` | No | Create a virtual entity schema without a physical database table (default: false) |
 | `columns` | No | Initial columns |
 | `seed-rows` | No | Rows to insert after creation |
+
+Use `is-virtual: true` only when the entity is backed by a custom data provider rather than a Creatio database table. A virtual `create-entity` operation cannot include `seed-rows` because there is no table to populate. Verify the result through `get-entity-schema-properties` or the entity list returned by `get-app-info`.
 
 #### `update-entity`
 

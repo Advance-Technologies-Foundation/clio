@@ -24,7 +24,9 @@ DESCRIPTION
     local database and Redis instead of falling back to a Kubernetes cluster.
 
     Options passed on the deploy-creatio command line always take precedence
-    over these defaults.
+    over these defaults. When no default site name is configured, interactive
+    deployment asks the user to enter one. This includes the Windows Explorer
+    right-click action.
 
 OPTIONS
     --deploy-db-server-name <name>     Default local database server name for
@@ -36,8 +38,8 @@ OPTIONS
                                        'redis' block of appsettings.json.
 
     --deploy-site-name <name>          Default site name for deploy-creatio.
-                                       When unset, the site name is derived from
-                                       the deployed zip file name.
+                                       When unset, interactive deployment
+                                       prompts for the site name.
 
     --deploy-site-port <port>          Default site port for deploy-creatio.
 
@@ -62,6 +64,9 @@ EXAMPLES
 
     # Clear all deploy-creatio defaults
     config --reset
+
+    If deploy-site-name is not configured, the Windows Explorer right-click
+    action asks for the site name before deployment proceeds.
 
 BEHAVIOR
     - With no arguments (or with --show), prints the appsettings.json path and a
