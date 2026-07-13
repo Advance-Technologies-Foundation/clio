@@ -234,24 +234,6 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 		return TryBuildAndWrite(options, resolvedSettings, themeDirectory, out outputPath, out warnings, out error);
 	}
 
-	// Shared by the resolvedSettings-aware workspace-write overload above: builds the artifacts against
-	// resolvedSettings (rather than a by-name environment lookup) and writes them to outputDirectory. Kept
-	// private (not a public overload) — the two required new overloads are the ones the MCP tool calls
-	// directly; this is their shared plumbing, mirroring what the untouched name-based
-	// TryBuildTheme(options, outputDirectory, ...) overload does for the CLI path.
-	private bool TryBuildAndWrite(BuildThemeOptions options, EnvironmentSettings resolvedSettings, string outputDirectory,
-		out string outputPath, out IReadOnlyList<string> warnings, out string error) {
-		outputPath = null;
-		if (!TryBuildTheme(options, resolvedSettings, out string css, out string descriptor, out warnings, out error)) {
-			return false;
-		}
-		if (!TryWriteArtifacts(outputDirectory, css, descriptor, out error)) {
-			return false;
-		}
-		outputPath = outputDirectory;
-		return true;
-	}
-
 	/// <summary>
 	/// Builds the artifacts of a theme from <paramref name="options"/> and the bundled, version-matched
 	/// template — the <c>theme.css</c> and its <c>theme.json</c> descriptor. Shared by the CLI command and the
@@ -331,6 +313,25 @@ public class BuildThemeCommand : Command<BuildThemeOptions> {
 			error = ex.Message;
 			return false;
 		}
+	}
+
+	// Shared by the resolvedSettings-aware workspace-write overload: builds the artifacts against
+	// resolvedSettings (rather than a by-name environment lookup) and writes them to outputDirectory. Kept
+	// private (not a public overload) — the two required new overloads are the ones the MCP tool calls
+	// directly; this is their shared plumbing, mirroring what the untouched name-based
+	// TryBuildTheme(options, outputDirectory, ...) overload does for the CLI path. Placed with the other
+	// private write helpers so the public TryBuildTheme overloads stay adjacent (Sonar S4136).
+	private bool TryBuildAndWrite(BuildThemeOptions options, EnvironmentSettings resolvedSettings, string outputDirectory,
+		out string outputPath, out IReadOnlyList<string> warnings, out string error) {
+		outputPath = null;
+		if (!TryBuildTheme(options, resolvedSettings, out string css, out string descriptor, out warnings, out error)) {
+			return false;
+		}
+		if (!TryWriteArtifacts(outputDirectory, css, descriptor, out error)) {
+			return false;
+		}
+		outputPath = outputDirectory;
+		return true;
 	}
 
 	private bool TryWriteArtifacts(string outputDirectory, string css, string descriptor, out string error) {
