@@ -5780,3 +5780,38 @@ Decision: 0 Blocker/High regressions; all changes are behavior-preserving extrac
 Discovery: MeasureRestartAsync now reads the stopwatch after the post-restart verification call, inflating the restart metric vs older ipc-proof reports (advisory only).
 Files: clio/Command/RingCommand.cs, clio-ring/ClioRing.Ipc/IpcProofRunner.cs, clio-ring/ClioRing/SingleInstance.cs, clio-ring/ClioRing/App.axaml.cs
 Impact: PR #851 still clear of Blocker/High; review trail complete in room codex-e2e-test-debugging-clio-mcp-e2e.
+
+## 2026-07-13 10:40 – Concurrent settings mutation safety
+Context: Concurrent deploy-creatio commands, deploy/uninstall overlap, and manual edits could be lost when a long-running command saved its startup settings snapshot.
+Decision: Serialize settings mutations with a sibling cross-process lock, reload immediately before each mutation, and replace a securely prepared file only after exact-content validation under a deny-write handle.
+Discovery: SettingsRepository loaded settings in its constructor and every mutation recreated appsettings.json from that stale model; deploy registration and uninstall removal both reached this path.
+Files: clio/Environment/ConfigurationOptions.cs, clio/Environment/SettingsBootstrapService.cs, clio.tests/Command/SettingsRepositoryConcurrencyTests.cs
+Impact: Cooperating clio processes no longer overwrite one another, completed manual edits are retained, malformed settings fail closed, and real multi-process coverage protects the behavior.
+
+## 2026-07-13 11:42 – Contributor issue-first PR policy
+Context: Contributor guidance needed a mandatory, searchable GitHub issue trail for every pull request.
+Decision: Require an issue before each PR, classify it with an enabled issue type and relevant labels, link it with a closing keyword when appropriate, and self-assign the PR; contributors without metadata permissions must request maintainer help before review.
+Discovery: The organization enables `Task`, `Bug`, and `Feature` issue types; the repository has domain and change-kind labels available for filtering.
+Files: CONTRIBUTING.md
+Impact: Contributors now have a concise issue-to-PR workflow with clear ownership and searchable classification.
+
+## 2026-07-13 12:06 – Draft-first pull request workflow
+Context: Repository auto-merge can complete a ready pull request as soon as protection checks pass, while project review may happen outside GitHub.
+Decision: Require every pull request to start as a draft and prohibit enabling auto-merge until implementation, validation, documentation, and external review are complete and the pull request is marked ready.
+Discovery: Draft status provides an explicit author-controlled readiness boundary without adding a GitHub approval requirement or privileged pull-request automation.
+Files: CONTRIBUTING.md
+Impact: Human and agent contributions now have a clear handoff from work-in-progress to protected auto-merge eligibility.
+
+## 2026-07-13 11:26 – Explorer deploy site-name inference regression traced
+Context: Right-clicking a Creatio ZIP in Windows Explorer derives the deployment site name from the archive, producing oversized or incompatible database and IIS identifiers for long build filenames.
+Decision: Proposed removing only the unconditional ZIP-name derivation from DeployCreatioDefaultsResolver; preserve explicit --site-name and configured deploy-site-name precedence, then let the existing interactive installer prompt when neither is present.
+Discovery: PR #845 introduced DeriveSiteNameFromZipWhenUnset after the Explorer registry verb had already passed only --zip-file; this fills SiteName before CreatioInstallerService can execute its existing prompt.
+Files: clio/reg/clio_context_menu_win.reg, clio/Command/CreatioInstallCommand/DeployCreatioDefaultsResolver.cs, clio/Command/CreatioInstallCommand/CreatioInstallerService.cs, clio.tests/Command/DeployCreatioDefaultsResolverTests.cs, clio/docs/commands/config.md, clio/help/en/config.txt
+Impact: The future fix can restore per-deployment site-name entry for Explorer without changing the registry command or MCP wire contract.
+
+## 2026-07-13 12:06 – Explorer deploy prompts for site name
+Context: GitHub issue #855 requested an explicit site-name prompt when deploying a ZIP from the Windows Explorer context menu.
+Decision: Removed ZIP-filename site-name inference, retained explicit and configured defaults, and made silent deployments without a site name fail fast instead of waiting for input.
+Discovery: The existing Explorer registry verb and interactive installer prompt already provide the desired flow; only the defaults resolver prevented the prompt. The MCP tool and ClioRing always provide a site name, so their contracts remain unchanged.
+Files: clio/Command/CreatioInstallCommand/DeployCreatioDefaultsResolver.cs, clio/Command/CreatioInstallCommand/InstallerCommand.cs, clio.tests/Command/DeployCreatioDefaultsResolverTests.cs, clio.tests/Command/InstallerCommandSilentSiteNameTests.cs, clio/docs/commands/deploy-creatio.md, clio/help/en/deploy-creatio.txt
+Impact: Explorer deployments now request a safe explicit site name, while automation receives a clear configuration error and existing explicit/configured precedence remains compatible.
