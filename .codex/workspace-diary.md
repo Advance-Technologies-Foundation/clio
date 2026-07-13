@@ -5830,3 +5830,10 @@ Decision: Hid the inherited maintainer property only in `CallServiceCommandOptio
 Discovery: A delegating `new` property keeps the parsed maintainer value on the `RemoteCommandOptions` base contract, so downstream environment handling remains unchanged while other remote commands retain their existing `-m/--maintainer` alias.
 Files: clio/Query/DataServiceQuery.cs, clio.tests/Query/CallServiceCommandTests.cs, clio/docs/commands/call-service.md, clio/docs/commands/dataservice.md
 Impact: `call-service -m POST --maintainer Customer` and the inherited `dataservice` option contract parse on net8.0 and net10.0, generated help exposes unique short names, and neither the MCP surface nor a ClioRing-consumed contract changes.
+
+## 2026-07-13 19:56 – Virtual entity schema creation and readback
+Context: GitHub issue #864 required atomic virtual entity creation through standalone and batched MCP paths without creating a physical table.
+Decision: Added positive-only `is-virtual` mapping before the first schema save, preserved inherited virtual state for replacements, rejected virtual seed rows before mutation, and exposed virtual state through schema and application readback.
+Discovery: Creatio's normal DB-structure lifecycle excludes virtual schemas itself; live Creatio 10.0.0.802 PostgreSQL validation confirmed the schema is runtime-readable while no table is created.
+Files: clio/Command/EntitySchemaDesigner/RemoteEntitySchemaCreator.cs, clio/Command/McpServer/Tools/EntitySchemaTool.cs, clio/Command/McpServer/Tools/SchemaSyncTool.cs, clio/Command/ApplicationInfoService.cs, clio.mcp.e2e/EntitySchemaToolE2ETests.cs, clio.mcp.e2e/ApplicationToolE2ETests.cs
+Impact: CLI and MCP callers can create and verify virtual entities safely, with persistent creation remaining the default and PostgreSQL catalog behavior covered explicitly.

@@ -23,7 +23,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="create-app"></a>
 - [`create-app`](docs/commands/create-app.md) - Create a new application in Creatio
 <a id="get-app-info"></a>
-- [`get-app-info`](docs/commands/get-app-info.md) - Get information about an installed Creatio application
+- [`get-app-info`](docs/commands/get-app-info.md) - Get information about an installed Creatio application, including each entity's virtual flag
 <a id="list-apps"></a>
 <a id="get-app-list"></a>
 <a id="app-list"></a>
@@ -328,7 +328,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="client-unit-schema-create"></a>
 - [`create-client-unit-schema`](docs/commands/create-client-unit-schema.md) - Create a new JavaScript (ClientUnit) schema on a remote Creatio environment, `client-unit-schema-create`
 <a id="create-entity-schema"></a>
-- [`create-entity-schema`](docs/commands/create-entity-schema.md) - Create an entity schema in a remote Creatio package
+- [`create-entity-schema`](docs/commands/create-entity-schema.md) - Create a persistent or virtual entity schema in a remote Creatio package
 <a id="create-lookup"></a>
 - [`create-lookup`](docs/commands/create-lookup.md) - Create a lookup entity schema in a remote Creatio package
 <a id="create-schema"></a>
