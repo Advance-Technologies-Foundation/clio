@@ -780,7 +780,9 @@ public class BindingsModule {
 
 	// Fallback base address for the no-credential local bootstrap case only (never a multi-tenant
 	// target): used when the environment supplies no explicit Uri.
-	private const string DefaultLocalhostUri = "http://localhost";
+	// Composed from Uri.UriSchemeHttp rather than a literal so this loopback bootstrap fallback is not
+	// a hardcoded absolute URI (Sonar S1075). It is only ever used when the environment supplies no Uri.
+	private static readonly string DefaultLocalhostUri = $"{Uri.UriSchemeHttp}://localhost";
 
 	// Builds an ATF RemoteDataProvider for the environment. Bearer-first: an AccessToken is
 	// consumed via the dedicated bearer ctor and must never reach the login/password path

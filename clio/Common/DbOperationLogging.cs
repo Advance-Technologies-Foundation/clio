@@ -57,32 +57,33 @@ public interface IDbOperationLogSession : IDisposable {
 /// </summary>
 public sealed class DbOperationLogContextAccessor : IDbOperationLogContextAccessor {
 	// FR-06 (ENG-93208): the active session and last-completed path are per async-flow so concurrent
-	// MCP tool invocations never overwrite each other's db-operation context. Static AsyncLocal because
-	// BindingsModule registers this as a process-wide singleton; the isolation must live in flow-local
-	// storage, not instance fields. AsyncLocal reads/writes are individually thread-safe, so the prior
-	// instance lock is no longer needed — each flow mutates only its own slot.
-	private static readonly AsyncLocal<IDbOperationLogSession?> CurrentSessionLocal = new();
-	private static readonly AsyncLocal<string?> LastCompletedPathLocal = new();
+	// MCP tool invocations never overwrite each other's db-operation context. Instance AsyncLocal:
+	// BindingsModule registers this as a process-wide singleton, so a single instance's AsyncLocal slots
+	// are effectively process-wide AND flow-local — identical isolation to a static field, but scoped to
+	// the accessor instance so tests stay independent. AsyncLocal reads/writes are individually
+	// thread-safe, so the prior instance lock is no longer needed — each flow mutates only its own slot.
+	private readonly AsyncLocal<IDbOperationLogSession?> _currentSessionLocal = new();
+	private readonly AsyncLocal<string?> _lastCompletedPathLocal = new();
 
 	/// <inheritdoc />
-	public IDbOperationLogSession? CurrentSession => CurrentSessionLocal.Value;
+	public IDbOperationLogSession? CurrentSession => _currentSessionLocal.Value;
 
 	/// <inheritdoc />
-	public string? LastCompletedPath => LastCompletedPathLocal.Value;
+	public string? LastCompletedPath => _lastCompletedPathLocal.Value;
 
 	/// <inheritdoc />
-	public void ClearLastCompletedPath() => LastCompletedPathLocal.Value = null;
+	public void ClearLastCompletedPath() => _lastCompletedPathLocal.Value = null;
 
 	internal void SetCurrent(IDbOperationLogSession session) {
-		CurrentSessionLocal.Value = session;
-		LastCompletedPathLocal.Value = null;
+		_currentSessionLocal.Value = session;
+		_lastCompletedPathLocal.Value = null;
 	}
 
 	internal void Complete(IDbOperationLogSession session, string logFilePath) {
-		if (ReferenceEquals(CurrentSessionLocal.Value, session)) {
-			CurrentSessionLocal.Value = null;
+		if (ReferenceEquals(_currentSessionLocal.Value, session)) {
+			_currentSessionLocal.Value = null;
 		}
-		LastCompletedPathLocal.Value = logFilePath;
+		_lastCompletedPathLocal.Value = logFilePath;
 	}
 }
 

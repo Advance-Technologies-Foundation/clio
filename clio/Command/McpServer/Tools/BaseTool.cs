@@ -25,14 +25,6 @@ public abstract class BaseTool<T>(
 		return McpToolExecutionLock.SharedFallbackKey;
 	}
 
-	/// <summary>
-	/// Returns the per-tenant execution lock for <paramref name="options"/>. Tools that lock directly
-	/// (rather than through <see cref="ExecuteWithCleanLog{TResponse}(EnvironmentOptions, Func{TResponse})"/>)
-	/// acquire it so DIFFERENT tenants no longer serialize against each other.
-	/// </summary>
-	private protected object GetTenantExecutionLock(EnvironmentOptions options) =>
-		McpToolExecutionLock.GetLock(ResolveTenantLockKey(options));
-
 	// Runs body under the per-tenant execution lock (FR-05) and marks the session-container entry
 	// in-use for the duration (FR-08 in-flight guard) so eviction cannot dispose the container mid-call
 	// now that different tenants are no longer serialized by a single global lock. Here MarkInUse runs
@@ -123,39 +115,60 @@ public abstract class BaseTool<T>(
 
 	private protected CommandExecutionResult InternalExecute<TCommand>(T options,
 		Action<TCommand> configureCommand = null) where TCommand : Command<T> {
-		TCommand resolvedCommand;
-		// M2 (ENG-93208): capture the SAME cache key the container was acquired under so the execution
-		// lock / in-flight guard key off it directly — no second settings.Fill via GetTenantKey.
-		string tenantKey;
-		try {
-			// ResolveCommand resolves the env-scoped command AND enforces this options type's
-			// [RequiresPackage] and [RequiresCreatioVersion] declarations against the per-call target
-			// environment. Both gates live inside ResolveCommand so the typed-response path (tools that
-			// call it directly from inside ExecuteWithCleanLog) is gated too. An unmet package requirement
-			// surfaces as a PackageRequirementException (exit 1), an unmet/undeterminable version as a
-			// CreatioVersionRequirementException (distinct exit code 78, mirroring the CLI dispatch gate),
-			// an environment/argument failure as an EnvironmentResolutionException (exit 1); each becomes
-			// a caller-actionable failed result below, so the command never runs when its preconditions
-			// are not satisfied. The out tenantKey (M2) threads the acquired cache key to ExecuteLocked.
-			resolvedCommand = ResolveCommand<TCommand>(options, out tenantKey);
-		} catch (PackageRequirementException ex) {
-			// Surface the actionable install hint verbatim, without the exception-chain decoration.
-			return CommandExecutionResult.FromError(ex.Message);
-		} catch (CreatioVersionRequirementException ex) {
-			// Expected, caller-actionable refusal (unmet/undeterminable version) → distinct exit code 78.
-			return CommandExecutionResult.FromCreatioVersionRequirementError(ex);
-		} catch (EnvironmentResolutionException e) {
-			// Expected, caller-actionable environment/argument failure → exit code 1.
-			return CommandExecutionResult.FromResolverError(e);
-		} catch (Exception e) {
-			// Unexpected DI/bootstrap/wiring failure → exit code -1, so a real bug is not
-			// misreported as a routine validation error and stays diagnosable.
-			return CommandExecutionResult.FromException(e);
-		}
+		// Review #5 (ENG-93208): reserve the per-tenant lock AND the session-container in-flight guard
+		// BEFORE the first Acquire (symmetric with the typed-response ExecuteUnderTenantLock path). The key
+		// is computed up-front via ResolveTenantLockKey — the SAME key ResolveCommand's Acquire caches
+		// under (GetTenantKey and Resolve share ResolveSettingsAndKey / BuildPassthroughCacheKey) — so the
+		// pending in-use reservation is drained into the container the instant Acquire creates it. Otherwise
+		// the Acquire→MarkInUse window spans the package + Creatio-version HTTP gates with InUseCount == 0,
+		// during which a concurrent different-tenant Acquire could LRU-evict and dispose the container
+		// mid-resolve. This costs one extra settings.Fill (the M2 single-fill optimization is bypassed on
+		// this path) — an accepted trade for closing the eviction window.
+		string tenantKey = options is EnvironmentOptions environmentOptions
+			? ResolveTenantLockKey(environmentOptions)
+			: McpToolExecutionLock.SharedFallbackKey;
+		CommandExecutionResult result;
+		IReadOnlyList<LogMessage> messagesToForward = null;
+		string correlationId = null;
+		lock (McpToolExecutionLock.GetLock(tenantKey)) {
+			McpToolExecutionLock.MarkInUse(tenantKey);
+			try {
+				TCommand resolvedCommand;
+				try {
+					// ResolveCommand resolves the env-scoped command AND enforces this options type's
+					// [RequiresPackage] and [RequiresCreatioVersion] declarations against the per-call target
+					// environment (Acquire happens inside, now guarded by the reservation above). An unmet
+					// package requirement surfaces as a PackageRequirementException (exit 1), an
+					// unmet/undeterminable version as a CreatioVersionRequirementException (exit code 78,
+					// mirroring the CLI dispatch gate), an environment/argument failure as an
+					// EnvironmentResolutionException (exit 1); each becomes a caller-actionable failed result.
+					resolvedCommand = ResolveCommand<TCommand>(options);
+				} catch (PackageRequirementException ex) {
+					// Surface the actionable install hint verbatim, without the exception-chain decoration.
+					return CommandExecutionResult.FromError(ex.Message);
+				} catch (CreatioVersionRequirementException ex) {
+					// Expected, caller-actionable refusal (unmet/undeterminable version) → distinct exit code 78.
+					return CommandExecutionResult.FromCreatioVersionRequirementError(ex);
+				} catch (EnvironmentResolutionException e) {
+					// Expected, caller-actionable environment/argument failure → exit code 1.
+					return CommandExecutionResult.FromResolverError(e);
+				} catch (Exception e) {
+					// Unexpected DI/bootstrap/wiring failure → exit code -1, so a real bug is not
+					// misreported as a routine validation error and stays diagnosable.
+					return CommandExecutionResult.FromException(e);
+				}
 
-		configureCommand?.Invoke(resolvedCommand);
-		// Use the key threaded from ResolveCommand (M2) rather than recomputing it via ResolveTenantLockKey.
-		return ExecuteLocked(resolvedCommand, options, tenantKey);
+				configureCommand?.Invoke(resolvedCommand);
+				(result, messagesToForward, correlationId) = RunCommandUnderHeldLock(resolvedCommand, options, tenantKey);
+			}
+			finally {
+				McpToolExecutionLock.MarkAvailable(tenantKey);
+			}
+		}
+		// Forward log notifications OUTSIDE the execution lock to avoid blocking other tool invocations on
+		// stdio I/O performed by SendNotificationAsync.
+		McpLogNotifier.ForwardMessages(messagesToForward, correlationId);
+		return result;
 	}
 
 	/// <summary>
@@ -284,50 +297,66 @@ public abstract class BaseTool<T>(
 	}
 
 	// Runs command.Execute under the per-tenant execution lock for tenantKey (FR-05), with the
-	// session-container in-flight guard marked for the call duration (FR-08). tenantKey is supplied by
-	// the caller — the container-resolution key from ResolveCommand on the env-sensitive path (M2), or
-	// the computed key on the injected/direct path — so the lock keys off the exact shared session.
+	// session-container in-flight guard marked for the call duration (FR-08). Used by the injected/direct
+	// path (InternalExecute(Command<T>, T)), which has no prior Acquire so it takes the lock and marks
+	// in-use here. The generic InternalExecute<TCommand> path already holds the lock and the marker (it
+	// reserves them BEFORE Acquire, review #5), so it calls RunCommandUnderHeldLock directly.
 	private CommandExecutionResult ExecuteLocked(Command<T> command, T options, string tenantKey) {
-		string correlationId = Guid.NewGuid().ToString("N")[..12];
-		CommandExecutionResult executionResult;
+		CommandExecutionResult result;
 		IReadOnlyList<LogMessage> messagesToForward;
+		string correlationId;
 		lock (McpToolExecutionLock.GetLock(tenantKey)) {
 			// FR-08 in-flight guard: keep the session container from being evicted/disposed mid-call now
 			// that a different tenant's Acquire can trigger eviction while this call runs.
 			McpToolExecutionLock.MarkInUse(tenantKey);
-			dbOperationLogContextAccessor?.ClearLastCompletedPath();
-			bool previousPreserveMessages = logger.PreserveMessages;
-			logger.PreserveMessages = true;
 			try {
-				int exitCode = command.Execute(options);
-				IReadOnlyList<LogMessage> flushedMessages = RedactForPassthrough(
-					SanitizeForSerialization(logger.FlushAndSnapshotMessages(clearMessages: true)), tenantKey);
-				messagesToForward = flushedMessages;
-				executionResult = new CommandExecutionResult(
-					exitCode,
-					[.. flushedMessages],
-					dbOperationLogContextAccessor?.LastCompletedPath,
-					CorrelationId: correlationId);
-			}
-			catch (Exception e) {
-				List<LogMessage> priorLogs = [.. SanitizeForSerialization(
-					logger.FlushAndSnapshotMessages(clearMessages: true))];
-				RedactForPassthrough(priorLogs, tenantKey);
-				messagesToForward = priorLogs;
-				// FR-11 (ENG-93208): scrub the exception chain ONLY on a passthrough request (same tenant-key
-				// signal RedactForPassthrough uses). The trusted stdio / -e path keeps full-fidelity -1 text.
-				executionResult = CommandExecutionResult.FromException(
-					e, priorLogs, correlationId, redactSensitive: IsPassthroughKey(tenantKey));
+				(result, messagesToForward, correlationId) = RunCommandUnderHeldLock(command, options, tenantKey);
 			}
 			finally {
-				logger.PreserveMessages = previousPreserveMessages;
 				McpToolExecutionLock.MarkAvailable(tenantKey);
 			}
 		}
 		// Forward log notifications OUTSIDE the execution lock to avoid blocking other
 		// tool invocations on stdio I/O performed by SendNotificationAsync.
 		McpLogNotifier.ForwardMessages(messagesToForward, correlationId);
-		return executionResult;
+		return result;
+	}
+
+	// Executes command.Execute assuming the caller ALREADY holds the per-tenant execution lock for
+	// tenantKey and has marked the in-flight guard (FR-05/FR-08). Returns the execution result plus the
+	// messages to forward AFTER the lock is released (the caller performs the stdio-I/O forwarding outside
+	// the lock). Never takes the lock or the in-use markers itself, so it composes with both the
+	// reserve-before-Acquire generic path (review #5) and the injected/direct ExecuteLocked entry.
+	private (CommandExecutionResult Result, IReadOnlyList<LogMessage> Messages, string CorrelationId)
+		RunCommandUnderHeldLock(Command<T> command, T options, string tenantKey) {
+		string correlationId = Guid.NewGuid().ToString("N")[..12];
+		dbOperationLogContextAccessor?.ClearLastCompletedPath();
+		bool previousPreserveMessages = logger.PreserveMessages;
+		logger.PreserveMessages = true;
+		try {
+			int exitCode = command.Execute(options);
+			IReadOnlyList<LogMessage> flushedMessages = RedactForPassthrough(
+				SanitizeForSerialization(logger.FlushAndSnapshotMessages(clearMessages: true)), tenantKey);
+			CommandExecutionResult executionResult = new(
+				exitCode,
+				[.. flushedMessages],
+				dbOperationLogContextAccessor?.LastCompletedPath,
+				CorrelationId: correlationId);
+			return (executionResult, flushedMessages, correlationId);
+		}
+		catch (Exception e) {
+			List<LogMessage> priorLogs = [.. SanitizeForSerialization(
+				logger.FlushAndSnapshotMessages(clearMessages: true))];
+			RedactForPassthrough(priorLogs, tenantKey);
+			// FR-11 (ENG-93208): scrub the exception chain ONLY on a passthrough request (same tenant-key
+			// signal RedactForPassthrough uses). The trusted stdio / -e path keeps full-fidelity -1 text.
+			CommandExecutionResult executionResult = CommandExecutionResult.FromException(
+				e, priorLogs, correlationId, redactSensitive: IsPassthroughKey(tenantKey));
+			return (executionResult, priorLogs, correlationId);
+		}
+		finally {
+			logger.PreserveMessages = previousPreserveMessages;
+		}
 	}
 
 	// The MCP SDK serializes the returned CommandExecutionResult with System.Text.Json, which walks

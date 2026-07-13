@@ -110,8 +110,10 @@ public static class SessionContainerCacheDefaults {
 }
 
 /// <summary>
-/// Default <see cref="ISessionContainerCache"/> implementation. Thread-safe via a single lock (all
-/// operations are cheap); the factory is invoked under the lock so a key is built at most once.
+/// Default <see cref="ISessionContainerCache"/> implementation. Thread-safe via a single lock guarding the
+/// map operations only; the expensive container build (<c>factory()</c>) runs OUTSIDE the lock, followed by
+/// a double-checked insert (review #2, ENG-93208) — so a slow per-tenant build never serializes other
+/// tenants' cache lookups. A rare concurrent same-key build disposes its loser at insert time.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -189,20 +191,35 @@ public sealed class SessionContainerCache : ISessionContainerCache {
 				existing.LastAccessUtc = now;
 				return existing.Provider;
 			}
-			// Build under the lock so a given key is materialized exactly once even under contention.
-			// A failing factory throws here BEFORE the entry is added, so no broken entry is cached.
-			IServiceProvider provider = factory();
+		}
+		// Review #2 (ENG-93208): build OUTSIDE _sync. factory() is a full ~455-registration ServiceProvider
+		// build with ValidateOnBuild=true — running it under the single process-global cache lock serialized
+		// every tenant's cache-miss build on one lock, reintroducing the throughput bottleneck this feature
+		// set out to remove (the rotating-token cache key makes misses a near-continuous stream). A failing
+		// factory throws here, before any entry is added, so no broken entry is ever cached.
+		IServiceProvider built = factory();
+		lock (_sync) {
+			DateTime now = _utcNow();
+			// Double-checked insert: a concurrent Acquire of the SAME key may have built and inserted while
+			// we were building ours. If so, dispose our loser and return the winner so a key still maps to
+			// exactly one live container. (Two concurrent first-time builds of the same key is the accepted
+			// cost of building off the lock; it is rare and self-heals here.)
+			if (_entries.TryGetValue(cacheKey, out CacheEntry existing)) {
+				existing.LastAccessUtc = now;
+				(built as IDisposable)?.Dispose();
+				return existing.Provider;
+			}
 			// FIX 1: seed the new entry's in-use count from any reservation MarkInUse recorded before this
 			// Acquire (typed-response path), and clear it — so the in-flight guard protects the entry the
 			// instant it exists and a concurrent different-tenant Acquire cannot LRU-evict it mid-call.
 			_pendingInUse.Remove(cacheKey, out int reserved);
 			_entries[cacheKey] = new CacheEntry {
-				Provider = provider,
+				Provider = built,
 				LastAccessUtc = now,
 				InUseCount = reserved
 			};
 			EvictOverCapacity(cacheKey);
-			return provider;
+			return built;
 		}
 	}
 

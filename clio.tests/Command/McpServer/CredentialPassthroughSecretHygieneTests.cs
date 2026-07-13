@@ -467,10 +467,11 @@ public sealed class CredentialPassthroughSecretHygieneTests {
 	}
 
 	// FIX B boundary harness for the -1 catch-all. Exercises the env-sensitive
-	// InternalExecute<TCommand> → ExecuteLocked path with a substitute resolver whose LastResolvedTenantKey
-	// decides passthrough vs registry — the SAME signal FromException's redactSensitive keys off — and a
-	// throwing command so the catch-all produces the -1 envelope. The logger is silent (empty LogMessages)
-	// so the only channel for the seeded secret is the thrown exception chain.
+	// InternalExecute<TCommand> → ExecuteLocked path with a substitute resolver whose GetTenantKey decides
+	// passthrough vs registry — the SAME signal FromException's redactSensitive keys off (the InternalExecute
+	// path reserves the guard BEFORE Acquire using GetTenantKey, review #5) — and a throwing command so the
+	// catch-all produces the -1 envelope. The logger is silent (empty LogMessages) so the only channel for
+	// the seeded secret is the thrown exception chain.
 	private sealed class ThrowingEnvToolHarness(
 		Command<PassthroughLogToolOptions> command, ILogger logger, IToolCommandResolver resolver)
 		: BaseTool<PassthroughLogToolOptions>(command, logger, resolver) {
@@ -484,13 +485,16 @@ public sealed class CredentialPassthroughSecretHygieneTests {
 			logger.LogMessages.Returns(new List<LogMessage>());
 			IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 			resolver.Resolve<ThrowingEnvCommand>(Arg.Any<EnvironmentOptions>()).Returns(command);
+			// In production GetTenantKey and LastResolvedTenantKey yield the SAME key (both go through
+			// BuildPassthroughCacheKey / ResolveSettingsAndKey); the InternalExecute path keys off GetTenantKey.
+			resolver.GetTenantKey(Arg.Any<EnvironmentOptions>()).Returns(tenantKey);
 			resolver.LastResolvedTenantKey.Returns(tenantKey);
 			return new ThrowingEnvToolHarness(command, logger, resolver);
 		}
 	}
 
 	// Exercises the env-sensitive InternalExecute<TCommand> → ExecuteLocked path with a substitute resolver
-	// whose LastResolvedTenantKey decides passthrough vs registry, and a substitute logger pre-seeded with a
+	// whose GetTenantKey decides passthrough vs registry, and a substitute logger pre-seeded with a
 	// secret-bearing log line so ExecuteLocked flushes it into the returned envelope.
 	private sealed class PassthroughLogToolHarness(
 		Command<PassthroughLogToolOptions> command, ILogger logger, IToolCommandResolver resolver)
@@ -505,6 +509,9 @@ public sealed class CredentialPassthroughSecretHygieneTests {
 			logger.LogMessages.Returns(new List<LogMessage> { new InfoMessage(seededLogLine) });
 			IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 			resolver.Resolve<NoopCommand>(Arg.Any<EnvironmentOptions>()).Returns(command);
+			// In production GetTenantKey and LastResolvedTenantKey yield the SAME key; the InternalExecute
+			// path keys the lock / in-flight guard / redaction off GetTenantKey (review #5).
+			resolver.GetTenantKey(Arg.Any<EnvironmentOptions>()).Returns(tenantKey);
 			resolver.LastResolvedTenantKey.Returns(tenantKey);
 			return new PassthroughLogToolHarness(command, logger, resolver);
 		}

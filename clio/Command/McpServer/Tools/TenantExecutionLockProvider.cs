@@ -12,24 +12,19 @@ namespace Clio.Command.McpServer.Tools;
 public interface ITenantExecutionLockProvider {
 
 	/// <summary>
-	/// Returns the execution lock for <paramref name="cacheKey"/>, creating it on first use. The same
-	/// key always returns the same object; different keys return different objects.
+	/// Returns the execution lock for <paramref name="cacheKey"/>, creating it on first use, and PINS the
+	/// mapping in-use before returning (review #3, ENG-93208) so the object it hands out can never be
+	/// evicted between hand-out and the caller taking the monitor. The same key always returns the same
+	/// object; different keys return different objects. Every <see cref="GetLock"/> must be balanced by a
+	/// <see cref="MarkAvailable"/> for the same key when the call completes.
 	/// </summary>
 	/// <param name="cacheKey">The credential-discriminating cache key (see <c>ToolCommandResolver</c>).</param>
-	/// <returns>A stable lock object for the key.</returns>
+	/// <returns>A stable, pinned lock object for the key.</returns>
 	object GetLock(string cacheKey);
 
 	/// <summary>
-	/// Marks the lock for <paramref name="cacheKey"/> as held by an in-flight call, so eviction can
-	/// never drop its mapping while a thread still holds the object. Balanced by <see cref="MarkAvailable"/>.
-	/// No-op for an unknown key.
-	/// </summary>
-	/// <param name="cacheKey">The cache key whose lock is now held.</param>
-	void MarkInUse(string cacheKey);
-
-	/// <summary>
-	/// Clears one in-use marker set by <see cref="MarkInUse"/> for <paramref name="cacheKey"/>.
-	/// No-op for an unknown key or a lock not currently marked in use.
+	/// Releases one in-use pin taken by <see cref="GetLock"/> for <paramref name="cacheKey"/>, making the
+	/// mapping evictable again once no pin remains. No-op for an unknown key or a lock not currently pinned.
 	/// </summary>
 	/// <param name="cacheKey">The cache key whose in-flight call has completed.</param>
 	void MarkAvailable(string cacheKey);
@@ -46,23 +41,13 @@ public interface ITenantExecutionLockProvider {
 /// <b>Eviction never breaks mutual exclusion.</b> A key whose lock is currently held (in-use count &gt; 0)
 /// is never evicted: dropping the mapping and later minting a NEW object for the same key while an old
 /// holder still runs would let a second thread lock the new object and run concurrently with the first.
-/// The in-use count is driven by <see cref="MarkInUse"/> / <see cref="MarkAvailable"/>, which every lock
-/// site calls immediately after acquiring / before releasing the monitor. The sub-microsecond window
-/// between <see cref="GetLock"/> and the first <see cref="MarkInUse"/> is covered by the fresh
-/// last-access timestamp set in <see cref="GetLock"/> (idle-TTL cannot fire on a just-touched entry, and
-/// the LRU sweep never picks the newest entry). Evicting a mapping merely forgets it; an in-flight holder
-/// keeps its own object reference, and a later <see cref="GetLock"/> for the same key mints a new object
-/// only after the old one is no longer referenced.
-/// <para>
-/// <b>Note — the SESSION-CACHE window is NOT sub-microsecond.</b> This provider's own
-/// <see cref="GetLock"/>→<see cref="MarkInUse"/> gap is trivially short, but on the
-/// <c>InternalExecute</c> path the session container is <c>Acquire</c>d and only later marked in-use,
-/// AFTER the package and Creatio-version gates (each a potential HTTP round-trip). That wider
-/// <c>Acquire</c>→<c>MarkInUse</c> interval is the session cache's concern, not this lock map's: it is
-/// covered on the typed-response path by <see cref="SessionContainerCache"/>'s pending-reservation guard
-/// (FIX 1, ENG-93208), and stays benign on the <c>InternalExecute</c> path only because nothing on it is
-/// <see cref="System.IDisposable"/> (see the disposal note on <see cref="SessionContainerCache"/>).
-/// </para>
+/// <b>The pin is taken inside <see cref="GetLock"/> itself (review #3, ENG-93208)</b>, not in a separate
+/// later call: a hand-out atomically increments the in-use count under the map lock, so there is NO window
+/// in which a just-handed-out mapping is unpinned and evictable — even under a burst that saturates the
+/// map while the caller is preempted before it takes the monitor. Every <see cref="GetLock"/> is balanced
+/// by a <see cref="MarkAvailable"/> when the call completes. Evicting a mapping merely forgets it; an
+/// in-flight holder keeps its own object reference, and a later <see cref="GetLock"/> for the same key
+/// mints a new object only after every pin on the old one is released.
 /// </remarks>
 public sealed class TenantExecutionLockProvider : ITenantExecutionLockProvider {
 
@@ -118,27 +103,21 @@ public sealed class TenantExecutionLockProvider : ITenantExecutionLockProvider {
 			EvictIdle(now);
 			if (_entries.TryGetValue(cacheKey, out LockEntry existing)) {
 				existing.LastAccessUtc = now;
+				// Review #3: pin at hand-out so a concurrent burst cannot evict this mapping between the
+				// hand-out and the caller taking the monitor. Balanced by MarkAvailable.
+				existing.InUseCount++;
 				return existing.Lock;
 			}
 			LockEntry entry = new() {
 				Lock = new object(),
 				LastAccessUtc = now,
-				InUseCount = 0
+				// Review #3: created already pinned — the mapping is protected the instant it is handed out,
+				// closing the GetLock→(former)MarkInUse window under map-saturation eviction.
+				InUseCount = 1
 			};
 			_entries[cacheKey] = entry;
 			EvictOverCapacity(cacheKey);
 			return entry.Lock;
-		}
-	}
-
-	/// <inheritdoc />
-	public void MarkInUse(string cacheKey) {
-		ArgumentException.ThrowIfNullOrWhiteSpace(cacheKey);
-		lock (_sync) {
-			if (_entries.TryGetValue(cacheKey, out LockEntry entry)) {
-				entry.InUseCount++;
-				entry.LastAccessUtc = _utcNow();
-			}
 		}
 	}
 
