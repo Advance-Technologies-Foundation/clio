@@ -602,19 +602,19 @@ namespace Clio
 				return;
 			}
 
-			using Stream currentSettingsStream = OpenCurrentSettings(fileSystem);
-			using StreamReader reader = new(currentSettingsStream, Encoding.UTF8,
-				detectEncodingFromByteOrderMarks: true, leaveOpen: true);
-			string currentContent = reader.ReadToEnd();
-			if (!string.Equals(currentContent, expectedContent, StringComparison.Ordinal)) {
-				throw new SettingsFileChangedException();
+			using (Stream currentSettingsStream = OpenCurrentSettings(fileSystem)) {
+				using StreamReader reader = new(currentSettingsStream, Encoding.UTF8,
+					detectEncodingFromByteOrderMarks: true, leaveOpen: true);
+				string currentContent = reader.ReadToEnd();
+				if (!string.Equals(currentContent, expectedContent, StringComparison.Ordinal)) {
+					throw new SettingsFileChangedException();
+				}
+				if (isRealFileSystem) {
+					fileSystem.File.Replace(tempFilePath, AppSettingsFile, destinationBackupFileName: null,
+						ignoreMetadataErrors: true);
+					return;
+				}
 			}
-			if (isRealFileSystem) {
-				fileSystem.File.Replace(tempFilePath, AppSettingsFile, destinationBackupFileName: null,
-					ignoreMetadataErrors: true);
-				return;
-			}
-			currentSettingsStream.Dispose();
 			fileSystem.File.Move(tempFilePath, AppSettingsFile, overwrite: true);
 		}
 
