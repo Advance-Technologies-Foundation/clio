@@ -154,7 +154,9 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		}
 
 		schema.Columns = columns;
-		schema.PrimaryColumn = columns.FirstOrDefault(column => column.IsGuidType()) ?? schema.PrimaryColumn;
+		if (!schema.ParentSchema.HasValue()) {
+			schema.PrimaryColumn = columns.FirstOrDefault(column => column.IsGuidType()) ?? schema.PrimaryColumn;
+		}
 		schema.PrimaryDisplayColumn ??= columns.FirstOrDefault(column => column.IsTextType());
 	}
 

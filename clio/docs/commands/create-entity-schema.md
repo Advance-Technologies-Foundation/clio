@@ -119,6 +119,7 @@ cliogate must be installed on the target Creatio environment.
 ## Notes
 
 - `default-value-config` is recommended for non-constant sources.
+- A root schema uses its first Guid column as the primary column and adds a generated Guid column when none is supplied. A schema with a parent preserves the parent's primary column; custom Guid columns remain ordinary columns.
 - For `default-value-config.source = SystemValue`, `value-source` can be Guid, alias, or caption; clio persists canonical Guid.
 - For `default-value-config.source = Settings`, `value-source` can be code, name, or id; clio persists canonical setting code.
 - **Caption language validation.** Every `title-localizations` / `description-localizations` value must be written in the language of its culture key. The mandatory `en-US` value must be English; a value written in a script that does not match a Latin-script culture key (for example Cyrillic text under `en-US`) is rejected with an actionable error. Put localized text under its own culture key (e.g. `uk-UA`). This guarantees generated captions match the connected user's profile language.
