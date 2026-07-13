@@ -249,7 +249,8 @@ public sealed class CreateRelatedPageAddonToolE2ETests {
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
 			because: "a null pages entry should be reported inside the structured response, not as an MCP binding error");
-		response.Success.Should().BeFalse();
+		response.Success.Should().BeFalse(
+			because: "a null pages entry fails validation, so the structured response reports failure rather than binding");
 		response.Error.Should().Contain("pages",
 			because: "the structured response should explain that a null pages entry is not allowed");
 	}

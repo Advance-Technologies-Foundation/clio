@@ -105,7 +105,8 @@ public sealed class GetRelatedPageAddonToolE2ETests {
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
 			because: "input validation should stay inside the structured tool response, not surface as an MCP binding error");
-		response.Success.Should().BeFalse();
+		response.Success.Should().BeFalse(
+			because: "a blank entity-schema-name fails validation, so the structured response reports failure rather than reading the add-on");
 		response.Error.Should().Contain("entity-schema-name",
 			because: "the structured response should name the missing required field");
 	}
