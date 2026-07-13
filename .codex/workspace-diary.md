@@ -5767,3 +5767,10 @@ Decision: 0 Blocker/High regressions; all changes are behavior-preserving extrac
 Discovery: MeasureRestartAsync now reads the stopwatch after the post-restart verification call, inflating the restart metric vs older ipc-proof reports (advisory only).
 Files: clio/Command/RingCommand.cs, clio-ring/ClioRing.Ipc/IpcProofRunner.cs, clio-ring/ClioRing/SingleInstance.cs, clio-ring/ClioRing/App.axaml.cs
 Impact: PR #851 still clear of Blocker/High; review trail complete in room codex-e2e-test-debugging-clio-mcp-e2e.
+
+## 2026-07-13 10:40 – Concurrent settings mutation safety
+Context: Concurrent deploy-creatio commands, deploy/uninstall overlap, and manual edits could be lost when a long-running command saved its startup settings snapshot.
+Decision: Serialize settings mutations with a sibling cross-process lock, reload immediately before each mutation, and replace a securely prepared file only after exact-content validation under a deny-write handle.
+Discovery: SettingsRepository loaded settings in its constructor and every mutation recreated appsettings.json from that stale model; deploy registration and uninstall removal both reached this path.
+Files: clio/Environment/ConfigurationOptions.cs, clio/Environment/SettingsBootstrapService.cs, clio.tests/Command/SettingsRepositoryConcurrencyTests.cs
+Impact: Cooperating clio processes no longer overwrite one another, completed manual edits are retained, malformed settings fail closed, and real multi-process coverage protects the behavior.

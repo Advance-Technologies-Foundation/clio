@@ -2,12 +2,16 @@ using Clio.UserEnvironment;
 using Clio.Utilities;
 using Newtonsoft.Json;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Text.Json.Serialization;
+using System.Threading;
 using Clio.Common;
 using Clio.Common.db;
 using ConsoleTables;
@@ -454,9 +458,15 @@ namespace Clio
 	{
 		private const string FileName = "appsettings.json";
 		private const string SchemaFileName = "schema.json";
+		private const int SettingsLockTimeoutSeconds = 30;
 		private static readonly object SchemaFileLock = new ();
+		private static readonly ConcurrentDictionary<string, object> ProcessSettingsLocks = new();
+		[ThreadStatic]
+		private static HashSet<string> _heldSettingsLocks;
 
 		private Settings _settings = new ();
+		private readonly IFileSystem _fileSystem;
+		private readonly ISettingsBootstrapService _settingsBootstrapService;
 		// Used by GetEnvironment to confirm Safe-environment operations without deadlocking a
 		// non-interactive host. Null only for the internal/direct (non-DI) construction sites that
 		// never call GetEnvironment; those fall back to RealInteractiveConsole.Shared.
@@ -494,14 +504,16 @@ namespace Clio
 
 		public SettingsRepository(IFileSystem fileSystem = null, ISettingsBootstrapService settingsBootstrapService = null, IInteractiveConsole interactiveConsole = null) {
 	_interactiveConsole = interactiveConsole;
+	_fileSystem = fileSystem ?? FileSystem;
 	if (fileSystem != null) {
 		FileSystem = fileSystem;
 	}
 	ISettingsBootstrapService bootstrapService = settingsBootstrapService;
 	if (bootstrapService == null) {
-		bootstrapService = new SettingsBootstrapService(FileSystem);
+		bootstrapService = new SettingsBootstrapService(_fileSystem);
 	}
-	SettingsBootstrapResult bootstrapResult = bootstrapService.GetResult();
+	_settingsBootstrapService = bootstrapService;
+	SettingsBootstrapResult bootstrapResult = ExecuteWithSettingsLock(_fileSystem, bootstrapService.GetResult);
 	_settings = bootstrapResult.Settings ?? new Settings();
 	EnsureSettingsCollections();
 	AttachDbServers(_settings);
@@ -532,18 +544,118 @@ namespace Clio
 			}
 		}
 
-		internal static void SaveSettings(IFileSystem fileSystem, Settings settings) {
+		internal static void SaveSettings(IFileSystem fileSystem, Settings settings, string expectedContent = null,
+			bool verifyExpectedContent = false) {
+			ExecuteWithSettingsLock(fileSystem, () => {
+				SaveSettingsUnlocked(fileSystem, settings, expectedContent, verifyExpectedContent);
+				return true;
+			});
+		}
+
+		private static void SaveSettingsUnlocked(IFileSystem fileSystem, Settings settings, string expectedContent,
+			bool verifyExpectedContent) {
 			if (!fileSystem.Directory.Exists(AppSettingsFolderPath)) {
 				fileSystem.Directory.CreateDirectory(AppSettingsFolderPath);
 			}
-			using (StreamWriter fileWriter = fileSystem.File.CreateText(AppSettingsFile)) {
-				JsonSerializer serializer = new() {
-					Formatting = Formatting.Indented,
-					NullValueHandling = NullValueHandling.Ignore
-				};
-				serializer.Serialize(fileWriter, settings);
+			bool isRealFileSystem = fileSystem is FileSystem;
+			if (isRealFileSystem && System.IO.File.Exists(AppSettingsFile)
+				&& new FileInfo(AppSettingsFile).LinkTarget != null) {
+				throw new IOException(
+					$"Refusing to replace symbolic-link settings file '{AppSettingsFile}'.");
+			}
+			UnixFileMode? unixFileMode = null;
+			System.Security.AccessControl.FileSecurity windowsFileSecurity = null;
+			if (isRealFileSystem && System.IO.File.Exists(AppSettingsFile)) {
+				if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) {
+					windowsFileSecurity = new FileInfo(AppSettingsFile).GetAccessControl();
+				}
+				else {
+					unixFileMode = System.IO.File.GetUnixFileMode(AppSettingsFile);
+				}
+			}
+			string tempFilePath = Path.Combine(AppSettingsFolderPath,
+				$".{FileName}.{Guid.NewGuid():N}.tmp");
+			try {
+				WriteSettingsTempFile(fileSystem, tempFilePath, settings, isRealFileSystem,
+					windowsFileSecurity, unixFileMode);
+
+				if (!verifyExpectedContent) {
+					fileSystem.File.Move(tempFilePath, AppSettingsFile, overwrite: true);
+				}
+				else if (expectedContent == null) {
+					try {
+						fileSystem.File.Move(tempFilePath, AppSettingsFile);
+					}
+					catch (IOException) when (fileSystem.File.Exists(AppSettingsFile)) {
+						throw new SettingsFileChangedException();
+					}
+				}
+				else {
+					Stream currentSettingsStream;
+					try {
+						currentSettingsStream = fileSystem.File.Open(AppSettingsFile, FileMode.Open,
+							FileAccess.Read, FileShare.Read | FileShare.Delete);
+					}
+					catch (FileNotFoundException) {
+						throw new SettingsFileChangedException();
+					}
+					using (currentSettingsStream) {
+						using StreamReader reader = new(currentSettingsStream, Encoding.UTF8,
+							detectEncodingFromByteOrderMarks: true, leaveOpen: true);
+						string currentContent = reader.ReadToEnd();
+						if (!string.Equals(currentContent, expectedContent, StringComparison.Ordinal)) {
+							throw new SettingsFileChangedException();
+						}
+						if (isRealFileSystem) {
+							fileSystem.File.Replace(tempFilePath, AppSettingsFile, destinationBackupFileName: null,
+								ignoreMetadataErrors: true);
+						}
+						else {
+							currentSettingsStream.Dispose();
+							fileSystem.File.Move(tempFilePath, AppSettingsFile, overwrite: true);
+						}
+					}
+				}
+			}
+			finally {
+				if (fileSystem.File.Exists(tempFilePath)) {
+					fileSystem.File.Delete(tempFilePath);
+				}
 			}
 			SaveSchema(fileSystem);
+		}
+
+		private static void WriteSettingsTempFile(IFileSystem fileSystem, string tempFilePath, Settings settings,
+			bool isRealFileSystem, System.Security.AccessControl.FileSecurity windowsFileSecurity,
+			UnixFileMode? unixFileMode) {
+			JsonSerializer serializer = new() {
+				Formatting = Formatting.Indented,
+				NullValueHandling = NullValueHandling.Ignore
+			};
+			if (!isRealFileSystem) {
+				using StreamWriter mockWriter = fileSystem.File.CreateText(tempFilePath);
+				serializer.Serialize(mockWriter, settings);
+				mockWriter.Flush();
+				return;
+			}
+
+			FileStreamOptions options = new() {
+				Mode = FileMode.CreateNew,
+				Access = FileAccess.Write,
+				Share = FileShare.None
+			};
+			if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) {
+				options.UnixCreateMode = unixFileMode ?? (UnixFileMode.UserRead | UnixFileMode.UserWrite);
+			}
+			using FileStream stream = new(tempFilePath, options);
+			if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) && windowsFileSecurity != null) {
+				new FileInfo(tempFilePath).SetAccessControl(windowsFileSecurity);
+			}
+			using (StreamWriter fileWriter = new(stream, new UTF8Encoding(false), leaveOpen: true)) {
+				serializer.Serialize(fileWriter, settings);
+				fileWriter.Flush();
+			}
+			stream.Flush(flushToDisk: true);
 		}
 
 		private static void SaveSchema(IFileSystem fileSystem) {
@@ -592,10 +704,102 @@ namespace Clio
 			_settings.Features = rebuilt;
 		}
 
-		private void Save() {
-			EnsureSettingsCollections();
-			SaveSettings(FileSystem, _settings);
+		private void UpdateSettings(Action<Settings> mutation) {
+			ExecuteWithSettingsLock(_fileSystem, () => {
+				for (int attempt = 0; attempt < 3; attempt++) {
+					SettingsBootstrapResult latest = _settingsBootstrapService.GetResult();
+					if (string.Equals(latest.Report.Status, "broken", StringComparison.OrdinalIgnoreCase)) {
+						string issue = latest.Report.Issues.FirstOrDefault()?.Message
+							?? "appsettings.json is unreadable.";
+						throw new InvalidOperationException(
+							$"Cannot update settings because {issue}");
+					}
+
+					string expectedContent = _fileSystem.File.ReadAllText(AppSettingsFile);
+					try {
+						_settings = JsonConvert.DeserializeObject<Settings>(expectedContent);
+						if (_settings == null) {
+							throw new Newtonsoft.Json.JsonSerializationException(
+								"appsettings.json did not contain a settings object.");
+						}
+					}
+					catch (Newtonsoft.Json.JsonException) when (attempt < 2) {
+						Thread.Sleep(10);
+						continue;
+					}
+					catch (Newtonsoft.Json.JsonException exception) {
+						throw new InvalidOperationException(
+							"Cannot update settings because appsettings.json changed to unreadable content.", exception);
+					}
+					AttachDbServers(_settings);
+					EnsureSettingsCollections();
+					mutation(_settings);
+					EnsureSettingsCollections();
+					try {
+						SaveSettings(_fileSystem, _settings, expectedContent, verifyExpectedContent: true);
+						return true;
+					}
+					catch (SettingsFileChangedException) {
+						if (attempt == 2) {
+							throw new IOException(
+								"appsettings.json kept changing while clio was updating it. Try the command again.");
+						}
+						// An editor changed the file after it was reloaded. Retry the mutation against that version.
+					}
+				}
+				throw new InvalidOperationException("Settings update retry loop ended unexpectedly.");
+			});
 		}
+
+		internal static T ExecuteWithSettingsLock<T>(IFileSystem fileSystem, Func<T> action) {
+			string lockFilePath = $"{AppSettingsFile}.lock";
+			object processLock = ProcessSettingsLocks.GetOrAdd(lockFilePath, _ => new object());
+			Stopwatch stopwatch = Stopwatch.StartNew();
+			if (!Monitor.TryEnter(processLock, TimeSpan.FromSeconds(SettingsLockTimeoutSeconds))) {
+				throw new TimeoutException(
+					$"Timed out waiting to update {AppSettingsFile}. Another clio operation may still be using settings.");
+			}
+			try {
+				_heldSettingsLocks ??= [];
+				if (_heldSettingsLocks.Contains(lockFilePath)) {
+					return action();
+				}
+
+				if (!fileSystem.Directory.Exists(AppSettingsFolderPath)) {
+					fileSystem.Directory.CreateDirectory(AppSettingsFolderPath);
+				}
+				Stream lockStream = null;
+				while (lockStream == null) {
+					try {
+						lockStream = fileSystem.File.Open(lockFilePath, FileMode.OpenOrCreate,
+							FileAccess.ReadWrite, FileShare.None);
+					}
+					catch (IOException) when (stopwatch.Elapsed < TimeSpan.FromSeconds(SettingsLockTimeoutSeconds)) {
+						Thread.Sleep(50);
+					}
+					catch (IOException exception) {
+						throw new TimeoutException(
+							$"Timed out waiting to update {AppSettingsFile}. Another clio process may still be updating settings.",
+							exception);
+					}
+				}
+
+				using (lockStream) {
+					_heldSettingsLocks.Add(lockFilePath);
+					try {
+						return action();
+					}
+					finally {
+						_heldSettingsLocks.Remove(lockFilePath);
+					}
+				}
+			}
+			finally {
+				Monitor.Exit(processLock);
+			}
+		}
+
+		internal sealed class SettingsFileChangedException : IOException { }
 
 		public void ShowSettingsTo(TextWriter streamWriter, string environment = null, bool showShort = false) {
 			EnsureSettingsCollections();
@@ -747,8 +951,7 @@ namespace Clio
 		}
 
 		public void SetAutoupdate(bool value) {
-			_settings.Autoupdate = value;
-			Save();
+			UpdateSettings(settings => settings.Autoupdate = value);
 		}
 
 		public bool IsFeatureEnabled(string featureName) {
@@ -763,9 +966,7 @@ namespace Clio
 			if (string.IsNullOrWhiteSpace(featureName)) {
 				throw new ArgumentException("Feature name must be a non-empty value.", nameof(featureName));
 			}
-			EnsureSettingsCollections();
-			_settings.Features[featureName] = enabled;
-			Save();
+			UpdateSettings(settings => settings.Features[featureName] = enabled);
 		}
 
 		public IReadOnlyDictionary<string, bool> GetFeatures() {
@@ -774,38 +975,36 @@ namespace Clio
 		}
 
 		public void ConfigureEnvironment(string name, EnvironmentSettings environment) {
-			EnsureSettingsCollections();
-			if (string.IsNullOrEmpty(name)) {
-				if (_settings.Environments.Count == 0) {
-					_settings = CreateDefaultSettings(_settings);
+			UpdateSettings(settings => {
+				if (string.IsNullOrEmpty(name)) {
+					if (settings.Environments.Count == 0) {
+						_settings = settings = CreateDefaultSettings(settings);
+					}
+					settings.GetActiveEnvironment().Merge(environment);
+				} else if (!settings.Environments.TryAdd(name, environment)) {
+					settings.Environments[name].Merge(environment);
+				} else if (string.IsNullOrWhiteSpace(settings.ActiveEnvironmentKey)) {
+					settings.ActiveEnvironmentKey = name;
 				}
-				_settings.GetActiveEnvironment().Merge(environment);
-			} else if (!_settings.Environments.TryAdd(name, environment)) {
-				_settings.Environments[name].Merge(environment);
-			} else if (string.IsNullOrWhiteSpace(_settings.ActiveEnvironmentKey)) {
-				_settings.ActiveEnvironmentKey = name;
-			}
-			Save();
+			});
 		}
 
 		public void SetActiveEnvironment(string activeEnvironment) {
-			EnsureSettingsCollections();
-			_settings.ActiveEnvironmentKey = activeEnvironment;
-			Save();
+			UpdateSettings(settings => settings.ActiveEnvironmentKey = activeEnvironment);
 		}
 
 		public void RemoveEnvironment(string environment) {
-			EnsureSettingsCollections();
-			string actualKey = FindEnvironmentKey(environment);
-			if (actualKey == null) {
-				throw new KeyNotFoundException($"Application \"{environment}\" not found");
-			}
-			if (_settings.Environments.Remove(actualKey)) {
-				if (string.Equals(_settings.ActiveEnvironmentKey, actualKey, StringComparison.OrdinalIgnoreCase)) {
-					_settings.ActiveEnvironmentKey = _settings.Environments.Keys.FirstOrDefault();
+			UpdateSettings(settings => {
+				string actualKey = settings.Environments.Keys.FirstOrDefault(key =>
+					string.Equals(key, environment, StringComparison.OrdinalIgnoreCase));
+				if (actualKey == null) {
+					throw new KeyNotFoundException($"Application \"{environment}\" not found");
 				}
-				Save();
-			}
+				if (settings.Environments.Remove(actualKey)
+					&& string.Equals(settings.ActiveEnvironmentKey, actualKey, StringComparison.OrdinalIgnoreCase)) {
+					settings.ActiveEnvironmentKey = settings.Environments.Keys.FirstOrDefault();
+				}
+			});
 		}
 
 		public static void OpenSettingsFile() {
@@ -824,10 +1023,10 @@ namespace Clio
 		}
 
 		void ISettingsRepository.RemoveAllEnvironment() {
-			EnsureSettingsCollections();
-			_settings.Environments.Clear();
-			_settings.ActiveEnvironmentKey = null;
-			Save();
+			UpdateSettings(settings => {
+				settings.Environments.Clear();
+				settings.ActiveEnvironmentKey = null;
+			});
 		}
 
 		public string GetIISClioRootPath() {
@@ -907,8 +1106,8 @@ namespace Clio
 		}
 
 		public void SetDeployCreatioDefaults(DeployCreatioDefaults defaults) {
-			_settings.DeployCreatioDefaults = defaults is null || defaults.IsEmpty ? null : defaults;
-			Save();
+			UpdateSettings(settings =>
+				settings.DeployCreatioDefaults = defaults is null || defaults.IsEmpty ? null : defaults);
 		}
 
 	}
