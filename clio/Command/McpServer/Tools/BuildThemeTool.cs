@@ -141,10 +141,10 @@ public sealed class BuildThemeTool(
 	// mixed-input HasExplicitCredentialArgs rejection under passthrough) surfaces from the resolver as an
 	// EnvironmentResolutionException; it is caught and fails soft to LatestFallback (AC-02/AC-03) — the same
 	// documented fallback the CLI's offline path produces. The catch is DELIBERATELY narrowed to
-	// EnvironmentResolutionException (not a bare catch (Exception), which would violate the no-bare-catch rule
-	// / S2221): an unexpected fault (NullReferenceException, a DI/wiring bug) must NOT be masked as a silent
-	// newest-version build — it propagates to a real error response, as the resolver's own expected-vs-unexpected
-	// contract (exit 1 vs -1) intends. And the fallback is no longer SILENT: when the caller explicitly named an
+	// EnvironmentResolutionException — not a broad catch-all of the base Exception type, which would violate the
+	// no-bare-catch rule / S2221: an unexpected fault such as a NullReference or a DI/wiring bug must NOT be
+	// masked as a silent newest-version build — it propagates to a real error response, as the resolver's own
+	// expected-vs-unexpected contract (exit 1 vs -1) intends. And the fallback is no longer SILENT: when the caller explicitly named an
 	// environment we could not resolve, fallbackWarning names the drop to the newest template so it is visible
 	// instead of a silent success that diverges from the CLI's hard error.
 	private EnvironmentSettings ResolveVersionSettings(BuildThemeArgs args, out string fallbackWarning) {
