@@ -227,8 +227,12 @@ public class ToolCommandResolver(
 		_lastResolvedTenantKey.Value = cacheKey;
 		// Nothing is persisted (AC-03): the ephemeral settings never touch the settings repository,
 		// disk, session, or appsettings.json — only this in-memory container cache.
+		// Skip per-build ValidateOnBuild/ValidateScopes on this rotating-token hot path (review): the
+		// EnvironmentScoped graph SHAPE is invariant across tenants and is validated once at mcp-http host
+		// startup (BindingsModule.ValidateEnvironmentScopedGraph), so re-validating the full ~455-registration
+		// graph on every near-continuous rotating-token cache miss is pure startup-grade cost.
 		IServiceProvider container = sessionContainerCache.Acquire(cacheKey,
-			() => new BindingsModule().Register(settings));
+			() => new BindingsModule().Register(settings, validateGraph: false));
 		return container.GetRequiredService<TCommand>();
 	}
 

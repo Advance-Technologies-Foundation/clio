@@ -16,7 +16,7 @@ namespace Clio.Tests.Common;
 /// <see cref="Barrier"/> forces the two flows to interleave deterministically (no arbitrary sleeps).
 /// </summary>
 [TestFixture]
-[Category("Unit")]
+[Category("Integration")]
 [Property("Module", "Common")]
 [NonParallelizable]
 public sealed class ConsoleLoggerCaptureIsolationTests {

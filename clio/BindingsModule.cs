@@ -125,12 +125,23 @@ public class BindingsModule {
 	/// is resolved. Do NOT derive this from a process-wide static inside this module — it must be
 	/// threaded explicitly so a live MCP session's per-environment builds stay gated off.
 	/// </param>
-	/// <returns>The built and validated service provider.</returns>
+	/// <param name="validateGraph">
+	/// When <c>true</c> (default) the provider is built with <c>ValidateOnBuild</c> + <c>ValidateScopes</c>
+	/// so a scope/lifetime or missing-registration mistake fails fast. Pass <c>false</c> ONLY for the
+	/// per-request ephemeral session-container builds on the mcp-http credential-passthrough hot path
+	/// (review): the <see cref="BindingsModuleRegistrationProfile.EnvironmentScoped"/> graph SHAPE is
+	/// structurally invariant across tenants (only <see cref="EnvironmentSettings"/> values differ), so it
+	/// is validated once at host startup via <see cref="ValidateEnvironmentScopedGraph"/> and re-validating
+	/// on every rotating-token cache miss is pure startup-grade cost. Never pass <c>false</c> for a build
+	/// whose graph shape is not already covered by that one-time startup validation.
+	/// </param>
+	/// <returns>The built (and, unless <paramref name="validateGraph"/> is <c>false</c>, validated) service provider.</returns>
 	public IServiceProvider Register(EnvironmentSettings settings = null,
 		Action<IServiceCollection> additionalRegistrations = null,
 		BindingsModuleRegistrationProfile? profile = null,
 		bool applyBootstrapRepairs = true,
-		bool registerMcpHost = false){
+		bool registerMcpHost = false,
+		bool validateGraph = true){
 		IServiceCollection services = new ServiceCollection();
 		ISettingsRepository settingsRepository = RegisterInto(services, settings, profile, applyBootstrapRepairs);
 		if (registerMcpHost) {
@@ -139,9 +150,25 @@ public class BindingsModule {
 		}
 		additionalRegistrations?.Invoke(services);
 		return services.BuildServiceProvider(new ServiceProviderOptions {
-			ValidateOnBuild = true,
-			ValidateScopes = true
+			ValidateOnBuild = validateGraph,
+			ValidateScopes = validateGraph
 		});
+	}
+
+	/// <summary>
+	/// Validates the <see cref="BindingsModuleRegistrationProfile.EnvironmentScoped"/> graph SHAPE once —
+	/// builds a representative environment-scoped container with <c>ValidateOnBuild</c> + <c>ValidateScopes</c>
+	/// and disposes it. Called once at mcp-http host startup so the per-request ephemeral builds can skip
+	/// per-build validation (review) while a scope/lifetime or missing-registration mistake in that profile
+	/// still fails fast at startup rather than on the first passthrough request. The representative settings
+	/// are non-connecting (a loopback URI); validation reflects over the graph without any Creatio round-trip
+	/// because every client is registered lazily.
+	/// </summary>
+	public static void ValidateEnvironmentScopedGraph() {
+		EnvironmentSettings representative = new() { Uri = $"{Uri.UriSchemeHttp}://localhost", IsNetCore = true };
+		IServiceProvider probe = new BindingsModule().Register(
+			representative, profile: BindingsModuleRegistrationProfile.EnvironmentScoped, validateGraph: true);
+		(probe as IDisposable)?.Dispose();
 	}
 
 	/// <summary>

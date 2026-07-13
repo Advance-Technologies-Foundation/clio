@@ -18,7 +18,7 @@ namespace Clio.Tests.Command.McpServer;
 /// silently drift the assumption.
 /// </summary>
 [TestFixture]
-[Category("Integration")]
+[Category("Unit")]
 [Property("Module", "McpServer")]
 public sealed class McpHttpTransportDefaultsTests {
 
