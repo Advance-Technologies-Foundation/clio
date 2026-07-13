@@ -64,6 +64,10 @@ public sealed class McpDurableCallToolHandler(
 	public async ValueTask<CallToolResult> HandleAsync(
 		RequestContext<CallToolRequestParams> request,
 		CancellationToken cancellationToken) {
+		// This throw is intentional and does NOT contradict the return-not-thrown invariant below: a null
+		// request is a genuine SDK-contract violation (the SDK never invokes the handler with one), not a
+		// tool OUTCOME. Only expected outcomes are returned as structured results; a broken precondition
+		// stays a fail-fast programming error.
 		ArgumentNullException.ThrowIfNull(request);
 		string correlationId = Guid.NewGuid().ToString();
 		// Sanitized for prose reflection: an arbitrary caller-supplied name is later interpolated into

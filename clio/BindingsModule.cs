@@ -152,6 +152,11 @@ public class BindingsModule {
 			// singletons for the host's lifetime; the tool surface is fixed at process start anyway
 			// (tools/list is registered once), so a singleton also makes feature-flag reads consistent
 			// for the whole session.
+			// ORDERING DEPENDENCY: both types are ALSO auto-registered as transients by the reflection
+			// interface-scan inside RegisterInto (they implement Clio.* interfaces). These AddSingleton
+			// calls win only because RegisterInto ran earlier (line above) — last-registration-wins. If the
+			// scan were ever moved after this block, the lifetime would silently revert to transient and
+			// rebuild the ~165-tool map on every unmatched-name call. Keep this block after RegisterInto.
 			services.AddSingleton<Command.McpServer.Tools.IMcpToolInvokerRegistry,
 				Command.McpServer.Tools.McpToolInvokerRegistry>();
 			services.AddSingleton<Command.McpServer.IMcpToolCompatibilityCatalog,
