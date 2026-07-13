@@ -81,7 +81,7 @@ public sealed class McpToolInvokerRegistry : IMcpToolInvokerRegistry {
 	/// <param name="featureToggleService">The feature toggle rule gating each tool type.</param>
 	/// <param name="serializerOptions">Serializer options governing tool argument marshalling.</param>
 	/// <exception cref="ArgumentNullException">When any required argument is <c>null</c>.</exception>
-	public McpToolInvokerRegistry(
+	internal McpToolInvokerRegistry(
 		IServiceProvider serviceProvider,
 		Assembly assembly,
 		IFeatureToggleService featureToggleService,
@@ -109,8 +109,21 @@ public sealed class McpToolInvokerRegistry : IMcpToolInvokerRegistry {
 			foreach (MethodInfo method in EnumerateToolMethods(toolType)) {
 				McpServerTool tool = CreateTool(method, toolType, serviceProvider, createOptions);
 				string toolName = tool.ProtocolTool.Name;
-				if (string.IsNullOrWhiteSpace(toolName) || _tools.ContainsKey(toolName)) {
+				if (string.IsNullOrWhiteSpace(toolName)) {
 					continue;
+				}
+				// Fail fast on a duplicate tool NAME rather than silently keeping the first one: two
+				// [McpServerTool] methods advertising the same name make dispatch ambiguous and would let a
+				// rename land as a silent second definition instead of a catalog alias. There are no
+				// duplicate names in the production catalog today (verified), so this only fires on a
+				// genuine authoring mistake — and because the MCP host resolves the registry EAGERLY right
+				// after the container is built (BindingsModule.Register, registerMcpHost path; ValidateOnBuild
+				// alone does not instantiate services), that mistake aborts host startup, not first dispatch.
+				if (_tools.ContainsKey(toolName)) {
+					throw new InvalidOperationException(
+						$"Duplicate MCP tool name '{toolName}' is declared by more than one [McpServerTool] method. " +
+						"Tool names must be unique; represent a renamed/legacy name as an entry in " +
+						$"{nameof(IMcpToolCompatibilityCatalog)} instead of a second [McpServerTool] method.");
 				}
 				_tools[toolName] = tool;
 				_destructive[toolName] = tool.ProtocolTool.Annotations?.DestructiveHint ?? true;

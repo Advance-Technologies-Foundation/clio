@@ -672,6 +672,86 @@ stories:
       - story-mcp-e2e-noenvironment-parallelization-3
     blocks: []
 
+  # ---------------------------------------------------------------------------
+  # Feature: mcp-durable-invocation (forgiving MCP tool surface)
+  # PRD: spec/prd/prd-mcp-durable-invocation.md  ADR: spec/adr/adr-mcp-durable-invocation.md
+  # Added 2026-07-10. Recommended order: 1 -> 2 -> 3 -> 4 -> 5. Jira: ENG-93370.
+  # ---------------------------------------------------------------------------
+  - id: story-mcp-durable-invocation-1
+    title: "Compatibility/alias catalog + fail-fast collisions"
+    feature: "mcp-durable-invocation"
+    size: M
+    status: review
+    file: spec/stories/story-mcp-durable-invocation-1.md
+    prd: spec/prd/prd-mcp-durable-invocation.md
+    adr: spec/adr/adr-mcp-durable-invocation.md
+    fr: [FR-4]
+    ac: [AC-01, AC-02, AC-03, AC-04, AC-05]
+    status_detail: "All 5 stories implemented + green 2026-07-10 (unit 5371+, e2e 5/5 vs real server, live JSON-RPC proof). Not yet in a PR."
+    depends_on: []
+    blocks:
+      - story-mcp-durable-invocation-2
+      - story-mcp-durable-invocation-3
+
+  - id: story-mcp-durable-invocation-2
+    title: "Forgiving unmatched-name handler (execute / confirm / actionable error)"
+    feature: "mcp-durable-invocation"
+    size: L
+    status: review
+    file: spec/stories/story-mcp-durable-invocation-2.md
+    prd: spec/prd/prd-mcp-durable-invocation.md
+    adr: spec/adr/adr-mcp-durable-invocation.md
+    fr: [FR-1, FR-2, FR-3, FR-3a, FR-5, FR-8, FR-9]
+    ac: [AC-01, AC-02, AC-03, AC-04, AC-05, AC-06, AC-07, AC-08]
+    note: "Revised 2026-07-10 after Codex adversarial review (B1/B2/B3/H5/H6/M10/M12)."
+    depends_on:
+      - story-mcp-durable-invocation-1
+    blocks:
+      - story-mcp-durable-invocation-5
+
+  - id: story-mcp-durable-invocation-3
+    title: "Drift-guard test + maintenance-target ownership for tpl"
+    feature: "mcp-durable-invocation"
+    size: M
+    status: review
+    file: spec/stories/story-mcp-durable-invocation-3.md
+    prd: spec/prd/prd-mcp-durable-invocation.md
+    adr: spec/adr/adr-mcp-durable-invocation.md
+    fr: [FR-6]
+    ac: [AC-01, AC-02, AC-03, AC-04]
+    depends_on:
+      - story-mcp-durable-invocation-1
+    blocks:
+      - story-mcp-durable-invocation-4
+
+  - id: story-mcp-durable-invocation-4
+    title: "Fix workspace AGENTS.md template (delegate to live channel) + strip BOM"
+    feature: "mcp-durable-invocation"
+    size: S
+    status: review
+    file: spec/stories/story-mcp-durable-invocation-4.md
+    prd: spec/prd/prd-mcp-durable-invocation.md
+    adr: spec/adr/adr-mcp-durable-invocation.md
+    fr: [FR-7]
+    ac: [AC-01, AC-02, AC-03, AC-04]
+    depends_on:
+      - story-mcp-durable-invocation-3
+    blocks: []
+
+  - id: story-mcp-durable-invocation-5
+    title: "MCP e2e coverage + docs/MCP-surface review"
+    feature: "mcp-durable-invocation"
+    size: M
+    status: review
+    file: spec/stories/story-mcp-durable-invocation-5.md
+    prd: spec/prd/prd-mcp-durable-invocation.md
+    adr: spec/adr/adr-mcp-durable-invocation.md
+    fr: [NFR-3]
+    ac: [AC-01, AC-02, AC-03, AC-04]
+    depends_on:
+      - story-mcp-durable-invocation-2
+    blocks: []
+
   # --- mcp-lazy-schema stories (ENG-90312) — added 2026-07-12, previously untracked ---
   # 12 story files existed under spec/stories/ with no sprint-status.yaml entries. Reconciled
   # against Jira (ENG-90312, Closed/Done 2026-07-10) and GitHub (PR #743 spike/mcp-lazy-schema, MERGED 2026-07-06).

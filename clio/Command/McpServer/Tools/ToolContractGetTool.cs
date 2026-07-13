@@ -257,8 +257,9 @@ public sealed record ToolContractGetResponse(
 /// <param name="ContractAvailable">Whether a full curated contract is reachable by naming this tool.</param>
 /// <param name="Resident">
 /// Whether the tool is present in <c>tools/list</c> and therefore called natively (<c>true</c>), or hidden
-/// from <c>tools/list</c> and reachable only through <c>clio-run</c> / <c>clio-run-destructive</c>
-/// (<c>false</c>). Derived from <see cref="McpCoreToolProfile.IsResident"/>, independent of whether an
+/// from <c>tools/list</c> (<c>false</c>). A non-resident tool is reachable through <c>clio-run</c> /
+/// <c>clio-run-destructive</c>, and on the stdio transport also via forgiving direct invocation
+/// (the durable unmatched-name handler). Derived from <see cref="McpCoreToolProfile.IsResident"/>, independent of whether an
 /// invoker registry is supplied. Never wrap a resident tool in <c>clio-run</c>.
 /// </param>
 /// <param name="Destructive">
@@ -271,7 +272,10 @@ public sealed record ToolContractIndexEntry(
 	[property: JsonPropertyName("purpose")] string Purpose,
 	[property: JsonPropertyName("contract-available")] bool ContractAvailable,
 	[property: JsonPropertyName("resident")] bool Resident,
-	[property: JsonPropertyName("destructive")] bool? Destructive = null
+	[property: JsonPropertyName("destructive")] bool? Destructive = null,
+	[property: JsonPropertyName("aliases")]
+	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	IReadOnlyList<string> Aliases = null
 );
 
 [SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters", Justification = "This serialized contract record mirrors the external MCP wire shape and grouping fields would make the contract harder to inspect and evolve.")]
@@ -768,7 +772,13 @@ internal static class ToolContractCatalog {
 			string.IsNullOrEmpty(purpose) ? name : purpose,
 			ContractAvailable: contractAvailable,
 			Resident: McpCoreToolProfile.IsResident(name),
-			Destructive: ResolveDestructive(toolInvokerRegistry, name));
+			Destructive: ResolveDestructive(toolInvokerRegistry, name),
+			// Deprecated alias names are projected from the compatibility catalog (the single source of
+			// truth for renames), so an agent scanning the index finds a legacy name next to its canonical
+			// entry instead of concluding the tool disappeared.
+			Aliases: McpToolCompatibilityCatalog.SeedAliasesByCanonical.TryGetValue(name, out IReadOnlyList<string> aliases)
+				? aliases
+				: null);
 	}
 
 	/// <summary>
