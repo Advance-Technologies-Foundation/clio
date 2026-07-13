@@ -399,6 +399,8 @@ internal static class ToolContractCatalog {
 	private const string EntitySchemaNameDescription = "Entity schema name.";
 	private const string EntitySchemaNameFieldName = "entity-schema-name";
 	private const string EnvironmentNameFieldName = "environment-name";
+	private const string PassthroughEnvironmentNameSuffix =
+		" Required on stdio / registered-environment transports; omit under credential passthrough — the X-Integration-Credentials header supplies the target tenant.";
 	private const string ErrorFieldName = "error";
 	private const string ExampleAccountSchemaName = "Account";
 	private const string ExampleContactSchemaName = "Contact";
@@ -1186,9 +1188,10 @@ internal static class ToolContractCatalog {
 			ApplicationCreateTool.ApplicationCreateToolName,
 			"Creates a Creatio application and returns installed application identity plus the created application context envelope and Data Forge enrichment diagnostics.",
 			new ToolInputSchemaContract(
-				[EnvironmentNameFieldName, "name", "code", TemplateCodeFieldName],
+				["name", "code", TemplateCodeFieldName],
 				[
-					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription
+						+ PassthroughEnvironmentNameSuffix),
 					Field("name", StringType, "Application display name."),
 					Field("code", StringType, "Application code (business-meaningful part; SchemaNamePrefix is auto-applied by clio)."),
 					Field(TemplateCodeFieldName, StringType, "Technical template code such as AppFreedomUI."),
@@ -1282,9 +1285,10 @@ internal static class ToolContractCatalog {
 			ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
 			"Creates a section inside an existing installed application and returns structured section, entity, and page readback data.",
 			new ToolInputSchemaContract(
-				[EnvironmentNameFieldName, ApplicationCodeFieldName, CaptionFieldName],
+				[ApplicationCodeFieldName, CaptionFieldName],
 				[
-					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription
+						+ PassthroughEnvironmentNameSuffix),
 					Field(ApplicationCodeFieldName, StringType, InstalledApplicationCodeDescription),
 					Field(CaptionFieldName, StringType, "Section caption."),
 					Field(DescriptionFieldName, StringType, "Optional section description."),
@@ -1377,9 +1381,10 @@ internal static class ToolContractCatalog {
 			ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName,
 			"Updates metadata of an existing installed application section and returns structured section readback data before and after the update.",
 			new ToolInputSchemaContract(
-				[EnvironmentNameFieldName, ApplicationCodeFieldName, SectionCodeFieldName],
+				[ApplicationCodeFieldName, SectionCodeFieldName],
 				[
-					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription
+						+ PassthroughEnvironmentNameSuffix),
 					Field(ApplicationCodeFieldName, StringType, InstalledApplicationCodeDescription),
 					Field(SectionCodeFieldName, StringType, "Existing section code inside the installed application."),
 					Field(CaptionFieldName, StringType, "Optional updated section caption."),
@@ -1467,9 +1472,10 @@ internal static class ToolContractCatalog {
 			ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName,
 			"Deletes a section from an existing installed application and returns structured readback of the deleted section.",
 			new ToolInputSchemaContract(
-				[EnvironmentNameFieldName, ApplicationCodeFieldName, SectionCodeFieldName],
+				[ApplicationCodeFieldName, SectionCodeFieldName],
 				[
-					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription
+						+ PassthroughEnvironmentNameSuffix),
 					Field(ApplicationCodeFieldName, StringType, InstalledApplicationCodeDescription),
 					Field(SectionCodeFieldName, StringType, "Existing section code inside the installed application."),
 					Field(DeleteEntitySchemaFieldName, BooleanType,
@@ -1527,9 +1533,10 @@ internal static class ToolContractCatalog {
 			ApplicationSectionGetListTool.ApplicationSectionGetListToolName,
 			"Returns the list of sections of an existing installed application and their metadata.",
 			new ToolInputSchemaContract(
-				[EnvironmentNameFieldName, ApplicationCodeFieldName],
+				[ApplicationCodeFieldName],
 				[
-					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription
+						+ PassthroughEnvironmentNameSuffix),
 					Field(ApplicationCodeFieldName, StringType, InstalledApplicationCodeDescription)
 				]),
 			EnvelopeOutput(
@@ -2053,9 +2060,10 @@ internal static class ToolContractCatalog {
 			ApplicationGetInfoTool.ApplicationGetInfoToolName,
 			"Returns installed application identity plus current package and entity metadata so callers can inspect the right app before mutating it.",
 			new ToolInputSchemaContract(
-				[EnvironmentNameFieldName],
+				[],
 				[
-					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription
+						+ PassthroughEnvironmentNameSuffix),
 					Field(SelectorIdFieldName, StringType, "Application GUID."),
 					Field(SelectorCodeFieldName, StringType, "Application code.")
 				],
@@ -2107,9 +2115,10 @@ internal static class ToolContractCatalog {
 			ApplicationGetListTool.ApplicationGetListToolName,
 			"Lists installed applications from the target Creatio environment so the caller can discover the right existing app first.",
 			new ToolInputSchemaContract(
-				[EnvironmentNameFieldName],
+				[],
 				[
-					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription)
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription
+						+ PassthroughEnvironmentNameSuffix)
 				]),
 			EnvelopeOutput(
 				SuccessFieldName,

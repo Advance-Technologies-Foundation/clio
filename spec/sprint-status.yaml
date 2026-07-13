@@ -989,6 +989,324 @@ stories:
       - story-mcp-http-credential-passthrough-13
     blocks: []
 
+  # --- mcp-passthrough-tool-parity stories (ENG-93347), added 2026-07-10; revised same day after Codex adversarial review ---
+  # Tool-level parity fix on top of ENG-93208's passthrough edge. MUST branch from and target
+  # claude/clio-mcp-multi-tenant-73a807, NOT master (PRD/ADR "Branching Constraint" — the seam this
+  # feature builds on does not exist on master).
+  # Sliced from the ADR's 9-vertical-slice Implementation Plan. 17 stories:
+  #   1 (c3 guard) | 2 (shared c1 deps) -> 3..9 (c1 tools, SERIALIZED — see below) | 10 (c2) |
+  #   11-14 (matrix tools, parallel) -> 15 (consolidated E2E, owns ALL FR-08/AC-07/AC-09 e2e) ->
+  #   16 (OQ-04 registry, maps (tool, dependency-path, scenario) -> named tests) -> 17 (docs).
+  # SERIALIZED MERGE ORDER 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9: all seven c1 tools live in
+  # clio/Command/McpServer/Tools/ApplicationTool.cs (+ ApplicationToolArgs.cs) — no two open PRs may touch
+  # the same file concurrently; encoded via depends_on chains below.
+  # blocks fields are RECIPROCAL with depends_on (every direct dependent is listed).
+  # FR-10 (CLIO* clean incl. CLIO005 + per-slice targeted test run) is carried by every code story 1-16.
+  # ADR "CLI flag specification" table: [Required] removed from environment-name on the 7 Application
+  # args records (stories 3-9), PageSyncArgs (story 12), and the two name-based LinkFromRepositoryTool
+  # methods (story 1) — NOT on update-page/get-component-info/build-theme (already optional today).
+  # clio.mcp.e2e is NOT in CI — story 15's suites run manually against a live stand.
+  - id: story-mcp-passthrough-tool-parity-1
+    title: "Credential-Passthrough Tool Guard + link-from-repository Fail-Fast (class c3)"
+    feature: "mcp-passthrough-tool-parity"
+    size: M
+    status: review
+    file: spec/mcp-passthrough-tool-parity/stories/story-mcp-passthrough-tool-parity-1.md
+    prd: spec/mcp-passthrough-tool-parity/prd/prd-mcp-passthrough-tool-parity.md
+    adr: spec/adr/adr-mcp-passthrough-tool-parity.md
+    fr: [FR-04, FR-05a, FR-07, FR-10]
+    ac: [AC-06, AC-09, AC-ERR]
+    depends_on: []
+    blocks:
+      - story-mcp-passthrough-tool-parity-15
+      - story-mcp-passthrough-tool-parity-16
+
+  - id: story-mcp-passthrough-tool-parity-2
+    title: "Shared c1 dependencies — settings-based ICaptionCultureResolver + IApplicationInfoService overloads"
+    feature: "mcp-passthrough-tool-parity"
+    size: M
+    status: review
+    file: spec/mcp-passthrough-tool-parity/stories/story-mcp-passthrough-tool-parity-2.md
+    prd: spec/mcp-passthrough-tool-parity/prd/prd-mcp-passthrough-tool-parity.md
+    adr: spec/adr/adr-mcp-passthrough-tool-parity.md
+    fr: [FR-01, FR-05, FR-10]
+    depends_on: []
+    blocks:
+      - story-mcp-passthrough-tool-parity-3
+      - story-mcp-passthrough-tool-parity-4
+      - story-mcp-passthrough-tool-parity-5
+      - story-mcp-passthrough-tool-parity-6
+      - story-mcp-passthrough-tool-parity-7
+      - story-mcp-passthrough-tool-parity-8
+      - story-mcp-passthrough-tool-parity-9
+      - story-mcp-passthrough-tool-parity-15
+      - story-mcp-passthrough-tool-parity-16
+
+  - id: story-mcp-passthrough-tool-parity-3
+    title: "list-apps — route through the resolver (class c1)"
+    feature: "mcp-passthrough-tool-parity"
+    size: M
+    status: review
+    note: "First in the SERIALIZED c1 chain 3->4->5->6->7->8->9 (shared ApplicationTool.cs / ApplicationToolArgs.cs). Owns the IApplicationListService settings-based overload (ADR slice 6c) — Story 2 provides only the two shared interfaces."
+    file: spec/mcp-passthrough-tool-parity/stories/story-mcp-passthrough-tool-parity-3.md
+    prd: spec/mcp-passthrough-tool-parity/prd/prd-mcp-passthrough-tool-parity.md
+    adr: spec/adr/adr-mcp-passthrough-tool-parity.md
+    fr: [FR-01, FR-05, FR-05a, FR-10]
+    ac: [AC-01, AC-06, AC-07, AC-09, AC-ERR]
+    depends_on: [story-mcp-passthrough-tool-parity-2]
+    blocks:
+      - story-mcp-passthrough-tool-parity-4
+      - story-mcp-passthrough-tool-parity-15
+      - story-mcp-passthrough-tool-parity-16
+
+  - id: story-mcp-passthrough-tool-parity-4
+    title: "get-app-info — route through the resolver (class c1)"
+    feature: "mcp-passthrough-tool-parity"
+    size: S
+    status: review
+    note: "Serialized c1 chain: starts after story 3 merges (shared ApplicationTool.cs)."
+    file: spec/mcp-passthrough-tool-parity/stories/story-mcp-passthrough-tool-parity-4.md
+    prd: spec/mcp-passthrough-tool-parity/prd/prd-mcp-passthrough-tool-parity.md
+    adr: spec/adr/adr-mcp-passthrough-tool-parity.md
+    fr: [FR-01, FR-05, FR-05a, FR-10]
+    ac: [AC-02, AC-06, AC-09, AC-ERR]
+    depends_on: [story-mcp-passthrough-tool-parity-2, story-mcp-passthrough-tool-parity-3]
+    blocks:
+      - story-mcp-passthrough-tool-parity-5
+      - story-mcp-passthrough-tool-parity-15
+      - story-mcp-passthrough-tool-parity-16
+
+  - id: story-mcp-passthrough-tool-parity-5
+    title: "create-app — route through the resolver, including nested caption-culture and polling calls (class c1)"
+    feature: "mcp-passthrough-tool-parity"
+    size: L
+    status: review
+    note: "Serialized c1 chain: starts after story 4 merges (shared ApplicationTool.cs / ApplicationToolArgs.cs)."
+    file: spec/mcp-passthrough-tool-parity/stories/story-mcp-passthrough-tool-parity-5.md
+    prd: spec/mcp-passthrough-tool-parity/prd/prd-mcp-passthrough-tool-parity.md
+    adr: spec/adr/adr-mcp-passthrough-tool-parity.md
+    fr: [FR-01, FR-05, FR-05a, FR-10]
+    ac: [AC-02, AC-06, AC-07, AC-09, AC-ERR]
+    depends_on: [story-mcp-passthrough-tool-parity-2, story-mcp-passthrough-tool-parity-4]
+    blocks:
+      - story-mcp-passthrough-tool-parity-6
+      - story-mcp-passthrough-tool-parity-15
+      - story-mcp-passthrough-tool-parity-16
+
+  - id: story-mcp-passthrough-tool-parity-6
+    title: "create-app-section — route through the resolver, including doubled nested caption-culture and app-info calls (class c1)"
+    feature: "mcp-passthrough-tool-parity"
+    size: L
+    status: review
+    note: "Serialized c1 chain: starts after story 5 merges (shared ApplicationTool.cs)."
+    file: spec/mcp-passthrough-tool-parity/stories/story-mcp-passthrough-tool-parity-6.md
+    prd: spec/mcp-passthrough-tool-parity/prd/prd-mcp-passthrough-tool-parity.md
+    adr: spec/adr/adr-mcp-passthrough-tool-parity.md
+    fr: [FR-01, FR-05, FR-05a, FR-10]
+    ac: [AC-02, AC-06, AC-07, AC-09, AC-ERR]
+    depends_on: [story-mcp-passthrough-tool-parity-2, story-mcp-passthrough-tool-parity-5]
+    blocks:
+      - story-mcp-passthrough-tool-parity-7
+      - story-mcp-passthrough-tool-parity-15
+      - story-mcp-passthrough-tool-parity-16
+
+  - id: story-mcp-passthrough-tool-parity-7
+    title: "update-app-section — route through the resolver, including nested caption-culture and app-info calls (class c1)"
+    feature: "mcp-passthrough-tool-parity"
+    size: M
+    status: review
+    note: "Serialized c1 chain: starts after story 6 merges (shared ApplicationTool.cs)."
+    file: spec/mcp-passthrough-tool-parity/stories/story-mcp-passthrough-tool-parity-7.md
+    prd: spec/mcp-passthrough-tool-parity/prd/prd-mcp-passthrough-tool-parity.md
+    adr: spec/adr/adr-mcp-passthrough-tool-parity.md
+    fr: [FR-01, FR-05, FR-05a, FR-10]
+    ac: [AC-02, AC-06, AC-09, AC-ERR]
+    depends_on: [story-mcp-passthrough-tool-parity-2, story-mcp-passthrough-tool-parity-6]
+    blocks:
+      - story-mcp-passthrough-tool-parity-8
+      - story-mcp-passthrough-tool-parity-15
+      - story-mcp-passthrough-tool-parity-16
+
+  - id: story-mcp-passthrough-tool-parity-8
+    title: "delete-app-section — route through the resolver, including nested FindApplicationId (class c1)"
+    feature: "mcp-passthrough-tool-parity"
+    size: S
+    status: review
+    note: "Serialized c1 chain: starts after story 7 merges (shared ApplicationTool.cs)."
+    file: spec/mcp-passthrough-tool-parity/stories/story-mcp-passthrough-tool-parity-8.md
+    prd: spec/mcp-passthrough-tool-parity/prd/prd-mcp-passthrough-tool-parity.md
+    adr: spec/adr/adr-mcp-passthrough-tool-parity.md
+    fr: [FR-01, FR-05, FR-05a, FR-10]
+    ac: [AC-02, AC-06, AC-09, AC-ERR]
+    depends_on: [story-mcp-passthrough-tool-parity-2, story-mcp-passthrough-tool-parity-7]
+    blocks:
+      - story-mcp-passthrough-tool-parity-9
+      - story-mcp-passthrough-tool-parity-15
+      - story-mcp-passthrough-tool-parity-16
+
+  - id: story-mcp-passthrough-tool-parity-9
+    title: "list-app-sections — route through the resolver, including nested FindApplicationId (class c1)"
+    feature: "mcp-passthrough-tool-parity"
+    size: S
+    status: review
+    note: "Serialized c1 chain: LAST — starts after story 8 merges (shared ApplicationTool.cs)."
+    file: spec/mcp-passthrough-tool-parity/stories/story-mcp-passthrough-tool-parity-9.md
+    prd: spec/mcp-passthrough-tool-parity/prd/prd-mcp-passthrough-tool-parity.md
+    adr: spec/adr/adr-mcp-passthrough-tool-parity.md
+    fr: [FR-01, FR-05, FR-05a, FR-10]
+    ac: [AC-02, AC-06, AC-09, AC-ERR]
+    depends_on: [story-mcp-passthrough-tool-parity-2, story-mcp-passthrough-tool-parity-8]
+    blocks:
+      - story-mcp-passthrough-tool-parity-15
+      - story-mcp-passthrough-tool-parity-16
+
+  - id: story-mcp-passthrough-tool-parity-10
+    title: "get-user-culture — close the active-tenant data leak (class c2)"
+    feature: "mcp-passthrough-tool-parity"
+    size: S
+    status: review
+    file: spec/mcp-passthrough-tool-parity/stories/story-mcp-passthrough-tool-parity-10.md
+    prd: spec/mcp-passthrough-tool-parity/prd/prd-mcp-passthrough-tool-parity.md
+    adr: spec/adr/adr-mcp-passthrough-tool-parity.md
+    fr: [FR-02, FR-10]
+    ac: [AC-03, AC-06, AC-09, AC-ERR]
+    depends_on: []
+    blocks:
+      - story-mcp-passthrough-tool-parity-15
+      - story-mcp-passthrough-tool-parity-16
+
+  - id: story-mcp-passthrough-tool-parity-11
+    title: "update-page — header-aware platform-version probe (matrix tool)"
+    feature: "mcp-passthrough-tool-parity"
+    size: S
+    status: review
+    file: spec/mcp-passthrough-tool-parity/stories/story-mcp-passthrough-tool-parity-11.md
+    prd: spec/mcp-passthrough-tool-parity/prd/prd-mcp-passthrough-tool-parity.md
+    adr: spec/adr/adr-mcp-passthrough-tool-parity.md
+    fr: [FR-03, FR-10]
+    ac: [AC-04, AC-06, AC-09, AC-ERR]
+    depends_on: []
+    blocks:
+      - story-mcp-passthrough-tool-parity-15
+      - story-mcp-passthrough-tool-parity-16
+
+  - id: story-mcp-passthrough-tool-parity-12
+    title: "sync-pages — remove the blank-name short-circuit, route the probe, relax requiredness (matrix tool)"
+    feature: "mcp-passthrough-tool-parity"
+    size: M
+    status: review
+    file: spec/mcp-passthrough-tool-parity/stories/story-mcp-passthrough-tool-parity-12.md
+    prd: spec/mcp-passthrough-tool-parity/prd/prd-mcp-passthrough-tool-parity.md
+    adr: spec/adr/adr-mcp-passthrough-tool-parity.md
+    fr: [FR-03, FR-05a, FR-10]
+    ac: [AC-04, AC-05, AC-06, AC-09, AC-ERR]
+    depends_on: []
+    blocks:
+      - story-mcp-passthrough-tool-parity-15
+      - story-mcp-passthrough-tool-parity-16
+
+  - id: story-mcp-passthrough-tool-parity-13
+    title: "get-component-info — guard the mixed-input path only (matrix tool, already header-only compliant)"
+    feature: "mcp-passthrough-tool-parity"
+    size: S
+    status: review
+    file: spec/mcp-passthrough-tool-parity/stories/story-mcp-passthrough-tool-parity-13.md
+    prd: spec/mcp-passthrough-tool-parity/prd/prd-mcp-passthrough-tool-parity.md
+    adr: spec/adr/adr-mcp-passthrough-tool-parity.md
+    fr: [FR-03, FR-10]
+    ac: [AC-04, AC-06, AC-09, AC-ERR]
+    depends_on: []
+    blocks:
+      - story-mcp-passthrough-tool-parity-15
+      - story-mcp-passthrough-tool-parity-16
+
+  - id: story-mcp-passthrough-tool-parity-14
+    title: "build-theme — Pattern B redesign (tool-resolved settings passed into a new command overload)"
+    feature: "mcp-passthrough-tool-parity"
+    size: L
+    status: review
+    file: spec/mcp-passthrough-tool-parity/stories/story-mcp-passthrough-tool-parity-14.md
+    prd: spec/mcp-passthrough-tool-parity/prd/prd-mcp-passthrough-tool-parity.md
+    adr: spec/adr/adr-mcp-passthrough-tool-parity.md
+    fr: [FR-03, FR-10]
+    ac: [AC-04, AC-06, AC-09, AC-ERR]
+    depends_on: []
+    blocks:
+      - story-mcp-passthrough-tool-parity-15
+      - story-mcp-passthrough-tool-parity-16
+
+  - id: story-mcp-passthrough-tool-parity-15
+    title: "Consolidated E2E coverage — multi-tenant, concurrency isolation, and no-regression suites (FR-08)"
+    feature: "mcp-passthrough-tool-parity"
+    size: L
+    status: review
+    note: "OWNS all FR-08/AC-07/AC-09 E2E: header-only + mixed-input multi-tenant for list-apps / create-app-section (incl. nested caption-culture) / get-user-culture / link-from-repository-unlocked; two-tenant isolation for EVERY newly routed tool (12); stdio + mcp-http -e no-regression for all 15 touched tools. MCP e2e NOT in CI — manual live-stand run is part of DoD; the (tool, dependency-path, scenario)->method list feeds story 16's registry."
+    file: spec/mcp-passthrough-tool-parity/stories/story-mcp-passthrough-tool-parity-15.md
+    prd: spec/mcp-passthrough-tool-parity/prd/prd-mcp-passthrough-tool-parity.md
+    adr: spec/adr/adr-mcp-passthrough-tool-parity.md
+    fr: [FR-08, FR-10]
+    ac: [AC-01, AC-02, AC-03, AC-04, AC-06, AC-07, AC-09]
+    depends_on:
+      - story-mcp-passthrough-tool-parity-1
+      - story-mcp-passthrough-tool-parity-2
+      - story-mcp-passthrough-tool-parity-3
+      - story-mcp-passthrough-tool-parity-4
+      - story-mcp-passthrough-tool-parity-5
+      - story-mcp-passthrough-tool-parity-6
+      - story-mcp-passthrough-tool-parity-7
+      - story-mcp-passthrough-tool-parity-8
+      - story-mcp-passthrough-tool-parity-9
+      - story-mcp-passthrough-tool-parity-10
+      - story-mcp-passthrough-tool-parity-11
+      - story-mcp-passthrough-tool-parity-12
+      - story-mcp-passthrough-tool-parity-13
+      - story-mcp-passthrough-tool-parity-14
+    blocks:
+      - story-mcp-passthrough-tool-parity-16
+
+  - id: story-mcp-passthrough-tool-parity-16
+    title: "FR-06/OQ-04 guard — audited classification registry + discovery-completeness + exact (tool, dependency-path, scenario)->test mapping"
+    feature: "mcp-passthrough-tool-parity"
+    size: L
+    status: review
+    note: "PassthroughCoverageEntry carries a stable DependencyPath id (outer / version-probe / write / caption-culture-* / app-info-* / preparation / unlocked-query ...) so the mapping is per audited PATH, not per tool. Consumes the exact unit-test names from stories 1-14 and the E2E names from story 15's Dev Agent Record."
+    file: spec/mcp-passthrough-tool-parity/stories/story-mcp-passthrough-tool-parity-16.md
+    prd: spec/mcp-passthrough-tool-parity/prd/prd-mcp-passthrough-tool-parity.md
+    adr: spec/adr/adr-mcp-passthrough-tool-parity.md
+    fr: [FR-06, FR-07, FR-10]
+    ac: [AC-08]
+    depends_on:
+      - story-mcp-passthrough-tool-parity-1
+      - story-mcp-passthrough-tool-parity-2
+      - story-mcp-passthrough-tool-parity-3
+      - story-mcp-passthrough-tool-parity-4
+      - story-mcp-passthrough-tool-parity-5
+      - story-mcp-passthrough-tool-parity-6
+      - story-mcp-passthrough-tool-parity-7
+      - story-mcp-passthrough-tool-parity-8
+      - story-mcp-passthrough-tool-parity-9
+      - story-mcp-passthrough-tool-parity-10
+      - story-mcp-passthrough-tool-parity-11
+      - story-mcp-passthrough-tool-parity-12
+      - story-mcp-passthrough-tool-parity-13
+      - story-mcp-passthrough-tool-parity-14
+      - story-mcp-passthrough-tool-parity-15
+    blocks:
+      - story-mcp-passthrough-tool-parity-17
+
+  - id: story-mcp-passthrough-tool-parity-17
+    title: "MCP surface + docs review — final consolidated step (FR-09)"
+    feature: "mcp-passthrough-tool-parity"
+    size: M
+    status: review
+    file: spec/mcp-passthrough-tool-parity/stories/story-mcp-passthrough-tool-parity-17.md
+    prd: spec/mcp-passthrough-tool-parity/prd/prd-mcp-passthrough-tool-parity.md
+    adr: spec/adr/adr-mcp-passthrough-tool-parity.md
+    fr: [FR-09]
+    ac: [AC-10]
+    depends_on: [story-mcp-passthrough-tool-parity-16]
+    blocks: []
+
   # --- ENG-93386: standard MCP authorization (OAuth 2.1 Resource Server) ---
   # ADR: spec/adr/adr-mcp-http-standard-authorization.md · PRD: spec/prd/prd-mcp-http-standard-authorization.md
   # Order: 1 (spike, BLOCKING) -> 2 -> 3 -> 4,5 -> 6 -> 7 -> 8

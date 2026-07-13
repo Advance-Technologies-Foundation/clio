@@ -27,8 +27,7 @@ public sealed class PageSyncTool(
 	IComponentInfoCatalog webComponentCatalog,
 	IPageBodySamplingService samplingService,
 	IPageBaselineGuard pageBaselineGuard,
-	IPlatformVersionResolverFactory? resolverFactory = null,
-	ISettingsRepository? settingsRepository = null) {
+	IPlatformVersionResolverFactory? resolverFactory = null) {
 
 	internal const string ToolName = "sync-pages";
 
@@ -49,7 +48,7 @@ public sealed class PageSyncTool(
 	             "if the body changes SCHEMA_CONVERTERS call get-guidance with name `page-schema-converters` first; " +
 	             "if the body adds or edits `@creatio-devkit/common` usage call get-guidance with name `page-schema-creatio-devkit-common` before editing SCHEMA_DEPS or SDK calls.")]
 	public async Task<PageSyncResponse> SyncPages(
-		[Description("Parameters: environment-name (required); pages array (required); validate, verify (optional).")]
+		[Description("Parameters: environment-name (required unless an authorized HTTP credential-passthrough header supplies the target tenant); pages array (required); validate, verify (optional).")]
 		[Required] PageSyncArgs args,
 		McpServerLib.McpServer server,
 		CancellationToken cancellationToken = default) {
@@ -85,16 +84,28 @@ public sealed class PageSyncTool(
 	/// <summary>
 	/// Resolves the target environment's platform version so the chart-widget validation catalog is scoped
 	/// to the component set the environment actually ships (mirroring <c>get-component-info</c>'s resolution).
-	/// Fail-soft: a blank environment, absent resolver dependencies (e.g. a unit test that did not supply
-	/// them), or any probe failure yields <see langword="null"/>, which <see cref="ChartWidgetValidation"/>
-	/// maps to the safe <c>latest</c> superset — version resolution must never block a save.
+	/// The guard below only checks for an ABSENT resolver dependency (e.g. a unit test that did not supply
+	/// one) — NOT a blank environment name. A blank name is a legitimate, expected shape under authorized
+	/// HTTP credential passthrough (the header carries the tenant, not an <c>environment-name</c> argument),
+	/// so the probe below must still run and be resolved through the injected
+	/// <see cref="IToolCommandResolver"/>: this is what lets the probe reach the header-selected tenant
+	/// instead of silently degrading to <c>latest</c> without
+	/// ever consulting the credential context (the regression this method previously had). Routing the
+	/// settings lookup through <see cref="IToolCommandResolver.Resolve{TCommand}"/> also means a mixed-input
+	/// call (header AND an explicit, different <c>environment-name</c>) is rejected by the resolver's
+	/// passthrough guard BEFORE any named-tenant settings lookup — the same rejection-first ordering already
+	/// enforced for the actual page save later in the batch.
+	/// Fail-soft: any probe failure (including the resolver's own rejection, e.g. an unresolvable
+	/// environment or a mixed-input rejection) yields <see langword="null"/>, which
+	/// <see cref="ChartWidgetValidation"/> maps to the safe <c>latest</c> superset — version resolution
+	/// must never block a save.
 	/// </summary>
-	private async Task<string?> ResolvePlatformVersionAsync(string environmentName, CancellationToken cancellationToken) {
-		if (resolverFactory is null || settingsRepository is null || string.IsNullOrWhiteSpace(environmentName)) {
+	private async Task<string?> ResolvePlatformVersionAsync(string? environmentName, CancellationToken cancellationToken) {
+		if (resolverFactory is null) {
 			return null;
 		}
 		try {
-			EnvironmentSettings settings = settingsRepository.GetEnvironment(new EnvironmentOptions { Environment = environmentName });
+			EnvironmentSettings settings = commandResolver.Resolve<EnvironmentSettings>(new EnvironmentOptions { Environment = environmentName });
 			if (settings is null) {
 				return null;
 			}
@@ -104,8 +115,9 @@ public sealed class PageSyncTool(
 		} catch (OperationCanceledException) {
 			throw;
 		} catch (Exception) {
-			// Fail-soft: a bad/unreachable environment must not break a save. The catalog stays on 'latest'
-			// (ChartWidgetValidation maps null -> latest), matching get-component-info's soft degrade.
+			// Fail-soft: a bad/unreachable environment, or the resolver's own passthrough/mixed-input
+			// rejection, must not break a save. The catalog stays on 'latest' (ChartWidgetValidation maps
+			// null -> latest), matching get-component-info's soft degrade.
 			return null;
 		}
 	}
@@ -949,10 +961,13 @@ public sealed class PageSyncTool(
 /// Top-level arguments for the <c>sync-pages</c> MCP tool.
 /// </summary>
 public sealed record PageSyncArgs(
+	// FR-05a: conditionally required — forbidden under authorized HTTP credential passthrough (the header
+	// carries the tenant), required/resolvable otherwise via ToolCommandResolver.ResolveSettingsAndKey's
+	// existing EnvironmentResolutionException throw. [Required] is intentionally NOT applied here so a
+	// header-only passthrough call is not rejected at pre-tool MCP schema binding (mirrors PageUpdateArgs).
 	[property: JsonPropertyName("environment-name")]
 	[property: Description(McpToolDescriptions.EnvironmentName)]
-	[property: Required]
-	string EnvironmentName,
+	string? EnvironmentName,
 
 	[property: JsonPropertyName("pages")]
 	[property: Description("Pages to update")]

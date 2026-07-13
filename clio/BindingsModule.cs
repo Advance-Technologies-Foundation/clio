@@ -490,6 +490,12 @@ public class BindingsModule {
 		// auto-registration of BOTH the real and the null implementations (the skip is keyed on the interface).
 		services.AddSingleton<ICredentialContextAccessor, NullCredentialContextAccessor>();
 		services.AddSingleton<ITargetUrlValidator, NullTargetUrlValidator>();
+		// Centralized credential-passthrough fail-fast guard (FR-04, ENG-93347). Reads the SAME
+		// ICredentialContextAccessor seam registered above (null object here, the real per-request
+		// accessor in the mcp-http host via last-registration-wins), so the guard is inert on
+		// stdio/CLI and fires only on authorized passthrough requests. Consumed by guard-only tools
+		// (link-from-repository-*) through the BaseTool.RejectIfPassthroughUnsupported helper.
+		services.AddSingleton<ICredentialPassthroughToolGuard, CredentialPassthroughToolGuard>();
 		// Shared DEFAULT session-container cache (FR-08). The mcp-http host re-registers a run-time
 		// configured instance AFTER this shared build (McpHttpServerCommand.Run) from --session-idle-ttl
 		// / --max-sessions, so last-registration-wins gives the configured cache in HTTP and this

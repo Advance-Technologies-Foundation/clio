@@ -1044,8 +1044,10 @@ public sealed class ToolContractGetToolTests {
 		ToolContractDefinition contract = result.Tools!.Single();
 		contract.Name.Should().Be(ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
 			because: "the requested tool contract should be returned verbatim");
-		contract.InputSchema.Required.Should().Contain(["environment-name", "application-code", "caption"],
-			because: "section-create requires environment-name, application-code, and caption as the minimal payload");
+		contract.InputSchema.Required.Should().Contain(["application-code", "caption"],
+			because: "section-create requires application-code and caption as the minimal payload");
+		contract.InputSchema.Required.Should().NotContain("environment-name",
+			because: "environment-name is schema-optional (FR-05a, ENG-93347): passthrough supplies the tenant via the X-Integration-Credentials header, while non-passthrough requiredness is enforced by the resolver at runtime");
 		contract.InputSchema.AnyOf.Should().BeNullOrEmpty(
 			because: "section-create now uses a single required application-code selector");
 		contract.InputSchema.Validators.Should().Contain(validator =>
@@ -1098,8 +1100,10 @@ public sealed class ToolContractGetToolTests {
 		ToolContractDefinition contract = result.Tools!.Single();
 		contract.Name.Should().Be(ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName,
 			because: "the requested tool contract should be returned verbatim");
-		contract.InputSchema.Required.Should().Contain(["environment-name", "application-code", "section-code"],
-			because: "section-update requires environment-name, application-code, and section-code as the selector payload");
+		contract.InputSchema.Required.Should().Contain(["application-code", "section-code"],
+			because: "section-update requires application-code and section-code as the selector payload");
+		contract.InputSchema.Required.Should().NotContain("environment-name",
+			because: "environment-name is schema-optional (FR-05a, ENG-93347): passthrough supplies the tenant via the X-Integration-Credentials header, while non-passthrough requiredness is enforced by the resolver at runtime");
 		contract.InputSchema.Properties.Should().Contain(field => field.Name == "caption",
 			because: "section-update should advertise caption as an optional mutable field");
 		contract.InputSchema.Properties.Should().Contain(field => field.Name == "description",
@@ -1128,6 +1132,54 @@ public sealed class ToolContractGetToolTests {
 					ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName
 				},
 				because: "section-update should advertise the canonical discover-inspect-mutate flow for existing section metadata edits");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the canonical existing-app section-delete contract with environment-name schema-optional (FR-05a, ENG-93347).")]
+	public void ToolContractGet_Should_Return_ApplicationSectionDelete_Contract() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
+			ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName
+		]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "get-tool-contract should expose the delete-app-section contract");
+		ToolContractDefinition contract = result.Tools!.Single();
+		contract.Name.Should().Be(ApplicationSectionDeleteTool.ApplicationSectionDeleteToolName,
+			because: "the requested tool contract should be returned verbatim");
+		contract.InputSchema.Required.Should().Contain(["application-code", "section-code"],
+			because: "section-delete requires application-code and section-code as the selector payload");
+		contract.InputSchema.Required.Should().NotContain("environment-name",
+			because: "environment-name is schema-optional (FR-05a, ENG-93347): passthrough supplies the tenant via the X-Integration-Credentials header, while non-passthrough requiredness is enforced by the resolver at runtime");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the canonical existing-app section-list contract with environment-name schema-optional (FR-05a, ENG-93347).")]
+	public void ToolContractGet_Should_Return_ApplicationSectionGetList_Contract() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
+			ApplicationSectionGetListTool.ApplicationSectionGetListToolName
+		]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "get-tool-contract should expose the list-app-sections contract");
+		ToolContractDefinition contract = result.Tools!.Single();
+		contract.Name.Should().Be(ApplicationSectionGetListTool.ApplicationSectionGetListToolName,
+			because: "the requested tool contract should be returned verbatim");
+		contract.InputSchema.Required.Should().Contain(["application-code"],
+			because: "section-list requires application-code as the selector payload");
+		contract.InputSchema.Required.Should().NotContain("environment-name",
+			because: "environment-name is schema-optional (FR-05a, ENG-93347): passthrough supplies the tenant via the X-Integration-Credentials header, while non-passthrough requiredness is enforced by the resolver at runtime");
 	}
 
 	[Test]

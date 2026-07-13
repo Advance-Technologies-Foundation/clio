@@ -11,7 +11,31 @@ public abstract class BaseTool<T>(
 	Command<T>? command,
 	ILogger logger,
 	IToolCommandResolver commandResolver = null,
-	IDbOperationLogContextAccessor dbOperationLogContextAccessor = null) {
+	IDbOperationLogContextAccessor dbOperationLogContextAccessor = null,
+	ICredentialPassthroughToolGuard passthroughGuard = null) {
+
+	/// <summary>
+	/// Rejects the current call when a credential-passthrough context is active and the invoked
+	/// tool (or the invoked branch) is not supported under passthrough (FR-04, ENG-93347).
+	/// Guard-only tools call this FIRST, before any Creatio-reaching work, so the caller gets the
+	/// single uniform "not supported under credential passthrough" rejection instead of a
+	/// confused-deputy call against a registered environment's stored credentials.
+	/// </summary>
+	/// <param name="toolName">The MCP tool name to name in the rejection message.</param>
+	/// <param name="alternativeGuidance">The supported alternative to point the caller at.</param>
+	/// <returns>
+	/// <see langword="null"/> when the guard should not fire (no guard wired — e.g. stdio direct
+	/// construction — or no passthrough context), so the caller proceeds normally; otherwise the
+	/// typed rejection envelope (exit code 1 — an EXPECTED, caller-actionable refusal).
+	/// </returns>
+	private protected CommandExecutionResult RejectIfPassthroughUnsupported(string toolName,
+		string alternativeGuidance) {
+		if (passthroughGuard is null || !passthroughGuard.IsPassthroughActive) {
+			return null;
+		}
+		return CommandExecutionResult.FromValidationError(
+			passthroughGuard.BuildUnsupportedMessage(toolName, alternativeGuidance));
+	}
 
 	// FR-05 (ENG-93208): resolves the per-tenant execution-lock key for the given options. Runs the
 	// SAME identity branch the command resolves under (credential passthrough / registry / URI) so the
