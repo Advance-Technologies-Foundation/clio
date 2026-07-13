@@ -327,6 +327,77 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 	}
 
 	[Test]
+	[Description("Creates an entity schema with an assigned parent schema and preserves the inherited primary column when a custom Guid column is requested.")]
+	public void Create_ShouldPreserveInheritedPrimaryColumn_WhenDerivedSchemaHasCustomGuid()
+	{
+		// Arrange
+		string? saveBody = null;
+		bool saveDbStructureCalled = false;
+		bool runtimeVerifyCalled = false;
+		SetupApplicationClient((url, body) => {
+			if (url.Contains("CreateNewSchema", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
+			}
+			if (url.Contains("CheckUniqueSchemaName", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":true}";
+			}
+			if (url.Contains("GetAvailableParentSchemas", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"items\":[{\"uId\":\"33333333-3333-3333-3333-333333333333\",\"name\":\"Account\",\"caption\":\"Account\"}]}";
+			}
+			if (url.Contains("AssignParentSchema", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"parentSchema\":{\"uId\":\"33333333-3333-3333-3333-333333333333\",\"name\":\"Account\"},\"columns\":[],\"inheritedColumns\":[{\"uId\":\"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa\",\"name\":\"Id\",\"type\":0}],\"indexes\":[],\"primaryColumn\":{\"uId\":\"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa\",\"name\":\"Id\",\"type\":0}}}";
+			}
+			if (url.Contains("SaveSchema", StringComparison.Ordinal)) {
+				saveBody = body;
+				return "{\"success\":true,\"schemaUid\":\"22222222-2222-2222-2222-222222222222\"}";
+			}
+			if (url.Contains("SchemaDesignerRequest", StringComparison.Ordinal)) {
+				saveDbStructureCalled = true;
+				return "{\"success\":true}";
+			}
+			if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
+				runtimeVerifyCalled = true;
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"UsrAccount\"}}";
+			}
+			throw new InvalidOperationException($"Unexpected url {url}");
+		});
+
+		// Act
+		_creator.Create(new CreateEntitySchemaOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrAccount",
+			Title = "Account",
+			ParentSchemaName = "Account",
+			Columns = ["UsrName:Text:Name", "UsrExternalRecordId:Guid:External record Id"]
+		});
+
+		// Assert
+		_applicationClient.Received().ExecutePostRequest(
+			Arg.Is<string>(url => url.Contains("GetAvailableParentSchemas", StringComparison.Ordinal)),
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+		_applicationClient.Received().ExecutePostRequest(
+			Arg.Is<string>(url => url.Contains("AssignParentSchema", StringComparison.Ordinal)),
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+		saveBody.Should().NotBeNullOrWhiteSpace(
+			because: "derived entity creation must submit the final schema payload for saving");
+		JObject json = JObject.Parse(saveBody!);
+		json["primaryColumn"]!["name"]!.Value<string>().Should().Be("Id",
+			because: "a derived schema must retain the primary column inherited from its assigned parent");
+		json["columns"]!.Should().Contain(column => column["name"]!.Value<string>() == "UsrExternalRecordId",
+			because: "the requested custom Guid must remain an ordinary own column in the saved schema");
+		saveDbStructureCalled.Should().BeTrue(
+			because: "derived entity creation must materialize the saved schema structure");
+		runtimeVerifyCalled.Should().BeTrue(
+			because: "derived entity creation must verify that the saved schema is available at runtime");
+	}
+
+	[Test]
 	[Description("Stops entity creation before save when the requested schema name is already occupied in the target package context.")]
 	public void Create_StopsBeforeSave_WhenSchemaNameAlreadyExists()
 	{

@@ -9,6 +9,7 @@ using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Command.McpServer.Tools;
+using Clio.Common;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Creatio;
 using Clio.Mcp.E2E.Support.Mcp;
@@ -31,6 +32,7 @@ namespace Clio.Mcp.E2E;
 public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 
 	private const string ToolName = SchemaSyncTool.ToolName;
+	private const string AddPackageDependencyToolName = AddPackageDependencyTool.AddPackageDependencyToolName;
 	private const string ReadSchemaToolName = GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName;
 	private const string ReadColumnToolName = GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName;
 	private const string CurrentDateTimeSystemValueUId = "d7c295d3-3146-4ee1-ac49-3a7bd0edc45d";
@@ -882,6 +884,33 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 		];
 	}
 
+	private static LogDecoratorType[] GetMessageTypes(JsonElement result) {
+		if (!result.TryGetProperty("messages", out JsonElement messagesElement) ||
+			messagesElement.ValueKind != JsonValueKind.Array) {
+			return [];
+		}
+
+		return [
+			.. messagesElement
+				.EnumerateArray()
+				.Select(message => message.TryGetProperty("message-type", out JsonElement typeElement)
+					? ParseMessageType(typeElement)
+					: LogDecoratorType.None)
+		];
+	}
+
+	private static LogDecoratorType ParseMessageType(JsonElement typeElement) {
+		if (typeElement.ValueKind == JsonValueKind.Number && typeElement.TryGetInt32(out int typeValue) &&
+			Enum.IsDefined(typeof(LogDecoratorType), typeValue)) {
+			return (LogDecoratorType)typeValue;
+		}
+
+		return typeElement.ValueKind == JsonValueKind.String &&
+			Enum.TryParse(typeElement.GetString(), ignoreCase: true, out LogDecoratorType messageType)
+			? messageType
+			: LogDecoratorType.None;
+	}
+
 	// Binding-layer failures reach the client through several equivalent surfaces on the lazy tool
 	// surface: a native resident call fails with the SDK diagnostics ("An error occurred invoking
 	// 'sync-schemas'." / "Failed to deserialize argument 'args' for MCP tool 'sync-schemas'"), while a
@@ -1084,6 +1113,135 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 		afterReadback.Columns.Should().NotContain(
 			column => column.Name == dropColumnName,
 			because: "the name-alias remove must drop the existing column");
+	}
+
+	[Test]
+	[Description("Preserves the inherited Id primary column when sync-schemas creates a BaseEntity-derived schema with a custom Guid, and accepts an ordered remove/re-add of that Guid in one update batch.")]
+	[AllureTag(ToolName)]
+	[AllureTag(ReadSchemaToolName)]
+	[AllureName("sync-schemas preserves inherited primary column and verifies final remove-readd state")]
+	[AllureDescription("Creates a BaseEntity-derived schema with text and Guid custom columns on a real sandbox, verifies inherited Id remains primary, then removes and re-adds the Guid in one ordered update-entity batch and verifies both success and final readback.")]
+	public async Task SchemaSyncTool_ShouldPreserveInheritedPrimaryColumn_WhenCustomGuidIsRemovedAndReadded() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: true);
+		const string nameColumnName = "UsrName";
+		const string externalIdColumnName = "UsrExternalRecordId";
+		CallToolResult dependencyResult = await context.Session.CallToolAsync(
+			AddPackageDependencyToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = context.EnvironmentName!,
+					["package-name"] = context.PackageName!,
+					["dependencies"] = new object?[] {
+						new Dictionary<string, object?> { ["name"] = "Base" }
+					}
+				}
+			},
+			context.CancellationTokenSource.Token);
+		dependencyResult.IsError.Should().NotBeTrue(
+			because: "the sandbox package must depend on Base before it can extend BaseEntity");
+		CommandExecutionEnvelope dependencyExecution = McpCommandExecutionParser.Extract(dependencyResult);
+		dependencyExecution.ExitCode.Should().Be(0,
+			because: "the Base package dependency is required for Creatio to save a BaseEntity-derived schema");
+
+		// Act
+		CallToolResult createResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = context.EnvironmentName!,
+					["package-name"] = context.PackageName!,
+					["operations"] = new object?[] {
+						new Dictionary<string, object?> {
+							["type"] = "create-entity",
+							["schema-name"] = context.EntitySchemaName!,
+							["title-localizations"] = BuildLocalizations("Inherited Primary Entity"),
+							["parent-schema-name"] = "BaseEntity",
+							["columns"] = new object?[] {
+								new Dictionary<string, object?> {
+									["name"] = nameColumnName,
+									["type"] = "MediumText",
+									["title-localizations"] = BuildLocalizations("Name"),
+									["required"] = true
+								},
+								new Dictionary<string, object?> {
+									["name"] = externalIdColumnName,
+									["type"] = "Guid",
+									["title-localizations"] = BuildLocalizations("External record Id")
+								}
+							}
+						}
+					}
+				}
+			},
+			context.CancellationTokenSource.Token);
+		createResult.IsError.Should().NotBeTrue(
+			because: "valid derived schema creation should return a structured MCP success response");
+		JsonElement createResponse = ExtractSchemaSyncResponse(createResult);
+		createResponse.GetProperty("success").GetBoolean().Should().BeTrue(
+			because: "a custom Guid must not prevent creation of a BaseEntity-derived schema");
+		JsonElement createOperationResult = FindResult(
+			createResponse.GetProperty("results").EnumerateArray(), "create-entity", context.EntitySchemaName!);
+		GetMessageTypes(createOperationResult).Should().Contain(LogDecoratorType.Info,
+			because: "successful create-entity output should carry at least one informational execution message");
+		EntitySchemaPropertiesInfo createdSchema = await GetSchemaPropertiesAsync(
+			context.Session, context.EnvironmentName!, context.PackageName!, context.EntitySchemaName!,
+			context.CancellationTokenSource.Token);
+
+		CallToolResult updateResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = context.EnvironmentName!,
+					["package-name"] = context.PackageName!,
+					["operations"] = new object?[] {
+						new Dictionary<string, object?> {
+							["type"] = "update-entity",
+							["schema-name"] = context.EntitySchemaName!,
+							["update-operations"] = new object?[] {
+								new Dictionary<string, object?> {
+									["action"] = "remove",
+									["column-name"] = externalIdColumnName
+								},
+								new Dictionary<string, object?> {
+									["action"] = "add",
+									["column-name"] = externalIdColumnName,
+									["type"] = "Guid",
+									["title-localizations"] = BuildLocalizations("External record Id")
+								}
+							}
+						}
+					}
+				}
+			},
+			context.CancellationTokenSource.Token);
+		updateResult.IsError.Should().NotBeTrue(
+			because: "the remove/re-add batch should return a structured MCP success response");
+		JsonElement updateResponse = ExtractSchemaSyncResponse(updateResult);
+		updateResponse.GetProperty("success").GetBoolean().Should().BeTrue(
+			because: "post-save verification must evaluate the final ordered batch state");
+		JsonElement updateOperationResult = FindResult(
+			updateResponse.GetProperty("results").EnumerateArray(), "update-entity", context.EntitySchemaName!);
+		GetMessageTypes(updateOperationResult).Should().Contain(LogDecoratorType.Info,
+			because: "successful update-entity output should carry at least one informational execution message");
+		EntitySchemaPropertiesInfo updatedSchema = await GetSchemaPropertiesAsync(
+			context.Session, context.EnvironmentName!, context.PackageName!, context.EntitySchemaName!,
+			context.CancellationTokenSource.Token);
+
+		// Assert
+		createdSchema.ParentSchemaName.Should().Be("BaseEntity",
+			because: "the regression requires a schema that inherits its primary column from BaseEntity");
+		createdSchema.PrimaryColumnName.Should().Be("Id",
+			because: "a custom Guid on a derived schema must not replace the inherited Id primary column");
+		createdSchema.Columns.Should().Contain(column =>
+				column.Name == externalIdColumnName && column.Source == "own" && column.Type == "Guid",
+			because: "the custom Guid should be persisted as an ordinary own column");
+
+		updatedSchema.PrimaryColumnName.Should().Be("Id",
+			because: "removing and re-adding the ordinary custom Guid must not change the inherited primary column");
+		updatedSchema.Columns.Should().ContainSingle(column =>
+				column.Name == externalIdColumnName && column.Source == "own" && column.Type == "Guid",
+			because: "the final schema should contain exactly one re-added custom Guid column");
 	}
 
 	private static Dictionary<string, string> BuildLocalizations(string enUs, string? ukUa = null) {

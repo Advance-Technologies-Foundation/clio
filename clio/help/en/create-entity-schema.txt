@@ -100,6 +100,8 @@ NOTES
     - The command works against a remote Creatio environment only
     - Package resolution requires cliogate to be installed on the target environment
     - If no Guid column is supplied for a root schema, Id:Guid is added automatically
+    - A schema with a parent keeps the parent's primary column; custom Guid columns
+      remain ordinary columns
     - --is-virtual is independent of parent and replacement-schema settings
     - If no display column is set, the first text-like column is used as primary display column
     - Prefer default-value-config for Settings, SystemValue, or Sequence; keep

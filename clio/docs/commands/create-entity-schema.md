@@ -127,6 +127,7 @@ cliogate must be installed on the target Creatio environment.
 ## Notes
 
 - `default-value-config` is recommended for non-constant sources.
+- A root schema uses its first Guid column as the primary column and adds a generated Guid column when none is supplied. A schema with a parent preserves the parent's primary column; custom Guid columns remain ordinary columns.
 - `--is-virtual` is independent of inheritance and replacement behavior; use it only for entities whose data comes from a custom provider rather than a Creatio table.
 - For `default-value-config.source = SystemValue`, `value-source` can be Guid, alias, or caption; clio persists canonical Guid.
 - For `default-value-config.source = Settings`, `value-source` can be code, name, or id; clio persists canonical setting code.

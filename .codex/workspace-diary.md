@@ -5844,3 +5844,24 @@ Decision: Replaced the stale runtime-schema assertion with discovery through the
 Discovery: Long-tail tools are intentionally absent from tools/list and remain discoverable through the get-tool-contract compact index.
 Files: clio.mcp.e2e/CreateRelatedPageAddonToolE2ETests.cs
 Impact: The full related-page add-on fixture passes all six scenarios on both net8.0 and net10.0 and now tests the supported MCP discovery contract.
+
+## 2026-07-13 21:01 – Preserve inherited primary columns during schema sync
+Context: GitHub issue #865 reported that creating a BaseEntity-derived schema promoted its first custom Guid to primary, while an ordered remove/re-add of the same column falsely failed final verification.
+Decision: Assign a primary column from own Guid columns only for root schemas, and verify update batches from their net final column-presence expectations rather than checking every intermediate operation against the final saved schema.
+Discovery: A fresh package must depend on `Base` before Creatio accepts a BaseEntity-derived schema. The disposable 10.0.0.802 deployment also returns an unauthenticated 302 from the cliogate readiness route, so local E2E validation used the already-verified authenticated cliogate installation while retaining the normal bootstrap in committed test code.
+Files: clio/Command/EntitySchemaDesigner/RemoteEntitySchemaCreator.cs, clio/Command/EntitySchemaDesigner/RemoteEntitySchemaColumnManager.cs, clio.tests/Command/RemoteEntitySchemaCreatorTests.cs, clio.tests/Command/RemoteEntitySchemaColumnManagerTests.cs, clio.mcp.e2e/SchemaSyncToolE2ETests.cs, clio/help/en/create-entity-schema.txt, clio/help/en/update-entity-schema.txt, clio/docs/commands/create-entity-schema.md, clio/docs/commands/update-entity-schema.md
+Impact: Derived schemas retain inherited `Id`, remove/re-add batches succeed when the final column exists, and the real MCP regression passes against an isolated Creatio 10.0.0.802 deployment that was fully removed afterward.
+
+## 2026-07-13 21:58 – Align related-page read E2E with lazy MCP discovery
+Context: PR #870's TeamCity MCP E2E build failed because get-related-page-addon was expected in the resident tools/list surface.
+Decision: Replaced the stale resident-tool schema assertion with discovery through the established get-tool-contract lazy-surface union, matching the paired create tool.
+Discovery: Both related-page add-on tools are intentionally long-tail tools; direct invocation remains supported while discovery belongs to the compact contract index.
+Files: clio.mcp.e2e/GetRelatedPageAddonToolE2ETests.cs
+Impact: All three get-related-page-addon E2E scenarios pass on net8.0 and net10.0, and the test now verifies the supported MCP discovery contract.
+
+## 2026-07-13 22:26 – Keep long schema-sync E2E visible to TeamCity
+Context: PR #870's full MCP E2E run reached the new application/schema-sync regression but TeamCity's three-minute blame inactivity timeout aborted the test host before the long remote scenario completed.
+Decision: Emit test-progress heartbeats every 30 seconds while application creation, schema synchronization, and settled metadata readback are in flight.
+Discovery: TeamCity reported 83 passing tests and produced hang dumps without an assertion failure; the last completed test preceded ApplicationGetInfo_Should_Read_Virtual_Entity_After_SchemaSync alphabetically, identifying the silent long-running scenario.
+Files: clio.mcp.e2e/ApplicationToolE2ETests.cs
+Impact: The real regression keeps its ten-minute operation budget while producing enough test-host output to avoid false hang classification; both target frameworks compile successfully.
