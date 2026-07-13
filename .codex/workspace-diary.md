@@ -5858,3 +5858,10 @@ Decision: Replaced the stale resident-tool schema assertion with discovery throu
 Discovery: Both related-page add-on tools are intentionally long-tail tools; direct invocation remains supported while discovery belongs to the compact contract index.
 Files: clio.mcp.e2e/GetRelatedPageAddonToolE2ETests.cs
 Impact: All three get-related-page-addon E2E scenarios pass on net8.0 and net10.0, and the test now verifies the supported MCP discovery contract.
+
+## 2026-07-13 22:26 – Keep long schema-sync E2E visible to TeamCity
+Context: PR #870's full MCP E2E run reached the new application/schema-sync regression but TeamCity's three-minute blame inactivity timeout aborted the test host before the long remote scenario completed.
+Decision: Emit test-progress heartbeats every 30 seconds while application creation, schema synchronization, and settled metadata readback are in flight.
+Discovery: TeamCity reported 83 passing tests and produced hang dumps without an assertion failure; the last completed test preceded ApplicationGetInfo_Should_Read_Virtual_Entity_After_SchemaSync alphabetically, identifying the silent long-running scenario.
+Files: clio.mcp.e2e/ApplicationToolE2ETests.cs
+Impact: The real regression keeps its ten-minute operation budget while producing enough test-host output to avoid false hang classification; both target frameworks compile successfully.

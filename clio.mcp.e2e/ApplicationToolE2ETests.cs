@@ -433,38 +433,47 @@ public sealed class ApplicationToolE2ETests {
 		string addedColumnName = $"UsrStatus{suffix[..4]}";
 		string virtualSchemaName = $"UsrVirtual{suffix}";
 
-		ApplicationInfoActResult createResult = await ActCreateAsync(
-			arrangeContext.Session,
-			arrangeContext.CancellationTokenSource.Token,
-			arrangeContext.EnvironmentName,
-			applicationName,
-			createdApplicationCode,
-			description: null,
-			ApplicationTemplateCode,
-			ApplicationIconId,
-			ApplicationIconBackground,
-			optionalTemplateDataJson: null);
+		ApplicationInfoActResult createResult = await AwaitWithTestProgressAsync(
+			ActCreateAsync(
+				arrangeContext.Session,
+				arrangeContext.CancellationTokenSource.Token,
+				arrangeContext.EnvironmentName,
+				applicationName,
+				createdApplicationCode,
+				description: null,
+				ApplicationTemplateCode,
+				ApplicationIconId,
+				ApplicationIconBackground,
+				optionalTemplateDataJson: null),
+			"application creation",
+			arrangeContext.CancellationTokenSource.Token);
 
 		// Act
-		CallToolResult schemaSyncCallResult = await CallSchemaSyncUpdateCanonicalMainEntityAsync(
-			arrangeContext.Session,
-			arrangeContext.CancellationTokenSource.Token,
-			arrangeContext.EnvironmentName,
-			createResult.Result.PackageName!,
-			createdApplicationCode,
-			addedColumnName,
-			virtualSchemaName);
+		CallToolResult schemaSyncCallResult = await AwaitWithTestProgressAsync(
+			CallSchemaSyncUpdateCanonicalMainEntityAsync(
+				arrangeContext.Session,
+				arrangeContext.CancellationTokenSource.Token,
+				arrangeContext.EnvironmentName,
+				createResult.Result.PackageName!,
+				createdApplicationCode,
+				addedColumnName,
+				virtualSchemaName),
+			"schema synchronization",
+			arrangeContext.CancellationTokenSource.Token);
 		JsonElement schemaSyncResponse = ExtractSchemaSyncResponse(schemaSyncCallResult);
 		// sync-schemas triggers an asynchronous server-side schema recompile; the canonical main
 		// entity can be momentarily absent from get-app-info until that settles. Poll the readback so
 		// the regression assertions below test the settled state instead of racing the recompile.
-		ApplicationInfoActResult infoResult = await WaitForCanonicalMainEntityAsync(
-			arrangeContext.Session,
-			arrangeContext.CancellationTokenSource.Token,
-			arrangeContext.EnvironmentName,
-			createdApplicationCode,
-			applicationName,
-			virtualSchemaName);
+		ApplicationInfoActResult infoResult = await AwaitWithTestProgressAsync(
+			WaitForCanonicalMainEntityAsync(
+				arrangeContext.Session,
+				arrangeContext.CancellationTokenSource.Token,
+				arrangeContext.EnvironmentName,
+				createdApplicationCode,
+				applicationName,
+				virtualSchemaName),
+			"application metadata readback",
+			arrangeContext.CancellationTokenSource.Token);
 		ApplicationEntityEnvelope? canonicalMainEntity = infoResult.Result.Entities?
 			.FirstOrDefault(entity => string.Equals(entity.Name, createdApplicationCode, StringComparison.OrdinalIgnoreCase));
 		ApplicationEntityEnvelope? virtualEntity = infoResult.Result.Entities?
@@ -1130,6 +1139,23 @@ public sealed class ApplicationToolE2ETests {
 			element = default;
 			return false;
 		}
+	}
+
+	private static async Task<T> AwaitWithTestProgressAsync<T>(
+		Task<T> operation,
+		string operationName,
+		CancellationToken cancellationToken) {
+		while (!operation.IsCompleted) {
+			Task delay = Task.Delay(TimeSpan.FromSeconds(30), cancellationToken);
+			if (await Task.WhenAny(operation, delay) == operation) {
+				break;
+			}
+
+			cancellationToken.ThrowIfCancellationRequested();
+			TestContext.Progress.WriteLine($"[heartbeat] Waiting for {operationName}...");
+		}
+
+		return await operation;
 	}
 
 	private static string DescribeCallResult(CallToolResult callResult) {
