@@ -28,10 +28,16 @@ internal static class McpToolSchemaCatalog {
 	private static readonly Lazy<IReadOnlyDictionary<string, string>> RawDescriptions =
 		new(BuildRawDescriptions);
 
+	// The registered-tool-name set is derived once from the (immutable) schema-contract keys and cached:
+	// the set is fixed at process start, so re-materializing it on every getter access only wasted an
+	// allocation per call.
+	private static readonly Lazy<IReadOnlyCollection<string>> RegisteredToolNamesCache =
+		new(() => SchemaContracts.Value.Keys.ToArray());
+
 	/// <summary>
 	/// Returns the stable set of every registered MCP tool name discovered by reflection.
 	/// </summary>
-	internal static IReadOnlyCollection<string> RegisteredToolNames => SchemaContracts.Value.Keys.ToArray();
+	internal static IReadOnlyCollection<string> RegisteredToolNames => RegisteredToolNamesCache.Value;
 
 	/// <summary>
 	/// Tries to synthesize a contract from a registered tool's own input schema.

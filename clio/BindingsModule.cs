@@ -147,13 +147,48 @@ public class BindingsModule {
 		ISettingsRepository settingsRepository = RegisterInto(services, settings, profile, applyBootstrapRepairs);
 		if (registerMcpHost) {
 			services.AddTransient<McpServerCommand>();
-			RegisterMcpServer(services, settingsRepository).WithStdioServerTransport();
+			// The durable (forgiving) unmatched-name handler is registered HERE — at the stdio call-site —
+			// and deliberately NOT inside the transport-neutral RegisterMcpServer, which the unreleased
+			// mcp-http host also calls (McpHttpServerCommand): the forgiving invocation contract is scoped
+			// to the stdio transport only (ADR adr-mcp-durable-invocation, D1). The SDK invokes the handler
+			// only on a ToolCollection miss, so advertised (resident) tools are never shadowed.
+			RegisterMcpServer(services, settingsRepository)
+				.WithStdioServerTransport()
+				.WithCallToolHandler(static (request, cancellationToken) =>
+					request.Services.GetRequiredService<Command.McpServer.IMcpDurableCallToolHandler>()
+						.HandleAsync(request, cancellationToken));
+			// The invoker registry's constructor reflects every enabled [McpServerToolType] and
+			// SDK-builds the full tool map (~165 methods) — far too expensive to rebuild per call, which
+			// the assembly-scan transient registration would do (and the unmatched-name path resolves it
+			// twice: handler + executor). Pin both the registry and the compatibility catalog as
+			// singletons for the host's lifetime; the tool surface is fixed at process start anyway
+			// (tools/list is registered once), so a singleton also makes feature-flag reads consistent
+			// for the whole session.
+			// ORDERING DEPENDENCY: both types are ALSO auto-registered as transients by the reflection
+			// interface-scan inside RegisterInto (they implement Clio.* interfaces). These AddSingleton
+			// calls win only because RegisterInto ran earlier (line above) — last-registration-wins. If the
+			// scan were ever moved after this block, the lifetime would silently revert to transient and
+			// rebuild the ~165-tool map on every unmatched-name call. Keep this block after RegisterInto.
+			services.AddSingleton<Command.McpServer.Tools.IMcpToolInvokerRegistry,
+				Command.McpServer.Tools.McpToolInvokerRegistry>();
+			services.AddSingleton<Command.McpServer.IMcpToolCompatibilityCatalog,
+				Command.McpServer.McpToolCompatibilityCatalog>();
 		}
 		additionalRegistrations?.Invoke(services);
-		return services.BuildServiceProvider(new ServiceProviderOptions {
+		ServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions {
 			ValidateOnBuild = validateGraph,
 			ValidateScopes = validateGraph
 		});
+		if (registerMcpHost) {
+			// Fail-fast validation of the durable-invocation surface. ValidateOnBuild verifies the DI
+			// graph's call sites but does NOT instantiate transients/singletons, so a malformed
+			// compatibility catalog (duplicate canonical/alias) or a duplicate MCP tool NAME would
+			// otherwise surface only on the first tools/call. Resolving both here makes a malformed
+			// surface abort HOST STARTUP instead — the constructors throw on any collision.
+			provider.GetRequiredService<Command.McpServer.IMcpToolCompatibilityCatalog>();
+			provider.GetRequiredService<Command.McpServer.Tools.IMcpToolInvokerRegistry>();
+		}
+		return provider;
 	}
 
 	/// <summary>
