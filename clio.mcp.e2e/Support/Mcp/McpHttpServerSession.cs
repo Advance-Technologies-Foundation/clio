@@ -12,16 +12,17 @@ using ModelContextProtocol.Protocol;
 namespace Clio.Mcp.E2E.Support.Mcp;
 
 /// <summary>
-/// Manual / live-stand-only harness for the <c>clio mcp-http</c> credential-passthrough edge
-/// (ENG-93208, Story 15c/15d/AC-07). Spawns a single <c>clio mcp-http</c> process bound to loopback and
-/// lets a test connect one or more Streamable-HTTP MCP clients to it, each carrying its own
-/// <c>Authorization: Bearer &lt;platform-api-key&gt;</c> and per-request <c>X-Integration-Credentials</c>
-/// header — the multi-tenant passthrough scenario.
+/// Manual / live-stand-only harness for the <c>clio mcp-http</c> edge — the ENG-93208 credential-passthrough
+/// fixtures (Story 15c/15d/AC-07) and the ENG-93386 standard-OAuth-authorization fixtures (Story 8) both
+/// reuse this session. Spawns a single <c>clio mcp-http</c> process bound to loopback and lets a test
+/// connect one or more Streamable-HTTP MCP clients to it, each carrying its own <c>Authorization: Bearer
+/// &lt;value&gt;</c> (a legacy platform-api-key OR a live OAuth JWT, depending on the fixture) and an
+/// optional per-request <c>X-Integration-Credentials</c> header.
 /// <para>
-/// NOT run in CI. These fixtures need a live Creatio stand and a running clio mcp-http process
-/// started with <c>--platform-api-key</c> (the sole passthrough gate); when the live-stand env vars are
-/// absent the fixtures <c>Assert.Ignore</c> before this helper is touched. See
-/// <see cref="McpHttpPassthroughStand"/> for the required configuration.
+/// NOT run in CI. The passthrough fixtures need a live Creatio stand and <c>--platform-api-key</c>
+/// (<see cref="McpHttpPassthroughStand"/>); the OAuth fixtures need a live identity-platform Authorization
+/// Server and <c>--auth-*</c> flags (<see cref="McpHttpOAuthStand"/>). When the relevant live-stand env
+/// vars are absent the fixtures <c>Assert.Ignore</c> before this helper is touched.
 /// </para>
 /// </summary>
 internal sealed class McpHttpServerSession : IAsyncDisposable {
@@ -42,8 +43,16 @@ internal sealed class McpHttpServerSession : IAsyncDisposable {
 	/// Spawns a single <c>clio mcp-http</c> process on a free loopback port with the given platform API
 	/// key, and waits until it is accepting connections.
 	/// </summary>
+	/// <param name="settings">e2e process/environment settings.</param>
+	/// <param name="platformApiKey">Legacy platform-api-key value, or <see langword="null"/> to omit
+	/// <c>--platform-api-key</c> entirely.</param>
+	/// <param name="cancellationToken">Cancellation token.</param>
+	/// <param name="extraArguments">Additional raw CLI arguments appended verbatim (e.g. the
+	/// ENG-93386 <c>--auth-*</c> flags for the standard-OAuth e2e fixtures). <see langword="null"/>
+	/// (default) adds nothing.</param>
 	public static async Task<McpHttpServerSession> StartAsync(
-		McpE2ESettings settings, string? platformApiKey, CancellationToken cancellationToken) {
+		McpE2ESettings settings, string? platformApiKey, CancellationToken cancellationToken,
+		IReadOnlyList<string>? extraArguments = null) {
 		int port = FindFreeLoopbackPort();
 		List<string> arguments = [
 			"mcp-http",
@@ -54,6 +63,9 @@ internal sealed class McpHttpServerSession : IAsyncDisposable {
 			// Omit --platform-api-key entirely for the no-regression (pre-passthrough) leg (15d).
 			arguments.Add("--platform-api-key");
 			arguments.Add(platformApiKey);
+		}
+		if (extraArguments is { Count: > 0 }) {
+			arguments.AddRange(extraArguments);
 		}
 		ClioProcessDescriptor descriptor = ClioExecutableResolver.Resolve(settings, [.. arguments]);
 
@@ -84,10 +96,17 @@ internal sealed class McpHttpServerSession : IAsyncDisposable {
 	}
 
 	/// <summary>
-	/// Connects a fresh Streamable-HTTP MCP client to the running process, presenting the platform API
-	/// key as a bearer token and (optionally) a per-request <c>X-Integration-Credentials</c> header.
-	/// Each connection is an independent async flow and, with distinct credentials, a distinct tenant.
+	/// Connects a fresh Streamable-HTTP MCP client to the running process, presenting
+	/// <paramref name="platformApiKey"/> as an <c>Authorization: Bearer</c> value and (optionally) a
+	/// per-request <c>X-Integration-Credentials</c> header. Each connection is an independent async
+	/// flow and, with distinct credentials, a distinct tenant.
 	/// </summary>
+	/// <remarks>
+	/// Despite the parameter name (kept for compatibility with the ENG-93208 passthrough fixtures),
+	/// this value is opaque to the transport — it is placed verbatim on the <c>Authorization</c>
+	/// header. The ENG-93386 OAuth e2e fixtures pass a live <c>client_credentials</c> JWT here, not a
+	/// legacy platform-api-key.
+	/// </remarks>
 	public async Task<McpClient> ConnectAsync(
 		string? platformApiKey,
 		string? integrationCredentialsBase64,

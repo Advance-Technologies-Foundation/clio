@@ -36,9 +36,11 @@ public class McpHttpServerCommandOptions : BaseCommandOptions
 	public string CredentialsHeaderName { get; set; }
 
 	[Option("platform-api-key", Required = false,
-		HelpText = "Comma-separated platform API key(s). When at least one is set (here or via the "
-			+ "CLIO_MCP_HTTP_PLATFORM_API_KEY environment variable), per-request credential "
-			+ "passthrough is enabled and requests must present a matching 'Authorization: Bearer <key>'.")]
+		HelpText = "Non-OAuth dev/offline fallback for per-request credential passthrough. "
+			+ "Comma-separated platform API key(s) (here or via CLIO_MCP_HTTP_PLATFORM_API_KEY); "
+			+ "requests must present a matching 'Authorization: Bearer <key>'. IGNORED entirely "
+			+ "when --auth-authority is configured -- standard OAuth authorization is then the only "
+			+ "front door (it cannot be combined with this key on the same Authorization header).")]
 	public string PlatformApiKey { get; set; }
 
 	[Option("allowed-base-urls", Required = false,
@@ -58,6 +60,62 @@ public class McpHttpServerCommandOptions : BaseCommandOptions
 		HelpText = "Maximum number of per-session containers kept in memory. When exceeded, the "
 			+ "least-recently-used container is evicted. Defaults to 50.")]
 	public int MaxSessions { get; set; }
+
+	[Option("auth-authority", Required = false,
+		HelpText = "OIDC authority (discovery/JWKS base URL) of the OAuth 2.1 Authorization Server "
+			+ "whose access tokens this edge accepts. Setting it (here or via CLIO_MCP_HTTP_AUTH_AUTHORITY) "
+			+ "ENABLES standard bearer-JWT authorization on the whole endpoint. Unset (default) => "
+			+ "authorization is off and the edge behaves exactly as before.")]
+	public string AuthAuthority { get; set; }
+
+	[Option("auth-audience", Required = false,
+		HelpText = "Comma-separated accepted audience(s) the token must be issued for (also read from "
+			+ "CLIO_MCP_HTTP_AUTH_AUDIENCE). Validated against the token 'aud' claim.")]
+	public string AuthAudience { get; set; }
+
+	[Option("auth-required-scopes", Required = false,
+		HelpText = "Comma-separated scope(s) every request must carry, all required (also read from "
+			+ "CLIO_MCP_HTTP_AUTH_REQUIRED_SCOPES). Checked against the token 'scope'/'scp' claim.")]
+	public string AuthRequiredScopes { get; set; }
+
+	[Option("auth-issuer", Required = false,
+		HelpText = "Comma-separated accepted issuer(s) for the token 'iss' claim (also read from "
+			+ "CLIO_MCP_HTTP_AUTH_ISSUER). Optional: when unset, the issuer is validated against the "
+			+ "discovery document's issuer. Use it when the token 'iss' (public authority) differs from "
+			+ "--auth-authority (internal discovery URL).")]
+	public string AuthIssuer { get; set; }
+
+	[Option("auth-allow-insecure-metadata", Required = false,
+		HelpText = "Allow OIDC metadata/JWKS to be fetched over plain HTTP (also enabled by a truthy "
+			+ "CLIO_MCP_HTTP_AUTH_ALLOW_INSECURE_METADATA). Default is HTTPS-only; set this only for an "
+			+ "internal-DNS HTTP authority on a trusted network.")]
+	public bool AuthAllowInsecureMetadata { get; set; }
+
+	[Option("auth-resource", Required = false,
+		HelpText = "Explicit Protected Resource Metadata 'resource' (canonical MCP endpoint URI) override "
+			+ "(also CLIO_MCP_HTTP_AUTH_RESOURCE). Unset (default) => derived per-request from the "
+			+ "incoming scheme/host/path, which is correct behind any ingress that forwards the Host "
+			+ "header. Set only when auto-derivation is wrong for this deployment.")]
+	public string AuthResource { get; set; }
+
+	[Option("allow-insecure-public", Required = false,
+		HelpText = "Allow starting with a public/wildcard --host (e.g. 0.0.0.0) while authorization is "
+			+ "OFF (no --auth-authority configured) (also a truthy CLIO_MCP_HTTP_ALLOW_INSECURE_PUBLIC). "
+			+ "Without this flag, clio REFUSES TO START in that combination: an unauthenticated public "
+			+ "bind exposes every registered environment's stored credentials to anyone who can reach "
+			+ "the port. Not recommended outside a fully trusted network.")]
+	public bool AllowInsecurePublic { get; set; }
+
+	[Option("auth-allow-any-audience", Required = false,
+		HelpText = "Allow enabling standard OAuth authorization (--auth-authority) with NEITHER "
+			+ "--auth-audience NOR --auth-required-scopes configured (also a truthy "
+			+ "CLIO_MCP_HTTP_AUTH_ALLOW_ANY_AUDIENCE). Without this flag, clio REFUSES TO START in that "
+			+ "combination: with no audience or scope restriction, the endpoint would accept ANY token "
+			+ "the configured --auth-authority ever mints for ANY client/resource, not just this one -- a "
+			+ "confused-deputy risk on a shared identity platform. Configure --auth-audience and/or "
+			+ "--auth-required-scopes instead wherever possible; this flag is a documented escape hatch, "
+			+ "not a recommended posture.")]
+	public bool AuthAllowAnyAudience { get; set; }
 }
 
 /// <summary>
@@ -139,6 +197,84 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 		builder.Services.AddSingleton<ISessionContainerCache>(
 			new SessionContainerCache(sessionIdleTtl, maxSessions));
 
+		// Standard OAuth 2.1 Resource-Server authorization (ENG-93386, Story 2/3). It is resolved from
+		// the auth command-line flags plus their CLIO_MCP_HTTP_AUTH environment-variable equivalents, and
+		// turns on only when an authority value is present. When disabled we register NOTHING here and add
+		// no authN/authZ middleware below — calling ASP.NET's UseAuthentication with no registered scheme
+		// throws, so skipping the whole block is required, not just cosmetic. The edge behaves as before.
+		AuthConfiguration authConfiguration =
+			AuthConfiguration.Resolve(options, AuthEnvironment.FromProcessEnvironment());
+		if (authConfiguration.Enabled) {
+			McpHttpAuthentication.ConfigureServices(builder.Services, authConfiguration);
+		}
+
+		// ENG-93386 Story 7 (FR-12/D-6): --platform-api-key is retired as the default front door
+		// but retained as a dev/offline fallback for when OAuth is not configured. Once OAuth IS
+		// configured, the key is silently bypassed (see EnforcePlatformApiKeyGate) rather than
+		// combined with it — flag the now-inert configuration loudly so it is never a silent
+		// misconfiguration.
+		if (ShouldWarnPlatformApiKeyIgnored(authConfiguration.Enabled, platformApiKeys.Count)) {
+			ConsoleLogger.Instance.WriteWarning(
+				"Both --auth-authority and --platform-api-key are configured; --platform-api-key is "
+				+ "IGNORED while standard OAuth authorization is enabled — it cannot be combined with "
+				+ "OAuth on the same Authorization header (FR-12). Remove --platform-api-key / unset "
+				+ "CLIO_MCP_HTTP_PLATFORM_API_KEY if it is no longer needed.");
+		}
+
+		// Public-bind guard (Story 5, OQ-A: REFUSE, not just warn — security-first default). A wildcard
+		// --host with authorization OFF means every registered environment's stored credentials are
+		// reachable to anyone who can route to this port; that combination must not silently start.
+		bool allowInsecurePublic = options.AllowInsecurePublic
+			|| IsTruthyEnvironmentFlag("CLIO_MCP_HTTP_ALLOW_INSECURE_PUBLIC");
+		PublicBindGuardOutcome guardOutcome = EvaluatePublicBindGuard(
+			IsPublicBind(options.Host), authConfiguration.Enabled, allowInsecurePublic);
+		switch (guardOutcome) {
+			case PublicBindGuardOutcome.Refuse:
+				ConsoleLogger.Instance.WriteError(
+					$"Refusing to start: --host {options.Host} is a public/wildcard bind with no "
+					+ "authorization configured (no --auth-authority). This would expose every "
+					+ "registered environment's stored credentials to anyone who can reach the port. "
+					+ "Configure --auth-authority, or pass --allow-insecure-public to start anyway "
+					+ "(not recommended).");
+				return 1;
+			case PublicBindGuardOutcome.Warn:
+				ConsoleLogger.Instance.WriteWarning(
+					$"mcp-http is bound to {options.Host} (public/wildcard) with NO authorization "
+					+ "configured; --allow-insecure-public was set. Every registered environment's "
+					+ "stored credentials are reachable to anyone who can reach this port. Use only on "
+					+ "a fully trusted network.");
+				break;
+		}
+
+		// Audience/scope guard (ENG-93386, Story 8 final-review fix; REFUSE, not just warn —
+		// security-first default, same posture as the public-bind guard above). Enabling authorization
+		// requires only --auth-authority; with NEITHER --auth-audience NOR --auth-required-scopes also
+		// configured, the JWT bearer handler accepts ANY token the shared issuer ever mints for ANY
+		// client/resource (ValidateAudience becomes false and the scope check is vacuously satisfied by
+		// an empty required-scope set) — a confused-deputy risk on a shared identity platform.
+		bool allowAnyAudience = options.AuthAllowAnyAudience
+			|| IsTruthyEnvironmentFlag("CLIO_MCP_HTTP_AUTH_ALLOW_ANY_AUDIENCE");
+		PublicBindGuardOutcome audienceGuardOutcome = EvaluateAudienceScopeGuard(
+			authConfiguration.Enabled, authConfiguration.Audiences.Count, authConfiguration.RequiredScopes.Count,
+			allowAnyAudience);
+		switch (audienceGuardOutcome) {
+			case PublicBindGuardOutcome.Refuse:
+				ConsoleLogger.Instance.WriteError(
+					"Refusing to start: --auth-authority is configured but neither --auth-audience nor "
+					+ "--auth-required-scopes is set. The endpoint would accept any token the configured "
+					+ "authority ever mints for any client or resource, not just this one. Configure "
+					+ "--auth-audience and/or --auth-required-scopes, or pass --auth-allow-any-audience "
+					+ "to start anyway (not recommended).");
+				return 1;
+			case PublicBindGuardOutcome.Warn:
+				ConsoleLogger.Instance.WriteWarning(
+					"Standard OAuth authorization is enabled with NEITHER --auth-audience NOR "
+					+ "--auth-required-scopes configured; --auth-allow-any-audience was set. The endpoint "
+					+ "accepts any token the configured authority mints for any client or resource. Use "
+					+ "only when the authority is exclusively dedicated to this deployment.");
+				break;
+		}
+
 		AspNetWebApplication app = builder.Build();
 
 		// FR-05/FR-08 (ENG-93208): wire the tool-execution-lock facade to this host's DI-registered
@@ -158,20 +294,28 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 		app.UseHostFiltering();
 		app.Use((context, next) => ValidateOrigin(context, next, options.Host));
 
-		// Per-request credential-passthrough leg (Story 5/4). Always wired: it is gated SOLELY by the
-		// platform API-key gate, which fail-closes when no key is configured. With no key set (the
-		// default) the gate publishes PassthroughEnabledItemKey=false, the credential-capture middleware
-		// ignores the credential header, and the verb / stdio / -e <env> behave exactly as 8.1.0.72 — so
-		// wiring the middleware unconditionally does NOT expose passthrough by default. A key is what
-		// turns it on. (The former incubation feature flag was removed: mcp-http is not yet used in prod,
-		// so the second gate was redundant given the fail-closed api-key gate.)
+		// Standard OAuth 2.1 authentication/authorization (ENG-93386, Story 3). Added ONLY when
+		// authorization is enabled (an authority is configured); adding UseAuthentication with no
+		// registered scheme would throw. Endpoint enforcement (RequireAuthorization) + the fail-safe /
+		// public-bind guard land in Story 5 — here the pipeline only authenticates and authorizes so the
+		// principal is available to the credential-capture middleware below (Story 6 gates on it).
+		if (authConfiguration.Enabled) {
+			app.UseAuthentication();
+			app.UseAuthorization();
+		}
+
+		// Per-request credential-passthrough leg (Story 5/4). Always wired. When OAuth is NOT
+		// configured (default, dev/offline), gated SOLELY by the platform API-key gate, which
+		// fail-closes when no key is configured — unchanged pre-ENG-93386 behavior. When OAuth IS
+		// configured, the legacy key gate is bypassed (FR-12/D-6, Story 7): passthrough eligibility
+		// comes solely from the authenticated principal RequireAuthorization already guaranteed.
 		//
-		// The edge API-key gate runs BEFORE the credential-capture middleware so a credential header is
-		// treated as trusted only after this gate authorizes the request.
+		// The gate runs BEFORE the credential-capture middleware so a credential header is treated
+		// as trusted only after this gate authorizes the request.
 		IPlatformApiKeyGate platformApiKeyGate =
 			app.Services.GetRequiredService<IPlatformApiKeyGate>();
 		app.Use((context, next) => EnforcePlatformApiKeyGate(
-			context, next, platformApiKeyGate, options.CredentialsHeaderName));
+			context, next, platformApiKeyGate, options.CredentialsHeaderName, authConfiguration.Enabled));
 
 		ICredentialHeaderParser credentialHeaderParser =
 			app.Services.GetRequiredService<ICredentialHeaderParser>();
@@ -179,9 +323,16 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 			app.Services.GetRequiredService<ICredentialContextAccessor>();
 		app.Use((context, next) => CaptureCredentialContext(
 			context, next, credentialHeaderParser, credentialContextAccessor,
-			options.CredentialsHeaderName));
+			options.CredentialsHeaderName, authConfiguration.Enabled));
 
-		app.MapMcp(options.Path);
+		// Whole-endpoint enforcement (ENG-93386, Story 5): when authorization is enabled, EVERY request
+		// to the MCP endpoint — passthrough AND pre-registered -e <env> / stored-credential access alike
+		// — requires a valid token. This closes the "gates only passthrough" gap the bespoke platform-API-
+		// key gate left open. When disabled, MapMcp carries no authorization requirement (today's behavior).
+		IEndpointConventionBuilder mcpEndpoint = app.MapMcp(options.Path);
+		if (authConfiguration.Enabled) {
+			mcpEndpoint.RequireAuthorization(McpHttpAuthentication.PolicyName);
+		}
 
 		ConsoleLogger.Instance.WriteInfo(
 			$"MCP HTTP server listening on http://{options.Host}:{options.Port}{options.Path}");
@@ -257,11 +408,27 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 	// missing or mismatched key short-circuits with HTTP 401 and no secret (AC-03/AC-ERR).
 	// The decision is published to the pipeline via PassthroughEnabledItemKey, which the
 	// credential-capture middleware honors.
+	//
+	// ENG-93386 Story 7 (FR-12/D-6): once standard OAuth is configured, this legacy gate is
+	// BYPASSED entirely rather than combined with it — the two schemes cannot coexist on the
+	// same 'Authorization' header (JwtBearerHandler already claims it for the JWT once OAuth is
+	// enabled), so an AND/OR combination is not even meaningful. Passthrough eligibility then
+	// comes solely from the authenticated principal that RequireAuthorization (Story 5) already
+	// guaranteed for this endpoint; CaptureCredentialContext's own authenticated-principal check
+	// (Story 6) independently re-verifies it. When OAuth is not configured (default, dev/offline),
+	// this gate behaves exactly as before ENG-93386 — --platform-api-key's retained fallback role.
 	internal static async Task EnforcePlatformApiKeyGate(
 		HttpContext context,
 		RequestDelegate next,
 		IPlatformApiKeyGate gate,
-		string credentialHeaderName) {
+		string credentialHeaderName,
+		bool authorizationEnabled) {
+		if (authorizationEnabled) {
+			context.Items[PassthroughEnabledItemKey] = context.User?.Identity?.IsAuthenticated == true;
+			await next(context);
+			return;
+		}
+
 		if (!gate.PassthroughEnabled) {
 			// No key configured: fail-closed default. Downstream ignores the credential header.
 			context.Items[PassthroughEnabledItemKey] = false;
@@ -299,18 +466,36 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 	// false/absent the credential header is ignored entirely — no parse, no 400 — so an
 	// untrusted/no-key request behaves exactly as 8.1.0.72 (AC-02). Parse failure inside the
 	// trusted path ⇒ HTTP 400 with a JSON body naming the defect (no secret).
+	//
+	// ENG-93386 Story 6 (FR-07 header-strip): when standard OAuth authorization is configured
+	// (requireAuthenticatedPrincipal == true), the header is honored ONLY on an authenticated
+	// request. Story 5's RequireAuthorization on the /mcp endpoint already makes this true for any
+	// request reaching this middleware via that endpoint — this check makes the invariant explicit
+	// and independently testable rather than an emergent property of middleware order, and also
+	// covers a request that reaches this globally-wired middleware via a path other than /mcp
+	// (where RequireAuthorization never ran). Additive: when authorization is not configured
+	// (requireAuthenticatedPrincipal == false), passthrough keeps working via the platform-API-key
+	// gate alone — unchanged, pre-ENG-93386 behavior; Story 7 decides that gate's ultimate fate.
 	internal static async Task CaptureCredentialContext(
 		HttpContext context,
 		RequestDelegate next,
 		ICredentialHeaderParser parser,
 		ICredentialContextAccessor accessor,
-		string headerName) {
+		string headerName,
+		bool requireAuthenticatedPrincipal) {
 		bool passthroughEnabled =
 			context.Items.TryGetValue(PassthroughEnabledItemKey, out object flag)
 			&& flag is true;
 
 		if (!passthroughEnabled) {
 			// Not a trusted passthrough request — ignore the credential header (AC-02).
+			await next(context);
+			return;
+		}
+
+		if (requireAuthenticatedPrincipal && context.User?.Identity?.IsAuthenticated != true) {
+			// FR-07: standard OAuth is configured but this request carries no valid principal —
+			// the credential header is stripped/ignored, not merely deferred (AC-03).
 			await next(context);
 			return;
 		}
@@ -374,8 +559,94 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 	private static bool IsWildcardHost(string host) =>
 		host is "0.0.0.0" or "*" or "::" or "[::]";
 
-	private static bool IsTruthyEnvironmentFlag(string variableName) {
-		string value = Environment.GetEnvironmentVariable(variableName);
-		return string.Equals(value, "true", StringComparison.OrdinalIgnoreCase) || value == "1";
+	/// <summary>The public-bind guard's decision (ENG-93386, Story 5, OQ-A).</summary>
+	internal enum PublicBindGuardOutcome
+	{
+		/// <summary>No conflict: either the bind is not public, or authorization is enabled.</summary>
+		Ok,
+
+		/// <summary>Public bind with authorization off, but the operator explicitly opted in; start with a loud warning.</summary>
+		Warn,
+
+		/// <summary>Public bind with authorization off and no explicit opt-in; refuse to start.</summary>
+		Refuse
 	}
+
+	/// <summary>
+	/// Decides whether a public/reachable <c>--host</c> combined with authorization being off is allowed
+	/// to start. Security-first default: REFUSE, not merely warn — an unauthenticated reachable bind
+	/// exposes every registered environment's stored credentials to any caller that can reach the port.
+	/// The operator can explicitly override via <c>--allow-insecure-public</c> (or the matching env var).
+	/// </summary>
+	/// <param name="isPublicBind">Whether <c>--host</c> is reachable by more than just this machine's own
+	/// loopback interface — a wildcard bind (<c>0.0.0.0</c>) or any concrete non-loopback address/hostname
+	/// (see <see cref="IsPublicBind"/>). Final-review fix (Story 8): originally this only covered the four
+	/// literal wildcard spellings, silently missing a bind to a concrete LAN/public IP or DNS name — the
+	/// exact "gates only the literal wildcard" gap this guard exists to close.</param>
+	/// <param name="authorizationEnabled">Whether OAuth Resource-Server authorization is configured.</param>
+	/// <param name="allowInsecurePublic">Whether the operator explicitly opted into the insecure combination.</param>
+	/// <returns>The guard's decision.</returns>
+	internal static PublicBindGuardOutcome EvaluatePublicBindGuard(
+		bool isPublicBind, bool authorizationEnabled, bool allowInsecurePublic) {
+		if (!isPublicBind || authorizationEnabled) {
+			return PublicBindGuardOutcome.Ok;
+		}
+		return allowInsecurePublic ? PublicBindGuardOutcome.Warn : PublicBindGuardOutcome.Refuse;
+	}
+
+	/// <summary>
+	/// ENG-93386 Story 8 (final-review fix). Decides whether standard OAuth authorization being enabled
+	/// with NEITHER an accepted audience NOR a required scope configured is allowed to start. Security-first
+	/// default: REFUSE, not merely warn — with both empty, <see cref="McpHttpAuthentication.BuildTokenValidationParameters"/>
+	/// disables audience validation and the scope check is vacuously satisfied, so the endpoint accepts any
+	/// token the configured authority ever mints for any client or resource (a confused-deputy risk on a
+	/// shared identity platform). The operator can explicitly override via <c>--auth-allow-any-audience</c>
+	/// (or the matching env var). Reuses <see cref="PublicBindGuardOutcome"/> — an identical Ok/Warn/Refuse
+	/// shape for a distinct startup precondition.
+	/// </summary>
+	/// <param name="authorizationEnabled">Whether OAuth Resource-Server authorization is configured.</param>
+	/// <param name="audienceCount">Number of configured accepted audiences.</param>
+	/// <param name="requiredScopeCount">Number of configured required scopes.</param>
+	/// <param name="allowAnyAudience">Whether the operator explicitly opted into the unscoped combination.</param>
+	/// <returns>The guard's decision.</returns>
+	internal static PublicBindGuardOutcome EvaluateAudienceScopeGuard(
+		bool authorizationEnabled, int audienceCount, int requiredScopeCount, bool allowAnyAudience) {
+		if (!authorizationEnabled || audienceCount > 0 || requiredScopeCount > 0) {
+			return PublicBindGuardOutcome.Ok;
+		}
+		return allowAnyAudience ? PublicBindGuardOutcome.Warn : PublicBindGuardOutcome.Refuse;
+	}
+
+	/// <summary>
+	/// ENG-93386 Story 8 (final-review fix): <see langword="true"/> for any host reachable by more than
+	/// this machine's own loopback interface. Broader than <see cref="IsWildcardHost"/> (which only
+	/// recognizes the literal wildcard spellings and is used for Host-header allow-listing, a distinct
+	/// concern): a bind to a concrete LAN/public IP or DNS hostname is just as reachable to a remote
+	/// caller as <c>0.0.0.0</c>, so the public-bind guard must treat it the same way. Deliberately reuses
+	/// <see cref="TargetUrlValidator.IsLoopbackIpOrLocalhost"/> (parses the FULL 127.0.0.0/8 / <c>::1</c>
+	/// loopback range), not the narrower <see cref="IsLoopbackAlias"/> — a second-pass adversarial-review
+	/// fix caught that the alias-only check misclassified a legitimate loopback address like
+	/// <c>127.0.0.2</c> as "public" and would have refused a harmless local bind.
+	/// </summary>
+	/// <param name="host">The <c>--host</c> value.</param>
+	/// <returns><see langword="true"/> when the bind is not loopback.</returns>
+	internal static bool IsPublicBind(string host) => !TargetUrlValidator.IsLoopbackIpOrLocalhost(host);
+
+	/// <summary>
+	/// ENG-93386 Story 7 (FR-12/D-6): <see langword="true"/> when both standard OAuth authorization
+	/// and at least one legacy platform API key are configured together — a combination that is not
+	/// a security problem (OAuth supersedes the key entirely; see <see cref="EnforcePlatformApiKeyGate"/>)
+	/// but is worth a loud startup warning so an operator never assumes the key is still enforced.
+	/// </summary>
+	/// <param name="authorizationEnabled">Whether OAuth Resource-Server authorization is configured.</param>
+	/// <param name="platformApiKeyCount">Number of configured platform API keys.</param>
+	/// <returns><see langword="true"/> when the configured key is now inert and should be flagged.</returns>
+	internal static bool ShouldWarnPlatformApiKeyIgnored(bool authorizationEnabled, int platformApiKeyCount) =>
+		authorizationEnabled && platformApiKeyCount > 0;
+
+	// ENG-93386 Story 8 (final-review fix): delegates the actual truthy-parsing rule to
+	// AuthConfiguration.IsTruthy so every mcp-http boolean env-var override (this one included) trims
+	// whitespace the same way — a review found this copy previously did not trim, unlike the other.
+	private static bool IsTruthyEnvironmentFlag(string variableName) =>
+		AuthConfiguration.IsTruthy(Environment.GetEnvironmentVariable(variableName));
 }

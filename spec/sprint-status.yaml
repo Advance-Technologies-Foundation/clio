@@ -1307,6 +1307,92 @@ stories:
     depends_on: [story-mcp-passthrough-tool-parity-16]
     blocks: []
 
+  # --- ENG-93386: standard MCP authorization (OAuth 2.1 Resource Server) ---
+  # ADR: spec/adr/adr-mcp-http-standard-authorization.md · PRD: spec/prd/prd-mcp-http-standard-authorization.md
+  # Order: 1 (spike, BLOCKING) -> 2 -> 3 -> 4,5 -> 6 -> 7 -> 8
+  # Branch off umbrella claude/clio-mcp-multi-tenant-73a807, NOT master.
+  - id: story-mcp-http-standard-authorization-1
+    title: "Spike: confirm identity-platform M2M capability (OQ-B) [BLOCKING]"
+    feature: "mcp-http-standard-authorization"
+    size: S
+    status: done
+    depends_on: []
+    blocks: [story-mcp-http-standard-authorization-2, story-mcp-http-standard-authorization-3, story-mcp-http-standard-authorization-6]
+    note: "RESOLVED 2026-07-10 via metarepo investigation. GO: client_credentials, issuer/JWKS/RS256. NO-GO: RFC 8707 resource (aud is scope-derived), private_key_jwt (client secret only). Follow feature-flag-service/control-plane RS precedent + IdentityPlatformAuth__* config; aud=creatio_ai_api|clio_mcp_api. Findings: spec/mcp-http-standard-authorization/identity-platform-spike-findings.md"
+    file: spec/stories/story-mcp-http-standard-authorization-1.md
+    prd: spec/prd/prd-mcp-http-standard-authorization.md
+    adr: spec/adr/adr-mcp-http-standard-authorization.md
+
+  - id: story-mcp-http-standard-authorization-2
+    title: "Auth configuration options (issuer/audience/scopes) + OIDC discovery"
+    feature: "mcp-http-standard-authorization"
+    size: S
+    status: done
+    depends_on: [story-mcp-http-standard-authorization-1]
+    blocks: [story-mcp-http-standard-authorization-3, story-mcp-http-standard-authorization-4, story-mcp-http-standard-authorization-5]
+    note: "DONE 2026-07-11. AuthConfiguration + AuthEnvironment (5 --auth-* flags + CLIO_MCP_HTTP_AUTH_* env); enabled iff --auth-authority set; models discovery-authority + valid-issuers + audiences + required-scopes + RequireHttpsMetadata (allow-insecure opt-out). 12 unit tests. Validated: dotnet test --filter Category=Unit&Module=McpServer."
+    file: spec/stories/story-mcp-http-standard-authorization-2.md
+
+  - id: story-mcp-http-standard-authorization-3
+    title: "JWT bearer Resource-Server validation (AddJwtBearer)"
+    feature: "mcp-http-standard-authorization"
+    size: M
+    status: done
+    depends_on: [story-mcp-http-standard-authorization-1, story-mcp-http-standard-authorization-2]
+    blocks: [story-mcp-http-standard-authorization-4, story-mcp-http-standard-authorization-5]
+    note: "DONE 2026-07-11. McpHttpAuthentication: AddJwtBearer (issuer/audience/RS256+PS256/lifetime, MapInboundClaims=false, iss trailing-slash normalization) + AddAuthorization 'mcp' policy via RequireAssertion lambda scope-check (scope/scp, NOT a handler class -> avoids assembly-scan/ValidateOnBuild trap). Wired in Run() behind Enabled gate + UseAuthentication/UseAuthorization (hermetic fail-safe off). JwtBearer pkg per-TFM (10.0.9 net10 / 8.0.11 net8). 12 unit tests. NOTE: endpoint enforcement (RequireAuthorization) + full HTTP 401/403 matrix are Story 5; here validation-params + scope-policy + DI-compose are unit-tested."
+    file: spec/stories/story-mcp-http-standard-authorization-3.md
+
+  - id: story-mcp-http-standard-authorization-4
+    title: "Protected Resource Metadata + WWW-Authenticate (SDK handler)"
+    feature: "mcp-http-standard-authorization"
+    size: S
+    status: done
+    depends_on: [story-mcp-http-standard-authorization-2, story-mcp-http-standard-authorization-3]
+    blocks: [story-mcp-http-standard-authorization-5]
+    note: "DONE 2026-07-11. OQ-F resolved by decompiling pinned SDK 1.4.0: AddMcp() default ForwardAuthenticate=\"Bearer\" matches JwtBearerDefaults; DefaultChallengeScheme=McpAuth routes 401 through McpAuthenticationHandler (RFC 9728 resource_metadata challenge); handler is IAuthenticationRequestHandler so .well-known is served unconditionally+anonymously, no endpoint mapping needed. ProtectedResourceMetadata ships in transitive ModelContextProtocol.Core, no new package. OQ-C resolved by design (Resource left null -> per-request auto-derivation from Host header; --auth-resource override available). Verified with REAL TestServer pipeline (McpHttpAuthenticationPipelineTests): 401+WWW-Authenticate, anonymous .well-known, valid->200, wrong-aud/expired->401, missing-scope->403. 11 new tests."
+    file: spec/stories/story-mcp-http-standard-authorization-4.md
+
+  - id: story-mcp-http-standard-authorization-5
+    title: "Protect whole endpoint (RequireAuthorization) + fail-safe + public-bind guard"
+    feature: "mcp-http-standard-authorization"
+    size: M
+    status: done
+    depends_on: [story-mcp-http-standard-authorization-3, story-mcp-http-standard-authorization-4]
+    blocks: [story-mcp-http-standard-authorization-6]
+    note: "DONE 2026-07-11. OQ-A resolved: REFUSE security-first (EvaluatePublicBindGuard) -- public/wildcard host + auth off refuses to start (WriteError+exit1) unless --allow-insecure-public (+env), which starts with WriteWarning instead. MapMcp(path).RequireAuthorization(mcp) applied when enabled -> passthrough AND -e/stored both need a token, closing the ENG-93208 partial-coverage gap. Middleware ordering already correct from Story 3 (UseAuthorization short-circuits before EnforcePlatformApiKeyGate/CaptureCredentialContext). Verified: 4 guard-matrix unit tests + real TestServer pipeline test (auth-disabled reaches endpoint with no token, AC-04); all Story-4 401/403 cases re-verified with enforcement now on the endpoint itself. 5 new tests."
+    file: spec/stories/story-mcp-http-standard-authorization-5.md
+
+  - id: story-mcp-http-standard-authorization-6
+    title: "Back-door hardening: header strip, gateway->tenant authZ, no-token-passthrough invariant"
+    feature: "mcp-http-standard-authorization"
+    size: M
+    status: done
+    depends_on: [story-mcp-http-standard-authorization-1, story-mcp-http-standard-authorization-5]
+    blocks: [story-mcp-http-standard-authorization-7]
+    note: "DONE 2026-07-11 (FR-08 scoped down, see ADR OQ-G). FR-07 header-strip: CaptureCredentialContext gained requireAuthenticatedPrincipal (threaded from authConfiguration.Enabled) -- when standard OAuth is configured, an unauthenticated request's X-Integration-Credentials is explicitly ignored, not just deferred by middleware order (covers a non-/mcp path too). Additive: OAuth-off mode unaffected. FR-09 invariant proven structurally + by test: ToolCommandResolver.BuildEphemeralSettings reads only the parsed CredentialContext, never Request.Headers.Authorization; grepped the whole outbound-client path (ApplicationClientFactory + child-container site) for confirmation. FR-13: combined-secrets test proves the existing SensitiveErrorTextRedactor already scrubs both planes (Creatio token + MCP JWT) in one message -- no new redaction pipeline needed. FR-08 (gateway->tenant authZ) explicitly NOT implemented: Story-1 spike found identity-platform's client_credentials token mints no per-tenant/org claim, so there is no real contract to enforce -- inventing one would be a fictional check. Filed as a platform-team follow-up (Jira comment); today any authenticated gateway may assert any tenant, same trust boundary as the retiring platform-api-key gate (not a regression). 5 new tests (CredentialPassthroughAuthHardeningTests.cs x4, SensitiveErrorTextRedactorTests.cs x1)."
+    file: spec/stories/story-mcp-http-standard-authorization-6.md
+
+  - id: story-mcp-http-standard-authorization-7
+    title: "Retire/gate --platform-api-key + unified auth error taxonomy"
+    feature: "mcp-http-standard-authorization"
+    size: M
+    status: done
+    depends_on: [story-mcp-http-standard-authorization-5]
+    blocks: [story-mcp-http-standard-authorization-8]
+    note: "DONE 2026-07-11. OQ-D resolved per ADR D-6: retired as default front door, kept as opt-in dev/offline fallback. EnforcePlatformApiKeyGate branches on authorizationEnabled -- when OAuth is configured, the legacy key check is bypassed entirely (not combined/ANDed/ORed -- the two schemes can't coexist on one Authorization header once JwtBearerHandler claims it) and PassthroughEnabledItemKey is derived solely from context.User.Identity.IsAuthenticated; when OAuth is off, unchanged pre-ENG-93386 behavior. New pure predicate ShouldWarnPlatformApiKeyIgnored triggers a startup warning when both are configured together (inert, not insecure, but flagged). Unified taxonomy (FR-11) was already substantially closed by Stories 5/6; this story removes the remaining two-Bearer-schemes ambiguity. CLI HelpText + help/en/mcp-http.txt + docs/commands/mcp-http.md updated to state the retired/fallback disposition. 7 new tests in PlatformApiKeyDispositionTests.cs."
+    file: spec/stories/story-mcp-http-standard-authorization-7.md
+
+  - id: story-mcp-http-standard-authorization-8
+    title: "Per-tool authorization filters (optional), docs, e2e"
+    feature: "mcp-http-standard-authorization"
+    size: M
+    status: done
+    depends_on: [story-mcp-http-standard-authorization-7]
+    blocks: []
+    note: "DONE 2026-07-11 (FR-10 scoped down, see ADR). FR-10 per-tool AddAuthorizationFilters not implemented -- same reasoning class as Story 6's FR-08: identity-platform issues one undifferentiated scope, so a per-tool filter would be a no-op or reject-all; endpoint-level RequireAuthorization suffices for v1 per the AC's own escape hatch. Docs: all 4 targets updated (mcp-http.txt/.md, Commands.md, McpCapabilityMap.md); no stale wording found. MCP surface: mcp-http is the server itself, not wrapped by any tool -- reviewed, no update required. E2E: McpHttpOAuthAuthorizationE2ETests.cs (5 tests) + McpHttpOAuthStand + OAuthClientCredentialsTokenFetcher authored, skip-gate verified to fire cleanly, but NOT run against a live AS (stated explicitly). FINAL ADVERSARIAL REVIEW (mandatory ready-to-merge gate) run over the whole branch diff via 3 parallel reviewers (quality/correctness-performance/security); all 3 independently converged on 2 real gaps, both fixed: (1) HIGH audience/scope fail-open -- --auth-authority alone enabled auth with no --auth-audience/--auth-required-scopes accepted ANY token from the issuer for ANY resource; fixed with new EvaluateAudienceScopeGuard (REFUSE-by-default, --auth-allow-any-audience escape hatch). (2) MEDIUM public-bind guard only recognized 4 literal wildcard spellings, missing concrete LAN/public IP/DNS binds; fixed via IsPublicBind (any non-loopback host). Also fixed: duplicated/inconsistent truthy-env-var parser unified, stale e2e-harness doc wording, ADR Status Proposed->Accepted. 16 new/updated tests (AudienceScopeGuardTests.cs x5, PublicBindGuardTests.cs +11). Full McpServer unit suite: 2087 passed/0 failed/1 skipped, both net8.0/net10.0. ALL 8 STORIES OF ENG-93386 NOW DONE."
+    file: spec/stories/story-mcp-http-standard-authorization-8.md
+
   # --- mcp-lazy-schema stories (ENG-90312) — added 2026-07-12, previously untracked ---
   # 12 story files existed under spec/stories/ with no sprint-status.yaml entries. Reconciled
   # against Jira (ENG-90312, Closed/Done 2026-07-10) and GitHub (PR #743 spike/mcp-lazy-schema, MERGED 2026-07-06).

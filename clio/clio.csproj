@@ -134,6 +134,9 @@
 
 	<ItemGroup Label="ASP.NET Core hosting for MCP HTTP transport">
 		<FrameworkReference Include="Microsoft.AspNetCore.App" />
+		<!-- JwtBearer is NOT in the ASP.NET Core shared framework; needed for the MCP HTTP
+		     OAuth 2.1 Resource-Server auth (ENG-93386). -->
+		<PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
 	</ItemGroup>
 
 	<ItemGroup Label="Centrally Managed Package Versions">
