@@ -558,64 +558,15 @@ namespace Clio
 				fileSystem.Directory.CreateDirectory(AppSettingsFolderPath);
 			}
 			bool isRealFileSystem = fileSystem is FileSystem;
-			if (isRealFileSystem && System.IO.File.Exists(AppSettingsFile)
-				&& new FileInfo(AppSettingsFile).LinkTarget != null) {
-				throw new IOException(
-					$"Refusing to replace symbolic-link settings file '{AppSettingsFile}'.");
-			}
-			UnixFileMode? unixFileMode = null;
-			System.Security.AccessControl.FileSecurity windowsFileSecurity = null;
-			if (isRealFileSystem && System.IO.File.Exists(AppSettingsFile)) {
-				if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) {
-					windowsFileSecurity = new FileInfo(AppSettingsFile).GetAccessControl();
-				}
-				else {
-					unixFileMode = System.IO.File.GetUnixFileMode(AppSettingsFile);
-				}
-			}
+			(System.Security.AccessControl.FileSecurity windowsFileSecurity, UnixFileMode? unixFileMode) =
+				GetSettingsFileSecurity(isRealFileSystem);
 			string tempFilePath = Path.Combine(AppSettingsFolderPath,
 				$".{FileName}.{Guid.NewGuid():N}.tmp");
 			try {
 				WriteSettingsTempFile(fileSystem, tempFilePath, settings, isRealFileSystem,
 					windowsFileSecurity, unixFileMode);
-
-				if (!verifyExpectedContent) {
-					fileSystem.File.Move(tempFilePath, AppSettingsFile, overwrite: true);
-				}
-				else if (expectedContent == null) {
-					try {
-						fileSystem.File.Move(tempFilePath, AppSettingsFile);
-					}
-					catch (IOException) when (fileSystem.File.Exists(AppSettingsFile)) {
-						throw new SettingsFileChangedException();
-					}
-				}
-				else {
-					Stream currentSettingsStream;
-					try {
-						currentSettingsStream = fileSystem.File.Open(AppSettingsFile, FileMode.Open,
-							FileAccess.Read, FileShare.Read | FileShare.Delete);
-					}
-					catch (FileNotFoundException) {
-						throw new SettingsFileChangedException();
-					}
-					using (currentSettingsStream) {
-						using StreamReader reader = new(currentSettingsStream, Encoding.UTF8,
-							detectEncodingFromByteOrderMarks: true, leaveOpen: true);
-						string currentContent = reader.ReadToEnd();
-						if (!string.Equals(currentContent, expectedContent, StringComparison.Ordinal)) {
-							throw new SettingsFileChangedException();
-						}
-						if (isRealFileSystem) {
-							fileSystem.File.Replace(tempFilePath, AppSettingsFile, destinationBackupFileName: null,
-								ignoreMetadataErrors: true);
-						}
-						else {
-							currentSettingsStream.Dispose();
-							fileSystem.File.Move(tempFilePath, AppSettingsFile, overwrite: true);
-						}
-					}
-				}
+				CommitSettingsFile(fileSystem, tempFilePath, expectedContent, verifyExpectedContent,
+					isRealFileSystem);
 			}
 			finally {
 				if (fileSystem.File.Exists(tempFilePath)) {
@@ -623,6 +574,67 @@ namespace Clio
 				}
 			}
 			SaveSchema(fileSystem);
+		}
+
+		private static (System.Security.AccessControl.FileSecurity WindowsFileSecurity, UnixFileMode? UnixFileMode)
+			GetSettingsFileSecurity(bool isRealFileSystem) {
+			if (!isRealFileSystem || !System.IO.File.Exists(AppSettingsFile)) {
+				return (null, null);
+			}
+			FileInfo settingsFile = new(AppSettingsFile);
+			if (settingsFile.LinkTarget != null) {
+				throw new IOException(
+					$"Refusing to replace symbolic-link settings file '{AppSettingsFile}'.");
+			}
+			return RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+				? (settingsFile.GetAccessControl(), null)
+				: (null, System.IO.File.GetUnixFileMode(AppSettingsFile));
+		}
+
+		private static void CommitSettingsFile(IFileSystem fileSystem, string tempFilePath, string expectedContent,
+			bool verifyExpectedContent, bool isRealFileSystem) {
+			if (!verifyExpectedContent) {
+				fileSystem.File.Move(tempFilePath, AppSettingsFile, overwrite: true);
+				return;
+			}
+			if (expectedContent == null) {
+				MoveNewSettingsFile(fileSystem, tempFilePath);
+				return;
+			}
+
+			using Stream currentSettingsStream = OpenCurrentSettings(fileSystem);
+			using StreamReader reader = new(currentSettingsStream, Encoding.UTF8,
+				detectEncodingFromByteOrderMarks: true, leaveOpen: true);
+			string currentContent = reader.ReadToEnd();
+			if (!string.Equals(currentContent, expectedContent, StringComparison.Ordinal)) {
+				throw new SettingsFileChangedException();
+			}
+			if (isRealFileSystem) {
+				fileSystem.File.Replace(tempFilePath, AppSettingsFile, destinationBackupFileName: null,
+					ignoreMetadataErrors: true);
+				return;
+			}
+			currentSettingsStream.Dispose();
+			fileSystem.File.Move(tempFilePath, AppSettingsFile, overwrite: true);
+		}
+
+		private static void MoveNewSettingsFile(IFileSystem fileSystem, string tempFilePath) {
+			try {
+				fileSystem.File.Move(tempFilePath, AppSettingsFile);
+			}
+			catch (IOException) when (fileSystem.File.Exists(AppSettingsFile)) {
+				throw new SettingsFileChangedException();
+			}
+		}
+
+		private static Stream OpenCurrentSettings(IFileSystem fileSystem) {
+			try {
+				return fileSystem.File.Open(AppSettingsFile, FileMode.Open,
+					FileAccess.Read, FileShare.Read | FileShare.Delete);
+			}
+			catch (FileNotFoundException) {
+				throw new SettingsFileChangedException();
+			}
 		}
 
 		private static void WriteSettingsTempFile(IFileSystem fileSystem, string tempFilePath, Settings settings,
@@ -707,21 +719,9 @@ namespace Clio
 		private void UpdateSettings(Action<Settings> mutation) {
 			ExecuteWithSettingsLock(_fileSystem, () => {
 				for (int attempt = 0; attempt < 3; attempt++) {
-					SettingsBootstrapResult latest = _settingsBootstrapService.GetResult();
-					if (string.Equals(latest.Report.Status, "broken", StringComparison.OrdinalIgnoreCase)) {
-						string issue = latest.Report.Issues.FirstOrDefault()?.Message
-							?? "appsettings.json is unreadable.";
-						throw new InvalidOperationException(
-							$"Cannot update settings because {issue}");
-					}
-
-					string expectedContent = _fileSystem.File.ReadAllText(AppSettingsFile);
+					string expectedContent;
 					try {
-						_settings = JsonConvert.DeserializeObject<Settings>(expectedContent);
-						if (_settings == null) {
-							throw new Newtonsoft.Json.JsonSerializationException(
-								"appsettings.json did not contain a settings object.");
-						}
+						_settings = LoadLatestSettings(out expectedContent);
 					}
 					catch (Newtonsoft.Json.JsonException) when (attempt < 2) {
 						Thread.Sleep(10);
@@ -749,6 +749,21 @@ namespace Clio
 				}
 				throw new InvalidOperationException("Settings update retry loop ended unexpectedly.");
 			});
+		}
+
+		private Settings LoadLatestSettings(out string expectedContent) {
+			SettingsBootstrapResult latest = _settingsBootstrapService.GetResult();
+			if (string.Equals(latest.Report.Status, "broken", StringComparison.OrdinalIgnoreCase)) {
+				string issue = latest.Report.Issues.FirstOrDefault()?.Message
+					?? "appsettings.json is unreadable.";
+				throw new InvalidOperationException(
+					$"Cannot update settings because {issue}");
+			}
+
+			expectedContent = _fileSystem.File.ReadAllText(AppSettingsFile);
+			return JsonConvert.DeserializeObject<Settings>(expectedContent)
+				?? throw new Newtonsoft.Json.JsonSerializationException(
+					"appsettings.json did not contain a settings object.");
 		}
 
 		internal static T ExecuteWithSettingsLock<T>(IFileSystem fileSystem, Func<T> action) {

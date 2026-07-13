@@ -7,6 +7,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Clio.Tests.Infrastructure;
+using Clio.UserEnvironment;
 using FluentAssertions;
 using Newtonsoft.Json;
 using NUnit.Framework;
@@ -171,6 +172,48 @@ public sealed class SettingsRepositoryConcurrencyTests {
 			because: "the first repository must persist through the filesystem it was constructed with");
 		persistedOther.GetAllEnvironments().Should().NotContainKey("first",
 			because: "constructing another repository must not redirect the first repository's save into a different filesystem");
+	}
+
+	[Test]
+	[Description("A settings mutation retries when an editor leaves transient invalid JSON between validation and the exact read.")]
+	public void ConfigureEnvironment_ShouldRetry_WhenLatestSettingsAreTransientlyInvalid() {
+		// Arrange
+		string validSettings = _fileSystem.File.ReadAllText(SettingsRepository.AppSettingsFile);
+		SettingsBootstrapResult healthyResult = new SettingsBootstrapService(_fileSystem).GetResult();
+		TransientInvalidSettingsBootstrapService bootstrap = new(_fileSystem, healthyResult, validSettings);
+		SettingsRepository deployment = new(_fileSystem, bootstrap);
+
+		// Act
+		deployment.ConfigureEnvironment("deployed", new EnvironmentSettings { Uri = "https://deployed.example.com" });
+
+		// Assert
+		bootstrap.GetResultCallCount.Should().Be(3,
+			because: "the mutation must reload after the transient parse failure instead of failing immediately");
+		new SettingsRepository(_fileSystem).GetAllEnvironments().Should().ContainKey("deployed",
+			because: "the retried mutation must apply to the restored valid settings");
+	}
+
+	private sealed class TransientInvalidSettingsBootstrapService(
+		MockFileSystem fileSystem,
+		SettingsBootstrapResult healthyResult,
+		string validSettings) : ISettingsBootstrapService {
+
+		public int GetResultCallCount { get; private set; }
+
+		public SettingsBootstrapResult GetResult() {
+			GetResultCallCount++;
+			if (GetResultCallCount == 2) {
+				fileSystem.File.WriteAllText(SettingsRepository.AppSettingsFile, "{ transient invalid json");
+			}
+			else if (GetResultCallCount == 3) {
+				fileSystem.File.WriteAllText(SettingsRepository.AppSettingsFile, validSettings);
+			}
+			return healthyResult;
+		}
+
+		public SettingsBootstrapReport GetReport() {
+			return GetResult().Report;
+		}
 	}
 
 }
