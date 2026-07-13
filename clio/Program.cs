@@ -16,6 +16,7 @@ using Clio.Command.OAuthAppConfiguration;
 using Clio.Command.McpServer;
 using Clio.Command.PackageCommand;
 using Clio.Command.SqlScriptCommand;
+using Clio.Command.Theming;
 using Clio.Command.TIDE;
 using Clio.Command.Update;
 using Clio.Common;
@@ -169,6 +170,7 @@ internal class Program {
 		typeof(CheckWindowsFeaturesOptions),
 		typeof(ManageWindowsFeaturesOptions),
 		typeof(CreateTestProjectOptions),
+		typeof(CreateIntegrationTestProjectOptions),
 		typeof(ListenOptions),
 		typeof(ShowPackageFileContentOptions),
 		typeof(SwitchNugetToDllOptions),
@@ -208,9 +210,17 @@ internal class Program {
 		typeof(StopOptions),
 		typeof(HostsOptions),
 		typeof(ClearRedisOptions),
+		typeof(BuildThemeOptions),
+		typeof(ClearThemesCacheOptions),
+		typeof(ListThemesOptions),
+		typeof(CreateThemeOptions),
+		typeof(UpdateThemeOptions),
+		typeof(DeleteThemeOptions),
 		typeof(LastCompilationLogOptions),
 		typeof(UploadLicenseCommandOptions),
 		typeof(RegisterOptions),
+		typeof(ConfigOptions),
+		typeof(RingCommandOptions),
 		typeof(UnregisterOptions),
 		typeof(LinkWorkspaceWithTideRepositoryOptions),
 		typeof(CheckWebFarmNodeConfigurationsOptions),
@@ -231,6 +241,7 @@ internal class Program {
 		typeof(GetIdentityPublicJwkOptions),
 		typeof(RegenerateIdentitySigningKeyOptions),
 		typeof(CheckAuthCodeFlowOptions),
+		typeof(RegisterSsoProviderOptions),
 
 
 	];
@@ -271,7 +282,29 @@ internal class Program {
 			result = normalizedArgs;
 		}
 
+		result = NormalizeGetSysSettingArgs(result);
 		return NormalizeJsonFlagArgs(result);
+	}
+
+	// The `get-syssetting` alias shares the `set-syssetting` verb and its options, and read mode
+	// is gated solely by the --get flag. Without normalization `clio get-syssetting <code>` falls
+	// through to the write path and overwrites the setting with an empty string (silent data loss).
+	// Inject --get when the command is invoked through the get-syssetting alias so the "get" name
+	// actually reads, matching its help ("Get or set a system setting value").
+	internal static string[] NormalizeGetSysSettingArgs(string[] args) {
+		if (args is null || args.Length == 0
+			|| !string.Equals(args[0], "get-syssetting", StringComparison.OrdinalIgnoreCase)) {
+			return args;
+		}
+		bool alreadyHasGetFlag = args.Any(token =>
+			string.Equals(token, "--get", StringComparison.OrdinalIgnoreCase));
+		if (alreadyHasGetFlag) {
+			return args;
+		}
+		var output = new List<string>(args.Length + 1);
+		output.AddRange(args);
+		output.Add("--get");
+		return output.ToArray();
 	}
 
 	// The --json option is declared as bool? (its established public form is `--json true|false`).
@@ -370,6 +403,12 @@ internal class Program {
 			RestartOptions opts => Resolve<RestartCommand>(opts).Execute(opts),
 			StartOptions opts => Resolve<StartCommand>(opts).Execute(opts),
 			ClearRedisOptions opts => Resolve<RedisCommand>(opts).Execute(opts),
+			BuildThemeOptions opts => Resolve<BuildThemeCommand>(opts).Execute(opts),
+			ClearThemesCacheOptions opts => Resolve<ClearThemesCacheCommand>(opts).Execute(opts),
+			ListThemesOptions opts => Resolve<ListThemesCommand>(opts).Execute(opts),
+			CreateThemeOptions opts => Resolve<CreateThemeCommand>(opts).Execute(opts),
+			UpdateThemeOptions opts => Resolve<UpdateThemeCommand>(opts).Execute(opts),
+			DeleteThemeOptions opts => Resolve<DeleteThemeCommand>(opts).Execute(opts),
 			UploadLicenseCommandOptions opts => Resolve<UploadLicenseCommand>(opts).Execute(opts),
 			RegAppOptions opts => Resolve<RegAppCommand>(opts).Execute(opts),
 			AppListOptions opts => Resolve<ShowAppListCommand>().Execute(opts),
@@ -397,6 +436,8 @@ internal class Program {
 			NewPkgOptions opts => Resolve<NewPkgCommand>().Execute(opts),
 			ConvertOptions opts => ConvertPackage(opts),
 			RegisterOptions opts => Resolve<RegisterCommand>().Execute(opts),
+			ConfigOptions opts => Resolve<ConfigCommand>().Execute(opts),
+			RingCommandOptions opts => Resolve<RingCommand>().Execute(opts),
 			UnregisterOptions opts => Resolve<UnregisterCommand>().Execute(opts),
 			PullPkgOptions opts => DownloadZipPackages(opts),
 			ExecuteSqlScriptOptions opts => Resolve<SqlScriptCommand>(opts).Execute(opts),
@@ -484,6 +525,7 @@ internal class Program {
 			CheckWindowsFeaturesOptions opts => Resolve<CheckWindowsFeaturesCommand>().Execute(opts),
 			ManageWindowsFeaturesOptions opts => Resolve<ManageWindowsFeaturesCommand>().Execute(opts),
 			CreateTestProjectOptions opts => Resolve<CreateTestProjectCommand>(opts).Execute(opts),
+			CreateIntegrationTestProjectOptions opts => Resolve<CreateIntegrationTestProjectCommand>(opts).Execute(opts),
 			DeactivatePkgOptions opts => Resolve<DeactivatePackageCommand>(opts).Execute(opts),
 			ListenOptions opts => Resolve<ListenCommand>(opts).Execute(opts),
 			ShowPackageFileContentOptions opts => Resolve<ShowPackageFileContentCommand>(opts).Execute(opts),
@@ -558,6 +600,7 @@ internal class Program {
 			GetIdentityPublicJwkOptions opts => Resolve<GetIdentityPublicJwkCommand>(opts).Execute(opts),
 			RegenerateIdentitySigningKeyOptions opts => Resolve<RegenerateIdentitySigningKeyCommand>(opts).Execute(opts),
 			CheckAuthCodeFlowOptions opts => Resolve<CheckAuthCodeFlowCommand>(opts).Execute(opts),
+			RegisterSsoProviderOptions opts => Resolve<RegisterSsoProviderCommand>(opts).Execute(opts),
 			var _ => 1
 		};
 	};
@@ -1027,7 +1070,8 @@ internal class Program {
 		Dictionary<string, HashSet<string>> searchTermsByCanonicalName = new(StringComparer.OrdinalIgnoreCase);
 		foreach (Type optionType in CommandOption) {
 			VerbAttribute verbAttribute = optionType.GetCustomAttribute<VerbAttribute>();
-			if (verbAttribute == null || verbAttribute.Hidden || string.IsNullOrWhiteSpace(verbAttribute.Name)) {
+			if (verbAttribute == null || verbAttribute.Hidden || string.IsNullOrWhiteSpace(verbAttribute.Name)
+				|| optionType.IsDefined(typeof(FeatureToggleAttribute), inherit: false)) {
 				continue;
 			}
 			if (!searchTermsByCanonicalName.TryGetValue(verbAttribute.Name, out HashSet<string> searchTerms)) {

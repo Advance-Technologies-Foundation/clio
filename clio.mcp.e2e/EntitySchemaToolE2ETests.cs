@@ -1439,7 +1439,7 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 	private static async Task<CallToolResult> CallGetSchemaPropertiesAsync(
 		McpServerSession session,
 		string environmentName,
-		string packageName,
+		string? packageName,
 		string schemaName,
 		CancellationToken cancellationToken) {
 		IList<McpClientTool> tools = await session.ListToolsAsync(cancellationToken);
