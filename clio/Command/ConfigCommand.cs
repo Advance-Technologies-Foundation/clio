@@ -33,10 +33,10 @@ public class ConfigOptions {
 
 	/// <summary>
 	/// Gets or sets the default site name applied when <c>deploy-creatio</c> is run without <c>--site-name</c>.
-	/// When left unset the site name is derived from the deployed zip file name.
+	/// When left unset, interactive deployment prompts for the site name.
 	/// </summary>
 	[Option("deploy-site-name", Required = false,
-		HelpText = "Default site name for deploy-creatio. When unset, the site name is derived from the zip file name.")]
+		HelpText = "Default site name for deploy-creatio. When unset, interactive deployment prompts for the site name.")]
 	public string DeploySiteName { get; set; }
 
 	/// <summary>

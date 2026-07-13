@@ -32,7 +32,8 @@ public sealed class InstallerCommandLogArtifactTests {
 		// Act
 		int result = sut.Execute(new PfInstallerOptions {
 			IsSilent = true,
-			DbServerName = "local-pg"
+			DbServerName = "local-pg",
+			SiteName = "test-site"
 		});
 
 		// Assert

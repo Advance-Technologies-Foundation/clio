@@ -31,7 +31,8 @@ back to a Kubernetes cluster.
 
 Options passed on the `deploy-creatio` command line always take precedence over
 these defaults. When no default site name is configured and none is passed on
-the command line, the site name is derived from the deployed zip file name.
+the command line, interactive deployment asks the user to enter a site name.
+This includes the Windows Explorer right-click action.
 
 ## Options
 
@@ -42,8 +43,8 @@ the command line, the site name is derived from the deployed zip file name.
 --deploy-redis-server-name <name>  Default local Redis server name for deploy-creatio.
                                    Must be a key in the 'redis' block of appsettings.json.
 
---deploy-site-name <name>          Default site name for deploy-creatio. When unset, the
-                                   site name is derived from the deployed zip file name.
+--deploy-site-name <name>          Default site name for deploy-creatio. When unset,
+                                   interactive deployment prompts for the site name.
 
 --deploy-site-port <port>          Default site port for deploy-creatio.
 
@@ -73,7 +74,8 @@ clio config --reset
 
 After configuring the defaults above, the "clio: deploy Creatio" Windows
 Explorer right-click action deploys to the local database and Redis without any
-further arguments.
+further arguments. If `--deploy-site-name` is not configured, the CLI asks for
+the site name before deployment proceeds.
 
 ## Behavior
 
