@@ -45,6 +45,12 @@ internal sealed class SandboxSettings {
 	/// </summary>
 	public string? EnvironmentPath { get; set; }
 
+	/// <summary>
+	/// Database provider used by provider-specific sandbox assertions. Set to <c>postgresql</c>
+	/// through <c>McpE2E__Sandbox__DatabaseProvider</c> to enable PostgreSQL catalog checks.
+	/// </summary>
+	public string? DatabaseProvider { get; set; }
+
 	public string? ProcessCode { get; set; }
 
 	public string? ApplicationPackagePath { get; set; }

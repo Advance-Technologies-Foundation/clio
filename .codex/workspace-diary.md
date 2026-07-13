@@ -5963,3 +5963,66 @@ Decision: Removed ZIP-filename site-name inference, retained explicit and config
 Discovery: The existing Explorer registry verb and interactive installer prompt already provide the desired flow; only the defaults resolver prevented the prompt. The MCP tool and ClioRing always provide a site name, so their contracts remain unchanged.
 Files: clio/Command/CreatioInstallCommand/DeployCreatioDefaultsResolver.cs, clio/Command/CreatioInstallCommand/InstallerCommand.cs, clio.tests/Command/DeployCreatioDefaultsResolverTests.cs, clio.tests/Command/InstallerCommandSilentSiteNameTests.cs, clio/docs/commands/deploy-creatio.md, clio/help/en/deploy-creatio.txt
 Impact: Explorer deployments now request a safe explicit site name, while automation receives a clear configuration error and existing explicit/configured precedence remains compatible.
+
+## 2026-07-13 12:56 – Ring build discovery empty-state diagnosis
+Context: Ring deploy UI connected successfully but showed no Creatio builds.
+Decision: Traced the UI empty state through `list-creatio-builds` to the shared clio settings rather than the Ring installation directory.
+Discovery: `%LOCALAPPDATA%\Creatio\clio\appsettings.json` configured `F:\CreatioProductBuild`, which does not exist; the live repository is `F:\CreatioBuilds` and contains 42 recursively discoverable ZIP files.
+Files: clio-ring/ClioRing/ViewModels/InstallFormViewModel.cs, clio/Command/McpServer/Tools/ListCreatioBuildsTool.cs, clio/Environment/ConfigurationOptions.cs
+Impact: Future Ring empty build-list reports should first validate the shared `creatio-products` path and distinguish missing-folder discovery from UI binding failures.
+
+## 2026-07-13 13:14 – Ring deploy password-reset warning hidden inside restore stage
+Context: A Ring deployment completed successfully but Creatio still required the Supervisor password change.
+Decision: Traced the deployed run receipt to its per-operation database log and compared the Ring/MCP plan with the installer helper.
+Discovery: Ring has no password-reset input or stage; MCP hard-codes `DisableResetPassword = true`, and the helper runs inside `restore-db`. Run `10ab095c-431c-41b4-add1-82c3b93a0c0f` failed to update `SysAdminUnit` with PostgreSQL error 42501 (permission denied), but the helper intentionally logged a warning and continued, so restore and the overall deployment were reported successful.
+Files: clio/Command/McpServer/Tools/InstallerCommandTool.cs, clio/Command/CreatioInstallCommand/CreatioInstallerService.cs, C:/Tools/clio-ring/Logs/deploy-10ab095c-431c-41b4-add1-82c3b93a0c0f.ndjson
+Impact: Password-reset-disable failures need explicit Ring visibility and ownership/permission remediation; current pipeline success does not prove the forced-change flag was cleared.
+
+## 2026-07-13 13:52 – Preserve password-change state for Ring and Explorer deploys
+Context: Issue #861 requested `DisableResetPassword = false` for ClioRing and Windows Explorer ZIP deployments after a Ring run silently failed to clear `SysAdminUnit.ForceChangePassword`.
+Decision: Made false the deploy-creatio CLI default and the explicit MCP/Ring adapter value; Explorer's existing `--ZipFile` command inherits the CLI default. Updated MCP tool, prompt, lazy contract, deploy guidance, CLI help, and detailed docs to state that clio preserves the restored database value rather than promising to enable it.
+Discovery: `DisableResetPassword = false` skips the SQL that writes false; it does not write true. The pre-PR quality/security/correctness review caught this distinction and also found the legacy compatibility fixture's `UnitTests` category excluded it from the mandatory `Category=Unit` gate, so the fixture now uses `Unit`.
+Files: clio/Command/CreatioInstallCommand/InstallerCommand.cs, clio/Command/McpServer/Tools/InstallerCommandTool.cs, clio/Command/McpServer/Tools/ToolContractGetTool.cs, clio/Command/McpServer/Prompts/DeployCreatioPrompt.cs, clio/Command/McpServer/Resources/DeployLifecycleGuidanceResource.cs, clio.tests/Command/CliOptionNamingBackwardCompatibilityTests.cs, clio.tests/Command/McpServer/InstallerCommandToolTests.cs, clio.mcp.e2e/DeployCreatioToolE2ETests.cs, clio/docs/commands/deploy-creatio.md, clio/help/en/deploy-creatio.txt
+Impact: Ring and Explorer no longer clear the restored build's password-change state by default; Command/MCP suites pass 4196/4211 with 15 skips on net8 and net10, MCP E2E passes 2/2 per framework, Ring passes 95/95, and Windows x64 NativeAOT publish succeeds.
+
+## 2026-07-13 16:30 – call-service method alias parser conflict fixed
+Context: GitHub issue #863 reported that `call-service -m POST` collided with the inherited `-m/--maintainer` option and failed before command execution.
+Decision: Hid the inherited maintainer property only in `CallServiceCommandOptions`, re-exposing it as long-only `--maintainer` while preserving `-m/--method`; added a real parser regression test covering both options together.
+Discovery: A delegating `new` property keeps the parsed maintainer value on the `RemoteCommandOptions` base contract, so downstream environment handling remains unchanged while other remote commands retain their existing `-m/--maintainer` alias.
+Files: clio/Query/DataServiceQuery.cs, clio.tests/Query/CallServiceCommandTests.cs, clio/docs/commands/call-service.md, clio/docs/commands/dataservice.md
+Impact: `call-service -m POST --maintainer Customer` and the inherited `dataservice` option contract parse on net8.0 and net10.0, generated help exposes unique short names, and neither the MCP surface nor a ClioRing-consumed contract changes.
+
+## 2026-07-13 19:56 – Virtual entity schema creation and readback
+Context: GitHub issue #864 required atomic virtual entity creation through standalone and batched MCP paths without creating a physical table.
+Decision: Added positive-only `is-virtual` mapping before the first schema save, preserved inherited virtual state for replacements, rejected virtual seed rows before mutation, and exposed virtual state through schema and application readback.
+Discovery: Creatio's normal DB-structure lifecycle excludes virtual schemas itself; live Creatio 10.0.0.802 PostgreSQL validation confirmed the schema is runtime-readable while no table is created.
+Files: clio/Command/EntitySchemaDesigner/RemoteEntitySchemaCreator.cs, clio/Command/McpServer/Tools/EntitySchemaTool.cs, clio/Command/McpServer/Tools/SchemaSyncTool.cs, clio/Command/ApplicationInfoService.cs, clio.mcp.e2e/EntitySchemaToolE2ETests.cs, clio.mcp.e2e/ApplicationToolE2ETests.cs
+Impact: CLI and MCP callers can create and verify virtual entities safely, with persistent creation remaining the default and PostgreSQL catalog behavior covered explicitly.
+
+## 2026-07-13 20:36 – Align related-page add-on E2E with lazy MCP discovery
+Context: PR #869's TeamCity MCP E2E build failed because create-related-page-addon was expected in the resident tools/list surface.
+Decision: Replaced the stale runtime-schema assertion with discovery through the established lazy-surface union, while retaining the fixture's existing nested pages payload-binding coverage.
+Discovery: Long-tail tools are intentionally absent from tools/list and remain discoverable through the get-tool-contract compact index.
+Files: clio.mcp.e2e/CreateRelatedPageAddonToolE2ETests.cs
+Impact: The full related-page add-on fixture passes all six scenarios on both net8.0 and net10.0 and now tests the supported MCP discovery contract.
+
+## 2026-07-13 21:01 – Preserve inherited primary columns during schema sync
+Context: GitHub issue #865 reported that creating a BaseEntity-derived schema promoted its first custom Guid to primary, while an ordered remove/re-add of the same column falsely failed final verification.
+Decision: Assign a primary column from own Guid columns only for root schemas, and verify update batches from their net final column-presence expectations rather than checking every intermediate operation against the final saved schema.
+Discovery: A fresh package must depend on `Base` before Creatio accepts a BaseEntity-derived schema. The disposable 10.0.0.802 deployment also returns an unauthenticated 302 from the cliogate readiness route, so local E2E validation used the already-verified authenticated cliogate installation while retaining the normal bootstrap in committed test code.
+Files: clio/Command/EntitySchemaDesigner/RemoteEntitySchemaCreator.cs, clio/Command/EntitySchemaDesigner/RemoteEntitySchemaColumnManager.cs, clio.tests/Command/RemoteEntitySchemaCreatorTests.cs, clio.tests/Command/RemoteEntitySchemaColumnManagerTests.cs, clio.mcp.e2e/SchemaSyncToolE2ETests.cs, clio/help/en/create-entity-schema.txt, clio/help/en/update-entity-schema.txt, clio/docs/commands/create-entity-schema.md, clio/docs/commands/update-entity-schema.md
+Impact: Derived schemas retain inherited `Id`, remove/re-add batches succeed when the final column exists, and the real MCP regression passes against an isolated Creatio 10.0.0.802 deployment that was fully removed afterward.
+
+## 2026-07-13 21:58 – Align related-page read E2E with lazy MCP discovery
+Context: PR #870's TeamCity MCP E2E build failed because get-related-page-addon was expected in the resident tools/list surface.
+Decision: Replaced the stale resident-tool schema assertion with discovery through the established get-tool-contract lazy-surface union, matching the paired create tool.
+Discovery: Both related-page add-on tools are intentionally long-tail tools; direct invocation remains supported while discovery belongs to the compact contract index.
+Files: clio.mcp.e2e/GetRelatedPageAddonToolE2ETests.cs
+Impact: All three get-related-page-addon E2E scenarios pass on net8.0 and net10.0, and the test now verifies the supported MCP discovery contract.
+
+## 2026-07-13 22:26 – Keep long schema-sync E2E visible to TeamCity
+Context: PR #870's full MCP E2E run reached the new application/schema-sync regression but TeamCity's three-minute blame inactivity timeout aborted the test host before the long remote scenario completed.
+Decision: Emit test-progress heartbeats every 30 seconds while application creation, schema synchronization, and settled metadata readback are in flight.
+Discovery: TeamCity reported 83 passing tests and produced hang dumps without an assertion failure; the last completed test preceded ApplicationGetInfo_Should_Read_Virtual_Entity_After_SchemaSync alphabetically, identifying the silent long-running scenario.
+Files: clio.mcp.e2e/ApplicationToolE2ETests.cs
+Impact: The real regression keeps its ten-minute operation budget while producing enough test-host output to avoid false hang classification; both target frameworks compile successfully.

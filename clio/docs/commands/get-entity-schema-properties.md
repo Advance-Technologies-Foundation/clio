@@ -36,6 +36,7 @@ There are two modes, selected by the presence of `--package`:
   SSP availability, and the other schema flags).
 
 This is the canonical verification path after create-entity-schema.
+Structured output includes `virtual`, which is `true` when the schema has no physical database table.
 
 ## Options
 

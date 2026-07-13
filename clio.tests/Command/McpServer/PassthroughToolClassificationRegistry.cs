@@ -220,7 +220,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["remove-data-binding-row"] = PassthroughClassification.NotEnvironmentSensitive,
 			["check-settings-health"] = PassthroughClassification.NotEnvironmentSensitive, // PRD prose: "get-settings-health"
 
-			// --- NotApplicable (115): class (a)/(b) — already passthrough-capable, out of this audit ---
+			// --- NotApplicable (117): class (a)/(b) — already passthrough-capable, out of this audit ---
 			["StopAllCreatio"] = PassthroughClassification.NotApplicable,
 			["add-item-model"] = PassthroughClassification.NotApplicable,
 			["add-package"] = PassthroughClassification.NotApplicable,
@@ -244,6 +244,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["create-oauth-technical-user"] = PassthroughClassification.NotApplicable,
 			["create-page"] = PassthroughClassification.NotApplicable,
 			["create-page-business-rules"] = PassthroughClassification.NotApplicable,
+			["create-related-page-addon"] = PassthroughClassification.NotApplicable,
 			["create-schema"] = PassthroughClassification.NotApplicable,
 			["create-server-to-server-oauth-app"] = PassthroughClassification.NotApplicable,
 			["create-sql-schema"] = PassthroughClassification.NotApplicable,
@@ -284,6 +285,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["get-identity-service-config"] = PassthroughClassification.NotApplicable,
 			["get-page"] = PassthroughClassification.NotApplicable,
 			["get-process-signature"] = PassthroughClassification.NotApplicable,
+			["get-related-page-addon"] = PassthroughClassification.NotApplicable,
 			["get-schema"] = PassthroughClassification.NotApplicable,
 			["get-schema-name-prefix"] = PassthroughClassification.NotApplicable,
 			["get-sql-schema"] = PassthroughClassification.NotApplicable,

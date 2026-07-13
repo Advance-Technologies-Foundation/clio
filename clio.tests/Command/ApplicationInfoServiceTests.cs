@@ -62,6 +62,10 @@ public sealed class ApplicationInfoServiceTests {
 			because: "application entities should be sorted by caption");
 		result.Entities[0].Columns.Should().ContainSingle(
 			because: "inherited runtime columns should be excluded from the final payload");
+		result.Entities[0].IsVirtual.Should().BeTrue(
+			because: "application readback should preserve the runtime virtual-schema flag");
+		result.Entities[1].IsVirtual.Should().BeFalse(
+			because: "schemas without an explicit runtime virtual flag should remain persistent");
 		result.Entities[0].Columns[0].DataValueType.Should().Be("Text",
 			because: "runtime schema data-value types should be mapped to readable names");
 		result.Entities[1].Columns[0].DefaultValueSource.Should().Be("Const",
@@ -468,7 +472,7 @@ public sealed class ApplicationInfoServiceTests {
 		_applicationClient.ExecutePostRequest(
 				Arg.Is<string>(url => url.EndsWith("RuntimeEntitySchemaRequest", StringComparison.Ordinal)),
 				Arg.Is<string>(body => body.Contains("\"uId\":\"entity-a\"", StringComparison.Ordinal)))
-			.Returns("""{"success":true,"schema":{"uId":"entity-a","name":"UsrAlpha","caption":{"en-US":"Alpha caption"},"columns":{"Items":{"visible":{"name":"Name","caption":{"en-US":"Name"},"dataValueType":1,"isInherited":false},"inherited":{"name":"CreatedOn","caption":{"en-US":"Created On"},"dataValueType":7,"isInherited":true}}}}}""");
+			.Returns("""{"success":true,"schema":{"uId":"entity-a","name":"UsrAlpha","caption":{"en-US":"Alpha caption"},"isVirtual":true,"columns":{"Items":{"visible":{"name":"Name","caption":{"en-US":"Name"},"dataValueType":1,"isInherited":false},"inherited":{"name":"CreatedOn","caption":{"en-US":"Created On"},"dataValueType":7,"isInherited":true}}}}}""");
 		_applicationClient.ExecutePostRequest(
 				Arg.Is<string>(url => url.EndsWith("RuntimeEntitySchemaRequest", StringComparison.Ordinal)),
 				Arg.Is<string>(body => body.Contains("\"uId\":\"entity-b\"", StringComparison.Ordinal)))

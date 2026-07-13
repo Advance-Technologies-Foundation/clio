@@ -1238,6 +1238,28 @@ public sealed class ToolContractGetToolTests {
 					GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName
 				}),
 			because: "update-entity-schema should advertise the canonical inspect-mutate-verify flow");
+		ToolContractDefinition createEntityContract = result.Tools.Single(contract =>
+			contract.Name == CreateEntitySchemaTool.CreateEntitySchemaToolName);
+		createEntityContract.InputSchema.Properties.Should().Contain(field =>
+				field.Name == "is-virtual" && field.Type == "boolean",
+			because: "the standalone create contract must advertise virtual entity creation");
+		createEntityContract.Defaults.Should().Contain(defaultValue =>
+				defaultValue.Name == "is-virtual" && defaultValue.Value == "false",
+			because: "persistent entity creation must remain the documented default");
+		ToolContractDefinition syncContract = result.Tools.Single(contract =>
+			contract.Name == SchemaSyncTool.ToolName);
+		syncContract.Defaults.Should().Contain(defaultValue =>
+				defaultValue.Name == "operations[*].is-virtual" && defaultValue.Value == "false",
+			because: "batched create-entity operations must document the same persistent default");
+		syncContract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "sync-schemas-virtual-entity-seed-rows"
+				&& validator.Code == "invalid-workflow-shape",
+			because: "the contract must reject seed rows before creating a virtual schema that has no table");
+		ToolContractDefinition propertiesContract = result.Tools.Single(contract =>
+			contract.Name == GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName);
+		propertiesContract.OutputContract.Fields.Should().Contain(field =>
+				field.Name == "virtual" && field.Type == "boolean",
+			because: "schema readback must advertise the virtual flag for verification");
 	}
 
 	[Test]
@@ -1432,6 +1454,9 @@ public sealed class ToolContractGetToolTests {
 			because: "the contract should advertise the installed application version");
 		contract.OutputContract.Fields.Should().Contain(field => field.Name == "schema-name-prefix",
 			because: "the contract should advertise the active SchemaNamePrefix so agents know the correct prefix for subsequent schema names");
+		contract.OutputContract.Fields.Should().Contain(field =>
+				field.Name == "entities" && field.Description.Contains("`virtual`", StringComparison.Ordinal),
+			because: "get-app-info should document virtual status within each entity result");
 	}
 
 	[Test]

@@ -277,7 +277,8 @@ public sealed class ApplicationToolTests {
 								"Const",
 								"Default",
 								Required: true)
-						])
+						],
+						IsVirtual: true)
 				],
 				[
 					new PageListItem {
@@ -322,6 +323,8 @@ public sealed class ApplicationToolTests {
 			because: "the MCP tool should preserve the installed application version");
 		result.Entities.Should().ContainSingle(
 			because: "the MCP tool should surface the entity metadata returned by the backend service");
+		result.Entities![0].Virtual.Should().BeTrue(
+			because: "get-app-info should expose the runtime virtual-schema flag");
 		result.Entities![0].Columns[0].DataValueType.Should().Be("Text",
 			because: "the Clio response should preserve application column types");
 		result.Entities![0].Columns[0].Type.Should().Be("Text",
@@ -1024,7 +1027,8 @@ public sealed class ApplicationToolTests {
 							DataValueType: "Text",
 							ReferenceSchema: "Contact",
 							Required: true)
-					])
+					],
+					Virtual: true)
 			],
 			Pages: [
 				new PageListItem {
@@ -1073,6 +1077,8 @@ public sealed class ApplicationToolTests {
 			because: "application page payloads should use schema-name instead of name");
 		json.Should().Contain("\"u-id\":\"entity-uid\"",
 			because: "entity payloads should keep Clio kebab-case payload fields");
+		json.Should().Contain("\"virtual\":true",
+			because: "entity payloads should expose the virtual-schema readback flag");
 		json.Should().Contain("\"data-value-type\":\"Text\"",
 			because: "column payloads should keep the legacy data-value-type field for backward compatibility");
 		json.Should().Contain("\"reference-schema\":\"Contact\"",

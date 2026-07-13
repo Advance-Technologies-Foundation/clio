@@ -60,6 +60,50 @@ public class CallServiceCommandTestCase
 	}
 
 	[Test]
+	[Description("Verifies -m selects the HTTP method while the inherited maintainer option remains available by long name")]
+	public void CallServiceCommandOptions_ShouldParseMethodAndMaintainer_WhenBothOptionsAreProvided()
+	{
+		// Arrange
+		string[] arguments = ["-m", "POST", "--maintainer", "Customer"];
+
+		// Act
+		ParserResult<CallServiceCommandOptions> result =
+			Parser.Default.ParseArguments<CallServiceCommandOptions>(arguments);
+		CallServiceCommandOptions options = null;
+		result.WithParsed(parsed => options = parsed);
+
+		// Assert
+		result.Tag.Should().Be(ParserResultType.Parsed,
+			because: "call-service must expose unique short options to the command-line parser");
+		options!.HttpMethodName.Should().Be("POST",
+			because: "-m is the documented HTTP method alias for call-service");
+		options.Maintainer.Should().Be("Customer",
+			because: "the inherited maintainer setting must remain available through --maintainer");
+	}
+
+	[Test]
+	[Description("Verifies dataservice inherits the conflict-free method and maintainer option contract")]
+	public void DataServiceQueryOptions_ShouldParseMethodAndMaintainer_WhenBothOptionsAreProvided()
+	{
+		// Arrange
+		string[] arguments = ["-t", "select", "-m", "POST", "--maintainer", "Customer"];
+
+		// Act
+		ParserResult<DataServiceQueryOptions> result =
+			Parser.Default.ParseArguments<DataServiceQueryOptions>(arguments);
+		DataServiceQueryOptions options = null;
+		result.WithParsed(parsed => options = parsed);
+
+		// Assert
+		result.Tag.Should().Be(ParserResultType.Parsed,
+			because: "dataservice inherits the same unique short-option contract as call-service");
+		options!.HttpMethodName.Should().Be("POST",
+			because: "-m must remain the HTTP method alias on the derived dataservice command");
+		options.Maintainer.Should().Be("Customer",
+			because: "dataservice must retain the long maintainer option inherited from call-service");
+	}
+
+	[Test]
 	[Description("Verifies CallServiceCommand class exists and inherits from BaseServiceCommand")]
 	public void CallServiceCommand_ClassExists_WithCorrectBase()
 	{

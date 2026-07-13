@@ -18,7 +18,19 @@ public class CallServiceCommandOptions : RemoteCommandOptions {
 
 	#region Properties: Public
 
-	[Option('m', "method", Required = false, HelpText = "Result file", Separator = ';')]
+	/// <summary>
+	/// Gets or sets the package maintainer used for the target environment.
+	/// </summary>
+	[Option("maintainer", Required = false, HelpText = "Maintainer name")]
+	public new string Maintainer {
+		get => base.Maintainer;
+		set => base.Maintainer = value;
+	}
+
+	/// <summary>
+	/// Gets or sets the HTTP method used for the service request.
+	/// </summary>
+	[Option('m', "method", Required = false, HelpText = "HTTP method", Separator = ';')]
 	public string HttpMethodName { get; set; }
 
 	[Option('f', "input", Required = false, HelpText = "Request file", Separator = ' ')]
