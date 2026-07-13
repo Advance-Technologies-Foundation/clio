@@ -303,8 +303,8 @@ namespace Clio
 		public string RedisServerName { get; set; }
 
 		/// <summary>
-		/// Gets or sets the default site name used when <c>--site-name</c> is omitted. When left empty the
-		/// site name is derived from the deployed zip file name.
+		/// Gets or sets the default site name used when <c>--site-name</c> is omitted. When left empty,
+		/// interactive deployment prompts for the site name.
 		/// </summary>
 		[JsonProperty("site-name")]
 		public string SiteName { get; set; }
