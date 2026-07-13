@@ -61,6 +61,8 @@ public sealed class InstallerCommandToolTests
 			because: "the tool description should direct agents to run passing-infrastructure discovery before deployment");
 		text.Should().Contain("find-empty-iis-port",
 			because: "the tool description should tell agents how to choose a safe local IIS sitePort");
+		text.Should().Contain("existing forced-password-change state",
+			because: "the tool description should disclose that deployment preserves the database's existing state");
 	}
 
 	[Test]
@@ -105,8 +107,8 @@ public sealed class InstallerCommandToolTests
 			because: "local Redis server selection should be forwarded when provided");
 		command.ReceivedOptions.RedisDb.Should().Be(-1,
 			because: "the reduced MCP contract should keep automatic Redis DB detection");
-		command.ReceivedOptions.DisableResetPassword.Should().BeTrue(
-			because: "the MCP wrapper should preserve the CLI default and disable forced password reset unless explicitly changed in code");
+		command.ReceivedOptions.DisableResetPassword.Should().BeFalse(
+			because: "Ring deployments should not clear the database's existing forced-password-change state");
 		command.ReceivedOptions.DB.Should().BeNull(
 			because: "the reduced MCP contract should let the installer detect the database type from the build");
 		command.ReceivedOptions.DropIfExists.Should().BeTrue(
@@ -180,6 +182,8 @@ public sealed class InstallerCommandToolTests
 			because: "the prompt should direct the agent to discover a safe local IIS port when sitePort selection matters");
 		prompt.Should().Contain("deploy-creatio",
 			because: "the prompt should conclude with the actual deployment call");
+		prompt.Should().Contain("existing forced-password-change state",
+			because: "the prompt should disclose that deployment preserves the database's existing state");
 	}
 
 	private static McpServerToolAttribute GetDeployCreatioAttribute()
