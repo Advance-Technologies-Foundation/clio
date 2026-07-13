@@ -300,6 +300,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["modify-business-process"] = PassthroughClassification.NotApplicable,
 			["modify-entity-schema-column"] = PassthroughClassification.NotApplicable,
 			["modify-user-task-parameters"] = PassthroughClassification.NotApplicable,
+			["new-integration-test-project"] = PassthroughClassification.NotApplicable,
 			["new-test-project"] = PassthroughClassification.NotApplicable,
 			["new-ui-project"] = PassthroughClassification.NotApplicable,
 			["odata-create"] = PassthroughClassification.NotApplicable,
