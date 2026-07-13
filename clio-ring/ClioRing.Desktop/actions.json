@@ -119,6 +119,22 @@
       "Risk": "None"
     },
     {
+      "Id": "clio-import-iis-environments",
+      "Title": "Import IIS Environments",
+      "ShortTitle": "Import IIS",
+      "Icon": "globe",
+      "Kind": "ClioCommand",
+      "ClioCommand": {
+        "Verb": "reg",
+        "Args": ["--add-from-iis"]
+      },
+      "Parameters": [],
+      "Risk": "Confirm",
+      "ConfirmText": "Scan local IIS and update the local clio environment catalog?",
+      "ConsequenceText": "Existing registrations with matching IIS site names will be replaced with detected local settings, including credentials and safety flags.",
+      "RefreshEnvironmentsOnSuccess": true
+    },
+    {
       "Id": "clio-manage-envs",
       "Title": "Manage Environments",
       "ShortTitle": "Manage Envs",

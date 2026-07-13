@@ -175,6 +175,11 @@
           "type": "string",
           "title": "Consequence line",
           "description": "Optional explicit consequence line shown prominently in the confirm dialog (distinct from ConfirmText), spelling out the concrete irreversible effect."
+        },
+        "RefreshEnvironmentsOnSuccess": {
+          "type": "boolean",
+          "title": "Refresh environments on success",
+          "description": "When true, reloads clio's registered-environment catalog after the command exits successfully."
         }
       },
       "allOf": [
