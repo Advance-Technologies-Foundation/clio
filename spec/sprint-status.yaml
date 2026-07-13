@@ -936,3 +936,202 @@ stories:
     depends_on: [story-mcp-lazy-schema-11]
     blocks: []
     note: "RECONCILED 2026-07-12: PR #821 (feature/ENG-92761-mcp-resident-tool-flag) MERGED 2026-07-06, stacked on spike/mcp-lazy-schema. No pre-existing story file; Jira ENG-92761 Closed/Done."
+
+  # --- ring-guided-deploy stories (cross-repo: clio typed MCP events + clio-ring guided UX) — added 2026-07-11 ---
+  # CROSS-REPO feature. Foundation = C:\Projects\clio (typed MCP progress _meta events, stories 1-5).
+  # Consumption = C:\Projects\clio\clio-ring, branch spike/ring-clio-ipc (guided UX, stories 6-11).
+  # Ring-consumption stories DEPEND ON the clio-event stories (the events are the load-bearing interface).
+  # Recommended order:
+  #   clio:  1 -> (2 ∥ 3) -> 4 -> 5
+  #   ring:  6 (needs clio-1 fixture; live e2e needs clio-4) -> 7 -> (8 ∥ 9); 10 (needs 6); 11 (independent)
+  # Dependency graph is acyclic. All stories ready-for-dev; ring stories carry a noted cross-repo dependency
+  # (the file has no `blocked` status — valid statuses are ready-for-dev|in-progress|review|done|deferred).
+  - id: story-ring-guided-deploy-1
+    title: "Typed ClioStageEvent envelope + StageIds constants + JSON fixture contract test"
+    feature: "ring-guided-deploy"
+    repo: "clio"
+    size: M
+    status: review
+    file: spec/ring-guided-deploy/stories/story-ring-guided-deploy-1.md
+    prd: spec/ring-guided-deploy/prd/prd-ring-guided-deploy.md
+    adr: spec/ring-guided-deploy/adr/adr-ring-guided-deploy.md
+    fr: [FR-09, FR-10, FR-11, FR-12, FR-15]
+    ac: [AC-09, AC-11, AC-12]
+    depends_on: []
+    blocks:
+      - story-ring-guided-deploy-2
+      - story-ring-guided-deploy-3
+      - story-ring-guided-deploy-6
+
+  - id: story-ring-guided-deploy-2
+    title: "Deploy stage-event seam — IStageEventSource + emitter in CreatioInstallerService"
+    feature: "ring-guided-deploy"
+    repo: "clio"
+    size: L
+    status: review
+    file: spec/ring-guided-deploy/stories/story-ring-guided-deploy-2.md
+    prd: spec/ring-guided-deploy/prd/prd-ring-guided-deploy.md
+    adr: spec/ring-guided-deploy/adr/adr-ring-guided-deploy.md
+    fr: [FR-05, FR-13, FR-15]
+    ac: [AC-05, AC-10, AC-12]
+    depends_on: [story-ring-guided-deploy-1]
+    blocks:
+      - story-ring-guided-deploy-4
+
+  - id: story-ring-guided-deploy-3
+    title: "Uninstall stage-event seam — CreatioUninstaller + UninstallCreatioCommand incl. 3 corrections"
+    feature: "ring-guided-deploy"
+    repo: "clio"
+    size: L
+    status: review
+    file: spec/ring-guided-deploy/stories/story-ring-guided-deploy-3.md
+    prd: spec/ring-guided-deploy/prd/prd-ring-guided-deploy.md
+    adr: spec/ring-guided-deploy/adr/adr-ring-guided-deploy.md
+    fr: [FR-07, FR-14]
+    ac: [AC-07, AC-08, AC-10]
+    depends_on: [story-ring-guided-deploy-1]
+    blocks:
+      - story-ring-guided-deploy-4
+
+  - id: story-ring-guided-deploy-4
+    title: "MCP tool forwarding — deploy/uninstall tools stream ClioStageEvent via progress _meta"
+    feature: "ring-guided-deploy"
+    repo: "clio"
+    size: L
+    status: review
+    note: "clio.mcp.e2e is NOT in CI — the manifest→stage→run-completed _meta assertion is a manual live-stand run."
+    file: spec/ring-guided-deploy/stories/story-ring-guided-deploy-4.md
+    prd: spec/ring-guided-deploy/prd/prd-ring-guided-deploy.md
+    adr: spec/ring-guided-deploy/adr/adr-ring-guided-deploy.md
+    fr: [FR-08, FR-13, FR-14, FR-15]
+    ac: [AC-09, AC-12, AC-ERR]
+    depends_on: [story-ring-guided-deploy-2, story-ring-guided-deploy-3]
+    blocks:
+      - story-ring-guided-deploy-5
+
+  - id: story-ring-guided-deploy-5
+    title: "Docs + MCP capability map + uninstall AppPool-profile doc correction"
+    feature: "ring-guided-deploy"
+    repo: "clio"
+    size: S
+    status: review
+    file: spec/ring-guided-deploy/stories/story-ring-guided-deploy-5.md
+    prd: spec/ring-guided-deploy/prd/prd-ring-guided-deploy.md
+    adr: spec/ring-guided-deploy/adr/adr-ring-guided-deploy.md
+    fr: [FR-16]
+    ac: [AC-08]
+    depends_on: [story-ring-guided-deploy-4]
+    blocks: []
+
+  - id: story-ring-guided-deploy-12
+    title: "Deploy honest-failure reporting — convert swallowed stage-result failures into pipeline failures"
+    feature: "ring-guided-deploy"
+    repo: "clio"
+    size: M
+    status: review
+    note: "release-blocker for deploy integration. Story 2 was instrument-only: CreatioInstallerService.Execute swallowed the non-zero return of restore-db/deploy-app/configure-conn-strings/register-env (emitted done + run success + exit 0 over a failed action). Added int RunStage(string, Func<int>) to the emitter (non-zero return => failed + cascade skipped + failure run-completed, returns the code, no throw) and routed those four stages through it with an early nonzero return. wait-ready left soft (only warns today). thrown stages (stage-build/unzip/copy-files) unchanged."
+    prd: spec/ring-guided-deploy/prd/prd-ring-guided-deploy.md
+    adr: spec/ring-guided-deploy/adr/adr-ring-guided-deploy.md
+    depends_on: [story-ring-guided-deploy-2]
+    blocks: []
+
+  - id: story-ring-guided-deploy-6
+    title: "Ring ClioStageEvent mirror + raw _meta notification adapter in ClioRing.Ipc"
+    feature: "ring-guided-deploy"
+    repo: "clio (clio-ring/)"
+    size: L
+    status: review
+    note: "CROSS-REPO dependency: mirror + contract test build against clio story 1's committed JSON fixture; live end-to-end verification needs clio story 4 to have landed. Unit/contract coverage does not."
+    file: spec/ring-guided-deploy/stories/story-ring-guided-deploy-6.md
+    prd: spec/ring-guided-deploy/prd/prd-ring-guided-deploy.md
+    adr: spec/ring-guided-deploy/adr/adr-ring-guided-deploy.md
+    fr: [FR-08, FR-12]
+    ac: [AC-11]
+    depends_on: [story-ring-guided-deploy-1]
+    blocks:
+      - story-ring-guided-deploy-7
+      - story-ring-guided-deploy-10
+
+  - id: story-ring-guided-deploy-7
+    title: "DeployPipelineViewModel + GitHub-Actions step-list view"
+    feature: "ring-guided-deploy"
+    repo: "clio (clio-ring/)"
+    size: L
+    status: review
+    file: spec/ring-guided-deploy/stories/story-ring-guided-deploy-7.md
+    prd: spec/ring-guided-deploy/prd/prd-ring-guided-deploy.md
+    adr: spec/ring-guided-deploy/adr/adr-ring-guided-deploy.md
+    fr: [FR-04, FR-05, FR-07]
+    ac: [AC-05, AC-09, AC-10, AC-ERR]
+    depends_on: [story-ring-guided-deploy-6]
+    blocks:
+      - story-ring-guided-deploy-8
+      - story-ring-guided-deploy-9
+
+  - id: story-ring-guided-deploy-8
+    title: "Guided Install form on the main ring + preflight as first pipeline step"
+    feature: "ring-guided-deploy"
+    repo: "clio (clio-ring/)"
+    size: L
+    status: review
+    file: spec/ring-guided-deploy/stories/story-ring-guided-deploy-8.md
+    prd: spec/ring-guided-deploy/prd/prd-ring-guided-deploy.md
+    adr: spec/ring-guided-deploy/adr/adr-ring-guided-deploy.md
+    fr: [FR-01, FR-02, FR-03, FR-04, FR-21, FR-22]
+    ac: [AC-01, AC-02, AC-03, AC-04, AC-16, AC-17]
+    depends_on: [story-ring-guided-deploy-7]
+    blocks: []
+
+  - id: story-ring-guided-deploy-9
+    title: "Guided Uninstall on the main ring — local-env picker + Yes/No confirm + pipeline"
+    feature: "ring-guided-deploy"
+    repo: "clio (clio-ring/)"
+    size: M
+    status: review
+    file: spec/ring-guided-deploy/stories/story-ring-guided-deploy-9.md
+    prd: spec/ring-guided-deploy/prd/prd-ring-guided-deploy.md
+    adr: spec/ring-guided-deploy/adr/adr-ring-guided-deploy.md
+    fr: [FR-01, FR-06, FR-21]
+    ac: [AC-01, AC-06, AC-16]
+    depends_on: [story-ring-guided-deploy-7]
+    blocks: []
+
+  - id: story-ring-guided-deploy-10
+    title: "Ring logging + NDJSON deployment receipt from the same event stream"
+    feature: "ring-guided-deploy"
+    repo: "clio (clio-ring/)"
+    size: M
+    status: review
+    file: spec/ring-guided-deploy/stories/story-ring-guided-deploy-10.md
+    prd: spec/ring-guided-deploy/prd/prd-ring-guided-deploy.md
+    adr: spec/ring-guided-deploy/adr/adr-ring-guided-deploy.md
+    fr: [FR-17, FR-18]
+    ac: [AC-12, AC-13, AC-14]
+    depends_on: [story-ring-guided-deploy-6]
+    blocks: []
+
+  - id: story-ring-guided-deploy-11
+    title: "Ring settings — default clio + dev-clio path override + visible connected-clio identity"
+    feature: "ring-guided-deploy"
+    repo: "clio (clio-ring/)"
+    size: M
+    status: review
+    note: "Ring settings + handshake identity; independent of the typed-event chain (stories 1-7) — can proceed in parallel."
+    file: spec/ring-guided-deploy/stories/story-ring-guided-deploy-11.md
+    prd: spec/ring-guided-deploy/prd/prd-ring-guided-deploy.md
+    adr: spec/ring-guided-deploy/adr/adr-ring-guided-deploy.md
+    fr: [FR-19, FR-20]
+    ac: [AC-15]
+    depends_on: []
+    blocks: []
+  - id: story-clio-ring-companion-integration-1
+    title: "Integrate and deliver the clio-ring internal companion"
+    feature: "clio-ring-companion-integration"
+    repo: "clio"
+    size: L
+    status: review
+    file: spec/clio-ring-companion-integration/stories/story-clio-ring-companion-integration-1.md
+    prd: spec/clio-ring-companion-integration/prd/spec-clio-ring-companion-integration.md
+    adr: spec/clio-ring-companion-integration/adr/adr-clio-ring-companion-integration.md
+    depends_on: []
+    blocks: []
