@@ -115,6 +115,64 @@ internal static class McpProgressHeartbeat {
 	}
 
 	/// <summary>
+	/// Reporter-aware overload of <see cref="RunWithProgressAsync{TResult}(ModelContextProtocol.Server.McpServer, ProgressToken?, string, Func{TResult}, CancellationToken, TimeSpan?)"/>:
+	/// <paramref name="work"/> receives an <see cref="Action{String}"/> to push stage markers, which share
+	/// one monotonic counter with the timer heartbeats. No-op reporter and inline run when there is no token.
+	/// </summary>
+	internal static Task<TResult> RunWithProgressAsync<TResult>(
+		ModelContextProtocol.Server.McpServer server,
+		ProgressToken? progressToken,
+		string operationName,
+		Func<Action<string>, TResult> work,
+		CancellationToken cancellationToken = default,
+		TimeSpan? interval = null) {
+		return RunWithProgressAsync(
+			CreateChannel(server, progressToken), operationName, work, cancellationToken, interval);
+	}
+
+	/// <summary>
+	/// Core, transport-agnostic heartbeat loop. Runs <paramref name="work"/> on the calling thread,
+	/// passing it a stage reporter, while a background task beats through <paramref name="channel"/>
+	/// every <paramref name="interval"/>. A <see langword="null"/> <paramref name="channel"/> means "no
+	/// progress token": <paramref name="work"/> runs inline with a no-op reporter. Exceptions from
+	/// <paramref name="work"/> propagate unchanged; the heartbeat is always stopped (success, throw, or
+	/// cancellation). Exposed as <c>internal</c> so unit tests can drive the cadence with a fake sink
+	/// channel (the transport-injection seam that replaced the old <c>RunWithBeatAsync</c>).
+	/// </summary>
+	internal static async Task<TResult> RunWithProgressAsync<TResult>(
+		ProgressChannel channel,
+		string operationName,
+		Func<Action<string>, TResult> work,
+		CancellationToken cancellationToken = default,
+		TimeSpan? interval = null) {
+		ArgumentNullException.ThrowIfNull(work);
+		Action<string> reportStage = BuildStageReporter(channel);
+		if (channel is null) {
+			return work(reportStage);
+		}
+
+		TimeSpan effectiveInterval = interval ?? DefaultInterval;
+		using CancellationTokenSource heartbeatCts =
+			CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+		// Pump on a background task so its timer continuations never depend on the calling
+		// thread, which blocks inside the synchronous work() below.
+		Task pump = Task.Run(
+			() => PumpChannelAsync(channel, operationName, effectiveInterval, heartbeatCts.Token), CancellationToken.None);
+		try {
+			return work(reportStage);
+		}
+		finally {
+			await heartbeatCts.CancelAsync().ConfigureAwait(false);
+			try {
+				await pump.ConfigureAwait(false);
+			}
+			catch (OperationCanceledException) {
+				// Expected when the pump observes cancellation on stop.
+			}
+		}
+	}
+
+	/// <summary>
 	/// Runs <paramref name="work"/> on a background thread while emitting heartbeats, but bounds the
 	/// <em>response</em> by <paramref name="deadline"/>: if the work finishes first its result (or
 	/// exception) is returned/propagated unchanged; if the deadline elapses first the method throws
@@ -175,48 +233,6 @@ internal static class McpProgressHeartbeat {
 			server, progressToken, operationName, (Action<string> _) => work(), deadline, cancellationToken, interval);
 	}
 
-	private static void ObserveInBackground<TResult>(Task<TResult> task, string operationName) {
-		_ = task.ContinueWith(
-			t => {
-				// Reading t.Exception observes the fault so it never surfaces as an
-				// UnobservedTaskException; writing it to stderr turns the otherwise-silent
-				// post-deadline background failure into a diagnostic trail.
-				AggregateException exception = t.Exception;
-				if (exception is null) {
-					return;
-				}
-
-				try {
-					Console.Error.WriteLine(
-						$"[{operationName}] background operation faulted after the response deadline: {exception.GetBaseException()}");
-				}
-				catch {
-					// stderr diagnostics are best-effort: a closed/redirected stream must never
-					// resurface as an UnobservedTaskException from the very continuation that
-					// exists to suppress one.
-				}
-			},
-			CancellationToken.None,
-			TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
-			TaskScheduler.Default);
-	}
-
-	/// <summary>
-	/// Reporter-aware overload of <see cref="RunWithProgressAsync{TResult}(ModelContextProtocol.Server.McpServer, ProgressToken?, string, Func{TResult}, CancellationToken, TimeSpan?)"/>:
-	/// <paramref name="work"/> receives an <see cref="Action{String}"/> to push stage markers, which share
-	/// one monotonic counter with the timer heartbeats. No-op reporter and inline run when there is no token.
-	/// </summary>
-	internal static Task<TResult> RunWithProgressAsync<TResult>(
-		ModelContextProtocol.Server.McpServer server,
-		ProgressToken? progressToken,
-		string operationName,
-		Func<Action<string>, TResult> work,
-		CancellationToken cancellationToken = default,
-		TimeSpan? interval = null) {
-		return RunWithProgressAsync(
-			CreateChannel(server, progressToken), operationName, work, cancellationToken, interval);
-	}
-
 	/// <summary>
 	/// Reporter-aware overload of
 	/// <see cref="RunWithProgressAndDeadlineAsync{TResult}(ModelContextProtocol.Server.McpServer, ProgressToken?, string, Func{TResult}, TimeSpan?, CancellationToken, TimeSpan?)"/>:
@@ -232,48 +248,6 @@ internal static class McpProgressHeartbeat {
 		TimeSpan? interval = null) {
 		return RunWithProgressAndDeadlineAsync(
 			CreateChannel(server, progressToken), operationName, work, deadline, cancellationToken, interval);
-	}
-
-	/// <summary>
-	/// Core, transport-agnostic heartbeat loop. Runs <paramref name="work"/> on the calling thread,
-	/// passing it a stage reporter, while a background task beats through <paramref name="channel"/>
-	/// every <paramref name="interval"/>. A <see langword="null"/> <paramref name="channel"/> means "no
-	/// progress token": <paramref name="work"/> runs inline with a no-op reporter. Exceptions from
-	/// <paramref name="work"/> propagate unchanged; the heartbeat is always stopped (success, throw, or
-	/// cancellation). Exposed as <c>internal</c> so unit tests can drive the cadence with a fake sink
-	/// channel (the transport-injection seam that replaced the old <c>RunWithBeatAsync</c>).
-	/// </summary>
-	internal static async Task<TResult> RunWithProgressAsync<TResult>(
-		ProgressChannel channel,
-		string operationName,
-		Func<Action<string>, TResult> work,
-		CancellationToken cancellationToken = default,
-		TimeSpan? interval = null) {
-		ArgumentNullException.ThrowIfNull(work);
-		Action<string> reportStage = BuildStageReporter(channel);
-		if (channel is null) {
-			return work(reportStage);
-		}
-
-		TimeSpan effectiveInterval = interval ?? DefaultInterval;
-		using CancellationTokenSource heartbeatCts =
-			CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-		// Pump on a background task so its timer continuations never depend on the calling
-		// thread, which blocks inside the synchronous work() below.
-		Task pump = Task.Run(
-			() => PumpChannelAsync(channel, operationName, effectiveInterval, heartbeatCts.Token), CancellationToken.None);
-		try {
-			return work(reportStage);
-		}
-		finally {
-			await heartbeatCts.CancelAsync().ConfigureAwait(false);
-			try {
-				await pump.ConfigureAwait(false);
-			}
-			catch (OperationCanceledException) {
-				// Expected when the pump observes cancellation on stop.
-			}
-		}
 	}
 
 	/// <summary>
@@ -335,6 +309,32 @@ internal static class McpProgressHeartbeat {
 				// Expected when the pump observes cancellation on stop.
 			}
 		}
+	}
+
+	private static void ObserveInBackground<TResult>(Task<TResult> task, string operationName) {
+		_ = task.ContinueWith(
+			t => {
+				// Reading t.Exception observes the fault so it never surfaces as an
+				// UnobservedTaskException; writing it to stderr turns the otherwise-silent
+				// post-deadline background failure into a diagnostic trail.
+				AggregateException exception = t.Exception;
+				if (exception is null) {
+					return;
+				}
+
+				try {
+					Console.Error.WriteLine(
+						$"[{operationName}] background operation faulted after the response deadline: {exception.GetBaseException()}");
+				}
+				catch {
+					// stderr diagnostics are best-effort: a closed/redirected stream must never
+					// resurface as an UnobservedTaskException from the very continuation that
+					// exists to suppress one.
+				}
+			},
+			CancellationToken.None,
+			TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+			TaskScheduler.Default);
 	}
 
 	private static ProgressChannel CreateChannel(
