@@ -5774,3 +5774,10 @@ Decision: Serialize settings mutations with a sibling cross-process lock, reload
 Discovery: SettingsRepository loaded settings in its constructor and every mutation recreated appsettings.json from that stale model; deploy registration and uninstall removal both reached this path.
 Files: clio/Environment/ConfigurationOptions.cs, clio/Environment/SettingsBootstrapService.cs, clio.tests/Command/SettingsRepositoryConcurrencyTests.cs
 Impact: Cooperating clio processes no longer overwrite one another, completed manual edits are retained, malformed settings fail closed, and real multi-process coverage protects the behavior.
+
+## 2026-07-13 11:42 – Contributor issue-first PR policy
+Context: Contributor guidance needed a mandatory, searchable GitHub issue trail for every pull request.
+Decision: Require an issue before each PR, classify it with an enabled issue type and relevant labels, link it with a closing keyword when appropriate, and self-assign the PR; contributors without metadata permissions must request maintainer help before review.
+Discovery: The organization enables `Task`, `Bug`, and `Feature` issue types; the repository has domain and change-kind labels available for filtering.
+Files: CONTRIBUTING.md
+Impact: Contributors now have a concise issue-to-PR workflow with clear ownership and searchable classification.
