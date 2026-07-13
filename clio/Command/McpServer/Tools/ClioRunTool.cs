@@ -119,13 +119,19 @@ public sealed class ClioRunExecutor(IMcpToolInvokerRegistry toolRegistry) : ICli
 			return Error(SensitiveErrorTextRedactor.Redact($"Error: {ex.Message}"));
 		}
 
+		// Preserve the caller's protocol metadata (_meta) on the rebuilt child params. BuildChildParams
+		// constructs a fresh CallToolRequestParams (Name + Arguments only) with a null Meta, so without this
+		// the caller's ProgressToken — which RequestParams exposes as a read-only view over
+		// Meta["progressToken"] — is dropped, and any notifications/progress a dispatched tool emits (e.g.
+		// deploy-creatio / uninstall-creatio typed stage events) is silently lost (the tool's forwarder reads
+		// Params.ProgressToken and no-ops when it is null). Carrying Meta forward preserves the progress token
+		// and any other _meta. Read it BEFORE reassigning callContext.Params below.
+		childParams.Meta = callContext.Params?.Meta;
+
 		// Dispatch within the SAME request context (same server/session/services), retargeting it at the
 		// resolved tool and its arguments. Reusing the caller's context — rather than constructing a new
 		// one — carries the live MCP server forward so the SDK's InvokeAsync can build and run the real
 		// tool, and avoids the RequestContext constructor's non-null-server guard.
-		// Carry the caller's _meta (progress token) onto the child params so a dispatched lazy tool's
-		// notifications/progress reach the client instead of being dropped.
-		childParams.Meta = callContext.Params?.Meta;
 		callContext.Params = childParams;
 		callContext.MatchedPrimitive = tool;
 		try {
@@ -250,7 +256,11 @@ public sealed class ClioRunExecutor(IMcpToolInvokerRegistry toolRegistry) : ICli
 				&& !success) {
 				return true;
 			}
-			if (IsErrorFieldName(property.Key)
+			// A normal successful discovery result commonly carries a non-empty `message` or `detail`.
+			// Those fields are redactable AFTER another failure signal is established, but their presence
+			// alone must never classify the entire payload as a failure (that turned real build paths into
+			// the literal `[redacted-path]` before the Ring could use them).
+			if (string.Equals(property.Key, "error", StringComparison.OrdinalIgnoreCase)
 				&& property.Value is JsonValue errorValue
 				&& errorValue.TryGetValue(out string errorText)
 				&& !string.IsNullOrWhiteSpace(errorText)) {

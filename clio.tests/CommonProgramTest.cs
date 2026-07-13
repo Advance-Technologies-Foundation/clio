@@ -478,6 +478,23 @@ internal class CommonProgramTest : BaseClioModuleTests{
 	}
 
 	[Test]
+	[Description("Keeps disabled experimental commands out of unknown-command suggestions.")]
+	public void ExecuteCommands_WithDisabledExperimentalCommand_ShouldNotSuggestExperimentalCommand() {
+		// Arrange
+		StringWriter consoleOutput = new();
+		Console.SetOut(consoleOutput);
+		Console.SetError(consoleOutput);
+
+		// Act
+		Program.ExecuteCommands(["ring"]);
+		string output = consoleOutput.ToString();
+
+		// Assert
+		output.Should().NotContain("clio ring",
+			because: "a disabled experimental command must remain undiscoverable on recovery surfaces");
+	}
+
+	[Test]
 	[Description("Falls back to generic help when the input is too dissimilar to any visible command.")]
 	public void ExecuteCommands_WithLowConfidenceUnknownVerb_ShouldShowOnlyHelpHints() {
 		StringWriter consoleOutput = new();

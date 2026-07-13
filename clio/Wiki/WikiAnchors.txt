@@ -27,6 +27,7 @@ component-registry-refresh:component-registry-refresh,component-registry
 get-component-info:get-component-info,component-info
 get-user-culture:get-user-culture,profile-language
 compressApp:compressApp,comp-app
+config:config
 create-app:create-app
 create-app-section:create-app-section
 create-data-binding:create-data-binding
@@ -121,6 +122,7 @@ modify-entity-schema-column:modify-entity-schema-column
 modify-user-task-parameters:modify-user-task-parameters
 new-pkg:new-pkg,init
 new-test-project:new-test-project,create-test-project,unit-test
+new-integration-test-project:new-integration-test-project,integration-test
 new-ui-project:new-ui-project,create-ui-project,createup,new-ui,ui,uiproject
 open-k8-files:open-k8-files,cfg-k8,cfg-k8f,cfg-k8s
 open-settings:open-settings,conf,configuration,os,settings
@@ -143,6 +145,7 @@ push-pkg:push-pkg,install,push
 push-workspace:push-workspace,pushw
 reg-web-app:reg-web-app,cfg,reg
 register:register
+ring:ring
 remove-data-binding-row:remove-data-binding-row
 remove-data-binding-row-db:remove-data-binding-row-db
 restart-web-app:restart-web-app,restart

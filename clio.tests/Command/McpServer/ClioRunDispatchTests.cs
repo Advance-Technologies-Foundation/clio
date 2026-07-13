@@ -107,16 +107,17 @@ public sealed class ClioRunDispatchTests {
 
 	// A typed-POCO SUCCESS envelope whose data legitimately carries URI/path-shaped strings, returned as a
 	// plain record without IsError — the audit backstop must leave it completely untouched.
-	public sealed record PocoSuccessEnvelope(bool Success, string Url);
+	public sealed record PocoSuccessEnvelope(bool Success, string Message, string Url, string FullPath);
 
 	[McpServerToolType]
 	private static class PocoSuccessToolType {
 		internal const string LegitimateUrl = "https://legit-host:443/0/odata/Contact";
+		internal const string LegitimatePath = @"F:\CreatioBuilds\10.1.268\build.zip";
 
 		[McpServerTool(Name = "poco-success-tool", Destructive = false)]
 		[System.ComponentModel.Description("Returns a typed POCO success envelope carrying a URL field.")]
 		public static PocoSuccessEnvelope ReturnSuccess([System.ComponentModel.Description("payload")] string value) =>
-			new(Success: true, Url: LegitimateUrl);
+			new(Success: true, Message: "Found 36 builds.", Url: LegitimateUrl, FullPath: LegitimatePath);
 	}
 
 	private static McpServerTool BuildPocoSuccessTool() =>
@@ -405,27 +406,6 @@ public sealed class ClioRunDispatchTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Forwards the caller's request _meta (which carries the progress token) onto the retargeted child params, so a dispatched long-tail tool hidden from tools/list can stream notifications/progress under the token the client is listening on.")]
-	public async Task RunAsync_ShouldForwardMetaToDispatchedTool_WhenToolIsDispatched() {
-		// Arrange
-		RegisterTool("echo-tool", BuildEchoTool(), destructive: false);
-		System.Text.Json.Nodes.JsonObject meta = new() { ["progressToken"] = "tok-1" };
-		RequestContext<CallToolRequestParams> callContext = CallContext();
-		callContext.Params = new CallToolRequestParams { Name = ClioRunTool.ToolName, Meta = meta };
-		JsonElement args = JsonDocument.Parse("{\"value\":\"hi\"}").RootElement;
-
-		// Act
-		await _sut.RunAsync("echo-tool", args, destructiveSurface: false, callContext, CancellationToken.None);
-
-		// Assert
-		callContext.Params.Name.Should().Be("echo-tool",
-			because: "dispatch retargets the request context at the resolved tool");
-		callContext.Params.Meta.Should().BeSameAs(meta,
-			because: "clio-run must forward the caller's _meta (carrying the progress token) to the dispatched tool so a lazy tool's notifications/progress reach the client");
-	}
-
-	[Test]
-	[Category("Unit")]
 	[Description("Records the dispatched tool name and its resolved destructiveness into the result's out-of-band _meta, so a host that auto-allows clio-run still has an audit trail of the concrete (possibly destructive) tool it ran.")]
 	public async Task RunAsync_ShouldEchoResolvedDestructivenessIntoMeta_WhenToolIsDispatched() {
 		// Arrange
@@ -461,6 +441,32 @@ public sealed class ClioRunDispatchTests {
 		result.Content.OfType<TextContentBlock>().Should().Contain(
 			block => block.Text.Contains("echo:hello", StringComparison.Ordinal),
 			because: "clio-run must reach the real tool method and return its output");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The caller's ProgressToken is preserved onto the rebuilt child params so a dispatched tool (e.g. deploy-creatio) can emit notifications/progress; without this the token is dropped and typed stage events are silently lost.")]
+	public async Task RunAsync_ShouldPreserveCallerProgressToken_WhenDispatchingTool() {
+		// Arrange — a valid dispatch whose incoming call carries a ProgressToken (as a real MCP progress-tracked
+		// call does). BuildChildParams rebuilds Params from Name+Arguments only, so the fix must copy the token.
+		RegisterTool("echo-tool", BuildEchoTool(), destructive: false);
+		JsonElement args = JsonDocument.Parse("{\"value\":\"hello\"}").RootElement;
+		// RequestParams exposes ProgressToken as a read-only view over Meta["progressToken"], so seed the token
+		// through _meta exactly as a progress-tracked MCP call arrives on the wire.
+		const string tokenValue = "ring-progress-token-1";
+		RequestContext<CallToolRequestParams> ctx = CallContext();
+		ctx.Params = new CallToolRequestParams {
+			Name = ClioRunTool.ToolName,
+			Meta = new System.Text.Json.Nodes.JsonObject { ["progressToken"] = tokenValue }
+		};
+
+		// Act — dispatch through clio-run, which rewrites ctx.Params to the child tool's params.
+		await _sut.RunAsync("echo-tool", args, destructiveSurface: false, ctx, CancellationToken.None);
+
+		// Assert — the rewritten child params still carry the caller's ProgressToken (via preserved _meta), so
+		// the dispatched tool's forwarder (which reads Params.ProgressToken) can send progress to the host.
+		ctx.Params!.ProgressToken.Should().Be(new ProgressToken(tokenValue),
+			because: "clio-run must carry the caller's ProgressToken onto the dispatched tool or progress is lost");
 	}
 
 	[Test]
@@ -540,6 +546,10 @@ public sealed class ClioRunDispatchTests {
 		string text = ErrorText(result);
 		text.Should().Contain(PocoSuccessToolType.LegitimateUrl,
 			because: "a successful payload's legitimate URL data must survive — the backstop only touches failure content");
+		using JsonDocument successPayload = JsonDocument.Parse(text);
+		successPayload.RootElement.GetProperty("FullPath").GetString().Should().Be(
+			PocoSuccessToolType.LegitimatePath,
+			because: "a successful discovery payload with a normal message must preserve its usable filesystem path exactly");
 		text.Should().NotContain("[redacted",
 			because: "no redaction placeholder may appear in a successful envelope");
 	}

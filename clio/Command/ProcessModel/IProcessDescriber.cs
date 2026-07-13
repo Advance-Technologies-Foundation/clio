@@ -212,6 +212,14 @@ public sealed class DescribedElement {
 	/// <summary>For a signal start element: the record-event trigger (entity + change type). Null otherwise.</summary>
 	[JsonPropertyName("signal")]
 	public DescribedSignal Signal { get; set; }
+
+	/// <summary>
+	/// The element's data source filter (a signal start's <c>EntityFilters</c> or a data-operation element's
+	/// <c>DataSourceFilters</c>), decoded server-side into the high-level shape; <c>null</c> when the element
+	/// carries no filter. Round-trips into a <c>create</c>/<c>modify</c> <c>filter</c> descriptor.
+	/// </summary>
+	[JsonPropertyName("filter")]
+	public DescribedFilter Filter { get; set; }
 }
 
 /// <summary>The record-event trigger of a signal start element (what starts the process).</summary>
@@ -224,9 +232,108 @@ public sealed class DescribedSignal {
 	[JsonPropertyName("entitySchemaUId")]
 	public string EntitySchemaUId { get; set; }
 
-	/// <summary>Record change(s) that start the process: <c>added</c>, <c>modified</c>, <c>deleted</c>, or a combination.</summary>
+	/// <summary>The record change that starts the process: <c>added</c>, <c>modified</c>, or <c>deleted</c> (a single event — the designer has no combined trigger).</summary>
 	[JsonPropertyName("on")]
 	public string On { get; set; }
+}
+
+/// <summary>A data source filter group read back from an element — a recursive AND/OR tree of conditions.</summary>
+public class DescribedFilterGroup {
+	/// <summary>How the members combine: <c>and</c> or <c>or</c>.</summary>
+	[JsonPropertyName("logicalOperation")]
+	public string LogicalOperation { get; set; }
+
+	/// <summary>Leaf comparisons at this group level.</summary>
+	[JsonPropertyName("conditions")]
+	public List<DescribedFilterCondition> Conditions { get; set; }
+
+	/// <summary>Nested sub-groups, each with its own <see cref="LogicalOperation"/>.</summary>
+	[JsonPropertyName("groups")]
+	public List<DescribedFilterGroup> Groups { get; set; }
+}
+
+/// <summary>The root data source filter of an element: the group tree plus the object its columns belong to.</summary>
+public sealed class DescribedFilter : DescribedFilterGroup {
+	/// <summary>Root object (entity schema) the filter columns belong to (for example <c>Contact</c>).</summary>
+	[JsonPropertyName("object")]
+	public string Object { get; set; }
+}
+
+/// <summary>A single leaf comparison of a described filter: <c>column comparison &lt;right-hand value&gt;</c>.</summary>
+public sealed class DescribedFilterCondition {
+	/// <summary>Column path (may traverse lookups, for example <c>Account.Code</c>).</summary>
+	[JsonPropertyName("column")]
+	public string Column { get; set; }
+
+	/// <summary>Comparison token (for example <c>equal</c>, <c>greater</c>, <c>contains</c>, <c>isNull</c>).</summary>
+	[JsonPropertyName("comparison")]
+	public string Comparison { get; set; }
+
+	/// <summary>Constant value (string form); null for a reference or a null check.</summary>
+	[JsonPropertyName("value")]
+	public string Value { get; set; }
+
+	/// <summary>
+	/// Human-readable caption of the value on read-back (never sent on write). For a lookup constant this is the
+	/// referenced record's display name (for example <c>Approved</c>) so the value is not shown as a bare GUID; for a
+	/// process/element parameter reference it is that parameter's caption (making the opaque <see cref="Expression"/>
+	/// token readable). Null for a plain scalar, or when the source process predates the resolved-display serialization.
+	/// </summary>
+	[JsonPropertyName("displayValue")]
+	public string DisplayValue { get; set; }
+
+	/// <summary>
+	/// RESERVED (forward-compat) — NOT populated by the current server. The decoder surfaces every parameter
+	/// reference (process- or element-level) as the raw meta-path <see cref="Expression"/> token only, so a described
+	/// reference always arrives in <see cref="Expression"/>, never here. Kept to mirror the write-side descriptor
+	/// (which does accept a by-name process parameter) so a symbolic read-back would bind without a DTO change if a
+	/// future server emits one. Do not assume references round-trip structurally today.
+	/// </summary>
+	[JsonPropertyName("processParameter")]
+	public string ProcessParameter { get; set; }
+
+	/// <summary>
+	/// RESERVED (forward-compat) — NOT populated by the current server; see <see cref="ProcessParameter"/>. An
+	/// element-parameter reference is surfaced as the raw <see cref="Expression"/> token, not this structured shape.
+	/// </summary>
+	[JsonPropertyName("elementParameter")]
+	public DescribedFilterElementRef ElementParameter { get; set; }
+
+	/// <summary>
+	/// Raw meta-path expression token. The read-back surfaces EVERY parameter reference here (both process- and
+	/// element-parameter references), which is why <see cref="ProcessParameter"/> / <see cref="ElementParameter"/>
+	/// stay null on a real describe.
+	/// </summary>
+	[JsonPropertyName("expression")]
+	public string Expression { get; set; }
+
+	/// <summary>A relative-date / system macro compared against the column (for example <c>Today</c>, <c>NextNDays</c>).</summary>
+	[JsonPropertyName("macro")]
+	public string Macro { get; set; }
+
+	/// <summary>The integer argument for an argument macro (for example <c>NextNDays</c> / <c>PreviousNHours</c>).</summary>
+	[JsonPropertyName("macroArgument")]
+	public int? MacroArgument { get; set; }
+
+	/// <summary>
+	/// A calendar/clock part extracted from a Date/DateTime <see cref="Column"/> before comparing (for example
+	/// <c>Year</c>, <c>Month</c>, <c>Day</c>, <c>Weekday</c>): the condition reads <c>Year(CreatedOn) = 2026</c>. A
+	/// left-hand modifier of the column, not a right-hand source — the integer parts pair with an integer
+	/// <see cref="Value"/>, while <c>HourMinute</c> extracts the time-of-day and reads back a <c>HH:mm:ss</c> value.
+	/// </summary>
+	[JsonPropertyName("datePart")]
+	public string DatePart { get; set; }
+}
+
+/// <summary>An element-parameter reference used as a filter's right-hand value.</summary>
+public sealed class DescribedFilterElementRef {
+	/// <summary>Name (local handle) of the element that owns the parameter — the element's <c>Name</c>, not a GUID.</summary>
+	[JsonPropertyName("elementName")]
+	public string ElementName { get; set; }
+
+	/// <summary>Name of the parameter on that element.</summary>
+	[JsonPropertyName("parameter")]
+	public string Parameter { get; set; }
 }
 
 /// <summary>A sequence flow between two nodes.</summary>

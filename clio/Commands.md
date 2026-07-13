@@ -397,6 +397,10 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="create-test-project"></a>
 <a id="unit-test"></a>
 - [`new-test-project`](docs/commands/new-test-project.md) - Create a new test project, `create-test-project`, `unit-test`
+
+<a id="new-integration-test-project"></a>
+<a id="integration-test"></a>
+- [`new-integration-test-project`](docs/commands/new-integration-test-project.md) - Create a portable Creatio integration-test project, `integration-test`
 <a id="new-ui-project"></a>
 <a id="create-ui-project"></a>
 <a id="createup"></a>
@@ -563,19 +567,21 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`build-theme`](docs/commands/build-theme.md) - Build the artifacts of a Creatio theme from brand colours and fonts
 <a id="clear-themes-cache"></a>
 <a id="flush-themes"></a>
-- [`clear-themes-cache`](docs/commands/clear-themes-cache.md) - Refresh the Creatio theme cache, `flush-themes`
+- [`clear-themes-cache`](docs/commands/clear-themes-cache.md) - Refresh the Creatio theme cache (Creatio 10.0.0+), `flush-themes`
 <a id="create-theme"></a>
-- [`create-theme`](docs/commands/create-theme.md) - Create a custom Creatio theme on an environment
+- [`create-theme`](docs/commands/create-theme.md) - Create a custom Creatio theme on an environment (Creatio 10.0.0+)
 <a id="delete-theme"></a>
-- [`delete-theme`](docs/commands/delete-theme.md) - Delete a custom Creatio theme from an environment
+- [`delete-theme`](docs/commands/delete-theme.md) - Delete a custom Creatio theme from an environment (Creatio 10.0.0+)
 <a id="list-themes"></a>
 <a id="get-themes"></a>
-- [`list-themes`](docs/commands/list-themes.md) - List the custom Creatio themes available on an environment, `get-themes`
+- [`list-themes`](docs/commands/list-themes.md) - List the custom Creatio themes available on an environment (Creatio 10.0.0+), `get-themes`
 <a id="update-theme"></a>
-- [`update-theme`](docs/commands/update-theme.md) - Overwrite an existing custom Creatio theme on an environment
+- [`update-theme`](docs/commands/update-theme.md) - Overwrite an existing custom Creatio theme on an environment (Creatio 10.0.0+)
 
 ## Integrations & Tools
 
+<a id="ring"></a>
+- [`ring`](docs/commands/ring.md) - Manage the opt-in internal clio-ring desktop preview (experimental; Windows x64 only)
 <a id="delete-toolkit"></a>
 - [`delete-toolkit`](docs/commands/delete-toolkit.md) - Uninstall the Creatio AI App Development Toolkit from coding agents (alias: delete-skill)
 <a id="env-ui"></a>
@@ -636,6 +642,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`healthcheck`](docs/commands/healthcheck.md) - Run Creatio health checks, `hc`
 <a id="register"></a>
 - [`register`](docs/commands/register.md) - Register clio shell integrations
+<a id="config"></a>
+- [`config`](docs/commands/config.md) - View and set clio configuration defaults (e.g. deploy-creatio defaults used by the Explorer context menu)
 <a id="set-app-icon"></a>
 <a id="ai"></a>
 <a id="appicon"></a>
