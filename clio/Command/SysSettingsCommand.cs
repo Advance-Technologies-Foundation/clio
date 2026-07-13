@@ -17,10 +17,13 @@ namespace Clio.Command
 		[Value(0, MetaName = "Code", Required = true, HelpText = "Sys-setting code")]
 		public string Code { get; set; }
 
-		[Value(1, MetaName = "Value", Required = false, HelpText = "Sys-setting Value")]
+		[Value(1, MetaName = "Value", Required = false, HelpText =
+			"Sys-setting value. When Type is Binary (a setting whose value is stored as blob data, such as the " +
+			"logo), pass the path to a file and clio uploads its contents for you.")]
 		public string Value { get; set; }
 
-		[Value(2, MetaName = "Type", Required = false, HelpText = "Type", Default = "Text")]
+		[Value(2, MetaName = "Type", Required = false, HelpText =
+			"Sys-setting type (default: Text). Use Binary for a setting whose value is blob data, such as the logo.", Default = "Text")]
 		public string Type { get; set; }
 
 		[Option("get", Required = false, HelpText = "Use GET to retrieve sys-setting")]
@@ -37,33 +40,82 @@ namespace Clio.Command
 	public class SysSettingsCommand : Command<SysSettingsOptions> {
 
 		private const string LookupTypeName = "Lookup";
+		private const string BinaryTypeName = "Binary";
 
-		// Binary is intentionally excluded from the MCP create/update surface: the
-		// platform's PostSysSettingsValues endpoint is scalar-only, and the
-		// SysSettingsValue model does not expose a BinaryValue column, so get-sys-setting
-		// cannot read a binary value back either. Binary sys-settings need a dedicated
-		// upload/download path that is out of scope for this PR.
+		// Binary sys-settings (a value stored as blob data, e.g. the logo) are supported for WRITE: the value is a Base64 payload
+		// sent through PostSysSettingsValues, exactly like every other type. Prefer supplying a file
+		// path (CLI value / MCP value-file-path) so clio reads and encodes the blob locally instead of
+		// pushing a large Base64 string through the tool-call arguments. The MCP read surface does not
+		// return a Binary value — clio's SysSettingsValue model maps no binary column, so get-sys-setting
+		// returns empty and list-sys-settings shows "<binary>". The raw Base64 is still available via the
+		// legacy CLI "get-syssetting <code>", which reads it through the cliogate endpoint.
 		private static readonly string[] SupportedValueTypeNames = [
 			"Text", "ShortText", "MediumText", "LongText", "SecureText", "MaxSizeText",
 			"Boolean", "DateTime", "Date", "Time", "Integer",
 			"Money", "Float", LookupTypeName,
-			"Currency", "Decimal"
+			"Currency", "Decimal", BinaryTypeName
 		];
 
 		private readonly ISysSettingsManager _sysSettingsManager;
 		private readonly ILogger _logger;
+		private readonly IFileSystem _fileSystem;
 
-		public SysSettingsCommand(ISysSettingsManager sysSettingsManager, ILogger logger){
+		public SysSettingsCommand(ISysSettingsManager sysSettingsManager, ILogger logger, IFileSystem fileSystem){
 			_sysSettingsManager = sysSettingsManager;
 			_logger = logger;
+			_fileSystem = fileSystem;
 		}
+
+		// A sys-setting value is meant for a logo/small image; this cap guards against a mistaken path
+		// (e.g. pointing at a database backup) being read fully into memory and Base64-encoded. It is a
+		// sanity limit, not a policy — 10 MB comfortably covers any real logo or background image.
+		private const long MaxBinaryFileSizeBytes = 10L * 1024 * 1024;
+
+		/// <summary>
+		/// Reads the file at <paramref name="filePath"/> and returns its Base64-encoded contents.
+		/// Used to turn a file's contents (e.g. the logo, or any blob) into the Base64 payload a Binary sys-setting expects,
+		/// keeping the bytes on disk rather than in the CLI/MCP arguments. Rejects files larger than
+		/// <see cref="MaxBinaryFileSizeBytes"/> so a wrong path fails fast instead of exhausting memory.
+		/// </summary>
+		private string EncodeFileToBase64(string filePath){
+			if (!_fileSystem.ExistsFile(filePath)) {
+				throw new ArgumentException($"File not found: '{filePath}'.");
+			}
+			long sizeBytes = _fileSystem.GetFileSize(filePath);
+			if (sizeBytes > MaxBinaryFileSizeBytes) {
+				throw new ArgumentException(
+					$"File '{filePath}' is {sizeBytes:N0} bytes, which exceeds the " +
+					$"{MaxBinaryFileSizeBytes:N0}-byte limit for a Binary sys-setting value.");
+			}
+			_logger.WriteInfo($"Reading Binary sys-setting value from file '{filePath}' ({sizeBytes} bytes).");
+			return Convert.ToBase64String(_fileSystem.ReadAllBytes(filePath));
+		}
+
+		// A Base64 string uses only [A-Za-z0-9+/=], so any of '.', '\' or ':' means the caller almost
+		// certainly meant a file path — used to give a "file not found" hint instead of a Base64 error.
+		private static bool LooksLikeFilePath(string value) =>
+			value.IndexOf('.') >= 0 || value.IndexOf('\\') >= 0 || value.IndexOf(':') >= 0;
 
 		private void CreateSysSettingIfNotExists(SysSettingsOptions opts) {
 			_sysSettingsManager.CreateSysSettingIfNotExists(opts.Code, opts.Code, opts.Type);
 		}
 
 		public void UpdateSysSetting(SysSettingsOptions opts, EnvironmentSettings settings = null) {
-			bool isUpdated = _sysSettingsManager.UpdateSysSetting(opts.Code, opts.Value);
+			// For a Binary setting, a value that points at an existing file is read and Base64-encoded
+			// locally (the blob upload path, e.g. the logo); an inline Base64 string is passed through as-is.
+			string value = opts.Value;
+			if (string.Equals(opts.Type, BinaryTypeName, StringComparison.Ordinal) && opts.Value is not null) {
+				if (_fileSystem.ExistsFile(opts.Value)) {
+					value = EncodeFileToBase64(opts.Value);
+				} else if (LooksLikeFilePath(opts.Value)) {
+					// The value looks like a path (Base64 never contains '.', '\\' or ':') but no such file
+					// exists — report that plainly instead of letting it fail later as "invalid Base64".
+					throw new ArgumentException(
+						$"File not found: '{opts.Value}'. For a Binary setting pass a path to an existing " +
+						"file (e.g. the logo), or a Base64 string.");
+				}
+			}
+			bool isUpdated = _sysSettingsManager.UpdateSysSetting(opts.Code, value, opts.Type);
 			if(isUpdated) {
 				_logger.WriteInfo($"SysSettings with code: {opts.Code} updated.");
 			} else {
@@ -88,11 +140,21 @@ namespace Clio.Command
 				if (string.IsNullOrWhiteSpace(args.Code)) {
 					throw new ArgumentException("code is required.");
 				}
-				if (args.Value is null) {
-					throw new ArgumentException("value is required.");
+				bool hasInlineValue = args.Value is not null;
+				bool hasFilePath = !string.IsNullOrWhiteSpace(args.ValueFilePath);
+				if (hasInlineValue && hasFilePath) {
+					throw new ArgumentException("Provide either 'value' or 'value-file-path', not both.");
 				}
-				string valueTypeName = string.IsNullOrWhiteSpace(args.ValueTypeName) ? "Text" : args.ValueTypeName;
-				bool updated = _sysSettingsManager.UpdateSysSetting(args.Code, args.Value, valueTypeName);
+				if (!hasInlineValue && !hasFilePath) {
+					throw new ArgumentException("value is required (supply 'value' or 'value-file-path').");
+				}
+				// A file path is read and Base64-encoded locally; such payloads are Binary by nature, so
+				// default the type accordingly when it is not resolved from the target environment.
+				string value = hasFilePath ? EncodeFileToBase64(args.ValueFilePath) : args.Value;
+				string valueTypeName = string.IsNullOrWhiteSpace(args.ValueTypeName)
+					? (hasFilePath ? BinaryTypeName : "Text")
+					: args.ValueTypeName;
+				bool updated = _sysSettingsManager.UpdateSysSetting(args.Code, value, valueTypeName);
 				if (!updated) {
 					return new SysSettingUpdateResult(false, args.Code, null,
 						"Failed to update sys-setting. The setting may not exist, or the value did not match the expected type.");
@@ -183,23 +245,28 @@ namespace Clio.Command
 			return isUnconfigured ? string.Empty : MaskedSecureValuePlaceholder;
 		}
 
+		// Placeholder surfaced for Binary values in list-sys-settings: the metadata (code/name/type) is
+		// useful for discovery (e.g. a branding agent finding LogoImage), but the blob itself cannot be
+		// read back, so the value column shows this marker instead of an empty or misleading string.
+		private const string BinaryValuePlaceholder = "<binary>";
+
 		/// <summary>
 		/// Returns the catalog of sys-settings on the target environment with code, display name, value-type, default value, and cacheable/personal flags.
-		/// Binary-type settings are excluded from the result — Binary read/write is not exposed through this MCP tool set
-		/// (no BinaryValue column in SysSettingsValue and PostSysSettingsValues is scalar-only), so listing them would be misleading.
+		/// Binary-type settings (whose value is stored as blob data, e.g. the logo) ARE listed so callers can discover them, but their value column shows
+		/// <c>&lt;binary&gt;</c> because the MCP read surface does not return the blob (clio's SysSettingsValue model maps no
+		/// binary column; the CLI get-syssetting returns the raw Base64) — write them with update-sys-setting using value-file-path.
 		/// SecureText values are masked: the metadata row is returned but the actual stored secret is replaced with a placeholder
 		/// so the catalog cannot be used to harvest secrets.
 		/// </summary>
 		public SysSettingsListResult TryListSysSettings(ListSysSettingsArgs args) {
 			try {
-				List<SysSettings> settings = _sysSettingsManager.GetAllSysSettingsWithValues();
+				List<SysSettings> settings = _sysSettingsManager.GetAllSysSettingsWithValues(includeBinary: true);
 				SysSettingItem[] items = settings
-					.Where(setting => !string.Equals(setting.ValueTypeName, "Binary", StringComparison.Ordinal))
 					.Select(setting => new SysSettingItem(
 						setting.Code,
 						setting.Name,
 						setting.ValueTypeName,
-						MaskSecureValue(setting),
+						FormatListValue(setting),
 						setting.IsCacheable,
 						setting.IsPersonal))
 					.ToArray();
@@ -210,8 +277,10 @@ namespace Clio.Command
 			}
 		}
 
-		private static string MaskSecureValue(SysSettings setting) =>
-			ApplySecureTextMask(setting.ValueTypeName, setting.DefValue);
+		private static string FormatListValue(SysSettings setting) =>
+			string.Equals(setting.ValueTypeName, BinaryTypeName, StringComparison.Ordinal)
+				? BinaryValuePlaceholder
+				: ApplySecureTextMask(setting.ValueTypeName, setting.DefValue);
 
 		/// <summary>
 		/// Creates a new sys-setting with the supplied metadata. For <c>Lookup</c> settings resolves the

@@ -17,7 +17,7 @@ public sealed class SysSettingsGuidanceResource {
 	/// Returns the canonical guidance article for creating, reading, listing, and updating Creatio system settings.
 	/// </summary>
 	[McpServerResource(UriTemplate = ResourceUri, Name = "sys-settings-guidance")]
-	[Description("Returns canonical MCP guidance for the Creatio sys-settings CRU surface: tool order, supported value-type-names and aliases, Lookup resolution, SecureText masking, Date/Time TZ caveat, and Binary exclusion.")]
+	[Description("Returns canonical MCP guidance for the Creatio sys-settings CRU surface: tool order, supported value-type-names and aliases, Lookup resolution, SecureText masking, Date/Time TZ caveat, and Binary (write-only, via value-file-path) upload.")]
 	public ResourceContents GetGuide() => Guide;
 
 	internal static readonly TextResourceContents Guide = new() {
@@ -35,7 +35,7 @@ public sealed class SysSettingsGuidanceResource {
 			       Tool call shapes
 			       - `list-sys-settings` — `{ "args": { "environment-name": "<env>" } }`
 			       - `get-sys-setting` — `{ "args": { "environment-name": "<env>", "code": "<setting code>" } }`
-			       - `update-sys-setting` — `{ "args": { "environment-name": "<env>", "code": "<setting code>", "value": "<new value>" } }` (optional `value-type-name` fallback when the setting cannot be located on the environment)
+			       - `update-sys-setting` — `{ "args": { "environment-name": "<env>", "code": "<setting code>", "value": "<new value>" } }` (optional `value-type-name` fallback when the setting cannot be located on the environment). For `Binary` settings pass `value-file-path` (a local file path) instead of `value`.
 			       - `create-sys-setting` — `{ "args": { "environment-name": "<env>", "code": "<setting code>", "name": "<display name>", "value-type-name": "<type>", "value": "<initial>", "reference-schema-name": "<entity>" } }` (`value` and `reference-schema-name` are optional except where noted below)
 
 			       Preferred workflows
@@ -48,7 +48,7 @@ public sealed class SysSettingsGuidanceResource {
 			       - Scalars: `Boolean`, `DateTime`, `Date`, `Time`, `Integer`.
 			       - Numerics: `Money` (canonical), `Float` (canonical). Aliases accepted: `Currency` → `Money`, `Decimal` → `Float`.
 			       - `Lookup`: requires `reference-schema-name`. Pass the entity schema name (for example `Contact` or a custom `UsrPhoneFormat`).
-			       - `Binary` is intentionally absent from the advertised surface. `SysSettingsValue` has no `BinaryValue` column and `PostSysSettingsValues` is scalar-only, so MCP cannot round-trip binary payloads. Binary sys-settings need a dedicated upload flow that lives outside this tool set.
+			       - `Binary` (a value stored as blob data, e.g. the logo) is WRITE-ONLY through this surface. Set the value with `update-sys-setting` using `value-file-path`: clio reads the file and Base64-encodes it locally, then sends it through the same `PostSysSettingsValues` path as every other type. (`create-sys-setting` has no `value-file-path`; its optional initial `value` accepts inline Base64 only, so for a blob value create the setting first, then upload with `update-sys-setting`.) Do NOT inline the Base64 in `value` for large blobs — a logo is thousands of tokens; pass the file path instead. Reading a `Binary` value back is not exposed through MCP: `list-sys-settings` DOES list Binary settings (so you can discover codes like `LogoImage`) but shows their value as `<binary>`, and `get-sys-setting` returns an empty value for them, because clio's `SysSettingsValue` model does not map the platform's binary media column. (If you genuinely need the raw bytes, the legacy CLI `clio get-syssetting <code>` returns the Base64 via the cliogate endpoint — but avoid piping a multi-thousand-token blob back through an agent.)
 
 			       Lookup resolution rules
 			       - On `create-sys-setting` with `value-type-name=Lookup`, `reference-schema-name` is mandatory.
@@ -80,7 +80,8 @@ public sealed class SysSettingsGuidanceResource {
 			       - For lookup table seeding (creating the entries a Lookup sys-setting points at), see `data-bindings` guidance.
 
 			       Anti-patterns
-			       - Do not advertise `Binary` to callers as a usable MCP sys-setting type; it is excluded for a reason.
+			       - Do not inline a large Binary blob (e.g. the logo) in `value`; pass `value-file-path` so clio encodes the file locally and the bytes stay out of the tool-call arguments.
+			       - Do not expect a real `Binary` value from `get-sys-setting` / `list-sys-settings`; the row is listed for discovery but the value shows as `<binary>` (write-only surface for Binary).
 			       - Do not call `update-sys-setting` for SecureText and then try to verify the plaintext through `get-sys-setting`. The response is masked.
 			       - Do not retry Date/Time writes to "fix" a TZ delta on the read side; the platform-side conversion is consistent and orthogonal to the tool.
 			       - Prefer the MCP `create-sys-setting` / `update-sys-setting` tools over shelling out to the legacy `clio set-syssetting` CLI through any shell-execution tool; the MCP path validates input, masks secrets, and returns structured errors.

@@ -159,7 +159,7 @@ internal static class GuidanceCatalog {
 				"sys-settings",
 				"""
 				Canonical MCP guidance for the Creatio sys-settings CRU surface: tool order, supported value-type-names and aliases, 
-				Lookup resolution, SecureText masking, Date/Time TZ caveat, and Binary exclusion.
+				Lookup resolution, SecureText masking, Date/Time TZ caveat, and Binary (write-only, via value-file-path) upload.
 				""",
 				SysSettingsGuidanceResource.Guide),
 			["ui-project"] = Create(

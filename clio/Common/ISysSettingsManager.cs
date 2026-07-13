@@ -73,7 +73,13 @@ public interface ISysSettingsManager
 
 	void CreateSysSettingIfNotExists(string optsCode, string code, string optsType);
 	
-	public List<SysSettings> GetAllSysSettingsWithValues();
+	/// <summary>
+	/// Returns all sys-settings with their values attached. Binary-type settings are excluded by default
+	/// (the manifest/download path cannot serialize a blob value); pass <paramref name="includeBinary"/>
+	/// = true for the discovery surface (list-sys-settings), where the metadata is useful even though the
+	/// blob value itself is not readable.
+	/// </summary>
+	public List<SysSettings> GetAllSysSettingsWithValues(bool includeBinary = false);
 
 }
 
@@ -162,6 +168,19 @@ public class SysSettingsManager : ISysSettingsManager
 		bool isInt = int.TryParse(value, style, provider, out int intValue);
 		return isInt ? (object)intValue
 			: throw new InvalidCastException($"Could not convert {value} to to {nameof(Int32)}");
+	}
+
+	/// <summary>
+	/// Returns true when <paramref name="value"/> is a non-empty, well-formed Base64 string.
+	/// Used to guard Binary sys-setting writes so a malformed payload is rejected before it reaches
+	/// the platform's PostSysSettingsValues endpoint.
+	/// </summary>
+	private static bool IsValidBase64(string value){
+		if (string.IsNullOrWhiteSpace(value)) {
+			return false;
+		}
+		Span<byte> buffer = new byte[value.Length];
+		return Convert.TryFromBase64String(value, buffer, out _);
 	}
 
 	private Guid GetEntityIdByDisplayValue(string entityName, string optsValue){
@@ -416,6 +435,21 @@ public class SysSettingsManager : ISysSettingsManager
 			}
 			payloadValue = intValue;
 		}
+		else if (optionsType.Contains("Binary")) {
+			// Binary sys-settings (e.g. LogoImage) are written by sending the payload as a Base64
+			// string inside the same sysSettingsValues map used by every other type; the platform's
+			// PostSysSettingsValues endpoint accepts it. Callers pass an already-Base64-encoded value
+			// (the command layer encodes a file for CLI/MCP callers). Reading the value back is not
+			// supported here — see SysSettingsCommand for the write-only rationale.
+			string base64Value = value?.ToString() ?? string.Empty;
+			if (!IsValidBase64(base64Value)) {
+				_logger.WriteError(
+					$"SysSettings with code: {code} is not updated. Value is not valid Base64 " +
+					"(Binary settings expect a Base64-encoded payload).");
+				return false;
+			}
+			payloadValue = base64Value;
+		}
 		else {
 			_logger.WriteError(
 				$"SysSettings with code: {code} is not updated. Unsupported value-type-name '{optionsType}'.");
@@ -477,11 +511,11 @@ public class SysSettingsManager : ISysSettingsManager
 		return sysSchema?.UId;
 	}
 
-	public List<SysSettings> GetAllSysSettingsWithValues() {
-		var sysSettings = AppDataContextFactory.GetAppDataContext(_dataProvider)
-			.Models<SysSettings>()
-			.Where(s => s.ValueTypeName != "Binary")
-			.ToList();
+	public List<SysSettings> GetAllSysSettingsWithValues(bool includeBinary = false) {
+		var models = AppDataContextFactory.GetAppDataContext(_dataProvider).Models<SysSettings>();
+		var sysSettings = includeBinary
+			? models.ToList()
+			: models.Where(s => s.ValueTypeName != "Binary").ToList();
 
 		var sysSettingsValues = AppDataContextFactory.GetAppDataContext(_dataProvider)
 			.Models<SysSettingsValue>()

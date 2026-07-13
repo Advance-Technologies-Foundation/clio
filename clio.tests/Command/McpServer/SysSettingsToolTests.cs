@@ -14,8 +14,8 @@ namespace Clio.Tests.Command.McpServer;
 [Property("Module", "McpServer")]
 public sealed class SysSettingsToolTests {
 
-	private static IToolCommandResolver BuildResolver(ISysSettingsManager manager) {
-		SysSettingsCommand command = new(manager, Substitute.For<ILogger>());
+	private static IToolCommandResolver BuildResolver(ISysSettingsManager manager, IFileSystem fileSystem = null) {
+		SysSettingsCommand command = new(manager, Substitute.For<ILogger>(), fileSystem ?? Substitute.For<IFileSystem>());
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<SysSettingsCommand>(Arg.Any<EnvironmentOptions>()).Returns(command);
 		return commandResolver;
@@ -214,18 +214,29 @@ public sealed class SysSettingsToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("create-sys-setting refuses Binary value-type-name because PostSysSettingsValues is scalar-only and there is no BinaryValue read column to round-trip through.")]
-	public void CreateSysSetting_Should_Reject_Binary_Value_Type() {
+	[Description("create-sys-setting accepts Binary value-type-name: binary sys-settings (logos/images) are a supported write type provisioned like any other value-type-name.")]
+	public void CreateSysSetting_Should_Accept_Binary_Value_Type() {
+		// Arrange
 		ISysSettingsManager manager = Substitute.For<ISysSettingsManager>();
+		manager.InsertSysSetting(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(),
+			Arg.Any<bool>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<Guid?>())
+			.Returns(new SysSettingsManager.InsertSysSettingResponse(
+				new SysSettingsManager.ResponseStatus(string.Empty, string.Empty, Array.Empty<object>()),
+				Guid.NewGuid(), 1, false, true));
 		SysSettingCreateTool tool = new(BuildResolver(manager));
 
+		// Act
 		SysSettingCreateResult result = tool.CreateSysSetting(
 			new CreateSysSettingArgs("local", "UsrBinCode", "Binary setting", "Binary"));
 
-		result.Success.Should().BeFalse(
-			because: "Binary is intentionally excluded from the MCP-advertised surface — it needs a dedicated upload/download flow that is out of scope for this tool set");
-		result.Error.Should().Contain("Unsupported value-type-name",
-			because: "Binary is no longer in the SupportedValueTypeNames whitelist so the standard refusal message applies");
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "Binary is a supported write type now, so create must provision it like any other value-type-name");
+		result.ValueTypeName.Should().Be("Binary",
+			because: "the created setting echoes the Binary value-type-name it was created with");
+		manager.Received(1).InsertSysSetting("Binary setting", "UsrBinCode", "Binary",
+			Arg.Any<bool>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<Guid?>());
 	}
 
 	[Test]
@@ -327,6 +338,106 @@ public sealed class SysSettingsToolTests {
 			because: "the update itself succeeds — only the readback value surface needs to be sanitized");
 		result.Value.Should().Be("***",
 			because: "update-sys-setting must not echo the freshly-stored SecureText back in clear or it bypasses the masking policy");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("update-sys-setting reads the file at value-file-path, Base64-encodes it locally, and writes it as the value so image/logo blobs never travel through the tool arguments.")]
+	public void UpdateSysSetting_Should_Encode_File_From_ValueFilePath() {
+		// Arrange
+		byte[] bytes = [1, 2, 3, 4, 5];
+		string expectedBase64 = Convert.ToBase64String(bytes);
+		ISysSettingsManager manager = Substitute.For<ISysSettingsManager>();
+		string capturedValue = null;
+		manager.UpdateSysSetting("LogoImage", Arg.Do<object>(v => capturedValue = v as string), Arg.Any<string>())
+			.Returns(true);
+		manager.GetAllUsersDefaultWithType("LogoImage").Returns((string.Empty, "Binary"));
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		fileSystem.ExistsFile("logo.png").Returns(true);
+		fileSystem.ReadAllBytes("logo.png").Returns(bytes);
+		SysSettingUpdateTool tool = new(BuildResolver(manager, fileSystem));
+
+		// Act
+		SysSettingUpdateResult result = tool.UpdateSysSetting(
+			new UpdateSysSettingArgs("local", "LogoImage", ValueFilePath: "logo.png"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "a readable file path must produce a successful binary write");
+		capturedValue.Should().Be(expectedBase64,
+			because: "clio must Base64-encode the file bytes locally before sending them to the platform");
+		manager.Received(1).UpdateSysSetting("LogoImage", expectedBase64, Arg.Any<string>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("update-sys-setting rejects a call that supplies both value and value-file-path because the payload source would be ambiguous.")]
+	public void UpdateSysSetting_Should_Reject_Both_Value_And_FilePath() {
+		// Arrange
+		ISysSettingsManager manager = Substitute.For<ISysSettingsManager>();
+		SysSettingUpdateTool tool = new(BuildResolver(manager));
+
+		// Act
+		SysSettingUpdateResult result = tool.UpdateSysSetting(
+			new UpdateSysSettingArgs("local", "LogoImage", "rawbase64", ValueFilePath: "logo.png"));
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "value and value-file-path are mutually exclusive sources for the payload");
+		result.Error.Should().Contain("not both",
+			because: "the error must tell the caller to pass only one payload source");
+		manager.DidNotReceive().UpdateSysSetting(Arg.Any<string>(), Arg.Any<object>(), Arg.Any<string>());
+	}
+
+	#endregion
+
+	#region set-syssetting CLI (Binary file path)
+
+	[Test]
+	[Category("Unit")]
+	[Description("The set-syssetting CLI reads a Binary value from a file path on disk and sends it Base64-encoded, keeping the logo/image bytes off the command line.")]
+	public void Cli_SetSysSetting_Binary_Should_Encode_File() {
+		// Arrange
+		byte[] bytes = [10, 20, 30, 40];
+		string expectedBase64 = Convert.ToBase64String(bytes);
+		ISysSettingsManager manager = Substitute.For<ISysSettingsManager>();
+		string capturedValue = null;
+		manager.UpdateSysSetting("LogoImage", Arg.Do<object>(v => capturedValue = v as string), "Binary")
+			.Returns(true);
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		fileSystem.ExistsFile("logo.png").Returns(true);
+		fileSystem.GetFileSize("logo.png").Returns(bytes.Length);
+		fileSystem.ReadAllBytes("logo.png").Returns(bytes);
+		SysSettingsCommand command = new(manager, Substitute.For<ILogger>(), fileSystem);
+
+		// Act
+		command.UpdateSysSetting(new SysSettingsOptions { Code = "LogoImage", Value = "logo.png", Type = "Binary" });
+
+		// Assert
+		capturedValue.Should().Be(expectedBase64,
+			because: "the CLI must read the file and Base64-encode its bytes before handing them to the manager");
+		manager.Received(1).UpdateSysSetting("LogoImage", expectedBase64, "Binary");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The set-syssetting CLI reports a clear 'file not found' error when a Binary value looks like a path but no such file exists, instead of failing later as invalid Base64.")]
+	public void Cli_SetSysSetting_Binary_MissingFile_Should_Report_FileNotFound() {
+		// Arrange
+		ISysSettingsManager manager = Substitute.For<ISysSettingsManager>();
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		fileSystem.ExistsFile(Arg.Any<string>()).Returns(false);
+		SysSettingsCommand command = new(manager, Substitute.For<ILogger>(), fileSystem);
+
+		// Act
+		Action act = () => command.UpdateSysSetting(
+			new SysSettingsOptions { Code = "LogoImage", Value = @"C:\missing\logo.png", Type = "Binary" });
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("*File not found*",
+				because: "a path-like Binary value with no matching file must fail with a file-not-found message, not an invalid-Base64 one");
+		manager.DidNotReceive().UpdateSysSetting(Arg.Any<string>(), Arg.Any<object>(), Arg.Any<string>());
 	}
 
 	#endregion

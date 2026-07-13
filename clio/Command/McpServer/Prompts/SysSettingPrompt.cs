@@ -27,7 +27,7 @@ public static class SysSettingPrompt {
 		[Description("Display name of the sys-setting")]
 		string name,
 		[Required]
-		[Description("Value type. Creatio internal name: Text, ShortText, MediumText, LongText, SecureText, MaxSizeText, Boolean, DateTime, Date, Time, Integer, Money, Float, Lookup. Aliases: Currency=Money, Decimal=Float. Binary is not exposed by this tool set.")]
+		[Description("Value type. Creatio internal name: Text, ShortText, MediumText, LongText, SecureText, MaxSizeText, Boolean, DateTime, Date, Time, Integer, Money, Float, Lookup. Aliases: Currency=Money, Decimal=Float. Binary (blob data, such as the logo) is write-only: set the value via update-sys-setting with value-file-path.")]
 		string valueTypeName,
 		[Description("Optional initial All-Users default value")]
 		string value = null,
@@ -41,8 +41,9 @@ public static class SysSettingPrompt {
 		 Pass `environment-name`, `code`, `name`, and `value-type-name` exactly as provided. The `value-type-name`
 		 must be a Creatio internal name: `Text`, `ShortText`, `MediumText`, `LongText`, `SecureText`,
 		 `MaxSizeText`, `Boolean`, `DateTime`, `Date`, `Time`, `Integer`, `Money`, `Float`, `Lookup`.
-		 Aliases `Currency` and `Decimal` map to `Money` and `Float` respectively. `Binary` is not exposed by this
-		 tool set — binary sys-settings need a dedicated upload flow that lives outside MCP.
+		 Aliases `Currency` and `Decimal` map to `Money` and `Float` respectively. `Binary` settings (a value stored
+		 as blob data, such as the logo) are write-only through clio: create the setting, then assign the value with
+		 `{SysSettingUpdateTool.UpdateSysSettingToolName}` using `value-file-path`. Reading a `Binary` value back is not exposed through MCP (the legacy CLI `get-syssetting` returns the raw Base64).
 		 For `Lookup` settings, `reference-schema-name` is required and must reference an entity schema that exists
 		 on the target environment (e.g. `Contact`, `UsrPhoneFormat`). For non-Lookup settings, omit it.
 		 When the caller supplies an initial value, pass it via `value`; clio then invokes
@@ -88,8 +89,9 @@ public static class SysSettingPrompt {
 		$"""
 		 Use clio mcp server `{SysSettingsListTool.ListSysSettingsToolName}` to discover sys-settings on
 		 environment `{environmentName}`. The response includes code, display name, value-type-name, default
-		 value, and the cacheable/personal flags for every setting. Binary-type settings are excluded from the
-		 list — Binary read/write is not exposed through this MCP tool set and needs the dedicated upload/download flow.
+		 value, and the cacheable/personal flags for every setting. Binary-type settings (whose value is stored as blob
+		 data, e.g. the logo) are listed too, with their value shown as `<binary>` because MCP does not surface the blob value;
+		 write them with `{SysSettingUpdateTool.UpdateSysSettingToolName}` using `value-file-path`.
 		 Use this catalog before `{SysSettingGetTool.GetSysSettingToolName}` or
 		 `{SysSettingUpdateTool.UpdateSysSettingToolName}` when the exact setting code is unknown.
 		 """;
@@ -117,7 +119,9 @@ public static class SysSettingPrompt {
 		 `code`, and `value` exactly as provided. The setting must already exist — call
 		 `{SysSettingCreateTool.CreateSysSettingToolName}` first when registering a new setting. Pass
 		 `value-type-name` only as a fallback when the setting type cannot be resolved from the platform (it is
-		 unused otherwise). For Lookup settings, `value` may be a GUID or the display name of an existing lookup
+		 unused otherwise). For a `Binary` setting (blob data, such as the logo), omit `value` and pass `value-file-path`
+		 with a local file path instead; clio reads the file and Base64-encodes it, so the blob never travels through the
+		 tool-call arguments. For Lookup settings, `value` may be a GUID or the display name of an existing lookup
 		 record; clio resolves display names to GUIDs before save. For DateTime / Date / Time, use ISO 8601.
 		 Verify the assigned value with `{SysSettingGetTool.GetSysSettingToolName}` when explicit confirmation is
 		 needed. Date and Time values may round-trip with a local-TZ offset on some platform deployments — treat

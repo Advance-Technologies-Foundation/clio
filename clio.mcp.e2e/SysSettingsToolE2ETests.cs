@@ -274,6 +274,59 @@ public sealed class SysSettingsToolE2ETests : McpContractFixtureBase {
 		updateResponse.Error.Should().BeNull();
 	}
 
+	[Test]
+	[AllureTag(UpdateToolName)]
+	[AllureName("update-sys-setting uploads a Binary setting from a local file via value-file-path")]
+	[AllureDescription("Creates a unique Binary sys-setting, then updates it by pointing value-file-path at a local file; clio reads and Base64-encodes the file locally and the platform accepts the Binary write.")]
+	[Description("Creates a unique Binary sys-setting, then updates it by pointing value-file-path at a local file; clio reads and Base64-encodes the file locally and the platform accepts the Binary write.")]
+	public async Task UpdateSysSetting_Should_Upload_Binary_From_ValueFilePath() {
+		// Arrange
+		await using ArrangeContext arrangeContext = await ArrangeAsync(
+			requireReachableEnvironment: true,
+			requireDestructiveOptIn: true);
+		string code = $"UsrMcpE2EBin{Guid.NewGuid():N}"[..32];
+		CallToolResult createResult = await CallToolAsync(
+			arrangeContext,
+			CreateToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = arrangeContext.EnvironmentName,
+				["code"] = code,
+				["name"] = code,
+				["value-type-name"] = "Binary"
+			});
+		EntitySchemaStructuredResultParser.Extract<SysSettingCreateResult>(createResult).Success.Should().BeTrue(
+			because: "the binary upload scenario requires a successfully-created precondition Binary setting");
+		string filePath = Path.Combine(Path.GetTempPath(), $"{code}.bin");
+		byte[] fileBytes = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]; // PNG signature bytes stand in for a logo
+		await File.WriteAllBytesAsync(filePath, fileBytes);
+
+		try {
+			// Act
+			CallToolResult updateResult = await CallToolAsync(
+				arrangeContext,
+				UpdateToolName,
+				new Dictionary<string, object?> {
+					["environment-name"] = arrangeContext.EnvironmentName,
+					["code"] = code,
+					["value-file-path"] = filePath
+				});
+			SysSettingUpdateResult updateResponse =
+				EntitySchemaStructuredResultParser.Extract<SysSettingUpdateResult>(updateResult);
+
+			// Assert
+			updateResult.IsError.Should().NotBeTrue();
+			updateResponse.Success.Should().BeTrue(
+				because: "clio must read the file, Base64-encode it locally, and the platform must accept the Binary write");
+			updateResponse.Code.Should().Be(code,
+				because: "the response must echo the updated Binary setting code");
+			updateResponse.Error.Should().BeNull();
+		} finally {
+			if (File.Exists(filePath)) {
+				File.Delete(filePath);
+			}
+		}
+	}
+
 	#endregion
 
 	#region Helpers
