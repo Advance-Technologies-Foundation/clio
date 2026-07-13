@@ -138,14 +138,23 @@ public sealed class McpDurableCallToolHandler(
 		string canonicalName,
 		bool viaAlias,
 		string correlationId) {
-		if (result is null) {
-			return result;
-		}
+		// Defensive floor: the handler's contract is to always RETURN a non-null CallToolResult (the whole
+		// return-not-thrown design rests on it). A well-behaved executor never returns null, but if it does
+		// synthesize a structured error rather than propagating null up to the SDK.
+		result ??= new CallToolResult {
+			IsError = true,
+			Content = [new TextContentBlock {
+				Text = $"Tool '{canonicalName}' was dispatched but produced no result."
+			}]
+		};
 		string aliasNote = viaAlias
 			? $" Note: '{requestedName}' is a deprecated alias — use '{canonicalName}'."
 			: string.Empty;
+		// Word the advisory to the actual outcome: a dispatched tool can return IsError=true, and claiming it
+		// "Executed" cleanly would mislead the agent about what happened.
+		string outcomeVerb = result.IsError == true ? "Attempted" : "Executed";
 		string advisory =
-			$"[clio] Executed '{canonicalName}' directly; it is not advertised in tools/list.{aliasNote} " +
+			$"[clio] {outcomeVerb} '{canonicalName}' directly; it is not advertised in tools/list.{aliasNote} " +
 			$"Prefer the advertised executor next time: clio-run {{\"command\":\"{canonicalName}\",\"args\":{{…}}}} " +
 			"(discover contracts via get-tool-contract).";
 		List<ContentBlock> content = result.Content is null ? [] : [.. result.Content];

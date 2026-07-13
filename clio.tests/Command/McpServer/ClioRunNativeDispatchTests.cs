@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command.McpServer;
@@ -133,6 +134,54 @@ public sealed class ClioRunNativeDispatchTests {
 			because: "the original request params must be restored after the retargeted dispatch");
 		context.MatchedPrimitive.Should().BeNull(
 			because: "the original (unmatched) MatchedPrimitive must be restored after dispatch");
+	}
+
+
+	// A real SDK-built tool that records the protocol _meta it observed on the retargeted request context,
+	// so the native-dispatch _meta/progress-token forwarding can be asserted end to end.
+	[McpServerToolType]
+	private static class MetaCapturingToolType {
+		public static JsonObject CapturedMeta { get; set; }
+
+		[McpServerTool(Name = "meta-capturing-tool", Destructive = false)]
+		[System.ComponentModel.Description("Records the request context's _meta and echoes its input.")]
+		public static string Capture(
+			RequestContext<CallToolRequestParams> context,
+			[System.ComponentModel.Description("payload")] string value) {
+			CapturedMeta = context.Params?.Meta;
+			return $"captured:{value}";
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Forwards the caller's protocol _meta (including the progress token) onto the retargeted child request, so notifications/progress a dispatched tool emits are not lost — the native-dispatch counterpart of the clio-run progress-token fix.")]
+	public async Task InvokeResolvedAsync_ShouldForwardCallerMeta_WhenDispatchingNatively() {
+		// Arrange — a native call carrying a progress token plus a custom _meta entry.
+		MetaCapturingToolType.CapturedMeta = null;
+		McpServerTool tool = BuildTool(typeof(MetaCapturingToolType), nameof(MetaCapturingToolType.Capture));
+		Dictionary<string, JsonElement> arguments = new() {
+			["value"] = JsonSerializer.SerializeToElement("hi")
+		};
+		RequestContext<CallToolRequestParams> context = CallContext("meta-capturing-tool", arguments);
+		JsonObject callerMeta = new() {
+			["progressToken"] = "tok-123",
+			["custom-meta"] = "keep-me"
+		};
+		context.Params!.Meta = callerMeta;
+
+		// Act
+		CallToolResult result = await _sut.InvokeResolvedAsync(tool, "meta-capturing-tool", context, CancellationToken.None);
+
+		// Assert
+		result.IsError.Should().NotBe(true,
+			because: "the meta-capturing tool binds and runs normally");
+		MetaCapturingToolType.CapturedMeta.Should().NotBeNull(
+			because: "the dispatched tool must observe the caller's _meta, not a null one");
+		MetaCapturingToolType.CapturedMeta!["progressToken"]!.GetValue<string>().Should().Be("tok-123",
+			because: "the progress token must survive dispatch so notifications/progress keep flowing to the caller");
+		MetaCapturingToolType.CapturedMeta!["custom-meta"]!.GetValue<string>().Should().Be("keep-me",
+			because: "all caller _meta is forwarded verbatim, not just the progress token");
 	}
 
 

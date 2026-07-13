@@ -214,6 +214,8 @@ public sealed class McpDurableCallToolHandlerTests {
 		JsonElement payload = StructuredOf(result);
 		payload.GetProperty("code").GetString().Should().Be("feature-disabled",
 			because: "a real-but-gated tool must be distinguishable from an unknown name");
+		payload.GetProperty("correlation-id").GetString().Should().NotBeNullOrWhiteSpace(
+			because: "every handler outcome carries a correlation id");
 		result.Content.OfType<TextContentBlock>().Single().Text
 			.Should().Contain("clio experimental", because: "the outcome teaches how to enable the feature");
 	}
@@ -240,6 +242,8 @@ public sealed class McpDurableCallToolHandlerTests {
 		JsonElement payload = StructuredOf(result);
 		payload.GetProperty("code").GetString().Should().Be("cli-verb-not-mcp-tool",
 			because: "a CLI-only verb is actionable guidance, not an unknown name");
+		payload.GetProperty("correlation-id").GetString().Should().NotBeNullOrWhiteSpace(
+			because: "every handler outcome carries a correlation id");
 		result.Content.OfType<TextContentBlock>().Single().Text
 			.Should().Contain($"clio {cliOnlyVerb}", because: "the outcome shows the terminal command to run");
 	}
@@ -270,5 +274,111 @@ public sealed class McpDurableCallToolHandlerTests {
 			because: "an alias whose canonical is gone must name the replacement, not report unknown");
 		payload.GetProperty("replacement").GetString().Should().Be("replacement-tool",
 			because: "the entry's explicit replacement wins over the canonical");
+		payload.GetProperty("correlation-id").GetString().Should().NotBeNullOrWhiteSpace(
+			because: "every handler outcome carries a correlation id");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Classifies a name owned by a foreign surface (not clio) as foreign-command, without executing, and carries a correlation id.")]
+	public async Task HandleAsync_ShouldReturnForeignCommand_WhenNameIsOwnedByAnotherSurface() {
+		// Arrange
+		McpToolCompatibilityEntry entry = new(
+			CanonicalName: "foreign-thing",
+			Aliases: ["foreign-alias"],
+			Kind: McpToolCompatibilityKind.DeprecatedAlias,
+			DeprecatedSince: null,
+			Replacement: null,
+			Owner: McpToolSurfaceOwner.Foreign);
+		_catalog.TryResolveAlias("foreign-alias", out Arg.Any<string>(), out Arg.Any<McpToolCompatibilityEntry>())
+			.Returns(callInfo => { callInfo[1] = "foreign-thing"; callInfo[2] = entry; return true; });
+		RequestContext<CallToolRequestParams> context = CallContext("foreign-alias");
+
+		// Act
+		CallToolResult result = await _sut.HandleAsync(context, CancellationToken.None);
+
+		// Assert
+		await _executor.DidNotReceiveWithAnyArgs().InvokeResolvedAsync(default, default, default, default);
+		JsonElement payload = StructuredOf(result);
+		payload.GetProperty("code").GetString().Should().Be("foreign-command",
+			because: "a name owned by another surface must not be treated as a clio tool");
+		payload.GetProperty("owner").GetString().Should().Be("Foreign",
+			because: "the outcome names the owning surface for the agent");
+		payload.GetProperty("correlation-id").GetString().Should().NotBeNullOrWhiteSpace(
+			because: "every handler outcome carries a correlation id");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns a structured unknown-tool outcome (with an empty requested-name and a correlation id) for a blank/whitespace tool name, rather than throwing.")]
+	public async Task HandleAsync_ShouldReturnUnknownTool_WhenNameIsBlank() {
+		// Arrange
+		RequestContext<CallToolRequestParams> context = CallContext("   ");
+
+		// Act
+		CallToolResult result = await _sut.HandleAsync(context, CancellationToken.None);
+
+		// Assert
+		JsonElement payload = StructuredOf(result);
+		payload.GetProperty("code").GetString().Should().Be("unknown-tool",
+			because: "a blank name resolves nowhere and must return a structured outcome, not throw");
+		payload.GetProperty("requested-name").GetString().Should().BeEmpty(
+			because: "the empty requested name is echoed back verbatim");
+		payload.GetProperty("correlation-id").GetString().Should().NotBeNullOrWhiteSpace(
+			because: "every handler outcome carries a correlation id");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Applies a defensive floor: when the executor returns null (a contract violation), the handler still returns a non-null structured error result rather than propagating null, honoring the return-not-thrown invariant.")]
+	public async Task HandleAsync_ShouldReturnNonNullError_WhenExecutorReturnsNull() {
+		// Arrange
+		McpServerTool tool = BuildEchoTool();
+		_registry.TryGetTool("echo-tool", out Arg.Any<McpServerTool>())
+			.Returns(callInfo => { callInfo[1] = tool; return true; });
+		_registry.IsDestructive("echo-tool").Returns(false);
+		RequestContext<CallToolRequestParams> context = CallContext("echo-tool");
+		_executor.InvokeResolvedAsync(tool, "echo-tool", context, Arg.Any<CancellationToken>())
+			.Returns((CallToolResult)null);
+
+		// Act
+		CallToolResult result = await _sut.HandleAsync(context, CancellationToken.None);
+
+		// Assert
+		result.Should().NotBeNull(
+			because: "the handler contract is to always RETURN a CallToolResult, never null");
+		result.IsError.Should().BeTrue(
+			because: "a missing executor result is surfaced as an error, not a silent success");
+		result.Content.OfType<TextContentBlock>().Select(block => block.Text)
+			.Should().Contain(text => text.Contains("produced no result"),
+				because: "the defensive floor explains why there is no payload");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Words the advisory as 'Attempted' (not 'Executed') when the dispatched non-destructive tool returns an error result, so the agent is not misled about the outcome.")]
+	public async Task HandleAsync_ShouldSayAttempted_WhenDispatchedToolReturnsError() {
+		// Arrange
+		McpServerTool tool = BuildEchoTool();
+		_registry.TryGetTool("echo-tool", out Arg.Any<McpServerTool>())
+			.Returns(callInfo => { callInfo[1] = tool; return true; });
+		_registry.IsDestructive("echo-tool").Returns(false);
+		RequestContext<CallToolRequestParams> context = CallContext("echo-tool");
+		CallToolResult errorResult = new() {
+			IsError = true,
+			Content = [new TextContentBlock { Text = "tool failed" }]
+		};
+		_executor.InvokeResolvedAsync(tool, "echo-tool", context, Arg.Any<CancellationToken>())
+			.Returns(errorResult);
+
+		// Act
+		CallToolResult result = await _sut.HandleAsync(context, CancellationToken.None);
+
+		// Assert
+		IEnumerable<string> texts = result.Content.OfType<TextContentBlock>().Select(block => block.Text);
+		texts.Should().Contain(text => text.Contains("[clio] Attempted 'echo-tool'"),
+			because: "an error result must not be advertised as a clean execution");
+		texts.Should().NotContain(text => text.Contains("[clio] Executed 'echo-tool'"),
+			because: "the 'Executed' wording is reserved for a successful (non-error) result");
 	}
 }

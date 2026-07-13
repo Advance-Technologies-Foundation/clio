@@ -227,4 +227,26 @@ public sealed class McpToolCompatibilityCatalogTests {
 		danglingCanonicals.Should().BeEmpty(
 			because: "a deprecated-alias entry must point at a real registered tool, otherwise the alias resolves to nothing");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("No alias in the shipped catalog equals a real registered tool name, so a direct tools/call for a real (long-tail) tool can never be silently shadowed and re-dispatched to a different canonical.")]
+	public void ProductionCatalog_ShouldNotDeclareAnyAliasThatIsARealToolName() {
+		// Arrange — alias resolution runs FIRST in both the durable handler and clio-run, so an alias whose
+		// name equals a real tool would intercept a direct call to that tool and re-route it to the canonical.
+		IMcpToolCompatibilityCatalog catalog = new McpToolCompatibilityCatalog();
+		McpToolInvokerRegistry registry = BuildRegistryOverFullCatalog();
+		HashSet<string> toolNames = registry.ToolNames.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+		// Act
+		List<string> aliasesShadowingRealTools = catalog.Entries
+			.SelectMany(entry => entry.Aliases ?? Array.Empty<string>())
+			.Where(alias => toolNames.Contains(alias))
+			.ToList();
+
+		// Assert
+		aliasesShadowingRealTools.Should().BeEmpty(
+			because: "an alias equal to a real registered tool name would silently shadow that tool " +
+				"and re-dispatch it to the canonical — the aliases must be disjoint from the tool names");
+	}
 }

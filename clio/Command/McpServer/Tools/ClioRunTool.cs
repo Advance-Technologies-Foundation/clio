@@ -170,15 +170,15 @@ public sealed class ClioRunExecutor(
 		// The native call's Arguments are ALREADY in the SDK's bound shape (keyed by parameter name), so
 		// they are forwarded verbatim — running them through BuildChildParams would re-wrap a
 		// single-complex-parameter tool's record under its parameter name a second time
-		// ({"args":{"args":{…}}}) and break deserialization. Protocol `_meta` is copied onto the
-		// retargeted params; the SDK derives the progress token FROM `Meta`
-		// (RequestParams.ProgressToken is read-only), so copying Meta preserves progress reporting for
-		// progress-aware tools exactly as on a direct advertised call.
+		// ({"args":{"args":{…}}}) and break deserialization. Protocol `_meta` (incl. the progress token,
+		// which RequestParams exposes as a read-only view over Meta["progressToken"]) is NOT copied here:
+		// DispatchAsync is the single owner of Meta forwarding for BOTH callers, so it carries the caller's
+		// Meta onto childParams just before dispatch. Task-augmentation metadata is copied here because
+		// DispatchAsync does not touch it.
 		CallToolRequestParams originalParams = callContext.Params;
 		CallToolRequestParams childParams = new() {
 			Name = canonicalName,
 			Arguments = originalParams?.Arguments,
-			Meta = originalParams?.Meta,
 #pragma warning disable MCPEXP001 // Task-augmentation metadata is SDK-experimental; copied verbatim so a
 			// task-augmented direct call keeps its task identity through the forgiving dispatch. If the SDK
 			// removes/renames the property this assignment is the single line to update.
@@ -539,16 +539,27 @@ public sealed class ClioRunExecutor(
 	private IReadOnlyList<string> BuildSuggestions(string requestedName) =>
 		BuildSuggestions(requestedName, toolRegistry);
 
+	// Upper bound on the requested-name length fed into the O(n·m) Levenshtein ranking. This is a cold
+	// error path (only reached on an unknown tool), but the requested name is caller-supplied and could be
+	// arbitrarily long, so it is capped before ranking — mirroring the same 64-char cap the durable handler
+	// applies when sanitizing the name for prose reflection.
+	private const int MaxRequestedNameLengthForRanking = 64;
+
 	// Static form shared with the durable (forgiving) call-tool handler, so both callers rank the same
 	// candidate set with the same algorithm and never drift apart.
 	internal static IReadOnlyList<string> BuildSuggestions(string requestedName, IMcpToolInvokerRegistry registry) {
+		// Cap the caller-supplied name before it drives the per-candidate Levenshtein computation, so an
+		// oversized name cannot inflate the cost of the ranking on this cold error path.
+		string rankingName = requestedName is { Length: > MaxRequestedNameLengthForRanking }
+			? requestedName[..MaxRequestedNameLengthForRanking]
+			: requestedName;
 		return registry.ToolNames
 			.Concat(McpToolSchemaCatalog.RegisteredToolNames)
 			.Where(name => !string.IsNullOrWhiteSpace(name)
 				&& !string.Equals(name, ClioRunTool.ToolName, StringComparison.OrdinalIgnoreCase)
 				&& !string.Equals(name, ClioRunDestructiveTool.ToolName, StringComparison.OrdinalIgnoreCase))
 			.Distinct(StringComparer.OrdinalIgnoreCase)
-			.OrderBy(name => McpToolArgumentSupport.LevenshteinDistance(requestedName, name))
+			.OrderBy(name => McpToolArgumentSupport.LevenshteinDistance(rankingName, name))
 			.ThenBy(name => name, StringComparer.OrdinalIgnoreCase)
 			.Take(3)
 			.ToArray();

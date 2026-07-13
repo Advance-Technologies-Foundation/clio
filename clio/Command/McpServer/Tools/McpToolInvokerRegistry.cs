@@ -81,7 +81,7 @@ public sealed class McpToolInvokerRegistry : IMcpToolInvokerRegistry {
 	/// <param name="featureToggleService">The feature toggle rule gating each tool type.</param>
 	/// <param name="serializerOptions">Serializer options governing tool argument marshalling.</param>
 	/// <exception cref="ArgumentNullException">When any required argument is <c>null</c>.</exception>
-	public McpToolInvokerRegistry(
+	internal McpToolInvokerRegistry(
 		IServiceProvider serviceProvider,
 		Assembly assembly,
 		IFeatureToggleService featureToggleService,

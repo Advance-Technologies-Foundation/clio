@@ -134,6 +134,35 @@ public sealed class DurableInvocationToolE2ETests : McpContractFixtureBase {
 
 	[Test]
 	[Category("E2E")]
+	[Description("The machine-readable outcome code survives the real McpToolErrorFilter in StructuredContent (not flattened to text): the return-not-thrown contract holds end to end over the wire (ENG-93370, TC-I-04).")]
+	[AllureTag("durable-invocation")]
+	[AllureName("outcome code survives the error filter in StructuredContent")]
+	public async Task DirectCall_ShouldPreserveStructuredCode_ThroughErrorFilter() {
+		// Arrange — an unknown name produces an IsError outcome. If the handler had THROWN (or the filter
+		// flattened the error), McpToolErrorFilter would leave a text-only error with no StructuredContent,
+		// losing the machine-readable code. The whole design rests on the outcome being RETURNED, so the
+		// StructuredContent must arrive intact.
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolRawAsync(
+			"definitely-not-a-real-tool-xyz",
+			new Dictionary<string, object?>(),
+			context.CancellationTokenSource.Token);
+
+		// Assert
+		callResult.IsError.Should().BeTrue(because: "an unknown tool cannot be executed");
+		callResult.StructuredContent.Should().NotBeNull(
+			because: "the filter must preserve the returned StructuredContent, not flatten the outcome to text");
+		JsonElement structured = callResult.StructuredContent!.Value;
+		structured.GetProperty("code").GetString().Should().Be("unknown-tool",
+			because: "the machine-readable outcome code must survive the McpToolErrorFilter intact");
+		structured.GetProperty("correlation-id").GetString().Should().NotBeNullOrWhiteSpace(
+			because: "the correlation id travels in StructuredContent alongside the code");
+	}
+
+	[Test]
+	[Category("E2E")]
 	[Description("The forgiving handler does not change the advertised surface: tools/list still returns only the resident lazy profile (ENG-93370 preserves the PR #743 context economy).")]
 	[AllureTag("durable-invocation")]
 	[AllureName("tools/list surface is unchanged by the durable handler")]
