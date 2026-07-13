@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using Clio.Command.McpServer.Progress;
 using Clio.Common;
 using CommandLine;
 using FluentValidation;
@@ -92,7 +93,7 @@ public class UninstallCreatioCommandOptions : EnvironmentNameOptions
 
 }
 
-public class UninstallCreatioCommand : Command<UninstallCreatioCommandOptions>
+public class UninstallCreatioCommand : Command<UninstallCreatioCommandOptions>, IStageEventSource
 {
 
 	#region Fields: Private
@@ -105,11 +106,35 @@ public class UninstallCreatioCommand : Command<UninstallCreatioCommandOptions>
 
 	#region Constructors: Public
 
-	public UninstallCreatioCommand(IValidator<UninstallCreatioCommandOptions> validator, 
+	public UninstallCreatioCommand(IValidator<UninstallCreatioCommandOptions> validator,
 		ILogger logger, ICreatioUninstaller creatioUninstaller){
 		_validator = validator;
 		_logger = logger;
 		_creatioUninstaller = creatioUninstaller;
+	}
+
+	#endregion
+
+	#region Events: Public
+
+	/// <inheritdoc />
+	/// <remarks>
+	/// Bubbles the uninstall stage-event seam up from <see cref="ICreatioUninstaller"/> (the collaborator that
+	/// actually emits) so an MCP tool can subscribe to the resolved command instance via <c>configureCommand</c>
+	/// (story 4). Subscriptions delegate to the underlying uninstaller when it is an
+	/// <see cref="IStageEventSource"/>; otherwise they are inert.
+	/// </remarks>
+	public event EventHandler<ClioStageEvent> StageChanged {
+		add {
+			if (_creatioUninstaller is IStageEventSource source) {
+				source.StageChanged += value;
+			}
+		}
+		remove {
+			if (_creatioUninstaller is IStageEventSource source) {
+				source.StageChanged -= value;
+			}
+		}
 	}
 
 	#endregion
@@ -146,8 +171,17 @@ public class UninstallCreatioCommand : Command<UninstallCreatioCommandOptions>
 			var _ when options.EnvironmentName is not null => () => _creatioUninstaller.UninstallByEnvironmentName(options.EnvironmentName),
 			var _ => throw new ArgumentOutOfRangeException(nameof(options), "Either PhysicalPath or EnvironmentName must be provided")
 		};
-		act.Invoke();
-		
+
+		try {
+			act.Invoke();
+		}
+		catch (CreatioUninstallAbortedException ex) {
+			// Correction A: the run was aborted before any destructive step (for example the configuration
+			// could not be read). Report the failure honestly instead of printing a success message.
+			_logger.WriteError(ex.Message);
+			return 1;
+		}
+
 		return PrintDoneAndExit(options);
 	}
 
