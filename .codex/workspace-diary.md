@@ -5851,3 +5851,10 @@ Decision: Assign a primary column from own Guid columns only for root schemas, a
 Discovery: A fresh package must depend on `Base` before Creatio accepts a BaseEntity-derived schema. The disposable 10.0.0.802 deployment also returns an unauthenticated 302 from the cliogate readiness route, so local E2E validation used the already-verified authenticated cliogate installation while retaining the normal bootstrap in committed test code.
 Files: clio/Command/EntitySchemaDesigner/RemoteEntitySchemaCreator.cs, clio/Command/EntitySchemaDesigner/RemoteEntitySchemaColumnManager.cs, clio.tests/Command/RemoteEntitySchemaCreatorTests.cs, clio.tests/Command/RemoteEntitySchemaColumnManagerTests.cs, clio.mcp.e2e/SchemaSyncToolE2ETests.cs, clio/help/en/create-entity-schema.txt, clio/help/en/update-entity-schema.txt, clio/docs/commands/create-entity-schema.md, clio/docs/commands/update-entity-schema.md
 Impact: Derived schemas retain inherited `Id`, remove/re-add batches succeed when the final column exists, and the real MCP regression passes against an isolated Creatio 10.0.0.802 deployment that was fully removed afterward.
+
+## 2026-07-13 21:58 – Align related-page read E2E with lazy MCP discovery
+Context: PR #870's TeamCity MCP E2E build failed because get-related-page-addon was expected in the resident tools/list surface.
+Decision: Replaced the stale resident-tool schema assertion with discovery through the established get-tool-contract lazy-surface union, matching the paired create tool.
+Discovery: Both related-page add-on tools are intentionally long-tail tools; direct invocation remains supported while discovery belongs to the compact contract index.
+Files: clio.mcp.e2e/GetRelatedPageAddonToolE2ETests.cs
+Impact: All three get-related-page-addon E2E scenarios pass on net8.0 and net10.0, and the test now verifies the supported MCP discovery contract.
