@@ -1,5 +1,6 @@
 # Clio Sprint Status
 # Updated by story-writer agent; revised 2026-06-10 after adversarial review
+# Reconciled against Jira + merged-PR reality on 2026-07-12 (see reconciliation note below).
 # Statuses: ready-for-dev | in-progress | review | done | deferred
 #
 # GATES before any story leaves ready-for-dev:
@@ -9,19 +10,29 @@
 # Spike outcome simplified Story 2: OAuth branch removed (forms-auth sole path).
 # Recommended order: 1, 3 (parallel) -> 2 -> 4 -> 5, 6, 7, 8 -> 10 -> 9 (Mode A). Stories 11/12 done.
 # Note: story 7 also needs story 1. Dependency graph is acyclic.
-# PR (single, all stories): https://github.com/Advance-Technologies-Foundation/clio/pull/691
+# Jira: ENG-91234 (Closed/Done). PR (single, all stories): https://github.com/Advance-Technologies-Foundation/clio/pull/691 (MERGED 2026-06-11).
+#
+# --- 2026-07-12 reconciliation note ---
+# All rows below marked "review"/"in-progress" as of 2026-06-xx were verified against Jira (creatio.atlassian.net)
+# and GitHub PR state; every referenced Jira ticket is Closed/Done (ENG-90883 is Closed/Won't-Do, PR still merged)
+# and every referenced PR is MERGED. Statuses flipped to `done` accordingly, each with jira/pr fields added.
+# mcp-lazy-schema (ENG-90312, PR #743 MERGED 2026-07-06) had 12 story files under spec/stories/ that were never
+# added to this tracker — added below as `done`. ENG-92761 (resident-tool-flag follow-up, PR #821 MERGED
+# 2026-07-06) is a separate Jira ticket stacked on the same branch; tracked as its own row.
 
 stories:
   - id: story-browser-session-handoff-1
     title: "Safe-env Deadlock Fix — IInteractiveConsole Abstraction (fail-closed, all callers)"
     feature: "browser-session-handoff"
     size: M
-    status: review
+    status: done
+    jira: ENG-91234
+    pr: 691
     depends_on: []
     note: "Implemented + verified locally 2026-06-10 (8 new tests + full unit suite 3483 pass, 0 new failures). Not yet in a PR."
-    file: spec/stories/story-browser-session-handoff-1.md
-    prd: spec/prd/prd-browser-session-handoff.md
-    adr: spec/adr/adr-browser-session-handoff.md
+    file: spec/archive/browser-session-handoff/stories/story-browser-session-handoff-1.md
+    prd: spec/archive/browser-session-handoff/prd/prd-browser-session-handoff.md
+    adr: spec/archive/browser-session-handoff/adr/adr-browser-session-handoff.md
 
   - id: story-browser-session-handoff-11
     title: "OAuthTokenLogin Spike (OQ-01) — confirm NetFW availability"
@@ -31,20 +42,22 @@ stories:
     depends_on: []
     blocks: [story-browser-session-handoff-2]
     note: "RESOLVED 2026-06-10: NO-GO. OAuthTokenLogin needs an external-access token, not clio's client-credentials token, on both hosts. Forms-auth is the sole path; OAuth-only fails closed. OAuth branch removed from story 2."
-    file: spec/stories/story-browser-session-handoff-11.md
-    prd: spec/prd/prd-browser-session-handoff.md
-    adr: spec/adr/adr-browser-session-handoff.md
+    file: spec/archive/browser-session-handoff/stories/story-browser-session-handoff-11.md
+    prd: spec/archive/browser-session-handoff/prd/prd-browser-session-handoff.md
+    adr: spec/archive/browser-session-handoff/adr/adr-browser-session-handoff.md
 
   - id: story-browser-session-handoff-2
     title: "ICreatioAuthClient — Forms-Auth (IsNetCore-aware) + OAuth branch"
     feature: "browser-session-handoff"
     size: M
-    status: review
+    status: done
+    jira: ENG-91234
+    pr: 691
     depends_on: [story-browser-session-handoff-11, story-browser-session-handoff-12]
     note: "Implemented + verified locally 2026-06-10 (10 unit tests; full unit suite 3504 pass, 0 new failures). Forms-auth sole path; dedicated IHttpClientFactory client; KnownRoute.AuthServiceLogin added. Not yet in a PR."
-    file: spec/stories/story-browser-session-handoff-2.md
-    prd: spec/prd/prd-browser-session-handoff.md
-    adr: spec/adr/adr-browser-session-handoff.md
+    file: spec/archive/browser-session-handoff/stories/story-browser-session-handoff-2.md
+    prd: spec/archive/browser-session-handoff/prd/prd-browser-session-handoff.md
+    adr: spec/archive/browser-session-handoff/adr/adr-browser-session-handoff.md
 
   - id: story-browser-session-handoff-12
     title: "Cookie-Surface Spike (OQ-06) — does creatio.client expose its cookie jar?"
@@ -54,97 +67,113 @@ stories:
     depends_on: []
     blocks: [story-browser-session-handoff-2]
     note: "RESOLVED 2026-06-10: Decision B. NuGet cookie store is internal CreatioClient.AuthCookie (no InternalsVisibleTo) — unreachable. Story 2 uses a dedicated IHttpClientFactory client; no ICreatioCookieProvider."
-    file: spec/stories/story-browser-session-handoff-12.md
-    prd: spec/prd/prd-browser-session-handoff.md
-    adr: spec/adr/adr-browser-session-handoff.md
+    file: spec/archive/browser-session-handoff/stories/story-browser-session-handoff-12.md
+    prd: spec/archive/browser-session-handoff/prd/prd-browser-session-handoff.md
+    adr: spec/archive/browser-session-handoff/adr/adr-browser-session-handoff.md
 
   - id: story-browser-session-handoff-3
     title: "IBrowserSessionCache — On-Disk storageState Cache (owner-only, stable key)"
     feature: "browser-session-handoff"
     size: M
-    status: review
+    status: done
+    jira: ENG-91234
+    pr: 691
     depends_on: []
     note: "Implemented + verified locally 2026-06-10 (11 unit + 2 integration tests; full unit suite 3494 pass, 0 new failures). Windows owner-only ACL = documented limitation. Not yet in a PR."
-    file: spec/stories/story-browser-session-handoff-3.md
-    prd: spec/prd/prd-browser-session-handoff.md
-    adr: spec/adr/adr-browser-session-handoff.md
+    file: spec/archive/browser-session-handoff/stories/story-browser-session-handoff-3.md
+    prd: spec/archive/browser-session-handoff/prd/prd-browser-session-handoff.md
+    adr: spec/archive/browser-session-handoff/adr/adr-browser-session-handoff.md
 
   - id: story-browser-session-handoff-4
     title: "IBrowserSessionService — Auth + Cache Orchestration"
     feature: "browser-session-handoff"
     size: M
-    status: review
+    status: done
+    jira: ENG-91234
+    pr: 691
     depends_on: [story-browser-session-handoff-2, story-browser-session-handoff-3]
     note: "Implemented + verified 2026-06-10 (7 unit tests; full suite 3511 pass, 0 new failures). Validation detects 200-login-page + 401."
-    file: spec/stories/story-browser-session-handoff-4.md
-    prd: spec/prd/prd-browser-session-handoff.md
-    adr: spec/adr/adr-browser-session-handoff.md
+    file: spec/archive/browser-session-handoff/stories/story-browser-session-handoff-4.md
+    prd: spec/archive/browser-session-handoff/prd/prd-browser-session-handoff.md
+    adr: spec/archive/browser-session-handoff/adr/adr-browser-session-handoff.md
 
   - id: story-browser-session-handoff-5
     title: "GetBrowserSessionCommand — CLI Verb"
     feature: "browser-session-handoff"
     size: M
-    status: review
+    status: done
+    jira: ENG-91234
+    pr: 691
     depends_on: [story-browser-session-handoff-4]
     note: "Implemented + verified 2026-06-10 (4 tests incl. ReadmeChecker; full suite 3515 pass, 0 new). Docs (help/docs/Commands.md/WikiAnchors) created with the verb."
-    file: spec/stories/story-browser-session-handoff-5.md
-    prd: spec/prd/prd-browser-session-handoff.md
-    adr: spec/adr/adr-browser-session-handoff.md
+    file: spec/archive/browser-session-handoff/stories/story-browser-session-handoff-5.md
+    prd: spec/archive/browser-session-handoff/prd/prd-browser-session-handoff.md
+    adr: spec/archive/browser-session-handoff/adr/adr-browser-session-handoff.md
 
   - id: story-browser-session-handoff-6
     title: "ClearBrowserSessionCommand — CLI Verb"
     feature: "browser-session-handoff"
     size: S
-    status: review
+    status: done
+    jira: ENG-91234
+    pr: 691
     depends_on: [story-browser-session-handoff-4]
     note: "Implemented + verified 2026-06-10 (3 tests incl. ReadmeChecker; full suite 3518 pass, 0 new). Docs created with the verb."
-    file: spec/stories/story-browser-session-handoff-6.md
-    prd: spec/prd/prd-browser-session-handoff.md
-    adr: spec/adr/adr-browser-session-handoff.md
+    file: spec/archive/browser-session-handoff/stories/story-browser-session-handoff-6.md
+    prd: spec/archive/browser-session-handoff/prd/prd-browser-session-handoff.md
+    adr: spec/archive/browser-session-handoff/adr/adr-browser-session-handoff.md
 
   - id: story-browser-session-handoff-7
     title: "GetBrowserSessionTool — MCP Tool"
     feature: "browser-session-handoff"
     size: M
-    status: review
+    status: done
+    jira: ENG-91234
+    pr: 691
     depends_on: [story-browser-session-handoff-1, story-browser-session-handoff-5]
     note: "Implemented + verified 2026-06-10 (5 unit tests; full suite 3523 pass, 0 new; e2e builds). Structured-response pattern (SchemaNamePrefixTool), not BaseTool<T> — see story Notes. output-path not on MCP surface."
-    file: spec/stories/story-browser-session-handoff-7.md
-    prd: spec/prd/prd-browser-session-handoff.md
-    adr: spec/adr/adr-browser-session-handoff.md
+    file: spec/archive/browser-session-handoff/stories/story-browser-session-handoff-7.md
+    prd: spec/archive/browser-session-handoff/prd/prd-browser-session-handoff.md
+    adr: spec/archive/browser-session-handoff/adr/adr-browser-session-handoff.md
 
   - id: story-browser-session-handoff-8
     title: "ClearBrowserSessionTool — MCP Tool"
     feature: "browser-session-handoff"
     size: S
-    status: review
+    status: done
+    jira: ENG-91234
+    pr: 691
     depends_on: [story-browser-session-handoff-6]
     note: "Implemented + verified 2026-06-10 (3 unit tests; full suite 3526 pass, 0 new; e2e builds). Destructive=true/Idempotent=true; structured-response pattern."
-    file: spec/stories/story-browser-session-handoff-8.md
-    prd: spec/prd/prd-browser-session-handoff.md
-    adr: spec/adr/adr-browser-session-handoff.md
+    file: spec/archive/browser-session-handoff/stories/story-browser-session-handoff-8.md
+    prd: spec/archive/browser-session-handoff/prd/prd-browser-session-handoff.md
+    adr: spec/archive/browser-session-handoff/adr/adr-browser-session-handoff.md
 
   - id: story-browser-session-handoff-9
     title: "open-web-app --authenticated — CDP Cookie Injection (Mode A)"
     feature: "browser-session-handoff"
     size: L
-    status: review
+    status: done
+    jira: ENG-91234
+    pr: 691
     depends_on: [story-browser-session-handoff-4]
     note: "Implemented + live-verified 2026-06-10. CDP spike resolved (WebSocket Network.setCookie on a page target, DevToolsActivePort port discovery, loopback-only binding, direct Chromium launch). IAuthenticatedBrowserLauncher + IChromiumLocator; OpenAppCommand gains --authenticated; fails closed, unauthenticated path unchanged. 4 command unit tests + 4 ChromiumLocator unit tests; live DevTools navigation is a manual E2E gate. Validated: dotnet test --filter Category=Unit&(Module=Command|Module=Common)."
-    file: spec/stories/story-browser-session-handoff-9.md
-    prd: spec/prd/prd-browser-session-handoff.md
-    adr: spec/adr/adr-browser-session-handoff.md
+    file: spec/archive/browser-session-handoff/stories/story-browser-session-handoff-9.md
+    prd: spec/archive/browser-session-handoff/prd/prd-browser-session-handoff.md
+    adr: spec/archive/browser-session-handoff/adr/adr-browser-session-handoff.md
 
   - id: story-browser-session-handoff-10
     title: "Documentation + MCP Capability Map"
     feature: "browser-session-handoff"
     size: M
-    status: review
+    status: done
+    jira: ENG-91234
+    pr: 691
     depends_on: [story-browser-session-handoff-5, story-browser-session-handoff-6, story-browser-session-handoff-7, story-browser-session-handoff-8]
     note: "Capability map updated 2026-06-10; per-command docs shipped with their verbs in stories 5/6 (ReadmeChecker gate, so docs landed in the same PR). full suite 3526 pass, 0 new."
-    file: spec/stories/story-browser-session-handoff-10.md
-    prd: spec/prd/prd-browser-session-handoff.md
-    adr: spec/adr/adr-browser-session-handoff.md
+    file: spec/archive/browser-session-handoff/stories/story-browser-session-handoff-10.md
+    prd: spec/archive/browser-session-handoff/prd/prd-browser-session-handoff.md
+    adr: spec/archive/browser-session-handoff/adr/adr-browser-session-handoff.md
 
   # --- user-profile-language-detection stories (from master) ---
   - id: story-user-profile-language-detection-1
@@ -152,9 +181,9 @@ stories:
     feature: "user-profile-language-detection"
     size: M
     status: done
-    file: spec/stories/story-user-profile-language-detection-1.md
-    prd: spec/prd/prd-user-profile-language-detection.md
-    adr: spec/adr/adr-user-profile-language-detection.md
+    file: spec/archive/user-profile-language-detection/stories/story-user-profile-language-detection-1.md
+    prd: spec/archive/user-profile-language-detection/prd/prd-user-profile-language-detection.md
+    adr: spec/archive/user-profile-language-detection/adr/adr-user-profile-language-detection.md
     fr: [FR-01, FR-02, FR-10]
     ac: [AC-01, AC-05, SM-01]
     depends_on: []
@@ -171,9 +200,9 @@ stories:
     feature: "user-profile-language-detection"
     size: S
     status: done
-    file: spec/stories/story-user-profile-language-detection-2.md
-    prd: spec/prd/prd-user-profile-language-detection.md
-    adr: spec/adr/adr-user-profile-language-detection.md
+    file: spec/archive/user-profile-language-detection/stories/story-user-profile-language-detection-2.md
+    prd: spec/archive/user-profile-language-detection/prd/prd-user-profile-language-detection.md
+    adr: spec/archive/user-profile-language-detection/adr/adr-user-profile-language-detection.md
     fr: [FR-11]
     ac: [AC-ERR]
     depends_on: [story-user-profile-language-detection-1]
@@ -184,9 +213,9 @@ stories:
     feature: "user-profile-language-detection"
     size: M
     status: done
-    file: spec/stories/story-user-profile-language-detection-3.md
-    prd: spec/prd/prd-user-profile-language-detection.md
-    adr: spec/adr/adr-user-profile-language-detection.md
+    file: spec/archive/user-profile-language-detection/stories/story-user-profile-language-detection-3.md
+    prd: spec/archive/user-profile-language-detection/prd/prd-user-profile-language-detection.md
+    adr: spec/archive/user-profile-language-detection/adr/adr-user-profile-language-detection.md
     fr: [FR-12]
     ac: [AC-04]
     depends_on: [story-user-profile-language-detection-1]
@@ -197,9 +226,9 @@ stories:
     feature: "user-profile-language-detection"
     size: L
     status: done
-    file: spec/stories/story-user-profile-language-detection-4a.md
-    prd: spec/prd/prd-user-profile-language-detection.md
-    adr: spec/adr/adr-user-profile-language-detection.md
+    file: spec/archive/user-profile-language-detection/stories/story-user-profile-language-detection-4a.md
+    prd: spec/archive/user-profile-language-detection/prd/prd-user-profile-language-detection.md
+    adr: spec/archive/user-profile-language-detection/adr/adr-user-profile-language-detection.md
     fr: [FR-03, FR-04]
     ac: [AC-02, AC-06, AC-08]
     depends_on: [story-user-profile-language-detection-1]
@@ -210,9 +239,9 @@ stories:
     feature: "user-profile-language-detection"
     size: M
     status: done
-    file: spec/stories/story-user-profile-language-detection-4b.md
-    prd: spec/prd/prd-user-profile-language-detection.md
-    adr: spec/adr/adr-user-profile-language-detection.md
+    file: spec/archive/user-profile-language-detection/stories/story-user-profile-language-detection-4b.md
+    prd: spec/archive/user-profile-language-detection/prd/prd-user-profile-language-detection.md
+    adr: spec/archive/user-profile-language-detection/adr/adr-user-profile-language-detection.md
     fr: [FR-03]
     ac: [AC-02, AC-08]
     depends_on: [story-user-profile-language-detection-1]
@@ -223,9 +252,9 @@ stories:
     feature: "user-profile-language-detection"
     size: L
     status: done
-    file: spec/stories/story-user-profile-language-detection-5.md
-    prd: spec/prd/prd-user-profile-language-detection.md
-    adr: spec/adr/adr-user-profile-language-detection.md
+    file: spec/archive/user-profile-language-detection/stories/story-user-profile-language-detection-5.md
+    prd: spec/archive/user-profile-language-detection/prd/prd-user-profile-language-detection.md
+    adr: spec/archive/user-profile-language-detection/adr/adr-user-profile-language-detection.md
     fr: [FR-03, FR-04]
     ac: [AC-02, AC-06, AC-08]
     depends_on: [story-user-profile-language-detection-1]
@@ -236,9 +265,9 @@ stories:
     feature: "user-profile-language-detection"
     size: M
     status: done
-    file: spec/stories/story-user-profile-language-detection-6.md
-    prd: spec/prd/prd-user-profile-language-detection.md
-    adr: spec/adr/adr-user-profile-language-detection.md
+    file: spec/archive/user-profile-language-detection/stories/story-user-profile-language-detection-6.md
+    prd: spec/archive/user-profile-language-detection/prd/prd-user-profile-language-detection.md
+    adr: spec/archive/user-profile-language-detection/adr/adr-user-profile-language-detection.md
     fr: [FR-03, FR-04]
     ac: [AC-02, AC-06, AC-08]
     depends_on: [story-user-profile-language-detection-1]
@@ -249,9 +278,9 @@ stories:
     feature: "user-profile-language-detection"
     size: M
     status: done
-    file: spec/stories/story-user-profile-language-detection-7.md
-    prd: spec/prd/prd-user-profile-language-detection.md
-    adr: spec/adr/adr-user-profile-language-detection.md
+    file: spec/archive/user-profile-language-detection/stories/story-user-profile-language-detection-7.md
+    prd: spec/archive/user-profile-language-detection/prd/prd-user-profile-language-detection.md
+    adr: spec/archive/user-profile-language-detection/adr/adr-user-profile-language-detection.md
     fr: [FR-07, FR-08, FR-09]
     ac: [AC-05, AC-07]
     depends_on: [story-user-profile-language-detection-3]
@@ -261,11 +290,14 @@ stories:
     title: "update-page best-effort Designer Presence save push"
     feature: "update-page-designer-presence-push"
     size: M
-    status: in-progress
-    file: spec/stories/story-update-page-designer-presence-push-1.md
-    prd: spec/prd/spec-update-page-designer-presence-push.md
-    adr: spec/adr/adr-update-page-designer-presence-push.md
-    test_plan: spec/test-plans/tp-update-page-designer-presence-push.md
+    status: done
+    file: spec/archive/update-page-designer-presence-push/stories/story-update-page-designer-presence-push-1.md
+    prd: spec/archive/update-page-designer-presence-push/prd/spec-update-page-designer-presence-push.md
+    adr: spec/archive/update-page-designer-presence-push/adr/adr-update-page-designer-presence-push.md
+    test_plan: spec/archive/update-page-designer-presence-push/test-plans/tp-update-page-designer-presence-push.md
+    jira: ENG-91317
+    pr: 699
+    note: "RECONCILED 2026-07-12: Verified implemented in code 2026-07-12: PageDesignerPresenceNotifier (sender DesignerPresence_<type>_<name-lower>, BroadcastMsg, users[] single element) shipped as part of PR #699; wired optionally into the page-update path (PageUpdateOptions.cs). Tests present: PageDesignerPresenceNotifierTests, PageUpdateCommandDesignerPresenceTests, PageDesignerPresencePublishersTests."
     depends_on: []
     blocks: []
 
@@ -273,9 +305,11 @@ stories:
     title: "Reusable progress-heartbeat helper"
     feature: "mcp-progress-heartbeat"
     size: M
-    status: review
-    file: spec/stories/story-mcp-progress-heartbeat-1.md
-    adr: spec/adr/adr-mcp-progress-heartbeat.md
+    status: done
+    file: spec/archive/mcp-progress-heartbeat/stories/story-mcp-progress-heartbeat-1.md
+    adr: spec/archive/mcp-progress-heartbeat/adr/adr-mcp-progress-heartbeat.md
+    jira: ENG-91274
+    pr: 688
     depends_on: []
     blocks:
       - mcp-progress-heartbeat-2
@@ -284,9 +318,11 @@ stories:
     title: "Wire heartbeat into application tool family + contract docs"
     feature: "mcp-progress-heartbeat"
     size: M
-    status: review
-    file: spec/stories/story-mcp-progress-heartbeat-2.md
-    adr: spec/adr/adr-mcp-progress-heartbeat.md
+    status: done
+    file: spec/archive/mcp-progress-heartbeat/stories/story-mcp-progress-heartbeat-2.md
+    adr: spec/archive/mcp-progress-heartbeat/adr/adr-mcp-progress-heartbeat.md
+    jira: ENG-91274
+    pr: 688
     depends_on: [mcp-progress-heartbeat-1]
     blocks:
       - mcp-progress-heartbeat-3
@@ -295,9 +331,11 @@ stories:
     title: "E2E progress coverage + docs/capability map"
     feature: "mcp-progress-heartbeat"
     size: S
-    status: review
-    file: spec/stories/story-mcp-progress-heartbeat-3.md
-    adr: spec/adr/adr-mcp-progress-heartbeat.md
+    status: done
+    file: spec/archive/mcp-progress-heartbeat/stories/story-mcp-progress-heartbeat-3.md
+    adr: spec/archive/mcp-progress-heartbeat/adr/adr-mcp-progress-heartbeat.md
+    jira: ENG-91274
+    pr: 688
     depends_on: [mcp-progress-heartbeat-2]
     blocks: []
 
@@ -309,11 +347,13 @@ stories:
     title: "Foundation — UId-filtered SysSchema query + conflict/baseline models"
     feature: "detect-external-schema-changes"
     size: M
-    status: review
-    file: spec/stories/story-detect-external-schema-changes-1.md
-    prd: spec/prd/prd-detect-external-schema-changes.md
-    adr: spec/adr/adr-detect-external-schema-changes.md
+    status: done
+    file: spec/archive/detect-external-schema-changes/stories/story-detect-external-schema-changes-1.md
+    prd: spec/archive/detect-external-schema-changes/prd/prd-detect-external-schema-changes.md
+    adr: spec/archive/detect-external-schema-changes/adr/adr-detect-external-schema-changes.md
     fr: [FR-04, FR-06]
+    jira: ENG-91317
+    pr: 699
     depends_on: []
     blocks:
       - story-detect-external-schema-changes-2
@@ -323,12 +363,14 @@ stories:
     title: "Baseline capture — get-page checksum fetch, typed meta.json, PageBaselineStore"
     feature: "detect-external-schema-changes"
     size: L
-    status: review
-    file: spec/stories/story-detect-external-schema-changes-2.md
-    prd: spec/prd/prd-detect-external-schema-changes.md
-    adr: spec/adr/adr-detect-external-schema-changes.md
+    status: done
+    file: spec/archive/detect-external-schema-changes/stories/story-detect-external-schema-changes-2.md
+    prd: spec/archive/detect-external-schema-changes/prd/prd-detect-external-schema-changes.md
+    adr: spec/archive/detect-external-schema-changes/adr/adr-detect-external-schema-changes.md
     fr: [FR-01, FR-07, FR-08, FR-10]
     ac: [AC-09]
+    jira: ENG-91317
+    pr: 699
     depends_on: [story-detect-external-schema-changes-1]
     blocks:
       - story-detect-external-schema-changes-3
@@ -337,12 +379,14 @@ stories:
     title: "Conflict gate — PageUpdateCommand chokepoint + PageUpdateTool plumbing"
     feature: "detect-external-schema-changes"
     size: L
-    status: review
-    file: spec/stories/story-detect-external-schema-changes-3.md
-    prd: spec/prd/prd-detect-external-schema-changes.md
-    adr: spec/adr/adr-detect-external-schema-changes.md
+    status: done
+    file: spec/archive/detect-external-schema-changes/stories/story-detect-external-schema-changes-3.md
+    prd: spec/archive/detect-external-schema-changes/prd/prd-detect-external-schema-changes.md
+    adr: spec/archive/detect-external-schema-changes/adr/adr-detect-external-schema-changes.md
     fr: [FR-02, FR-04, FR-05, FR-06, FR-08, FR-09, FR-11, FR-12]
     ac: [AC-01, AC-02, AC-03, AC-04, AC-05, AC-06, AC-08, AC-10, AC-ERR]
+    jira: ENG-91317
+    pr: 699
     depends_on: [story-detect-external-schema-changes-1, story-detect-external-schema-changes-2]
     blocks:
       - story-detect-external-schema-changes-4
@@ -352,12 +396,14 @@ stories:
     title: "sync-pages — per-page conflict surfacing, per-page force, meta.json refresh"
     feature: "detect-external-schema-changes"
     size: M
-    status: review
-    file: spec/stories/story-detect-external-schema-changes-4.md
-    prd: spec/prd/prd-detect-external-schema-changes.md
-    adr: spec/adr/adr-detect-external-schema-changes.md
+    status: done
+    file: spec/archive/detect-external-schema-changes/stories/story-detect-external-schema-changes-4.md
+    prd: spec/archive/detect-external-schema-changes/prd/prd-detect-external-schema-changes.md
+    adr: spec/archive/detect-external-schema-changes/adr/adr-detect-external-schema-changes.md
     fr: [FR-03, FR-05, FR-08, FR-09, FR-13]
     ac: [AC-07]
+    jira: ENG-91317
+    pr: 699
     depends_on: [story-detect-external-schema-changes-3]
     blocks:
       - story-detect-external-schema-changes-5
@@ -366,13 +412,15 @@ stories:
     title: "Docs, MCP guidance artifacts, and E2E coverage"
     feature: "detect-external-schema-changes"
     size: M
-    status: review
+    status: done
     note: "clio.mcp.e2e is NOT in CI — manual run against a live stand; first E2E scenario verifies A-01/OQ-02 (designer saves bump SysSchema.Checksum)."
-    file: spec/stories/story-detect-external-schema-changes-5.md
-    prd: spec/prd/prd-detect-external-schema-changes.md
-    adr: spec/adr/adr-detect-external-schema-changes.md
+    file: spec/archive/detect-external-schema-changes/stories/story-detect-external-schema-changes-5.md
+    prd: spec/archive/detect-external-schema-changes/prd/prd-detect-external-schema-changes.md
+    adr: spec/archive/detect-external-schema-changes/adr/adr-detect-external-schema-changes.md
     fr: [FR-14]
     ac: [AC-01, AC-02, AC-07, AC-11]
+    jira: ENG-91317
+    pr: 699
     depends_on: [story-detect-external-schema-changes-3, story-detect-external-schema-changes-4]
     blocks: []
 
@@ -381,12 +429,14 @@ stories:
     title: "CLI parity — auto-discover baseline in CLI update-page; CLI get-page persists .clio-pages; extract shared IPageBaselineGuard/IPageFileWriter"
     feature: "detect-external-schema-changes"
     size: M
-    status: in-progress
-    note: "ADR Option B left baseline I/O MCP-only, assuming CLI users pass --expected-checksum by hand; AI agents (Codex) don't, so CLI update-page silently overwrote designer edits. Baseline arm/refresh and get-page file output are now shared services (IPageBaselineGuard, IPageFileWriter) consumed by the CLI verbs AND the three MCP tools (update-page/sync-pages/get-page)."
-    file: spec/stories/story-detect-external-schema-changes-6.md
-    prd: spec/prd/prd-detect-external-schema-changes.md
-    adr: spec/adr/adr-detect-external-schema-changes.md
+    status: done
+    note: "ADR Option B left baseline I/O MCP-only, assuming CLI users pass --expected-checksum by hand; AI agents (Codex) don't, so CLI update-page silently overwrote designer edits. Baseline arm/refresh and get-page file output are now shared services (IPageBaselineGuard, IPageFileWriter) consumed by the CLI verbs AND the three MCP tools (update-page/sync-pages/get-page). RECONCILED 2026-07-12: DONE via PR #723 (MERGED 2026-06-17): shared IPageBaselineGuard/IPageFileWriter DI services, CLI parity for update-page/get-page. Confirmed merged and closed out (drive-pr-green)."
+    file: spec/archive/detect-external-schema-changes/stories/story-detect-external-schema-changes-6.md
+    prd: spec/archive/detect-external-schema-changes/prd/prd-detect-external-schema-changes.md
+    adr: spec/archive/detect-external-schema-changes/adr/adr-detect-external-schema-changes.md
     fr: [FR-02, FR-09, FR-11]
+    jira: ENG-91317
+    pr: 723
     depends_on: [story-detect-external-schema-changes-3]
     blocks: []
 
@@ -403,9 +453,9 @@ stories:
     size: S
     status: done
     note: "DONE 2026-06-13: spec/read-column-default-values/read-column-default-values-current-path.md. Verified read path = EntitySchemaDesignerService.svc/GetSchemaDesignItem (not OData); lookup-Const readback is GUID-only. Empty code diff."
-    file: spec/stories/story-read-column-default-values-1.md
-    prd: spec/prd/prd-read-column-default-values.md
-    adr: spec/adr/adr-read-column-default-values.md
+    file: spec/archive/read-column-default-values/stories/story-read-column-default-values-1.md
+    prd: spec/archive/read-column-default-values/prd/prd-read-column-default-values.md
+    adr: spec/archive/read-column-default-values/adr/adr-read-column-default-values.md
     fr: [FR-01]
     ac: [AC-01]
     depends_on: []
@@ -417,9 +467,9 @@ stories:
     size: M
     status: done
     note: "DONE 2026-06-13: spec/read-column-default-values/read-column-default-values-odata-probe.md. FINDING: CSDL $metadata carries ZERO DefaultValue facets (0 in 1.43MB) on studio0614 (.NET FW 8.x) — OData metadata unusable for defaults. AC-ERR: .NET Core row uncovered (no Core env reachable). Side finding: clio call-service broken on duplicate-URI appsettings (.Single() bug) — used authenticated curl fallback; zero production code touched."
-    file: spec/stories/story-read-column-default-values-2.md
-    prd: spec/prd/prd-read-column-default-values.md
-    adr: spec/adr/adr-read-column-default-values.md
+    file: spec/archive/read-column-default-values/stories/story-read-column-default-values-2.md
+    prd: spec/archive/read-column-default-values/prd/prd-read-column-default-values.md
+    adr: spec/archive/read-column-default-values/adr/adr-read-column-default-values.md
     fr: [FR-02]
     ac: [AC-02, AC-ERR]
     depends_on: []
@@ -431,9 +481,9 @@ stories:
     size: L
     status: done
     note: "DONE 2026-06-13 on studio0614: spec/read-column-default-values/read-column-default-values-e2e-scenario.md. All 6 steps clio/MCP only. Predicate FAIL (component d display-value absent); runtime application PASS (UsrColorId auto-set to default GUID on insert). OQ-03: persisted defValue.Value is a plain GUID (A-04=false). A-02 cleared."
-    file: spec/stories/story-read-column-default-values-3.md
-    prd: spec/prd/prd-read-column-default-values.md
-    adr: spec/adr/adr-read-column-default-values.md
+    file: spec/archive/read-column-default-values/stories/story-read-column-default-values-3.md
+    prd: spec/archive/read-column-default-values/prd/prd-read-column-default-values.md
+    adr: spec/archive/read-column-default-values/adr/adr-read-column-default-values.md
     fr: [FR-03]
     ac: [AC-03]
     depends_on: []
@@ -445,9 +495,9 @@ stories:
     size: M
     status: done
     note: "DONE 2026-06-13: spec/read-column-default-values/read-column-default-values-comparison.md. Decision = HYBRID (Option B): keep designer readback + enrich in clio. OData $metadata (A) rejected (0/4 on D1). D7 = OData data endpoint (SelectQuery fallback). OQ-04 = enrichment default-on/fail-soft. Gap CONFIRMED -> Phase B in scope. ADR Status -> Accepted."
-    file: spec/stories/story-read-column-default-values-4.md
-    prd: spec/prd/prd-read-column-default-values.md
-    adr: spec/adr/adr-read-column-default-values.md
+    file: spec/archive/read-column-default-values/stories/story-read-column-default-values-4.md
+    prd: spec/archive/read-column-default-values/prd/prd-read-column-default-values.md
+    adr: spec/archive/read-column-default-values/adr/adr-read-column-default-values.md
     fr: [FR-04]
     ac: [AC-04]
     depends_on: [story-read-column-default-values-2, story-read-column-default-values-3]
@@ -457,13 +507,15 @@ stories:
     title: "Jira ENG-91318 closure + epic ENG-85256 surfacing (Phase A)"
     feature: "read-column-default-values"
     size: S
-    status: in-progress
-    note: "In progress 2026-06-13: posting decision summary to ENG-91318 + surfacing to epic ENG-85256."
-    file: spec/stories/story-read-column-default-values-5.md
-    prd: spec/prd/prd-read-column-default-values.md
-    adr: spec/adr/adr-read-column-default-values.md
+    status: done
+    note: "In progress 2026-06-13: posting decision summary to ENG-91318 + surfacing to epic ENG-85256. RECONCILED 2026-07-12: Jira ENG-91318 confirmed Closed/Done (resolved 2026-06-17); decision summary + epic ENG-85256 surfacing completed."
+    file: spec/archive/read-column-default-values/stories/story-read-column-default-values-5.md
+    prd: spec/archive/read-column-default-values/prd/prd-read-column-default-values.md
+    adr: spec/archive/read-column-default-values/adr/adr-read-column-default-values.md
     fr: [FR-08]
     ac: []
+    jira: ENG-91318
+    pr: 700
     depends_on: [story-read-column-default-values-4]
     blocks: []
 
@@ -473,9 +525,9 @@ stories:
     size: L
     status: done
     note: "DONE 2026-06-13. OQ-06 resolved (display column via IRuntimeEntitySchemaReader.PrimaryDisplayColumnName; value in session culture; imageLookup/no-display -> display-column-unavailable marker). New ILookupDefaultDisplayValueResolver (SelectQuery transport via IApplicationClient) + display-value/record-resolution on EntitySchemaDefaultValueConfig; enrichment wired into RemoteEntitySchemaColumnManager.GetColumnProperties (Const+lookup only, fail-soft). DI via convention auto-registration. Unit tests: LookupDefaultDisplayValueResolverTests (6) + manager enrichment tests (2). Validated: dotnet test --filter Category=Unit&(Module=Command|Module=McpServer) = 2584 pass."
-    file: spec/stories/story-read-column-default-values-6.md
-    prd: spec/prd/prd-read-column-default-values.md
-    adr: spec/adr/adr-read-column-default-values.md
+    file: spec/archive/read-column-default-values/stories/story-read-column-default-values-6.md
+    prd: spec/archive/read-column-default-values/prd/prd-read-column-default-values.md
+    adr: spec/archive/read-column-default-values/adr/adr-read-column-default-values.md
     fr: [FR-05]
     ac: [DRAFT-AC-05]
     depends_on: [story-read-column-default-values-4]
@@ -487,9 +539,9 @@ stories:
     size: M
     status: done
     note: "DONE 2026-06-13. EntitySchemaDefaultValueSourceResolver.Resolve extended with a Const branch + referenceSchemaName param: validates the referenced record exists (IRemoteEntitySchemaDesignerClient.CheckRecordExists via SelectQuery) before save; unknown GUID -> EntitySchemaDesignerException 'was not found in referenced schema'. Unknown/no-access -> pass through (TOCTOU caveat documented). Validation wired at apply sites (manager 926, creator 241). Unit tests: 4 resolver Const cases + 3 CheckRecordExists client cases."
-    file: spec/stories/story-read-column-default-values-7.md
-    prd: spec/prd/prd-read-column-default-values.md
-    adr: spec/adr/adr-read-column-default-values.md
+    file: spec/archive/read-column-default-values/stories/story-read-column-default-values-7.md
+    prd: spec/archive/read-column-default-values/prd/prd-read-column-default-values.md
+    adr: spec/archive/read-column-default-values/adr/adr-read-column-default-values.md
     fr: [FR-06]
     ac: [DRAFT-AC-06]
     depends_on: [story-read-column-default-values-4]
@@ -501,9 +553,9 @@ stories:
     size: M
     status: done
     note: "DONE 2026-06-13. MCP: EntitySchemaTool descriptions (get-entity-schema-column-properties enrichment + markers; modify-entity-schema-column Const-GUID validation), EntitySchemaPrompt lookup-default guidance, ToolContractGetTool field description + lookup-Const example + readback description. Docs: help/en/{get-entity-schema-column-properties,modify-entity-schema-column}.txt + docs/commands/{...}.md updated; Commands.md reviewed, no change needed. E2E: clio.mcp.e2e write-rejection test + reference-schema-name harness param. NOTE: MCP E2E NOT in CI — positive enrichment path was manually verified live on studio0614 (Story 3 evidence); the automated rejection E2E must be run manually before merge (SM-01 Phase B counter)."
-    file: spec/stories/story-read-column-default-values-8.md
-    prd: spec/prd/prd-read-column-default-values.md
-    adr: spec/adr/adr-read-column-default-values.md
+    file: spec/archive/read-column-default-values/stories/story-read-column-default-values-8.md
+    prd: spec/archive/read-column-default-values/prd/prd-read-column-default-values.md
+    adr: spec/archive/read-column-default-values/adr/adr-read-column-default-values.md
     fr: [FR-07]
     ac: []
     depends_on: [story-read-column-default-values-6, story-read-column-default-values-7]
@@ -542,22 +594,26 @@ stories:
     title: "advise-theme-palette MCP tool + Clio.Theming engine changes (interactive palette layer)"
     feature: "theming-agent"
     size: L
-    status: in-progress
+    status: done
     file: spec/adr/adr-theming.md
     adr: spec/adr/adr-theming.md
+    jira: ENG-90636
+    pr: 748
     depends_on: []
     blocks: []
-    status_note: "The former standalone contract spec/theming-agent/theme-color-advisor-contract.md no longer exists; the design now lives in adr-theming.md (Area D). Tool shipped as advise-theme-palette (renamed from theme-color-advisor)."
+    status_note: "The former standalone contract spec/theming-agent/theme-color-advisor-contract.md no longer exists; the design now lives in adr-theming.md (Area D). Tool shipped as advise-theme-palette (renamed from theme-color-advisor). RECONCILED 2026-07-12: Verified shipped 2026-07-12: ThemePaletteAdvisor, AdviseThemePaletteResult, AdviseThemePaletteTool present in code (clio/Command/Theming, clio/Command/McpServer/Tools); last touched by PR #748 review-fix commit 0d76ee48 (2026-07-09)."
     note: "Interactive orchestration layer over the shipped native engine (theme-agent gap analysis). adac skill creatio-theme-orchestrator already rewritten to this contract. Build order: (1) Clio.Theming engine changes — ColorNormalizer.TryNormalize; 3-state AdaptedPrimaryResult carrying OriginalContrastOnWhite; MeetsMinContrastOnWhite; accent similarity thresholds (0.10/0.07) + ClassifySimilarityBand; SelectBestValidAccent (NOT ChooseBestAccent — that filters contrast-only + degenerate max-contrast fallback); IThemeTemplateProvider.TryGetPaletteDefault (offline success/error -500) + public offline ResolveCompatibleVersion(string). (2) advise-theme-palette flat ComponentInfoTool-style MCP tool (ReadOnly/Destructive=false/Idempotent/OpenWorld=false, [FeatureToggle theming], operation-dispatched, verdict-returning, stateless, offline) + AdviseThemePaletteResult DTO + unit tests + mandatory clio.mcp.e2e. (3) rewrite ThemingGuidanceResource palette flow + routing row. Decisions: no metadata persistence v1; no environmentName (offline version only); theme-name length unchanged (soft 50 in guidance, hard 250 in create-theme); verdicts not raw numbers; verdict/warning-code types are tool-owned, not engine. Design: adr-theming.md Area D."
   # --- mcp-e2e-noenvironment-parallelization stories (ENG-92558) ---
   - id: story-mcp-e2e-noenvironment-parallelization-1
     title: "Shared fixture foundation and Sandbox guards"
     feature: "mcp-e2e-noenvironment-parallelization"
     size: M
-    status: in-progress
-    file: spec/stories/story-mcp-e2e-noenvironment-parallelization-1.md
-    prd: spec/prd/prd-mcp-e2e-noenvironment-parallelization.md
-    adr: spec/adr/adr-mcp-e2e-noenvironment-parallelization.md
+    status: done
+    jira: ENG-92558
+    pr: 804
+    file: spec/archive/mcp-e2e-noenvironment-parallelization/stories/story-mcp-e2e-noenvironment-parallelization-1.md
+    prd: spec/archive/mcp-e2e-noenvironment-parallelization/prd/prd-mcp-e2e-noenvironment-parallelization.md
+    adr: spec/archive/mcp-e2e-noenvironment-parallelization/adr/adr-mcp-e2e-noenvironment-parallelization.md
     fr: [FR-01, FR-02, FR-07]
     ac: [AC-01, AC-04, AC-05, AC-08]
     depends_on: []
@@ -570,12 +626,14 @@ stories:
     title: "Convert pure NoEnvironment fixtures to shared server"
     feature: "mcp-e2e-noenvironment-parallelization"
     size: M
-    status: in-progress
-    file: spec/stories/story-mcp-e2e-noenvironment-parallelization-2.md
-    prd: spec/prd/prd-mcp-e2e-noenvironment-parallelization.md
-    adr: spec/adr/adr-mcp-e2e-noenvironment-parallelization.md
+    status: done
+    file: spec/archive/mcp-e2e-noenvironment-parallelization/stories/story-mcp-e2e-noenvironment-parallelization-2.md
+    prd: spec/archive/mcp-e2e-noenvironment-parallelization/prd/prd-mcp-e2e-noenvironment-parallelization.md
+    adr: spec/archive/mcp-e2e-noenvironment-parallelization/adr/adr-mcp-e2e-noenvironment-parallelization.md
     fr: [FR-03, FR-04]
     ac: [AC-02, AC-08, AC-09]
+    jira: ENG-92558
+    pr: 804
     depends_on: [story-mcp-e2e-noenvironment-parallelization-1]
     blocks:
       - story-mcp-e2e-noenvironment-parallelization-4
@@ -584,12 +642,14 @@ stories:
     title: "Split NoEnvironment tests out of mixed Sandbox fixtures"
     feature: "mcp-e2e-noenvironment-parallelization"
     size: L
-    status: in-progress
-    file: spec/stories/story-mcp-e2e-noenvironment-parallelization-3.md
-    prd: spec/prd/prd-mcp-e2e-noenvironment-parallelization.md
-    adr: spec/adr/adr-mcp-e2e-noenvironment-parallelization.md
+    status: done
+    file: spec/archive/mcp-e2e-noenvironment-parallelization/stories/story-mcp-e2e-noenvironment-parallelization-3.md
+    prd: spec/archive/mcp-e2e-noenvironment-parallelization/prd/prd-mcp-e2e-noenvironment-parallelization.md
+    adr: spec/archive/mcp-e2e-noenvironment-parallelization/adr/adr-mcp-e2e-noenvironment-parallelization.md
     fr: [FR-05, FR-06, FR-10]
     ac: [AC-03, AC-04, AC-09]
+    jira: ENG-92558
+    pr: 804
     depends_on: [story-mcp-e2e-noenvironment-parallelization-1]
     blocks:
       - story-mcp-e2e-noenvironment-parallelization-4
@@ -598,12 +658,14 @@ stories:
     title: "Fail-closed parallel cohort and timing proof"
     feature: "mcp-e2e-noenvironment-parallelization"
     size: M
-    status: in-progress
-    file: spec/stories/story-mcp-e2e-noenvironment-parallelization-4.md
-    prd: spec/prd/prd-mcp-e2e-noenvironment-parallelization.md
-    adr: spec/adr/adr-mcp-e2e-noenvironment-parallelization.md
+    status: done
+    file: spec/archive/mcp-e2e-noenvironment-parallelization/stories/story-mcp-e2e-noenvironment-parallelization-4.md
+    prd: spec/archive/mcp-e2e-noenvironment-parallelization/prd/prd-mcp-e2e-noenvironment-parallelization.md
+    adr: spec/archive/mcp-e2e-noenvironment-parallelization/adr/adr-mcp-e2e-noenvironment-parallelization.md
     fr: [FR-08, FR-09, FR-11]
     ac: [AC-06, AC-07, AC-10]
+    jira: ENG-92558
+    pr: 804
     depends_on:
       - story-mcp-e2e-noenvironment-parallelization-1
       - story-mcp-e2e-noenvironment-parallelization-2
@@ -688,4 +750,387 @@ stories:
     ac: [AC-01, AC-02, AC-03, AC-04]
     depends_on:
       - story-mcp-durable-invocation-2
+    blocks: []
+
+  # --- mcp-lazy-schema stories (ENG-90312) — added 2026-07-12, previously untracked ---
+  # 12 story files existed under spec/stories/ with no sprint-status.yaml entries. Reconciled
+  # against Jira (ENG-90312, Closed/Done 2026-07-10) and GitHub (PR #743 spike/mcp-lazy-schema, MERGED 2026-07-06).
+  - id: story-mcp-lazy-schema-0
+    title: "Reconcile PR #624, fix default profile and clio-run split decisions"
+    feature: "mcp-lazy-schema"
+    size: M
+    status: done
+    jira: ENG-90312
+    pr: 743
+    file: spec/archive/mcp-lazy-schema/stories/story-mcp-lazy-schema-0.md
+    adr: spec/archive/mcp-lazy-schema/adr/adr-mcp-lazy-schema.md
+    test_plan: spec/archive/mcp-lazy-schema/test-plans/tp-mcp-lazy-schema.md
+    depends_on: []
+    blocks: []
+    note: "RECONCILED 2026-07-12: added to tracker retroactively; shipped in PR #743 (single squashed PR covering stories 0-11)."
+
+  - id: story-mcp-lazy-schema-1
+    title: "IFeatureToggleService-gated core/long-tail MCP profile"
+    feature: "mcp-lazy-schema"
+    size: M
+    status: done
+    jira: ENG-90312
+    pr: 743
+    file: spec/archive/mcp-lazy-schema/stories/story-mcp-lazy-schema-1.md
+    adr: spec/archive/mcp-lazy-schema/adr/adr-mcp-lazy-schema.md
+    test_plan: spec/archive/mcp-lazy-schema/test-plans/tp-mcp-lazy-schema.md
+    depends_on: []
+    blocks: []
+    note: "RECONCILED 2026-07-12: added to tracker retroactively; shipped in PR #743 (single squashed PR covering stories 0-11)."
+
+  - id: story-mcp-lazy-schema-2
+    title: "Slim core-tool descriptions + dedup environment-name parameter"
+    feature: "mcp-lazy-schema"
+    size: M
+    status: done
+    jira: ENG-90312
+    pr: 743
+    file: spec/archive/mcp-lazy-schema/stories/story-mcp-lazy-schema-2.md
+    adr: spec/archive/mcp-lazy-schema/adr/adr-mcp-lazy-schema.md
+    test_plan: spec/archive/mcp-lazy-schema/test-plans/tp-mcp-lazy-schema.md
+    depends_on: []
+    blocks: []
+    note: "RECONCILED 2026-07-12: added to tracker retroactively; shipped in PR #743 (single squashed PR covering stories 0-11)."
+
+  - id: story-mcp-lazy-schema-3
+    title: "command→optionsType registry + generalized container resolution"
+    feature: "mcp-lazy-schema"
+    size: M
+    status: done
+    jira: ENG-90312
+    pr: 743
+    file: spec/archive/mcp-lazy-schema/stories/story-mcp-lazy-schema-3.md
+    adr: spec/archive/mcp-lazy-schema/adr/adr-mcp-lazy-schema.md
+    test_plan: spec/archive/mcp-lazy-schema/test-plans/tp-mcp-lazy-schema.md
+    depends_on: []
+    blocks: []
+    note: "RECONCILED 2026-07-12: added to tracker retroactively; shipped in PR #743 (single squashed PR covering stories 0-11)."
+
+  - id: story-mcp-lazy-schema-4
+    title: "clio-run executor — kebab/enum/required-aware arg binding + output contract"
+    feature: "mcp-lazy-schema"
+    size: M
+    status: done
+    jira: ENG-90312
+    pr: 743
+    file: spec/archive/mcp-lazy-schema/stories/story-mcp-lazy-schema-4.md
+    adr: spec/archive/mcp-lazy-schema/adr/adr-mcp-lazy-schema.md
+    test_plan: spec/archive/mcp-lazy-schema/test-plans/tp-mcp-lazy-schema.md
+    depends_on: []
+    blocks: []
+    note: "RECONCILED 2026-07-12: added to tracker retroactively; shipped in PR #743 (single squashed PR covering stories 0-11)."
+
+  - id: story-mcp-lazy-schema-5
+    title: "inline-contract-on-error for clio-run (self-correct in one round)"
+    feature: "mcp-lazy-schema"
+    size: M
+    status: done
+    jira: ENG-90312
+    pr: 743
+    file: spec/archive/mcp-lazy-schema/stories/story-mcp-lazy-schema-5.md
+    adr: spec/archive/mcp-lazy-schema/adr/adr-mcp-lazy-schema.md
+    test_plan: spec/archive/mcp-lazy-schema/test-plans/tp-mcp-lazy-schema.md
+    depends_on: []
+    blocks: []
+    note: "RECONCILED 2026-07-12: added to tracker retroactively; shipped in PR #743 (single squashed PR covering stories 0-11)."
+
+  - id: story-mcp-lazy-schema-6
+    title: "Curated get-tool-contract coverage for the full long tail"
+    feature: "mcp-lazy-schema"
+    size: M
+    status: done
+    jira: ENG-90312
+    pr: 743
+    file: spec/archive/mcp-lazy-schema/stories/story-mcp-lazy-schema-6.md
+    adr: spec/archive/mcp-lazy-schema/adr/adr-mcp-lazy-schema.md
+    test_plan: spec/archive/mcp-lazy-schema/test-plans/tp-mcp-lazy-schema.md
+    depends_on: []
+    blocks: []
+    note: "RECONCILED 2026-07-12: added to tracker retroactively; shipped in PR #743 (single squashed PR covering stories 0-11)."
+
+  - id: story-mcp-lazy-schema-7
+    title: "Compact command index (list-clio-commands) + migrate anti-patterns/flow-hints"
+    feature: "mcp-lazy-schema"
+    size: M
+    status: done
+    jira: ENG-90312
+    pr: 743
+    file: spec/archive/mcp-lazy-schema/stories/story-mcp-lazy-schema-7.md
+    adr: spec/archive/mcp-lazy-schema/adr/adr-mcp-lazy-schema.md
+    test_plan: spec/archive/mcp-lazy-schema/test-plans/tp-mcp-lazy-schema.md
+    depends_on: []
+    blocks: []
+    note: "RECONCILED 2026-07-12: added to tracker retroactively; shipped in PR #743 (single squashed PR covering stories 0-11)."
+
+  - id: story-mcp-lazy-schema-8
+    title: "Security — split clio-run safe vs clio-run-destructive"
+    feature: "mcp-lazy-schema"
+    size: M
+    status: done
+    jira: ENG-90312
+    pr: 743
+    file: spec/archive/mcp-lazy-schema/stories/story-mcp-lazy-schema-8.md
+    adr: spec/archive/mcp-lazy-schema/adr/adr-mcp-lazy-schema.md
+    test_plan: spec/archive/mcp-lazy-schema/test-plans/tp-mcp-lazy-schema.md
+    depends_on: []
+    blocks: []
+    note: "RECONCILED 2026-07-12: added to tracker retroactively; shipped in PR #743 (single squashed PR covering stories 0-11)."
+
+  - id: story-mcp-lazy-schema-9
+    title: "Migration + consumer inventory (CAADT / adaclio / e2e)"
+    feature: "mcp-lazy-schema"
+    size: M
+    status: done
+    jira: ENG-90312
+    pr: 743
+    file: spec/archive/mcp-lazy-schema/stories/story-mcp-lazy-schema-9.md
+    adr: spec/archive/mcp-lazy-schema/adr/adr-mcp-lazy-schema.md
+    test_plan: spec/archive/mcp-lazy-schema/test-plans/tp-mcp-lazy-schema.md
+    depends_on: []
+    blocks: []
+    note: "RECONCILED 2026-07-12: added to tracker retroactively; shipped in PR #743 (single squashed PR covering stories 0-11)."
+
+  - id: story-mcp-lazy-schema-10
+    title: "Deprecation aliases (flat name → clio-run proxy) + default-profile flip"
+    feature: "mcp-lazy-schema"
+    size: M
+    status: done
+    jira: ENG-90312
+    pr: 743
+    file: spec/archive/mcp-lazy-schema/stories/story-mcp-lazy-schema-10.md
+    adr: spec/archive/mcp-lazy-schema/adr/adr-mcp-lazy-schema.md
+    test_plan: spec/archive/mcp-lazy-schema/test-plans/tp-mcp-lazy-schema.md
+    depends_on: []
+    blocks: []
+    note: "RECONCILED 2026-07-12: added to tracker retroactively; shipped in PR #743 (single squashed PR covering stories 0-11)."
+
+  - id: story-mcp-lazy-schema-11
+    title: "Docs/MCP migration ×74 + tool-budget ratchet test from scratch"
+    feature: "mcp-lazy-schema"
+    size: M
+    status: done
+    jira: ENG-90312
+    pr: 743
+    file: spec/archive/mcp-lazy-schema/stories/story-mcp-lazy-schema-11.md
+    adr: spec/archive/mcp-lazy-schema/adr/adr-mcp-lazy-schema.md
+    test_plan: spec/archive/mcp-lazy-schema/test-plans/tp-mcp-lazy-schema.md
+    depends_on: []
+    blocks: []
+    note: "RECONCILED 2026-07-12: added to tracker retroactively; shipped in PR #743 (single squashed PR covering stories 0-11)."
+
+  # --- mcp-resident-tool-flag follow-up (ENG-92761) — stacked on spike/mcp-lazy-schema ---
+  - id: story-mcp-resident-tool-flag-1
+    title: "Self-describing lazy surface — resident flag in tool index + core-rules line"
+    feature: "mcp-lazy-schema"
+    size: S
+    status: done
+    jira: ENG-92761
+    pr: 821
+    adr: spec/archive/mcp-lazy-schema/adr/adr-mcp-lazy-schema.md
+    depends_on: [story-mcp-lazy-schema-11]
+    blocks: []
+    note: "RECONCILED 2026-07-12: PR #821 (feature/ENG-92761-mcp-resident-tool-flag) MERGED 2026-07-06, stacked on spike/mcp-lazy-schema. No pre-existing story file; Jira ENG-92761 Closed/Done."
+
+  # --- ring-guided-deploy stories (cross-repo: clio typed MCP events + clio-ring guided UX) — added 2026-07-11 ---
+  # CROSS-REPO feature. Foundation = C:\Projects\clio (typed MCP progress _meta events, stories 1-5).
+  # Consumption = C:\Projects\clio\clio-ring, branch spike/ring-clio-ipc (guided UX, stories 6-11).
+  # Ring-consumption stories DEPEND ON the clio-event stories (the events are the load-bearing interface).
+  # Recommended order:
+  #   clio:  1 -> (2 ∥ 3) -> 4 -> 5
+  #   ring:  6 (needs clio-1 fixture; live e2e needs clio-4) -> 7 -> (8 ∥ 9); 10 (needs 6); 11 (independent)
+  # Dependency graph is acyclic. All stories ready-for-dev; ring stories carry a noted cross-repo dependency
+  # (the file has no `blocked` status — valid statuses are ready-for-dev|in-progress|review|done|deferred).
+  - id: story-ring-guided-deploy-1
+    title: "Typed ClioStageEvent envelope + StageIds constants + JSON fixture contract test"
+    feature: "ring-guided-deploy"
+    repo: "clio"
+    size: M
+    status: review
+    file: spec/ring-guided-deploy/stories/story-ring-guided-deploy-1.md
+    prd: spec/ring-guided-deploy/prd/prd-ring-guided-deploy.md
+    adr: spec/ring-guided-deploy/adr/adr-ring-guided-deploy.md
+    fr: [FR-09, FR-10, FR-11, FR-12, FR-15]
+    ac: [AC-09, AC-11, AC-12]
+    depends_on: []
+    blocks:
+      - story-ring-guided-deploy-2
+      - story-ring-guided-deploy-3
+      - story-ring-guided-deploy-6
+
+  - id: story-ring-guided-deploy-2
+    title: "Deploy stage-event seam — IStageEventSource + emitter in CreatioInstallerService"
+    feature: "ring-guided-deploy"
+    repo: "clio"
+    size: L
+    status: review
+    file: spec/ring-guided-deploy/stories/story-ring-guided-deploy-2.md
+    prd: spec/ring-guided-deploy/prd/prd-ring-guided-deploy.md
+    adr: spec/ring-guided-deploy/adr/adr-ring-guided-deploy.md
+    fr: [FR-05, FR-13, FR-15]
+    ac: [AC-05, AC-10, AC-12]
+    depends_on: [story-ring-guided-deploy-1]
+    blocks:
+      - story-ring-guided-deploy-4
+
+  - id: story-ring-guided-deploy-3
+    title: "Uninstall stage-event seam — CreatioUninstaller + UninstallCreatioCommand incl. 3 corrections"
+    feature: "ring-guided-deploy"
+    repo: "clio"
+    size: L
+    status: review
+    file: spec/ring-guided-deploy/stories/story-ring-guided-deploy-3.md
+    prd: spec/ring-guided-deploy/prd/prd-ring-guided-deploy.md
+    adr: spec/ring-guided-deploy/adr/adr-ring-guided-deploy.md
+    fr: [FR-07, FR-14]
+    ac: [AC-07, AC-08, AC-10]
+    depends_on: [story-ring-guided-deploy-1]
+    blocks:
+      - story-ring-guided-deploy-4
+
+  - id: story-ring-guided-deploy-4
+    title: "MCP tool forwarding — deploy/uninstall tools stream ClioStageEvent via progress _meta"
+    feature: "ring-guided-deploy"
+    repo: "clio"
+    size: L
+    status: review
+    note: "clio.mcp.e2e is NOT in CI — the manifest→stage→run-completed _meta assertion is a manual live-stand run."
+    file: spec/ring-guided-deploy/stories/story-ring-guided-deploy-4.md
+    prd: spec/ring-guided-deploy/prd/prd-ring-guided-deploy.md
+    adr: spec/ring-guided-deploy/adr/adr-ring-guided-deploy.md
+    fr: [FR-08, FR-13, FR-14, FR-15]
+    ac: [AC-09, AC-12, AC-ERR]
+    depends_on: [story-ring-guided-deploy-2, story-ring-guided-deploy-3]
+    blocks:
+      - story-ring-guided-deploy-5
+
+  - id: story-ring-guided-deploy-5
+    title: "Docs + MCP capability map + uninstall AppPool-profile doc correction"
+    feature: "ring-guided-deploy"
+    repo: "clio"
+    size: S
+    status: review
+    file: spec/ring-guided-deploy/stories/story-ring-guided-deploy-5.md
+    prd: spec/ring-guided-deploy/prd/prd-ring-guided-deploy.md
+    adr: spec/ring-guided-deploy/adr/adr-ring-guided-deploy.md
+    fr: [FR-16]
+    ac: [AC-08]
+    depends_on: [story-ring-guided-deploy-4]
+    blocks: []
+
+  - id: story-ring-guided-deploy-12
+    title: "Deploy honest-failure reporting — convert swallowed stage-result failures into pipeline failures"
+    feature: "ring-guided-deploy"
+    repo: "clio"
+    size: M
+    status: review
+    note: "release-blocker for deploy integration. Story 2 was instrument-only: CreatioInstallerService.Execute swallowed the non-zero return of restore-db/deploy-app/configure-conn-strings/register-env (emitted done + run success + exit 0 over a failed action). Added int RunStage(string, Func<int>) to the emitter (non-zero return => failed + cascade skipped + failure run-completed, returns the code, no throw) and routed those four stages through it with an early nonzero return. wait-ready left soft (only warns today). thrown stages (stage-build/unzip/copy-files) unchanged."
+    prd: spec/ring-guided-deploy/prd/prd-ring-guided-deploy.md
+    adr: spec/ring-guided-deploy/adr/adr-ring-guided-deploy.md
+    depends_on: [story-ring-guided-deploy-2]
+    blocks: []
+
+  - id: story-ring-guided-deploy-6
+    title: "Ring ClioStageEvent mirror + raw _meta notification adapter in ClioRing.Ipc"
+    feature: "ring-guided-deploy"
+    repo: "clio (clio-ring/)"
+    size: L
+    status: review
+    note: "CROSS-REPO dependency: mirror + contract test build against clio story 1's committed JSON fixture; live end-to-end verification needs clio story 4 to have landed. Unit/contract coverage does not."
+    file: spec/ring-guided-deploy/stories/story-ring-guided-deploy-6.md
+    prd: spec/ring-guided-deploy/prd/prd-ring-guided-deploy.md
+    adr: spec/ring-guided-deploy/adr/adr-ring-guided-deploy.md
+    fr: [FR-08, FR-12]
+    ac: [AC-11]
+    depends_on: [story-ring-guided-deploy-1]
+    blocks:
+      - story-ring-guided-deploy-7
+      - story-ring-guided-deploy-10
+
+  - id: story-ring-guided-deploy-7
+    title: "DeployPipelineViewModel + GitHub-Actions step-list view"
+    feature: "ring-guided-deploy"
+    repo: "clio (clio-ring/)"
+    size: L
+    status: review
+    file: spec/ring-guided-deploy/stories/story-ring-guided-deploy-7.md
+    prd: spec/ring-guided-deploy/prd/prd-ring-guided-deploy.md
+    adr: spec/ring-guided-deploy/adr/adr-ring-guided-deploy.md
+    fr: [FR-04, FR-05, FR-07]
+    ac: [AC-05, AC-09, AC-10, AC-ERR]
+    depends_on: [story-ring-guided-deploy-6]
+    blocks:
+      - story-ring-guided-deploy-8
+      - story-ring-guided-deploy-9
+
+  - id: story-ring-guided-deploy-8
+    title: "Guided Install form on the main ring + preflight as first pipeline step"
+    feature: "ring-guided-deploy"
+    repo: "clio (clio-ring/)"
+    size: L
+    status: review
+    file: spec/ring-guided-deploy/stories/story-ring-guided-deploy-8.md
+    prd: spec/ring-guided-deploy/prd/prd-ring-guided-deploy.md
+    adr: spec/ring-guided-deploy/adr/adr-ring-guided-deploy.md
+    fr: [FR-01, FR-02, FR-03, FR-04, FR-21, FR-22]
+    ac: [AC-01, AC-02, AC-03, AC-04, AC-16, AC-17]
+    depends_on: [story-ring-guided-deploy-7]
+    blocks: []
+
+  - id: story-ring-guided-deploy-9
+    title: "Guided Uninstall on the main ring — local-env picker + Yes/No confirm + pipeline"
+    feature: "ring-guided-deploy"
+    repo: "clio (clio-ring/)"
+    size: M
+    status: review
+    file: spec/ring-guided-deploy/stories/story-ring-guided-deploy-9.md
+    prd: spec/ring-guided-deploy/prd/prd-ring-guided-deploy.md
+    adr: spec/ring-guided-deploy/adr/adr-ring-guided-deploy.md
+    fr: [FR-01, FR-06, FR-21]
+    ac: [AC-01, AC-06, AC-16]
+    depends_on: [story-ring-guided-deploy-7]
+    blocks: []
+
+  - id: story-ring-guided-deploy-10
+    title: "Ring logging + NDJSON deployment receipt from the same event stream"
+    feature: "ring-guided-deploy"
+    repo: "clio (clio-ring/)"
+    size: M
+    status: review
+    file: spec/ring-guided-deploy/stories/story-ring-guided-deploy-10.md
+    prd: spec/ring-guided-deploy/prd/prd-ring-guided-deploy.md
+    adr: spec/ring-guided-deploy/adr/adr-ring-guided-deploy.md
+    fr: [FR-17, FR-18]
+    ac: [AC-12, AC-13, AC-14]
+    depends_on: [story-ring-guided-deploy-6]
+    blocks: []
+
+  - id: story-ring-guided-deploy-11
+    title: "Ring settings — default clio + dev-clio path override + visible connected-clio identity"
+    feature: "ring-guided-deploy"
+    repo: "clio (clio-ring/)"
+    size: M
+    status: review
+    note: "Ring settings + handshake identity; independent of the typed-event chain (stories 1-7) — can proceed in parallel."
+    file: spec/ring-guided-deploy/stories/story-ring-guided-deploy-11.md
+    prd: spec/ring-guided-deploy/prd/prd-ring-guided-deploy.md
+    adr: spec/ring-guided-deploy/adr/adr-ring-guided-deploy.md
+    fr: [FR-19, FR-20]
+    ac: [AC-15]
+    depends_on: []
+    blocks: []
+  - id: story-clio-ring-companion-integration-1
+    title: "Integrate and deliver the clio-ring internal companion"
+    feature: "clio-ring-companion-integration"
+    repo: "clio"
+    size: L
+    status: review
+    file: spec/clio-ring-companion-integration/stories/story-clio-ring-companion-integration-1.md
+    prd: spec/clio-ring-companion-integration/prd/spec-clio-ring-companion-integration.md
+    adr: spec/clio-ring-companion-integration/adr/adr-clio-ring-companion-integration.md
+    depends_on: []
     blocks: []

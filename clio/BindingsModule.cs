@@ -201,6 +201,8 @@ public class BindingsModule {
 		services.AddSingleton<IDbOperationLogSessionFactory, DbOperationLogSessionFactory>();
 		services.AddTransient<IContainerRegistryCredentialProvider, ContainerRegistryCredentialProvider>();
 		services.AddHttpClient();
+		services.AddTransient<IRingDistributionService, RingDistributionService>();
+		services.AddTransient<RingCommand>();
 		services.AddHttpClient<IContainerRegistryPreflightService, ContainerRegistryPreflightService>();
 		// Named HttpClient for the component-registry CDN + docs pipelines. Timeout is
 		// configured once here so callers never mutate HttpClient.Timeout after construction

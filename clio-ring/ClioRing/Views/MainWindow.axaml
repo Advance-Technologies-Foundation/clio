@@ -1,0 +1,14 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:ClioRing.ViewModels"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:views="clr-namespace:ClioRing.Views"
+        mc:Ignorable="d" d:DesignWidth="1000" d:DesignHeight="600"
+        x:Class="ClioRing.Views.MainWindow"
+        Icon="/Assets/avalonia-logo.ico"
+        Title="ClioRing Workspace Companion"
+        Width="1000"
+        Height="600" x:CompileBindings="True">
+        <views:MainView />
+</Window>

@@ -206,6 +206,16 @@ public sealed class ClioRunExecutor(
 		CancellationToken cancellationToken) {
 		CallToolRequestParams originalParams = callContext.Params;
 		IMcpServerPrimitive originalPrimitive = callContext.MatchedPrimitive;
+		// Preserve the caller's protocol metadata (_meta) on the rebuilt child params. The clio-run entry
+		// path builds childParams via BuildChildParams, which constructs a fresh CallToolRequestParams
+		// (Name + Arguments only) with a null Meta, so without this the caller's ProgressToken — which
+		// RequestParams exposes as a read-only view over Meta["progressToken"] — is dropped, and any
+		// notifications/progress a dispatched tool emits (e.g. deploy-creatio / uninstall-creatio typed stage
+		// events) is silently lost (the tool's forwarder reads Params.ProgressToken and no-ops when it is
+		// null). Carrying Meta forward preserves the progress token and any other _meta. The
+		// InvokeResolvedAsync path already sets Meta on childParams to this same value, so re-assigning it
+		// here is harmless; it is the clio-run path that needs it. Read it BEFORE reassigning callContext.Params.
+		childParams.Meta = originalParams?.Meta;
 		callContext.Params = childParams;
 		callContext.MatchedPrimitive = tool;
 		try {
@@ -341,7 +351,11 @@ public sealed class ClioRunExecutor(
 				&& !success) {
 				return true;
 			}
-			if (IsErrorFieldName(property.Key)
+			// A normal successful discovery result commonly carries a non-empty `message` or `detail`.
+			// Those fields are redactable AFTER another failure signal is established, but their presence
+			// alone must never classify the entire payload as a failure (that turned real build paths into
+			// the literal `[redacted-path]` before the Ring could use them).
+			if (string.Equals(property.Key, "error", StringComparison.OrdinalIgnoreCase)
 				&& property.Value is JsonValue errorValue
 				&& errorValue.TryGetValue(out string errorText)
 				&& !string.IsNullOrWhiteSpace(errorText)) {

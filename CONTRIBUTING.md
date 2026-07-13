@@ -32,6 +32,41 @@ Open in VS Code and install the recommended extensions (`.vscode/extensions.json
 | `make lint` | Rebuild with analyzer diagnostics surfaced |
 | `make verify-docs` | Check agent-doc wrappers are in sync with canonical docs |
 
+## Contributing to ClioRing
+
+ClioRing is the optional Windows desktop companion in [`clio-ring/`](clio-ring/). It is an
+internal `0.x` preview delivered independently from the `clio` dotnet tool, and it may be removed
+if the experiment does not prove useful. Keep contributions isolated and reversible.
+
+Before changing Ring, read:
+
+- [ClioRing companion architecture](project-context.md#clioring-companion-architecture-internal-preview)
+  for the dependency, NativeAOT, protocol, updater-security, privacy, and deletion contract.
+- [ClioRing contribution policy](AGENTS.md#clioring-contribution-policy) for the mandatory safety
+  and validation checklist.
+
+The product identity is **ClioRing** / `clio-ring`; project paths, namespaces, tests, workflow
+commands, assembly identities, and solution entries must stay aligned with that identity.
+
+> **NativeAOT is mandatory.** The shipped application is the Windows x64 NativeAOT publish, not
+> the JIT build. Every Ring change must preserve a clean AOT publish with zero IL2026/IL3050
+> trim/AOT warnings. Passing unit tests or successfully running from an IDE is not sufficient.
+
+Current validation commands:
+
+```powershell
+# Ring regression suite
+dotnet test clio-ring/ClioRing.Tests/ClioRing.Tests.csproj -c Release
+
+# The shipped shape: Windows x64 NativeAOT
+dotnet publish clio-ring/ClioRing.Desktop/ClioRing.Desktop.csproj `
+  -c Release -r win-x64 --self-contained true -p:PublishAot=true
+```
+
+For UI workflow changes, first prove the happy path through a debugger/button harness with explicit
+inputs. Then add focused regression coverage. A harness must never deploy or uninstall a real
+environment without an explicit user gesture and disposable target confirmation.
+
 ## Test targets
 
 | Command | What it does |
@@ -164,6 +199,25 @@ Smart regression: run only the module you changed before pushing.
 See [Test targets](#test-targets) above and [AGENTS.md](AGENTS.md#smart-regression-testing-policy).
 
 ## PR workflow
+
+Every pull request must have a GitHub issue filed before the pull request is opened.
+
+When creating the issue:
+
+- Keep the title and description accurate and concise. Update them if the scope changes.
+- Select exactly one GitHub issue type: `Task`, `Bug`, or `Feature`.
+- Add at least one relevant repository label so the issue can be found and filtered easily.
+- If your GitHub permissions do not allow you to set the issue type or labels, state the requested
+  type and labels in the issue and ask a maintainer to apply them before review.
+
+When opening the pull request:
+
+- Reference at least one issue in the pull request description. Prefer a closing keyword such as
+  `Fixes #123` or `Closes #123` when the pull request fully resolves the issue.
+- Assign the pull request to yourself. If your GitHub permissions do not allow this, ask a
+  maintainer to assign it to you before review.
+- Keep the pull request scope aligned with the referenced issue. Update the issue before expanding
+  or materially changing that scope.
 
 ```bash
 # Check PR status and CI results

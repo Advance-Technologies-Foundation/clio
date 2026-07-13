@@ -219,6 +219,7 @@ internal class Program {
 		typeof(UploadLicenseCommandOptions),
 		typeof(RegisterOptions),
 		typeof(ConfigOptions),
+		typeof(RingCommandOptions),
 		typeof(UnregisterOptions),
 		typeof(LinkWorkspaceWithTideRepositoryOptions),
 		typeof(CheckWebFarmNodeConfigurationsOptions),
@@ -435,6 +436,7 @@ internal class Program {
 			ConvertOptions opts => ConvertPackage(opts),
 			RegisterOptions opts => Resolve<RegisterCommand>().Execute(opts),
 			ConfigOptions opts => Resolve<ConfigCommand>().Execute(opts),
+			RingCommandOptions opts => Resolve<RingCommand>().Execute(opts),
 			UnregisterOptions opts => Resolve<UnregisterCommand>().Execute(opts),
 			PullPkgOptions opts => DownloadZipPackages(opts),
 			ExecuteSqlScriptOptions opts => Resolve<SqlScriptCommand>(opts).Execute(opts),
@@ -1066,7 +1068,8 @@ internal class Program {
 		Dictionary<string, HashSet<string>> searchTermsByCanonicalName = new(StringComparer.OrdinalIgnoreCase);
 		foreach (Type optionType in CommandOption) {
 			VerbAttribute verbAttribute = optionType.GetCustomAttribute<VerbAttribute>();
-			if (verbAttribute == null || verbAttribute.Hidden || string.IsNullOrWhiteSpace(verbAttribute.Name)) {
+			if (verbAttribute == null || verbAttribute.Hidden || string.IsNullOrWhiteSpace(verbAttribute.Name)
+				|| optionType.IsDefined(typeof(FeatureToggleAttribute), inherit: false)) {
 				continue;
 			}
 			if (!searchTermsByCanonicalName.TryGetValue(verbAttribute.Name, out HashSet<string> searchTerms)) {

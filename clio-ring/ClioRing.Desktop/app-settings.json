@@ -1,0 +1,15 @@
+{
+  "WorkspaceFolder": "C:\\Projects\\Workspaces",
+  "Hotkey": "Ctrl+Alt+C",
+  "Channel": "dev",
+  "Experiments": {
+    "ClioIpc": false
+  },
+  "ClioIpc": {
+    "Command": "dotnet",
+    "Args": [
+      "C:\\Projects\\clio\\clio\\bin\\Debug\\net10.0\\clio.dll",
+      "mcp-server"
+    ]
+  }
+}
