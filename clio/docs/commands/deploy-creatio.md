@@ -167,8 +167,8 @@ Only applicable when using --db-server-name for local database restore
 Default: false (will prompt user)
 
 --disable-reset-password
-Disable automatic password-reset script after installation
-Hidden option, Default: true
+When true, disable Creatio's forced password change after installation
+Hidden option, Default: false (preserves the build database's existing ForceChangePassword value)
 
 Corporate-gated behavior (script executes only when ALL conditions are met):
 - Option value is true
@@ -278,7 +278,10 @@ operation log artifact
 
 Password Reset Script (Creatio >= 8.3.3):
 - Applies SQL script that sets Supervisor ForceChangePassword to false
-- Runs only when --disable-reset-password is true (default)
+- Runs only when --disable-reset-password is explicitly set to true
+- By default, the script is skipped and the build database's existing ForceChangePassword value is preserved
+- Creatio asks the user to choose a new password only when that preserved value is true
+- This option does not assign a new Supervisor password
 - Runs only for corporate-eligible machines:
 - tscrm domain member (Windows)
 - OR tscrm.com reachable via ping

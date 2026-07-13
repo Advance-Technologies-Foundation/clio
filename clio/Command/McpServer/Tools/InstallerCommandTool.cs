@@ -46,6 +46,8 @@ public class InstallerCommandTool(
 				 If you are deploying locally to IIS, also run `find-empty-iis-port` to choose a safe `sitePort`.
 				 Review the failing areas from `assert-infrastructure`, prefer the recommended bundle from
 				 `show-passing-infrastructure`, and then call `deploy-creatio` with the selected arguments.
+				 Deployment preserves the build database's existing forced-password-change state and does not
+				 clear it automatically.
 				 """)]
 	public CommandExecutionResult DeployCreatio(
 		RequestContext<CallToolRequestParams> requestContext,
@@ -64,7 +66,7 @@ public class InstallerCommandTool(
 			DbServerName = args.DbServerName,
 			RedisServerName = args.RedisServerName,
 			RedisDb = -1,
-			DisableResetPassword = true,
+			DisableResetPassword = false,
 			AutoRun = true,
 			IsSilent = true,
 			DropIfExists = true
