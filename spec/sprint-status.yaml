@@ -1054,3 +1054,17 @@ stories:
     adr: spec/clio-ring-companion-integration/adr/adr-clio-ring-companion-integration.md
     depends_on: []
     blocks: []
+
+  - id: story-virtual-entity-schema-1
+    title: "Create and read Creatio virtual entity schemas through MCP"
+    feature: "virtual-entity-schema"
+    repo: "clio"
+    size: M
+    status: review
+    issue: 864
+    file: spec/virtual-entity-schema/virtual-entity-schema-story.md
+    prd: spec/virtual-entity-schema/virtual-entity-schema-spec.md
+    adr: spec/virtual-entity-schema/virtual-entity-schema-plan.md
+    test_plan: spec/virtual-entity-schema/virtual-entity-schema-qa.md
+    depends_on: []
+    blocks: []
