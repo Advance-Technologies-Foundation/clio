@@ -12,6 +12,11 @@ namespace Clio.Tests.Command;
 [TestFixture]
 [Category("Unit")]
 [Property("Module", "Command")]
+// This fixture spawns real threads and blocks on multi-second signals to prove the per-key lock
+// serializes/overlaps work. Left in the parallel pool (Parallelizable(Fixtures)) it adds thread-pool
+// pressure that perturbs timing-sensitive fixtures on net8; run it serially so it neither starves nor
+// destabilizes its neighbours.
+[NonParallelizable]
 public sealed class SectionCreateSerializationGuardTests {
 	private static readonly TimeSpan GenerousWait = TimeSpan.FromSeconds(30);
 	private static readonly TimeSpan SignalWait = TimeSpan.FromSeconds(5);
