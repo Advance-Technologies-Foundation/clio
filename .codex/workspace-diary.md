@@ -5781,3 +5781,10 @@ Decision: Require an issue before each PR, classify it with an enabled issue typ
 Discovery: The organization enables `Task`, `Bug`, and `Feature` issue types; the repository has domain and change-kind labels available for filtering.
 Files: CONTRIBUTING.md
 Impact: Contributors now have a concise issue-to-PR workflow with clear ownership and searchable classification.
+
+## 2026-07-13 12:06 – Draft-first pull request workflow
+Context: Repository auto-merge can complete a ready pull request as soon as protection checks pass, while project review may happen outside GitHub.
+Decision: Require every pull request to start as a draft and prohibit enabling auto-merge until implementation, validation, documentation, and external review are complete and the pull request is marked ready.
+Discovery: Draft status provides an explicit author-controlled readiness boundary without adding a GitHub approval requirement or privileged pull-request automation.
+Files: CONTRIBUTING.md
+Impact: Human and agent contributions now have a clear handoff from work-in-progress to protected auto-merge eligibility.
