@@ -133,7 +133,11 @@ enabled") rather than silently honored:
   no-argument path was already compliant before this feature (documented `latest-fallback`).
 - `build-theme` — the version-resolution probe only. Falls back **soft** (not an error) to the
   newest bundled template when no header-derived tenant is available, and on mixed input (a
-  header plus an explicit `environment-name`) — never a header-blind name lookup.
+  header plus an explicit `environment-name`) — never a header-blind name lookup. The soft
+  fallback is not silent: when the caller explicitly named an `environment-name` that could not
+  be resolved, the result carries a non-fatal `warnings` entry naming the environment and the
+  newest-version fallback (the resolution catch is scoped to `EnvironmentResolutionException`, so
+  an unexpected fault surfaces as a real error rather than a silent newest-version build).
 
 **Passthrough-unsupported** — fails fast with one uniform error naming the tool and the
 alternative (register the target environment and use the stdio path, or a non-passthrough

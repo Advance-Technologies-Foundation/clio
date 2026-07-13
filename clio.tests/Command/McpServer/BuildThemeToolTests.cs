@@ -331,6 +331,48 @@ public sealed class BuildThemeToolTests
 	}
 
 	[Test]
+	[Description("Review follow-up (BuildThemeTool.cs thread): the fail-soft LatestFallback is no longer SILENT — when the caller explicitly named an environment that could not be resolved, the tool emits a non-fatal warning naming the environment so the drop to the newest template is visible (the CLI hard-fails; this tool's contract is never-fail, so the divergence surfaces as an advisory instead of a silent success).")]
+	public void BuildTheme_ShouldWarnAboutFallback_WhenNamedEnvironmentUnresolved() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<EnvironmentSettings>(Arg.Is<EnvironmentOptions>(o => o.Environment == "ghost"))
+			.Returns(_ => throw new EnvironmentResolutionException("build-theme: environment 'ghost' is not registered."));
+		BuildThemeCommand command = new(_themeCssBuilder, _themeTemplateProvider, _resolverFactory, _settingsRepository,
+			_workspacePathBuilder, _fileSystem, Substitute.For<ILogger>());
+		BuildThemeTool tool = new(command, Substitute.For<ILogger>(), commandResolver);
+
+		// Act
+		BuildThemeResult result = tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme",
+			EnvironmentName: "ghost"));
+
+		// Assert
+		result.Success.Should().BeTrue(because: "an unresolvable named environment still fails soft to LatestFallback");
+		result.Warnings.Should().NotBeNull(because: "the fallback must surface a warning instead of being silent");
+		result.Warnings.Should().Contain(w => w.Contains("ghost") && w.Contains("newest supported version"),
+			because: "the warning must name the unresolved environment and the newest-version fallback so the caller is not silently diverged from the CLI's hard error");
+	}
+
+	[Test]
+	[Description("Review follow-up (BuildThemeTool.cs thread): the resolution catch is narrowed to EnvironmentResolutionException, so an UNEXPECTED fault (a DI/wiring bug surfacing as e.g. InvalidOperationException) is NOT masked as a silent newest-version build — it propagates to a real error response, matching the resolver's expected-vs-unexpected (exit 1 vs -1) contract.")]
+	public void BuildTheme_ShouldNotSwallowUnexpectedException_WhenResolverFaultsUnexpectedly() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>())
+			.Returns(_ => throw new InvalidOperationException("unexpected DI wiring fault"));
+		BuildThemeCommand command = new(_themeCssBuilder, _themeTemplateProvider, _resolverFactory, _settingsRepository,
+			_workspacePathBuilder, _fileSystem, Substitute.For<ILogger>());
+		BuildThemeTool tool = new(command, Substitute.For<ILogger>(), commandResolver);
+
+		// Act
+		System.Action act = () => tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme",
+			EnvironmentName: "dev"));
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+			because: "an unexpected non-resolution fault must not be masked as a silent latest-fallback build; only EnvironmentResolutionException is caught");
+	}
+
+	[Test]
 	[Description("AC-01 (header-only): with commandResolver supplied, environment-name blank, and version blank, the tool resolves EnvironmentSettings via commandResolver — the header tenant under credential passthrough — and the command builds against ITS resolved version, not a header-blind name lookup.")]
 	public void BuildTheme_ShouldResolveVersionAgainstResolverSettings_WhenHeaderOnlyWithCommandResolver() {
 		// Arrange

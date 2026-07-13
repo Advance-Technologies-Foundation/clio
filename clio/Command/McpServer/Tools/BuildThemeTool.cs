@@ -121,17 +121,33 @@ public sealed class BuildThemeTool(
 		// commandResolver every other matrix tool probes with) and passes the result into the command, which
 		// resolves the version against it directly — reaching the header tenant under credential passthrough
 		// instead of a header-blind name lookup. An explicit --version always wins and skips this attempt
-		// entirely (AC-07). Any resolution failure (unresolvable environment, or the mixed-input
-		// HasExplicitCredentialArgs rejection) is caught and fails soft to LatestFallback (AC-02/AC-03) — the
-		// same documented fallback marker the CLI's offline path produces.
+		// entirely (AC-07).
+		//
+		// A caller-actionable resolution failure (unresolvable/typo environment, broken bootstrap, or the
+		// mixed-input HasExplicitCredentialArgs rejection under passthrough) surfaces from the resolver as an
+		// EnvironmentResolutionException; it is caught and fails soft to LatestFallback (AC-02/AC-03) — the same
+		// documented fallback the CLI's offline path produces. The catch is DELIBERATELY narrowed to
+		// EnvironmentResolutionException (not a bare catch (Exception), which would violate the no-bare-catch
+		// rule / S2221): an unexpected fault (NullReferenceException, a DI/wiring bug) must NOT be masked as a
+		// silent newest-version build — it propagates to a real error response, as the resolver's own
+		// expected-vs-unexpected contract (exit 1 vs -1) intends. And the fallback is no longer SILENT: when the
+		// caller explicitly named an environment we could not resolve, we emit a non-fatal warning so the drop
+		// to the newest template is visible instead of a silent success that diverges from the CLI's hard error.
 		EnvironmentSettings resolvedSettings = null;
+		string environmentFallbackWarning = null;
 		if (string.IsNullOrWhiteSpace(args.Version) && commandResolver is not null) {
 			try {
 				resolvedSettings = commandResolver.Resolve<EnvironmentSettings>(
 					new EnvironmentOptions { Environment = args.EnvironmentName });
 			}
-			catch (Exception) {
+			catch (EnvironmentResolutionException) {
 				resolvedSettings = null;
+				if (!string.IsNullOrWhiteSpace(args.EnvironmentName)) {
+					environmentFallbackWarning =
+						$"build-theme: could not resolve environment '{args.EnvironmentName}' — built against the "
+						+ "newest supported version instead. Pass version to target a specific template, or omit "
+						+ "environment-name to use the credential-passthrough tenant's version.";
+				}
 			}
 		}
 		return ExecuteWithCleanLog(() => {
@@ -139,13 +155,27 @@ public sealed class BuildThemeTool(
 				if (!command.TryBuildTheme(options, resolvedSettings, args.WorkspaceDirectory, args.PackageName, out string writtenPath, out IReadOnlyList<string> writeWarnings, out string writeError)) {
 					return BuildThemeResult.Failure(writeError);
 				}
-				return BuildThemeResult.Written(writtenPath, writeWarnings);
+				return BuildThemeResult.Written(writtenPath, PrependWarning(environmentFallbackWarning, writeWarnings));
 			}
 			if (!command.TryBuildTheme(options, resolvedSettings, out string css, out string descriptor, out IReadOnlyList<string> warnings, out string buildError)) {
 				return BuildThemeResult.Failure(buildError);
 			}
-			return BuildThemeResult.Successful(css, descriptor, warnings);
+			return BuildThemeResult.Successful(css, descriptor, PrependWarning(environmentFallbackWarning, warnings));
 		});
+	}
+
+	// Prepends the optional environment-fallback advisory (when the caller named an environment that could not
+	// be resolved) to the command's own warnings, so the non-silent fallback marker rides the same warnings
+	// channel. Returns the command warnings unchanged when there is no advisory to add.
+	private static IReadOnlyList<string> PrependWarning(string warning, IReadOnlyList<string> warnings) {
+		if (string.IsNullOrWhiteSpace(warning)) {
+			return warnings;
+		}
+		List<string> combined = [warning];
+		if (warnings is { Count: > 0 }) {
+			combined.AddRange(warnings);
+		}
+		return combined;
 	}
 
 	private static bool TryValidateWorkspaceTarget(BuildThemeArgs args, [NotNullWhen(false)] out string? error) {
@@ -226,9 +256,9 @@ public sealed record BuildThemeArgs(
 
 	[property: JsonPropertyName("environment-name")]
 	[property: Description("Registered environment whose Creatio version the theme targets; mutually exclusive with version. " +
-		"If the environment cannot be resolved or its version cannot be determined, the theme is still built — silently using the newest supported version — instead of failing. " +
+		"If the environment cannot be resolved or its version cannot be determined, the theme is still built using the newest supported version instead of failing — but a non-fatal warning reports the fallback so it is not silent. " +
 		"Always optional, including under credential passthrough: omit it so the header-supplied tenant's version is used; " +
-		"if both a passthrough header and environment-name are supplied, the mismatch is treated the same as an unresolvable environment (soft fallback to the newest version, never an error).")]
+		"if both a passthrough header and environment-name are supplied, the mismatch is treated the same as an unresolvable environment (soft fallback to the newest version with a warning, never an error).")]
 	string? EnvironmentName = null,
 
 	[property: JsonPropertyName("workspace-directory")]

@@ -315,6 +315,33 @@ public class LinkFromRepositoryToolPassthroughTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("AC-07 (by-env-package-path no-regression): outside passthrough, with skip-preparation off (the preparation-reaching leg that IS guarded under passthrough), link-from-repository-by-env-package-path maps and executes exactly as the pre-change baseline. CI-executed sibling of the by-environment / unlocked no-regression unit tests, so all three guarded branches are proven by a behavioral assertion in CI rather than a discovery-only E2E row.")]
+	public void LinkFromRepositoryByEnvPackagePath_ShouldExecuteUnchanged_WhenNotPassthroughAndEnvPackagePathSupplied() {
+		// Arrange
+		FakeLink4RepoCommand command = new();
+		LinkFromRepositoryTool tool = new(command, ConsoleLogger.Instance, CreateGuard(passthroughActive: false));
+
+		// Act
+		CommandExecutionResult result = tool.LinkFromRepositoryByEnvPackagePath(
+			@"C:\Creatio\Pkg", @"C:\Repo", "PkgA,PkgB", skipPreparation: false);
+
+		// Assert
+		result.ExitCode.Should().Be(0,
+			because: "the guarded preparation-reaching leg must match the pre-change baseline exactly when not under passthrough");
+		command.CapturedOptions.Should().NotBeNull(
+			because: "the command must receive the mapped options as before");
+		command.CapturedOptions!.EnvPkgPath.Should().Be(@"C:\Creatio\Pkg",
+			because: "the explicit environment package path must be preserved");
+		command.CapturedOptions.RepoPath.Should().Be(@"C:\Repo",
+			because: "the repository path must be preserved");
+		command.CapturedOptions.Packages.Should().Be("PkgA,PkgB",
+			because: "the raw package selector must be preserved");
+		command.CapturedOptions.SkipPreparation.Should().BeFalse(
+			because: "skip-preparation off must still route through the (non-passthrough) preparation path unchanged");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("FR-05a: environment-name is schema-optional (has a default value and no [Required]) on both name-based methods, so a header-only passthrough call reaches the guard instead of failing MCP binding; envPkgPath stays required unconditionally.")]
 	[TestCase(nameof(LinkFromRepositoryTool.LinkFromRepositoryByEnvironment))]
 	[TestCase(nameof(LinkFromRepositoryTool.LinkFromRepositoryUnlocked))]
