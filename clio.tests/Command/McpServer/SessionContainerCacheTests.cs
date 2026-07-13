@@ -1,4 +1,6 @@
 using System;
+using System.Threading;
+using System.Threading.Tasks;
 using Clio.Command.McpServer;
 using FluentAssertions;
 using NUnit.Framework;
@@ -230,6 +232,68 @@ public sealed class SessionContainerCacheTests {
 		// Assert
 		released.Disposed.Should().BeTrue(
 			because: "once the in-use marker is cleared the entry is idle-evictable again");
+	}
+
+	[Test]
+	[Description("Review #2: the container build runs OUTSIDE the cache lock, so a slow build for one tenant does not block a different tenant's Acquire (would deadlock/time out if the factory ran under the shared lock).")]
+	public void Acquire_ShouldBuildOutsideLock_SoSlowBuildDoesNotBlockOtherTenants() {
+		// Arrange
+		SessionContainerCache cache = CreateCache(TimeSpan.FromHours(1), 50);
+		using ManualResetEventSlim factoryEntered = new(false);
+		using ManualResetEventSlim releaseFactory = new(false);
+		SpyServiceProvider slow = new();
+		SpyServiceProvider fast = new();
+
+		// Act — park tenant A inside its build, then Acquire a DIFFERENT tenant's key on this thread.
+		Task<IServiceProvider> slowAcquire = Task.Run(() => cache.Acquire("slow", () => {
+			factoryEntered.Set();
+			releaseFactory.Wait(TimeSpan.FromSeconds(5));
+			return slow;
+		}));
+		factoryEntered.Wait(TimeSpan.FromSeconds(5)).Should().BeTrue(
+			because: "tenant A must reach its factory so the assertion runs while A's build is in progress");
+		IServiceProvider b = cache.Acquire("fast", () => fast);
+
+		// Assert — B completed while A's build was still parked, proving the build is not under _sync.
+		b.Should().BeSameAs(fast,
+			because: "a different tenant's Acquire must complete while another tenant's build is in progress — the build is off the shared lock");
+		releaseFactory.Set();
+		slowAcquire.Wait(TimeSpan.FromSeconds(5)).Should().BeTrue(
+			because: "the parked build completes once released");
+		slowAcquire.Result.Should().BeSameAs(slow,
+			because: "the slow tenant still gets its own built provider");
+	}
+
+	[Test]
+	[Description("Review #2: two threads that build the SAME key concurrently insert exactly one provider; the loser of the race is disposed and both callers observe the winner.")]
+	public void Acquire_ShouldDisposeLoserAndReturnWinner_WhenTwoThreadsBuildSameKeyConcurrently() {
+		// Arrange
+		SessionContainerCache cache = CreateCache(TimeSpan.FromHours(1), 50);
+		using Barrier barrier = new(2);
+		SpyServiceProvider p1 = new();
+		SpyServiceProvider p2 = new();
+
+		IServiceProvider Build(SpyServiceProvider p) => cache.Acquire("same", () => {
+			// Both threads reach here only after both missed the first-check and are building off the lock.
+			barrier.SignalAndWait(TimeSpan.FromSeconds(5));
+			return p;
+		});
+
+		// Act
+		Task<IServiceProvider> t1 = Task.Run(() => Build(p1));
+		Task<IServiceProvider> t2 = Task.Run(() => Build(p2));
+		Task.WaitAll([t1, t2], TimeSpan.FromSeconds(10)).Should().BeTrue(
+			because: "both same-key Acquire calls must complete without deadlock");
+
+		// Assert
+		IServiceProvider winner = t1.Result;
+		t2.Result.Should().BeSameAs(winner,
+			because: "both Acquire calls for the same key must return the single winning provider");
+		(p1.Disposed ^ p2.Disposed).Should().BeTrue(
+			because: "exactly the loser of the same-key build race is disposed, never both and never neither");
+		SpyServiceProvider loser = ReferenceEquals(winner, p1) ? p2 : p1;
+		loser.Disposed.Should().BeTrue(
+			because: "the provider that lost the double-checked insert must be disposed, not leaked");
 	}
 
 	[Test]

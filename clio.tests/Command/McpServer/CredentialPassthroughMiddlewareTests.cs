@@ -108,6 +108,28 @@ public sealed class CredentialPassthroughMiddlewareTests
 	}
 
 	[Test]
+	[Description("Review #1 (security): when passthrough is enabled, a request that omits the credential header AND presents no/invalid platform key is rejected with HTTP 401 — the whole MCP surface is fail-closed, not only credential-bearing requests.")]
+	public async Task EnforcePlatformApiKeyGate_ShouldReturn401AndShortCircuit_WhenPassthroughEnabledAndNoCredentialHeaderAndUnauthenticated() {
+		// Arrange
+		IPlatformApiKeyGate gate = new PlatformApiKeyGate([PlatformKey]);
+		// No credential header and no Authorization at all: this is the previously-unauthenticated path
+		// (registered-environment tools / reg-web-app) that must now be gated on a passthrough edge.
+		DefaultHttpContext context = CreateContext();
+		(RequestDelegate next, Func<bool> wasCalled) = TrackingNext();
+
+		// Act
+		await McpHttpServerCommand.EnforcePlatformApiKeyGate(context, next, gate, HeaderName);
+
+		// Assert
+		context.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized,
+			because: "with passthrough enabled the API key is required on EVERY request, so an unauthenticated no-header request must be rejected (review #1)");
+		wasCalled().Should().BeFalse(
+			because: "an unauthenticated request must never reach the MCP tool surface on a passthrough edge");
+		context.Items[McpHttpServerCommand.PassthroughEnabledItemKey].Should().Be(false,
+			because: "a rejected request never enables passthrough downstream");
+	}
+
+	[Test]
 	[Description("A configured key + credential header + matching 'Authorization: Bearer <key>' marks passthrough enabled and the capture middleware records the per-request context.")]
 	public async Task GateThenCapture_ShouldCaptureContext_WhenKeyConfiguredAndAuthorizedWithCredentialHeader() {
 		// Arrange

@@ -1,0 +1,181 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:ClioRing.ViewModels"
+             xmlns:conv="using:ClioRing.Converters"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="720" d:DesignHeight="640"
+             x:Class="ClioRing.Views.DeployPipelineView"
+             x:DataType="vm:DeployPipelineViewModel"
+             x:CompileBindings="True"
+             FontFamily="Inter, Segoe UI, sans-serif"
+             Foreground="#E6EDF3">
+
+    <UserControl.Resources>
+        <conv:IconKeyConverter x:Key="IconKey" />
+        <SolidColorBrush x:Key="Pending" Color="#6E7681" />
+        <SolidColorBrush x:Key="Running" Color="#F97316" />
+        <SolidColorBrush x:Key="Success" Color="#3FB950" />
+        <SolidColorBrush x:Key="Failure" Color="#F85149" />
+        <SolidColorBrush x:Key="SkipNa" Color="#8B949E" />
+        <SolidColorBrush x:Key="SkipAfter" Color="#D29922" />
+    </UserControl.Resources>
+
+    <UserControl.Styles>
+        <!-- Glyph + state badge colour is driven off the step's state class, never per-icon. -->
+        <Style Selector="Border.step Path.glyph">
+            <Setter Property="Stroke" Value="{StaticResource Pending}" />
+        </Style>
+        <Style Selector="Border.step.running Path.glyph">
+            <Setter Property="Stroke" Value="{StaticResource Running}" />
+        </Style>
+        <Style Selector="Border.step.done Path.glyph">
+            <Setter Property="Stroke" Value="{StaticResource Success}" />
+        </Style>
+        <Style Selector="Border.step.failed Path.glyph">
+            <Setter Property="Stroke" Value="{StaticResource Failure}" />
+        </Style>
+        <Style Selector="Border.step.skipNa Path.glyph">
+            <Setter Property="Stroke" Value="{StaticResource SkipNa}" />
+        </Style>
+        <Style Selector="Border.step.skipAfter Path.glyph">
+            <Setter Property="Stroke" Value="{StaticResource SkipAfter}" />
+        </Style>
+
+        <Style Selector="Border.step.running">
+            <Setter Property="BorderBrush" Value="#66F97316" />
+        </Style>
+        <Style Selector="Border.step.failed">
+            <Setter Property="BorderBrush" Value="#66F85149" />
+        </Style>
+
+        <Style Selector="TextBlock.stateBadge">
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{StaticResource Pending}" />
+        </Style>
+        <Style Selector="Border.step.running TextBlock.stateBadge">
+            <Setter Property="Foreground" Value="{StaticResource Running}" />
+        </Style>
+        <Style Selector="Border.step.done TextBlock.stateBadge">
+            <Setter Property="Foreground" Value="{StaticResource Success}" />
+        </Style>
+        <Style Selector="Border.step.failed TextBlock.stateBadge">
+            <Setter Property="Foreground" Value="{StaticResource Failure}" />
+        </Style>
+        <Style Selector="Border.step.skipNa TextBlock.stateBadge">
+            <Setter Property="Foreground" Value="{StaticResource SkipNa}" />
+        </Style>
+        <Style Selector="Border.step.skipAfter TextBlock.stateBadge">
+            <Setter Property="Foreground" Value="{StaticResource SkipAfter}" />
+        </Style>
+    </UserControl.Styles>
+
+    <Grid Margin="16" RowDefinitions="Auto,*" Background="#0E1117">
+
+        <!-- ===== Header: overall run state + summary + derived URL ===== -->
+        <Border Grid.Row="0" CornerRadius="10" Padding="14" Background="#161C26"
+                BorderBrush="#26FFFFFF" BorderThickness="1">
+            <StackPanel Spacing="8">
+                <Grid ColumnDefinitions="*,Auto">
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Title}" FontSize="16" FontWeight="SemiBold" Foreground="#E6EDF3" VerticalAlignment="Center"/>
+                        <TextBlock Text="{Binding Operation}" FontSize="12" Foreground="#8B949E" VerticalAlignment="Center"
+                                   FontFamily="Cascadia Code,Consolas,monospace"/>
+                    </StackPanel>
+                    <Border Grid.Column="1" CornerRadius="6" Padding="8,2" VerticalAlignment="Center" Background="#1F2937"
+                            IsVisible="{Binding RunStateLabel, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                        <TextBlock Text="{Binding RunStateLabel}" FontSize="11" FontWeight="SemiBold" Foreground="#E6EDF3"/>
+                    </Border>
+                </Grid>
+
+                <!-- Terminal summary (one human message) -->
+                <SelectableTextBlock Text="{Binding Summary}" Foreground="#C9D1D9" FontSize="13" TextWrapping="Wrap"
+                                     IsVisible="{Binding Summary, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+
+                <!-- Terminal technical detail behind an expander (failure path only, no happy-path noise) -->
+                <Expander Header="Technical detail" IsVisible="{Binding HasTerminalDetail}" Background="#0B0E14">
+                    <StackPanel Spacing="4" Margin="0,4,0,0">
+                        <SelectableTextBlock Text="{Binding TerminalDetail}" Foreground="#8B949E" FontSize="12"
+                                             FontFamily="Cascadia Code,Consolas,monospace" TextWrapping="Wrap"/>
+                        <TextBlock Foreground="#6E7681" FontSize="11" IsVisible="{Binding HasErrorCode}">
+                            <Run Text="error code:"/><Run Text=" "/><Run Text="{Binding ErrorCode}"/>
+                        </TextBlock>
+                    </StackPanel>
+                </Expander>
+
+                <!-- Derived URL / path on success -->
+                <StackPanel Orientation="Horizontal" Spacing="10" IsVisible="{Binding HasDerivedUrl}">
+                    <Button Content="Open deployed site" Classes="accent" Command="{Binding OpenDerivedUrlCommand}"/>
+                    <SelectableTextBlock Text="{Binding DerivedUrl}" Foreground="#58A6FF" FontSize="12" VerticalAlignment="Center"
+                                         FontFamily="Cascadia Code,Consolas,monospace"/>
+                </StackPanel>
+                <TextBlock Foreground="#6E7681" FontSize="11" IsVisible="{Binding HasDerivedPath}"
+                           FontFamily="Cascadia Code,Consolas,monospace">
+                    <Run Text="path:"/><Run Text=" "/><Run Text="{Binding DerivedPath}"/>
+                </TextBlock>
+
+                <!-- AC-06: unsupported schema degrade banner (shown instead of steps) -->
+                <Border IsVisible="{Binding IsSchemaUnsupported}" CornerRadius="8" Padding="10" Background="#3A2A12"
+                        BorderBrush="#D29922" BorderThickness="1">
+                    <SelectableTextBlock Text="{Binding UnsupportedSchemaMessage}" Foreground="#F0C674" FontSize="12" TextWrapping="Wrap"/>
+                </Border>
+            </StackPanel>
+        </Border>
+
+        <!-- ===== Step list (GitHub-Actions style) ===== -->
+        <ScrollViewer Grid.Row="1" Margin="0,12,0,0" IsVisible="{Binding HasSteps}">
+            <ItemsControl ItemsSource="{Binding Steps}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:PipelineStepViewModel">
+                        <Border Classes="step" Margin="0,3" CornerRadius="8" Padding="12,10"
+                                Background="#0B0E14" BorderBrush="#2A3140" BorderThickness="1"
+                                Classes.running="{Binding IsRunning}"
+                                Classes.done="{Binding IsDone}"
+                                Classes.failed="{Binding IsFailed}"
+                                Classes.skipNa="{Binding IsSkippedNotApplicable}"
+                                Classes.skipAfter="{Binding IsSkippedAfterFailure}">
+                            <Grid RowDefinitions="Auto,Auto">
+                                <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto,Auto">
+                                    <!-- State glyph -->
+                                    <Path Grid.Column="0" Classes="glyph" Width="20" Height="20" Margin="0,0,10,0"
+                                          Stretch="Uniform" StrokeThickness="1.8"
+                                          StrokeLineCap="Round" StrokeJoin="Round"
+                                          Data="{Binding IconKey, Converter={StaticResource IconKey}}"
+                                          VerticalAlignment="Center"/>
+                                    <!-- Name + message -->
+                                    <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding Name}" Foreground="#E6EDF3" FontWeight="SemiBold" FontSize="13"/>
+                                        <TextBlock Text="{Binding Message}" Foreground="#8B949E" FontSize="11.5"
+                                                   TextWrapping="Wrap"
+                                                   IsVisible="{Binding Message, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                                    </StackPanel>
+                                    <!-- Duration -->
+                                    <TextBlock Grid.Column="2" Text="{Binding DurationText}" Foreground="#6E7681" FontSize="11"
+                                               VerticalAlignment="Center" Margin="8,0"
+                                               FontFamily="Cascadia Code,Consolas,monospace"
+                                               IsVisible="{Binding HasDuration}"/>
+                                    <!-- State badge -->
+                                    <TextBlock Grid.Column="3" Classes="stateBadge" Text="{Binding StateLabel}" VerticalAlignment="Center"/>
+                                </Grid>
+
+                                <!-- Expandable technical detail (detail / errorCode) -->
+                                <Expander Grid.Row="1" Header="Technical detail" Margin="30,6,0,0" Background="#11151C"
+                                          IsVisible="{Binding HasTechnicalDetail}">
+                                    <StackPanel Spacing="4" Margin="0,4,0,0">
+                                        <SelectableTextBlock Text="{Binding Detail}" Foreground="#8B949E" FontSize="12"
+                                                             FontFamily="Cascadia Code,Consolas,monospace" TextWrapping="Wrap"
+                                                             IsVisible="{Binding Detail, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                                        <TextBlock Foreground="#6E7681" FontSize="11" IsVisible="{Binding HasErrorCode}">
+                                            <Run Text="error code:"/><Run Text=" "/><Run Text="{Binding ErrorCode}"/>
+                                        </TextBlock>
+                                    </StackPanel>
+                                </Expander>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

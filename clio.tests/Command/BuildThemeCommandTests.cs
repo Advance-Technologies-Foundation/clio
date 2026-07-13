@@ -68,6 +68,17 @@ public class BuildThemeCommandTests : BaseCommandTests<BuildThemeOptions>
 	};
 
 	[Test, Category("Unit")]
+	[Description("The pure-compute build-theme command stays available regardless of any Creatio version: it never contacts an environment, so its options type must not declare a version requirement.")]
+	public void BuildThemeOptions_ShouldNotDeclareCreatioVersionRequirement_WhenInspectingAttributes() {
+		// Arrange & Act
+		bool isGated = RequiresCreatioVersionAttribute.IsDefinedOn(typeof(BuildThemeOptions));
+
+		// Assert
+		isGated.Should().BeFalse(
+			because: "build-theme is pure computation without a target environment and must not force a version probe");
+	}
+
+	[Test, Category("Unit")]
 	[Description("Writes the built theme.css to stdout and touches no files when --output is omitted.")]
 	public void Execute_ShouldWriteCssToStdout_WhenOutputOmitted() {
 		// Arrange

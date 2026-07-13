@@ -34,6 +34,7 @@ public sealed class ThemingGuidanceResource {
 		       - Get or set the default theme — see "Get / set the default theme".
 
 		       Constraints
+		       - Theming is supported only on Creatio 10.0.0 or later. On an older environment the theme tools refuse with an explicit version-requirement error — relay it to the user and stop; do not retry or work around it.
 		       - Do not change font sizes or line heights — only the font family is meant to change. The interface is not yet adapted to altered typography metrics, so overriding them degrades or breaks the layout. When the user wants to change them, tell them this and leave them at their defaults. If the user keeps insisting, change them only when the user explicitly tells you to ignore this guide. Hand-authored `css-content` must not override them unless that explicit override was given.
 
 		       Calling the tools

@@ -464,6 +464,36 @@ Linux:
        - Templates are identified by original zip filename in metadata
        - You can safely ignore these informational messages
 
+## Progress and Stage Events (MCP)
+
+    When run as an MCP tool, deploy-creatio emits a typed, versioned progress stream
+    over MCP notifications/progress in the _meta.clioStageEvent field, so a GUI client
+    can render a live step list instead of parsing log lines. This is additive: CLI
+    behavior, tool arguments, descriptions, and the Destructive flag are unchanged.
+
+    The stream is:
+    - one "manifest" event up front listing every stage that will run, in order
+    - a "stage" event per transition (running -> done / failed / skipped, with
+      index / total / durationMs)
+    - one terminal "run-completed" event with outcome = success or failure
+
+    Deploy stages (in order):
+        stage-build            Build/prepare the source (network-drive source only;
+                               otherwise emitted skipped / not-applicable)
+        unzip                  Unzip the Creatio distribution
+        copy-files             Copy files into the target directory
+        restore-db             Restore the application database
+        deploy-app             Deploy the application (IIS / dotnet host)
+        configure-conn-strings Configure database and Redis connection strings
+        register-env           Register the environment with clio
+        wait-ready             Wait until the application reports ready
+
+    Honest failure: a stage that fails is emitted failed, the remaining stages are
+    emitted skipped (after-failure), and the run ends run-completed / failure. A
+    non-zero stage result is surfaced as a failure and is never masked as success.
+
+    The envelope carries a schemaVersion field (currently 1) and is forward-compatible.
+
 ## Reporting Bugs
 
     https://github.com/Advance-Technologies-Foundation/clio

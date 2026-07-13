@@ -14,9 +14,9 @@ list-themes - list the custom Creatio themes available on an environment
 reading them from the native `ThemeService.svc/GetAvailableThemes` endpoint.
 For each theme it shows the `id`, `caption`, `cssClassName`, and `cssFilePath`.
 
-The command requires the `CanCustomizeBranding` license; a caller without it
-receives an empty list rather than an error. It is read-only and does not change
-the environment.
+The command requires Creatio 10.0.0 or later on the target environment and the
+`CanCustomizeBranding` license; a caller without the license receives an empty
+list rather than an error. It is read-only and does not change the environment.
 
 ## Synopsis
 
