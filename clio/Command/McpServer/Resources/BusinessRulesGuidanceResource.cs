@@ -71,6 +71,7 @@ public sealed class BusinessRulesGuidanceResource {
 
 		       A. Conditional field/element STATE (visible/hidden, editable/read-only, required/optional) → BUSINESS RULE with hide-element/show-element/make-* (entity or page). What drives the condition:
 		          - a field value ("when field X equals Y, hide/show/enable/require field Z") → condition compares the field to a value or another field.
+		          - a field being FILLED or EMPTY ("hidden until a value is entered") → comparisonType is-filled-in or is-not-filled-in.
 		          - the current user's ROLE ("Resolved visible only for administrators") → condition CurrentUserRoles CONTAIN <role id>, plus the inverse NOT_CONTAIN → opposite action. Do NOT write a HandleViewModelInitRequest handler or use column access rights just to hide a control — role-based field state IS a business rule. Use column/object permissions only to restrict the underlying DATA, not just the UI control.
 		          - WHO the current user is ("Assignee group visible only for Supervisor") → condition compares CurrentUser / CurrentUserContact / CurrentUserAccount to the target id. Not a handler.
 
@@ -106,6 +107,7 @@ public sealed class BusinessRulesGuidanceResource {
 
 		       Common mistakes to avoid
 		       - Do NOT add visibility/editability/required toggling logic in SCHEMA_HANDLERS — use business rules.
+		       - Do NOT toggle element visibility from a handler through a bound page attribute (the "visible": "$Flag" + $context.set("Flag", ...) anti-pattern). Visibility that depends on another field — including "hidden until a field is filled" — is a business rule.
 		       - Do NOT confuse business rules with business logic. Business rules are declarative condition→action pairs, not imperative code.
 		       - Do NOT write `$context.enableAttribute()`/`$context.disableAttribute()` handlers when a business rule suffices.
 		       - Do NOT try to assign the current user/contact/account or current date to a field via set-values — system variables (CurrentUser, CurrentUserContact, CurrentUserAccount, CurrentUserRoles, CurrentDate/Time/DateTime) are condition operands only, not set-values sources.

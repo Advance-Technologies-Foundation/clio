@@ -15,7 +15,8 @@ native `ThemeService.svc/UpdateTheme` endpoint. The theme is located by `--id` a
 rewritten in its current package; the package cannot be changed.
 
 This is a **full overwrite**: `--caption`, `--css-class-name`, and the theme CSS are all
-required. Requires the `CanCustomizeBranding` license and the `CanManageThemes` system operation.
+required. Requires Creatio 10.0.0 or later on the target environment, the
+`CanCustomizeBranding` license, and the `CanManageThemes` system operation.
 
 Provide the CSS through exactly one of `--css-content` (inline) or `--css-content-file`
 (a UTF-8 file, up to 1 MiB).

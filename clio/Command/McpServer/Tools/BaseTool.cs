@@ -36,6 +36,34 @@ public abstract class BaseTool<T>(
 		}
 	}
 
+	/// <summary>
+	/// Resolves an environment-scoped command for the current MCP call and runs <paramref name="executor"/>
+	/// against it, producing a typed response. This is the typed-response counterpart of
+	/// <see cref="InternalExecute{TCommand}(T, Action{TCommand})"/>: it funnels the same
+	/// <see cref="ResolveCommand{TCommand}"/> gate (package + Creatio version) so an unmet requirement is
+	/// refused uniformly, and it maps a <see cref="CreatioVersionRequirementException"/> to a failure that
+	/// carries the stable error code — typed results have no exit code, so the code travels in the message.
+	/// A tool passes its own <paramref name="onFailure"/> factory because only the tool knows how to build
+	/// its specific response shape.
+	/// </summary>
+	private protected TResponse ExecuteResolved<TCommand, TResponse>(
+		T options,
+		Func<TCommand, TResponse> executor,
+		Func<string, TResponse> onFailure) where TCommand : Command<T> {
+		return ExecuteWithCleanLog(() => {
+			try {
+				TCommand resolvedCommand = ResolveCommand<TCommand>(options);
+				return executor(resolvedCommand);
+			}
+			catch (CreatioVersionRequirementException ex) {
+				return onFailure($"{ex.Message} [{ex.ErrorCode}]");
+			}
+			catch (Exception ex) {
+				return onFailure(ex.Message);
+			}
+		});
+	}
+
 	private protected CommandExecutionResult InternalExecute(T options) {
 		if (command is null) {
 			throw new InvalidOperationException(
@@ -49,16 +77,21 @@ public abstract class BaseTool<T>(
 		TCommand resolvedCommand;
 		try {
 			// ResolveCommand resolves the env-scoped command AND enforces this options type's
-			// [RequiresPackage] declarations against the per-call target environment. The gate lives
-			// inside ResolveCommand so the typed-response path (tools that call it directly from inside
-			// ExecuteWithCleanLog) is package-gated too. An unmet requirement surfaces as a
-			// PackageRequirementException; an environment/argument failure as an
-			// EnvironmentResolutionException; both become a caller-actionable failed result (exit 1)
-			// below, so the command never runs when its preconditions are not satisfied.
+			// [RequiresPackage] and [RequiresCreatioVersion] declarations against the per-call target
+			// environment. Both gates live inside ResolveCommand so the typed-response path (tools that
+			// call it directly from inside ExecuteWithCleanLog) is gated too. An unmet package requirement
+			// surfaces as a PackageRequirementException (exit 1), an unmet/undeterminable version as a
+			// CreatioVersionRequirementException (distinct exit code 78, mirroring the CLI dispatch gate),
+			// an environment/argument failure as an EnvironmentResolutionException (exit 1); each becomes
+			// a caller-actionable failed result below, so the command never runs when its preconditions
+			// are not satisfied.
 			resolvedCommand = ResolveCommand<TCommand>(options);
 		} catch (PackageRequirementException ex) {
 			// Surface the actionable install hint verbatim, without the exception-chain decoration.
 			return CommandExecutionResult.FromError(ex.Message);
+		} catch (CreatioVersionRequirementException ex) {
+			// Expected, caller-actionable refusal (unmet/undeterminable version) → distinct exit code 78.
+			return CommandExecutionResult.FromCreatioVersionRequirementError(ex);
 		} catch (EnvironmentResolutionException e) {
 			// Expected, caller-actionable environment/argument failure → exit code 1.
 			return CommandExecutionResult.FromResolverError(e);
@@ -68,37 +101,29 @@ public abstract class BaseTool<T>(
 			return CommandExecutionResult.FromException(e);
 		}
 
-		// Creatio-version gate for environment-bound commands. It runs AFTER ResolveCommand has already
-		// resolved the env-scoped command and enforced the package gate (see ResolveCommand), so the
-		// environment is validated by the time we get here and the version checker never hits an
-		// unknown-env. Like the package gate it runs only in the env-SENSITIVE path, resolves its checker
-		// from the SAME environment-scoped container the command came from, and runs before the execution
-		// lock so a refusal does not hold it. Package is NOT re-enforced here — ResolveCommand already did
-		// it for BOTH execution paths, and adding it again would double-gate.
-		CommandExecutionResult versionRequirementFailure = EnforceCreatioVersionRequirements(options);
-		if (versionRequirementFailure is not null) {
-			return versionRequirementFailure;
-		}
-
 		configureCommand?.Invoke(resolvedCommand);
 		return InternalExecute(resolvedCommand, options);
 	}
 
 	/// <summary>
 	/// Resolves an environment-scoped command instance for the current MCP call and enforces the
-	/// options type's package requirements before returning it.
+	/// options type's package and Creatio version requirements before returning it.
 	/// </summary>
 	/// <remarks>
 	/// Both BaseTool execution paths funnel through here — the <see cref="InternalExecute{TCommand}"/>
 	/// path and the typed-response path that calls this method directly from inside
-	/// <see cref="ExecuteWithCleanLog"/> — so every BaseTool tool is package-gated uniformly,
-	/// regardless of its return shape. The command is resolved FIRST (so an unknown-environment failure
-	/// surfaces as <see cref="EnvironmentResolutionException"/>), THEN the requirement is enforced. A
-	/// <see cref="PackageRequirementException"/> (unmet requirement) and any other verification failure
-	/// both propagate to the caller.
+	/// <see cref="ExecuteWithCleanLog"/> — so every BaseTool tool is package- and version-gated
+	/// uniformly, regardless of its return shape. The command is resolved FIRST (so an
+	/// unknown-environment failure surfaces as <see cref="EnvironmentResolutionException"/>), THEN the
+	/// Creatio version requirement is enforced, THEN the package requirement — the same relative order
+	/// as the CLI dispatch gate (feature-toggle → creatio-version → package), so a command declaring
+	/// both attributes refuses with the same error on both surfaces. A
+	/// <see cref="PackageRequirementException"/> / <see cref="CreatioVersionRequirementException"/>
+	/// (unmet requirement) and any other verification failure propagate to the caller.
 	/// </remarks>
 	private protected TCommand ResolveCommand<TCommand>(T options) where TCommand : Command<T> {
 		TCommand resolvedCommand = ResolveFromCallContainer<TCommand>(options);
+		EnforceCreatioVersionRequirements(options);
 		EnforcePackageRequirements(options);
 		return resolvedCommand;
 	}
@@ -121,34 +146,23 @@ public abstract class BaseTool<T>(
 		checker.EnsureRequirements(options);
 	}
 
-	// Returns a failed result (exit code 78) when the per-call environment does not satisfy this options
-	// type's [RequiresCreatioVersion] declaration (too old, or undeterminable → fail-closed), or null when
-	// there is nothing to enforce / the requirement is met. Cheap static pre-check first: options types
-	// without [RequiresCreatioVersion] skip resolution entirely, so non-gated tools stay zero-cost and
-	// never force an environment round-trip — intentionally stricter than the package gate, because the
-	// version check exists solely to add that round-trip. Mirrors the CLI gate
-	// (Program.TryGetCreatioVersionRequirementError): only CreatioVersionRequirementException is mapped to
-	// the version exit code; a malformed [RequiresCreatioVersion] (e.g. on a non-bool property) surfaces as
-	// an InvalidOperationException that flows to the catch-all (exit code -1), NOT into the version-gate
-	// failure — a developer error must stay distinguishable from a version refusal. Nothing escapes here.
-	private CommandExecutionResult EnforceCreatioVersionRequirements(T options) {
+	// Enforces this options type's [RequiresCreatioVersion] declaration against the per-call target
+	// environment. It runs on the ResolveCommand path (before the package gate, mirroring the CLI
+	// dispatch order), so BOTH BaseTool execution paths — InternalExecute<TCommand> and the
+	// typed-response/ExecuteWithCleanLog path — are version-gated uniformly. Cheap static pre-check first: options types without
+	// [RequiresCreatioVersion] skip resolution entirely, so non-gated tools stay zero-cost and never
+	// force an environment round-trip — intentionally stricter than the package gate, because the
+	// version check exists solely to add that round-trip. An unmet/undeterminable version propagates as
+	// CreatioVersionRequirementException (fail-closed; mapped to the distinct exit code 78 by
+	// InternalExecute<TCommand> and to a typed failure by each typed-response tool's own catch); a
+	// malformed [RequiresCreatioVersion] (e.g. on a non-bool property) propagates as
+	// InvalidOperationException so a developer error stays distinguishable from a version refusal.
+	private void EnforceCreatioVersionRequirements(T options) {
 		if (!RequiresCreatioVersionAttribute.IsDefinedOn(typeof(T))) {
-			return null;
+			return;
 		}
-		try {
-			ICreatioVersionChecker checker = ResolveFromCallContainer<ICreatioVersionChecker>(options);
-			checker.EnsureRequirements(options);
-			return null;
-		}
-		catch (CreatioVersionRequirementException ex) {
-			// Expected, caller-actionable refusal (unmet/undeterminable version) → distinct exit code 78.
-			return CommandExecutionResult.FromCreatioVersionRequirementError(ex);
-		}
-		catch (Exception ex) {
-			// Unexpected failure while verifying the version requirement (a malformed attribute, or a
-			// non-soft-degrading checker error) → exit code -1, never collapsed into the version exit code.
-			return CommandExecutionResult.FromException(ex);
-		}
+		ICreatioVersionChecker checker = ResolveFromCallContainer<ICreatioVersionChecker>(options);
+		checker.EnsureRequirements(options);
 	}
 
 	// Resolves an arbitrary service from the per-call, environment-scoped container using the SAME

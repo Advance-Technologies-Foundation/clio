@@ -172,6 +172,8 @@ public class BindingsModule {
 		services.AddSingleton<IDbOperationLogSessionFactory, DbOperationLogSessionFactory>();
 		services.AddTransient<IContainerRegistryCredentialProvider, ContainerRegistryCredentialProvider>();
 		services.AddHttpClient();
+		services.AddTransient<IRingDistributionService, RingDistributionService>();
+		services.AddTransient<RingCommand>();
 		services.AddHttpClient<IContainerRegistryPreflightService, ContainerRegistryPreflightService>();
 		// Named HttpClient for the component-registry CDN + docs pipelines. Timeout is
 		// configured once here so callers never mutate HttpClient.Timeout after construction
@@ -229,6 +231,7 @@ public class BindingsModule {
 		services.AddTransient<ILocalRedisAssertion, LocalRedisAssertion>();
 		services.AddTransient<k8Commands>();
 		services.AddTransient<IInfrastructurePathProvider, InfrastructurePathProvider>();
+		services.AddTransient<IDeployCreatioDefaultsResolver, DeployCreatioDefaultsResolver>();
 		services.AddTransient<InstallerCommand>();
 		services.AddTransient<DeployIdentityCommand>();
 		services.AddTransient<IIdentityServiceArchiveResolver, IdentityServiceArchiveResolver>();
@@ -509,6 +512,7 @@ public class BindingsModule {
 		services.AddTransient<UpdateCliCommand>();
 		services.AddTransient<SetAutoupdateCommand>();
 		services.AddTransient<ExperimentalCommand>();
+		services.AddTransient<ConfigCommand>();
 		services.AddTransient<RegisterCommand>();
 		services.AddTransient<UnregisterCommand>();
 		
@@ -581,6 +585,7 @@ public class BindingsModule {
 		services.AddTransient<CreateThemeCommand>();
 		services.AddTransient<UpdateThemeCommand>();
 		services.AddTransient<DeleteThemeCommand>();
+		services.AddTransient<CheckThemingAccessCommand>();
 		services.AddTransient<ICreatioRightsClient, CreatioRightsClient>();
 		services.AddTransient<ICreatioLicenseClient, CreatioLicenseClient>();
 		services.AddTransient<IFsmModeStatusService, FsmModeStatusService>();
@@ -598,6 +603,8 @@ public class BindingsModule {
 		services.AddTransient<CheckWindowsFeaturesCommand>();
 		services.AddTransient<ManageWindowsFeaturesCommand>();
 		services.AddTransient<CreateTestProjectCommand>();
+		services.AddTransient<CreateIntegrationTestProjectCommand>();
+		services.AddTransient<IValidator<CreateIntegrationTestProjectOptions>, CreateIntegrationTestProjectOptionsValidator>();
 		services.AddTransient<ListenCommand>();
 		services.AddTransient<ShowPackageFileContentCommand>();
 		services.AddTransient<CompilePackageCommand>();

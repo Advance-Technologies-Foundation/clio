@@ -47,6 +47,10 @@ internal static class GuidanceCatalog {
 				"configuration-webservice-tests",
 				"Canonical MCP guidance for testing Creatio configuration web services.",
 				ConfigurationWebServiceTestsGuidanceResource.Guide),
+			["integration-testing"] = Create(
+				"integration-testing",
+				"Canonical guidance for portable Creatio integration tests, CI authentication, ATF.Repository, Allure, process scenarios, cleanup, and optional browser testing.",
+				IntegrationTestingGuidanceResource.Guide),
 			["page-schema-converters"] = Create(
 				"page-schema-converters",
 				"Canonical MCP guidance for creating and editing Freedom UI page converters inside raw page schema bodies.",

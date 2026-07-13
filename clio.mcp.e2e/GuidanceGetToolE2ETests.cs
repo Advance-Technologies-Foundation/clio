@@ -269,16 +269,16 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			context.Session,
 			context.CancellationTokenSource.Token,
 			new Dictionary<string, object?> {
-				["name"] = "page-modification"
+				["name"] = "page-modification-overview"
 			});
 
 		// Assert
 		response.Success.Should().BeTrue(
-			because: "page-modification is a registered guidance name");
+			because: "page-modification-overview is a registered guidance name");
 		response.Article.Should().NotBeNull(
 			because: "successful guidance lookups should return the resolved article payload");
-		response.Article!.Uri.Should().Be("docs://mcp/guides/page-modification",
-			because: "the canonical page-modification resource URI should still be visible in the tool response");
+		response.Article!.Uri.Should().Be("docs://mcp/guides/page-modification-overview",
+			because: "the overview sub-guide owns the anti-bundle reverse-engineering rule after the guidance split");
 		response.Article.Text.Should().Contain("reverse-engineering one is NOT a substitute",
 			because: "the anti-bundle-reverse-engineering guidance is a core ENG-91953 deliverable and must survive over the real MCP wire");
 	}
@@ -436,18 +436,16 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "successful guidance lookups should return the resolved article payload");
 		response.Article!.Uri.Should().Be("docs://mcp/guides/page-modification",
 			because: "the canonical resource URI for the web page guide should be stable");
-		response.Article.Text.Should().Contain("clio MCP page modification guide",
-			because: "the guidance tool should return the canonical web page guide text");
+		response.Article.Text.Should().Contain("ENTRY guide for editing a Freedom UI page",
+			because: "the guidance tool should return the canonical page-modification entry guide text");
 		response.Article.Text.Should().Contain("COMPONENT-TYPE VERIFICATION IS MANDATORY",
 			because: "the web page guide must force component-type verification before any viewConfigDiff insert to prevent invented crt.* types");
 		response.Article.Text.Should().Contain("get-component-info",
 			because: "the verification rule must route the agent to get-component-info as the authoritative component catalog");
 		response.Article.Text.Should().Contain("ASK THE USER",
 			because: "the web page guide must tell the agent to ask the user (existing component vs custom) when no OOTB component matches");
-		response.Article.Text.Should().Contain("its content slot MUST be initialized",
-			because: "the web page guide must center the new-container rule on initializing the content slot, the verified root cause (ENG-91555, PR #789 review)");
-		response.Article.Text.Should().Contain("is not a container for other items",
-			because: "the web page guide must name the exact runtime error a slot-less container raises so the agent recognizes it");
+		response.Article.Text.Should().Contain("page-modification-containers",
+			because: "the entry guide must route container placement and content-slot work to the dedicated containers sub-guide after the guidance split");
 		response.Article.Text.Should().Contain("showing a user-facing message/confirmation/info/success/error popup",
 			because: "the gate table must route a 'show a confirmation message' requirement into page-schema-handlers so the agent uses crt.ShowDialogRequest (ENG-91748)");
 		response.Article.Text.Should().Contain("NEVER use `alert(...)`, `window.alert(...)`, `confirm(...)`, or `prompt(...)`",
