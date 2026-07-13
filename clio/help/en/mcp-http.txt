@@ -23,8 +23,10 @@ SECURITY
     and the Origin header (restricted to the bound host / loopback) to prevent
     DNS-rebinding and cross-origin abuse; disallowed requests are rejected with
     HTTP 400 / 403. Native MCP clients send no Origin header and are unaffected.
-    There is no built-in authentication — use --host 0.0.0.0 only on trusted
-    networks.
+    Standard OAuth 2.1 Resource-Server authorization is available (see
+    --auth-authority below) but OFF by default. With it off, use --host 0.0.0.0
+    only on trusted networks (a public/wildcard --host with authorization off
+    refuses to start unless --allow-insecure-public is set).
 
 OPTIONS
     --port <port>
@@ -40,12 +42,17 @@ OPTIONS
         Default: /mcp
 
     --platform-api-key <keys>
+        Non-OAuth dev/offline fallback for per-request credential passthrough.
         Comma-separated set of platform API key(s) (also read from the
         CLIO_MCP_HTTP_PLATFORM_API_KEY environment variable). Setting at least
         one key ENABLES per-request credential passthrough; each request must
         then present a matching 'Authorization: Bearer <platform-api-key>'.
         Keys are compared in constant time; rotate by supplying the old and new
         key together in the comma-set. Unset (default) => passthrough disabled.
+        IGNORED ENTIRELY when --auth-authority is configured -- standard OAuth
+        is then the only front door and cannot be combined with this key on
+        the same Authorization header. Configuring both logs a startup warning
+        since the key becomes inert, not a security problem.
 
     --allowed-base-urls <urls>
         Comma-separated SSRF allowlist of origins a passthrough target url may
@@ -69,10 +76,74 @@ OPTIONS
         Name of the request header carrying the base64-encoded JSON credentials.
         Default: X-Integration-Credentials
 
+    --auth-authority <url>
+        OIDC authority (discovery/JWKS base URL) of the OAuth 2.1 Authorization
+        Server whose access tokens this edge accepts (also CLIO_MCP_HTTP_AUTH_AUTHORITY).
+        Setting it ENABLES standard bearer-JWT authorization; unset => off (as before).
+
+    --auth-audience <auds>
+        Comma-separated accepted audience(s) validated against the token 'aud'
+        (also CLIO_MCP_HTTP_AUTH_AUDIENCE).
+
+    --auth-required-scopes <scopes>
+        Comma-separated scope(s) every request must carry, all required, checked
+        against the 'scope'/'scp' claim (also CLIO_MCP_HTTP_AUTH_REQUIRED_SCOPES).
+
+    --auth-issuer <issuers>
+        Comma-separated accepted issuer(s) for the token 'iss' (also
+        CLIO_MCP_HTTP_AUTH_ISSUER). Optional; when unset the issuer is validated
+        against the discovery document. Use when the public token 'iss' differs
+        from the internal --auth-authority discovery URL.
+
+    --auth-allow-insecure-metadata
+        Allow OIDC metadata/JWKS over plain HTTP (also a truthy
+        CLIO_MCP_HTTP_AUTH_ALLOW_INSECURE_METADATA). Default is HTTPS-only; use
+        only for an internal-DNS HTTP authority on a trusted network.
+
+    --auth-resource <uri>
+        Explicit Protected Resource Metadata 'resource' (canonical MCP endpoint
+        URI) override (also CLIO_MCP_HTTP_AUTH_RESOURCE). Unset (default) =>
+        derived per-request from the incoming scheme/host/path, correct behind
+        any ingress that forwards the Host header.
+
+    --allow-insecure-public
+        Allow starting with a public/wildcard --host (e.g. 0.0.0.0), OR any
+        other concrete non-loopback host/IP, while authorization is OFF (also a
+        truthy CLIO_MCP_HTTP_ALLOW_INSECURE_PUBLIC). Without this flag, clio
+        REFUSES TO START in that combination: an unauthenticated reachable bind
+        exposes every registered environment's stored credentials to anyone who
+        can reach the port. Not recommended outside a fully trusted network.
+
+    --auth-allow-any-audience
+        Allow enabling authorization (--auth-authority) with NEITHER
+        --auth-audience NOR --auth-required-scopes configured (also a truthy
+        CLIO_MCP_HTTP_AUTH_ALLOW_ANY_AUDIENCE). Without this flag, clio REFUSES
+        TO START in that combination: with no audience or scope restriction the
+        endpoint accepts ANY token the configured authority ever mints for ANY
+        client/resource -- a confused-deputy risk on a shared identity platform.
+        Configure --auth-audience and/or --auth-required-scopes instead
+        wherever possible; this is a documented escape hatch, not a
+        recommended posture.
+
+    When authorization is enabled, EVERY request to the MCP endpoint requires a
+    valid token — pre-registered '-e <env>' / stored-credential access included,
+    not just the credential-passthrough leg. The edge serves Protected Resource
+    Metadata (RFC 9728) anonymously at /.well-known/oauth-protected-resource, and
+    an unauthenticated/invalid-token/insufficient-scope request receives 401 (or
+    403 for scope) with a WWW-Authenticate header naming that discovery URL.
+
+    With no --auth-authority configured (default), authorization is off and the
+    server behaves exactly as before this feature — EXCEPT that a reachable
+    (public/wildcard or concrete non-loopback) --host with no authorization
+    refuses to start (see --allow-insecure-public), and enabling authorization
+    with no audience/scope restriction refuses to start too (see
+    --auth-allow-any-audience).
+
 CREDENTIAL PASSTHROUGH (multi-tenant edge)
     Per-request credential passthrough lets a gateway target a different Creatio
-    tenant on each request instead of a pre-registered environment. It is gated
-    SOLELY by the platform API key and off by default (fail-closed):
+    tenant on each request instead of a pre-registered environment. When
+    --auth-authority is NOT configured (default), it is gated SOLELY by the
+    platform API key and off by default (fail-closed):
 
       - Set a platform API key (--platform-api-key / CLIO_MCP_HTTP_PLATFORM_API_KEY)
         to enable it.
@@ -80,6 +151,20 @@ CREDENTIAL PASSTHROUGH (multi-tenant edge)
     With no key configured, the credential header is ignored and the server
     behaves exactly as before — the verb, stdio mode, and '-e <env>' targeting
     are always available regardless of the key.
+
+    When --auth-authority IS configured, the platform API key is IGNORED
+    entirely (see --platform-api-key above) and passthrough eligibility comes
+    solely from the authenticated OAuth principal instead.
+
+    Standard-auth header strip: when --auth-authority IS configured, the
+    credential header is honored ONLY on an authenticated request (a valid
+    bearer token) -- an unauthenticated request has it ignored outright, not
+    deferred. The inbound gateway/platform bearer token is never forwarded to
+    Creatio; the outbound credential comes solely from this header. Per-tenant
+    claim-based authorization (which gateway may assert which tenant) is not
+    implemented in v1 -- the platform's client-credentials token carries no
+    per-tenant claim yet; any authenticated caller is trusted for any tenant,
+    same trust boundary as the platform-api-key gate had.
 
     When enabled, an authorized request carries credentials in the header:
 

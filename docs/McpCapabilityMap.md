@@ -92,17 +92,26 @@ Typical examples:
 - `show-webApp-list`
 - `find-empty-iis-port`
 
-### 4. HTTP credential-passthrough edge (multi-tenant)
+### 4. HTTP credential-passthrough edge (multi-tenant) + standard OAuth authorization
 
 The `mcp-http` HTTP host adds a fourth, opt-in targeting mode: **per-request credential
 passthrough**. Instead of a pre-registered environment, a gateway supplies the target tenant
-URL and credentials on each request via an `X-Integration-Credentials: <base64 JSON>` header,
-gated by an `Authorization: Bearer <platform-api-key>`. The same registered tool surface then
-executes against an **ephemeral, in-memory** per-tenant container (nothing persisted; pooled
-with idle-TTL / LRU eviction). It is gated **solely by the platform API key** (fail-closed and
-off by default): with no key configured the header is ignored and `mcp-http` behaves as
-stdio-parity. See [`docs/commands/mcp-http.md`](../clio/docs/commands/mcp-http.md) for the full
-contract (header shapes, SSRF allowlist, and the mode-gated plaintext-arg policy).
+URL and credentials on each request via an `X-Integration-Credentials: <base64 JSON>` header.
+The same registered tool surface then executes against an **ephemeral, in-memory** per-tenant
+container (nothing persisted; pooled with idle-TTL / LRU eviction).
+
+`mcp-http` also supports **standard MCP OAuth 2.1 Resource-Server authorization**
+(`--auth-authority`; off by default): when configured, EVERY request to the endpoint —
+passthrough and pre-registered `-e <env>` access alike — requires a valid bearer JWT, and the
+edge serves Protected Resource Metadata (RFC 9728) at `/.well-known/oauth-protected-resource`
+for discovery. The legacy `--platform-api-key` gate is retained only as a non-OAuth dev/offline
+fallback: with `--auth-authority` configured it is bypassed entirely (the two schemes cannot
+share one `Authorization` header); with no OAuth configured (default) it is the sole gate for
+the passthrough leg, fail-closed and off by default — with no key configured the credential
+header is ignored and `mcp-http` behaves as stdio-parity. The inbound MCP/gateway bearer token
+is never forwarded to Creatio; the tenant credential is a separate, distinct plane. See
+[`docs/commands/mcp-http.md`](../clio/docs/commands/mcp-http.md) for the full contract (header
+shapes, SSRF allowlist, the mode-gated plaintext-arg policy, and the OAuth option reference).
 
 ## What An AI Learns About Execution Semantics
 
