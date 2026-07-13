@@ -4571,7 +4571,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildDeployCreatio() {
 		return new ToolContractDefinition(
 			InstallerCommandTool.DeployCreatioToolName,
-			"Deploys Creatio from a zip archive using the real deploy-creatio command path. This is the most consequential, hardest-to-reverse lifecycle tool: it drops and recreates the target site. Run the deploy preflight first (assert-infrastructure -> show-passing-infrastructure -> find-empty-iis-port) and prefer the recommended bundle from show-passing-infrastructure.",
+			"Deploys Creatio from a zip archive using the real deploy-creatio command path. This is the most consequential, hardest-to-reverse lifecycle tool: it drops and recreates the target site. Run the deploy preflight first (assert-infrastructure -> show-passing-infrastructure -> find-empty-iis-port) and prefer the recommended bundle from show-passing-infrastructure. Deployment preserves the build database's existing forced-password-change state and does not clear it automatically.",
 			new ToolInputSchemaContract(
 				[SiteNameFieldName, ZipFileFieldName, SitePortFieldName],
 				[
