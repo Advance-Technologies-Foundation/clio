@@ -80,6 +80,8 @@ public partial class RingViewModel : ViewModelBase {
 	private CancellationTokenSource? _cts;
 	private bool _environmentLoadInProgress;
 	private bool _environmentReloadPending;
+	private string? _pendingConfirmEnvironment;
+	private ClioEnvironment? _pendingConfirmEnvironmentSnapshot;
 
 	/// <summary>All ring nodes (outer actions + up to 6 inner env quick-chips).</summary>
 	public ObservableCollection<RingItemViewModel> Items { get; } = new();
@@ -245,13 +247,15 @@ public partial class RingViewModel : ViewModelBase {
 	public bool HasSelectedEnvironment => _allEnvironments.Any(e => e.Name == SelectedEnvironmentName);
 
 	/// <summary>Compact hint for the selected env (host · Local/Cloud · flavour).</summary>
-	public string SelectedEnvironmentHint {
-		get {
-			ClioEnvironment? env = _allEnvironments.FirstOrDefault(e => e.Name == SelectedEnvironmentName);
-			return env is null
-				? "no environment selected"
-				: $"{(env.Host.Length > 0 ? env.Host : "?")} · {env.LocationLabel} · {env.FrameworkLabel}";
-		}
+	public string SelectedEnvironmentHint => HasSelectedEnvironment
+		? EnvironmentHint(SelectedEnvironmentName)
+		: "no environment selected";
+
+	private string EnvironmentHint(string environmentName) {
+		ClioEnvironment? env = _allEnvironments.FirstOrDefault(e => e.Name == environmentName);
+		return env is null
+			? "environment details unavailable"
+			: $"{(env.Host.Length > 0 ? env.Host : "?")} · {env.LocationLabel} · {env.FrameworkLabel}";
 	}
 
 	/// <summary>Whether the All location filter is active.</summary>
@@ -815,15 +819,27 @@ public partial class RingViewModel : ViewModelBase {
 		action.Parameters.Any(p => p.ParameterType == ParameterType.Env);
 
 	private void OpenConfirm(RingItemViewModel item, RingAction action) {
-		string env = SelectedEnvironmentName;
-		string lead = string.IsNullOrWhiteSpace(action.ConfirmText)
+		string? fixedEnvironment = string.IsNullOrWhiteSpace(action.ClioCommand?.EnvName)
+			? null
+			: action.ClioCommand!.EnvName;
+		string? env = fixedEnvironment ?? (ActionTargetsEnvParameter(action) ? SelectedEnvironmentName : null);
+		bool targetsEnvironment = env is not null;
+		string defaultLead = targetsEnvironment
 			? $"Run '{action.Title}' against '{env}'?"
-			: action.ConfirmText!.Replace("{env}", env);
+			: $"Run '{action.Title}'?";
+		string lead = string.IsNullOrWhiteSpace(action.ConfirmText)
+			? defaultLead
+			: action.ConfirmText!.Replace("{env}", env ?? string.Empty);
 
-		// Append the RESOLVED target so the user sees exactly which endpoint is affected.
-		ConfirmMessage = $"{lead}\n\nTarget: {env} · {SelectedEnvironmentHint}";
+		// Append the resolved endpoint only when this action targets a selected or fixed environment.
+		ConfirmMessage = targetsEnvironment ? $"{lead}\n\nTarget: {env} · {EnvironmentHint(env!)}" : lead;
 		RequiresTypedConfirm = action.RequireTypedConfirm;
-		ConfirmExpected = env;
+		ConfirmExpected = env ?? string.Empty;
+		_pendingConfirmEnvironment = env;
+		_pendingConfirmEnvironmentSnapshot = env is null
+			? null
+			: _allEnvironments.FirstOrDefault(environment =>
+				string.Equals(environment.Name, env, StringComparison.OrdinalIgnoreCase));
 		ConfirmConsequence = action.ConsequenceText ?? string.Empty;
 		ConfirmInput = string.Empty;
 		PendingConfirmItem = item;
@@ -842,16 +858,38 @@ public partial class RingViewModel : ViewModelBase {
 	[RelayCommand(CanExecute = nameof(CanConfirm))]
 	private async Task ConfirmAsync() {
 		RingItemViewModel? item = PendingConfirmItem;
-		PendingConfirmItem = null;
-		ConfirmMessage = string.Empty;
-		ConfirmArmed = false;
-		RequiresTypedConfirm = false;
-		ConfirmExpected = string.Empty;
-		ConfirmConsequence = string.Empty;
-		ConfirmInput = string.Empty;
-		if (item is not null) {
-			await ExecuteItemAsync(item).ConfigureAwait(true);
+		string? confirmedEnvironment = _pendingConfirmEnvironment;
+		if (await EnvironmentTargetChangedAsync(_pendingConfirmEnvironmentSnapshot).ConfigureAwait(true)) {
+			ClearPendingConfirm();
+			FocusCaption = "Environment changed. Review and confirm again.";
+			return;
 		}
+		ClearPendingConfirm();
+		if (item is not null) {
+			await ExecuteItemAsync(item, confirmedEnvironment).ConfigureAwait(true);
+		}
+	}
+
+	private async Task<bool> EnvironmentTargetChangedAsync(ClioEnvironment? snapshot) {
+		if (snapshot is null) {
+			return false;
+		}
+
+		IReadOnlyList<ClioEnvironment> environments = await _clio.ListEnvironmentsAsync().ConfigureAwait(true);
+		ClioEnvironment? current = environments.FirstOrDefault(environment =>
+			string.Equals(environment.Name, snapshot.Name, StringComparison.OrdinalIgnoreCase));
+		return current is null
+			|| current.IsNetCore != snapshot.IsNetCore
+			|| !EnvironmentUrisEqual(current.Uri, snapshot.Uri);
+	}
+
+	private static bool EnvironmentUrisEqual(string? left, string? right) {
+		if (Uri.TryCreate(left, UriKind.Absolute, out Uri? leftUri)
+			&& Uri.TryCreate(right, UriKind.Absolute, out Uri? rightUri)) {
+			return leftUri.Equals(rightUri);
+		}
+
+		return string.Equals(left?.TrimEnd('/'), right?.TrimEnd('/'), StringComparison.OrdinalIgnoreCase);
 	}
 
 	private bool CanConfirm() =>
@@ -860,8 +898,12 @@ public partial class RingViewModel : ViewModelBase {
 
 	/// <summary>Dismisses a pending confirmation without running.</summary>
 	[RelayCommand]
-	private void DismissConfirm() {
+	private void DismissConfirm() => ClearPendingConfirm();
+
+	private void ClearPendingConfirm() {
 		PendingConfirmItem = null;
+		_pendingConfirmEnvironment = null;
+		_pendingConfirmEnvironmentSnapshot = null;
 		ConfirmMessage = string.Empty;
 		ConfirmArmed = false;
 		RequiresTypedConfirm = false;
@@ -917,7 +959,7 @@ public partial class RingViewModel : ViewModelBase {
 		HotkeyNotice = message;
 	}
 
-	private async Task ExecuteItemAsync(RingItemViewModel item) {
+	private async Task ExecuteItemAsync(RingItemViewModel item, string? confirmedEnvironment = null) {
 		RingAction action = item.Action!;
 		switch (action.Kind) {
 			case ActionKind.ClioCommand:
@@ -925,8 +967,11 @@ public partial class RingViewModel : ViewModelBase {
 				await RunClioAsync(new ClioInvocation {
 					Verb = spec.Verb,
 					Args = spec.Args,
-					EnvName = spec.EnvName ?? ResolveEnvParameter(action)
+					EnvName = spec.EnvName ?? confirmedEnvironment ?? ResolveEnvParameter(action)
 				}, item).ConfigureAwait(true);
+				if (action.RefreshEnvironmentsOnSuccess && Outcome == RunOutcome.Success) {
+					await LoadEnvironmentsAsync().ConfigureAwait(true);
+				}
 				break;
 			case ActionKind.OpenUrl:
 				OpenShell(action.OpenUrl!.Url);

@@ -148,6 +148,12 @@ public sealed record RingAction {
 	/// e.g. "the database will be dropped and application files removed, with no undo". Null = none.
 	/// </summary>
 	public string? ConsequenceText { get; init; }
+
+	/// <summary>
+	/// When true, refreshes the clio-owned environment catalog after this action completes successfully.
+	/// Use for commands that add, update, or remove registered environments.
+	/// </summary>
+	public bool RefreshEnvironmentsOnSuccess { get; init; }
 }
 
 /// <summary>Root document of <c>actions.json</c>: the full declarative action graph.</summary>

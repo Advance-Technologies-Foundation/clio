@@ -105,4 +105,42 @@ public sealed class ActionCatalogUninstallCreatioTests {
 		manageEnvironments.ClioCommand.Args.Should().Equal(["--json"],
 			because: "JSON output uses clio's masked projection and must not expose stored credentials");
 	}
+
+	[Test]
+	[Description("The shipped catalog exposes a confirmed Import IIS action that runs clio reg --add-from-iis and refreshes environments.")]
+	public void Load_ShouldContainImportIisAction_WhenShippedActionsJsonIsUsed() {
+		// Arrange
+		var loader = new ActionCatalogLoader();
+
+		// Act
+		ActionCatalog catalog = loader.Load(ShippedCatalogPath);
+		RingAction importIis = catalog.Actions.First(a =>
+			string.Equals(a.Id, "clio-import-iis-environments", StringComparison.OrdinalIgnoreCase));
+
+		// Assert
+		importIis.Title.Should().Be("Import IIS Environments",
+			because: "the ring should clearly describe what will be imported");
+		importIis.Kind.Should().Be(ActionKind.ClioCommand,
+			because: "the existing clio command owns IIS discovery and environment registration");
+		importIis.ClioCommand.Should().NotBeNull(
+			because: "a ClioCommand action requires a typed command payload");
+		importIis.ClioCommand!.Verb.Should().Be("reg",
+			because: "the requested Ring action must execute the existing clio reg alias");
+		importIis.ClioCommand.Args.Should().Equal(["--add-from-iis"],
+			because: "the action must activate IIS environment discovery");
+		importIis.Parameters.Should().BeEmpty(
+			because: "local IIS discovery does not require a selected registered environment");
+		importIis.Risk.Should().Be(Risk.Confirm,
+			because: "matching registrations can be overwritten and the user must explicitly approve that catalog change");
+		importIis.ConfirmText.Should().Contain("local clio environment catalog",
+			because: "the confirmation must identify the actual target rather than the currently selected environment");
+		importIis.ConsequenceText.Should().Contain("matching IIS site names",
+			because: "the confirmation must disclose that same-name registrations can be replaced");
+		importIis.ConsequenceText.Should().Contain("credentials",
+			because: "the confirmation must disclose that stored credentials can be replaced");
+		importIis.ConsequenceText.Should().Contain("safety flags",
+			because: "the confirmation must disclose that stored safety settings can be replaced");
+		importIis.RefreshEnvironmentsOnSuccess.Should().BeTrue(
+			because: "newly imported registrations must appear without relying solely on the file watcher");
+	}
 }
