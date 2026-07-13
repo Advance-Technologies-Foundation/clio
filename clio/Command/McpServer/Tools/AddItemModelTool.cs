@@ -74,12 +74,17 @@ public sealed class AddItemModelTool(
 			try {
 				exitCode = command.Execute(options);
 				Thread.Sleep(500);
-				CommandExecutionResult result = new(exitCode, [.. logger.LogMessages.ToList()]);
+				// FR-11 (review): redact the self-captured snapshot on a passthrough request (no-op off
+				// passthrough), matching the main path's RunCommandUnderHeldLock redaction.
+				CommandExecutionResult result = new(exitCode,
+					[.. McpPassthroughRedaction.SanitizeAndRedact([.. logger.LogMessages], tenantKey)]);
 				logger.ClearMessages();
 				return AddItemModelToolOutputCompactor.Compact(result, fileSystem, outputFolderPath);
 			}
 			catch (Exception exception) {
-				List<LogMessage> logMessages = [.. logger.LogMessages, new ErrorMessage(SensitiveErrorTextRedactor.Redact(exception.Message))];
+				List<LogMessage> logMessages = [
+					.. McpPassthroughRedaction.SanitizeAndRedact([.. logger.LogMessages], tenantKey),
+					new ErrorMessage(SensitiveErrorTextRedactor.Redact(exception.Message))];
 				CommandExecutionResult result = new(1, logMessages);
 				logger.ClearMessages();
 				return AddItemModelToolOutputCompactor.Compact(result, fileSystem, outputFolderPath);

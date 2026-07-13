@@ -152,6 +152,14 @@ public sealed class TargetUrlValidator : ITargetUrlValidator
 				"Error: target url is blocked: cloud-metadata address (169.254.169.254)");
 		}
 
+		// Unspecified 0.0.0.0 / :: — IPAddress.IsLoopback returns false for both, but an outbound connect()
+		// to them is routed to the local host by the OS, so they defeat the always-on loopback guarantee.
+		// Runs post-normalize, so ::ffff:0.0.0.0 (mapped) and 0.0.0.0. (trailing dot) reach here too.
+		if (ip.Equals(IPAddress.Any) || ip.Equals(IPAddress.IPv6Any)) {
+			throw new TargetUrlNotAllowedException(
+				"Error: target url is blocked: unspecified address (0.0.0.0 / ::) is routed to the local host");
+		}
+
 		if (IsIpv4LinkLocal(ip)) {
 			throw new TargetUrlNotAllowedException(
 				"Error: target url is blocked: IPv4 link-local address (169.254.0.0/16)");
@@ -160,6 +168,13 @@ public sealed class TargetUrlValidator : ITargetUrlValidator
 		if (IsIpv6LinkLocal(ip)) {
 			throw new TargetUrlNotAllowedException(
 				"Error: target url is blocked: IPv6 link-local address (fe80::/10)");
+		}
+
+		// fc00::/7 — IPv6 unique-local. Contains the AWS IPv6 IMDS endpoint fd00:ec2::254, so without this
+		// the IPv6 instance-metadata surface is reachable even though the IPv4 IMDS address is blocked.
+		if (IsIpv6UniqueLocal(ip)) {
+			throw new TargetUrlNotAllowedException(
+				"Error: target url is blocked: IPv6 unique-local address (fc00::/7)");
 		}
 
 		if (IPAddress.IsLoopback(ip) && !_boundHostIsLoopback) {
@@ -185,6 +200,16 @@ public sealed class TargetUrlValidator : ITargetUrlValidator
 		// fe80::/10 — first 10 bits are 1111 1110 10.
 		byte[] bytes = ip.GetAddressBytes();
 		return bytes[0] == 0xFE && (bytes[1] & 0xC0) == 0x80;
+	}
+
+	private static bool IsIpv6UniqueLocal(IPAddress ip) {
+		if (ip.AddressFamily != AddressFamily.InterNetworkV6) {
+			return false;
+		}
+
+		// fc00::/7 — first 7 bits are 1111 110.
+		byte[] bytes = ip.GetAddressBytes();
+		return (bytes[0] & 0xFE) == 0xFC;
 	}
 
 	private static bool TryGetIpLiteral(Uri uri, out IPAddress ip) {

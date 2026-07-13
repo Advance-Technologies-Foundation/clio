@@ -359,8 +359,8 @@ public abstract class BaseTool<T>(
 		logger.PreserveMessages = true;
 		try {
 			int exitCode = command.Execute(options);
-			IReadOnlyList<LogMessage> flushedMessages = RedactForPassthrough(
-				SanitizeForSerialization(logger.FlushAndSnapshotMessages(clearMessages: true)), tenantKey);
+			IReadOnlyList<LogMessage> flushedMessages = McpPassthroughRedaction.SanitizeAndRedact(
+				logger.FlushAndSnapshotMessages(clearMessages: true), tenantKey);
 			CommandExecutionResult executionResult = new(
 				exitCode,
 				[.. flushedMessages],
@@ -369,13 +369,12 @@ public abstract class BaseTool<T>(
 			return (executionResult, flushedMessages, correlationId);
 		}
 		catch (Exception e) {
-			List<LogMessage> priorLogs = [.. SanitizeForSerialization(
-				logger.FlushAndSnapshotMessages(clearMessages: true))];
-			RedactForPassthrough(priorLogs, tenantKey);
+			List<LogMessage> priorLogs = [.. McpPassthroughRedaction.SanitizeAndRedact(
+				logger.FlushAndSnapshotMessages(clearMessages: true), tenantKey)];
 			// FR-11 (ENG-93208): scrub the exception chain ONLY on a passthrough request (same tenant-key
 			// signal RedactForPassthrough uses). The trusted stdio / -e path keeps full-fidelity -1 text.
 			CommandExecutionResult executionResult = CommandExecutionResult.FromException(
-				e, priorLogs, correlationId, redactSensitive: IsPassthroughKey(tenantKey));
+				e, priorLogs, correlationId, redactSensitive: McpPassthroughRedaction.IsPassthroughKey(tenantKey));
 			return (executionResult, priorLogs, correlationId);
 		}
 		finally {
@@ -383,46 +382,4 @@ public abstract class BaseTool<T>(
 		}
 	}
 
-	// The MCP SDK serializes the returned CommandExecutionResult with System.Text.Json, which walks
-	// LogMessage.Value (typed object). A TableMessage carries a raw ConsoleTable whose object graph
-	// reaches System.Text.Encoding.Preamble (a ReadOnlySpan<byte> ref struct) — System.Text.Json throws
-	// on that, and the SDK turns the throw into IsError=true (e.g. experimental list-features, ENG-92149).
-	// Project every non-string Value to its rendered string form (the same text the console writes via
-	// table.ToString()) before it enters the serialized envelope. This is general — any LogMessage with a
-	// non-serializable Value is made safe — and console rendering is untouched because the console reads
-	// from the live ConsoleLogger buffer, not this detached MCP snapshot.
-	private static IReadOnlyList<LogMessage> SanitizeForSerialization(IReadOnlyList<LogMessage> messages) {
-		foreach (LogMessage message in messages.Where(message => message.Value is not (null or string))) {
-			message.Value = message.Value.ToString();
-		}
-		return messages;
-	}
-
-	// FIX 2 (ENG-93208, FR-11): scrub each command log-message value before it crosses the MCP boundary,
-	// but ONLY on a credential-passthrough request. On the public multi-tenant passthrough edge the
-	// returned CommandExecutionResult AND the forwarded log notifications are copied into the model/host
-	// transcript (often a third-party LLM), and a command log line routinely carries the target URI/host
-	// (or a Bearer/cookie/password value on a failure). The trusted stdio / -e path is NOT redacted so it
-	// keeps full-fidelity logs (no diagnosability regression). The passthrough signal is the resolved
-	// tenant key: only a passthrough context produces a key with ToolCommandResolver.PassthroughKeyPrefix
-	// (env-sensitive path threads it from the resolve; the injected/direct path only ever holds the shared
-	// fallback or a registry/URI key). Mirrors SanitizeForSerialization's per-message in-place walk and
-	// runs AFTER it, so a table-derived value already stringified is scrubbed too. The local
-	// db-operation log FILE is intentionally left at full fidelity — redaction hits only this detached,
-	// MCP-crossing snapshot, never the console or file sink.
-	private static IReadOnlyList<LogMessage> RedactForPassthrough(IReadOnlyList<LogMessage> messages, string tenantKey) {
-		if (!IsPassthroughKey(tenantKey)) {
-			return messages;
-		}
-		foreach (LogMessage message in messages) {
-			if (message.Value is string text) {
-				message.Value = SensitiveErrorTextRedactor.Redact(text);
-			}
-		}
-		return messages;
-	}
-
-	private static bool IsPassthroughKey(string tenantKey) =>
-		tenantKey is not null
-		&& tenantKey.StartsWith(ToolCommandResolver.PassthroughKeyPrefix, StringComparison.OrdinalIgnoreCase);
 }

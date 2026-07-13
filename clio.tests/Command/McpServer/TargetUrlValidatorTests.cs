@@ -113,6 +113,70 @@ public sealed class TargetUrlValidatorTests
 	}
 
 	[Test]
+	[Description("Review: the unspecified IPv4 address 0.0.0.0 is always blocked — an outbound connect to it is OS-routed to the local host, defeating the loopback guarantee.")]
+	public void EnsureAllowed_ShouldReject_WhenTargetIsUnspecifiedIpv4() {
+		// Arrange
+		ITargetUrlValidator sut = CreateValidator();
+
+		// Act
+		Action act = () => sut.EnsureAllowed("http://0.0.0.0:8080/");
+
+		// Assert
+		act.Should().Throw<TargetUrlNotAllowedException>(
+				because: "0.0.0.0 routes to the local host, so it is a baseline block regardless of allowlist")
+			.Which.Message.Should().Contain("unspecified",
+				because: "the rejection names the blocked address class (AC-ERR)");
+	}
+
+	[Test]
+	[Description("Review: the unspecified IPv6 address :: is always blocked (OS-routed to the local host), like 0.0.0.0.")]
+	public void EnsureAllowed_ShouldReject_WhenTargetIsUnspecifiedIpv6() {
+		// Arrange
+		ITargetUrlValidator sut = CreateValidator();
+
+		// Act
+		Action act = () => sut.EnsureAllowed("http://[::]/");
+
+		// Assert
+		act.Should().Throw<TargetUrlNotAllowedException>(
+				because: ":: routes to the local host, so it is a baseline block regardless of allowlist")
+			.Which.Message.Should().Contain("unspecified",
+				because: "the rejection names the blocked address class (AC-ERR)");
+	}
+
+	[Test]
+	[Description("Review: an IPv4-mapped unspecified literal (::ffff:0.0.0.0) normalizes to 0.0.0.0 and is blocked, so the dual-stack encoding cannot bypass the unspecified block.")]
+	public void EnsureAllowed_ShouldReject_WhenTargetIsIpv4MappedUnspecified() {
+		// Arrange
+		ITargetUrlValidator sut = CreateValidator();
+
+		// Act
+		Action act = () => sut.EnsureAllowed("http://[::ffff:0.0.0.0]/");
+
+		// Assert
+		act.Should().Throw<TargetUrlNotAllowedException>(
+				because: "an IPv4-mapped unspecified literal must normalize to 0.0.0.0 and hit the unspecified block")
+			.Which.Message.Should().Contain("unspecified",
+				because: "the rejection names the blocked address class after normalization (AC-ERR)");
+	}
+
+	[Test]
+	[Description("Review: an IPv6 unique-local address (fc00::/7) is always blocked — it contains the AWS IPv6 IMDS endpoint fd00:ec2::254, so IPv6 instance-metadata must not be reachable.")]
+	public void EnsureAllowed_ShouldReject_WhenTargetIsIpv6UniqueLocalMetadata() {
+		// Arrange
+		ITargetUrlValidator sut = CreateValidator();
+
+		// Act
+		Action act = () => sut.EnsureAllowed("http://[fd00:ec2::254]/latest/meta-data/");
+
+		// Assert
+		act.Should().Throw<TargetUrlNotAllowedException>(
+				because: "fc00::/7 contains the AWS IPv6 metadata endpoint and is a baseline block regardless of allowlist")
+			.Which.Message.Should().Contain("unique-local",
+				because: "the rejection names the blocked address class (AC-ERR)");
+	}
+
+	[Test]
 	[Description("An IPv4-mapped IPv6 cloud-metadata literal is blocked so the dual-stack encoding cannot bypass baseline (AC-02).")]
 	public void EnsureAllowed_ShouldReject_WhenTargetIsIpv4MappedIpv6CloudMetadata() {
 		// Arrange

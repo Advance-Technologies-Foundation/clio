@@ -194,6 +194,10 @@ public sealed class CreateLookupTool : BaseTool<CreateEntitySchemaOptions> {
 				$"Lookup '{args.SchemaName}'");
 			int exitCode = -1;
 			return ExecuteUnderTenantLock(options, () => {
+				// FR-11 (review): this tool self-captures and builds its own result inside the lock, so it
+				// bypasses RunCommandUnderHeldLock's redaction — redact the snapshot here on a passthrough
+				// request (no-op off passthrough). Same key the tenant lock resolves under.
+				string tenantKey = ResolveTenantLockKey(options);
 				bool previousPreserveMessages = _logger.PreserveMessages;
 				_logger.PreserveMessages = true;
 				try {
@@ -207,13 +211,13 @@ public sealed class CreateLookupTool : BaseTool<CreateEntitySchemaOptions> {
 
 					CommandExecutionResult returnResult = new(
 						exitCode,
-						[.. _logger.FlushAndSnapshotMessages(clearMessages: true)],
+						[.. McpPassthroughRedaction.SanitizeAndRedact([.. _logger.FlushAndSnapshotMessages(clearMessages: true)], tenantKey)],
 						null,
 						dataForge);
 					return returnResult;
 				}
 				catch (Exception exception) {
-					List<LogMessage> logMessages = [.. _logger.FlushAndSnapshotMessages(clearMessages: true), new ErrorMessage(SensitiveErrorTextRedactor.Redact(exception.Message))];
+					List<LogMessage> logMessages = [.. McpPassthroughRedaction.SanitizeAndRedact([.. _logger.FlushAndSnapshotMessages(clearMessages: true)], tenantKey), new ErrorMessage(SensitiveErrorTextRedactor.Redact(exception.Message))];
 					CommandExecutionResult returnResult = new(
 						exitCode > 0 ? exitCode : 1,
 						logMessages,
