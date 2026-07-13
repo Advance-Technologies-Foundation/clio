@@ -135,6 +135,9 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		schema.Columns ??= [];
 		schema.Indexes ??= [];
 		schema.InheritedColumns ??= [];
+		if (options.IsVirtual) {
+			schema.IsVirtual = true;
+		}
 		NormalizeAdministrationMetadata(schema);
 
 		Dictionary<string, ManagerItemDto> referenceSchemas = parsedColumns.Any(c => c.IsLookup)

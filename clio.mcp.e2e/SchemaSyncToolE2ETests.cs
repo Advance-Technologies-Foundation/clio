@@ -228,6 +228,104 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("Creates a virtual entity through sync-schemas and verifies readback plus absence of a PostgreSQL table.")]
+	[AllureTag(ToolName)]
+	[AllureTag(ReadSchemaToolName)]
+	[AllureName("sync-schemas creates a virtual entity without a physical table")]
+	[AllureDescription("Runs a real sync-schemas create-entity operation with is-virtual=true, verifies the schema readback, and checks the disposable PostgreSQL catalog for table absence.")]
+	public async Task SchemaSync_CreateEntity_Should_Create_Virtual_Schema_Without_Physical_Table() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		TestConfiguration.RequirePostgreSqlSandbox(settings);
+		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: true);
+		SandboxEnvironmentContext sandbox = SandboxEnvironmentResolver.Resolve(settings);
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = context.EnvironmentName,
+					["package-name"] = context.PackageName,
+					["operations"] = new object?[] {
+						new Dictionary<string, object?> {
+							["type"] = "create-entity",
+							["schema-name"] = context.EntitySchemaName,
+							["title-localizations"] = BuildLocalizations("Virtual schema sync entity"),
+							["is-virtual"] = true
+						}
+					}
+				}
+			},
+			context.CancellationTokenSource.Token);
+		JsonElement response = ExtractSchemaSyncResponse(callResult);
+		EntitySchemaPropertiesInfo schemaProperties = await GetSchemaPropertiesAsync(
+			context.Session,
+			context.EnvironmentName!,
+			context.PackageName!,
+			context.EntitySchemaName!,
+			context.CancellationTokenSource.Token);
+		bool physicalTableExists = PostgresTableProbe.Exists(
+			sandbox.DatabaseConnectionString,
+			context.EntitySchemaName!);
+
+		// Assert
+		response.GetProperty("success").GetBoolean().Should().BeTrue(
+			because: $"sync-schemas should create the virtual schema successfully. Payload: {FormatPayload(response)}");
+		schemaProperties.Virtual.Should().BeTrue(
+			because: "get-entity-schema-properties must read back the virtual flag created through sync-schemas");
+		physicalTableExists.Should().BeFalse(
+			because: "sync-schemas must not cause Creatio to materialize a PostgreSQL table for a virtual entity");
+	}
+
+	[Test]
+	[Description("Rejects seed rows for virtual entity creation before environment resolution.")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-schemas rejects seed rows for virtual entities before mutation")]
+	[AllureDescription("Starts the real MCP server without a reachable environment and verifies that is-virtual plus seed-rows returns a structured validation failure before any schema is created.")]
+	public async Task SchemaSyncTool_Should_Reject_SeedRows_For_Virtual_Entity_Before_Environment_Resolution() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: false);
+		string invalidEnvironmentName = $"missing-sync-schemas-env-{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = invalidEnvironmentName,
+					["package-name"] = "UsrPkg",
+					["operations"] = new object?[] {
+						new Dictionary<string, object?> {
+							["type"] = "create-entity",
+							["schema-name"] = "UsrVirtualItem",
+							["title-localizations"] = BuildLocalizations("Virtual item"),
+							["is-virtual"] = true,
+							["seed-rows"] = new object?[] {
+								new Dictionary<string, object?> {
+									["values"] = new Dictionary<string, object?> { ["Name"] = "Unavailable" }
+								}
+							}
+						}
+					}
+				}
+			},
+			context.CancellationTokenSource.Token);
+		JsonElement response = ExtractSchemaSyncResponse(callResult);
+		JsonElement result = response.GetProperty("results").EnumerateArray().Single();
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "invalid field combinations should use the normal structured MCP result envelope");
+		response.GetProperty("success").GetBoolean().Should().BeFalse(
+			because: "virtual entities cannot accept table-backed seed data");
+		result.GetProperty("error").GetString().Should().Contain("cannot include seed-rows",
+			because: "the caller must receive actionable guidance before any remote mutation");
+		result.GetProperty("error").GetString().Should().NotContain(invalidEnvironmentName,
+			because: "local validation must happen before environment resolution");
+	}
+
+	[Test]
 	[Description("Rejects inherited BaseLookup columns in create-lookup operations before environment resolution.")]
 	[AllureTag(ToolName)]
 	[AllureName("sync-schemas rejects inherited BaseLookup columns before environment resolution")]

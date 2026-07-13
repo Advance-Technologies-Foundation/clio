@@ -53,9 +53,10 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 		containerBuilder.AddTransient(_ => _sysSettingsManager);
 	}
 
-	[Test]
-	[Description("Creates a root entity schema, auto-adds the prefixed primary column from SchemaNamePrefix when needed, and persists the requested text column metadata.")]
-	public void Create_CreatesSchemaWithoutParent_AndShapesSavePayload()
+	[TestCase(false)]
+	[TestCase(true)]
+	[Description("Creates persistent and virtual root entity schemas, auto-adds the primary column, and persists the requested virtual flag in the save payload.")]
+	public void Create_CreatesSchemaWithoutParent_AndShapesSavePayload(bool isVirtual)
 	{
 		string saveBody = null;
 		bool saveDbStructureCalled = false;
@@ -86,6 +87,7 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 			Package = "UsrPkg",
 			SchemaName = "UsrVehicle",
 			Title = "Vehicle",
+			IsVirtual = isVirtual,
 			Columns = ["Name:Text:Vehicle name"]
 		});
 
@@ -113,6 +115,8 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 		var json = JObject.Parse(saveBody);
 		json["name"]!.Value<string>().Should().Be("UsrVehicle");
 		json["caption"]![0]!["value"]!.Value<string>().Should().Be("Vehicle");
+		json["isVirtual"]!.Value<bool>().Should().Be(isVirtual,
+			because: "the schema designer DTO must distinguish persistent and virtual entities before SaveSchema");
 		Guid.Parse(json["package"]!["uId"]!.Value<string>()!).Should().Be(_packageUId);
 		json["primaryColumn"]!["name"]!.Value<string>().Should().Be("UsrId",
 			because: "the generated primary GUID column should use the configured SchemaNamePrefix");
@@ -257,6 +261,69 @@ internal class RemoteEntitySchemaCreatorTests : BaseClioModuleTests
 			because: "entity creation must still materialize DB structure when the prefix is empty");
 		runtimeVerifyCalled.Should().BeTrue(
 			because: "entity creation must still verify runtime availability when the prefix is empty");
+	}
+
+	[Test]
+	[Description("Preserves virtual state inherited by a replacement schema when the caller omits the virtual option.")]
+	public void Create_ReplacementOfVirtualParent_PreservesInheritedVirtualState()
+	{
+		string saveBody = null;
+		bool saveDbStructureCalled = false;
+		bool runtimeVerifyCalled = false;
+		SetupApplicationClient((url, body) => {
+			if (url.Contains("CreateNewSchema", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
+			}
+			if (url.Contains("CheckUniqueSchemaName", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"value\":true}";
+			}
+			if (url.Contains("GetAvailableParentSchemas", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"items\":[{\"uId\":\"33333333-3333-3333-3333-333333333333\",\"name\":\"Account\",\"caption\":\"Account\"}]}";
+			}
+			if (url.Contains("AssignParentSchema", StringComparison.Ordinal)) {
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"package\":{\"uId\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"UsrPkg\"},\"parentSchema\":{\"uId\":\"33333333-3333-3333-3333-333333333333\",\"name\":\"Account\"},\"isVirtual\":true,\"columns\":[],\"inheritedColumns\":[],\"indexes\":[]}}";
+			}
+			if (url.Contains("SaveSchema", StringComparison.Ordinal)) {
+				saveBody = body;
+				return "{\"success\":true,\"schemaUid\":\"22222222-2222-2222-2222-222222222222\"}";
+			}
+			if (url.Contains("SchemaDesignerRequest", StringComparison.Ordinal)) {
+				saveDbStructureCalled = true;
+				return "{\"success\":true}";
+			}
+			if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
+				runtimeVerifyCalled = true;
+				return "{\"success\":true,\"schema\":{\"uId\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"UsrAccount\"}}";
+			}
+			throw new InvalidOperationException($"Unexpected url {url}");
+		});
+
+		_creator.Create(new CreateEntitySchemaOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrAccount",
+			Title = "Account",
+			ParentSchemaName = "Account",
+			ExtendParent = true
+		});
+
+		_applicationClient.Received().ExecutePostRequest(
+			Arg.Is<string>(url => url.Contains("GetAvailableParentSchemas", StringComparison.Ordinal)),
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+		_applicationClient.Received().ExecutePostRequest(
+			Arg.Is<string>(url => url.Contains("AssignParentSchema", StringComparison.Ordinal)),
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+		JObject.Parse(saveBody)["isVirtual"]!.Value<bool>().Should().BeTrue(
+			because: "an omitted positive-only option must not erase virtual state inherited by a replacement schema");
+		saveDbStructureCalled.Should().BeTrue(
+			because: "the normal designer actualization lifecycle remains required for virtual replacement schemas");
+		runtimeVerifyCalled.Should().BeTrue(
+			because: "the replacement schema must still be verified through the runtime readback path");
 	}
 
 	[Test]

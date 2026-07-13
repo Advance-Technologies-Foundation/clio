@@ -91,6 +91,8 @@ public sealed class SchemaSyncToolTests {
 			because: "create-lookup must always inherit from BaseLookup");
 		fakeCreateCommand.CapturedOptions.Environment.Should().Be("dev",
 			because: "the environment should be forwarded from the batch args");
+		fakeCreateCommand.CapturedOptions.IsVirtual.Should().BeFalse(
+			because: "lookup schemas remain persistent even if the virtual property is absent");
 		registrationService.Received(1).EnsureLookupRegistration("UsrPkg", "UsrTodoStatus", "Todo Status");
 	}
 
@@ -147,7 +149,7 @@ public sealed class SchemaSyncToolTests {
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("create-entity", "UsrTodoList",
-				TitleLocalizations: Localizations("Todo List"), ParentSchemaName: "BaseEntity")]);
+				TitleLocalizations: Localizations("Todo List"), ParentSchemaName: "BaseEntity") { IsVirtual = true }]);
 
 		// Act
 		SchemaSyncResponse response = await tool.SchemaSync(args);
@@ -157,6 +159,8 @@ public sealed class SchemaSyncToolTests {
 			because: "a create-entity with exit code 0 should succeed");
 		fakeCreateCommand.CapturedOptions!.ParentSchemaName.Should().Be("BaseEntity",
 			because: "create-entity should use the specified parent schema");
+		fakeCreateCommand.CapturedOptions.IsVirtual.Should().BeTrue(
+			because: "create-entity should preserve the explicit virtual-schema request");
 	}
 
 	[Test]
@@ -669,6 +673,42 @@ public sealed class SchemaSyncToolTests {
 			because: "the caller must be told that each seed row requires a values wrapper");
 		fakeCreateCommand.CapturedOptions.Should().BeNull(
 			because: "sync-schemas should not attempt create-lookup after local seed-row validation fails");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects seed rows for virtual entity creation before executing any remote command.")]
+	public async Task SchemaSync_VirtualEntityWithSeedRows_Should_Fail_Before_Command_Resolution() {
+		// Arrange
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncArgs args = new(
+			"missing-env", "UsrPkg",
+			[
+				new SchemaSyncOperation("create-entity", "UsrVirtualItem",
+					TitleLocalizations: Localizations("Virtual item"),
+					SeedRows: [new SchemaSyncSeedRow(new Dictionary<string, System.Text.Json.JsonElement> {
+						["Name"] = ToJsonElement("Unavailable")
+					})]) {
+					IsVirtual = true
+				}
+			]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a virtual entity has no physical table that seed rows could populate");
+		response.Results.Should().ContainSingle(
+			because: "the invalid combined operation must stop before mutating the target environment");
+		response.Results[0].Error.Should().Contain("cannot include seed-rows",
+			because: "the caller needs an actionable explanation of the incompatible fields");
+		fakeCreateCommand.CapturedOptions.Should().BeNull(
+			because: "validation must reject the request before resolving or executing the create command");
 	}
 
 	[Test]
