@@ -217,4 +217,42 @@ public sealed class AuthConfigurationTests
 		sut.Audiences.Should().BeEmpty(because: "blank comma-set entries are dropped");
 		sut.RequiredScopes.Should().BeEmpty(because: "an empty scopes value yields no scopes");
 	}
+
+	// IsTruthy is the single parser behind three security downgrades (--auth-allow-insecure-metadata,
+	// --allow-insecure-public, --auth-allow-any-audience). These fail-closed cases prove that any value
+	// other than the two recognized truthy spellings is treated as false, so a parser drift cannot
+	// silently re-open the holes the REFUSE guards close.
+	[TestCase("yes")]
+	[TestCase("2")]
+	[TestCase("0")]
+	[TestCase("false")]
+	[TestCase("False")]
+	[TestCase("")]
+	[TestCase("  ")]
+	[TestCase(null)]
+	[Description("IsTruthy treats every unrecognized value (including null/blank) as false — fail-closed for the security-downgrade flags it gates.")]
+	public void IsTruthy_ShouldReturnFalse_WhenValueUnrecognized(string value) {
+		// Act
+		bool result = AuthConfiguration.IsTruthy(value);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "only \"true\" and \"1\" enable a security downgrade; any other value must fail closed");
+	}
+
+	[TestCase("true")]
+	[TestCase("TRUE")]
+	[TestCase("True")]
+	[TestCase(" true ")]
+	[TestCase("1")]
+	[TestCase(" 1 ")]
+	[Description("IsTruthy recognizes only \"true\"/\"1\" (case-insensitive, whitespace-tolerant) as truthy.")]
+	public void IsTruthy_ShouldReturnTrue_WhenTrueOrOneWithWhitespace(string value) {
+		// Act
+		bool result = AuthConfiguration.IsTruthy(value);
+
+		// Assert
+		result.Should().BeTrue(
+			because: "\"true\" and \"1\" are the two recognized truthy spellings, ignoring case and surrounding whitespace");
+	}
 }

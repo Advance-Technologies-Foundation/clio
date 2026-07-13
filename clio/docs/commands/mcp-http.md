@@ -25,6 +25,14 @@ The server runs until the process is terminated (Ctrl+C or SIGTERM).
 installs that ship only `Microsoft.NETCore.App` are not supported (see the Installation
 section of the main README).
 
+**Patched runtime (deployment / runtime security).** Because the OAuth edge exposes a public
+Kestrel endpoint, the operative security control is the **installed ASP.NET Core shared runtime**,
+not clio's NuGet pins — clio references ASP.NET Core through `Microsoft.AspNetCore.App`
+(`FrameworkReference`), so the Kestrel/JwtBearer assemblies loaded at runtime come from the machine's
+shared runtime. CVE-2025-55315 (request-smuggling / security-feature-bypass, CVSS 9.9) affects
+ASP.NET Core 8 runtimes `<= 8.0.20`. Deploy the OAuth-enabled edge on a **patched** runtime:
+**.NET 8 `>= 8.0.21`** (current servicing) or **.NET 10 `>= 10.0.9`**.
+
 ## Security
 
 The HTTP transport exposes the same tools as stdio mode — each acting with the operator's

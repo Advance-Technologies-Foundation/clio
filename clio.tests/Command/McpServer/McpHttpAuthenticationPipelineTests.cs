@@ -124,6 +124,22 @@ public sealed class McpHttpAuthenticationPipelineTests
 		return handler.WriteToken(token);
 	}
 
+	// Signs a token with an explicit credential while keeping iss/aud/exp valid, so a negative test can
+	// isolate exactly one broken property — the signature or the algorithm — from every other check.
+	private static string IssueTokenSignedWith(SigningCredentials credentials,
+		string audience = Audience, string issuer = Issuer) {
+		JwtSecurityTokenHandler handler = new();
+		DateTime expires = DateTime.UtcNow.AddMinutes(5);
+		JwtSecurityToken token = new(
+			issuer: issuer,
+			audience: audience,
+			claims: [],
+			notBefore: expires.AddMinutes(-6),
+			expires: expires,
+			signingCredentials: credentials);
+		return handler.WriteToken(token);
+	}
+
 	[Test]
 	[Description("An unauthenticated request is rejected with 401 and a WWW-Authenticate header naming the resource_metadata URI (RFC 9728).")]
 	public async Task UnauthenticatedRequest_ShouldReturn401WithResourceMetadataChallenge() {
@@ -206,6 +222,57 @@ public sealed class McpHttpAuthenticationPipelineTests
 
 		// Assert
 		response.StatusCode.Should().Be(HttpStatusCode.Unauthorized, because: "the token has expired");
+	}
+
+	[Test]
+	[Description("A token with valid iss/aud/exp but signed by a DIFFERENT RSA key is rejected with 401 (signature validation).")]
+	public async Task WrongSignatureToken_ShouldReturn401() {
+		// Arrange
+		await StartHostAsync(Config());
+		RsaSecurityKey foreignKey = new(System.Security.Cryptography.RSA.Create(2048));
+		string token = IssueTokenSignedWith(new SigningCredentials(foreignKey, SecurityAlgorithms.RsaSha256));
+		_client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+		// Act
+		HttpResponseMessage response = await _client.GetAsync("/mcp");
+
+		// Assert
+		response.StatusCode.Should().Be(HttpStatusCode.Unauthorized,
+			because: "the token is signed by a key the resource server does not trust, so signature validation must reject it");
+	}
+
+	[Test]
+	[Description("An alg-confusion token (alg=HS256 using the RSA public key material as the HMAC secret) is rejected with 401.")]
+	public async Task AlgConfusionHs256Token_ShouldReturn401() {
+		// Arrange
+		await StartHostAsync(Config());
+		byte[] publicModulus = _signingKey.Rsa.ExportParameters(false).Modulus;
+		SymmetricSecurityKey hmacKey = new(publicModulus);
+		string token = IssueTokenSignedWith(new SigningCredentials(hmacKey, SecurityAlgorithms.HmacSha256));
+		_client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+		// Act
+		HttpResponseMessage response = await _client.GetAsync("/mcp");
+
+		// Assert
+		response.StatusCode.Should().Be(HttpStatusCode.Unauthorized,
+			because: "only RS256/PS256 are accepted, so an HS256 token forged from the public key must be rejected (no algorithm confusion)");
+	}
+
+	[Test]
+	[Description("A token with a valid signature/audience but an untrusted issuer is rejected with 401 (issuer validation).")]
+	public async Task WrongIssuerToken_ShouldReturn401() {
+		// Arrange
+		await StartHostAsync(Config());
+		string token = IssueToken(issuer: "https://evil.example");
+		_client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+		// Act
+		HttpResponseMessage response = await _client.GetAsync("/mcp");
+
+		// Assert
+		response.StatusCode.Should().Be(HttpStatusCode.Unauthorized,
+			because: "the token's iss is not in the configured valid-issuer set, so issuer validation must reject it");
 	}
 
 	[Test]
