@@ -399,6 +399,8 @@ internal static class ToolContractCatalog {
 	private const string EntitySchemaNameDescription = "Entity schema name.";
 	private const string EntitySchemaNameFieldName = "entity-schema-name";
 	private const string EnvironmentNameFieldName = "environment-name";
+	private const string PassthroughEnvironmentNameSuffix =
+		" Required on stdio / registered-environment transports; omit under credential passthrough — the X-Integration-Credentials header supplies the target tenant.";
 	private const string ErrorFieldName = "error";
 	private const string ExampleAccountSchemaName = "Account";
 	private const string ExampleContactSchemaName = "Contact";
@@ -1189,7 +1191,7 @@ internal static class ToolContractCatalog {
 				["name", "code", TemplateCodeFieldName],
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription
-						+ " Required on stdio / registered-environment transports; omit under credential passthrough — the X-Integration-Credentials header supplies the target tenant."),
+						+ PassthroughEnvironmentNameSuffix),
 					Field("name", StringType, "Application display name."),
 					Field("code", StringType, "Application code (business-meaningful part; SchemaNamePrefix is auto-applied by clio)."),
 					Field(TemplateCodeFieldName, StringType, "Technical template code such as AppFreedomUI."),
@@ -1286,7 +1288,7 @@ internal static class ToolContractCatalog {
 				[ApplicationCodeFieldName, CaptionFieldName],
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription
-						+ " Required on stdio / registered-environment transports; omit under credential passthrough — the X-Integration-Credentials header supplies the target tenant."),
+						+ PassthroughEnvironmentNameSuffix),
 					Field(ApplicationCodeFieldName, StringType, InstalledApplicationCodeDescription),
 					Field(CaptionFieldName, StringType, "Section caption."),
 					Field(DescriptionFieldName, StringType, "Optional section description."),
@@ -1382,7 +1384,7 @@ internal static class ToolContractCatalog {
 				[ApplicationCodeFieldName, SectionCodeFieldName],
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription
-						+ " Required on stdio / registered-environment transports; omit under credential passthrough — the X-Integration-Credentials header supplies the target tenant."),
+						+ PassthroughEnvironmentNameSuffix),
 					Field(ApplicationCodeFieldName, StringType, InstalledApplicationCodeDescription),
 					Field(SectionCodeFieldName, StringType, "Existing section code inside the installed application."),
 					Field(CaptionFieldName, StringType, "Optional updated section caption."),
@@ -1473,7 +1475,7 @@ internal static class ToolContractCatalog {
 				[ApplicationCodeFieldName, SectionCodeFieldName],
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription
-						+ " Required on stdio / registered-environment transports; omit under credential passthrough — the X-Integration-Credentials header supplies the target tenant."),
+						+ PassthroughEnvironmentNameSuffix),
 					Field(ApplicationCodeFieldName, StringType, InstalledApplicationCodeDescription),
 					Field(SectionCodeFieldName, StringType, "Existing section code inside the installed application."),
 					Field(DeleteEntitySchemaFieldName, BooleanType,
@@ -1534,7 +1536,7 @@ internal static class ToolContractCatalog {
 				[ApplicationCodeFieldName],
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription
-						+ " Required on stdio / registered-environment transports; omit under credential passthrough — the X-Integration-Credentials header supplies the target tenant."),
+						+ PassthroughEnvironmentNameSuffix),
 					Field(ApplicationCodeFieldName, StringType, InstalledApplicationCodeDescription)
 				]),
 			EnvelopeOutput(
@@ -2061,7 +2063,7 @@ internal static class ToolContractCatalog {
 				[],
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription
-						+ " Required on stdio / registered-environment transports; omit under credential passthrough — the X-Integration-Credentials header supplies the target tenant."),
+						+ PassthroughEnvironmentNameSuffix),
 					Field(SelectorIdFieldName, StringType, "Application GUID."),
 					Field(SelectorCodeFieldName, StringType, "Application code.")
 				],
@@ -2116,7 +2118,7 @@ internal static class ToolContractCatalog {
 				[],
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription
-						+ " Required on stdio / registered-environment transports; omit under credential passthrough — the X-Integration-Credentials header supplies the target tenant.")
+						+ PassthroughEnvironmentNameSuffix)
 				]),
 			EnvelopeOutput(
 				SuccessFieldName,

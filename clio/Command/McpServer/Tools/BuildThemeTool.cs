@@ -115,41 +115,7 @@ public sealed class BuildThemeTool(
 			Version = args.Version,
 			EnvironmentName = args.EnvironmentName
 		};
-		// Pattern B (ADR verification #5, ENG-93347): BuildThemeOptions is not EnvironmentOptions-derived, so
-		// this tool cannot route the version probe through BaseTool's InternalExecute<TCommand> environment
-		// resolution. Instead, when --version is blank, the TOOL resolves EnvironmentSettings itself (the same
-		// commandResolver every other matrix tool probes with) and passes the result into the command, which
-		// resolves the version against it directly — reaching the header tenant under credential passthrough
-		// instead of a header-blind name lookup. An explicit --version always wins and skips this attempt
-		// entirely (AC-07).
-		//
-		// A caller-actionable resolution failure (unresolvable/typo environment, broken bootstrap, or the
-		// mixed-input HasExplicitCredentialArgs rejection under passthrough) surfaces from the resolver as an
-		// EnvironmentResolutionException; it is caught and fails soft to LatestFallback (AC-02/AC-03) — the same
-		// documented fallback the CLI's offline path produces. The catch is DELIBERATELY narrowed to
-		// EnvironmentResolutionException (not a bare catch (Exception), which would violate the no-bare-catch
-		// rule / S2221): an unexpected fault (NullReferenceException, a DI/wiring bug) must NOT be masked as a
-		// silent newest-version build — it propagates to a real error response, as the resolver's own
-		// expected-vs-unexpected contract (exit 1 vs -1) intends. And the fallback is no longer SILENT: when the
-		// caller explicitly named an environment we could not resolve, we emit a non-fatal warning so the drop
-		// to the newest template is visible instead of a silent success that diverges from the CLI's hard error.
-		EnvironmentSettings resolvedSettings = null;
-		string environmentFallbackWarning = null;
-		if (string.IsNullOrWhiteSpace(args.Version) && commandResolver is not null) {
-			try {
-				resolvedSettings = commandResolver.Resolve<EnvironmentSettings>(
-					new EnvironmentOptions { Environment = args.EnvironmentName });
-			}
-			catch (EnvironmentResolutionException) {
-				resolvedSettings = null;
-				if (!string.IsNullOrWhiteSpace(args.EnvironmentName)) {
-					environmentFallbackWarning =
-						$"build-theme: could not resolve environment '{args.EnvironmentName}' — built against the "
-						+ "newest supported version instead. Pass version to target a specific template, or omit "
-						+ "environment-name to use the credential-passthrough tenant's version.";
-				}
-			}
-		}
+		EnvironmentSettings resolvedSettings = ResolveVersionSettings(args, out string environmentFallbackWarning);
 		return ExecuteWithCleanLog(() => {
 			if (writeToPackage) {
 				if (!command.TryBuildTheme(options, resolvedSettings, args.WorkspaceDirectory, args.PackageName, out string writtenPath, out IReadOnlyList<string> writeWarnings, out string writeError)) {
@@ -162,6 +128,43 @@ public sealed class BuildThemeTool(
 			}
 			return BuildThemeResult.Successful(css, descriptor, PrependWarning(environmentFallbackWarning, warnings));
 		});
+	}
+
+	// Pattern B (ADR verification #5, ENG-93347): BuildThemeOptions is not EnvironmentOptions-derived, so this
+	// tool cannot route the version probe through BaseTool's InternalExecute<TCommand> environment resolution.
+	// Instead, when --version is blank, the TOOL resolves EnvironmentSettings itself (the same commandResolver
+	// every other matrix tool probes with) and passes the result into the command, which resolves the version
+	// against it directly — reaching the header tenant under credential passthrough instead of a header-blind
+	// name lookup. An explicit --version always wins and skips this attempt entirely (AC-07).
+	//
+	// A caller-actionable resolution failure (unresolvable/typo environment, broken bootstrap, or the
+	// mixed-input HasExplicitCredentialArgs rejection under passthrough) surfaces from the resolver as an
+	// EnvironmentResolutionException; it is caught and fails soft to LatestFallback (AC-02/AC-03) — the same
+	// documented fallback the CLI's offline path produces. The catch is DELIBERATELY narrowed to
+	// EnvironmentResolutionException (not a bare catch (Exception), which would violate the no-bare-catch rule
+	// / S2221): an unexpected fault (NullReferenceException, a DI/wiring bug) must NOT be masked as a silent
+	// newest-version build — it propagates to a real error response, as the resolver's own expected-vs-unexpected
+	// contract (exit 1 vs -1) intends. And the fallback is no longer SILENT: when the caller explicitly named an
+	// environment we could not resolve, fallbackWarning names the drop to the newest template so it is visible
+	// instead of a silent success that diverges from the CLI's hard error.
+	private EnvironmentSettings ResolveVersionSettings(BuildThemeArgs args, out string fallbackWarning) {
+		fallbackWarning = null;
+		if (!string.IsNullOrWhiteSpace(args.Version) || commandResolver is null) {
+			return null;
+		}
+		try {
+			return commandResolver.Resolve<EnvironmentSettings>(
+				new EnvironmentOptions { Environment = args.EnvironmentName });
+		}
+		catch (EnvironmentResolutionException) {
+			if (!string.IsNullOrWhiteSpace(args.EnvironmentName)) {
+				fallbackWarning =
+					$"build-theme: could not resolve environment '{args.EnvironmentName}' — built against the "
+					+ "newest supported version instead. Pass version to target a specific template, or omit "
+					+ "environment-name to use the credential-passthrough tenant's version.";
+			}
+			return null;
+		}
 	}
 
 	// Prepends the optional environment-fallback advisory (when the caller named an environment that could not

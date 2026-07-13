@@ -206,7 +206,10 @@ public sealed class PassthroughToolClassificationGuardTests {
 	[Description("Sentinel used by MappingPresence_ShouldFail_WhenOnlyAnUnrelatedTestCoversTheFixture to prove a " +
 		"real, existing, [Test]-attributed method for the WRONG tuple does not satisfy the guard.")]
 	public void SentinelUnrelatedTest() {
-		// Intentionally empty — only its existence and [Test] attribute matter to the fixture above.
+		// Only this method's existence and [Test] attribute matter to the fixture above; the trivial
+		// assertion is here solely so it is not an assertion-free test (S2699) — it is never executed for
+		// its behavior, only reflected over.
+		Assert.Pass("Sentinel: reflected over by MappingPresence_ShouldFail_WhenOnlyAnUnrelatedTestCoversTheFixture; not a behavioral test.");
 	}
 
 	/// <summary>
