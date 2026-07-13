@@ -1775,3 +1775,68 @@ stories:
     adr: spec/clio-ring-companion-integration/adr/adr-clio-ring-companion-integration.md
     depends_on: []
     blocks: []
+
+  # ENG-93348 — explicit runtime routing for MCP HTTP credential passthrough
+  - id: story-mcp-http-passthrough-runtime-routing-1
+    title: "Header contract and fail-closed runtime propagation"
+    feature: "mcp-http-passthrough-runtime-routing"
+    repo: "clio"
+    size: M
+    status: ready-for-dev
+    jira: ENG-93348
+    file: spec/stories/story-mcp-http-passthrough-runtime-routing-1.md
+    prd: spec/prd/prd-mcp-http-passthrough-runtime-routing.md
+    adr: spec/adr/adr-mcp-http-passthrough-runtime-routing.md
+    test_plan: spec/test-plans/tp-mcp-http-passthrough-runtime-routing.md
+    fr: [FR-01, FR-02, FR-04, FR-06, FR-07]
+    ac: [AC-03, AC-04, AC-05, AC-07, AC-08]
+    depends_on: []
+    blocks: [story-mcp-http-passthrough-runtime-routing-2]
+
+  - id: story-mcp-http-passthrough-runtime-routing-2
+    title: "Runtime-bound settings and canonical lifecycle identity"
+    feature: "mcp-http-passthrough-runtime-routing"
+    repo: "clio"
+    size: M
+    status: ready-for-dev
+    jira: ENG-93348
+    file: spec/stories/story-mcp-http-passthrough-runtime-routing-2.md
+    prd: spec/prd/prd-mcp-http-passthrough-runtime-routing.md
+    adr: spec/adr/adr-mcp-http-passthrough-runtime-routing.md
+    test_plan: spec/test-plans/tp-mcp-http-passthrough-runtime-routing.md
+    fr: [FR-03, FR-05, FR-06, FR-07]
+    ac: [AC-01, AC-02, AC-04, AC-06, AC-07, AC-08, AC-09]
+    depends_on: [story-mcp-http-passthrough-runtime-routing-1]
+    blocks: [story-mcp-http-passthrough-runtime-routing-3]
+
+  - id: story-mcp-http-passthrough-runtime-routing-3
+    title: "Dual-runtime HTTP and live MCP E2E proof"
+    feature: "mcp-http-passthrough-runtime-routing"
+    repo: "clio"
+    size: L
+    status: ready-for-dev
+    jira: ENG-93348
+    file: spec/stories/story-mcp-http-passthrough-runtime-routing-3.md
+    prd: spec/prd/prd-mcp-http-passthrough-runtime-routing.md
+    adr: spec/adr/adr-mcp-http-passthrough-runtime-routing.md
+    test_plan: spec/test-plans/tp-mcp-http-passthrough-runtime-routing.md
+    fr: [FR-01, FR-04, FR-09, FR-10]
+    ac: [AC-01, AC-02, AC-03, AC-05, AC-07, AC-08, AC-11]
+    depends_on: [story-mcp-http-passthrough-runtime-routing-2]
+    blocks: [story-mcp-http-passthrough-runtime-routing-4]
+
+  - id: story-mcp-http-passthrough-runtime-routing-4
+    title: "Documentation, compatibility, and no-regression closure"
+    feature: "mcp-http-passthrough-runtime-routing"
+    repo: "clio"
+    size: M
+    status: ready-for-dev
+    jira: ENG-93348
+    file: spec/stories/story-mcp-http-passthrough-runtime-routing-4.md
+    prd: spec/prd/prd-mcp-http-passthrough-runtime-routing.md
+    adr: spec/adr/adr-mcp-http-passthrough-runtime-routing.md
+    test_plan: spec/test-plans/tp-mcp-http-passthrough-runtime-routing.md
+    fr: [FR-07, FR-08, FR-09, FR-10, FR-11]
+    ac: [AC-08, AC-09, AC-10, AC-12]
+    depends_on: [story-mcp-http-passthrough-runtime-routing-3]
+    blocks: []

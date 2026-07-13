@@ -5963,3 +5963,31 @@ Decision: Removed ZIP-filename site-name inference, retained explicit and config
 Discovery: The existing Explorer registry verb and interactive installer prompt already provide the desired flow; only the defaults resolver prevented the prompt. The MCP tool and ClioRing always provide a site name, so their contracts remain unchanged.
 Files: clio/Command/CreatioInstallCommand/DeployCreatioDefaultsResolver.cs, clio/Command/CreatioInstallCommand/InstallerCommand.cs, clio.tests/Command/DeployCreatioDefaultsResolverTests.cs, clio.tests/Command/InstallerCommandSilentSiteNameTests.cs, clio/docs/commands/deploy-creatio.md, clio/help/en/deploy-creatio.txt
 Impact: Explorer deployments now request a safe explicit site name, while automation receives a clear configuration error and existing explicit/configured precedence remains compatible.
+
+## 2026-07-14 02:25 – ENG-93348 BMAD Phase 1 runtime-routing PRD
+Context: Credential passthrough from PR #830 always inherited `IsNetCore=false`, so AI Platform requests could not address .NET Core/NET8 Creatio routes.
+Decision: Defined required JSON boolean `isNetCore` on the passthrough header and fail-closed HTTP 400 behavior when missing/invalid; required the runtime to participate in the canonical container/lock identity. Auto-detection is out of scope.
+Discovery: `CredentialHeaderParser`, `CredentialContext`, `BuildEphemeralSettings`, and `BuildPassthroughCacheKey` all omit runtime today. The existing registration detector is not bearer-aware and is unnecessary when the unreleased gateway contract can supply the authoritative value.
+Files: spec/prd/prd-mcp-http-passthrough-runtime-routing.md, clio/Command/McpServer/CredentialHeaderParser.cs, clio/Command/McpServer/CredentialContext.cs, clio/Command/McpServer/Tools/ToolCommandResolver.cs
+Impact: Phase 1 is ready for facilitator approval before ADR design; no production code changed.
+
+## 2026-07-14 03:05 – ENG-93348 BMAD Phase 2 runtime-routing ADR
+Context: Phase 1 approved a required `isNetCore` boolean for credential passthrough, with HTTP 400 on missing/invalid values and no detection/default.
+Decision: Preserve the raw JSON token until validation, carry a compile-required boolean through parse/context records, set ephemeral `EnvironmentSettings.IsNetCore`, and add runtime to the one canonical passthrough key already shared by cache, lock, and in-flight guards.
+Discovery: `ServiceUrlBuilder` and all environment-bound client constructors already honor `IsNetCore`; `SessionContainerCache`, `TenantExecutionLockProvider`, and `McpToolExecutionLock` need no API or production changes. ClioRing consumes stdio `mcp-server`, not the HTTP credential header.
+Files: spec/adr/adr-mcp-http-passthrough-runtime-routing.md, spec/prd/prd-mcp-http-passthrough-runtime-routing.md, clio/Command/McpServer/CredentialHeaderParser.cs, clio/Command/McpServer/CredentialContext.cs, clio/Command/McpServer/McpHttpServerCommand.cs, clio/Command/McpServer/Tools/ToolCommandResolver.cs
+Impact: Phase 2 is ready for facilitator approval before story decomposition; no production code changed.
+
+## 2026-07-14 03:35 – ENG-93348 BMAD Phase 3 implementation stories
+Context: The approved runtime-routing PRD and ADR needed buildable, test-carrying work items before QA planning.
+Decision: Split implementation into four serialized stories: fail-closed header propagation, runtime-bound settings/canonical identity, dual-runtime process/live E2E proof, and documentation/compatibility closure. Each story owns relevant validation; there is no production-only slice.
+Discovery: The live .NET Core bearer stand remains an operational prerequisite, while ClioRing, MCP tool arguments, cache APIs, and ServiceUrlBuilder require review but no expected contract redesign.
+Files: spec/stories/story-mcp-http-passthrough-runtime-routing-{1,2,3,4}.md, spec/sprint-status.yaml, spec/prd/prd-mcp-http-passthrough-runtime-routing.md, spec/adr/adr-mcp-http-passthrough-runtime-routing.md
+Impact: Phase 3 is tracked as ready-for-dev in dependency order `1 → 2 → 3 → 4`; QA can now build a test plan with direct FR/AC ownership.
+
+## 2026-07-14 04:05 – ENG-93348 BMAD Phase 4 QA test plan
+Context: Runtime-routing stories required an executable quality gate spanning parser validation, canonical identity, real HTTP routing, and two live Creatio runtime families.
+Decision: Defined unit, real-process, and manual MCP E2E layers with full FR/AC traceability. A sanitized route capture proves root versus exactly one `/0/`, while distinct live Core bearer and Framework runs remain non-waivable exit criteria.
+Discovery: Existing MCP HTTP E2E is manual/not in CI and its encoders/stand configuration omit runtime today; strict per-tenant runtime variables and compile-required encoder booleans close that gap. A successful tool response alone is not route-layout evidence.
+Files: spec/test-plans/tp-mcp-http-passthrough-runtime-routing.md, spec/sprint-status.yaml, clio.mcp.e2e/Support/Mcp/McpHttpServerSession.cs, clio.mcp.e2e/Support/Mcp/McpHttpPassthroughStand.cs
+Impact: The BMAD planning chain now has PRD, ADR, four ready-for-dev stories, and a test plan; implementation cannot be declared complete without real dual-runtime proof.
