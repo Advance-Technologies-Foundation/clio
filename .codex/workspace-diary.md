@@ -5815,3 +5815,24 @@ Context: code review raised two items beyond the AC — (1) `value-file-path` re
 Decision: (F1) Add a 10 MB sanity cap + audit log in SysSettingsCommand.EncodeFileToBase64 (checked via IFileSystem.GetFileSize before read); NO path-locking and NO config — clio is a personal local tool and its other file-path tools (`body-file`) are unrestricted, so a hard root would be inconsistent and break "logo lives anywhere". (F2 = Option B) list-sys-settings now INCLUDES Binary with value shown as `<binary>`; added `includeBinary` flag (default false) to GetAllSysSettingsWithValues so the manifest/download path stays Binary-free and its tests are untouched. Minor: CLI now reports a clear "file not found" for a path-like Binary value with no file (Base64 never contains '.', '\\' or ':'); added CLI unit tests.
 Files: clio/Command/SysSettingsCommand.cs, clio/Common/ISysSettingsManager.cs, plus wording realign in SysSettingsTool.cs / ToolContractGetTool.cs / SysSettingPrompt.cs / SysSettingsGuidanceResource.cs; tests in SysSettingsToolTests.cs, SysSettingsManagerNewBehaviorTests.cs.
 Impact: net8 unit tests (Module=McpServer|Module=Common) 2598 passed / 0 failed / 3 skipped.
+
+## 2026-07-13 12:56 – Ring build discovery empty-state diagnosis
+Context: Ring deploy UI connected successfully but showed no Creatio builds.
+Decision: Traced the UI empty state through `list-creatio-builds` to the shared clio settings rather than the Ring installation directory.
+Discovery: `%LOCALAPPDATA%\Creatio\clio\appsettings.json` configured `F:\CreatioProductBuild`, which does not exist; the live repository is `F:\CreatioBuilds` and contains 42 recursively discoverable ZIP files.
+Files: clio-ring/ClioRing/ViewModels/InstallFormViewModel.cs, clio/Command/McpServer/Tools/ListCreatioBuildsTool.cs, clio/Environment/ConfigurationOptions.cs
+Impact: Future Ring empty build-list reports should first validate the shared `creatio-products` path and distinguish missing-folder discovery from UI binding failures.
+
+## 2026-07-13 13:14 – Ring deploy password-reset warning hidden inside restore stage
+Context: A Ring deployment completed successfully but Creatio still required the Supervisor password change.
+Decision: Traced the deployed run receipt to its per-operation database log and compared the Ring/MCP plan with the installer helper.
+Discovery: Ring has no password-reset input or stage; MCP hard-codes `DisableResetPassword = true`, and the helper runs inside `restore-db`. Run `10ab095c-431c-41b4-add1-82c3b93a0c0f` failed to update `SysAdminUnit` with PostgreSQL error 42501 (permission denied), but the helper intentionally logged a warning and continued, so restore and the overall deployment were reported successful.
+Files: clio/Command/McpServer/Tools/InstallerCommandTool.cs, clio/Command/CreatioInstallCommand/CreatioInstallerService.cs, C:/Tools/clio-ring/Logs/deploy-10ab095c-431c-41b4-add1-82c3b93a0c0f.ndjson
+Impact: Password-reset-disable failures need explicit Ring visibility and ownership/permission remediation; current pipeline success does not prove the forced-change flag was cleared.
+
+## 2026-07-13 13:52 – Preserve password-change state for Ring and Explorer deploys
+Context: Issue #861 requested `DisableResetPassword = false` for ClioRing and Windows Explorer ZIP deployments after a Ring run silently failed to clear `SysAdminUnit.ForceChangePassword`.
+Decision: Made false the deploy-creatio CLI default and the explicit MCP/Ring adapter value; Explorer's existing `--ZipFile` command inherits the CLI default. Updated MCP tool, prompt, lazy contract, deploy guidance, CLI help, and detailed docs to state that clio preserves the restored database value rather than promising to enable it.
+Discovery: `DisableResetPassword = false` skips the SQL that writes false; it does not write true. The pre-PR quality/security/correctness review caught this distinction and also found the legacy compatibility fixture's `UnitTests` category excluded it from the mandatory `Category=Unit` gate, so the fixture now uses `Unit`.
+Files: clio/Command/CreatioInstallCommand/InstallerCommand.cs, clio/Command/McpServer/Tools/InstallerCommandTool.cs, clio/Command/McpServer/Tools/ToolContractGetTool.cs, clio/Command/McpServer/Prompts/DeployCreatioPrompt.cs, clio/Command/McpServer/Resources/DeployLifecycleGuidanceResource.cs, clio.tests/Command/CliOptionNamingBackwardCompatibilityTests.cs, clio.tests/Command/McpServer/InstallerCommandToolTests.cs, clio.mcp.e2e/DeployCreatioToolE2ETests.cs, clio/docs/commands/deploy-creatio.md, clio/help/en/deploy-creatio.txt
+Impact: Ring and Explorer no longer clear the restored build's password-change state by default; Command/MCP suites pass 4196/4211 with 15 skips on net8 and net10, MCP E2E passes 2/2 per framework, Ring passes 95/95, and Windows x64 NativeAOT publish succeeds.
