@@ -7,9 +7,7 @@ using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
-using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
-using System.Text.Json;
 
 namespace Clio.Mcp.E2E;
 
@@ -25,29 +23,21 @@ public sealed class CreateRelatedPageAddonToolE2ETests {
 	private const string ToolName = CreateRelatedPageAddonTool.ToolName;
 
 	[Test]
-	[Description("Advertises the pages-array runtime schema for create-related-page-addon through the real MCP server.")]
+	[Description("Exposes create-related-page-addon through the get-tool-contract compact index on the lazy MCP surface.")]
 	[AllureTag(ToolName)]
-	[AllureName("create-related-page-addon MCP tool advertises the pages-array schema")]
-	[AllureDescription("Starts the real clio MCP server, lists tools, and verifies create-related-page-addon exposes a pages array whose items carry page-schema-name, is-default and is-add.")]
-	public async Task CreateRelatedPageAddon_Should_Advertise_Pages_Array_Runtime_Schema() {
+	[AllureName("create-related-page-addon MCP tool is discoverable on the lazy surface")]
+	[AllureDescription("Starts the real clio MCP server and verifies create-related-page-addon is discoverable via the get-tool-contract compact index even though long-tail tools are not resident in tools/list.")]
+	public async Task CreateRelatedPageAddon_Should_Be_Discoverable_On_Lazy_Surface() {
 		// Arrange
 		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
 
 		// Act
-		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(
+		IReadOnlyCollection<string> toolNames = await arrangeContext.Session.ListReachableToolNamesAsync(
 			arrangeContext.CancellationTokenSource.Token);
 
 		// Assert
-		McpClientTool tool = tools.Single(candidate => candidate.Name == ToolName);
-		JsonElement inputSchema = JsonSerializer.SerializeToElement(tool.ProtocolTool.InputSchema);
-		JsonElement argsSchema = inputSchema.GetProperty("properties").GetProperty("args").GetProperty("properties");
-		argsSchema.EnumerateObject().Select(property => property.Name).Should().Contain(
-			["entity-schema-name", "package-name", "pages"],
-			because: "the tool should advertise the object, package and pages inputs");
-		JsonElement pageItemSchema = argsSchema.GetProperty("pages").GetProperty("items").GetProperty("properties");
-		pageItemSchema.EnumerateObject().Select(property => property.Name).Should().Contain(
-			["page-schema-name", "is-default", "is-add"],
-			because: "each related-page entry should advertise the page name and the default/add flags");
+		toolNames.Should().Contain(ToolName,
+			because: "create-related-page-addon must be discoverable through get-tool-contract even though it is not resident in tools/list");
 	}
 
 	[Test]

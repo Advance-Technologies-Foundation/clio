@@ -5837,3 +5837,10 @@ Decision: Added positive-only `is-virtual` mapping before the first schema save,
 Discovery: Creatio's normal DB-structure lifecycle excludes virtual schemas itself; live Creatio 10.0.0.802 PostgreSQL validation confirmed the schema is runtime-readable while no table is created.
 Files: clio/Command/EntitySchemaDesigner/RemoteEntitySchemaCreator.cs, clio/Command/McpServer/Tools/EntitySchemaTool.cs, clio/Command/McpServer/Tools/SchemaSyncTool.cs, clio/Command/ApplicationInfoService.cs, clio.mcp.e2e/EntitySchemaToolE2ETests.cs, clio.mcp.e2e/ApplicationToolE2ETests.cs
 Impact: CLI and MCP callers can create and verify virtual entities safely, with persistent creation remaining the default and PostgreSQL catalog behavior covered explicitly.
+
+## 2026-07-13 20:36 – Align related-page add-on E2E with lazy MCP discovery
+Context: PR #869's TeamCity MCP E2E build failed because create-related-page-addon was expected in the resident tools/list surface.
+Decision: Replaced the stale runtime-schema assertion with discovery through the established lazy-surface union, while retaining the fixture's existing nested pages payload-binding coverage.
+Discovery: Long-tail tools are intentionally absent from tools/list and remain discoverable through the get-tool-contract compact index.
+Files: clio.mcp.e2e/CreateRelatedPageAddonToolE2ETests.cs
+Impact: The full related-page add-on fixture passes all six scenarios on both net8.0 and net10.0 and now tests the supported MCP discovery contract.
