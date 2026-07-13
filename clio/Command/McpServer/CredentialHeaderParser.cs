@@ -13,7 +13,15 @@ namespace Clio.Command.McpServer;
 /// </summary>
 /// <param name="Url">The target Creatio environment URL (always present on success).</param>
 /// <param name="Auth">The precedence-resolved authentication material.</param>
-public sealed record CredentialParseResult(string Url, CredentialMaterial Auth);
+public sealed record CredentialParseResult(string Url, CredentialMaterial Auth)
+{
+	/// <summary>
+	/// FR-11 (review): override the compiler-generated <c>ToString()</c> so <see cref="Auth"/> renders via
+	/// the redacted <see cref="CredentialMaterial.ToString"/> and no secret material is printed.
+	/// </summary>
+	/// <returns>A redacted string (url and credential kind only).</returns>
+	public override string ToString() => $"{nameof(CredentialParseResult)} {{ Url = {Url}, Auth = {Auth} }}";
+}
 
 /// <summary>
 /// Parses the base64-encoded JSON <c>X-Integration-Credentials</c> header into a
@@ -95,8 +103,12 @@ public sealed class CredentialHeaderParser : ICredentialHeaderParser
 		return true;
 	}
 
-	// Precedence order: accessToken first, then cookie, then login with password. Present
-	// means non-whitespace, and login with password is only usable when both are non-whitespace.
+	// Precedence order: accessToken first, then login with password, then cookie. Present means
+	// non-whitespace, and login with password is only usable when both are non-whitespace. Cookie ranks
+	// LAST (review): it is unsupported in v1 (rejected downstream), so a payload that also carries a usable
+	// login+password must resolve to the supported material rather than being shadowed by the cookie into a
+	// rejection. A cookie-only payload still resolves to Cookie so the caller gets the specific
+	// "cookie not supported in v1" message instead of a generic "no usable auth material".
 	private static bool TryResolveAuth(CredentialPayload payload, out CredentialMaterial auth) {
 		if (!string.IsNullOrWhiteSpace(payload.AccessToken)) {
 			auth = CredentialMaterial.FromAccessToken(
@@ -104,13 +116,13 @@ public sealed class CredentialHeaderParser : ICredentialHeaderParser
 			return true;
 		}
 
-		if (!string.IsNullOrWhiteSpace(payload.Cookie)) {
-			auth = CredentialMaterial.FromCookie(payload.Cookie);
+		if (!string.IsNullOrWhiteSpace(payload.Login) && !string.IsNullOrWhiteSpace(payload.Password)) {
+			auth = CredentialMaterial.FromLoginPassword(payload.Login, payload.Password);
 			return true;
 		}
 
-		if (!string.IsNullOrWhiteSpace(payload.Login) && !string.IsNullOrWhiteSpace(payload.Password)) {
-			auth = CredentialMaterial.FromLoginPassword(payload.Login, payload.Password);
+		if (!string.IsNullOrWhiteSpace(payload.Cookie)) {
+			auth = CredentialMaterial.FromCookie(payload.Cookie);
 			return true;
 		}
 

@@ -73,6 +73,14 @@ public sealed record CredentialMaterial(
 	public static CredentialMaterial FromLoginPassword(string login, string password) =>
 		new(CredentialKind.LoginPassword, string.Empty, string.Empty, string.Empty,
 			login, password);
+
+	/// <summary>
+	/// FR-11 (review): the compiler-generated record <c>ToString()</c> prints every field, including the
+	/// access token / cookie / password. Override it so an accidental interpolation or log of this record
+	/// never leaks a secret — only the non-secret <see cref="Kind"/> is emitted.
+	/// </summary>
+	/// <returns>A redacted string that names only the credential kind.</returns>
+	public override string ToString() => $"{nameof(CredentialMaterial)} {{ Kind = {Kind} }}";
 }
 
 /// <summary>
@@ -93,4 +101,14 @@ public sealed record CredentialContext(
 	string Url,
 	CredentialMaterial Auth,
 	McpTransport Transport,
-	bool PassthroughModeEnabled);
+	bool PassthroughModeEnabled)
+{
+	/// <summary>
+	/// FR-11 (review): override the compiler-generated <c>ToString()</c> so it delegates to the redacted
+	/// <see cref="CredentialMaterial.ToString"/> for <see cref="Auth"/> and never prints secret material.
+	/// </summary>
+	/// <returns>A redacted string (url, transport, flag, and the credential kind only).</returns>
+	public override string ToString() =>
+		$"{nameof(CredentialContext)} {{ Url = {Url}, Transport = {Transport}, "
+		+ $"PassthroughModeEnabled = {PassthroughModeEnabled}, Auth = {Auth} }}";
+}

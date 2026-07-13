@@ -284,7 +284,8 @@ public class ToolCommandResolver(
 		auth?.Kind switch {
 			CredentialKind.AccessToken => !string.IsNullOrWhiteSpace(auth.AccessToken),
 			CredentialKind.Cookie => !string.IsNullOrWhiteSpace(auth.Cookie),
-			CredentialKind.LoginPassword => !string.IsNullOrWhiteSpace(auth.Login),
+			CredentialKind.LoginPassword => !string.IsNullOrWhiteSpace(auth.Login)
+				&& !string.IsNullOrWhiteSpace(auth.Password),
 			_ => false
 		};
 
