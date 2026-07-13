@@ -130,9 +130,22 @@ public sealed class TargetUrlValidator : ITargetUrlValidator
 
 		// Rule 2: baseline address-class blocks (ALWAYS, regardless of allowlist). These apply
 		// only to IP-literal hosts. A non-IP hostname is not resolved here — see the class-level
-		// remarks for the documented DNS-rebinding TOCTOU residual (out of scope for v1).
+		// remarks for the documented DNS-rebinding TOCTOU residual (out of scope for v1). Runs BEFORE the
+		// https-only rule so a metadata/link-local/unspecified target reports the specific address-class
+		// block (the security-relevant reason) rather than a generic scheme error.
 		if (TryGetIpLiteral(uri, out IPAddress ip)) {
 			EnsureIpNotBlocked(ip);
+		}
+
+		// Rule 2b (review Blocker): require HTTPS for any non-loopback target. On the credential-passthrough
+		// network edge a plaintext http target would expose the forwarded bearer token / password to
+		// interception or MITM — and the bearer client transport does not enforce TLS certificate validation,
+		// so http here is a credential-leak vector, not merely unencrypted. http is permitted ONLY for an
+		// explicit loopback dev target (127.0.0.0/8 / ::1 / localhost), where there is no off-host network hop.
+		if (uri.Scheme == Uri.UriSchemeHttp && !IsLoopbackIpOrLocalhost(uri.Host)) {
+			throw new TargetUrlNotAllowedException(
+				"Error: target url must use https for credential passthrough "
+				+ "(http is allowed only for a loopback dev target)");
 		}
 
 		// Rule 3: optional origin allowlist. When configured, the target origin must be on it;

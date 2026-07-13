@@ -143,14 +143,14 @@ public sealed class SessionContainerCache : ISessionContainerCache {
 		public int InUseCount { get; set; }
 	}
 
-	private readonly Dictionary<string, CacheEntry> _entries = new(StringComparer.OrdinalIgnoreCase);
+	private readonly Dictionary<string, CacheEntry> _entries = new(StringComparer.Ordinal);
 	// Pending in-use reservations recorded by MarkInUse for a key whose entry does NOT exist yet (FIX 1,
 	// ENG-93208). Acquire drains a key's reservation into the InUseCount of the entry it creates, so a
 	// MarkInUse-before-Acquire (the typed-response tool path) still protects the entry the moment it is
 	// created. Same comparer as _entries so a case-variant key never splits across the two maps.
 	// Invariant: a key present here is ABSENT from _entries (MarkInUse routes to the entry when present,
 	// and Acquire drains the reservation on the create branch), so new-entry-only draining is complete.
-	private readonly Dictionary<string, int> _pendingInUse = new(StringComparer.OrdinalIgnoreCase);
+	private readonly Dictionary<string, int> _pendingInUse = new(StringComparer.Ordinal);
 	private readonly object _sync = new();
 	private readonly TimeSpan _idleTtl;
 	private readonly int _maxSessions;
@@ -287,7 +287,7 @@ public sealed class SessionContainerCache : ISessionContainerCache {
 			DateTime oldest = DateTime.MaxValue;
 			foreach (KeyValuePair<string, CacheEntry> kvp in _entries) {
 				if (kvp.Value.InUseCount > 0
-					|| string.Equals(kvp.Key, justAddedKey, StringComparison.OrdinalIgnoreCase)) {
+					|| string.Equals(kvp.Key, justAddedKey, StringComparison.Ordinal)) {
 					continue;
 				}
 				if (kvp.Value.LastAccessUtc < oldest) {

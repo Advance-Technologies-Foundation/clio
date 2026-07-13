@@ -115,7 +115,11 @@ public abstract class BaseTool<T>(
 		T options,
 		Func<TCommand, TResponse> executor,
 		Func<string, TResponse> onFailure) where TCommand : Command<T> {
-		return ExecuteWithCleanLog(() => {
+		// Review (Codex #6): pass options to ExecuteWithCleanLog so this typed-response path runs under the
+		// PER-TENANT lock (not the shared fallback, which would serialize independent tenants) AND marks the
+		// session-container in-use for the call — the reserve-before-Acquire guard (review #5). The
+		// parameterless overload would key on the fallback and leave the resolved container evictable mid-call.
+		return ExecuteWithCleanLog(options as EnvironmentOptions, () => {
 			try {
 				TCommand resolvedCommand = ResolveCommand<TCommand>(options);
 				return executor(resolvedCommand);

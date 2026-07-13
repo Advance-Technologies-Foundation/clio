@@ -60,23 +60,23 @@ public sealed class TenantExecutionLockProviderTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Treats cache keys case-insensitively so a single tenant identity yields one lock regardless of casing.")]
-	public void GetLock_ShouldReturnSameLock_WhenKeysDifferOnlyByCase() {
+	[Description("Review (Codex): cache keys are compared CASE-SENSITIVELY (Ordinal), so two keys differing only by case (e.g. URL path case) map to DISTINCT locks and never collide onto one tenant — matching the session-container cache.")]
+	public void GetLock_ShouldReturnDistinctLocks_WhenKeysDifferOnlyByCase() {
 		// Arrange
 		ITenantExecutionLockProvider provider = TenantExecutionLockProvider.Shared;
 		string suffix = Guid.NewGuid().ToString();
-		string lowerKey = "tenant-" + suffix;
-		string upperKey = "TENANT-" + suffix.ToUpperInvariant();
+		string lowerKey = "tenant-" + suffix + "/creatioa";
+		string upperKey = "tenant-" + suffix + "/CreatioA";
 
 		// Act
 		object lowerLock = provider.GetLock(lowerKey);
 		object upperLock = provider.GetLock(upperKey);
 
 		// Assert
-		upperLock.Should().BeSameAs(lowerLock,
-			because: "cache keys are compared case-insensitively, matching the session-container cache");
+		upperLock.Should().NotBeSameAs(lowerLock,
+			because: "case-sensitive keys must not collapse two distinct (case-differing) URLs onto one lock (Codex #2)");
 
-		// Cleanup — both GetLock calls pinned the same case-insensitive entry; balance both pins.
+		// Cleanup — each key pinned its own distinct entry; balance both pins.
 		provider.MarkAvailable(lowerKey);
 		provider.MarkAvailable(upperKey);
 	}

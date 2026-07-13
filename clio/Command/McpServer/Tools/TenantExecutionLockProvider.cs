@@ -64,7 +64,7 @@ public sealed class TenantExecutionLockProvider : ITenantExecutionLockProvider {
 		public int InUseCount { get; set; }
 	}
 
-	private readonly Dictionary<string, LockEntry> _entries = new(StringComparer.OrdinalIgnoreCase);
+	private readonly Dictionary<string, LockEntry> _entries = new(StringComparer.Ordinal);
 	private readonly object _sync = new();
 	private readonly TimeSpan _idleTtl;
 	private readonly int _maxEntries;
@@ -158,7 +158,7 @@ public sealed class TenantExecutionLockProvider : ITenantExecutionLockProvider {
 			DateTime oldest = DateTime.MaxValue;
 			foreach (KeyValuePair<string, LockEntry> kvp in _entries) {
 				if (kvp.Value.InUseCount > 0
-					|| string.Equals(kvp.Key, justAddedKey, StringComparison.OrdinalIgnoreCase)) {
+					|| string.Equals(kvp.Key, justAddedKey, StringComparison.Ordinal)) {
 					continue;
 				}
 				if (kvp.Value.LastAccessUtc < oldest) {
