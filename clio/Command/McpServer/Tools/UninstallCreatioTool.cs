@@ -1,32 +1,63 @@
 ﻿using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
+using Clio.Command.McpServer.Progress;
 using Clio.Common;
+using ModelContextProtocol;
+using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
 
-public class UninstallCreatioTool(UninstallCreatioCommand command, ILogger logger) : BaseTool<UninstallCreatioCommandOptions>(command, logger) {
-	
+/// <summary>
+/// MCP tool surface for the <c>uninstall-creatio</c> command.
+/// </summary>
+/// <remarks>
+/// Like <c>deploy-creatio</c>, uninstall is a local-only command (no <see cref="IApplicationClient"/>),
+/// so it runs through <c>InternalExecute(options)</c> and streams progress by subscribing the injected
+/// command's <see cref="IStageEventSource.StageChanged"/> for the run — see
+/// <see cref="IStageEventProgressForwarder"/> for the corrected ADR-D4 environment-bound assumption.
+/// </remarks>
+public class UninstallCreatioTool(
+	UninstallCreatioCommand command,
+	ILogger logger,
+	IStageEventProgressForwarder progressForwarder,
+	ModelContextProtocol.Server.McpServer server) : BaseTool<UninstallCreatioCommandOptions>(command, logger) {
+
 	[McpServerTool(Name = "uninstall-creatio", ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false )]
 	[Description("""
 				 uninstall-creatio command completely removes local Creatio instance from
 				 the machine, including the IIS site and application pool, database (both
-				 local and containerized), application files, and application pool user
-				 profile data.
-				 
+				 local and containerized), and application files. Application-pool profile
+				 data is currently left in place and reported as skipped/not-supported.
+
 				 The command reads the database connection string from ConnectionStrings.config
 				 in the Creatio installation directory and uses it to connect and drop the
 				 database. This works for both local databases (PostgreSQL, MSSQL) and
 				 containerized databases (Kubernetes/Rancher).
 				 """)]
 	public CommandExecutionResult UninstallCreatio(
+		RequestContext<CallToolRequestParams> requestContext,
 		[Description("Uninstall parameters")] [Required] UninstallCreatioArgs args
-	) {
-		
+	) => UninstallCreatio(requestContext.Params?.ProgressToken, args);
+
+	// Progress-token overload kept internal so unit tests can drive it without constructing a
+	// RequestContext<CallToolRequestParams> (which requires a live McpServer).
+	internal CommandExecutionResult UninstallCreatio(ProgressToken? progressToken, UninstallCreatioArgs args) {
+
 		UninstallCreatioCommandOptions options = new() {
 			EnvironmentName = args.EnvironmentName
 		};
+
+		// Subscribe the injected command (an IStageEventSource) so each ClioStageEvent is forwarded as a
+		// notifications/progress with the typed envelope in _meta.clioStageEvent. No-op when the caller
+		// did not send a ProgressToken.
+		using System.IDisposable subscription = progressForwarder.Subscribe(
+			command,
+			progressToken,
+			notification => server.SendNotificationAsync(
+				NotificationMethods.ProgressNotification, notification).GetAwaiter().GetResult());
+
 		return InternalExecute(options);
 	}
 }

@@ -12,6 +12,7 @@ clear-themes-cache - refresh only the Creatio theme cache
 
 `clear-themes-cache` refreshes the Creatio theme catalog cache on the target
 environment. It affects only theme data and does not restart the application.
+Requires Creatio 10.0.0 or later on the target environment.
 
 A normal package push (`push-workspace` / `push-pkg`) already refreshes the theme
 registry, so this command is only needed when theme files change on the environment

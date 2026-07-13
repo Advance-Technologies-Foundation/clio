@@ -404,8 +404,8 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 	// Story 5 edge API-key gate. Fail-closed and strictly additive: when no platform API
 	// key is configured (default) the request behaves exactly as 8.1.0.72 — the credential
 	// header is never treated as trusted (AC-02). When passthrough is enabled, a request
-	// carrying the credential header must present a matching 'Authorization: Bearer <key>';
-	// a missing/mismatched key short-circuits with HTTP 401 and no secret (AC-03/AC-ERR).
+	// carrying the credential header must present a matching Authorization Bearer key. A
+	// missing or mismatched key short-circuits with HTTP 401 and no secret (AC-03/AC-ERR).
 	// The decision is published to the pipeline via PassthroughEnabledItemKey, which the
 	// credential-capture middleware honors.
 	//
@@ -436,14 +436,12 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 			return;
 		}
 
-		if (!context.Request.Headers.ContainsKey(credentialHeaderName)) {
-			// Passthrough-capable server, but this request is not using passthrough
-			// (e.g. pre-registered -e). Still exactly 8.1.0.72 behavior.
-			context.Items[PassthroughEnabledItemKey] = false;
-			await next(context);
-			return;
-		}
-
+		// Passthrough is enabled ⇒ this endpoint is a network edge, so the API key is required on EVERY
+		// request, not only credential-bearing ones (review #1, ENG-93208). Otherwise a request that omits
+		// the credential header would reach the full MCP tool surface — including registered-environment
+		// tools and reg-web-app — completely unauthenticated on a non-loopback bind. Fail closed on the
+		// whole surface: authenticate first, then decide whether THIS request also carries passthrough
+		// credentials. Default (no key configured, branch above) stays exactly 8.1.0.72.
 		string authorization = context.Request.Headers.Authorization.ToString();
 		if (!gate.IsAuthorized(authorization)) {
 			context.Items[PassthroughEnabledItemKey] = false;
@@ -455,7 +453,10 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 			return;
 		}
 
-		context.Items[PassthroughEnabledItemKey] = true;
+		// Authenticated. Passthrough is honored for this request only when it actually carries the
+		// credential header; an authenticated no-header request is a legitimate pre-registered -e call and
+		// runs with passthrough OFF (exactly 8.1.0.72 resolution), but it is no longer unauthenticated.
+		context.Items[PassthroughEnabledItemKey] = context.Request.Headers.ContainsKey(credentialHeaderName);
 		await next(context);
 	}
 

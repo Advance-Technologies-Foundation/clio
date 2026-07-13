@@ -95,8 +95,8 @@ public sealed class CredentialHeaderParser : ICredentialHeaderParser
 		return true;
 	}
 
-	// Precedence: accessToken → cookie → login+password. "Present" means non-whitespace;
-	// login+password is only usable when BOTH are non-whitespace.
+	// Precedence order: accessToken first, then cookie, then login with password. Present
+	// means non-whitespace, and login with password is only usable when both are non-whitespace.
 	private static bool TryResolveAuth(CredentialPayload payload, out CredentialMaterial auth) {
 		if (!string.IsNullOrWhiteSpace(payload.AccessToken)) {
 			auth = CredentialMaterial.FromAccessToken(

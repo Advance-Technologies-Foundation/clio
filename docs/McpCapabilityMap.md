@@ -191,11 +191,15 @@ on top of the `0`/`1`/`-1` contract: when the target environment runs an older c
 command's floor — or its version is undeterminable (the gate fails closed) — the `BaseTool` path
 returns the distinct `exit-code` `78` (`Program.CreatioVersionRequirementExitCode`) with the stable
 `CreatioVersionRequirementException.ErrorCode` (`version-too-old` / `version-undeterminable`) embedded
-in the message. This refusal path is covered at the **unit** level (the `BaseTool` tests). An
-**end-to-end** refusal test is a deliberate, documented harness gap: it is deferred until a real
-shipping command actually carries `[RequiresCreatioVersion]`, at which point e2e coverage, the docs,
-and the MCP tool contract for that command become mandatory. This mirrors the package-gate posture —
-the gate logic is unit-proven now, and e2e lands with the first command that exercises it.
+in the message. Typed-response tools (`create-theme`, `list-themes`, `check-theming-access`) carry no
+exit code, so they refuse with `{ success: false, error }` where the same stable ErrorCode travels in
+the `error` message. The gate is enforced at the shared `ResolveCommand` chokepoint, ordered before
+the package gate — the same relative precedence as the CLI dispatch gate (feature-toggle →
+creatio-version → package).
+
+The refusal path is unit-proven; at the end-to-end level each gated tool's contract is asserted to
+advertise its floor. A live e2e refusal test requires an environment below the floor, which the
+harness does not provision — that remains the one documented gap.
 
 ### Workspace path rules
 
@@ -462,6 +466,28 @@ How the AI should think about this area:
 - it is a local-host and target-environment control surface
 - destructive power is high, especially for restore and uninstall flows
 
+**Typed stage-event progress contract (`deploy-creatio` / `uninstall-creatio`).** Both tools
+emit a versioned, typed progress stream over MCP `notifications/progress` in the
+`_meta.clioStageEvent` field, so a GUI consumer (the clio-ring guided-deploy UX) can render a
+live, GitHub-Actions-style step list instead of parsing log lines. The stream is:
+
+- one `manifest` event up front listing every stage that will run, in order;
+- a `stage` event per transition (`running` → `done` / `failed` / `skipped`, carrying
+  `index` / `total` / `durationMs`);
+- one terminal `run-completed` event with `outcome` = `success` / `failure`.
+
+Deploy stages: `stage-build` (network-source only; otherwise `skipped` `not-applicable`) →
+`unzip` → `copy-files` → `restore-db` → `deploy-app` → `configure-conn-strings` →
+`register-env` → `wait-ready`. Uninstall stages: `read-config` → `stop-iis` → `delete-iis` →
+`drop-db` → `delete-files` → `unregister` (final, only after cleanup succeeds), plus a
+conditional `delete-apppool-profile` reported `skipped` `not-supported` when a profile exists.
+Failure is honest: a stage that fails is emitted `failed`, the remaining stages `skipped`
+(`after-failure`), and the run ends `run-completed` `failure` — a non-zero stage result is
+never masked as success. The envelope is stamped with `schemaVersion` (currently `1`), is
+purely additive (tool arguments, descriptions, and `Destructive` flags are unchanged), and is
+forward-compatible: an unknown field or a bumped schema version does not break a mirrored
+consumer.
+
 ### 9. Runtime Control And Maintenance
 
 These tools are operational rather than design-oriented.
@@ -534,7 +560,7 @@ Companion surfaces (see the `process-modeling` guidance):
 
 ### 12. Theming
 
-These tools brand a Creatio app: build a custom theme from brand colours and fonts, apply it to an environment, and manage the theme catalog. `build-theme` and `advise-theme-palette` run offline; the rest act on a registered environment (`environment-name`) via the native ThemeService. All theming tools take a single `args` object with kebab-case fields.
+These tools brand a Creatio app: build a custom theme from brand colours and fonts, apply it to an environment, and manage the theme catalog. `build-theme` and `advise-theme-palette` run offline; the rest act on a registered environment (`environment-name`) via the native ThemeService, which requires Creatio 10.0.0 or later — on an older (or version-undeterminable) environment they refuse with the version-gate error (see "Version gate (exit 78)"). All theming tools take a single `args` object with kebab-case fields.
 
 - `build-theme`
   Render a theme's `theme.css` (and, in workspace mode, `theme.json`) from a primary colour, optional secondary/accent/system colours, and fonts, over a bundled version-pinned template. Writes into a workspace package when given `workspace-directory` + `package-name`, otherwise returns the CSS. Never mutates an environment.
