@@ -206,15 +206,16 @@ public sealed class ClioRunExecutor(
 		CancellationToken cancellationToken) {
 		CallToolRequestParams originalParams = callContext.Params;
 		IMcpServerPrimitive originalPrimitive = callContext.MatchedPrimitive;
-		// Preserve the caller's protocol metadata (_meta) on the rebuilt child params. The clio-run entry
-		// path builds childParams via BuildChildParams, which constructs a fresh CallToolRequestParams
-		// (Name + Arguments only) with a null Meta, so without this the caller's ProgressToken — which
+		// This is the SINGLE owner of _meta forwarding for BOTH callers (the clio-run entry path and
+		// InvokeResolvedAsync) — do not delete it, and do not re-add a Meta copy at either call site.
+		// clio-run builds childParams via BuildChildParams, which constructs a fresh CallToolRequestParams
+		// (Name + Arguments only) with a null Meta; InvokeResolvedAsync builds it with Name/Arguments/Task
+		// but deliberately leaves Meta to this line. Without it the caller's ProgressToken — which
 		// RequestParams exposes as a read-only view over Meta["progressToken"] — is dropped, and any
 		// notifications/progress a dispatched tool emits (e.g. deploy-creatio / uninstall-creatio typed stage
 		// events) is silently lost (the tool's forwarder reads Params.ProgressToken and no-ops when it is
-		// null). Carrying Meta forward preserves the progress token and any other _meta. The
-		// InvokeResolvedAsync path already sets Meta on childParams to this same value, so re-assigning it
-		// here is harmless; it is the clio-run path that needs it. Read it BEFORE reassigning callContext.Params.
+		// null). Carrying Meta forward here preserves the progress token and any other _meta for both paths.
+		// Read it BEFORE reassigning callContext.Params.
 		childParams.Meta = originalParams?.Meta;
 		callContext.Params = childParams;
 		callContext.MatchedPrimitive = tool;
