@@ -151,8 +151,9 @@ namespace Clio.Command
 				// A file path is read and Base64-encoded locally; such payloads are Binary by nature, so
 				// default the type accordingly when it is not resolved from the target environment.
 				string value = hasFilePath ? EncodeFileToBase64(args.ValueFilePath) : args.Value;
+				string fallbackTypeName = hasFilePath ? BinaryTypeName : "Text";
 				string valueTypeName = string.IsNullOrWhiteSpace(args.ValueTypeName)
-					? (hasFilePath ? BinaryTypeName : "Text")
+					? fallbackTypeName
 					: args.ValueTypeName;
 				bool updated = _sysSettingsManager.UpdateSysSetting(args.Code, value, valueTypeName);
 				if (!updated) {
