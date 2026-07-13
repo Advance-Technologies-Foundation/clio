@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Clio.Command.CreatioInstallCommand;
+using Clio.Command.McpServer.Progress;
 using Clio.Command.McpServer.Prompts;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
@@ -9,6 +10,7 @@ using ConsoleTables;
 using FluentAssertions;
 using FluentValidation.Results;
 using k8s;
+using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using NSubstitute;
 using NUnit.Framework;
@@ -72,7 +74,8 @@ public sealed class InstallerCommandToolTests
 		IDbOperationLogSessionFactory dbOperationLogSessionFactory =
 			new DbOperationLogSessionFactory(logger, dbOperationLogContextAccessor);
 		FakeInstallerCommand command = new(logger, exitCode: 7, dbOperationLogSessionFactory);
-		InstallerCommandTool tool = new(command, logger, dbOperationLogContextAccessor);
+		InstallerCommandTool tool = new(command, logger,
+			Substitute.For<IStageEventProgressForwarder>(), server: null!, dbOperationLogContextAccessor);
 		DeployCreatioArgs args = new(
 			SiteName: "creatio-app",
 			ZipFile: @"C:\temp\creatio.zip",
@@ -81,7 +84,7 @@ public sealed class InstallerCommandToolTests
 			RedisServerName: "redis-main");
 
 		// Act
-		CommandExecutionResult result = tool.DeployCreatio(args);
+		CommandExecutionResult result = tool.DeployCreatio((ProgressToken?)null, args);
 
 		// Assert
 		result.ExitCode.Should().Be(7,
@@ -134,7 +137,8 @@ public sealed class InstallerCommandToolTests
 		// Arrange
 		TestLogger logger = new();
 		FakeInstallerCommand command = new(logger, exitCode: 0);
-		InstallerCommandTool tool = new(command, logger);
+		InstallerCommandTool tool = new(command, logger,
+			Substitute.For<IStageEventProgressForwarder>(), server: null!);
 		DeployCreatioArgs args = new(
 			SiteName: "creatio-app",
 			ZipFile: @"C:\temp\creatio.zip",
@@ -143,7 +147,7 @@ public sealed class InstallerCommandToolTests
 			RedisServerName: null);
 
 		// Act
-		tool.DeployCreatio(args);
+		tool.DeployCreatio((ProgressToken?)null, args);
 
 		// Assert
 		command.ReceivedOptions.Should().NotBeNull(
@@ -204,7 +208,7 @@ public sealed class InstallerCommandToolTests
 			TestLogger logger,
 			int exitCode,
 			IDbOperationLogSessionFactory dbOperationLogSessionFactory = null)
-			: base(Substitute.For<ICreatioInstallerService>(), logger, Substitute.For<IKubernetes>())
+			: base(Substitute.For<ICreatioInstallerService>(), logger, Substitute.For<IKubernetes>(), Substitute.For<IDeployCreatioDefaultsResolver>())
 		{
 			_logger = logger;
 			_exitCode = exitCode;

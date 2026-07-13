@@ -9,3 +9,8 @@ clio.tests/Examples/**/*.yml  text eol=lf
 # theme-css golden; pin both to LF so the parity gate never depends on each machine's core.autocrlf.
 clio/tpl/themes/**/*.tpl                   text eol=lf
 clio.tests/Theming/Fixtures/*.json         text eol=lf
+
+# The ClioStageEvent cross-repo contract fixture (story ring-guided-deploy-1) is compared
+# byte-for-byte against System.Text.Json output and mirrored byte-identically into the Ring
+# repo; pin it to LF so the parity gate never depends on each machine's core.autocrlf.
+clio.tests/Command/McpServer/Fixtures/ClioStageEvent.contract.ndjson text eol=lf

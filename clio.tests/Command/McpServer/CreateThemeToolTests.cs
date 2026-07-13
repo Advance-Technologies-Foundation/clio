@@ -60,6 +60,8 @@ public class CreateThemeToolTests {
 		FakeCreateThemeCommand resolvedCommand = new(createdId: "generated-id");
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<CreateThemeCommand>(Arg.Any<CreateThemeOptions>()).Returns(resolvedCommand);
+		commandResolver.Resolve<ICreatioVersionChecker>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ICreatioVersionChecker>());
 		CreateThemeTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
@@ -136,6 +138,8 @@ public class CreateThemeToolTests {
 		FakeCreateThemeCommand resolvedCommand = new(success: false, error: "id already exists");
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<CreateThemeCommand>(Arg.Any<CreateThemeOptions>()).Returns(resolvedCommand);
+		commandResolver.Resolve<ICreatioVersionChecker>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ICreatioVersionChecker>());
 		CreateThemeTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
@@ -226,6 +230,8 @@ public class CreateThemeToolTests {
 		FakeCreateThemeCommand resolvedCommand = new(createdId: "ocean");
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<CreateThemeCommand>(Arg.Any<CreateThemeOptions>()).Returns(resolvedCommand);
+		commandResolver.Resolve<ICreatioVersionChecker>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ICreatioVersionChecker>());
 		CreateThemeTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
 		// Act
@@ -266,6 +272,41 @@ public class CreateThemeToolTests {
 			because: "cssContent is not a declared wire name, so it must not bind");
 		camel.ExtensionData.Should().ContainKey("cssContent",
 			because: "the unbound camelCase spelling must land in the overflow bag so the tool can return a rename hint");
+	}
+
+	[Test]
+	[Description("Returns a structured failure carrying the version-requirement message and never creates the theme when the target environment does not satisfy the Creatio version floor.")]
+	[Category("Unit")]
+	public void CreateTheme_ShouldReturnFailure_WhenCreatioVersionRequirementIsUnmet() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeCreateThemeCommand defaultCommand = new();
+		FakeCreateThemeCommand resolvedCommand = new(createdId: "generated-id");
+		ICreatioVersionChecker versionChecker = Substitute.For<ICreatioVersionChecker>();
+		versionChecker
+			.When(c => c.EnsureRequirements(Arg.Any<object>()))
+			.Do(_ => throw new CreatioVersionRequirementException(
+				"This command requires Creatio 10.0.0 or later. The target environment runs 8.1.5. Update Creatio and retry.",
+				CreatioVersionRequirementException.VersionTooOldCode));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateThemeCommand>(Arg.Any<CreateThemeOptions>()).Returns(resolvedCommand);
+		commandResolver.Resolve<ICreatioVersionChecker>(Arg.Any<EnvironmentOptions>()).Returns(versionChecker);
+		CreateThemeTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CreateThemeResult result = tool.CreateTheme(new CreateThemeArgs(
+			EnvironmentName: "docker_fix2", CssClassName: "ocean-theme", CssContent: ".ocean-theme{}", Caption: "Ocean"));
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "an unmet Creatio version requirement must refuse the create on the MCP surface exactly as the CLI gate does");
+		result.Error.Should().Contain("requires Creatio 10.0.0 or later",
+			because: "the version-requirement message must be surfaced to the MCP caller");
+		result.Error.Should().Contain($"[{CreatioVersionRequirementException.VersionTooOldCode}]",
+			because: "the typed result carries no exit code, so the stable machine-readable ErrorCode must travel in the error message");
+		resolvedCommand.CapturedOptions.Should().BeNull(
+			because: "the theme must never be created when the environment does not satisfy the version floor");
+		ConsoleLogger.Instance.ClearMessages();
 	}
 
 	private sealed class FakeCreateThemeCommand : CreateThemeCommand {

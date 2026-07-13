@@ -9,8 +9,9 @@ DESCRIPTION
     the native ThemeService.svc/CreateTheme endpoint. The theme CSS is supplied
     as text, inline or from a file.
 
-    Requires the CanCustomizeBranding license and the CanManageThemes system
-    operation. When --id is omitted, an auto-generated UUID is used and printed
+    Requires Creatio 10.0.0 or later on the target environment, the
+    CanCustomizeBranding license, and the CanManageThemes system operation.
+    When --id is omitted, an auto-generated UUID is used and printed
     back. When --caption is omitted, it is derived from --css-class-name. When
     --package-name is omitted, the environment's CurrentPackageId system setting
     owns the new theme.

@@ -7,13 +7,13 @@
 
 ## Project Identity
 
-| Field | Value |
-|-------|-------|
-| Project | Clio — CLI tool for Creatio platform integration |
-| Language | C# 12 / .NET 10 |
-| Type | Global dotnet tool (`dotnet tool install clio -g`) |
-| Repo | `Advance-Technologies-Foundation/clio` |
-| Main solution | `MainSolution.slnx` |
+| Field         | Value                                              |
+|---------------|----------------------------------------------------|
+| Project       | Clio — CLI tool for Creatio platform integration   |
+| Language      | C# 12 / .NET 10                                    |
+| Type          | Global dotnet tool plus optional ClioRing companion |
+| Repo          | `Advance-Technologies-Foundation/clio`             |
+| Main solution | `clio.slnx` (ClioRing is the `/clio-ring/` group)  |
 
 ---
 
@@ -77,17 +77,107 @@
 - **MCP registration caveat (do not regress):** gated MCP types are registered via `McpFeatureToggleFilter.RegisterEnabledPrimitives`, which passes `IEnumerable<Type>` to the SDK's `WithTools` / `WithResources` / `WithPrompts`. Never pass a `Type[]` to those methods and never revert to `*FromAssembly`: a `Type[]` binds to the SDK's generic `WithX<T>(T)` overload and silently registers **nothing**. Do not add an abstract/open-generic type exclusion — the SDK enumerates such types and `BaseTool<T>` is inert by design.
 - **Do not** put `[FeatureToggle]` on the management command (`experimental`) itself, and do not gate a shipping command unless you intend it to be hidden by default.
 
+### ClioRing companion architecture (internal preview)
+
+ClioRing is the optional Windows desktop companion under `clio-ring/`. It is an internal
+employee preview, not another way to package the `clio` global tool. The experiment may be
+removed if user feedback does not justify maintaining it, so its boundary with clio must remain
+deliberately narrow and reversible.
+
+#### Identity
+
+- The product, command, executable, release assets, and intended .NET identity are **ClioRing** / `clio-ring`.
+- The project group is `ClioRing`, `ClioRing.Desktop`, `ClioRing.Ipc`, and `ClioRing.Tests`.
+  Keep project paths, assembly identities, namespaces, tests, workflow paths, and solution entries
+  aligned with that identity. Do not introduce alternative product-family names.
+- Ring has independent `0.x` preview versions. A clio tool release and a Ring release are not
+  required to share a version or ship together.
+
+#### Ownership and dependency direction
+
+- `clio/` owns the CLI, MCP server, environment configuration, and the feature-gated `clio ring`
+  lifecycle bootstrap. It must not reference Avalonia or Ring application assemblies.
+- The Ring application owns UI, interaction state, pipeline rendering, and desktop-only
+  orchestration. It consumes clio through supported process/MCP contracts; it must not call
+  command classes, DI internals, or Creatio clients by project reference.
+- The desktop host owns OS startup and packaged configuration. Keep platform-specific behavior
+  at this edge rather than in view models or protocol DTOs.
+- The IPC project is a quarantine boundary around the reflection-heavy ModelContextProtocol SDK.
+  AOT projects may consume its plain interfaces and immutable record DTOs, but SDK types,
+  reflection-based serialization, and MCP client implementation details must not escape it.
+- Tests and harnesses may reference application and IPC contracts, but production assemblies
+  must never reference test or harness projects.
+
+The intended dependency flow is one-way:
+
+```text
+clio-ring desktop -> Ring UI/application -> Ring IPC contract -> clio process/MCP surface
+clio CLI/bootstrap -------------------------------------------> GitHub Ring release assets
+```
+
+There is no reverse dependency from clio core to the Ring UI. Shared behavior belongs in an
+explicit stable protocol contract, not in a new shared implementation assembly.
+
+Independent release cadence requires consumer-driven contract validation: clio provider changes
+that touch a Ring-consumed MCP tool, nested `clio-run` command, progress event, receipt, or error
+envelope must run Ring compatibility tests before release. This is protocol governance, not code
+coupling. Ring must remain compatible with the prior released clio contract where practical, and
+clio must preserve the prior released Ring through additive evolution or an explicitly versioned
+transition; the two products must never require an atomic upgrade.
+
+#### Protocol and NativeAOT rules
+
+- **NativeAOT compatibility is a release invariant, not an optional optimization.** The shipped
+  Windows x64 application is the output of `dotnet publish ... -p:PublishAot=true`. Every Ring
+  change must preserve a successful NativeAOT publish with zero IL2026/IL3050 trim/AOT warnings.
+  A normal JIT build or passing unit tests does not prove a Ring change is complete.
+- Typed MCP `_meta` stage events and deployment receipts are the pipeline source of truth. Do
+  not scrape console text to infer progress or success.
+- MCP progress callbacks can be concurrent and out of order. Consumers must de-duplicate by
+  `(runId, sequence)` and buffer until the next contiguous sequence; never implement a simple
+  `sequence <= maxSeen` filter because it can discard the manifest at sequence zero.
+- A run is successful only after its explicit successful terminal event/receipt. Process exit,
+  silence, or the presence of ordinary `message` fields must never fabricate success.
+- All JSON used by NativeAOT code must use source-generated `System.Text.Json` metadata. Do not
+  introduce reflection-based serialization, runtime assembly scanning, dynamic code generation,
+  or silence trimming/AOT warnings in Ring production projects.
+- Keep DTOs backwards tolerant: ignore unknown fields, make additive fields optional, and treat
+  removal/semantic changes as a coordinated clio/Ring protocol migration.
+
+#### Environment ownership, privacy, and destructive actions
+
+- Clio's environment settings are the source of truth. Ring may cache only for presentation and
+  must refresh on summon, manual refresh, watched settings-file changes, and successful
+  deploy/uninstall completion. Ring must not invent a second environment store.
+- Never log or persist passwords, auth headers, connection strings, decrypted credentials, or
+  unredacted secrets. Ring has **no telemetry** while it is an internal preview.
+- Deploy and uninstall require an explicit user gesture and immutable confirmation of the target.
+  Agents, probes, startup recovery, and background refresh must never initiate a real destructive
+  operation. Automated happy-path harnesses must require an explicit disposable target/build.
+
+#### Distribution and deletion boundary
+
+- `clio` remains delivered as a global dotnet tool. Ring is a Windows x64 NativeAOT ZIP hosted on
+  GitHub Releases and installed under `%LOCALAPPDATA%\Creatio\clio-ring` by `clio ring`.
+- GitHub release authority for `Advance-Technologies-Foundation/clio` is the preview publisher
+  trust root. Bootstrap changes must retain exact-host/asset validation, SHA-256 verification,
+  archive and download bounds, ZIP traversal protection, downgrade refusal, lifecycle locking,
+  same-version repair, and locked-executable uninstall preflight.
+- Do not add clio configuration or environment migrations solely for Ring. Removing the experiment
+  must remain possible by deleting `clio-ring/`, its release workflow, and the small Ring lifecycle
+  command/service/docs/test surface without changing existing clio environments.
+
 ---
 
 ## Testing Rules (critical)
 
 ### Test categories — THREE TIERS ONLY
 
-| Category | Attribute | Meaning | Runs on |
-|----------|-----------|---------|---------|
-| `Unit` | `[Category("Unit")]` | No I/O, no external deps, NSubstitute mocks only | Every push |
-| `Integration` | `[Category("Integration")]` | File system, DB, IIS, K8s stubs | PR merge |
-| `E2E` | `[Category("E2E")]` | Real clio process, MCP protocol, real Creatio | Release / manual |
+| Category      | Attribute                   | Meaning                                          | Runs on          |
+|---------------|-----------------------------|--------------------------------------------------|------------------|
+| `Unit`        | `[Category("Unit")]`        | No I/O, no external deps, NSubstitute mocks only | Every push       |
+| `Integration` | `[Category("Integration")]` | File system, DB, IIS, K8s stubs                  | PR merge         |
+| `E2E`         | `[Category("E2E")]`         | Real clio process, MCP protocol, real Creatio    | Release / manual |
 
 **NEVER use**: `[Category("UnitTests")]`, `[Category("CommandTests")]`, or any other string.
 These are legacy violations — do not replicate them.
@@ -134,14 +224,14 @@ Never: `Test1`, `TestMethod`, `ShouldWork`, `MyTest`.
 
 ## Key Files for Agents
 
-| Purpose | Path |
-|---------|------|
-| QA strategy | `spec/qa-automation-strategy/qa-automation-strategy.md` |
-| CLI naming violations | `spec/cli-naming/camelcase-violations.md` |
-| MCP capability map | `docs/McpCapabilityMap.md` |
-| Contributing guide | `CONTRIBUTING.md` |
-| Release notes guide | `RELEASE.md` |
-| BMAD sprint status | `spec/sprint-status.yaml` |
+| Purpose               | Path                                                    |
+|-----------------------|---------------------------------------------------------|
+| QA strategy           | `spec/qa-automation-strategy/qa-automation-strategy.md` |
+| CLI naming violations | `spec/cli-naming/camelcase-violations.md`               |
+| MCP capability map    | `docs/McpCapabilityMap.md`                              |
+| Contributing guide    | `CONTRIBUTING.md`                                       |
+| Release notes guide   | `RELEASE.md`                                            |
+| BMAD sprint status    | `spec/sprint-status.yaml`                               |
 
 ---
 
