@@ -4877,7 +4877,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildListSysSettings() {
 		return new ToolContractDefinition(
 			SysSettingsListTool.ListSysSettingsToolName,
-			"Lists Creatio system settings with their All-Users default values, value-type-name, and metadata. Binary-type settings are excluded — Binary read/write is not exposed through this MCP tool set and needs the dedicated upload/download flow.",
+			"Lists Creatio system settings with their All-Users default values, value-type-name, and metadata. Binary-type settings (whose value is stored as blob data, e.g. the logo) are listed too, with their value shown as <binary> because MCP does not surface the blob value; write them with update-sys-setting using value-file-path.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName],
 				[
@@ -4915,8 +4915,8 @@ internal static class ToolContractCatalog {
 			SysSettingCreateTool.CreateSysSettingToolName,
 			"Creates a new Creatio system setting and optionally assigns an initial All-Users default value. " +
 			"Allowed value-type-name values match Creatio internal names: Text, ShortText, MediumText, LongText, SecureText, MaxSizeText, " +
-			"Boolean, DateTime, Date, Time, Integer, Money, Float, Lookup. " +
-			"Aliases: Currency = Money, Decimal = Float. Binary sys-settings are not exposed through this tool set. " +
+			"Boolean, DateTime, Date, Time, Integer, Money, Float, Lookup, Binary. " +
+			"Aliases: Currency = Money, Decimal = Float. Binary settings (a value stored as blob data, e.g. the logo) are write-only: assign the value via update-sys-setting with value-file-path; reading a Binary value back is not exposed through MCP. " +
 			"For Lookup type, reference-schema-name is required.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, SysSettingCodeFieldName, "name", SysSettingValueTypeFieldName],
@@ -4924,7 +4924,7 @@ internal static class ToolContractCatalog {
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(SysSettingCodeFieldName, StringType, "Sys-setting code (unique)."),
 					Field("name", StringType, "Display name of the sys-setting."),
-					Field(SysSettingValueTypeFieldName, StringType, "Value type. Creatio internal name: Text, ShortText, MediumText, LongText, SecureText, MaxSizeText, Boolean, DateTime, Date, Time, Integer, Money, Float, Lookup. Aliases: Currency = Money, Decimal = Float. Binary is not exposed by this tool set."),
+					Field(SysSettingValueTypeFieldName, StringType, "Value type. Creatio internal name: Text, ShortText, MediumText, LongText, SecureText, MaxSizeText, Boolean, DateTime, Date, Time, Integer, Money, Float, Lookup, Binary. Aliases: Currency = Money, Decimal = Float. Binary (blob data, e.g. the logo) is write-only via update-sys-setting value-file-path."),
 					Field(SysSettingValueFieldName, StringType, "Optional initial All-Users default value applied via update-sys-setting after creation."),
 					Field("description", StringType, "Optional description text."),
 					Field("is-cacheable", BooleanType, "Whether the setting is cacheable. Defaults to true."),
@@ -4968,13 +4968,14 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildUpdateSysSetting() {
 		return new ToolContractDefinition(
 			SysSettingUpdateTool.UpdateSysSettingToolName,
-			"Updates the All-Users default value of an existing Creatio system setting. The setting must already exist — use create-sys-setting first to register a new code.",
+			"Updates the All-Users default value of an existing Creatio system setting. The setting must already exist; use create-sys-setting first to register a new code. Provide exactly one of value or value-file-path. For a Binary setting (blob data, e.g. the logo) pass value-file-path so clio Base64-encodes the file locally.",
 			new ToolInputSchemaContract(
-				[EnvironmentNameFieldName, SysSettingCodeFieldName, SysSettingValueFieldName],
+				[EnvironmentNameFieldName, SysSettingCodeFieldName],
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(SysSettingCodeFieldName, StringType, "Existing sys-setting code."),
-					Field(SysSettingValueFieldName, StringType, "New value. Booleans accept true/false, decimals/integers expect invariant culture, dates/times expect ISO 8601, Lookup expects a Guid or a display name."),
+					Field(SysSettingValueFieldName, StringType, "New value (provide this OR value-file-path). Booleans accept true/false, decimals/integers expect invariant culture, dates/times expect ISO 8601, Lookup expects a Guid or a display name, Binary expects a raw Base64 string."),
+					Field("value-file-path", StringType, "Local file path whose bytes clio reads and Base64-encodes into the value (provide this OR value). Use for Binary settings (blob data, e.g. the logo) so the blob stays out of the tool-call arguments."),
 					Field(SysSettingValueTypeFieldName, StringType, "Optional fallback value-type-name when the setting cannot be located on the target environment.")
 				]),
 			EnvelopeOutput(
