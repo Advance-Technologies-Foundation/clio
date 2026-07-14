@@ -235,62 +235,74 @@ namespace Clio.Command
 		/// </summary>
 		public SysSettingUpdateResult TryUpdateSysSetting(UpdateSysSettingArgs args) {
 			try {
-				if (string.IsNullOrWhiteSpace(args.Code)) {
-					throw new ArgumentException("code is required.");
-				}
-				bool hasInlineValue = args.Value is not null;
-				bool hasFilePath = !string.IsNullOrWhiteSpace(args.ValueFilePath);
-				if (hasInlineValue && hasFilePath) {
-					throw new ArgumentException("Provide either 'value' or 'value-file-path', not both.");
-				}
-				if (!hasInlineValue && !hasFilePath) {
-					throw new ArgumentException("value is required (supply 'value' or 'value-file-path').");
-				}
-				// Resolve the existing type once so file/inline paths share it (avoids a second lookup).
-				(_, string existingType) = _sysSettingsManager.GetAllUsersDefaultWithType(args.Code);
-				bool targetIsBinary = string.Equals(existingType, BinaryTypeName, StringComparison.Ordinal);
-				string value;
-				if (hasFilePath) {
-					// A file upload targets a Binary setting: confirm the target is Binary and passes the
-					// environment's file-security policy before reading the file.
-					if (existingType is null) {
-						throw new ArgumentException(
-							$"Sys-setting '{args.Code}' was not found. Create it as a Binary setting before uploading a file.");
-					}
-					if (!targetIsBinary) {
-						throw new ArgumentException(
-							$"Cannot upload a file to sys-setting '{args.Code}': it is type '{existingType}', not Binary. " +
-							"A file value can only be written to a Binary setting.");
-					}
-					EnforceFileSecurityPolicy(args.ValueFilePath);
-					value = EncodeFileToBase64(args.ValueFilePath);
-				} else {
-					// An inline value for a Binary setting is rejected while a policy is active (no extension
-					// to validate); when allowed, validate it up front so the caller gets the specific cause.
-					RejectInlineBinaryUnderActivePolicy(args.Code, targetIsBinary);
-					value = args.Value;
-					if (targetIsBinary && !_sysSettingsManager.TryValidateBinaryValue(value, out string binaryError)) {
-						return new SysSettingUpdateResult(false, args.Code, null, binaryError);
-					}
-				}
-				// A file-derived payload is Binary by nature; default the type accordingly when it is not
-				// resolved from the target environment.
-				string fallbackTypeName = hasFilePath ? BinaryTypeName : "Text";
-				string valueTypeName = string.IsNullOrWhiteSpace(args.ValueTypeName)
-					? fallbackTypeName
-					: args.ValueTypeName;
+				bool hasFilePath = ValidateUpdateArgs(args);
+				string value = PrepareUpdateValue(args, hasFilePath, out string valueTypeName);
 				bool updated = _sysSettingsManager.UpdateSysSetting(args.Code, value, valueTypeName);
 				if (!updated) {
 					return new SysSettingUpdateResult(false, args.Code, null,
 						"Failed to update sys-setting. The setting may not exist, or the value did not match the expected type.");
 				}
 				(string readback, string readbackType) = _sysSettingsManager.GetAllUsersDefaultWithType(args.Code);
-				string maskedReadback = ApplySecureTextMask(readbackType, readback);
-				return new SysSettingUpdateResult(true, args.Code, maskedReadback);
+				return new SysSettingUpdateResult(true, args.Code, ApplySecureTextMask(readbackType, readback));
 			} catch (Exception ex) {
-				string message = CategorizeError(ex, "updating sys-setting");
-				return new SysSettingUpdateResult(false, args.Code, null, message);
+				return new SysSettingUpdateResult(false, args.Code, null, CategorizeError(ex, "updating sys-setting"));
 			}
+		}
+
+		/// <summary>
+		/// Validates the update arguments: a non-empty code and exactly one of <c>value</c> / <c>value-file-path</c>.
+		/// Returns whether the payload comes from a file path. Throws <see cref="ArgumentException"/> on invalid input.
+		/// </summary>
+		private static bool ValidateUpdateArgs(UpdateSysSettingArgs args){
+			if (string.IsNullOrWhiteSpace(args.Code)) {
+				throw new ArgumentException("code is required.");
+			}
+			bool hasInlineValue = args.Value is not null;
+			bool hasFilePath = !string.IsNullOrWhiteSpace(args.ValueFilePath);
+			if (hasInlineValue && hasFilePath) {
+				throw new ArgumentException("Provide either 'value' or 'value-file-path', not both.");
+			}
+			if (!hasInlineValue && !hasFilePath) {
+				throw new ArgumentException("value is required (supply 'value' or 'value-file-path').");
+			}
+			return hasFilePath;
+		}
+
+		/// <summary>
+		/// Produces the value to send and resolves the value-type-name, applying the Binary write guards:
+		/// a file upload requires an existing Binary target that passes the file-security policy; an inline
+		/// value for a Binary target is refused under an active policy and otherwise validated up front (the
+		/// specific malformed/too-large cause is thrown so it surfaces on the result). Throws on any violation.
+		/// </summary>
+		private string PrepareUpdateValue(UpdateSysSettingArgs args, bool hasFilePath, out string valueTypeName){
+			// Resolve the existing type once so file/inline paths share it (avoids a second lookup).
+			(_, string existingType) = _sysSettingsManager.GetAllUsersDefaultWithType(args.Code);
+			bool targetIsBinary = string.Equals(existingType, BinaryTypeName, StringComparison.Ordinal);
+			string value;
+			if (hasFilePath) {
+				if (existingType is null) {
+					throw new ArgumentException(
+						$"Sys-setting '{args.Code}' was not found. Create it as a Binary setting before uploading a file.");
+				}
+				if (!targetIsBinary) {
+					throw new ArgumentException(
+						$"Cannot upload a file to sys-setting '{args.Code}': it is type '{existingType}', not Binary. " +
+						"A file value can only be written to a Binary setting.");
+				}
+				EnforceFileSecurityPolicy(args.ValueFilePath);
+				value = EncodeFileToBase64(args.ValueFilePath);
+			} else {
+				RejectInlineBinaryUnderActivePolicy(args.Code, targetIsBinary);
+				value = args.Value;
+				if (targetIsBinary && !_sysSettingsManager.TryValidateBinaryValue(value, out string binaryError)) {
+					throw new ArgumentException(binaryError);
+				}
+			}
+			// A file-derived payload is Binary by nature; default the type accordingly when it is not
+			// resolved from the target environment.
+			string fallbackTypeName = hasFilePath ? BinaryTypeName : "Text";
+			valueTypeName = string.IsNullOrWhiteSpace(args.ValueTypeName) ? fallbackTypeName : args.ValueTypeName;
+			return value;
 		}
 
 		public override int Execute(SysSettingsOptions opts) {
