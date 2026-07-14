@@ -66,29 +66,50 @@ namespace Clio.Command
 			_fileSystem = fileSystem;
 		}
 
-		// A sys-setting value is meant for a logo/small image; this cap guards against a mistaken path
-		// (e.g. pointing at a database backup) being read fully into memory and Base64-encoded. It is a
-		// sanity limit, not a policy — 10 MB comfortably covers any real logo or background image.
-		private const long MaxBinaryFileSizeBytes = 10L * 1024 * 1024;
-
 		/// <summary>
 		/// Reads the file at <paramref name="filePath"/> and returns its Base64-encoded contents.
-		/// Used to turn a file's contents (e.g. the logo, or any blob) into the Base64 payload a Binary sys-setting expects,
-		/// keeping the bytes on disk rather than in the CLI/MCP arguments. Rejects files larger than
-		/// <see cref="MaxBinaryFileSizeBytes"/> so a wrong path fails fast instead of exhausting memory.
+		/// Used to turn a file's bytes (e.g. the logo, or any blob) into the Base64 payload a Binary
+		/// sys-setting expects, keeping the bytes on disk rather than in the CLI/MCP arguments. Rejects a
+		/// file exceeding <see cref="SysSettingsManager.MaxBinaryValueBytes"/> both before the read (fail
+		/// fast, no huge allocation) and after it (closes the race where the file grows between sizing and
+		/// reading). The manager re-checks the decoded length, so the limit also holds for inline Base64.
 		/// </summary>
 		private string EncodeFileToBase64(string filePath){
 			if (!_fileSystem.ExistsFile(filePath)) {
 				throw new ArgumentException($"File not found: '{filePath}'.");
 			}
 			long sizeBytes = _fileSystem.GetFileSize(filePath);
-			if (sizeBytes > MaxBinaryFileSizeBytes) {
+			if (sizeBytes > SysSettingsManager.MaxBinaryValueBytes) {
 				throw new ArgumentException(
 					$"File '{filePath}' is {sizeBytes:N0} bytes, which exceeds the " +
-					$"{MaxBinaryFileSizeBytes:N0}-byte limit for a Binary sys-setting value.");
+					$"{SysSettingsManager.MaxBinaryValueBytes:N0}-byte limit for a Binary sys-setting value.");
 			}
-			_logger.WriteInfo($"Reading Binary sys-setting value from file '{filePath}' ({sizeBytes} bytes).");
-			return Convert.ToBase64String(_fileSystem.ReadAllBytes(filePath));
+			byte[] bytes = _fileSystem.ReadAllBytes(filePath);
+			if (bytes.LongLength > SysSettingsManager.MaxBinaryValueBytes) {
+				throw new ArgumentException(
+					$"File '{filePath}' is {bytes.LongLength:N0} bytes, which exceeds the " +
+					$"{SysSettingsManager.MaxBinaryValueBytes:N0}-byte limit for a Binary sys-setting value.");
+			}
+			_logger.WriteInfo($"Reading Binary sys-setting value from file '{filePath}' ({bytes.LongLength:N0} bytes).");
+			return Convert.ToBase64String(bytes);
+		}
+
+		/// <summary>
+		/// Confirms the existing sys-setting <paramref name="code"/> is Binary before a file is uploaded to
+		/// it. Prevents a file's Base64 from being persisted as text on a non-Binary setting, and never lets
+		/// a caller-supplied value-type-name override the actual type of an existing setting.
+		/// </summary>
+		private void EnsureExistingSettingIsBinary(string code){
+			(_, string existingType) = _sysSettingsManager.GetAllUsersDefaultWithType(code);
+			if (existingType is null) {
+				throw new ArgumentException(
+					$"Sys-setting '{code}' was not found. Create it as a Binary setting before uploading a file.");
+			}
+			if (!string.Equals(existingType, BinaryTypeName, StringComparison.Ordinal)) {
+				throw new ArgumentException(
+					$"Cannot upload a file to sys-setting '{code}': it is type '{existingType}', not Binary. " +
+					"A file value can only be written to a Binary setting.");
+			}
 		}
 
 		// A Base64 string uses only [A-Za-z0-9+/=], so any of '.', '\' or ':' means the caller almost
@@ -106,6 +127,7 @@ namespace Clio.Command
 			string value = opts.Value;
 			if (string.Equals(opts.Type, BinaryTypeName, StringComparison.Ordinal) && opts.Value is not null) {
 				if (_fileSystem.ExistsFile(opts.Value)) {
+					EnsureExistingSettingIsBinary(opts.Code);
 					value = EncodeFileToBase64(opts.Value);
 				} else if (LooksLikeFilePath(opts.Value)) {
 					// The value looks like a path (Base64 never contains '.', '\\' or ':') but no such file
@@ -147,6 +169,11 @@ namespace Clio.Command
 				}
 				if (!hasInlineValue && !hasFilePath) {
 					throw new ArgumentException("value is required (supply 'value' or 'value-file-path').");
+				}
+				// A file upload targets a Binary setting: confirm the existing setting is Binary before
+				// reading the file, so a file's Base64 is never persisted as text on a non-Binary setting.
+				if (hasFilePath) {
+					EnsureExistingSettingIsBinary(args.Code);
 				}
 				// A file path is read and Base64-encoded locally; such payloads are Binary by nature, so
 				// default the type accordingly when it is not resolved from the target environment.

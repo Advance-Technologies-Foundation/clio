@@ -171,16 +171,28 @@ public class SysSettingsManager : ISysSettingsManager
 	}
 
 	/// <summary>
-	/// Returns true when <paramref name="value"/> is a non-empty, well-formed Base64 string.
-	/// Used to guard Binary sys-setting writes so a malformed payload is rejected before it reaches
-	/// the platform's PostSysSettingsValues endpoint.
+	/// Upper bound on a Binary sys-setting payload (decoded bytes). Applies to every write path — a file
+	/// read for value-file-path and an inline Base64 value alike — so no route can bypass it. A logo or
+	/// background comfortably fits; the cap guards against a mistaken large file exhausting memory.
 	/// </summary>
-	private static bool IsValidBase64(string value){
+	public const long MaxBinaryValueBytes = 10L * 1024 * 1024;
+
+	/// <summary>
+	/// Validates that <paramref name="value"/> is a non-empty, well-formed Base64 string and reports the
+	/// decoded byte length. Used to guard Binary sys-setting writes so a malformed or oversized payload is
+	/// rejected before it reaches the platform's PostSysSettingsValues endpoint.
+	/// </summary>
+	private static bool TryDecodeBase64(string value, out int decodedByteLength){
+		decodedByteLength = 0;
 		if (string.IsNullOrWhiteSpace(value)) {
 			return false;
 		}
-		Span<byte> buffer = new byte[value.Length];
-		return Convert.TryFromBase64String(value, buffer, out _);
+		byte[] buffer = new byte[value.Length];
+		if (!Convert.TryFromBase64String(value, buffer, out decodedByteLength)) {
+			decodedByteLength = 0;
+			return false;
+		}
+		return true;
 	}
 
 	private Guid GetEntityIdByDisplayValue(string entityName, string optsValue){
@@ -442,10 +454,18 @@ public class SysSettingsManager : ISysSettingsManager
 			// (the command layer encodes a file for CLI/MCP callers). Reading the value back is not
 			// supported here — see SysSettingsCommand for the write-only rationale.
 			string base64Value = value?.ToString() ?? string.Empty;
-			if (!IsValidBase64(base64Value)) {
+			if (!TryDecodeBase64(base64Value, out int decodedByteLength)) {
 				_logger.WriteError(
 					$"SysSettings with code: {code} is not updated. Value is not valid Base64 " +
 					"(Binary settings expect a Base64-encoded payload).");
+				return false;
+			}
+			// Enforce the size cap here so it applies to every write path (inline Base64 as well as a
+			// file read upstream), and against the decoded byte count actually being sent.
+			if (decodedByteLength > MaxBinaryValueBytes) {
+				_logger.WriteError(
+					$"SysSettings with code: {code} is not updated. Binary value is {decodedByteLength:N0} bytes, " +
+					$"which exceeds the {MaxBinaryValueBytes:N0}-byte limit.");
 				return false;
 			}
 			payloadValue = base64Value;

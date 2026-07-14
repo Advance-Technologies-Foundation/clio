@@ -108,20 +108,21 @@ public static class SysSettingPrompt {
 		[Required]
 		[Description("Existing sys-setting code")]
 		string code,
-		[Required]
-		[Description("New value. Must match the setting's value-type-name (booleans, decimals, integers, ISO date/time, or a Guid/display-name for Lookup)")]
-		string value,
+		[Description("New value (provide this OR value-file-path). Must match the setting's value-type-name (booleans, decimals, integers, ISO date/time, a Guid/display-name for Lookup, or raw Base64 for Binary)")]
+		string value = null,
 		[Description("Optional explicit value-type-name. Used as a fallback when the setting cannot be located on the target environment")]
-		string valueTypeName = null) =>
+		string valueTypeName = null,
+		[Description("Local file path (provide this OR value). For a Binary setting such as the logo; clio reads the file and Base64-encodes it locally so the blob stays out of the tool-call arguments")]
+		string valueFilePath = null) =>
 		$"""
 		 Use clio mcp server `{SysSettingUpdateTool.UpdateSysSettingToolName}` to set the All-Users default value
-		 of sys-setting `{code}` to `{value}` on environment `{environmentName}`. Pass `environment-name`,
-		 `code`, and `value` exactly as provided. The setting must already exist — call
+		 of sys-setting `{code}` on environment `{environmentName}`. Pass `environment-name` and `code`, plus
+		 exactly ONE of `value` or `value-file-path`. The setting must already exist — call
 		 `{SysSettingCreateTool.CreateSysSettingToolName}` first when registering a new setting. Pass
 		 `value-type-name` only as a fallback when the setting type cannot be resolved from the platform (it is
 		 unused otherwise). For a `Binary` setting (blob data, such as the logo), omit `value` and pass `value-file-path`
 		 with a local file path instead; clio reads the file and Base64-encodes it, so the blob never travels through the
-		 tool-call arguments. For Lookup settings, `value` may be a GUID or the display name of an existing lookup
+		 tool-call arguments (the target setting must already be Binary). For Lookup settings, `value` may be a GUID or the display name of an existing lookup
 		 record; clio resolves display names to GUIDs before save. For DateTime / Date / Time, use ISO 8601.
 		 Verify the assigned value with `{SysSettingGetTool.GetSysSettingToolName}` when explicit confirmation is
 		 needed. Date and Time values may round-trip with a local-TZ offset on some platform deployments — treat

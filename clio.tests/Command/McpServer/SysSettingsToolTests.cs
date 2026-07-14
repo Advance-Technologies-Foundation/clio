@@ -389,6 +389,53 @@ public sealed class SysSettingsToolTests {
 		manager.DidNotReceive().UpdateSysSetting(Arg.Any<string>(), Arg.Any<object>(), Arg.Any<string>());
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("update-sys-setting rejects a value-file-path upload when the existing target setting is not Binary, so a file's Base64 is never persisted as text.")]
+	public void UpdateSysSetting_Should_Reject_File_For_NonBinary_Setting() {
+		// Arrange
+		ISysSettingsManager manager = Substitute.For<ISysSettingsManager>();
+		manager.GetAllUsersDefaultWithType("SchemaNamePrefix").Returns(("Usr", "Text"));
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		fileSystem.ExistsFile("logo.png").Returns(true);
+		SysSettingUpdateTool tool = new(BuildResolver(manager, fileSystem));
+
+		// Act
+		SysSettingUpdateResult result = tool.UpdateSysSetting(
+			new UpdateSysSettingArgs("local", "SchemaNamePrefix", ValueFilePath: "logo.png"));
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "a file can only be uploaded to a Binary setting, not a Text one");
+		result.Error.Should().Contain("not Binary",
+			because: "the error must explain the target setting's type is wrong for a file upload");
+		manager.DidNotReceive().UpdateSysSetting(Arg.Any<string>(), Arg.Any<object>(), Arg.Any<string>());
+		fileSystem.DidNotReceive().ReadAllBytes(Arg.Any<string>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("update-sys-setting rejects a value-file-path upload when the target setting does not exist, directing the caller to create it as Binary first.")]
+	public void UpdateSysSetting_Should_Reject_File_For_Missing_Setting() {
+		// Arrange
+		ISysSettingsManager manager = Substitute.For<ISysSettingsManager>();
+		manager.GetAllUsersDefaultWithType("UsrNope").Returns((string.Empty, (string)null));
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		fileSystem.ExistsFile("logo.png").Returns(true);
+		SysSettingUpdateTool tool = new(BuildResolver(manager, fileSystem));
+
+		// Act
+		SysSettingUpdateResult result = tool.UpdateSysSetting(
+			new UpdateSysSettingArgs("local", "UsrNope", ValueFilePath: "logo.png"));
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "update requires the setting to already exist");
+		result.Error.Should().Contain("was not found",
+			because: "the error must tell the caller to create the Binary setting first");
+		manager.DidNotReceive().UpdateSysSetting(Arg.Any<string>(), Arg.Any<object>(), Arg.Any<string>());
+	}
+
 	#endregion
 
 	#region set-syssetting CLI (Binary file path)
@@ -404,6 +451,7 @@ public sealed class SysSettingsToolTests {
 		string capturedValue = null;
 		manager.UpdateSysSetting("LogoImage", Arg.Do<object>(v => capturedValue = v as string), "Binary")
 			.Returns(true);
+		manager.GetAllUsersDefaultWithType("LogoImage").Returns((string.Empty, "Binary"));
 		IFileSystem fileSystem = Substitute.For<IFileSystem>();
 		fileSystem.ExistsFile("logo.png").Returns(true);
 		fileSystem.GetFileSize("logo.png").Returns(bytes.Length);

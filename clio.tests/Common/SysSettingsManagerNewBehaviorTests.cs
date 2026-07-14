@@ -809,6 +809,25 @@ public class SysSettingsManagerNewBehaviorTests {
 		applicationClient.DidNotReceive().ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>());
 	}
 
+	[Test]
+	[Description("Binary updates reject an oversized inline Base64 value before contacting the platform, so the size cap cannot be bypassed via the inline value path.")]
+	public void UpdateSysSetting_BinaryType_RejectsOversizedValue() {
+		// Arrange
+		byte[] tooBig = new byte[(int)SysSettingsManager.MaxBinaryValueBytes + 1];
+		string base64 = Convert.ToBase64String(tooBig);
+		DataProviderMock providerMock = SetupSysSettingsMock(Guid.NewGuid(), "LogoImage", "Binary");
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		ISysSettingsManager sut = BuildSut(providerMock, applicationClient);
+
+		// Act
+		bool updated = sut.UpdateSysSetting("LogoImage", base64, "Binary");
+
+		// Assert
+		updated.Should().BeFalse(
+			because: "a Binary payload over the decoded-byte cap must be rejected regardless of input form");
+		applicationClient.DidNotReceive().ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>());
+	}
+
 	#endregion
 
 	#region GetSysSettingValueByCode — All-Users-only fallback
