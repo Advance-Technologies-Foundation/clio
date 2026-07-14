@@ -48,6 +48,10 @@ hosts [options]
 --fail-on-error         Return non-zero exit code on errors
 
 --fail-on-warning       Return non-zero exit code on warnings
+
+--json                  Output the host list as machine-readable JSON and
+                        suppress progress messages. Used by the macOS
+                        menu bar app.
 ```
 
 ## Example
@@ -61,6 +65,9 @@ same as above, using alias
 
 clio hosts --fail-on-error
 list hosts, returning error code on failure
+
+clio hosts --json
+output the host list as a JSON array (Environment, ServiceName, Status, PID, EnvironmentPath, Url)
 
 Example output (Windows with IIS):
 Scanning 3 environment(s) in parallel...

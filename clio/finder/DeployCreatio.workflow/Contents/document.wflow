@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>AMApplicationBuild</key>
+	<string>534</string>
+	<key>AMApplicationVersion</key>
+	<string>2.10</string>
+	<key>AMDocumentVersion</key>
+	<string>2</string>
+	<key>actions</key>
+	<array>
+		<dict>
+			<key>AMActionBuildVersion</key>
+			<integer>1</integer>
+			<key>AMActionName</key>
+			<string>Run AppleScript</string>
+			<key>AMActionParameters</key>
+			<dict>
+				<key>source</key>
+				<string>on run {input, parameters}
+	repeat with theItem in input
+		set posixPath to POSIX path of theItem
+		if posixPath ends with ".zip" then
+			set cmd to "clio deploy-creatio --zip-file " &amp; quoted form of posixPath &amp; " --explorer-launch"
+		else
+			set cmd to "cd " &amp; quoted form of posixPath &amp; "; clio deploy-creatio --explorer-launch"
+		end if
+		tell application "Terminal"
+			activate
+			do script cmd
+		end tell
+	end repeat
+end run
+</string>
+			</dict>
+			<key>AMAdobeActionType</key>
+			<string>AMAppleScriptAction</string>
+			<key>AMAutomatorActionIdentifier</key>
+			<string>com.apple.RunAppleScript</string>
+			<key>AMBundleIdentifier</key>
+			<string>com.apple.Automator.RunScript</string>
+			<key>AMCategory</key>
+			<string>AMCategoryUtilities</string>
+			<key>AMConnected</key>
+			<true/>
+			<key>AMDescription</key>
+			<dict>
+				<key>AMDefault</key>
+				<string>Runs the specified AppleScript.</string>
+				<key>AMIndent</key>
+				<integer>0</integer>
+				<key>AMTitle</key>
+				<string>Run AppleScript</string>
+			</dict>
+			<key>AMName</key>
+			<string>Run AppleScript</string>
+			<key>AMRequiresOutput</key>
+			<false/>
+			<key>AMUIDisable</key>
+			<false/>
+		</dict>
+	</array>
+	<key>connectors</key>
+	<dict/>
+	<key>workflowMetaData</key>
+	<dict>
+		<key>applicationBundleIDsByPath</key>
+		<dict/>
+		<key>applicationPaths</key>
+		<array/>
+		<key>inputTypeIdentifier</key>
+		<string>com.apple.Automator.fileSystemObject</string>
+		<key>outputTypeIdentifier</key>
+		<string>com.apple.Automator.nothing</string>
+		<key>presentationMode</key>
+		<integer>11</integer>
+		<key>processesInput</key>
+		<true/>
+		<key>serviceInputTypeIdentifier</key>
+		<string>com.apple.Automator.fileSystemObject</string>
+		<key>serviceOutputTypeIdentifier</key>
+		<string>com.apple.Automator.nothing</string>
+		<key>serviceProcessesInput</key>
+		<true/>
+		<key>systemImageName</key>
+		<string>NSActionTemplate</string>
+		<key>useAutomaticInputType</key>
+		<false/>
+		<key>workflowTypeIdentifier</key>
+		<string>com.apple.Automator.servicesMenu</string>
+	</dict>
+</dict>
+</plist>

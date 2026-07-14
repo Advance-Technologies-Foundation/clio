@@ -1402,6 +1402,7 @@ internal class Program {
 		Parser.Default.Settings.ShowHeader = false;
 		Parser.Default.Settings.HelpDirectory = helpDirectoryPath;
 		IServiceProvider bm = new BindingsModule().Register(applyBootstrapRepairs: false);
+		EnsureMacOsFinderIntegration(bm);
 		if (TryHandleBuiltInHelp(args, bm, out int helpExitCode)) {
 			return helpExitCode;
 		}
@@ -1449,6 +1450,22 @@ internal class Program {
 			string.Equals(arg, "--help", StringComparison.OrdinalIgnoreCase)
 			|| string.Equals(arg, "-h", StringComparison.OrdinalIgnoreCase)
 			|| string.Equals(arg, "--version", StringComparison.OrdinalIgnoreCase));
+	}
+
+	private static void EnsureMacOsFinderIntegration(IServiceProvider serviceProvider) {
+		try {
+			if (!OperatingSystem.IsMacOS()) {
+				return;
+			}
+			IMacOsFinderIntegration finderIntegration =
+				serviceProvider.GetRequiredService<IMacOsFinderIntegration>();
+			finderIntegration.InstallAsync().GetAwaiter().GetResult();
+			IMacOsMenuBarIntegration menuBarIntegration =
+				serviceProvider.GetRequiredService<IMacOsMenuBarIntegration>();
+			menuBarIntegration.InstallAsync().GetAwaiter().GetResult();
+		} catch {
+			// Finder / menu bar integration must never block or crash the tool.
+		}
 	}
 
 	private static void RunStartupUpdateCheck(string[] args, IServiceProvider serviceProvider) {

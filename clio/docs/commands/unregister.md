@@ -6,7 +6,7 @@
 
 ## Name
 
-unregister - Unregister clio commands from Windows context menu
+unregister - Unregister clio commands from the OS shell context menu
 
 ## Synopsis
 
@@ -16,21 +16,24 @@ unregister [OPTIONS]
 
 ## Description
 
-Removes clio commands from the Windows context menu (right-click menu) for
-folders and files. This command cleans up registry entries that were created
-by the 'register' command.
+Removes clio commands from the OS shell context menu (right-click menu). This
+command reverses the changes made by the 'register' command.
 
-The command performs the following actions:
+On Windows, it:
 - Removes clio entries from Windows Registry for folders
 - Removes clio entries from Windows Registry for files
 - Cleans up context menu integration
 
-Note: This command does not remove icon files from %APPDATA%\clio folder.
+Note: on Windows this does not remove icon files from %APPDATA%\clio folder.
+
+On macOS, it removes the **Deploy Creatio** Finder Quick Action from
+`~/Library/Services` and removes the **menu bar app**: it unloads and deletes
+the LaunchAgent (`~/Library/LaunchAgents/com.creatio.clio.menubar.plist`) and
+the compiled binary (`~/Library/Application Support/clio/ClioMenuBar`).
 
 REQUIREMENTS:
-- Windows operating system only
-- Administrator privileges required
-- Windows Registry access
+- Windows: administrator privileges and Windows Registry access
+- macOS: no administrator privileges required
 
 ## Options
 
@@ -59,12 +62,20 @@ unregister --Target m
 
 ## Behavior
 
+On Windows:
+
 1. Executes registry delete command for folder context menu entries
 HKEY_CLASSES_ROOT\Folder\shell\clio
 2. Executes registry delete command for file context menu entries
 HKEY_CLASSES_ROOT\*\shell\clio
 3. Uses /f flag to force deletion without confirmation
 4. Displays success or error message
+
+On macOS:
+
+1. Removes `~/Library/Services/DeployCreatio.workflow` if present
+2. Unloads and removes the menu bar app LaunchAgent and compiled binary
+3. Displays success or error message
 
 ## Registry Keys Deleted
 
@@ -73,15 +84,16 @@ HKEY_CLASSES_ROOT\*\shell\clio
 
 ## Exit Codes
 
-    0   Successfully unregistered context menu
+    0   Successfully unregistered context menu / Finder Quick Action
     1   Failed to unregister (registry delete command failed or other error occurred)
 
 ## Notes
 
-- This command only works on Windows operating systems
-- Administrator privileges are recommended for reliable operation
-- Icon files in %APPDATA%\clio\ are not removed
-- Command returns non-zero when any registry delete command exits with a non-zero code
+- Supported on Windows and macOS
+- On Windows, administrator privileges are recommended for reliable operation
+- On Windows, icon files in %APPDATA%\clio\ are not removed
+- On Windows, command returns non-zero when any registry delete command exits with a non-zero code
+- On macOS, the Quick Action is removed from ~/Library/Services/DeployCreatio.workflow
 
 ## Manual Cleanup
 

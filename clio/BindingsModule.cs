@@ -293,6 +293,8 @@ public class BindingsModule {
 		}
 
 		services.AddTransient<Clio.Common.IFileSystem, Clio.Common.FileSystem>();
+		services.AddTransient<IMacOsFinderIntegration, MacOsFinderIntegration>();
+		services.AddTransient<IMacOsMenuBarIntegration, MacOsMenuBarIntegration>();
 		services.AddTransient<IFileSecurityHardening, FileSecurityHardening>();
 		services.AddTransient<Clio.Common.BrowserSession.IBrowserSessionCache, Clio.Common.BrowserSession.BrowserSessionCache>();
 		services.AddTransient<Clio.Common.BrowserSession.ICreatioAuthClient, Clio.Common.BrowserSession.CreatioAuthClient>();

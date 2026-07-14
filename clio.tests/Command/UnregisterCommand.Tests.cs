@@ -16,6 +16,9 @@ internal class UnregisterCommandTests : BaseCommandTests<UnregisterOptions>{
 	#region Fields: Private
 
 	private ILogger _logger;
+	private IMacOsFinderIntegration _macOsFinderIntegration;
+	private IMacOsMenuBarIntegration _macOsMenuBarIntegration;
+	private IOperationSystem _operationSystem;
 	private IProcessExecutor _processExecutor;
 	private UnregisterCommand _unregisterCommand;
 
@@ -27,8 +30,14 @@ internal class UnregisterCommandTests : BaseCommandTests<UnregisterOptions>{
 		base.AdditionalRegistrations(containerBuilder);
 		_logger = Substitute.For<ILogger>();
 		_processExecutor = Substitute.For<IProcessExecutor>();
+		_operationSystem = Substitute.For<IOperationSystem>();
+		_macOsFinderIntegration = Substitute.For<IMacOsFinderIntegration>();
+		_macOsMenuBarIntegration = Substitute.For<IMacOsMenuBarIntegration>();
 		containerBuilder.AddSingleton(_logger);
 		containerBuilder.AddSingleton(_processExecutor);
+		containerBuilder.AddSingleton(_operationSystem);
+		containerBuilder.AddSingleton(_macOsFinderIntegration);
+		containerBuilder.AddSingleton(_macOsMenuBarIntegration);
 		containerBuilder.AddTransient<UnregisterCommand>();
 	}
 
@@ -74,6 +83,26 @@ internal class UnregisterCommandTests : BaseCommandTests<UnregisterOptions>{
 			o.SuppressErrors));
 		_logger.Received(1).WriteLine(Arg.Is<string>(message =>
 			message.Contains("successfully unregistered", StringComparison.OrdinalIgnoreCase)));
+	}
+
+	[Test]
+	[Description("Execute should remove the Finder quick action and return zero on macOS.")]
+	public void Execute_WhenPlatformIsMacOs_RemovesQuickActionAndReturnsZero() {
+		// Arrange
+		_operationSystem.IsMacOS.Returns(true);
+		_macOsFinderIntegration.UninstallAsync().Returns(Task.CompletedTask);
+		UnregisterOptions options = new();
+
+		// Act
+		int result = _unregisterCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "unregister removes the Finder quick action on macOS");
+		_macOsFinderIntegration.Received(1).UninstallAsync();
+		_macOsMenuBarIntegration.Received(1).UninstallAsync();
+		_processExecutor.DidNotReceiveWithAnyArgs().ExecuteAndCaptureAsync(default);
+		_logger.Received(1).WriteLine(Arg.Is<string>(message =>
+			message.Contains("menu bar app unregistered", StringComparison.OrdinalIgnoreCase)));
 	}
 
 	[Test]

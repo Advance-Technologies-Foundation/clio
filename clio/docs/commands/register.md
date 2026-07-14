@@ -6,7 +6,7 @@
 
 ## Name
 
-register - Register clio commands in Windows context menu
+register - Register clio commands in the OS shell context menu
 
 ## Synopsis
 
@@ -16,19 +16,34 @@ register [OPTIONS]
 
 ## Description
 
-Registers clio commands in the Windows context menu (right-click menu) for
-folders and files. This provides convenient access to clio commands directly
-from Windows Explorer without opening a terminal.
+Registers clio commands in the OS shell context menu (right-click menu) so clio
+commands can be launched directly from the file manager without opening a
+terminal.
 
-The command performs the following actions:
+On Windows, the command:
 - Copies clio icon files to the user's AppData folder
 - Imports Windows registry entries to add clio to context menus
 - Enables right-click access to clio commands from Windows Explorer
 
+On macOS, the command installs the **Deploy Creatio** Finder Quick Action into
+`~/Library/Services`. After installation you can right-click a folder that
+contains extracted Creatio binaries, or a Creatio `.zip` file, and choose
+**Quick Actions > Deploy Creatio** to run `clio deploy-creatio` against it. The
+Quick Action is also installed/updated automatically the first time clio runs
+after a `dotnet tool install`/`dotnet tool update`, so running this command
+manually on macOS is usually not required.
+
+On macOS, the command also installs a **menu bar (status bar) app**. It compiles
+the bundled Swift source with `swiftc` into `~/Library/Application Support/clio`
+and registers a per-user LaunchAgent so the app starts at login. The menu bar
+icon offers **Deploy Creatio...** (pick a folder or `.zip`) and, for every
+registered Creatio host (from `clio hosts`), **Start / Stop / Open folder**
+actions. If `swiftc` is not available (install it with `xcode-select --install`),
+the menu bar app is skipped and the rest of the registration still succeeds.
+
 REQUIREMENTS:
-- Windows operating system only
-- Administrator privileges required
-- Windows Registry access
+- Windows: administrator privileges and Windows Registry access
+- macOS: no administrator privileges required
 
 ## Options
 
@@ -60,13 +75,22 @@ register --Path "C:\Tools\clio"
 
 ## Behavior
 
-1. Checks if running on Windows operating system
-2. Verifies administrator privileges
-3. Creates %APPDATA%\clio folder if it doesn't exist
-4. Copies all icon files from clio installation img folder to AppData
-5. Imports unregister registry file to clean previous entries
-6. Imports register registry file to add new context menu entries
-7. Displays success or error message
+On Windows:
+
+1. Verifies administrator privileges
+2. Creates %APPDATA%\clio folder if it doesn't exist
+3. Copies all icon files from clio installation img folder to AppData
+4. Imports unregister registry file to clean previous entries
+5. Imports register registry file to add new context menu entries
+6. Displays success or error message
+
+On macOS:
+
+1. Locates the bundled `DeployCreatio.workflow` next to the clio assembly
+2. Copies (or refreshes when newer) the Quick Action into `~/Library/Services`
+3. Compiles the menu bar app (when `swiftc` is available) and installs its
+   LaunchAgent (`~/Library/LaunchAgents/com.creatio.clio.menubar.plist`)
+4. Displays success or error message
 
 ## Registry Files Used
 
@@ -75,16 +99,19 @@ register --Path "C:\Tools\clio"
 
 ## Exit Codes
 
-    0   Successfully registered context menu
-    1   Failed to register (not Windows, no admin rights, registry import failed, or other error occurred)
+    0   Successfully registered context menu / Finder Quick Action
+    1   Failed to register (unsupported OS, no admin rights on Windows, registry import failed, or other error occurred)
 
 ## Notes
 
-- This command only works on Windows operating systems
-- Administrator privileges are mandatory
-- Previous context menu entries are automatically removed before registration
-- Icons are stored in: %APPDATA%\clio\
-- To remove context menu entries, use the 'unregister' command
+- Supported on Windows and macOS
+- Windows requires administrator privileges; macOS does not
+- On Windows, previous context menu entries are automatically removed before registration
+- On Windows, icons are stored in: %APPDATA%\clio\
+- On macOS, the Quick Action is stored in: ~/Library/Services/DeployCreatio.workflow
+- On macOS, the menu bar app is stored in: ~/Library/Application Support/clio/ClioMenuBar
+  with LaunchAgent ~/Library/LaunchAgents/com.creatio.clio.menubar.plist
+- To remove context menu entries / the Quick Action / the menu bar app, use the 'unregister' command
 
 ## Security Considerations
 

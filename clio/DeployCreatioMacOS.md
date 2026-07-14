@@ -304,6 +304,91 @@ Example: http://localhost:8080
 
 ---
 
+## Deploy from Finder (Quick Action)
+
+On macOS clio ships a **Deploy Creatio** Finder Quick Action so you can deploy
+without opening a terminal.
+
+### Installation
+
+The Quick Action is installed automatically the first time clio runs after a
+`dotnet tool install clio -g` or `dotnet tool update clio -g`. You can also
+install or refresh it manually:
+
+```bash
+clio register
+```
+
+This copies `DeployCreatio.workflow` into `~/Library/Services`. To remove it:
+
+```bash
+clio unregister
+```
+
+> **Note:** No administrator privileges are required on macOS.
+
+### Usage
+
+1. In Finder, right-click either:
+   - a **folder** containing extracted Creatio binaries, or
+   - a Creatio **`.zip`** file.
+2. Choose **Quick Actions > Deploy Creatio** (also available under the
+   **Services** submenu).
+
+clio runs `deploy-creatio` against the selected item:
+
+- For a folder, clio deploys from that folder.
+- For a `.zip` file, clio runs `clio deploy-creatio --zip-file "<file>"`.
+
+Deployment defaults (database, platform, port, etc.) come from your clio
+configuration; see the `config` command to change them.
+
+> **macOS enablement:** on recent macOS versions a newly installed Quick Action
+> must be enabled once via **Finder right-click ▸ Quick Actions ▸ Customize…**
+> (or **System Settings ▸ Keyboard ▸ Keyboard Shortcuts ▸ Services ▸ Files and
+> Folders**). `clio register` opens that settings pane for you. The menu bar app
+> below has no such enablement step.
+
+---
+
+## Menu bar app
+
+On macOS clio also installs a **menu bar (status bar) app** — a persistent icon
+in the top menu bar — so you never need the one-time Quick Action enablement.
+
+### Installation
+
+The menu bar app is installed automatically the first time clio runs after a
+`dotnet tool install clio -g` / `dotnet tool update clio -g`, or manually with
+`clio register`. clio compiles the bundled Swift source with `swiftc` into
+`~/Library/Application Support/clio/ClioMenuBar` and installs a LaunchAgent
+(`~/Library/LaunchAgents/com.creatio.clio.menubar.plist`) so it starts at login.
+
+If `swiftc` is missing, install the Xcode Command Line Tools and re-run
+`clio register`:
+
+```bash
+xcode-select --install
+clio register
+```
+
+Remove it with `clio unregister`.
+
+### Usage
+
+Click the menu bar icon to:
+
+- **Deploy Creatio…** — pick a folder or `.zip`, then clio runs
+  `deploy-creatio --zip-file "<path>"` in Terminal.
+- For every registered host (from `clio hosts`), a submenu with **Start**
+  (`clio start -e <env>`), **Stop** (`clio stop -e <env>`), **Open in browser**
+  (opens the environment URL/port), **Open folder**, and **Remove host…**
+  (`clio uninstall-creatio -e <env>` — drops the database and deletes the files;
+  shows a confirmation dialog first).
+- **Refresh** re-reads the host list; **Quit** stops the app until next login.
+
+---
+
 ## Managing Applications
 
 After deployment, you can manage local Creatio applications using the following commands.

@@ -39,6 +39,7 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 	private readonly Ik8Commands _k8CommandsMock = Substitute.For<Ik8Commands>();
 	private readonly IMssql _mssqlMock = Substitute.For<IMssql>();
 	private readonly IPostgres _postgresMock = Substitute.For<IPostgres>();
+	private readonly IOperationSystem _operationSystemMock = Substitute.For<IOperationSystem>();
 
 	#endregion
 
@@ -111,6 +112,7 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 		containerBuilder.AddSingleton<Ik8Commands>(_k8CommandsMock);
 		containerBuilder.AddSingleton<IMssql>(_mssqlMock);
 		containerBuilder.AddSingleton<IPostgres>(_postgresMock);
+		containerBuilder.AddSingleton<IOperationSystem>(_operationSystemMock);
 	}
 
 	#endregion
@@ -124,6 +126,7 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 			Password = ""
 		};
 		base.Setup();
+		_operationSystemMock.IsWindows.Returns(true);
 		_settingsRepositoryMock.FindEnvironment(EnvironmentName).Returns(EnvironmentSettings);
 		
 		_k8CommandsMock.GetMssqlConnectionString().Returns(_cnpMs);
@@ -136,6 +139,8 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 		_loggerMock.ClearReceivedCalls();
 		_mssqlMock.ClearReceivedCalls();
 		_postgresMock.ClearReceivedCalls();
+		_iisScannerMock.ClearReceivedCalls();
+		_settingsRepositoryMock.ClearReceivedCalls();
 	}
 
 	#endregion
@@ -240,6 +245,32 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 			// K8s connection should not be used when a local connection string is successfully parsed
 			_k8CommandsMock.DidNotReceive().GetMssqlConnectionString();
 		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("UninstallByPath should parse ConnectionStrings.config that starts with a UTF-8 BOM (as Creatio writes it) instead of failing with 'Data at the root level is invalid'")]
+	public void UninstallByPath_DropsDb_WhenConnectionStringHasUtf8Bom(){
+		// Arrange
+		MockStartedSite();
+		const string dbName = "bomdb";
+		string csPath = Path.Join(InstalledCreatioPath, ConnectionStringsFileName);
+		string csContent = "\uFEFF" + $"""
+							<?xml version="1.0" encoding="utf-8"?>
+							<connectionStrings>
+							  <add name="db" connectionString="Server=127.0.0.1;Port=5432;Database={dbName};User ID=postgres;Password=root;" />
+							</connectionStrings>
+							""";
+		FileSystem.AddFile(csPath, new MockFileData(csContent));
+
+		// Act
+		Action act = () => _sut.UninstallByPath(InstalledCreatioPath);
+
+		// Assert
+		act.Should().NotThrow(
+			because: "a leading UTF-8 BOM must be tolerated when parsing ConnectionStrings.config");
+		_loggerMock.Received(1).WriteInfo("Found db: bomdb, Server: PostgreSql");
+		_postgresMock.Received(1).DropDb(dbName);
 	}
 
 	[TestCase("ConnectionStrings_PG")]
@@ -651,6 +682,60 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 			System.Text.Json.JsonSerializer.Serialize(e, ClioStageEventContract.SerializerOptions)));
 		serialized.Should().NotContain(secret,
 			"because secrets are excluded at the single emitter redaction boundary and never reach any event field (AC-12)");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("On macOS the -e uninstall resolves the target from EnvironmentPath, skips the IIS stages without invoking the IIS scanner, and still drops the db, deletes files, and unregisters.")]
+	public void UninstallByEnvironmentName_ResolvesFromEnvironmentPath_AndSkipsIis_OnMacOs(){
+		// Arrange
+		const string macOsPath = "/Users/test/creatio-mac";
+		_operationSystemMock.IsWindows.Returns(false);
+		EnvironmentSettings.EnvironmentPath = macOsPath;
+		FileSystem.AddDirectory(macOsPath);
+		string csPath = Path.Join(macOsPath, ConnectionStringsFileName);
+		string csContent = File.ReadAllText("Examples/CreatioInstalledDir/ConnectionStrings_PG.config");
+		FileSystem.AddFile(csPath, new MockFileData(csContent));
+		List<ClioStageEvent> events = CaptureStageEvents();
+
+		// Act
+		_sut.UninstallByEnvironmentName(EnvironmentName);
+
+		// Assert
+		_iisScannerMock.DidNotReceive().FindAllCreatioSites(
+			);
+		_loggerMock.Received(1).WriteInfo($"Uninstalling Creatio from directory: {macOsPath}");
+		StagesWithStatus(events, StageIds.StopIis).Should().Contain(
+			s => s.Status == ClioStageEventContract.StageStatuses.Skipped && s.SkipReason == ClioStageEventContract.SkipReasons.NotApplicable,
+			"because there is no IIS site to stop on macOS");
+		StagesWithStatus(events, StageIds.DeleteIis).Should().Contain(
+			s => s.Status == ClioStageEventContract.StageStatuses.Skipped && s.SkipReason == ClioStageEventContract.SkipReasons.NotApplicable,
+			"because there is no IIS site to delete on macOS");
+		StagesWithStatus(events, StageIds.DropDb).Select(s => s.Status).Should().Contain(
+			ClioStageEventContract.StageStatuses.Done, "because the database is still dropped on macOS");
+		StagesWithStatus(events, StageIds.DeleteFiles).Select(s => s.Status).Should().Contain(
+			ClioStageEventContract.StageStatuses.Done, "because the installation files are still deleted on macOS");
+		_settingsRepositoryMock.Received(1).RemoveEnvironment(EnvironmentName);
+		events.Last().RunCompleted!.Outcome.Should().Be(ClioStageEventContract.RunOutcomes.Success,
+			"because the macOS uninstall completed successfully");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("On macOS the -e uninstall aborts without touching IIS when the registered environment has no valid EnvironmentPath.")]
+	public void UninstallByEnvironmentName_Aborts_WhenEnvironmentPathMissing_OnMacOs(){
+		// Arrange
+		_operationSystemMock.IsWindows.Returns(false);
+		EnvironmentSettings.EnvironmentPath = string.Empty;
+
+		// Act
+		Action act = () => _sut.UninstallByEnvironmentName(EnvironmentName);
+
+		// Assert
+		act.Should().Throw<CreatioUninstallAbortedException>(
+			"because the uninstall target cannot be resolved without a valid EnvironmentPath on macOS");
+		_iisScannerMock.DidNotReceive().FindAllCreatioSites();
+		_settingsRepositoryMock.DidNotReceive().RemoveEnvironment(Arg.Any<string>());
 	}
 
 }

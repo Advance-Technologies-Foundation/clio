@@ -116,6 +116,7 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 	private readonly IMssql _mssql;
 	private readonly IPostgres _postgres;
 	private readonly IStageEventEmitter _stageEventEmitter;
+	private readonly IOperationSystem _operationSystem;
 
 	#endregion
 
@@ -123,7 +124,7 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 
 	public CreatioUninstaller(IFileSystem fileSystem, ISettingsRepository settingsRepository,
 		IIisScanner iisScanner, ILogger logger, Ik8Commands k8Commands, IMssql mssql, IPostgres postgres,
-		IStageEventEmitter stageEventEmitter){
+		IStageEventEmitter stageEventEmitter, IOperationSystem operationSystem){
 		_fileSystem = fileSystem;
 		_settingsRepository = settingsRepository;
 		_iisScanner = iisScanner;
@@ -132,6 +133,7 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 		_mssql = mssql;
 		_postgres = postgres;
 		_stageEventEmitter = stageEventEmitter;
+		_operationSystem = operationSystem;
 	}
 
 	#endregion
@@ -153,7 +155,10 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 
 	private static OneOf<DbInfo, Error> GetDbInfoFromXmlContent(string csContent){
 		XmlDocument doc = new();
-		doc.LoadXml(csContent);
+		// Creatio's ConnectionStrings.config is written with a UTF-8 BOM. XmlDocument.LoadXml(string)
+		// does not tolerate a leading BOM (or leading whitespace) and throws "Data at the root level is
+		// invalid. Line 1, position 1.", so strip it before parsing.
+		doc.LoadXml(csContent.TrimStart('\uFEFF', '\u200B', ' ', '\t', '\r', '\n'));
 
 		const string mssqlMarker = "Data Source=";
 		const string psqlMarker = "Server=";
@@ -265,7 +270,27 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 
 	public void UninstallByEnvironmentName(string environmentName){
 		EnvironmentSettings settings = _settingsRepository.FindEnvironment(environmentName);
-		if (settings is null || !Uri.TryCreate(settings.Uri, UriKind.Absolute, out Uri envUri)) {
+		if (settings is null) {
+			AbortUnresolvedTarget($"Environment '{environmentName}' is not registered.");
+			return;
+		}
+
+		// On macOS/Linux there is no IIS: resolve the physical path from the registered clio environment
+		// (EnvironmentPath) instead of correlating an IIS site URI. Windows keeps the IIS correlation below.
+		if (!_operationSystem.IsWindows) {
+			string envPath = settings.EnvironmentPath;
+			if (string.IsNullOrWhiteSpace(envPath) || !_fileSystem.ExistsDirectory(envPath)) {
+				AbortUnresolvedTarget(
+					$"Environment '{environmentName}' does not have a valid EnvironmentPath. "
+					+ "The uninstall target could not be resolved.");
+				return;
+			}
+			_logger.WriteInfo($"Uninstalling Creatio from directory: {envPath}");
+			RunUninstall(envPath, environmentName);
+			return;
+		}
+
+		if (!Uri.TryCreate(settings.Uri, UriKind.Absolute, out Uri envUri)) {
 			AbortUnresolvedTarget($"Environment '{environmentName}' is not registered with a valid absolute URI.");
 			return;
 		}
@@ -342,7 +367,11 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 		}
 
 		bool hasEnvironment = !string.IsNullOrWhiteSpace(environmentName);
-		bool profileExists = TryResolveAppPoolProfileDirectory(creatioDirectoryPath, out string profileDirectory);
+		// Application-pool profiles are a Windows/IIS concept; resolving one on macOS/Linux would invoke
+		// appcmd.exe (which is absent) and crash, so only probe for it on Windows.
+		string profileDirectory = null;
+		bool profileExists = _operationSystem.IsWindows
+			&& TryResolveAppPoolProfileDirectory(creatioDirectoryPath, out profileDirectory);
 
 		_stageEventEmitter.Begin(ClioStageEventContract.Operations.Uninstall,
 			BuildUninstallManifest(profileExists), OnStageChanged);
@@ -361,9 +390,16 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 			_logger.WriteInfo($"Found db: {info.DbName}, Server: {info.DbType}");
 		});
 
-		_stageEventEmitter.RunStage(StageIds.StopIis, () => StopIISSite(creatioDirectoryPath));
-
-		_stageEventEmitter.RunStage(StageIds.DeleteIis, () => DeleteIISSite(creatioDirectoryPath));
+		// IIS site stop/delete only applies on Windows. On macOS/Linux the site is not hosted by IIS,
+		// so these stages are reported as skipped/not-applicable instead of invoking appcmd.exe (absent).
+		if (_operationSystem.IsWindows) {
+			_stageEventEmitter.RunStage(StageIds.StopIis, () => StopIISSite(creatioDirectoryPath));
+			_stageEventEmitter.RunStage(StageIds.DeleteIis, () => DeleteIISSite(creatioDirectoryPath));
+		}
+		else {
+			_stageEventEmitter.SkipStage(StageIds.StopIis, ClioStageEventContract.SkipReasons.NotApplicable);
+			_stageEventEmitter.SkipStage(StageIds.DeleteIis, ClioStageEventContract.SkipReasons.NotApplicable);
+		}
 
 		_stageEventEmitter.RunStage(StageIds.DropDb, () => DropDatabase(dbInfo));
 

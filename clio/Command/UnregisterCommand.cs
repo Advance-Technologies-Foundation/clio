@@ -19,7 +19,9 @@ internal class UnregisterOptions{
 	#endregion
 }
 
-internal class UnregisterCommand(ILogger logger, IProcessExecutor processExecutor) : Command<UnregisterOptions>{
+internal class UnregisterCommand(ILogger logger, IProcessExecutor processExecutor,
+		IOperationSystem operationSystem, IMacOsFinderIntegration macOsFinderIntegration,
+		IMacOsMenuBarIntegration macOsMenuBarIntegration) : Command<UnregisterOptions>{
 	#region Methods: Private
 
 	private bool TryExecuteProcess(string program, string arguments, string operationDescription) {
@@ -48,6 +50,13 @@ internal class UnregisterCommand(ILogger logger, IProcessExecutor processExecuto
 
 	public override int Execute(UnregisterOptions options) {
 		try {
+			if (operationSystem.IsMacOS) {
+				macOsFinderIntegration.UninstallAsync().GetAwaiter().GetResult();
+				macOsMenuBarIntegration.UninstallAsync().GetAwaiter().GetResult();
+				logger.WriteLine("Clio Finder 'Deploy Creatio' quick action and menu bar app unregistered");
+				return 0;
+			}
+
 			if (!TryExecuteProcess("cmd", "/c reg delete HKEY_CLASSES_ROOT\\Folder\\shell\\clio /f",
 					"remove Folder context menu registration")) {
 				return 1;

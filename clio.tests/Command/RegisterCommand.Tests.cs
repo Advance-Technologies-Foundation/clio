@@ -15,6 +15,8 @@ public class RegisterCommandTests : BaseCommandTests<RegisterOptions>{
 	#region Fields: Private
 
 	private ILogger _logger;
+	private IMacOsFinderIntegration _macOsFinderIntegration;
+	private IMacOsMenuBarIntegration _macOsMenuBarIntegration;
 	private IOperationSystem _operationSystem;
 	private IProcessExecutor _processExecutor;
 	private RegisterCommand _registerCommand;
@@ -28,9 +30,13 @@ public class RegisterCommandTests : BaseCommandTests<RegisterOptions>{
 		_logger = Substitute.For<ILogger>();
 		_operationSystem = Substitute.For<IOperationSystem>();
 		_processExecutor = Substitute.For<IProcessExecutor>();
+		_macOsFinderIntegration = Substitute.For<IMacOsFinderIntegration>();
+		_macOsMenuBarIntegration = Substitute.For<IMacOsMenuBarIntegration>();
 		containerBuilder.AddSingleton(_logger);
 		containerBuilder.AddSingleton(_operationSystem);
 		containerBuilder.AddSingleton(_processExecutor);
+		containerBuilder.AddSingleton(_macOsFinderIntegration);
+		containerBuilder.AddSingleton(_macOsMenuBarIntegration);
 		containerBuilder.AddTransient<RegisterCommand>();
 	}
 
@@ -66,6 +72,26 @@ public class RegisterCommandTests : BaseCommandTests<RegisterOptions>{
 		_logger.Received(1).WriteLine(Arg.Is<string>(message =>
 			message.Contains("only supported on: 'windows'", StringComparison.OrdinalIgnoreCase)));
 		_processExecutor.DidNotReceiveWithAnyArgs().ExecuteAndCaptureAsync(default);
+	}
+
+	[Test]
+	[Description("Execute should install the Finder quick action and return zero on macOS.")]
+	public void Execute_WhenPlatformIsMacOs_InstallsQuickActionAndReturnsZero() {
+		// Arrange
+		_operationSystem.IsWindows.Returns(false);
+		_operationSystem.IsMacOS.Returns(true);
+		_macOsFinderIntegration.InstallAsync().Returns(Task.CompletedTask);
+		RegisterOptions options = new();
+
+		// Act
+		int result = _registerCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "register installs the Finder quick action on macOS");
+		_macOsFinderIntegration.Received(1).InstallAsync();
+		_macOsMenuBarIntegration.Received(1).InstallAsync();
+		_logger.Received(1).WriteLine(Arg.Is<string>(message =>
+			message.Contains("quick action and menu bar app registered", StringComparison.OrdinalIgnoreCase)));
 	}
 
 	[Test]

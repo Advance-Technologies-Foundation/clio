@@ -15,7 +15,13 @@ using ConsoleTables;
 namespace Clio.Command;
 
 [Verb("hosts", Aliases = ["list-hosts"], HelpText = "List all Creatio hosts and their status")]
-public class HostsOptions : BaseCommandOptions{ }
+public class HostsOptions : BaseCommandOptions{
+
+	[Option("json", Required = false, HelpText = "Output the host list as machine-readable JSON " +
+		"(suppresses progress messages). Used by the macOS menu bar app.")]
+	public bool Json { get; set; }
+
+}
 
 public class HostsCommand(
 	ISettingsRepository settingsRepository, 
@@ -34,8 +40,21 @@ public class HostsCommand(
 		public string Status { get; set; }
 		public int? PID { get; set; }
 		public string EnvironmentPath { get; set; }
+		public string Url { get; set; }
 
 		#endregion
+	}
+
+	#endregion
+
+	#region Fields: Private
+
+	private bool _jsonMode;
+
+	private void WriteProgress(string message) {
+		if (!_jsonMode) {
+			logger.WriteInfo(message);
+		}
 	}
 
 	#endregion
@@ -100,11 +119,11 @@ public class HostsCommand(
 		List<EnvironmentSettings> environments = GetAllEnvironmentsWithPath();
 
 		if (environments.Count == 0) {
-			logger.WriteInfo("No environments with paths found.");
+			WriteProgress("No environments with paths found.");
 			return [];
 		}
 
-		logger.WriteInfo($"Scanning {environments.Count} environment(s) in parallel...");
+		WriteProgress($"Scanning {environments.Count} environment(s) in parallel...");
 
 		// Create tasks for all environments to scan in parallel
 		Task<HostInfo>[] scanTasks = environments.Select(ScanEnvironmentAsync).ToArray();
@@ -112,13 +131,13 @@ public class HostsCommand(
 		// Wait for all scans to complete
 		HostInfo[] hosts = await Task.WhenAll(scanTasks);
 
-		logger.WriteInfo($"\nScan complete. Found {hosts.Length} host(s).\n");
+		WriteProgress($"\nScan complete. Found {hosts.Length} host(s).\n");
 		return hosts.ToList();
 	}
 
 	private async Task<HostInfo> ScanEnvironmentAsync(EnvironmentSettings env) {
 		string envName = GetEnvironmentName(env);
-		logger.WriteInfo($"Checking {envName}...");
+		WriteProgress($"Checking {envName}...");
 		
 		string serviceName = $"creatio-{GetServiceName(envName, env.EnvironmentPath)}";
 		string status;
@@ -135,54 +154,54 @@ public class HostsCommand(
 				if (primarySite.IsRunning) {
 					status = "Running (IIS)";
 					// Get w3wp.exe PID for the site
-					logger.WriteInfo($"  → {envName}: Found running IIS site: {primarySite.SiteName}, getting PID...");
+					WriteProgress($"  → {envName}: Found running IIS site: {primarySite.SiteName}, getting PID...");
 					pid = await iisSiteDetector.GetSiteProcessId(primarySite.SiteName);
 					if (pid.HasValue) {
-						logger.WriteInfo($"  → {envName}: PID: {pid.Value}");
+						WriteProgress($"  → {envName}: PID: {pid.Value}");
 					} else {
 						logger.WriteWarning($"  → {envName}: Could not determine PID for site {primarySite.SiteName}");
 					}
 				} else {
 					status = "Stopped (IIS)";
-					logger.WriteInfo($"  → {envName}: Found IIS site: {primarySite.SiteName} (Stopped)");
+					WriteProgress($"  → {envName}: Found IIS site: {primarySite.SiteName} (Stopped)");
 				}
 				
 				// Use actual IIS site name as service name
 				serviceName = primarySite.SiteName;
 			} else {
 				// No IIS site found, check for background process
-				logger.WriteInfo($"  → {envName}: No IIS site found, checking for background process...");
+				WriteProgress($"  → {envName}: No IIS site found, checking for background process...");
 				(int pid, string processName)? processInfo = GetBackgroundProcess(env.EnvironmentPath);
 				
 				if (processInfo != null) {
 					status = "Running (Process)";
 					pid = processInfo.Value.pid;
-					logger.WriteInfo($"  → {envName}: Found process: {processInfo.Value.processName} (PID: {pid})");
+					WriteProgress($"  → {envName}: Found process: {processInfo.Value.processName} (PID: {pid})");
 				} else {
 					status = "Stopped";
-					logger.WriteInfo($"  → {envName}: No running process found");
+					WriteProgress($"  → {envName}: No running process found");
 				}
 			}
 		} else {
 			// On macOS/Linux, check for systemd/launchd service
-			logger.WriteInfo($"  → {envName}: Checking service: {serviceName}...");
+			WriteProgress($"  → {envName}: Checking service: {serviceName}...");
 			bool serviceRunning = await serviceManager.IsServiceRunning(serviceName);
 			
 			if (serviceRunning) {
 				status = "Running (Service)";
-				logger.WriteInfo($"  → {envName}: Service is running");
+				WriteProgress($"  → {envName}: Service is running");
 			} else {
 				// Check for background process
-				logger.WriteInfo($"  → {envName}: Service not running, checking for background process...");
+				WriteProgress($"  → {envName}: Service not running, checking for background process...");
 				(int pid, string processName)? processInfo = GetBackgroundProcess(env.EnvironmentPath);
 				
 				if (processInfo != null) {
 					status = "Running (Process)";
 					pid = processInfo.Value.pid;
-					logger.WriteInfo($"  → {envName}: Found process: {processInfo.Value.processName} (PID: {pid})");
+					WriteProgress($"  → {envName}: Found process: {processInfo.Value.processName} (PID: {pid})");
 				} else {
 					status = "Stopped";
-					logger.WriteInfo($"  → {envName}: No running process found");
+					WriteProgress($"  → {envName}: No running process found");
 				}
 			}
 		}
@@ -192,7 +211,8 @@ public class HostsCommand(
 			ServiceName = serviceName,
 			Status = status,
 			PID = pid,
-			EnvironmentPath = env.EnvironmentPath
+			EnvironmentPath = env.EnvironmentPath,
+			Url = env.Uri
 		};
 	}
 
@@ -298,7 +318,14 @@ public class HostsCommand(
 
 	public override int Execute(HostsOptions options) {
 		try {
+			_jsonMode = options.Json;
 			List<HostInfo> hosts = GetAllHosts().Result;
+
+			if (_jsonMode) {
+				logger.WriteLine(Newtonsoft.Json.JsonConvert.SerializeObject(hosts,
+					Newtonsoft.Json.Formatting.Indented));
+				return 0;
+			}
 
 			if (hosts.Count == 0) {
 				logger.WriteInfo("No Creatio hosts found.");
@@ -310,6 +337,10 @@ public class HostsCommand(
 			return 0;
 		}
 		catch (Exception ex) {
+			if (options.Json) {
+				logger.WriteLine("[]");
+				return 1;
+			}
 			logger.WriteError($"Failed to list hosts: {ex.Message}");
 			return 1;
 		}

@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleIdentifier</key>
+	<string>com.creatio.clio.DeployCreatio</string>
+	<key>CFBundleName</key>
+	<string>Deploy Creatio</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>NSServices</key>
+	<array>
+		<dict>
+			<key>NSBackgroundColorName</key>
+			<string>background</string>
+			<key>NSIconName</key>
+			<string>NSActionTemplate</string>
+			<key>NSMenuItem</key>
+			<dict>
+				<key>default</key>
+				<string>Deploy Creatio</string>
+			</dict>
+			<key>NSMessage</key>
+			<string>runWorkflowAsService</string>
+			<key>NSSendFileTypes</key>
+			<array>
+				<string>public.directory</string>
+				<string>com.pkware.zip-archive</string>
+			</array>
+			<key>NSRequiredContext</key>
+			<dict/>
+		</dict>
+	</array>
+</dict>
+</plist>

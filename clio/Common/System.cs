@@ -14,6 +14,11 @@ namespace Clio.Common
 		bool IsWindows { get; }
 
 		/// <summary>
+		/// Gets a value indicating whether the current operating system is macOS.
+		/// </summary>
+		bool IsMacOS { get; }
+
+		/// <summary>
 		/// Determines whether the current process has administrator rights.
 		/// </summary>
 		/// <returns><c>true</c> when the current process runs with administrator privileges; otherwise, <c>false</c>.</returns>
@@ -33,6 +38,12 @@ namespace Clio.Common
 		public bool IsWindows {
 			get {
 				return RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
+			}
+		}
+
+		public bool IsMacOS {
+			get {
+				return RuntimeInformation.IsOSPlatform(OSPlatform.OSX);
 			}
 		}
 

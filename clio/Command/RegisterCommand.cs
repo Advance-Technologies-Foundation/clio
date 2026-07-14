@@ -27,6 +27,8 @@ public class RegisterCommand : Command<RegisterOptions>{
 
 	private readonly IFileSystem _fileSystem;
 	private readonly ILogger _logger;
+	private readonly IMacOsFinderIntegration _macOsFinderIntegration;
+	private readonly IMacOsMenuBarIntegration _macOsMenuBarIntegration;
 	private readonly IOperationSystem _operationSystem;
 	private readonly IProcessExecutor _processExecutor;
 
@@ -41,12 +43,17 @@ public class RegisterCommand : Command<RegisterOptions>{
 	/// <param name="processExecutor">Process executor used to run system commands.</param>
 	/// <param name="fileSystem">Filesystem abstraction used for path and file operations.</param>
 	/// <param name="operationSystem">Operating system abstraction used for OS and privilege checks.</param>
+	/// <param name="macOsFinderIntegration">Installer for the macOS Finder "Deploy Creatio" Quick Action.</param>
+	/// <param name="macOsMenuBarIntegration">Installer for the macOS clio menu bar app.</param>
 	public RegisterCommand(ILogger logger, IProcessExecutor processExecutor, IFileSystem fileSystem,
-		IOperationSystem operationSystem) {
+		IOperationSystem operationSystem, IMacOsFinderIntegration macOsFinderIntegration,
+		IMacOsMenuBarIntegration macOsMenuBarIntegration) {
 		_logger = logger;
 		_processExecutor = processExecutor;
 		_fileSystem = fileSystem;
 		_operationSystem = operationSystem;
+		_macOsFinderIntegration = macOsFinderIntegration;
+		_macOsMenuBarIntegration = macOsMenuBarIntegration;
 	}
 
 	#endregion
@@ -141,7 +148,20 @@ public class RegisterCommand : Command<RegisterOptions>{
 				return 0;
 			}
 
-			_logger.WriteLine("Clio register command is only supported on: 'windows'.");
+			if (_operationSystem.IsMacOS) {
+				_macOsFinderIntegration.InstallAsync().GetAwaiter().GetResult();
+				_macOsMenuBarIntegration.InstallAsync().GetAwaiter().GetResult();
+				_logger.WriteLine(
+					"Clio Finder 'Deploy Creatio' quick action and menu bar app registered.");
+				_logger.WriteLine(
+					"Opening System Settings so you can enable the quick action under Services > Files and Folders.");
+				_processExecutor.Execute("open",
+					"\"x-apple.systempreferences:com.apple.preference.keyboard?Shortcuts\"",
+					waitForExit: false, suppressErrors: true);
+				return 0;
+			}
+
+			_logger.WriteLine("Clio register command is only supported on: 'windows' and 'macos'.");
 			return 1;
 		}
 		catch (Exception e) {
