@@ -747,7 +747,7 @@ public sealed class ApplicationSectionToolE2ETests {
 		settings.ProcessEnvironmentVariables[McpProgressHeartbeat.IntervalOverrideEnvVar] = "0.05";
 		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
 		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		CollectingProgress progress = new();
+		MessageCollectingProgress progress = new();
 
 		// Act — list-app-sections is read-only and always performs a backend round-trip, so the
 		// heartbeat fires while it works even when the application does not exist.
@@ -768,19 +768,6 @@ public sealed class ApplicationSectionToolE2ETests {
 		progress.Count.Should().BeGreaterThanOrEqualTo(1,
 			because: "a long-running application tool must stream at least one progress notification so the client resets its inactivity timeout instead of timing out");
 	}
-
-	/// <summary>
-	/// Thread-safe <see cref="IProgress{T}"/> sink that records progress notifications synchronously
-	/// as the SDK delivers them, so the count is deterministic by the time the tool call returns.
-	/// </summary>
-	private sealed class CollectingProgress : IProgress<ProgressNotificationValue> {
-		private int _count;
-
-		public int Count => Volatile.Read(ref _count);
-
-		public void Report(ProgressNotificationValue value) => Interlocked.Increment(ref _count);
-	}
-
 
 	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
 		string? configuredEnvironmentName = settings.Sandbox.EnvironmentName;

@@ -168,8 +168,16 @@ ENG-91274 (above) shipped a **content-free keep-alive beat**. ENG-93087 extends 
 - **What each tool reports.** `sync-schemas` pushes a per-operation marker (`"<i>/<n>: <op> <schema>"`)
   before each operation and its seed step (purely tool-level, no command change). `create-app` and
   `create-app-section` push coarse markers ("enriching…", "creating application", "creating section")
-  around their service calls; finer sub-stages would require threading a callback into the services
-  (deferred).
+  around their service calls. Finer sub-stage markers are also delivered: a `reportStage` callback is
+  threaded into `IApplicationCreateService.CreateApplication` and
+  `IApplicationSectionCreateService.CreateSection`, which invoke it at internal stage boundaries
+  (e.g. "enriching application model", "creating application package", "loading application metadata",
+  "loading created section").
+- **Why `reportStage` and not `IStageEventSource`.** The `reportStage` callback is a deliberate choice
+  over the `IStageEventSource`/`ClioStageEvent`/`StageEventProgressForwarder` pattern used by
+  deploy/uninstall: these are injected singleton services (not per-call-resolved commands), and
+  `IStageEventSource` provides no timer keep-alive, response-deadline, or background-continuation
+  semantics that create-app-section needs.
 - **Tests.** `McpProgressHeartbeatTests` covers the reporter overloads, `ProgressChannel` monotonic
   sequencing, and the reporter no-op path; `SchemaSyncToolE2ETests` asserts a per-operation stage
   marker reaches the client via the `IProgress` overload.

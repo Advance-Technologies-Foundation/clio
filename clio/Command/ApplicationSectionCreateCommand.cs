@@ -274,7 +274,8 @@ public sealed class ApplicationSectionCreateService(
 					environmentSettings,
 					effectiveCultureName,
 					insertTimeoutMs,
-					exception);
+					exception,
+					reportStage);
 			}
 			logger.EndSpinner(false);
 			throw failureClass == ApplicationSectionCreateFailureClass.Transport
@@ -624,7 +625,8 @@ public sealed class ApplicationSectionCreateService(
 		EnvironmentSettings environmentSettings,
 		string effectiveCultureName,
 		int insertTimeoutMs,
-		Exception cause) {
+		Exception cause,
+		Action<string>? reportStage = null) {
 		bool? sectionVisible = TryVerifySectionExists(client, environmentSettings, resolvedRequest);
 		if (sectionVisible == true) {
 			logger.EndSpinner(true);
@@ -633,6 +635,7 @@ public sealed class ApplicationSectionCreateService(
 				+ $"'{resolvedRequest.SectionCode}' is already visible — continuing with readback.");
 			// The server already proved slow, so the recovery readback runs bounded too —
 			// otherwise the budget guarantee would be lost right after the timeout.
+			reportStage?.Invoke("loading created section");
 			return LoadCreatedSection(
 				environmentName,
 				beforeInfo,

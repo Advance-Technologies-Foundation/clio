@@ -362,6 +362,36 @@ public sealed class McpProgressHeartbeatTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Cancels a queued ProgressChannel send when the gate is held by an in-flight (stalled) send, proving SendAsync passes its token to _sendGate.WaitAsync — so a wedged transport can never block a queued send (and therefore the response deadline) indefinitely (PR #837 N1).")]
+	public async Task ProgressChannel_ShouldCancelQueuedSend_WhenGateHeldAndTokenCancelled() {
+		// Arrange — the first send blocks inside the transport, holding the gate. A gate wait that ignored
+		// the token (the pre-fix no-arg WaitAsync) would make the second send wait forever.
+		using ManualResetEventSlim firstSendEntered = new ManualResetEventSlim(false);
+		TaskCompletionSource releaseFirstSend = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		McpProgressHeartbeat.ProgressChannel channel = new(async _ => {
+			firstSendEntered.Set();
+			await releaseFirstSend.Task.ConfigureAwait(false);
+		});
+		Task blockingSend = Task.Run(() => channel.SendAsync("holds-the-gate"));
+		firstSendEntered.Wait(StopGuard);
+		using CancellationTokenSource cancellationTokenSource = new CancellationTokenSource();
+
+		// Act — the second send must wait on the held gate; cancelling the token must abort that wait.
+		Task queuedSend = channel.SendAsync("queued-behind-the-gate", cancellationTokenSource.Token);
+		await cancellationTokenSource.CancelAsync();
+		Func<Task> act = async () => await queuedSend;
+
+		// Assert
+		await act.Should().ThrowAsync<OperationCanceledException>(
+			because: "SendAsync must forward its token to _sendGate.WaitAsync so a queued send is cancellable while a stalled transport holds the gate");
+
+		// Cleanup — release the first send so the gate-holding task completes.
+		releaseFirstSend.SetResult();
+		await blockingSend.ConfigureAwait(false);
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Interleaves a caller-pushed stage marker with a timer heartbeat on one channel, recording both messages under strictly increasing progress values.")]
 	public async Task RunWithProgressAsync_ShouldInterleaveMarkerAndBeat_WhenWorkReportsThenWaits() {
 		// Arrange — the sink signals separately once the marker lands and once a heartbeat lands, so the

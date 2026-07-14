@@ -168,7 +168,8 @@ internal static class McpProgressHeartbeat {
 				await pump.ConfigureAwait(false);
 			}
 			catch (OperationCanceledException) {
-				// Expected when the pump observes cancellation on stop.
+				// Defensive: PumpChannelAsync self-handles cancellation and SafeSendAsync swallows send faults, so
+				// pump completes normally; this guards a future change that could let it fault.
 			}
 		}
 	}
@@ -318,7 +319,8 @@ internal static class McpProgressHeartbeat {
 				await pump.ConfigureAwait(false);
 			}
 			catch (OperationCanceledException) {
-				// Expected when the pump observes cancellation on stop.
+				// Defensive: PumpChannelAsync self-handles cancellation and SafeSendAsync swallows send faults, so
+				// pump completes normally; this guards a future change that could let it fault.
 			}
 		}
 	}
@@ -383,9 +385,9 @@ internal static class McpProgressHeartbeat {
 		};
 	}
 
-	private static async Task SafeSendAsync(ProgressChannel channel, string message) {
+	private static async Task SafeSendAsync(ProgressChannel channel, string message, CancellationToken cancellationToken = default) {
 		try {
-			await channel.SendAsync(message).ConfigureAwait(false);
+			await channel.SendAsync(message, cancellationToken).ConfigureAwait(false);
 		}
 		catch {
 			// Best-effort: a broken progress channel must never surface from the tool.
@@ -407,7 +409,9 @@ internal static class McpProgressHeartbeat {
 
 			tick++;
 			// Reuse SafeSendAsync so the "broken channel must never surface" swallow policy lives in one place.
-			await SafeSendAsync(channel, $"{label} is still running… (~{tick * intervalSeconds}s elapsed)").ConfigureAwait(false);
+			// Passing the pump's cancellationToken makes the send-gate wait cancellable, so a pump blocked on the
+			// gate (behind a wedged fire-and-forget marker send) unblocks when the finally cancels heartbeatCts.
+			await SafeSendAsync(channel, $"{label} is still running… (~{tick * intervalSeconds}s elapsed)", cancellationToken).ConfigureAwait(false);
 		}
 	}
 
@@ -439,8 +443,8 @@ internal static class McpProgressHeartbeat {
 		}
 
 		/// <summary>Sends <paramref name="message"/> under the next gap-free monotonic <c>Progress</c> value; sends are serialized so the counter never regresses.</summary>
-		internal async Task SendAsync(string message) {
-			await _sendGate.WaitAsync().ConfigureAwait(false);
+		internal async Task SendAsync(string message, CancellationToken cancellationToken = default) {
+			await _sendGate.WaitAsync(cancellationToken).ConfigureAwait(false);
 			try {
 				int sequence = ++_sequence;
 				await _send(new ModelContextProtocol.ProgressNotificationValue {

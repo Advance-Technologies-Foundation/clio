@@ -23,6 +23,15 @@ internal sealed class MessageCollectingProgress : System.IProgress<ProgressNotif
 		}
 	}
 
+	/// <summary>Number of progress notifications observed so far.</summary>
+	public int Count {
+		get {
+			lock (_gate) {
+				return _messages.Count;
+			}
+		}
+	}
+
 	/// <inheritdoc />
 	public void Report(ProgressNotificationValue value) {
 		lock (_gate) {

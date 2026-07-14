@@ -417,6 +417,17 @@ public sealed class ApplicationToolE2ETests {
 		progress.Messages.Should().Contain(
 			message => message.Contains("loading application metadata", StringComparison.Ordinal),
 			because: "create-app must stream the 'loading application metadata' stage marker so the client can show the metadata-load phase (ENG-93087)");
+		List<string> orderedMessages = progress.Messages.ToList();
+		int enrichingMarkerIndex = orderedMessages.FindIndex(
+			message => message.Contains("enriching application model", StringComparison.Ordinal));
+		int creatingPackageMarkerIndex = orderedMessages.FindIndex(
+			message => message.Contains("creating application package", StringComparison.Ordinal));
+		int loadingMetadataMarkerIndex = orderedMessages.FindIndex(
+			message => message.Contains("loading application metadata", StringComparison.Ordinal));
+		enrichingMarkerIndex.Should().BeLessThan(creatingPackageMarkerIndex,
+			because: "the 'enriching application model' marker must reach the client before 'creating application package', matching execution order (ENG-93087)");
+		creatingPackageMarkerIndex.Should().BeLessThan(loadingMetadataMarkerIndex,
+			because: "the 'creating application package' marker must reach the client before 'loading application metadata', matching execution order (ENG-93087)");
 	}
 
 	[Category("McpE2E.Sandbox")]

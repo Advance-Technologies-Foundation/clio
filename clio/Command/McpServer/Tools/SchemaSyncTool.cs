@@ -53,11 +53,15 @@ public sealed class SchemaSyncTool(
 		global::ModelContextProtocol.Server.McpServer server,
 		RequestContext<CallToolRequestParams> requestContext,
 		CancellationToken cancellationToken = default) {
+		// Heartbeat-only overload (no RunWithProgressAndDeadlineAsync): sync-schemas returns per-operation
+		// results and has no single "in-progress, poll" envelope. It executes stop-on-first-failure under
+		// McpToolExecutionLock and each operation is individually bounded, so the deadline/background-
+		// continuation contract used by create-app-section does not map cleanly here.
 		return await McpProgressHeartbeat.RunWithProgressAsync(
 			server,
 			requestContext?.Params?.ProgressToken,
 			ToolName,
-			reportStage => ExecuteBatch(args, reportStage),
+			reportStage => ExecuteBatch(args, reportStage, cancellationToken),
 			cancellationToken).ConfigureAwait(false);
 	}
 
@@ -65,7 +69,12 @@ public sealed class SchemaSyncTool(
 	/// Runs the batch synchronously, pushing a stage marker through <paramref name="reportStage"/> before
 	/// each operation (and its seed step) so a long publish sequence shows per-operation progress.
 	/// </summary>
-	internal SchemaSyncResponse ExecuteBatch(SchemaSyncArgs args, Action<string> reportStage) {
+	internal SchemaSyncResponse ExecuteBatch(SchemaSyncArgs args, Action<string> reportStage,
+		CancellationToken cancellationToken = default) {
+		// Materialize the operations once so the enrichment collectors and the execution loop share a single
+		// enumeration pass (args.Operations may be a lazy IEnumerable).
+		IReadOnlyList<SchemaSyncOperation> operations =
+			args.Operations as IReadOnlyList<SchemaSyncOperation> ?? args.Operations.ToList();
 		// Data Forge enrichment is DIAGNOSTIC ONLY — it never gates the schema operations below. The
 		// builder already degrades gracefully (an unhealthy dataforge subsystem, e.g. 'baseUri: Value
 		// cannot be null', is caught and surfaced as a warning rather than thrown). This outer guard is
@@ -76,8 +85,8 @@ public sealed class SchemaSyncTool(
 			try {
 				dataForge = enrichmentService.Enrich(
 					args.EnvironmentName,
-					CollectCandidateTerms(args),
-					CollectLookupHints(args));
+					CollectCandidateTerms(operations),
+					CollectLookupHints(operations));
 			} catch (Exception ex) when (!McpExceptionPolicy.IsUnrecoverable(ex)) {
 				// Degrade ONLY operational enrichment failures (dataforge/HTTP/data-layer) into a warning —
 				// a fatal condition or programming defect (OOM/NRE/…) must propagate, not be hidden here
@@ -96,8 +105,6 @@ public sealed class SchemaSyncTool(
 					ContextSummary: new ApplicationDataForgeContextSummary([], [], [], []));
 			}
 		}
-		IReadOnlyList<SchemaSyncOperation> operations =
-			args.Operations as IReadOnlyList<SchemaSyncOperation> ?? args.Operations.ToList();
 		int total = operations.Count;
 		var results = new List<SchemaSyncOperationResult>();
 		lock (McpToolExecutionLock.SyncRoot) {
@@ -105,13 +112,14 @@ public sealed class SchemaSyncTool(
 			logger.PreserveMessages = true;
 			try {
 				for (int index = 0; index < total; index++) {
+					cancellationToken.ThrowIfCancellationRequested();
 					SchemaSyncOperation op = operations[index];
-					reportStage($"{index + 1}/{total}: {GetReportedOperationType(op)} {op.SchemaName}");
 					logger.ClearMessages();
 					if (TryValidateSeedRows(op, index, out SchemaSyncOperationResult? seedValidationFailure)) {
 						results.Add(seedValidationFailure);
 						break;
 					}
+					reportStage($"{index + 1}/{total}: {GetReportedOperationType(op)} {op.SchemaName}");
 					SchemaSyncOperationResult result = ExecuteOperation(op, args, index);
 					results.Add(result);
 					if (!result.Success) {
@@ -139,11 +147,11 @@ public sealed class SchemaSyncTool(
 		};
 	}
 
-	private static IReadOnlyList<string> CollectCandidateTerms(SchemaSyncArgs args) {
-		return args.Operations
+	private static IReadOnlyList<string> CollectCandidateTerms(IReadOnlyList<SchemaSyncOperation> operations) {
+		return operations
 			.Where(op => !string.IsNullOrWhiteSpace(op.SchemaName))
 			.Select(op => op.SchemaName.Trim())
-			.Concat(args.Operations
+			.Concat(operations
 				.SelectMany(op => (IEnumerable<string>?)op.TitleLocalizations?.Values ?? [])
 				.Where(title => !string.IsNullOrWhiteSpace(title))
 				.Select(title => title.Trim()))
@@ -151,12 +159,12 @@ public sealed class SchemaSyncTool(
 			.ToList();
 	}
 
-	private static IReadOnlyList<string> CollectLookupHints(SchemaSyncArgs args) {
-		return args.Operations
+	private static IReadOnlyList<string> CollectLookupHints(IReadOnlyList<SchemaSyncOperation> operations) {
+		return operations
 			.Where(op => string.Equals(op.Type, "create-lookup", StringComparison.Ordinal)
 				&& !string.IsNullOrWhiteSpace(op.SchemaName))
 			.Select(op => op.SchemaName.Trim())
-			.Concat(args.Operations
+			.Concat(operations
 				.Where(op => string.Equals(op.Type, "create-lookup", StringComparison.Ordinal))
 				.SelectMany(op => (IEnumerable<string>?)op.TitleLocalizations?.Values ?? [])
 				.Where(title => !string.IsNullOrWhiteSpace(title))
