@@ -76,6 +76,7 @@ namespace cliogate.Files.cs
 
 		private readonly ILog _log = LogManager.GetLogger(typeof(CreatioApiGateway));
 		private readonly string splitName = "#OriginalMaintainer:";
+		private const string DescriptionColumnName = "Description";
 
 		#endregion
 
@@ -407,12 +408,12 @@ namespace cliogate.Files.cs
 				foreach (string lockPackage in lockPackages) {
 					string originalMaintainer = GetPackageAttributeValue<string>("Maintainer", lockPackage);
 					string[] description = SplitLockDescription(
-						GetPackageAttributeValue<string>("Description", lockPackage), splitName);
+						GetPackageAttributeValue<string>(DescriptionColumnName, lockPackage), splitName);
 					string maintainer = description.Length > 1 ? description.Last() : originalMaintainer;
 					Query query = new Update(UserConnection, "SysPackage")
 						.Set("InstallType", Column.Parameter(1))
 						.Set("Maintainer", Column.Parameter(maintainer))
-						.Set("Description", Column.Parameter(description[0]))
+						.Set(DescriptionColumnName, Column.Parameter(description[0]))
 						.Where("Name").IsEqual(Column.Parameter(lockPackage));
 					Update update = query as Update;
 					update.BuildParametersAsValue = true;
@@ -474,11 +475,11 @@ namespace cliogate.Files.cs
 				foreach (string unlockPackage in unlockPackages) {
 					string originalMaintainer = GetPackageAttributeValue<string>("Maintainer", unlockPackage);
 					string description = BuildUnlockDescription(
-						GetPackageAttributeValue<string>("Description", unlockPackage), originalMaintainer, splitName);
+						GetPackageAttributeValue<string>(DescriptionColumnName, unlockPackage), originalMaintainer, splitName);
 					Query query = new Update(UserConnection, "SysPackage")
 						.Set("InstallType", Column.Parameter(0))
 						.Set("Maintainer", Column.Parameter(maintainerCode))
-						.Set("Description", Column.Parameter(description))
+						.Set(DescriptionColumnName, Column.Parameter(description))
 						.Where("Name").IsEqual(Column.Parameter(unlockPackage));
 					Update update = query as Update;
 					update.BuildParametersAsValue = true;
