@@ -966,6 +966,22 @@ public sealed class ApplicationSectionCreateServiceTests {
 	}
 
 	[Test]
+	[Category("Unit")]
+	[Description("Emits the 'loading created section' stage marker on the insert-timeout recovery path before the post-timeout verification readback runs (ENG-93087).")]
+	public void CreateSection_Should_Report_LoadingCreatedSection_Marker_On_InsertTimeout_Recovery() {
+		// Arrange
+		List<string> markers = [];
+		SetUpTimedOutInsertWithReadbackMocks();
+
+		// Act
+		_ = _sut.CreateSection("sandbox", CreateReuseEntityRequest(), reportStage: markers.Add);
+
+		// Assert
+		markers.Should().Contain("loading created section",
+			because: "the insert-timeout recovery path must announce the created-section readback stage before reading it back");
+	}
+
+	[Test]
 	[Description("Bounds the post-timeout verification readback with the 30-second budget so the recovery cannot run unbounded after the insert already proved slow (ENG-91540 readback half of AC9).")]
 	public void CreateSection_Should_Pass_Bounded_Readback_Timeout_When_Insert_Times_Out_But_Section_Is_Visible() {
 		// Arrange

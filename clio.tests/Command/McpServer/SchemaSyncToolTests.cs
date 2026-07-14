@@ -1462,6 +1462,41 @@ public sealed class SchemaSyncToolTests {
 			because: "sync-schemas must stop on the first failure and never announce a later operation");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Aborts the batch and never resolves the second operation's backend command when cancellation is signalled mid-batch after the first operation's marker (ENG-93087).")]
+	public void ExecuteBatch_Should_Abort_Remaining_Operations_When_Cancelled_MidBatch() {
+		// Arrange
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreateCommand);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ILookupRegistrationService>());
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[
+				new SchemaSyncOperation("create-entity", "UsrAlpha", TitleLocalizations: Localizations("Alpha")),
+				new SchemaSyncOperation("create-lookup", "UsrBeta", TitleLocalizations: Localizations("Beta"))
+			]);
+		using var cts = new System.Threading.CancellationTokenSource();
+		Action<string> reportStage = marker => {
+			if (marker.Contains("1/2", StringComparison.Ordinal)) {
+				cts.Cancel();
+			}
+		};
+
+		// Act
+		Action act = () => tool.ExecuteBatch(args, reportStage, cts.Token);
+
+		// Assert
+		FluentActions.Invoking(act).Should().Throw<OperationCanceledException>(
+			because: "a cancellation signalled after the first operation's marker must abort the batch on the calling thread");
+		commandResolver.DidNotReceive().Resolve<CreateEntitySchemaCommand>(
+			Arg.Is<CreateEntitySchemaOptions>(options => options.SchemaName == "UsrBeta"));
+	}
+
 	private static System.Text.Json.JsonElement ToJsonElement(string value) {
 		return System.Text.Json.JsonDocument.Parse($"\"{value}\"").RootElement.Clone();
 	}
