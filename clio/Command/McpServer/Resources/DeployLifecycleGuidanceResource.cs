@@ -52,6 +52,8 @@ public sealed class DeployLifecycleGuidanceResource {
 		         `dbServerName`, `redisServerName` (omit to keep the default Kubernetes deployment path).
 		       - Prefer the recommended bundle from `show-passing-infrastructure` and the port from `find-empty-iis-port`.
 		       - Do not proceed if assert-infrastructure left the targeted database/Redis sections failing.
+		       - Deployments preserve the build database's existing forced-password-change state by default and do
+		         not clear it automatically. deploy-creatio does not assign a new Supervisor password.
 
 		       IdentityService
 		       - `deploy-identity` deploys IdentityService to IIS for an already registered local Creatio environment,

@@ -61,7 +61,7 @@ public sealed class ApplicationGetInfoTool(IApplicationInfoService applicationIn
 	/// </summary>
 	[McpServerTool(Name = ApplicationGetInfoToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
-	[Description("Gets application information from Creatio through backend MCP. Returns installed application identity plus package and entity context. "
+	[Description("Gets installed app identity, package, and entities from Creatio; each entity includes virtual. "
 		+ "Each entity column round-trips into sync-schemas update-entity as-is — send the same column object back and add an 'action' verb (modify/remove); "
 		+ "no field renaming needed, and no separate get-tool-contract call is required to learn the write shape. "
 		+ "Long-running: streams notifications/progress while working — await completion and do not retry on a perceived timeout.")]

@@ -85,7 +85,8 @@ public class PfInstallerOptions : EnvironmentNameOptions{
 	/// <summary>
 	/// Gets or sets a value indicating whether force-password-reset disabling script may be executed.
 	/// </summary>
-	[Option("disable-reset-password", Required = false, Hidden = true, Default = true, HelpText = "Disables reset password after installation")]
+	[Option("disable-reset-password", Required = false, Hidden = true, Default = false,
+		HelpText = "When true, disables the forced password change after installation")]
 	public bool DisableResetPassword { get; set; }
 	
 	/// <summary>
@@ -234,6 +235,13 @@ public class PfInstallerOptions : EnvironmentNameOptions{
 /// Executes Creatio deployment using validated command options.
 /// </summary>
 public class InstallerCommand : Command<PfInstallerOptions>, IStageEventSource{
+	#region Constants: Private
+
+	private const string MissingSilentSiteNameError =
+		"Site name is required for silent deployment. Specify --site-name or configure deploy-site-name.";
+
+	#endregion
+
 	#region Fields: Private
 
 	private readonly ICreatioInstallerService _creatioInstallerService;
@@ -309,6 +317,10 @@ public class InstallerCommand : Command<PfInstallerOptions>, IStageEventSource{
 			// Kubernetes-vs-local branch below, so a configured default db-server-name routes the plain
 			// Explorer context-menu deploy (which passes only --zip-file) to the local database.
 			_deployCreatioDefaultsResolver.ApplyDefaults(options);
+			if (options.IsSilent && string.IsNullOrWhiteSpace(options.SiteName)) {
+				_logger.WriteError(MissingSilentSiteNameError);
+				return 1;
+			}
 
 			if (_kubernetes is FakeKubernetes && string.IsNullOrEmpty(options.DbServerName)) {
 				_logger.WriteError(
