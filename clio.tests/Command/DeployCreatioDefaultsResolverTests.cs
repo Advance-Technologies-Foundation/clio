@@ -58,7 +58,7 @@ public sealed class DeployCreatioDefaultsResolverTests : BaseClioModuleTests {
 	public void ApplyDefaults_ShouldUseSoleEnabledLocalDbServer_WhenNoDeployDefaultConfigured() {
 		// Arrange
 		_settingsRepository.GetLocalDbServerNames().Returns(["my-local-postgres"]);
-		PfInstallerOptions options = new();
+		PfInstallerOptions options = new() { ExplorerLaunch = true };
 
 		// Act
 		_sut.ApplyDefaults(options);
@@ -69,11 +69,26 @@ public sealed class DeployCreatioDefaultsResolverTests : BaseClioModuleTests {
 	}
 
 	[Test]
+	[Description("Preserves an omitted database server as Kubernetes intent outside the Explorer integration.")]
+	public void ApplyDefaults_ShouldPreserveKubernetesIntent_WhenSoleLocalDbExistsOutsideExplorer() {
+		// Arrange
+		_settingsRepository.GetLocalDbServerNames().Returns(["my-local-postgres"]);
+		PfInstallerOptions options = new();
+
+		// Act
+		_sut.ApplyDefaults(options);
+
+		// Assert
+		options.DbServerName.Should().BeNullOrEmpty(
+			because: "MCP and ClioRing use an omitted database server to explicitly select Kubernetes");
+	}
+
+	[Test]
 	[Description("Leaves database selection unset when multiple local database servers are enabled and no deploy default exists.")]
 	public void ApplyDefaults_ShouldKeepKubernetesFallback_WhenMultipleLocalDbServersEnabled() {
 		// Arrange
 		_settingsRepository.GetLocalDbServerNames().Returns(["postgres-a", "postgres-b"]);
-		PfInstallerOptions options = new();
+		PfInstallerOptions options = new() { ExplorerLaunch = true };
 
 		// Act
 		_sut.ApplyDefaults(options);
@@ -88,7 +103,7 @@ public sealed class DeployCreatioDefaultsResolverTests : BaseClioModuleTests {
 	public void ApplyDefaults_ShouldKeepKubernetesFallback_WhenNoLocalDbServerEnabled() {
 		// Arrange
 		_settingsRepository.GetLocalDbServerNames().Returns([]);
-		PfInstallerOptions options = new();
+		PfInstallerOptions options = new() { ExplorerLaunch = true };
 
 		// Act
 		_sut.ApplyDefaults(options);

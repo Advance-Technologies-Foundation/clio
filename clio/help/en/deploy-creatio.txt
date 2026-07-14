@@ -138,8 +138,8 @@ OPTIONS
     --db-server-name NAME
         Name of database server configuration from appsettings.json
         When specified, automatically restores database from zip file to local server
-        If omitted, uses the configured deploy default, then the sole enabled local
-        database server. When neither resolves a local server, restores to Kubernetes
+        If omitted, uses the configured deploy default. The Explorer action then uses
+        a sole enabled local server; other callers restore to Kubernetes
         Requires database server configuration in appsettings.json (see DATABASE RESTORATION)
 
         IMPORTANT: If kubectl is not detected (no Kubernetes cluster available),
@@ -256,8 +256,8 @@ EXAMPLES
 BEHAVIOR
 
     Database Restoration (Automatic):
-    - WITHOUT --db-server-name: Uses the configured deploy default, then the sole
-      enabled local database server; otherwise restores to Kubernetes
+    - WITHOUT --db-server-name: Uses the configured deploy default. The Explorer
+      action then uses a sole enabled local server; other callers restore to Kubernetes
     - WITH --db-server-name: Restores database to local server from appsettings.json
     - Database is extracted from db/*.bak (MSSQL) or db/*.backup (PostgreSQL) in zip
     - Connection strings are automatically updated to point to target database
@@ -312,9 +312,9 @@ DATABASE RESTORATION
 
     AUTOMATIC DATABASE RESTORATION:
     - If --db-server-name is NOT specified:
-      A configured deploy default is used first. Otherwise a sole enabled local
-      database server is selected. If neither applies, the database is restored
-      to Kubernetes.
+      A configured deploy default is used first. The Explorer action then selects
+      a sole enabled local database server. Other callers preserve the existing
+      Kubernetes behavior when no deploy default applies.
 
     - If --db-server-name IS specified:
       Database is restored to local database server configured in appsettings.json

@@ -10,10 +10,11 @@ Explorer starts `deploy-creatio` with only the selected ZIP. When no deploy-spec
 
 - Explicit command options retain highest precedence.
 - A deploy-specific database default retains precedence over general local configurations.
-- When exactly one local database configuration is enabled, it becomes the fallback local preference.
+- For Explorer launches, exactly one enabled local database configuration becomes the fallback local preference.
+- MCP, ClioRing, and ordinary CLI calls preserve omitted `DbServerName` as Kubernetes intent.
 - Zero or multiple enabled local database configurations preserve the existing Kubernetes fallback.
 - Existing local Redis resolution continues to honor explicit selection, `defaultRedis`, and a sole enabled server.
-- The Explorer deploy terminal closes on success and pauses on non-zero exit.
+- The Explorer deploy terminal pauses on non-zero exit without an additional command-level exit prompt.
 
 ## Exclusions
 

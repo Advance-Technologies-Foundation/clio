@@ -26,7 +26,7 @@ stories:
     feature: "explorer-deploy-local-defaults"
     repo: "clio"
     size: S
-    status: review
+    status: done
     issue: 874
     file: spec/explorer-deploy-local-defaults/explorer-deploy-local-defaults-story.md
     prd: spec/explorer-deploy-local-defaults/explorer-deploy-local-defaults-spec.md

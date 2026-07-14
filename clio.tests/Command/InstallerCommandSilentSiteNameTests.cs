@@ -69,4 +69,27 @@ internal sealed class InstallerCommandSilentSiteNameTests : BaseCommandTests<PfI
 			"Site name is required for silent deployment. Specify --site-name or configure deploy-site-name.",
 			because: "the error should explain how an unattended caller can provide the required site name");
 	}
+
+	[TestCase(0)]
+	[TestCase(1)]
+	[Description("Explorer deployment leaves terminal lifetime to the failure-aware registry launcher without an extra prompt.")]
+	public void Execute_ShouldNotPromptForExit_WhenLaunchedFromExplorer(int installerResult) {
+		// Arrange
+		_creatioInstallerService.Execute(Arg.Any<PfInstallerOptions>()).Returns(installerResult);
+		InstallerCommand command = Container.GetRequiredService<InstallerCommand>();
+		PfInstallerOptions options = new() {
+			DbServerName = "local-postgres",
+			ExplorerLaunch = true,
+			SiteName = "issue874",
+			ZipFile = @"C:\CreatioBuilds\creatio.zip"
+		};
+
+		// Act
+		int result = command.Execute(options);
+
+		// Assert
+		result.Should().Be(installerResult,
+			because: "Explorer deployment must preserve the installer exit code for conditional pause handling");
+		_logger.DidNotReceive().WriteLine("Press enter to exit...");
+	}
 }

@@ -7,13 +7,14 @@ namespace Clio.Command.CreatioInstallCommand;
 
 /// <summary>
 /// Applies persisted <c>deploy-creatio</c> defaults to command options so that options omitted on the
-/// command line fall back to the values configured via <c>clio config</c> or an unambiguous local database.
+/// command line fall back to the values configured via <c>clio config</c> or, for Explorer launches, an
+/// unambiguous local database.
 /// </summary>
 public interface IDeployCreatioDefaultsResolver {
 	/// <summary>
-	/// Fills unspecified deployment options from the saved defaults and selects the sole enabled local database
-	/// when no database default is configured. Options supplied on the command line are never overwritten, and an
-	/// unset site name remains empty so interactive deployment can prompt for it.
+	/// Fills unspecified deployment options from the saved defaults and, for Explorer launches, selects the sole
+	/// enabled local database when no database default is configured. Options supplied on the command line are never
+	/// overwritten, and an unset site name remains empty so interactive deployment can prompt for it.
 	/// </summary>
 	/// <param name="options">The deployment options to complete in place.</param>
 	void ApplyDefaults(PfInstallerOptions options);
@@ -99,7 +100,7 @@ public class DeployCreatioDefaultsResolver : IDeployCreatioDefaultsResolver {
 		|| string.Equals(deploymentMethod, PfInstallerOptions.AutoDeploymentMethod, StringComparison.OrdinalIgnoreCase);
 
 	private void ApplySoleLocalDatabaseDefault(PfInstallerOptions options) {
-		if (!string.IsNullOrWhiteSpace(options.DbServerName)) {
+		if (!options.ExplorerLaunch || !string.IsNullOrWhiteSpace(options.DbServerName)) {
 			return;
 		}
 

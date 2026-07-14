@@ -21,8 +21,10 @@ deployment with optional HTTPS configuration and automatic service management.
 When `--site-name` and the configured `deploy-site-name` default are both
 omitted, interactive deployment prompts for the site name. The Windows Explorer
 "clio: deploy Creatio" action uses this prompt instead of deriving a name from
-the selected ZIP archive. Its terminal closes after a successful deployment and
-waits for a key press after a failed deployment so the error remains visible.
+the selected ZIP archive. When exactly one local database server is enabled and
+no deploy-specific database default exists, the Explorer action selects that
+server. Its terminal waits for a key press after a failed deployment so the
+error remains visible.
 
 Every deploy-creatio run creates a temp database-operation log file for the
 database restore portion of deployment. The final CLI output includes the
@@ -30,8 +32,9 @@ absolute path in a "Database operation log:" line. For MCP tool execution,
 the same path is returned in the structured response as log-file-path.
 
 Database restore mode:
-- Without --db-server-name: uses a configured deploy default, then the sole
-  enabled local database server; otherwise uses the existing Kubernetes restore flow
+- Without --db-server-name: uses a configured deploy default; the Explorer action
+  then uses the sole enabled local database server, while other callers keep the
+  existing Kubernetes restore flow
 - With --db-server-name: configured local/local-style DB server from appsettings.json
 
 PostgreSQL running in Docker is supported through --db-server-name when the
@@ -45,9 +48,9 @@ Clio does not docker exec into the container.
 For PostgreSQL local restore, pg_restore must be installed on the machine
 running clio and available in PATH or via db.pgToolsPath.
 
-If Kubernetes is not available and more than one local database server is enabled,
-configure a deploy default or pass --db-server-name explicitly. A sole enabled local
-database server is selected automatically.
+If Kubernetes is not available, configure a deploy default or pass
+--db-server-name explicitly. The Explorer action also selects a sole enabled local
+database server automatically.
 
 ## Synopsis
 

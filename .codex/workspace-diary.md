@@ -5917,3 +5917,10 @@ Decision: Preserve explicit and deploy-specific precedence, select the sole enab
 Discovery: The live deployment log stopped at the Kubernetes restore branch because an empty DbServerName was treated as Kubernetes; defaultRedis was already resolved correctly after local database mode is selected.
 Files: clio/Command/CreatioInstallCommand/DeployCreatioDefaultsResolver.cs, clio/reg/clio_context_menu_win.reg, clio.tests/Command/DeployCreatioDefaultsResolverTests.cs, clio.tests/Command/ExplorerContextMenuRegistrationTests.cs, spec/explorer-deploy-local-defaults/
 Impact: Explorer deployment uses the user's sole enabled local PostgreSQL and configured Redis preference without changing explicit MCP or ClioRing infrastructure selection, and failures remain readable.
+
+## 2026-07-14 13:15 – Scope Explorer defaults and harden context-menu execution
+Context: The first comprehensive review of issue #874 found that a general sole-local fallback could redirect non-Explorer Kubernetes callers and that quoting the entire cmd.exe payload was unsafe for metacharacter-bearing paths.
+Decision: Gate sole-local inference behind a hidden --explorer-launch marker, preserve ordinary CLI/MCP/ClioRing Kubernetes semantics, and use cmd.exe /d /c with only the ZIP argument quoted plus a failure-only pause.
+Discovery: Explorer mode should own both default inference and terminal lifetime; an execution-level registry test with a metacharacter filename proves the command cannot inject a second command.
+Files: clio/Command/CreatioInstallCommand/InstallerCommand.cs, clio/Command/CreatioInstallCommand/DeployCreatioDefaultsResolver.cs, clio/reg/clio_context_menu_win.reg, clio.tests/Command/ExplorerContextMenuRegistrationTests.cs
+Impact: Rancher Desktop can remain off for Explorer deployment when one local server is configured, while automation callers retain their established Kubernetes contract and Explorer failures remain visible exactly once.

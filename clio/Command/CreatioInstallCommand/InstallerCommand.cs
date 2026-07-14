@@ -88,6 +88,13 @@ public class PfInstallerOptions : EnvironmentNameOptions{
 	[Option("disable-reset-password", Required = false, Hidden = true, Default = false,
 		HelpText = "When true, disables the forced password change after installation")]
 	public bool DisableResetPassword { get; set; }
+
+	/// <summary>
+	/// Gets or sets a value indicating whether the command was launched by the Windows Explorer integration.
+	/// </summary>
+	[Option("explorer-launch", Required = false, Hidden = true, Default = false,
+		HelpText = "Marks deployment as launched by the Windows Explorer integration")]
+	public bool ExplorerLaunch { get; set; }
 	
 	/// <summary>
 	/// Gets or sets the database engine type: <c>pg</c> or <c>mssql</c>.
@@ -329,7 +336,7 @@ public class InstallerCommand : Command<PfInstallerOptions>, IStageEventSource{
 			}
 
 			int result = _creatioInstallerService.Execute(options);
-			if (!options.IsSilent) {
+			if (!options.IsSilent && !options.ExplorerLaunch) {
 				_logger.WriteLine("Press enter to exit...");
 				Console.ReadLine();
 			}
