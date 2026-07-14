@@ -96,7 +96,13 @@ Typical examples:
 
 The `mcp-http` HTTP host adds a fourth, opt-in targeting mode: **per-request credential
 passthrough**. Instead of a pre-registered environment, a gateway supplies the target tenant
-URL and credentials on each request via an `X-Integration-Credentials: <base64 JSON>` header.
+URL, credentials, and an explicit `isNetCore` runtime boolean on each request via an
+`X-Integration-Credentials: <base64 JSON>` header. `true` selects the root .NET Core/NET 8
+routes; `false` selects the .NET Framework layout with exactly one `/0/` segment. The runtime
+field is required, is matched case-insensitively by property name, and is header context
+rather than an MCP tool argument. Missing or non-boolean values are rejected with HTTP 400
+before target validation, client creation, or outbound calls; clio never defaults or probes the
+tenant runtime. The runtime is part of the in-memory cache and lock identity.
 Most of the registered tool surface then executes against an **ephemeral, in-memory** per-tenant
 container (nothing persisted; pooled with idle-TTL / LRU eviction) — but not every tool honors
 the header yet: see "Per-tool passthrough support (ENG-93347)" immediately below for the audited

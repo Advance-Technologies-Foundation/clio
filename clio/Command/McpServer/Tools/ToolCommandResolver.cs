@@ -238,13 +238,14 @@ public class ToolCommandResolver(
 	/// an environment name, or runs the interactive <c>Fill</c> path — the header-built environment
 	/// carries no Safe flag and stays non-interactive / fail-closed (A-06).
 	/// </summary>
-	/// <param name="context">The per-request credential context (url + precedence-resolved auth).</param>
-	/// <returns>An in-memory <see cref="EnvironmentSettings"/> carrying the target url and credential material.</returns>
+	/// <param name="context">The per-request credential context (url, runtime, and precedence-resolved auth).</param>
+	/// <returns>An in-memory <see cref="EnvironmentSettings"/> carrying the target url, runtime, and credential material.</returns>
 	internal static EnvironmentSettings BuildEphemeralSettings(CredentialContext context) {
 		ArgumentNullException.ThrowIfNull(context);
 		CredentialMaterial auth = context.Auth;
 		EnvironmentSettings settings = new() {
-			Uri = context.Url
+			Uri = context.Url,
+			IsNetCore = context.IsNetCore
 		};
 		switch (auth?.Kind) {
 			case CredentialKind.AccessToken:
@@ -288,7 +289,7 @@ public class ToolCommandResolver(
 			_ => false
 		};
 
-	// Dedicated passthrough cache key that INCLUDES the credential discriminator (kind + token /
+	// Dedicated passthrough cache key that INCLUDES the runtime and credential discriminator (kind + token /
 	// cookie / login+password), unlike BuildCacheKey which hashes only Login|Password|ClientId|IsNetCore
 	// and would collide two different bearer tokens on the same url (cross-tenant reuse). The secret
 	// material is SHA-256 hashed, never placed raw in the key. The FULL hash is used (not a 64-bit
@@ -298,6 +299,7 @@ public class ToolCommandResolver(
 	internal static string BuildPassthroughCacheKey(CredentialContext context) {
 		CredentialMaterial auth = context.Auth;
 		string material = string.Concat(
+			context.IsNetCore ? "1" : "0", "|",
 			((int)(auth?.Kind ?? CredentialKind.AccessToken)).ToString(), "|",
 			auth?.AccessToken ?? string.Empty, "|",
 			auth?.AccessTokenType ?? string.Empty, "|",

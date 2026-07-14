@@ -515,7 +515,7 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 		}
 
 		accessor.Current = new CredentialContext(
-			parsed.Url, parsed.Auth, McpTransport.Http, passthroughEnabled);
+			parsed.Url, parsed.Auth, parsed.IsNetCore, McpTransport.Http, passthroughEnabled);
 
 		await next(context);
 	}

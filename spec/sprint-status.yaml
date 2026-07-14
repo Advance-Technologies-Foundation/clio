@@ -739,7 +739,7 @@ stories:
     title: "Client seam — EnvironmentSettings token/cookie fields + NoReauthExecutor + factory branch"
     feature: "mcp-http-credential-passthrough"
     size: M
-    status: in-progress
+    status: review
     file: spec/mcp-http-credential-passthrough/stories/story-mcp-http-credential-passthrough-3.md
     prd: spec/mcp-http-credential-passthrough/prd/prd-mcp-http-credential-passthrough.md
     adr: spec/adr/adr-mcp-http-credential-passthrough.md
@@ -755,7 +755,7 @@ stories:
     title: "Header + credential context — X-Integration-Credentials parse, precedence, context seam"
     feature: "mcp-http-credential-passthrough"
     size: M
-    status: in-progress
+    status: review
     file: spec/mcp-http-credential-passthrough/stories/story-mcp-http-credential-passthrough-4.md
     prd: spec/mcp-http-credential-passthrough/prd/prd-mcp-http-credential-passthrough.md
     adr: spec/adr/adr-mcp-http-credential-passthrough.md
@@ -775,7 +775,7 @@ stories:
     title: "Edge API-key gate — fail-closed, strictly additive"
     feature: "mcp-http-credential-passthrough"
     size: M
-    status: in-progress
+    status: review
     file: spec/mcp-http-credential-passthrough/stories/story-mcp-http-credential-passthrough-5.md
     prd: spec/mcp-http-credential-passthrough/prd/prd-mcp-http-credential-passthrough.md
     adr: spec/adr/adr-mcp-http-credential-passthrough.md
@@ -793,7 +793,7 @@ stories:
     title: "SSRF / egress validator on the per-request target URL"
     feature: "mcp-http-credential-passthrough"
     size: M
-    status: in-progress
+    status: review
     file: spec/mcp-http-credential-passthrough/stories/story-mcp-http-credential-passthrough-6.md
     prd: spec/mcp-http-credential-passthrough/prd/prd-mcp-http-credential-passthrough.md
     adr: spec/adr/adr-mcp-http-credential-passthrough.md
@@ -1782,7 +1782,7 @@ stories:
     feature: "mcp-http-passthrough-runtime-routing"
     repo: "clio"
     size: M
-    status: ready-for-dev
+    status: in-progress
     jira: ENG-93348
     file: spec/stories/story-mcp-http-passthrough-runtime-routing-1.md
     prd: spec/prd/prd-mcp-http-passthrough-runtime-routing.md
@@ -1798,7 +1798,7 @@ stories:
     feature: "mcp-http-passthrough-runtime-routing"
     repo: "clio"
     size: M
-    status: ready-for-dev
+    status: in-progress
     jira: ENG-93348
     file: spec/stories/story-mcp-http-passthrough-runtime-routing-2.md
     prd: spec/prd/prd-mcp-http-passthrough-runtime-routing.md
@@ -1814,7 +1814,7 @@ stories:
     feature: "mcp-http-passthrough-runtime-routing"
     repo: "clio"
     size: L
-    status: ready-for-dev
+    status: in-progress
     jira: ENG-93348
     file: spec/stories/story-mcp-http-passthrough-runtime-routing-3.md
     prd: spec/prd/prd-mcp-http-passthrough-runtime-routing.md
@@ -1830,7 +1830,7 @@ stories:
     feature: "mcp-http-passthrough-runtime-routing"
     repo: "clio"
     size: M
-    status: ready-for-dev
+    status: in-progress
     jira: ENG-93348
     file: spec/stories/story-mcp-http-passthrough-runtime-routing-4.md
     prd: spec/prd/prd-mcp-http-passthrough-runtime-routing.md

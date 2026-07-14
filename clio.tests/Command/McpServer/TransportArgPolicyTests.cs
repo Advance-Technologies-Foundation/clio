@@ -41,6 +41,7 @@ public sealed class TransportArgPolicyTests {
 		accessor.Current.Returns(new CredentialContext(
 			"https://acme.creatio.com",
 			CredentialMaterial.FromAccessToken("header-supplied-token", "Bearer"),
+			false,
 			transport,
 			passthroughModeEnabled));
 		return accessor;

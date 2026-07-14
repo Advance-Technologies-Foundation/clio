@@ -23,11 +23,14 @@ public sealed class CredentialHeaderParserTests
 		return Convert.ToBase64String(Encoding.UTF8.GetBytes(json));
 	}
 
+	private static string EncodeJson(string json) =>
+		Convert.ToBase64String(Encoding.UTF8.GetBytes(json));
+
 	[Test]
 	[Description("A base64-encoded JSON payload with url and accessToken parses into AccessToken material.")]
 	public void TryParse_ShouldReturnAccessTokenMaterial_WhenAccessTokenPresent() {
 		// Arrange
-		string header = Encode(new { url = "https://env.creatio.com", accessToken = SecretToken, accessTokenType = "Bearer" });
+		string header = Encode(new { url = "https://env.creatio.com", accessToken = SecretToken, accessTokenType = "Bearer", isNetCore = false });
 
 		// Act
 		bool ok = _sut.TryParse(header, out CredentialParseResult result, out string error);
@@ -39,6 +42,80 @@ public sealed class CredentialHeaderParserTests
 		result.Auth.Kind.Should().Be(CredentialKind.AccessToken, because: "accessToken is present");
 		result.Auth.AccessToken.Should().Be(SecretToken, because: "the token is carried on the material");
 		result.Auth.AccessTokenType.Should().Be("Bearer", because: "the token type is carried alongside the token");
+		result.IsNetCore.Should().BeFalse(because: "the explicit runtime boolean must be preserved");
+	}
+
+	[Test]
+	[Description("An explicit JSON true runtime value is accepted and carried through the parse result.")]
+	public void TryParse_ShouldReturnNetCoreRuntime_WhenIsNetCoreIsTrue() {
+		// Arrange
+		string header = Encode(new {
+			url = "https://env.creatio.com",
+			accessToken = SecretToken,
+			accessTokenType = "Bearer",
+			isNetCore = true
+		});
+
+		// Act
+		bool ok = _sut.TryParse(header, out CredentialParseResult result, out string error);
+
+		// Assert
+		ok.Should().BeTrue(because: "a JSON boolean true is a valid runtime selection");
+		error.Should().BeNull(because: "the explicit true value is valid");
+		result.IsNetCore.Should().BeTrue(because: "the parser must preserve the Core runtime selection");
+	}
+
+	[Test]
+	[Description("The runtime property is matched case-insensitively while the parsed value remains a JSON boolean.")]
+	public void TryParse_ShouldAcceptRuntimeProperty_WhenPropertyNameUsesDifferentCasing() {
+		// Arrange
+		string header = EncodeJson(
+			$"{{\"url\":\"https://env.creatio.com\",\"accessToken\":\"{SecretToken}\",\"IsNetCore\":true}}");
+
+		// Act
+		bool ok = _sut.TryParse(header, out CredentialParseResult result, out string error);
+
+		// Assert
+		ok.Should().BeTrue(because: "the existing JSON policy is case-insensitive");
+		error.Should().BeNull(because: "casing does not change the field meaning");
+		result.IsNetCore.Should().BeTrue(because: "the case-insensitive field must retain its boolean value");
+	}
+
+	[Test]
+	[Description("A missing runtime property is rejected before authentication resolution with a defect-only error.")]
+	public void TryParse_ShouldFail_WhenIsNetCoreIsMissing() {
+		// Arrange
+		string header = Encode(new { url = "https://env.creatio.com", accessToken = SecretToken });
+
+		// Act
+		bool ok = _sut.TryParse(header, out CredentialParseResult result, out string error);
+
+		// Assert
+		ok.Should().BeFalse(because: "runtime selection is required for passthrough headers");
+		result.Should().BeNull(because: "missing runtime metadata cannot produce a parse result");
+		error.Should().Be("missing isNetCore", because: "the caller needs to know which required field is absent");
+		error.Should().NotContain(SecretToken, because: "validation errors must not expose credentials");
+	}
+
+	[TestCase("null")]
+	[TestCase("\"true\"")]
+	[TestCase("1")]
+	[TestCase("[]")]
+	[TestCase("{}")]
+	[Description("A present non-boolean runtime value is rejected without coercion or secret disclosure.")]
+	public void TryParse_ShouldFail_WhenIsNetCoreIsNotJsonBoolean(string runtimeJson) {
+		// Arrange
+		string header = EncodeJson(
+			$"{{\"url\":\"https://env.creatio.com\",\"accessToken\":\"{SecretToken}\",\"isNetCore\":{runtimeJson}}}");
+
+		// Act
+		bool ok = _sut.TryParse(header, out CredentialParseResult result, out string error);
+
+		// Assert
+		ok.Should().BeFalse(because: "only JSON booleans are valid runtime metadata");
+		result.Should().BeNull(because: "an invalid runtime cannot produce a parse result");
+		error.Should().Be("isNetCore must be a JSON boolean", because: "the error must identify the invalid JSON kind without echoing it");
+		error.Should().NotContain(SecretToken, because: "validation errors must not expose credentials");
 	}
 
 	[Test]
@@ -50,7 +127,8 @@ public sealed class CredentialHeaderParserTests
 			accessToken = SecretToken,
 			cookie = SecretCookie,
 			login = "admin",
-			password = SecretPassword
+			password = SecretPassword,
+			isNetCore = false
 		});
 
 		// Act
@@ -69,7 +147,8 @@ public sealed class CredentialHeaderParserTests
 			url = "https://env.creatio.com",
 			cookie = SecretCookie,
 			login = "admin",
-			password = SecretPassword
+			password = SecretPassword,
+			isNetCore = false
 		});
 
 		// Act
@@ -85,7 +164,7 @@ public sealed class CredentialHeaderParserTests
 	[Description("When only login+password are present, LoginPassword material is resolved.")]
 	public void TryParse_ShouldReturnLoginPassword_WhenOnlyLoginAndPasswordPresent() {
 		// Arrange
-		string header = Encode(new { url = "https://env.creatio.com", login = "admin", password = SecretPassword });
+		string header = Encode(new { url = "https://env.creatio.com", login = "admin", password = SecretPassword, isNetCore = false });
 
 		// Act
 		bool ok = _sut.TryParse(header, out CredentialParseResult result, out _);
@@ -101,7 +180,7 @@ public sealed class CredentialHeaderParserTests
 	[Description("A login with no password is not usable auth material and falls through to a failure.")]
 	public void TryParse_ShouldFail_WhenLoginPresentButPasswordMissing() {
 		// Arrange
-		string header = Encode(new { url = "https://env.creatio.com", login = "admin" });
+		string header = Encode(new { url = "https://env.creatio.com", login = "admin", isNetCore = false });
 
 		// Act
 		bool ok = _sut.TryParse(header, out CredentialParseResult result, out string error);
@@ -116,7 +195,7 @@ public sealed class CredentialHeaderParserTests
 	[Description("A payload with url but no auth fields at all fails with a no-auth-material defect.")]
 	public void TryParse_ShouldFail_WhenNoAuthMaterialPresent() {
 		// Arrange
-		string header = Encode(new { url = "https://env.creatio.com" });
+		string header = Encode(new { url = "https://env.creatio.com", isNetCore = false });
 
 		// Act
 		bool ok = _sut.TryParse(header, out CredentialParseResult result, out string error);

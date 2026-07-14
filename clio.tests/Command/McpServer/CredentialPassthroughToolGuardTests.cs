@@ -25,6 +25,7 @@ public class CredentialPassthroughToolGuardTests {
 		new(
 			"https://tenant.example.com",
 			CredentialMaterial.FromAccessToken("super-secret-token", "Bearer"),
+			false,
 			McpTransport.Http,
 			PassthroughModeEnabled: true);
 

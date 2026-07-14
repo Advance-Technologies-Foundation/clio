@@ -14,6 +14,7 @@ public sealed class CredentialContextAccessorTests
 		new(
 			"https://env.creatio.com",
 			CredentialMaterial.FromAccessToken("token", "Bearer"),
+			false,
 			McpTransport.Http,
 			PassthroughModeEnabled: true);
 

@@ -53,7 +53,7 @@ public sealed class CredentialPassthroughAuthHardeningTests
 
 	private static string ValidCredentialHeader() {
 		string json =
-			$"{{\"url\":\"https://acme.creatio.com\",\"accessToken\":\"{SecretAccessToken}\",\"accessTokenType\":\"Bearer\"}}";
+			$"{{\"url\":\"https://acme.creatio.com\",\"accessToken\":\"{SecretAccessToken}\",\"accessTokenType\":\"Bearer\",\"isNetCore\":false}}";
 		return Convert.ToBase64String(Encoding.UTF8.GetBytes(json));
 	}
 
@@ -104,6 +104,8 @@ public sealed class CredentialPassthroughAuthHardeningTests
 			because: "an authenticated request's credential header must still be captured when authorization is enabled");
 		accessor.Current!.Url.Should().Be("https://acme.creatio.com",
 			because: "the parsed target url must flow onto the captured context exactly as without Story 6's gate");
+		accessor.Current.IsNetCore.Should().BeFalse(
+			because: "the authenticated passthrough context must retain the explicit runtime value");
 	}
 
 	[Test]

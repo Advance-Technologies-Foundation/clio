@@ -62,7 +62,7 @@ public sealed class CredentialPassthroughMiddlewareTests
 
 	private static string ValidCredentialHeader() {
 		string json =
-			$"{{\"url\":\"https://acme.creatio.com\",\"accessToken\":\"{SecretAccessToken}\",\"accessTokenType\":\"Bearer\"}}";
+			$"{{\"url\":\"https://acme.creatio.com\",\"accessToken\":\"{SecretAccessToken}\",\"accessTokenType\":\"Bearer\",\"isNetCore\":false}}";
 		return Convert.ToBase64String(Encoding.UTF8.GetBytes(json));
 	}
 
@@ -154,6 +154,8 @@ public sealed class CredentialPassthroughMiddlewareTests
 			because: "the parsed target url must flow onto the captured context");
 		accessor.Current.Auth.Kind.Should().Be(CredentialKind.AccessToken,
 			because: "the access-token payload must resolve to access-token auth material");
+		accessor.Current.IsNetCore.Should().BeFalse(
+			because: "the middleware must copy the explicit runtime boolean into request context");
 		accessor.Current.PassthroughModeEnabled.Should().BeTrue(
 			because: "the captured context must carry the gate's passthrough decision");
 		terminalCalled().Should().BeTrue(

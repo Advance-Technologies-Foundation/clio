@@ -58,9 +58,9 @@ public sealed class ToolCommandResolverCacheKeyTests {
 	public void BuildPassthroughCacheKey_ShouldDifferForSameUrlDistinctTokens_WhenTokensDiffer() {
 		// Arrange
 		CredentialContext first = new(Url,
-			CredentialMaterial.FromAccessToken(TokenOne, "Bearer"), McpTransport.Http, true);
+			CredentialMaterial.FromAccessToken(TokenOne, "Bearer"), false, McpTransport.Http, true);
 		CredentialContext second = new(Url,
-			CredentialMaterial.FromAccessToken(TokenTwo, "Bearer"), McpTransport.Http, true);
+			CredentialMaterial.FromAccessToken(TokenTwo, "Bearer"), false, McpTransport.Http, true);
 
 		// Act
 		string keyOne = ToolCommandResolver.BuildPassthroughCacheKey(first);
@@ -76,7 +76,7 @@ public sealed class ToolCommandResolverCacheKeyTests {
 	public void BuildPassthroughCacheKey_ShouldBeSecretFree_WhenTokenIsPresent() {
 		// Arrange
 		CredentialContext context = new(Url,
-			CredentialMaterial.FromAccessToken(TokenOne, "Bearer"), McpTransport.Http, true);
+			CredentialMaterial.FromAccessToken(TokenOne, "Bearer"), false, McpTransport.Http, true);
 
 		// Act
 		string key = ToolCommandResolver.BuildPassthroughCacheKey(context);
@@ -84,5 +84,23 @@ public sealed class ToolCommandResolverCacheKeyTests {
 		// Assert
 		key.Should().NotContain(TokenOne,
 			because: "the credential material is hashed before it is placed in the key");
+	}
+
+	[Test]
+	[Description("The passthrough cache key differs when only the runtime route family changes.")]
+	public void BuildPassthroughCacheKey_ShouldDiffer_WhenOnlyRuntimeDiffers() {
+		// Arrange
+		CredentialContext framework = new(Url,
+			CredentialMaterial.FromAccessToken(TokenOne, "Bearer"), false, McpTransport.Http, true);
+		CredentialContext core = new(Url,
+			CredentialMaterial.FromAccessToken(TokenOne, "Bearer"), true, McpTransport.Http, true);
+
+		// Act
+		string frameworkKey = ToolCommandResolver.BuildPassthroughCacheKey(framework);
+		string coreKey = ToolCommandResolver.BuildPassthroughCacheKey(core);
+
+		// Assert
+		frameworkKey.Should().NotBe(coreKey,
+			because: "the same credentials cannot share an environment-bound container across route families");
 	}
 }

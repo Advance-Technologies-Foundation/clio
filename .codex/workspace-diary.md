@@ -5991,3 +5991,17 @@ Decision: Defined unit, real-process, and manual MCP E2E layers with full FR/AC 
 Discovery: Existing MCP HTTP E2E is manual/not in CI and its encoders/stand configuration omit runtime today; strict per-tenant runtime variables and compile-required encoder booleans close that gap. A successful tool response alone is not route-layout evidence.
 Files: spec/test-plans/tp-mcp-http-passthrough-runtime-routing.md, spec/sprint-status.yaml, clio.mcp.e2e/Support/Mcp/McpHttpServerSession.cs, clio.mcp.e2e/Support/Mcp/McpHttpPassthroughStand.cs
 Impact: The BMAD planning chain now has PRD, ADR, four ready-for-dev stories, and a test plan; implementation cannot be declared complete without real dual-runtime proof.
+
+## 2026-07-14 05:10 – ENG-93348 runtime-routing implementation
+Context: Implemented all four serialized stories for explicit runtime routing in MCP HTTP credential passthrough.
+Decision: Require and validate a JSON boolean `isNetCore`, propagate it into ephemeral settings and the canonical passthrough cache/lock key, and fail before target validation or outbound work on invalid metadata.
+Discovery: Focused process E2E proves encoder booleans and HTTP 400 rejection on both net8.0 and net10.0; live dual-runtime tenant validation remains manual-gated by the required stand variables.
+Files: clio/Command/McpServer/CredentialHeaderParser.cs, clio/Command/McpServer/CredentialContext.cs, clio/Command/McpServer/Tools/ToolCommandResolver.cs, clio.mcp.e2e/McpHttpRuntimeRoutingE2ETests.cs, clio/docs/commands/mcp-http.md, clio/help/en/mcp-http.txt, docs/McpCapabilityMap.md
+Impact: Unit coverage passes 2266 tests per TFM and focused runtime E2E passes 2 tests per TFM; the branch is ready for adversarial review and delivery.
+
+## 2026-07-14 05:25 – ENG-93348 review closure
+Context: Completed the mandatory pre-PR quality, correctness/performance, and security review over the full diff.
+Decision: Fixed XML documentation nesting, corrected cookie examples to include the required runtime field, added Allure metadata/steps, and parameterized tenant-key equivalence for Core and Framework runtimes.
+Discovery: No production Blocker/High defects or security leaks were found. Live dual-runtime POST /mcp success and captured route evidence remain an external stand prerequisite and are recorded as an explicit PR blocker.
+Files: clio.mcp.e2e/McpHttpRuntimeRoutingE2ETests.cs, clio.mcp.e2e/Support/Mcp/McpHttpServerSession.cs, clio.tests/Command/McpServer/TenantKeyEquivalenceTests.cs, clio/docs/commands/mcp-http.md, clio/help/en/mcp-http.txt
+Impact: Review advisories are resolved; all stories are marked `review` pending PR feedback and live-stand validation.

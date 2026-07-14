@@ -23,8 +23,9 @@ namespace Clio.Mcp.E2E.Support.Mcp;
 /// token via <see cref="OAuthClientCredentialsTokenFetcher"/>.</description></item>
 /// <item><description><c>CLIO_MCP_HTTP_E2E_AUTH_REQUIRED_SCOPES</c> — (optional) comma-separated
 /// scope(s) passed to <c>--auth-required-scopes</c> and requested from the token endpoint.</description></item>
-/// <item><description><c>CLIO_MCP_HTTP_E2E_TENANT1_URL</c> / <c>CLIO_MCP_HTTP_E2E_TENANT1_TOKEN</c>
-/// — reused from <see cref="McpHttpPassthroughStand"/> for the OAuth+passthrough interop leg.</description></item>
+/// <item><description><c>CLIO_MCP_HTTP_E2E_TENANT1_URL</c> / <c>CLIO_MCP_HTTP_E2E_TENANT1_TOKEN</c> /
+/// <c>CLIO_MCP_HTTP_E2E_TENANT1_IS_NET_CORE=true|false</c> — reused from
+/// <see cref="McpHttpPassthroughStand"/> for the OAuth+passthrough interop leg.</description></item>
 /// </list>
 /// </remarks>
 internal sealed class McpHttpOAuthStand {
@@ -35,6 +36,7 @@ internal sealed class McpHttpOAuthStand {
 	public string? RequiredScopes { get; init; }
 	public string? TenantUrl { get; init; }
 	public string? TenantToken { get; init; }
+	public bool? TenantIsNetCore { get; init; }
 
 	/// <summary>
 	/// Reads the live-stand configuration from environment variables, or calls
@@ -61,9 +63,13 @@ internal sealed class McpHttpOAuthStand {
 			ClientSecret = clientSecret!,
 			RequiredScopes = Read("CLIO_MCP_HTTP_E2E_AUTH_REQUIRED_SCOPES"),
 			TenantUrl = Read("CLIO_MCP_HTTP_E2E_TENANT1_URL"),
-			TenantToken = Read("CLIO_MCP_HTTP_E2E_TENANT1_TOKEN")
+			TenantToken = Read("CLIO_MCP_HTTP_E2E_TENANT1_TOKEN"),
+			TenantIsNetCore = TryReadRuntime("CLIO_MCP_HTTP_E2E_TENANT1_IS_NET_CORE")
 		};
 	}
+
+	private static bool? TryReadRuntime(string name) =>
+		bool.TryParse(Read(name), out bool value) ? value : null;
 
 	private static string? Read(string name) => Environment.GetEnvironmentVariable(name);
 }

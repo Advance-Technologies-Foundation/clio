@@ -32,6 +32,7 @@ public class LinkFromRepositoryToolPassthroughTests {
 			? new CredentialContext(
 				"https://tenant.example.com",
 				CredentialMaterial.FromAccessToken("super-secret-token", "Bearer"),
+				false,
 				McpTransport.Http,
 				PassthroughModeEnabled: true)
 			: null);

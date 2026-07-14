@@ -89,13 +89,14 @@ public sealed class TenantKeyEquivalenceTests {
 			because: "the per-tenant lock must key off the exact identity the registry container is cached under");
 	}
 
-	[Test]
-	[Description("On the passthrough path, GetTenantKey returns the SAME passthrough key the container is cached under.")]
-	public void GetTenantKey_ShouldEqualAcquireKey_WhenPassthroughPath() {
+	[TestCase(false, TestName = "GetTenantKey_ShouldEqualAcquireKey_WhenPassthroughFrameworkPath")]
+	[TestCase(true, TestName = "GetTenantKey_ShouldEqualAcquireKey_WhenPassthroughCorePath")]
+	[Description("On the passthrough path, GetTenantKey returns the SAME passthrough key the container is cached under for each runtime.")]
+	public void GetTenantKey_ShouldEqualAcquireKey_WhenPassthroughPath(bool isNetCore) {
 		// Arrange — a present credential context selects the passthrough branch in BOTH Resolve and GetTenantKey.
 		ICredentialContextAccessor accessor = Substitute.For<ICredentialContextAccessor>();
 		accessor.Current.Returns(new CredentialContext(
-			Url, CredentialMaterial.FromAccessToken(Token, "Bearer"), McpTransport.Http, true));
+			Url, CredentialMaterial.FromAccessToken(Token, "Bearer"), isNetCore, McpTransport.Http, true));
 		KeyCapturingSessionCache cache = new();
 		ToolCommandResolver resolver = CreateResolver(cache, accessor);
 		EnvironmentOptions options = new();
