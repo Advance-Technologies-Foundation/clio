@@ -139,8 +139,8 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 			because: "the append/full-config rejection is a structured tool response, not an MCP transport error");
 		response.Success.Should().BeFalse(
 			because: "append cannot merge a full-config body; the up-front guard must reject it end-to-end via the real MCP transport per AGENTS.md MCP e2e rule");
-		response.Error.Should().Contain("Append merge cannot use this body",
-			because: "the agent-facing error must name the append/full-config problem so the caller does not chase a phantom environment / syntax failure");
+		response.Error.Should().Contain(Clio.Command.McpServer.Tools.PageUpdateTool.AppendFullConfigRejectionPrefix,
+			because: "the agent-facing error must begin with the shared rejection-prefix constant so the caller does not chase a phantom environment / syntax failure (ENG-93090 RC-5)");
 		response.Error.Should().Contain("replace",
 			because: "the corrective hint must route the caller to replace mode, the working alternative for a full-config body");
 	}

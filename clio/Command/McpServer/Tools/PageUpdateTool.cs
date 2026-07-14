@@ -35,6 +35,10 @@ public sealed class PageUpdateTool(
 	// Prefix shared by every offline validation-failure response so the wording stays consistent.
 	private const string ValidationFailedPrefix = "Validation failed: ";
 
+	// Prefix for the up-front append/full-config rejection. Exposed as a shared constant so the unit and
+	// e2e tests assert against it instead of a duplicated string literal (ENG-93090 RC-5).
+	internal const string AppendFullConfigRejectionPrefix = "Append merge cannot use this body: ";
+
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[Description("Update a Freedom UI page schema body. environment-name preferred; uri/login/password fallback only. " +
 		"On a successful non-dry-run save it also best-effort notifies active Creatio designers (Designer Presence); the save still succeeds if that notification is skipped (carried as a warning). " +
@@ -135,11 +139,13 @@ public sealed class PageUpdateTool(
 		if (!PageBodyMerger.UsesUnsupportedFullConfigForm(options.Body, out string message)) {
 			return null;
 		}
+		// `message` (the shared PageBodyMerger constant) already states both corrective actions
+		// ("Use 'replace' mode, or convert the body to the diff form ... before append."). Add ONLY
+		// what it lacks — the docs pointer — instead of re-stating those actions (ENG-93090 RC-3).
 		return new PageUpdateResponse {
 			Success = false,
-			Error = "Append merge cannot use this body: " + message
-				+ " [hint: send ONLY the new diff-form operations (viewConfigDiff/handlers) for append, "
-				+ "or set mode='replace' to save this full-config body verbatim. See docs://mcp/guides/page-modification.]"
+			Error = AppendFullConfigRejectionPrefix + message
+				+ " See docs://mcp/guides/page-modification for the append diff-form contract."
 		};
 	}
 

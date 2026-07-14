@@ -78,8 +78,8 @@ DESCRIPTION
     current schema body from the server and merges your incoming fragment into
     it (viewConfigDiff dedupes by name, handlers by request). Append requires the
     diff form: a full-config body (the SCHEMA_VIEW_MODEL_CONFIG / SCHEMA_MODEL_CONFIG
-    markers, instead of the *_DIFF markers) cannot be merged and is rejected up
-    front with an actionable hint — use --mode replace for such a body.
+    markers, instead of the *_DIFF markers) cannot be merged and is rejected with
+    an actionable hint — use --mode replace for such a body.
 
 SYNOPSIS
     clio update-page [options]

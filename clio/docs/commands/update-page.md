@@ -117,10 +117,11 @@ entries dedupe by `name` (incoming wins), handlers dedupe by `request`.
 
 Append requires the **diff form**. A full-config body — the `SCHEMA_VIEW_MODEL_CONFIG` /
 `SCHEMA_MODEL_CONFIG` markers (mobile: top-level `viewModelConfig` / `modelConfig`) instead
-of the `*_DIFF` markers — cannot be merged. Such a body is rejected up front with an
-actionable hint (before any server round-trip); use `--mode replace` to save it verbatim.
-Note the `--body` value is always a raw string with `/**MARKER*/` pairs, never a structured
-object.
+of the `*_DIFF` markers — cannot be merged. Such a body is rejected with an actionable hint;
+use `--mode replace` to save it verbatim. Both surfaces refuse it: the CLI verb rejects it
+while merging, and the MCP `update-page` tool detects it up front, before any server
+round-trip. Note the `--body` value is always a raw string with `/**MARKER*/` pairs, never a
+structured object.
 
 ## Synopsis
 

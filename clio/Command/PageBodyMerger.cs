@@ -57,6 +57,14 @@ internal static class PageBodyMerger {
 		if (string.IsNullOrWhiteSpace(body)) {
 			return false;
 		}
+		// Web full-config markers are unambiguous (an AMD body carrying the SCHEMA_VIEW_MODEL_CONFIG /
+		// SCHEMA_MODEL_CONFIG comment markers), so check them first — independent of the leading-brace
+		// heuristic — and always label the finding with the web message (ENG-93090 RC-4).
+		if (ReadRawSection(body, "SCHEMA_VIEW_MODEL_CONFIG") != null ||
+			ReadRawSection(body, "SCHEMA_MODEL_CONFIG") != null) {
+			message = WebFullConfigNotSupportedMessage;
+			return true;
+		}
 		if (PageSchemaTypeExtensions.FromBody(body) == PageSchemaType.Mobile) {
 			JObject parsed;
 			try {
@@ -66,19 +74,25 @@ internal static class PageBodyMerger {
 				// upstream JSON/syntax validators) will surface the precise parse error.
 				return false;
 			}
-			if (parsed["viewModelConfig"] is JObject || parsed["modelConfig"] is JObject) {
+			// A diff-form mobile body carries `viewModelConfigDiff` / `modelConfigDiff`; the full-config
+			// keys are absent. Flag a top-level `viewModelConfig` / `modelConfig` that is present as
+			// ANYTHING other than null — not only a JObject — so a malformed non-object value cannot slip
+			// past detection and get silently dropped by the merge (ENG-93090 RC-8).
+			if (IsPresentFullConfigToken(parsed["viewModelConfig"]) ||
+				IsPresentFullConfigToken(parsed["modelConfig"])) {
 				message = MobileFullConfigNotSupportedMessage;
 				return true;
 			}
-			return false;
-		}
-		if (ReadRawSection(body, "SCHEMA_VIEW_MODEL_CONFIG") != null ||
-			ReadRawSection(body, "SCHEMA_MODEL_CONFIG") != null) {
-			message = WebFullConfigNotSupportedMessage;
-			return true;
 		}
 		return false;
 	}
+
+	/// <summary>
+	/// A top-level mobile full-config key counts as "present" when it exists and is not JSON null,
+	/// regardless of whether the value is an object, array, or scalar.
+	/// </summary>
+	private static bool IsPresentFullConfigToken(JToken token) =>
+		token is not null && token.Type != JTokenType.Null;
 
 	/// <summary>
 	/// Returns a merged body string that combines <paramref name="currentBody"/> (the schema's
@@ -101,6 +115,15 @@ internal static class PageBodyMerger {
 		}
 		if (string.IsNullOrWhiteSpace(incomingBody)) {
 			throw new InvalidOperationException("Incoming body is empty — pass the new viewConfigDiff/handlers fragment.");
+		}
+		// Reject a full-config INCOMING body on the shared merge path so BOTH surfaces (CLI verb and MCP
+		// tool) refuse it. MergeWeb/MergeMobile below inspect only the CURRENT server body; without this
+		// check a full-config incoming fragment against a diff-form current body would slip through and its
+		// full-config content be SILENTLY DROPPED (only the incoming *_DIFF sections are read). That is the
+		// ENG-90634 failure degraded to silent data loss on the CLI path (ENG-93090 RC-1). The MCP tool
+		// still guards the incoming body up front (no fetch); this is the surface-agnostic backstop.
+		if (UsesUnsupportedFullConfigForm(incomingBody, out string incomingFullConfigMessage)) {
+			throw new InvalidOperationException(incomingFullConfigMessage);
 		}
 		return PageSchemaTypeExtensions.FromBody(currentBody) == PageSchemaType.Mobile
 			? MergeMobile(currentBody, incomingBody)
