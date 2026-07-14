@@ -1,3 +1,4 @@
+using System;
 using System.Linq;
 using Clio.Command.CreatioInstallCommand;
 using Clio.Common;
@@ -15,7 +16,7 @@ internal sealed class InstallerCommandSilentSiteNameTests : BaseCommandTests<PfI
 	private readonly ICreatioInstallerService _creatioInstallerService = Substitute.For<ICreatioInstallerService>();
 	private readonly IDeployCreatioDefaultsResolver _defaultsResolver =
 		Substitute.For<IDeployCreatioDefaultsResolver>();
-	private readonly IKubernetes _kubernetes = Substitute.For<IKubernetes>();
+	private readonly IKubernetes _kubernetes = new FakeKubernetes();
 	private readonly ILogger _logger = Substitute.For<ILogger>();
 
 	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
@@ -30,7 +31,6 @@ internal sealed class InstallerCommandSilentSiteNameTests : BaseCommandTests<PfI
 	public override void TearDown() {
 		_creatioInstallerService.ClearReceivedCalls();
 		_defaultsResolver.ClearReceivedCalls();
-		_kubernetes.ClearReceivedCalls();
 		_logger.ClearReceivedCalls();
 		base.TearDown();
 	}
@@ -91,10 +91,65 @@ internal sealed class InstallerCommandSilentSiteNameTests : BaseCommandTests<PfI
 		// Assert
 		result.Should().Be(installerResult,
 			because: "Explorer deployment must preserve the installer exit code while managing its terminal lifetime");
-		int promptCount = _logger.ReceivedCalls().Count(call =>
-			call.GetMethodInfo().Name == nameof(ILogger.WriteLine)
-			&& Equals(call.GetArguments().SingleOrDefault(), "Press enter to exit..."));
-		promptCount.Should().Be(shouldPrompt ? 1 : 0,
+		CountExitPrompts().Should().Be(shouldPrompt ? 1 : 0,
 			because: "Explorer must remain open after failure and close without an acknowledgement prompt after success");
 	}
+
+	[Test]
+	[Description("Explorer deployment prompts after an early Kubernetes validation failure.")]
+	public void Execute_ShouldPromptForExit_WhenExplorerValidationFailsBeforeInstaller() {
+		// Arrange
+		InstallerCommand command = Container.GetRequiredService<InstallerCommand>();
+		PfInstallerOptions options = new() {
+			ExplorerLaunch = true,
+			SiteName = "issue874",
+			ZipFile = @"C:\CreatioBuilds\creatio.zip"
+		};
+
+		// Act
+		int result = command.Execute(options);
+
+		// Assert
+		result.Should().Be(1,
+			because: "an Explorer launch without Kubernetes or a resolved local database cannot continue");
+		_creatioInstallerService.ReceivedCalls().Should().BeEmpty(
+			because: "Kubernetes validation must fail before installation starts");
+		CountExitPrompts().Should().Be(1,
+			because: "the validation error must remain visible in the Explorer terminal");
+	}
+
+	[Test]
+	[Description("Explorer deployment logs and prompts after an installer exception instead of closing the terminal.")]
+	public void Execute_ShouldLogAndPromptForExit_WhenExplorerInstallerThrows() {
+		// Arrange
+		_creatioInstallerService.Execute(Arg.Any<PfInstallerOptions>())
+			.Returns(_ => throw new InvalidOperationException("Explorer deployment failed"));
+		InstallerCommand command = Container.GetRequiredService<InstallerCommand>();
+		PfInstallerOptions options = new() {
+			DbServerName = "local-postgres",
+			ExplorerLaunch = true,
+			SiteName = "issue874",
+			ZipFile = @"C:\CreatioBuilds\creatio.zip"
+		};
+
+		// Act
+		int result = command.Execute(options);
+		_creatioInstallerService.Execute(Arg.Any<PfInstallerOptions>()).Returns(0);
+
+		// Assert
+		result.Should().Be(1,
+			because: "Explorer exceptions must be converted to a visible unsuccessful exit");
+		string[] errors = _logger.ReceivedCalls()
+			.Where(call => call.GetMethodInfo().Name == nameof(ILogger.WriteError))
+			.Select(call => call.GetArguments().SingleOrDefault()?.ToString() ?? string.Empty)
+			.ToArray();
+		errors.Should().Contain(message => message.Contains("Explorer deployment failed", StringComparison.Ordinal),
+			because: "the exception message must be printed before awaiting acknowledgement");
+		CountExitPrompts().Should().Be(1,
+			because: "the exception must remain visible in the Explorer terminal");
+	}
+
+	private int CountExitPrompts() => _logger.ReceivedCalls().Count(call =>
+		call.GetMethodInfo().Name == nameof(ILogger.WriteLine)
+		&& Equals(call.GetArguments().SingleOrDefault(), "Press enter to exit..."));
 }

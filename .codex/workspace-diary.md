@@ -5924,3 +5924,10 @@ Decision: Gate sole-local inference behind a hidden --explorer-launch marker, pr
 Discovery: Quoting a filename is insufficient protection when cmd.exe expands percent variables; removing the shell prevents legal metacharacter-bearing ZIP filenames from becoming executable syntax.
 Files: clio/Command/CreatioInstallCommand/InstallerCommand.cs, clio/Command/CreatioInstallCommand/DeployCreatioDefaultsResolver.cs, clio/reg/clio_context_menu_win.reg, clio.tests/Command/ExplorerContextMenuRegistrationTests.cs
 Impact: Rancher Desktop can remain off for Explorer deployment when one local server is configured, while automation callers retain their established Kubernetes contract and Explorer failures remain visible exactly once.
+
+## 2026-07-14 13:38 – Keep every Explorer deployment failure visible
+Context: Final review found that moving failure acknowledgement into clio still left early validation returns and exceptions able to close the Explorer terminal.
+Decision: Track Explorer success across the whole command, render operation-log and exception details first, and acknowledge every unsuccessful non-silent Explorer exit from the outer finally path.
+Discovery: Failure visibility must span defaults resolution, infrastructure validation, installer return codes, and thrown exceptions; handling only the installer result is incomplete.
+Files: clio/Command/CreatioInstallCommand/InstallerCommand.cs, clio.tests/Command/InstallerCommandSilentSiteNameTests.cs
+Impact: Explorer success closes immediately, while all tested failure paths display the diagnostic and log location before waiting for Enter.

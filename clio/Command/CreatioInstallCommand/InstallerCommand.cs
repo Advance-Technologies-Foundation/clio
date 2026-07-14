@@ -318,33 +318,48 @@ public class InstallerCommand : Command<PfInstallerOptions>, IStageEventSource{
 	/// <c>0</c> on success; non-zero value when execution cannot continue or deployment fails.
 	/// </returns>
 	public override int Execute(PfInstallerOptions options) {
-		using IDbOperationLogSession dbOperationLogSession = _dbOperationLogSessionFactory.BeginSession("deploy-creatio");
+		bool explorerDeploymentFailed = options.ExplorerLaunch;
 		try {
-			// Fill options omitted on the command line from persisted `clio config` defaults BEFORE the
-			// Kubernetes-vs-local branch below, so a configured default db-server-name routes the plain
-			// Explorer context-menu deploy (which passes only --zip-file) to the local database.
-			_deployCreatioDefaultsResolver.ApplyDefaults(options);
-			if (options.IsSilent && string.IsNullOrWhiteSpace(options.SiteName)) {
-				_logger.WriteError(MissingSilentSiteNameError);
-				return 1;
-			}
+			using IDbOperationLogSession dbOperationLogSession =
+				_dbOperationLogSessionFactory.BeginSession("deploy-creatio");
+			try {
+				// Fill options omitted on the command line from persisted `clio config` defaults BEFORE the
+				// Kubernetes-vs-local branch below, so a configured default db-server-name routes the plain
+				// Explorer context-menu deploy (which passes only --zip-file) to the local database.
+				_deployCreatioDefaultsResolver.ApplyDefaults(options);
+				if (options.IsSilent && string.IsNullOrWhiteSpace(options.SiteName)) {
+					_logger.WriteError(MissingSilentSiteNameError);
+					return 1;
+				}
 
-			if (_kubernetes is FakeKubernetes && string.IsNullOrEmpty(options.DbServerName)) {
-				_logger.WriteError(
-					"Could not detect kubectl config, and db server name (db-server-name) is not specified.");
-				return 1;
-			}
+				if (_kubernetes is FakeKubernetes && string.IsNullOrEmpty(options.DbServerName)) {
+					_logger.WriteError(
+						"Could not detect kubectl config, and db server name (db-server-name) is not specified.");
+					return 1;
+				}
 
-			int result = _creatioInstallerService.Execute(options);
-			if (!options.IsSilent && (!options.ExplorerLaunch || result != 0)) {
+				int result = _creatioInstallerService.Execute(options);
+				explorerDeploymentFailed = options.ExplorerLaunch && result != 0;
+				if (!options.IsSilent && !options.ExplorerLaunch) {
+					_logger.WriteLine("Press enter to exit...");
+					Console.ReadLine();
+				}
+
+				return result;
+			}
+			finally {
+				_logger.WriteInfo($"Database operation log: {dbOperationLogSession.LogFilePath}");
+			}
+		}
+		catch (Exception exception) when (options.ExplorerLaunch) {
+			_logger.WriteError(exception.GetReadableMessageException(Program.IsDebugMode));
+			return 1;
+		}
+		finally {
+			if (!options.IsSilent && explorerDeploymentFailed) {
 				_logger.WriteLine("Press enter to exit...");
 				Console.ReadLine();
 			}
-
-			return result;
-		}
-		finally {
-			_logger.WriteInfo($"Database operation log: {dbOperationLogSession.LogFilePath}");
 		}
 	}
 

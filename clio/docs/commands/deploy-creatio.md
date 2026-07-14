@@ -23,8 +23,9 @@ omitted, interactive deployment prompts for the site name. The Windows Explorer
 "clio: deploy Creatio" action uses this prompt instead of deriving a name from
 the selected ZIP archive. When exactly one local database server is enabled and
 no deploy-specific database default exists, the Explorer action selects that
-server. Clio waits for a key press after a failed Explorer deployment so the
-error remains visible, without passing the ZIP filename through a command shell.
+server. Clio waits for a key press after any failed Explorer deployment, including
+early validation errors and exceptions, so the error remains visible without
+passing the ZIP filename through a command shell.
 
 Every deploy-creatio run creates a temp database-operation log file for the
 database restore portion of deployment. The final CLI output includes the
