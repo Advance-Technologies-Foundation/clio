@@ -116,6 +116,10 @@ public sealed class ApplicationToolE2ETests {
 			because: "get-app-info should include page summaries in the structured metadata envelope even when the list is empty");
 		infoResult.Result.Entities.Should().NotBeNull(
 			because: "get-app-info should include entity summaries in the structured metadata envelope even when the list is empty");
+		infoResult.Result.Entities.Should().NotBeEmpty(
+			because: "the seeded application must expose at least one entity before its virtual flags can be verified end to end");
+		infoResult.Result.Entities.Should().OnlyContain(entity => entity.Virtual.HasValue,
+			because: "get-app-info must serialize an explicit virtual flag for every returned entity, including persistent schemas");
 		infoResult.Result.Error.Should().BeNullOrWhiteSpace(
 			because: "successful get-app-info calls should not include an error payload");
 		infoResult.Result.SchemaNamePrefix.Should().NotBeNull(
@@ -405,16 +409,16 @@ public sealed class ApplicationToolE2ETests {
 
 	[Category("McpE2E.Sandbox")]
 	[Test]
-	[Description("Creates an application, mutates the canonical main entity through sync-schemas, and verifies get-app-info still returns the application display name instead of Base object.")]
+	[Description("Creates an application, mutates its schemas through sync-schemas, and verifies canonical caption plus virtual-entity readback through get-app-info.")]
 	[AllureFeature(CreateToolName)]
 	[AllureFeature(SchemaSyncToolName)]
 	[AllureFeature(InfoToolName)]
 	[AllureTag(CreateToolName)]
 	[AllureTag(SchemaSyncToolName)]
 	[AllureTag(InfoToolName)]
-	[AllureName("Application get info keeps canonical main entity caption after sync-schemas")]
-	[AllureDescription("Uses the real clio MCP server to create an application, applies a minimal sync-schemas update-entity mutation to the canonical main entity, then verifies get-app-info still returns the installed application display name instead of the generic Base object fallback.")]
-	public async Task ApplicationGetInfo_Should_Keep_Canonical_Main_Entity_Caption_After_SchemaSync() {
+	[AllureName("Application get info keeps canonical caption and exposes virtual entities after sync-schemas")]
+	[AllureDescription("Uses the real clio MCP server to create an application, updates its canonical entity, creates a virtual entity, and verifies both through get-app-info.")]
+	public async Task ApplicationGetInfo_Should_Read_Virtual_Entity_After_SchemaSync() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		if (!settings.AllowDestructiveMcpTests) {
@@ -427,39 +431,53 @@ public sealed class ApplicationToolE2ETests {
 		string createdApplicationCode = $"UsrCodex{suffix}";
 		string applicationName = $"Codex E2E {suffix}";
 		string addedColumnName = $"UsrStatus{suffix[..4]}";
+		string virtualSchemaName = $"UsrVirtual{suffix}";
 
-		ApplicationInfoActResult createResult = await ActCreateAsync(
-			arrangeContext.Session,
-			arrangeContext.CancellationTokenSource.Token,
-			arrangeContext.EnvironmentName,
-			applicationName,
-			createdApplicationCode,
-			description: null,
-			ApplicationTemplateCode,
-			ApplicationIconId,
-			ApplicationIconBackground,
-			optionalTemplateDataJson: null);
+		ApplicationInfoActResult createResult = await AwaitWithTestProgressAsync(
+			ActCreateAsync(
+				arrangeContext.Session,
+				arrangeContext.CancellationTokenSource.Token,
+				arrangeContext.EnvironmentName,
+				applicationName,
+				createdApplicationCode,
+				description: null,
+				ApplicationTemplateCode,
+				ApplicationIconId,
+				ApplicationIconBackground,
+				optionalTemplateDataJson: null),
+			"application creation",
+			arrangeContext.CancellationTokenSource.Token);
 
 		// Act
-		CallToolResult schemaSyncCallResult = await CallSchemaSyncUpdateCanonicalMainEntityAsync(
-			arrangeContext.Session,
-			arrangeContext.CancellationTokenSource.Token,
-			arrangeContext.EnvironmentName,
-			createResult.Result.PackageName!,
-			createdApplicationCode,
-			addedColumnName);
+		CallToolResult schemaSyncCallResult = await AwaitWithTestProgressAsync(
+			CallSchemaSyncUpdateCanonicalMainEntityAsync(
+				arrangeContext.Session,
+				arrangeContext.CancellationTokenSource.Token,
+				arrangeContext.EnvironmentName,
+				createResult.Result.PackageName!,
+				createdApplicationCode,
+				addedColumnName,
+				virtualSchemaName),
+			"schema synchronization",
+			arrangeContext.CancellationTokenSource.Token);
 		JsonElement schemaSyncResponse = ExtractSchemaSyncResponse(schemaSyncCallResult);
 		// sync-schemas triggers an asynchronous server-side schema recompile; the canonical main
 		// entity can be momentarily absent from get-app-info until that settles. Poll the readback so
 		// the regression assertions below test the settled state instead of racing the recompile.
-		ApplicationInfoActResult infoResult = await WaitForCanonicalMainEntityAsync(
-			arrangeContext.Session,
-			arrangeContext.CancellationTokenSource.Token,
-			arrangeContext.EnvironmentName,
-			createdApplicationCode,
-			applicationName);
+		ApplicationInfoActResult infoResult = await AwaitWithTestProgressAsync(
+			WaitForCanonicalMainEntityAsync(
+				arrangeContext.Session,
+				arrangeContext.CancellationTokenSource.Token,
+				arrangeContext.EnvironmentName,
+				createdApplicationCode,
+				applicationName,
+				virtualSchemaName),
+			"application metadata readback",
+			arrangeContext.CancellationTokenSource.Token);
 		ApplicationEntityEnvelope? canonicalMainEntity = infoResult.Result.Entities?
 			.FirstOrDefault(entity => string.Equals(entity.Name, createdApplicationCode, StringComparison.OrdinalIgnoreCase));
+		ApplicationEntityEnvelope? virtualEntity = infoResult.Result.Entities?
+			.FirstOrDefault(entity => string.Equals(entity.Name, virtualSchemaName, StringComparison.OrdinalIgnoreCase));
 
 		// Assert
 		createResult.Result.Success.Should().BeTrue(
@@ -472,6 +490,10 @@ public sealed class ApplicationToolE2ETests {
 			because: "get-app-info should continue to return the canonical main entity after sync-schemas mutations");
 		canonicalMainEntity!.Caption.Should().Be(applicationName,
 			because: "the canonical main entity should keep the installed application display name instead of degrading to Base object after sync-schemas");
+		virtualEntity.Should().NotBeNull(
+			because: "get-app-info must include the virtual schema created in the application's primary package");
+		virtualEntity!.Virtual.Should().BeTrue(
+			because: "get-app-info must preserve the runtime virtual state for a real schema created through sync-schemas");
 	}
 
 	[Category("McpE2E.Sandbox")]
@@ -753,7 +775,8 @@ public sealed class ApplicationToolE2ETests {
 		CancellationToken cancellationToken,
 		string environmentName,
 		string applicationCode,
-		string expectedCaption) {
+		string expectedCaption,
+		string expectedVirtualEntityName) {
 		// The canonical main entity schema name equals the installed application code, so the same
 		// value is both the get-app-info lookup code and the expected entity name in the readback.
 		// Gate the poll on the fully-settled state the downstream assertions check: the entity must be
@@ -765,7 +788,8 @@ public sealed class ApplicationToolE2ETests {
 			try {
 				ApplicationInfoActResult candidate = await ActInfoAsync(
 					session, cancellationToken, environmentName, id: null, code: applicationCode);
-				if (ContainsCanonicalMainEntity(candidate, applicationCode, expectedCaption)) {
+				if (ContainsExpectedEntities(
+					candidate, applicationCode, expectedCaption, expectedVirtualEntityName)) {
 					return candidate;
 				}
 			}
@@ -782,11 +806,16 @@ public sealed class ApplicationToolE2ETests {
 		return await ActInfoAsync(session, cancellationToken, environmentName, id: null, code: applicationCode);
 	}
 
-	private static bool ContainsCanonicalMainEntity(
-		ApplicationInfoActResult infoResult, string expectedEntityName, string expectedCaption) {
-		return infoResult.Result.Entities?
-			.Any(entity => string.Equals(entity.Name, expectedEntityName, StringComparison.OrdinalIgnoreCase)
-				&& string.Equals(entity.Caption, expectedCaption, StringComparison.Ordinal)) == true;
+	private static bool ContainsExpectedEntities(
+		ApplicationInfoActResult infoResult,
+		string expectedEntityName,
+		string expectedCaption,
+		string expectedVirtualEntityName) {
+		IReadOnlyList<ApplicationEntityEnvelope>? entities = infoResult.Result.Entities;
+		return entities?.Any(entity => string.Equals(entity.Name, expectedEntityName, StringComparison.OrdinalIgnoreCase)
+				&& string.Equals(entity.Caption, expectedCaption, StringComparison.Ordinal)) == true
+			&& entities.Any(entity => string.Equals(entity.Name, expectedVirtualEntityName, StringComparison.OrdinalIgnoreCase)
+				&& entity.Virtual == true);
 	}
 
 	[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
@@ -944,7 +973,8 @@ public sealed class ApplicationToolE2ETests {
 		string environmentName,
 		string packageName,
 		string schemaName,
-		string addedColumnName) {
+		string addedColumnName,
+		string virtualSchemaName) {
 		IReadOnlyCollection<string> reachableToolNames = await session.ListReachableToolNamesAsync(cancellationToken);
 		reachableToolNames.Should().Contain(SchemaSyncToolName,
 			because: "the sync-schemas MCP tool must be discoverable via the get-tool-contract compact index before the canonical-main-entity regression scenario can be executed");
@@ -967,6 +997,12 @@ public sealed class ApplicationToolE2ETests {
 									["title-localizations"] = BuildLocalizations("Status")
 								}
 							}
+						},
+						new Dictionary<string, object?> {
+							["type"] = "create-entity",
+							["schema-name"] = virtualSchemaName,
+							["title-localizations"] = BuildLocalizations("Virtual item"),
+							["is-virtual"] = true
 						}
 					}
 				}
@@ -1103,6 +1139,23 @@ public sealed class ApplicationToolE2ETests {
 			element = default;
 			return false;
 		}
+	}
+
+	private static async Task<T> AwaitWithTestProgressAsync<T>(
+		Task<T> operation,
+		string operationName,
+		CancellationToken cancellationToken) {
+		while (!operation.IsCompleted) {
+			Task delay = Task.Delay(TimeSpan.FromSeconds(30), cancellationToken);
+			if (await Task.WhenAny(operation, delay) == operation) {
+				break;
+			}
+
+			cancellationToken.ThrowIfCancellationRequested();
+			TestContext.Progress.WriteLine($"[heartbeat] Waiting for {operationName}...");
+		}
+
+		return await operation;
 	}
 
 	private static string DescribeCallResult(CallToolResult callResult) {

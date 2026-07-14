@@ -20,6 +20,7 @@ using Clio.Command.McpServer;
 using Clio.Command.McpServer.Resources;
 using Clio.Command.PackageCommand;
 using Clio.Command.ProcessModel;
+using Clio.Command.RelatedPages;
 using Clio.Command.SqlScriptCommand;
 using Clio.Command.Theming;
 using Clio.Command.TIDE;
@@ -125,23 +126,85 @@ public class BindingsModule {
 	/// is resolved. Do NOT derive this from a process-wide static inside this module — it must be
 	/// threaded explicitly so a live MCP session's per-environment builds stay gated off.
 	/// </param>
-	/// <returns>The built and validated service provider.</returns>
+	/// <param name="validateGraph">
+	/// When <c>true</c> (default) the provider is built with <c>ValidateOnBuild</c> + <c>ValidateScopes</c>
+	/// so a scope/lifetime or missing-registration mistake fails fast. Pass <c>false</c> ONLY for the
+	/// per-request ephemeral session-container builds on the mcp-http credential-passthrough hot path
+	/// (review): the <see cref="BindingsModuleRegistrationProfile.EnvironmentScoped"/> graph SHAPE is
+	/// structurally invariant across tenants (only <see cref="EnvironmentSettings"/> values differ), so it
+	/// is validated once at host startup via <see cref="ValidateEnvironmentScopedGraph"/> and re-validating
+	/// on every rotating-token cache miss is pure startup-grade cost. Never pass <c>false</c> for a build
+	/// whose graph shape is not already covered by that one-time startup validation.
+	/// </param>
+	/// <returns>The built (and, unless <paramref name="validateGraph"/> is <c>false</c>, validated) service provider.</returns>
 	public IServiceProvider Register(EnvironmentSettings settings = null,
 		Action<IServiceCollection> additionalRegistrations = null,
 		BindingsModuleRegistrationProfile? profile = null,
 		bool applyBootstrapRepairs = true,
-		bool registerMcpHost = false){
+		bool registerMcpHost = false,
+		bool validateGraph = true){
 		IServiceCollection services = new ServiceCollection();
 		ISettingsRepository settingsRepository = RegisterInto(services, settings, profile, applyBootstrapRepairs);
 		if (registerMcpHost) {
 			services.AddTransient<McpServerCommand>();
-			RegisterMcpServer(services, settingsRepository).WithStdioServerTransport();
+			// The durable (forgiving) unmatched-name handler is registered HERE — at the stdio call-site —
+			// and deliberately NOT inside the transport-neutral RegisterMcpServer, which the unreleased
+			// mcp-http host also calls (McpHttpServerCommand): the forgiving invocation contract is scoped
+			// to the stdio transport only (ADR adr-mcp-durable-invocation, D1). The SDK invokes the handler
+			// only on a ToolCollection miss, so advertised (resident) tools are never shadowed.
+			RegisterMcpServer(services, settingsRepository)
+				.WithStdioServerTransport()
+				.WithCallToolHandler(static (request, cancellationToken) =>
+					request.Services.GetRequiredService<Command.McpServer.IMcpDurableCallToolHandler>()
+						.HandleAsync(request, cancellationToken));
+			// The invoker registry's constructor reflects every enabled [McpServerToolType] and
+			// SDK-builds the full tool map (~165 methods) — far too expensive to rebuild per call, which
+			// the assembly-scan transient registration would do (and the unmatched-name path resolves it
+			// twice: handler + executor). Pin both the registry and the compatibility catalog as
+			// singletons for the host's lifetime; the tool surface is fixed at process start anyway
+			// (tools/list is registered once), so a singleton also makes feature-flag reads consistent
+			// for the whole session.
+			// ORDERING DEPENDENCY: both types are ALSO auto-registered as transients by the reflection
+			// interface-scan inside RegisterInto (they implement Clio.* interfaces). These AddSingleton
+			// calls win only because RegisterInto ran earlier (line above) — last-registration-wins. If the
+			// scan were ever moved after this block, the lifetime would silently revert to transient and
+			// rebuild the ~165-tool map on every unmatched-name call. Keep this block after RegisterInto.
+			services.AddSingleton<Command.McpServer.Tools.IMcpToolInvokerRegistry,
+				Command.McpServer.Tools.McpToolInvokerRegistry>();
+			services.AddSingleton<Command.McpServer.IMcpToolCompatibilityCatalog,
+				Command.McpServer.McpToolCompatibilityCatalog>();
 		}
 		additionalRegistrations?.Invoke(services);
-		return services.BuildServiceProvider(new ServiceProviderOptions {
-			ValidateOnBuild = true,
-			ValidateScopes = true
+		ServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions {
+			ValidateOnBuild = validateGraph,
+			ValidateScopes = validateGraph
 		});
+		if (registerMcpHost) {
+			// Fail-fast validation of the durable-invocation surface. ValidateOnBuild verifies the DI
+			// graph's call sites but does NOT instantiate transients/singletons, so a malformed
+			// compatibility catalog (duplicate canonical/alias) or a duplicate MCP tool NAME would
+			// otherwise surface only on the first tools/call. Resolving both here makes a malformed
+			// surface abort HOST STARTUP instead — the constructors throw on any collision.
+			provider.GetRequiredService<Command.McpServer.IMcpToolCompatibilityCatalog>();
+			provider.GetRequiredService<Command.McpServer.Tools.IMcpToolInvokerRegistry>();
+		}
+		return provider;
+	}
+
+	/// <summary>
+	/// Validates the <see cref="BindingsModuleRegistrationProfile.EnvironmentScoped"/> graph SHAPE once —
+	/// builds a representative environment-scoped container with <c>ValidateOnBuild</c> + <c>ValidateScopes</c>
+	/// and disposes it. Called once at mcp-http host startup so the per-request ephemeral builds can skip
+	/// per-build validation (review) while a scope/lifetime or missing-registration mistake in that profile
+	/// still fails fast at startup rather than on the first passthrough request. The representative settings
+	/// are non-connecting (a loopback URI); validation reflects over the graph without any Creatio round-trip
+	/// because every client is registered lazily.
+	/// </summary>
+	public static void ValidateEnvironmentScopedGraph() {
+		EnvironmentSettings representative = new() { Uri = $"{Uri.UriSchemeHttp}://localhost", IsNetCore = true };
+		IServiceProvider probe = new BindingsModule().Register(
+			representative, profile: BindingsModuleRegistrationProfile.EnvironmentScoped, validateGraph: true);
+		(probe as IDisposable)?.Dispose();
 	}
 
 	/// <summary>
@@ -301,6 +364,8 @@ public class BindingsModule {
 		services.AddTransient<IApplicationSectionUpdateService, ApplicationSectionUpdateService>();
 		services.AddTransient<UpdateAppSectionCommand>();
 		services.AddTransient<IAddonSchemaDesignerClient, AddonSchemaDesignerClient>();
+		services.AddTransient<IPageSchemaResolver, PageSchemaResolver>();
+		services.AddTransient<IRelatedPageAddonService, RelatedPageAddonService>();
 		services.AddTransient<IBusinessRuleAddonService, BusinessRuleAddonService>();
 		services.AddTransient<IBusinessRulePackageResolver, BusinessRulePackageResolver>();
 		services.AddTransient<IBusinessRuleFormulaValidationService, BusinessRuleFormulaValidationService>();
@@ -346,6 +411,8 @@ public class BindingsModule {
 		services.AddTransient<IPageBaselineGuard, PageBaselineGuard>();
 		services.AddTransient<IPageFileWriter, PageFileWriter>();
 		services.AddTransient<PageCreateCommand>();
+		services.AddTransient<CreateRelatedPageAddonCommand>();
+		services.AddTransient<GetRelatedPageAddonCommand>();
 		services.AddTransient<PageTemplatesListCommand>();
 		services.AddTransient<SourceCodeSchemaCreateCommand>();
 		services.AddTransient<SourceCodeSchemaUpdateCommand>();
@@ -439,6 +506,8 @@ public class BindingsModule {
 		services.AddTransient<PageGetTool>();
 		services.AddTransient<PageUpdateTool>();
 		services.AddTransient<PageCreateTool>();
+		services.AddTransient<CreateRelatedPageAddonTool>();
+		services.AddTransient<GetRelatedPageAddonTool>();
 		services.AddTransient<PageTemplatesListTool>();
 		services.AddTransient<SchemaCreateTool>();
 		services.AddTransient<SchemaUpdateTool>();

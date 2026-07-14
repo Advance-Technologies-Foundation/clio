@@ -133,6 +133,12 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 			System.Net.Http.HttpClient.DefaultProxy = new System.Net.WebProxy();
 		}
 
+		// Validate the per-request EnvironmentScoped graph SHAPE once here (review): the passthrough
+		// hot-path builds skip per-build ValidateOnBuild to avoid re-validating the full ~455-registration
+		// graph on every rotating-token cache miss, so a scope/lifetime or missing-registration mistake in
+		// that profile must still fail fast at startup rather than on the first passthrough request.
+		BindingsModule.ValidateEnvironmentScopedGraph();
+
 		AspNetWebApplicationBuilder builder = AspNetWebApplication.CreateBuilder();
 		builder.WebHost.UseUrls($"http://{options.Host}:{options.Port}");
 

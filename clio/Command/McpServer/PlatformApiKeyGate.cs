@@ -57,9 +57,12 @@ public sealed class PlatformApiKeyGate : IPlatformApiKeyGate
 	/// </param>
 	public PlatformApiKeyGate(IReadOnlyList<string> keys) {
 		ArgumentNullException.ThrowIfNull(keys);
+		// Store the SHA-256 of each key rather than its raw bytes so IsAuthorized compares two
+		// FIXED-width (32-byte) digests: FixedTimeEquals then never takes a length-mismatch branch, so
+		// the comparison leaks neither which key matched NOR the configured key length (review).
 		byte[][] encoded = new byte[keys.Count][];
 		for (int i = 0; i < keys.Count; i++) {
-			encoded[i] = Encoding.UTF8.GetBytes(keys[i]);
+			encoded[i] = SHA256.HashData(Encoding.UTF8.GetBytes(keys[i]));
 		}
 
 		_keyBytes = encoded;
@@ -87,11 +90,13 @@ public sealed class PlatformApiKeyGate : IPlatformApiKeyGate
 			return false;
 		}
 
-		byte[] presentedBytes = Encoding.UTF8.GetBytes(presented);
+		// Hash the presented token to the same fixed 32-byte width as the stored key digests, so the
+		// comparison below is truly constant-time (no length-mismatch branch, review).
+		byte[] presentedBytes = SHA256.HashData(Encoding.UTF8.GetBytes(presented));
 
-		// Compare against EVERY configured key without an early-out. FixedTimeEquals
-		// returns false on a length mismatch (acceptable per design); the OR-accumulate
-		// ensures the loop does not reveal which key matched via a short-circuit.
+		// Compare against EVERY configured key digest without an early-out. Both operands are 32-byte
+		// SHA-256 digests, so FixedTimeEquals never short-circuits on length; the OR-accumulate ensures
+		// the loop does not reveal which key matched.
 		bool matched = false;
 		foreach (byte[] key in _keyBytes) {
 			matched |= CryptographicOperations.FixedTimeEquals(presentedBytes, key);

@@ -87,13 +87,19 @@ public sealed class CompileCreatioTool(
 			{
 				exitCode = command.Execute(options);
 				Thread.Sleep(500);
-				CommandExecutionResult result = new(exitCode, [.. logger.LogMessages.ToList()]);
+				// FR-11 (review): redact the self-captured snapshot on a passthrough request before it
+				// crosses the MCP boundary — the main path does this via RunCommandUnderHeldLock, this
+				// self-managed-capture tool must do it too. No-op off passthrough.
+				CommandExecutionResult result = new(exitCode,
+					[.. McpPassthroughRedaction.SanitizeAndRedact([.. logger.LogMessages], tenantKey)]);
 				logger.ClearMessages();
 				return result;
 			}
 			catch (Exception exception)
 			{
-				List<LogMessage> logMessages = [.. logger.LogMessages, new ErrorMessage(SensitiveErrorTextRedactor.Redact(exception.Message))];
+				List<LogMessage> logMessages = [
+					.. McpPassthroughRedaction.SanitizeAndRedact([.. logger.LogMessages], tenantKey),
+					new ErrorMessage(SensitiveErrorTextRedactor.Redact(exception.Message))];
 				CommandExecutionResult result = new(1, logMessages);
 				logger.ClearMessages();
 				return result;

@@ -1393,6 +1393,86 @@ stories:
     note: "DONE 2026-07-11 (FR-10 scoped down, see ADR). FR-10 per-tool AddAuthorizationFilters not implemented -- same reasoning class as Story 6's FR-08: identity-platform issues one undifferentiated scope, so a per-tool filter would be a no-op or reject-all; endpoint-level RequireAuthorization suffices for v1 per the AC's own escape hatch. Docs: all 4 targets updated (mcp-http.txt/.md, Commands.md, McpCapabilityMap.md); no stale wording found. MCP surface: mcp-http is the server itself, not wrapped by any tool -- reviewed, no update required. E2E: McpHttpOAuthAuthorizationE2ETests.cs (5 tests) + McpHttpOAuthStand + OAuthClientCredentialsTokenFetcher authored, skip-gate verified to fire cleanly, but NOT run against a live AS (stated explicitly). FINAL ADVERSARIAL REVIEW (mandatory ready-to-merge gate) run over the whole branch diff via 3 parallel reviewers (quality/correctness-performance/security); all 3 independently converged on 2 real gaps, both fixed: (1) HIGH audience/scope fail-open -- --auth-authority alone enabled auth with no --auth-audience/--auth-required-scopes accepted ANY token from the issuer for ANY resource; fixed with new EvaluateAudienceScopeGuard (REFUSE-by-default, --auth-allow-any-audience escape hatch). (2) MEDIUM public-bind guard only recognized 4 literal wildcard spellings, missing concrete LAN/public IP/DNS binds; fixed via IsPublicBind (any non-loopback host). Also fixed: duplicated/inconsistent truthy-env-var parser unified, stale e2e-harness doc wording, ADR Status Proposed->Accepted. 16 new/updated tests (AudienceScopeGuardTests.cs x5, PublicBindGuardTests.cs +11). Full McpServer unit suite: 2087 passed/0 failed/1 skipped, both net8.0/net10.0. ALL 8 STORIES OF ENG-93386 NOW DONE."
     file: spec/stories/story-mcp-http-standard-authorization-8.md
 
+  # ---------------------------------------------------------------------------
+  # Feature: mcp-durable-invocation (forgiving MCP tool surface)
+  # PRD: spec/prd/prd-mcp-durable-invocation.md  ADR: spec/adr/adr-mcp-durable-invocation.md
+  # Added 2026-07-10. Recommended order: 1 -> 2 -> 3 -> 4 -> 5. Jira: ENG-93370.
+  # ---------------------------------------------------------------------------
+  - id: story-mcp-durable-invocation-1
+    title: "Compatibility/alias catalog + fail-fast collisions"
+    feature: "mcp-durable-invocation"
+    size: M
+    status: review
+    file: spec/stories/story-mcp-durable-invocation-1.md
+    prd: spec/prd/prd-mcp-durable-invocation.md
+    adr: spec/adr/adr-mcp-durable-invocation.md
+    fr: [FR-4]
+    ac: [AC-01, AC-02, AC-03, AC-04, AC-05]
+    status_detail: "All 5 stories implemented + green 2026-07-10 (unit 5371+, e2e 5/5 vs real server, live JSON-RPC proof). Not yet in a PR."
+    depends_on: []
+    blocks:
+      - story-mcp-durable-invocation-2
+      - story-mcp-durable-invocation-3
+
+  - id: story-mcp-durable-invocation-2
+    title: "Forgiving unmatched-name handler (execute / confirm / actionable error)"
+    feature: "mcp-durable-invocation"
+    size: L
+    status: review
+    file: spec/stories/story-mcp-durable-invocation-2.md
+    prd: spec/prd/prd-mcp-durable-invocation.md
+    adr: spec/adr/adr-mcp-durable-invocation.md
+    fr: [FR-1, FR-2, FR-3, FR-3a, FR-5, FR-8, FR-9]
+    ac: [AC-01, AC-02, AC-03, AC-04, AC-05, AC-06, AC-07, AC-08]
+    note: "Revised 2026-07-10 after Codex adversarial review (B1/B2/B3/H5/H6/M10/M12)."
+    depends_on:
+      - story-mcp-durable-invocation-1
+    blocks:
+      - story-mcp-durable-invocation-5
+
+  - id: story-mcp-durable-invocation-3
+    title: "Drift-guard test + maintenance-target ownership for tpl"
+    feature: "mcp-durable-invocation"
+    size: M
+    status: review
+    file: spec/stories/story-mcp-durable-invocation-3.md
+    prd: spec/prd/prd-mcp-durable-invocation.md
+    adr: spec/adr/adr-mcp-durable-invocation.md
+    fr: [FR-6]
+    ac: [AC-01, AC-02, AC-03, AC-04]
+    depends_on:
+      - story-mcp-durable-invocation-1
+    blocks:
+      - story-mcp-durable-invocation-4
+
+  - id: story-mcp-durable-invocation-4
+    title: "Fix workspace AGENTS.md template (delegate to live channel) + strip BOM"
+    feature: "mcp-durable-invocation"
+    size: S
+    status: review
+    file: spec/stories/story-mcp-durable-invocation-4.md
+    prd: spec/prd/prd-mcp-durable-invocation.md
+    adr: spec/adr/adr-mcp-durable-invocation.md
+    fr: [FR-7]
+    ac: [AC-01, AC-02, AC-03, AC-04]
+    depends_on:
+      - story-mcp-durable-invocation-3
+    blocks: []
+
+  - id: story-mcp-durable-invocation-5
+    title: "MCP e2e coverage + docs/MCP-surface review"
+    feature: "mcp-durable-invocation"
+    size: M
+    status: review
+    file: spec/stories/story-mcp-durable-invocation-5.md
+    prd: spec/prd/prd-mcp-durable-invocation.md
+    adr: spec/adr/adr-mcp-durable-invocation.md
+    fr: [NFR-3]
+    ac: [AC-01, AC-02, AC-03, AC-04]
+    depends_on:
+      - story-mcp-durable-invocation-2
+    blocks: []
+
   # --- mcp-lazy-schema stories (ENG-90312) — added 2026-07-12, previously untracked ---
   # 12 story files existed under spec/stories/ with no sprint-status.yaml entries. Reconciled
   # against Jira (ENG-90312, Closed/Done 2026-07-10) and GitHub (PR #743 spike/mcp-lazy-schema, MERGED 2026-07-06).
@@ -1782,7 +1862,7 @@ stories:
     feature: "mcp-http-passthrough-runtime-routing"
     repo: "clio"
     size: M
-    status: in-progress
+    status: review
     jira: ENG-93348
     file: spec/stories/story-mcp-http-passthrough-runtime-routing-1.md
     prd: spec/prd/prd-mcp-http-passthrough-runtime-routing.md
@@ -1798,7 +1878,7 @@ stories:
     feature: "mcp-http-passthrough-runtime-routing"
     repo: "clio"
     size: M
-    status: in-progress
+    status: review
     jira: ENG-93348
     file: spec/stories/story-mcp-http-passthrough-runtime-routing-2.md
     prd: spec/prd/prd-mcp-http-passthrough-runtime-routing.md
@@ -1814,7 +1894,7 @@ stories:
     feature: "mcp-http-passthrough-runtime-routing"
     repo: "clio"
     size: L
-    status: in-progress
+    status: review
     jira: ENG-93348
     file: spec/stories/story-mcp-http-passthrough-runtime-routing-3.md
     prd: spec/prd/prd-mcp-http-passthrough-runtime-routing.md
@@ -1830,7 +1910,7 @@ stories:
     feature: "mcp-http-passthrough-runtime-routing"
     repo: "clio"
     size: M
-    status: in-progress
+    status: review
     jira: ENG-93348
     file: spec/stories/story-mcp-http-passthrough-runtime-routing-4.md
     prd: spec/prd/prd-mcp-http-passthrough-runtime-routing.md
@@ -1839,4 +1919,18 @@ stories:
     fr: [FR-07, FR-08, FR-09, FR-10, FR-11]
     ac: [AC-08, AC-09, AC-10, AC-12]
     depends_on: [story-mcp-http-passthrough-runtime-routing-3]
+    blocks: []
+
+  - id: story-virtual-entity-schema-1
+    title: "Create and read Creatio virtual entity schemas through MCP"
+    feature: "virtual-entity-schema"
+    repo: "clio"
+    size: M
+    status: review
+    issue: 864
+    file: spec/virtual-entity-schema/virtual-entity-schema-story.md
+    prd: spec/virtual-entity-schema/virtual-entity-schema-spec.md
+    adr: spec/virtual-entity-schema/virtual-entity-schema-plan.md
+    test_plan: spec/virtual-entity-schema/virtual-entity-schema-qa.md
+    depends_on: []
     blocks: []

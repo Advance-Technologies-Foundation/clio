@@ -15,6 +15,9 @@ DESCRIPTION
     By default the command prints a readable summary. Use --json to output
     the raw JSON response instead.
 
+    In CLI JSON output, every entity includes IsVirtual. The MCP result exposes
+    the same value as virtual. A true value means the schema has no physical table.
+
 SYNOPSIS
     clio get-app-info [options]
 

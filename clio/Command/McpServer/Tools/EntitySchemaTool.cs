@@ -34,6 +34,7 @@ public sealed class CreateEntitySchemaTool(
 
 				 Use this when the schema should be created directly on the target environment instead of generating
 				 local source files. The package must already exist on the target environment.
+				 Set `is-virtual` to true only when the schema must not have a physical database table; it defaults to false.
 
 				 The tool applies the DB structure and publishes the schema automatically, so the new entity is
 				 immediately usable as a Lookup reference in sys-settings and lookup pickers — no compile needed.
@@ -52,7 +53,8 @@ public sealed class CreateEntitySchemaTool(
 				BuildCandidateTerms(args.SchemaName, args.TitleLocalizations))
 			: null;
 		try {
-			CreateEntitySchemaOptions options = CreateOptions(args, args.ParentSchemaName, args.ExtendParent);
+			CreateEntitySchemaOptions options = CreateOptions(
+				args, args.ParentSchemaName, args.ExtendParent, args.IsVirtual);
 			CommandExecutionResult result = InternalExecute<CreateEntitySchemaCommand>(options);
 			return result with { DataForge = dataForge };
 		} catch (Exception exception) {
@@ -74,7 +76,8 @@ public sealed class CreateEntitySchemaTool(
 	internal static CreateEntitySchemaOptions CreateOptions(
 		EntitySchemaCreateArgsBase args,
 		string? parentSchemaName,
-		bool extendParent) {
+		bool extendParent,
+		bool isVirtual = false) {
 		string context = $"Schema '{args.SchemaName}'";
 		IReadOnlyDictionary<string, string> titleLocalizations = EntitySchemaLocalizationContract.RequireTitleLocalizations(
 			args.TitleLocalizations,
@@ -93,6 +96,7 @@ public sealed class CreateEntitySchemaTool(
 			TitleLocalizations = titleNormalization.Localizations ?? titleLocalizations,
 			ParentSchemaName = (!extendParent && string.IsNullOrWhiteSpace(parentSchemaName)) ? "BaseEntity" : parentSchemaName,
 			ExtendParent = extendParent,
+			IsVirtual = isVirtual,
 			Columns = SerializeColumns(args.Columns, context),
 			Environment = args.EnvironmentName,
 			CaptionCulture = args.CaptionCulture
@@ -194,6 +198,10 @@ public sealed class CreateLookupTool : BaseTool<CreateEntitySchemaOptions> {
 				$"Lookup '{args.SchemaName}'");
 			int exitCode = -1;
 			return ExecuteUnderTenantLock(options, () => {
+				// FR-11 (review): this tool self-captures and builds its own result inside the lock, so it
+				// bypasses RunCommandUnderHeldLock's redaction — redact the snapshot here on a passthrough
+				// request (no-op off passthrough). Same key the tenant lock resolves under.
+				string tenantKey = ResolveTenantLockKey(options);
 				bool previousPreserveMessages = _logger.PreserveMessages;
 				_logger.PreserveMessages = true;
 				try {
@@ -207,13 +215,13 @@ public sealed class CreateLookupTool : BaseTool<CreateEntitySchemaOptions> {
 
 					CommandExecutionResult returnResult = new(
 						exitCode,
-						[.. _logger.FlushAndSnapshotMessages(clearMessages: true)],
+						[.. McpPassthroughRedaction.SanitizeAndRedact([.. _logger.FlushAndSnapshotMessages(clearMessages: true)], tenantKey)],
 						null,
 						dataForge);
 					return returnResult;
 				}
 				catch (Exception exception) {
-					List<LogMessage> logMessages = [.. _logger.FlushAndSnapshotMessages(clearMessages: true), new ErrorMessage(SensitiveErrorTextRedactor.Redact(exception.Message))];
+					List<LogMessage> logMessages = [.. McpPassthroughRedaction.SanitizeAndRedact([.. _logger.FlushAndSnapshotMessages(clearMessages: true)], tenantKey), new ErrorMessage(SensitiveErrorTextRedactor.Redact(exception.Message))];
 					CommandExecutionResult returnResult = new(
 						exitCode > 0 ? exitCode : 1,
 						logMessages,
@@ -376,7 +384,8 @@ public sealed class GetEntitySchemaPropertiesTool(
 		+ "Omit package-name for the MERGED/EFFECTIVE view (columns from all packages) — use this for column discovery; "
 		+ "an empty column list from a single-package read does NOT prove a column is absent. "
 		+ "Supply package-name to inspect one package layer and to read schema-level fields that the merged view returns as null "
-		+ "(parent-schema-name, indexes-count, ssp-available, use-record-deactivation, use-deny-record-rights, use-live-editing).")]
+		+ "(parent-schema-name, indexes-count, ssp-available, use-record-deactivation, use-deny-record-rights, use-live-editing). "
+		+ "The result always includes virtual so callers can verify whether the schema has a physical database table.")]
 	public EntitySchemaPropertiesInfo GetEntitySchemaProperties(
 		[Description("environment-name, schema-name (required); package-name (optional — omit for the merged all-packages view)")] [Required] GetEntitySchemaPropertiesArgs args) {
 		GetEntitySchemaPropertiesOptions options = new() {
@@ -608,7 +617,14 @@ public sealed record CreateEntitySchemaArgs(
 	bool ExtendParent = false,
 
 	IEnumerable<CreateEntitySchemaColumnArgs>? Columns = null
-) : EntitySchemaCreateArgsBase(PackageName, SchemaName, TitleLocalizations, EnvironmentName, Columns);
+) : EntitySchemaCreateArgsBase(PackageName, SchemaName, TitleLocalizations, EnvironmentName, Columns) {
+	/// <summary>
+	/// Gets whether the entity schema is virtual and must not have a physical database table.
+	/// </summary>
+	[property: JsonPropertyName("is-virtual")]
+	[property: Description("Create a virtual entity schema without a physical database table. Defaults to false.")]
+	public bool IsVirtual { get; init; }
+}
 
 /// <summary>
 /// Arguments for the <c>create-lookup</c> MCP tool.

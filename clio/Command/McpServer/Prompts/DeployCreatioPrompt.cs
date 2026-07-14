@@ -32,6 +32,8 @@ public static class DeployCreatioPrompt
 		 deployable choices and the recommended `dbServerName` and `redisServerName` values.
 		 If you are deploying locally to IIS, run `{FindEmptyIisPortTool.FindEmptyIisPortToolName}` to pick
 		 a safe `sitePort` between {FindEmptyIisPortTool.RangeStart} and {FindEmptyIisPortTool.RangeEnd}.
+		 The deployment preserves the build database's existing forced-password-change state and does not
+		 clear it automatically.
 		 After that preflight, call `{InstallerCommandTool.DeployCreatioToolName}` with site name `{siteName}`,
 		 zip file `{zipFile}`, site port `{sitePort}`, and the selected or recommended server-name arguments.
 		 """;

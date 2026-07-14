@@ -27,6 +27,29 @@ public sealed class CredentialHeaderParserTests
 		Convert.ToBase64String(Encoding.UTF8.GetBytes(json));
 
 	[Test]
+	[Description("Review (FR-11): CredentialMaterial / CredentialContext / CredentialParseResult ToString() must NOT print the token, cookie, or password — an accidental interpolation or log of the record cannot leak a secret.")]
+	public void ToString_ShouldNotLeakSecretMaterial_ForCredentialRecords() {
+		// Arrange
+		CredentialMaterial token = CredentialMaterial.FromAccessToken(SecretToken, "Bearer");
+		CredentialMaterial login = CredentialMaterial.FromLoginPassword("admin", SecretPassword);
+		CredentialMaterial cookie = CredentialMaterial.FromCookie(SecretCookie);
+		CredentialContext context = new("https://env.creatio.com", token, McpTransport.Http, true);
+		CredentialParseResult parseResult = new("https://env.creatio.com", login);
+
+		// Act
+		string materialText = token.ToString() + login.ToString() + cookie.ToString();
+		string contextText = context.ToString();
+		string parseResultText = parseResult.ToString();
+
+		// Assert
+		materialText.Should().NotContain(SecretToken, because: "the record ToString must not print the access token (FR-11)");
+		materialText.Should().NotContain(SecretPassword, because: "the record ToString must not print the password (FR-11)");
+		materialText.Should().NotContain(SecretCookie, because: "the record ToString must not print the cookie (FR-11)");
+		contextText.Should().NotContain(SecretToken, because: "the context ToString delegates to the redacted material ToString (FR-11)");
+		parseResultText.Should().NotContain(SecretPassword, because: "the parse-result ToString delegates to the redacted material ToString (FR-11)");
+	}
+
+	[Test]
 	[Description("A base64-encoded JSON payload with url and accessToken parses into AccessToken material.")]
 	public void TryParse_ShouldReturnAccessTokenMaterial_WhenAccessTokenPresent() {
 		// Arrange
@@ -140,8 +163,8 @@ public sealed class CredentialHeaderParserTests
 	}
 
 	[Test]
-	[Description("When cookie and login+password are present but accessToken is absent, cookie wins by precedence.")]
-	public void TryParse_ShouldPreferCookie_WhenAccessTokenAbsentAndCookiePresent() {
+	[Description("Review: when cookie and login+password are present but accessToken is absent, login+password wins — cookie ranks LAST because it is unsupported in v1 and must not shadow usable credentials.")]
+	public void TryParse_ShouldPreferLoginPassword_WhenCookieAndLoginPasswordPresent() {
 		// Arrange
 		string header = Encode(new {
 			url = "https://env.creatio.com",
@@ -156,7 +179,24 @@ public sealed class CredentialHeaderParserTests
 
 		// Assert
 		ok.Should().BeTrue(because: "the payload is well-formed");
-		result.Auth.Kind.Should().Be(CredentialKind.Cookie, because: "cookie has precedence over login+password");
+		result.Auth.Kind.Should().Be(CredentialKind.LoginPassword,
+			because: "login+password (supported in v1) must not be shadowed by the cookie (unsupported in v1)");
+		result.Auth.Login.Should().Be("admin", because: "the login is carried on the resolved material");
+	}
+
+	[Test]
+	[Description("Review: a cookie-only payload still resolves to Cookie material so the caller gets the specific 'cookie not supported in v1' rejection rather than a generic 'no usable auth material'.")]
+	public void TryParse_ShouldResolveCookie_WhenOnlyCookiePresent() {
+		// Arrange
+		string header = Encode(new { url = "https://env.creatio.com", cookie = SecretCookie });
+
+		// Act
+		bool ok = _sut.TryParse(header, out CredentialParseResult result, out _);
+
+		// Assert
+		ok.Should().BeTrue(because: "the payload is well-formed");
+		result.Auth.Kind.Should().Be(CredentialKind.Cookie,
+			because: "a cookie-only payload resolves to Cookie so the specific v1-unsupported message is produced");
 		result.Auth.Cookie.Should().Be(SecretCookie, because: "the cookie is carried on the material");
 	}
 

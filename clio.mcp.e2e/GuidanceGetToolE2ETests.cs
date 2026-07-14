@@ -65,6 +65,34 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 
 	[Test]
 	[AllureTag(GuidanceGetTool.ToolName)]
+	[AllureName("get-guidance returns the canonical page-to-object binding guidance article")]
+	public async Task GuidanceGet_Should_Return_Related_Page_Binding_Guide() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		GuidanceGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["name"] = "related-page-binding"
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "related-page-binding is a registered guidance name");
+		response.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article payload");
+		response.Article!.Uri.Should().Be("docs://mcp/guides/related-page-binding",
+			because: "the canonical resource URI should still be visible in the tool response");
+		response.Article.Text.Should().Contain("clio MCP page-to-object binding guide",
+			because: "the guidance tool should return the canonical page-to-object binding guide text");
+		response.Article.Text.Should().Contain("create-related-page-addon",
+			because: "the resolved article must document the create-related-page-addon write tool");
+	}
+
+	[Test]
+	[AllureTag(GuidanceGetTool.ToolName)]
 	[AllureName("get-guidance returns the canonical validator guidance article")]
 	public async Task GuidanceGet_Should_Return_Page_Schema_Validators_Guide() {
 		// Arrange
@@ -226,7 +254,7 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 		response.Article.Text.Should().Contain("There is no page for new or existing record",
 			because: "the related-list guide must warn that a header CreateRecordRequest Add button on a section-less detail entity throws this runtime error on click");
 		response.Article.Text.Should().Contain("inline add row IS the add affordance",
-			because: "the related-list guide must steer callers to inline grid add (its editable flags fetched from get-component-info crt.DataGrid) as the safe default add affordance");
+			because: "the related-list guide must still name the inline add affordance (Mechanism B) for the simple-line-item case, even though page-based add is the primary path");
 	}
 
 	[Test]

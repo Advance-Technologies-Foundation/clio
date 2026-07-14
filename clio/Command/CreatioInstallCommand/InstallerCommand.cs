@@ -85,7 +85,8 @@ public class PfInstallerOptions : EnvironmentNameOptions{
 	/// <summary>
 	/// Gets or sets a value indicating whether force-password-reset disabling script may be executed.
 	/// </summary>
-	[Option("disable-reset-password", Required = false, Hidden = true, Default = true, HelpText = "Disables reset password after installation")]
+	[Option("disable-reset-password", Required = false, Hidden = true, Default = false,
+		HelpText = "When true, disables the forced password change after installation")]
 	public bool DisableResetPassword { get; set; }
 	
 	/// <summary>

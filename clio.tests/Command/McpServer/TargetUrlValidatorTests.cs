@@ -113,6 +113,114 @@ public sealed class TargetUrlValidatorTests
 	}
 
 	[Test]
+	[Description("Review: the unspecified IPv4 address 0.0.0.0 is always blocked — an outbound connect to it is OS-routed to the local host, defeating the loopback guarantee.")]
+	public void EnsureAllowed_ShouldReject_WhenTargetIsUnspecifiedIpv4() {
+		// Arrange
+		ITargetUrlValidator sut = CreateValidator();
+
+		// Act
+		Action act = () => sut.EnsureAllowed("http://0.0.0.0:8080/");
+
+		// Assert
+		act.Should().Throw<TargetUrlNotAllowedException>(
+				because: "0.0.0.0 routes to the local host, so it is a baseline block regardless of allowlist")
+			.Which.Message.Should().Contain("unspecified",
+				because: "the rejection names the blocked address class (AC-ERR)");
+	}
+
+	[Test]
+	[Description("Review: the unspecified IPv6 address :: is always blocked (OS-routed to the local host), like 0.0.0.0.")]
+	public void EnsureAllowed_ShouldReject_WhenTargetIsUnspecifiedIpv6() {
+		// Arrange
+		ITargetUrlValidator sut = CreateValidator();
+
+		// Act
+		Action act = () => sut.EnsureAllowed("http://[::]/");
+
+		// Assert
+		act.Should().Throw<TargetUrlNotAllowedException>(
+				because: ":: routes to the local host, so it is a baseline block regardless of allowlist")
+			.Which.Message.Should().Contain("unspecified",
+				because: "the rejection names the blocked address class (AC-ERR)");
+	}
+
+	[Test]
+	[Description("Review: an IPv4-mapped unspecified literal (::ffff:0.0.0.0) normalizes to 0.0.0.0 and is blocked, so the dual-stack encoding cannot bypass the unspecified block.")]
+	public void EnsureAllowed_ShouldReject_WhenTargetIsIpv4MappedUnspecified() {
+		// Arrange
+		ITargetUrlValidator sut = CreateValidator();
+
+		// Act
+		Action act = () => sut.EnsureAllowed("http://[::ffff:0.0.0.0]/");
+
+		// Assert
+		act.Should().Throw<TargetUrlNotAllowedException>(
+				because: "an IPv4-mapped unspecified literal must normalize to 0.0.0.0 and hit the unspecified block")
+			.Which.Message.Should().Contain("unspecified",
+				because: "the rejection names the blocked address class after normalization (AC-ERR)");
+	}
+
+	[Test]
+	[Description("Review: an IPv6 unique-local address (fc00::/7) is always blocked — it contains the AWS IPv6 IMDS endpoint fd00:ec2::254, so IPv6 instance-metadata must not be reachable.")]
+	public void EnsureAllowed_ShouldReject_WhenTargetIsIpv6UniqueLocalMetadata() {
+		// Arrange
+		ITargetUrlValidator sut = CreateValidator();
+
+		// Act
+		Action act = () => sut.EnsureAllowed("http://[fd00:ec2::254]/latest/meta-data/");
+
+		// Assert
+		act.Should().Throw<TargetUrlNotAllowedException>(
+				because: "fc00::/7 contains the AWS IPv6 metadata endpoint and is a baseline block regardless of allowlist")
+			.Which.Message.Should().Contain("unique-local",
+				because: "the rejection names the blocked address class (AC-ERR)");
+	}
+
+	[Test]
+	[Description("Review Blocker: a plaintext http target to a NON-loopback host is rejected — the forwarded bearer token must not cross the network in the clear (the bearer transport does not enforce TLS validation).")]
+	public void EnsureAllowed_ShouldReject_WhenTargetIsHttpNonLoopback() {
+		// Arrange
+		ITargetUrlValidator sut = CreateValidator();
+
+		// Act
+		Action act = () => sut.EnsureAllowed("http://acme.creatio.com/");
+
+		// Assert
+		act.Should().Throw<TargetUrlNotAllowedException>(
+				because: "http to a non-loopback host would expose the passthrough credential to interception/MITM")
+			.Which.Message.Should().Contain("https",
+				because: "the rejection names the required scheme (AC-ERR)");
+	}
+
+	[Test]
+	[Description("Review Blocker: an https target to a non-loopback host passes the scheme rule (it is encrypted).")]
+	public void EnsureAllowed_ShouldPermit_WhenTargetIsHttpsNonLoopback() {
+		// Arrange
+		ITargetUrlValidator sut = CreateValidator();
+
+		// Act
+		Action act = () => sut.EnsureAllowed("https://acme.creatio.com/");
+
+		// Assert
+		act.Should().NotThrow(because: "https to a real host is the supported transport for credential passthrough");
+	}
+
+	[Test]
+	[Description("Review Blocker: a plaintext http target to a loopback dev host is permitted (no off-host network hop) when the server is bound to loopback.")]
+	public void EnsureAllowed_ShouldPermit_WhenTargetIsHttpLoopbackDev() {
+		// Arrange — bound to loopback so the loopback address-class block does not fire either.
+		ITargetUrlValidator sut = CreateValidator(boundHost: LoopbackBoundHost);
+
+		// Act
+		Action actLocalhost = () => sut.EnsureAllowed("http://localhost:5000/");
+		Action actLoopbackIp = () => sut.EnsureAllowed("http://127.0.0.1:5000/");
+
+		// Assert
+		actLocalhost.Should().NotThrow(because: "http is allowed for an explicit loopback dev target");
+		actLoopbackIp.Should().NotThrow(because: "http is allowed for an explicit loopback dev target");
+	}
+
+	[Test]
 	[Description("An IPv4-mapped IPv6 cloud-metadata literal is blocked so the dual-stack encoding cannot bypass baseline (AC-02).")]
 	public void EnsureAllowed_ShouldReject_WhenTargetIsIpv4MappedIpv6CloudMetadata() {
 		// Arrange
@@ -366,13 +474,13 @@ public sealed class TargetUrlValidatorTests
 	}
 
 	[Test]
-	[Description("An RFC1918 private address (http://10.0.0.5/) is PERMITTED when no allowlist is set — documenting the deliberate v1 residual so a future baseline tightening fails this test.")]
+	[Description("An RFC1918 private address (https://10.0.0.5/) is PERMITTED when no allowlist is set — documenting the deliberate v1 residual so a future baseline tightening fails this test.")]
 	public void EnsureAllowed_ShouldPermit_WhenTargetIsRfc1918TenAndAllowlistUnset() {
 		// Arrange
 		ITargetUrlValidator sut = CreateValidator(boundHost: NonLoopbackBoundHost);
 
 		// Act
-		Action act = () => sut.EnsureAllowed("http://10.0.0.5/");
+		Action act = () => sut.EnsureAllowed("https://10.0.0.5/");
 
 		// Assert
 		act.Should().NotThrow(
@@ -380,13 +488,13 @@ public sealed class TargetUrlValidatorTests
 	}
 
 	[Test]
-	[Description("An RFC1918 private address (http://192.168.1.10/) is PERMITTED when no allowlist is set — documenting the deliberate v1 residual.")]
+	[Description("An RFC1918 private address (https://192.168.1.10/) is PERMITTED when no allowlist is set — documenting the deliberate v1 residual.")]
 	public void EnsureAllowed_ShouldPermit_WhenTargetIsRfc1918OneNineTwoAndAllowlistUnset() {
 		// Arrange
 		ITargetUrlValidator sut = CreateValidator(boundHost: NonLoopbackBoundHost);
 
 		// Act
-		Action act = () => sut.EnsureAllowed("http://192.168.1.10/");
+		Action act = () => sut.EnsureAllowed("https://192.168.1.10/");
 
 		// Assert
 		act.Should().NotThrow(
