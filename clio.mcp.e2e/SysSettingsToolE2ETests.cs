@@ -296,7 +296,7 @@ public sealed class SysSettingsToolE2ETests : McpContractFixtureBase {
 			});
 		EntitySchemaStructuredResultParser.Extract<SysSettingCreateResult>(createResult).Success.Should().BeTrue(
 			because: "the binary upload scenario requires a successfully-created precondition Binary setting");
-		string filePath = Path.Combine(Path.GetTempPath(), $"{code}.bin");
+		string filePath = Path.Combine(Path.GetTempPath(), $"{code}.png");
 		byte[] fileBytes = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]; // PNG signature bytes stand in for a logo
 		await File.WriteAllBytesAsync(filePath, fileBytes);
 

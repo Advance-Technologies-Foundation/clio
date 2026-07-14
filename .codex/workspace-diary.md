@@ -5970,3 +5970,14 @@ Decision: Track Explorer success across the whole command, render operation-log 
 Discovery: Failure visibility must span defaults resolution, infrastructure validation, installer return codes, and thrown exceptions; handling only the installer result is incomplete.
 Files: clio/Command/CreatioInstallCommand/InstallerCommand.cs, clio.tests/Command/InstallerCommandSilentSiteNameTests.cs
 Impact: Explorer success closes immediately, while all tested failure paths display the diagnostic and log location before waiting for Enter.
+
+## 2026-07-14 14:40 – ENG-93320 PR #866 review round 3 (Krylov: 2 blockers + 2 corrections)
+Context: Round-2 re-review confirmed 4 items resolved; two policy blockers + two corrections remained.
+Decision:
+- (Blocker 1) Enforced the file-security gate at EVERY Binary write entry point, not just MCP update: added the inline-Binary-under-active-policy refusal to the CLI inline path and to create-sys-setting's initial value (checked before insert). Overload RejectInlineBinaryUnderActivePolicy(code, targetIsBinary) reused across paths.
+- (Blocker 2) GetFileSecurityPolicy now fails CLOSED: reads the authoritative All-Users value, accepts Disabled ONLY for the known Disabled GUID, and resolves missing/malformed/unknown ids to a new FileSecurityMode.Unknown -> UnknownPolicy; Enforce/Reject helpers refuse the upload ("Cannot determine the environment file-security mode..."). Malformed AllowFilesWithUnknownType is treated conservatively (false); missing uses the platform default (true).
+- (Correction 3) Propagate the specific Binary validation cause to the MCP result: new ISysSettingsManager.TryValidateBinaryValue(value, out error); TryUpdateSysSetting resolves the target type once and, for an inline Binary value, returns the specific malformed/too-large error instead of the generic update-failure message.
+- (Correction 4) E2E temp file renamed .bin -> .png (bin is in Creatio's default DenyList; the bytes are already a PNG signature) so the happy path passes on a default environment.
+Tests: added manager GetFileSecurityPolicy resolution tests (3 known ids + missing + malformed + unknown), command tests (CLI inline reject, create-with-value reject, Unknown-mode file refusal, specific-cause propagation). net8 unit (Module=McpServer|Module=Common) 2670 passed / 0 failed / 3 skipped.
+Live: CLI happy/inline-reject/deny-ext verified on localhost (dev) + ts1-web03 (both DenyList). MCP resident tools verified over mcp-http: list-sys-settings shows LogoImage as <binary>, get-sys-setting returns empty for Binary.
+Files: clio/Common/ISysSettingsManager.cs, clio/Command/SysSettingsCommand.cs, clio.tests/Command/McpServer/SysSettingsToolTests.cs, clio.tests/Common/SysSettingsManagerNewBehaviorTests.cs, clio.mcp.e2e/SysSettingsToolE2ETests.cs

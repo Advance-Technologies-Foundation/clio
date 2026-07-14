@@ -830,6 +830,77 @@ public class SysSettingsManagerNewBehaviorTests {
 
 	#endregion
 
+	#region GetFileSecurityPolicy — fail-closed mode resolution
+
+	// Platform-fixed FileSecurityMode lookup ids.
+	private const string FileSecurityDisabledId = "9801C625-FAFB-4ED3-9383-C3C942A5C1E3";
+	private const string FileSecurityAllowListId = "C6CA9A2F-3A4A-4D51-B67B-DE36852CB916";
+	private const string FileSecurityDenyListId = "60849C6E-24B4-45DF-9AAD-2F69D419823C";
+
+	private static DataProviderMock SetupFileSecurityModeMock(string valueTypeName, string rawValue) {
+		Guid settingId = Guid.NewGuid();
+		bool isLookup = valueTypeName == "Lookup";
+		DataProviderMock providerMock = new();
+		providerMock.MockItems("SysSettings").Returns(new List<Dictionary<string, object>> {
+			new() {
+				{ "Id", settingId }, { "Code", "FileSecurityMode" }, { "Name", "FileSecurityMode" },
+				{ "ValueTypeName", valueTypeName }, { "Description", "" },
+				{ "IsCacheable", true }, { "IsPersonal", false }, { "IsSSPAvailable", false }
+			}
+		});
+		providerMock.MockItems("SysSettingsValue").Returns(new List<Dictionary<string, object>> {
+			new() {
+				{ "Id", Guid.NewGuid() }, { "SysSettings", settingId }, { "SysAdminUnit", AllUsersAdminUnitId },
+				{ "IsDef", true }, { "TextValue", isLookup ? string.Empty : rawValue },
+				{ "IntegerValue", 0 }, { "FloatValue", 0m }, { "BooleanValue", false },
+				{ "DateTimeValue", new DateTime(1900, 1, 1) },
+				{ "GuidValue", isLookup ? Guid.Parse(rawValue) : Guid.Empty }
+			}
+		});
+		return providerMock;
+	}
+
+	[TestCase(FileSecurityDisabledId, FileSecurityMode.Disabled)]
+	[TestCase(FileSecurityAllowListId, FileSecurityMode.AllowList)]
+	[TestCase(FileSecurityDenyListId, FileSecurityMode.DenyList)]
+	[Description("GetFileSecurityPolicy maps each of the three known FileSecurityMode lookup ids to its mode.")]
+	public void GetFileSecurityPolicy_Resolves_Known_Mode_Ids(string modeGuid, FileSecurityMode expected) {
+		// Arrange
+		ISysSettingsManager sut = BuildSut(SetupFileSecurityModeMock("Lookup", modeGuid));
+
+		// Act & Assert
+		sut.GetFileSecurityPolicy().Mode.Should().Be(expected,
+			because: "each documented FileSecurityMode id must resolve to its corresponding mode");
+	}
+
+	[Test]
+	[Description("GetFileSecurityPolicy fails closed to Unknown when the FileSecurityMode value is missing, rather than defaulting to Disabled.")]
+	public void GetFileSecurityPolicy_Missing_Mode_Is_Unknown() {
+		// Arrange
+		DataProviderMock providerMock = new();
+		providerMock.MockItems("SysSettings").Returns(new List<Dictionary<string, object>>());
+		providerMock.MockItems("SysSettingsValue").Returns(new List<Dictionary<string, object>>());
+		ISysSettingsManager sut = BuildSut(providerMock);
+
+		// Act & Assert
+		sut.GetFileSecurityPolicy().Mode.Should().Be(FileSecurityMode.Unknown,
+			because: "a missing mode must fail closed (Unknown), never be treated as Disabled");
+	}
+
+	[TestCase("not-a-guid", "Text")]
+	[TestCase("11111111-1111-1111-1111-111111111111", "Lookup")]
+	[Description("GetFileSecurityPolicy fails closed to Unknown for a malformed value or an unrecognized mode id.")]
+	public void GetFileSecurityPolicy_Malformed_Or_Unknown_Mode_Is_Unknown(string rawValue, string valueTypeName) {
+		// Arrange
+		ISysSettingsManager sut = BuildSut(SetupFileSecurityModeMock(valueTypeName, rawValue));
+
+		// Act & Assert
+		sut.GetFileSecurityPolicy().Mode.Should().Be(FileSecurityMode.Unknown,
+			because: "a malformed or unrecognized FileSecurityMode must fail closed to Unknown");
+	}
+
+	#endregion
+
 	#region GetSysSettingValueByCode — All-Users-only fallback
 
 	[Test]

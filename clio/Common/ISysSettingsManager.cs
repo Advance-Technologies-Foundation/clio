@@ -16,8 +16,12 @@ using IAbstractionsFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Common;
 
-/// <summary>Creatio's file-upload security mode (mirrors the platform's FileSecurityMode lookup).</summary>
-public enum FileSecurityMode { Disabled, AllowList, DenyList }
+/// <summary>
+/// Creatio's file-upload security mode (mirrors the platform's FileSecurityMode lookup). <see cref="Unknown"/>
+/// is clio-only: the configured value was missing, malformed, or an unrecognized id, so the mode could not be
+/// resolved and Binary uploads must fail closed rather than be treated as Disabled.
+/// </summary>
+public enum FileSecurityMode { Disabled, AllowList, DenyList, Unknown }
 
 /// <summary>
 /// The environment's active file-upload security policy, read from sys-settings. Advisory on the
@@ -28,6 +32,10 @@ public sealed record FileSecurityPolicy(FileSecurityMode Mode, IReadOnlySet<stri
 {
 	public static FileSecurityPolicy DisabledPolicy { get; } =
 		new(FileSecurityMode.Disabled, new HashSet<string>(), true);
+
+	/// <summary>Policy for an unresolvable mode: enforcement is on and every Binary upload is refused (fail closed).</summary>
+	public static FileSecurityPolicy UnknownPolicy { get; } =
+		new(FileSecurityMode.Unknown, new HashSet<string>(), false);
 
 	public bool IsActive => Mode != FileSecurityMode.Disabled;
 }
@@ -84,6 +92,13 @@ public interface ISysSettingsManager
 	Guid? FindSchemaUIdByName(string schemaName);
 
 	bool UpdateSysSetting(string code, object value, string valueTypeName = "Text");
+
+	/// <summary>
+	/// Validates a Binary sys-setting value (well-formed Base64 within the size cap). Returns false with a
+	/// specific <paramref name="error"/> (malformed vs too-large) so callers can surface the real cause
+	/// instead of a generic update failure.
+	/// </summary>
+	bool TryValidateBinaryValue(string value, out string error);
 
 	#endregion
 
@@ -590,27 +605,56 @@ public class SysSettingsManager : ISysSettingsManager
 	private static readonly Guid FileSecurityModeDenyListId = new("60849C6E-24B4-45DF-9AAD-2F69D419823C");
 	private static readonly Guid FileSecurityModeAllowListId = new("C6CA9A2F-3A4A-4D51-B67B-DE36852CB916");
 
+	/// <inheritdoc cref="ISysSettingsManager.TryValidateBinaryValue" />
+	public bool TryValidateBinaryValue(string value, out string error) {
+		switch (ValidateBinaryBase64(value, out int _)) {
+			case Base64ValidationResult.Malformed:
+				error = "Value is not valid Base64 (Binary settings expect a Base64-encoded payload).";
+				return false;
+			case Base64ValidationResult.TooLarge:
+				error = $"Binary value exceeds the {MaxBinaryValueBytes:N0}-byte limit.";
+				return false;
+			default:
+				error = null;
+				return true;
+		}
+	}
+
 	/// <inheritdoc cref="ISysSettingsManager.GetFileSecurityPolicy" />
 	public FileSecurityPolicy GetFileSecurityPolicy() {
-		FileSecurityMode mode = FileSecurityMode.Disabled;
-		if (Guid.TryParse(GetSysSettingValueByCode("FileSecurityMode"), out Guid modeId)) {
-			if (modeId == FileSecurityModeAllowListId) {
-				mode = FileSecurityMode.AllowList;
-			} else if (modeId == FileSecurityModeDenyListId) {
-				mode = FileSecurityMode.DenyList;
-			}
+		// Read the authoritative All-Users value and resolve the mode fail-closed: only the explicit
+		// Disabled id counts as Disabled. A missing, malformed, or unrecognized id resolves to Unknown so
+		// callers refuse the Binary upload rather than silently skipping the only barrier on this path.
+		string modeRaw = GetAllUsersDefaultByCode("FileSecurityMode");
+		FileSecurityMode mode;
+		if (!Guid.TryParse(modeRaw, out Guid modeId)) {
+			mode = FileSecurityMode.Unknown;
+		} else if (modeId == FileSecurityModeDisabledId) {
+			mode = FileSecurityMode.Disabled;
+		} else if (modeId == FileSecurityModeAllowListId) {
+			mode = FileSecurityMode.AllowList;
+		} else if (modeId == FileSecurityModeDenyListId) {
+			mode = FileSecurityMode.DenyList;
+		} else {
+			mode = FileSecurityMode.Unknown;
 		}
 		if (mode == FileSecurityMode.Disabled) {
 			return FileSecurityPolicy.DisabledPolicy;
 		}
+		if (mode == FileSecurityMode.Unknown) {
+			return FileSecurityPolicy.UnknownPolicy;
+		}
 		string listCode = mode == FileSecurityMode.AllowList ? "FileExtensionsAllowList" : "FileExtensionsDenyList";
-		string listRaw = GetSysSettingValueByCode(listCode) ?? string.Empty;
+		string listRaw = GetAllUsersDefaultByCode(listCode) ?? string.Empty;
 		HashSet<string> extensions = new(StringComparer.OrdinalIgnoreCase);
 		foreach (string entry in listRaw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)) {
 			extensions.Add(entry.TrimStart('.'));
 		}
-		// Platform default for AllowFilesWithUnknownType is true; treat an unset/unparseable value as true.
-		bool allowUnknown = !bool.TryParse(GetSysSettingValueByCode("AllowFilesWithUnknownType"), out bool parsed) || parsed;
+		// AllowFilesWithUnknownType: an unset value uses the platform default (true); a present-but-malformed
+		// value is treated conservatively (false / do not allow unknown-type files).
+		string allowUnknownRaw = GetAllUsersDefaultByCode("AllowFilesWithUnknownType");
+		bool allowUnknown = string.IsNullOrWhiteSpace(allowUnknownRaw)
+			|| (bool.TryParse(allowUnknownRaw, out bool parsed) && parsed);
 		return new FileSecurityPolicy(mode, extensions, allowUnknown);
 	}
 

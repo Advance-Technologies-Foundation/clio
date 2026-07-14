@@ -126,6 +126,12 @@ namespace Clio.Command
 			if (!policy.IsActive) {
 				return;
 			}
+			// Fail closed: if the environment's file-security mode could not be resolved, refuse rather than
+			// upload — this client-side check is the only policy barrier on the sys-setting write path.
+			if (policy.Mode == FileSecurityMode.Unknown) {
+				throw new ArgumentException(
+					"Cannot determine the environment file-security mode; Binary upload was refused.");
+			}
 			string fileName = Path.GetFileName(filePath);
 			string extension = Path.GetExtension(filePath).TrimStart('.');
 			if (string.IsNullOrEmpty(extension)) {
@@ -152,10 +158,25 @@ namespace Clio.Command
 		/// </summary>
 		private void RejectInlineBinaryUnderActivePolicy(string code){
 			(_, string existingType) = _sysSettingsManager.GetAllUsersDefaultWithType(code);
-			if (!string.Equals(existingType, BinaryTypeName, StringComparison.Ordinal)) {
+			RejectInlineBinaryUnderActivePolicy(code,
+				string.Equals(existingType, BinaryTypeName, StringComparison.Ordinal));
+		}
+
+		/// <summary>
+		/// Rejects an inline Base64 value for a Binary setting while a file-security policy is active (an
+		/// inline value has no extension to validate). Overload takes the known target type so callers that
+		/// already know it (e.g. create-sys-setting) need not resolve it again.
+		/// </summary>
+		private void RejectInlineBinaryUnderActivePolicy(string code, bool targetIsBinary){
+			if (!targetIsBinary) {
 				return;
 			}
-			if (_sysSettingsManager.GetFileSecurityPolicy().IsActive) {
+			FileSecurityPolicy policy = _sysSettingsManager.GetFileSecurityPolicy();
+			if (policy.Mode == FileSecurityMode.Unknown) {
+				throw new ArgumentException(
+					"Cannot determine the environment file-security mode; Binary upload was refused.");
+			}
+			if (policy.IsActive) {
 				throw new ArgumentException(
 					$"Sys-setting '{code}' is Binary and this environment has an active file-security policy. " +
 					"Provide the value via value-file-path (a file path) so its extension can be validated, " +
@@ -187,6 +208,9 @@ namespace Clio.Command
 					throw new ArgumentException(
 						$"File not found: '{opts.Value}'. For a Binary setting pass a path to an existing " +
 						"file (e.g. the logo), or a Base64 string.");
+				} else {
+					// Inline Base64 for a Binary setting: subject to the same file-security gate as the MCP path.
+					RejectInlineBinaryUnderActivePolicy(opts.Code);
 				}
 			}
 			bool isUpdated = _sysSettingsManager.UpdateSysSetting(opts.Code, value, opts.Type);
@@ -222,18 +246,35 @@ namespace Clio.Command
 				if (!hasInlineValue && !hasFilePath) {
 					throw new ArgumentException("value is required (supply 'value' or 'value-file-path').");
 				}
-				// A file upload targets a Binary setting: confirm the existing setting is Binary and passes
-				// the environment's file-security policy before reading the file. An inline value for a
-				// Binary setting is rejected while a policy is active (no extension to validate).
+				// Resolve the existing type once so file/inline paths share it (avoids a second lookup).
+				(_, string existingType) = _sysSettingsManager.GetAllUsersDefaultWithType(args.Code);
+				bool targetIsBinary = string.Equals(existingType, BinaryTypeName, StringComparison.Ordinal);
+				string value;
 				if (hasFilePath) {
-					EnsureExistingSettingIsBinary(args.Code);
+					// A file upload targets a Binary setting: confirm the target is Binary and passes the
+					// environment's file-security policy before reading the file.
+					if (existingType is null) {
+						throw new ArgumentException(
+							$"Sys-setting '{args.Code}' was not found. Create it as a Binary setting before uploading a file.");
+					}
+					if (!targetIsBinary) {
+						throw new ArgumentException(
+							$"Cannot upload a file to sys-setting '{args.Code}': it is type '{existingType}', not Binary. " +
+							"A file value can only be written to a Binary setting.");
+					}
 					EnforceFileSecurityPolicy(args.ValueFilePath);
+					value = EncodeFileToBase64(args.ValueFilePath);
 				} else {
-					RejectInlineBinaryUnderActivePolicy(args.Code);
+					// An inline value for a Binary setting is rejected while a policy is active (no extension
+					// to validate); when allowed, validate it up front so the caller gets the specific cause.
+					RejectInlineBinaryUnderActivePolicy(args.Code, targetIsBinary);
+					value = args.Value;
+					if (targetIsBinary && !_sysSettingsManager.TryValidateBinaryValue(value, out string binaryError)) {
+						return new SysSettingUpdateResult(false, args.Code, null, binaryError);
+					}
 				}
-				// A file path is read and Base64-encoded locally; such payloads are Binary by nature, so
-				// default the type accordingly when it is not resolved from the target environment.
-				string value = hasFilePath ? EncodeFileToBase64(args.ValueFilePath) : args.Value;
+				// A file-derived payload is Binary by nature; default the type accordingly when it is not
+				// resolved from the target environment.
 				string fallbackTypeName = hasFilePath ? BinaryTypeName : "Text";
 				string valueTypeName = string.IsNullOrWhiteSpace(args.ValueTypeName)
 					? fallbackTypeName
@@ -374,6 +415,12 @@ namespace Clio.Command
 		public SysSettingCreateResult TryCreateSysSetting(CreateSysSettingArgs args) {
 			try {
 				ValidateCreateArgs(args);
+				// A Binary initial value is inline Base64 (create has no value-file-path), so it is subject
+				// to the same file-security gate as an inline update — checked before anything is created.
+				if (args.Value is not null) {
+					RejectInlineBinaryUnderActivePolicy(args.Code,
+						string.Equals(args.ValueTypeName, BinaryTypeName, StringComparison.Ordinal));
+				}
 				Guid? referenceSchemaUId = ResolveReferenceSchemaUId(args);
 				SysSettingsManager.InsertSysSettingResponse response = _sysSettingsManager.InsertSysSetting(
 					args.Name,
