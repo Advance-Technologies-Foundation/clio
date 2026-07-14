@@ -270,8 +270,10 @@ public abstract class BaseTool<T>(
 	// switch logic the command itself is resolved with. Sharing this with ResolveCommand guarantees the
 	// gate's checker is bound to the exact container the command runs in (cached by env key in
 	// ToolCommandResolver), not the MCP startup/bootstrap container. The IToolCommandResolver methods are
-	// unconstrained, so this works for IRequiredPackageChecker as well as Command<T>.
-	private TService ResolveFromCallContainer<TService>(T options) =>
+	// unconstrained, so this works for IRequiredPackageChecker as well as Command<T>. private protected
+	// (not private) so WorkspaceCommandToolBase can resolve the per-tenant IWorkspacePathBuilder instance
+	// that the command it is about to execute will itself resolve (ENG-93208 H1 fix).
+	private protected TService ResolveFromCallContainer<TService>(T options) =>
 		ResolveFromCallContainer<TService>(options, out _);
 
 	private TService ResolveFromCallContainer<TService>(T options, out string tenantKey) {

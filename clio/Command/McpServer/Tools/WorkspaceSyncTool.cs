@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 using Clio.Common;
+using Clio.Workspaces;
 using ModelContextProtocol.Server;
 using IFileSystem = System.IO.Abstractions.IFileSystem;
 
@@ -37,21 +38,38 @@ public abstract class WorkspaceCommandToolBase<TOptions>(
 			return CreateFailureResult($"Workspace path not found: {workspacePath}");
 		}
 
-		// The working-directory pin mutates PROCESS-WIDE cwd, so it must hold the single global CwdLock
-		// (H1), NOT a per-tenant lock. Lock ordering is per-tenant → CwdLock: acquire the per-tenant lock
-		// FIRST via ExecuteUnderTenantLock(options) — with the SAME key the inner execute()'s
-		// InternalExecute<TCommand> resolves under, so that inner acquire is a reentrant no-op and no new
-		// CwdLock→per-tenant edge is created — THEN take CwdLock around the pin/execute/restore region.
+		// ENG-93208 (H1 fix): route the workspace root through IWorkspacePathBuilder.RootPath — the same
+		// settable seam Workspace.PublishToFile/PublishToFolder already use — instead of pinning the
+		// PROCESS-WIDE working directory. IWorkspacePathBuilder is resolved from the per-tenant session
+		// container (ToolCommandResolver/SessionContainerCache), the SAME container execute()'s
+		// InternalExecute<TCommand> resolves the command from, so different tenants never share this
+		// instance; only THIS tenant's own concurrent calls could race on it, which ExecuteUnderTenantLock
+		// below serializes (same key InternalExecute<TCommand> reacquires reentrantly). The push/restore
+		// network operation therefore no longer touches process cwd at all, so it no longer contends with
+		// McpToolExecutionLock.CwdLock (held by PageSyncTool/PageFileWriter/PageBaselineGuard while
+		// anchoring page output to cwd) — removing the cross-tenant head-of-line blocking (review #4).
 		return ExecuteUnderTenantLock(options, () => {
-			lock (McpToolExecutionLock.CwdLock) {
-				string originalDirectory = fileSystem.Directory.GetCurrentDirectory();
-				try {
-					fileSystem.Directory.SetCurrentDirectory(workspacePath);
-					return execute();
-				}
-				finally {
-					fileSystem.Directory.SetCurrentDirectory(originalDirectory);
-				}
+			IWorkspacePathBuilder workspacePathBuilder;
+			try {
+				workspacePathBuilder = ResolveFromCallContainer<IWorkspacePathBuilder>(options);
+			}
+			// Mirrors InternalExecute<TCommand>'s own ResolveCommand catch (BaseTool.cs): an unknown or
+			// unreachable environment must fail the SAME graceful way whether it surfaces here (resolving
+			// IWorkspacePathBuilder) or a moment later inside execute() (resolving the command itself) —
+			// both resolve through the same per-tenant container / environment-settings lookup.
+			catch (EnvironmentResolutionException e) {
+				return CommandExecutionResult.FromResolverError(e);
+			}
+			catch (Exception e) {
+				return CommandExecutionResult.FromException(e);
+			}
+
+			try {
+				workspacePathBuilder.RootPath = workspacePath;
+				return execute();
+			}
+			finally {
+				workspacePathBuilder.RootPath = null;
 			}
 		});
 	}

@@ -29,16 +29,29 @@ internal static class McpToolExecutionLock {
 
 	/// <summary>
 	/// Single process-global lock for regions that pin or restore the process working directory
-	/// (H1/H2, ENG-93208). The current directory is process-global state, so once different tenants run
-	/// concurrently (per-tenant lock) a workspace tool that pins cwd could otherwise place another
-	/// tenant's output under the pinned workspace, and two writers could corrupt each other's
-	/// save/restore. It is deliberately NOT a per-tenant lock: cwd is process-global and these are
-	/// local-workspace ops, not the multi-tenant hot path, so serializing them is acceptable.
+	/// (H2, ENG-93208). The current directory is process-global state, so once different tenants run
+	/// concurrently (per-tenant lock) a tool that pins cwd could otherwise place another tenant's output
+	/// under the pinned workspace, and two writers could corrupt each other's save/restore. It is
+	/// deliberately NOT a per-tenant lock: cwd is process-global and these are local, infrequent ops, not
+	/// the multi-tenant hot path, so serializing them is acceptable.
+	/// <para>
+	/// <b>ENG-93208 systemic fix (review #4 follow-up) — <c>WorkspaceSyncTool</c> no longer takes this
+	/// lock.</b> <c>push-workspace</c>/<c>restore-workspace</c> used to pin process cwd around the
+	/// network-bound install/restore, which serialized them against every other <see cref="CwdLock"/>
+	/// user for the duration of that network call — including the page-sync hot path
+	/// (<c>PageSyncTool.WriteVerifiedBodyFile</c>), causing cross-tenant head-of-line blocking.
+	/// <c>WorkspaceCommandToolBase.ExecuteInWorkspace</c> now threads the explicit workspace root through
+	/// <c>IWorkspacePathBuilder.RootPath</c> (resolved per-tenant session container, the same seam
+	/// <c>Workspace.PublishToFile</c>/<c>PublishToFolder</c> already used) instead of mutating process
+	/// cwd, so it needs no process-wide lock at all — only the per-tenant lock (already held via
+	/// <c>ExecuteUnderTenantLock</c>) guards against the SAME tenant racing two concurrent calls on its
+	/// own <see cref="IWorkspacePathBuilder"/> instance.
+	/// </para>
 	/// <para>
 	/// <b>Scope limitation (review #4, ENG-93208 — NOT a full guarantee).</b> Only the tools that take
-	/// <see cref="CwdLock"/> EXPLICITLY are mutually excluded: <c>WorkspaceSyncTool</c>,
-	/// <c>CreateUiProjectTool</c>, <c>DownloadConfigurationTool</c>, <c>PageSyncTool</c>,
-	/// <c>PageFileWriter</c>, <c>PageBaselineGuard</c>. The much larger set of TRANSITIVE / direct
+	/// <see cref="CwdLock"/> EXPLICITLY are mutually excluded: <c>CreateUiProjectTool</c>,
+	/// <c>DownloadConfigurationTool</c>, <c>PageSyncTool</c>, <c>PageFileWriter</c>,
+	/// <c>PageBaselineGuard</c>. The much larger set of TRANSITIVE / direct
 	/// <c>Environment.CurrentDirectory</c> readers reached through <c>command.Execute</c> — e.g.
 	/// <c>PackageArchiver</c>, <c>WorkingDirectoriesProvider.CurrentDirectory</c>,
 	/// <c>FileSystem</c>'s <c>GetCurrentDirectory</c> calls, <c>ModelBuilder</c>, <c>PackageCreator</c>,
@@ -47,17 +60,16 @@ internal static class McpToolExecutionLock {
 	/// <see cref="CwdLock"/> across a cwd pin, tenant B's cwd-defaulting command can still read A's pinned
 	/// cwd. This is a KNOWN residual, tolerated because the multi-tenant passthrough edge is an incubation
 	/// feature that is OFF by default (no concurrent tenants on the shipped default). The systemic fix —
-	/// thread an explicit working directory instead of mutating/reading process cwd — is tracked as a
-	/// follow-up; do not rely on this lock for cross-tenant cwd isolation of the transitive readers.
+	/// thread an explicit working directory instead of mutating/reading process cwd — has landed for the
+	/// workspace push/restore path (above); the remaining tools in this list are tracked as a follow-up.
+	/// Do not rely on this lock for cross-tenant cwd isolation of the transitive readers.
 	/// </para>
 	/// <para>
 	/// <b>Deadlock ordering (single global order): per-tenant lock → CwdLock, NEVER the reverse.</b> A
 	/// tool that already holds its per-tenant lock (a command running under
 	/// <c>ExecuteUnderTenantLock</c> / <c>InternalExecute</c>, or the page-sync batch) may then take
 	/// <see cref="CwdLock"/>. No path may take <see cref="CwdLock"/> and THEN acquire a per-tenant lock
-	/// for a different key. Workspace writers therefore acquire their per-tenant lock first (with the
-	/// same key their inner command resolves under, so the inner acquire is a reentrant no-op) and only
-	/// then take <see cref="CwdLock"/> around the pin/execute/restore region.
+	/// for a different key.
 	/// </para>
 	/// </summary>
 	internal static readonly object CwdLock = new();
