@@ -597,6 +597,33 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 
 	[Test]
 	[AllureTag(GuidanceGetTool.ToolName)]
+	[AllureName("get-guidance returns the canonical widget-layout guidance article")]
+	[Description("Verifies get-guidance resolves the shared widget-layout guide over the real stdio MCP path — the layout/styling guide the dashboards router and home-page guide both route to after the extraction.")]
+	public async Task GuidanceGet_Should_Return_Widget_Layout_Guide() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		GuidanceGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["name"] = "widget-layout"
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "widget-layout is a registered guidance name");
+		response.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article payload");
+		response.Article!.Uri.Should().Be("docs://mcp/guides/widget-layout",
+			because: "the canonical resource URI for the widget-layout guide should be stable");
+		response.Article.Text.Should().Contain("clio MCP widget layout guide",
+			because: "the guidance tool should return the canonical widget-layout guide text");
+	}
+
+	[Test]
+	[AllureTag(GuidanceGetTool.ToolName)]
 	[AllureName("get-guidance returns the canonical ESQ guidance article")]
 	public async Task GuidanceGet_Should_Return_Esq_Guide() {
 		// Arrange

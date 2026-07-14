@@ -117,7 +117,7 @@ internal static class GuidanceCatalog {
 				ChartWidgetGuidanceResource.Guide),
 			["dashboards"] = Create(
 				"dashboards",
-				"The clio MCP dashboards router: a names-only index that routes dashboard work to dashboard-creation (create the page), dashboard-design (widget layout/sizing/styling), and indicator-widget / chart-widget (per-widget payload).",
+				"The clio MCP dashboards router: a names-only index that routes dashboard work to dashboard-creation (create the page), widget-layout (widget layout/sizing/styling), dashboard-design (the DashboardDS filter-by-page-data binding), and indicator-widget / chart-widget (per-widget payload).",
 				DashboardGuidanceResource.Guide),
 			["dashboard-creation"] = Create(
 				"dashboard-creation",
@@ -125,8 +125,12 @@ internal static class GuidanceCatalog {
 				DashboardCreationGuidanceResource.Guide),
 			["dashboard-design"] = Create(
 				"dashboard-design",
-				"Canonical MCP guidance for placing, sizing, grouping, and styling Freedom UI analytical widgets (metrics and charts) on dashboards: the 12-column grid, the metric-band-then-chart-grid skeleton, section grouping, per-widget-type default sizes, the plain-white default card style, and the DashboardDS data source widgets filter by.",
+				"Canonical MCP guidance for the dashboard-specific DashboardDS hidden page data source that a dashboard's widgets filter by via a dependencies entry; general widget layout/sizing/styling lives in the widget-layout guide.",
 				DashboardDesignGuidanceResource.Guide),
+			["widget-layout"] = Create(
+				"widget-layout",
+				"Canonical MCP guidance for laying out, sizing, grouping, and styling Freedom UI analytical widgets (metrics and charts) on any analytics surface (dashboard or home page): the 12-column grid, the metric-band-then-chart-grid skeleton, section grouping, per-widget-type default sizes, and the plain-white default card style.",
+				WidgetLayoutGuidanceResource.Guide),
 			["related-list"] = Create(
 				"related-list",
 				"Canonical MCP guidance for adding a Freedom UI related/child list and filtering it by the current page record (master-detail \"filter by page data\"): the declarative, dependencies-based scoping — no handler. Fetch the 'Expanded list' composite structure via get-component-info.",

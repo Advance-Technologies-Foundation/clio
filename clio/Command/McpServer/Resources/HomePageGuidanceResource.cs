@@ -30,17 +30,28 @@ public sealed class HomePageGuidanceResource {
 		       at it, saved as a package data binding so it ships with the package.
 
 		       For the generic page rules (schema-name format, template catalog, verification, designer mapping)
-		       read `page-creation`; for the data-binding tool contract and verification discipline read
-		       `data-bindings`. This guide adds only the home-page specifics and the workplace binding.
+		       read `page-creation`; for laying out and styling the page's widgets read `widget-layout` (a home
+		       page uses the SAME layout and styles as a dashboard); for the data-binding tool contract and
+		       verification discipline read `data-bindings`. This guide adds only the home-page specifics and the
+		       workplace binding.
 
 		       ## Flow
 
-		       1. `create-page` with `template` = `BaseHomePage`, a `schema-name` (active prefix, e.g.
+		       1. Agree the widget set. When the user's request does not name a concrete set of widgets, propose
+		          widgets that suit the home page's subject and get the user's approval BEFORE calling `create-page`
+		          — no mutation until the set is approved; iterate on the proposal until it is. Skip the proposal
+		          only when the user explicitly delegates the choice.
+		       2. `create-page` with `template` = `BaseHomePage`, a `schema-name` (active prefix, e.g.
 		          `UsrMyHomePage`), and the target `package-name`. Capture the returned `schemaUId` — that UId is
-		          the value you bind in step 4. `create-page` assigns the home-page schema group automatically
+		          the value you bind in step 6. `create-page` assigns the home-page schema group automatically
 		          from the template, so there is no separate group step.
-		       2. `get-page` to verify the schema reads back.
-		       3. Identify the target workplace(s): read `SysWorkplace` with `odata-read` (select `Id`, `Name`,
+		       3. `get-page` to verify the schema reads back.
+		       4. Add the approved widgets and lay them out and style them per `widget-layout` — a home page uses
+		          the SAME 12-column grid, metric-band-then-chart-grid layout, plain-white cards, and per-type
+		          sizes as a dashboard. Author each widget's payload per `indicator-widget` (metrics) /
+		          `chart-widget` (charts) and edit the page body per `page-modification`. A home page is
+		          standalone: it has no `DashboardDS` page-data filter, so ignore that dashboard-only binding.
+		       5. Identify the target workplace(s): read `SysWorkplace` with `odata-read` (select `Id`, `Name`,
 		          `HomePageUId`) to get each workplace `Id` and its current home page. Prefer `odata-read` here —
 		          `SysWorkplace` is a restricted system object and `execute-esq` (DataService) can return 401 on
 		          it. A workplace has one home page, so bind each workplace the page should apply to. If the user
@@ -52,15 +63,15 @@ public sealed class HomePageGuidanceResource {
 		          one, and it is set up in the Creatio UI. This is the app workplace `SysWorkplace` — NOT clio's
 		          `create-workspace` (a local project folder) and NOT the dev `SysWorkspace` table; do not use
 		          those here.
-		       4. Point each target workplace at the page and persist it as a DB-first package data binding so it
+		       6. Point each target workplace at the page and persist it as a DB-first package data binding so it
 		          ships with the package. You are UPDATING an existing workplace row (not creating one):
 		          a. `create-data-binding-db` (schema `SysWorkplace`, your `package`) to establish the binding. It
-		             may be empty (no `rows`) — this only creates the binding that step 4b writes into.
+		             may be empty (no `rows`) — this only creates the binding that step 6b writes into.
 		          b. `upsert-data-binding-row-db` (binding `SysWorkplace`) with
-		             `values` = `{"Id":"<workplace-id>","HomePageUId":"<page schemaUId from step 1>"}`. Because the
+		             `values` = `{"Id":"<workplace-id>","HomePageUId":"<page schemaUId from step 2>"}`. Because the
 		             workplace row already exists in the table, upsert UPDATES it (matched by `Id`) rather than
 		             inserting. Read `data-bindings` for the tool contract.
-		       5. Read `SysWorkplace.HomePageUId` back with `odata-read` to confirm the value; do not treat the
+		       7. Read `SysWorkplace.HomePageUId` back with `odata-read` to confirm the value; do not treat the
 		          install log as proof.
 
 		       To UNSET a workplace's home page later, upsert `HomePageUId` back to

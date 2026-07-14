@@ -28,8 +28,9 @@ public sealed class DashboardCreationGuidanceResource {
 
 		       Use this guide to CREATE a Freedom UI dashboard page. A dashboard is a page schema inheriting
 		       `BaseDashboardTemplate` that carries three optional properties linking it to the `crt.Dashboards`
-		       element that displays it. For laying out / sizing / styling the widgets on the dashboard afterwards,
-		       read `dashboard-design`. For the generic page-creation rules (schema-name format, template catalog,
+		       element that displays it. For laying out / sizing / styling the widgets afterwards read
+		       `widget-layout`, and for the dashboard's `DashboardDS` filter-by-page-data binding read
+		       `dashboard-design`. For the generic page-creation rules (schema-name format, template catalog,
 		       failure modes) read `page-creation`; this guide adds only the dashboard specifics.
 
 		       ## Flow
@@ -39,7 +40,7 @@ public sealed class DashboardCreationGuidanceResource {
 		          widgets that make sense for the dashboard's subject and data scope, and get the user's approval
 		          BEFORE calling `create-page` — no mutation until the set is approved; iterate on the proposal
 		          until it is. Skip the proposal only when the user explicitly delegates the choice. Add the
-		          approved widgets after creation per `dashboard-design`.
+		          approved widgets after creation per `widget-layout`.
 		       3. `create-page` with `template` = `BaseDashboardTemplate`, a `schema-name` (active prefix, e.g.
 		          `UsrMyDashboard`), the target `package-name`, and `optional-properties` carrying the three
 		          properties below.
