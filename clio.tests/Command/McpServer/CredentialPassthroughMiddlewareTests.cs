@@ -220,6 +220,43 @@ public sealed class CredentialPassthroughMiddlewareTests
 	}
 
 	[Test]
+	[Description("Review M1 (advisory): a credential header with an invalid isNetCore AND an unconditionally SSRF-blocked (cloud-metadata) url still short-circuits on the isNetCore defect — next() (and everything downstream of it, including TargetUrlValidator/ResolvePassthrough) never runs, so the runtime-metadata check is strictly ordered before any url/egress validation by construction, not just by convention.")]
+	public async Task GateThenCapture_ShouldReturn400WithIsNetCoreError_WhenIsNetCoreInvalidAndUrlWouldFailSsrfCheck() {
+		// Arrange
+		// 169.254.169.254 is the cloud-metadata (IMDS) address TargetUrlValidator blocks
+		// unconditionally, regardless of the server's bound host (unlike a loopback address,
+		// which TargetUrlValidator allows when the server itself is bound to loopback) — see
+		// TargetUrlValidator.cs. This keeps the test's "SSRF-blocked url" premise unconditionally true.
+		string payload =
+			$"{{\"url\":\"http://169.254.169.254/internal\",\"accessToken\":\"{SecretAccessToken}\",\"accessTokenType\":\"Bearer\",\"isNetCore\":\"true\"}}";
+		string header = Convert.ToBase64String(Encoding.UTF8.GetBytes(payload));
+		IPlatformApiKeyGate gate = new PlatformApiKeyGate([PlatformKey]);
+		ICredentialHeaderParser parser = new CredentialHeaderParser();
+		DefaultHttpContext context =
+			CreateContext(authorization: $"Bearer {PlatformKey}", credentialHeader: header);
+		ICredentialContextAccessor accessor = AccessorFor(context);
+		(RequestDelegate terminal, Func<bool> terminalCalled) = TrackingNext();
+		RequestDelegate captureNext = ctx =>
+			McpHttpServerCommand.CaptureCredentialContext(ctx, terminal, parser, accessor, HeaderName, requireAuthenticatedPrincipal: false);
+
+		// Act
+		await McpHttpServerCommand.EnforcePlatformApiKeyGate(context, captureNext, gate, HeaderName, authorizationEnabled: false);
+
+		// Assert
+		context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest,
+			because: "an invalid isNetCore value must fail closed regardless of the url's SSRF risk");
+		terminalCalled().Should().BeFalse(
+			because: "the request must short-circuit at header parsing — TargetUrlValidator, which only runs downstream of next(), must never be reached");
+		accessor.Current.Should().BeNull(
+			because: "no context is captured, and therefore no client can ever be built, when isNetCore fails validation");
+		string body = ReadBody(context);
+		body.Should().Contain("isNetCore must be a JSON boolean",
+			because: "the surfaced defect must be the runtime-metadata error, not a url/SSRF error, proving isNetCore is validated first");
+		body.Should().NotContain(SecretAccessToken,
+			because: "the 400 body must never echo credential material (FR-11)");
+	}
+
+	[Test]
 	[Description("The capture middleware is inert (forwards, captures nothing, never returns 400) when the gate did not enable passthrough — encoding the gate-before-capture ordering contract.")]
 	public async Task CaptureCredentialContext_ShouldBeInert_WhenPassthroughItemKeyAbsent() {
 		// Arrange

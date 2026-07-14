@@ -54,16 +54,30 @@ public sealed class McpHttpRuntimeRoutingE2ETests {
 	[Test]
 	[AllureTag("mcp-http")]
 	[AllureName("invalid runtime metadata fails before dispatch")]
-	[AllureDescription("Starts a real mcp-http process and verifies missing and non-boolean isNetCore metadata returns HTTP 400 without echoing the bearer secret.")]
-	[Description("The real mcp-http process rejects missing and non-boolean runtime metadata before MCP dispatch.")]
+	[AllureDescription("Starts a real mcp-http process and verifies missing and non-boolean isNetCore metadata returns HTTP 400 with the exact static defect message, without echoing the bearer/login/password/cookie secret, across every supported auth mode.")]
+	[Description("The real mcp-http process rejects missing and non-boolean runtime metadata before MCP dispatch, for every auth mode, without leaking the secret and with the exact static error text.")]
 	public async Task Passthrough_ShouldReturn400BeforeDispatch_WhenRuntimeMetadataIsMissingOrInvalid() {
 		// Arrange
 		const string platformApiKey = "process-runtime-routing-test-key";
-		string[] payloads = [
-			"{\"url\":\"https://tenant.example.com\",\"accessToken\":\"opaque-token\"}",
-			"{\"url\":\"https://tenant.example.com\",\"accessToken\":\"opaque-token\",\"isNetCore\":null}",
-			"{\"url\":\"https://tenant.example.com\",\"accessToken\":\"opaque-token\",\"isNetCore\":\"true\"}",
-			"{\"url\":\"https://tenant.example.com\",\"accessToken\":\"opaque-token\",\"isNetCore\":1}"
+		const string bearerSecret = "opaque-token";
+		const string passwordSecret = "supervisor-secret-password";
+		const string cookieSecret = "session-secret-cookie-value";
+		(string Payload, string Secret, string ExpectedErrorBody)[] cases = [
+			// Bearer auth: missing isNetCore and every non-boolean JSON kind.
+			($"{{\"url\":\"https://tenant.example.com\",\"accessToken\":\"{bearerSecret}\"}}",
+				bearerSecret, "{\"error\":\"Error: missing isNetCore\"}"),
+			($"{{\"url\":\"https://tenant.example.com\",\"accessToken\":\"{bearerSecret}\",\"isNetCore\":null}}",
+				bearerSecret, "{\"error\":\"Error: isNetCore must be a JSON boolean\"}"),
+			($"{{\"url\":\"https://tenant.example.com\",\"accessToken\":\"{bearerSecret}\",\"isNetCore\":\"true\"}}",
+				bearerSecret, "{\"error\":\"Error: isNetCore must be a JSON boolean\"}"),
+			($"{{\"url\":\"https://tenant.example.com\",\"accessToken\":\"{bearerSecret}\",\"isNetCore\":1}}",
+				bearerSecret, "{\"error\":\"Error: isNetCore must be a JSON boolean\"}"),
+			// M2 (review, advisory): login/password and cookie auth modes must fail closed the
+			// same way, and the 400 body must never echo the password/cookie value either.
+			($"{{\"url\":\"https://tenant.example.com\",\"login\":\"admin\",\"password\":\"{passwordSecret}\"}}",
+				passwordSecret, "{\"error\":\"Error: missing isNetCore\"}"),
+			($"{{\"url\":\"https://tenant.example.com\",\"cookie\":\"{cookieSecret}\"}}",
+				cookieSecret, "{\"error\":\"Error: missing isNetCore\"}")
 		];
 		using CancellationTokenSource cts = new(TimeSpan.FromMinutes(2));
 		McpHttpServerSession server = await AllureApi.Step(
@@ -71,8 +85,8 @@ public sealed class McpHttpRuntimeRoutingE2ETests {
 			() => McpHttpServerSession.StartAsync(_settings, platformApiKey, cts.Token));
 		await using (server) {
 			using HttpClient client = new();
-			await AllureApi.Step("Act and assert fail-closed responses for each invalid runtime payload", async () => {
-				foreach (string payload in payloads) {
+			await AllureApi.Step("Act and assert fail-closed responses for each invalid runtime payload and auth mode", async () => {
+				foreach ((string payload, string secret, string expectedErrorBody) in cases) {
 					string encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes(payload));
 					using HttpRequestMessage request = new(HttpMethod.Post, server.EndpointUrl) {
 						Content = new StringContent(
@@ -87,8 +101,10 @@ public sealed class McpHttpRuntimeRoutingE2ETests {
 					string body = await response.Content.ReadAsStringAsync(cts.Token);
 					response.StatusCode.Should().Be(HttpStatusCode.BadRequest,
 						because: "missing and non-boolean runtime metadata must fail at the HTTP middleware boundary");
-					body.Should().NotContain("opaque-token",
-						because: "the process-level validation response must remain secret-free");
+					body.Should().Be(expectedErrorBody,
+						because: "the process-level 400 body must be the exact static defect message, with no secret interpolated");
+					body.Should().NotContain(secret,
+						because: "the process-level validation response must remain secret-free regardless of auth mode");
 				}
 			});
 		}
