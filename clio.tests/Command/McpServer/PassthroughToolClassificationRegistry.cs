@@ -318,7 +318,6 @@ internal static class PassthroughToolClassificationRegistry {
 			["resolve-oauth-system-user"] = PassthroughClassification.NotApplicable,
 			["restart-by-credentials"] = PassthroughClassification.NotApplicable,
 			["restart-by-environment-name"] = PassthroughClassification.NotApplicable,
-			["restart-by-environmentName"] = PassthroughClassification.NotApplicable, // legacy alias, pre-existing camelCase MCP tool name (not touched by this feature)
 			["restore-db-by-credentials"] = PassthroughClassification.NotApplicable,
 			["restore-db-by-environment"] = PassthroughClassification.NotApplicable,
 			["restore-db-to-local-server"] = PassthroughClassification.NotApplicable,
