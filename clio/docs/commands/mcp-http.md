@@ -192,9 +192,18 @@ precedence **accessToken → login+password**:
 The caller-supplied `url` is validated **before any outbound call** (Story 6):
 
 - **Baseline blocks (always on, regardless of the allowlist):** cloud-metadata
-  (`169.254.169.254`), IPv4/IPv6 link-local, and loopback (loopback is permitted only when
-  the server itself is bound to loopback). IP-literal, integer/hex/octal, IPv4-mapped-IPv6,
-  and single-trailing-dot encodings are all normalized before the check.
+  (`169.254.169.254` and the IPv6 IMDS `fd00:ec2::254`), IPv4/IPv6 link-local (`169.254.0.0/16`,
+  `fe80::/10`), IPv6 unique-local (`fc00::/7`), the unspecified addresses (`0.0.0.0` / `::`, which
+  the OS routes to the local host), and loopback (loopback is permitted only when the server
+  itself is bound to loopback). IP-literal, integer/hex/octal, IPv4-mapped-IPv6, and
+  single-trailing-dot encodings are all normalized before the check.
+- **HTTPS required for non-loopback targets:** a plaintext `http://` target is rejected for any
+  non-loopback host — the forwarded bearer token / password would otherwise cross the network in
+  the clear (the bearer transport does not enforce TLS certificate validation). `http://` is
+  allowed **only** for an explicit loopback dev target (`localhost` / `127.0.0.0/8` / `::1`).
+  > **On-prem note:** an on-prem Creatio served over plain `http` on a private network will be
+  > rejected with a scheme error — front it with TLS (`https`) or use pre-registered `-e <env>`
+  > targeting instead of the passthrough header.
 - **`--allowed-base-urls`:** when set, the target **origin** (scheme+host+port) must be on
   the list. Each entry must include a scheme (`https://…`); a set with no valid absolute
   http/https origin **fails fast at startup** rather than silently degrading to baseline-only.
