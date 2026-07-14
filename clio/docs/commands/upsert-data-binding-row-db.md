@@ -25,6 +25,10 @@ clio upsert-data-binding-row-db -e <ENVIRONMENT_NAME> --package <PACKAGE_NAME>
 ## Behavior
 
 Calls SchemaDataDesignerService.svc/SaveSchema to upsert the given row in the remote DB.
+Insert vs update is decided by the row primary key: when a row with that Id already exists
+in the table it is UPDATED; a row present in neither the binding nor the table is INSERTED
+(so it must carry every required column). The binding must already exist — create it with
+create-data-binding-db first.
 SaveSchema metadata is rebuilt from the primary key plus the columns present in the
 existing bound rows and the requested upsert payload.
 After remote mutation, read back from Creatio instead of treating the request payload

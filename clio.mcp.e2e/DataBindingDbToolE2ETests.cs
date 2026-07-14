@@ -294,6 +294,79 @@ public sealed class DataBindingDbToolE2ETests : McpContractFixtureBase {
 			"successful Account DB-first binding creation should emit a completion message");
 	}
 
+	[Test]
+	[Description("Upserts a row whose Id exists in the table but is not yet bound to the target binding, and verifies the row is UPDATED (exit 0) instead of failing with the insert-required-field error, proving the live-but-unbound adoption path over the real MCP wire.")]
+	[AllureTag(UpsertRowDbToolName)]
+	[AllureName("upsert-data-binding-row-db adopts and updates a live-but-unbound row")]
+	[AllureDescription("Seeds a Lookup row in one binding, establishes a second empty binding, then upserts that row's Id into the second binding. Verifies the upsert exits 0 by updating the existing row rather than attempting an insert that would fail because required columns are absent.")]
+	public async Task UpsertDataBindingRowDb_Should_Update_Live_Row_When_Unbound_In_Target_Binding() {
+		// Arrange
+		await using DataBindingDbArrangeContext arrangeContext = await ArrangeAsync(requireEnvironment: true);
+		string seedBindingName = $"UsrAdoptSeed{arrangeContext.PackageName}";
+		string targetBindingName = $"UsrAdoptTarget{arrangeContext.PackageName}";
+		string rowName = $"E2E Adopt {arrangeContext.PackageName}";
+
+		// Act - seed a Lookup row (inserts it into the table and binds it in the seed binding)
+		CommandExecutionActResult seedResult = await ActCommandAsync(
+			arrangeContext,
+			CreateDbToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = arrangeContext.EnvironmentName,
+				["package-name"] = arrangeContext.PackageName,
+				["schema-name"] = "Lookup",
+				["binding-name"] = seedBindingName,
+				["rows"] = $"[{{\"values\":{{\"Name\":\"{rowName}\"}}}}]"
+			});
+		AssertToolCallSucceeded(seedResult);
+		AssertCommandExitCode(seedResult, 0, "seeding the Lookup row should succeed");
+		string createdRowId = ExtractCreatedRowId(seedResult);
+
+		// Act - establish a SEPARATE empty binding so the seeded row exists in the table but is NOT bound here
+		CommandExecutionActResult targetBindingResult = await ActCommandAsync(
+			arrangeContext,
+			CreateDbToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = arrangeContext.EnvironmentName,
+				["package-name"] = arrangeContext.PackageName,
+				["schema-name"] = "Lookup",
+				["binding-name"] = targetBindingName
+			});
+		AssertToolCallSucceeded(targetBindingResult);
+		AssertCommandExitCode(targetBindingResult, 0, "establishing the empty target binding should succeed");
+
+		// Act - upsert the seeded row's Id into the empty target binding
+		CommandExecutionActResult upsertResult = await ActCommandAsync(
+			arrangeContext,
+			UpsertRowDbToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = arrangeContext.EnvironmentName,
+				["package-name"] = arrangeContext.PackageName,
+				["binding-name"] = targetBindingName,
+				["values"] = $"{{\"Id\":\"{createdRowId}\",\"Name\":\"{rowName} Updated\"}}"
+			});
+
+		// Assert
+		AssertToolCallSucceeded(upsertResult);
+		AssertCommandExitCode(upsertResult, 0,
+			"upsert must UPDATE a row that exists in the table but is unbound in the target binding, not attempt an insert that fails on required columns");
+	}
+
+	private static string ExtractCreatedRowId(CommandExecutionActResult seedResult) {
+		seedResult.Execution.Output.Should().NotBeNullOrEmpty(
+			because: "create-data-binding-db should emit a 'Created row: <id>' message for the seeded row");
+		foreach (CommandLogMessageEnvelope message in seedResult.Execution.Output!) {
+			System.Text.RegularExpressions.Match match = System.Text.RegularExpressions.Regex.Match(
+				message.Value?.ToString() ?? string.Empty,
+				@"Created row:\s*([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})");
+			if (match.Success) {
+				return match.Groups[1].Value;
+			}
+		}
+
+		Assert.Fail("Could not extract the created row Id from the seed create-data-binding-db output.");
+		return string.Empty;
+	}
+
 	private async Task<DataBindingDbArrangeContext> ArrangeAsync(bool requireEnvironment) {
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
