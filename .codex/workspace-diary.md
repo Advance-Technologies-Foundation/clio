@@ -5910,6 +5910,7 @@ Decision: Emit test-progress heartbeats every 30 seconds while application creat
 Discovery: TeamCity reported 83 passing tests and produced hang dumps without an assertion failure; the last completed test preceded ApplicationGetInfo_Should_Read_Virtual_Entity_After_SchemaSync alphabetically, identifying the silent long-running scenario.
 Files: clio.mcp.e2e/ApplicationToolE2ETests.cs
 Impact: The real regression keeps its ten-minute operation budget while producing enough test-host output to avoid false hang classification; both target frameworks compile successfully.
+
 ## 2026-07-11 – cliogate UnlockPackages/LockPackages null-payload crash under Developer Mode (#848)
 Context: With Developer Mode on, the post-install "unlock maintainer packages" step crashed. clio sends `{"unlockPackages": null}` (null = "unlock all by maintainer", the gate's else branch), but the gate logged `string.Join(", ", unlockPackages)` BEFORE the null guard → ArgumentNullException → HTTP 500 HTML page → clio failed with the misleading `System.Text.Json.JsonException: '<' is an invalid start of a value`. Blocked install-application, push-workspace --use-application-installer, set-dev-mode.
 Decision: null-coalesce both `string.Join` log lines (UnlockPackages + LockPackages) with `?? Array.Empty<string>()`, and route the nullable `SysPackage.Description` handling through two pure internal helpers `BuildUnlockDescription` / `SplitLockDescription` (each null-guarded) so the latent NRE on null Description is fixed AND unit-testable. clio-side `PackageUnlocker.CallGate` now guards a null/empty gate response and wraps a non-JSON body in a clear InvalidOperationException (echo sanitized via `TextUtilities.SanitizeForDisplay`, matching the CreatioServiceClient precedent) instead of the raw JsonException. Versions NOT touched (AssemblyInfo 1.1.1.2 vs descriptor 2.0.0.44 desync is a separate item).
@@ -5917,3 +5918,24 @@ Discovery: cliogate.tests CAN build/run here (CreatioSDK/CreatioMock restored). 
 Files: cliogate/Files/cs/CreatioApiGateway.cs, cliogate/Properties/AssemblyInfo.cs (InternalsVisibleTo only), cliogate.tests/CreatioApiGatewayTestFixture.cs, clio/Package/PackageUnlocker.cs, clio.tests/Package/PackageLockManagerTests.cs (new), regenerated clio/cliogate/cliogate.gz + cliogate_netcore.gz via build.ps1.
 MCP/docs: reviewed, no update required — no command options/verb/handler-contract/help/MCP-argument change; observable behavior is only "no longer crashes".
 Impact: unlock/lock steps null-safe and Description-null-safe; confusing JSON `'<'` error replaced by an actionable message. Validated: cliogate.tests 25 passed (net472); clio.tests Category=Unit&Module=Package 85 passed (net8.0+net10.0); clio Release 0 errors. Branch fix/848 merged with origin/master (only the diary conflicted, resolved as union). NOTE: the gate fix ships once the .gz are rebuilt (done) and redeployed (push-pkg).
+
+## 2026-07-14 12:34 – Explorer deploy honors sole local infrastructure
+Context: Issue #874 reproduced an Explorer ZIP deployment selecting unavailable Rancher Desktop Kubernetes while one enabled local PostgreSQL server and a default local Redis server were configured; the error terminal then closed immediately.
+Decision: Preserve explicit and deploy-specific precedence, select the sole enabled local database only when unambiguous, retain Kubernetes fallback for zero or multiple local choices, and conditionally pause the Explorer deploy terminal after non-zero exit.
+Discovery: The live deployment log stopped at the Kubernetes restore branch because an empty DbServerName was treated as Kubernetes; defaultRedis was already resolved correctly after local database mode is selected.
+Files: clio/Command/CreatioInstallCommand/DeployCreatioDefaultsResolver.cs, clio/reg/clio_context_menu_win.reg, clio.tests/Command/DeployCreatioDefaultsResolverTests.cs, clio.tests/Command/ExplorerContextMenuRegistrationTests.cs, spec/explorer-deploy-local-defaults/
+Impact: Explorer deployment uses the user's sole enabled local PostgreSQL and configured Redis preference without changing explicit MCP or ClioRing infrastructure selection, and failures remain readable.
+
+## 2026-07-14 13:15 – Scope Explorer defaults and harden context-menu execution
+Context: The first comprehensive review of issue #874 found that a general sole-local fallback could redirect non-Explorer Kubernetes callers and that quoting the entire cmd.exe payload was unsafe for metacharacter-bearing paths.
+Decision: Gate sole-local inference behind a hidden --explorer-launch marker, preserve ordinary CLI/MCP/ClioRing Kubernetes semantics, invoke clio directly from Explorer, and let the command prompt only after a failed Explorer deployment.
+Discovery: Quoting a filename is insufficient protection when cmd.exe expands percent variables; removing the shell prevents legal metacharacter-bearing ZIP filenames from becoming executable syntax.
+Files: clio/Command/CreatioInstallCommand/InstallerCommand.cs, clio/Command/CreatioInstallCommand/DeployCreatioDefaultsResolver.cs, clio/reg/clio_context_menu_win.reg, clio.tests/Command/ExplorerContextMenuRegistrationTests.cs
+Impact: Rancher Desktop can remain off for Explorer deployment when one local server is configured, while automation callers retain their established Kubernetes contract and Explorer failures remain visible exactly once.
+
+## 2026-07-14 13:38 – Keep every Explorer deployment failure visible
+Context: Final review found that moving failure acknowledgement into clio still left early validation returns and exceptions able to close the Explorer terminal.
+Decision: Track Explorer success across the whole command, render operation-log and exception details first, and acknowledge every unsuccessful non-silent Explorer exit from the outer finally path.
+Discovery: Failure visibility must span defaults resolution, infrastructure validation, installer return codes, and thrown exceptions; handling only the installer result is incomplete.
+Files: clio/Command/CreatioInstallCommand/InstallerCommand.cs, clio.tests/Command/InstallerCommandSilentSiteNameTests.cs
+Impact: Explorer success closes immediately, while all tested failure paths display the diagnostic and log location before waiting for Enter.
