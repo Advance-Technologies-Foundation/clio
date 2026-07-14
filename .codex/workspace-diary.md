@@ -5945,3 +5945,30 @@ Decision: Merged current origin/master with an append-only diary union, made exp
 Discovery: Treating a null Description as empty also made a missing package reach an UPDATE affecting zero rows; both endpoints then returned true. Session-backed HttpContext test setup can drive the public gateway endpoints and prove the corrected false result without changing production UserConnection semantics.
 Files: cliogate/Files/cs/CreatioApiGateway.cs, cliogate.tests/CreatioApiGatewayTestFixture.cs, clio/Package/PackageUnlocker.cs, clio.tests/Package/PackageLockManagerTests.cs, clio/cliogate/cliogate.gz, clio/cliogate/cliogate_netcore.gz
 Impact: Explicit missing-package requests no longer report false success, error pages are not echoed into normal output, package input cannot forge gateway log lines, and both shipped gate archives contain the reviewed fix. Validated: cliogate.tests 28/28; Package unit module 85/85 on net8.0 and net10.0; canonical build.ps1 completed with 0 errors. Docs reviewed, no update required. MCP reviewed, no update required. ClioRing compatibility reviewed, no Ring-consumed contract changed.
+## 2026-07-14 14:08 – Make MCP progress waits timeout-safe
+Context: TeamCity build 15725495 failed unrelated PR #866 because the corrupt-archive deploy progress test received a stale partial snapshot after its terminal-event wait timed out.
+Decision: Replace polling with notification-driven wakeups, recheck one final snapshot at the timeout boundary, and throw a secret-safe diagnostic timeout rather than returning unsatisfied data.
+Discovery: The old cancellation path broke out of its delay without refreshing the queue, so a boundary-arriving terminal event could be present while the caller still received the previous stage-only snapshot.
+Files: clio.mcp.e2e/Support/Mcp/McpServerSession.cs, clio.mcp.e2e/DeployUninstallProgressTests.cs, clio.mcp.e2e/AGENTS.md, spec/mcp-progress-wait-timeout/
+Impact: Shared MCP E2E runs no longer convert a timeout race into misleading event-order failures, while genuine missing terminal events fail explicitly with safe diagnostics.
+
+## 2026-07-14 15:02 – Isolate and order MCP progress assertions
+Context: The first comprehensive review of issue #876 found that the fixture-wide capture queue could leak terminal events across invocations, accumulate wakeups, and format an unbounded diagnostic history; repeated validation then reproduced concurrent callback ordering as a separate flake.
+Decision: Scope every wait to an explicit progress token, coalesce notification wakeups, cap diagnostics to the latest 20 matching notifications, and replay typed events by their protocol sequence before asserting order.
+Discovery: MCP notification handlers can complete out of arrival order even within one request, so queue insertion order is not the protocol order; the versioned sequence field is authoritative and matches ClioRing's ordered-buffering contract.
+Files: clio.mcp.e2e/Support/Mcp/McpServerSession.cs, clio.mcp.e2e/DeployUninstallProgressTests.cs, clio.mcp.e2e/AGENTS.md, spec/mcp-progress-wait-timeout/
+Impact: Ten fresh-process fixture runs passed on each of net8.0 and net10.0 without installing or uninstalling Creatio, while unrelated streams can no longer satisfy a wait.
+
+## 2026-07-14 15:18 – Keep opaque progress tokens out of diagnostics
+Context: Final security review found that timeout text echoed the caller-supplied progress token even though opaque correlation values may contain sensitive identifiers and failures are written to CI logs.
+Decision: Use the token only for in-memory stream filtering, omit it from exception text, and cover the rule with a secret-shaped unrelated token.
+Discovery: Secret-safe typed-event summaries do not require exposing the correlation key used to select the stream.
+Files: clio.mcp.e2e/Support/Mcp/McpServerSession.cs, clio.mcp.e2e/DeployUninstallProgressTests.cs, spec/mcp-progress-wait-timeout/mcp-progress-wait-timeout-qa.md
+Impact: Timeout diagnostics retain event, sequence, stage, status, and outcome evidence without leaking opaque caller input.
+
+## 2026-07-14 15:36 – Require complete progress streams and broadcast wakeups
+Context: Final quality and testing reviews found that a terminal callback could arrive before lower sequences and that one shared consuming semaphore could wake the wrong token waiter.
+Decision: Broadcast each notification through a versioned task-completion signal, compare typed progress-token values, and require a distinct contiguous sequence from zero through terminal before completing a wait.
+Discovery: Sorting a partial snapshot cannot recover callbacks that have not arrived; terminal presence proves completeness only when every preceding sequence is already captured. This supersedes the earlier coalescing-semaphore decision.
+Files: clio.mcp.e2e/Support/Mcp/McpServerSession.cs, clio.mcp.e2e/DeployUninstallProgressTests.cs, spec/mcp-progress-wait-timeout/
+Impact: Deterministic terminal-first and typed-token regressions pass, and the five-test fixture passed ten fresh-process runs on each of net8.0 and net10.0 without real Creatio lifecycle operations.
