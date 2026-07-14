@@ -26,7 +26,7 @@ stories:
     feature: "mcp-progress-wait-timeout"
     repo: "clio"
     size: S
-    status: review
+    status: done
     issue: 876
     file: spec/mcp-progress-wait-timeout/mcp-progress-wait-timeout-story.md
     prd: spec/mcp-progress-wait-timeout/mcp-progress-wait-timeout-spec.md

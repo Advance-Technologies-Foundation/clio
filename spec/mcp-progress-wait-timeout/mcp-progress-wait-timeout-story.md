@@ -1,6 +1,6 @@
 # Story: deterministic MCP progress waiting
 
-Status: review
+Status: done
 
 As a contributor, I want MCP E2E progress waits to fail only after checking the final captured state so unrelated pull requests are not failed by stale partial snapshots.
 

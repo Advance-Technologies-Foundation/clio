@@ -202,6 +202,7 @@ public sealed class DeployUninstallProgressTests : McpContractFixtureBase {
 	[Description("Requires a contiguous sequence-zero-through-terminal typed event stream before a progress wait can complete.")]
 	[AllureTag(ToolName)]
 	[AllureName("Progress completion rejects an out-of-order partial typed stream")]
+	[AllureDescription("Feeds terminal-first partial and complete typed streams to the completion predicate and proves it waits for every distinct protocol sequence from zero through terminal.")]
 	public void CompleteTerminalStream_Should_Require_Every_Sequence_Through_Terminal() {
 		// Arrange
 		Guid runId = Guid.NewGuid();
@@ -230,6 +231,7 @@ public sealed class DeployUninstallProgressTests : McpContractFixtureBase {
 	[Description("Keeps numeric and string MCP progress tokens distinct while selecting captured notifications.")]
 	[AllureTag(ToolName)]
 	[AllureName("Progress capture preserves the MCP token value type")]
+	[AllureDescription("Serializes a numeric MCP progress token and verifies typed matching accepts numeric 1 while rejecting the distinct string token value 1.")]
 	public void ProgressTokenMatching_Should_Not_Conflate_Numeric_And_String_Values() {
 		// Arrange
 		ProgressToken numericToken = new(1L);
