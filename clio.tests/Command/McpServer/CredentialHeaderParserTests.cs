@@ -33,8 +33,8 @@ public sealed class CredentialHeaderParserTests
 		CredentialMaterial token = CredentialMaterial.FromAccessToken(SecretToken, "Bearer");
 		CredentialMaterial login = CredentialMaterial.FromLoginPassword("admin", SecretPassword);
 		CredentialMaterial cookie = CredentialMaterial.FromCookie(SecretCookie);
-		CredentialContext context = new("https://env.creatio.com", token, McpTransport.Http, true);
-		CredentialParseResult parseResult = new("https://env.creatio.com", login);
+		CredentialContext context = new("https://env.creatio.com", token, false, McpTransport.Http, true);
+		CredentialParseResult parseResult = new("https://env.creatio.com", login, false);
 
 		// Act
 		string materialText = token.ToString() + login.ToString() + cookie.ToString();
@@ -188,7 +188,7 @@ public sealed class CredentialHeaderParserTests
 	[Description("Review: a cookie-only payload still resolves to Cookie material so the caller gets the specific 'cookie not supported in v1' rejection rather than a generic 'no usable auth material'.")]
 	public void TryParse_ShouldResolveCookie_WhenOnlyCookiePresent() {
 		// Arrange
-		string header = Encode(new { url = "https://env.creatio.com", cookie = SecretCookie });
+		string header = Encode(new { url = "https://env.creatio.com", cookie = SecretCookie, isNetCore = false });
 
 		// Act
 		bool ok = _sut.TryParse(header, out CredentialParseResult result, out _);
