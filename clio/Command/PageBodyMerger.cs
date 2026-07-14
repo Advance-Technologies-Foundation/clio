@@ -116,14 +116,21 @@ internal static class PageBodyMerger {
 		if (string.IsNullOrWhiteSpace(incomingBody)) {
 			throw new InvalidOperationException("Incoming body is empty — pass the new viewConfigDiff/handlers fragment.");
 		}
-		// Reject a full-config INCOMING body on the shared merge path so BOTH surfaces (CLI verb and MCP
-		// tool) refuse it. MergeWeb/MergeMobile below inspect only the CURRENT server body; without this
-		// check a full-config incoming fragment against a diff-form current body would slip through and its
-		// full-config content be SILENTLY DROPPED (only the incoming *_DIFF sections are read). That is the
-		// ENG-90634 failure degraded to silent data loss on the CLI path (ENG-93090 RC-1). The MCP tool
-		// still guards the incoming body up front (no fetch); this is the surface-agnostic backstop.
+		// Full-config detection for BOTH bodies runs here through the single shared predicate
+		// (UsesUnsupportedFullConfigForm), so MergeWeb/MergeMobile no longer re-implement it (ENG-93090
+		// RC-10) and incoming + current bodies share one detection path — which also closes the mobile
+		// non-object gap on the current body (RC-9).
+		//   - INCOMING: a full-config fragment against a diff-form current body would otherwise slip through
+		//     (the merge reads only the incoming *_DIFF sections) and its full-config content be SILENTLY
+		//     DROPPED — the ENG-90634 failure degraded to silent data loss on the CLI path (RC-1). The MCP
+		//     tool also guards the incoming body up front (no fetch); this is the surface-agnostic backstop.
+		//   - CURRENT: append merge supports only a diff-form server body; the full-config form cannot be
+		//     merged without producing a mixed full-config/*Diff output.
 		if (UsesUnsupportedFullConfigForm(incomingBody, out string incomingFullConfigMessage)) {
 			throw new InvalidOperationException(incomingFullConfigMessage);
+		}
+		if (UsesUnsupportedFullConfigForm(currentBody, out string currentFullConfigMessage)) {
+			throw new InvalidOperationException(currentFullConfigMessage);
 		}
 		return PageSchemaTypeExtensions.FromBody(currentBody) == PageSchemaType.Mobile
 			? MergeMobile(currentBody, incomingBody)
@@ -134,15 +141,8 @@ internal static class PageBodyMerger {
 	/// Merges two web (AMD) page bodies using marker-based section replacement.
 	/// </summary>
 	private static string MergeWeb(string currentBody, string incomingBody) {
-		// Append-merge only supports the diff form. The full-config forms
-		// `viewModelConfig` / `modelConfig` may appear on root schemas but
-		// are not the default and are not handled here. Refuse rather than
-		// silently dropping the incoming diff because the matching `_DIFF`
-		// marker is missing from the current body.
-		if (ReadRawSection(currentBody, "SCHEMA_VIEW_MODEL_CONFIG") != null ||
-			ReadRawSection(currentBody, "SCHEMA_MODEL_CONFIG") != null) {
-			throw new InvalidOperationException(WebFullConfigNotSupportedMessage);
-		}
+		// Precondition: Merge() has already rejected a full-config current or incoming body via the shared
+		// UsesUnsupportedFullConfigForm predicate, so this method only ever sees diff-form bodies.
 		JArray mergedViewConfigDiff = MergeArrayByName(
 			ReadJsonArray(currentBody, "SCHEMA_VIEW_CONFIG_DIFF"),
 			ReadJsonArray(incomingBody, "SCHEMA_VIEW_CONFIG_DIFF"));
@@ -188,14 +188,9 @@ internal static class PageBodyMerger {
 				$"Incoming mobile page body is not valid JSON: {ex.Message}", ex);
 		}
 
-		// Append-merge only supports the diff form. The full-config forms
-		// `viewModelConfig` / `modelConfig` may appear on root schemas but
-		// are not the default and are not handled here. Refuse rather than
-		// silently producing a body that mixes full-config and *Diff siblings.
-		if (current["viewModelConfig"] is JObject || current["modelConfig"] is JObject) {
-			throw new InvalidOperationException(MobileFullConfigNotSupportedMessage);
-		}
-
+		// Precondition: Merge() has already rejected a full-config current or incoming body via the shared
+		// UsesUnsupportedFullConfigForm predicate — including a present-but-non-object viewModelConfig /
+		// modelConfig on the current body (ENG-93090 RC-9) — so this method only ever sees diff-form bodies.
 		JArray mergedViewConfigDiff = MergeArrayByName(
 			current["viewConfigDiff"] as JArray ?? new JArray(),
 			incoming["viewConfigDiff"] as JArray ?? new JArray());

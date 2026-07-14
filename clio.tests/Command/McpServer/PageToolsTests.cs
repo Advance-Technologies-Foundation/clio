@@ -4908,6 +4908,24 @@ public class PageToolsTests
 	}
 
 	[Test]
+	[Description("PageBodyMerger mobile: a CURRENT-body full-config key present as a non-object is now rejected via the shared predicate, closing the mixed-form gap on the current body too (ENG-93090 RC-9)")]
+	[Category("Unit")]
+	public void PageBodyMerger_Mobile_Should_Throw_When_Current_FullConfig_Key_Is_NonObject() {
+		// Arrange — the CURRENT server body carries `viewModelConfig` as an array (present, non-object);
+		// the incoming fragment is clean diff form.
+		string currentBody = "{\"viewModelConfig\":[],\"viewConfigDiff\":[]}";
+		string incomingBody = "{\"viewConfigDiff\":[{\"operation\":\"insert\",\"name\":\"A\"}]}";
+
+		// Act
+		Action act = () => PageBodyMerger.Merge(currentBody, incomingBody);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+				because: "the shared current-body predicate must reject a present-but-non-object full-config key instead of merging into a mixed full-config/*Diff body (ENG-93090 RC-9)")
+			.WithMessage("*viewModelConfig*");
+	}
+
+	[Test]
 	[Description("update-page replace: a full-config body is NOT tripped by the append guard — replace saves it verbatim (ENG-93090 RC-6)")]
 	[Category("Unit")]
 	public async System.Threading.Tasks.Task UpdatePage_ShouldNotRejectFullConfigBody_WhenModeIsReplace() {
