@@ -14,7 +14,7 @@ namespace Clio.Tests.Command;
 /// TDD workflow: new-form tests fail first (RED), fix adds kebab alias, both pass (GREEN).
 /// </summary>
 [TestFixture]
-[Category("UnitTests")]
+[Category("Unit")]
 [Property("Module", "Command")]
 internal sealed class CliOptionNamingBackwardCompatibilityTests {
 
@@ -1254,6 +1254,24 @@ internal sealed class CliOptionNamingBackwardCompatibilityTests {
 		PfInstallerOptions? opts = null;
 		result.WithParsed(o => opts = o);
 		opts!.ZipFile.Should().Be("/pkg.zip", because: "new --zip-file must map to the ZipFile property");
+	}
+
+	[Test]
+	[Description("Explorer ZIP deployment preserves the database's forced-password-change state when disable-reset-password is omitted")]
+	public void PfInstallerOptions_ShouldDefaultDisableResetPasswordToFalse_WhenExplorerContextArgumentsOmitIt() {
+		// Arrange
+		string[] arguments = ["--ZipFile", "/pkg.zip"];
+
+		// Act
+		ParserResult<PfInstallerOptions> result = Parser.Default.ParseArguments<PfInstallerOptions>(arguments);
+		PfInstallerOptions? options = null;
+		result.WithParsed(parsed => options = parsed);
+
+		// Assert
+		result.Tag.Should().Be(ParserResultType.Parsed,
+			because: "the Windows Explorer registry command should parse when the hidden password-reset option is omitted");
+		options!.DisableResetPassword.Should().BeFalse(
+			because: "CLI and Explorer deployments should not clear the database's existing forced-password-change state by default");
 	}
 
 	// ─── ExecuteSqlScriptOptions ───────────────────────────────────────────────

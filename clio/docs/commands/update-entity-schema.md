@@ -106,6 +106,7 @@ cliogate must be installed on the target Creatio environment.
 - `--operation` payloads can include structured `default-value-config`.
 - For `SystemValue`, clio resolves Guid/alias/caption to canonical Guid before save.
 - For `Settings`, clio resolves code/name/id to canonical setting code before save.
+- Post-save verification evaluates the final ordered batch state. A later operation may intentionally re-add a column name removed earlier in the same batch.
 - `--caption-culture <VALUE>` overrides the culture for written column captions/descriptions (e.g. `en-US`, `uk-UA`) across the whole batch. Precedence: override > the connected user's profile culture (see `get-user-culture`) > `en-US`. When omitted, clio resolves the profile culture and falls back to `en-US` if it cannot be resolved.
 - Each `title-localizations` / `description-localizations` value must be written in the language of its culture key. The `en-US` value must be English; a value in a script that does not match a Latin-script culture key (e.g. Cyrillic under `en-US`) is rejected — put localized text under its own culture key such as `uk-UA`.
 

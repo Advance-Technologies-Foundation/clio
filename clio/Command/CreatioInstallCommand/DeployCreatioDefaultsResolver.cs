@@ -1,20 +1,20 @@
 using System;
 using System.Linq;
-using System.Text;
 using Clio.Common;
 using Clio.UserEnvironment;
-using IFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Command.CreatioInstallCommand;
 
 /// <summary>
 /// Applies persisted <c>deploy-creatio</c> defaults to command options so that options omitted on the
-/// command line fall back to the values configured via <c>clio config</c>.
+/// command line fall back to the values configured via <c>clio config</c> or, for Explorer launches, an
+/// unambiguous local database.
 /// </summary>
 public interface IDeployCreatioDefaultsResolver {
 	/// <summary>
-	/// Fills unspecified deployment options from the saved defaults and, when no site name is available,
-	/// derives one from the deployed zip file name. Options supplied on the command line are never overwritten.
+	/// Fills unspecified deployment options from the saved defaults and, for Explorer launches, selects the sole
+	/// enabled local database when no database default is configured. Options supplied on the command line are never
+	/// overwritten, and an unset site name remains empty so interactive deployment can prompt for it.
 	/// </summary>
 	/// <param name="options">The deployment options to complete in place.</param>
 	void ApplyDefaults(PfInstallerOptions options);
@@ -27,7 +27,6 @@ public class DeployCreatioDefaultsResolver : IDeployCreatioDefaultsResolver {
 	#region Fields: Private
 
 	private readonly ISettingsRepository _settingsRepository;
-	private readonly IFileSystem _fileSystem;
 	private readonly ILogger _logger;
 
 	#endregion
@@ -38,11 +37,9 @@ public class DeployCreatioDefaultsResolver : IDeployCreatioDefaultsResolver {
 	/// Initializes a new instance of the <see cref="DeployCreatioDefaultsResolver"/> class.
 	/// </summary>
 	/// <param name="settingsRepository">Repository that supplies the persisted deploy-creatio defaults.</param>
-	/// <param name="fileSystem">Filesystem abstraction used to derive a site name from the zip file path.</param>
 	/// <param name="logger">Logger used to report which defaults were applied.</param>
-	public DeployCreatioDefaultsResolver(ISettingsRepository settingsRepository, IFileSystem fileSystem, ILogger logger) {
+	public DeployCreatioDefaultsResolver(ISettingsRepository settingsRepository, ILogger logger) {
 		_settingsRepository = settingsRepository;
-		_fileSystem = fileSystem;
 		_logger = logger;
 	}
 
@@ -58,7 +55,7 @@ public class DeployCreatioDefaultsResolver : IDeployCreatioDefaultsResolver {
 
 		DeployCreatioDefaults defaults = _settingsRepository.GetDeployCreatioDefaults();
 		ApplyConfiguredDefaults(options, defaults);
-		DeriveSiteNameFromZipWhenUnset(options);
+		ApplySoleLocalDatabaseDefault(options);
 	}
 
 	#endregion
@@ -98,55 +95,23 @@ public class DeployCreatioDefaultsResolver : IDeployCreatioDefaultsResolver {
 		}
 	}
 
-	private void DeriveSiteNameFromZipWhenUnset(PfInstallerOptions options) {
-		if (!string.IsNullOrWhiteSpace(options.SiteName) || string.IsNullOrWhiteSpace(options.ZipFile)) {
-			return;
-		}
-
-		string derived = SanitizeSiteName(_fileSystem.Path.GetFileNameWithoutExtension(options.ZipFile));
-		if (string.IsNullOrWhiteSpace(derived)) {
-			return;
-		}
-
-		options.SiteName = derived;
-		_logger.WriteInfo($"[Site Name] derived from zip file: {derived}");
-	}
-
 	private static bool IsDeploymentMethodUnset(string deploymentMethod) =>
 		string.IsNullOrWhiteSpace(deploymentMethod)
 		|| string.Equals(deploymentMethod, PfInstallerOptions.AutoDeploymentMethod, StringComparison.OrdinalIgnoreCase);
 
-	// Produces a site name that is also valid as an unquoted database/catalog name and IIS site name:
-	// keep ASCII letters, digits and underscores; fold every other character (dots, spaces, hyphens,
-	// non-ASCII) to a single underscore. A leading digit is prefixed with an underscore because unquoted
-	// database identifiers cannot start with a digit (Creatio build zips typically begin with a version).
-	private static string SanitizeSiteName(string rawName) {
-		if (string.IsNullOrWhiteSpace(rawName)) {
-			return string.Empty;
+	private void ApplySoleLocalDatabaseDefault(PfInstallerOptions options) {
+		if (!options.ExplorerLaunch || !string.IsNullOrWhiteSpace(options.DbServerName)) {
+			return;
 		}
 
-		StringBuilder builder = new(rawName.Length);
-		bool lastWasSeparator = false;
-		foreach (char symbol in rawName) {
-			if (IsAllowedSiteNameChar(symbol)) {
-				builder.Append(symbol);
-				lastWasSeparator = false;
-			}
-			else if (!lastWasSeparator && builder.Length > 0) {
-				builder.Append('_');
-				lastWasSeparator = true;
-			}
+		string[] enabledServerNames = _settingsRepository.GetLocalDbServerNames().Take(2).ToArray();
+		if (enabledServerNames.Length != 1) {
+			return;
 		}
 
-		string sanitized = builder.ToString().Trim('_');
-		if (sanitized.Length > 0 && char.IsDigit(sanitized[0])) {
-			sanitized = "_" + sanitized;
-		}
-		return sanitized;
+		options.DbServerName = enabledServerNames[0];
+		_logger.WriteInfo($"[Local default] db-server-name = {enabledServerNames[0]}");
 	}
-
-	private static bool IsAllowedSiteNameChar(char symbol) =>
-		symbol is (>= 'a' and <= 'z') or (>= 'A' and <= 'Z') or (>= '0' and <= '9') or '_';
 
 	#endregion
 }

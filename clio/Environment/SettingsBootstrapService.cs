@@ -60,11 +60,30 @@ public sealed class SettingsBootstrapService : ISettingsBootstrapService {
 	}
 
 	private SettingsBootstrapResult Load() {
+		return SettingsRepository.ExecuteWithSettingsLock(_fileSystem, () => {
+			for (int attempt = 0; attempt < 3; attempt++) {
+				try {
+					return LoadUnlocked();
+				}
+				catch (SettingsRepository.SettingsFileChangedException) {
+					if (attempt == 2) {
+						throw new IOException(
+							"appsettings.json kept changing while clio was loading it. Try the command again.");
+					}
+					// Reload and reapply migrations if another writer won the atomic settings replacement.
+				}
+			}
+			throw new InvalidOperationException("The settings load retry loop completed unexpectedly.");
+		});
+	}
+
+	private SettingsBootstrapResult LoadUnlocked() {
 		string settingsFilePath = SettingsRepository.AppSettingsFile;
 		if (!_fileSystem.File.Exists(settingsFilePath)) {
 			Settings emptySettings = new() { Environments = [], SettingsVersion = CurrentSettingsVersion };
 			if (_applyRepairs) {
-				SettingsRepository.SaveSettings(_fileSystem, emptySettings);
+				SettingsRepository.SaveSettings(_fileSystem, emptySettings, expectedContent: null,
+					verifyExpectedContent: true);
 			}
 			return BuildResult("healthy", settingsFilePath, null, emptySettings, [], []);
 		}
@@ -107,7 +126,7 @@ public sealed class SettingsBootstrapService : ISettingsBootstrapService {
 		}
 		SettingsRepository.AttachDbServers(settingsModel);
 		if (_applyRepairs && ApplyMigrations(settingsModel, repairs)) {
-			SettingsRepository.SaveSettings(_fileSystem, settingsModel);
+			SettingsRepository.SaveSettings(_fileSystem, settingsModel, fileContent, verifyExpectedContent: true);
 		}
 		return BuildResult(
 			issues.Count > 0 ? "issues-detected" : "healthy",

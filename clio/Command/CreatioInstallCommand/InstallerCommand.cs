@@ -85,8 +85,16 @@ public class PfInstallerOptions : EnvironmentNameOptions{
 	/// <summary>
 	/// Gets or sets a value indicating whether force-password-reset disabling script may be executed.
 	/// </summary>
-	[Option("disable-reset-password", Required = false, Hidden = true, Default = true, HelpText = "Disables reset password after installation")]
+	[Option("disable-reset-password", Required = false, Hidden = true, Default = false,
+		HelpText = "When true, disables the forced password change after installation")]
 	public bool DisableResetPassword { get; set; }
+
+	/// <summary>
+	/// Gets or sets a value indicating whether the command was launched by the Windows Explorer integration.
+	/// </summary>
+	[Option("explorer-launch", Required = false, Hidden = true, Default = false,
+		HelpText = "Marks deployment as launched by the Windows Explorer integration")]
+	public bool ExplorerLaunch { get; set; }
 	
 	/// <summary>
 	/// Gets or sets the database engine type: <c>pg</c> or <c>mssql</c>.
@@ -234,6 +242,13 @@ public class PfInstallerOptions : EnvironmentNameOptions{
 /// Executes Creatio deployment using validated command options.
 /// </summary>
 public class InstallerCommand : Command<PfInstallerOptions>, IStageEventSource{
+	#region Constants: Private
+
+	private const string MissingSilentSiteNameError =
+		"Site name is required for silent deployment. Specify --site-name or configure deploy-site-name.";
+
+	#endregion
+
 	#region Fields: Private
 
 	private readonly ICreatioInstallerService _creatioInstallerService;
@@ -303,29 +318,48 @@ public class InstallerCommand : Command<PfInstallerOptions>, IStageEventSource{
 	/// <c>0</c> on success; non-zero value when execution cannot continue or deployment fails.
 	/// </returns>
 	public override int Execute(PfInstallerOptions options) {
-		using IDbOperationLogSession dbOperationLogSession = _dbOperationLogSessionFactory.BeginSession("deploy-creatio");
+		bool explorerDeploymentFailed = options.ExplorerLaunch;
 		try {
-			// Fill options omitted on the command line from persisted `clio config` defaults BEFORE the
-			// Kubernetes-vs-local branch below, so a configured default db-server-name routes the plain
-			// Explorer context-menu deploy (which passes only --zip-file) to the local database.
-			_deployCreatioDefaultsResolver.ApplyDefaults(options);
+			using IDbOperationLogSession dbOperationLogSession =
+				_dbOperationLogSessionFactory.BeginSession("deploy-creatio");
+			try {
+				// Fill options omitted on the command line from persisted `clio config` defaults BEFORE the
+				// Kubernetes-vs-local branch below, so a configured default db-server-name routes the plain
+				// Explorer context-menu deploy (which passes only --zip-file) to the local database.
+				_deployCreatioDefaultsResolver.ApplyDefaults(options);
+				if (options.IsSilent && string.IsNullOrWhiteSpace(options.SiteName)) {
+					_logger.WriteError(MissingSilentSiteNameError);
+					return 1;
+				}
 
-			if (_kubernetes is FakeKubernetes && string.IsNullOrEmpty(options.DbServerName)) {
-				_logger.WriteError(
-					"Could not detect kubectl config, and db server name (db-server-name) is not specified.");
-				return 1;
+				if (_kubernetes is FakeKubernetes && string.IsNullOrEmpty(options.DbServerName)) {
+					_logger.WriteError(
+						"Could not detect kubectl config, and db server name (db-server-name) is not specified.");
+					return 1;
+				}
+
+				int result = _creatioInstallerService.Execute(options);
+				explorerDeploymentFailed = options.ExplorerLaunch && result != 0;
+				if (!options.IsSilent && !options.ExplorerLaunch) {
+					_logger.WriteLine("Press enter to exit...");
+					Console.ReadLine();
+				}
+
+				return result;
 			}
-
-			int result = _creatioInstallerService.Execute(options);
-			if (!options.IsSilent) {
+			finally {
+				_logger.WriteInfo($"Database operation log: {dbOperationLogSession.LogFilePath}");
+			}
+		}
+		catch (Exception exception) when (options.ExplorerLaunch) {
+			_logger.WriteError(exception.GetReadableMessageException(Program.IsDebugMode));
+			return 1;
+		}
+		finally {
+			if (!options.IsSilent && explorerDeploymentFailed) {
 				_logger.WriteLine("Press enter to exit...");
 				Console.ReadLine();
 			}
-
-			return result;
-		}
-		finally {
-			_logger.WriteInfo($"Database operation log: {dbOperationLogSession.LogFilePath}");
 		}
 	}
 

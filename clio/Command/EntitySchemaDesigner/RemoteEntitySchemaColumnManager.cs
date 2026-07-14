@@ -1092,49 +1092,49 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		EntityDesignSchemaDto reloadedSchema,
 		IEnumerable<ModifyEntitySchemaColumnOptions> operations,
 		string effectiveCultureName) {
-		foreach (ModifyEntitySchemaColumnOptions operation in operations) {
-			EntitySchemaColumnAction action = NormalizeAction(operation.Action);
-			VerifyColumnMutation(reloadedSchema, action, operation, effectiveCultureName);
-		}
-	}
-
-	private static void VerifyColumnMutation(
-		EntityDesignSchemaDto reloadedSchema,
-		EntitySchemaColumnAction action,
-		ModifyEntitySchemaColumnOptions options,
-		string effectiveCultureName) {
-		string expectedColumnName = !string.IsNullOrWhiteSpace(options.NewName)
-			? options.NewName.Trim()
-			: options.ColumnName.Trim();
-		List<EntitySchemaColumnDto> ownColumns = reloadedSchema.Columns?.ToList() ?? [];
+		HashSet<string> ownColumnNames = (reloadedSchema.Columns?.ToList() ?? [])
+			.Select(column => column.Name)
+			.ToHashSet(StringComparer.OrdinalIgnoreCase);
 		List<EntitySchemaColumnDto> inheritedColumns = reloadedSchema.InheritedColumns?.ToList() ?? [];
 
-		switch (action) {
-			case EntitySchemaColumnAction.Add:
-			case EntitySchemaColumnAction.Modify:
-				bool ownColumnExists = ownColumns.Any(column =>
-					string.Equals(column.Name, expectedColumnName, StringComparison.OrdinalIgnoreCase));
+		// Expected OWN-column presence, accounting for renames (old name absent, new name present). An
+		// inherited-column caption/description override stays in InheritedColumns (never in Columns), so it is
+		// verified via VerifyInheritedCaptionOverride and excluded from the own-column presence check to avoid
+		// a false "could not be reloaded" failure.
+		Dictionary<string, bool> expectedColumnPresence = new(StringComparer.OrdinalIgnoreCase);
+		foreach (ModifyEntitySchemaColumnOptions operation in operations) {
+			EntitySchemaColumnAction action = NormalizeAction(operation.Action);
+			string columnName = operation.ColumnName.Trim();
+
+			if (action == EntitySchemaColumnAction.Modify && string.IsNullOrWhiteSpace(operation.NewName)
+				&& !ownColumnNames.Contains(columnName)) {
 				EntitySchemaColumnDto inheritedMatch = inheritedColumns.FirstOrDefault(column =>
-					string.Equals(column.Name, expectedColumnName, StringComparison.OrdinalIgnoreCase));
-				// A modify may target an inherited column (caption override): accept the reload from either
-				// collection, otherwise an inherited caption override would falsely fail verification.
-				if (!ownColumnExists && inheritedMatch == null) {
-					throw new EntitySchemaDesignerException(
-						$"Column '{expectedColumnName}' could not be reloaded after save.");
+					string.Equals(column.Name, columnName, StringComparison.OrdinalIgnoreCase));
+				if (inheritedMatch != null) {
+					VerifyInheritedCaptionOverride(inheritedMatch, operation, effectiveCultureName);
+					continue;
 				}
-				// Reaching here with !ownColumnExists guarantees inheritedMatch != null (the guard above threw
-				// otherwise): a modify that resolved to an inherited column is a caption override to verify.
-				if (!ownColumnExists) {
-					VerifyInheritedCaptionOverride(inheritedMatch, options, effectiveCultureName);
-				}
-				break;
-			case EntitySchemaColumnAction.Remove:
-				if (ownColumns.Any(column =>
-					string.Equals(column.Name, options.ColumnName, StringComparison.OrdinalIgnoreCase))) {
-					throw new EntitySchemaDesignerException(
-						$"Column '{options.ColumnName}' is still present after save.");
-				}
-				break;
+			}
+
+			if (action == EntitySchemaColumnAction.Modify && !string.IsNullOrWhiteSpace(operation.NewName)) {
+				expectedColumnPresence[columnName] = false;
+				expectedColumnPresence[operation.NewName.Trim()] = true;
+				continue;
+			}
+
+			expectedColumnPresence[columnName] = action != EntitySchemaColumnAction.Remove;
+		}
+
+		foreach ((string columnName, bool shouldExist) in expectedColumnPresence) {
+			bool columnExists = ownColumnNames.Contains(columnName);
+			if (shouldExist && !columnExists) {
+				throw new EntitySchemaDesignerException(
+					$"Column '{columnName}' could not be reloaded after save.");
+			}
+			if (!shouldExist && columnExists) {
+				throw new EntitySchemaDesignerException(
+					$"Column '{columnName}' is still present after save.");
+			}
 		}
 	}
 
