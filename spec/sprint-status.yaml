@@ -21,6 +21,20 @@
 # 2026-07-06) is a separate Jira ticket stacked on the same branch; tracked as its own row.
 
 stories:
+  - id: story-explorer-deploy-local-defaults-1
+    title: "Use local infrastructure preferences and preserve Explorer deployment errors"
+    feature: "explorer-deploy-local-defaults"
+    repo: "clio"
+    size: S
+    status: review
+    issue: 874
+    file: spec/explorer-deploy-local-defaults/explorer-deploy-local-defaults-story.md
+    prd: spec/explorer-deploy-local-defaults/explorer-deploy-local-defaults-spec.md
+    adr: spec/explorer-deploy-local-defaults/explorer-deploy-local-defaults-plan.md
+    test_plan: spec/explorer-deploy-local-defaults/explorer-deploy-local-defaults-qa.md
+    depends_on: []
+    blocks: []
+
   - id: story-browser-session-handoff-1
     title: "Safe-env Deadlock Fix — IInteractiveConsole Abstraction (fail-closed, all callers)"
     feature: "browser-session-handoff"

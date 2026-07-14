@@ -5910,3 +5910,10 @@ Decision: Emit test-progress heartbeats every 30 seconds while application creat
 Discovery: TeamCity reported 83 passing tests and produced hang dumps without an assertion failure; the last completed test preceded ApplicationGetInfo_Should_Read_Virtual_Entity_After_SchemaSync alphabetically, identifying the silent long-running scenario.
 Files: clio.mcp.e2e/ApplicationToolE2ETests.cs
 Impact: The real regression keeps its ten-minute operation budget while producing enough test-host output to avoid false hang classification; both target frameworks compile successfully.
+
+## 2026-07-14 12:34 – Explorer deploy honors sole local infrastructure
+Context: Issue #874 reproduced an Explorer ZIP deployment selecting unavailable Rancher Desktop Kubernetes while one enabled local PostgreSQL server and a default local Redis server were configured; the error terminal then closed immediately.
+Decision: Preserve explicit and deploy-specific precedence, select the sole enabled local database only when unambiguous, retain Kubernetes fallback for zero or multiple local choices, and conditionally pause the Explorer deploy terminal after non-zero exit.
+Discovery: The live deployment log stopped at the Kubernetes restore branch because an empty DbServerName was treated as Kubernetes; defaultRedis was already resolved correctly after local database mode is selected.
+Files: clio/Command/CreatioInstallCommand/DeployCreatioDefaultsResolver.cs, clio/reg/clio_context_menu_win.reg, clio.tests/Command/DeployCreatioDefaultsResolverTests.cs, clio.tests/Command/ExplorerContextMenuRegistrationTests.cs, spec/explorer-deploy-local-defaults/
+Impact: Explorer deployment uses the user's sole enabled local PostgreSQL and configured Redis preference without changing explicit MCP or ClioRing infrastructure selection, and failures remain readable.

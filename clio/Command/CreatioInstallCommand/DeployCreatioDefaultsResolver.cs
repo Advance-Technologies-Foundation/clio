@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Clio.Common;
 using Clio.UserEnvironment;
 
@@ -6,12 +7,13 @@ namespace Clio.Command.CreatioInstallCommand;
 
 /// <summary>
 /// Applies persisted <c>deploy-creatio</c> defaults to command options so that options omitted on the
-/// command line fall back to the values configured via <c>clio config</c>.
+/// command line fall back to the values configured via <c>clio config</c> or an unambiguous local database.
 /// </summary>
 public interface IDeployCreatioDefaultsResolver {
 	/// <summary>
-	/// Fills unspecified deployment options from the saved defaults. Options supplied on the command line are
-	/// never overwritten, and an unset site name remains empty so interactive deployment can prompt for it.
+	/// Fills unspecified deployment options from the saved defaults and selects the sole enabled local database
+	/// when no database default is configured. Options supplied on the command line are never overwritten, and an
+	/// unset site name remains empty so interactive deployment can prompt for it.
 	/// </summary>
 	/// <param name="options">The deployment options to complete in place.</param>
 	void ApplyDefaults(PfInstallerOptions options);
@@ -52,6 +54,7 @@ public class DeployCreatioDefaultsResolver : IDeployCreatioDefaultsResolver {
 
 		DeployCreatioDefaults defaults = _settingsRepository.GetDeployCreatioDefaults();
 		ApplyConfiguredDefaults(options, defaults);
+		ApplySoleLocalDatabaseDefault(options);
 	}
 
 	#endregion
@@ -94,6 +97,20 @@ public class DeployCreatioDefaultsResolver : IDeployCreatioDefaultsResolver {
 	private static bool IsDeploymentMethodUnset(string deploymentMethod) =>
 		string.IsNullOrWhiteSpace(deploymentMethod)
 		|| string.Equals(deploymentMethod, PfInstallerOptions.AutoDeploymentMethod, StringComparison.OrdinalIgnoreCase);
+
+	private void ApplySoleLocalDatabaseDefault(PfInstallerOptions options) {
+		if (!string.IsNullOrWhiteSpace(options.DbServerName)) {
+			return;
+		}
+
+		string[] enabledServerNames = _settingsRepository.GetLocalDbServerNames().Take(2).ToArray();
+		if (enabledServerNames.Length != 1) {
+			return;
+		}
+
+		options.DbServerName = enabledServerNames[0];
+		_logger.WriteInfo($"[Local default] db-server-name = {enabledServerNames[0]}");
+	}
 
 	#endregion
 }

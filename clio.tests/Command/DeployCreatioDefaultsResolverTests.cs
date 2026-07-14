@@ -54,6 +54,51 @@ public sealed class DeployCreatioDefaultsResolverTests : BaseClioModuleTests {
 	}
 
 	[Test]
+	[Description("Uses the sole enabled local database server when no explicit or deploy-specific default is configured.")]
+	public void ApplyDefaults_ShouldUseSoleEnabledLocalDbServer_WhenNoDeployDefaultConfigured() {
+		// Arrange
+		_settingsRepository.GetLocalDbServerNames().Returns(["my-local-postgres"]);
+		PfInstallerOptions options = new();
+
+		// Act
+		_sut.ApplyDefaults(options);
+
+		// Assert
+		options.DbServerName.Should().Be("my-local-postgres",
+			because: "a sole enabled local database is the unambiguous local deployment preference");
+	}
+
+	[Test]
+	[Description("Leaves database selection unset when multiple local database servers are enabled and no deploy default exists.")]
+	public void ApplyDefaults_ShouldKeepKubernetesFallback_WhenMultipleLocalDbServersEnabled() {
+		// Arrange
+		_settingsRepository.GetLocalDbServerNames().Returns(["postgres-a", "postgres-b"]);
+		PfInstallerOptions options = new();
+
+		// Act
+		_sut.ApplyDefaults(options);
+
+		// Assert
+		options.DbServerName.Should().BeNullOrEmpty(
+			because: "multiple local database servers are ambiguous and must not silently replace the existing Kubernetes path");
+	}
+
+	[Test]
+	[Description("Leaves database selection unset when no enabled local database server or deploy default exists.")]
+	public void ApplyDefaults_ShouldKeepKubernetesFallback_WhenNoLocalDbServerEnabled() {
+		// Arrange
+		_settingsRepository.GetLocalDbServerNames().Returns([]);
+		PfInstallerOptions options = new();
+
+		// Act
+		_sut.ApplyDefaults(options);
+
+		// Assert
+		options.DbServerName.Should().BeNullOrEmpty(
+			because: "the existing Kubernetes path remains the fallback when no local database preference is available");
+	}
+
+	[Test]
 	[Description("Keeps the command-line db server name and does not override it from the configured default.")]
 	public void ApplyDefaults_ShouldNotOverrideDbServerName_WhenExplicitlyProvided() {
 		// Arrange
