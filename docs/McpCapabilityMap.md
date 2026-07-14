@@ -11,7 +11,7 @@ The document is source-driven. It is based on the current assembly registration 
 - `clio/Command/McpServer/Prompts`
 - `clio/Command/McpServer/Resources`
 
-Snapshot date: `2026-06-10`
+Snapshot date: `2026-07-09`
 
 ## One-sentence summary
 
@@ -19,21 +19,46 @@ An external AI sees `clio` MCP not as a generic system shell, but as a curated C
 
 ## Discovery Snapshot
 
-From MCP discovery, the surface currently exposes:
+Since the lazy-schema split (ENG-90312, PR #743) `tools/list` advertises only the **resident** profile
+(~27 discovery/read tools + the executors); the full catalog (~137 invokable tools) stays reachable but
+is discovered through `get-tool-contract`, not `tools/list`:
 
-- `63` tools
-- `50` prompts
-- `4` resources
-- `56` tools with explicit safety metadata
-- `7` legacy operational tools without explicit `ReadOnly` / `Destructive` / `Idempotent` flags
+- `~27` resident tools in `tools/list` (see `McpCoreToolProfile`)
+- the full invokable catalog (~137 tools) indexed by `get-tool-contract` (each entry carries `resident`
+  and `destructive` flags, plus `aliases` when a legacy name maps to it)
+- `67` prompts
+- `92` resources
+- `1` resource template
 
 Important shape of the surface:
 
-- Transport is stdio only.
-- Registration is assembly-wide via `WithToolsFromAssembly`, `WithPromptsFromAssembly`, and `WithResourcesFromAssembly`.
-- The tool layer is mixed-generation:
-  - newer tools are strongly typed and usually expose `ReadOnly`, `Destructive`, `Idempotent`, and `OpenWorld`
-  - older lifecycle tools still expose valid MCP tools, but without the same metadata richness
+- Transports: stdio (the shipped default) and an HTTP host (`mcp-http`, not yet released). The durable unmatched-name handling described below is registered on the stdio transport only.
+- Discovery returns only the enabled surface: feature-gated tools, prompts, and resources are omitted while their feature flag is off, so the advertised counts reflect the default flag state.
+- Every tool declares explicit `ReadOnly` / `Destructive` / `Idempotent` safety metadata, so a client can rely on those flags when deciding what is safe to invoke.
+
+## Durable Invocation (forgiving unmatched-name handling, ENG-93370)
+
+A `tools/call` naming a tool that is NOT advertised in `tools/list` no longer dead-ends. The stdio
+server registers an unmatched-name handler (`McpDurableCallToolHandler` via the SDK's
+`WithCallToolHandler`; stdio transport only) that restores the pre-lazy invocation contract:
+
+- **Non-destructive real tool** → executed directly through the same dispatch path `clio-run` uses; the
+  result carries a model-visible advisory in `Content` recommending the advertised
+  `clio-run {"command":"<tool>","args":{…}}` path, plus a `durable-invocation` audit block in `_meta`.
+- **Destructive real tool** → NEVER silently executed. Returns a structured `confirmation-required`
+  outcome with a ready-to-retry `clio-run-destructive` call shape — reproducing the per-tool prompt the
+  host applied when the tool was still advertised.
+- **Renamed/deprecated name** → resolved through `McpToolCompatibilityCatalog` (the MCP analogue of the
+  CLI hidden-alias policy; e.g. `restart-by-environmentName` → `restart-by-environment-name`). Catalog
+  collisions fail at startup.
+- **Unresolvable name** → a structured, machine-readable outcome instead of an opaque error:
+  `unknown-tool` (with Levenshtein did-you-mean candidates and the `get-tool-contract` discovery hint),
+  `feature-disabled`, `cli-verb-not-mcp-tool`, `deprecated-tool-alias`, or `foreign-command` — every
+  outcome carrying a `correlation-id`.
+
+The advertised `tools/list` surface is unchanged by this handler (context economy preserved), and
+shipped workspace templates are guarded against naming non-resident tools imperatively by
+`WorkspaceTemplateGuidanceDriftTests` (resident-or-bridged oracle).
 
 ## What This MCP Fundamentally Is
 
@@ -171,11 +196,15 @@ on top of the `0`/`1`/`-1` contract: when the target environment runs an older c
 command's floor — or its version is undeterminable (the gate fails closed) — the `BaseTool` path
 returns the distinct `exit-code` `78` (`Program.CreatioVersionRequirementExitCode`) with the stable
 `CreatioVersionRequirementException.ErrorCode` (`version-too-old` / `version-undeterminable`) embedded
-in the message. This refusal path is covered at the **unit** level (the `BaseTool` tests). An
-**end-to-end** refusal test is a deliberate, documented harness gap: it is deferred until a real
-shipping command actually carries `[RequiresCreatioVersion]`, at which point e2e coverage, the docs,
-and the MCP tool contract for that command become mandatory. This mirrors the package-gate posture —
-the gate logic is unit-proven now, and e2e lands with the first command that exercises it.
+in the message. Typed-response tools (`create-theme`, `list-themes`, `check-theming-access`) carry no
+exit code, so they refuse with `{ success: false, error }` where the same stable ErrorCode travels in
+the `error` message. The gate is enforced at the shared `ResolveCommand` chokepoint, ordered before
+the package gate — the same relative precedence as the CLI dispatch gate (feature-toggle →
+creatio-version → package).
+
+The refusal path is unit-proven; at the end-to-end level each gated tool's contract is asserted to
+advertise its floor. A live e2e refusal test requires an environment below the floor, which the
+harness does not provision — that remains the one documented gap.
 
 ### Workspace path rules
 
@@ -442,6 +471,28 @@ How the AI should think about this area:
 - it is a local-host and target-environment control surface
 - destructive power is high, especially for restore and uninstall flows
 
+**Typed stage-event progress contract (`deploy-creatio` / `uninstall-creatio`).** Both tools
+emit a versioned, typed progress stream over MCP `notifications/progress` in the
+`_meta.clioStageEvent` field, so a GUI consumer (the clio-ring guided-deploy UX) can render a
+live, GitHub-Actions-style step list instead of parsing log lines. The stream is:
+
+- one `manifest` event up front listing every stage that will run, in order;
+- a `stage` event per transition (`running` → `done` / `failed` / `skipped`, carrying
+  `index` / `total` / `durationMs`);
+- one terminal `run-completed` event with `outcome` = `success` / `failure`.
+
+Deploy stages: `stage-build` (network-source only; otherwise `skipped` `not-applicable`) →
+`unzip` → `copy-files` → `restore-db` → `deploy-app` → `configure-conn-strings` →
+`register-env` → `wait-ready`. Uninstall stages: `read-config` → `stop-iis` → `delete-iis` →
+`drop-db` → `delete-files` → `unregister` (final, only after cleanup succeeds), plus a
+conditional `delete-apppool-profile` reported `skipped` `not-supported` when a profile exists.
+Failure is honest: a stage that fails is emitted `failed`, the remaining stages `skipped`
+(`after-failure`), and the run ends `run-completed` `failure` — a non-zero stage result is
+never masked as success. The envelope is stamped with `schemaVersion` (currently `1`), is
+purely additive (tool arguments, descriptions, and `Destructive` flags are unchanged), and is
+forward-compatible: an unknown field or a bumped schema version does not break a mirrored
+consumer.
+
 ### 9. Runtime Control And Maintenance
 
 These tools are operational rather than design-oriented.
@@ -512,9 +563,40 @@ Companion surfaces (see the `process-modeling` guidance):
 - `get-guidance name=process-modeling` — the BPMN element catalog, connection rules, and the validate-then-drive recipe.
 - `generate-process-model` — reads an existing process into a C# model (existing tool).
 
+### 12. Theming
+
+These tools brand a Creatio app: build a custom theme from brand colours and fonts, apply it to an environment, and manage the theme catalog. `build-theme` and `advise-theme-palette` run offline; the rest act on a registered environment (`environment-name`) via the native ThemeService, which requires Creatio 10.0.0 or later — on an older (or version-undeterminable) environment they refuse with the version-gate error (see "Version gate (exit 78)"). All theming tools take a single `args` object with kebab-case fields.
+
+- `build-theme`
+  Render a theme's `theme.css` (and, in workspace mode, `theme.json`) from a primary colour, optional secondary/accent/system colours, and fonts, over a bundled version-pinned template. Writes into a workspace package when given `workspace-directory` + `package-name`, otherwise returns the CSS. Never mutates an environment.
+- `advise-theme-palette`
+  Stateless offline advisor that scores brand-colour choices (readability on white, accent similarity) and returns a verdict per operation, so the agent never judges a colour by eye.
+- `create-theme`
+  Create a theme on the environment from inline `css-content` plus a caption.
+- `update-theme`
+  Full overwrite of an existing theme by id (caption, CSS class name, CSS content).
+- `delete-theme`
+  Delete a theme by id; deleting an unknown id is an error.
+- `list-themes`
+  List custom themes (id, caption, CSS class name, CSS file path). An empty list means no themes or no `CanCustomizeBranding` license.
+- `clear-themes-cache`
+  Refresh the theme catalog cache; needed only when theme files change on the environment outside a clio install.
+- `check-theming-access`
+  Report whether the caller has the `CanManageThemes` operation and `CanCustomizeBranding` license, to gate authoring on a real permission check.
+
+What an external AI can practically do here:
+
+- build a theme offline (`build-theme`) with `advise-theme-palette` driving the palette, then commit it to a workspace package and push, or apply it directly with `create-theme`
+- restyle, remove, and confirm themes on an environment
+- precheck theming permissions before authoring, and set the default via the `DefaultTheme` system setting (see the theming guidance)
+
+Companion surfaces (see the `theming` guidance):
+
+- `get-guidance name=theming` — the palette conversation, the build step, and the workspace/dev vs no-code/server delivery flows.
+
 ## Prompt Layer: What The AI Gets Beyond Raw Tools
 
-The `50` prompts do not add new execution power, but they materially change how an external AI can reason about the surface.
+The prompt layer does not add new execution power, but it materially changes how an external AI can reason about the surface.
 
 The prompt layer acts as embedded operating guidance:
 
@@ -543,6 +625,8 @@ The MCP resource surface is still small, but it now has one MCP-native guidance 
   Dedicated help resource for Redis flush help
 - `docs://mcp/guides/app-modeling`
   Canonical modeling guide for DB-first app creation, lookup behavior, default semantics, and batch-first page/schema workflows
+- `docs://mcp/guides/theming`
+  Canonical MCP guidance for managing custom Creatio themes with clio — create, restyle, delete, list, and set the default — and shipping them to a Creatio environment
 
 How an external AI should interpret resources:
 
@@ -625,6 +709,12 @@ All lifecycle tools now declare explicit safety metadata (`ReadOnly`, `Destructi
 - `restart-by-credentials`
 - `clear-redis-db-by-environment`
 - `clear-redis-db-by-credentials`
+- `clear-themes-cache`
+- `list-themes`
+- `create-theme`
+- `update-theme`
+- `delete-theme`
+- `check-theming-access`
 
 ### 4. Mixed response shapes
 

@@ -23,7 +23,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="create-app"></a>
 - [`create-app`](docs/commands/create-app.md) - Create a new application in Creatio
 <a id="get-app-info"></a>
-- [`get-app-info`](docs/commands/get-app-info.md) - Get information about an installed Creatio application
+- [`get-app-info`](docs/commands/get-app-info.md) - Get information about an installed Creatio application, including each entity's virtual flag
 <a id="list-apps"></a>
 <a id="get-app-list"></a>
 <a id="app-list"></a>
@@ -328,7 +328,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="client-unit-schema-create"></a>
 - [`create-client-unit-schema`](docs/commands/create-client-unit-schema.md) - Create a new JavaScript (ClientUnit) schema on a remote Creatio environment, `client-unit-schema-create`
 <a id="create-entity-schema"></a>
-- [`create-entity-schema`](docs/commands/create-entity-schema.md) - Create an entity schema in a remote Creatio package
+- [`create-entity-schema`](docs/commands/create-entity-schema.md) - Create a persistent or virtual entity schema in a remote Creatio package
 <a id="create-lookup"></a>
 - [`create-lookup`](docs/commands/create-lookup.md) - Create a lookup entity schema in a remote Creatio package
 <a id="create-schema"></a>
@@ -397,6 +397,10 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="create-test-project"></a>
 <a id="unit-test"></a>
 - [`new-test-project`](docs/commands/new-test-project.md) - Create a new test project, `create-test-project`, `unit-test`
+
+<a id="new-integration-test-project"></a>
+<a id="integration-test"></a>
+- [`new-integration-test-project`](docs/commands/new-integration-test-project.md) - Create a portable Creatio integration-test project, `integration-test`
 <a id="new-ui-project"></a>
 <a id="create-ui-project"></a>
 <a id="createup"></a>
@@ -429,6 +433,14 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="page-templates"></a>
 <a id="page-templates-list"></a>
 - [`list-page-templates`](docs/commands/list-page-templates.md) - List Freedom UI page templates available for create-page, `page-templates`, `page-templates-list`
+<a id="create-related-page-addon"></a>
+<a id="related-page-addon"></a>
+<a id="set-related-pages"></a>
+- [`create-related-page-addon`](docs/commands/create-related-page-addon.md) - Bind Freedom UI pages to an object (default/add page, optionally per role and type) via the RelatedPage add-on, `related-page-addon`, `set-related-pages`
+<a id="get-related-page-addon"></a>
+<a id="related-page-addon-get"></a>
+<a id="get-related-pages"></a>
+- [`get-related-page-addon`](docs/commands/get-related-page-addon.md) - Read an object's current RelatedPage configuration (bound default/add pages per role and type), `related-page-addon-get`, `get-related-pages`
 <a id="run"></a>
 <a id="run-scenario"></a>
 <a id="scenario"></a>
@@ -557,8 +569,27 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="loadlicense"></a>
 - [`upload-license`](docs/commands/upload-license.md) - Load license to selected environment, `license`, `load-license`, `loadlicense`
 
+## Theming
+
+<a id="build-theme"></a>
+- [`build-theme`](docs/commands/build-theme.md) - Build the artifacts of a Creatio theme from brand colours and fonts
+<a id="clear-themes-cache"></a>
+<a id="flush-themes"></a>
+- [`clear-themes-cache`](docs/commands/clear-themes-cache.md) - Refresh the Creatio theme cache (Creatio 10.0.0+), `flush-themes`
+<a id="create-theme"></a>
+- [`create-theme`](docs/commands/create-theme.md) - Create a custom Creatio theme on an environment (Creatio 10.0.0+)
+<a id="delete-theme"></a>
+- [`delete-theme`](docs/commands/delete-theme.md) - Delete a custom Creatio theme from an environment (Creatio 10.0.0+)
+<a id="list-themes"></a>
+<a id="get-themes"></a>
+- [`list-themes`](docs/commands/list-themes.md) - List the custom Creatio themes available on an environment (Creatio 10.0.0+), `get-themes`
+<a id="update-theme"></a>
+- [`update-theme`](docs/commands/update-theme.md) - Overwrite an existing custom Creatio theme on an environment (Creatio 10.0.0+)
+
 ## Integrations & Tools
 
+<a id="ring"></a>
+- [`ring`](docs/commands/ring.md) - Manage the opt-in internal clio-ring desktop preview (experimental; Windows x64 only)
 <a id="delete-toolkit"></a>
 - [`delete-toolkit`](docs/commands/delete-toolkit.md) - Uninstall the Creatio AI App Development Toolkit from coding agents (alias: delete-skill)
 <a id="env-ui"></a>
@@ -597,6 +628,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="check-auth-code-flow"></a>
 <a id="auth-code-flow"></a>
 - [`check-auth-code-flow`](docs/commands/check-auth-code-flow.md) - Check whether the environment can use the OAuth authorization code flow, `auth-code-flow`
+<a id="register-sso-provider"></a>
+<a id="sso-register-provider"></a>
+- [`register-sso-provider`](docs/commands/register-sso-provider.md) - Register a new OIDC SSO provider in Creatio, `sso-register-provider`
 
 ## General
 
@@ -616,6 +650,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`healthcheck`](docs/commands/healthcheck.md) - Run Creatio health checks, `hc`
 <a id="register"></a>
 - [`register`](docs/commands/register.md) - Register clio shell integrations
+<a id="config"></a>
+- [`config`](docs/commands/config.md) - View and set clio configuration defaults (e.g. deploy-creatio defaults used by the Explorer context menu)
 <a id="set-app-icon"></a>
 <a id="ai"></a>
 <a id="appicon"></a>

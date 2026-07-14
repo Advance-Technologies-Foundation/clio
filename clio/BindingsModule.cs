@@ -20,7 +20,9 @@ using Clio.Command.McpServer;
 using Clio.Command.McpServer.Resources;
 using Clio.Command.PackageCommand;
 using Clio.Command.ProcessModel;
+using Clio.Command.RelatedPages;
 using Clio.Command.SqlScriptCommand;
+using Clio.Command.Theming;
 using Clio.Command.TIDE;
 using Clio.Command.Update;
 using Clio.Common;
@@ -44,6 +46,7 @@ using Clio.Project.NuGet;
 using Clio.Query;
 using Clio.Requests;
 using Clio.Requests.Validators;
+using Clio.Theming;
 using Clio.Utilities;
 using Clio.Command.McpServer.Tools;
 using Clio.Command.McpServer.Tools.ProcessDesigner;
@@ -133,13 +136,48 @@ public class BindingsModule {
 		ISettingsRepository settingsRepository = RegisterInto(services, settings, profile, applyBootstrapRepairs);
 		if (registerMcpHost) {
 			services.AddTransient<McpServerCommand>();
-			RegisterMcpServer(services, settingsRepository).WithStdioServerTransport();
+			// The durable (forgiving) unmatched-name handler is registered HERE — at the stdio call-site —
+			// and deliberately NOT inside the transport-neutral RegisterMcpServer, which the unreleased
+			// mcp-http host also calls (McpHttpServerCommand): the forgiving invocation contract is scoped
+			// to the stdio transport only (ADR adr-mcp-durable-invocation, D1). The SDK invokes the handler
+			// only on a ToolCollection miss, so advertised (resident) tools are never shadowed.
+			RegisterMcpServer(services, settingsRepository)
+				.WithStdioServerTransport()
+				.WithCallToolHandler(static (request, cancellationToken) =>
+					request.Services.GetRequiredService<Command.McpServer.IMcpDurableCallToolHandler>()
+						.HandleAsync(request, cancellationToken));
+			// The invoker registry's constructor reflects every enabled [McpServerToolType] and
+			// SDK-builds the full tool map (~165 methods) — far too expensive to rebuild per call, which
+			// the assembly-scan transient registration would do (and the unmatched-name path resolves it
+			// twice: handler + executor). Pin both the registry and the compatibility catalog as
+			// singletons for the host's lifetime; the tool surface is fixed at process start anyway
+			// (tools/list is registered once), so a singleton also makes feature-flag reads consistent
+			// for the whole session.
+			// ORDERING DEPENDENCY: both types are ALSO auto-registered as transients by the reflection
+			// interface-scan inside RegisterInto (they implement Clio.* interfaces). These AddSingleton
+			// calls win only because RegisterInto ran earlier (line above) — last-registration-wins. If the
+			// scan were ever moved after this block, the lifetime would silently revert to transient and
+			// rebuild the ~165-tool map on every unmatched-name call. Keep this block after RegisterInto.
+			services.AddSingleton<Command.McpServer.Tools.IMcpToolInvokerRegistry,
+				Command.McpServer.Tools.McpToolInvokerRegistry>();
+			services.AddSingleton<Command.McpServer.IMcpToolCompatibilityCatalog,
+				Command.McpServer.McpToolCompatibilityCatalog>();
 		}
 		additionalRegistrations?.Invoke(services);
-		return services.BuildServiceProvider(new ServiceProviderOptions {
+		ServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions {
 			ValidateOnBuild = true,
 			ValidateScopes = true
 		});
+		if (registerMcpHost) {
+			// Fail-fast validation of the durable-invocation surface. ValidateOnBuild verifies the DI
+			// graph's call sites but does NOT instantiate transients/singletons, so a malformed
+			// compatibility catalog (duplicate canonical/alias) or a duplicate MCP tool NAME would
+			// otherwise surface only on the first tools/call. Resolving both here makes a malformed
+			// surface abort HOST STARTUP instead — the constructors throw on any collision.
+			provider.GetRequiredService<Command.McpServer.IMcpToolCompatibilityCatalog>();
+			provider.GetRequiredService<Command.McpServer.Tools.IMcpToolInvokerRegistry>();
+		}
+		return provider;
 	}
 
 	/// <summary>
@@ -169,6 +207,8 @@ public class BindingsModule {
 		services.AddSingleton<IDbOperationLogSessionFactory, DbOperationLogSessionFactory>();
 		services.AddTransient<IContainerRegistryCredentialProvider, ContainerRegistryCredentialProvider>();
 		services.AddHttpClient();
+		services.AddTransient<IRingDistributionService, RingDistributionService>();
+		services.AddTransient<RingCommand>();
 		services.AddHttpClient<IContainerRegistryPreflightService, ContainerRegistryPreflightService>();
 		// Named HttpClient for the component-registry CDN + docs pipelines. Timeout is
 		// configured once here so callers never mutate HttpClient.Timeout after construction
@@ -226,6 +266,7 @@ public class BindingsModule {
 		services.AddTransient<ILocalRedisAssertion, LocalRedisAssertion>();
 		services.AddTransient<k8Commands>();
 		services.AddTransient<IInfrastructurePathProvider, InfrastructurePathProvider>();
+		services.AddTransient<IDeployCreatioDefaultsResolver, DeployCreatioDefaultsResolver>();
 		services.AddTransient<InstallerCommand>();
 		services.AddTransient<DeployIdentityCommand>();
 		services.AddTransient<IIdentityServiceArchiveResolver, IdentityServiceArchiveResolver>();
@@ -282,6 +323,7 @@ public class BindingsModule {
 		services.AddTransient<InstallSkillsCommand>();
 		services.AddTransient<UpdateSkillCommand>();
 		services.AddTransient<DeleteSkillCommand>();
+		services.AddTransient<BuildThemeCommand>();
 		services.AddTransient<PushPackageCommand>();
 		services.AddTransient<InstallApplicationCommand>();
 		services.AddTransient<IApplicationSectionCreateService, ApplicationSectionCreateService>();
@@ -289,6 +331,8 @@ public class BindingsModule {
 		services.AddTransient<IApplicationSectionUpdateService, ApplicationSectionUpdateService>();
 		services.AddTransient<UpdateAppSectionCommand>();
 		services.AddTransient<IAddonSchemaDesignerClient, AddonSchemaDesignerClient>();
+		services.AddTransient<IPageSchemaResolver, PageSchemaResolver>();
+		services.AddTransient<IRelatedPageAddonService, RelatedPageAddonService>();
 		services.AddTransient<IBusinessRuleAddonService, BusinessRuleAddonService>();
 		services.AddTransient<IBusinessRulePackageResolver, BusinessRulePackageResolver>();
 		services.AddTransient<IBusinessRuleFormulaValidationService, BusinessRuleFormulaValidationService>();
@@ -332,6 +376,8 @@ public class BindingsModule {
 		services.AddTransient<IPageBaselineGuard, PageBaselineGuard>();
 		services.AddTransient<IPageFileWriter, PageFileWriter>();
 		services.AddTransient<PageCreateCommand>();
+		services.AddTransient<CreateRelatedPageAddonCommand>();
+		services.AddTransient<GetRelatedPageAddonCommand>();
 		services.AddTransient<PageTemplatesListCommand>();
 		services.AddTransient<SourceCodeSchemaCreateCommand>();
 		services.AddTransient<SourceCodeSchemaUpdateCommand>();
@@ -368,6 +414,9 @@ public class BindingsModule {
 		services.AddSingleton<IComponentRegistryDocsClient, ComponentRegistryDocsClient>();
 		services.AddSingleton<IComponentInfoCatalog, ComponentInfoCatalog>();
 		services.AddSingleton<IMobileComponentInfoCatalog, MobileComponentInfoCatalog>();
+		services.AddSingleton<IThemeCssBuilder, ThemeCssBuilder>();
+		services.AddSingleton<IThemeTemplateProvider, ThemeTemplateProvider>();
+		services.AddSingleton<IThemePaletteAdvisor, ThemePaletteAdvisor>();
 		// Only the per-environment IPlatformVersionResolverFactory is registered: both the
 		// get-component-info MCP tool and the CLI verb resolve the platform version from
 		// per-call arguments (environment-name / uri / version), never from an ambient
@@ -428,6 +477,8 @@ public class BindingsModule {
 		services.AddTransient<PageGetTool>();
 		services.AddTransient<PageUpdateTool>();
 		services.AddTransient<PageCreateTool>();
+		services.AddTransient<CreateRelatedPageAddonTool>();
+		services.AddTransient<GetRelatedPageAddonTool>();
 		services.AddTransient<PageTemplatesListTool>();
 		services.AddTransient<SchemaCreateTool>();
 		services.AddTransient<SchemaUpdateTool>();
@@ -445,6 +496,14 @@ public class BindingsModule {
 		services.AddSingleton<IPageBodySamplingService, PageBodySamplingServiceImpl>();
 		services.AddTransient<GuidanceGetTool>();
 		services.AddTransient<ComponentInfoTool>();
+		services.AddTransient<BuildThemeTool>();
+		services.AddTransient<AdviseThemePaletteTool>();
+		services.AddTransient<ClearThemesCacheTool>();
+		services.AddTransient<ListThemesTool>();
+		services.AddTransient<CreateThemeTool>();
+		services.AddTransient<UpdateThemeTool>();
+		services.AddTransient<DeleteThemeTool>();
+		services.AddTransient<CheckThemingAccessTool>();
 		services.AddTransient<GetUserCultureTool>();
 		services.AddTransient<PackageHotfixTool>();
 		services.AddTransient<AddPackageDependencyTool>();
@@ -492,6 +551,7 @@ public class BindingsModule {
 		services.AddTransient<UpdateCliCommand>();
 		services.AddTransient<SetAutoupdateCommand>();
 		services.AddTransient<ExperimentalCommand>();
+		services.AddTransient<ConfigCommand>();
 		services.AddTransient<RegisterCommand>();
 		services.AddTransient<UnregisterCommand>();
 		
@@ -559,6 +619,14 @@ public class BindingsModule {
 		services.AddTransient<StopCommand>();
 		services.AddTransient<HostsCommand>();
 		services.AddTransient<RedisCommand>();
+		services.AddTransient<ClearThemesCacheCommand>();
+		services.AddTransient<ListThemesCommand>();
+		services.AddTransient<CreateThemeCommand>();
+		services.AddTransient<UpdateThemeCommand>();
+		services.AddTransient<DeleteThemeCommand>();
+		services.AddTransient<CheckThemingAccessCommand>();
+		services.AddTransient<ICreatioRightsClient, CreatioRightsClient>();
+		services.AddTransient<ICreatioLicenseClient, CreatioLicenseClient>();
 		services.AddTransient<IFsmModeStatusService, FsmModeStatusService>();
 		services.AddTransient<SetFsmConfigCommand>();
 		services.AddTransient<TurnFsmCommand>();
@@ -574,6 +642,8 @@ public class BindingsModule {
 		services.AddTransient<CheckWindowsFeaturesCommand>();
 		services.AddTransient<ManageWindowsFeaturesCommand>();
 		services.AddTransient<CreateTestProjectCommand>();
+		services.AddTransient<CreateIntegrationTestProjectCommand>();
+		services.AddTransient<IValidator<CreateIntegrationTestProjectOptions>, CreateIntegrationTestProjectOptionsValidator>();
 		services.AddTransient<ListenCommand>();
 		services.AddTransient<ShowPackageFileContentCommand>();
 		services.AddTransient<CompilePackageCommand>();
@@ -709,6 +779,7 @@ public class BindingsModule {
 		services.AddTransient<GetIdentityPublicJwkCommand>();
 		services.AddTransient<RegenerateIdentitySigningKeyCommand>();
 		services.AddTransient<CheckAuthCodeFlowCommand>();
+		services.AddTransient<RegisterSsoProviderCommand>();
 		services.AddTransient<IMssql, Mssql>();
 		services.AddTransient<IPostgres, Postgres>();
 		services.AddSingleton<CommandHelpCatalog>();

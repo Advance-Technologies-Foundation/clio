@@ -152,6 +152,44 @@ public sealed class McpToolInvokerRegistryTests {
 			because: "list-pages is a read-only discovery tool and is not destructive");
 	}
 
+	// Two deliberately colliding tool types for the duplicate-name guard test below. They live in the
+	// TEST assembly, so the production catalog stays collision-free while the guard is still provable.
+	[McpServerToolType]
+	private static class DuplicateNameToolTypeA {
+		[McpServerTool(Name = "zz-duplicate-name-tool", Destructive = false)]
+		[System.ComponentModel.Description("First declaration of a deliberately duplicated tool name.")]
+		public static string RunA() => "a";
+	}
+
+	[McpServerToolType]
+	private static class DuplicateNameToolTypeB {
+		[McpServerTool(Name = "zz-duplicate-name-tool", Destructive = false)]
+		[System.ComponentModel.Description("Second declaration of a deliberately duplicated tool name.")]
+		public static string RunB() => "b";
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Throws on a duplicate MCP tool NAME instead of silently keeping the first declaration, so a rename can never ship as a second method (TC-U-05).")]
+	public void Constructor_ShouldThrow_WhenTwoToolMethodsDeclareTheSameName() {
+		// Arrange — scanning the TEST assembly picks up the two colliding fixture types above.
+		IServiceProvider provider = Substitute.For<IServiceProvider>();
+		IFeatureToggleService featureToggle = Substitute.For<IFeatureToggleService>();
+		featureToggle.IsEnabled(Arg.Any<Type>()).Returns(true);
+
+		// Act
+		Action act = () => _ = new McpToolInvokerRegistry(
+			provider,
+			typeof(McpToolInvokerRegistryTests).Assembly,
+			featureToggle,
+			JsonSerializerOptions.Default);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+				because: "a duplicate tool name makes dispatch ambiguous and must fail fast at registry construction")
+			.WithMessage("*Duplicate MCP tool name*");
+	}
+
 	[Test]
 	[Category("Unit")]
 	[Description("Fails closed for an unknown tool so the safe clio-run surface refuses it.")]

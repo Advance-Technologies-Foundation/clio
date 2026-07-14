@@ -313,7 +313,8 @@ public sealed class ApplicationInfoService(
 				canonicalMainEntityCaptionFallback,
 				entityRow.Caption,
 				entityName),
-			columns);
+			columns,
+			response.Schema.IsVirtual);
 	}
 
 	private static ApplicationColumnInfoResult MapColumn(RuntimeSchemaColumnDto column, DesignSchemaColumnDto? designColumn)
@@ -787,6 +788,9 @@ public sealed class ApplicationInfoService(
 		[JsonPropertyName("caption")]
 		public Dictionary<string, string>? Caption { get; set; }
 
+		[JsonPropertyName("isVirtual")]
+		public bool IsVirtual { get; set; }
+
 		[JsonPropertyName("columns")]
 		public RuntimeSchemaColumnsDto? Columns { get; set; }
 	}
@@ -898,11 +902,13 @@ public sealed record ApplicationInfoResult(
 /// <param name="Name">Entity schema name.</param>
 /// <param name="Caption">Entity caption.</param>
 /// <param name="Columns">Non-inherited runtime columns.</param>
+/// <param name="IsVirtual">Whether the entity schema is virtual and has no physical database table.</param>
 public sealed record ApplicationEntityInfoResult(
 	string UId,
 	string Name,
 	string Caption,
-	IReadOnlyList<ApplicationColumnInfoResult> Columns);
+	IReadOnlyList<ApplicationColumnInfoResult> Columns,
+	bool IsVirtual = false);
 
 /// <summary>
 /// Structured column information returned as part of application info results.

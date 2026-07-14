@@ -27,6 +27,7 @@ namespace Clio.Mcp.E2E;
 [AllureNUnit]
 [AllureFeature(ValidateProcessGraphTool.ToolName)]
 [NonParallelizable]
+[Category(ProcessDesignerE2EGate.CategoryName)]
 public sealed class ValidateProcessGraphToolE2ETests {
 
 	private const string ToolName = ValidateProcessGraphTool.ToolName;

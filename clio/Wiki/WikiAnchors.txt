@@ -18,6 +18,7 @@ check-nuget-update:check-nuget-update,check
 check-windows-features:check-windows-features,cf,checkf,checks,checkw
 clear-local-env:clear-local-env,clear-env
 clear-redis-db:clear-redis-db,flushdb
+clear-themes-cache:clear-themes-cache,flush-themes
 clone-env:clone-env,clone,clone-environment
 compare-web-farm-node:compare-web-farm-node,check-farm,check-web-farm-node,cwf,farm-check
 compile-configuration:compile-configuration,cc,compile-remote
@@ -26,6 +27,7 @@ component-registry-refresh:component-registry-refresh,component-registry
 get-component-info:get-component-info,component-info
 get-user-culture:get-user-culture,profile-language
 compressApp:compressApp,comp-app
+config:config
 create-app:create-app
 create-app-section:create-app-section
 create-data-binding:create-data-binding
@@ -67,6 +69,11 @@ generate-source-code:generate-source-code,gsc
 get-app-hash:get-app-hash
 get-app-info:get-app-info
 list-apps:list-apps,get-app-list,app-list,apps,apps-list,lia
+build-theme:build-theme
+list-themes:list-themes,get-themes
+create-theme:create-theme
+update-theme:update-theme
+delete-theme:delete-theme
 get-build-info:get-build-info,bi,buildinfo
 get-client-unit-schema:get-client-unit-schema,client-unit-schema-get
 get-entity-schema-column-properties:get-entity-schema-column-properties
@@ -115,6 +122,7 @@ modify-entity-schema-column:modify-entity-schema-column
 modify-user-task-parameters:modify-user-task-parameters
 new-pkg:new-pkg,init
 new-test-project:new-test-project,create-test-project,unit-test
+new-integration-test-project:new-integration-test-project,integration-test
 new-ui-project:new-ui-project,create-ui-project,createup,new-ui,ui,uiproject
 open-k8-files:open-k8-files,cfg-k8,cfg-k8f,cfg-k8s
 open-settings:open-settings,conf,configuration,os,settings
@@ -126,6 +134,8 @@ list-pages:list-pages,page-list
 update-page:update-page,page-update
 create-page:create-page,page-create
 list-page-templates:list-page-templates,page-templates,page-templates-list
+create-related-page-addon:create-related-page-addon,related-page-addon,set-related-pages
+get-related-page-addon:get-related-page-addon,related-page-addon-get,get-related-pages
 ping-app:ping-app,ping
 pkg-hotfix:pkg-hotfix,hf,hotfix
 pkg-to-db:pkg-to-db,2db,todb
@@ -137,6 +147,7 @@ push-pkg:push-pkg,install,push
 push-workspace:push-workspace,pushw
 reg-web-app:reg-web-app,cfg,reg
 register:register
+ring:ring
 remove-data-binding-row:remove-data-binding-row
 remove-data-binding-row-db:remove-data-binding-row-db
 restart-web-app:restart-web-app,restart
@@ -183,3 +194,4 @@ get-identity-assertion:get-identity-assertion,identity-assertion
 get-identity-public-jwk:get-identity-public-jwk,identity-public-jwk
 regenerate-identity-signing-key:regenerate-identity-signing-key,identity-regenerate-key
 check-auth-code-flow:check-auth-code-flow,auth-code-flow
+register-sso-provider:register-sso-provider,sso-register-provider

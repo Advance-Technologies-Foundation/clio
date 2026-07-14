@@ -1,3 +1,9 @@
+# Authoritative agent instructions
+
+`AGENTS.md` is the single authoritative instruction file for all coding agents working in this repository.
+Read this file and `project-context.md` before doing any work. More specific nested `AGENTS.md` files, when present,
+may add rules for their subtree but must not duplicate or contradict this file.
+
 # ClioGate integration
 
 ClioGate is a Creatio package (in `cliogate/`) that acts as a privileged backend service.
@@ -10,6 +16,10 @@ Use ClioGate endpoints whenever:
 - The operation touches schema objects with restricted NUI security (`SysPackage`, `SysSchema`, etc.).
 - The existing DataService ESQ path fails with `SecurityException: Current user does not have permissions for the "X" object`.
 - The operation needs to run with elevated permissions that can't be granted at the schema level.
+
+Read-only name→UId schema resolution is the exception: looking up a schema's UId by name uses
+DataService ESQ by convention across clio, not ClioGate. (Trade-off: the caller needs DataService
+read access to the schema tables — accepted for consistency.)
 
 ## ClioGate URL pattern
 
@@ -149,6 +159,7 @@ Review MCP artifacts whenever any of the following is changed:
 - Authentication/requirements/dependencies for command execution
 - Workspace ownership/validation behavior
 - Command output, progress reporting, or destructive behavior
+- The MCP tool-surface model (resident vs long-tail membership in `McpCoreToolProfile`, tool renames/removals, the compatibility catalog, executor/dispatch behavior) — this class of change invalidates SHIPPED agent guidance, not just per-command artifacts
 
 ## Required MCP targets
 
@@ -158,6 +169,7 @@ For every touched command, verify and update all relevant files:
 - `clio\clio\Command\McpServer\Resources\*.cs`
 - `clio.tests\Command\McpServer\*.cs`
 - `clio.mcp.e2e\*.cs`
+- `clio\tpl\**` — the shipped workspace/ui-project agent-instruction templates (`AGENTS.md`, `CLAUDE.md`, `.mcp.json`). Stamped verbatim into every user/partner repo by `create-workspace` and guarded by `clio.tests\Command\McpServer\WorkspaceTemplateGuidanceDriftTests.cs` (resident-or-bridged oracle): a tool named imperatively in a template must be resident or routed through `clio-run`/`get-tool-contract`. When renaming or removing an MCP tool, add a `McpToolCompatibilityCatalog` entry instead of leaving the old name dangling.
 
 ## Update rules
 
@@ -169,6 +181,44 @@ For every touched command, verify and update all relevant files:
 - If no MCP artifact exists for a touched command, explicitly check whether one should be added and mention the result in the change summary.
 - If MCP artifacts are still accurate after review, explicitly state "MCP reviewed, no update required" in the change summary/PR description.
 - If you changed a command's rule or behavior, review the matching guidance article in `GuidanceCatalog` AND its trigger line in the relevant tool `[Description]`. `McpServerInstructions.cs` carries only a mandatory pointer to the `routing` guide (`get-guidance name=routing`); the routing table itself (guide **names** only) lives in `Resources\RoutingGuidanceResource.cs`, and detailed rules live once in each guide (`Resources\*GuidanceResource.cs`) — never duplicate guide content in the instructions or the routing map. When you add or rename a guide, update the routing map row that points at it.
+
+## ClioRing MCP compatibility gate
+
+ClioRing is independently built and released, but it is a consumer of clio's MCP contract.
+Decoupling forbids implementation/project coupling; it does **not** permit unvalidated protocol
+breakage. Clio is the provider and must run consumer-driven compatibility checks when its MCP
+surface can affect Ring.
+
+This gate is mandatory when changing any of the following:
+
+- An MCP tool invoked directly by Ring or dispatched through `clio-run`, including its name,
+  arguments, defaults, validation, destructive classification, result content, or error envelope.
+- Tool discovery/contract output, environment catalog output, child-process startup/handshake, or
+  cancellation and process-lifetime behavior consumed by Ring.
+- `notifications/progress`, progress-token correlation, `_meta.clioStageEvent`, deployment receipt,
+  manifest/stage/terminal semantics, sequence ordering, or failure/success classification.
+- A CLI command invoked by Ring through `clio-run`, even when no dedicated MCP tool class changed.
+
+Do not maintain a duplicate static tool list here. Determine the live consumer surface by searching
+`clio-ring/ClioRing.Ipc`, `clio-ring/ClioRing`, and `clio-ring/ClioRing.Desktop/actions.json` for
+tool calls and nested command names.
+
+Before completing a change covered by this gate:
+
+1. Add/update provider-side MCP unit and E2E coverage as required by the normal MCP policy.
+2. Run `dotnet test clio-ring/ClioRing.Tests/ClioRing.Tests.csproj -c Release` against the changed
+   clio source/contract.
+3. Run the relevant Ring contract/harness path; for typed stage events, preserve byte/schema parity
+   of the committed contract fixture and verify unknown-field tolerance and ordered replay.
+4. Run the Windows x64 NativeAOT publish command from the ClioRing policy. Contract changes can
+   alter source-generated DTO/serialization paths, so JIT-only validation is insufficient.
+5. If compatibility cannot be preserved additively, introduce an explicit schema/protocol version
+   and a transition supporting the previously released Ring. Never rely on clio and Ring being
+   upgraded atomically.
+
+State `ClioRing compatibility reviewed` plus the exact Ring commands/results in the change summary
+or PR description. If inspection proves the changed surface is not consumed by Ring, state
+`ClioRing compatibility reviewed, no Ring-consumed contract changed` and cite the inspected paths.
 
 ## Skill to use
 
@@ -198,6 +248,8 @@ For every touched command, verify and update all relevant files:
 - `clio\help\en\<command>.txt` (CLI `-H` help)
 - `clio\docs\commands\<command>.md` (detailed GitHub docs)
 - `clio\Commands.md` (overview/index and command section)
+- `clio\Wiki\WikiAnchors.txt` (canonical command and alias anchor mapping)
+- `clio\tpl\workspace\AGENTS.md` / `clio\tpl\ui-project*\AGENTS.md` — when the change affects a workflow those shipped templates describe (deploy/FSM flow, tool names, discovery model)
 
 ## Update rules
 
@@ -253,6 +305,7 @@ Before committing any change, run only the tests for affected modules — do not
 | `Query` | `clio/Query/` |
 | `Requests` | `clio/Requests/` |
 | `Validators` | `clio/Validators/` |
+| `Theming` | `clio/Theming/` |
 
 ## Selection rules
 
@@ -401,6 +454,12 @@ State which tier ran (and why) in the PR thread / change summary so the scope is
 This projects uses Centrally managed nuget packages versions, see
 [Directory.Packages.props](./Directory.Packages.props) for details.
 
+- Package families that must move together use one named MSBuild property (for example
+  `AvaloniaVersion`, `MsPackageVersion`, and `SIOVersion`) referenced by every family member.
+- Prefer the latest compatible stable package version. Use ordinary versions such as `12.1.0`,
+  not exact-range syntax such as `[12.1.0]`, so Rider, Visual Studio, and dependency automation can
+  discover upgrades. An exact range requires a documented compatibility reason next to the entry.
+
 # Feature toggles (experimental commands)
 
 Experimental / not-for-public CLI commands can be hidden behind a runtime flag.
@@ -416,6 +475,52 @@ While off, the command is invisible and unreachable on every surface (CLI parse,
 **Do not** reintroduce `WithToolsFromAssembly` / `WithResourcesFromAssembly` / `WithPromptsFromAssembly`, and do not pass a `Type[]` to `WithTools` / `WithResources` / `WithPrompts` — that binds to the SDK's generic overload and registers nothing. MCP registration must go through `McpFeatureToggleFilter.RegisterEnabledPrimitives` (which uses `IEnumerable<Type>`).
 
 See the "Feature toggles" section in `project-context.md` for the full rule and the four enforcement surfaces.
+
+# ClioRing contribution policy
+
+ClioRing is the optional internal-preview desktop companion in `clio-ring/`. Before changing it,
+read **ClioRing companion architecture (internal preview)** in `project-context.md`; that section
+is authoritative for its product boundary, dependency direction, protocol, release trust model,
+privacy, and deletion strategy.
+
+Mandatory rules:
+
+- Treat **ClioRing** / `clio-ring` as the only product-family identity. Keep project paths,
+  namespaces, workflow commands, assembly identities, and solution entries aligned.
+- Keep clio core independent from Avalonia and Ring application assemblies. Ring integration with
+  clio uses supported CLI/MCP contracts; never add a shortcut project reference into clio internals.
+- **Maintain NativeAOT compatibility on every Ring change.** Keep ModelContextProtocol SDK/reflection
+  behavior inside the IPC boundary. Production projects use plain interfaces/records and
+  source-generated `System.Text.Json`; new IL2026/IL3050 warnings or a failed Windows x64 AOT publish
+  are release blockers, not warnings to suppress. JIT success is insufficient.
+- Treat progress delivery as concurrent and out of order. Preserve the `(runId, sequence)` ordered
+  buffering contract, the sequence-zero manifest, and explicit terminal success/failure semantics.
+- Keep clio settings as the only environment catalog. Refresh caches; do not create a Ring-owned
+  environment database or copy credentials into Ring settings.
+- Do not add telemetry. Do not log, persist, display, or put into test snapshots any secret-bearing
+  configuration, connection string, token, password, or authorization header.
+- Never let an agent, test, probe, watcher, retry, or startup path perform a real deploy/uninstall
+  without an explicit user gesture and disposable target confirmation. Prefer the debugger/button
+  harness for proving the UI happy path, then add focused regression tests.
+- Preserve the secure updater invariants listed in `project-context.md`. Do not broaden download
+  hosts, accept unsigned/unhashed assets, remove size/path bounds, allow downgrades, or weaken the
+  install/update/uninstall lifecycle lock without an approved security design.
+- Ring lifecycle remains intentionally absent from MCP unless a concrete agent use case and safe
+  authorization model are approved. Do not expose a local UI installer merely for surface parity.
+- Keep the feature removable: Ring-specific state, migrations, and dependencies must not leak into
+  ordinary clio environment operation.
+
+Required Ring validation commands:
+
+```powershell
+dotnet test clio-ring/ClioRing.Tests/ClioRing.Tests.csproj -c Release
+dotnet publish clio-ring/ClioRing.Desktop/ClioRing.Desktop.csproj -c Release -r win-x64 --self-contained true -p:PublishAot=true
+```
+
+For changes to the `clio ring` lifecycle command/bootstrap, also run the targeted Command-module
+tests under every target framework affected by the change. Release workflow or bootstrap changes
+require focused tests for checksum/host/path bounds, downgrade/repair behavior, concurrency, and
+locked-executable uninstall; a successful UI launch alone is not sufficient.
 
 # BMAD development pipeline
 

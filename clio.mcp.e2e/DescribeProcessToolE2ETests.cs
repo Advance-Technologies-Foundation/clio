@@ -24,6 +24,7 @@ namespace Clio.Mcp.E2E;
 [AllureNUnit]
 [AllureFeature(DescribeProcessTool.ToolName)]
 [NonParallelizable]
+[Category(ProcessDesignerE2EGate.CategoryName)]
 public sealed class DescribeProcessToolE2ETests {
 
 	private const string ToolName = DescribeProcessTool.ToolName;

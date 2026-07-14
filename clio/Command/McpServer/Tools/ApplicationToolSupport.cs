@@ -33,7 +33,8 @@ internal static class ApplicationToolResultMapper {
 							column.DataValueType,
 							column.ReferenceSchema,
 							column.Required))
-						.ToList()))
+						.ToList(),
+					entity.IsVirtual))
 				.ToList(),
 			result.Pages?
 				.Select(page => new PageListItem {
@@ -79,7 +80,8 @@ internal static class ApplicationToolResultMapper {
 							column.DataValueType,
 							column.ReferenceSchema,
 							column.Required))
-						.ToList()),
+						.ToList(),
+					result.Entity.IsVirtual),
 			result.Pages
 				.Select(page => new PageListItem {
 					SchemaName = page.SchemaName,
