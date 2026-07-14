@@ -49,14 +49,14 @@ public abstract class WorkspaceCommandToolBase<TOptions>(
 		// McpToolExecutionLock.CwdLock (held by PageSyncTool/PageFileWriter/PageBaselineGuard while
 		// anchoring page output to cwd) — removing the cross-tenant head-of-line blocking (review #4).
 		return ExecuteUnderTenantLock(options, () => {
+			// An unknown or unreachable environment must fail the SAME graceful way whether it surfaces
+			// resolving IWorkspacePathBuilder right below, or a moment later resolving the command itself
+			// inside execute() (BaseTool's own resolve path) — both go through the same per-tenant
+			// container and environment-settings lookup, so the exception shapes here mirror that path.
 			IWorkspacePathBuilder workspacePathBuilder;
 			try {
 				workspacePathBuilder = ResolveFromCallContainer<IWorkspacePathBuilder>(options);
 			}
-			// Mirrors InternalExecute<TCommand>'s own ResolveCommand catch (BaseTool.cs): an unknown or
-			// unreachable environment must fail the SAME graceful way whether it surfaces here (resolving
-			// IWorkspacePathBuilder) or a moment later inside execute() (resolving the command itself) —
-			// both resolve through the same per-tenant container / environment-settings lookup.
 			catch (EnvironmentResolutionException e) {
 				return CommandExecutionResult.FromResolverError(e);
 			}
