@@ -100,7 +100,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="ss"></a>
 <a id="sys-setting"></a>
 <a id="syssetting"></a>
-- [`set-syssetting`](docs/commands/set-syssetting.md) - Get or set a system setting value, `get-syssetting`, `ss`, `sys-setting`, `syssetting`
+- [`set-syssetting`](docs/commands/set-syssetting.md) - Get or set a system setting value (including blob-data settings such as the logo — pass a file path for Type Binary), `get-syssetting`, `ss`, `sys-setting`, `syssetting`
 <a id="set-webservice-url"></a>
 <a id="swu"></a>
 <a id="webservice"></a>
@@ -490,7 +490,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="dc"></a>
 <a id="ic"></a>
 <a id="install-creatio"></a>
-- [`deploy-creatio`](docs/commands/deploy-creatio.md) - Install Creatio from a distribution package, `dc`, `ic`, `install-creatio`
+- [`deploy-creatio`](docs/commands/deploy-creatio.md) - Install Creatio from a distribution package, with Explorer support for unambiguous local infrastructure defaults, `dc`, `ic`, `install-creatio`
 <a id="deploy-identity"></a>
 - [`deploy-identity`](docs/commands/deploy-identity.md) - Deploy IdentityService to IIS and connect it to a Creatio environment
 <a id="get-identity-service-config"></a>
