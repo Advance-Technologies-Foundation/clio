@@ -314,12 +314,28 @@ public sealed class SysSettingsToolE2ETests : McpContractFixtureBase {
 				EntitySchemaStructuredResultParser.Extract<SysSettingUpdateResult>(updateResult);
 
 			// Assert
-			updateResult.IsError.Should().NotBeTrue();
+			updateResult.IsError.Should().NotBeTrue(
+				because: "a Binary upload from a readable file must not surface a tool error");
 			updateResponse.Success.Should().BeTrue(
 				because: "clio must read the file, Base64-encode it locally, and the platform must accept the Binary write");
 			updateResponse.Code.Should().Be(code,
 				because: "the response must echo the updated Binary setting code");
-			updateResponse.Error.Should().BeNull();
+			updateResponse.Error.Should().BeNull(
+				because: "a successful Binary upload must not populate the error envelope");
+
+			// Round-trip byte fidelity: MCP get returns empty for Binary, so read the stored value back
+			// through the legacy get-syssetting / cliogate path, decode it, and assert it equals the source.
+			ClioCliCommandResult readBack = await ClioCliCommandRunner.RunAsync(
+				arrangeContext.Settings,
+				["get-syssetting", code, "-e", arrangeContext.EnvironmentName!]);
+			readBack.ExitCode.Should().Be(0,
+				because: "reading the stored Binary value back through the legacy CLI path must succeed");
+			int marker = readBack.StandardOutput.LastIndexOf(" : ", StringComparison.Ordinal);
+			marker.Should().BeGreaterThan(-1,
+				because: "get-syssetting prints the stored value after a ' : ' separator");
+			string storedBase64 = readBack.StandardOutput[(marker + 3)..].Trim();
+			storedBase64.Should().Be(Convert.ToBase64String(fileBytes),
+				because: "the bytes persisted on the platform must exactly equal the uploaded source file");
 		} finally {
 			if (File.Exists(filePath)) {
 				File.Delete(filePath);
@@ -363,7 +379,7 @@ public sealed class SysSettingsToolE2ETests : McpContractFixtureBase {
 			? await ResolveReachableEnvironmentAsync(settings)
 			: settings.Sandbox.EnvironmentName;
 		McpServerSession session = Session;
-		return new ArrangeContext(session, cancellationTokenSource, environmentName);
+		return new ArrangeContext(session, cancellationTokenSource, environmentName, settings);
 	}
 
 	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
@@ -387,7 +403,8 @@ public sealed class SysSettingsToolE2ETests : McpContractFixtureBase {
 	private new sealed record ArrangeContext(
 		McpServerSession Session,
 		CancellationTokenSource CancellationTokenSource,
-		string? EnvironmentName) : IAsyncDisposable {
+		string? EnvironmentName,
+		McpE2ESettings Settings) : IAsyncDisposable {
 		public ValueTask DisposeAsync() {
 			CancellationTokenSource.Dispose();
 			return ValueTask.CompletedTask;

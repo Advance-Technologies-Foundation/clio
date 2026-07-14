@@ -16,6 +16,22 @@ using IAbstractionsFileSystem = System.IO.Abstractions.IFileSystem;
 
 namespace Clio.Common;
 
+/// <summary>Creatio's file-upload security mode (mirrors the platform's FileSecurityMode lookup).</summary>
+public enum FileSecurityMode { Disabled, AllowList, DenyList }
+
+/// <summary>
+/// The environment's active file-upload security policy, read from sys-settings. Advisory on the
+/// sys-setting write path (the platform enforces it only on the multipart file-upload service), but clio
+/// applies it client-side so a Binary upload from a file mirrors what the environment would allow.
+/// </summary>
+public sealed record FileSecurityPolicy(FileSecurityMode Mode, IReadOnlySet<string> Extensions, bool AllowUnknownType)
+{
+	public static FileSecurityPolicy DisabledPolicy { get; } =
+		new(FileSecurityMode.Disabled, new HashSet<string>(), true);
+
+	public bool IsActive => Mode != FileSecurityMode.Disabled;
+}
+
 public interface ISysSettingsManager
 {
 
@@ -80,6 +96,13 @@ public interface ISysSettingsManager
 	/// blob value itself is not readable.
 	/// </summary>
 	public List<SysSettings> GetAllSysSettingsWithValues(bool includeBinary = false);
+
+	/// <summary>
+	/// Reads the environment's file-upload security policy (FileSecurityMode + the active extension list +
+	/// AllowFilesWithUnknownType) from sys-settings. Returns <see cref="FileSecurityPolicy.DisabledPolicy"/>
+	/// when the mode is Disabled or cannot be resolved.
+	/// </summary>
+	FileSecurityPolicy GetFileSecurityPolicy();
 
 }
 
@@ -177,22 +200,34 @@ public class SysSettingsManager : ISysSettingsManager
 	/// </summary>
 	public const long MaxBinaryValueBytes = 10L * 1024 * 1024;
 
+	internal enum Base64ValidationResult { Valid, Malformed, TooLarge }
+
 	/// <summary>
-	/// Validates that <paramref name="value"/> is a non-empty, well-formed Base64 string and reports the
-	/// decoded byte length. Used to guard Binary sys-setting writes so a malformed or oversized payload is
-	/// rejected before it reaches the platform's PostSysSettingsValues endpoint.
+	/// Validates a Binary sys-setting payload without allocating from unbounded attacker-controlled input.
+	/// First rejects on the encoded length (an upper bound on the decoded size) so an oversized value never
+	/// gets a full buffer allocated for it; only then allocates to verify Base64 well-formedness and the
+	/// exact decoded size. Distinguishes <see cref="Base64ValidationResult.Malformed"/> from
+	/// <see cref="Base64ValidationResult.TooLarge"/> so callers can report the real cause.
 	/// </summary>
-	private static bool TryDecodeBase64(string value, out int decodedByteLength){
+	private static Base64ValidationResult ValidateBinaryBase64(string value, out int decodedByteLength){
 		decodedByteLength = 0;
 		if (string.IsNullOrWhiteSpace(value)) {
-			return false;
+			return Base64ValidationResult.Malformed;
+		}
+		// Base64 encodes 3 bytes per 4 chars, so decoded <= length/4*3. Reject on this upper bound BEFORE
+		// allocating, so a huge inline value cannot force a large allocation just to be rejected afterward.
+		long maxPossibleDecoded = (long)value.Length / 4 * 3;
+		if (maxPossibleDecoded > MaxBinaryValueBytes) {
+			return Base64ValidationResult.TooLarge;
 		}
 		byte[] buffer = new byte[value.Length];
 		if (!Convert.TryFromBase64String(value, buffer, out decodedByteLength)) {
 			decodedByteLength = 0;
-			return false;
+			return Base64ValidationResult.Malformed;
 		}
-		return true;
+		return decodedByteLength > MaxBinaryValueBytes
+			? Base64ValidationResult.TooLarge
+			: Base64ValidationResult.Valid;
 	}
 
 	private Guid GetEntityIdByDisplayValue(string entityName, string optsValue){
@@ -453,20 +488,21 @@ public class SysSettingsManager : ISysSettingsManager
 			// PostSysSettingsValues endpoint accepts it. Callers pass an already-Base64-encoded value
 			// (the command layer encodes a file for CLI/MCP callers). Reading the value back is not
 			// supported here — see SysSettingsCommand for the write-only rationale.
+			// Validate + size-cap here so the limit holds for every write path (inline Base64 as well as a
+			// file read upstream), enforced against the decoded byte count without allocating from an
+			// unbounded input first.
 			string base64Value = value?.ToString() ?? string.Empty;
-			if (!TryDecodeBase64(base64Value, out int decodedByteLength)) {
-				_logger.WriteError(
-					$"SysSettings with code: {code} is not updated. Value is not valid Base64 " +
-					"(Binary settings expect a Base64-encoded payload).");
-				return false;
-			}
-			// Enforce the size cap here so it applies to every write path (inline Base64 as well as a
-			// file read upstream), and against the decoded byte count actually being sent.
-			if (decodedByteLength > MaxBinaryValueBytes) {
-				_logger.WriteError(
-					$"SysSettings with code: {code} is not updated. Binary value is {decodedByteLength:N0} bytes, " +
-					$"which exceeds the {MaxBinaryValueBytes:N0}-byte limit.");
-				return false;
+			switch (ValidateBinaryBase64(base64Value, out int _)) {
+				case Base64ValidationResult.Malformed:
+					_logger.WriteError(
+						$"SysSettings with code: {code} is not updated. Value is not valid Base64 " +
+						"(Binary settings expect a Base64-encoded payload).");
+					return false;
+				case Base64ValidationResult.TooLarge:
+					_logger.WriteError(
+						$"SysSettings with code: {code} is not updated. Binary value exceeds the " +
+						$"{MaxBinaryValueBytes:N0}-byte limit.");
+					return false;
 			}
 			payloadValue = base64Value;
 		}
@@ -545,8 +581,37 @@ public class SysSettingsManager : ISysSettingsManager
 				.Where(i => i.SysSettingsId == sysSetting.Id)
 				.ToList();
 			sysSetting.SysSettingsValues = currentSysSettingValue;
-		}		
+		}
 		return sysSettings;
+	}
+
+	// Platform-fixed FileSecurityMode lookup ids (constants in Terrasoft.Web.FileSecurity.FileSecurityModeProvider).
+	private static readonly Guid FileSecurityModeDisabledId = new("9801C625-FAFB-4ED3-9383-C3C942A5C1E3");
+	private static readonly Guid FileSecurityModeDenyListId = new("60849C6E-24B4-45DF-9AAD-2F69D419823C");
+	private static readonly Guid FileSecurityModeAllowListId = new("C6CA9A2F-3A4A-4D51-B67B-DE36852CB916");
+
+	/// <inheritdoc cref="ISysSettingsManager.GetFileSecurityPolicy" />
+	public FileSecurityPolicy GetFileSecurityPolicy() {
+		FileSecurityMode mode = FileSecurityMode.Disabled;
+		if (Guid.TryParse(GetSysSettingValueByCode("FileSecurityMode"), out Guid modeId)) {
+			if (modeId == FileSecurityModeAllowListId) {
+				mode = FileSecurityMode.AllowList;
+			} else if (modeId == FileSecurityModeDenyListId) {
+				mode = FileSecurityMode.DenyList;
+			}
+		}
+		if (mode == FileSecurityMode.Disabled) {
+			return FileSecurityPolicy.DisabledPolicy;
+		}
+		string listCode = mode == FileSecurityMode.AllowList ? "FileExtensionsAllowList" : "FileExtensionsDenyList";
+		string listRaw = GetSysSettingValueByCode(listCode) ?? string.Empty;
+		HashSet<string> extensions = new(StringComparer.OrdinalIgnoreCase);
+		foreach (string entry in listRaw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)) {
+			extensions.Add(entry.TrimStart('.'));
+		}
+		// Platform default for AllowFilesWithUnknownType is true; treat an unset/unparseable value as true.
+		bool allowUnknown = !bool.TryParse(GetSysSettingValueByCode("AllowFilesWithUnknownType"), out bool parsed) || parsed;
+		return new FileSecurityPolicy(mode, extensions, allowUnknown);
 	}
 
 	#endregion

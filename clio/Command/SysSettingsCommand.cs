@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -69,27 +70,29 @@ namespace Clio.Command
 		/// <summary>
 		/// Reads the file at <paramref name="filePath"/> and returns its Base64-encoded contents.
 		/// Used to turn a file's bytes (e.g. the logo, or any blob) into the Base64 payload a Binary
-		/// sys-setting expects, keeping the bytes on disk rather than in the CLI/MCP arguments. Rejects a
-		/// file exceeding <see cref="SysSettingsManager.MaxBinaryValueBytes"/> both before the read (fail
-		/// fast, no huge allocation) and after it (closes the race where the file grows between sizing and
-		/// reading). The manager re-checks the decoded length, so the limit also holds for inline Base64.
+		/// sys-setting expects, keeping the bytes on disk rather than in the CLI/MCP arguments. Reads from a
+		/// single open handle and stops as soon as the content exceeds
+		/// <see cref="SysSettingsManager.MaxBinaryValueBytes"/>, so a file that grows or is replaced after
+		/// any metadata inspection cannot force an unbounded allocation. The manager re-checks the decoded
+		/// length, so the limit also holds for inline Base64.
 		/// </summary>
 		private string EncodeFileToBase64(string filePath){
 			if (!_fileSystem.ExistsFile(filePath)) {
 				throw new ArgumentException($"File not found: '{filePath}'.");
 			}
-			long sizeBytes = _fileSystem.GetFileSize(filePath);
-			if (sizeBytes > SysSettingsManager.MaxBinaryValueBytes) {
-				throw new ArgumentException(
-					$"File '{filePath}' is {sizeBytes:N0} bytes, which exceeds the " +
-					$"{SysSettingsManager.MaxBinaryValueBytes:N0}-byte limit for a Binary sys-setting value.");
+			long cap = SysSettingsManager.MaxBinaryValueBytes;
+			using Stream stream = _fileSystem.OpenReadStream(filePath);
+			using MemoryStream buffered = new();
+			byte[] chunk = new byte[81920];
+			int read;
+			while ((read = stream.Read(chunk, 0, chunk.Length)) > 0) {
+				if (buffered.Length + read > cap) {
+					throw new ArgumentException(
+						$"File '{filePath}' exceeds the {cap:N0}-byte limit for a Binary sys-setting value.");
+				}
+				buffered.Write(chunk, 0, read);
 			}
-			byte[] bytes = _fileSystem.ReadAllBytes(filePath);
-			if (bytes.LongLength > SysSettingsManager.MaxBinaryValueBytes) {
-				throw new ArgumentException(
-					$"File '{filePath}' is {bytes.LongLength:N0} bytes, which exceeds the " +
-					$"{SysSettingsManager.MaxBinaryValueBytes:N0}-byte limit for a Binary sys-setting value.");
-			}
+			byte[] bytes = buffered.ToArray();
 			_logger.WriteInfo($"Reading Binary sys-setting value from file '{filePath}' ({bytes.LongLength:N0} bytes).");
 			return Convert.ToBase64String(bytes);
 		}
@@ -112,6 +115,54 @@ namespace Clio.Command
 			}
 		}
 
+		/// <summary>
+		/// Applies the environment's active file-security policy to <paramref name="filePath"/> before upload,
+		/// mirroring how Creatio would treat the same file on its upload service (extension allow/deny +
+		/// unknown-type). Advisory client-side check: the platform does not gate the sys-setting write path
+		/// itself, but this keeps a Binary upload consistent with the environment's configured policy.
+		/// </summary>
+		private void EnforceFileSecurityPolicy(string filePath){
+			FileSecurityPolicy policy = _sysSettingsManager.GetFileSecurityPolicy();
+			if (!policy.IsActive) {
+				return;
+			}
+			string fileName = Path.GetFileName(filePath);
+			string extension = Path.GetExtension(filePath).TrimStart('.');
+			if (string.IsNullOrEmpty(extension)) {
+				if (!policy.AllowUnknownType) {
+					throw new ArgumentException(
+						$"Cannot upload '{fileName}': files with no extension are not allowed in this environment " +
+						"(AllowFilesWithUnknownType is off).");
+				}
+				return;
+			}
+			bool listed = policy.Extensions.Contains(extension);
+			bool allowed = policy.Mode == FileSecurityMode.AllowList ? listed : !listed;
+			if (!allowed) {
+				throw new ArgumentException(
+					$"Cannot upload '{fileName}': files with extension '.{extension}' are not allowed in this " +
+					$"environment ({policy.Mode} file-security policy).");
+			}
+		}
+
+		/// <summary>
+		/// Rejects an inline Base64 value for a Binary setting while a file-security policy is active: an
+		/// inline value carries no filename/extension, so it would bypass the environment's extension policy.
+		/// The caller must use value-file-path (which has an extension to validate) instead.
+		/// </summary>
+		private void RejectInlineBinaryUnderActivePolicy(string code){
+			(_, string existingType) = _sysSettingsManager.GetAllUsersDefaultWithType(code);
+			if (!string.Equals(existingType, BinaryTypeName, StringComparison.Ordinal)) {
+				return;
+			}
+			if (_sysSettingsManager.GetFileSecurityPolicy().IsActive) {
+				throw new ArgumentException(
+					$"Sys-setting '{code}' is Binary and this environment has an active file-security policy. " +
+					"Provide the value via value-file-path (a file path) so its extension can be validated, " +
+					"rather than an inline Base64 value.");
+			}
+		}
+
 		// A Base64 string uses only [A-Za-z0-9+/=], so any of '.', '\' or ':' means the caller almost
 		// certainly meant a file path — used to give a "file not found" hint instead of a Base64 error.
 		private static bool LooksLikeFilePath(string value) =>
@@ -128,6 +179,7 @@ namespace Clio.Command
 			if (string.Equals(opts.Type, BinaryTypeName, StringComparison.Ordinal) && opts.Value is not null) {
 				if (_fileSystem.ExistsFile(opts.Value)) {
 					EnsureExistingSettingIsBinary(opts.Code);
+					EnforceFileSecurityPolicy(opts.Value);
 					value = EncodeFileToBase64(opts.Value);
 				} else if (LooksLikeFilePath(opts.Value)) {
 					// The value looks like a path (Base64 never contains '.', '\\' or ':') but no such file
@@ -170,10 +222,14 @@ namespace Clio.Command
 				if (!hasInlineValue && !hasFilePath) {
 					throw new ArgumentException("value is required (supply 'value' or 'value-file-path').");
 				}
-				// A file upload targets a Binary setting: confirm the existing setting is Binary before
-				// reading the file, so a file's Base64 is never persisted as text on a non-Binary setting.
+				// A file upload targets a Binary setting: confirm the existing setting is Binary and passes
+				// the environment's file-security policy before reading the file. An inline value for a
+				// Binary setting is rejected while a policy is active (no extension to validate).
 				if (hasFilePath) {
 					EnsureExistingSettingIsBinary(args.Code);
+					EnforceFileSecurityPolicy(args.ValueFilePath);
+				} else {
+					RejectInlineBinaryUnderActivePolicy(args.Code);
 				}
 				// A file path is read and Base64-encoded locally; such payloads are Binary by nature, so
 				// default the type accordingly when it is not resolved from the target environment.

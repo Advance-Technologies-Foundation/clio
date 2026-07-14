@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Net.Http;
 using ATF.Repository.Providers;
 using Clio.Command;
@@ -352,9 +354,10 @@ public sealed class SysSettingsToolTests {
 		manager.UpdateSysSetting("LogoImage", Arg.Do<object>(v => capturedValue = v as string), Arg.Any<string>())
 			.Returns(true);
 		manager.GetAllUsersDefaultWithType("LogoImage").Returns((string.Empty, "Binary"));
+		manager.GetFileSecurityPolicy().Returns(FileSecurityPolicy.DisabledPolicy);
 		IFileSystem fileSystem = Substitute.For<IFileSystem>();
 		fileSystem.ExistsFile("logo.png").Returns(true);
-		fileSystem.ReadAllBytes("logo.png").Returns(bytes);
+		fileSystem.OpenReadStream("logo.png").Returns(_ => new MemoryStream(bytes));
 		SysSettingUpdateTool tool = new(BuildResolver(manager, fileSystem));
 
 		// Act
@@ -410,7 +413,7 @@ public sealed class SysSettingsToolTests {
 		result.Error.Should().Contain("not Binary",
 			because: "the error must explain the target setting's type is wrong for a file upload");
 		manager.DidNotReceive().UpdateSysSetting(Arg.Any<string>(), Arg.Any<object>(), Arg.Any<string>());
-		fileSystem.DidNotReceive().ReadAllBytes(Arg.Any<string>());
+		fileSystem.DidNotReceive().OpenReadStream(Arg.Any<string>());
 	}
 
 	[Test]
@@ -436,6 +439,55 @@ public sealed class SysSettingsToolTests {
 		manager.DidNotReceive().UpdateSysSetting(Arg.Any<string>(), Arg.Any<object>(), Arg.Any<string>());
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("update-sys-setting rejects a value-file-path upload whose extension is blocked by the environment's active file-security policy, mirroring the platform's upload rules.")]
+	public void UpdateSysSetting_Should_Reject_File_Blocked_By_Security_Policy() {
+		// Arrange
+		ISysSettingsManager manager = Substitute.For<ISysSettingsManager>();
+		manager.GetAllUsersDefaultWithType("LogoImage").Returns((string.Empty, "Binary"));
+		manager.GetFileSecurityPolicy().Returns(new FileSecurityPolicy(
+			FileSecurityMode.DenyList, new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "exe", "svg" }, true));
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		fileSystem.ExistsFile("payload.svg").Returns(true);
+		SysSettingUpdateTool tool = new(BuildResolver(manager, fileSystem));
+
+		// Act
+		SysSettingUpdateResult result = tool.UpdateSysSetting(
+			new UpdateSysSettingArgs("local", "LogoImage", ValueFilePath: "payload.svg"));
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "a denied extension must be rejected before the file is read or uploaded");
+		result.Error.Should().Contain(".svg",
+			because: "the error must name the blocked extension so the caller understands the policy");
+		fileSystem.DidNotReceive().OpenReadStream(Arg.Any<string>());
+		manager.DidNotReceive().UpdateSysSetting(Arg.Any<string>(), Arg.Any<object>(), Arg.Any<string>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("update-sys-setting rejects an inline Base64 value for a Binary setting while a file-security policy is active, since an inline value carries no extension to validate.")]
+	public void UpdateSysSetting_Should_Reject_Inline_Binary_Under_Active_Policy() {
+		// Arrange
+		ISysSettingsManager manager = Substitute.For<ISysSettingsManager>();
+		manager.GetAllUsersDefaultWithType("LogoImage").Returns((string.Empty, "Binary"));
+		manager.GetFileSecurityPolicy().Returns(new FileSecurityPolicy(
+			FileSecurityMode.AllowList, new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "png" }, false));
+		SysSettingUpdateTool tool = new(BuildResolver(manager));
+
+		// Act
+		SysSettingUpdateResult result = tool.UpdateSysSetting(
+			new UpdateSysSettingArgs("local", "LogoImage", "aVZCT1J3"));
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "an inline Binary value has no extension to validate against an active policy");
+		result.Error.Should().Contain("value-file-path",
+			because: "the error must direct the caller to the file-path form so the extension can be checked");
+		manager.DidNotReceive().UpdateSysSetting(Arg.Any<string>(), Arg.Any<object>(), Arg.Any<string>());
+	}
+
 	#endregion
 
 	#region set-syssetting CLI (Binary file path)
@@ -452,10 +504,10 @@ public sealed class SysSettingsToolTests {
 		manager.UpdateSysSetting("LogoImage", Arg.Do<object>(v => capturedValue = v as string), "Binary")
 			.Returns(true);
 		manager.GetAllUsersDefaultWithType("LogoImage").Returns((string.Empty, "Binary"));
+		manager.GetFileSecurityPolicy().Returns(FileSecurityPolicy.DisabledPolicy);
 		IFileSystem fileSystem = Substitute.For<IFileSystem>();
 		fileSystem.ExistsFile("logo.png").Returns(true);
-		fileSystem.GetFileSize("logo.png").Returns(bytes.Length);
-		fileSystem.ReadAllBytes("logo.png").Returns(bytes);
+		fileSystem.OpenReadStream("logo.png").Returns(_ => new MemoryStream(bytes));
 		SysSettingsCommand command = new(manager, Substitute.For<ILogger>(), fileSystem);
 
 		// Act
@@ -485,6 +537,32 @@ public sealed class SysSettingsToolTests {
 		act.Should().Throw<ArgumentException>()
 			.WithMessage("*File not found*",
 				because: "a path-like Binary value with no matching file must fail with a file-not-found message, not an invalid-Base64 one");
+		manager.DidNotReceive().UpdateSysSetting(Arg.Any<string>(), Arg.Any<object>(), Arg.Any<string>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The set-syssetting CLI rejects a Binary file whose content exceeds the size cap during the bounded read, so an oversized (or mid-read grown) file cannot be uploaded.")]
+	public void Cli_SetSysSetting_Binary_OverCap_Should_Reject_During_Read() {
+		// Arrange — a stream that yields more than the cap, simulating an oversized/grown file.
+		long cap = SysSettingsManager.MaxBinaryValueBytes;
+		Stream oversized = new MemoryStream(new byte[cap + 1]);
+		ISysSettingsManager manager = Substitute.For<ISysSettingsManager>();
+		manager.GetAllUsersDefaultWithType("LogoImage").Returns((string.Empty, "Binary"));
+		manager.GetFileSecurityPolicy().Returns(FileSecurityPolicy.DisabledPolicy);
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		fileSystem.ExistsFile("big.png").Returns(true);
+		fileSystem.OpenReadStream("big.png").Returns(oversized);
+		SysSettingsCommand command = new(manager, Substitute.For<ILogger>(), fileSystem);
+
+		// Act
+		Action act = () => command.UpdateSysSetting(
+			new SysSettingsOptions { Code = "LogoImage", Value = "big.png", Type = "Binary" });
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("*limit*",
+				because: "the bounded read must reject content exceeding the cap instead of allocating it all and uploading");
 		manager.DidNotReceive().UpdateSysSetting(Arg.Any<string>(), Arg.Any<object>(), Arg.Any<string>());
 	}
 
