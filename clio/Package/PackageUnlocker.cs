@@ -79,8 +79,7 @@ namespace Clio.Package
 			} catch (JsonException ex) {
 				throw new InvalidOperationException(
 					$"ClioGate {route} returned a non-JSON response (likely an HTTP error page). " +
-					"Check the Creatio application logs (Error.log) and verify the installed cliogate version is current. " +
-					$"Response begins with: {TextUtilities.SanitizeForDisplay(response, 200)}", ex);
+					"Check the Creatio application logs (Error.log) and verify the installed cliogate version is current.", ex);
 			}
 			if (!success) {
 				throw new InvalidOperationException(

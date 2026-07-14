@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Clio.Common;
 using Clio.Package;
+using Clio.Tests.Command;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
@@ -9,23 +10,29 @@ using NUnit.Framework;
 namespace Clio.Tests.Package;
 
 [TestFixture]
-[Category("Unit")]
 [Property("Module", "Package")]
-public class PackageLockManagerTests {
+public class PackageLockManagerTests : BaseClioModuleTests {
 
-	private static (PackageLockManager manager, IApplicationClient applicationClient) CreateManager() {
-		// Real ServiceUrlBuilder so the ClioGate route mapping is exercised; only the HTTP boundary is faked.
-		EnvironmentSettings environmentSettings = new() {
-			Uri = "http://localhost",
-			IsNetCore = true
-		};
-		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+	private IApplicationClient _applicationClient;
+	private IPackageLockManager _manager;
+
+	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
+		_applicationClient = Substitute.For<IApplicationClient>();
 		IApplicationClientFactory applicationClientFactory = Substitute.For<IApplicationClientFactory>();
-		applicationClientFactory.CreateClient(Arg.Any<EnvironmentSettings>()).Returns(applicationClient);
-		IServiceUrlBuilder serviceUrlBuilder = new ServiceUrlBuilder(environmentSettings);
-		PackageLockManager manager =
-			new(environmentSettings, applicationClientFactory, serviceUrlBuilder);
-		return (manager, applicationClient);
+		applicationClientFactory.CreateClient(Arg.Any<EnvironmentSettings>()).Returns(_applicationClient);
+		containerBuilder.AddSingleton(applicationClientFactory);
+		containerBuilder.AddTransient<IPackageLockManager, PackageLockManager>();
+	}
+
+	public override void Setup() {
+		EnvironmentSettings.IsNetCore = true;
+		base.Setup();
+		_manager = Container.GetRequiredService<IPackageLockManager>();
+	}
+
+	public override void TearDown() {
+		_applicationClient.ClearReceivedCalls();
+		base.TearDown();
 	}
 
 	[Test]
@@ -33,13 +40,12 @@ public class PackageLockManagerTests {
 		"instead of surfacing the raw JsonException, so the real cause is not hidden.")]
 	public void Unlock_ShouldThrowClearInvalidOperationException_WhenGateReturnsHtmlErrorPage() {
 		// Arrange
-		(PackageLockManager manager, IApplicationClient applicationClient) = CreateManager();
-		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
 				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("<html><body>500 - Internal server error.</body></html>");
 
 		// Act
-		Action act = () => manager.Unlock(new List<string>());
+		Action act = () => _manager.Unlock(new List<string>());
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>(
@@ -51,37 +57,33 @@ public class PackageLockManagerTests {
 	}
 
 	[Test]
-	[Description("Caps the echoed response-body excerpt at 200 characters so a multi-kilobyte HTML error page does not flood the error message.")]
-	public void Unlock_ShouldTruncateEchoedBody_WhenNonJsonResponseIsLarge() {
+	[Description("Does not copy a non-JSON response body into the user-facing exception because upstream error pages may contain sensitive details.")]
+	public void Unlock_ShouldNotExposeResponseBody_WhenNonJsonResponseIsReturned() {
 		// Arrange
-		(PackageLockManager manager, IApplicationClient applicationClient) = CreateManager();
-		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
+		const string responseBody = "sensitive upstream response";
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
 				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns(new string('x', 5000));
+			.Returns(responseBody);
 
 		// Act
-		Action act = () => manager.Unlock(new List<string>());
+		Action act = () => _manager.Unlock(new List<string>());
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>(because: "a non-JSON body is a transport-level failure")
-			.Which.Message.Should()
-				.Contain(new string('x', 200) + "...",
-					because: "the echoed body is capped at exactly 200 characters followed by an ellipsis")
-				.And.NotContain(new string('x', 201),
-					because: "no more than 200 characters of the raw body are echoed into the message");
+			.Which.Message.Should().NotContain(responseBody,
+				because: "upstream error content may contain secrets or internal details that must not reach ordinary output");
 	}
 
 	[Test]
 	[Description("Wraps an empty gate response in a clear InvalidOperationException instead of surfacing a raw JSON parse error.")]
 	public void Unlock_ShouldThrowClearInvalidOperationException_WhenGateReturnsEmptyResponse() {
 		// Arrange
-		(PackageLockManager manager, IApplicationClient applicationClient) = CreateManager();
-		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
 				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(string.Empty);
 
 		// Act
-		Action act = () => manager.Unlock(new List<string>());
+		Action act = () => _manager.Unlock(new List<string>());
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>(
@@ -94,13 +96,12 @@ public class PackageLockManagerTests {
 	[Description("Wraps a null gate response in a clear InvalidOperationException rather than letting a raw ArgumentNullException escape the JSON parse.")]
 	public void Unlock_ShouldThrowClearInvalidOperationException_WhenGateReturnsNullResponse() {
 		// Arrange
-		(PackageLockManager manager, IApplicationClient applicationClient) = CreateManager();
-		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
 				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns((string)null);
 
 		// Act
-		Action act = () => manager.Unlock(new List<string>());
+		Action act = () => _manager.Unlock(new List<string>());
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>(
@@ -113,13 +114,12 @@ public class PackageLockManagerTests {
 	[Description("Completes without throwing when the gate returns a JSON true result for the unlock-all (empty) payload.")]
 	public void Unlock_ShouldNotThrow_WhenGateReturnsTrue() {
 		// Arrange
-		(PackageLockManager manager, IApplicationClient applicationClient) = CreateManager();
-		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
 				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("true");
 
 		// Act
-		Action act = () => manager.Unlock(new List<string>());
+		Action act = () => _manager.Unlock(new List<string>());
 
 		// Assert
 		act.Should().NotThrow(
@@ -130,13 +130,12 @@ public class PackageLockManagerTests {
 	[Description("Throws the 'returned false' InvalidOperationException when the gate reports a false result.")]
 	public void Unlock_ShouldThrowInvalidOperationException_WhenGateReturnsFalse() {
 		// Arrange
-		(PackageLockManager manager, IApplicationClient applicationClient) = CreateManager();
-		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
 				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("false");
 
 		// Act
-		Action act = () => manager.Unlock(new List<string>());
+		Action act = () => _manager.Unlock(new List<string>());
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>(

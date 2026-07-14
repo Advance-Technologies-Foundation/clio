@@ -138,12 +138,14 @@ OPTIONS
     --db-server-name NAME
         Name of database server configuration from appsettings.json
         When specified, automatically restores database from zip file to local server
-        If not specified, restores database to Kubernetes cluster (default behavior)
+        If omitted, uses the configured deploy default. The Explorer action then uses
+        a sole enabled local server; other callers restore to Kubernetes
         Requires database server configuration in appsettings.json (see DATABASE RESTORATION)
 
-        IMPORTANT: If kubectl is not detected (no Kubernetes cluster available),
-        then --db-server-name is REQUIRED. The command will fail with an error
-        if neither kubectl config nor db-server-name is available
+        IMPORTANT: Outside the Explorer action, if kubectl is not detected (no
+        Kubernetes cluster available), then --db-server-name or a configured deploy
+        database default is REQUIRED. The Explorer action can also infer a sole
+        enabled local database server.
 
         Docker PostgreSQL note:
         - Configure the published host endpoint in appsettings.json (for example localhost:5433)
@@ -255,7 +257,8 @@ EXAMPLES
 BEHAVIOR
 
     Database Restoration (Automatic):
-    - WITHOUT --db-server-name: Restores database to Kubernetes cluster
+    - WITHOUT --db-server-name: Uses the configured deploy default. The Explorer
+      action then uses a sole enabled local server; other callers restore to Kubernetes
     - WITH --db-server-name: Restores database to local server from appsettings.json
     - Database is extracted from db/*.bak (MSSQL) or db/*.backup (PostgreSQL) in zip
     - Connection strings are automatically updated to point to target database
@@ -309,8 +312,10 @@ DATABASE RESTORATION
     during deployment. The restoration target depends on the --db-server-name flag:
 
     AUTOMATIC DATABASE RESTORATION:
-    - If --db-server-name is NOT specified (default):
-      Database is restored to Kubernetes cluster
+    - If --db-server-name is NOT specified:
+      A configured deploy default is used first. The Explorer action then selects
+      a sole enabled local database server. Other callers preserve the existing
+      Kubernetes behavior when no deploy default applies.
 
     - If --db-server-name IS specified:
       Database is restored to local database server configured in appsettings.json
@@ -420,11 +425,13 @@ DATABASE RESTORATION
 TROUBLESHOOTING
 
     Q: "Could not detect kubectl config, and db server name (db-server-name) is not specified"
-    A: This error occurs when Kubernetes is not available and no enabled local database server is configured.
+    A: This error occurs when Kubernetes is not available and no unambiguous local database server is selected.
        Solutions:
        1. Install and configure kubectl for Kubernetes deployment
        2. Add --db-server-name parameter with a configured local database server
-       3. Configure database server in appsettings.json (see DATABASE RESTORATION section)
+       3. For the Windows Explorer action, configure exactly one enabled database
+          server in appsettings.json
+       4. Configure a deploy database default with clio config
 
     Q: "The type or namespace name could not be found"
     A: Ensure IIS is installed (Windows) or dotnet SDK is available

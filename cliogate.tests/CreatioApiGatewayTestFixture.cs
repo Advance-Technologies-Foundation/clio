@@ -9,6 +9,7 @@ using Terrasoft.Core;
 using Terrasoft.Core.Entities;
 using Terrasoft.Core.Factories;
 using Terrasoft.TestFramework;
+using Terrasoft.Web.Http.Abstractions;
 
 namespace cliogate.tests
 {
@@ -54,6 +55,15 @@ namespace cliogate.tests
             		x[2] = value;
             		return true;
             	});
+		}
+
+		private CreatioApiGateway CreateGatewayWithHttpContext(){
+			HttpContext context = Substitute.For<HttpContext>();
+			HttpSessionState session = Substitute.For<HttpSessionState>();
+			context.Session.Returns(session);
+			return new CreatioApiGateway {
+				HttpContextAccessor = CustomSetupHttpContextAccessor(context, UserConnection)
+			};
 		}
 		
 		#region Methods: Protected
@@ -135,46 +145,74 @@ namespace cliogate.tests
 			actual.Should().Be(testItem.Value.ToString(testItem.FormatString));
 		}
 		
-		// NOTE: UnlockPackages/LockPackages read the HttpContext-backed BaseService.UserConnection property,
-		// which is unavailable in this harness, so the full method body cannot be driven here (it later throws
-		// NullReferenceException from get_UserConnection). These tests target only the ArgumentNullException that
-		// the null-safe log fix removes: without the fix, string.Join throws ArgumentNullException *before* the
-		// UserConnection access, so the assertion fails; with the fix it is reached and passes. The null-Description
-		// (NRE) logic is covered deterministically by the BuildUnlockDescription / SplitLockDescription tests below.
 		[Test]
-		[Description("UnlockPackages must not throw ArgumentNullException when the package list is null " +
+		[Description("UnlockPackages completes successfully when the package list is null " +
 			"(the normal 'unlock all packages by maintainer code' case).")]
-		public void UnlockPackages_ShouldNotThrowArgumentNullException_WhenPackagesNull(){
+		public void UnlockPackages_ShouldReturnTrue_WhenPackagesNull(){
 			//Arrange
 			UserConnection.DBSecurityEngine.GetCanExecuteOperation("CanManageSolution")
 				.Returns(true);
 			MockSysSetting("Maintainer", "CustomMaintainer");
-			CreatioApiGateway sut = new CreatioApiGateway();
+			CreatioApiGateway sut = CreateGatewayWithHttpContext();
 
 			//Act
-			Action act = () => sut.UnlockPackages(null);
+			bool actual = sut.UnlockPackages(null);
 
 			//Assert
-			act.Should().NotThrow<ArgumentNullException>(
-				because: "a null payload is the supported 'unlock all by maintainer' signal, logged before the null guard");
+			actual.Should().BeTrue(
+				because: "a null payload is the supported 'unlock all by maintainer' signal and must complete successfully");
 		}
 
-		[Description("LockPackages must not throw ArgumentNullException when the package list is null " +
+		[Description("LockPackages completes successfully when the package list is null " +
 			"(the 'lock all packages by maintainer code' case).")]
 		[Test]
-		public void LockPackages_ShouldNotThrowArgumentNullException_WhenPackagesNull(){
+		public void LockPackages_ShouldReturnTrue_WhenPackagesNull(){
 			//Arrange
 			UserConnection.DBSecurityEngine.GetCanExecuteOperation("CanManageSolution")
 				.Returns(true);
 			MockSysSetting("Maintainer", "CustomMaintainer");
-			CreatioApiGateway sut = new CreatioApiGateway();
+			CreatioApiGateway sut = CreateGatewayWithHttpContext();
 
 			//Act
-			Action act = () => sut.LockPackages(null);
+			bool actual = sut.LockPackages(null);
 
 			//Assert
-			act.Should().NotThrow<ArgumentNullException>(
-				because: "a null payload is the supported 'lock all by maintainer' signal, logged before the null guard");
+			actual.Should().BeTrue(
+				because: "a null payload is the supported 'lock all by maintainer' signal and must complete successfully");
+		}
+
+		[Test]
+		[Description("UnlockPackages returns false when an explicitly requested package does not exist and the update affects zero rows.")]
+		public void UnlockPackages_ShouldReturnFalse_WhenRequestedPackageDoesNotExist(){
+			//Arrange
+			UserConnection.DBSecurityEngine.GetCanExecuteOperation("CanManageSolution")
+				.Returns(true);
+			MockSysSetting("Maintainer", "CustomMaintainer");
+			CreatioApiGateway sut = CreateGatewayWithHttpContext();
+
+			//Act
+			bool actual = sut.UnlockPackages(new[] {"MissingPackage"});
+
+			//Assert
+			actual.Should().BeFalse(
+				because: "a requested package that was not updated must not be reported as successfully unlocked");
+		}
+
+		[Test]
+		[Description("LockPackages returns false when an explicitly requested package does not exist and the update affects zero rows.")]
+		public void LockPackages_ShouldReturnFalse_WhenRequestedPackageDoesNotExist(){
+			//Arrange
+			UserConnection.DBSecurityEngine.GetCanExecuteOperation("CanManageSolution")
+				.Returns(true);
+			MockSysSetting("Maintainer", "CustomMaintainer");
+			CreatioApiGateway sut = CreateGatewayWithHttpContext();
+
+			//Act
+			bool actual = sut.LockPackages(new[] {"MissingPackage"});
+
+			//Assert
+			actual.Should().BeFalse(
+				because: "a requested package that was not updated must not be reported as successfully locked");
 		}
 
 		[Test]
@@ -231,6 +269,20 @@ namespace cliogate.tests
 				because: "segment 0 is the human-readable description");
 			actual[1].Should().Be("Vendor",
 				because: "segment 1 is the preserved original maintainer");
+		}
+
+		[Test]
+		[Description("FormatPackageNamesForLog replaces control, formatting, and separator characters so package input cannot forge log lines.")]
+		public void FormatPackageNamesForLog_ShouldReplaceUnsafeCharacters_WhenPackageNameContainsFormatting(){
+			//Arrange
+			string[] packageNames = {"Safe\r\nForged\u202E\u2028Line\u2029Paragraph", "Second"};
+
+			//Act
+			string actual = CreatioApiGateway.FormatPackageNamesForLog(packageNames);
+
+			//Assert
+			actual.Should().Be("Safe  Forged  Line Paragraph, Second",
+				because: "control, bidirectional formatting, and Unicode separator characters must not alter gateway log structure");
 		}
 
 		public static IEnumerable<TestDataItem> DateTimeData = new List<TestDataItem> {
