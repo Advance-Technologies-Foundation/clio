@@ -72,8 +72,7 @@ public sealed class DeployUninstallProgressTests : McpContractFixtureBase {
 		// Assert
 		IReadOnlyList<JsonNode> rawParams = await arrangeContext.Session.WaitForCapturedProgressAsync(
 			progressToken,
-			nodes => ExtractStageEvents(nodes).LastOrDefault()?.EventType
-				== ClioStageEventContract.EventTypes.RunCompleted,
+			HasCompleteTerminalStream,
 			TimeSpan.FromSeconds(30),
 			arrangeContext.CancellationTokenSource.Token);
 		IReadOnlyList<ClioStageEvent> events = ExtractStageEvents(rawParams);
@@ -118,8 +117,7 @@ public sealed class DeployUninstallProgressTests : McpContractFixtureBase {
 		ProgressToken progressToken = await InvokeCorruptArchiveDeployAsync(arrangeContext);
 		await arrangeContext.Session.WaitForCapturedProgressAsync(
 			progressToken,
-			nodes => ExtractStageEvents(nodes).Any(stageEvent =>
-				stageEvent.EventType == ClioStageEventContract.EventTypes.RunCompleted),
+			HasCompleteTerminalStream,
 			TimeSpan.FromSeconds(30),
 			arrangeContext.CancellationTokenSource.Token);
 
@@ -139,17 +137,19 @@ public sealed class DeployUninstallProgressTests : McpContractFixtureBase {
 			because: "timeout diagnostics should identify the captured terminal event");
 		assertion.Which.Message.Should().NotContain("fixture-password",
 			because: "progress timeout diagnostics must not expose configured credentials");
-		ProgressToken unrelatedToken = new($"clio-mcp-e2e-unrelated-{Guid.NewGuid():N}");
+		const string secretShapedToken = "Bearer fixture-progress-secret";
+		ProgressToken unrelatedToken = new(secretShapedToken);
 		Func<Task> unrelatedAct = async () => await arrangeContext.Session.WaitForCapturedProgressAsync(
 			unrelatedToken,
-			nodes => ExtractStageEvents(nodes).Any(stageEvent =>
-				stageEvent.EventType == ClioStageEventContract.EventTypes.RunCompleted),
+			HasCompleteTerminalStream,
 			TimeSpan.FromMilliseconds(10),
 			arrangeContext.CancellationTokenSource.Token);
 		var unrelatedAssertion = await unrelatedAct.Should().ThrowAsync<TimeoutException>(
 			because: "a terminal event captured for another progress token must not satisfy this invocation");
 		unrelatedAssertion.Which.Message.Should().Contain("Captured 0 notification(s)",
 			because: "timeout diagnostics and conditions must be scoped to the requested progress token");
+		unrelatedAssertion.Which.Message.Should().NotContain(secretShapedToken,
+			because: "opaque caller-supplied progress tokens can contain sensitive identifiers and must not reach CI logs");
 	}
 
 	[Test]
@@ -186,8 +186,7 @@ public sealed class DeployUninstallProgressTests : McpContractFixtureBase {
 
 		IReadOnlyList<JsonNode> rawParams = await arrangeContext.Session.WaitForCapturedProgressAsync(
 			progressToken,
-			nodes => ExtractStageEvents(nodes).LastOrDefault()?.EventType
-				== ClioStageEventContract.EventTypes.RunCompleted,
+			HasCompleteTerminalStream,
 			TimeSpan.FromSeconds(30),
 			arrangeContext.CancellationTokenSource.Token);
 		IReadOnlyList<ClioStageEvent> events = ExtractStageEvents(rawParams);
@@ -197,6 +196,57 @@ public sealed class DeployUninstallProgressTests : McpContractFixtureBase {
 			because: "the unresolved target must terminate the typed progress stream as a failure");
 		events[^1].RunCompleted!.ErrorCode.Should().Be("uninstall-target-not-found",
 			because: "Ring and other MCP consumers need a stable machine-readable failure classification");
+	}
+
+	[Test]
+	[Description("Requires a contiguous sequence-zero-through-terminal typed event stream before a progress wait can complete.")]
+	[AllureTag(ToolName)]
+	[AllureName("Progress completion rejects an out-of-order partial typed stream")]
+	public void CompleteTerminalStream_Should_Require_Every_Sequence_Through_Terminal() {
+		// Arrange
+		Guid runId = Guid.NewGuid();
+		JsonNode manifest = CreateCapturedStageEventParams(CreateStageEvent(runId, 0,
+			ClioStageEventContract.EventTypes.Manifest));
+		JsonNode stage = CreateCapturedStageEventParams(CreateStageEvent(runId, 1,
+			ClioStageEventContract.EventTypes.Stage));
+		JsonNode terminal = CreateCapturedStageEventParams(CreateStageEvent(runId, 2,
+			ClioStageEventContract.EventTypes.RunCompleted));
+
+		// Act
+		bool terminalOnly = HasCompleteTerminalStream([terminal]);
+		bool missingIntermediate = HasCompleteTerminalStream([terminal, manifest]);
+		bool completeOutOfOrder = HasCompleteTerminalStream([terminal, manifest, stage]);
+
+		// Assert
+		terminalOnly.Should().BeFalse(
+			because: "a terminal callback can arrive before every lower-sequence callback has been captured");
+		missingIntermediate.Should().BeFalse(
+			because: "manifest and terminal events do not prove that the intermediate sequence was captured");
+		completeOutOfOrder.Should().BeTrue(
+			because: "callback order is irrelevant once every protocol sequence from zero through terminal is present");
+	}
+
+	[Test]
+	[Description("Keeps numeric and string MCP progress tokens distinct while selecting captured notifications.")]
+	[AllureTag(ToolName)]
+	[AllureName("Progress capture preserves the MCP token value type")]
+	public void ProgressTokenMatching_Should_Not_Conflate_Numeric_And_String_Values() {
+		// Arrange
+		ProgressToken numericToken = new(1L);
+		ProgressToken stringToken = new("1");
+		JsonNode capturedParams = new JsonObject {
+			["progressToken"] = JsonSerializer.SerializeToNode(numericToken)
+		};
+
+		// Act
+		bool matchesNumericToken = McpServerSession.HasProgressToken(capturedParams, numericToken);
+		bool matchesStringToken = McpServerSession.HasProgressToken(capturedParams, stringToken);
+
+		// Assert
+		matchesNumericToken.Should().BeTrue(
+			because: "a captured notification must match the same typed MCP progress token");
+		matchesStringToken.Should().BeFalse(
+			because: "numeric 1 and string 1 are distinct MCP progress-token values");
 	}
 
 	// Reads the typed ClioStageEvent out of each captured progress params node, skipping any
@@ -217,6 +267,47 @@ public sealed class DeployUninstallProgressTests : McpContractFixtureBase {
 
 		return [.. events.OrderBy(stageEvent => stageEvent.Sequence)];
 	}
+
+	private static bool HasCompleteTerminalStream(IReadOnlyList<JsonNode> rawParams) {
+		IReadOnlyList<ClioStageEvent> events = ExtractStageEvents(rawParams);
+		foreach (ClioStageEvent terminal in events.Where(stageEvent =>
+			stageEvent.EventType == ClioStageEventContract.EventTypes.RunCompleted)) {
+			int[] sequences = [.. events
+				.Where(stageEvent => stageEvent.RunId == terminal.RunId && stageEvent.Sequence <= terminal.Sequence)
+				.Select(stageEvent => stageEvent.Sequence)
+				.Distinct()
+				.Order()];
+			if (terminal.Sequence >= 0
+				&& terminal.Sequence < int.MaxValue
+				&& sequences.Length == terminal.Sequence + 1
+				&& sequences[0] == 0
+				&& sequences[^1] == terminal.Sequence) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	private static JsonNode CreateCapturedStageEventParams(ClioStageEvent stageEvent) => new JsonObject {
+		["_meta"] = new JsonObject {
+			["clioStageEvent"] = JsonSerializer.SerializeToNode(stageEvent, ClioStageEventContract.SerializerOptions)
+		}
+	};
+
+	private static ClioStageEvent CreateStageEvent(Guid runId, int sequence, string eventType) => new(
+		ClioStageEventContract.SchemaVersion,
+		eventType,
+		runId,
+		sequence,
+		ClioStageEventContract.Operations.Deploy,
+		Stages: eventType == ClioStageEventContract.EventTypes.Manifest ? [] : null,
+		Stage: eventType == ClioStageEventContract.EventTypes.Stage
+			? new ClioStageDetail("unzip", "Unzip", 0, 1, ClioStageEventContract.StageStatuses.Running)
+			: null,
+		RunCompleted: eventType == ClioStageEventContract.EventTypes.RunCompleted
+			? new ClioRunCompleted(ClioStageEventContract.RunOutcomes.Failure, "Fixture failure")
+			: null);
 
 	private static async Task<ProgressToken> InvokeCorruptArchiveDeployAsync(ArrangeContext arrangeContext) {
 		string corruptZipFile = Path.Combine(Path.GetTempPath(), $"corrupt-creatio-{Guid.NewGuid():N}.zip");

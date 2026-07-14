@@ -5945,3 +5945,17 @@ Decision: Scope every wait to an explicit progress token, coalesce notification 
 Discovery: MCP notification handlers can complete out of arrival order even within one request, so queue insertion order is not the protocol order; the versioned sequence field is authoritative and matches ClioRing's ordered-buffering contract.
 Files: clio.mcp.e2e/Support/Mcp/McpServerSession.cs, clio.mcp.e2e/DeployUninstallProgressTests.cs, clio.mcp.e2e/AGENTS.md, spec/mcp-progress-wait-timeout/
 Impact: Ten fresh-process fixture runs passed on each of net8.0 and net10.0 without installing or uninstalling Creatio, while unrelated streams can no longer satisfy a wait.
+
+## 2026-07-14 15:18 – Keep opaque progress tokens out of diagnostics
+Context: Final security review found that timeout text echoed the caller-supplied progress token even though opaque correlation values may contain sensitive identifiers and failures are written to CI logs.
+Decision: Use the token only for in-memory stream filtering, omit it from exception text, and cover the rule with a secret-shaped unrelated token.
+Discovery: Secret-safe typed-event summaries do not require exposing the correlation key used to select the stream.
+Files: clio.mcp.e2e/Support/Mcp/McpServerSession.cs, clio.mcp.e2e/DeployUninstallProgressTests.cs, spec/mcp-progress-wait-timeout/mcp-progress-wait-timeout-qa.md
+Impact: Timeout diagnostics retain event, sequence, stage, status, and outcome evidence without leaking opaque caller input.
+
+## 2026-07-14 15:36 – Require complete progress streams and broadcast wakeups
+Context: Final quality and testing reviews found that a terminal callback could arrive before lower sequences and that one shared consuming semaphore could wake the wrong token waiter.
+Decision: Broadcast each notification through a versioned task-completion signal, compare typed progress-token values, and require a distinct contiguous sequence from zero through terminal before completing a wait.
+Discovery: Sorting a partial snapshot cannot recover callbacks that have not arrived; terminal presence proves completeness only when every preceding sequence is already captured. This supersedes the earlier coalescing-semaphore decision.
+Files: clio.mcp.e2e/Support/Mcp/McpServerSession.cs, clio.mcp.e2e/DeployUninstallProgressTests.cs, spec/mcp-progress-wait-timeout/
+Impact: Deterministic terminal-first and typed-token regressions pass, and the five-test fixture passed ten fresh-process runs on each of net8.0 and net10.0 without real Creatio lifecycle operations.

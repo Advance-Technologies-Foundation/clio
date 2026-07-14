@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E.Support.Configuration;
@@ -15,7 +16,8 @@ internal sealed class McpServerSession : IAsyncDisposable {
 	private const int MaxDiagnosticNotifications = 20;
 	private readonly StdioClientTransport _transport;
 	private readonly ConcurrentQueue<JsonNode> _capturedProgressParams = new();
-	private readonly SemaphoreSlim _progressCapturedSignal = new(0, 1);
+	private readonly object _progressCapturedSignalLock = new();
+	private TaskCompletionSource<bool> _progressCapturedSignal = CreateProgressCapturedSignal();
 	private IAsyncDisposable? _progressCaptureRegistration;
 	private bool _progressCaptureRegistered;
 	private HashSet<string>? _advertisedToolNames;
@@ -125,45 +127,58 @@ internal sealed class McpServerSession : IAsyncDisposable {
 		Stopwatch stopwatch = Stopwatch.StartNew();
 		while (true) {
 			cancellationToken.ThrowIfCancellationRequested();
+			Task progressCaptured = GetProgressCapturedSignalTask();
 			IReadOnlyList<JsonNode> snapshot = GetCapturedProgressParams(progressToken);
 			if (condition(snapshot)) {
 				return snapshot;
 			}
 
 			TimeSpan remaining = timeout - stopwatch.Elapsed;
-			if (remaining <= TimeSpan.Zero
-				|| !await _progressCapturedSignal.WaitAsync(remaining, cancellationToken)) {
+			try {
+				if (remaining <= TimeSpan.Zero) {
+					throw new TimeoutException();
+				}
+				await progressCaptured.WaitAsync(remaining, cancellationToken);
+			}
+			catch (TimeoutException) {
 				IReadOnlyList<JsonNode> finalSnapshot = GetCapturedProgressParams(progressToken);
 				if (condition(finalSnapshot)) {
 					return finalSnapshot;
 				}
 
-				throw new TimeoutException(BuildProgressTimeoutMessage(progressToken, timeout, finalSnapshot));
+				throw new TimeoutException(BuildProgressTimeoutMessage(timeout, finalSnapshot));
 			}
 		}
 	}
 
 	private IReadOnlyList<JsonNode> GetCapturedProgressParams(ProgressToken progressToken) {
-		string expectedToken = progressToken.Token?.ToString() ?? string.Empty;
-		return [.. _capturedProgressParams.Where(node =>
-			string.Equals(node["progressToken"]?.ToString(), expectedToken, StringComparison.Ordinal))];
+		return [.. _capturedProgressParams.Where(node => HasProgressToken(node, progressToken))];
+	}
+
+	internal static bool HasProgressToken(JsonNode node, ProgressToken expectedToken) {
+		ProgressToken? capturedToken = node["progressToken"]?.Deserialize<ProgressToken>();
+		return capturedToken.HasValue && capturedToken.Value.Equals(expectedToken);
 	}
 
 	private void SignalProgressCaptured() {
-		if (_progressCapturedSignal.CurrentCount != 0) {
-			return;
+		TaskCompletionSource<bool> signal;
+		lock (_progressCapturedSignalLock) {
+			signal = _progressCapturedSignal;
+			_progressCapturedSignal = CreateProgressCapturedSignal();
 		}
+		signal.TrySetResult(true);
+	}
 
-		try {
-			_progressCapturedSignal.Release();
-		}
-		catch (SemaphoreFullException) {
-			// Concurrent notifications coalesce into the existing wakeup.
+	private Task GetProgressCapturedSignalTask() {
+		lock (_progressCapturedSignalLock) {
+			return _progressCapturedSignal.Task;
 		}
 	}
 
-	private static string BuildProgressTimeoutMessage(ProgressToken progressToken, TimeSpan timeout,
-		IReadOnlyList<JsonNode> snapshot) {
+	private static TaskCompletionSource<bool> CreateProgressCapturedSignal() =>
+		new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+	private static string BuildProgressTimeoutMessage(TimeSpan timeout, IReadOnlyList<JsonNode> snapshot) {
 		int omittedCount = Math.Max(0, snapshot.Count - MaxDiagnosticNotifications);
 		IEnumerable<JsonNode> diagnosticTail = snapshot.Skip(omittedCount);
 		string events = snapshot.Count == 0
@@ -171,7 +186,7 @@ internal sealed class McpServerSession : IAsyncDisposable {
 			: string.Join(", ", diagnosticTail.Select(DescribeProgressNotification));
 		string omitted = omittedCount == 0 ? string.Empty : $" {omittedCount} earlier notification(s) omitted.";
 		return $"Timed out after {timeout.TotalSeconds:0.###} seconds waiting for MCP progress condition. "
-			+ $"Progress token: {progressToken}. Captured {snapshot.Count} notification(s): {events}.{omitted}";
+			+ $"Captured {snapshot.Count} notification(s): {events}.{omitted}";
 	}
 
 	private static string DescribeProgressNotification(JsonNode node) {
@@ -362,6 +377,5 @@ internal sealed class McpServerSession : IAsyncDisposable {
 			await _progressCaptureRegistration.DisposeAsync();
 		}
 		await Client.DisposeAsync();
-		_progressCapturedSignal.Dispose();
 	}
 }
