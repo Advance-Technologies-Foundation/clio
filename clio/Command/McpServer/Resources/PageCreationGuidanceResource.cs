@@ -70,7 +70,7 @@ public sealed class PageCreationGuidanceResource {
 			       - `templateName` — name of the template (e.g. `BlankPageTemplate`, `BaseHomePage`).
 
 			       Designer type mapping
-			       - `BaseHomePage` (schemaType=9): opens in the **Homepage designer**. Do NOT use the standard Freedom UI page designer URL for this template.
+			       - `BaseHomePage` (schemaType=9): opens in the **Homepage designer**. Do NOT use the standard Freedom UI page designer URL for this template. A `BaseHomePage` page becomes a workplace's home page only after you bind it — read get-guidance name `home-page`.
 			       - All other schemaType=9 templates (BlankPageTemplate, PageWithTabsFreedomTemplate, BaseMiniPageTemplate, ListPageV3Template, etc.): open in the **Freedom UI page designer**.
 			       - schemaType=10 mobile templates: open in the **Mobile page designer**.
 			       - IMPORTANT: Do NOT guess or construct a browser designer URL based only on `schemaUId`. Use `templateName` and `schemaType` from the response to determine the correct designer. If unsure, call `get-page` to verify the created page loaded correctly — that is sufficient; the user can open the designer themselves from Workspace Explorer.

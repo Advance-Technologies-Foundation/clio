@@ -570,6 +570,33 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 
 	[Test]
 	[AllureTag(GuidanceGetTool.ToolName)]
+	[AllureName("get-guidance returns the canonical home-page guidance article")]
+	[Description("Verifies get-guidance resolves the home-page guide over the real stdio MCP path, confirming the create-page tool and routing map route to a live catalog entry.")]
+	public async Task GuidanceGet_Should_Return_Home_Page_Guide() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		GuidanceGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["name"] = "home-page"
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "home-page is a registered guidance name");
+		response.Article.Should().NotBeNull(
+			because: "successful guidance lookups should return the resolved article payload");
+		response.Article!.Uri.Should().Be("docs://mcp/guides/home-page",
+			because: "the canonical resource URI for the home-page guide should be stable");
+		response.Article.Text.Should().Contain("clio MCP home-page guide",
+			because: "the guidance tool should return the canonical home-page guide text");
+	}
+
+	[Test]
+	[AllureTag(GuidanceGetTool.ToolName)]
 	[AllureName("get-guidance returns the canonical ESQ guidance article")]
 	public async Task GuidanceGet_Should_Return_Esq_Guide() {
 		// Arrange

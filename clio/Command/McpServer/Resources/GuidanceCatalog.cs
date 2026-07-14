@@ -75,6 +75,10 @@ internal static class GuidanceCatalog {
 				"page-creation",
 				"Canonical MCP guidance for creating Freedom UI pages from supported templates via create-page: the list-page-templates -> create-page -> get-page flow, the supported web/mobile template catalog, required and optional inputs, validation/failure modes, and designer-type mapping.",
 				PageCreationGuidanceResource.Guide),
+			["home-page"] = Create(
+				"home-page",
+				"Canonical MCP guidance for creating a Freedom UI home page (BaseHomePage) and making it a workplace's home page by binding SysWorkplace.HomePageUId as a package data binding.",
+				HomePageGuidanceResource.Guide),
 			["page-modification"] = Create(
 				"page-modification",
 				"Entry guidance for Freedom UI page modification: the mandatory pre-edit GATE checklist and canonical flow, routing the detailed mechanics to the page-modification-overview / -field-contract / -containers / -components sub-guides (each kept small so one get-guidance response fits the agent token limit).",

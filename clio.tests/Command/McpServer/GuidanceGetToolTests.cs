@@ -550,6 +550,25 @@ public sealed class GuidanceGetToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Resolves the home-page guide through get-guidance to its canonical URI, confirming the new catalog wiring the create-page tool and routing map route to.")]
+	public async Task GuidanceGet_Should_Return_Home_Page_Article() {
+		// Arrange
+		GuidanceGetTool tool = new(_featureToggleService);
+
+		// Act
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("home-page"));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "home-page is a registered guidance name the create-page tool and the routing map route to");
+		result.Article.Should().NotBeNull(
+			because: "a successful guidance lookup must return the resolved article");
+		result.Article!.Uri.Should().Be("docs://mcp/guides/home-page",
+			because: "the tool must resolve the home-page name to its canonical guide URI");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Resolves the dashboard-creation guide through get-guidance to its canonical URI.")]
 	public async Task GuidanceGet_Should_Return_Dashboard_Creation_Article() {
 		// Arrange
