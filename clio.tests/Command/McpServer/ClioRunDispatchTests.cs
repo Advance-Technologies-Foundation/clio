@@ -29,7 +29,9 @@ public sealed class ClioRunDispatchTests {
 	[SetUp]
 	public void SetUp() {
 		_registry = Substitute.For<IMcpToolInvokerRegistry>();
-		_sut = new ClioRunExecutor(_registry);
+		// An inert catalog substitute: TryResolveAlias defaults to false, so alias resolution never
+		// interferes with the direct-name dispatch behavior these tests pin.
+		_sut = new ClioRunExecutor(_registry, Substitute.For<IMcpToolCompatibilityCatalog>());
 	}
 
 	// A real SDK-built tool over a static echo method, so InvokeAsync executes without a live server.
@@ -314,7 +316,8 @@ public sealed class ClioRunDispatchTests {
 		result.IsError.Should().BeTrue(because: "clio-run must not be able to target itself");
 		ErrorText(result).Should().Contain("self/cross-dispatch is not allowed",
 			because: "the guard must explain that the executors cannot be dispatch targets");
-		_registry.DidNotReceive().TryGetTool(ClioRunTool.ToolName, out Arg.Any<McpServerTool>());
+		// A read-only registry lookup IS allowed before the guard (alias canonicalization runs first so
+		// the guard always sees the final dispatch target); the refusal message above proves no dispatch.
 	}
 
 	[Test]
@@ -347,7 +350,8 @@ public sealed class ClioRunDispatchTests {
 			because: "the registry matches names with OrdinalIgnoreCase, so a different-cased executor name is still self-dispatch and must be refused");
 		ErrorText(result).Should().Contain("self/cross-dispatch is not allowed",
 			because: "the guard must reject the case-variant alias for the same recursion reason");
-		_registry.DidNotReceive().TryGetTool(mixedCaseName, out Arg.Any<McpServerTool>());
+		// Read-only registry lookups may precede the guard (alias canonicalization); the refusal above
+		// proves the differently-cased executor name was still never dispatched.
 	}
 
 	[Test]
@@ -726,7 +730,8 @@ public sealed class ClioRunDispatchTests {
 		result.IsError.Should().BeTrue(because: "a wrapped clio-run target must still be caught by the recursion guard after recovery");
 		ErrorText(result).Should().Contain("self/cross-dispatch is not allowed",
 			because: "recovery runs before the guard, so the recovered command 'clio-run' must trip the same self-dispatch refusal");
-		_registry.DidNotReceive().TryGetTool("clio-run", out Arg.Any<McpServerTool>());
+		// Read-only registry lookups may precede the guard (alias canonicalization); the refusal above
+		// proves the recovered executor name was still never dispatched.
 	}
 
 	[Test]

@@ -23,7 +23,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="create-app"></a>
 - [`create-app`](docs/commands/create-app.md) - Create a new application in Creatio
 <a id="get-app-info"></a>
-- [`get-app-info`](docs/commands/get-app-info.md) - Get information about an installed Creatio application
+- [`get-app-info`](docs/commands/get-app-info.md) - Get information about an installed Creatio application, including each entity's virtual flag
 <a id="list-apps"></a>
 <a id="get-app-list"></a>
 <a id="app-list"></a>
@@ -328,7 +328,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="client-unit-schema-create"></a>
 - [`create-client-unit-schema`](docs/commands/create-client-unit-schema.md) - Create a new JavaScript (ClientUnit) schema on a remote Creatio environment, `client-unit-schema-create`
 <a id="create-entity-schema"></a>
-- [`create-entity-schema`](docs/commands/create-entity-schema.md) - Create an entity schema in a remote Creatio package
+- [`create-entity-schema`](docs/commands/create-entity-schema.md) - Create a persistent or virtual entity schema in a remote Creatio package
 <a id="create-lookup"></a>
 - [`create-lookup`](docs/commands/create-lookup.md) - Create a lookup entity schema in a remote Creatio package
 <a id="create-schema"></a>
@@ -490,7 +490,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="dc"></a>
 <a id="ic"></a>
 <a id="install-creatio"></a>
-- [`deploy-creatio`](docs/commands/deploy-creatio.md) - Install Creatio from a distribution package, `dc`, `ic`, `install-creatio`
+- [`deploy-creatio`](docs/commands/deploy-creatio.md) - Install Creatio from a distribution package, with Explorer support for unambiguous local infrastructure defaults, `dc`, `ic`, `install-creatio`
 <a id="deploy-identity"></a>
 - [`deploy-identity`](docs/commands/deploy-identity.md) - Deploy IdentityService to IIS and connect it to a Creatio environment
 <a id="get-identity-service-config"></a>
