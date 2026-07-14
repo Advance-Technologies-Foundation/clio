@@ -115,6 +115,38 @@ public sealed class SectionCreateSerializationGuardTests {
 	}
 
 	[Test]
+	[Description("Distinct environment + application pairs whose naive concatenation would be identical map to different gates (the Unit Separator control character prevents the collision); this assertion does not depend on any specific separator glyph (F8).")]
+	public void Run_ShouldAllowOverlap_WhenConcatenationWouldBeAmbiguousWithoutSeparator() {
+		// Arrange
+		// Without a separator, ("ab","c") and ("a","bc") both concatenate to "abc"; the separator must keep
+		// them on distinct gates so they run in parallel.
+		SectionCreateSerializationGuard guard = new(new NullLogger());
+		using ManualResetEventSlim firstEntered = new(false);
+		using ManualResetEventSlim releaseFirst = new(false);
+		using ManualResetEventSlim secondEntered = new(false);
+
+		// Act
+		Task first = Task.Run(() => guard.Run("ab", "c", GenerousWait, () => {
+			firstEntered.Set();
+			releaseFirst.Wait(SignalWait);
+			return 0;
+		}));
+		firstEntered.Wait(SignalWait).Should().BeTrue(
+			because: "the first Run must acquire its pair's gate");
+		Task second = Task.Run(() => guard.Run("a", "bc", GenerousWait, () => {
+			secondEntered.Set();
+			return 0;
+		}));
+		bool secondOverlapped = secondEntered.Wait(SignalWait);
+		releaseFirst.Set();
+		Task.WaitAll([first, second], SignalWait);
+
+		// Assert
+		secondOverlapped.Should().BeTrue(
+			because: "('ab','c') and ('a','bc') are distinct pairs, so the separator must map them to different gates and let them overlap");
+	}
+
+	[Test]
 	[Description("Degrades to best-effort when the per-key wait times out: the work still runs (unserialized) and a warning is logged instead of failing (ENG-93089 AC-03 / NFR-02).")]
 	public void Run_ShouldProceedUnserializedAndWarn_WhenWaitTimesOut() {
 		// Arrange

@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Concurrent;
 using System.Threading;
 using Clio.Common;
 
@@ -42,18 +41,16 @@ public interface ISectionCreateSerializationGuard {
 /// </summary>
 public sealed class SectionCreateSerializationGuard(ILogger logger) : ISectionCreateSerializationGuard {
 	// Registry of per-key mutexes. A plain instance field is process-shared because the guard is a DI
-	// singleton — no static field is needed (cleaner for CLIO005). Entries are NEVER evicted: the count is
-	// bounded by the number of distinct environment+application-code pairs a process touches (tens at most,
-	// each SemaphoreSlim is a few dozen bytes), and ref-counted removal would introduce a TOCTOU race
-	// between Release and the next GetOrAdd. Never-remove is the standard, correct keyed-lock pattern here.
-	private readonly ConcurrentDictionary<string, SemaphoreSlim> _sectionCreateLocks =
-		new(StringComparer.Ordinal);
+	// singleton — no static field is needed (cleaner for CLIO005). KeyedSemaphore never evicts entries:
+	// the count is bounded by the number of distinct environment+application-code pairs a process touches
+	// (tens at most), and ref-counted removal would race Release against the next GetOrAdd (see its docs).
+	private readonly KeyedSemaphore _sectionCreateLocks = new();
 
 	/// <inheritdoc />
 	public T Run<T>(string environmentName, string applicationCode, TimeSpan waitTimeout, Func<T> work) {
 		ArgumentNullException.ThrowIfNull(work);
 		string key = BuildKey(environmentName, applicationCode);
-		SemaphoreSlim gate = _sectionCreateLocks.GetOrAdd(key, _ => new SemaphoreSlim(1, 1));
+		SemaphoreSlim gate = _sectionCreateLocks.GetOrAdd(key);
 		bool acquired = gate.Wait(waitTimeout);
 		if (!acquired) {
 			logger.WriteWarning(
@@ -72,8 +69,9 @@ public sealed class SectionCreateSerializationGuard(ILogger logger) : ISectionCr
 	}
 
 	// The key joins the lower-cased environment name and application code so callers that differ only by
-	// case map to the same mutex (case-insensitive per ADR Q1). The unit separator (U+241F) cannot appear
-	// in either part, so distinct pairs can never collide onto one key.
+	// case map to the same mutex (case-insensitive per ADR Q1). The separator is the ASCII Unit Separator
+	// control character U+001F, which does not occur in clio environment names or Creatio application
+	// codes, so distinct pairs can never collide onto one key.
 	private static string BuildKey(string environmentName, string applicationCode) =>
-		$"{(environmentName ?? string.Empty).ToLowerInvariant()}␟{(applicationCode ?? string.Empty).ToLowerInvariant()}";
+		$"{(environmentName ?? string.Empty).ToLowerInvariant()}\u001F{(applicationCode ?? string.Empty).ToLowerInvariant()}";
 }

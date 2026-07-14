@@ -43,20 +43,22 @@ public static class ApplicationSectionCreateFailureClassExtensions {
 	/// <summary>
 	/// Maps the failure class to the kebab-case value carried by the MCP error envelope.
 	/// </summary>
+	/// <remarks>
+	/// The explicit arms keep the MCP <c>error-class</c> contract in sync with the failure classes. This
+	/// method is called from inside a <c>catch (ApplicationSectionCreateException)</c> while the tool is
+	/// already surfacing an error, so it must never throw — a throw there would escape the sibling
+	/// <c>catch (Exception)</c> and crash the tool. Any unmapped value therefore degrades to
+	/// <c>server-error</c> (the safe, most conservative class) instead of throwing.
+	/// </remarks>
 	/// <param name="failureClass">Failure class to map.</param>
 	/// <returns><c>transport</c>, <c>creatio-timeout</c>, <c>contention</c>, or <c>server-error</c>.</returns>
-	/// <exception cref="ArgumentOutOfRangeException">
-	/// Thrown when a new failure class is added without a wire mapping — a compile-safe reminder to keep the
-	/// MCP <c>error-class</c> contract in sync, rather than silently serializing the new value as another class.
-	/// </exception>
 	public static string ToWireValue(this ApplicationSectionCreateFailureClass failureClass) =>
 		failureClass switch {
 			ApplicationSectionCreateFailureClass.Transport => "transport",
 			ApplicationSectionCreateFailureClass.CreatioTimeout => "creatio-timeout",
 			ApplicationSectionCreateFailureClass.Contention => "contention",
 			ApplicationSectionCreateFailureClass.ServerError => "server-error",
-			_ => throw new ArgumentOutOfRangeException(nameof(failureClass), failureClass,
-				"Unmapped ApplicationSectionCreateFailureClass has no MCP error-class wire value.")
+			_ => "server-error"
 		};
 }
 
