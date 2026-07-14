@@ -100,6 +100,31 @@ public sealed class DashboardCreationGuidanceResource {
 		         Use the UId of `MyDashboard` from `MyPackage` (the root schema of that name) — not the Custom-package
 		         replacement, and not the parent `MyBaseDashboard`.
 
+		       ## Access rights, and shipping them with the package
+
+		       Who may read / edit / delete a dashboard is a RECORD-LEVEL access right on the dashboard's
+		       client-unit schema. Set or change it with `set-record-rights`, read it with `get-record-rights`,
+		       addressing the dashboard as entity `SysSchemaAdminUnit` with `record-id` = the dashboard schema UId
+		       (resolve the UId by name via `execute-esq` on `SysUserLevelSchema`, then `SysSchema`). The full
+		       contract — grantee is a `SysAdminUnit` GUID, operation `read|edit|delete`, level `granted|delegated`,
+		       and the record-level vs operation-level distinction — is in `get-guidance name=record-rights`.
+
+		       These rights are DATA — rows in the `SysSchemaAdminUnitRight` table — NOT part of the schema
+		       definition. Transferring the package to another environment carries the dashboard schema but NOT its
+		       rights rows, so every grant beyond the creation-time `All Employees` read is LOST on the target env
+		       unless you ship the rows as a package data binding.
+
+		       To make the rights travel with the package, bind the granted rows into the SAME package as the
+		       dashboard (see `get-guidance name=data-bindings`):
+		       1. `create-data-binding-db` (environment, `package` = the dashboard's package, `schema-name` =
+		          `SysSchemaAdminUnitRight`) — creates the binding.
+		       2. For EACH granted right, `upsert-data-binding-row-db` (same `package`, `binding-name` =
+		          `SysSchemaAdminUnitRight`, `values` = the existing row: `Id`, `RecordId` = the schema UId,
+		          `SysAdminUnit` = grantee GUID, `Operation`, `RightLevel`, `Position`). upsert registers the
+		          EXISTING row in place — it does NOT create a second grant. Read the row values first with
+		          `get-record-rights` (or `execute-esq` on `SysSchemaAdminUnitRight`).
+		       Then read the binding back to confirm; the rows now install with the package on the next environment.
+
 		       ## Notes
 
 		       - `create-page` seeds `optionalProperties` at creation, so the dashboard is correctly linked in a
