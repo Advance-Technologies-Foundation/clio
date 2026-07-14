@@ -1884,8 +1884,8 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Returns the canonical list-sys-settings contract documenting Binary exclusion in its description.")]
-	public void ToolContractGet_Should_Return_ListSysSettings_Contract_With_Binary_Exclusion_Note() {
+	[Description("Returns the canonical list-sys-settings contract documenting that Binary settings are listed (value shown as <binary>) and written via value-file-path.")]
+	public void ToolContractGet_Should_Return_ListSysSettings_Contract_With_Binary_Note() {
 		ToolContractGetTool tool = new();
 
 		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
@@ -1896,9 +1896,9 @@ public sealed class ToolContractGetToolTests {
 			because: "list-sys-settings is part of the executable clio MCP contract surface");
 		ToolContractDefinition contract = result.Tools!.Single();
 		contract.Description.Should().Contain("Binary",
-			because: "the description must call out Binary exclusion so contract-driven clients understand why those entries are absent");
-		contract.Description.Should().Contain("excluded",
-			because: "the description must clarify Binary is not just hidden, but unsupported through this tool set");
+			because: "the description must call out Binary handling so contract-driven clients understand how those entries behave in the list");
+		contract.Description.Should().Contain("value-file-path",
+			because: "the description must point callers at the write path (update-sys-setting with value-file-path) since Binary values are listed but shown as <binary>, not readable");
 	}
 
 	[Test]
