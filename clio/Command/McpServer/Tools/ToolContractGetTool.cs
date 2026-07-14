@@ -257,8 +257,9 @@ public sealed record ToolContractGetResponse(
 /// <param name="ContractAvailable">Whether a full curated contract is reachable by naming this tool.</param>
 /// <param name="Resident">
 /// Whether the tool is present in <c>tools/list</c> and therefore called natively (<c>true</c>), or hidden
-/// from <c>tools/list</c> and reachable only through <c>clio-run</c> / <c>clio-run-destructive</c>
-/// (<c>false</c>). Derived from <see cref="McpCoreToolProfile.IsResident"/>, independent of whether an
+/// from <c>tools/list</c> (<c>false</c>). A non-resident tool is reachable through <c>clio-run</c> /
+/// <c>clio-run-destructive</c>, and on the stdio transport also via forgiving direct invocation
+/// (the durable unmatched-name handler). Derived from <see cref="McpCoreToolProfile.IsResident"/>, independent of whether an
 /// invoker registry is supplied. Never wrap a resident tool in <c>clio-run</c>.
 /// </param>
 /// <param name="Destructive">
@@ -271,7 +272,10 @@ public sealed record ToolContractIndexEntry(
 	[property: JsonPropertyName("purpose")] string Purpose,
 	[property: JsonPropertyName("contract-available")] bool ContractAvailable,
 	[property: JsonPropertyName("resident")] bool Resident,
-	[property: JsonPropertyName("destructive")] bool? Destructive = null
+	[property: JsonPropertyName("destructive")] bool? Destructive = null,
+	[property: JsonPropertyName("aliases")]
+	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	IReadOnlyList<string> Aliases = null
 );
 
 [SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters", Justification = "This serialized contract record mirrors the external MCP wire shape and grouping fields would make the contract harder to inspect and evolve.")]
@@ -768,7 +772,13 @@ internal static class ToolContractCatalog {
 			string.IsNullOrEmpty(purpose) ? name : purpose,
 			ContractAvailable: contractAvailable,
 			Resident: McpCoreToolProfile.IsResident(name),
-			Destructive: ResolveDestructive(toolInvokerRegistry, name));
+			Destructive: ResolveDestructive(toolInvokerRegistry, name),
+			// Deprecated alias names are projected from the compatibility catalog (the single source of
+			// truth for renames), so an agent scanning the index finds a legacy name next to its canonical
+			// entry instead of concluding the tool disappeared.
+			Aliases: McpToolCompatibilityCatalog.SeedAliasesByCanonical.TryGetValue(name, out IReadOnlyList<string> aliases)
+				? aliases
+				: null);
 	}
 
 	/// <summary>
@@ -4862,7 +4872,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildListSysSettings() {
 		return new ToolContractDefinition(
 			SysSettingsListTool.ListSysSettingsToolName,
-			"Lists Creatio system settings with their All-Users default values, value-type-name, and metadata. Binary-type settings are excluded — Binary read/write is not exposed through this MCP tool set and needs the dedicated upload/download flow.",
+			"Lists Creatio system settings with their All-Users default values, value-type-name, and metadata. Binary-type settings (whose value is stored as blob data, e.g. the logo) are listed too, with their value shown as <binary> because MCP does not surface the blob value; write them with update-sys-setting using value-file-path.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName],
 				[
@@ -4900,8 +4910,8 @@ internal static class ToolContractCatalog {
 			SysSettingCreateTool.CreateSysSettingToolName,
 			"Creates a new Creatio system setting and optionally assigns an initial All-Users default value. " +
 			"Allowed value-type-name values match Creatio internal names: Text, ShortText, MediumText, LongText, SecureText, MaxSizeText, " +
-			"Boolean, DateTime, Date, Time, Integer, Money, Float, Lookup. " +
-			"Aliases: Currency = Money, Decimal = Float. Binary sys-settings are not exposed through this tool set. " +
+			"Boolean, DateTime, Date, Time, Integer, Money, Float, Lookup, Binary. " +
+			"Aliases: Currency = Money, Decimal = Float. Binary settings (a value stored as blob data, e.g. the logo) are write-only: assign the value via update-sys-setting with value-file-path; reading a Binary value back is not exposed through MCP. " +
 			"For Lookup type, reference-schema-name is required.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, SysSettingCodeFieldName, "name", SysSettingValueTypeFieldName],
@@ -4909,7 +4919,7 @@ internal static class ToolContractCatalog {
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(SysSettingCodeFieldName, StringType, "Sys-setting code (unique)."),
 					Field("name", StringType, "Display name of the sys-setting."),
-					Field(SysSettingValueTypeFieldName, StringType, "Value type. Creatio internal name: Text, ShortText, MediumText, LongText, SecureText, MaxSizeText, Boolean, DateTime, Date, Time, Integer, Money, Float, Lookup. Aliases: Currency = Money, Decimal = Float. Binary is not exposed by this tool set."),
+					Field(SysSettingValueTypeFieldName, StringType, "Value type. Creatio internal name: Text, ShortText, MediumText, LongText, SecureText, MaxSizeText, Boolean, DateTime, Date, Time, Integer, Money, Float, Lookup, Binary. Aliases: Currency = Money, Decimal = Float. Binary (blob data, e.g. the logo) is write-only via update-sys-setting value-file-path."),
 					Field(SysSettingValueFieldName, StringType, "Optional initial All-Users default value applied via update-sys-setting after creation."),
 					Field("description", StringType, "Optional description text."),
 					Field("is-cacheable", BooleanType, "Whether the setting is cacheable. Defaults to true."),
@@ -4953,13 +4963,14 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildUpdateSysSetting() {
 		return new ToolContractDefinition(
 			SysSettingUpdateTool.UpdateSysSettingToolName,
-			"Updates the All-Users default value of an existing Creatio system setting. The setting must already exist — use create-sys-setting first to register a new code.",
+			"Updates the All-Users default value of an existing Creatio system setting. The setting must already exist; use create-sys-setting first to register a new code. Provide exactly one of value or value-file-path. For a Binary setting (blob data, e.g. the logo) pass value-file-path so clio Base64-encodes the file locally.",
 			new ToolInputSchemaContract(
-				[EnvironmentNameFieldName, SysSettingCodeFieldName, SysSettingValueFieldName],
+				[EnvironmentNameFieldName, SysSettingCodeFieldName],
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(SysSettingCodeFieldName, StringType, "Existing sys-setting code."),
-					Field(SysSettingValueFieldName, StringType, "New value. Booleans accept true/false, decimals/integers expect invariant culture, dates/times expect ISO 8601, Lookup expects a Guid or a display name."),
+					Field(SysSettingValueFieldName, StringType, "New value (provide this OR value-file-path). Booleans accept true/false, decimals/integers expect invariant culture, dates/times expect ISO 8601, Lookup expects a Guid or a display name, Binary expects a raw Base64 string."),
+					Field("value-file-path", StringType, "Local file path whose bytes clio reads and Base64-encodes into the value (provide this OR value). Use for Binary settings (blob data, e.g. the logo) so the blob stays out of the tool-call arguments."),
 					Field(SysSettingValueTypeFieldName, StringType, "Optional fallback value-type-name when the setting cannot be located on the target environment.")
 				]),
 			EnvelopeOutput(
