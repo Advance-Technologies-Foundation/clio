@@ -23,7 +23,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="create-app"></a>
 - [`create-app`](docs/commands/create-app.md) - Create a new application in Creatio
 <a id="get-app-info"></a>
-- [`get-app-info`](docs/commands/get-app-info.md) - Get information about an installed Creatio application
+- [`get-app-info`](docs/commands/get-app-info.md) - Get information about an installed Creatio application, including each entity's virtual flag
 <a id="list-apps"></a>
 <a id="get-app-list"></a>
 <a id="app-list"></a>
@@ -328,7 +328,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="client-unit-schema-create"></a>
 - [`create-client-unit-schema`](docs/commands/create-client-unit-schema.md) - Create a new JavaScript (ClientUnit) schema on a remote Creatio environment, `client-unit-schema-create`
 <a id="create-entity-schema"></a>
-- [`create-entity-schema`](docs/commands/create-entity-schema.md) - Create an entity schema in a remote Creatio package
+- [`create-entity-schema`](docs/commands/create-entity-schema.md) - Create a persistent or virtual entity schema in a remote Creatio package
 <a id="create-lookup"></a>
 - [`create-lookup`](docs/commands/create-lookup.md) - Create a lookup entity schema in a remote Creatio package
 <a id="create-schema"></a>
@@ -433,6 +433,14 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="page-templates"></a>
 <a id="page-templates-list"></a>
 - [`list-page-templates`](docs/commands/list-page-templates.md) - List Freedom UI page templates available for create-page, `page-templates`, `page-templates-list`
+<a id="create-related-page-addon"></a>
+<a id="related-page-addon"></a>
+<a id="set-related-pages"></a>
+- [`create-related-page-addon`](docs/commands/create-related-page-addon.md) - Bind Freedom UI pages to an object (default/add page, optionally per role and type) via the RelatedPage add-on, `related-page-addon`, `set-related-pages`
+<a id="get-related-page-addon"></a>
+<a id="related-page-addon-get"></a>
+<a id="get-related-pages"></a>
+- [`get-related-page-addon`](docs/commands/get-related-page-addon.md) - Read an object's current RelatedPage configuration (bound default/add pages per role and type), `related-page-addon-get`, `get-related-pages`
 <a id="run"></a>
 <a id="run-scenario"></a>
 <a id="scenario"></a>
@@ -580,6 +588,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 
 ## Integrations & Tools
 
+<a id="ring"></a>
+- [`ring`](docs/commands/ring.md) - Manage the opt-in internal clio-ring desktop preview (experimental; Windows x64 only)
 <a id="delete-toolkit"></a>
 - [`delete-toolkit`](docs/commands/delete-toolkit.md) - Uninstall the Creatio AI App Development Toolkit from coding agents (alias: delete-skill)
 <a id="env-ui"></a>

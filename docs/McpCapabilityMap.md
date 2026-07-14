@@ -19,18 +19,46 @@ An external AI sees `clio` MCP not as a generic system shell, but as a curated C
 
 ## Discovery Snapshot
 
-From MCP discovery, the surface currently exposes:
+Since the lazy-schema split (ENG-90312, PR #743) `tools/list` advertises only the **resident** profile
+(~27 discovery/read tools + the executors); the full catalog (~137 invokable tools) stays reachable but
+is discovered through `get-tool-contract`, not `tools/list`:
 
-- `137` tools
+- `~27` resident tools in `tools/list` (see `McpCoreToolProfile`)
+- the full invokable catalog (~137 tools) indexed by `get-tool-contract` (each entry carries `resident`
+  and `destructive` flags, plus `aliases` when a legacy name maps to it)
 - `67` prompts
 - `92` resources
 - `1` resource template
 
 Important shape of the surface:
 
-- Transport is stdio only.
+- Transports: stdio (the shipped default) and an HTTP host (`mcp-http`, not yet released). The durable unmatched-name handling described below is registered on the stdio transport only.
 - Discovery returns only the enabled surface: feature-gated tools, prompts, and resources are omitted while their feature flag is off, so the advertised counts reflect the default flag state.
 - Every tool declares explicit `ReadOnly` / `Destructive` / `Idempotent` safety metadata, so a client can rely on those flags when deciding what is safe to invoke.
+
+## Durable Invocation (forgiving unmatched-name handling, ENG-93370)
+
+A `tools/call` naming a tool that is NOT advertised in `tools/list` no longer dead-ends. The stdio
+server registers an unmatched-name handler (`McpDurableCallToolHandler` via the SDK's
+`WithCallToolHandler`; stdio transport only) that restores the pre-lazy invocation contract:
+
+- **Non-destructive real tool** → executed directly through the same dispatch path `clio-run` uses; the
+  result carries a model-visible advisory in `Content` recommending the advertised
+  `clio-run {"command":"<tool>","args":{…}}` path, plus a `durable-invocation` audit block in `_meta`.
+- **Destructive real tool** → NEVER silently executed. Returns a structured `confirmation-required`
+  outcome with a ready-to-retry `clio-run-destructive` call shape — reproducing the per-tool prompt the
+  host applied when the tool was still advertised.
+- **Renamed/deprecated name** → resolved through `McpToolCompatibilityCatalog` (the MCP analogue of the
+  CLI hidden-alias policy; e.g. `restart-by-environmentName` → `restart-by-environment-name`). Catalog
+  collisions fail at startup.
+- **Unresolvable name** → a structured, machine-readable outcome instead of an opaque error:
+  `unknown-tool` (with Levenshtein did-you-mean candidates and the `get-tool-contract` discovery hint),
+  `feature-disabled`, `cli-verb-not-mcp-tool`, `deprecated-tool-alias`, or `foreign-command` — every
+  outcome carrying a `correlation-id`.
+
+The advertised `tools/list` surface is unchanged by this handler (context economy preserved), and
+shipped workspace templates are guarded against naming non-resident tools imperatively by
+`WorkspaceTemplateGuidanceDriftTests` (resident-or-bridged oracle).
 
 ## What This MCP Fundamentally Is
 
@@ -442,6 +470,28 @@ How the AI should think about this area:
 - this is not just build/deploy
 - it is a local-host and target-environment control surface
 - destructive power is high, especially for restore and uninstall flows
+
+**Typed stage-event progress contract (`deploy-creatio` / `uninstall-creatio`).** Both tools
+emit a versioned, typed progress stream over MCP `notifications/progress` in the
+`_meta.clioStageEvent` field, so a GUI consumer (the clio-ring guided-deploy UX) can render a
+live, GitHub-Actions-style step list instead of parsing log lines. The stream is:
+
+- one `manifest` event up front listing every stage that will run, in order;
+- a `stage` event per transition (`running` → `done` / `failed` / `skipped`, carrying
+  `index` / `total` / `durationMs`);
+- one terminal `run-completed` event with `outcome` = `success` / `failure`.
+
+Deploy stages: `stage-build` (network-source only; otherwise `skipped` `not-applicable`) →
+`unzip` → `copy-files` → `restore-db` → `deploy-app` → `configure-conn-strings` →
+`register-env` → `wait-ready`. Uninstall stages: `read-config` → `stop-iis` → `delete-iis` →
+`drop-db` → `delete-files` → `unregister` (final, only after cleanup succeeds), plus a
+conditional `delete-apppool-profile` reported `skipped` `not-supported` when a profile exists.
+Failure is honest: a stage that fails is emitted `failed`, the remaining stages `skipped`
+(`after-failure`), and the run ends `run-completed` `failure` — a non-zero stage result is
+never masked as success. The envelope is stamped with `schemaVersion` (currently `1`), is
+purely additive (tool arguments, descriptions, and `Destructive` flags are unchanged), and is
+forward-compatible: an unknown field or a bumped schema version does not break a mirrored
+consumer.
 
 ### 9. Runtime Control And Maintenance
 

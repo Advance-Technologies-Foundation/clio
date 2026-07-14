@@ -257,8 +257,9 @@ public sealed record ToolContractGetResponse(
 /// <param name="ContractAvailable">Whether a full curated contract is reachable by naming this tool.</param>
 /// <param name="Resident">
 /// Whether the tool is present in <c>tools/list</c> and therefore called natively (<c>true</c>), or hidden
-/// from <c>tools/list</c> and reachable only through <c>clio-run</c> / <c>clio-run-destructive</c>
-/// (<c>false</c>). Derived from <see cref="McpCoreToolProfile.IsResident"/>, independent of whether an
+/// from <c>tools/list</c> (<c>false</c>). A non-resident tool is reachable through <c>clio-run</c> /
+/// <c>clio-run-destructive</c>, and on the stdio transport also via forgiving direct invocation
+/// (the durable unmatched-name handler). Derived from <see cref="McpCoreToolProfile.IsResident"/>, independent of whether an
 /// invoker registry is supplied. Never wrap a resident tool in <c>clio-run</c>.
 /// </param>
 /// <param name="Destructive">
@@ -271,7 +272,10 @@ public sealed record ToolContractIndexEntry(
 	[property: JsonPropertyName("purpose")] string Purpose,
 	[property: JsonPropertyName("contract-available")] bool ContractAvailable,
 	[property: JsonPropertyName("resident")] bool Resident,
-	[property: JsonPropertyName("destructive")] bool? Destructive = null
+	[property: JsonPropertyName("destructive")] bool? Destructive = null,
+	[property: JsonPropertyName("aliases")]
+	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	IReadOnlyList<string> Aliases = null
 );
 
 [SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters", Justification = "This serialized contract record mirrors the external MCP wire shape and grouping fields would make the contract harder to inspect and evolve.")]
@@ -461,6 +465,7 @@ internal static class ToolContractCatalog {
 	private const string InstalledApplicationIdentifierDescription = "Installed application identifier.";
 	private const string InstalledApplicationVersionDescription = "Installed application version.";
 	private const string InvalidWorkflowShapeCode = "invalid-workflow-shape";
+	private const string IsVirtualFieldName = "is-virtual";
 	private const string MissingRequiredParameterCode = "missing-required-parameter";
 	private const string PackageUIdFieldName = "package-u-id";
 	private const string PackageNameDescription = "Target package name.";
@@ -767,7 +772,13 @@ internal static class ToolContractCatalog {
 			string.IsNullOrEmpty(purpose) ? name : purpose,
 			ContractAvailable: contractAvailable,
 			Resident: McpCoreToolProfile.IsResident(name),
-			Destructive: ResolveDestructive(toolInvokerRegistry, name));
+			Destructive: ResolveDestructive(toolInvokerRegistry, name),
+			// Deprecated alias names are projected from the compatibility catalog (the single source of
+			// truth for renames), so an agent scanning the index finds a legacy name next to its canonical
+			// entry instead of concluding the tool disappeared.
+			Aliases: McpToolCompatibilityCatalog.SeedAliasesByCanonical.TryGetValue(name, out IReadOnlyList<string> aliases)
+				? aliases
+				: null);
 	}
 
 	/// <summary>
@@ -1228,7 +1239,7 @@ internal static class ToolContractCatalog {
 				Field(ApplicationNameFieldName, StringType, InstalledApplicationDisplayNameDescription),
 				Field(ApplicationCodeFieldName, StringType, InstalledApplicationCodeDescription),
 				Field(ApplicationVersionFieldName, StringType, InstalledApplicationVersionDescription),
-				Field("entities", ArrayType, "Application entities. Each entity `columns` item carries a vocabulary unified with the sync-schemas write surfaces so it round-trips without translation: `name`, `caption`, canonical `type` (with `data-value-type` kept as a legacy alias), canonical `reference-schema-name` (with `reference-schema` kept as a legacy alias), and `required`. Send a column back to sync-schemas update-entity by adding the `action` verb."),
+				Field("entities", ArrayType, "Application entities. Each entity includes `virtual`, and each entity `columns` item carries a vocabulary unified with the sync-schemas write surfaces so it round-trips without translation: `name`, `caption`, canonical `type` (with `data-value-type` kept as a legacy alias), canonical `reference-schema-name` (with `reference-schema` kept as a legacy alias), and `required`. Send a column back to sync-schemas update-entity by adding the `action` verb."),
 				Field(PagesFieldName, ArrayType, "Primary-package Freedom UI pages using list-pages item shape (`schema-name`, `uId`, `packageName`, `parentSchemaName`)."),
 				Field("schema-name-prefix", StringType, "Active SchemaNamePrefix resolved from the environment. Use as the prefix for all subsequent custom schema codes (lookups, columns, supporting entities). Empty string means no prefix is configured."),
 				Field("dataforge", ObjectType, "Optional Data Forge enrichment diagnostics including health/status/coverage, warnings, and a compact context-summary."),
@@ -2076,7 +2087,7 @@ internal static class ToolContractCatalog {
 				Field(ApplicationNameFieldName, StringType, InstalledApplicationDisplayNameDescription),
 				Field(ApplicationCodeFieldName, StringType, InstalledApplicationCodeDescription),
 				Field(ApplicationVersionFieldName, StringType, InstalledApplicationVersionDescription),
-				Field("entities", ArrayType, "Application entities. Each entity `columns` item carries a vocabulary unified with the sync-schemas write surfaces so it round-trips without translation: `name`, `caption`, canonical `type` (with `data-value-type` kept as a legacy alias), canonical `reference-schema-name` (with `reference-schema` kept as a legacy alias), and `required`. Send a column back to sync-schemas update-entity by adding the `action` verb."),
+				Field("entities", ArrayType, "Application entities. Each entity includes `virtual`, and each entity `columns` item carries a vocabulary unified with the sync-schemas write surfaces so it round-trips without translation: `name`, `caption`, canonical `type` (with `data-value-type` kept as a legacy alias), canonical `reference-schema-name` (with `reference-schema` kept as a legacy alias), and `required`. Send a column back to sync-schemas update-entity by adding the `action` verb."),
 				Field(PagesFieldName, ArrayType, "Primary-package Freedom UI pages using list-pages item shape (`schema-name`, `uId`, `packageName`, `parentSchemaName`)."),
 				Field("schema-name-prefix", StringType, "Active SchemaNamePrefix system setting for the environment. Use as the prefix for all subsequent custom schema codes. Empty string means no prefix is configured."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
@@ -2903,12 +2914,17 @@ internal static class ToolContractCatalog {
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PackageNameFieldName, OperationsFieldName],
 				EnvironmentPackageFields(
-					Field(OperationsFieldName, ArrayType, "Ordered schema operations. For update-entity, supply `update-operations` (add/modify/remove) or a `columns` add-batch. Column fields are unified with get-app-info: `column-name` (alias `name`), `type` (alias `data-value-type`), `reference-schema-name` (alias `reference-schema`), `required` (alias `is-required`) — so a column read from get-app-info can be sent back by adding the `action` verb. For an add, `title-localizations` is OPTIONAL: when omitted, `en-US` is auto-derived from a scalar `title`/`caption` or the column name (the `en-US` value must be English when supplied).")),
+					Field(OperationsFieldName, ArrayType, "Ordered schema operations. For create-entity, set `is-virtual` to true to create a virtual schema without a physical table; it defaults to false and cannot be combined with `seed-rows`. For update-entity, supply `update-operations` (add/modify/remove) or a `columns` add-batch. Column fields are unified with get-app-info: `column-name` (alias `name`), `type` (alias `data-value-type`), `reference-schema-name` (alias `reference-schema`), `required` (alias `is-required`) — so a column read from get-app-info can be sent back by adding the `action` verb. For an add, `title-localizations` is OPTIONAL: when omitted, `en-US` is auto-derived from a scalar `title`/`caption` or the column name (the `en-US` value must be English when supplied).")),
 				Validators: [
 					new ToolContractValidator(
 						"sync-schemas-operations-localizations",
 						InvalidLocalizationMapCode,
-						Field: OperationsFieldName)
+						Field: OperationsFieldName),
+					new ToolContractValidator(
+						"sync-schemas-virtual-entity-seed-rows",
+						InvalidWorkflowShapeCode,
+						Fields: [$"{OperationsFieldName}[*].{IsVirtualFieldName}", $"{OperationsFieldName}[*].seed-rows"],
+						Context: "A create-entity operation cannot combine is-virtual=true with seed-rows because a virtual entity has no physical table.")
 				]),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -2920,7 +2936,9 @@ internal static class ToolContractCatalog {
 			),
 			CommonErrorContract,
 			EnvironmentPackageAliases(),
-			[],
+			[
+				Default($"{OperationsFieldName}[*].{IsVirtualFieldName}", "false", "Create-entity operations create persistent schemas unless explicitly marked virtual.")
+			],
 			[
 				Example("Create a lookup and extend the main entity", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
@@ -3231,7 +3249,8 @@ internal static class ToolContractCatalog {
 					Field(TitleLocalizationsFieldName, ObjectType, "Localization map that must include en-US."),
 					Field("columns", ArrayType, "Optional initial columns."),
 					Field(ParentSchemaNameFieldName, StringType, "Optional parent schema name."),
-					Field("extend-parent", BooleanType, "Optional replacement-schema flag.")),
+					Field("extend-parent", BooleanType, "Optional replacement-schema flag."),
+					Field(IsVirtualFieldName, BooleanType, "Creates a virtual entity schema without a physical database table when true.")),
 				Validators: [
 					RequiredLocalizationMapValidator(TitleLocalizationsFieldName)
 				]),
@@ -3242,7 +3261,9 @@ internal static class ToolContractCatalog {
 				Alias(ParameterScope, "extend-parent", "extendParent", RejectedStatus, "Use 'extend-parent' instead of 'extendParent'."),
 				TitleParameterAlias(),
 				CaptionParameterAlias()),
-			[],
+			[
+				Default(IsVirtualFieldName, "false", "Entity schemas are persistent unless explicitly marked virtual.")
+			],
 			[
 				Example("Create an additional business entity", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
@@ -3567,6 +3588,7 @@ internal static class ToolContractCatalog {
 			StructuredResultOutput(
 				Field("name", StringType, "Schema name."),
 				Field("title", StringType, "Schema title."),
+				Field("virtual", BooleanType, "Whether the entity schema is virtual and has no physical database table."),
 				Field(ColumnsFieldName, ArrayType, "Column metadata.")),
 			CommonErrorContract,
 			EnvironmentPackageSchemaAliases(),
@@ -4571,7 +4593,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildDeployCreatio() {
 		return new ToolContractDefinition(
 			InstallerCommandTool.DeployCreatioToolName,
-			"Deploys Creatio from a zip archive using the real deploy-creatio command path. This is the most consequential, hardest-to-reverse lifecycle tool: it drops and recreates the target site. Run the deploy preflight first (assert-infrastructure -> show-passing-infrastructure -> find-empty-iis-port) and prefer the recommended bundle from show-passing-infrastructure.",
+			"Deploys Creatio from a zip archive using the real deploy-creatio command path. This is the most consequential, hardest-to-reverse lifecycle tool: it drops and recreates the target site. Run the deploy preflight first (assert-infrastructure -> show-passing-infrastructure -> find-empty-iis-port) and prefer the recommended bundle from show-passing-infrastructure. Deployment preserves the build database's existing forced-password-change state and does not clear it automatically.",
 			new ToolInputSchemaContract(
 				[SiteNameFieldName, ZipFileFieldName, SitePortFieldName],
 				[

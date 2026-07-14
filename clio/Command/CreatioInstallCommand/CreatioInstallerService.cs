@@ -9,6 +9,7 @@ using System.Net.NetworkInformation;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
+using Clio.Command.McpServer.Progress;
 using Clio.Common;
 using Clio.Common.Database;
 using Clio.Common.db;
@@ -101,7 +102,7 @@ public interface ICreatioInstallerService {
 /// <summary>
 ///     Default implementation of <see cref="ICreatioInstallerService" /> for deploy-creatio command execution.
 /// </summary>
-public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInstallerService{
+public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInstallerService, IStageEventSource{
 	#region Fields: Private
 
 	private readonly IBackupFileDetector _backupFileDetector;
@@ -133,6 +134,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 	private readonly RegAppCommand _registerCommand;
 	private readonly string _remoteArtefactServerPath;
 	private readonly ISettingsRepository _settingsRepository;
+	private readonly IStageEventEmitter _stageEventEmitter;
 
 	#endregion
 
@@ -159,6 +161,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 	/// <param name="corporateEnvironmentDetector">Detector for corporate network/domain availability.</param>
 	/// <param name="creatioPackageVersionParser">Parser for version extraction from package filename.</param>
 	/// <param name="passwordResetScriptExecutor">Executor for post-restore password reset script.</param>
+	/// <param name="stageEventEmitter">Emitter that raises typed stage-progress events for the deploy run.</param>
 	/// <param name="dbOperationLogContextAccessor">Accessor for the active database operation log session.</param>
 	public CreatioInstallerService(IPackageArchiver packageArchiver, k8Commands k8,
 		IConfigureConnectionStringHandler configureConnectionStringHandler, RegAppCommand registerCommand, ISettingsRepository settingsRepository,
@@ -172,6 +175,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		ICorporateEnvironmentDetector corporateEnvironmentDetector,
 		ICreatioPackageVersionParser creatioPackageVersionParser,
 		IPasswordResetScriptExecutor passwordResetScriptExecutor,
+		IStageEventEmitter stageEventEmitter,
 		IDbOperationLogContextAccessor dbOperationLogContextAccessor = null) {
 		_packageArchiver = packageArchiver;
 		_k8 = k8;
@@ -196,6 +200,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		_corporateEnvironmentDetector = corporateEnvironmentDetector;
 		_creatioPackageVersionParser = creatioPackageVersionParser;
 		_passwordResetScriptExecutor = passwordResetScriptExecutor;
+		_stageEventEmitter = stageEventEmitter;
 		_dbOperationLogContextAccessor = dbOperationLogContextAccessor ?? NullDbOperationLogContextAccessor.Instance;
 	}
 
@@ -209,7 +214,53 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 
 	#endregion
 
+	#region Events: Public
+
+	/// <inheritdoc />
+	public event EventHandler<ClioStageEvent> StageChanged;
+
+	#endregion
+
 	#region Methods: Private
+
+	private void OnStageChanged(ClioStageEvent stageEvent) {
+		StageChanged?.Invoke(this, stageEvent);
+	}
+
+	internal static IReadOnlyList<StageDescriptor> BuildDeployManifest() {
+		// Ordered exactly as the stages execute below (ADR fact 7 / FR-05). stage-build is the only
+		// conditional stage: it runs when the source is a network drive and is skipped (not-applicable)
+		// otherwise. The emitter assigns each entry its zero-based index and the shared total.
+		return [
+			new StageDescriptor(StageIds.StageBuild, "Build source", true),
+			new StageDescriptor(StageIds.Unzip, "Unzip distribution", false),
+			new StageDescriptor(StageIds.CopyFiles, "Copy files", false),
+			new StageDescriptor(StageIds.RestoreDb, "Restore database", false),
+			new StageDescriptor(StageIds.DeployApp, "Deploy application", false),
+			new StageDescriptor(StageIds.ConfigureConnStrings, "Configure connection strings", false),
+			new StageDescriptor(StageIds.RegisterEnv, "Register environment", false),
+			new StageDescriptor(StageIds.WaitReady, "Wait until ready", false)
+		];
+	}
+
+	// Mirrors the network-drive decision made by CopyLocalWhenNetworkDrive so the manifest built up front
+	// (stage-build run vs skipped) matches the copy actually performed. Kept separate to leave the existing
+	// copy method untouched.
+	private bool IsNetworkDriveSource(string path) {
+		if (path.StartsWith(@"\\")) {
+			return true;
+		}
+
+		if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) {
+			return false;
+		}
+
+		if (path.StartsWith(".\\")) {
+			path = _msFileSystem.Path.GetFullPath(path);
+		}
+
+		return _msFileSystem.DriveInfo.New(_msFileSystem.Path.GetPathRoot(path)) is { DriveType: DriveType.Network };
+	}
 
 	private string BuildMssqlConnectionString(LocalDbServerConfiguration dbConfig, string databaseName) {
 		string dataSource = dbConfig.Hostname.Contains("\\") || dbConfig.Port == 0
@@ -1404,33 +1455,54 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		_logger.WriteInfo($"[Site Name] - {options.SiteName}");
 		_logger.WriteInfo($"[Site Port] - {options.SitePort}");
 
-		options.ZipFile = CopyLocalWhenNetworkDrive(options.ZipFile);
-		string deploymentFolder = DetermineFolderPath(options);
+		// Emit the up-front manifest (built from the resolved execution path) before any stage runs, then
+		// wrap each real stage boundary with the emitter. Emission is observational only: with no
+		// subscriber attached the raising is a no-op and deploy behavior is unchanged.
+		bool isNetworkSource = IsNetworkDriveSource(options.ZipFile);
+		_stageEventEmitter.Begin(ClioStageEventContract.Operations.Deploy, BuildDeployManifest(), OnStageChanged);
+		try {
 
-		string unzippedDirectoryPath = InstallerHelper.UnzipOrTakeExistingOldPath(options.ZipFile, _packageArchiver);
-		if (!_fileSystem.ExistsDirectory(deploymentFolder)) {
-			_logger.WriteInfo($"[Creating deployment folder] - {deploymentFolder}");
-			_fileSystem.CreateDirectory(deploymentFolder);
+		// stage-build: copying from a network drive to the local products folder is the only work this
+		// stage performs; for a non-network source it is inert (skipped, not-applicable).
+		if (isNetworkSource) {
+			_stageEventEmitter.RunStage(StageIds.StageBuild,
+				() => { options.ZipFile = CopyLocalWhenNetworkDrive(options.ZipFile); });
+		}
+		else {
+			options.ZipFile = CopyLocalWhenNetworkDrive(options.ZipFile);
+			_stageEventEmitter.SkipStage(StageIds.StageBuild, ClioStageEventContract.SkipReasons.NotApplicable);
 		}
 
-		string str = $"""
-					  [Copy deployment files]
-					      From: {unzippedDirectoryPath}
-					      To:   {deploymentFolder}
-					  """;
-		_logger.WriteInfo(str);
-		_fileSystem.CopyDirectoryWithFilter(unzippedDirectoryPath, deploymentFolder, true, source => {
-			if (_msFileSystem.Directory.Exists(source)) {
-				return _excludedDirectories.Contains(_msFileSystem.Path.GetFileName(source)?.ToLower());
+		string deploymentFolder = DetermineFolderPath(options);
+
+		string unzippedDirectoryPath = null;
+		_stageEventEmitter.RunStage(StageIds.Unzip,
+			() => { unzippedDirectoryPath = InstallerHelper.UnzipOrTakeExistingOldPath(options.ZipFile, _packageArchiver); });
+
+		_stageEventEmitter.RunStage(StageIds.CopyFiles, () => {
+			if (!_fileSystem.ExistsDirectory(deploymentFolder)) {
+				_logger.WriteInfo($"[Creating deployment folder] - {deploymentFolder}");
+				_fileSystem.CreateDirectory(deploymentFolder);
 			}
 
-			if (_msFileSystem.File.Exists(source)) {
-				return _excludedExtensions.Contains(_msFileSystem.Path.GetExtension(source)?.ToLower());
-			}
+			string str = $"""
+						  [Copy deployment files]
+						      From: {unzippedDirectoryPath}
+						      To:   {deploymentFolder}
+						  """;
+			_logger.WriteInfo(str);
+			_fileSystem.CopyDirectoryWithFilter(unzippedDirectoryPath, deploymentFolder, true, source => {
+				if (_msFileSystem.Directory.Exists(source)) {
+					return _excludedDirectories.Contains(_msFileSystem.Path.GetFileName(source)?.ToLower());
+				}
 
-			return true;
+				if (_msFileSystem.File.Exists(source)) {
+					return _excludedExtensions.Contains(_msFileSystem.Path.GetExtension(source)?.ToLower());
+				}
+
+				return true;
+			});
 		});
-
 
 		InstallerHelper.DatabaseType dbType;
 		try {
@@ -1442,39 +1514,50 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			dbType = InstallerHelper.DatabaseType.Postgres;
 		}
 
-		int dbRestoreResult;
+		// restore-db, deploy-app, configure-conn-strings and register-env each signal failure by a non-zero
+		// return, not by throwing. Route them through the Func<int> RunStage overload so a genuine failure is
+		// emitted as failed + cascade + failure run-completed and the deploy stops here with the real exit
+		// code — the pipeline can no longer report Done/Success over a failed underlying action.
+		int dbRestoreResult = 0;
+		int dbRestoreExit = _stageEventEmitter.RunStage(StageIds.RestoreDb, () => {
+			// Check if the user specified a local database server
+			if (!string.IsNullOrEmpty(options.DbServerName)) {
+				_logger.WriteInfo($"[Database Restore Mode] - Local server: {options.DbServerName}");
+				dbRestoreResult = RestoreToLocalDb(unzippedDirectoryPath, options.SiteName, options.DbServerName,
+					options.DropIfExists, options.ZipFile);
+			}
+			else {
+				_logger.WriteInfo("[Database Restore Mode] - Kubernetes cluster");
+				dbRestoreResult = dbType switch {
+									  InstallerHelper.DatabaseType.MsSql => DoMsWork(unzippedDirectoryPath,
+										  options.SiteName),
+									  var _ => DoPgWork(unzippedDirectoryPath, options.SiteName,
+										  _msFileSystem.Path.GetFileNameWithoutExtension(options.ZipFile))
+								  };
+			}
 
-		// Check if the user specified a local database server
-		if (!string.IsNullOrEmpty(options.DbServerName)) {
-			_logger.WriteInfo($"[Database Restore Mode] - Local server: {options.DbServerName}");
-			dbRestoreResult = RestoreToLocalDb(unzippedDirectoryPath, options.SiteName, options.DbServerName,
-				options.DropIfExists, options.ZipFile);
+			if (dbRestoreResult == 0) {
+				TryDisableForcedPasswordReset(options, dbType);
+			}
+
+			return dbRestoreResult;
+		});
+		if (dbRestoreExit != 0) {
+			return dbRestoreExit;
 		}
-		else {
-			_logger.WriteInfo("[Database Restore Mode] - Kubernetes cluster");
-			dbRestoreResult = dbType switch {
-								  InstallerHelper.DatabaseType.MsSql => DoMsWork(unzippedDirectoryPath,
-									  options.SiteName),
-								  var _ => DoPgWork(unzippedDirectoryPath, options.SiteName,
-									  _msFileSystem.Path.GetFileNameWithoutExtension(options.ZipFile))
-							  };
+
+		// The database restore succeeded (a failure would have returned above), so deploy the application.
+		int deployExit = _stageEventEmitter.RunStage(StageIds.DeployApp,
+			() => DeployApplication(deploymentFolder, options));
+		if (deployExit != 0) {
+			return deployExit;
 		}
 
-		if (dbRestoreResult == 0) {
-			TryDisableForcedPasswordReset(options, dbType);
+		int configureExit = _stageEventEmitter.RunStage(StageIds.ConfigureConnStrings,
+			() => UpdateConnectionString(deploymentFolder, options, dbType).GetAwaiter().GetResult());
+		if (configureExit != 0) {
+			return configureExit;
 		}
-
-		int deploySiteResult = dbRestoreResult switch {
-								   0 => DeployApplication(deploymentFolder, options),
-								   var _ => ExitWithErrorMessage("Database restore failed")
-							   };
-
-
-		int updateConnectionStringResult = deploySiteResult switch {
-											   0 => UpdateConnectionString(deploymentFolder, options, dbType)
-													.GetAwaiter().GetResult(),
-											   var _ => ExitWithErrorMessage("Failed to deploy application")
-										   };
 
 		string uri = $"http://localhost:{options.SitePort}";
 		if (isIisDeployment) {
@@ -1482,21 +1565,32 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		}
 
 		bool isNetCore = InstallerHelper.DetectFrameworkByPath(deploymentFolder) == InstallerHelper.FrameworkType.NetCore;
-		_registerCommand.Execute(new RegAppOptions {
+		int registerExit = _stageEventEmitter.RunStage(StageIds.RegisterEnv, () => _registerCommand.Execute(new RegAppOptions {
 			EnvironmentName = options.SiteName,
 			Login = "Supervisor",
 			Password = "Supervisor",
 			Uri = uri,
 			IsNetCore = isNetCore,
 			EnvironmentPath = deploymentFolder
+		}));
+		if (registerExit != 0) {
+			return registerExit;
+		}
+
+		_stageEventEmitter.RunStage(StageIds.WaitReady, () => {
+			// For DotNet deployments, wait for the server to become ready before proceeding. IIS
+			// deployments are ready once registered, so this stage completes immediately.
+			if (!isIisDeployment) {
+				_logger.WriteInfo("Waiting for server to become ready...");
+				ThrowIfServerNotReady(WaitForServerReady(uri, isNetCore));
+			}
 		});
 
-		// For DotNet deployments, wait for the server to become ready before proceeding
-		if (!isIisDeployment) {
-			_logger.WriteInfo("Waiting for server to become ready...");
-			if (!WaitForServerReady(uri, isNetCore)) {
-				_logger.WriteWarning("Server did not become ready within the timeout period.");
-			}
+		_stageEventEmitter.CompleteSuccess("Deployment completed", uri, deploymentFolder);
+		}
+		catch (Exception ex) {
+			_stageEventEmitter.CompleteFailure("Deployment failed", ex.Message, "deployment-execution-failed");
+			throw;
 		}
 
 		if (options.AutoRun == true) {
@@ -1505,6 +1599,12 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		}
 
 		return 0;
+	}
+
+	internal static void ThrowIfServerNotReady(bool isReady) {
+		if (!isReady) {
+			throw new TimeoutException("Server did not become ready within the timeout period.");
+		}
 	}
 
 	/// <inheritdoc />

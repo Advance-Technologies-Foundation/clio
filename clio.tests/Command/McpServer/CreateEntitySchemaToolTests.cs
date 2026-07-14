@@ -58,7 +58,7 @@ public class CreateEntitySchemaToolTests {
 			new List<CreateEntitySchemaColumnArgs> {
 				new("Name", "Text", Localizations("Vehicle name")),
 				new("Owner", "Lookup", Localizations("Owner"), "Contact")
-			}));
+			}) { IsVirtual = true });
 
 		// Assert
 		result.ExitCode.Should().Be(0, "because the tool should forward a valid create entity schema request");
@@ -67,6 +67,7 @@ public class CreateEntitySchemaToolTests {
 			&& options.SchemaName == "UsrVehicle"
 			&& options.Title == "Vehicle"
 			&& options.ParentSchemaName == "BaseEntity"
+			&& options.IsVirtual
 			&& options.Environment == "docker_fix2"));
 		defaultCommand.CapturedOptions.Should().BeNull(
 			"because the environment-aware tool should use the resolved command");

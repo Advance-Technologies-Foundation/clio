@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using Clio.Command.McpServer.Progress;
 using Clio.Common;
 using CommandLine;
 using k8s;
@@ -84,7 +85,8 @@ public class PfInstallerOptions : EnvironmentNameOptions{
 	/// <summary>
 	/// Gets or sets a value indicating whether force-password-reset disabling script may be executed.
 	/// </summary>
-	[Option("disable-reset-password", Required = false, Hidden = true, Default = true, HelpText = "Disables reset password after installation")]
+	[Option("disable-reset-password", Required = false, Hidden = true, Default = false,
+		HelpText = "When true, disables the forced password change after installation")]
 	public bool DisableResetPassword { get; set; }
 	
 	/// <summary>
@@ -232,7 +234,14 @@ public class PfInstallerOptions : EnvironmentNameOptions{
 /// <summary>
 /// Executes Creatio deployment using validated command options.
 /// </summary>
-public class InstallerCommand : Command<PfInstallerOptions>{
+public class InstallerCommand : Command<PfInstallerOptions>, IStageEventSource{
+	#region Constants: Private
+
+	private const string MissingSilentSiteNameError =
+		"Site name is required for silent deployment. Specify --site-name or configure deploy-site-name.";
+
+	#endregion
+
 	#region Fields: Private
 
 	private readonly ICreatioInstallerService _creatioInstallerService;
@@ -268,6 +277,30 @@ public class InstallerCommand : Command<PfInstallerOptions>{
 
 	#endregion
 
+	#region Events: Public
+
+	/// <inheritdoc />
+	/// <remarks>
+	/// Bubbles the deploy stage-event seam up from <see cref="ICreatioInstallerService"/> (the service that
+	/// actually emits) so an MCP tool can subscribe to the resolved command instance via
+	/// <c>configureCommand</c> (story 4). Subscriptions delegate to the underlying service when it is an
+	/// <see cref="IStageEventSource"/>; otherwise they are inert.
+	/// </remarks>
+	public event EventHandler<ClioStageEvent> StageChanged {
+		add {
+			if (_creatioInstallerService is IStageEventSource source) {
+				source.StageChanged += value;
+			}
+		}
+		remove {
+			if (_creatioInstallerService is IStageEventSource source) {
+				source.StageChanged -= value;
+			}
+		}
+	}
+
+	#endregion
+
 	#region Methods: Public
 
 	/// <summary>
@@ -284,6 +317,10 @@ public class InstallerCommand : Command<PfInstallerOptions>{
 			// Kubernetes-vs-local branch below, so a configured default db-server-name routes the plain
 			// Explorer context-menu deploy (which passes only --zip-file) to the local database.
 			_deployCreatioDefaultsResolver.ApplyDefaults(options);
+			if (options.IsSilent && string.IsNullOrWhiteSpace(options.SiteName)) {
+				_logger.WriteError(MissingSilentSiteNameError);
+				return 1;
+			}
 
 			if (_kubernetes is FakeKubernetes && string.IsNullOrEmpty(options.DbServerName)) {
 				_logger.WriteError(
