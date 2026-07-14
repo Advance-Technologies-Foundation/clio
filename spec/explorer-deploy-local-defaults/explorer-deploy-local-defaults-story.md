@@ -11,5 +11,5 @@ As a Windows user deploying a Creatio ZIP from Explorer, I want clio to use my u
 - Explicit and deploy-specific selections are not overridden.
 - Zero or multiple enabled local database servers preserve Kubernetes fallback behavior.
 - Default local Redis resolution remains unchanged.
-- Explorer pauses exactly once after failure and does not add a command-level exit prompt.
+- Explorer pauses exactly once after failure and closes without a prompt after success.
 - Targeted command tests and documentation consistency checks pass.

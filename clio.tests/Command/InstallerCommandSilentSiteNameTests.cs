@@ -70,10 +70,11 @@ internal sealed class InstallerCommandSilentSiteNameTests : BaseCommandTests<PfI
 			because: "the error should explain how an unattended caller can provide the required site name");
 	}
 
-	[TestCase(0)]
-	[TestCase(1)]
-	[Description("Explorer deployment leaves terminal lifetime to the failure-aware registry launcher without an extra prompt.")]
-	public void Execute_ShouldNotPromptForExit_WhenLaunchedFromExplorer(int installerResult) {
+	[TestCase(0, false)]
+	[TestCase(1, true)]
+	[Description("Explorer deployment prompts for acknowledgement only when installation fails.")]
+	public void Execute_ShouldPromptForExitOnlyOnFailure_WhenLaunchedFromExplorer(int installerResult,
+		bool shouldPrompt) {
 		// Arrange
 		_creatioInstallerService.Execute(Arg.Any<PfInstallerOptions>()).Returns(installerResult);
 		InstallerCommand command = Container.GetRequiredService<InstallerCommand>();
@@ -89,7 +90,11 @@ internal sealed class InstallerCommandSilentSiteNameTests : BaseCommandTests<PfI
 
 		// Assert
 		result.Should().Be(installerResult,
-			because: "Explorer deployment must preserve the installer exit code for conditional pause handling");
-		_logger.DidNotReceive().WriteLine("Press enter to exit...");
+			because: "Explorer deployment must preserve the installer exit code while managing its terminal lifetime");
+		int promptCount = _logger.ReceivedCalls().Count(call =>
+			call.GetMethodInfo().Name == nameof(ILogger.WriteLine)
+			&& Equals(call.GetArguments().SingleOrDefault(), "Press enter to exit..."));
+		promptCount.Should().Be(shouldPrompt ? 1 : 0,
+			because: "Explorer must remain open after failure and close without an acknowledgement prompt after success");
 	}
 }

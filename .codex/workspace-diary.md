@@ -5920,7 +5920,7 @@ Impact: Explorer deployment uses the user's sole enabled local PostgreSQL and co
 
 ## 2026-07-14 13:15 – Scope Explorer defaults and harden context-menu execution
 Context: The first comprehensive review of issue #874 found that a general sole-local fallback could redirect non-Explorer Kubernetes callers and that quoting the entire cmd.exe payload was unsafe for metacharacter-bearing paths.
-Decision: Gate sole-local inference behind a hidden --explorer-launch marker, preserve ordinary CLI/MCP/ClioRing Kubernetes semantics, and use cmd.exe /d /c with only the ZIP argument quoted plus a failure-only pause.
-Discovery: Explorer mode should own both default inference and terminal lifetime; an execution-level registry test with a metacharacter filename proves the command cannot inject a second command.
+Decision: Gate sole-local inference behind a hidden --explorer-launch marker, preserve ordinary CLI/MCP/ClioRing Kubernetes semantics, invoke clio directly from Explorer, and let the command prompt only after a failed Explorer deployment.
+Discovery: Quoting a filename is insufficient protection when cmd.exe expands percent variables; removing the shell prevents legal metacharacter-bearing ZIP filenames from becoming executable syntax.
 Files: clio/Command/CreatioInstallCommand/InstallerCommand.cs, clio/Command/CreatioInstallCommand/DeployCreatioDefaultsResolver.cs, clio/reg/clio_context_menu_win.reg, clio.tests/Command/ExplorerContextMenuRegistrationTests.cs
 Impact: Rancher Desktop can remain off for Explorer deployment when one local server is configured, while automation callers retain their established Kubernetes contract and Explorer failures remain visible exactly once.

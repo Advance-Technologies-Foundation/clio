@@ -336,7 +336,7 @@ public class InstallerCommand : Command<PfInstallerOptions>, IStageEventSource{
 			}
 
 			int result = _creatioInstallerService.Execute(options);
-			if (!options.IsSilent && !options.ExplorerLaunch) {
+			if (!options.IsSilent && (!options.ExplorerLaunch || result != 0)) {
 				_logger.WriteLine("Press enter to exit...");
 				Console.ReadLine();
 			}

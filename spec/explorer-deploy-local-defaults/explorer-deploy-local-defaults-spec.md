@@ -14,7 +14,7 @@ Explorer starts `deploy-creatio` with only the selected ZIP. When no deploy-spec
 - MCP, ClioRing, and ordinary CLI calls preserve omitted `DbServerName` as Kubernetes intent.
 - Zero or multiple enabled local database configurations preserve the existing Kubernetes fallback.
 - Existing local Redis resolution continues to honor explicit selection, `defaultRedis`, and a sole enabled server.
-- The Explorer deploy terminal pauses on non-zero exit without an additional command-level exit prompt.
+- Clio pauses the Explorer deploy terminal on non-zero exit and closes it without a prompt on success.
 
 ## Exclusions
 
