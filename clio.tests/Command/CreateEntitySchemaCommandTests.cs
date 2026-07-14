@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Clio.Command;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
@@ -89,5 +90,32 @@ internal class CreateEntitySchemaCommandTests : BaseCommandTests<CreateEntitySch
 			because: "a successful parse should produce create-entity-schema options");
 		parsedOptions!.Columns.Should().BeEquivalentTo([jsonColumn],
 			because: "semicolons inside a JSON title or default value are part of the payload, not column separators");
+	}
+
+	[TestCase(false)]
+	[TestCase(true)]
+	[Description("Parses the optional --is-virtual flag and defaults it to false for persistent entity schemas.")]
+	public void Parse_Should_Map_IsVirtual_Option(bool expected) {
+		// Arrange
+		List<string> arguments = [
+			"--package", "UsrPkg",
+			"--name", "UsrVehicle",
+			"--title", "Vehicle"
+		];
+		if (expected) {
+			arguments.Add("--is-virtual");
+		}
+		CreateEntitySchemaOptions? parsedOptions = null;
+
+		// Act
+		ParserResult<CreateEntitySchemaOptions> parseResult = Parser.Default
+			.ParseArguments<CreateEntitySchemaOptions>(arguments)
+			.WithParsed(result => parsedOptions = result);
+
+		// Assert
+		parseResult.Tag.Should().Be(ParserResultType.Parsed,
+			because: "the optional virtual-schema flag should be accepted by the command parser");
+		parsedOptions!.IsVirtual.Should().Be(expected,
+			because: "the command must distinguish persistent schemas from explicitly virtual schemas");
 	}
 }
