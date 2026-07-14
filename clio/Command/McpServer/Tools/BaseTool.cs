@@ -125,10 +125,13 @@ public abstract class BaseTool<T>(
 				return executor(resolvedCommand);
 			}
 			catch (CreatioVersionRequirementException ex) {
-				return onFailure($"{ex.Message} [{ex.ErrorCode}]");
+				// Review (b-horodyskyi): this typed-response path lands in the model/host transcript like
+				// every other MCP result, so it needs the same uniform redaction McpToolErrorFilter applies —
+				// an inner-most data/HTTP/DB message routinely carries a target URI/host or credential value.
+				return onFailure(SensitiveErrorTextRedactor.Redact($"{ex.Message} [{ex.ErrorCode}]"));
 			}
 			catch (Exception ex) {
-				return onFailure(ex.Message);
+				return onFailure(SensitiveErrorTextRedactor.Redact(ex.Message));
 			}
 		});
 	}

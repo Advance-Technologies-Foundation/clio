@@ -146,6 +146,29 @@ public class CheckThemingAccessToolTests {
 	}
 
 	[Test]
+	[Description("Redacts a sensitive inner-most exception message before it crosses into the MCP client transcript, mirroring McpToolErrorFilter's uniform redaction (review: b-horodyskyi, FR-11-style gap on the ExecuteResolved typed-response path).")]
+	[Category("Unit")]
+	public void CheckThemingAccess_ShouldRedactSensitiveText_WhenClientThrows() {
+		// Arrange
+		(CheckThemingAccessTool tool, IToolCommandResolver _, ICreatioRightsClient rights, ICreatioLicenseClient __) = CreateTool();
+		rights.GetCanExecuteOperation("CanManageThemes", Arg.Any<CreatioRequestOptions>())
+			.Returns(_ => throw new InvalidOperationException(
+				"Request to https://internal-host.example/api?token=sekret123 failed: password=hunter2"));
+
+		// Act
+		ThemingAccessResult result = tool.CheckThemingAccess(new CheckThemingAccessArgs(EnvironmentName: "docker_fix2"));
+
+		// Assert
+		result.Success.Should().BeFalse(because: "a thrown transport error must still surface as a tool failure");
+		result.Error.Should().NotContain("internal-host.example",
+			because: "the exception message can carry a target host, so ExecuteResolved must redact it like every other MCP error path");
+		result.Error.Should().NotContain("sekret123",
+			because: "the exception message can carry a credential value, so ExecuteResolved must redact it like every other MCP error path");
+		result.Error.Should().NotContain("hunter2",
+			because: "the exception message can carry a credential value, so ExecuteResolved must redact it like every other MCP error path");
+	}
+
+	[Test]
 	[Description("Binds the check-theming-access argument record from kebab-case JSON using the real MCP serializer options, and routes camelCase spellings into the overflow bag — the exact JSON->record binding the MCP host performs, which direct method calls bypass.")]
 	[Category("Unit")]
 	public void CheckThemingAccessArgs_ShouldBindKebabCaseAndRouteCamelCaseToExtensionData() {

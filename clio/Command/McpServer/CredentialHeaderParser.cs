@@ -27,7 +27,8 @@ public sealed record CredentialParseResult(string Url, CredentialMaterial Auth, 
 /// <summary>
 /// Parses the base64-encoded JSON <c>X-Integration-Credentials</c> header into a
 /// precedence-resolved <see cref="CredentialParseResult"/>. The parser is pure
-/// (no <c>HttpContext</c> dependency) so it is fully unit-testable.
+/// (no <c>HttpContext</c> dependency) so it is fully unit-testable. Precedence is
+/// <c>accessToken → login+password → cookie</c> (cookie resolves last).
 /// </summary>
 public interface ICredentialHeaderParser
 {
@@ -46,7 +47,7 @@ public interface ICredentialHeaderParser
 
 /// <summary>
 /// Default <see cref="ICredentialHeaderParser"/>: base64-decode → JSON-parse →
-/// apply <c>accessToken → cookie → login+password</c> precedence. Errors name the
+/// apply <c>accessToken → login+password → cookie</c> precedence. Errors name the
 /// defect only and never echo secret material (FR-11).
 /// </summary>
 public sealed class CredentialHeaderParser : ICredentialHeaderParser

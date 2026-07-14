@@ -17,17 +17,17 @@ public enum McpTransport
 
 /// <summary>
 /// The kind of authentication material a <see cref="CredentialMaterial"/> carries,
-/// after the <c>accessToken → cookie → login+password</c> precedence has been resolved.
+/// after the <c>accessToken → login+password → cookie</c> precedence has been resolved.
 /// </summary>
 public enum CredentialKind
 {
 	/// <summary>A pre-issued bearer access token (highest precedence).</summary>
 	AccessToken,
 
-	/// <summary>A raw authentication cookie.</summary>
+	/// <summary>A raw authentication cookie (lowest precedence).</summary>
 	Cookie,
 
-	/// <summary>A login/password pair (lowest precedence).</summary>
+	/// <summary>A login/password pair (middle precedence).</summary>
 	LoginPassword
 }
 
@@ -59,14 +59,14 @@ public sealed record CredentialMaterial(
 		new(CredentialKind.AccessToken, accessToken, accessTokenType ?? string.Empty,
 			string.Empty, string.Empty, string.Empty);
 
-	/// <summary>Creates cookie material (middle precedence).</summary>
+	/// <summary>Creates cookie material (lowest precedence).</summary>
 	/// <param name="cookie">The authentication cookie.</param>
 	/// <returns>A <see cref="CredentialMaterial"/> of kind <see cref="CredentialKind.Cookie"/>.</returns>
 	public static CredentialMaterial FromCookie(string cookie) =>
 		new(CredentialKind.Cookie, string.Empty, string.Empty, cookie,
 			string.Empty, string.Empty);
 
-	/// <summary>Creates login/password material (lowest precedence).</summary>
+	/// <summary>Creates login/password material (middle precedence).</summary>
 	/// <param name="login">The login.</param>
 	/// <param name="password">The password.</param>
 	/// <returns>A <see cref="CredentialMaterial"/> of kind <see cref="CredentialKind.LoginPassword"/>.</returns>
