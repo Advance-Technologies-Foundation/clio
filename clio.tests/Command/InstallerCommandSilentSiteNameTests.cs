@@ -16,7 +16,6 @@ internal sealed class InstallerCommandSilentSiteNameTests : BaseCommandTests<PfI
 	private readonly ICreatioInstallerService _creatioInstallerService = Substitute.For<ICreatioInstallerService>();
 	private readonly IDeployCreatioDefaultsResolver _defaultsResolver =
 		Substitute.For<IDeployCreatioDefaultsResolver>();
-	private readonly IKubernetes _kubernetes = new FakeKubernetes();
 	private readonly ILogger _logger = Substitute.For<ILogger>();
 
 	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
@@ -24,7 +23,7 @@ internal sealed class InstallerCommandSilentSiteNameTests : BaseCommandTests<PfI
 		containerBuilder.AddSingleton(_creatioInstallerService);
 		containerBuilder.AddSingleton<IDbOperationLogSessionFactory>(_ => NullDbOperationLogSessionFactory.Instance);
 		containerBuilder.AddSingleton(_defaultsResolver);
-		containerBuilder.AddSingleton(_kubernetes);
+		containerBuilder.AddSingleton<IKubernetes, FakeKubernetes>();
 		containerBuilder.AddSingleton(_logger);
 	}
 
@@ -33,11 +32,6 @@ internal sealed class InstallerCommandSilentSiteNameTests : BaseCommandTests<PfI
 		_defaultsResolver.ClearReceivedCalls();
 		_logger.ClearReceivedCalls();
 		base.TearDown();
-	}
-
-	[OneTimeTearDown]
-	public void OneTimeTearDown() {
-		_kubernetes.Dispose();
 	}
 
 	[Test]
