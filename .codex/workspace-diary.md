@@ -5931,3 +5931,10 @@ Decision: Track Explorer success across the whole command, render operation-log 
 Discovery: Failure visibility must span defaults resolution, infrastructure validation, installer return codes, and thrown exceptions; handling only the installer result is incomplete.
 Files: clio/Command/CreatioInstallCommand/InstallerCommand.cs, clio.tests/Command/InstallerCommandSilentSiteNameTests.cs
 Impact: Explorer success closes immediately, while all tested failure paths display the diagnostic and log location before waiting for Enter.
+
+## 2026-07-14 14:08 – Make MCP progress waits timeout-safe
+Context: TeamCity build 15725495 failed unrelated PR #866 because the corrupt-archive deploy progress test received a stale partial snapshot after its terminal-event wait timed out.
+Decision: Replace polling with notification-driven wakeups, recheck one final snapshot at the timeout boundary, and throw a secret-safe diagnostic timeout rather than returning unsatisfied data.
+Discovery: The old cancellation path broke out of its delay without refreshing the queue, so a boundary-arriving terminal event could be present while the caller still received the previous stage-only snapshot.
+Files: clio.mcp.e2e/Support/Mcp/McpServerSession.cs, clio.mcp.e2e/DeployUninstallProgressTests.cs, clio.mcp.e2e/AGENTS.md, spec/mcp-progress-wait-timeout/
+Impact: Shared MCP E2E runs no longer convert a timeout race into misleading event-order failures, while genuine missing terminal events fail explicitly with safe diagnostics.

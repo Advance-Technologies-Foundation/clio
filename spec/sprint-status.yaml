@@ -21,6 +21,20 @@
 # 2026-07-06) is a separate Jira ticket stacked on the same branch; tracked as its own row.
 
 stories:
+  - id: story-mcp-progress-wait-timeout-1
+    title: "Make MCP progress waits notification-driven and timeout-safe"
+    feature: "mcp-progress-wait-timeout"
+    repo: "clio"
+    size: S
+    status: review
+    issue: 876
+    file: spec/mcp-progress-wait-timeout/mcp-progress-wait-timeout-story.md
+    prd: spec/mcp-progress-wait-timeout/mcp-progress-wait-timeout-spec.md
+    adr: spec/mcp-progress-wait-timeout/mcp-progress-wait-timeout-plan.md
+    test_plan: spec/mcp-progress-wait-timeout/mcp-progress-wait-timeout-qa.md
+    depends_on: []
+    blocks: []
+
   - id: story-explorer-deploy-local-defaults-1
     title: "Use local infrastructure preferences and preserve Explorer deployment errors"
     feature: "explorer-deploy-local-defaults"

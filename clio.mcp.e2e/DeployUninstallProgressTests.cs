@@ -64,29 +64,10 @@ public sealed class DeployUninstallProgressTests : McpContractFixtureBase {
 		// Arrange
 		await using ArrangeContext arrangeContext = Arrange();
 		arrangeContext.Session.StartCapturingProgressNotifications();
-		string corruptZipFile = Path.Combine(Path.GetTempPath(), $"corrupt-creatio-{Guid.NewGuid():N}.zip");
-		await File.WriteAllTextAsync(corruptZipFile, "not a zip archive", arrangeContext.CancellationTokenSource.Token);
 
 		// Act — use the same explicit-token + raw-handler path as ClioRing. The SDK's typed progress
 		// overload installs a competing handler and drops _meta during deserialization.
-		try {
-			await arrangeContext.Session.CallToolWithRawProgressAsync(
-				ToolName,
-				new Dictionary<string, object?> {
-					["args"] = new Dictionary<string, object?> {
-						["siteName"] = $"e2e-{Guid.NewGuid():N}",
-						["zipFile"] = corruptZipFile,
-						["sitePort"] = 5011,
-						// Cross the FakeKubernetes/no-defaults preflight on clean CI agents. The corrupt
-						// archive fails at unzip before this deliberately nonexistent server is resolved.
-						["dbServerName"] = "e2e-unused-before-unzip"
-					}
-				},
-				arrangeContext.CancellationTokenSource.Token);
-		}
-		finally {
-			File.Delete(corruptZipFile);
-		}
+		await InvokeCorruptArchiveDeployAsync(arrangeContext);
 
 		// Assert
 		IReadOnlyList<JsonNode> rawParams = await arrangeContext.Session.WaitForCapturedProgressAsync(
@@ -122,6 +103,39 @@ public sealed class DeployUninstallProgressTests : McpContractFixtureBase {
 		string wire = string.Join('\n', rawParams.Select(node => node.ToJsonString())).ToLowerInvariant();
 		wire.Should().NotContainAny(["password=", "pwd=", "user id=", "bearer "],
 			because: "no connection string, credential, or token may cross the wire (AC-ERR; redaction is at source)");
+	}
+
+	[Test]
+	[Description("Reports safe typed-event diagnostics when a captured MCP progress condition times out.")]
+	[AllureTag(ToolName)]
+	[AllureName("Progress capture timeout reports the observed typed event sequence")]
+	[AllureDescription("Runs the non-destructive corrupt-archive deploy path, confirms its terminal event was captured, then verifies an intentionally impossible wait fails explicitly with safe typed-event diagnostics instead of returning a partial snapshot.")]
+	public async Task ProgressCaptureWait_Should_Report_Typed_Event_Diagnostics_When_Condition_Times_Out() {
+		// Arrange
+		await using ArrangeContext arrangeContext = Arrange();
+		arrangeContext.Session.StartCapturingProgressNotifications();
+		await InvokeCorruptArchiveDeployAsync(arrangeContext);
+		await arrangeContext.Session.WaitForCapturedProgressAsync(
+			nodes => ExtractStageEvents(nodes).Any(stageEvent =>
+				stageEvent.EventType == ClioStageEventContract.EventTypes.RunCompleted),
+			TimeSpan.FromSeconds(30),
+			arrangeContext.CancellationTokenSource.Token);
+
+		// Act
+		Func<Task> act = async () => await arrangeContext.Session.WaitForCapturedProgressAsync(
+			_ => false,
+			TimeSpan.FromMilliseconds(10),
+			arrangeContext.CancellationTokenSource.Token);
+
+		// Assert
+		var assertion = await act.Should().ThrowAsync<TimeoutException>(
+			because: "an unsatisfied progress condition must fail explicitly instead of returning a partial snapshot");
+		assertion.Which.Message.Should().Contain("manifest(",
+			because: "timeout diagnostics should identify the captured typed manifest without dumping raw payloads");
+		assertion.Which.Message.Should().Contain("run-completed(",
+			because: "timeout diagnostics should identify the captured terminal event");
+		assertion.Which.Message.Should().NotContain("fixture-password",
+			because: "progress timeout diagnostics must not expose configured credentials");
 	}
 
 	[Test]
@@ -185,6 +199,30 @@ public sealed class DeployUninstallProgressTests : McpContractFixtureBase {
 		}
 
 		return events;
+	}
+
+	private static async Task InvokeCorruptArchiveDeployAsync(ArrangeContext arrangeContext) {
+		string corruptZipFile = Path.Combine(Path.GetTempPath(), $"corrupt-creatio-{Guid.NewGuid():N}.zip");
+		await File.WriteAllTextAsync(corruptZipFile, "not a zip archive",
+			arrangeContext.CancellationTokenSource.Token);
+		try {
+			await arrangeContext.Session.CallToolWithRawProgressAsync(
+				ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["siteName"] = $"e2e-{Guid.NewGuid():N}",
+						["zipFile"] = corruptZipFile,
+						["sitePort"] = 5011,
+						// Cross the FakeKubernetes/no-defaults preflight on clean CI agents. The corrupt
+						// archive fails at unzip before this deliberately nonexistent server is resolved.
+						["dbServerName"] = "e2e-unused-before-unzip"
+					}
+				},
+				arrangeContext.CancellationTokenSource.Token);
+		}
+		finally {
+			File.Delete(corruptZipFile);
+		}
 	}
 
 }
