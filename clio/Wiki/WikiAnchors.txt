@@ -70,6 +70,8 @@ get-app-hash:get-app-hash
 get-app-info:get-app-info
 list-apps:list-apps,get-app-list,app-list,apps,apps-list,lia
 build-theme:build-theme
+get-record-rights:get-record-rights
+set-record-rights:set-record-rights
 list-themes:list-themes,get-themes
 create-theme:create-theme
 update-theme:update-theme

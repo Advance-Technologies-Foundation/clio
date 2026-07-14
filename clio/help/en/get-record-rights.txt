@@ -1,0 +1,44 @@
+COMMAND TYPE
+    Record rights
+
+NAME
+    get-record-rights - Read the record-level access rights of a single Creatio record
+
+SYNOPSIS
+    get-record-rights --entity <EntitySchemaName> --record-id <guid> [OPTIONS]
+
+DESCRIPTION
+    Reads and prints the record-level access rights of a single record, mirroring the read
+    half of the Creatio UI's record-rights panel. Each grant is printed as:
+
+        <operation> / <level> -> <grantee display name> (<grantee id>)
+
+    where operation is read/edit/delete and level is granted/delegated.
+
+    Address the target with --entity and --record-id (both required). A client-unit
+    schema/dashboard is addressed the same way, as
+    --entity SysSchemaAdminUnit --record-id <schema UId>.
+
+OPTIONS
+    --entity
+        Entity schema name of the target record (for example Contact). Required. Use with
+        --record-id. For a client-unit schema/dashboard, pass SysSchemaAdminUnit.
+
+    --record-id
+        Primary column value (record id) of the target record. Required. Use with --entity.
+        For a client-unit schema/dashboard, the schema UId.
+
+    -e, --environment
+        Name of the registered environment to query.
+
+EXIT CODES
+    0   The rights were read (printed to stdout; a message is shown when the record has none).
+    1   The target could not be resolved or the read failed. A user-friendly "Error: ..."
+        message is printed.
+
+EXAMPLES
+    Read the rights of a Contact record:
+        clio get-record-rights --entity Contact --record-id 7f3b869f-34f3-4f20-ab4d-7480a5fdf647 -e production
+
+    Read the rights of a client-unit schema/dashboard (addressed as SysSchemaAdminUnit):
+        clio get-record-rights --entity SysSchemaAdminUnit --record-id 7bdd745c-1111-2222-3333-444444444444 -e production
