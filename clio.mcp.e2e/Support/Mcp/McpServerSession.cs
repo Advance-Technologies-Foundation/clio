@@ -183,6 +183,19 @@ internal sealed class McpServerSession : IAsyncDisposable {
 	}
 
 	/// <summary>
+	/// Invokes a tool by its BARE name with NO resident-vs-<c>clio-run</c> routing — the raw wire call
+	/// an agent following static guidance would make. This is the entry point for testing the durable
+	/// (forgiving) unmatched-name handler (ENG-93370), which must observe the unrouted name itself; the
+	/// routed <see cref="CallToolAsync(string, IReadOnlyDictionary{string, object?}, CancellationToken)"/>
+	/// would mask it behind <c>clio-run</c>.
+	/// </summary>
+	public async Task<CallToolResult> CallToolRawAsync(
+		string toolName,
+		IReadOnlyDictionary<string, object?> arguments,
+		CancellationToken cancellationToken) =>
+		await Client.CallToolAsync(toolName, arguments, cancellationToken: cancellationToken);
+
+	/// <summary>
 	/// Invokes a tool with an explicit progress token while leaving the raw progress-notification
 	/// handler as the sole handler for <c>notifications/progress</c>. This mirrors ClioRing's call path
 	/// and preserves notification <c>_meta</c>, which the SDK's typed <c>progress:</c> overload drops.

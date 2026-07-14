@@ -123,6 +123,43 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 
 	[Category("McpE2E.Sandbox")]
 	[Test]
+	[Description("Creates a virtual entity schema and verifies both structured readback and absence of a PostgreSQL table through the real MCP server.")]
+	[AllureTag(CreateToolName)]
+	[AllureTag(ReadSchemaToolName)]
+	[AllureName("Virtual entity schema is saved without a physical table")]
+	[AllureDescription("Creates a virtual entity through create-entity-schema, reads the virtual flag through get-entity-schema-properties, and queries the disposable sandbox PostgreSQL catalog to prove no physical table was created.")]
+	public async Task CreateEntitySchema_Should_Create_Virtual_Schema_Without_Physical_Table() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		TestConfiguration.RequirePostgreSqlSandbox(settings);
+		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSandboxPackageAsync();
+		SandboxEnvironmentContext sandbox = SandboxEnvironmentResolver.Resolve(settings);
+
+		// Act
+		CallToolResult callResult = await CallCreateEntitySchemaAsync(
+			arrangeContext.Session,
+			arrangeContext.EnvironmentName,
+			arrangeContext.PackageName,
+			arrangeContext.SchemaName,
+			arrangeContext.CancellationTokenSource.Token,
+			isVirtual: true);
+		CommandExecutionEnvelope createResult = McpCommandExecutionParser.Extract(callResult);
+		EntitySchemaPropertiesInfo schemaProperties = await ActGetSchemaPropertiesAsync(arrangeContext);
+		bool physicalTableExists = PostgresTableProbe.Exists(
+			sandbox.DatabaseConnectionString,
+			arrangeContext.SchemaName);
+
+		// Assert
+		AssertCommandSucceeded(createResult,
+			"create-entity-schema should accept an explicit virtual entity request on the disposable sandbox");
+		schemaProperties.Virtual.Should().BeTrue(
+			because: "get-entity-schema-properties must read back the saved virtual-schema flag");
+		physicalTableExists.Should().BeFalse(
+			because: "Creatio must not materialize a PostgreSQL table for a virtual entity schema");
+	}
+
+	[Category("McpE2E.Sandbox")]
+	[Test]
 	[Description("Creates a remote lookup schema through MCP and verifies the resulting schema inherits from BaseLookup.")]
 	[AllureTag(CreateLookupToolName)]
 	[AllureTag(ReadSchemaToolName)]
@@ -1218,7 +1255,8 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 		string packageName,
 		string schemaName,
 		CancellationToken cancellationToken,
-		IReadOnlyList<Dictionary<string, object?>>? columns = null) {
+		IReadOnlyList<Dictionary<string, object?>>? columns = null,
+		bool isVirtual = false) {
 		IReadOnlyCollection<string> reachableToolNames = await session.ListReachableToolNamesAsync(cancellationToken);
 		reachableToolNames.Should().Contain(CreateToolName,
 			because: "the create-entity-schema MCP tool must be discoverable via the get-tool-contract compact index before the end-to-end call can be executed");
@@ -1231,7 +1269,8 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 					["package-name"] = packageName,
 					["schema-name"] = schemaName,
 					["title-localizations"] = BuildLocalizations("Vehicle"),
-					["columns"] = columns
+					["columns"] = columns,
+					["is-virtual"] = isVirtual
 				}
 			},
 			cancellationToken);
