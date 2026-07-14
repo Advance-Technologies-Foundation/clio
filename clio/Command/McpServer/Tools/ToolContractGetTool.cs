@@ -1895,7 +1895,12 @@ internal static class ToolContractCatalog {
 					[FindEntitySchemaTool.FindEntitySchemaToolName, GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName, ODataReadTool.ToolName],
 					"Alternative discovery path: use find-entity-schema to locate the schema by name, then get-entity-schema-properties to inspect its columns, then query.")
 			],
-			[]);
+			[],
+			[
+				new ToolAntiPattern(
+					"Reading a freshly-created custom object or lookup by entity name immediately after creating it and treating the result as a data gap.",
+					"A custom entity set is not queryable by OData entity name until its schema is compiled and the application is restarted. Until then odata-read returns success:false with a routing error (No type was found that matches the controller). Compile/restart first, then re-read.")
+			]);
 	}
 
 	private static ToolContractDefinition BuildODataCreate() {

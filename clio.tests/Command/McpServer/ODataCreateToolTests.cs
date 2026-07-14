@@ -180,6 +180,32 @@ public sealed class ODataCreateToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("A Web API routing error body ({Message, MessageDetail}) for an unregistered controller is reported as a per-row failure, not a created record.")]
+	public void Create_Should_Surface_Routing_Error_As_Failure() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/0/odata/UsrCustomerStatus");
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"Message\":\"No HTTP resource was found that matches the request URI '.../0/odata/UsrCustomerStatus'.\",\"MessageDetail\":\"No type was found that matches the controller named 'UsrCustomerStatus'.\"}");
+		ODataCreateTool tool = new(resolver);
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "UsrCustomerStatus", Rows = Arr("[{\"Name\":\"Active\"}]")
+		});
+
+		// Assert
+		response.Results.Single().Success.Should().BeFalse(because: "a {Message, MessageDetail} routing body must never be reported as a successful create");
+		response.Results.Single().Error.Should().Contain("controller named 'UsrCustomerStatus'", because: "the MessageDetail identifies the unregistered controller");
+		response.Results.Single().Id.Should().BeNull(because: "no record was created against an unregistered entity set");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("A numeric primary key in the response body is accepted as a created record rather than reported as a missing Id.")]
 	public void Create_Should_Accept_Numeric_Id() {
 		// Arrange

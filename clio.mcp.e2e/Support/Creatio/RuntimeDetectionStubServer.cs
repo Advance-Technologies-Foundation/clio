@@ -127,6 +127,15 @@ http.createServer((request, response) => {
       sendText(response, 404, "Not Found");
       return;
     }
+    if (request.method === "GET" && config.ODataRoutingErrorEntity && url.includes("/odata/" + config.ODataRoutingErrorEntity)) {
+      // ASP.NET Web API 404 routing error shape for an unregistered/uncompiled OData controller.
+      // Creatio returns this with HTTP 200 in the analyzed session, masking the failure as data.
+      sendJson(response, 200, {
+        Message: "No HTTP resource was found that matches the request URI '" + url + "'.",
+        MessageDetail: "No type was found that matches the controller named '" + config.ODataRoutingErrorEntity + "'."
+      });
+      return;
+    }
     sendText(response, 404, "Not Found");
   });
 }).listen(port, "127.0.0.1", () => {
@@ -148,4 +157,5 @@ internal sealed record RuntimeDetectionStubServerConfiguration(
 	bool NetCoreServiceEnabled,
 	bool NetFrameworkServiceEnabled,
 	bool NetCoreUiMarkerEnabled = false,
-	bool NetFrameworkUiMarkerEnabled = false);
+	bool NetFrameworkUiMarkerEnabled = false,
+	string? ODataRoutingErrorEntity = null);
