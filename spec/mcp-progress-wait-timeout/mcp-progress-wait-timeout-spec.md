@@ -10,6 +10,9 @@ The MCP E2E progress-capture helper returned its latest snapshot when a timeout 
 - Re-read the queue once at the timeout boundary before deciding that the condition failed.
 - Return only a snapshot that satisfies the caller's condition.
 - Throw an explicit timeout containing secret-safe typed-event summaries when the condition remains false.
+- Isolate captured notification streams by the request's explicit progress token.
+- Replay typed events by protocol sequence because MCP callback scheduling can be concurrent and out of order.
+- Coalesce notification wakeups and bound timeout diagnostics to the latest 20 notifications.
 - Keep the corrupt-archive validation non-destructive; no Creatio instance may be installed or uninstalled.
 
 ## Exclusions

@@ -67,10 +67,11 @@ public sealed class DeployUninstallProgressTests : McpContractFixtureBase {
 
 		// Act — use the same explicit-token + raw-handler path as ClioRing. The SDK's typed progress
 		// overload installs a competing handler and drops _meta during deserialization.
-		await InvokeCorruptArchiveDeployAsync(arrangeContext);
+		ProgressToken progressToken = await InvokeCorruptArchiveDeployAsync(arrangeContext);
 
 		// Assert
 		IReadOnlyList<JsonNode> rawParams = await arrangeContext.Session.WaitForCapturedProgressAsync(
+			progressToken,
 			nodes => ExtractStageEvents(nodes).LastOrDefault()?.EventType
 				== ClioStageEventContract.EventTypes.RunCompleted,
 			TimeSpan.FromSeconds(30),
@@ -114,8 +115,9 @@ public sealed class DeployUninstallProgressTests : McpContractFixtureBase {
 		// Arrange
 		await using ArrangeContext arrangeContext = Arrange();
 		arrangeContext.Session.StartCapturingProgressNotifications();
-		await InvokeCorruptArchiveDeployAsync(arrangeContext);
+		ProgressToken progressToken = await InvokeCorruptArchiveDeployAsync(arrangeContext);
 		await arrangeContext.Session.WaitForCapturedProgressAsync(
+			progressToken,
 			nodes => ExtractStageEvents(nodes).Any(stageEvent =>
 				stageEvent.EventType == ClioStageEventContract.EventTypes.RunCompleted),
 			TimeSpan.FromSeconds(30),
@@ -123,6 +125,7 @@ public sealed class DeployUninstallProgressTests : McpContractFixtureBase {
 
 		// Act
 		Func<Task> act = async () => await arrangeContext.Session.WaitForCapturedProgressAsync(
+			progressToken,
 			_ => false,
 			TimeSpan.FromMilliseconds(10),
 			arrangeContext.CancellationTokenSource.Token);
@@ -136,6 +139,17 @@ public sealed class DeployUninstallProgressTests : McpContractFixtureBase {
 			because: "timeout diagnostics should identify the captured terminal event");
 		assertion.Which.Message.Should().NotContain("fixture-password",
 			because: "progress timeout diagnostics must not expose configured credentials");
+		ProgressToken unrelatedToken = new($"clio-mcp-e2e-unrelated-{Guid.NewGuid():N}");
+		Func<Task> unrelatedAct = async () => await arrangeContext.Session.WaitForCapturedProgressAsync(
+			unrelatedToken,
+			nodes => ExtractStageEvents(nodes).Any(stageEvent =>
+				stageEvent.EventType == ClioStageEventContract.EventTypes.RunCompleted),
+			TimeSpan.FromMilliseconds(10),
+			arrangeContext.CancellationTokenSource.Token);
+		var unrelatedAssertion = await unrelatedAct.Should().ThrowAsync<TimeoutException>(
+			because: "a terminal event captured for another progress token must not satisfy this invocation");
+		unrelatedAssertion.Which.Message.Should().Contain("Captured 0 notification(s)",
+			because: "timeout diagnostics and conditions must be scoped to the requested progress token");
 	}
 
 	[Test]
@@ -147,6 +161,7 @@ public sealed class DeployUninstallProgressTests : McpContractFixtureBase {
 		// Arrange
 		await using ArrangeContext arrangeContext = Arrange();
 		arrangeContext.Session.StartCapturingProgressNotifications();
+		ProgressToken progressToken = new($"clio-mcp-e2e-{Guid.NewGuid():N}");
 
 		// Act
 		CallToolResult callResult = await arrangeContext.Session.CallToolWithRawProgressAsync(
@@ -156,6 +171,7 @@ public sealed class DeployUninstallProgressTests : McpContractFixtureBase {
 					["environment-name"] = MissingEnvironmentName
 				}
 			},
+			progressToken,
 			arrangeContext.CancellationTokenSource.Token);
 
 		// Assert
@@ -169,6 +185,7 @@ public sealed class DeployUninstallProgressTests : McpContractFixtureBase {
 			because: "the caller must receive an actionable target-resolution error");
 
 		IReadOnlyList<JsonNode> rawParams = await arrangeContext.Session.WaitForCapturedProgressAsync(
+			progressToken,
 			nodes => ExtractStageEvents(nodes).LastOrDefault()?.EventType
 				== ClioStageEventContract.EventTypes.RunCompleted,
 			TimeSpan.FromSeconds(30),
@@ -198,11 +215,12 @@ public sealed class DeployUninstallProgressTests : McpContractFixtureBase {
 			}
 		}
 
-		return events;
+		return [.. events.OrderBy(stageEvent => stageEvent.Sequence)];
 	}
 
-	private static async Task InvokeCorruptArchiveDeployAsync(ArrangeContext arrangeContext) {
+	private static async Task<ProgressToken> InvokeCorruptArchiveDeployAsync(ArrangeContext arrangeContext) {
 		string corruptZipFile = Path.Combine(Path.GetTempPath(), $"corrupt-creatio-{Guid.NewGuid():N}.zip");
+		ProgressToken progressToken = new($"clio-mcp-e2e-{Guid.NewGuid():N}");
 		await File.WriteAllTextAsync(corruptZipFile, "not a zip archive",
 			arrangeContext.CancellationTokenSource.Token);
 		try {
@@ -218,11 +236,13 @@ public sealed class DeployUninstallProgressTests : McpContractFixtureBase {
 						["dbServerName"] = "e2e-unused-before-unzip"
 					}
 				},
+				progressToken,
 				arrangeContext.CancellationTokenSource.Token);
 		}
 		finally {
 			File.Delete(corruptZipFile);
 		}
+		return progressToken;
 	}
 
 }

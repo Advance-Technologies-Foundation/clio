@@ -2,7 +2,7 @@
 
 ## Decision
 
-Replace timer polling in `McpServerSession` with a `SemaphoreSlim` released by the raw notification handler. Each wake takes a fresh immutable queue snapshot. If the deadline is reached, take one final snapshot, return it only when the condition is satisfied, and otherwise throw `TimeoutException` with typed-event metadata only.
+Replace timer polling in `McpServerSession` with a coalescing `SemaphoreSlim` released by the raw notification handler. Each wake takes a fresh immutable queue snapshot scoped to the request's progress token. If the deadline is reached, take one final snapshot, return it only when the condition is satisfied, and otherwise throw `TimeoutException` with a bounded typed-event summary. Replay typed events by their protocol sequence before asserting order because MCP notification callbacks may complete concurrently.
 
 ## Compatibility
 

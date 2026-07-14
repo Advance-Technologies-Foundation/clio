@@ -75,6 +75,8 @@ Environment variables should use the standard double-underscore form, for exampl
 - Keep tests safe by generating unique resource names per run to avoid collisions across repeated executions.
 - Raw progress waits must be notification-driven and throw an explicit, secret-safe diagnostic timeout when
   their condition remains unsatisfied. Never return a partial progress snapshot as though it met the condition.
+- Scope raw progress waits to the request's explicit progress token, and assert typed event order by the
+  protocol sequence rather than concurrent notification-callback completion order.
 
 ## Manual execution
 

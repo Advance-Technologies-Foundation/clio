@@ -5938,3 +5938,10 @@ Decision: Replace polling with notification-driven wakeups, recheck one final sn
 Discovery: The old cancellation path broke out of its delay without refreshing the queue, so a boundary-arriving terminal event could be present while the caller still received the previous stage-only snapshot.
 Files: clio.mcp.e2e/Support/Mcp/McpServerSession.cs, clio.mcp.e2e/DeployUninstallProgressTests.cs, clio.mcp.e2e/AGENTS.md, spec/mcp-progress-wait-timeout/
 Impact: Shared MCP E2E runs no longer convert a timeout race into misleading event-order failures, while genuine missing terminal events fail explicitly with safe diagnostics.
+
+## 2026-07-14 15:02 – Isolate and order MCP progress assertions
+Context: The first comprehensive review of issue #876 found that the fixture-wide capture queue could leak terminal events across invocations, accumulate wakeups, and format an unbounded diagnostic history; repeated validation then reproduced concurrent callback ordering as a separate flake.
+Decision: Scope every wait to an explicit progress token, coalesce notification wakeups, cap diagnostics to the latest 20 matching notifications, and replay typed events by their protocol sequence before asserting order.
+Discovery: MCP notification handlers can complete out of arrival order even within one request, so queue insertion order is not the protocol order; the versioned sequence field is authoritative and matches ClioRing's ordered-buffering contract.
+Files: clio.mcp.e2e/Support/Mcp/McpServerSession.cs, clio.mcp.e2e/DeployUninstallProgressTests.cs, clio.mcp.e2e/AGENTS.md, spec/mcp-progress-wait-timeout/
+Impact: Ten fresh-process fixture runs passed on each of net8.0 and net10.0 without installing or uninstalling Creatio, while unrelated streams can no longer satisfy a wait.
