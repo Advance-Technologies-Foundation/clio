@@ -377,6 +377,82 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 	}
 
 	[Test]
+	[Description("Updates the live row through upsert-data-binding-row-db when the Id is not yet bound to the package but the row already exists in the table, binding it instead of attempting an insert that would fail on required columns.")]
+	public void UpsertDataBindingRowDb_Should_Update_Live_Row_When_Unbound_But_Exists_In_Table() {
+		// Arrange
+		Guid unboundLiveRowId = Guid.Parse("dddddddd-eeee-ffff-aaaa-bbbbbbbbbbbb");
+		_existingEntityNamesJson = $$"""{"rows":[{"Id":"{{unboundLiveRowId}}"}],"success":true}""";
+		UpsertDataBindingRowDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			BindingName = "SysSettings",
+			ValuesJson = $$"""{"Id":"{{unboundLiveRowId}}","Name":"Updated existing"}"""
+		};
+
+		// Act
+		int result = _upsertCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(0,
+			because: "upsert should adopt and update a row that exists in the table even when it is not yet bound to the package");
+		_applicationClient.Received().ExecutePostRequest(
+			"http://localhost/0/DataService/json/SyncReply/UpdateQuery",
+			Arg.Is<string>(body =>
+				body.Contains("\"rootSchemaName\":\"SysSettings\"") &&
+				body.Contains(unboundLiveRowId.ToString())),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			"http://localhost/0/DataService/json/SyncReply/InsertQuery",
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+		_applicationClient.Received().ExecutePostRequest(
+			"http://localhost/0/ServiceModel/SchemaDataDesignerService.svc/SaveSchema",
+			Arg.Is<string>(body => body.Contains(unboundLiveRowId.ToString())),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("Inserts a genuinely new row through upsert-data-binding-row-db when the Id is neither bound to the package nor present in the table, preserving the insert path for brand-new records.")]
+	public void UpsertDataBindingRowDb_Should_Insert_When_Unbound_And_Not_In_Table() {
+		// Arrange
+		Guid brandNewRowId = Guid.Parse("cccccccc-1111-2222-3333-444444444444");
+		_existingEntityNamesJson = """{"rows":[],"success":true}""";
+		UpsertDataBindingRowDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			BindingName = "SysSettings",
+			ValuesJson = $$"""{"Id":"{{brandNewRowId}}","Name":"Brand new"}"""
+		};
+
+		// Act
+		int result = _upsertCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(0,
+			because: "upsert should still insert a row that exists in neither the binding nor the table");
+		_applicationClient.Received().ExecutePostRequest(
+			"http://localhost/0/DataService/json/SyncReply/InsertQuery",
+			Arg.Is<string>(body =>
+				body.Contains("\"rootSchemaName\":\"SysSettings\"") &&
+				body.Contains("\"Brand new\"")),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			"http://localhost/0/DataService/json/SyncReply/UpdateQuery",
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+	}
+
+	[Test]
 	[Description("Projects SaveSchema metadata from the remaining bound rows after remove-data-binding-row-db so unrelated unsupported runtime columns do not block removal.")]
 	public void RemoveDataBindingRowDb_Should_Project_SaveSchema_From_Remaining_Bound_Rows() {
 		// Arrange
