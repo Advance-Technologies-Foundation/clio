@@ -934,6 +934,48 @@ public sealed class ApplicationToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Forwards a non-null stage reporter into the application create service so a regression that dropped the reportStage wiring (passing null instead of the reporter) fails; the no-op-vs-real distinction requires a live channel and is covered by the Fix 8 E2E marker assertion, not this unit test.")]
+	public async Task ApplicationCreate_Should_Forward_NonNull_Reporter_To_Create_Service() {
+		// Arrange
+		IApplicationCreateService applicationCreateService = Substitute.For<IApplicationCreateService>();
+		IApplicationCreateEnrichmentService enrichmentService = Substitute.For<IApplicationCreateEnrichmentService>();
+		Action<string>? capturedReporter = null;
+		applicationCreateService.CreateApplication(
+				Arg.Any<string>(),
+				Arg.Any<ApplicationCreateRequest>(),
+				Arg.Do<Action<string>>(reporter => capturedReporter = reporter))
+			.Returns(new ApplicationInfoResult(
+				PackageUId: "pkg-uid",
+				PackageName: "UsrCodexApp",
+				Entities: Array.Empty<ApplicationEntityInfoResult>(),
+				ApplicationId: "created-app-id"));
+		enrichmentService.Enrich(Arg.Any<ApplicationCreateArgs>(), Arg.Any<ApplicationOptionalTemplateData?>(), Arg.Any<CancellationToken>())
+			.Returns(new ApplicationDataForgeResult(
+				Used: false, Health: null, Status: null, Coverage: null,
+				Warnings: Array.Empty<string>(), ContextSummary: null));
+		ApplicationCreateTool tool = new(applicationCreateService, enrichmentService);
+
+		// Act
+		await tool.ApplicationCreate(new ApplicationCreateArgs(
+			EnvironmentName: "sandbox",
+			Name: "Codex App",
+			Code: "UsrCodexApp",
+			Description: null,
+			TemplateCode: "AppFreedomUI",
+			IconId: null,
+			IconBackground: null,
+			ClientTypeId: null));
+
+		// Assert
+		capturedReporter.Should().NotBeNull(
+			because: "the tool must forward a real reportStage callback into CreateApplication; a dropped-wiring regression passing null here would break per-phase progress");
+		Action invokeReporter = () => capturedReporter!("enriching application model");
+		invokeReporter.Should().NotThrow(
+			because: "the forwarded reporter must be safely invocable so the tool-level 'enriching application model' marker can be pushed without surfacing from the tool");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Serializes the application context response using Clio kebab-case field names.")]
 	public void ApplicationContextResponse_Should_Serialize_Using_Clio_Field_Names() {
 		// Arrange

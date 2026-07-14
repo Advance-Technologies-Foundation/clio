@@ -106,10 +106,11 @@ internal static class McpProgressHeartbeat {
 		CancellationToken cancellationToken = default,
 		TimeSpan? interval = null) {
 		ArgumentNullException.ThrowIfNull(work);
-		// A Func<TResult> is a reporter that ignores its arg. The explicit Action<string> parameter
-		// steers overload resolution to the reporter overload (a parameterless lambda would bind back
-		// to this same overload and recurse); on the no-marker path the ProgressChannel counter
-		// increments exactly like the old per-beat counter, so this is behavior-preserving.
+		// The explicit `Action<string>` parameter type is load-bearing: it forces overload resolution
+		// to the reporter overload below. Simplifying it to `() => work()` would rebind to THIS SAME
+		// Func<TResult> overload and recurse forever — a runtime stack overflow, NOT a compile error,
+		// because both signatures are valid targets for a parameterless lambda. On the no-marker path
+		// the ProgressChannel counter increments like the old per-beat counter, so this is behavior-preserving.
 		return RunWithProgressAsync(
 			server, progressToken, operationName, (Action<string> _) => work(), cancellationToken, interval);
 	}
@@ -227,8 +228,10 @@ internal static class McpProgressHeartbeat {
 		CancellationToken cancellationToken = default,
 		TimeSpan? interval = null) {
 		ArgumentNullException.ThrowIfNull(work);
-		// See the non-deadline overload: the explicit Action<string> parameter routes to the reporter
-		// overload and the ProgressChannel counter reproduces the old per-beat counter unchanged.
+		// The explicit `Action<string>` parameter type is load-bearing (see the non-deadline overload):
+		// it routes to the reporter overload below. Simplifying it to `() => work()` would rebind to
+		// THIS SAME Func<TResult> overload and recurse forever — a runtime stack overflow, NOT a compile
+		// error. The ProgressChannel counter reproduces the old per-beat counter unchanged.
 		return RunWithProgressAndDeadlineAsync(
 			server, progressToken, operationName, (Action<string> _) => work(), deadline, cancellationToken, interval);
 	}
@@ -257,6 +260,15 @@ internal static class McpProgressHeartbeat {
 	/// <c>internal</c> so unit tests can drive it with a fake sink channel. A <see langword="null"/>
 	/// <paramref name="channel"/> still detaches the work (only the heartbeat pump is skipped).
 	/// </summary>
+	/// <remarks>
+	/// On the deadline path <paramref name="work"/> runs detached (<see cref="Task.Run{TResult}(Func{TResult}, CancellationToken)"/>),
+	/// and the <c>finally</c> cancels/awaits only the heartbeat pump — outstanding fire-and-forget
+	/// <c>reportStage</c> marker sends are NOT cancelled. So a late stage marker can fire
+	/// <c>notifications/progress</c> after the tool has already returned the in-progress ("poll") envelope.
+	/// This is harmless by design: the sends are swallowed via <see cref="SafeSendAsync"/>, and clients ignore
+	/// progress for a token they consider finished. It is accepted rather than adding cross-cancellation
+	/// between the detached work and the response.
+	/// </remarks>
 	internal static async Task<TResult> RunWithProgressAndDeadlineAsync<TResult>(
 		ProgressChannel channel,
 		string operationName,
@@ -394,12 +406,8 @@ internal static class McpProgressHeartbeat {
 			}
 
 			tick++;
-			try {
-				await channel.SendAsync($"{label} is still running… (~{tick * intervalSeconds}s elapsed)").ConfigureAwait(false);
-			}
-			catch {
-				// Keep-alive is best-effort; a broken channel must never surface from the tool.
-			}
+			// Reuse SafeSendAsync so the "broken channel must never surface" swallow policy lives in one place.
+			await SafeSendAsync(channel, $"{label} is still running… (~{tick * intervalSeconds}s elapsed)").ConfigureAwait(false);
 		}
 	}
 
@@ -407,6 +415,15 @@ internal static class McpProgressHeartbeat {
 	/// Serializes progress sends for one request so heartbeats and stage markers share a single
 	/// monotonic <c>Progress</c> counter. Transport is injected so tests can drive it with a fake sink.
 	/// </summary>
+	/// <remarks>
+	/// Intentionally NOT built on <see cref="Clio.Command.McpServer.Progress.StageEventProgressForwarder"/>,
+	/// which also builds progress notifications: that forwarder emits a TYPED <c>ClioStageEvent</c> envelope into
+	/// <c>_meta.clioStageEvent</c>, driven by a command's <c>IStageEventSource.StageChanged</c> event stream
+	/// (deploy/uninstall). <see cref="ProgressChannel"/> instead emits plain human-readable text
+	/// (<c>Message</c>) with a numeric <c>Progress</c>, pushed imperatively by tool-level stage markers plus a
+	/// timer heartbeat sharing one monotonic counter. Different payload contract and push model, so the
+	/// envelope-builder is deliberately not shared.
+	/// </remarks>
 	internal sealed class ProgressChannel {
 		private readonly Func<ModelContextProtocol.ProgressNotificationValue, Task> _send;
 

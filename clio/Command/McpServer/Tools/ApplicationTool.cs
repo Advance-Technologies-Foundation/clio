@@ -249,22 +249,20 @@ public sealed class ApplicationSectionCreateTool(IApplicationSectionCreateServic
 				server,
 				requestContext?.Params?.ProgressToken,
 				ApplicationSectionCreateToolName,
-				reportStage => {
-					return applicationSectionCreateService.CreateSection(
-						args.EnvironmentName,
-						new ApplicationSectionCreateRequest(
-							args.ApplicationCode,
-							args.Caption,
-							args.Description,
-							args.EntitySchemaName,
-							args.WithMobilePages,
-							resolvedIconBackground,
-							args.CaptionCulture,
-							args.Code),
-						BackgroundInsertTimeoutMs,
-						BackgroundReadbackTimeoutMs,
-						reportStage);
-				},
+				reportStage => applicationSectionCreateService.CreateSection(
+					args.EnvironmentName,
+					new ApplicationSectionCreateRequest(
+						args.ApplicationCode,
+						args.Caption,
+						args.Description,
+						args.EntitySchemaName,
+						args.WithMobilePages,
+						resolvedIconBackground,
+						args.CaptionCulture,
+						args.Code),
+					BackgroundInsertTimeoutMs,
+					BackgroundReadbackTimeoutMs,
+					reportStage),
 				deadline: null,
 				cancellationToken: cancellationToken).ConfigureAwait(false);
 			return ApplicationToolHelper.CreateSectionContextResponse(ApplicationToolResultMapper.Map(result));

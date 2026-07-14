@@ -329,14 +329,24 @@ public sealed class McpProgressHeartbeatTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Assigns a gap-free 1..N progress sequence with no duplicates when many sends race concurrently, proving the send gate serializes the shared counter.")]
+	[Description("Assigns a gap-free 1..N progress sequence with no duplicates AND never overlaps two awaited transport sends when many sends race concurrently, proving the send gate serializes the awaited send rather than merely making the counter lock-free.")]
 	public async Task ProgressChannel_ShouldAssignGapFreeSequence_WhenSendsAreConcurrent() {
-		// Arrange — a thread-safe sink records every assigned Progress value under concurrent load.
+		// Arrange — a thread-safe sink records every assigned Progress value under concurrent load and,
+		// crucially, widens the send window with an await so a non-serialized transport would overlap.
 		const int sendCount = 200;
 		ConcurrentBag<float> assigned = new();
-		McpProgressHeartbeat.ProgressChannel channel = new(value => {
+		int concurrent = 0;
+		int overlapObserved = 0;
+		McpProgressHeartbeat.ProgressChannel channel = new(async value => {
+			int active = Interlocked.Increment(ref concurrent);
+			if (active > 1) {
+				// A gap-free counter alone would still allow the awaited send to overlap; the gate must not.
+				Interlocked.Exchange(ref overlapObserved, 1);
+			}
+
 			assigned.Add(value.Progress);
-			return Task.CompletedTask;
+			await Task.Yield();
+			Interlocked.Decrement(ref concurrent);
 		});
 
 		// Act — fire all sends concurrently so they contend for the channel's send gate.
@@ -346,6 +356,8 @@ public sealed class McpProgressHeartbeatTests {
 		assigned.OrderBy(value => value).Should().Equal(
 			Enumerable.Range(1, sendCount).Select(index => (float)index),
 			because: "the send gate must hand out a gap-free 1..N sequence with no duplicates even under concurrent sends");
+		overlapObserved.Should().Be(0,
+			because: "the send gate must serialize the awaited transport send so at most one send is ever in flight, not just the counter increment");
 	}
 
 	[Test]

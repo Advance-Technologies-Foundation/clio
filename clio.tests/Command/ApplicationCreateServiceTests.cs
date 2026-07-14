@@ -554,6 +554,7 @@ public sealed class ApplicationCreateServiceTests {
 	[Description("Polls get-app-info by application code when the CreateApp request times out and returns the first successful structured result.")]
 	public void CreateApplication_Should_Poll_ApplicationInfo_When_CreateApp_Times_Out() {
 		// Arrange
+		List<string> markers = [];
 		ApplicationInfoResult expectedResult = new("pkg-uid", "PrimaryPkg", [], SchemaNamePrefix: "Usr");
 		_applicationClient.ExecutePostRequest(
 				Arg.Is<string>(url => url.EndsWith("CreateApp", StringComparison.Ordinal)),
@@ -567,12 +568,14 @@ public sealed class ApplicationCreateServiceTests {
 				_ => expectedResult);
 
 		// Act
-		ApplicationInfoResult result = _sut.CreateApplication("sandbox", _fullRequest);
+		ApplicationInfoResult result = _sut.CreateApplication("sandbox", _fullRequest, markers.Add);
 
 		// Assert
 		result.Should().Be(expectedResult,
 			because: "timeout recovery should return the created application once get-app-info can resolve it");
 		_applicationInfoService.Received(3).GetApplicationInfo("sandbox", null, "UsrCodexApp");
+		markers.Should().Contain("waiting for application to be ready",
+			because: "the timeout->polling branch must emit the waiting stage marker so the client sees the recovery phase");
 	}
 
 	[Test]

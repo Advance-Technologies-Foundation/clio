@@ -409,6 +409,9 @@ public sealed class ApplicationToolE2ETests {
 		callResult.IsError.Should().NotBeTrue(
 			because: $"a valid create-app request should return structured application metadata. Actual result: {DescribeCallResult(callResult)}");
 		progress.Messages.Should().Contain(
+			m => m.Contains("enriching application model", StringComparison.Ordinal),
+			because: "create-app must stream the 'enriching application model' marker first so the client sees the initial enrichment phase (ENG-93087)");
+		progress.Messages.Should().Contain(
 			message => message.Contains("creating application package", StringComparison.Ordinal),
 			because: "create-app must stream the 'creating application package' stage marker so the client can show the package-creation phase (ENG-93087)");
 		progress.Messages.Should().Contain(
