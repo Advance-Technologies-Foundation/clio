@@ -143,10 +143,12 @@ public sealed class McpHttpOAuthAuthorizationE2ETests {
 	public async Task ValidToken_ShouldExecutePassthroughToolAgainstTenant() {
 		// Arrange
 		McpHttpOAuthStand stand = McpHttpOAuthStand.RequireOrIgnore();
-		if (string.IsNullOrWhiteSpace(stand.TenantUrl) || string.IsNullOrWhiteSpace(stand.TenantToken)) {
+		if (string.IsNullOrWhiteSpace(stand.TenantUrl)
+			|| string.IsNullOrWhiteSpace(stand.TenantToken)
+			|| !stand.TenantIsNetCore.HasValue) {
 			Assert.Ignore(
 				"OAuth+passthrough interop leg needs CLIO_MCP_HTTP_E2E_TENANT1_URL/_TOKEN in addition to "
-				+ "the auth stand variables.");
+				+ "the auth stand variables and CLIO_MCP_HTTP_E2E_TENANT1_IS_NET_CORE=true|false.");
 		}
 		using CancellationTokenSource cts = new(TimeSpan.FromMinutes(2));
 		string token = await OAuthClientCredentialsTokenFetcher.AcquireAsync(
@@ -156,7 +158,7 @@ public sealed class McpHttpOAuthAuthorizationE2ETests {
 
 		// Act
 		await using McpClient client = await server.ConnectAsync(
-			token, McpHttpServerSession.EncodeBearerCredentials(stand.TenantUrl!, stand.TenantToken!), cts.Token);
+			token, McpHttpServerSession.EncodeBearerCredentials(stand.TenantUrl!, stand.TenantToken!, stand.TenantIsNetCore.Value), cts.Token);
 		CallToolResult result = await client.CallToolAsync(
 			GetCreatioInfoTool.ToolName,
 			new Dictionary<string, object?> { ["args"] = new Dictionary<string, object?>() },

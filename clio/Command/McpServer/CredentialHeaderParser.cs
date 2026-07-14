@@ -13,7 +13,8 @@ namespace Clio.Command.McpServer;
 /// </summary>
 /// <param name="Url">The target Creatio environment URL (always present on success).</param>
 /// <param name="Auth">The precedence-resolved authentication material.</param>
-public sealed record CredentialParseResult(string Url, CredentialMaterial Auth)
+/// <param name="IsNetCore">Whether the target uses the root .NET Core/NET8 route layout; <see langword="false"/> selects the .NET Framework <c>/0/</c> layout.</param>
+public sealed record CredentialParseResult(string Url, CredentialMaterial Auth, bool IsNetCore)
 {
 	/// <summary>
 	/// FR-11 (review): override the compiler-generated <c>ToString()</c> so <see cref="Auth"/> renders via
@@ -94,12 +95,23 @@ public sealed class CredentialHeaderParser : ICredentialHeaderParser
 			return false;
 		}
 
+		if (payload.IsNetCore.ValueKind == JsonValueKind.Undefined) {
+			error = "missing isNetCore";
+			return false;
+		}
+
+		if (payload.IsNetCore.ValueKind != JsonValueKind.True
+			&& payload.IsNetCore.ValueKind != JsonValueKind.False) {
+			error = "isNetCore must be a JSON boolean";
+			return false;
+		}
+
 		if (!TryResolveAuth(payload, out CredentialMaterial auth)) {
 			error = "no usable auth material";
 			return false;
 		}
 
-		result = new CredentialParseResult(payload.Url.Trim(), auth);
+		result = new CredentialParseResult(payload.Url.Trim(), auth, payload.IsNetCore.GetBoolean());
 		return true;
 	}
 
@@ -149,5 +161,8 @@ public sealed class CredentialHeaderParser : ICredentialHeaderParser
 
 		[JsonPropertyName("password")]
 		public string Password { get; set; }
+
+		[JsonPropertyName("isNetCore")]
+		public JsonElement IsNetCore { get; set; }
 	}
 }

@@ -81,6 +81,7 @@ public sealed class GetUserCultureToolPassthroughTests {
 		accessor.Current.Returns(new CredentialContext(
 			HeaderTenantUrl,
 			CredentialMaterial.FromAccessToken(HeaderTenantToken, "Bearer"),
+			false,
 			McpTransport.Http,
 			PassthroughModeEnabled: true));
 		return accessor;

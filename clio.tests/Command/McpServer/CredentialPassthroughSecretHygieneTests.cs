@@ -113,7 +113,7 @@ public sealed class CredentialPassthroughSecretHygieneTests {
 	public void Resolve_ShouldNotLeakSecret_WhenExplicitCredentialArgsRejected() {
 		// Arrange
 		ToolCommandResolver resolver = CreateResolver(AccessorWith(new CredentialContext(
-			Url, CredentialMaterial.FromAccessToken("header-token", "Bearer"), McpTransport.Http, true)));
+			Url, CredentialMaterial.FromAccessToken("header-token", "Bearer"), false, McpTransport.Http, true)));
 		EnvironmentOptions options = new() { Uri = Url, Password = Secret };
 
 		// Act
@@ -133,7 +133,7 @@ public sealed class CredentialPassthroughSecretHygieneTests {
 	public void Resolve_ShouldNotLeakSecret_WhenCookieAuthRejected() {
 		// Arrange
 		ToolCommandResolver resolver = CreateResolver(AccessorWith(new CredentialContext(
-			Url, CredentialMaterial.FromCookie(Secret), McpTransport.Http, true)));
+			Url, CredentialMaterial.FromCookie(Secret), false, McpTransport.Http, true)));
 
 		// Act
 		Action act = () => resolver.Resolve<CreateEntitySchemaCommand>(new EnvironmentOptions());
@@ -150,7 +150,7 @@ public sealed class CredentialPassthroughSecretHygieneTests {
 	public void Resolve_ShouldNotLeakSecret_WhenAuthMaterialMissing() {
 		// Arrange — token blank so no usable auth; the seed rides on the url to prove it is not echoed.
 		ToolCommandResolver resolver = CreateResolver(AccessorWith(new CredentialContext(
-			$"{Url}/{Secret}", CredentialMaterial.FromAccessToken(string.Empty, "Bearer"), McpTransport.Http, true)));
+			$"{Url}/{Secret}", CredentialMaterial.FromAccessToken(string.Empty, "Bearer"), false, McpTransport.Http, true)));
 
 		// Act
 		Action act = () => resolver.Resolve<CreateEntitySchemaCommand>(new EnvironmentOptions());
@@ -167,7 +167,7 @@ public sealed class CredentialPassthroughSecretHygieneTests {
 	public void Resolve_ShouldNotLeakSecret_WhenNonBearerTokenRejected() {
 		// Arrange
 		ToolCommandResolver resolver = CreateResolver(AccessorWith(new CredentialContext(
-			Url, CredentialMaterial.FromAccessToken(Secret, "MAC"), McpTransport.Http, true)));
+			Url, CredentialMaterial.FromAccessToken(Secret, "MAC"), false, McpTransport.Http, true)));
 
 		// Act
 		Action act = () => resolver.Resolve<CreateEntitySchemaCommand>(new EnvironmentOptions());
@@ -186,7 +186,7 @@ public sealed class CredentialPassthroughSecretHygieneTests {
 	public void BuildPassthroughCacheKey_ShouldNotLeakSecret_WhenTokenPresent() {
 		// Arrange
 		CredentialContext context = new(
-			Url, CredentialMaterial.FromAccessToken(Secret, "Bearer"), McpTransport.Http, true);
+			Url, CredentialMaterial.FromAccessToken(Secret, "Bearer"), false, McpTransport.Http, true);
 
 		// Act
 		string key = ToolCommandResolver.BuildPassthroughCacheKey(context);
@@ -219,7 +219,7 @@ public sealed class CredentialPassthroughSecretHygieneTests {
 		// Arrange — reproduce the exact BaseTool failure path: a passthrough resolve throws
 		// EnvironmentResolutionException, which BaseTool maps via FromResolverError into the envelope.
 		ToolCommandResolver resolver = CreateResolver(AccessorWith(new CredentialContext(
-			Url, CredentialMaterial.FromAccessToken(Secret, "MAC"), McpTransport.Http, true)));
+			Url, CredentialMaterial.FromAccessToken(Secret, "MAC"), false, McpTransport.Http, true)));
 		CommandExecutionResult result;
 		try {
 			resolver.Resolve<CreateEntitySchemaCommand>(new EnvironmentOptions());
@@ -243,7 +243,7 @@ public sealed class CredentialPassthroughSecretHygieneTests {
 		// Arrange — the resolver builds only secret-free EnvironmentResolutionException messages; pin that
 		// the -1 FromException envelope (used by BaseTool's catch-all) does not reintroduce a secret.
 		ToolCommandResolver resolver = CreateResolver(AccessorWith(new CredentialContext(
-			Url, CredentialMaterial.FromCookie(Secret), McpTransport.Http, true)));
+			Url, CredentialMaterial.FromCookie(Secret), false, McpTransport.Http, true)));
 		CommandExecutionResult result;
 		try {
 			resolver.Resolve<CreateEntitySchemaCommand>(new EnvironmentOptions());

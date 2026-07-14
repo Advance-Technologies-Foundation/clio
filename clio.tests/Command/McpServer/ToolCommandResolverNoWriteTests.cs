@@ -33,6 +33,7 @@ public class ToolCommandResolverNoWriteTests {
 		accessor.Current.Returns(new CredentialContext(
 			"https://acme.creatio.com",
 			CredentialMaterial.FromAccessToken(SecretToken, "Bearer"),
+			false,
 			McpTransport.Http,
 			true));
 		ToolCommandResolver resolver = new(

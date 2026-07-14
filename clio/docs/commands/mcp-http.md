@@ -172,19 +172,30 @@ X-Integration-Credentials: <base64 JSON>
   base64-encoded JSON object. A malformed payload is rejected with **HTTP 400** naming the
   defect only (no secret is echoed).
 
-The JSON payload always requires `url` plus authentication material. Auth is resolved by
-precedence **accessToken → login+password**:
+The JSON payload always requires `url`, authentication material, and the explicit `isNetCore`
+runtime discriminator. `isNetCore` must be a JSON boolean (the property name is matched
+case-insensitively): `true` selects the root .NET Core/NET 8 route layout, while `false`
+selects the .NET Framework route layout. Auth is resolved by precedence **accessToken →
+login+password**:
 
 ```jsonc
-// access token (must be Bearer-typed)
-{ "url": "https://tenant.creatio.com", "accessToken": "<access-token>" }
+// access token (must be Bearer-typed; .NET Core/NET 8 tenant)
+{ "url": "https://tenant.creatio.com", "accessToken": "<access-token>", "isNetCore": true }
 
-// login + password (both required)
-{ "url": "https://tenant.creatio.com", "login": "<login>", "password": "<password>" }
+// login + password (both required; .NET Framework tenant)
+{ "url": "https://tenant.creatio.com", "login": "<login>", "password": "<password>", "isNetCore": false }
 ```
 
-> **Cookie leg (v1):** a `{ "url": ..., "cookie": ... }` payload parses, but a cookie-only
-> credential is **rejected as unsupported in v1** — supply an access token instead. A
+The runtime field is header context, not an MCP tool argument. Omitting it, setting it to
+`null`, or using a string, number, array, or object is rejected with **HTTP 400 before target
+validation, client creation, or any outbound call**. There is no default and clio does not
+probe the tenant to infer the runtime. The selected runtime is also part of the in-memory
+tenant cache and lock identity, so equivalent credentials for the two route layouts never
+share a client accidentally. For `true`, service routes remain at their root paths; for
+`false`, clio inserts exactly one `/0/` segment for .NET Framework compatibility.
+
+> **Cookie leg (v1):** a `{ "url": ..., "cookie": ..., "isNetCore": false }` payload parses, but a
+> cookie-only credential is **rejected as unsupported in v1** — supply an access token instead. A
 > non-`Bearer` access-token type is likewise rejected.
 
 ### SSRF / egress allowlist

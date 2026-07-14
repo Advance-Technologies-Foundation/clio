@@ -140,6 +140,7 @@ public class ToolCommandResolverTests {
 		CredentialContext context = new(
 			"https://acme.creatio.com",
 			CredentialMaterial.FromAccessToken("opaque-token", "Bearer"),
+			false,
 			McpTransport.Http,
 			true);
 
@@ -157,6 +158,51 @@ public class ToolCommandResolverTests {
 			because: "an access-token context carries no login/password material");
 		settings.Password.Should().BeNullOrEmpty(
 			because: "an access-token context carries no login/password material");
+		settings.IsNetCore.Should().BeFalse(
+			because: "the explicit Framework runtime value must be copied into ephemeral settings");
+	}
+
+	[Test]
+	[Description("Maps an explicit Core runtime selection to ephemeral settings and the root service URL layout.")]
+	[Category("Unit")]
+	public void BuildEphemeralSettings_ShouldMapCoreRuntime_WhenContextIsNetCore() {
+		// Arrange
+		CredentialContext context = new(
+			"https://acme.creatio.com",
+			CredentialMaterial.FromAccessToken("opaque-token", "Bearer"),
+			true,
+			McpTransport.Http,
+			true);
+
+		// Act
+		EnvironmentSettings settings = ToolCommandResolver.BuildEphemeralSettings(context);
+		string route = new ServiceUrlBuilder(settings).Build("DataService/json/SyncReply/SelectQuery");
+
+		// Assert
+		settings.IsNetCore.Should().BeTrue(because: "the validated Core runtime must reach ephemeral settings");
+		route.Should().NotContain("/0/", because: "Core tenants use the root service route layout");
+	}
+
+	[Test]
+	[Description("Maps an explicit Framework runtime selection to the single /0/ service URL layout.")]
+	[Category("Unit")]
+	public void BuildEphemeralSettings_ShouldMapFrameworkRuntime_WhenContextIsNotNetCore() {
+		// Arrange
+		CredentialContext context = new(
+			"https://acme.creatio.com",
+			CredentialMaterial.FromAccessToken("opaque-token", "Bearer"),
+			false,
+			McpTransport.Http,
+			true);
+
+		// Act
+		EnvironmentSettings settings = ToolCommandResolver.BuildEphemeralSettings(context);
+		string route = new ServiceUrlBuilder(settings).Build("DataService/json/SyncReply/SelectQuery");
+
+		// Assert
+		settings.IsNetCore.Should().BeFalse(because: "the validated Framework runtime must reach ephemeral settings");
+		route.Split("/0/", StringSplitOptions.None).Length.Should().Be(2,
+			because: "the Framework route must contain exactly one /0/ prefix");
 	}
 
 	[Test]
@@ -167,6 +213,7 @@ public class ToolCommandResolverTests {
 		CredentialContext context = new(
 			"https://acme.creatio.com",
 			CredentialMaterial.FromLoginPassword("Supervisor", "s3cret"),
+			false,
 			McpTransport.Http,
 			true);
 
@@ -182,6 +229,8 @@ public class ToolCommandResolverTests {
 			because: "the password from the header must flow into the ephemeral settings for the login/password client build");
 		settings.AccessToken.Should().BeNullOrEmpty(
 			because: "a login/password context carries no bearer token");
+		settings.IsNetCore.Should().BeFalse(
+			because: "the explicit Framework runtime value must be copied for login/password auth too");
 	}
 
 	[Test]
@@ -195,6 +244,7 @@ public class ToolCommandResolverTests {
 		accessor.Current.Returns(new CredentialContext(
 			"https://blocked.internal",
 			CredentialMaterial.FromAccessToken("opaque-token", "Bearer"),
+			false,
 			McpTransport.Http,
 			true));
 		ITargetUrlValidator validator = Substitute.For<ITargetUrlValidator>();
@@ -226,11 +276,13 @@ public class ToolCommandResolverTests {
 		CredentialContext contextA = new(
 			"https://acme.creatio.com",
 			CredentialMaterial.FromAccessToken("tenant-a-token", "Bearer"),
+			false,
 			McpTransport.Http,
 			true);
 		CredentialContext contextB = new(
 			"https://acme.creatio.com",
 			CredentialMaterial.FromAccessToken("tenant-b-token", "Bearer"),
+			false,
 			McpTransport.Http,
 			true);
 
@@ -251,6 +303,7 @@ public class ToolCommandResolverTests {
 		CredentialContext context = new(
 			"https://acme.creatio.com",
 			CredentialMaterial.FromAccessToken("tenant-a-token", "Bearer"),
+			false,
 			McpTransport.Http,
 			true);
 
@@ -284,6 +337,7 @@ public class ToolCommandResolverTests {
 		accessor.Current.Returns(new CredentialContext(
 			"https://acme.creatio.com",
 			CredentialMaterial.FromAccessToken("opaque-token", "Bearer"),
+			false,
 			McpTransport.Http,
 			true));
 		ToolCommandResolver resolver = CreateResolver(settingsRepository, settingsBootstrapService, accessor);
@@ -315,6 +369,7 @@ public class ToolCommandResolverTests {
 		accessor.Current.Returns(new CredentialContext(
 			"https://acme.creatio.com",
 			CredentialMaterial.FromCookie("BPMCSRF=super-secret-cookie-value"),
+			false,
 			McpTransport.Http,
 			true));
 		ToolCommandResolver resolver = CreateResolver(settingsRepository, settingsBootstrapService, accessor);
@@ -340,6 +395,7 @@ public class ToolCommandResolverTests {
 		accessor.Current.Returns(new CredentialContext(
 			"https://acme.creatio.com",
 			CredentialMaterial.FromAccessToken(string.Empty, "Bearer"),
+			false,
 			McpTransport.Http,
 			true));
 		ToolCommandResolver resolver = CreateResolver(settingsRepository, settingsBootstrapService, accessor);
@@ -369,6 +425,7 @@ public class ToolCommandResolverTests {
 		accessor.Current.Returns(new CredentialContext(
 			"https://acme.creatio.com",
 			CredentialMaterial.FromAccessToken("opaque-token", "MAC"),
+			false,
 			McpTransport.Http,
 			true));
 		ToolCommandResolver resolver = CreateResolver(settingsRepository, settingsBootstrapService, accessor);

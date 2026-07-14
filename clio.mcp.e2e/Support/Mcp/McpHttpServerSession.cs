@@ -140,11 +140,16 @@ internal sealed class McpHttpServerSession : IAsyncDisposable {
 	/// exact shape <c>CredentialHeaderParser</c> expects (<c>url</c> / <c>accessToken</c> /
 	/// <c>accessTokenType</c>).
 	/// </summary>
-	public static string EncodeBearerCredentials(string url, string accessToken, string authScheme = "Bearer") {
+	/// <param name="url">The tenant base URL.</param>
+	/// <param name="accessToken">The tenant bearer token.</param>
+	/// <param name="isNetCore">Whether the tenant uses the .NET Core route layout.</param>
+	/// <param name="authScheme">The token scheme, normally <c>Bearer</c>.</param>
+	public static string EncodeBearerCredentials(string url, string accessToken, bool isNetCore, string authScheme = "Bearer") {
 		string json = JsonSerializer.Serialize(new {
 			url,
 			accessToken,
-			accessTokenType = authScheme
+			accessTokenType = authScheme,
+			isNetCore
 		});
 		return Convert.ToBase64String(Encoding.UTF8.GetBytes(json));
 	}
@@ -154,11 +159,16 @@ internal sealed class McpHttpServerSession : IAsyncDisposable {
 	/// <c>IsNetCore=false</c>) tenant that has no OAuth access token, in the exact shape
 	/// <c>CredentialHeaderParser</c> expects (<c>url</c> / <c>login</c> / <c>password</c>).
 	/// </summary>
-	public static string EncodeLoginPasswordCredentials(string url, string login, string password) {
+	/// <param name="url">The tenant base URL.</param>
+	/// <param name="login">The tenant login.</param>
+	/// <param name="password">The tenant password.</param>
+	/// <param name="isNetCore">Whether the tenant uses the .NET Core route layout.</param>
+	public static string EncodeLoginPasswordCredentials(string url, string login, string password, bool isNetCore) {
 		string json = JsonSerializer.Serialize(new {
 			url,
 			login,
-			password
+			password,
+			isNetCore
 		});
 		return Convert.ToBase64String(Encoding.UTF8.GetBytes(json));
 	}

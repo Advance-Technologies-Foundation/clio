@@ -171,13 +171,24 @@ CREDENTIAL PASSTHROUGH (multi-tenant edge)
         Authorization: Bearer <platform-api-key>
         X-Integration-Credentials: <base64 JSON>
 
-    The base64 JSON payload requires 'url' plus auth material, resolved by
-    precedence accessToken -> login+password:
+    The base64 JSON payload requires 'url', auth material, and the explicit
+    'isNetCore' JSON boolean. Property names are case-insensitive. 'true'
+    selects the root .NET Core/NET 8 route layout; 'false' selects the .NET
+    Framework layout. Auth is resolved by precedence accessToken ->
+    login+password:
 
-        {"url":"https://tenant.creatio.com","accessToken":"<access-token>"}
-        {"url":"https://tenant.creatio.com","login":"<login>","password":"<password>"}
+        {"url":"https://tenant.creatio.com","accessToken":"<access-token>","isNetCore":true}
+        {"url":"https://tenant.creatio.com","login":"<login>","password":"<password>","isNetCore":false}
 
-    An access token must be Bearer-typed. A cookie-only payload parses but is
+    A missing, null, string, number, array, or object 'isNetCore' is rejected
+    with HTTP 400 before target validation, client creation, or any outbound
+    call. There is no default or runtime probe. The runtime is header context,
+    not an MCP tool argument, and is part of the in-memory cache/lock identity.
+    'true' keeps service routes at their root paths; 'false' inserts exactly
+    one '/0/' segment for .NET Framework compatibility.
+
+    An access token must be Bearer-typed. A cookie-only payload such as
+    {"url":"https://tenant.creatio.com","cookie":"<cookie>","isNetCore":false} parses but is
     REJECTED as unsupported in v1 — supply an access token instead.
 
     Nothing is persisted: clio builds an ephemeral, in-memory container per

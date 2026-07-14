@@ -91,6 +91,7 @@ public sealed record CredentialMaterial(
 /// </summary>
 /// <param name="Url">The target Creatio environment URL the credentials apply to (always required).</param>
 /// <param name="Auth">The precedence-resolved authentication material.</param>
+/// <param name="IsNetCore">Whether the target uses the root .NET Core/NET8 route layout; <see langword="false"/> selects the .NET Framework <c>/0/</c> layout.</param>
 /// <param name="Transport">The transport the request arrived on.</param>
 /// <param name="PassthroughModeEnabled">
 /// Whether per-request credential passthrough is enabled for this request. The
@@ -100,6 +101,7 @@ public sealed record CredentialMaterial(
 public sealed record CredentialContext(
 	string Url,
 	CredentialMaterial Auth,
+	bool IsNetCore,
 	McpTransport Transport,
 	bool PassthroughModeEnabled)
 {
