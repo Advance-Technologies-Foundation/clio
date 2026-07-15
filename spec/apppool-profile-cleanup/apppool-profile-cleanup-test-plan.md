@@ -5,7 +5,7 @@
 - Native/profile cleaner: deleted first try; absent; non-Windows; locked/access denied retried exactly three times; resolution/native failure becomes safe warning; SID namespace is enforced.
 - Uninstaller: actual app-pool name and registration are captured before pool deletion; done, skipped/not-applicable, and warning paths; warning does not prevent unregister; exactly one warning; success-with-warnings terminal.
 - Command/MCP: exit code remains 0, `WarningMessage` is preserved, progress warning and terminal outcome are forwarded, `IsError` remains false.
-- Contract: provider and Ring serialize `warning` with the existing `success` terminal; mirrored fixtures are byte-identical; unknown fields, previous-consumer behavior, and ordered replay remain tolerant.
+- Contract: provider and Ring serialize `warning` with the `success-with-warnings` terminal; mirrored fixtures are byte-identical; unknown fields and ordered replay remain tolerant.
 - Ring: yellow warning step, friendly message with expandable detail, completed-with-warnings header, successful refresh behavior.
 
 ## E2E and compatibility

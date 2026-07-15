@@ -48,7 +48,7 @@ public sealed class UninstallCreatioToolTests : BaseClioModuleTests {
 
 	[Test]
 	[Description("Advertises a stable destructive MCP contract that explains successful profile-cleanup warnings.")]
-	public void UninstallCreatio_ShouldExposeStableWarningAwareContract() {
+	public void UninstallCreatio_ShouldExposeStableWarningAwareContract_WhenToolIsDiscovered() {
 		// Arrange
 		McpServerToolAttribute attribute = (McpServerToolAttribute)typeof(UninstallCreatioTool)
 			.GetMethod(nameof(UninstallCreatioTool.UninstallCreatio), [typeof(RequestContext<CallToolRequestParams>), typeof(UninstallCreatioArgs)])!
@@ -73,7 +73,7 @@ public sealed class UninstallCreatioToolTests : BaseClioModuleTests {
 
 	[Test]
 	[Description("Maps the MCP environment name and preserves warning plus informational output with exit code zero.")]
-	public void UninstallCreatio_ShouldPreserveSuccessfulWarningOutput() {
+	public void UninstallCreatio_ShouldPreserveSuccessfulWarningOutput_WhenProfileCleanupWarns() {
 		// Arrange
 		_uninstaller.When(item => item.UninstallByEnvironmentName("sandbox"))
 			.Do(_ => _logger.WriteWarning("Profile remains; remove it manually."));

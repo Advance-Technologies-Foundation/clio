@@ -6023,6 +6023,13 @@ Discovery: Sorting a partial snapshot cannot recover callbacks that have not arr
 Files: clio.mcp.e2e/Support/Mcp/McpServerSession.cs, clio.mcp.e2e/DeployUninstallProgressTests.cs, spec/mcp-progress-wait-timeout/
 Impact: Deterministic terminal-first and typed-token regressions pass, and the five-test fixture passed ten fresh-process runs on each of net8.0 and net10.0 without real Creatio lifecycle operations.
 
+## 2026-07-15 10:30 – Clean IIS application-pool profiles during uninstall
+Context: Issue #881 required uninstall-creatio to remove the actual IIS virtual-account profile when possible and complete successfully with one warning when Windows keeps it locked.
+Decision: Capture and validate the app-pool SID/ProfileList registration before IIS deletion, call DeleteProfileW after IIS/files cleanup with bounded retries, and carry warning plus success-with-warnings through CLI, MCP, and ClioRing.
+Discovery: DeleteProfileW may remove ProfileList registration while leaving locked files behind, so native success and residual-directory state both matter; destructive fallback cleanup must reject reparse roots at every recursion boundary.
+Files: clio/Common/AppPoolProfileCleaner.cs, clio/Common/CreatioUninstaller.cs, clio/Requests/IISScannerRequest.cs, clio/Command/McpServer/Progress/, clio-ring/ClioRing/, clio.mcp.e2e/UninstallCreatioWarningE2ETests.cs, spec/apppool-profile-cleanup/
+Impact: Uninstall now removes registered IIS profiles best-effort, preserves exit 0 and IsError=false on cleanup warnings, renders a yellow completed-with-warnings Ring state, refreshes environments, and has live locked-profile proof against Creatio 10.0.0.802.
+
 ## 2026-07-15 09:16 – Classify get-info target failures safely
 Context: Issue #390 required get-info and its aliases to distinguish invalid URLs, unreachable targets, authentication failures, non-Creatio responses, and malformed Creatio responses without leaking response bodies or parser details.
 Decision: Make ApplicationInfoService the mandatory base probe, map failures to stable user-facing classifications, and run system-info and ClioGate enrichment only after a valid base report and as non-fatal best-effort steps.

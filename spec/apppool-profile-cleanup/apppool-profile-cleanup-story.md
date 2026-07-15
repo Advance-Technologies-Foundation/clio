@@ -1,6 +1,6 @@
 # Story: best-effort IIS application-pool profile cleanup
 
-Status: in-progress
+Status: done
 
 Issue: #881
 
@@ -14,4 +14,3 @@ As a local Creatio operator, I want uninstall to remove the IIS virtual-account 
 - Command docs/help/index/Wiki mapping and MCP guidance/description are reviewed and synchronized.
 - ClioRing contract tests, ordered replay, full Ring tests, and Windows x64 NativeAOT publish pass.
 - Final comprehensive agentic review has no unresolved Blocker or High findings.
-

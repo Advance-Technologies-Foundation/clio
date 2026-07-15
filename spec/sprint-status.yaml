@@ -1196,7 +1196,7 @@ stories:
     feature: "apppool-profile-cleanup"
     repo: "clio"
     size: L
-    status: in-progress
+    status: done
     issue: 881
     file: spec/apppool-profile-cleanup/apppool-profile-cleanup-story.md
     prd: spec/apppool-profile-cleanup/apppool-profile-cleanup-prd.md

@@ -12,7 +12,7 @@ Add a DI-backed application-pool profile cleaner in `clio/Common`. The cleaner h
 4. calls `DeleteProfileW` with that SID and path;
 5. retries native failures three times with short delays and returns a data-only result instead of throwing.
 
-`CreatioUninstaller` captures the app-pool name and validated SID/ProfileList registration before `delete-iis`, runs deletion after IIS/files cleanup and before `unregister`, logs one final warning, emits a warning stage, and completes with the existing `success` terminal. Missing/non-Windows profiles produce `skipped/not-applicable`.
+`CreatioUninstaller` captures the app-pool name and validated SID/ProfileList registration before `delete-iis`, runs deletion after IIS/files cleanup and before `unregister`, logs one final warning, emits a warning stage, and completes with the `success-with-warnings` terminal. Missing/non-Windows profiles produce `skipped/not-applicable`.
 
 Extend `IStageEventEmitter` with warning-stage completion and the explicit `success-with-warnings` terminal required by the issue contract. ClioRing maps that outcome to its successful warning-aware terminal UI.
 
