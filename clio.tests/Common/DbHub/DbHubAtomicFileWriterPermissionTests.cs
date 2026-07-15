@@ -37,17 +37,18 @@ public sealed class DbHubAtomicFileWriterPermissionTests : BaseClioModuleTests {
 		// Arrange
 		string path = Path.Combine(_directory, "dbhub.toml");
 		File.WriteAllText(path, "# original");
-		byte[] before = new FileInfo(path).GetAccessControl(AccessControlSections.Access)
-			.GetSecurityDescriptorBinaryForm();
+		FileSecurity beforeSecurity = new FileInfo(path).GetAccessControl(AccessControlSections.Access);
+		string[] beforeRules = EffectiveAccessRules(beforeSecurity);
 
 		// Act
 		_sut.Commit(path, "# replacement");
 
 		// Assert
-		byte[] after = new FileInfo(path).GetAccessControl(AccessControlSections.Access)
-			.GetSecurityDescriptorBinaryForm();
-		after.Should().Equal(before,
-			because: "atomic source synchronization must not broaden or discard an existing TOML ACL");
+		FileSecurity afterSecurity = new FileInfo(path).GetAccessControl(AccessControlSections.Access);
+		EffectiveAccessRules(afterSecurity).Should().Equal(beforeRules,
+			because: "Windows may canonicalize inherited descriptors but must preserve every effective access right");
+		afterSecurity.AreAccessRulesProtected.Should().Be(beforeSecurity.AreAccessRulesProtected,
+			because: "atomic replacement must preserve whether the user-managed ACL inherits from its parent");
 	}
 
 	[Test]
@@ -101,4 +102,13 @@ public sealed class DbHubAtomicFileWriterPermissionTests : BaseClioModuleTests {
 		File.ReadAllText(path).Should().Be("password = \"secret\"",
 			because: "the validated update should still be committed");
 	}
+
+	private static string[] EffectiveAccessRules(FileSecurity security) => security
+		.GetAccessRules(includeExplicit: true, includeInherited: true, typeof(SecurityIdentifier))
+		.Cast<FileSystemAccessRule>()
+		.GroupBy(rule => $"{rule.IdentityReference.Value}|{rule.AccessControlType}")
+		.Select(group => $"{group.Key}|{(int)group.Aggregate((FileSystemRights)0,
+			(rights, rule) => rights | rule.FileSystemRights)}")
+		.OrderBy(value => value, StringComparer.Ordinal)
+		.ToArray();
 }
