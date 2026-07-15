@@ -6023,6 +6023,13 @@ Discovery: Sorting a partial snapshot cannot recover callbacks that have not arr
 Files: clio.mcp.e2e/Support/Mcp/McpServerSession.cs, clio.mcp.e2e/DeployUninstallProgressTests.cs, spec/mcp-progress-wait-timeout/
 Impact: Deterministic terminal-first and typed-token regressions pass, and the five-test fixture passed ten fresh-process runs on each of net8.0 and net10.0 without real Creatio lifecycle operations.
 
+## 2026-07-15 10:30 – Clean IIS application-pool profiles during uninstall
+Context: Issue #881 required uninstall-creatio to remove the actual IIS virtual-account profile when possible and complete successfully with one warning when Windows keeps it locked.
+Decision: Capture and validate the app-pool SID/ProfileList registration before IIS deletion, call DeleteProfileW after IIS/files cleanup with bounded retries, and carry warning plus success-with-warnings through CLI, MCP, and ClioRing.
+Discovery: DeleteProfileW may remove ProfileList registration while leaving locked files behind, so native success and residual-directory state both matter; destructive fallback cleanup must reject reparse roots at every recursion boundary.
+Files: clio/Common/AppPoolProfileCleaner.cs, clio/Common/CreatioUninstaller.cs, clio/Requests/IISScannerRequest.cs, clio/Command/McpServer/Progress/, clio-ring/ClioRing/, clio.mcp.e2e/UninstallCreatioWarningE2ETests.cs, spec/apppool-profile-cleanup/
+Impact: Uninstall now removes registered IIS profiles best-effort, preserves exit 0 and IsError=false on cleanup warnings, renders a yellow completed-with-warnings Ring state, refreshes environments, and has live locked-profile proof against Creatio 10.0.0.802.
+
 ## 2026-07-15 09:16 – Classify get-info target failures safely
 Context: Issue #390 required get-info and its aliases to distinguish invalid URLs, unreachable targets, authentication failures, non-Creatio responses, and malformed Creatio responses without leaking response bodies or parser details.
 Decision: Make ApplicationInfoService the mandatory base probe, map failures to stable user-facing classifications, and run system-info and ClioGate enrichment only after a valid base report and as non-fatal best-effort steps.
@@ -6043,3 +6050,17 @@ Decision: Catch every recoverable exception at base and optional remote-operatio
 Discovery: ClioGate compatibility can throw InvalidOperationException or System.Text.Json parsing errors before GetSysInfo, so a narrow HTTP/Newtonsoft exception list cannot guarantee nonfatal enrichment or secret-safe MCP output.
 Files: clio/Command/GetCreatioInfoCommand.cs, clio.tests/Command/GetInfoCommand.cs
 Impact: Recoverable client/library failures now remain classified and redacted, while fatal or programming-defect exceptions still propagate for diagnosis.
+
+## 2026-07-15 11:01 – Preserve shared IIS pools during uninstall
+Context: Codex Review found that issue #881 could delete an application pool and Windows profile still used by another IIS application.
+Decision: Validate target topology before deletion, remove only the target site/application, requery assignments, and delete the pool/profile only after verified pool removal.
+Discovery: Root-site deletion can also remove nested sibling applications, and incomplete appcmd XML must be treated as unsafe rather than as proof of exclusive ownership.
+Files: clio/Requests/IISScannerRequest.cs, clio/Common/CreatioUninstaller.cs, clio.tests/Requests/IisScannerHandlerValidationTests.cs, clio.tests/Common/CreatioUninstallerTestFixture.cs, spec/apppool-profile-cleanup/
+Impact: Shared pools and profiles survive uninstall, destructive IIS decisions fail closed, and profile cleanup cannot run while a pool remains.
+
+## 2026-07-15 11:25 – Bind IIS cleanup to the resolved target identity
+Context: Final review of the shared-pool fix exposed malformed-output, same-name replacement, silent-delete, and concurrent reassignment edges around AppCmd.
+Decision: Require strict AppCmd XML, bind stop/delete to name plus normalized path plus pool, verify target absence, and bracket pool removal with fresh assignment and absence snapshots.
+Discovery: AppCmd cannot stop a nested application, and its process wrapper does not expose exit status; safe orchestration therefore uses a nested no-op and proves every destructive result from fresh IIS state.
+Files: clio/Requests/IISScannerRequest.cs, clio/Common/CreatioUninstaller.cs, clio.tests/Requests/IisScannerHandlerValidationTests.cs, clio.tests/Common/CreatioUninstallerTestFixture.cs
+Impact: Same-name replacements and sibling applications are not mutated, error-shaped output fails closed, and profile cleanup remains gated on verified pool absence.
