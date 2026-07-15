@@ -21,6 +21,20 @@
 # 2026-07-06) is a separate Jira ticket stacked on the same branch; tracked as its own row.
 
 stories:
+  - id: story-get-info-target-classification-1
+    title: "Classify get-info target and response failures"
+    feature: "get-info-target-classification"
+    repo: "clio"
+    size: S
+    status: review
+    issue: 390
+    file: spec/get-info-target-classification/get-info-target-classification-story.md
+    prd: spec/get-info-target-classification/get-info-target-classification-spec.md
+    adr: spec/get-info-target-classification/get-info-target-classification-plan.md
+    test_plan: spec/get-info-target-classification/get-info-target-classification-qa.md
+    depends_on: []
+    blocks: []
+
   - id: story-mcp-progress-wait-timeout-1
     title: "Make MCP progress waits notification-driven and timeout-safe"
     feature: "mcp-progress-wait-timeout"

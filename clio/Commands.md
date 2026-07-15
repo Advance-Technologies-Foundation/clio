@@ -61,7 +61,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="describe"></a>
 <a id="describe-creatio"></a>
 <a id="instance-info"></a>
-- [`get-info`](docs/commands/get-info.md) - Show system information for a Creatio instance, `describe`, `describe-creatio`, `instance-info`
+- [`get-info`](docs/commands/get-info.md) - Validate and show system information for a Creatio instance with actionable target/auth/response errors, `describe`, `describe-creatio`, `instance-info`
 <a id="get-webservice-url"></a>
 <a id="gwu"></a>
 - [`get-webservice-url`](docs/commands/get-webservice-url.md) - Show the configured base URL for a web service, `gwu`

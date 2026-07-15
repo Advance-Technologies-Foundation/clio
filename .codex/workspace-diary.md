@@ -6022,3 +6022,24 @@ Decision: Broadcast each notification through a versioned task-completion signal
 Discovery: Sorting a partial snapshot cannot recover callbacks that have not arrived; terminal presence proves completeness only when every preceding sequence is already captured. This supersedes the earlier coalescing-semaphore decision.
 Files: clio.mcp.e2e/Support/Mcp/McpServerSession.cs, clio.mcp.e2e/DeployUninstallProgressTests.cs, spec/mcp-progress-wait-timeout/
 Impact: Deterministic terminal-first and typed-token regressions pass, and the five-test fixture passed ten fresh-process runs on each of net8.0 and net10.0 without real Creatio lifecycle operations.
+
+## 2026-07-15 09:16 – Classify get-info target failures safely
+Context: Issue #390 required get-info and its aliases to distinguish invalid URLs, unreachable targets, authentication failures, non-Creatio responses, and malformed Creatio responses without leaking response bodies or parser details.
+Decision: Make ApplicationInfoService the mandatory base probe, map failures to stable user-facing classifications, and run system-info and ClioGate enrichment only after a valid base report and as non-fatal best-effort steps.
+Discovery: Creatio.Client can surface transport failures through nested exceptions and returns non-success response bodies directly, so classification must inspect exception chains while keeping debug output limited to safe metadata.
+Files: clio/Command/GetCreatioInfoCommand.cs, clio.tests/Command/GetInfoCommand.cs, clio/Command/McpServer/, clio.mcp.e2e/GetCreatioInfoToolE2ETests.cs, clio/docs/commands/get-info.md, spec/get-info-target-classification/
+Impact: CLI aliases and MCP now share stable secret-safe errors, valid Creatio instances still report base information without ClioGate, and Ring compatibility remains covered by its consumer tests and NativeAOT publish gate.
+
+## 2026-07-15 09:31 – Close get-info review edge cases
+Context: The comprehensive pre-PR review tested response classification against ambiguous plain text and minimally shaped JSON.
+Decision: Treat only object/array-prefixed parse failures as malformed JSON, require a non-empty coreVersion in the base report, and filter remote-failure catches to known transport, authentication, timeout, and JSON exception families.
+Discovery: JSON permits scalar top-level values, but ApplicationInfoService does not; using generic JSON scalar prefixes caused text such as `404 Not Found` to be misclassified.
+Files: clio/Command/GetCreatioInfoCommand.cs, clio.tests/Command/GetInfoCommand.cs, clio/help/en/get-info.txt, spec/sprint-status.yaml
+Impact: Digit-prefixed non-Creatio responses and empty sysValues envelopes now fail with the correct stable classification, while programming defects are no longer swallowed by remote-operation boundaries.
+
+## 2026-07-15 09:44 – Make secret-safe boundaries recoverable by policy
+Context: Final re-review traced real ClioGate compatibility failures through package-list parsing and found recoverable exception types beyond the transport whitelist.
+Decision: Catch every recoverable exception at base and optional remote-operation boundaries while explicitly propagating fatal runtime conditions and clear programming defects; validate optional success tokens by type before conversion.
+Discovery: ClioGate compatibility can throw InvalidOperationException or System.Text.Json parsing errors before GetSysInfo, so a narrow HTTP/Newtonsoft exception list cannot guarantee nonfatal enrichment or secret-safe MCP output.
+Files: clio/Command/GetCreatioInfoCommand.cs, clio.tests/Command/GetInfoCommand.cs
+Impact: Recoverable client/library failures now remain classified and redacted, while fatal or programming-defect exceptions still propagate for diagnosis.
