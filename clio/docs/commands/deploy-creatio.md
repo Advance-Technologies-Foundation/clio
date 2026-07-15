@@ -281,6 +281,7 @@ Database Restoration (Automatic):
 - WITH --db-server-name: Restores database to local server from appsettings.json
 - Database is extracted from db/*.bak (MSSQL) or db/*.backup (PostgreSQL) in zip
 - Connection strings are automatically updated to point to target database
+- Database and Redis connection values are written to the deployed configuration but never printed in command output
 - PostgreSQL/MSSQL native restore output is written into the temp database
 operation log artifact
 
@@ -492,9 +493,10 @@ Linux:
 
     The stream is:
     - one "manifest" event up front listing every stage that will run, in order
-    - a "stage" event per transition (running -> done / failed / skipped, with
+    - a "stage" event per transition (running -> done / warning / failed / skipped, with
       index / total / durationMs)
-    - one terminal "run-completed" event with outcome = success or failure
+    - one terminal "run-completed" event with outcome = success, success-with-warnings,
+      or failure
 
     Deploy stages (in order):
         stage-build            Build/prepare the source (network-drive source only;
@@ -506,10 +508,16 @@ Linux:
         configure-conn-strings Configure database and Redis connection strings
         register-env           Register the environment with clio
         wait-ready             Wait until the application reports ready
+        sync-dbhub-source      Reconcile the local database source when automatic dbHub
+                               synchronization is enabled (otherwise absent)
 
     Honest failure: a stage that fails is emitted failed, the remaining stages are
     emitted skipped (after-failure), and the run ends run-completed / failure. A
     non-zero stage result is surfaced as a failure and is never masked as success.
+
+    dbHub synchronization runs only after wait-ready succeeds. Its TOML/live-verification
+    failures are best effort: the stage is emitted warning, CLI output includes the safe
+    warning, and the run ends success-with-warnings without exposing database credentials.
 
     The envelope carries a schemaVersion field (currently 1) and is forward-compatible.
 

@@ -562,7 +562,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`turn-fsm`](docs/commands/turn-fsm.md) - Turn file system mode on or off for an environment, `fsm`, `tfsm`
 <a id="uninstall-creatio"></a>
 <a id="uc"></a>
-- [`uninstall-creatio`](docs/commands/uninstall-creatio.md) - Uninstall local Creatio with shared-pool-safe IIS profile cleanup, `uc`
+- [`uninstall-creatio`](docs/commands/uninstall-creatio.md) - Uninstall local Creatio with shared-pool-safe IIS profile and best-effort dbHub cleanup, `uc`
 <a id="upload-license"></a>
 <a id="license"></a>
 <a id="load-license"></a>

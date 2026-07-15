@@ -83,6 +83,15 @@ Run TC-E locally for both net8.0 and net10.0; do not wait for TeamCity MCP E2E.
 2. Verify hot reload by adding/removing a disposable managed source and polling HTTP after >500 ms without restarting the task.
 3. If lifecycle proof cannot be fully simulated, deploy the user-supplied Creatio archive under a unique disposable name. Verify successful deploy adds the source, offline dbHub gives warning/exit 0, and successful uninstall removes the exact source. Confirm IIS/database/files/settings/TOML cleanup.
 
+### Runtime evidence (2026-07-15)
+
+- Used an isolated `CLIO_HOME`, ports `18090`/`18091`, and the supplied Creatio archive; the real user settings and Scheduled Task were not modified.
+- Verified offline deploy completes with one warning and retains the managed TOML source for later reconciliation.
+- Verified online deploy hot-adds the Creatio PostgreSQL source, returns HTTP 200 from the deployed site, and produces credential-free output.
+- Verified dbHub 0.23.0 rejects PostgreSQL `prefer`/`allow` TLS modes and an empty source inventory; the implementation maps those modes to supported values and maintains a marked lazy in-memory `clio_control` source.
+- Ran the destructive MCP uninstall scenario locally: it returned success-with-warnings for the independent profile warning, preserved strict stage order, removed the exact managed dbHub source, and hot-reloaded dbHub back to only `clio_control`.
+- Verified the disposable site, files, clio environment registration, managed TOML source, isolated settings, and isolated dbHub processes were removed after the run.
+
 ## Regression and Delivery Gates
 
 ```powershell

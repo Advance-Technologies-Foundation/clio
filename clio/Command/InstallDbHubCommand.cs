@@ -40,14 +40,28 @@ public sealed class InstallDbHubCommand(
 
 	/// <inheritdoc />
 	public override int Execute(InstallDbHubOptions options) {
-		string configPath = ResolveConfigPath(options.ConfigPath, _settingsRepository.GetDbHubSettings());
+		string configPath;
+		try {
+			configPath = ResolveConfigPath(options.ConfigPath, _settingsRepository.GetDbHubSettings());
+		}
+		catch (Exception exception) when (exception is ArgumentException or NotSupportedException) {
+			_logger.WriteError("The dbHub config path is invalid.");
+			return 1;
+		}
 		DbHubInstallationResult result = _installerService.InstallOrRepair(new DbHubInstallRequest(configPath,
 			options.Host, options.Port, options.SyncLocalEnvironments));
 		if (!result.Success) {
 			_logger.WriteError(result.Message);
 			return 1;
 		}
-		_settingsRepository.SetDbHubSettings(result.Settings);
+		try {
+			_settingsRepository.SetDbHubSettings(result.Settings);
+		}
+		catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+			or InvalidDataException or InvalidOperationException) {
+			_logger.WriteError("dbHub is healthy, but clio could not persist its settings. Repair appsettings.json and rerun install-dbhub.");
+			return 1;
+		}
 		_logger.WriteInfo(result.Message);
 		_logger.WriteInfo($"dbHub configuration: {result.Settings.ConfigPath}");
 		return 0;

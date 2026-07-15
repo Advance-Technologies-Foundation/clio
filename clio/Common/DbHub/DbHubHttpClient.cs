@@ -41,11 +41,12 @@ public sealed class DbHubHttpClient(IHttpClientFactory httpClientFactory) : IDbH
 			}
 			using HttpResponseMessage initialize = await PostMcp(client,
 				"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{},\"clientInfo\":{\"name\":\"clio\",\"version\":\"1\"}}}");
-			return initialize.IsSuccessStatusCode
+			string initializeJson = await initialize.Content.ReadAsStringAsync();
+			return initialize.IsSuccessStatusCode && ContainsMcpResult(initializeJson)
 				? new DbHubVerificationResult(true, true)
 				: Offline("dbHub MCP verification failed.");
 		}
-		catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException) {
+		catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or JsonException) {
 			return Offline("dbHub is offline or did not respond in time.");
 		}
 	}
@@ -92,6 +93,10 @@ public sealed class DbHubHttpClient(IHttpClientFactory httpClientFactory) : IDbH
 	}
 
 	private HttpClient CreateClient(DbHubSettings settings) {
+		if (!string.Equals(settings.Host, DbHubSettings.DefaultHost, StringComparison.Ordinal)
+			|| settings.Port is < 1 or > 65535) {
+			throw new HttpRequestException("Unsafe dbHub endpoint configuration.");
+		}
 		HttpClient client = _httpClientFactory.CreateClient();
 		client.BaseAddress = new Uri($"http://{settings.Host}:{settings.Port}/", UriKind.Absolute);
 		client.Timeout = TimeSpan.FromSeconds(3);
@@ -110,10 +115,18 @@ public sealed class DbHubHttpClient(IHttpClientFactory httpClientFactory) : IDbH
 	private static bool ContainsAnyTool(string json) {
 		using JsonDocument document = JsonDocument.Parse(json);
 		if (!document.RootElement.TryGetProperty("result", out JsonElement result)
-			|| !result.TryGetProperty("tools", out JsonElement tools)) {
+			|| !result.TryGetProperty("tools", out JsonElement tools)
+			|| tools.ValueKind != JsonValueKind.Array) {
 			return false;
 		}
 		return tools.EnumerateArray().Any();
+	}
+
+	private static bool ContainsMcpResult(string json) {
+		using JsonDocument document = JsonDocument.Parse(json);
+		return document.RootElement.TryGetProperty("result", out JsonElement result)
+			&& result.ValueKind == JsonValueKind.Object
+			&& !document.RootElement.TryGetProperty("error", out _);
 	}
 
 	private static bool ContainsSourceInventory(string json, string sourceId) {

@@ -156,6 +156,25 @@ public sealed class DbHubTomlStoreTests : BaseClioModuleTests {
 	}
 
 	[Test]
+	[Description("Removing the last managed environment leaves a harmless control source for dbHub hot reload.")]
+	public void Remove_ShouldLeaveRunnableControlSource_WhenLastDatabaseSourceIsRemoved() {
+		// Arrange
+		_sut.Upsert(_configPath, Source("only", "only"));
+
+		// Act
+		DbHubSyncResult result = _sut.Remove(_configPath, "only");
+
+		// Assert
+		result.Changed.Should().BeTrue(because: "the owned environment source existed");
+		string content = File.ReadAllText(_configPath);
+		content.Should().NotContain("source=only", because: "the exact environment ownership block was removed");
+		content.Should().Contain($"id = \"{DbHubTomlStore.ControlSourceId}\"",
+			because: "dbHub 0.23 rejects and does not hot-reload a configuration with zero sources");
+		_sut.GetOwnedSources(_configPath).EnvironmentNames.Should().BeEmpty(
+			because: "the control source is infrastructure, not an environment ownership mapping");
+	}
+
+	[Test]
 	[Description("Concurrent source updates are serialized without losing any managed block.")]
 	public async Task Upsert_ShouldSerializeConcurrentUpdates() {
 		// Arrange

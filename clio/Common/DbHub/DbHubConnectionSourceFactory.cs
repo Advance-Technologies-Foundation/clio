@@ -106,12 +106,14 @@ public sealed class DbHubConnectionSourceFactory : IDbHubConnectionSourceFactory
 
 	private static DbHubSourceDiscoveryResult CreateSqlServer(string environmentName, string connectionString) {
 		SqlConnectionStringBuilder builder = new(connectionString);
-		if (builder.IntegratedSecurity) {
+		if (builder.IntegratedSecurity || builder.Authentication != SqlAuthenticationMethod.NotSpecified
+			|| string.IsNullOrWhiteSpace(builder.UserID)) {
 			return Skip(environmentName,
-				"SQL Server integrated authentication is not supported by dbHub; use SQL authentication.",
+				"The configured SQL Server authentication is not supported by clio's dbHub integration; use SQL authentication.",
 				UnsupportedAuthenticationCode);
 		}
-		if (builder.Encrypt == SqlConnectionEncryptOption.Mandatory && !builder.TrustServerCertificate) {
+		if (builder.Encrypt != SqlConnectionEncryptOption.Optional
+			&& (builder.Encrypt != SqlConnectionEncryptOption.Mandatory || !builder.TrustServerCertificate)) {
 			return Skip(environmentName,
 				"SQL Server certificate validation cannot be represented safely by dbHub 0.23.0.",
 				UnsupportedTlsCode);
@@ -126,8 +128,8 @@ public sealed class DbHubConnectionSourceFactory : IDbHubConnectionSourceFactory
 
 	private static string ToDbHubSslMode(SslMode sslMode) => sslMode switch {
 		SslMode.Disable => "disable",
-		SslMode.Allow => "allow",
-		SslMode.Prefer => "prefer",
+		SslMode.Allow => "disable",
+		SslMode.Prefer => "require",
 		SslMode.Require => "require",
 		SslMode.VerifyCA => "verify-ca",
 		SslMode.VerifyFull => "verify-full",

@@ -25,6 +25,7 @@ public interface IDbHubTomlStore {
 
 /// <inheritdoc />
 public sealed class DbHubTomlStore : IDbHubTomlStore {
+	internal const string ControlSourceId = "clio_control";
 	private const string ConflictCode = "DBHUB_SOURCE_OWNERSHIP_CONFLICT";
 	private const string FileUpdateCode = "DBHUB_CONFIG_UPDATE_FAILED";
 	private static readonly TimeSpan DefaultLockTimeout = TimeSpan.FromSeconds(30);
@@ -101,7 +102,8 @@ public sealed class DbHubTomlStore : IDbHubTomlStore {
 			if (!result.Changed) {
 				return result;
 			}
-			ValidateToml(candidate);
+			candidate = EnsureRunnableContent(candidate);
+			ValidateToml(candidate, requireSource: true);
 			_atomicFileWriter.Commit(fullPath, candidate);
 			return result;
 		}
@@ -192,6 +194,23 @@ public sealed class DbHubTomlStore : IDbHubTomlStore {
 		return block.ToString();
 	}
 
+	internal static string EnsureRunnableContent(string content) {
+		ValidateToml(content);
+		if (FindSourceIds(content).Count > 0) {
+			return content;
+		}
+		string newline = content.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
+		string separator = content.Length == 0 ? string.Empty : content.EndsWith(newline, StringComparison.Ordinal)
+			? newline : newline + newline;
+		return content + separator
+			+ "# clio-managed-control-source: keeps dbHub configuration valid when no database environments exist" + newline
+			+ "[[sources]]" + newline
+			+ $"id = {Quote(ControlSourceId)}" + newline
+			+ "type = \"sqlite\"" + newline
+			+ "dsn = \"sqlite:///:memory:\"" + newline
+			+ "lazy = true" + newline;
+	}
+
 	private FileStream AcquireLock(string path) {
 		Stopwatch stopwatch = Stopwatch.StartNew();
 		while (true) {
@@ -207,12 +226,16 @@ public sealed class DbHubTomlStore : IDbHubTomlStore {
 		}
 	}
 
-	private static void ValidateToml(string content) {
+	private static void ValidateToml(string content, bool requireSource = false) {
 		if (string.IsNullOrWhiteSpace(content)) {
 			return;
 		}
 		try {
-			_ = TomlSerializer.Deserialize<TomlTable>(content);
+			TomlTable document = TomlSerializer.Deserialize<TomlTable>(content);
+			if (requireSource && (!document.TryGetValue("sources", out object sources)
+					|| sources is not TomlTableArray sourceArray || sourceArray.Count == 0)) {
+				throw new InvalidDataException("dbHub requires at least one source.");
+			}
 		}
 		catch (Exception exception) when (exception is TomlException or InvalidOperationException) {
 			throw new InvalidDataException("Invalid TOML.");
@@ -220,11 +243,9 @@ public sealed class DbHubTomlStore : IDbHubTomlStore {
 	}
 
 	private static void RefuseUnsafeTarget(string path) {
-		if (!File.Exists(path)) {
-			return;
-		}
 		FileInfo info = new(path);
-		if (info.LinkTarget is not null || info.Attributes.HasFlag(FileAttributes.ReparsePoint)) {
+		if (info.LinkTarget is not null
+			|| (info.Exists && info.Attributes.HasFlag(FileAttributes.ReparsePoint))) {
 			throw new InvalidDataException("Unsafe TOML target.");
 		}
 	}

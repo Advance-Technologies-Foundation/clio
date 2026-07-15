@@ -77,6 +77,31 @@ public sealed class DbHubInstallerServiceTests : BaseClioModuleTests {
 		_taskManager.Received(1).EnsureAndStart(Arg.Any<string>(), Arg.Any<string>(),
 			Arg.Is<DbHubSettings>(settings => settings.Host == "127.0.0.1" && settings.Port == 17999),
 			out Arg.Any<string>());
+		string config = File.ReadAllText(request.ConfigPath);
+		config.Should().Contain("# clio-managed-control-source",
+			because: "a fresh dbHub server cannot start or hot-reload with an empty sources array");
+		config.Should().Contain($"id = \"{DbHubTomlStore.ControlSourceId}\"",
+			because: "the harmless in-memory SQLite control source keeps the fresh configuration runnable");
+	}
+
+	[Test]
+	[Description("Repairs a comments-only TOML with a control source while preserving the user's content.")]
+	public void InstallOrRepair_ShouldAddControlSource_WhenExistingTomlHasNoSources() {
+		// Arrange
+		_installedVersion = DbHubInstallerService.PinnedDbHubVersion;
+		DbHubInstallRequest request = Request();
+		const string comment = "# user comment that must survive\n";
+		File.WriteAllText(request.ConfigPath, comment);
+
+		// Act
+		DbHubInstallationResult result = _sut.InstallOrRepair(request);
+
+		// Assert
+		result.Success.Should().BeTrue(because: "clio can safely make a syntactically valid comments-only file runnable");
+		string config = File.ReadAllText(request.ConfigPath);
+		config.Should().StartWith(comment, because: "installer repair must preserve existing user comments and ordering");
+		config.Should().Contain($"id = \"{DbHubTomlStore.ControlSourceId}\"",
+			because: "dbHub 0.23 requires at least one source at startup");
 	}
 
 	[Test]
@@ -178,6 +203,22 @@ public sealed class DbHubInstallerServiceTests : BaseClioModuleTests {
 			because: "the task must run only in the current user session without storing credentials");
 		document.Descendants(ns + "RunLevel").Single().Value.Should().Be("LeastPrivilege",
 			because: "dbHub does not require an elevated task");
+	}
+
+	[TestCase(true, true, DbHubScheduledTaskManager.LegacyTaskName, DbHubScheduledTaskManager.TaskName)]
+	[TestCase(true, false, DbHubScheduledTaskManager.LegacyTaskName, null)]
+	[TestCase(false, true, DbHubScheduledTaskManager.TaskName, null)]
+	[TestCase(false, false, DbHubScheduledTaskManager.TaskName, null)]
+	[Description("Scheduled Task adoption selects one active task and identifies a duplicate for cleanup.")]
+	public void SelectTaskNames_ShouldReturnSingleActiveTask(bool legacyExists, bool canonicalExists,
+		string expectedActive, string expectedRedundant) {
+		// Act
+		(string active, string redundant) = DbHubScheduledTaskManager.SelectTaskNames(legacyExists, canonicalExists);
+
+		// Assert
+		active.Should().Be(expectedActive, because: "existing legacy installations are adopted idempotently");
+		redundant.Should().Be(expectedRedundant,
+			because: "two known logon tasks could race to bind the same local dbHub port");
 	}
 
 	private DbHubInstallRequest Request() => new(Path.Combine(_directory, "dbhub.toml"), "127.0.0.1", 17999, true);

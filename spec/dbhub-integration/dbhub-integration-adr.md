@@ -36,13 +36,15 @@ Create a `Clio.Common.DbHub` service boundary with separately testable installer
 
 Each source owned by clio is wrapped in unique marker comments containing an encoded environment key and normalized source ID. The store parses all source IDs for conflict detection but replaces/removes only complete clio marker ranges. Candidate text is validated before commit. Mutations acquire an adjacent cross-process lock, refuse unsafe link/reparse targets, write UTF-8 without BOM to a sibling temp file, flush to disk, preserve ACL/Unix mode, then `File.Replace` or atomic move. Temp cleanup is guaranteed.
 
+dbHub 0.23.0 refuses to start or hot-reload a configuration with zero sources. When a configuration has none, clio adds a marked `clio_control` in-memory SQLite source. It is not an environment ownership mapping, carries no credentials, and remains when the last managed database source is removed so exact removal can hot-reload successfully.
+
 ### Connection discovery
 
-The source factory reads `ConnectionStrings.config` via `XDocument`, selects `dbPostgreSql` or `db`, then parses with `NpgsqlConnectionStringBuilder` or `Microsoft.Data.SqlClient.SqlConnectionStringBuilder`. It emits individual TOML fields so special characters are escaped correctly. Integrated SQL Server authentication returns a safe skip result. Secret-bearing DTOs never implement diagnostic `ToString` output and never enter logs/progress.
+The source factory reads `ConnectionStrings.config` via `XDocument`, selects `dbPostgreSql` or `db`, then parses with `NpgsqlConnectionStringBuilder` or `Microsoft.Data.SqlClient.SqlConnectionStringBuilder`. It emits individual TOML fields so special characters are escaped correctly. Npgsql `Prefer` is tightened to dbHub `require`, and `Allow` maps to `disable`, because dbHub 0.23.0 accepts no opportunistic TLS tokens. Integrated SQL Server authentication returns a safe skip result. Secret-bearing DTOs redact diagnostic `ToString` output and never enter logs/progress; legacy deploy completion output also no longer prints full connection strings.
 
 ### Installation
 
-`IDbHubInstallerService` validates Windows, loopback host, port availability, Node >=22.5/npm, and global npm state. Missing dbHub is installed exactly as `npm install -g @bytebase/dbhub@0.23.0`; existing official installations are adopted. `npm prefix -g` resolves the absolute `dbhub.cmd` shim. A testable scheduled-task manager creates/repairs current-user XML with `LogonTrigger`, `InteractiveToken`, `Hidden=true`, and explicit HTTP/host/port/config arguments. A compatible existing task/config is preserved. Health verification uses `GET /healthz`; MCP verification uses a valid Streamable HTTP POST.
+`IDbHubInstallerService` validates Windows, loopback host, port availability, Node >=22.5/npm, and global npm state. Missing dbHub is installed exactly as `npm install -g @bytebase/dbhub@0.23.0`; existing official installations are adopted. `npm prefix -g` resolves the package entry point and `where.exe` resolves Node, so the Scheduled Task invokes Node directly rather than a shell shim. A testable scheduled-task manager creates/repairs current-user XML with `LogonTrigger`, `InteractiveToken`, `Hidden=true`, and explicit HTTP/host/port/config arguments. A compatible existing task/config is preserved. Health verification uses `GET /healthz`; MCP verification uses a valid Streamable HTTP POST.
 
 ### Synchronization
 
@@ -50,7 +52,7 @@ The source factory reads `ConnectionStrings.config` via `XDocument`, selects `db
 
 ### Lifecycle and progress
 
-Deploy manifest adds conditional `sync-dbhub` after `wait-ready`. Uninstall adds conditional `remove-dbhub-source` after destructive cleanup and before `unregister`; path-only uninstall skips it. Integration failures call the generic `WarnStage`, log one warning, and complete via `success-with-warnings`, without a non-zero exit or failed-stage cascade. ClioRing mirrors/renders warning vocabulary and treats both success outcomes as environment-refresh success.
+Deploy manifest adds conditional `sync-dbhub-source` after `wait-ready`. Uninstall adds conditional `remove-dbhub-source` after destructive cleanup and before `unregister`; path-only uninstall skips it. Integration failures call the generic `WarnStage`, log one warning, and complete via `success-with-warnings`, without a non-zero exit or failed-stage cascade. ClioRing mirrors/renders warning vocabulary and treats both success outcomes as environment-refresh success.
 
 ## Files to Create
 

@@ -1,4 +1,7 @@
+using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using Clio.Common.DbHub;
 using Clio.Tests.Command;
 using Clio.UserEnvironment;
@@ -34,6 +37,7 @@ public sealed class DbHubSynchronizationServiceTests : BaseClioModuleTests {
 		_settingsRepository.GetDbHubSettings().Returns(EnabledSettings());
 		_httpClient.VerifySource(Arg.Any<DbHubSettings>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<bool>())
 			.Returns(new DbHubVerificationResult(true, true));
+		_httpClient.VerifyServer(Arg.Any<DbHubSettings>()).Returns(new DbHubVerificationResult(true, true));
 		_tomlStore.GetOwnedSources(Arg.Any<string>()).Returns(new DbHubOwnedSourcesResult([]));
 		_sut = Container.GetRequiredService<IDbHubSynchronizationService>();
 	}
@@ -90,6 +94,58 @@ public sealed class DbHubSynchronizationServiceTests : BaseClioModuleTests {
 	}
 
 	[Test]
+	[Description("Full reconciliation removes an old owned source when an environment becomes remote-only.")]
+	public void Synchronize_ShouldRemoveOwnedSource_WhenEnvironmentBecomesRemote() {
+		// Arrange
+		EnvironmentSettings environment = new();
+		_settingsRepository.GetAllEnvironments().Returns(new Dictionary<string, EnvironmentSettings> {
+			["remote"] = environment
+		});
+		_sourceFactory.Create("remote", environment).Returns(new DbHubSourceDiscoveryResult(null,
+			new DbHubWarning("Source skipped.", "The environment is remote-only.", "DBHUB_CONNECTION_CONFIG_UNAVAILABLE")));
+		_tomlStore.GetOwnedSources("dbhub.toml").Returns(new DbHubOwnedSourcesResult(["remote"]));
+		_tomlStore.Remove("dbhub.toml", "remote").Returns(new DbHubSyncResult(true, false));
+
+		// Act
+		DbHubSyncSummary result = _sut.Synchronize();
+
+		// Assert
+		result.Changed.Should().Be(1, because: "remote-only registrations are no longer eligible local sources");
+		_tomlStore.Received(1).Remove("dbhub.toml", "remote");
+	}
+
+	[Test]
+	[Description("Offline full reconciliation probes HTTP once and still commits every valid TOML source.")]
+	public void Synchronize_ShouldProbeOfflineServerOnce_AndContinueTomlUpdates() {
+		// Arrange
+		EnvironmentSettings firstEnvironment = new() { EnvironmentPath = "first" };
+		EnvironmentSettings secondEnvironment = new() { EnvironmentPath = "second" };
+		_settingsRepository.GetAllEnvironments().Returns(new Dictionary<string, EnvironmentSettings> {
+			["first"] = firstEnvironment,
+			["second"] = secondEnvironment
+		});
+		DbHubSourceDefinition first = Source("first");
+		DbHubSourceDefinition second = Source("second");
+		_sourceFactory.Create("first", firstEnvironment).Returns(new DbHubSourceDiscoveryResult(first));
+		_sourceFactory.Create("second", secondEnvironment).Returns(new DbHubSourceDiscoveryResult(second));
+		_tomlStore.Upsert("dbhub.toml", Arg.Any<DbHubSourceDefinition>())
+			.Returns(new DbHubSyncResult(true, false));
+		_httpClient.VerifyServer(Arg.Any<DbHubSettings>()).Returns(new DbHubVerificationResult(false, false,
+			new DbHubWarning("dbHub offline.", ErrorCode: "DBHUB_LIVE_VERIFICATION_SKIPPED")));
+
+		// Act
+		DbHubSyncSummary result = _sut.Synchronize();
+
+		// Assert
+		result.Changed.Should().Be(2, because: "offline live verification must not block valid TOML commits");
+		result.Warnings.Should().ContainSingle(warning => warning.ErrorCode == "DBHUB_LIVE_VERIFICATION_SKIPPED",
+			because: "one server probe is sufficient for the whole reconciliation run");
+		_httpClient.Received(1).VerifyServer(Arg.Any<DbHubSettings>());
+		_httpClient.DidNotReceive().VerifySource(Arg.Any<DbHubSettings>(), Arg.Any<string>(),
+			Arg.Any<bool>(), Arg.Any<bool>());
+	}
+
+	[Test]
 	[Description("A single-environment reconciliation never removes unrelated managed sources.")]
 	public void Synchronize_ShouldNotRemoveStaleSources_WhenEnvironmentSelected() {
 		// Arrange
@@ -124,6 +180,74 @@ public sealed class DbHubSynchronizationServiceTests : BaseClioModuleTests {
 	}
 
 	[Test]
+	[Description("Manual synchronization refuses a non-loopback endpoint configured outside the installer.")]
+	public void Synchronize_ShouldRefuseUnsafeEndpoint() {
+		// Arrange
+		_settingsRepository.GetDbHubSettings().Returns(EnabledSettings(host: "0.0.0.0"));
+
+		// Act
+		DbHubSyncSummary result = _sut.Synchronize();
+
+		// Assert
+		result.Warnings.Should().ContainSingle(warning => warning.ErrorCode == "DBHUB_UNSAFE_ENDPOINT",
+			because: "manual settings edits must not broaden the unauthenticated HTTP trust boundary");
+		_sourceFactory.DidNotReceive().Create(Arg.Any<string>(), Arg.Any<EnvironmentSettings>());
+	}
+
+	[Test]
+	[Description("Manual synchronization converts unexpected failures into a credential-safe summary.")]
+	public void Synchronize_ShouldReturnSafeSummary_WhenSettingsReadThrows() {
+		// Arrange
+		_settingsRepository.GetDbHubSettings().Returns(_ => throw new InvalidOperationException(
+			"Password=super-secret-value"));
+
+		// Act
+		DbHubSyncSummary result = _sut.Synchronize();
+
+		// Assert
+		result.Warnings.Should().ContainSingle(warning => warning.ErrorCode == "DBHUB_SYNC_FAILED",
+			because: "manual reconciliation should fail as a safe command result rather than an exception");
+		string warningText = string.Join(" ", result.Warnings.Select(warning =>
+			$"{warning.Message} {warning.Detail}"));
+		warningText.Should().NotContain("super-secret-value",
+			because: "settings failures can carry credential-shaped data in exception messages");
+	}
+
+	[Test]
+	[Description("Automatic deployment synchronization converts unexpected integration errors into safe warnings.")]
+	public void SynchronizeEnvironment_ShouldReturnSafeWarning_WhenDependencyThrows() {
+		// Arrange
+		_settingsRepository.GetAllEnvironments().Returns(_ => throw new InvalidOperationException(
+			"Password=super-secret-value"));
+
+		// Act
+		DbHubSyncResult result = _sut.SynchronizeEnvironment("dev");
+
+		// Assert
+		result.Warning.ErrorCode.Should().Be("DBHUB_AUTOMATIC_SYNC_FAILED",
+			because: "a best-effort lifecycle hook must retain primary deployment success");
+		$"{result.Warning.Message} {result.Warning.Detail}".Should().NotContain("super-secret-value",
+			because: "dependency exception text may contain connection secrets and must not escape");
+	}
+
+	[Test]
+	[Description("Automatic uninstall cleanup converts unexpected integration errors into safe warnings.")]
+	public void RemoveEnvironmentSource_ShouldReturnSafeWarning_WhenDependencyThrows() {
+		// Arrange
+		_tomlStore.Remove("dbhub.toml", "dev").Returns(_ => throw new IOException(
+			"Password=super-secret-value"));
+
+		// Act
+		DbHubSyncResult result = _sut.RemoveEnvironmentSource("dev");
+
+		// Assert
+		result.Warning.ErrorCode.Should().Be("DBHUB_AUTOMATIC_SYNC_FAILED",
+			because: "a best-effort lifecycle hook must retain primary uninstall success");
+		$"{result.Warning.Message} {result.Warning.Detail}".Should().NotContain("super-secret-value",
+			because: "filesystem exception text may contain sensitive local data and must not escape");
+	}
+
+	[Test]
 	[Description("Normalization collisions skip both environments instead of overwriting one source.")]
 	public void Synchronize_ShouldSkipNormalizationCollisions() {
 		// Arrange
@@ -149,10 +273,11 @@ public sealed class DbHubSynchronizationServiceTests : BaseClioModuleTests {
 	private static DbHubSourceDefinition Source(string environment) => new(environment, environment, "postgres",
 		"localhost", 5432, "creatio", "app", "secret");
 
-	private static DbHubSettings EnabledSettings(bool withAutomaticSync = true) => new() {
+	private static DbHubSettings EnabledSettings(bool withAutomaticSync = true,
+		string host = DbHubSettings.DefaultHost) => new() {
 		Enabled = true,
 		ConfigPath = "dbhub.toml",
-		Host = DbHubSettings.DefaultHost,
+		Host = host,
 		Port = DbHubSettings.DefaultPort,
 		SyncLocalEnvironments = withAutomaticSync
 	};

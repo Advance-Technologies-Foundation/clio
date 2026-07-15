@@ -55,6 +55,8 @@ clio install-dbhub --sync-local-environments false
 
 - Installs exactly the dbHub version pinned by this clio release.
 - Validates existing TOML before changing installation state.
+- Adds a harmless in-memory SQLite `clio_control` source only when a configuration has no sources;
+  dbHub 0.23.0 requires at least one source to start and hot-reload.
 - Creates or repairs a hidden, least-privilege, current-user logon task.
 - Verifies `/healthz` and the MCP initialize handshake.
 - Persists settings only after verification succeeds.

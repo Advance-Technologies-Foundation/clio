@@ -31,6 +31,12 @@ internal sealed class SandboxSettings {
 	public string? EnvironmentName { get; set; }
 
 	/// <summary>
+	/// Requires the destructive uninstall sandbox to assert the conditional dbHub source-removal stage.
+	/// Enable only with an isolated CLIO_HOME whose dbHub integration is configured for the disposable environment.
+	/// </summary>
+	public bool RequireDbHubLifecycle { get; set; }
+
+	/// <summary>
 	/// When set, the harness re-registers the sandbox env at this URL via reg-web-app before tests,
 	/// so it targets the freshly-deployed stand instead of a stale registration.
 	/// In CI set via <c>McpE2E__Sandbox__EnvironmentUrl=%DeployedUrl%</c>.

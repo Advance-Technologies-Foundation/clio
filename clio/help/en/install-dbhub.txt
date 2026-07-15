@@ -43,6 +43,8 @@ EXAMPLES
 BEHAVIOR
     - Installs exactly the dbHub version pinned by this clio release.
     - Validates existing TOML before changing installation state.
+    - Adds an in-memory SQLite clio_control source only when the TOML has no
+      sources, because dbHub 0.23.0 requires one to start and hot-reload.
     - Creates or repairs a hidden least-privilege current-user logon task.
     - Verifies /healthz and the MCP initialize handshake.
     - Persists dbHub settings only after verification succeeds.

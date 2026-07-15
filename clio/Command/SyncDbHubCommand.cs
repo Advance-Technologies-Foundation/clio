@@ -29,6 +29,8 @@ public sealed class SyncDbHubCommand(IDbHubSynchronizationService synchronizatio
 				: $"{warning.Message} {warning.Detail}");
 		}
 		_logger.WriteInfo($"dbHub synchronization completed: {summary.Changed} changed, {summary.Unchanged} unchanged, {summary.Skipped} skipped.");
-		return summary.Warnings.Any(warning => warning.ErrorCode == "DBHUB_NOT_CONFIGURED") ? 1 : 0;
+		return summary.Warnings.Any(warning => warning.ErrorCode is "DBHUB_NOT_CONFIGURED"
+			or "DBHUB_UNSAFE_ENDPOINT" or "DBHUB_SYNC_FAILED" or "DBHUB_ENVIRONMENT_NOT_FOUND"
+			or "DBHUB_CONFIG_UPDATE_FAILED") ? 1 : 0;
 	}
 }

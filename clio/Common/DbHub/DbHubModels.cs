@@ -56,7 +56,13 @@ public sealed record DbHubSourceDefinition(
 	string Password,
 	string InstanceName = null,
 	string SslMode = null,
-	string SslRootCertificate = null);
+	string SslRootCertificate = null) {
+	/// <summary>Returns a diagnostic representation with credential fields redacted.</summary>
+	public override string ToString() =>
+		$"DbHubSourceDefinition {{ EnvironmentName = {EnvironmentName}, SourceId = {SourceId}, Type = {Type}, "
+		+ $"Host = {Host}, Port = {Port}, Database = {Database}, User = [redacted], Password = [redacted], "
+		+ $"InstanceName = {InstanceName}, SslMode = {SslMode}, SslRootCertificate = {SslRootCertificate} }}";
+}
 
 /// <summary>Safe source-discovery outcome.</summary>
 public sealed record DbHubSourceDiscoveryResult(DbHubSourceDefinition Source, DbHubWarning Warning = null) {

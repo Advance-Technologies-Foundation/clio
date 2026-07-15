@@ -561,12 +561,13 @@ live, GitHub-Actions-style step list instead of parsing log lines. The stream is
 - one `manifest` event up front listing every stage that will run, in order;
 - a `stage` event per transition (`running` → `done` / `failed` / `warning` / `skipped`, carrying
   `index` / `total` / `durationMs`);
-- one terminal `run-completed` event with `outcome` = `success` / `failure`.
+- one terminal `run-completed` event with `outcome` = `success` / `success-with-warnings` / `failure`.
 
 Deploy stages: `stage-build` (network-source only; otherwise `skipped` `not-applicable`) →
 `unzip` → `copy-files` → `restore-db` → `deploy-app` → `configure-conn-strings` →
-`register-env` → `wait-ready`. Uninstall stages: `read-config` → `stop-iis` → `delete-iis` →
-`drop-db` → `delete-files` → conditional `delete-apppool-profile` → `unregister` (final).
+`register-env` → `wait-ready` → conditional `sync-dbhub-source`. Uninstall stages: `read-config` →
+`stop-iis` → `delete-iis` → `drop-db` → `delete-files` → conditional `delete-apppool-profile` →
+conditional `remove-dbhub-source` → `unregister` (final).
 The profile stage resolves only the registered `IIS APPPOOL\<name>` SID/profile. Missing and
 non-Windows profiles are `skipped` `not-applicable`; exhausted deletion retries emit `warning`
 with `APPPOOL_PROFILE_DELETE_FAILED`, while the tool keeps exit code 0, returns `IsError=false`,
@@ -574,6 +575,9 @@ and terminates with `success-with-warnings`; the warning stage retains the detai
 The target IIS site/application is validated before removal. Pool assignments are rechecked after
 target deletion; a pool still used by another application and its Windows profile are preserved,
 and the profile stage is `skipped` `not-applicable`.
+dbHub lifecycle stages are included only when automatic local synchronization is enabled. TOML
+mutation is best effort: offline hot-reload verification emits `warning` and retains the primary
+deploy/uninstall success; a failed primary operation never adds/removes the source.
 Failure is honest: a stage that fails is emitted `failed`, the remaining stages `skipped`
 (`after-failure`), and the run ends `run-completed` `failure` — a non-zero stage result is
 never masked as success. The envelope is stamped with `schemaVersion` (currently `1`), is

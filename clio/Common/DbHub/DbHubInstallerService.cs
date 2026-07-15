@@ -10,7 +10,6 @@ using System.Threading;
 using System.Xml.Linq;
 using Newtonsoft.Json.Linq;
 using Tomlyn;
-using Tomlyn.Model;
 
 namespace Clio.Common.DbHub;
 
@@ -30,13 +29,15 @@ public interface IDbHubScheduledTaskManager {
 public sealed class DbHubInstallerService(
 	IProcessExecutor processExecutor,
 	IDbHubScheduledTaskManager scheduledTaskManager,
-	IDbHubHttpClient httpClient) : IDbHubInstallerService {
+	IDbHubHttpClient httpClient,
+	IDbHubAtomicFileWriter atomicFileWriter) : IDbHubInstallerService {
 	/// <summary>Exact dbHub version installed by this clio release.</summary>
 	public const string PinnedDbHubVersion = "0.23.0";
 	private static readonly Version MinimumNodeVersion = new(22, 5);
 	private readonly IProcessExecutor _processExecutor = processExecutor;
 	private readonly IDbHubScheduledTaskManager _scheduledTaskManager = scheduledTaskManager;
 	private readonly IDbHubHttpClient _httpClient = httpClient;
+	private readonly IDbHubAtomicFileWriter _atomicFileWriter = atomicFileWriter;
 
 	/// <inheritdoc />
 	public DbHubInstallationResult InstallOrRepair(DbHubInstallRequest request) {
@@ -129,29 +130,30 @@ public sealed class DbHubInstallerService(
 		return result;
 	}
 
-	private static bool EnsureConfigFile(string path, out string error) {
+	private bool EnsureConfigFile(string path, out string error) {
 		error = null;
 		try {
-			if (File.Exists(path)) {
+			FileInfo info = new(path);
+			if (info.LinkTarget is not null
+				|| (info.Exists && info.Attributes.HasFlag(FileAttributes.ReparsePoint))) {
+				error = "The dbHub TOML path resolves through a symbolic link or reparse point and was refused.";
+				return false;
+			}
+			if (info.Exists) {
 				string content = File.ReadAllText(path, Encoding.UTF8);
-				if (!string.IsNullOrWhiteSpace(content)) {
-					_ = TomlSerializer.Deserialize<TomlTable>(content);
+				string runnable = DbHubTomlStore.EnsureRunnableContent(content);
+				if (!string.Equals(content, runnable, StringComparison.Ordinal)) {
+					_atomicFileWriter.Commit(path, runnable);
 				}
 				return true;
 			}
 			Directory.CreateDirectory(Path.GetDirectoryName(path) ?? Environment.CurrentDirectory);
-			using FileStream stream = new(path, new FileStreamOptions {
-				Mode = FileMode.CreateNew,
-				Access = FileAccess.Write,
-				Share = FileShare.Read
-			});
-			using StreamWriter writer = new(stream, new UTF8Encoding(false), leaveOpen: true);
-			writer.WriteLine("# dbHub configuration managed jointly by the user and clio.");
-			writer.Flush();
-			stream.Flush(flushToDisk: true);
+			string initial = DbHubTomlStore.EnsureRunnableContent(
+				"# dbHub configuration managed jointly by the user and clio.\n");
+			_atomicFileWriter.Commit(path, initial);
 			return true;
 		}
-		catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+		catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException
 			or TomlException or InvalidOperationException) {
 			error = "The dbHub TOML file could not be created, read, or validated.";
 			return false;
@@ -210,7 +212,8 @@ public sealed class DbHubScheduledTaskManager(IProcessExecutor processExecutor) 
 	public bool EnsureAndStart(string nodePath, string dbHubEntryPath, DbHubSettings settings, out string error) {
 		error = null;
 		try {
-			string taskName = TaskExists(LegacyTaskName) ? LegacyTaskName : TaskName;
+			(string taskName, string redundantTaskName) = SelectTaskNames(
+				TaskExists(LegacyTaskName), TaskExists(TaskName));
 			string taskDirectory = Path.Combine(SettingsRepository.AppSettingsFolderPath, "dbhub");
 			Directory.CreateDirectory(taskDirectory);
 			string xmlPath = Path.Combine(taskDirectory, "dbhub-task.xml");
@@ -219,6 +222,11 @@ public sealed class DbHubScheduledTaskManager(IProcessExecutor processExecutor) 
 			ProcessExecutionResult create = Run($"/Create /TN {Quote(taskName)} /XML {Quote(xmlPath)} /F");
 			if (!Succeeded(create)) {
 				error = "The current-user dbHub Scheduled Task could not be created or repaired.";
+				return false;
+			}
+			if (redundantTaskName is not null
+				&& !Succeeded(Run($"/Delete /TN {Quote(redundantTaskName)} /F"))) {
+				error = "A redundant clio dbHub Scheduled Task could not be removed safely.";
 				return false;
 			}
 			_ = Run($"/Run /TN {Quote(taskName)}");
@@ -230,6 +238,11 @@ public sealed class DbHubScheduledTaskManager(IProcessExecutor processExecutor) 
 			return false;
 		}
 	}
+
+	internal static (string Active, string Redundant) SelectTaskNames(bool legacyExists, bool canonicalExists) =>
+		legacyExists
+			? (LegacyTaskName, canonicalExists ? TaskName : null)
+			: (TaskName, null);
 
 	internal static XDocument CreateTaskDocument(string nodePath, string dbHubEntryPath, DbHubSettings settings) {
 		XNamespace ns = "http://schemas.microsoft.com/windows/2004/02/mit/task";

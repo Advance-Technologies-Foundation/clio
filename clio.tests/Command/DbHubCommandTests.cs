@@ -73,6 +73,40 @@ public sealed class InstallDbHubCommandTests : BaseCommandTests<InstallDbHubOpti
 		_settingsRepository.DidNotReceive().SetDbHubSettings(Arg.Any<DbHubSettings>());
 		_logger.Received(1).WriteError("failed");
 	}
+
+	[Test]
+	[Description("Rejects an invalid config path with a stable command error instead of throwing.")]
+	public void Execute_ShouldReturnFailure_WhenConfigPathIsInvalid() {
+		// Arrange
+		InstallDbHubOptions options = new() { ConfigPath = "invalid\0path" };
+
+		// Act
+		int result = _sut.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "invalid user input must produce a scriptable command failure");
+		_logger.Received(1).WriteError("The dbHub config path is invalid.");
+		_installerService.DidNotReceive().InstallOrRepair(Arg.Any<DbHubInstallRequest>());
+	}
+
+	[Test]
+	[Description("Reports a partial installation when verified dbHub settings cannot be persisted.")]
+	public void Execute_ShouldReturnFailure_WhenSettingsPersistenceFails() {
+		// Arrange
+		DbHubSettings settings = new() { Enabled = true, ConfigPath = "dbhub.toml" };
+		_installerService.InstallOrRepair(Arg.Any<DbHubInstallRequest>())
+			.Returns(new DbHubInstallationResult(true, "healthy", settings));
+		_settingsRepository.When(repository => repository.SetDbHubSettings(settings))
+			.Do(_ => throw new System.IO.IOException("disk unavailable"));
+
+		// Act
+		int result = _sut.Execute(new InstallDbHubOptions { ConfigPath = "dbhub.toml" });
+
+		// Assert
+		result.Should().Be(1, because: "scripts must see that installation did not complete all persisted state");
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("could not persist") && message.Contains("rerun install-dbhub")));
+	}
 }
 
 [TestFixture]
@@ -118,17 +152,21 @@ public sealed class SyncDbHubCommandTests : BaseCommandTests<SyncDbHubOptions> {
 		_logger.Received(1).WriteInfo("dbHub synchronization completed: 1 changed, 0 unchanged, 1 skipped.");
 	}
 
-	[Test]
-	[Description("Returns an error when dbHub integration has not been configured.")]
-	public void Execute_ShouldFail_WhenDbHubNotConfigured() {
+	[TestCase("DBHUB_NOT_CONFIGURED")]
+	[TestCase("DBHUB_UNSAFE_ENDPOINT")]
+	[TestCase("DBHUB_SYNC_FAILED")]
+	[TestCase("DBHUB_ENVIRONMENT_NOT_FOUND")]
+	[TestCase("DBHUB_CONFIG_UPDATE_FAILED")]
+	[Description("Returns an error when manual reconciliation cannot run safely.")]
+	public void Execute_ShouldFail_WhenReconciliationCannotRun(string errorCode) {
 		// Arrange
 		_synchronizationService.Synchronize(null).Returns(new DbHubSyncSummary(0, 0, 1,
-			[new DbHubWarning("not configured", ErrorCode: "DBHUB_NOT_CONFIGURED")]));
+			[new DbHubWarning("reconciliation failed", ErrorCode: errorCode)]));
 
 		// Act
 		int result = _sut.Execute(new SyncDbHubOptions());
 
 		// Assert
-		result.Should().Be(1, because: "scripts need to distinguish missing installation from source skips");
+		result.Should().Be(1, because: "scripts need to distinguish unsafe command failures from source skips");
 	}
 }

@@ -61,6 +61,22 @@ public sealed class DbHubHttpClientTests : BaseClioModuleTests {
 	}
 
 	[Test]
+	[Description("Server verification rejects an HTTP-successful MCP JSON-RPC error response.")]
+	public void VerifyServer_ShouldRejectMcpErrorEnvelope() {
+		// Arrange
+		_handler.Responses.Enqueue(new HttpResponseMessage(HttpStatusCode.OK));
+		_handler.Responses.Enqueue(JsonResponse(
+			"{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32601,\"message\":\"method missing\"}}"));
+
+		// Act
+		DbHubVerificationResult result = _sut.VerifyServer(Settings());
+
+		// Assert
+		result.Verified.Should().BeFalse(
+			because: "HTTP 200 does not prove the dbHub endpoint completed MCP initialization");
+	}
+
+	[Test]
 	[Description("Source verification recognizes source-scoped tools returned by dbHub hot reload.")]
 	public void VerifySource_ShouldRecognizeSourceScopedTool() {
 		// Arrange
@@ -88,6 +104,21 @@ public sealed class DbHubHttpClientTests : BaseClioModuleTests {
 		result.Verified.Should().BeFalse(because: "the HTTP request failed");
 		$"{result.Warning.Message} {result.Warning.Detail}".Should().NotContain("secret-host",
 			because: "transport exceptions may contain sensitive endpoint details");
+	}
+
+	[Test]
+	[Description("Refuses live verification when settings point outside the loopback trust boundary.")]
+	public void VerifyServer_ShouldRefuseNonLoopbackEndpoint() {
+		// Arrange
+		DbHubSettings settings = Settings();
+		settings.Host = "db.internal.example";
+
+		// Act
+		DbHubVerificationResult result = _sut.VerifyServer(settings);
+
+		// Assert
+		result.Verified.Should().BeFalse(because: "dbHub's unauthenticated HTTP transport is local-only");
+		_httpClientFactory.DidNotReceive().CreateClient(Arg.Any<string>());
 	}
 
 	private static DbHubSettings Settings() => new() { Host = "127.0.0.1", Port = 17998 };

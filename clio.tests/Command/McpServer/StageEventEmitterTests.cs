@@ -401,7 +401,7 @@ public class StageEventEmitterTests {
 
 		// Act
 		emitter.CompleteSuccessWithWarnings("Uninstall completed with warnings", "Access is denied",
-			"APPPOOL_PROFILE_DELETE_FAILED", @"C:\inetpub\wwwroot\work");
+			"APPPOOL_PROFILE_DELETE_FAILED", @"C:\inetpub\wwwroot\work", "http://127.0.0.1:5000");
 
 		// Assert
 		ClioRunCompleted terminal = events.Last().RunCompleted!;
@@ -409,5 +409,9 @@ public class StageEventEmitterTests {
 			because: "consumers need an explicit successful terminal that preserves the warning outcome");
 		terminal.ErrorCode.Should().Be("APPPOOL_PROFILE_DELETE_FAILED",
 			because: "the warning remains machine-classifiable at terminal completion");
+		terminal.DerivedPath.Should().Be(@"C:\inetpub\wwwroot\work",
+			because: "warning completion must preserve the path produced by the primary operation");
+		terminal.DerivedUrl.Should().Be("http://127.0.0.1:5000",
+			because: "warning completion must preserve the URL produced by the primary operation");
 	}
 }

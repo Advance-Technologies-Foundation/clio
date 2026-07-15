@@ -262,6 +262,7 @@ BEHAVIOR
     - WITH --db-server-name: Restores database to local server from appsettings.json
     - Database is extracted from db/*.bak (MSSQL) or db/*.backup (PostgreSQL) in zip
     - Connection strings are automatically updated to point to target database
+    - Database and Redis connection values are never printed in command output
     - PostgreSQL/MSSQL native restore output is written into the temp database
       operation log artifact
 
@@ -465,6 +466,12 @@ TROUBLESHOOTING
        - Subsequent deployments with same zip file reuse the template
        - Templates are identified by original zip filename in metadata
        - You can safely ignore these informational messages
+
+DBHUB SYNCHRONIZATION
+    When automatic dbHub synchronization is enabled by install-dbhub, a successful local
+    deployment reconciles its database source only after readiness succeeds. TOML or live
+    verification problems are reported as non-fatal warnings; deployment still succeeds.
+    Database passwords and full connection strings are never written to output.
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio

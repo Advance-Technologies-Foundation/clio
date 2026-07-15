@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
+using Clio.Command.CreatioInstallCommand;
 using Clio.Command.McpServer.Progress;
+using Clio.Common;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -93,26 +95,69 @@ public class ClioStageEventContractTests {
 		// Arrange
 		string[] expectedDeploy = [
 			"stage-build", "unzip", "copy-files", "restore-db",
-			"deploy-app", "configure-conn-strings", "register-env", "wait-ready"
+			"deploy-app", "configure-conn-strings", "register-env", "wait-ready", "sync-dbhub-source"
 		];
 		string[] expectedUninstall = [
 			"read-config", "stop-iis", "delete-iis", "drop-db",
-			"delete-files", "unregister", "delete-apppool-profile"
+			"delete-files", "unregister", "delete-apppool-profile", "remove-dbhub-source"
 		];
 
 		// Act
 		string[] actualDeploy = [
 			StageIds.StageBuild, StageIds.Unzip, StageIds.CopyFiles, StageIds.RestoreDb,
-			StageIds.DeployApp, StageIds.ConfigureConnStrings, StageIds.RegisterEnv, StageIds.WaitReady
+			StageIds.DeployApp, StageIds.ConfigureConnStrings, StageIds.RegisterEnv, StageIds.WaitReady,
+			StageIds.SyncDbHubSource
 		];
 		string[] actualUninstall = [
 			StageIds.ReadConfig, StageIds.StopIis, StageIds.DeleteIis, StageIds.DropDb,
-			StageIds.DeleteFiles, StageIds.Unregister, StageIds.DeleteApppoolProfile
+			StageIds.DeleteFiles, StageIds.Unregister, StageIds.DeleteApppoolProfile, StageIds.RemoveDbHubSource
 		];
 
 		// Assert
 		actualDeploy.Should().Equal(expectedDeploy, "because deploy stage ids are stable kebab-case string keys, not enum ordinals");
 		actualUninstall.Should().Equal(expectedUninstall, "because uninstall stage ids are stable kebab-case string keys, not enum ordinals");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The uninstall manifest inserts dbHub removal after cleanup and before unregister only when enabled.")]
+	public void BuildUninstallManifest_ShouldInsertDbHubStageBeforeUnregister_WhenAutomaticSynchronizationEnabled() {
+		// Arrange
+		IReadOnlyList<StageDescriptor> defaultManifest = CreatioUninstaller.BuildUninstallManifest(
+			includeProfileStage: false);
+
+		// Act
+		IReadOnlyList<StageDescriptor> enabledManifest = CreatioUninstaller.BuildUninstallManifest(
+			includeProfileStage: false, includeDbHubRemoval: true);
+
+		// Assert
+		defaultManifest.Should().NotContain(stage => stage.StageId == StageIds.RemoveDbHubSource,
+			because: "disabled automatic synchronization must not alter the uninstall manifest");
+		enabledManifest[^2].Should().Be(
+			new StageDescriptor(StageIds.RemoveDbHubSource, "Remove dbHub source", true),
+			because: "source removal must run after destructive cleanup and immediately before unregister");
+		enabledManifest[^1].StageId.Should().Be(StageIds.Unregister,
+			because: "environment unregister remains the final uninstall stage");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The deploy manifest appends dbHub synchronization only when automatic synchronization is enabled.")]
+	public void BuildDeployManifest_ShouldAppendDbHubStage_WhenAutomaticSynchronizationEnabled() {
+		// Arrange
+		IReadOnlyList<StageDescriptor> defaultManifest = CreatioInstallerService.BuildDeployManifest();
+
+		// Act
+		IReadOnlyList<StageDescriptor> enabledManifest = CreatioInstallerService.BuildDeployManifest(
+			includeDbHubSync: true);
+
+		// Assert
+		defaultManifest.Should().NotContain(stage => stage.StageId == StageIds.SyncDbHubSource,
+			because: "disabled dbHub integration must not alter the public deploy manifest");
+		enabledManifest.Should().HaveCount(defaultManifest.Count + 1,
+			because: "automatic dbHub synchronization contributes one lifecycle stage");
+		enabledManifest[^1].Should().Be(new StageDescriptor(StageIds.SyncDbHubSource, "Synchronize dbHub source", true),
+			because: "source synchronization runs only after deployment readiness succeeds");
 	}
 
 	[Test]

@@ -102,6 +102,16 @@ public sealed class UninstallCreatioWarningE2ETests {
 				because: "Ring needs the explicit warning stage and stable error code");
 			events[^1].RunCompleted!.Outcome.Should().Be(ClioStageEventContract.RunOutcomes.SuccessWithWarnings,
 				because: "the terminal contract must distinguish successful completion with retained warnings");
+			if (settings.Sandbox.RequireDbHubLifecycle) {
+				string[] manifest = events[0].Stages!.Select(stage => stage.StageId).ToArray();
+				manifest.Should().ContainInOrder(
+					[StageIds.DeleteFiles, StageIds.RemoveDbHubSource, StageIds.Unregister],
+					because: "the opted-in dbHub lifecycle proof requires removal after cleanup and before unregister");
+				events.Should().Contain(stageEvent => stageEvent.Stage != null
+					&& stageEvent.Stage.StageId == StageIds.RemoveDbHubSource
+					&& stageEvent.Stage.Status == ClioStageEventContract.StageStatuses.Done,
+					because: "the live dbHub server must hot-reload the exact source removal successfully");
+			}
 		}
 		finally {
 			if (!uninstallCompleted) {
