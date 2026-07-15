@@ -31,7 +31,7 @@ public sealed class ClientUnitSchemaCreateTool(
 			Login = args.Login,
 			Password = args.Password
 		};
-		return ExecuteWithCleanLog(() => {
+		return ExecuteWithCleanLog(options, () => {
 			ClientUnitSchemaCreateCommand resolvedCommand;
 			try {
 				resolvedCommand = ResolveCommand<ClientUnitSchemaCreateCommand>(options);

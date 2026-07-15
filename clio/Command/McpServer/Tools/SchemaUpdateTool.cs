@@ -36,7 +36,7 @@ public sealed class SchemaUpdateTool(
 			Login = args.Login,
 			Password = args.Password
 		};
-		return ExecuteWithCleanLog(() => {
+		return ExecuteWithCleanLog(options, () => {
 			SourceCodeSchemaUpdateCommand resolvedCommand;
 			try {
 				resolvedCommand = ResolveCommand<SourceCodeSchemaUpdateCommand>(options);

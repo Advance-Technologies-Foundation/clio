@@ -33,7 +33,7 @@ public sealed class GetSchemaTool(
 			Login = args.Login,
 			Password = args.Password
 		};
-		return ExecuteWithCleanLog(() => {
+		return ExecuteWithCleanLog(options, () => {
 			GetSourceCodeSchemaCommand resolvedCommand;
 			try {
 				resolvedCommand = ResolveCommand<GetSourceCodeSchemaCommand>(options);

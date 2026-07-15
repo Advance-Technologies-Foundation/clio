@@ -214,6 +214,36 @@ internal class RemoteEntitySchemaColumnManagerTests
 	}
 
 	[Test]
+	[Description("Verifies the final batch state when an ordered remove is followed by an add of the same column name.")]
+	public void ModifyColumns_ShouldVerifyFinalState_WhenRemovedColumnIsReaddedInSameBatch() {
+		// Arrange
+		const string columnName = "UsrExternalRecordId";
+		_loadedSchema = CreateSchema(columns: [
+			CreateGuidColumn("Id", IdColumnUId),
+			CreateGuidColumn(columnName, CodeColumnUId)
+		]);
+		SetupLoadedSchema();
+		ModifyEntitySchemaColumnOptions[] batch = [
+			new() {
+				Package = "UsrPkg", SchemaName = "UsrVehicle", Action = "remove", ColumnName = columnName
+			},
+			new() {
+				Package = "UsrPkg", SchemaName = "UsrVehicle", Action = "add", ColumnName = columnName,
+				Type = "Guid", Title = "External record Id"
+			}
+		];
+
+		// Act
+		Action act = () => _manager.ModifyColumns(batch);
+
+		// Assert
+		act.Should().NotThrow(
+			because: "verification must evaluate the final ordered batch state instead of requiring an intermediate removal to remain visible");
+		_savedSchema.Columns.Should().ContainSingle(column => column.Name == columnName,
+			because: "the later add should leave exactly one final column with the re-used name");
+	}
+
+	[Test]
 	[Description("Succeeds with a warning when the OData rebuild request fails, because a rebuild-request fault must not fail an already-saved column change.")]
 	public void ModifyColumn_SucceedsWithWarning_WhenODataRebuildRequestFails() {
 		// Arrange

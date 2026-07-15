@@ -135,6 +135,9 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		schema.Columns ??= [];
 		schema.Indexes ??= [];
 		schema.InheritedColumns ??= [];
+		if (options.IsVirtual) {
+			schema.IsVirtual = true;
+		}
 		NormalizeAdministrationMetadata(schema);
 
 		Dictionary<string, ManagerItemDto> referenceSchemas = parsedColumns.Any(c => c.IsLookup)
@@ -154,7 +157,9 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		}
 
 		schema.Columns = columns;
-		schema.PrimaryColumn = columns.FirstOrDefault(column => column.IsGuidType()) ?? schema.PrimaryColumn;
+		if (!schema.ParentSchema.HasValue()) {
+			schema.PrimaryColumn = columns.FirstOrDefault(column => column.IsGuidType()) ?? schema.PrimaryColumn;
+		}
 		schema.PrimaryDisplayColumn ??= columns.FirstOrDefault(column => column.IsTextType());
 	}
 

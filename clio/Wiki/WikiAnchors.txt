@@ -27,6 +27,7 @@ component-registry-refresh:component-registry-refresh,component-registry
 get-component-info:get-component-info,component-info
 get-user-culture:get-user-culture,profile-language
 compressApp:compressApp,comp-app
+config:config
 create-app:create-app
 create-app-section:create-app-section
 create-data-binding:create-data-binding
@@ -101,6 +102,7 @@ idp-unbind:idp-unbind
 idp-upsert:idp-upsert
 info:info,get-version,i,ver
 install-application:install-application,install-app,push-app
+install-dbhub:install-dbhub
 install-gate:install-gate,gate,installgate,update-gate
 install-nuget-pkg:install-nuget-pkg,installng
 install-toolkit:install-toolkit
@@ -121,6 +123,7 @@ modify-entity-schema-column:modify-entity-schema-column
 modify-user-task-parameters:modify-user-task-parameters
 new-pkg:new-pkg,init
 new-test-project:new-test-project,create-test-project,unit-test
+new-integration-test-project:new-integration-test-project,integration-test
 new-ui-project:new-ui-project,create-ui-project,createup,new-ui,ui,uiproject
 open-k8-files:open-k8-files,cfg-k8,cfg-k8f,cfg-k8s
 open-settings:open-settings,conf,configuration,os,settings
@@ -132,6 +135,8 @@ list-pages:list-pages,page-list
 update-page:update-page,page-update
 create-page:create-page,page-create
 list-page-templates:list-page-templates,page-templates,page-templates-list
+create-related-page-addon:create-related-page-addon,related-page-addon,set-related-pages
+get-related-page-addon:get-related-page-addon,related-page-addon-get,get-related-pages
 ping-app:ping-app,ping
 pkg-hotfix:pkg-hotfix,hf,hotfix
 pkg-to-db:pkg-to-db,2db,todb
@@ -143,6 +148,7 @@ push-pkg:push-pkg,install,push
 push-workspace:push-workspace,pushw
 reg-web-app:reg-web-app,cfg,reg
 register:register
+ring:ring
 remove-data-binding-row:remove-data-binding-row
 remove-data-binding-row-db:remove-data-binding-row-db
 restart-web-app:restart-web-app,restart
@@ -166,6 +172,7 @@ show-local-envs:show-local-envs,localenvs
 show-package-file-content:show-package-file-content,files,show-files
 list-environments:list-environments,show-web-app-list,env,envs,show-web-app
 start:start,sc,start-creatio,start-server
+sync-dbhub:sync-dbhub
 stop:stop,stop-creatio
 switch-nuget-to-dll-reference:switch-nuget-to-dll-reference,nuget2dll
 turn-farm-mode:turn-farm-mode,farm-mode,tfm

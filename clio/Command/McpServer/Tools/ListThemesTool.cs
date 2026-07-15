@@ -26,6 +26,7 @@ public class ListThemesTool(
 	/// <summary>Lists the custom themes available on the target environment as a structured result.</summary>
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false),
 	 Description("List the custom Creatio themes available on a registered environment. " +
+		"Requires Creatio " + ThemeServiceRequirement.MinVersion + " or later on the target environment. " +
 		"Returns { success, themes:[{ id, caption, cssClassName, cssFilePath }], error? }. " +
 		"An empty themes array means the catalog is empty or the caller lacks the CanCustomizeBranding license. " +
 		"For the theme workflow, read get-guidance theming first.")]
@@ -48,27 +49,20 @@ public class ListThemesTool(
 	}
 
 	private ListThemesResult Execute(ListThemesOptions options) {
-		return ExecuteWithCleanLog(() => {
-			ListThemesCommand resolvedCommand;
-			try {
-				resolvedCommand = ResolveCommand<ListThemesCommand>(options);
-			}
-			catch (Exception ex) {
-				return ListThemesResult.Failure(ex.Message);
-			}
-			try {
+		return ExecuteResolved<ListThemesCommand, ListThemesResult>(options,
+			resolvedCommand => {
 				if (!resolvedCommand.TryGetAvailableThemes(options,
 						out IReadOnlyList<ThemeDescriptor> themes, out string errorMessage)) {
+					// Review (b-horodyskyi): errorMessage can carry a server-supplied ThemeService error body
+					// (ThemeServiceResponseParser/ThemeServiceResponse), so redact it the same as an exception
+					// message before it crosses into the MCP client transcript.
 					return ListThemesResult.Failure(string.IsNullOrWhiteSpace(errorMessage)
 						? "GetAvailableThemes returned success=false."
-						: errorMessage);
+						: SensitiveErrorTextRedactor.Redact(errorMessage));
 				}
 				return ListThemesResult.Successful(themes);
-			}
-			catch (Exception ex) {
-				return ListThemesResult.Failure(ex.Message);
-			}
-		});
+			},
+			ListThemesResult.Failure);
 	}
 }
 

@@ -34,6 +34,7 @@ public class CreateThemeTool(
 	/// <summary>Creates the theme on the target environment and returns a structured result carrying the effective theme id.</summary>
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false),
 	 Description("Create a custom Creatio theme on a registered environment via the native ThemeService. " +
+		"Requires Creatio " + ThemeServiceRequirement.MinVersion + " or later on the target environment. " +
 		"Returns { success, id, error? } where id is the created theme's id, auto-generated when omitted. " +
 		"Only inline CSS content is accepted; to supply CSS from a file, use the clio CLI (--css-content-file) instead. " +
 		"For the theme workflow, read get-guidance theming first.")]
@@ -65,26 +66,19 @@ public class CreateThemeTool(
 	}
 
 	private CreateThemeResult Execute(CreateThemeOptions options) {
-		return ExecuteWithCleanLog(() => {
-			CreateThemeCommand resolvedCommand;
-			try {
-				resolvedCommand = ResolveCommand<CreateThemeCommand>(options);
-			}
-			catch (Exception ex) {
-				return CreateThemeResult.Failure(ex.Message);
-			}
-			try {
+		return ExecuteResolved<CreateThemeCommand, CreateThemeResult>(options,
+			resolvedCommand => {
 				if (!resolvedCommand.TryCreateTheme(options, out string createdId, out string errorMessage)) {
+					// Review (b-horodyskyi): errorMessage can carry a server-supplied ThemeService error body
+					// (ThemeServiceResponseParser/ThemeServiceResponse), so redact it the same as an exception
+					// message before it crosses into the MCP client transcript.
 					return CreateThemeResult.Failure(string.IsNullOrWhiteSpace(errorMessage)
 						? "CreateTheme returned success=false."
-						: errorMessage);
+						: SensitiveErrorTextRedactor.Redact(errorMessage));
 				}
 				return CreateThemeResult.Successful(createdId);
-			}
-			catch (Exception ex) {
-				return CreateThemeResult.Failure(ex.Message);
-			}
-		});
+			},
+			CreateThemeResult.Failure);
 	}
 }
 

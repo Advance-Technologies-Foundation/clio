@@ -41,6 +41,7 @@ public static class EntitySchemaPrompt {
 		 Set `parent-schema-name` only when inheritance or replacement behavior was explicitly requested.
 		 Set `extend-parent` to `true` only when the request is specifically for a replacement schema, and only
 		 together with `parent-schema-name`.
+		 Set `is-virtual` to `true` only when the entity must not have a physical database table; it defaults to `false`.
 		 Include `columns` only when the request explicitly describes initial fields. `title-localizations` is
 		 OPTIONAL for a column add; when omitted, `en-US` is auto-derived from a scalar title/caption or the
 		 column name. Provide `title-localizations` for a proper caption; the `en-US` value must be English.
@@ -177,7 +178,7 @@ public static class EntitySchemaPrompt {
 		$"""
 		 Use clio mcp server `{GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName}` to read structured
 		 properties for entity schema `{schemaName}` from environment `{environmentName}`. The result is a schema
-		 summary object with a nested `columns` list for machine-readable column inspection.
+		 summary object with a `virtual` flag and a nested `columns` list for machine-readable column inspection.
 		 Pass `schema-name` and `environment-name` exactly as provided. Leave `package-name` empty to get the
 		 MERGED/EFFECTIVE schema with columns from ALL packages (this is what you want for column discovery,
 		 because custom columns are frequently added in a package other than the one that defines the schema).

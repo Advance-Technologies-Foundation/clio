@@ -67,6 +67,8 @@ NOTES
       type); on modify the stored value is left unchanged when omitted
     - execution stops on the first failed operation
     - the batch is saved and materialized once after all operations are applied
+    - post-save verification checks the final ordered batch state, so a later add may
+      intentionally reuse a column name removed earlier in the same batch
     - operation JSON can also use structured default-value-config; legacy
       default-value-source/default-value remain shorthand for Const and None
     - For default-value-config source=SystemValue:

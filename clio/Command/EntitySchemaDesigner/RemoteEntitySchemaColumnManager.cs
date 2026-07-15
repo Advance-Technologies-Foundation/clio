@@ -988,37 +988,32 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	private static void VerifyColumnMutations(
 		EntityDesignSchemaDto reloadedSchema,
 		IEnumerable<ModifyEntitySchemaColumnOptions> operations) {
+		Dictionary<string, bool> expectedColumnPresence = new(StringComparer.OrdinalIgnoreCase);
 		foreach (ModifyEntitySchemaColumnOptions operation in operations) {
 			EntitySchemaColumnAction action = NormalizeAction(operation.Action);
-			VerifyColumnMutation(reloadedSchema, action, operation);
+			string columnName = operation.ColumnName.Trim();
+			if (action == EntitySchemaColumnAction.Modify && !string.IsNullOrWhiteSpace(operation.NewName)) {
+				expectedColumnPresence[columnName] = false;
+				expectedColumnPresence[operation.NewName.Trim()] = true;
+				continue;
+			}
+
+			expectedColumnPresence[columnName] = action != EntitySchemaColumnAction.Remove;
 		}
-	}
 
-	private static void VerifyColumnMutation(
-		EntityDesignSchemaDto reloadedSchema,
-		EntitySchemaColumnAction action,
-		ModifyEntitySchemaColumnOptions options) {
-		string expectedColumnName = !string.IsNullOrWhiteSpace(options.NewName)
-			? options.NewName.Trim()
-			: options.ColumnName.Trim();
-		bool ownColumnExists = (reloadedSchema.Columns?.ToList() ?? []).Any(column =>
-			string.Equals(column.Name, expectedColumnName, StringComparison.OrdinalIgnoreCase));
-
-		switch (action) {
-			case EntitySchemaColumnAction.Add:
-			case EntitySchemaColumnAction.Modify:
-				if (!ownColumnExists) {
-					throw new EntitySchemaDesignerException(
-						$"Column '{expectedColumnName}' could not be reloaded after save.");
-				}
-				break;
-			case EntitySchemaColumnAction.Remove:
-				if ((reloadedSchema.Columns?.ToList() ?? []).Any(column =>
-					string.Equals(column.Name, options.ColumnName, StringComparison.OrdinalIgnoreCase))) {
-					throw new EntitySchemaDesignerException(
-						$"Column '{options.ColumnName}' is still present after save.");
-				}
-				break;
+		HashSet<string> reloadedColumnNames = (reloadedSchema.Columns?.ToList() ?? [])
+			.Select(column => column.Name)
+			.ToHashSet(StringComparer.OrdinalIgnoreCase);
+		foreach ((string columnName, bool shouldExist) in expectedColumnPresence) {
+			bool columnExists = reloadedColumnNames.Contains(columnName);
+			if (shouldExist && !columnExists) {
+				throw new EntitySchemaDesignerException(
+					$"Column '{columnName}' could not be reloaded after save.");
+			}
+			if (!shouldExist && columnExists) {
+				throw new EntitySchemaDesignerException(
+					$"Column '{columnName}' is still present after save.");
+			}
 		}
 	}
 

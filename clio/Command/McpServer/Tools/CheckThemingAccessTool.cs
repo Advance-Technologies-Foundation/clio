@@ -4,34 +4,28 @@ using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Clio.Command.Theming;
 using Clio.Common;
 using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
 
 /// <summary>
-/// Read-only MCP tool that reports whether the caller may manage custom themes on a target environment by
-/// composing two native Creatio checks: the <c>CanManageThemes</c> system operation
-/// (<see cref="ICreatioRightsClient"/>) and the <c>CanCustomizeBranding</c> license
-/// (<see cref="ICreatioLicenseClient"/>). Both clients are resolved for the per-call target environment.
+/// Read-only MCP tool that reports whether the caller may manage custom themes on a target environment,
+/// probing the <c>CanManageThemes</c> system operation and the <c>CanCustomizeBranding</c> license and
+/// returning both verdicts as a structured result.
 /// </summary>
 public sealed class CheckThemingAccessTool(
+	CheckThemingAccessCommand command,
 	ILogger logger,
-	IToolCommandResolver commandResolver) : BaseTool<EnvironmentOptions>(null, logger, commandResolver) {
-
-	private readonly IToolCommandResolver _commandResolver = commandResolver;
+	IToolCommandResolver commandResolver) : BaseTool<CheckThemingAccessOptions>(command, logger, commandResolver) {
 
 	internal const string ToolName = "check-theming-access";
-
-	/// <summary>The system operation that grants management of custom themes on an environment.</summary>
-	private const string CanManageThemesOperation = "CanManageThemes";
-
-	/// <summary>The license operation that grants branding customization (custom themes).</summary>
-	private const string CanCustomizeBrandingLicense = "CanCustomizeBranding";
 
 	/// <summary>Probes the <c>CanManageThemes</c> operation right and the <c>CanCustomizeBranding</c> license on the target environment and returns both verdicts.</summary>
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false),
 	 Description("Check whether the caller can manage custom themes on a registered environment. " +
+		"Requires Creatio " + ThemeServiceRequirement.MinVersion + " or later on the target environment. " +
 		"Probes the CanManageThemes system operation and the CanCustomizeBranding license. " +
 		"Returns { success, canManageThemes, canCustomizeBranding, error? }. " +
 		"Advisory only: run it before the no-code / server theme flow (create/update/delete-theme), " +
@@ -49,29 +43,19 @@ public sealed class CheckThemingAccessTool(
 		if (string.IsNullOrWhiteSpace(args.EnvironmentName)) {
 			return ThemingAccessResult.Failure("environment-name is required and cannot be empty.");
 		}
-		EnvironmentOptions options = new() {
+		CheckThemingAccessOptions options = new() {
 			Environment = args.EnvironmentName
 		};
 		return Execute(options);
 	}
 
-	private ThemingAccessResult Execute(EnvironmentOptions options) {
-		return ExecuteWithCleanLog(() => {
-			try {
-				ICreatioRightsClient rightsClient = _commandResolver.Resolve<ICreatioRightsClient>(options);
-				ICreatioLicenseClient licenseClient = _commandResolver.Resolve<ICreatioLicenseClient>(options);
-				CreatioRequestOptions requestOptions = new();
-				bool canManageThemes = rightsClient.GetCanExecuteOperation(CanManageThemesOperation, requestOptions);
-				IReadOnlyDictionary<string, bool> licenseStatuses = licenseClient.GetLicenseOperationStatuses(
-					new[] { CanCustomizeBrandingLicense }, requestOptions);
-				bool canCustomizeBranding = licenseStatuses.TryGetValue(CanCustomizeBrandingLicense, out bool granted)
-					&& granted;
-				return ThemingAccessResult.Successful(canManageThemes, canCustomizeBranding);
-			}
-			catch (Exception ex) {
-				return ThemingAccessResult.Failure(ex.Message);
-			}
-		});
+	private ThemingAccessResult Execute(CheckThemingAccessOptions options) {
+		return ExecuteResolved<CheckThemingAccessCommand, ThemingAccessResult>(options,
+			resolvedCommand => {
+				ThemingAccess access = resolvedCommand.GetThemingAccess();
+				return ThemingAccessResult.Successful(access.CanManageThemes, access.CanCustomizeBranding);
+			},
+			ThemingAccessResult.Failure);
 	}
 }
 

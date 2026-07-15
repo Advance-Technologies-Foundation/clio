@@ -25,12 +25,37 @@ public interface IApplicationInfoService
 	ApplicationInfoResult GetApplicationInfo(string environmentName, string? id, string? code);
 
 	/// <summary>
+	/// Loads application package and entity metadata against an already-resolved environment.
+	/// Behaves identically to <see cref="GetApplicationInfo(string, string?, string?)"/> except it never
+	/// consults <see cref="Clio.UserEnvironment.ISettingsRepository"/> — the caller supplies the settings
+	/// directly (e.g. an MCP passthrough tenant resolved from request headers).
+	/// </summary>
+	/// <param name="environmentSettings">The already-resolved environment settings; must not be <c>null</c>.</param>
+	/// <param name="id">Optional installed application identifier.</param>
+	/// <param name="code">Optional installed application code.</param>
+	/// <returns>Structured application package and entity information.</returns>
+	/// <exception cref="ArgumentNullException"><paramref name="environmentSettings"/> is <c>null</c>.</exception>
+	ApplicationInfoResult GetApplicationInfo(EnvironmentSettings environmentSettings, string? id, string? code);
+
+	/// <summary>
 	/// Resolves the minimal application identity (Id, Code, Name, Version) without loading entities or pages.
 	/// </summary>
 	/// <param name="environmentName">Registered clio environment name.</param>
 	/// <param name="code">Installed application code.</param>
 	/// <returns>Lightweight application identity record.</returns>
 	InstalledAppSummary FindApplicationId(string environmentName, string code);
+
+	/// <summary>
+	/// Resolves the minimal application identity against an already-resolved environment.
+	/// Behaves identically to <see cref="FindApplicationId(string, string)"/> except it never consults
+	/// <see cref="Clio.UserEnvironment.ISettingsRepository"/> — the caller supplies the settings directly
+	/// (e.g. an MCP passthrough tenant resolved from request headers).
+	/// </summary>
+	/// <param name="environmentSettings">The already-resolved environment settings; must not be <c>null</c>.</param>
+	/// <param name="code">Installed application code.</param>
+	/// <returns>Lightweight application identity record.</returns>
+	/// <exception cref="ArgumentNullException"><paramref name="environmentSettings"/> is <c>null</c>.</exception>
+	InstalledAppSummary FindApplicationId(EnvironmentSettings environmentSettings, string code);
 }
 
 /// <summary>
@@ -122,14 +147,31 @@ public sealed class ApplicationInfoService(
 			throw new ArgumentException("Environment name is required.", nameof(environmentName));
 		}
 
+		EnsureApplicationIdentifier(id, code);
+		EnvironmentSettings environmentSettings = settingsRepository.FindEnvironment(environmentName)
+			?? throw new InvalidOperationException(
+				EnvironmentNotFoundError.Build(environmentName, settingsRepository));
+		return GetApplicationInfoCore(environmentSettings, id, code);
+	}
+
+	/// <inheritdoc />
+	public ApplicationInfoResult GetApplicationInfo(EnvironmentSettings environmentSettings, string? id, string? code)
+	{
+		ArgumentNullException.ThrowIfNull(environmentSettings);
+		EnsureApplicationIdentifier(id, code);
+		return GetApplicationInfoCore(environmentSettings, id, code);
+	}
+
+	private static void EnsureApplicationIdentifier(string? id, string? code)
+	{
 		if (string.IsNullOrWhiteSpace(id) && string.IsNullOrWhiteSpace(code))
 		{
 			throw new ArgumentException("Either id or code is required.");
 		}
+	}
 
-		EnvironmentSettings environmentSettings = settingsRepository.FindEnvironment(environmentName)
-			?? throw new InvalidOperationException(
-				EnvironmentNotFoundError.Build(environmentName, settingsRepository));
+	private ApplicationInfoResult GetApplicationInfoCore(EnvironmentSettings environmentSettings, string? id, string? code)
+	{
 		IApplicationClient client = applicationClientFactory.CreateEnvironmentClient(environmentSettings);
 		IServiceUrlBuilder serviceUrlBuilder = serviceUrlBuilderFactory.Create(environmentSettings);
 
@@ -174,12 +216,30 @@ public sealed class ApplicationInfoService(
 		if (string.IsNullOrWhiteSpace(environmentName)) {
 			throw new ArgumentException("Environment name is required.", nameof(environmentName));
 		}
-		if (string.IsNullOrWhiteSpace(code)) {
-			throw new ArgumentException("Application code is required.", nameof(code));
-		}
+		EnsureApplicationCode(code);
 		EnvironmentSettings environmentSettings = settingsRepository.FindEnvironment(environmentName)
 			?? throw new InvalidOperationException(
 				EnvironmentNotFoundError.Build(environmentName, settingsRepository));
+		return FindApplicationIdCore(environmentSettings, code);
+	}
+
+	/// <inheritdoc />
+	public InstalledAppSummary FindApplicationId(EnvironmentSettings environmentSettings, string code)
+	{
+		ArgumentNullException.ThrowIfNull(environmentSettings);
+		EnsureApplicationCode(code);
+		return FindApplicationIdCore(environmentSettings, code);
+	}
+
+	private static void EnsureApplicationCode(string code)
+	{
+		if (string.IsNullOrWhiteSpace(code)) {
+			throw new ArgumentException("Application code is required.", nameof(code));
+		}
+	}
+
+	private InstalledAppSummary FindApplicationIdCore(EnvironmentSettings environmentSettings, string code)
+	{
 		IApplicationClient client = applicationClientFactory.CreateEnvironmentClient(environmentSettings);
 		IServiceUrlBuilder serviceUrlBuilder = serviceUrlBuilderFactory.Create(environmentSettings);
 		InstalledApplicationDto application = ResolveApplication(client, serviceUrlBuilder, null, code);
@@ -313,7 +373,8 @@ public sealed class ApplicationInfoService(
 				canonicalMainEntityCaptionFallback,
 				entityRow.Caption,
 				entityName),
-			columns);
+			columns,
+			response.Schema.IsVirtual);
 	}
 
 	private static ApplicationColumnInfoResult MapColumn(RuntimeSchemaColumnDto column, DesignSchemaColumnDto? designColumn)
@@ -787,6 +848,9 @@ public sealed class ApplicationInfoService(
 		[JsonPropertyName("caption")]
 		public Dictionary<string, string>? Caption { get; set; }
 
+		[JsonPropertyName("isVirtual")]
+		public bool IsVirtual { get; set; }
+
 		[JsonPropertyName("columns")]
 		public RuntimeSchemaColumnsDto? Columns { get; set; }
 	}
@@ -898,11 +962,13 @@ public sealed record ApplicationInfoResult(
 /// <param name="Name">Entity schema name.</param>
 /// <param name="Caption">Entity caption.</param>
 /// <param name="Columns">Non-inherited runtime columns.</param>
+/// <param name="IsVirtual">Whether the entity schema is virtual and has no physical database table.</param>
 public sealed record ApplicationEntityInfoResult(
 	string UId,
 	string Name,
 	string Caption,
-	IReadOnlyList<ApplicationColumnInfoResult> Columns);
+	IReadOnlyList<ApplicationColumnInfoResult> Columns,
+	bool IsVirtual = false);
 
 /// <summary>
 /// Structured column information returned as part of application info results.

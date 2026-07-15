@@ -30,6 +30,30 @@ internal sealed class DataForgeSettings {
 internal sealed class SandboxSettings {
 	public string? EnvironmentName { get; set; }
 
+	/// <summary>Archive used by the opt-in destructive deploy/uninstall lifecycle proof.</summary>
+	public string? DeploymentArchivePath { get; set; }
+
+	/// <summary>Explicit disposable IIS port used by the lifecycle proof.</summary>
+	public int DeploymentSitePort { get; set; }
+
+	/// <summary>Configured local database server used by the lifecycle proof.</summary>
+	public string? DeploymentDbServerName { get; set; }
+
+	/// <summary>Configured local Redis server used by the lifecycle proof.</summary>
+	public string? DeploymentRedisServerName { get; set; }
+
+	/// <summary>Requires deploy and uninstall to prove the real offline-dbHub warning contract.</summary>
+	public bool RequireDbHubWarning { get; set; }
+
+	/// <summary>Optional secret value that must not appear in MCP results or progress.</summary>
+	public string? SecretSentinel { get; set; }
+
+	/// <summary>
+	/// Requires the destructive uninstall sandbox to assert the conditional dbHub source-removal stage.
+	/// Enable only with an isolated CLIO_HOME whose dbHub integration is configured for the disposable environment.
+	/// </summary>
+	public bool RequireDbHubLifecycle { get; set; }
+
 	/// <summary>
 	/// When set, the harness re-registers the sandbox env at this URL via reg-web-app before tests,
 	/// so it targets the freshly-deployed stand instead of a stale registration.
@@ -44,6 +68,12 @@ internal sealed class SandboxSettings {
 	/// or ensure the clio environment is registered with --environment-path.
 	/// </summary>
 	public string? EnvironmentPath { get; set; }
+
+	/// <summary>
+	/// Database provider used by provider-specific sandbox assertions. Set to <c>postgresql</c>
+	/// through <c>McpE2E__Sandbox__DatabaseProvider</c> to enable PostgreSQL catalog checks.
+	/// </summary>
+	public string? DatabaseProvider { get; set; }
 
 	public string? ProcessCode { get; set; }
 

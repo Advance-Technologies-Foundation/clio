@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using Clio.Command.McpServer.Progress;
 using Clio.Common;
 using CommandLine;
 using k8s;
@@ -11,6 +12,21 @@ namespace Clio.Command.CreatioInstallCommand;
 /// </summary>
 [Verb("deploy-creatio", Aliases = ["dc", "ic", "install-creatio"], HelpText = "Deploy Creatio from zip file")]
 public class PfInstallerOptions : EnvironmentNameOptions{
+	#region Constants: Public
+
+	/// <summary>
+	/// The default deployment method used by the <c>--deployment</c> option; treated as "not explicitly
+	/// chosen" so a configured default can override it.
+	/// </summary>
+	public const string AutoDeploymentMethod = "auto";
+
+	/// <summary>
+	/// The deployment methods accepted by the <c>--deployment</c> option.
+	/// </summary>
+	public static readonly string[] AllowedDeploymentMethods = [AutoDeploymentMethod, "iis", "dotnet"];
+
+	#endregion
+
 	#region Properties: Overrides
 
 	internal override bool RequiredEnvironment => false;
@@ -69,8 +85,16 @@ public class PfInstallerOptions : EnvironmentNameOptions{
 	/// <summary>
 	/// Gets or sets a value indicating whether force-password-reset disabling script may be executed.
 	/// </summary>
-	[Option("disable-reset-password", Required = false, Hidden = true, Default = true, HelpText = "Disables reset password after installation")]
+	[Option("disable-reset-password", Required = false, Hidden = true, Default = false,
+		HelpText = "When true, disables the forced password change after installation")]
 	public bool DisableResetPassword { get; set; }
+
+	/// <summary>
+	/// Gets or sets a value indicating whether the command was launched by the Windows Explorer integration.
+	/// </summary>
+	[Option("explorer-launch", Required = false, Hidden = true, Default = false,
+		HelpText = "Marks deployment as launched by the Windows Explorer integration")]
+	public bool ExplorerLaunch { get; set; }
 	
 	/// <summary>
 	/// Gets or sets the database engine type: <c>pg</c> or <c>mssql</c>.
@@ -217,11 +241,19 @@ public class PfInstallerOptions : EnvironmentNameOptions{
 /// <summary>
 /// Executes Creatio deployment using validated command options.
 /// </summary>
-public class InstallerCommand : Command<PfInstallerOptions>{
+public class InstallerCommand : Command<PfInstallerOptions>, IStageEventSource{
+	#region Constants: Private
+
+	private const string MissingSilentSiteNameError =
+		"Site name is required for silent deployment. Specify --site-name or configure deploy-site-name.";
+
+	#endregion
+
 	#region Fields: Private
 
 	private readonly ICreatioInstallerService _creatioInstallerService;
 	private readonly IDbOperationLogSessionFactory _dbOperationLogSessionFactory;
+	private readonly IDeployCreatioDefaultsResolver _deployCreatioDefaultsResolver;
 	private readonly IKubernetes _kubernetes;
 	private readonly ILogger _logger;
 
@@ -235,16 +267,43 @@ public class InstallerCommand : Command<PfInstallerOptions>{
 	/// <param name="creatioInstallerService">Service that performs deployment steps.</param>
 	/// <param name="logger">Logger used for user-facing output.</param>
 	/// <param name="kubernetes">Kubernetes client used to validate cluster availability.</param>
+	/// <param name="deployCreatioDefaultsResolver">Resolver that fills omitted options from persisted deploy-creatio defaults.</param>
 	/// <param name="dbOperationLogSessionFactory">Factory that creates per-invocation database operation log artifacts.</param>
 	public InstallerCommand(
 		ICreatioInstallerService creatioInstallerService,
 		ILogger logger,
 		IKubernetes kubernetes,
+		IDeployCreatioDefaultsResolver deployCreatioDefaultsResolver,
 		IDbOperationLogSessionFactory dbOperationLogSessionFactory = null) {
 		_creatioInstallerService = creatioInstallerService;
 		_logger = logger;
 		_kubernetes = kubernetes;
+		_deployCreatioDefaultsResolver = deployCreatioDefaultsResolver;
 		_dbOperationLogSessionFactory = dbOperationLogSessionFactory ?? NullDbOperationLogSessionFactory.Instance;
+	}
+
+	#endregion
+
+	#region Events: Public
+
+	/// <inheritdoc />
+	/// <remarks>
+	/// Bubbles the deploy stage-event seam up from <see cref="ICreatioInstallerService"/> (the service that
+	/// actually emits) so an MCP tool can subscribe to the resolved command instance via
+	/// <c>configureCommand</c> (story 4). Subscriptions delegate to the underlying service when it is an
+	/// <see cref="IStageEventSource"/>; otherwise they are inert.
+	/// </remarks>
+	public event EventHandler<ClioStageEvent> StageChanged {
+		add {
+			if (_creatioInstallerService is IStageEventSource source) {
+				source.StageChanged += value;
+			}
+		}
+		remove {
+			if (_creatioInstallerService is IStageEventSource source) {
+				source.StageChanged -= value;
+			}
+		}
 	}
 
 	#endregion
@@ -259,24 +318,48 @@ public class InstallerCommand : Command<PfInstallerOptions>{
 	/// <c>0</c> on success; non-zero value when execution cannot continue or deployment fails.
 	/// </returns>
 	public override int Execute(PfInstallerOptions options) {
-		using IDbOperationLogSession dbOperationLogSession = _dbOperationLogSessionFactory.BeginSession("deploy-creatio");
+		bool explorerDeploymentFailed = options.ExplorerLaunch;
 		try {
-			if (_kubernetes is FakeKubernetes && string.IsNullOrEmpty(options.DbServerName)) {
-				_logger.WriteError(
-					"Could not detect kubectl config, and db server name (db-server-name) is not specified.");
-				return 1;
-			}
+			using IDbOperationLogSession dbOperationLogSession =
+				_dbOperationLogSessionFactory.BeginSession("deploy-creatio");
+			try {
+				// Fill options omitted on the command line from persisted `clio config` defaults BEFORE the
+				// Kubernetes-vs-local branch below, so a configured default db-server-name routes the plain
+				// Explorer context-menu deploy (which passes only --zip-file) to the local database.
+				_deployCreatioDefaultsResolver.ApplyDefaults(options);
+				if (options.IsSilent && string.IsNullOrWhiteSpace(options.SiteName)) {
+					_logger.WriteError(MissingSilentSiteNameError);
+					return 1;
+				}
 
-			int result = _creatioInstallerService.Execute(options);
-			if (!options.IsSilent) {
+				if (_kubernetes is FakeKubernetes && string.IsNullOrEmpty(options.DbServerName)) {
+					_logger.WriteError(
+						"Could not detect kubectl config, and db server name (db-server-name) is not specified.");
+					return 1;
+				}
+
+				int result = _creatioInstallerService.Execute(options);
+				explorerDeploymentFailed = options.ExplorerLaunch && result != 0;
+				if (!options.IsSilent && !options.ExplorerLaunch) {
+					_logger.WriteLine("Press enter to exit...");
+					Console.ReadLine();
+				}
+
+				return result;
+			}
+			finally {
+				_logger.WriteInfo($"Database operation log: {dbOperationLogSession.LogFilePath}");
+			}
+		}
+		catch (Exception exception) when (options.ExplorerLaunch) {
+			_logger.WriteError(exception.GetReadableMessageException(Program.IsDebugMode));
+			return 1;
+		}
+		finally {
+			if (!options.IsSilent && explorerDeploymentFailed) {
 				_logger.WriteLine("Press enter to exit...");
 				Console.ReadLine();
 			}
-
-			return result;
-		}
-		finally {
-			_logger.WriteInfo($"Database operation log: {dbOperationLogSession.LogFilePath}");
 		}
 	}
 
