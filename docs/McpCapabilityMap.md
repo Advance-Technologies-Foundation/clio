@@ -491,6 +491,9 @@ The profile stage resolves only the registered `IIS APPPOOL\<name>` SID/profile.
 non-Windows profiles are `skipped` `not-applicable`; exhausted deletion retries emit `warning`
 with `APPPOOL_PROFILE_DELETE_FAILED`, while the tool keeps exit code 0, returns `IsError=false`,
 and terminates with `success-with-warnings`; the warning stage retains the detail.
+The target IIS site/application is validated before removal. Pool assignments are rechecked after
+target deletion; a pool still used by another application and its Windows profile are preserved,
+and the profile stage is `skipped` `not-applicable`.
 Failure is honest: a stage that fails is emitted `failed`, the remaining stages `skipped`
 (`after-failure`), and the run ends `run-completed` `failure` — a non-zero stage result is
 never masked as success. The envelope is stamped with `schemaVersion` (currently `1`), is

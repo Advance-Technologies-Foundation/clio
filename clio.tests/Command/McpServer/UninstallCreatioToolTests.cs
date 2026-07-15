@@ -69,6 +69,8 @@ public sealed class UninstallCreatioToolTests : BaseClioModuleTests {
 			because: "uninstall removes infrastructure and must retain destructive classification");
 		description.Description.Should().Contain("warning with successful tool completion",
 			because: "agents must not retry an already successful destructive uninstall after a profile warning");
+		description.Description.Should().Contain("application pool and its profile are preserved",
+			because: "agents must understand that uninstall does not destroy IIS resources used by another application");
 	}
 
 	[Test]

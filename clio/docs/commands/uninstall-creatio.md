@@ -15,8 +15,9 @@ uc
 ## Description
 
 uninstall-creatio command removes a local Creatio instance from your machine,
-including the IIS site and application pool, database (both local and
-containerized), and application files.
+including the target IIS site or application, database (both local and
+containerized), and application files. The application pool is removed only
+when no other IIS application uses it.
 
 On Windows, the command also attempts to remove the registered IIS
 application-pool virtual-account profile. This is best-effort: a locked,
@@ -44,15 +45,16 @@ This operation cannot be undone.
         4. Proceeds with uninstall operations
 
     Uninstall operations (all methods):
-        1. Stops IIS application and application pool
-        2. Deletes IIS site and application pool
-        3. Extracts database connection string from ConnectionStrings.config
-        4. Parses connection parameters (host, port, username, password)
-        5. Connects and drops the database (local or Kubernetes/Rancher)
-        6. Deletes all files in installation directory
-        7. Deletes the registered IIS application-pool profile on Windows
+        1. Extracts database connection string from ConnectionStrings.config
+        2. Parses connection parameters (host, port, username, password)
+        3. Validates that the target IIS site/application can be removed without siblings
+        4. Stops the target site when supported and deletes the target site/application
+        5. Verifies target removal, then rechecks and deletes the pool only when unused
+        6. Connects and drops the database (local or Kubernetes/Rancher)
+        7. Deletes all files in installation directory
+        8. Deletes the registered IIS application-pool profile on Windows
            (best-effort; missing/non-Windows is not applicable)
-        8. Unregisters the environment (final step, including after a profile warning)
+        9. Unregisters the environment (final step, including after a profile warning)
 
 ## Synopsis
 
@@ -230,6 +232,10 @@ destroying the entire instance
     APPPOOL_PROFILE_DELETE_FAILED. The terminal outcome is success-with-warnings,
     while the warning stage retains the detail. The MCP command result keeps exit code 0 and the tool
     response is not marked as an error.
+
+    If another IIS application shares the target application pool, uninstall removes
+    only the target site/application and leaves the shared pool and its Windows profile intact;
+    delete-apppool-profile is skipped as not applicable.
 
     Honest failure: read-config runs before stop-iis. If it fails, the run aborts safely
     (the site remains running, the environment is NOT unregistered, and success is NOT

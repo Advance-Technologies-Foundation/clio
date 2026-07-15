@@ -346,9 +346,14 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 		UnregisteredSite targetSite = ResolveSite(creatioDirectoryPath);
 		string appPoolName = targetSite?.siteBinding.appPoolName;
 		bool includeProfileStage = !string.IsNullOrWhiteSpace(appPoolName);
+		if (targetSite is not null && !_iisScanner.IsIisTargetExclusive(targetSite.siteBinding.name)) {
+			AbortUnresolvedTarget(
+				$"IIS target '{targetSite.siteBinding.name}' contains other applications or could not be validated safely.");
+		}
 		AppPoolProfileCleanupTarget profileTarget = includeProfileStage
 			? _appPoolProfileCleaner.Prepare(appPoolName)
 			: null;
+		bool appPoolDeleted = false;
 
 		_stageEventEmitter.Begin(ClioStageEventContract.Operations.Uninstall,
 			BuildUninstallManifest(includeProfileStage), OnStageChanged);
@@ -367,9 +372,26 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 			_logger.WriteInfo($"Found db: {info.DbName}, Server: {info.DbType}");
 		});
 
-		_stageEventEmitter.RunStage(StageIds.StopIis, () => StopIISSite(creatioDirectoryPath, appPoolName));
+		_stageEventEmitter.RunStage(StageIds.StopIis,
+			() => {
+				if (targetSite is not null && !_iisScanner.TryStopIisTarget(targetSite.siteBinding.name,
+					targetSite.siteBinding.path, appPoolName)) {
+					throw new CreatioUninstallAbortedException(
+						$"IIS target '{targetSite.siteBinding.name}' changed and cannot be stopped safely.");
+				}
+				if (targetSite is null) {
+					StopIISSite(creatioDirectoryPath, appPoolName, false);
+				}
+			});
 
-		_stageEventEmitter.RunStage(StageIds.DeleteIis, () => DeleteIISSite(creatioDirectoryPath, appPoolName));
+		_stageEventEmitter.RunStage(StageIds.DeleteIis, () => {
+			if (targetSite is not null && !_iisScanner.TryDeleteIisTarget(targetSite.siteBinding.name,
+				targetSite.siteBinding.path, appPoolName)) {
+				throw new CreatioUninstallAbortedException(
+					$"IIS target '{targetSite.siteBinding.name}' changed or could not be removed safely.");
+			}
+			appPoolDeleted = includeProfileStage && _iisScanner.TryDeleteAppPoolIfUnused(appPoolName);
+		});
 
 		_stageEventEmitter.RunStage(StageIds.DropDb, () => DropDatabase(dbInfo));
 
@@ -381,7 +403,12 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 		AppPoolProfileCleanupResult profileResult = null;
 		string profileWarning = null;
 		if (includeProfileStage) {
-			profileResult = _appPoolProfileCleaner.TryDelete(profileTarget);
+			if (!appPoolDeleted || !_iisScanner.IsAppPoolAbsent(appPoolName)) {
+				profileResult = new AppPoolProfileCleanupResult(AppPoolProfileCleanupStatus.NotApplicable);
+			}
+			else {
+				profileResult = _appPoolProfileCleaner.TryDelete(profileTarget);
+			}
 			switch (profileResult.Status) {
 				case AppPoolProfileCleanupStatus.Deleted:
 					_stageEventEmitter.RunStage(StageIds.DeleteApppoolProfile, () => { });
@@ -433,25 +460,14 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 		return AllSites.FirstOrDefault(all => all.siteBinding.path == creatioDirectoryPath);
 	}
 
-	private void StopIISSite(string creatioDirectoryPath, string appPoolName){
+	private void StopIISSite(string creatioDirectoryPath, string appPoolName, bool manageAppPool){
 		UnregisteredSite site = ResolveSite(creatioDirectoryPath);
 		if (site is not null) {
-			_iisScanner.StopSiteByName(site.siteBinding.name, appPoolName);
+			_iisScanner.StopSiteByName(site.siteBinding.name, appPoolName, manageAppPool);
 			_logger.WriteInfo($"IIS Stopped: {site.siteBinding.name}");
 		}
 		else {
 			_logger.WriteWarning($"IIS NOT Stopped DIR: {creatioDirectoryPath}");
-		}
-	}
-
-	private void DeleteIISSite(string creatioDirectoryPath, string appPoolName){
-		UnregisteredSite site = ResolveSite(creatioDirectoryPath);
-		if (site is not null) {
-			_iisScanner.DeleteSiteByName(site.siteBinding.name, appPoolName);
-			_logger.WriteInfo($"IIS Removed: {site.siteBinding.name}");
-		}
-		else {
-			_logger.WriteWarning($"IIS NOT Removed: {creatioDirectoryPath}");
 		}
 	}
 

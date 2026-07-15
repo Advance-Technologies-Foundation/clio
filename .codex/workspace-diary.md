@@ -6050,3 +6050,17 @@ Decision: Catch every recoverable exception at base and optional remote-operatio
 Discovery: ClioGate compatibility can throw InvalidOperationException or System.Text.Json parsing errors before GetSysInfo, so a narrow HTTP/Newtonsoft exception list cannot guarantee nonfatal enrichment or secret-safe MCP output.
 Files: clio/Command/GetCreatioInfoCommand.cs, clio.tests/Command/GetInfoCommand.cs
 Impact: Recoverable client/library failures now remain classified and redacted, while fatal or programming-defect exceptions still propagate for diagnosis.
+
+## 2026-07-15 11:01 – Preserve shared IIS pools during uninstall
+Context: Codex Review found that issue #881 could delete an application pool and Windows profile still used by another IIS application.
+Decision: Validate target topology before deletion, remove only the target site/application, requery assignments, and delete the pool/profile only after verified pool removal.
+Discovery: Root-site deletion can also remove nested sibling applications, and incomplete appcmd XML must be treated as unsafe rather than as proof of exclusive ownership.
+Files: clio/Requests/IISScannerRequest.cs, clio/Common/CreatioUninstaller.cs, clio.tests/Requests/IisScannerHandlerValidationTests.cs, clio.tests/Common/CreatioUninstallerTestFixture.cs, spec/apppool-profile-cleanup/
+Impact: Shared pools and profiles survive uninstall, destructive IIS decisions fail closed, and profile cleanup cannot run while a pool remains.
+
+## 2026-07-15 11:25 – Bind IIS cleanup to the resolved target identity
+Context: Final review of the shared-pool fix exposed malformed-output, same-name replacement, silent-delete, and concurrent reassignment edges around AppCmd.
+Decision: Require strict AppCmd XML, bind stop/delete to name plus normalized path plus pool, verify target absence, and bracket pool removal with fresh assignment and absence snapshots.
+Discovery: AppCmd cannot stop a nested application, and its process wrapper does not expose exit status; safe orchestration therefore uses a nested no-op and proves every destructive result from fresh IIS state.
+Files: clio/Requests/IISScannerRequest.cs, clio/Common/CreatioUninstaller.cs, clio.tests/Requests/IisScannerHandlerValidationTests.cs, clio.tests/Common/CreatioUninstallerTestFixture.cs
+Impact: Same-name replacements and sibling applications are not mutated, error-shaped output fails closed, and profile cleanup remains gated on verified pool absence.

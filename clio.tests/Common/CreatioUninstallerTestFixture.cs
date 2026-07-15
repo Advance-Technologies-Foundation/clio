@@ -142,6 +142,11 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 		_mssqlMock.ClearReceivedCalls();
 		_postgresMock.ClearReceivedCalls();
 		_profileCleanerMock.ClearReceivedCalls();
+		_iisScannerMock.IsIisTargetExclusive(Arg.Any<string>()).Returns(true);
+		_iisScannerMock.TryStopIisTarget(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+		_iisScannerMock.TryDeleteIisTarget(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+		_iisScannerMock.TryDeleteAppPoolIfUnused(Arg.Any<string>()).Returns(true);
+		_iisScannerMock.IsAppPoolAbsent(Arg.Any<string>()).Returns(true);
 		_profileCleanerMock.Prepare(Arg.Any<string>()).Returns(
 			new AppPoolProfileCleanupTarget(new WindowsProfileRegistration("S-1-5-82-1", ProfileDirectoryPath)));
 		_profileCleanerMock.TryDelete(Arg.Any<AppPoolProfileCleanupTarget>()).Returns(
@@ -633,16 +638,123 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 		_sut.UninstallByPath(InstalledCreatioPath);
 
 		// Assert
-		_iisScannerMock.Received(1).StopSiteByName(EnvironmentName, AppPoolName);
-		_iisScannerMock.Received(1).DeleteSiteByName(EnvironmentName, AppPoolName);
+		_iisScannerMock.Received(1).TryStopIisTarget(EnvironmentName, InstalledCreatioPath, AppPoolName);
+		_iisScannerMock.Received(1).TryDeleteIisTarget(EnvironmentName, InstalledCreatioPath, AppPoolName);
+		_iisScannerMock.Received(1).TryDeleteAppPoolIfUnused(AppPoolName);
 		Received.InOrder(() => {
 			_profileCleanerMock.Prepare(AppPoolName);
-			_iisScannerMock.DeleteSiteByName(EnvironmentName, AppPoolName);
+			_iisScannerMock.TryDeleteIisTarget(EnvironmentName, InstalledCreatioPath, AppPoolName);
+			_iisScannerMock.TryDeleteAppPoolIfUnused(AppPoolName);
 			_profileCleanerMock.TryDelete(Arg.Any<AppPoolProfileCleanupTarget>());
 		});
 		StagesWithStatus(events, StageIds.DeleteApppoolProfile).Should().Contain(stage =>
 			stage.Status == ClioStageEventContract.StageStatuses.Done,
 			because: "successful Windows cleanup removes both profile registration and files");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A shared application pool is neither stopped nor deleted and its Windows profile is left untouched.")]
+	public void UninstallByPath_ShouldPreserveAppPoolAndProfile_WhenPoolIsShared() {
+		// Arrange
+		MockStartedSite(appPoolName: AppPoolName);
+		AddPostgresConnectionStringFile();
+		_iisScannerMock.TryDeleteAppPoolIfUnused(AppPoolName).Returns(false);
+		List<ClioStageEvent> events = CaptureStageEvents();
+
+		// Act
+		_sut.UninstallByPath(InstalledCreatioPath);
+
+		// Assert
+		_iisScannerMock.Received(1).TryStopIisTarget(EnvironmentName, InstalledCreatioPath, AppPoolName);
+		_iisScannerMock.Received(1).TryDeleteIisTarget(EnvironmentName, InstalledCreatioPath, AppPoolName);
+		_iisScannerMock.Received(1).TryDeleteAppPoolIfUnused(AppPoolName);
+		_profileCleanerMock.DidNotReceive().TryDelete(Arg.Any<AppPoolProfileCleanupTarget>());
+		StagesWithStatus(events, StageIds.DeleteApppoolProfile).Should().ContainSingle(stage =>
+			stage.Status == ClioStageEventContract.StageStatuses.Skipped
+			&& stage.SkipReason == ClioStageEventContract.SkipReasons.NotApplicable,
+			because: "a profile owned by another IIS app must remain available to that app");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An IIS target with sibling applications aborts before any destructive uninstall action.")]
+	public void UninstallByPath_ShouldAbortBeforeDestruction_WhenIisTargetIsNotExclusive() {
+		// Arrange
+		MockStartedSite(appPoolName: AppPoolName);
+		_iisScannerMock.IsIisTargetExclusive(EnvironmentName).Returns(false);
+
+		// Act
+		Action act = () => _sut.UninstallByPath(InstalledCreatioPath);
+
+		// Assert
+		act.Should().Throw<CreatioUninstallAbortedException>(
+			because: "removing a root site with sibling IIS applications would delete unrelated applications");
+		_iisScannerMock.DidNotReceive().TryStopIisTarget(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>());
+		_iisScannerMock.DidNotReceive().TryDeleteIisTarget(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>());
+		_iisScannerMock.DidNotReceive().TryDeleteAppPoolIfUnused(Arg.Any<string>());
+		_profileCleanerMock.DidNotReceive().TryDelete(Arg.Any<AppPoolProfileCleanupTarget>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A target that changes before IIS deletion fails the stage and prevents later destructive cleanup.")]
+	public void UninstallByPath_ShouldAbortRemainingCleanup_WhenIisTargetChangesBeforeDelete() {
+		// Arrange
+		MockStartedSite(appPoolName: AppPoolName);
+		AddPostgresConnectionStringFile();
+		_iisScannerMock.TryDeleteIisTarget(EnvironmentName, InstalledCreatioPath, AppPoolName).Returns(false);
+
+		// Act
+		Action act = () => _sut.UninstallByPath(InstalledCreatioPath);
+
+		// Assert
+		act.Should().Throw<CreatioUninstallAbortedException>(
+			because: "a fresh topology check or verified deletion failure must stop database and file removal");
+		_iisScannerMock.Received(1).TryDeleteIisTarget(EnvironmentName, InstalledCreatioPath, AppPoolName);
+		_iisScannerMock.DidNotReceive().TryDeleteAppPoolIfUnused(Arg.Any<string>());
+		_profileCleanerMock.DidNotReceive().TryDelete(Arg.Any<AppPoolProfileCleanupTarget>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A same-name IIS replacement aborts before the stop operation and never reaches deletion.")]
+	public void UninstallByPath_ShouldNotStopOrDelete_WhenIisIdentityChangesBeforeStop() {
+		// Arrange
+		MockStartedSite(appPoolName: AppPoolName);
+		AddPostgresConnectionStringFile();
+		_iisScannerMock.TryStopIisTarget(EnvironmentName, InstalledCreatioPath, AppPoolName).Returns(false);
+
+		// Act
+		Action act = () => _sut.UninstallByPath(InstalledCreatioPath);
+
+		// Assert
+		act.Should().Throw<CreatioUninstallAbortedException>(
+			because: "destructive authority must remain bound to the originally resolved IIS identity");
+		_iisScannerMock.Received(1).TryStopIisTarget(EnvironmentName, InstalledCreatioPath, AppPoolName);
+		_iisScannerMock.DidNotReceive().TryDeleteIisTarget(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A recreated application pool prevents cleanup of the newly active Windows profile.")]
+	public void UninstallByPath_ShouldPreserveProfile_WhenAppPoolReappearsBeforeProfileCleanup() {
+		// Arrange
+		MockStartedSite(appPoolName: AppPoolName);
+		AddPostgresConnectionStringFile();
+		_iisScannerMock.IsAppPoolAbsent(AppPoolName).Returns(false);
+		List<ClioStageEvent> events = CaptureStageEvents();
+
+		// Act
+		_sut.UninstallByPath(InstalledCreatioPath);
+
+		// Assert
+		_iisScannerMock.Received(1).IsAppPoolAbsent(AppPoolName);
+		_profileCleanerMock.DidNotReceive().TryDelete(Arg.Any<AppPoolProfileCleanupTarget>());
+		StagesWithStatus(events, StageIds.DeleteApppoolProfile).Should().ContainSingle(stage =>
+			stage.Status == ClioStageEventContract.StageStatuses.Skipped
+			&& stage.SkipReason == ClioStageEventContract.SkipReasons.NotApplicable,
+			because: "a pool recreated after deletion owns the profile and must remain untouched");
 	}
 
 	[Test]

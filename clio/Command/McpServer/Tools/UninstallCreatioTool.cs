@@ -29,10 +29,12 @@ public class UninstallCreatioTool(
 	[McpServerTool(Name = UninstallCreatioToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false )]
 	[Description("""
 				 uninstall-creatio command completely removes local Creatio instance from
-				 the machine, including the IIS site and application pool, database (both
-				 local and containerized), and application files. On Windows it also attempts
+				 the machine, including the target IIS site or application, database (both
+				 local and containerized), and application files. Its application pool is
+				 removed only when no other IIS application uses it. On Windows it also attempts
 				 to remove the registered IIS application-pool profile. A locked or denied
-				 profile is returned as a warning with successful tool completion.
+				 profile is returned as a warning with successful tool completion. A shared
+				 application pool and its profile are preserved.
 
 				 The command reads the database connection string from ConnectionStrings.config
 				 in the Creatio installation directory and uses it to connect and drop the

@@ -44,16 +44,49 @@ public interface IIisScanner {
 	IEnumerable<RegisteredSite> FindAllRegisteredCreatioSites();
 
 	/// <summary>
-	///  Stops the IIS site and its application pool by site name.
+	///  Stops the IIS site or nested application and, when requested, its application pool.
 	/// </summary>
 	/// <param name="siteName">The IIS site name to stop.</param>
-	void StopSiteByName(string siteName, string appPoolName = null);
+	/// <param name="appPoolName">The actual application-pool name; defaults to the site name.</param>
+	/// <param name="manageAppPool">Whether the target exclusively owns and may stop the pool.</param>
+	void StopSiteByName(string siteName, string appPoolName = null, bool manageAppPool = true);
 
 	/// <summary>
-	///  Deletes the IIS site and its application pool by site name.
+	///  Deletes the IIS site or nested application and, when requested, its application pool.
 	/// </summary>
 	/// <param name="siteName">The IIS site name to delete.</param>
-	void DeleteSiteByName(string siteName, string appPoolName = null);
+	/// <param name="appPoolName">The actual application-pool name; defaults to the site name.</param>
+	/// <param name="manageAppPool">Whether the target exclusively owns and may delete the pool.</param>
+	void DeleteSiteByName(string siteName, string appPoolName = null, bool manageAppPool = true);
+
+	/// <summary>Returns whether the target can be removed without deleting sibling IIS applications.</summary>
+	/// <param name="siteName">The target site or nested application name.</param>
+	/// <returns><see langword="true"/> only when the target can be removed independently.</returns>
+	bool IsIisTargetExclusive(string siteName);
+
+	/// <summary>Stops the target only after fresh topology and identity checks.</summary>
+	/// <param name="siteName">The target site or nested application name.</param>
+	/// <param name="physicalPath">The originally resolved target path.</param>
+	/// <param name="appPoolName">The originally resolved application-pool name.</param>
+	/// <returns><see langword="true"/> when the identity is valid and the supported stop completes or is not applicable.</returns>
+	bool TryStopIisTarget(string siteName, string physicalPath, string appPoolName);
+
+	/// <summary>Deletes the target only after a fresh topology check and verifies its absence.</summary>
+	/// <param name="siteName">The target site or nested application name.</param>
+	/// <param name="physicalPath">The originally resolved target path.</param>
+	/// <param name="appPoolName">The originally resolved application-pool name.</param>
+	/// <returns><see langword="true"/> only when safe removal is verified.</returns>
+	bool TryDeleteIisTarget(string siteName, string physicalPath, string appPoolName);
+
+	/// <summary>Deletes an application pool only when a fresh IIS snapshot has no assignments.</summary>
+	/// <param name="appPoolName">The application pool to revalidate and remove.</param>
+	/// <returns><see langword="true"/> only when removal is verified.</returns>
+	bool TryDeleteAppPoolIfUnused(string appPoolName);
+
+	/// <summary>Returns whether a fresh, complete IIS snapshot proves the pool is absent.</summary>
+	/// <param name="appPoolName">The application pool name.</param>
+	/// <returns><see langword="true"/> only when absence is verified.</returns>
+	bool IsAppPoolAbsent(string appPoolName);
 }
 
 public class IISScannerRequest : IExternalLink {
@@ -319,16 +352,176 @@ internal class IisScannerHandler : BaseExternalLinkHandler, IIisScanner, IExtern
 	#region Methods: Public
 
 	/// <inheritdoc />
-	public void StopSiteByName(string siteName, string appPoolName = null){
-		StopSite(siteName);
-		StopAppPool(string.IsNullOrWhiteSpace(appPoolName) ? siteName : appPoolName);
+	public void StopSiteByName(string siteName, string appPoolName = null, bool manageAppPool = true){
+		// AppCmd cannot stop an individual nested APP. Leaving it running is safer than stopping its
+		// potentially shared pool; delete-app remains the first supported app-scoped mutation.
+		if (ShouldStopSite(siteName, manageAppPool)) {
+			StopSite(siteName);
+		}
+		if (manageAppPool) {
+			StopAppPool(string.IsNullOrWhiteSpace(appPoolName) ? siteName : appPoolName);
+		}
+	}
+
+	internal static bool ShouldStopSite(string siteName, bool manageAppPool) =>
+		manageAppPool || !siteName.Contains('/');
+
+	/// <inheritdoc />
+	public void DeleteSiteByName(string siteName, string appPoolName = null, bool manageAppPool = true){
+		if (!manageAppPool && siteName.Contains('/')) {
+			ExecuteAppCmd($"delete app {QuoteAppCmdArgument($"/app.name:{siteName}")}");
+		}
+		else {
+			RemoveSite(siteName);
+		}
+		if (manageAppPool) {
+			RemoveAppPool(string.IsNullOrWhiteSpace(appPoolName) ? siteName : appPoolName);
+		}
 	}
 
 	/// <inheritdoc />
-	public void DeleteSiteByName(string siteName, string appPoolName = null){
-		RemoveSite(siteName);
-		RemoveAppPool(string.IsNullOrWhiteSpace(appPoolName) ? siteName : appPoolName);
+	public bool IsIisTargetExclusive(string siteName) =>
+		IsIisTargetExclusive(ExecuteAppCmd("list app /xml"), siteName);
+
+	/// <inheritdoc />
+	public bool TryStopIisTarget(string siteName, string physicalPath, string appPoolName) {
+		if (!IsIisTargetExclusive(siteName) || !HasExpectedIisTargetIdentity(siteName, physicalPath, appPoolName)) {
+			return false;
+		}
+		if (ShouldStopSite(siteName, manageAppPool: false)) {
+			StopSite(siteName);
+		}
+		return true;
 	}
+
+	/// <inheritdoc />
+	public bool TryDeleteIisTarget(string siteName, string physicalPath, string appPoolName) {
+		if (!IsIisTargetExclusive(siteName) || !HasExpectedIisTargetIdentity(siteName, physicalPath, appPoolName)) {
+			return false;
+		}
+		if (siteName.Contains('/')) {
+			ExecuteAppCmd($"delete app {QuoteAppCmdArgument($"/app.name:{siteName}")}");
+		}
+		else {
+			RemoveSite(siteName);
+		}
+		return IsIisTargetAbsent(ExecuteAppCmd("list app /xml"), siteName);
+	}
+
+	private bool HasExpectedIisTargetIdentity(string siteName, string physicalPath, string appPoolName) {
+		string appName = siteName.Contains('/') ? siteName : $"{siteName}/";
+		string actualPath = ExecuteAppCmd(
+			$"list VDIR {QuoteAppCmdArgument($"{siteName.TrimEnd('/')}/")} /text:physicalPath").Trim();
+		string actualAppPoolName = ExecuteAppCmd(
+			$"list APP {QuoteAppCmdArgument(appName)} /text:applicationPool").Trim();
+		return IsExpectedIisTargetIdentity(actualPath, actualAppPoolName, physicalPath, appPoolName);
+	}
+
+	internal static bool IsExpectedIisTargetIdentity(string actualPath, string actualAppPoolName,
+		string expectedPath, string expectedAppPoolName) {
+		if (string.IsNullOrWhiteSpace(actualPath) || string.IsNullOrWhiteSpace(expectedPath)
+			|| string.IsNullOrWhiteSpace(actualAppPoolName) || string.IsNullOrWhiteSpace(expectedAppPoolName)) {
+			return false;
+		}
+		try {
+			string normalizedActualPath = Path.GetFullPath(actualPath).TrimEnd(Path.DirectorySeparatorChar,
+				Path.AltDirectorySeparatorChar);
+			string normalizedExpectedPath = Path.GetFullPath(expectedPath).TrimEnd(Path.DirectorySeparatorChar,
+				Path.AltDirectorySeparatorChar);
+			return string.Equals(normalizedActualPath, normalizedExpectedPath, StringComparison.OrdinalIgnoreCase)
+				&& string.Equals(actualAppPoolName, expectedAppPoolName, StringComparison.OrdinalIgnoreCase);
+		}
+		catch (Exception exception) when (exception is ArgumentException or NotSupportedException
+			or PathTooLongException) {
+			return false;
+		}
+	}
+
+	internal static bool IsIisTargetExclusive(string appsXml, string siteName) {
+		if (!TryReadCompleteApps(appsXml, out XElement[] apps) || string.IsNullOrWhiteSpace(siteName)) {
+			return false;
+		}
+		if (siteName.Contains('/')) {
+			return apps.Count(app => string.Equals(app.Attribute("APP.NAME")!.Value, siteName,
+				StringComparison.OrdinalIgnoreCase)) == 1
+				&& !apps.Any(app => app.Attribute("APP.NAME")!.Value.StartsWith($"{siteName}/",
+					StringComparison.OrdinalIgnoreCase));
+		}
+		XElement[] siteApps = [.. apps.Where(app => string.Equals(app.Attribute("SITE.NAME")!.Value, siteName,
+			StringComparison.OrdinalIgnoreCase))];
+		return siteApps.Length == 1 && string.Equals(siteApps[0].Attribute("APP.NAME")!.Value, $"{siteName}/",
+			StringComparison.OrdinalIgnoreCase);
+	}
+
+	internal static bool IsIisTargetAbsent(string appsXml, string siteName) {
+		if (!TryReadCompleteApps(appsXml, out XElement[] apps) || string.IsNullOrWhiteSpace(siteName)) {
+			return false;
+		}
+		return siteName.Contains('/')
+			? !apps.Any(app => string.Equals(app.Attribute("APP.NAME")!.Value, siteName,
+				StringComparison.OrdinalIgnoreCase))
+			: !apps.Any(app => string.Equals(app.Attribute("SITE.NAME")!.Value, siteName,
+				StringComparison.OrdinalIgnoreCase));
+	}
+
+	public bool TryDeleteAppPoolIfUnused(string appPoolName) {
+		if (!CanDeleteAppPool(ExecuteAppCmd("list app /xml"), appPoolName)) {
+			return false;
+		}
+		RemoveAppPool(appPoolName);
+		return CanDeleteAppPool(ExecuteAppCmd("list app /xml"), appPoolName)
+			&& IsAppPoolAbsent(appPoolName);
+	}
+
+	/// <inheritdoc />
+	public bool IsAppPoolAbsent(string appPoolName) =>
+		IsAppPoolAbsent(ExecuteAppCmd("list apppool /xml"), appPoolName);
+
+	internal static bool CanDeleteAppPool(string appsXml, string appPoolName) {
+		return !string.IsNullOrWhiteSpace(appPoolName)
+			&& TryReadCompleteApps(appsXml, out XElement[] apps)
+			&& !apps.Any(app => string.Equals(app.Attribute("APPPOOL.NAME")!.Value, appPoolName,
+				StringComparison.OrdinalIgnoreCase));
+	}
+
+	internal static bool IsAppPoolAbsent(string appPoolsXml, string appPoolName) {
+		if (string.IsNullOrWhiteSpace(appPoolName)) {
+			return false;
+		}
+		try {
+			XElement root = XElement.Parse(appPoolsXml);
+			if (!HasExpectedAppCmdShape(root, "APPPOOL")) {
+				return false;
+			}
+			XElement[] pools = [.. root.Elements("APPPOOL")];
+			return pools.All(pool => !string.IsNullOrWhiteSpace(pool.Attribute("APPPOOL.NAME")?.Value))
+				&& !pools.Any(pool => string.Equals(pool.Attribute("APPPOOL.NAME")!.Value, appPoolName,
+					StringComparison.OrdinalIgnoreCase));
+		}
+		catch (Exception exception) when (exception is System.Xml.XmlException or ArgumentException) {
+			return false;
+		}
+	}
+
+	private static bool TryReadCompleteApps(string appsXml, out XElement[] apps) {
+		apps = [];
+		try {
+			XElement root = XElement.Parse(appsXml);
+			if (!HasExpectedAppCmdShape(root, "APP")) {
+				return false;
+			}
+			apps = [.. root.Elements("APP")];
+			return apps.All(app => !string.IsNullOrWhiteSpace(app.Attribute("APP.NAME")?.Value)
+				&& !string.IsNullOrWhiteSpace(app.Attribute("APPPOOL.NAME")?.Value)
+				&& !string.IsNullOrWhiteSpace(app.Attribute("SITE.NAME")?.Value));
+		}
+		catch (Exception exception) when (exception is System.Xml.XmlException or ArgumentException) {
+			return false;
+		}
+	}
+
+	private static bool HasExpectedAppCmdShape(XElement root, string childName) =>
+		root.Name == "appcmd" && root.Nodes().All(node => node is XElement element && element.Name == childName);
 
 	public async Task Handle(IExternalLink request){
 		_validator.ValidateAndThrow((IISScannerRequest)request);
