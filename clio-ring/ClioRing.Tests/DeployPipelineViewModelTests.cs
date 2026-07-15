@@ -376,4 +376,42 @@ public sealed class DeployPipelineViewModelTests {
 		_sut.Steps.Count.Should().Be(stepsAfterRun, because: "the sink auto-disposed on the terminal event, so later beats are ignored");
 		_sut.RunState.Should().Be(PipelineRunState.Succeeded, because: "the terminal state is preserved after the run's sink is disposed");
 	}
+
+	[Test]
+	[Description("A warning stage renders as a yellow warning state with friendly and expandable technical detail.")]
+	public void Ingest_ShouldRenderWarningStep_WhenStageStatusIsWarning() {
+		// Arrange
+		_sut.Ingest(Manifest(_runId, ThreeStageManifest()));
+
+		// Act
+		_sut.Ingest(Stage(_runId, "restore-db", ClioStageEventContract.StageStatuses.Warning,
+			message: "Application-pool profile could not be removed.", detail: "Access is denied.",
+			errorCode: "APPPOOL_PROFILE_DELETE_FAILED"));
+
+		// Assert
+		PipelineStepViewModel step = Step("restore-db");
+		step.State.Should().Be(PipelineStepState.Warning,
+			because: "warning is a dedicated state rather than a failed or skipped workaround");
+		step.StateLabel.Should().Be("WARNING", because: "the row visibly communicates the warning");
+		step.HasTechnicalDetail.Should().BeTrue(because: "safe detail is available behind the expander");
+	}
+
+	[Test]
+	[Description("A success-with-warnings terminal renders the dedicated successful warning state.")]
+	public void Ingest_ShouldCompleteSuccessfullyWithWarnings_WhenTerminalOutcomeRetainsWarning() {
+		// Arrange
+		_sut.Ingest(Manifest(_runId, ThreeStageManifest()));
+		_sut.Ingest(Stage(_runId, "restore-db", ClioStageEventContract.StageStatuses.Warning));
+
+		// Act
+		_sut.Ingest(RunCompleted(_runId, ClioStageEventContract.RunOutcomes.SuccessWithWarnings,
+			"Creatio was uninstalled, but its application-pool profile could not be removed."));
+
+		// Assert
+		_sut.RunState.Should().Be(PipelineRunState.SucceededWithWarnings,
+			because: "the terminal is successful without hiding the warning");
+		_sut.IsSucceeded.Should().BeTrue(because: "normal post-success refresh behavior must still run");
+		_sut.RunStateLabel.Should().Be("COMPLETED WITH WARNINGS",
+			because: "the terminal badge visibly communicates the retained warning");
+	}
 }

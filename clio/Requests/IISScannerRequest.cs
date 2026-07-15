@@ -22,7 +22,7 @@ public enum SiteType {
 	NotCreatioSite
 }
 
-public sealed record SiteBinding(string name, string state, string binding, string path) { }
+public sealed record SiteBinding(string name, string state, string binding, string path, string appPoolName = null) { }
 
 public sealed record UnregisteredSite(SiteBinding siteBinding, IList<Uri> Uris, SiteType siteType) { }
 
@@ -47,13 +47,13 @@ public interface IIisScanner {
 	///  Stops the IIS site and its application pool by site name.
 	/// </summary>
 	/// <param name="siteName">The IIS site name to stop.</param>
-	void StopSiteByName(string siteName);
+	void StopSiteByName(string siteName, string appPoolName = null);
 
 	/// <summary>
 	///  Deletes the IIS site and its application pool by site name.
 	/// </summary>
 	/// <param name="siteName">The IIS site name to delete.</param>
-	void DeleteSiteByName(string siteName);
+	void DeleteSiteByName(string siteName, string appPoolName = null);
 }
 
 public class IISScannerRequest : IExternalLink {
@@ -210,16 +210,21 @@ internal class IisScannerHandler : BaseExternalLinkHandler, IIisScanner, IExtern
 		return _processExecutor.Execute(Path.Join(dirPath, "appcmd.exe"), args, waitForExit: true);
 	}
 
-	private void StopAppPool(string name) => ExecuteAppCmd($"stop apppool /apppool.name:{name}");
-	private void StopSite(string name) => ExecuteAppCmd($"stop site /site.name:{name}");
-	private void RemoveSite(string name) => ExecuteAppCmd($"delete site /site.name:{name}");
-	private void RemoveAppPool(string name) => ExecuteAppCmd($"delete apppool /apppool.name:{name}");
+	private static string QuoteAppCmdArgument(string value) => $"\"{value.Replace("\"", "\\\"")}\"";
+
+	private void StopAppPool(string name) =>
+		ExecuteAppCmd($"stop apppool {QuoteAppCmdArgument($"/apppool.name:{name}")}");
+	private void StopSite(string name) => ExecuteAppCmd($"stop site {QuoteAppCmdArgument($"/site.name:{name}")}");
+	private void RemoveSite(string name) => ExecuteAppCmd($"delete site {QuoteAppCmdArgument($"/site.name:{name}")}");
+	private void RemoveAppPool(string name) =>
+		ExecuteAppCmd($"delete apppool {QuoteAppCmdArgument($"/apppool.name:{name}")}");
 
 	private SiteBinding GetSiteBinding(XElement xmlElement) => new SiteBinding(
 		xmlElement.Attribute("SITE.NAME")?.Value,
 		xmlElement.Attribute("state")?.Value,
 		xmlElement.Attribute("bindings")?.Value,
-		ExecuteAppCmd($"list VDIR {xmlElement.Attribute("SITE.NAME").Value}/ /text:physicalPath").Trim()
+		ExecuteAppCmd($"list VDIR {QuoteAppCmdArgument($"{xmlElement.Attribute("SITE.NAME").Value}/")} /text:physicalPath").Trim(),
+		ExecuteAppCmd($"list APP {QuoteAppCmdArgument($"{xmlElement.Attribute("SITE.NAME").Value}/")} /text:applicationPool").Trim()
 	);
 
 	private SiteBinding GetApplicationBinding(XElement xmlElement) {
@@ -246,7 +251,8 @@ internal class IisScannerHandler : BaseExternalLinkHandler, IIisScanner, IExtern
 		if (string.IsNullOrWhiteSpace(physicalPath)) {
 			physicalPath = ExecuteAppCmd($"list app \"{appName}\" /text:physicalPath").Trim();
 		}
-		return new SiteBinding(appName, siteState, siteBindings, physicalPath);
+		string appPoolName = ExecuteAppCmd($"list APP {QuoteAppCmdArgument(appName)} /text:applicationPool").Trim();
+		return new SiteBinding(appName, siteState, siteBindings, physicalPath, appPoolName);
 	}
 
 	private IEnumerable<SiteBinding> GetIISBindings() {
@@ -313,15 +319,15 @@ internal class IisScannerHandler : BaseExternalLinkHandler, IIisScanner, IExtern
 	#region Methods: Public
 
 	/// <inheritdoc />
-	public void StopSiteByName(string siteName){
+	public void StopSiteByName(string siteName, string appPoolName = null){
 		StopSite(siteName);
-		StopAppPool(siteName);
+		StopAppPool(string.IsNullOrWhiteSpace(appPoolName) ? siteName : appPoolName);
 	}
 
 	/// <inheritdoc />
-	public void DeleteSiteByName(string siteName){
+	public void DeleteSiteByName(string siteName, string appPoolName = null){
 		RemoveSite(siteName);
-		RemoveAppPool(siteName);
+		RemoveAppPool(string.IsNullOrWhiteSpace(appPoolName) ? siteName : appPoolName);
 	}
 
 	public async Task Handle(IExternalLink request){

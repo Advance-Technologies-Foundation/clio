@@ -701,6 +701,14 @@ public class BindingsModule {
 		services.AddTransient<DownloadConfigurationCommandOptionsValidator>();
 		services.AddTransient<AddItemOptionsValidator>();
 		services.AddTransient<ICreatioUninstaller, CreatioUninstaller>();
+		services.AddSingleton<IWindowsUserProfileApi, WindowsUserProfileApi>();
+		services.AddSingleton<IProfileDeletionRetryDelay, ProfileDeletionRetryDelay>();
+		if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) {
+			services.AddTransient<IAppPoolProfileCleaner, WindowsAppPoolProfileCleaner>();
+		}
+		else {
+			services.AddTransient<IAppPoolProfileCleaner, NonWindowsAppPoolProfileCleaner>();
+		}
 		services.AddTransient<ICreateIISSiteHandler, CreateIISSiteRequestHandler>();
 		services.AddTransient<IConfigureConnectionStringHandler, ConfigureConnectionStringRequestHandler>();
 		services.AddTransient<IUpdateIISSitePhysicalPathHandler, UpdateIISSitePhysicalPathRequestHandler>();

@@ -173,6 +173,22 @@ public class ClioStageEventContractTests {
 		evt.SchemaVersion.Should().NotBe(ClioStageEventContract.SchemaVersion, "because this envelope was emitted by a newer, incompatible schema version");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("The additive warning vocabulary is exposed without changing the versioned JSON shape.")]
+	public void WarningVocabulary_ShouldExposeStableTokens_WhenBestEffortCleanupWarns() {
+		// Arrange
+
+		// Act
+		string stageStatus = ClioStageEventContract.StageStatuses.Warning;
+		string runOutcome = ClioStageEventContract.RunOutcomes.SuccessWithWarnings;
+
+		// Assert
+		stageStatus.Should().Be("warning", because: "Ring and MCP require the exact additive stage token");
+		runOutcome.Should().Be("success-with-warnings",
+			because: "Ring and MCP require the exact successful warning terminal token");
+	}
+
 	private static string NormalizeNewlines(string text) => text.Replace("\r\n", "\n").Replace("\r", "\n");
 
 	private static ClioStageEvent CanonicalManifest() {

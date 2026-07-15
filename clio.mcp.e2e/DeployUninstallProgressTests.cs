@@ -32,7 +32,7 @@ namespace Clio.Mcp.E2E;
 [Parallelizable(ParallelScope.Self)]
 public sealed class DeployUninstallProgressTests : McpContractFixtureBase {
 	private const string ToolName = InstallerCommandTool.DeployCreatioToolName;
-	private const string UninstallToolName = "uninstall-creatio";
+	private const string UninstallToolName = UninstallCreatioTool.UninstallCreatioToolName;
 	private const string MissingEnvironmentName = "mcp-e2e-missing-uninstall-target";
 
 	/// <inheritdoc />

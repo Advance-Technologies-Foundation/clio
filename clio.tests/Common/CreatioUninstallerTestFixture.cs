@@ -26,7 +26,8 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 	private const string ConnectionStringsFileName = "ConnectionStrings.config";
 	private const string EnvironmentName = "work";
 	private const string InstalledCreatioPath = @"C:\inetpub\wwwroot\work";
-	private const string ProfileDirectoryPath = @"C:\Users\work";
+	private const string AppPoolName = "custom-work-pool";
+	private const string ProfileDirectoryPath = @"C:\Users\custom-work-pool";
 
 	#endregion
 
@@ -39,6 +40,7 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 	private readonly Ik8Commands _k8CommandsMock = Substitute.For<Ik8Commands>();
 	private readonly IMssql _mssqlMock = Substitute.For<IMssql>();
 	private readonly IPostgres _postgresMock = Substitute.For<IPostgres>();
+	private readonly IAppPoolProfileCleaner _profileCleanerMock = Substitute.For<IAppPoolProfileCleaner>();
 
 	#endregion
 
@@ -49,10 +51,10 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 		_iisScannerMock.FindAllCreatioSites().Returns(allSitesMock);
 	}
 
-	private void MockStartedSite(string url = "", string siteName = EnvironmentName){
+	private void MockStartedSite(string url = "", string siteName = EnvironmentName, string appPoolName = null){
 		IEnumerable<UnregisteredSite> allSitesMock = [
 			new UnregisteredSite(
-				new SiteBinding(siteName, "Started", "", InstalledCreatioPath),
+				new SiteBinding(siteName, "Started", "", InstalledCreatioPath, appPoolName),
 				[
 					string.IsNullOrWhiteSpace(url) ?
 						new Uri(EnvironmentSettings.Uri) : new Uri(url)
@@ -111,6 +113,7 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 		containerBuilder.AddSingleton<Ik8Commands>(_k8CommandsMock);
 		containerBuilder.AddSingleton<IMssql>(_mssqlMock);
 		containerBuilder.AddSingleton<IPostgres>(_postgresMock);
+		containerBuilder.AddSingleton<IAppPoolProfileCleaner>(_profileCleanerMock);
 	}
 
 	#endregion
@@ -134,8 +137,15 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 		
 		// Clear all mock call history before each test to ensure test isolation
 		_loggerMock.ClearReceivedCalls();
+		_settingsRepositoryMock.ClearReceivedCalls();
+		_iisScannerMock.ClearReceivedCalls();
 		_mssqlMock.ClearReceivedCalls();
 		_postgresMock.ClearReceivedCalls();
+		_profileCleanerMock.ClearReceivedCalls();
+		_profileCleanerMock.Prepare(Arg.Any<string>()).Returns(
+			new AppPoolProfileCleanupTarget(new WindowsProfileRegistration("S-1-5-82-1", ProfileDirectoryPath)));
+		_profileCleanerMock.TryDelete(Arg.Any<AppPoolProfileCleanupTarget>()).Returns(
+			new AppPoolProfileCleanupResult(AppPoolProfileCleanupStatus.NotApplicable));
 	}
 
 	#endregion
@@ -540,12 +550,11 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 
 	[Test]
 	[Category("Unit")]
-	[Description("Correction B / AC-04: when an app-pool profile directory exists the delete-apppool-profile stage is emitted skipped with reason not-supported and no deletion occurs.")]
-	public void UninstallByPath_ShouldEmitProfileSkippedNotSupported_WhenProfileDirectoryExists(){
+	[Description("A missing registered application-pool profile is emitted as skipped and not applicable.")]
+	public void UninstallByPath_ShouldEmitProfileSkippedNotApplicable_WhenProfileIsAbsent(){
 		// Arrange
-		MockStartedSite();
+		MockStartedSite(appPoolName: AppPoolName);
 		AddPostgresConnectionStringFile();
-		FileSystem.AddDirectory(ProfileDirectoryPath);
 		List<ClioStageEvent> events = CaptureStageEvents();
 
 		// Act
@@ -555,16 +564,16 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 		events.First().Stages!.Select(s => s.StageId).Should().Contain(StageIds.DeleteApppoolProfile,
 			"because the profile stage is present in the manifest when a profile directory exists (AC-04)");
 		StagesWithStatus(events, StageIds.DeleteApppoolProfile).Should().Contain(
-			s => s.Status == ClioStageEventContract.StageStatuses.Skipped && s.SkipReason == ClioStageEventContract.SkipReasons.NotSupported,
-			"because profile deletion is not supported and must be reported honestly, never silently succeeded (AC-04)");
-		FileSystem.Directory.Exists(ProfileDirectoryPath).Should().BeTrue(
-			"because the profile directory is left in place (no deletion is performed)");
+			s => s.Status == ClioStageEventContract.StageStatuses.Skipped && s.SkipReason == ClioStageEventContract.SkipReasons.NotApplicable,
+			"because an absent ProfileList registration has nothing to delete");
+		_profileCleanerMock.Received(1).Prepare(AppPoolName);
+		_profileCleanerMock.Received(1).TryDelete(Arg.Any<AppPoolProfileCleanupTarget>());
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Correction B / AC-04: when no app-pool profile directory exists the delete-apppool-profile stage is absent from the manifest and never emitted.")]
-	public void UninstallByPath_ShouldOmitProfileStage_WhenNoProfileDirectory(){
+	[Description("Omits profile cleanup when IIS does not expose an actual application-pool name.")]
+	public void UninstallByPath_ShouldOmitProfileStage_WhenAppPoolNameIsUnavailable(){
 		// Arrange
 		MockStartedSite();
 		AddPostgresConnectionStringFile();
@@ -577,7 +586,63 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 		events.First().Stages!.Select(s => s.StageId).Should().NotContain(StageIds.DeleteApppoolProfile,
 			"because the profile stage is absent from the manifest when no profile directory exists (AC-04)");
 		StagesWithStatus(events, StageIds.DeleteApppoolProfile).Should().BeEmpty(
-			"because a non-existent profile is never emitted");
+			"because no arbitrary profile can be inferred from site name or path");
+		_profileCleanerMock.DidNotReceive().Prepare(Arg.Any<string>());
+		_profileCleanerMock.DidNotReceive().TryDelete(Arg.Any<AppPoolProfileCleanupTarget>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A failed profile cleanup emits one warning, completes with warnings, and still unregisters the environment.")]
+	public void UninstallByEnvironmentName_ShouldWarnAndContinueUnregister_WhenProfileDeletionFails() {
+		// Arrange
+		MockStartedSite(appPoolName: AppPoolName);
+		AddPostgresConnectionStringFile();
+		_profileCleanerMock.TryDelete(Arg.Any<AppPoolProfileCleanupTarget>()).Returns(new AppPoolProfileCleanupResult(
+			AppPoolProfileCleanupStatus.Warning, ProfileDirectoryPath, "Access is denied.",
+			WindowsAppPoolProfileCleaner.ProfileDeleteFailedErrorCode));
+		List<ClioStageEvent> events = CaptureStageEvents();
+
+		// Act
+		_sut.UninstallByEnvironmentName(EnvironmentName);
+
+		// Assert
+		StagesWithStatus(events, StageIds.DeleteApppoolProfile).Should().ContainSingle(stage =>
+			stage.Status == ClioStageEventContract.StageStatuses.Warning
+			&& stage.ErrorCode == WindowsAppPoolProfileCleaner.ProfileDeleteFailedErrorCode,
+			because: "profile exhaustion is one non-fatal typed warning instead of a failed-stage cascade");
+		_settingsRepositoryMock.Received(1).RemoveEnvironment(EnvironmentName);
+		events.Last().RunCompleted!.Outcome.Should().Be(ClioStageEventContract.RunOutcomes.SuccessWithWarnings,
+			because: "the typed terminal must distinguish a successful uninstall that retained a warning");
+		_loggerMock.Received(1).WriteWarning(Arg.Is<string>(message =>
+			message.Contains(ProfileDirectoryPath) && message.Contains("Delete it manually")));
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A successful cleanup uses the actual IIS application-pool name and emits the profile stage as done.")]
+	public void UninstallByPath_ShouldDeleteActualAppPoolProfile_WhenCleanupSucceeds() {
+		// Arrange
+		MockStartedSite(appPoolName: AppPoolName);
+		AddPostgresConnectionStringFile();
+		_profileCleanerMock.TryDelete(Arg.Any<AppPoolProfileCleanupTarget>()).Returns(new AppPoolProfileCleanupResult(
+			AppPoolProfileCleanupStatus.Deleted, ProfileDirectoryPath));
+		List<ClioStageEvent> events = CaptureStageEvents();
+
+		// Act
+		_sut.UninstallByPath(InstalledCreatioPath);
+
+		// Assert
+		_iisScannerMock.Received(1).StopSiteByName(EnvironmentName, AppPoolName);
+		_iisScannerMock.Received(1).DeleteSiteByName(EnvironmentName, AppPoolName);
+		Received.InOrder(() => {
+			_profileCleanerMock.Prepare(AppPoolName);
+			_iisScannerMock.DeleteSiteByName(EnvironmentName, AppPoolName);
+			_profileCleanerMock.TryDelete(Arg.Any<AppPoolProfileCleanupTarget>());
+		});
+		StagesWithStatus(events, StageIds.DeleteApppoolProfile).Should().Contain(stage =>
+			stage.Status == ClioStageEventContract.StageStatuses.Done,
+			because: "successful Windows cleanup removes both profile registration and files");
 	}
 
 	[Test]

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Linq;
 using Avalonia.Threading;
 using ClioRing.Ipc;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -18,6 +19,9 @@ public enum PipelineRunState {
 
 	/// <summary>The run finished successfully (<c>run-completed outcome=success</c>).</summary>
 	Succeeded,
+
+	/// <summary>The run completed successfully while retaining one or more warnings.</summary>
+	SucceededWithWarnings,
 
 	/// <summary>The run finished with a failure (<c>run-completed outcome=failure</c>).</summary>
 	Failed,
@@ -72,6 +76,7 @@ public sealed partial class DeployPipelineViewModel : ViewModelBase {
 	[NotifyPropertyChangedFor(nameof(RunStateLabel))]
 	[NotifyPropertyChangedFor(nameof(IsRunning))]
 	[NotifyPropertyChangedFor(nameof(IsSucceeded))]
+	[NotifyPropertyChangedFor(nameof(IsSucceededWithWarnings))]
 	[NotifyPropertyChangedFor(nameof(IsFailed))]
 	[NotifyPropertyChangedFor(nameof(HasTerminalOutcome))]
 	private PipelineRunState _runState = PipelineRunState.Idle;
@@ -112,15 +117,19 @@ public sealed partial class DeployPipelineViewModel : ViewModelBase {
 	/// <summary>True while the run is in progress.</summary>
 	public bool IsRunning => RunState == PipelineRunState.Running;
 
-	/// <summary>True once the run has succeeded.</summary>
-	public bool IsSucceeded => RunState == PipelineRunState.Succeeded;
+	/// <summary>True once the run has succeeded, with or without warnings.</summary>
+	public bool IsSucceeded => RunState is PipelineRunState.Succeeded or PipelineRunState.SucceededWithWarnings;
+
+	/// <summary>True once the run has completed successfully with warnings.</summary>
+	public bool IsSucceededWithWarnings => RunState == PipelineRunState.SucceededWithWarnings;
 
 	/// <summary>True once the run has failed.</summary>
 	public bool IsFailed => RunState == PipelineRunState.Failed;
 
 	/// <summary>Whether the run has reached any terminal outcome (success / failure / cancelled).</summary>
 	public bool HasTerminalOutcome =>
-		RunState is PipelineRunState.Succeeded or PipelineRunState.Failed or PipelineRunState.Cancelled;
+		RunState is PipelineRunState.Succeeded or PipelineRunState.SucceededWithWarnings
+			or PipelineRunState.Failed or PipelineRunState.Cancelled;
 
 	/// <summary>Whether a derived URL is available on success (drives the "Open" affordance).</summary>
 	public bool HasDerivedUrl => !string.IsNullOrEmpty(DerivedUrl);
@@ -141,6 +150,7 @@ public sealed partial class DeployPipelineViewModel : ViewModelBase {
 	public string RunStateLabel => RunState switch {
 		PipelineRunState.Running => "RUNNING",
 		PipelineRunState.Succeeded => "SUCCEEDED",
+		PipelineRunState.SucceededWithWarnings => "COMPLETED WITH WARNINGS",
 		PipelineRunState.Failed => "FAILED",
 		PipelineRunState.Cancelled => "CANCELLED",
 		_ => string.Empty
@@ -267,6 +277,9 @@ public sealed partial class DeployPipelineViewModel : ViewModelBase {
 				// sends explicit skipped events; applying the cascade here first is idempotent with those.
 				CascadeAfterFailure();
 				break;
+			case ClioStageEventContract.StageStatuses.Warning:
+				step.MarkWarning(stage.Message, stage.DurationMs, stage.Detail, stage.ErrorCode);
+				break;
 			case ClioStageEventContract.StageStatuses.Skipped:
 				step.MarkSkipped(
 					stage.SkipReason ?? ClioStageEventContract.SkipReasons.NotApplicable,
@@ -298,7 +311,18 @@ public sealed partial class DeployPipelineViewModel : ViewModelBase {
 						step.MarkDone(step.Message, step.DurationMs, step.Detail);
 					}
 				}
-				RunState = PipelineRunState.Succeeded;
+				RunState = Steps.Any(step => step.IsWarning)
+					? PipelineRunState.SucceededWithWarnings
+					: PipelineRunState.Succeeded;
+				break;
+
+			case ClioStageEventContract.RunOutcomes.SuccessWithWarnings:
+				foreach (PipelineStepViewModel step in Steps) {
+					if (step.State is PipelineStepState.Pending or PipelineStepState.Running) {
+						step.MarkDone(step.Message, step.DurationMs, step.Detail);
+					}
+				}
+				RunState = PipelineRunState.SucceededWithWarnings;
 				break;
 
 			case ClioStageEventContract.RunOutcomes.Failure:
