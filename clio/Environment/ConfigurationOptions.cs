@@ -14,6 +14,7 @@ using System.Text.Json.Serialization;
 using System.Threading;
 using Clio.Common;
 using Clio.Common.db;
+using Clio.Common.DbHub;
 using ConsoleTables;
 using YamlDotNet.Serialization;
 using FileSystem = System.IO.Abstractions.FileSystem;
@@ -437,6 +438,10 @@ namespace Clio
 		/// </summary>
 		[JsonProperty("deploy-creatio-defaults")]
 		public DeployCreatioDefaults DeployCreatioDefaults { get; set; }
+
+		/// <summary>Gets or sets local dbHub HTTP server integration settings.</summary>
+		[JsonProperty("dbhub")]
+		public DbHubSettings DbHub { get; set; }
 
 		public EnvironmentSettings GetActiveEnvironment() {
 			if (string.IsNullOrEmpty(ActiveEnvironmentKey)
@@ -1150,6 +1155,15 @@ namespace Clio
 		public void SetDeployCreatioDefaults(DeployCreatioDefaults defaults) {
 			UpdateSettings(settings =>
 				settings.DeployCreatioDefaults = defaults is null || defaults.IsEmpty ? null : defaults);
+		}
+
+		public DbHubSettings GetDbHubSettings() {
+			return (_settings.DbHub ?? new DbHubSettings()).Clone();
+		}
+
+		public void SetDbHubSettings(DbHubSettings settings) {
+			ArgumentNullException.ThrowIfNull(settings);
+			UpdateSettings(current => current.DbHub = settings.Clone());
 		}
 
 	}

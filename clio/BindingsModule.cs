@@ -787,6 +787,8 @@ public class BindingsModule {
 		services.AddTransient<PullPkgCommand>();
 		services.AddTransient<AssemblyCommand>();
 		services.AddTransient<UninstallCreatioCommand>();
+		services.AddTransient<InstallDbHubCommand>();
+		services.AddTransient<SyncDbHubCommand>();
 		services.AddTransient<AddSchemaCommand>();
 		services.AddTransient<CreateEntitySchemaCommand>();
 		services.AddTransient<UpdateEntitySchemaCommand>();

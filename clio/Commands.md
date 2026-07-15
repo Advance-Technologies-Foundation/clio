@@ -588,6 +588,10 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 
 ## Integrations & Tools
 
+<a id="install-dbhub"></a>
+- [`install-dbhub`](docs/commands/install-dbhub.md) - Install, adopt, or repair a local loopback dbHub HTTP MCP server
+<a id="sync-dbhub"></a>
+- [`sync-dbhub`](docs/commands/sync-dbhub.md) - Reconcile clio-owned dbHub sources with local Creatio environments
 <a id="ring"></a>
 - [`ring`](docs/commands/ring.md) - Manage the opt-in internal clio-ring desktop preview (experimental; Windows x64 only)
 <a id="delete-toolkit"></a>

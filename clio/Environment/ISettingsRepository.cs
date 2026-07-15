@@ -1,6 +1,7 @@
 ﻿using System.Collections.Generic;
 using System.IO;
 using Clio.Common.db;
+using Clio.Common.DbHub;
 
 namespace Clio.UserEnvironment
 {
@@ -177,6 +178,14 @@ namespace Clio.UserEnvironment
 		/// </summary>
 		/// <param name="defaults">The defaults to persist, or <c>null</c>/empty to clear them.</param>
 		void SetDeployCreatioDefaults(DeployCreatioDefaults defaults);
+
+		/// <summary>Gets a detached snapshot of the local dbHub integration settings.</summary>
+		/// <returns>Configured settings, or safe disabled defaults when absent.</returns>
+		DbHubSettings GetDbHubSettings();
+
+		/// <summary>Persists local dbHub integration settings.</summary>
+		/// <param name="settings">Validated settings to persist.</param>
+		void SetDbHubSettings(DbHubSettings settings);
 
 		/// <summary>
 		/// Gets the default active environment name.

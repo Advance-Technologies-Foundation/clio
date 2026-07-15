@@ -517,6 +517,9 @@ What an external AI can practically do here:
 Important note:
 
 - `list-environments` explicitly returns unmasked settings, which is powerful but sensitive
+- dbHub installation and source reconciliation are intentionally CLI-only. `install-dbhub` creates or repairs
+  a current-user Scheduled Task, while `sync-dbhub` reads secret-bearing local database configuration and mutates
+  a workstation TOML file. Neither operation is exposed as an MCP tool without a concrete authorization model.
 
 ### 8. Deployment, Restore, And Infrastructure Preflight
 
