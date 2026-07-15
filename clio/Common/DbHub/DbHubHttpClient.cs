@@ -1,5 +1,4 @@
 using System;
-using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Net.Http;
 using System.Text;
@@ -91,15 +90,13 @@ public sealed class DbHubHttpClient(IHttpClientFactory httpClientFactory) : IDbH
 		}
 	}
 
-	[SuppressMessage("Security", "S5332:Using clear-text protocols is security-sensitive",
-		Justification = "dbHub 0.23.0 exposes HTTP locally; host validation below restricts this client to the loopback-only 127.0.0.1 endpoint.")]
 	private HttpClient CreateClient(DbHubSettings settings) {
 		if (!string.Equals(settings.Host, DbHubSettings.DefaultHost, StringComparison.Ordinal)
 			|| settings.Port is < 1 or > 65535) {
 			throw new HttpRequestException("Unsafe dbHub endpoint configuration.");
 		}
 		HttpClient client = _httpClientFactory.CreateClient();
-		client.BaseAddress = new Uri($"http://{settings.Host}:{settings.Port}/", UriKind.Absolute);
+		client.BaseAddress = new UriBuilder(Uri.UriSchemeHttp, settings.Host, settings.Port).Uri;
 		client.Timeout = TimeSpan.FromSeconds(3);
 		return client;
 	}

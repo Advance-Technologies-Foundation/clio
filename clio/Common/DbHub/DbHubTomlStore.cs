@@ -260,7 +260,7 @@ public sealed class DbHubTomlStore : IDbHubTomlStore {
 		Line($"port = {source.Port}");
 		Line($"database = {Quote(source.Database)}");
 		Line($"user = {Quote(source.User)}");
-		Line($"password = {Quote(source.Password)}");
+		Line($"password = {Quote(source.Credential)}");
 		if (!string.IsNullOrWhiteSpace(source.InstanceName)) {
 			Line($"instanceName = {Quote(source.InstanceName)}");
 		}

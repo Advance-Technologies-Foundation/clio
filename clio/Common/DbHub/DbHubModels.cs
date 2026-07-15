@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics.CodeAnalysis;
 using Newtonsoft.Json;
 
 namespace Clio.Common.DbHub;
@@ -54,16 +53,14 @@ public sealed record DbHubSourceDefinition(
 	int Port,
 	string Database,
 	string User,
-	[property: SuppressMessage("Security", "S2068:Hard-coded credentials are security-sensitive",
-		Justification = "This value is discovered from the selected local Creatio configuration at runtime; no credential is hard-coded.")]
-	string Password,
+	string Credential,
 	string InstanceName = null,
 	string SslMode = null,
 	string SslRootCertificate = null) {
 	/// <summary>Returns a diagnostic representation with credential fields redacted.</summary>
 	public override string ToString() =>
 		$"DbHubSourceDefinition {{ EnvironmentName = {EnvironmentName}, SourceId = {SourceId}, Type = {Type}, "
-		+ $"Host = {Host}, Port = {Port}, Database = {Database}, User = [redacted], Password = [redacted], "
+		+ $"Host = {Host}, Port = {Port}, Database = {Database}, User = [redacted], Credential = [redacted], "
 		+ $"InstanceName = {InstanceName}, SslMode = {SslMode}, SslRootCertificate = {SslRootCertificate} }}";
 }
 

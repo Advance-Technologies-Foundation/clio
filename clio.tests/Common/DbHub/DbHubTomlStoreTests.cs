@@ -337,7 +337,7 @@ public sealed class DbHubTomlStoreTests : BaseClioModuleTests {
 	public void Upsert_ShouldNotExposeSecrets_WhenValidationFails() {
 		// Arrange
 		File.WriteAllText(_configPath, "[[broken]");
-		DbHubSourceDefinition source = Source("dev", "dev") with { Password = "super-secret-value" };
+		DbHubSourceDefinition source = Source("dev", "dev") with { Credential = "super-secret-value" };
 
 		// Act
 		DbHubSyncResult result = _sut.Upsert(_configPath, source);
