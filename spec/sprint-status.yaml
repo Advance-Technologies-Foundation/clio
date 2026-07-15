@@ -1990,3 +1990,18 @@ stories:
     test_plan: spec/apppool-profile-cleanup/apppool-profile-cleanup-test-plan.md
     depends_on: []
     blocks: []
+
+  - id: story-dbhub-integration-1
+    title: "Deliver dbHub installation and automatic Creatio source synchronization"
+    feature: "dbhub-integration"
+    repo: "clio"
+    size: L
+    status: done
+    issue: 882
+    file: spec/dbhub-integration/dbhub-integration-story.md
+    prd: spec/dbhub-integration/dbhub-integration-prd.md
+    adr: spec/dbhub-integration/dbhub-integration-adr.md
+    test_plan: spec/dbhub-integration/dbhub-integration-test-plan.md
+    note: "Integrated onto merged issue #881 warning vocabulary and fail-closed shared-pool uninstall semantics."
+    depends_on: []
+    blocks: []

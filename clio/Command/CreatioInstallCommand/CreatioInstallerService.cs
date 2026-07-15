@@ -14,6 +14,7 @@ using Clio.Common;
 using Clio.Common.Database;
 using Clio.Common.db;
 using Clio.Common.DeploymentStrategies;
+using Clio.Common.DbHub;
 using Clio.Common.K8;
 using Clio.Common.ScenarioHandlers;
 using Clio.UserEnvironment;
@@ -135,6 +136,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 	private readonly string _remoteArtefactServerPath;
 	private readonly ISettingsRepository _settingsRepository;
 	private readonly IStageEventEmitter _stageEventEmitter;
+	private readonly IDbHubSynchronizationService _dbHubSynchronizationService;
 
 	#endregion
 
@@ -163,6 +165,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 	/// <param name="passwordResetScriptExecutor">Executor for post-restore password reset script.</param>
 	/// <param name="stageEventEmitter">Emitter that raises typed stage-progress events for the deploy run.</param>
 	/// <param name="dbOperationLogContextAccessor">Accessor for the active database operation log session.</param>
+	/// <param name="dbHubSynchronizationService">Best-effort dbHub source synchronization service.</param>
 	public CreatioInstallerService(IPackageArchiver packageArchiver, k8Commands k8,
 		IConfigureConnectionStringHandler configureConnectionStringHandler, RegAppCommand registerCommand, ISettingsRepository settingsRepository,
 		IFileSystem fileSystem, MsFileSystem msFileSystem, ILogger logger,
@@ -176,7 +179,8 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		ICreatioPackageVersionParser creatioPackageVersionParser,
 		IPasswordResetScriptExecutor passwordResetScriptExecutor,
 		IStageEventEmitter stageEventEmitter,
-		IDbOperationLogContextAccessor dbOperationLogContextAccessor = null) {
+		IDbOperationLogContextAccessor dbOperationLogContextAccessor = null,
+		IDbHubSynchronizationService dbHubSynchronizationService = null) {
 		_packageArchiver = packageArchiver;
 		_k8 = k8;
 		_configureConnectionStringHandler = configureConnectionStringHandler;
@@ -201,6 +205,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		_creatioPackageVersionParser = creatioPackageVersionParser;
 		_passwordResetScriptExecutor = passwordResetScriptExecutor;
 		_stageEventEmitter = stageEventEmitter;
+		_dbHubSynchronizationService = dbHubSynchronizationService;
 		_dbOperationLogContextAccessor = dbOperationLogContextAccessor ?? NullDbOperationLogContextAccessor.Instance;
 	}
 
@@ -227,11 +232,11 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		StageChanged?.Invoke(this, stageEvent);
 	}
 
-	internal static IReadOnlyList<StageDescriptor> BuildDeployManifest() {
+	internal static IReadOnlyList<StageDescriptor> BuildDeployManifest(bool includeDbHubSync = false) {
 		// Ordered exactly as the stages execute below (ADR fact 7 / FR-05). stage-build is the only
 		// conditional stage: it runs when the source is a network drive and is skipped (not-applicable)
 		// otherwise. The emitter assigns each entry its zero-based index and the shared total.
-		return [
+		List<StageDescriptor> stages = [
 			new StageDescriptor(StageIds.StageBuild, "Build source", true),
 			new StageDescriptor(StageIds.Unzip, "Unzip distribution", false),
 			new StageDescriptor(StageIds.CopyFiles, "Copy files", false),
@@ -241,6 +246,10 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			new StageDescriptor(StageIds.RegisterEnv, "Register environment", false),
 			new StageDescriptor(StageIds.WaitReady, "Wait until ready", false)
 		];
+		if (includeDbHubSync) {
+			stages.Add(new StageDescriptor(StageIds.SyncDbHubSource, "Synchronize dbHub source", true));
+		}
+		return stages;
 	}
 
 	// Mirrors the network-drive decision made by CopyLocalWhenNetworkDrive so the manifest built up front
@@ -1459,7 +1468,9 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 		// wrap each real stage boundary with the emitter. Emission is observational only: with no
 		// subscriber attached the raising is a no-op and deploy behavior is unchanged.
 		bool isNetworkSource = IsNetworkDriveSource(options.ZipFile);
-		_stageEventEmitter.Begin(ClioStageEventContract.Operations.Deploy, BuildDeployManifest(), OnStageChanged);
+		bool synchronizeDbHub = _dbHubSynchronizationService?.IsAutomaticSynchronizationEnabled() == true;
+		_stageEventEmitter.Begin(ClioStageEventContract.Operations.Deploy,
+			BuildDeployManifest(synchronizeDbHub), OnStageChanged);
 		try {
 
 		// stage-build: copying from a network drive to the local products folder is the only work this
@@ -1586,7 +1597,29 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			}
 		});
 
-		_stageEventEmitter.CompleteSuccess("Deployment completed", uri, deploymentFolder);
+		DbHubWarning dbHubWarning = null;
+		if (synchronizeDbHub) {
+			DbHubSyncResult dbHubResult = _dbHubSynchronizationService.SynchronizeEnvironment(options.SiteName);
+			dbHubWarning = dbHubResult.Warning;
+			if (dbHubWarning is null) {
+				_stageEventEmitter.RunStage(StageIds.SyncDbHubSource, () => { });
+			}
+			else {
+				_stageEventEmitter.WarnStage(StageIds.SyncDbHubSource, dbHubWarning.Message,
+					dbHubWarning.Detail, dbHubWarning.ErrorCode);
+				_logger.WriteWarning(string.IsNullOrWhiteSpace(dbHubWarning.Detail)
+					? dbHubWarning.Message
+					: $"{dbHubWarning.Message} {dbHubWarning.Detail}");
+			}
+		}
+
+		if (dbHubWarning is null) {
+			_stageEventEmitter.CompleteSuccess("Deployment completed", uri, deploymentFolder);
+		}
+		else {
+			_stageEventEmitter.CompleteSuccessWithWarnings("Deployment completed with a dbHub warning.",
+				dbHubWarning.Detail, dbHubWarning.ErrorCode, deploymentFolder, uri);
+		}
 		}
 		catch (Exception ex) {
 			_stageEventEmitter.CompleteFailure("Deployment failed", ex.Message, "deployment-execution-failed");

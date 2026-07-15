@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using System.Xml;
 using Clio.Command.McpServer.Progress;
+using Clio.Common.DbHub;
 using Clio.Common.db;
 using Clio.Common.K8;
 using Clio.Requests;
@@ -58,7 +59,8 @@ public interface ICreatioUninstaller
 	///         <item>Logs warnings if no sites are found or if the specified environment cannot be matched to any site.</item>
 	///     </list>
 	///     Unregistering the environment is the final stage and runs only after the destructive cleanup
-	///     (drop-database, delete-files) has completed; on any failure the environment is left registered
+	///     (drop-database, delete-files) has completed. When automatic dbHub synchronization is enabled,
+	///     its clio-owned source is removed on a best-effort basis immediately before unregistering. On any failure the environment is left registered
 	///     so the operation can be retried.
 	/// </remarks>
 	/// <exception cref="CreatioUninstallAbortedException">
@@ -87,6 +89,7 @@ public interface ICreatioUninstaller
 	///             On Windows, the registered IIS virtual-account profile is deleted on a best-effort basis
 	///             (<c>delete-apppool-profile</c>); exhausted native retries produce a warning and do not fail uninstall.
 	///         </item>
+	///         <item>Remove the clio-owned dbHub source on a best-effort basis (<c>remove-dbhub-source</c>).</item>
 	///     </list>
 	///     If <c>read-config</c> fails the run is aborted before any destructive step (no database is dropped,
 	///     no files are deleted) and a <see cref="CreatioUninstallAbortedException"/> is thrown rather than
@@ -116,6 +119,7 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 	private readonly IPostgres _postgres;
 	private readonly IStageEventEmitter _stageEventEmitter;
 	private readonly IAppPoolProfileCleaner _appPoolProfileCleaner;
+	private readonly IDbHubSynchronizationService _dbHubSynchronizationService;
 
 	#endregion
 
@@ -123,7 +127,8 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 
 	public CreatioUninstaller(IFileSystem fileSystem, ISettingsRepository settingsRepository,
 		IIisScanner iisScanner, ILogger logger, Ik8Commands k8Commands, IMssql mssql, IPostgres postgres,
-		IStageEventEmitter stageEventEmitter, IAppPoolProfileCleaner appPoolProfileCleaner){
+		IStageEventEmitter stageEventEmitter, IAppPoolProfileCleaner appPoolProfileCleaner,
+		IDbHubSynchronizationService dbHubSynchronizationService = null){
 		_fileSystem = fileSystem;
 		_settingsRepository = settingsRepository;
 		_iisScanner = iisScanner;
@@ -133,6 +138,7 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 		_postgres = postgres;
 		_stageEventEmitter = stageEventEmitter;
 		_appPoolProfileCleaner = appPoolProfileCleaner;
+		_dbHubSynchronizationService = dbHubSynchronizationService;
 	}
 
 	#endregion
@@ -318,7 +324,8 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 	/// plus the conditional <c>delete-apppool-profile</c> stage inserted before <c>unregister</c> only when an
 	/// actual IIS application-pool name was captured. <c>unregister</c> is always the final stage.
 	/// </summary>
-	internal static IReadOnlyList<StageDescriptor> BuildUninstallManifest(bool includeProfileStage){
+	internal static IReadOnlyList<StageDescriptor> BuildUninstallManifest(bool includeProfileStage,
+		bool includeDbHubRemoval = false){
 		List<StageDescriptor> stages = [
 			new StageDescriptor(StageIds.ReadConfig, "Read configuration", false),
 			new StageDescriptor(StageIds.StopIis, "Stop IIS site", false),
@@ -328,6 +335,9 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 		];
 		if (includeProfileStage) {
 			stages.Add(new StageDescriptor(StageIds.DeleteApppoolProfile, "Delete application-pool profile", true));
+		}
+		if (includeDbHubRemoval) {
+			stages.Add(new StageDescriptor(StageIds.RemoveDbHubSource, "Remove dbHub source", true));
 		}
 		stages.Add(new StageDescriptor(StageIds.Unregister, "Unregister environment", false));
 		return stages;
@@ -343,6 +353,8 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 		}
 
 		bool hasEnvironment = !string.IsNullOrWhiteSpace(environmentName);
+		bool synchronizeDbHub = hasEnvironment
+			&& _dbHubSynchronizationService?.IsAutomaticSynchronizationEnabled() == true;
 		UnregisteredSite targetSite = ResolveSite(creatioDirectoryPath);
 		string appPoolName = targetSite?.siteBinding.appPoolName;
 		bool includeProfileStage = !string.IsNullOrWhiteSpace(appPoolName);
@@ -356,7 +368,7 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 		bool appPoolDeleted = false;
 
 		_stageEventEmitter.Begin(ClioStageEventContract.Operations.Uninstall,
-			BuildUninstallManifest(includeProfileStage), OnStageChanged);
+			BuildUninstallManifest(includeProfileStage, synchronizeDbHub), OnStageChanged);
 
 		DbInfo dbInfo = null;
 		_stageEventEmitter.RunStage(StageIds.ReadConfig, () => {
@@ -430,6 +442,26 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 			}
 		}
 
+		DbHubWarning dbHubWarning = null;
+		if (synchronizeDbHub) {
+			DbHubSyncResult dbHubResult = _dbHubSynchronizationService.RemoveEnvironmentSource(environmentName);
+			dbHubWarning = dbHubResult.Warning;
+			if (dbHubWarning is not null) {
+				_stageEventEmitter.WarnStage(StageIds.RemoveDbHubSource, dbHubWarning.Message,
+					dbHubWarning.Detail, dbHubWarning.ErrorCode);
+				_logger.WriteWarning(string.IsNullOrWhiteSpace(dbHubWarning.Detail)
+					? dbHubWarning.Message
+					: $"{dbHubWarning.Message} {dbHubWarning.Detail}");
+			}
+			else if (dbHubResult.Skipped) {
+				_stageEventEmitter.SkipStage(StageIds.RemoveDbHubSource,
+					ClioStageEventContract.SkipReasons.NotApplicable);
+			}
+			else {
+				_stageEventEmitter.RunStage(StageIds.RemoveDbHubSource, () => { });
+			}
+		}
+
 		// Correction C: unregister is the final stage and runs only after the destructive cleanup above
 		// succeeded. Without an environment name there is nothing registered to remove.
 		if (hasEnvironment) {
@@ -445,10 +477,20 @@ public class CreatioUninstaller : ICreatioUninstaller, IStageEventSource
 			_logger.WriteWarning(profileWarning);
 		}
 
-		if (profileResult?.Status == AppPoolProfileCleanupStatus.Warning) {
+		bool profileHasWarning = profileResult?.Status == AppPoolProfileCleanupStatus.Warning;
+		if (profileHasWarning && dbHubWarning is not null) {
+			_stageEventEmitter.CompleteSuccessWithWarnings("Creatio was uninstalled with warnings.",
+				$"{profileResult.Detail} {dbHubWarning.Detail}".Trim(), "UNINSTALL_COMPLETED_WITH_WARNINGS",
+				creatioDirectoryPath);
+		}
+		else if (profileHasWarning) {
 			_stageEventEmitter.CompleteSuccessWithWarnings(
 				"Creatio was uninstalled, but its application-pool profile could not be removed.",
 				profileResult.Detail, profileResult.ErrorCode, creatioDirectoryPath);
+		}
+		else if (dbHubWarning is not null) {
+			_stageEventEmitter.CompleteSuccessWithWarnings("Creatio was uninstalled with a dbHub warning.",
+				dbHubWarning.Detail, dbHubWarning.ErrorCode, creatioDirectoryPath);
 		}
 		else {
 			_stageEventEmitter.CompleteSuccess("Uninstall completed", derivedPath: creatioDirectoryPath);

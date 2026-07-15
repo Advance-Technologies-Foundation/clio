@@ -54,7 +54,9 @@ This operation cannot be undone.
         7. Deletes all files in installation directory
         8. Deletes the registered IIS application-pool profile on Windows
            (best-effort; missing/non-Windows is not applicable)
-        9. Unregisters the environment (final step, including after a profile warning)
+        9. Removes the clio-owned dbHub source when automatic synchronization is enabled
+           (best-effort; TOML changes are retained when dbHub is offline)
+        10. Unregisters the environment (final step, including after a best-effort warning)
 
 ## Synopsis
 
@@ -112,6 +114,10 @@ clio uninstall-creatio --physicalPath C:\inetpub\wwwroot\creatio-dev
                 'C:\Users\mysite-pool' could not be removed because it is
                 currently in use or Windows denied access. Delete it manually
                 after the locking process exits.
+
+    If dbHub is offline or cannot verify its hot reload, the command retains the
+    valid TOML removal, writes one dbHub warning, unregisters the environment,
+    and still exits with code 0.
 
 ## Common Errors
 
@@ -199,7 +205,9 @@ clio uninstall-creatio --physicalPath C:\inetpub\wwwroot\creatio-dev
 - Consider using 'clear-local-env' if you want to clean data without
 destroying the entire instance
 - When `-e` is used, environment unregistration is the final stage and still
-  runs after a profile-cleanup warning
+  runs after a profile-cleanup or dbHub warning
+- dbHub source removal is available only for `-e`, because a physical path alone
+  has no registered environment-to-source ownership mapping
 
 ## Progress and Stage Events (MCP)
 
@@ -225,8 +233,10 @@ destroying the entire instance
         delete-apppool-profile  Conditional: delete the SID-validated registered
                                 IIS virtual-account profile; warning after retries,
                                 or skipped / not-applicable when absent/non-Windows
+        remove-dbhub-source     Conditional: remove the exact clio-owned source after
+                                destructive cleanup; offline verification is a warning
         unregister              Unregister the environment last, including after
-                                a non-fatal profile warning
+                                a non-fatal best-effort warning
 
     A profile cleanup warning uses status = warning and stable error code
     APPPOOL_PROFILE_DELETE_FAILED. The terminal outcome is success-with-warnings,
@@ -236,6 +246,10 @@ destroying the entire instance
     If another IIS application shares the target application pool, uninstall removes
     only the target site/application and leaves the shared pool and its Windows profile intact;
     delete-apppool-profile is skipped as not applicable.
+
+    A dbHub removal warning likewise uses status = warning and preserves primary
+    uninstall success. Failed destructive cleanup skips remove-dbhub-source with
+    after-failure, leaving the source available for reconciliation or retry.
 
     Honest failure: read-config runs before stop-iis. If it fails, the run aborts safely
     (the site remains running, the environment is NOT unregistered, and success is NOT

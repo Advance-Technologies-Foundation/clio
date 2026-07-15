@@ -48,6 +48,8 @@ public class InstallerCommandTool(
 				 `show-passing-infrastructure`, and then call `deploy-creatio` with the selected arguments.
 				 Deployment preserves the build database's existing forced-password-change state and does not
 				 clear it automatically.
+				 When local dbHub synchronization is enabled, deployment reconciles its database source only after
+				 readiness succeeds; a dbHub warning is non-fatal and produces success-with-warnings progress.
 				 """)]
 	public CommandExecutionResult DeployCreatio(
 		RequestContext<CallToolRequestParams> requestContext,

@@ -80,6 +80,7 @@ See docs: https://devblogs.microsoft.com/dotnet/introducing-central-package-mana
     <PackageVersion Include="DocumentFormat.OpenXmlSDK" Version="2.0.0"/>
     <PackageVersion Include="Microsoft.Web.Administration" Version="11.1.0"/>
     <PackageVersion Include="Acornima" Version="1.6.2" />
+    <PackageVersion Include="Tomlyn" Version="2.10.1" />
   </ItemGroup>
   <ItemGroup Label="Used in tests">
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.7.0" />

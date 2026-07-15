@@ -6,6 +6,7 @@ using System.Linq;
 using Clio.Command.McpServer.Progress;
 using Clio.Common;
 using Clio.Common.db;
+using Clio.Common.DbHub;
 using Clio.Common.K8;
 using Clio.Requests;
 using Clio.Tests.Command;
@@ -41,6 +42,8 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 	private readonly IMssql _mssqlMock = Substitute.For<IMssql>();
 	private readonly IPostgres _postgresMock = Substitute.For<IPostgres>();
 	private readonly IAppPoolProfileCleaner _profileCleanerMock = Substitute.For<IAppPoolProfileCleaner>();
+	private readonly IDbHubSynchronizationService _dbHubSynchronizationServiceMock =
+		Substitute.For<IDbHubSynchronizationService>();
 
 	#endregion
 
@@ -114,6 +117,7 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 		containerBuilder.AddSingleton<IMssql>(_mssqlMock);
 		containerBuilder.AddSingleton<IPostgres>(_postgresMock);
 		containerBuilder.AddSingleton<IAppPoolProfileCleaner>(_profileCleanerMock);
+		containerBuilder.AddSingleton<IDbHubSynchronizationService>(_dbHubSynchronizationServiceMock);
 	}
 
 	#endregion
@@ -147,6 +151,9 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 		_iisScannerMock.TryDeleteIisTarget(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>()).Returns(true);
 		_iisScannerMock.TryDeleteAppPoolIfUnused(Arg.Any<string>()).Returns(true);
 		_iisScannerMock.IsAppPoolAbsent(Arg.Any<string>()).Returns(true);
+		_dbHubSynchronizationServiceMock.ClearReceivedCalls();
+		_dbHubSynchronizationServiceMock.IsAutomaticSynchronizationEnabled().Returns(false);
+		_dbHubSynchronizationServiceMock.RemoveEnvironmentSource(Arg.Any<string>()).Returns(DbHubSyncResult.Unchanged());
 		_profileCleanerMock.Prepare(Arg.Any<string>()).Returns(
 			new AppPoolProfileCleanupTarget(new WindowsProfileRegistration("S-1-5-82-1", ProfileDirectoryPath)));
 		_profileCleanerMock.TryDelete(Arg.Any<AppPoolProfileCleanupTarget>()).Returns(
@@ -780,6 +787,60 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 
 	[Test]
 	[Category("Unit")]
+	[Description("Automatic dbHub synchronization removes its owned source after cleanup and before unregistering.")]
+	public void UninstallByEnvironmentName_ShouldRemoveDbHubSourceBeforeUnregister_WhenEnabled(){
+		// Arrange
+		MockStartedSite();
+		AddPostgresConnectionStringFile();
+		_dbHubSynchronizationServiceMock.IsAutomaticSynchronizationEnabled().Returns(true);
+		List<ClioStageEvent> events = CaptureStageEvents();
+
+		// Act
+		_sut.UninstallByEnvironmentName(EnvironmentName);
+
+		// Assert
+		string[] manifest = events.First().Stages!.Select(stage => stage.StageId).ToArray();
+		manifest.Should().ContainInOrder([StageIds.DeleteFiles, StageIds.RemoveDbHubSource, StageIds.Unregister],
+			because: "dbHub removal must follow destructive cleanup and precede environment unregister");
+		StagesWithStatus(events, StageIds.RemoveDbHubSource).Select(stage => stage.Status).Should().Equal(
+			[ClioStageEventContract.StageStatuses.Running, ClioStageEventContract.StageStatuses.Done],
+			because: "successful source removal is visible as a completed lifecycle stage");
+		Received.InOrder(() => {
+			_dbHubSynchronizationServiceMock.RemoveEnvironmentSource(EnvironmentName);
+			_settingsRepositoryMock.RemoveEnvironment(EnvironmentName);
+		});
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A dbHub removal warning remains non-fatal and is visible in CLI and typed progress.")]
+	public void UninstallByEnvironmentName_ShouldWarnAndContinueUnregister_WhenDbHubRemovalWarns(){
+		// Arrange
+		MockStartedSite();
+		AddPostgresConnectionStringFile();
+		_dbHubSynchronizationServiceMock.IsAutomaticSynchronizationEnabled().Returns(true);
+		_dbHubSynchronizationServiceMock.RemoveEnvironmentSource(EnvironmentName).Returns(new DbHubSyncResult(
+			Changed: true, Skipped: false, Warning: new DbHubWarning("dbHub live verification was skipped.",
+				"The TOML update was retained while dbHub was offline.", "DBHUB_LIVE_VERIFICATION_SKIPPED")));
+		List<ClioStageEvent> events = CaptureStageEvents();
+
+		// Act
+		_sut.UninstallByEnvironmentName(EnvironmentName);
+
+		// Assert
+		StagesWithStatus(events, StageIds.RemoveDbHubSource).Should().ContainSingle(stage =>
+			stage.Status == ClioStageEventContract.StageStatuses.Warning
+			&& stage.ErrorCode == "DBHUB_LIVE_VERIFICATION_SKIPPED",
+			because: "offline live verification is a typed warning rather than an uninstall failure");
+		_settingsRepositoryMock.Received(1).RemoveEnvironment(EnvironmentName);
+		events.Last().RunCompleted!.Outcome.Should().Be(ClioStageEventContract.RunOutcomes.SuccessWithWarnings,
+			because: "the primary uninstall succeeded while retaining the dbHub warning");
+		_loggerMock.Received(1).WriteWarning(Arg.Is<string>(message =>
+			message.Contains("dbHub live verification") && message.Contains("offline")));
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Correction C / AC-05: on a partial cleanup failure the environment is preserved - RemoveEnvironment is not called and unregister is skipped after-failure.")]
 	public void UninstallByEnvironmentName_ShouldPreserveRegistration_WhenCleanupFails(){
 		// Arrange
@@ -789,6 +850,7 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 		const string failDbName = "story3-fail-db";
 		AddPostgresConnectionStringFileWithDb(failDbName);
 		_postgresMock.When(p => p.DropDb(failDbName)).Do(_ => throw new InvalidOperationException("drop failed"));
+		_dbHubSynchronizationServiceMock.IsAutomaticSynchronizationEnabled().Returns(true);
 		List<ClioStageEvent> events = CaptureStageEvents();
 
 		// Act
@@ -798,6 +860,11 @@ public class CreatioUninstallerTestFixture : BaseClioModuleTests
 		act.Should().Throw<InvalidOperationException>(
 			"because the failing stage rethrows");
 		_settingsRepositoryMock.DidNotReceive().RemoveEnvironment(Arg.Any<string>());
+		_dbHubSynchronizationServiceMock.DidNotReceive().RemoveEnvironmentSource(Arg.Any<string>());
+		StagesWithStatus(events, StageIds.RemoveDbHubSource).Should().Contain(
+			s => s.Status == ClioStageEventContract.StageStatuses.Skipped
+				&& s.SkipReason == ClioStageEventContract.SkipReasons.AfterFailure,
+			because: "a failed destructive stage must retain the dbHub source for reconciliation or retry");
 		StagesWithStatus(events, StageIds.Unregister).Should().Contain(
 			s => s.Status == ClioStageEventContract.StageStatuses.Skipped && s.SkipReason == ClioStageEventContract.SkipReasons.AfterFailure,
 			"because registration is preserved for recovery on partial failure (AC-05 / Correction C)");

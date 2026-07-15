@@ -48,7 +48,9 @@ UNINSTALL PROCESS
         7. Deletes all files in installation directory
         8. Deletes the registered IIS application-pool profile on Windows
            (best-effort; missing/non-Windows is not applicable)
-        9. Unregisters the environment (final step, including after a profile warning)
+        9. Removes the clio-owned dbHub source when automatic synchronization is enabled
+           (best-effort; offline live verification is reported as a warning)
+        10. Unregisters the environment (final step, including after a best-effort warning)
 
 SYNOPSIS
     uninstall-creatio [options]
@@ -95,6 +97,9 @@ OUTPUT
 
     If another IIS application shares the target application pool, uninstall leaves
     the shared pool and its Windows profile intact and removes only the target site/application.
+
+    If dbHub is offline, a valid TOML removal is retained, the command reports
+    skipped live verification, unregisters the environment, and exits with code 0.
 
 COMMON ERRORS
     Environment not found:

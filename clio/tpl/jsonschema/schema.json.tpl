@@ -63,6 +63,10 @@
 			"$ref": "#/definitions/telemetrysettings",
 			"description": "Product telemetry upload configuration for the MCP server"
 		},
+		"dbhub": {
+			"$ref": "#/definitions/dbhubsettings",
+			"description": "Local dbHub HTTP MCP server integration"
+		},
 		"Environments": {
 			"type": "object",
 			"patternProperties": {
@@ -95,6 +99,18 @@
 		"Environments"
 	],
 	"definitions": {
+		"dbhubsettings": {
+			"type": "object",
+			"additionalProperties": false,
+			"properties": {
+				"enabled": { "type": "boolean", "default": false },
+				"config-path": { "type": "string", "minLength": 1 },
+				"host": { "type": "string", "enum": ["127.0.0.1"], "default": "127.0.0.1" },
+				"port": { "type": "integer", "minimum": 1, "maximum": 65535, "default": 7999 },
+				"sync-local-environments": { "type": "boolean", "default": true }
+			},
+			"required": ["enabled", "config-path", "host", "port", "sync-local-environments"]
+		},
 		"environment": {
 			"type": "object",
 			"properties": {

@@ -155,6 +155,7 @@
 		<PackageReference Include="Microsoft.IdentityModel.Tokens" />
 		<PackageReference Include="Newtonsoft.Json" />
 		<PackageReference Include="Acornima" />
+		<PackageReference Include="Tomlyn" />
 		<PackageReference Include="FluentValidation" />
 		<PackageReference Include="ConsoleTables" />
 		<PackageReference Include="Spectre.Console" />
