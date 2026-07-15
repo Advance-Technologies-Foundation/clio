@@ -14,6 +14,7 @@ using System.Text.Json.Serialization;
 using System.Threading;
 using Clio.Common;
 using Clio.Common.db;
+using Clio.Common.DbHub;
 using ConsoleTables;
 using YamlDotNet.Serialization;
 using FileSystem = System.IO.Abstractions.FileSystem;
@@ -109,6 +110,33 @@ namespace Clio
 				var simpleLoginUriText = cleanUri.TrimEnd('/') + (IsNetCore ? "/Shell/?simplelogin=true" : "/0/Shell/?simplelogin=true");
 				return simpleLoginUriText;
 			}
+		}
+
+		// Credential-passthrough secret fields (FR-01/FR-02/FR-18). Carried on an ephemeral,
+		// per-request EnvironmentSettings only; mirror the SimpleloginUri secret discipline
+		// ([YamlIgnore] + [Newtonsoft.Json.JsonIgnore]) so they are never persisted to
+		// appsettings.json and never appear in ShowSettingsTo output. Also [System.Text.Json...JsonIgnore]
+		// (review, belt-and-suspenders) so a future System.Text.Json serialization of these settings — the
+		// serializer the MCP tool DTOs use — can never emit the transient token/cookie either.
+		[YamlIgnore]
+		[Newtonsoft.Json.JsonIgnore]
+		[System.Text.Json.Serialization.JsonIgnore]
+		public string AccessToken {
+			get; set;
+		}
+
+		[YamlIgnore]
+		[Newtonsoft.Json.JsonIgnore]
+		[System.Text.Json.Serialization.JsonIgnore]
+		public string AccessTokenType {
+			get; set;
+		} = Clio.Common.AuthenticationScheme.Bearer;
+
+		[YamlIgnore]
+		[Newtonsoft.Json.JsonIgnore]
+		[System.Text.Json.Serialization.JsonIgnore]
+		public string Cookie {
+			get; set;
 		}
 
 		internal void Merge(EnvironmentSettings environment) {
@@ -410,6 +438,10 @@ namespace Clio
 		/// </summary>
 		[JsonProperty("deploy-creatio-defaults")]
 		public DeployCreatioDefaults DeployCreatioDefaults { get; set; }
+
+		/// <summary>Gets or sets local dbHub HTTP server integration settings.</summary>
+		[JsonProperty("dbhub")]
+		public DbHubSettings DbHub { get; set; }
 
 		public EnvironmentSettings GetActiveEnvironment() {
 			if (string.IsNullOrEmpty(ActiveEnvironmentKey)
@@ -1123,6 +1155,15 @@ namespace Clio
 		public void SetDeployCreatioDefaults(DeployCreatioDefaults defaults) {
 			UpdateSettings(settings =>
 				settings.DeployCreatioDefaults = defaults is null || defaults.IsEmpty ? null : defaults);
+		}
+
+		public DbHubSettings GetDbHubSettings() {
+			return (_settings.DbHub ?? new DbHubSettings()).Clone();
+		}
+
+		public void SetDbHubSettings(DbHubSettings settings) {
+			ArgumentNullException.ThrowIfNull(settings);
+			UpdateSettings(current => current.DbHub = settings.Clone());
 		}
 
 	}

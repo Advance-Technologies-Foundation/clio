@@ -562,7 +562,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`turn-fsm`](docs/commands/turn-fsm.md) - Turn file system mode on or off for an environment, `fsm`, `tfsm`
 <a id="uninstall-creatio"></a>
 <a id="uc"></a>
-- [`uninstall-creatio`](docs/commands/uninstall-creatio.md) - Uninstall local instance of creatio, `uc`
+- [`uninstall-creatio`](docs/commands/uninstall-creatio.md) - Uninstall local Creatio with shared-pool-safe IIS profile and best-effort dbHub cleanup, `uc`
 <a id="upload-license"></a>
 <a id="license"></a>
 <a id="load-license"></a>
@@ -588,6 +588,10 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 
 ## Integrations & Tools
 
+<a id="install-dbhub"></a>
+- [`install-dbhub`](docs/commands/install-dbhub.md) - Install, adopt, or repair a local loopback dbHub HTTP MCP server
+<a id="sync-dbhub"></a>
+- [`sync-dbhub`](docs/commands/sync-dbhub.md) - Reconcile clio-owned dbHub sources with local Creatio environments
 <a id="ring"></a>
 - [`ring`](docs/commands/ring.md) - Manage the opt-in internal clio-ring desktop preview (experimental; Windows x64 only)
 <a id="delete-toolkit"></a>
@@ -607,7 +611,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="lps"></a>
 - [`link-package-store`](docs/commands/link-package-store.md) - Link PackageStore packages into an environment, `lps`
 <a id="mcp-http"></a>
-- [`mcp-http`](docs/commands/mcp-http.md) - Start the MCP server over HTTP
+- [`mcp-http`](docs/commands/mcp-http.md) - Start the MCP server over HTTP (Streamable HTTP), with standard OAuth 2.1 Resource-Server authorization (off by default; whole-endpoint when configured) and an optional multi-tenant per-request credential-passthrough edge (dev/offline platform-api-key fallback when OAuth is not configured)
 <a id="mcp-server"></a>
 <a id="mcp"></a>
 - [`mcp-server`](docs/commands/mcp-server.md) - Start the MCP server over stdio, `mcp`

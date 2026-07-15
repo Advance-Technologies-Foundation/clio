@@ -32,15 +32,23 @@ namespace Clio.Mcp.E2E;
 [Parallelizable(ParallelScope.Self)]
 public sealed class DeployUninstallProgressTests : McpContractFixtureBase {
 	private const string ToolName = InstallerCommandTool.DeployCreatioToolName;
-	private const string UninstallToolName = "uninstall-creatio";
+	private const string UninstallToolName = UninstallCreatioTool.UninstallCreatioToolName;
 	private const string MissingEnvironmentName = "mcp-e2e-missing-uninstall-target";
 
 	/// <inheritdoc />
 	private protected override void ConfigureMcpServerSettings(McpE2ESettings settings) {
 		string iisRoot = CreateFixtureDirectory("deploy-progress-iis-root");
+		string dbHubConfig = Path.Combine(CreateFixtureDirectory("deploy-progress-dbhub"), "dbhub.toml");
 		JsonObject appSettings = new() {
 			["Autoupdate"] = false,
 			["iis-clio-root-path"] = iisRoot,
+			["dbhub"] = new JsonObject {
+				["enabled"] = true,
+				["config-path"] = dbHubConfig,
+				["host"] = "127.0.0.1",
+				["port"] = 65533,
+				["sync-local-environments"] = true
+			},
 			["Environments"] = new JsonObject {
 				[MissingEnvironmentName] = new JsonObject {
 					["Uri"] = "http://127.0.0.1:65534",
@@ -87,6 +95,8 @@ public sealed class DeployUninstallProgressTests : McpContractFixtureBase {
 			because: "the first typed event must be the up-front manifest (AC-09 sequence)");
 		manifest.Stages.Should().Contain(entry => entry.StageId == StageIds.Unzip,
 			because: "the deploy manifest must enumerate the unzip stage");
+		manifest.Stages.Should().Contain(entry => entry.StageId == StageIds.SyncDbHubSource && entry.Conditional,
+			because: "enabled automatic dbHub synchronization must be visible in the real MCP manifest");
 
 		events.Should().Contain(
 			stageEvent => stageEvent.Stage != null

@@ -77,7 +77,11 @@ public sealed class SchemaSyncTool(
 			}
 		}
 		var results = new List<SchemaSyncOperationResult>();
-		lock (McpToolExecutionLock.SyncRoot) {
+		// FR-05: serialize on the per-tenant lock keyed by the environment the batch's schema commands
+		// resolve under, so different tenants run concurrently instead of behind one global lock.
+		string tenantKey = commandResolver.GetTenantKey(new EnvironmentOptions { Environment = args.EnvironmentName });
+		lock (McpToolExecutionLock.GetLock(tenantKey)) {
+			McpToolExecutionLock.MarkInUse(tenantKey);
 			bool previousPreserveMessages = logger.PreserveMessages;
 			logger.PreserveMessages = true;
 			try {
@@ -87,14 +91,14 @@ public sealed class SchemaSyncTool(
 						results.Add(seedValidationFailure);
 						break;
 					}
-					SchemaSyncOperationResult result = ExecuteOperation(op, args, index);
+					SchemaSyncOperationResult result = ExecuteOperation(op, args, index, tenantKey);
 					results.Add(result);
 					if (!result.Success) {
 						break;
 					}
 					if (op.SeedRows?.Any() == true) {
 						logger.ClearMessages();
-						SchemaSyncOperationResult seedResult = ExecuteSeedData(op, args);
+						SchemaSyncOperationResult seedResult = ExecuteSeedData(op, args, tenantKey);
 						results.Add(seedResult);
 						if (!seedResult.Success) {
 							break;
@@ -104,6 +108,7 @@ public sealed class SchemaSyncTool(
 			} finally {
 				logger.ClearMessages();
 				logger.PreserveMessages = previousPreserveMessages;
+				McpToolExecutionLock.MarkAvailable(tenantKey);
 			}
 		}
 		return new SchemaSyncResponse {
@@ -139,11 +144,11 @@ public sealed class SchemaSyncTool(
 			.ToList();
 	}
 
-	private SchemaSyncOperationResult ExecuteOperation(SchemaSyncOperation op, SchemaSyncArgs args, int operationIndex) {
+	private SchemaSyncOperationResult ExecuteOperation(SchemaSyncOperation op, SchemaSyncArgs args, int operationIndex, string tenantKey) {
 		return op.Type switch {
-			CreateLookupOperationName => ExecuteCreateSchema(op, args, "BaseLookup", false, CreateLookupOperationName),
-			CreateEntityOperationName => ExecuteCreateSchema(op, args, op.ParentSchemaName, op.ExtendParent, CreateEntityOperationName),
-			UpdateEntityOperationName => ExecuteUpdateEntity(op, args),
+			CreateLookupOperationName => ExecuteCreateSchema(op, args, "BaseLookup", false, CreateLookupOperationName, tenantKey),
+			CreateEntityOperationName => ExecuteCreateSchema(op, args, op.ParentSchemaName, op.ExtendParent, CreateEntityOperationName, tenantKey),
+			UpdateEntityOperationName => ExecuteUpdateEntity(op, args, tenantKey),
 			_ => new SchemaSyncOperationResult {
 				Type = GetReportedOperationType(op),
 				SchemaName = op.SchemaName,
@@ -186,7 +191,7 @@ public sealed class SchemaSyncTool(
 
 	private SchemaSyncOperationResult ExecuteCreateSchema(
 		SchemaSyncOperation op, SchemaSyncArgs args,
-		string parentSchemaName, bool extendParent, string operationName) {
+		string parentSchemaName, bool extendParent, string operationName, string tenantKey) {
 		try {
 			string context = $"{operationName} operation for schema '{op.SchemaName}'";
 			IReadOnlyDictionary<string, string> titleLocalizations = EntitySchemaLocalizationContract.RequireTitleLocalizations(
@@ -214,7 +219,7 @@ public sealed class SchemaSyncTool(
 					op.SchemaName,
 					EntitySchemaLocalizationContract.GetDefaultTitle(titleLocalizations, context));
 			}
-			IReadOnlyList<LogMessage> messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)];
+			IReadOnlyList<LogMessage> messages = [.. McpPassthroughRedaction.SanitizeAndRedact([.. logger.FlushAndSnapshotMessages(clearMessages: true)], tenantKey)];
 			SchemaSyncCollisionInfo? collisionInfo = exitCode != 0
 				? TryGetCollisionInfo(op.SchemaName, args)
 				: null;
@@ -233,7 +238,7 @@ public sealed class SchemaSyncTool(
 				SchemaName = op.SchemaName,
 				Success = false,
 				Error = SensitiveErrorTextRedactor.Redact(ex.Message),
-				Messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)],
+				Messages = [.. McpPassthroughRedaction.SanitizeAndRedact([.. logger.FlushAndSnapshotMessages(clearMessages: true)], tenantKey)],
 				CollisionInfo = collisionInfo
 			};
 		}
@@ -260,7 +265,7 @@ public sealed class SchemaSyncTool(
 		}
 	}
 
-	private SchemaSyncOperationResult ExecuteUpdateEntity(SchemaSyncOperation op, SchemaSyncArgs args) {
+	private SchemaSyncOperationResult ExecuteUpdateEntity(SchemaSyncOperation op, SchemaSyncArgs args, string tenantKey) {
 		try {
 				IReadOnlyList<UpdateEntitySchemaOperationArgs> updateOperations = ResolveUpdateOperations(op);
 				if (updateOperations.Count == 0) {
@@ -278,7 +283,7 @@ public sealed class SchemaSyncTool(
 			};
 			UpdateEntitySchemaCommand command = commandResolver.Resolve<UpdateEntitySchemaCommand>(options);
 			int exitCode = command.Execute(options);
-			IReadOnlyList<LogMessage> messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)];
+			IReadOnlyList<LogMessage> messages = [.. McpPassthroughRedaction.SanitizeAndRedact([.. logger.FlushAndSnapshotMessages(clearMessages: true)], tenantKey)];
 				return new SchemaSyncOperationResult {
 					Type = UpdateEntityOperationName,
 				SchemaName = op.SchemaName,
@@ -292,7 +297,7 @@ public sealed class SchemaSyncTool(
 				SchemaName = op.SchemaName,
 				Success = false,
 				Error = SensitiveErrorTextRedactor.Redact(ex.Message),
-				Messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)]
+				Messages = [.. McpPassthroughRedaction.SanitizeAndRedact([.. logger.FlushAndSnapshotMessages(clearMessages: true)], tenantKey)]
 			};
 		}
 	}
@@ -366,7 +371,7 @@ public sealed class SchemaSyncTool(
 			+ "add an 'action' for modify/remove.";
 	}
 
-	private SchemaSyncOperationResult ExecuteSeedData(SchemaSyncOperation op, SchemaSyncArgs args) {
+	private SchemaSyncOperationResult ExecuteSeedData(SchemaSyncOperation op, SchemaSyncArgs args, string tenantKey) {
 		try {
 			string rowsJson = JsonSerializer.Serialize(op.SeedRows);
 			CreateDataBindingDbOptions options = new() {
@@ -377,7 +382,7 @@ public sealed class SchemaSyncTool(
 			};
 			CreateDataBindingDbCommand command = commandResolver.Resolve<CreateDataBindingDbCommand>(options);
 			int exitCode = command.Execute(options);
-			IReadOnlyList<LogMessage> messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)];
+			IReadOnlyList<LogMessage> messages = [.. McpPassthroughRedaction.SanitizeAndRedact([.. logger.FlushAndSnapshotMessages(clearMessages: true)], tenantKey)];
 			return new SchemaSyncOperationResult {
 				Type = SeedDataOperationName,
 				SchemaName = op.SchemaName,
@@ -391,7 +396,7 @@ public sealed class SchemaSyncTool(
 				SchemaName = op.SchemaName,
 				Success = false,
 				Error = SensitiveErrorTextRedactor.Redact(ex.Message),
-				Messages = [.. logger.FlushAndSnapshotMessages(clearMessages: true)]
+				Messages = [.. McpPassthroughRedaction.SanitizeAndRedact([.. logger.FlushAndSnapshotMessages(clearMessages: true)], tenantKey)]
 			};
 		}
 	}
