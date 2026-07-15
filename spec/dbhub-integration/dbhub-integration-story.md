@@ -53,5 +53,5 @@ All `TC-U-*` and `TC-I-*` cases in [dbhub-integration-test-plan.md](dbhub-integr
 
 - Implementation started: 2026-07-15
 - Implementation completed: 2026-07-15
-- Tests passing: full Unit net10.0/net8.0 (6059 passed, 25 skipped each); MCP lifecycle E2E (5 each); developer-local explicit archive lifecycle E2E (1 each); ClioRing (101); Windows x64 NativeAOT publish.
+- Tests passing: full Unit net10.0/net8.0 (6494 passed, 25 skipped each after rebasing onto current `master`); MCP lifecycle E2E (5 each); developer-local explicit archive lifecycle E2E (1 each); ClioRing (101); Windows x64 NativeAOT publish.
 - Notes: Rebased onto merged issue #881 safety semantics; comprehensive quality, correctness, and security review is clear. The archive-backed lifecycle fixture is explicitly local-only and forbidden in TeamCity.

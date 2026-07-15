@@ -119,5 +119,5 @@ dotnet publish clio-ring/ClioRing.Desktop/ClioRing.Desktop.csproj -c Release -r 
 - [x] Every TC-U and TC-I case is implemented and green.
 - [x] Relevant TC-E cases pass locally on both target frameworks.
 - [x] Disposable runtime state is verified and cleaned or explicitly not required with evidence.
-- [x] Full unit gate passes because shared `Common`, `BindingsModule`, and multiple modules change (6,059 passed and 25 skipped on each of net8.0 and net10.0).
+- [x] Full unit gate passes because shared `Common`, `BindingsModule`, and multiple modules change (6,494 passed and 25 skipped on each of net8.0 and net10.0 after rebasing onto current `master`).
 - [x] Ring tests and Windows x64 NativeAOT publish pass without IL2026/IL3050 warnings (101/101 tests plus successful Windows x64 publish).
