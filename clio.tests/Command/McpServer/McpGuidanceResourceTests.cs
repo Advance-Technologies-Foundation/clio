@@ -1984,6 +1984,18 @@ public sealed class McpGuidanceResourceTests {
 			because: "the sizing rule must tell the agent to use the 8-column width before growing the desktop taller");
 		article.Text.Should().Contain("grow PAST 10 rows",
 			because: "the escape hatch lets the desktop exceed 10 rows rather than shrink a widget below the 3-row floor");
+		article.Text.Should().Contain("MANDATORY GREETING LABEL",
+			because: "every new desktop must start with the fixed greeting label, so the guide must mandate it");
+		article.Text.Should().Contain("crt.Label",
+			because: "the guide must name the component the greeting is built from so the agent resolves it via get-component-info");
+		article.Text.Should().Contain("#MacrosTemplateString(#ResourceString(Label_Greeting_caption)#)#",
+			because: "the greeting caption macro is an exact, non-inventable token the agent must reproduce verbatim");
+		article.Text.Should().Contain("large-2",
+			because: "the greeting must use the 'Large 2' heading style (labelType large-2), an exact token the agent cannot infer");
+		article.Text.Should().Contain("Hello, [#Current user.Recipient Name#]!",
+			because: "the guide must carry the exact greeting resource value the agent registers");
+		article.Text.Should().Contain("Label_Greeting_caption",
+			because: "the greeting caption binds to the Label_Greeting_caption resource, which the agent must register");
 	}
 
 	[Test]

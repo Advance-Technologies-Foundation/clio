@@ -238,6 +238,10 @@ public sealed class McpGuidanceResourceE2ETests : McpContractFixtureBase {
 			because: "the guide should carry the desktop widget-sizing rule (3-row hard floor per widget)");
 		article.Text.Should().Contain("<= 10 rows",
 			because: "the guide should carry the 10-row desktop height target with its escape hatch");
+		article.Text.Should().Contain("MANDATORY GREETING LABEL",
+			because: "the guide should mandate the fixed greeting label on every new desktop");
+		article.Text.Should().Contain("Hello, [#Current user.Recipient Name#]!",
+			because: "the guide should carry the exact greeting resource value");
 	}
 
 	[Test]

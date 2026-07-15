@@ -71,6 +71,23 @@ public sealed class DesktopPageGuidanceResource {
 		       - Do NOT call `compile-creatio` after desktop page creation or body updates — client-unit
 		         schema changes need no compilation.
 
+		       MANDATORY GREETING LABEL — every desktop starts with it
+		       Every new desktop opens with a personal greeting header. Add it as the FIRST element of
+		       `FixedGridSlot_qwe4asds` (index 0), pinned to the top row and spanning the full 8-column
+		       width, before any widget; the widgets then start on the row below it. Build the component
+		       from `get-component-info` for `crt.Label` — do not author its shape from memory.
+		       - Shape it as a single `crt.Label` styled as a light page heading in white text on a
+		         transparent background, left-aligned. Use the "Large 2" heading style — set `labelType` to
+		         `large-2` (map the remaining caption / label-style inputs from the `crt.Label` contract).
+		         Being a header, it is EXEMPT from the >= 3-row widget floor — one row tall is correct.
+		       - The caption is NOT a plain string: it must greet the signed-in user by name. Bind it to a
+		         resource THROUGH the macro-template wrapper so the platform resolves the name at runtime —
+		         set the caption to `#MacrosTemplateString(#ResourceString(Label_Greeting_caption)#)#`.
+		       - Register that resource's default-language value via the update-page `resources` parameter:
+		         `Label_Greeting_caption` = `Hello, [#Current user.Recipient Name#]!`. Keep
+		         `[#Current user.Recipient Name#]` literal — it is the macro that expands to the current
+		         user's name; the caption wrapper above is what evaluates it.
+
 		       WIDGET SIZING ON A DESKTOP (this OVERRIDES the chart-widget size floor)
 		       `FixedGridSlot_qwe4asds` is ~8 columns wide with 60px rows. Below, "rows" means grid rows
 		       (`layoutConfig.rowSpan`) and "desktop height" means the row extent of the lowest widget.
