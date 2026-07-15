@@ -502,7 +502,9 @@ This part is small but important because many other tools depend on it.
   `frameworkDescription` are added WITHOUT cliogate via the admin-gated
   `GetSystemEnvironmentInfo` (needs `CanManageSolution`); `productName` and `licenseInfo` are added
   only when cliogate `>= 2.0.0.32` is installed. Best-effort: an unavailable source is skipped and
-  the call still succeeds. Read `get-guidance name=describe-environment` for the full field catalogue.
+  the call still succeeds. The required base probe returns classified, secret-safe Error logs for
+  invalid/unavailable targets, authentication failures, non-Creatio content, and unusable Creatio
+  responses. Read `get-guidance name=describe-environment` for the full field catalogue.
 
 What an external AI can practically do here:
 
