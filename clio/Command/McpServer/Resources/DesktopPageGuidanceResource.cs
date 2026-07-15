@@ -104,6 +104,29 @@ public sealed class DesktopPageGuidanceResource {
 		         budget (e.g. two bands at ~5 rows each) rather than one band of 3-row widgets over empty
 		         space. 3 rows is the crowded-case minimum, not the default size.
 
+		       WIDTH & LAYOUT — size and pack widgets to fill the grid (hero + supporting hierarchy)
+		       Avoid BOTH bad extremes: (1) every widget in ONE row of equal narrow columns — squeezes a
+		       data-dense chart until its labels/bars are unreadable and clips donut legends; (2) every
+		       widget (or pair) on its OWN full-width band — leaves small widgets floating tiny in big empty
+		       cells and wastes vertical space. Instead match each widget's size to its content AND its
+		       importance, and PACK mixed sizes into the same band:
+		       - HERO widget: the primary data-dense chart (time-series / many-category bar/column/line) is
+		         the biggest — give it most of the width (e.g. `colSpan` 6 of 8) and the full band height.
+		       - KPI TILES: a single-number / metric tile is the SMALLEST widget (~2 columns, ~2-3 rows). Do
+		         NOT give a couple of KPI numbers their own full-width band — STACK them in a narrow side
+		         column (the leftover columns) BESIDE the hero widget, in the SAME band.
+		       - SUPPORTING charts: donut/pie and the like read well at ~3-4 columns — put them SIDE BY SIDE
+		         in their own band, each sized to FILL ITS CELL (do not leave a small donut centered in a big
+		         empty cell; raise its `rowSpan`/`colSpan` until it fills the band height).
+		       - FILL THE CELL: every widget should fill the area it is allotted, up to the band height. A
+		         small widget adrift in a large empty cell means the layout is too sparse — grow the widget
+		         (or narrow/shorten the cell).
+		       - RULE OF THUMB: if a widget's labels would truncate at its width, it is too narrow — widen it
+		         (fewer widgets per row).
+		       - GOOD COMPOSITION for a hero chart + 2 KPI tiles + 2 donuts (mirror it): band 1 = the hero
+		         chart on the left (`colSpan` ~6) with the 2 KPI tiles STACKED in the right ~2 columns; band 2
+		         = the 2 donuts side by side, each filling half the width.
+
 		       ACCESS AND VISIBILITY
 		       - The `Desktop` entity is administrated by records: the selector shows a user ONLY the
 		         desktop rows they can read. Restricting a desktop to specific roles is therefore a

@@ -242,6 +242,8 @@ public sealed class McpGuidanceResourceE2ETests : McpContractFixtureBase {
 			because: "the guide should mandate the fixed greeting label on every new desktop");
 		article.Text.Should().Contain("Hello, [#Current user.Recipient Name#]!",
 			because: "the guide should carry the exact greeting resource value");
+		article.Text.Should().Contain("WIDTH & LAYOUT",
+			because: "the guide should steer per-widget width so a data-dense chart is not squeezed into a narrow column");
 	}
 
 	[Test]

@@ -1996,6 +1996,16 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide must carry the exact greeting resource value the agent registers");
 		article.Text.Should().Contain("Label_Greeting_caption",
 			because: "the greeting caption binds to the Label_Greeting_caption resource, which the agent must register");
+		article.Text.Should().Contain("WIDTH & LAYOUT",
+			because: "the guide must steer widget width/layout so the agent stops cramming every widget into one narrow row");
+		article.Text.Should().Contain("KPI TILES",
+			because: "the guide must call out single-number KPI tiles as the smallest widget with their own placement rule");
+		article.Text.Should().Contain("BESIDE the hero widget, in the SAME band",
+			because: "small KPI tiles must be stacked beside the hero widget in the same band, not given their own full-width band");
+		article.Text.Should().Contain("FILL ITS CELL",
+			because: "the guide must tell the agent to size widgets to fill their cell so donuts are not tiny and centered in empty space");
+		article.Text.Should().Contain("on its OWN full-width band",
+			because: "the guide must name the every-widget-on-its-own-full-width-band layout as a bad extreme to avoid (the sparse stacked layout)");
 	}
 
 	[Test]
