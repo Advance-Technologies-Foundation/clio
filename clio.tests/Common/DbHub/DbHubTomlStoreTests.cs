@@ -315,6 +315,23 @@ public sealed class DbHubTomlStoreTests : BaseClioModuleTests {
 	}
 
 	[Test]
+	[Description("Refuses an existing custom tool whose name collides with the generated dbHub MCP tool name.")]
+	public void Upsert_ShouldRefuseExistingToolNameCollision() {
+		// Arrange
+		const string content = "[[sources]]\nid = \"manual\"\ntype = \"postgres\"\ndsn = \"postgres://manual\"\n[[tools]]\nname = \"execute_sql_dev\"\nsource = \"manual\"\nreadonly = true\n";
+		File.WriteAllText(_configPath, content);
+
+		// Act
+		DbHubSyncResult result = _sut.Upsert(_configPath, Source("dev", "dev"));
+
+		// Assert
+		result.Warning.ErrorCode.Should().Be("DBHUB_SOURCE_OWNERSHIP_CONFLICT",
+			because: "clio must not create a source whose generated MCP tool name is already user-owned");
+		File.ReadAllText(_configPath).Should().Be(content,
+			because: "a tool-name conflict must leave the adopted configuration unchanged");
+	}
+
+	[Test]
 	[Description("Installer preparation and source synchronization share one lock without losing the source update.")]
 	public async Task EnsureRunnable_ShouldSerializeWithConcurrentUpsert() {
 		// Arrange

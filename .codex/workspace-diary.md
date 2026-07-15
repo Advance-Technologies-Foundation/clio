@@ -6303,3 +6303,10 @@ Decision: Mark the fixture NUnit Explicit and LocalOnly, require destructive san
 Discovery: MCP deploy-creatio intentionally auto-runs the deployed application, so archive lifecycle validation is disruptive even when all IIS, database, settings, and TOML state is isolated.
 Files: clio.mcp.e2e/DbHubLifecycleWarningE2ETests.cs, spec/dbhub-integration/dbhub-integration-test-plan.md
 Impact: TeamCity cannot install Creatio through this fixture, while a developer can still run the verified net8.0/net10.0 proof manually when explicitly requested.
+
+## 2026-07-15 14:21 – Resolve issue 882 automated review findings
+Context: The PR Codex review identified generic PostgreSQL keys, omitted SQL TLS settings, and custom dbHub tool names as compatibility gaps.
+Decision: Fall back to Npgsql when the generic connection string is not valid SQL Server syntax, map omitted SQL TLS options to required encryption, and refuse adopted TOML whose custom tool already owns the generated MCP name.
+Discovery: Microsoft.Data.SqlClient defaults cannot distinguish explicit options through ContainsKey; ShouldSerialize identifies whether TLS fields were actually supplied.
+Files: clio/Common/DbHub/DbHubConnectionSourceFactory.cs, clio/Common/DbHub/DbHubTomlStore.cs, clio.tests/Common/DbHub/
+Impact: clio-generated local connections synchronize without weakening transport security, and live verification cannot succeed against a pre-existing colliding tool.

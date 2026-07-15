@@ -40,6 +40,7 @@ public sealed class DbHubConnectionSourceFactory : IDbHubConnectionSourceFactory
 		try {
 			(string name, string connectionString) = ReadConnectionString(path);
 			return string.Equals(name, "dbPostgreSql", StringComparison.OrdinalIgnoreCase)
+				|| IsPostgresConnectionString(connectionString)
 				? CreatePostgres(environmentName, connectionString)
 				: CreateSqlServer(environmentName, connectionString);
 		}
@@ -112,7 +113,9 @@ public sealed class DbHubConnectionSourceFactory : IDbHubConnectionSourceFactory
 				"The configured SQL Server authentication is not supported by clio's dbHub integration; use SQL authentication.",
 				UnsupportedAuthenticationCode);
 		}
-		if (builder.Encrypt != SqlConnectionEncryptOption.Optional
+		bool usesImplicitTlsDefaults = !builder.ShouldSerialize("Encrypt")
+			&& !builder.ShouldSerialize("TrustServerCertificate");
+		if (!usesImplicitTlsDefaults && builder.Encrypt != SqlConnectionEncryptOption.Optional
 			&& (builder.Encrypt != SqlConnectionEncryptOption.Mandatory || !builder.TrustServerCertificate)) {
 			return Skip(environmentName,
 				"SQL Server certificate validation cannot be represented safely by dbHub 0.23.0.",
@@ -120,10 +123,23 @@ public sealed class DbHubConnectionSourceFactory : IDbHubConnectionSourceFactory
 		}
 
 		(string host, int port, string instance) = ParseSqlDataSource(builder.DataSource);
-		string sslMode = builder.Encrypt == SqlConnectionEncryptOption.Optional ? "disable" : "require";
+		string sslMode = builder.Encrypt == SqlConnectionEncryptOption.Optional && !usesImplicitTlsDefaults
+			? "disable"
+			: "require";
 		DbHubSourceDefinition source = new(environmentName, NormalizeSourceId(environmentName), "sqlserver",
 			host, port, builder.InitialCatalog, builder.UserID, builder.Password, instance, sslMode);
 		return new DbHubSourceDiscoveryResult(source);
+	}
+
+	private static bool IsPostgresConnectionString(string connectionString) {
+		try {
+			_ = new SqlConnectionStringBuilder(connectionString);
+			return false;
+		}
+		catch (ArgumentException) {
+			_ = new NpgsqlConnectionStringBuilder(connectionString);
+			return true;
+		}
 	}
 
 	private static string ToDbHubSslMode(SslMode sslMode) => sslMode switch {

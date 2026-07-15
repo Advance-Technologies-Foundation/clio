@@ -183,6 +183,12 @@ public sealed class DbHubTomlStore : IDbHubTomlStore {
 		int insertAt = existingManaged.Count > 0 ? existingManaged[0].Index : -1;
 		string remaining = RemoveMatches(content, existingManaged);
 		string targetSuffix = NormalizeDbHubToolSuffix(source.SourceId);
+		string targetToolName = $"execute_sql_{targetSuffix}";
+		if (FindToolNames(remaining).Contains(targetToolName)) {
+			return (content, new DbHubSyncResult(false, true,
+				new DbHubWarning($"dbHub source '{source.SourceId}' was not changed.",
+					"An existing tool already uses the generated dbHub MCP tool name.", ConflictCode)));
+		}
 		string collision = FindSourceIds(remaining).FirstOrDefault(id => string.Equals(
 			NormalizeDbHubToolSuffix(id), targetSuffix, StringComparison.Ordinal));
 		if (collision is not null) {
@@ -242,6 +248,22 @@ public sealed class DbHubTomlStore : IDbHubTomlStore {
 			foreach (TomlTable source in sourceArray) {
 				if (source.TryGetValue("id", out object id) && id is string sourceId) {
 					result.Add(sourceId);
+				}
+			}
+		}
+		return result;
+	}
+
+	private static HashSet<string> FindToolNames(string content) {
+		HashSet<string> result = new(StringComparer.Ordinal);
+		if (string.IsNullOrWhiteSpace(content)) {
+			return result;
+		}
+		TomlTable document = TomlSerializer.Deserialize<TomlTable>(content);
+		if (document.TryGetValue("tools", out object tools) && tools is TomlTableArray toolArray) {
+			foreach (TomlTable tool in toolArray) {
+				if (tool.TryGetValue("name", out object name) && name is string toolName) {
+					result.Add(toolName);
 				}
 			}
 		}
