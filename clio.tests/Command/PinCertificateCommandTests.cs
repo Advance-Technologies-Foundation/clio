@@ -89,6 +89,36 @@ public sealed class PinCertificateCommandTests : BaseCommandTests<PinCertificate
 	}
 
 	[Test]
+	[Description("Rejects an explicitly supplied malformed thumbprint instead of treating it as an interactive cancellation.")]
+	public void Execute_ShouldFail_WhenExplicitThumbprintIsMalformed() {
+		// Arrange
+		PinCertificateOptions options = new() { Thumbprint = "xyz" };
+
+		// Act
+		int result = _sut.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "an explicit malformed thumbprint must not report successful cancellation");
+		_resolver.DidNotReceive().GetUsableCertificates(Arg.Any<string>(), Arg.Any<DateTimeOffset>());
+		_settingsRepository.DidNotReceive().SetPinnedIisCertificateThumbprint(Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("Rejects nonseparator garbage even when normalization leaves a valid 40-character thumbprint.")]
+	public void Execute_ShouldFail_WhenExplicitThumbprintHasGarbageSuffix() {
+		// Arrange
+		PinCertificateOptions options = new() { Thumbprint = Thumbprint + "XYZ" };
+
+		// Act
+		int result = _sut.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "normalization must not hide invalid characters in an explicitly supplied thumbprint");
+		_resolver.DidNotReceive().GetUsableCertificates(Arg.Any<string>(), Arg.Any<DateTimeOffset>());
+		_settingsRepository.DidNotReceive().SetPinnedIisCertificateThumbprint(Arg.Any<string>());
+	}
+
+	[Test]
 	[Description("Clears the persisted IIS certificate preference without inspecting the certificate store.")]
 	public void Execute_ShouldClearPin_WhenClearIsRequested() {
 		// Arrange

@@ -23,6 +23,7 @@ public sealed class NetFrameworkHttpsConfigurator(System.IO.Abstractions.IFileSy
 	private const string HttpsBehaviorPath = @"Terrasoft.WebApp\ServiceModel\https\behaviors.config";
 	private const string HttpBindingPath = @"Terrasoft.WebApp\ServiceModel\http\bindings.config";
 	private const string HttpsBindingPath = @"Terrasoft.WebApp\ServiceModel\https\bindings.config";
+	private const string ConfigSourceAttribute = "configSource";
 	private const string WsServiceType = "Terrasoft.Messaging.MicrosoftWSService.MicrosoftWSService";
 	private readonly System.IO.Abstractions.IFileSystem _fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
 
@@ -33,8 +34,9 @@ public sealed class NetFrameworkHttpsConfigurator(System.IO.Abstractions.IFileSy
 		XmlDocument root = Load(rootPath);
 		XmlDocument inner = Load(innerPath);
 
-		bool rootChanged = SetConfigSource(root, "behaviors", HttpBehaviorPath, HttpsBehaviorPath)
-			| SetConfigSource(root, "bindings", HttpBindingPath, HttpsBindingPath);
+		bool behaviorChanged = SetConfigSource(root, "behaviors", HttpBehaviorPath, HttpsBehaviorPath);
+		bool bindingChanged = SetConfigSource(root, "bindings", HttpBindingPath, HttpsBindingPath);
+		bool rootChanged = behaviorChanged || bindingChanged;
 		XmlElement[] wsServices = inner.SelectNodes("//wsService[@type]")!
 			.Cast<XmlElement>()
 			.Where(element => element.GetAttribute("type").Contains(WsServiceType, StringComparison.Ordinal))
@@ -63,18 +65,18 @@ public sealed class NetFrameworkHttpsConfigurator(System.IO.Abstractions.IFileSy
 	}
 
 	private static bool SetConfigSource(XmlDocument document, string elementName, string httpPath, string httpsPath) {
-		XmlElement[] elements = document.SelectNodes($"//{elementName}[@configSource]")!
+		XmlElement[] elements = document.SelectNodes($"//{elementName}[@{ConfigSourceAttribute}]")!
 			.Cast<XmlElement>()
-			.Where(element => string.Equals(element.GetAttribute("configSource"), httpPath, StringComparison.OrdinalIgnoreCase)
-				|| string.Equals(element.GetAttribute("configSource"), httpsPath, StringComparison.OrdinalIgnoreCase))
+			.Where(element => string.Equals(element.GetAttribute(ConfigSourceAttribute), httpPath, StringComparison.OrdinalIgnoreCase)
+				|| string.Equals(element.GetAttribute(ConfigSourceAttribute), httpsPath, StringComparison.OrdinalIgnoreCase))
 			.ToArray();
 		if (elements.Length != 1) {
 			throw new InvalidDataException($"Expected one {elementName} configSource for Creatio ServiceModel, found {elements.Length}.");
 		}
-		if (string.Equals(elements[0].GetAttribute("configSource"), httpsPath, StringComparison.OrdinalIgnoreCase)) {
+		if (string.Equals(elements[0].GetAttribute(ConfigSourceAttribute), httpsPath, StringComparison.OrdinalIgnoreCase)) {
 			return false;
 		}
-		elements[0].SetAttribute("configSource", httpsPath);
+		elements[0].SetAttribute(ConfigSourceAttribute, httpsPath);
 		return true;
 	}
 

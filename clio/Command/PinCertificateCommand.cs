@@ -86,21 +86,30 @@ public sealed class PinCertificateCommand(
 			_logger.WriteInfo("The pinned IIS certificate was cleared.");
 			return 0;
 		}
+		bool hasExplicitThumbprint = !string.IsNullOrWhiteSpace(options.Thumbprint);
+		string normalizedExplicitThumbprint = hasExplicitThumbprint
+			? WindowsIisCertificateProvider.NormalizeThumbprint(options.Thumbprint)
+			: null;
+		if (hasExplicitThumbprint && (!HasOnlyThumbprintCharacters(options.Thumbprint)
+			|| normalizedExplicitThumbprint.Length != 40)) {
+			_logger.WriteError("Certificate thumbprint must contain exactly 40 hexadecimal characters.");
+			return 1;
+		}
 
 		string hostName = InstallerHelper.FetFQDN();
 		IReadOnlyList<IisCertificateInfo> certificates = _certificateResolver.GetUsableCertificates(hostName, DateTimeOffset.Now);
 		if (certificates.Count == 0) {
-			if (!string.IsNullOrWhiteSpace(options.Thumbprint)) {
-				_logger.WriteError($"Certificate '{WindowsIisCertificateProvider.NormalizeThumbprint(options.Thumbprint)}' is not a usable LocalMachine/My server certificate for '{hostName}'.");
+			if (hasExplicitThumbprint) {
+				_logger.WriteError($"Certificate '{normalizedExplicitThumbprint}' is not a usable LocalMachine/My server certificate for '{hostName}'.");
 				return 1;
 			}
 			_logger.WriteWarning($"No usable LocalMachine/My server certificate matches '{hostName}'. IIS HTTPS deployments will fall back to HTTP.");
 			return 0;
 		}
 
-		string requestedThumbprint = string.IsNullOrWhiteSpace(options.Thumbprint)
-			? _selectionPrompt.Select(certificates)
-			: WindowsIisCertificateProvider.NormalizeThumbprint(options.Thumbprint);
+		string requestedThumbprint = hasExplicitThumbprint
+			? normalizedExplicitThumbprint
+			: _selectionPrompt.Select(certificates);
 		if (string.IsNullOrWhiteSpace(requestedThumbprint)) {
 			_logger.WriteInfo("Certificate selection was cancelled; the existing pin was not changed.");
 			return 0;
@@ -116,4 +125,9 @@ public sealed class PinCertificateCommand(
 		_logger.WriteInfo($"Pinned IIS certificate {selected.Thumbprint} ({selected.Subject}, expires {selected.NotAfter:u}).");
 		return 0;
 	}
+
+	private static bool HasOnlyThumbprintCharacters(string value) => value.All(character =>
+		Uri.IsHexDigit(character)
+		|| char.IsWhiteSpace(character)
+		|| character is ':' or '-' or '\u200E' or '\u200F');
 }
