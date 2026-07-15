@@ -1,4 +1,7 @@
+using System;
+using System.Net;
 using System.Net.Http;
+using System.Threading.Tasks;
 using Clio.Command;
 using Clio.Common;
 using FluentAssertions;
@@ -44,9 +47,10 @@ public class GetInfoCommandTests : BaseCommandTests<GetCreatioInfoCommandOptions
 				Arg.Is<string>(u => u.Contains(GetSysInfoMarker)), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(response);
 
-	private static GetCreatioInfoCommand CreateCommand(IApplicationClient client, IClioGateway gateway, ILogger logger = null)
+	private static GetCreatioInfoCommand CreateCommand(IApplicationClient client, IClioGateway gateway,
+		ILogger logger = null, string uri = "https://creatio.test")
 	{
-		EnvironmentSettings env = new() { Uri = "https://creatio.test", IsNetCore = true };
+		EnvironmentSettings env = new() { Uri = uri, IsNetCore = true };
 		return new GetCreatioInfoCommand(client, env, gateway) { Logger = logger ?? Substitute.For<ILogger>() };
 	}
 
@@ -213,7 +217,8 @@ public class GetInfoCommandTests : BaseCommandTests<GetCreatioInfoCommandOptions
 				Arg.Is<string>(u => u.Contains(ApplicationInfoMarker)),
 				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("""{ "applicationInfo": { } }""");
-		GetCreatioInfoCommand command = CreateCommand(client, gateway: null);
+		ILogger logger = Substitute.For<ILogger>();
+		GetCreatioInfoCommand command = CreateCommand(client, gateway: null, logger);
 
 		// Act
 		int result = command.Execute(new GetCreatioInfoCommandOptions());
@@ -221,5 +226,256 @@ public class GetInfoCommandTests : BaseCommandTests<GetCreatioInfoCommandOptions
 		// Assert
 		result.Should().Be(1,
 			because: "an unusable ApplicationInfoService base must surface as a clean failure, not a crash");
+		logger.Received(1).WriteError("The Creatio ApplicationInfoService returned an unexpected response.");
+	}
+
+	[Test]
+	[Description("Classifies an HTML base response as a reachable non-Creatio target without exposing HTML or parser details.")]
+	public void Execute_ShouldReportNonCreatioTarget_WhenBaseResponseIsHtml()
+	{
+		// Arrange
+		const string html = "<html><body>not-creatio-secret-marker</body></html>";
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(html);
+		ILogger logger = Substitute.For<ILogger>();
+		GetCreatioInfoCommand command = CreateCommand(client, gateway: null, logger, "https://google.com");
+
+		// Act
+		int result = command.Execute(new GetCreatioInfoCommandOptions());
+
+		// Assert
+		result.Should().Be(1, because: "a reachable non-Creatio target cannot produce an environment report");
+		logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("does not appear to be a Creatio application", StringComparison.Ordinal)
+			&& message.Contains("https://google.com", StringComparison.Ordinal)));
+		logger.DidNotReceive().WriteError(Arg.Is<string>(message =>
+			message.Contains("Unexpected character", StringComparison.Ordinal)
+			|| message.Contains("not-creatio-secret-marker", StringComparison.Ordinal)));
+	}
+
+	[Test]
+	[Description("Classifies a plain non-JSON base response as a reachable non-Creatio target.")]
+	public void Execute_ShouldReportNonCreatioTarget_WhenBaseResponseIsPlainText()
+	{
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("plain text response");
+		ILogger logger = Substitute.For<ILogger>();
+		GetCreatioInfoCommand command = CreateCommand(client, gateway: null, logger);
+
+		// Act
+		int result = command.Execute(new GetCreatioInfoCommandOptions());
+
+		// Assert
+		result.Should().Be(1, because: "plain non-JSON content is not a usable Creatio response");
+		logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("does not appear to be a Creatio application", StringComparison.Ordinal)));
+	}
+
+	[Test]
+	[Description("Classifies malformed JSON from ApplicationInfoService with the stable unexpected-response error.")]
+	public void Execute_ShouldReportUnexpectedResponse_WhenBaseJsonIsMalformed()
+	{
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"applicationInfo\":");
+		ILogger logger = Substitute.For<ILogger>();
+		GetCreatioInfoCommand command = CreateCommand(client, gateway: null, logger);
+
+		// Act
+		int result = command.Execute(new GetCreatioInfoCommandOptions());
+
+		// Assert
+		result.Should().Be(1, because: "malformed JSON cannot be trusted as a Creatio report");
+		logger.Received(1).WriteError("The Creatio ApplicationInfoService returned an unexpected response.");
+		logger.DidNotReceive().WriteError(Arg.Is<string>(message => message.Contains("JsonReaderException", StringComparison.Ordinal)));
+	}
+
+	[Test]
+	[Description("Classifies an HTTP transport exception as an unavailable Creatio target.")]
+	public void Execute_ShouldReportConnectionFailure_WhenBaseProbeThrowsHttpRequestException()
+	{
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Throws(new HttpRequestException("secret transport implementation detail"));
+		ILogger logger = Substitute.For<ILogger>();
+		GetCreatioInfoCommand command = CreateCommand(client, gateway: null, logger);
+
+		// Act
+		int result = command.Execute(new GetCreatioInfoCommandOptions());
+
+		// Assert
+		result.Should().Be(1, because: "an unreachable target cannot produce a base Creatio report");
+		logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("Could not connect to the Creatio application", StringComparison.Ordinal)
+			&& !message.Contains("secret transport", StringComparison.Ordinal)));
+	}
+
+	[Test]
+	[Description("Classifies a request timeout as an unavailable Creatio target.")]
+	public void Execute_ShouldReportConnectionFailure_WhenBaseProbeTimesOut()
+	{
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Throws(new TaskCanceledException("secret timeout detail"));
+		ILogger logger = Substitute.For<ILogger>();
+		GetCreatioInfoCommand command = CreateCommand(client, gateway: null, logger);
+
+		// Act
+		int result = command.Execute(new GetCreatioInfoCommandOptions());
+
+		// Assert
+		result.Should().Be(1, because: "a timed-out base probe did not establish a Creatio report");
+		logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("Could not connect to the Creatio application", StringComparison.Ordinal)));
+	}
+
+	[Test]
+	[Description("Classifies rejected basic-auth credentials separately from non-Creatio and transport failures.")]
+	public void Execute_ShouldReportAuthenticationFailure_WhenBaseProbeRejectsCredentials()
+	{
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Throws(new UnauthorizedAccessException("Unauthorized secret-user for secret-url"));
+		ILogger logger = Substitute.For<ILogger>();
+		GetCreatioInfoCommand command = CreateCommand(client, gateway: null, logger);
+
+		// Act
+		int result = command.Execute(new GetCreatioInfoCommandOptions());
+
+		// Assert
+		result.Should().Be(1, because: "invalid credentials are a caller-actionable authentication failure");
+		logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("Authentication failed", StringComparison.Ordinal)
+			&& message.Contains("Verify the credentials", StringComparison.Ordinal)
+			&& !message.Contains("secret-user", StringComparison.Ordinal)));
+	}
+
+	[TestCase(HttpStatusCode.Unauthorized)]
+	[TestCase(HttpStatusCode.Forbidden)]
+	[Description("Classifies HTTP authentication status codes separately from transport and non-Creatio failures.")]
+	public void Execute_ShouldReportAuthenticationFailure_WhenBaseProbeReturnsAuthenticationStatus(
+		HttpStatusCode status)
+	{
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Throws(new HttpRequestException("secret HTTP detail", null, status));
+		ILogger logger = Substitute.For<ILogger>();
+		GetCreatioInfoCommand command = CreateCommand(client, gateway: null, logger);
+
+		// Act
+		int result = command.Execute(new GetCreatioInfoCommandOptions());
+
+		// Assert
+		result.Should().Be(1, because: "HTTP 401/403 means the caller must correct authentication settings");
+		logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("Authentication failed", StringComparison.Ordinal)
+			&& !message.Contains("secret HTTP detail", StringComparison.Ordinal)));
+	}
+
+	[Test]
+	[Description("Classifies Creatio's session-expired HTML response as authentication failure before parsing.")]
+	public void Execute_ShouldReportAuthenticationFailure_WhenBaseResponseIsLoginPage()
+	{
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("<html><form action=\"/0/Login/NuiLogin.aspx\">secret-login-body</form></html>");
+		ILogger logger = Substitute.For<ILogger>();
+		GetCreatioInfoCommand command = CreateCommand(client, gateway: null, logger);
+
+		// Act
+		int result = command.Execute(new GetCreatioInfoCommandOptions());
+
+		// Assert
+		result.Should().Be(1, because: "a Creatio login page means authentication failed, not that the URL is non-Creatio");
+		logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("Authentication failed", StringComparison.Ordinal)));
+		logger.DidNotReceive().WriteError(Arg.Is<string>(message => message.Contains("secret-login-body", StringComparison.Ordinal)));
+	}
+
+	[Test]
+	[Description("Rejects malformed and unsupported application URIs before sending the base probe.")]
+	public void Execute_ShouldRejectUriBeforeProbe_WhenUriIsNotHttpOrHttps()
+	{
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		ILogger logger = Substitute.For<ILogger>();
+		GetCreatioInfoCommand command = CreateCommand(client, gateway: null, logger, "ftp://files.example.test");
+
+		// Act
+		int result = command.Execute(new GetCreatioInfoCommandOptions());
+
+		// Assert
+		result.Should().Be(1, because: "ApplicationInfoService is supported only over absolute HTTP or HTTPS URLs");
+		logger.Received(1).WriteError("The application URL is invalid. Use an absolute HTTP or HTTPS URL.");
+		client.DidNotReceive().ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[NonParallelizable]
+	[Description("Debug diagnostics expose only safe classification metadata and redact URI user-info, query values, exception messages, and response bodies.")]
+	public void Execute_ShouldKeepDebugDiagnosticsSecretSafe_WhenBaseProbeFails()
+	{
+		// Arrange
+		bool originalDebugMode = Program.IsDebugMode;
+		Program.IsDebugMode = true;
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Throws(new AggregateException(new HttpRequestException("token=exception-secret")));
+		ILogger logger = Substitute.For<ILogger>();
+		GetCreatioInfoCommand command = CreateCommand(client, gateway: null, logger,
+			"https://user:password@creatio.test/site?token=query-secret#fragment-secret");
+
+		try {
+			// Act
+			int result = command.Execute(new GetCreatioInfoCommandOptions());
+
+			// Assert
+			result.Should().Be(1, because: "the wrapped transport failure is still an unavailable target");
+			logger.Received(1).WriteError(Arg.Is<string>(message =>
+				message.Contains("https://creatio.test", StringComparison.Ordinal)
+				&& !message.Contains("user", StringComparison.Ordinal)
+				&& !message.Contains("password", StringComparison.Ordinal)
+				&& !message.Contains("/site", StringComparison.Ordinal)
+				&& !message.Contains("query-secret", StringComparison.Ordinal)));
+			logger.Received(1).WriteDebug(Arg.Is<string>(message =>
+				message.Contains("classification=Connection", StringComparison.Ordinal)
+				&& message.Contains(nameof(HttpRequestException), StringComparison.Ordinal)
+				&& !message.Contains("exception-secret", StringComparison.Ordinal)
+				&& !message.Contains("query-secret", StringComparison.Ordinal)));
+		} finally {
+			Program.IsDebugMode = originalDebugMode;
+		}
+	}
+
+	[Test]
+	[Description("Keeps a successful base report when the optional ClioGate compatibility check fails.")]
+	public void Execute_ShouldReturnBaseReport_WhenCliogateCompatibilityCheckFails()
+	{
+		// Arrange
+		IApplicationClient client = SubstituteClient();
+		IClioGateway gateway = Substitute.For<IClioGateway>();
+		gateway.IsCompatibleWith(Arg.Any<string>()).Throws(new HttpRequestException("secret cliogate failure"));
+		ILogger logger = Substitute.For<ILogger>();
+		GetCreatioInfoCommand command = CreateCommand(client, gateway, logger);
+
+		// Act
+		int result = command.Execute(new GetCreatioInfoCommandOptions());
+
+		// Assert
+		result.Should().Be(0, because: "optional ClioGate compatibility cannot invalidate a successful base report");
+		logger.Received(1).WriteLine(Arg.Is<string>(message => message.Contains("coreVersion", StringComparison.Ordinal)));
+		logger.Received(1).WriteWarning(Arg.Is<string>(message =>
+			message.Contains("compatibility could not be determined", StringComparison.Ordinal)));
+		logger.DidNotReceive().WriteError(Arg.Any<string>());
 	}
 }

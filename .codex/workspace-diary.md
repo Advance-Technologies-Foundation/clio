@@ -6022,3 +6022,10 @@ Decision: Broadcast each notification through a versioned task-completion signal
 Discovery: Sorting a partial snapshot cannot recover callbacks that have not arrived; terminal presence proves completeness only when every preceding sequence is already captured. This supersedes the earlier coalescing-semaphore decision.
 Files: clio.mcp.e2e/Support/Mcp/McpServerSession.cs, clio.mcp.e2e/DeployUninstallProgressTests.cs, spec/mcp-progress-wait-timeout/
 Impact: Deterministic terminal-first and typed-token regressions pass, and the five-test fixture passed ten fresh-process runs on each of net8.0 and net10.0 without real Creatio lifecycle operations.
+
+## 2026-07-15 09:16 – Classify get-info target failures safely
+Context: Issue #390 required get-info and its aliases to distinguish invalid URLs, unreachable targets, authentication failures, non-Creatio responses, and malformed Creatio responses without leaking response bodies or parser details.
+Decision: Make ApplicationInfoService the mandatory base probe, map failures to stable user-facing classifications, and run system-info and ClioGate enrichment only after a valid base report and as non-fatal best-effort steps.
+Discovery: Creatio.Client can surface transport failures through nested exceptions and returns non-success response bodies directly, so classification must inspect exception chains while keeping debug output limited to safe metadata.
+Files: clio/Command/GetCreatioInfoCommand.cs, clio.tests/Command/GetInfoCommand.cs, clio/Command/McpServer/, clio.mcp.e2e/GetCreatioInfoToolE2ETests.cs, clio/docs/commands/get-info.md, spec/get-info-target-classification/
+Impact: CLI aliases and MCP now share stable secret-safe errors, valid Creatio instances still report base information without ClioGate, and Ring compatibility remains covered by its consumer tests and NativeAOT publish gate.
