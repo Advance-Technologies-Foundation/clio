@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using Newtonsoft.Json;
 
 namespace Clio.Common.DbHub;
@@ -53,6 +54,8 @@ public sealed record DbHubSourceDefinition(
 	int Port,
 	string Database,
 	string User,
+	[property: SuppressMessage("Security", "S2068:Hard-coded credentials are security-sensitive",
+		Justification = "This value is discovered from the selected local Creatio configuration at runtime; no credential is hard-coded.")]
 	string Password,
 	string InstanceName = null,
 	string SslMode = null,
