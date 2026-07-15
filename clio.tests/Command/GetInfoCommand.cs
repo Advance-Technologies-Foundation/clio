@@ -294,6 +294,28 @@ public class GetInfoCommandTests : BaseCommandTests<GetCreatioInfoCommandOptions
 			message.Contains("does not appear to be a Creatio application", StringComparison.Ordinal)));
 	}
 
+	[TestCase("true story")]
+	[TestCase("null-route")]
+	[TestCase("- backend unavailable")]
+	[Description("Classifies literal-prefixed plain text as a reachable non-Creatio response.")]
+	public void Execute_ShouldReportNonCreatioTarget_WhenPlainTextStartsLikeJsonLiteral(string response)
+	{
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(response);
+		ILogger logger = Substitute.For<ILogger>();
+		GetCreatioInfoCommand command = CreateCommand(client, gateway: null, logger);
+
+		// Act
+		int result = command.Execute(new GetCreatioInfoCommandOptions());
+
+		// Assert
+		result.Should().Be(1, because: "literal-prefixed server text is not a JSON Creatio response");
+		logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("does not appear to be a Creatio application", StringComparison.Ordinal)));
+	}
+
 	[Test]
 	[Description("Rejects a sysValues object without the required coreVersion base signature.")]
 	public void Execute_ShouldReportUnexpectedResponse_WhenBaseReportHasNoCoreVersion()

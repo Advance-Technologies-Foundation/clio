@@ -174,15 +174,11 @@ namespace Clio.Command
 				return false;
 			}
 			string trimmed = response.TrimStart();
-			// ApplicationInfoService must return an object. Preserve malformed-JSON classification for
-			// every unmistakable JSON token prefix, but treat digit-prefixed text such as "404 Not Found"
-			// as non-Creatio. A valid numeric JSON scalar parses successfully and is rejected by shape.
-			char first = trimmed[0];
-			bool hasJsonStart = first is '{' or '[' or '"' or '-'
-				|| trimmed.StartsWith("true", StringComparison.Ordinal)
-				|| trimmed.StartsWith("false", StringComparison.Ordinal)
-				|| trimmed.StartsWith("null", StringComparison.Ordinal);
-			return !hasJsonStart;
+			// ApplicationInfoService must return an object. Object/array/quoted token prefixes are
+			// unmistakably JSON-like when parsing fails; literal-looking plain text such as
+			// "true story", "null-route", "- backend unavailable", or "404 Not Found" is not.
+			// Valid JSON scalars parse successfully and are rejected later by the required object shape.
+			return trimmed[0] is not ('{' or '[' or '"');
 		}
 
 		private static bool IsRecoverable(Exception exception) =>
