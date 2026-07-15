@@ -104,7 +104,7 @@ BEHAVIOR
        (requires CanManageSolution)
     4. If a compatible cliogate (>= 2.0.0.32) is installed, GET
        /rest/CreatioApiGateway/GetSysInfo and merge productName + licenseInfo into
-       the same object (and backfill db engine / framework if step 2 did not)
+       the same object (and backfill db engine / framework if step 3 did not)
     5. Any optional source in steps 3-4 that is denied / absent / errors is skipped
        silently - the report still includes everything that was available
     6. Display the single combined report as formatted JSON

@@ -275,6 +275,45 @@ public class GetInfoCommandTests : BaseCommandTests<GetCreatioInfoCommandOptions
 	}
 
 	[Test]
+	[Description("Classifies digit-prefixed plain text as a reachable non-Creatio response rather than malformed JSON.")]
+	public void Execute_ShouldReportNonCreatioTarget_WhenBaseResponseStartsWithDigit()
+	{
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("404 Not Found");
+		ILogger logger = Substitute.For<ILogger>();
+		GetCreatioInfoCommand command = CreateCommand(client, gateway: null, logger);
+
+		// Act
+		int result = command.Execute(new GetCreatioInfoCommandOptions());
+
+		// Assert
+		result.Should().Be(1, because: "digit-prefixed server text is non-JSON content from a reachable non-Creatio target");
+		logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("does not appear to be a Creatio application", StringComparison.Ordinal)));
+	}
+
+	[Test]
+	[Description("Rejects a sysValues object without the required coreVersion base signature.")]
+	public void Execute_ShouldReportUnexpectedResponse_WhenBaseReportHasNoCoreVersion()
+	{
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("""{ "applicationInfo": { "sysValues": { } } }""");
+		ILogger logger = Substitute.For<ILogger>();
+		GetCreatioInfoCommand command = CreateCommand(client, gateway: null, logger);
+
+		// Act
+		int result = command.Execute(new GetCreatioInfoCommandOptions());
+
+		// Assert
+		result.Should().Be(1, because: "an empty sysValues object cannot establish a usable Creatio base report");
+		logger.Received(1).WriteError("The Creatio ApplicationInfoService returned an unexpected response.");
+	}
+
+	[Test]
 	[Description("Classifies malformed JSON from ApplicationInfoService with the stable unexpected-response error.")]
 	public void Execute_ShouldReportUnexpectedResponse_WhenBaseJsonIsMalformed()
 	{
@@ -401,14 +440,15 @@ public class GetInfoCommandTests : BaseCommandTests<GetCreatioInfoCommandOptions
 		logger.DidNotReceive().WriteError(Arg.Is<string>(message => message.Contains("secret-login-body", StringComparison.Ordinal)));
 	}
 
-	[Test]
+	[TestCase("ftp://files.example.test")]
+	[TestCase("not-a-uri")]
 	[Description("Rejects malformed and unsupported application URIs before sending the base probe.")]
-	public void Execute_ShouldRejectUriBeforeProbe_WhenUriIsNotHttpOrHttps()
+	public void Execute_ShouldRejectUriBeforeProbe_WhenUriIsNotHttpOrHttps(string uri)
 	{
 		// Arrange
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		ILogger logger = Substitute.For<ILogger>();
-		GetCreatioInfoCommand command = CreateCommand(client, gateway: null, logger, "ftp://files.example.test");
+		GetCreatioInfoCommand command = CreateCommand(client, gateway: null, logger, uri);
 
 		// Act
 		int result = command.Execute(new GetCreatioInfoCommandOptions());

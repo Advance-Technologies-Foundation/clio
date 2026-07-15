@@ -174,13 +174,16 @@ namespace Clio.Command
 				return false;
 			}
 			string trimmed = response.TrimStart();
-			char first = trimmed[0];
-			bool hasJsonStart = first is '{' or '[' or '"' or '-' || char.IsDigit(first)
-				|| trimmed.StartsWith("true", StringComparison.Ordinal)
-				|| trimmed.StartsWith("false", StringComparison.Ordinal)
-				|| trimmed.StartsWith("null", StringComparison.Ordinal);
-			return !hasJsonStart;
+			// ApplicationInfoService must return an object. A broken object/array-shaped payload is
+			// therefore malformed JSON, while text such as "404 Not Found" is plainly a non-Creatio
+			// response even though JSON itself permits a top-level number or string.
+			return trimmed[0] is not ('{' or '[');
 		}
+
+		private static bool IsExpectedRemoteFailure(Exception exception) =>
+			EnumerateExceptionChain(exception).Any(item => item is
+				UnauthorizedAccessException or TaskCanceledException or TimeoutException or
+				HttpRequestException or WebException or JsonException);
 
 		private static bool IsConnectionFailure(WebException exception) => exception.Status is
 			WebExceptionStatus.ConnectFailure or
@@ -221,7 +224,7 @@ namespace Clio.Command
 				string appInfoUrl = RootPath + CreatioServicePaths.GetApplicationInfo;
 				response = ApplicationClient.ExecutePostRequest(
 					appInfoUrl, "{}", options.TimeOut, options.MaxAttempts, options.RetryDelay);
-			} catch (Exception exception) {
+			} catch (Exception exception) when (IsExpectedRemoteFailure(exception)) {
 				ReportBaseProbeFailure(ClassifyBaseProbeException(exception), targetUri, exception);
 				return false;
 			}
@@ -243,7 +246,9 @@ namespace Clio.Command
 			}
 
 			if (root is not JObject rootObject
-					|| rootObject["applicationInfo"]?["sysValues"] is not JObject baseReport) {
+					|| rootObject["applicationInfo"]?["sysValues"] is not JObject baseReport
+					|| baseReport["coreVersion"]?.Type != JTokenType.String
+					|| string.IsNullOrWhiteSpace(baseReport["coreVersion"]?.Value<string>())) {
 				ReportBaseProbeFailure(BaseProbeFailure.UnexpectedResponse, targetUri,
 					responseLength: response?.Length);
 				return false;
@@ -302,7 +307,7 @@ namespace Clio.Command
 			bool compatible;
 			try {
 				compatible = ClioGateWay.IsCompatibleWith(ClioGateMinVersion);
-			} catch (Exception exception) {
+			} catch (Exception exception) when (IsExpectedRemoteFailure(exception)) {
 				WriteSafeDebug("cliogate-compatibility", BaseProbeFailure.UnexpectedResponse, exception);
 				return CliogateEnrichmentState.CompatibilityUnknown;
 			}
@@ -340,7 +345,7 @@ namespace Clio.Command
 						report[field] = value;
 					}
 				}
-			} catch (Exception e){
+			} catch (Exception e) when (IsExpectedRemoteFailure(e)){
 				// Degrade silently — the ApplicationInfoService base is already reported. Surface the reason
 				// only under --debug so an access/transport failure is diagnosable without polluting normal output.
 				WriteSafeDebug("system-environment-enrichment", BaseProbeFailure.UnexpectedResponse, e);
@@ -380,7 +385,7 @@ namespace Clio.Command
 					report["frameworkKind"] = sysInfo["IsNetCore"].Value<bool>() ? "Net" : "NetFramework";
 				}
 				return true;
-			} catch (Exception e){
+			} catch (Exception e) when (IsExpectedRemoteFailure(e)){
 				// Degrade silently — the base + GetSystemEnvironmentInfo data is already reported. Surface the
 				// reason only under --debug so an access/transport failure is diagnosable.
 				WriteSafeDebug("cliogate-sysinfo-enrichment", BaseProbeFailure.UnexpectedResponse, e);

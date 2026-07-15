@@ -6029,3 +6029,10 @@ Decision: Make ApplicationInfoService the mandatory base probe, map failures to 
 Discovery: Creatio.Client can surface transport failures through nested exceptions and returns non-success response bodies directly, so classification must inspect exception chains while keeping debug output limited to safe metadata.
 Files: clio/Command/GetCreatioInfoCommand.cs, clio.tests/Command/GetInfoCommand.cs, clio/Command/McpServer/, clio.mcp.e2e/GetCreatioInfoToolE2ETests.cs, clio/docs/commands/get-info.md, spec/get-info-target-classification/
 Impact: CLI aliases and MCP now share stable secret-safe errors, valid Creatio instances still report base information without ClioGate, and Ring compatibility remains covered by its consumer tests and NativeAOT publish gate.
+
+## 2026-07-15 09:31 – Close get-info review edge cases
+Context: The comprehensive pre-PR review tested response classification against ambiguous plain text and minimally shaped JSON.
+Decision: Treat only object/array-prefixed parse failures as malformed JSON, require a non-empty coreVersion in the base report, and filter remote-failure catches to known transport, authentication, timeout, and JSON exception families.
+Discovery: JSON permits scalar top-level values, but ApplicationInfoService does not; using generic JSON scalar prefixes caused text such as `404 Not Found` to be misclassified.
+Files: clio/Command/GetCreatioInfoCommand.cs, clio.tests/Command/GetInfoCommand.cs, clio/help/en/get-info.txt, spec/sprint-status.yaml
+Impact: Digit-prefixed non-Creatio responses and empty sysValues envelopes now fail with the correct stable classification, while programming defects are no longer swallowed by remote-operation boundaries.

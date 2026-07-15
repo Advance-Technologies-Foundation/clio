@@ -26,7 +26,7 @@ stories:
     feature: "get-info-target-classification"
     repo: "clio"
     size: S
-    status: done
+    status: review
     issue: 390
     file: spec/get-info-target-classification/get-info-target-classification-story.md
     prd: spec/get-info-target-classification/get-info-target-classification-spec.md
