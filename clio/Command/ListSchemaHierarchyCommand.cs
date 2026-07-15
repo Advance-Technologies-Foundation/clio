@@ -109,7 +109,7 @@ public class ListSchemaHierarchyCommand : Command<ListSchemaHierarchyOptions> {
 			JObject query = BuildSelectHierarchyByName(options.SchemaName, managerName);
 			string url = _serviceUrlBuilder.Build(SelectQueryRoute);
 			string json = _applicationClient.ExecutePostRequest(url, query.ToString(Formatting.None));
-			JArray rows = JObject.Parse(json)["rows"] as JArray ?? [];
+			JArray rows = DataServiceSelectResponse.ReadRows(json);
 
 			List<SchemaHierarchyEntry> schemas = rows.Select(MapHierarchyEntry).ToList();
 

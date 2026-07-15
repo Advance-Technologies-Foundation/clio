@@ -163,7 +163,7 @@ public class ListEntityClientSchemasCommand : Command<ListEntityClientSchemasOpt
 	private JArray Select(JObject query) {
 		string url = _serviceUrlBuilder.Build(SelectQueryRoute);
 		string json = _applicationClient.ExecutePostRequest(url, query.ToString(Formatting.None));
-		return JObject.Parse(json)["rows"] as JArray ?? [];
+		return DataServiceSelectResponse.ReadRows(json);
 	}
 
 	public override int Execute(ListEntityClientSchemasOptions options) {
