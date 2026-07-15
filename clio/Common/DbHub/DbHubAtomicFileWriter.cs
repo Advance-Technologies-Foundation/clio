@@ -57,13 +57,11 @@ public sealed class DbHubAtomicFileWriter : IDbHubAtomicFileWriter {
 			}
 			DbHubPathSafety.RefuseUnsafeTarget(path);
 			if (exists) {
-				File.Replace(temp, path, null, ignoreMetadataErrors: true);
+				File.Replace(temp, path, null, ignoreMetadataErrors: false);
 			} else {
 				File.Move(temp, path);
 			}
-			if (windowsSecurity is not null) {
-				new FileInfo(path).SetAccessControl(windowsSecurity);
-			} else if (unixMode is not null) {
+			if (unixMode is not null) {
 				File.SetUnixFileMode(path, unixMode.Value);
 			}
 		}
