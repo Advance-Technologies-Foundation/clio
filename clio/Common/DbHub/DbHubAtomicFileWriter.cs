@@ -61,6 +61,11 @@ public sealed class DbHubAtomicFileWriter : IDbHubAtomicFileWriter {
 			} else {
 				File.Move(temp, path);
 			}
+			if (windowsSecurity is not null) {
+				new FileInfo(path).SetAccessControl(windowsSecurity);
+			} else if (unixMode is not null) {
+				File.SetUnixFileMode(path, unixMode.Value);
+			}
 		}
 		finally {
 			if (File.Exists(temp)) {
