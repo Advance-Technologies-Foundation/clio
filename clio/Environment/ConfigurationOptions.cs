@@ -15,6 +15,7 @@ using System.Threading;
 using Clio.Common;
 using Clio.Common.db;
 using Clio.Common.DbHub;
+using Clio.Common.IIS;
 using ConsoleTables;
 using YamlDotNet.Serialization;
 using FileSystem = System.IO.Abstractions.FileSystem;
@@ -389,6 +390,10 @@ namespace Clio
 			set => _iISClioRootPath = value;
 		}
 
+		/// <summary>Gets or sets the preferred LocalMachine/My certificate thumbprint for IIS HTTPS deployment.</summary>
+		[JsonProperty("iis-certificate-thumbprint")]
+		public string IisCertificateThumbprint { get; set; }
+
 		[JsonProperty("workspaces-root")]
 		public string WorkspacesRoot {
 			get;
@@ -535,21 +540,22 @@ namespace Clio
 		internal static string SchemaFilePath => Path.Combine(AppSettingsFolderPath, SchemaFileName);
 
 		public SettingsRepository(IFileSystem fileSystem = null, ISettingsBootstrapService settingsBootstrapService = null, IInteractiveConsole interactiveConsole = null) {
-	_interactiveConsole = interactiveConsole;
-	_fileSystem = fileSystem ?? FileSystem;
-	if (fileSystem != null) {
-		FileSystem = fileSystem;
-	}
-	ISettingsBootstrapService bootstrapService = settingsBootstrapService;
-	if (bootstrapService == null) {
-		bootstrapService = new SettingsBootstrapService(_fileSystem);
-	}
-	_settingsBootstrapService = bootstrapService;
-	SettingsBootstrapResult bootstrapResult = ExecuteWithSettingsLock(_fileSystem, bootstrapService.GetResult);
-	_settings = bootstrapResult.Settings ?? new Settings();
-	EnsureSettingsCollections();
-	AttachDbServers(_settings);
-}
+			_interactiveConsole = interactiveConsole;
+			_fileSystem = fileSystem ?? FileSystem;
+			if (fileSystem != null) {
+				FileSystem = fileSystem;
+			}
+			ISettingsBootstrapService bootstrapService = settingsBootstrapService;
+			if (bootstrapService == null) {
+				bootstrapService = new SettingsBootstrapService(_fileSystem);
+			}
+			_settingsBootstrapService = bootstrapService;
+			SettingsBootstrapResult bootstrapResult = ExecuteWithSettingsLock(_fileSystem, bootstrapService.GetResult);
+			_settings = bootstrapResult.Settings ?? new Settings();
+			EnsureSettingsCollections();
+			AttachDbServers(_settings);
+			TrySaveSchema(_fileSystem);
+		}
 
 		internal static Settings CreateDefaultSettings(Settings settings = null) {
 			Settings result = settings ?? new Settings();
@@ -605,7 +611,19 @@ namespace Clio
 					fileSystem.File.Delete(tempFilePath);
 				}
 			}
-			SaveSchema(fileSystem);
+			TrySaveSchema(fileSystem);
+		}
+
+		private static void TrySaveSchema(IFileSystem fileSystem) {
+			try {
+				SaveSchema(fileSystem);
+			}
+			catch (IOException) {
+				// The schema is a derived editor aid. A locked/read-only schema must not block clio commands.
+			}
+			catch (UnauthorizedAccessException) {
+				// The schema is a derived editor aid. A locked/read-only schema must not block clio commands.
+			}
 		}
 
 		private static (System.Security.AccessControl.FileSecurity WindowsFileSecurity, UnixFileMode? UnixFileMode)
@@ -704,19 +722,29 @@ namespace Clio
 
 		private static void SaveSchema(IFileSystem fileSystem) {
 			lock (SchemaFileLock) {
-				if (fileSystem.File.Exists(SchemaFilePath)) {
-					return;
-				}
 				if (!fileSystem.Directory.Exists(AppSettingsFolderPath)) {
 					fileSystem.Directory.CreateDirectory(AppSettingsFolderPath);
 				}
 				string baseDir = AppDomain.CurrentDomain.BaseDirectory;
 				string tplPath = Path.Combine(baseDir, "tpl", "jsonschema", "schema.json.tpl");
-				if (!File.Exists(tplPath)) {
+				if (!fileSystem.File.Exists(tplPath)) {
 					return;
 				}
-				string tplContect = File.ReadAllText(tplPath);
-				fileSystem.File.WriteAllText(SchemaFilePath, tplContect);
+				string templateContent = fileSystem.File.ReadAllText(tplPath);
+				if (fileSystem.File.Exists(SchemaFilePath)
+					&& string.Equals(fileSystem.File.ReadAllText(SchemaFilePath), templateContent, StringComparison.Ordinal)) {
+					return;
+				}
+				string temporaryPath = SchemaFilePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+				try {
+					fileSystem.File.WriteAllText(temporaryPath, templateContent, new UTF8Encoding(false));
+					fileSystem.File.Move(temporaryPath, SchemaFilePath, overwrite: true);
+				}
+				finally {
+					if (fileSystem.File.Exists(temporaryPath)) {
+						fileSystem.File.Delete(temporaryPath);
+					}
+				}
 			}
 		}
 
@@ -1155,6 +1183,18 @@ namespace Clio
 		public void SetDeployCreatioDefaults(DeployCreatioDefaults defaults) {
 			UpdateSettings(settings =>
 				settings.DeployCreatioDefaults = defaults is null || defaults.IsEmpty ? null : defaults);
+		}
+
+		public string GetPinnedIisCertificateThumbprint() => _settings.IisCertificateThumbprint;
+
+		public void SetPinnedIisCertificateThumbprint(string thumbprint) {
+			string normalized = string.IsNullOrWhiteSpace(thumbprint)
+				? null
+				: WindowsIisCertificateProvider.NormalizeThumbprint(thumbprint);
+			if (normalized is not null && normalized.Length != 40) {
+				throw new ArgumentException("An IIS certificate thumbprint must contain exactly 40 hexadecimal characters.", nameof(thumbprint));
+			}
+			UpdateSettings(settings => settings.IisCertificateThumbprint = normalized);
 		}
 
 		public DbHubSettings GetDbHubSettings() {

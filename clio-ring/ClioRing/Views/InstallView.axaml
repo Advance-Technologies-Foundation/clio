@@ -34,8 +34,11 @@
                         <ToggleSwitch IsChecked="{Binding Local}" OnContent="Local" OffContent="Rancher"/>
                         <TextBlock Text="{Binding SourceLabel}" Foreground="#58A6FF" FontSize="12" TextWrapping="Wrap"/>
 
-                        <StackPanel Spacing="6" IsVisible="{Binding IsLocal}">
-                            <TextBlock Text="Database" Foreground="#C9D1D9" FontSize="12"/>
+						<StackPanel Spacing="6" IsVisible="{Binding IsLocal}">
+							<ToggleSwitch IsChecked="{Binding UseHttps}" OnContent="HTTPS preferred" OffContent="HTTP"/>
+							<TextBlock Text="HTTPS uses a matching IIS certificate and falls back to HTTP if none is installed."
+							           Foreground="#8B949E" FontSize="11" TextWrapping="Wrap"/>
+							<TextBlock Text="Database" Foreground="#C9D1D9" FontSize="12"/>
                             <ComboBox ItemsSource="{Binding LocalDatabases}" SelectedItem="{Binding SelectedDatabase}" HorizontalAlignment="Stretch">
                                 <ComboBox.ItemTemplate>
                                     <DataTemplate x:DataType="ipc:InfraDb">

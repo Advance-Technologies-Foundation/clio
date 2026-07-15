@@ -6310,3 +6310,17 @@ Decision: Fall back to Npgsql when the generic connection string is not valid SQ
 Discovery: Microsoft.Data.SqlClient defaults cannot distinguish explicit options through ContainsKey; ShouldSerialize identifies whether TLS fields were actually supplied.
 Files: clio/Common/DbHub/DbHubConnectionSourceFactory.cs, clio/Common/DbHub/DbHubTomlStore.cs, clio.tests/Common/DbHub/
 Impact: clio-generated local connections synchronize without weakening transport security, and live verification cannot succeed against a pre-existing colliding tool.
+
+## 2026-07-15 23:23 – Support opportunistic HTTPS for local IIS deployment
+Context: Issue #887 requested corporate machine-certificate HTTPS for local Creatio while preserving non-failing deployment on machines without a usable certificate.
+Decision: Resolve eligible LocalMachine/My certificates by FQDN with optional thumbprint pinning and deterministic expiration ordering, create one actual HTTP or HTTPS binding, transform the three required .NET Framework settings only for actual HTTPS, and propagate the actual scheme through registration, receipts, browser launch, MCP, and ClioRing.
+Discovery: Updating CertificateHash on an already-created Microsoft.Web.Administration binding did not populate HTTP.sys; replacing the provisional HTTPS binding through BindingCollection.Add(bindingInformation, hash, store, sslFlags) produced the working SSL registration. A SAN extension with no DNS entries must not fall back to CN, and schema refresh must remain best-effort because schema.json is derived editor metadata.
+Files: clio/Common/IIS/, clio/Common/DeploymentStrategies/IISDeploymentStrategy.cs, clio/Common/ScenarioHandlers/CreateIISSite.cs, clio/Command/PinCertificateCommand.cs, clio/Environment/ConfigurationOptions.cs, clio/Command/McpServer/, clio-ring/, spec/iis-https-deployment/
+Impact: .NET Framework and .NET 8 local IIS deployments can use the corporate certificate end-to-end, missing candidates fall back to HTTP with an accurate URL, settings/schema/contracts stay aligned, and developer-local ZIP validation remains outside TeamCity.
+
+## 2026-07-15 23:56 – Close IIS HTTPS delivery review findings
+Context: Sonar and GitHub review of issue #887 found three maintainability findings plus two edge-case regressions before merge.
+Decision: Extract IIS HTTPS DI registration, evaluate both XML transformations explicitly, keep dotnet-hosted deployments on their actual HTTP Kestrel URL, and reject malformed explicit thumbprints before certificate-store lookup.
+Discovery: `--use-https` is an IIS binding option; allowing it to affect DotNetDeploymentStrategy registration points readiness at an endpoint that the strategy deliberately removes from appsettings. Normalization can turn an all-nonhex explicit thumbprint into an empty value, which must not share interactive-cancellation semantics.
+Files: clio/BindingsModule.cs, clio/Common/IIS/NetFrameworkHttpsConfigurator.cs, clio/Common/DeploymentStrategies/DotNetDeploymentStrategy.cs, clio/Command/PinCertificateCommand.cs, clio.tests/Common/DotNetDeploymentStrategyTests.cs, clio.tests/Command/PinCertificateCommandTests.cs
+Impact: All reported review findings are covered by focused net8.0/net10.0 tests without broadening HTTPS beyond IIS.

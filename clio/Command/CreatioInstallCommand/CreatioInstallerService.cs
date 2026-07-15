@@ -1570,10 +1570,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			return configureExit;
 		}
 
-		string uri = $"http://localhost:{options.SitePort}";
-		if (isIisDeployment) {
-			uri = $"http://{InstallerHelper.FetFQDN()}:{options.SitePort}";
-		}
+		string uri = strategy.GetApplicationUrl(options);
 
 		bool isNetCore = InstallerHelper.DetectFrameworkByPath(deploymentFolder) == InstallerHelper.FrameworkType.NetCore;
 		int registerExit = _stageEventEmitter.RunStage(StageIds.RegisterEnv, () => _registerCommand.Execute(new RegAppOptions {
@@ -1653,9 +1650,10 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 
 	/// <inheritdoc />
 	public int StartWebBrowser(PfInstallerOptions options, bool isIisDeployment) {
+		string protocol = options.UseHttps ? "https" : "http";
 		string url = isIisDeployment
-			? $"http://{InstallerHelper.FetFQDN()}:{options.SitePort}"
-			: $"http://localhost:{options.SitePort}";
+			? $"{protocol}://{InstallerHelper.FetFQDN()}:{options.SitePort}"
+			: $"{protocol}://localhost:{options.SitePort}";
 
 		try {
 			string program;

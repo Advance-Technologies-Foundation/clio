@@ -33,6 +33,7 @@ using Clio.Common.SystemServices;
 using Clio.Common.Telemetry;
 using Clio.Common.K8;
 using Clio.Common.Kubernetes;
+using Clio.Common.IIS;
 using Clio.Common.Database;
 using Clio.Common.ScenarioHandlers;
 using Clio.Common.DataForge;
@@ -301,6 +302,7 @@ public class BindingsModule {
 		services.AddTransient<IInfrastructurePathProvider, InfrastructurePathProvider>();
 		services.AddTransient<IDeployCreatioDefaultsResolver, DeployCreatioDefaultsResolver>();
 		services.AddTransient<InstallerCommand>();
+		services.AddTransient<PinCertificateCommand>();
 		services.AddTransient<DeployIdentityCommand>();
 		services.AddTransient<IIdentityServiceArchiveResolver, IdentityServiceArchiveResolver>();
 		services.AddTransient<IIdentityServiceCreatioClient, IdentityServiceCreatioClient>();
@@ -770,9 +772,11 @@ public class BindingsModule {
 			services.AddTransient<IAppPoolProfileCleaner, NonWindowsAppPoolProfileCleaner>();
 		}
 		services.AddTransient<ICreateIISSiteHandler, CreateIISSiteRequestHandler>();
+		RegisterIisHttpsServices(services);
 		services.AddTransient<IConfigureConnectionStringHandler, ConfigureConnectionStringRequestHandler>();
 		services.AddTransient<IUpdateIISSitePhysicalPathHandler, UpdateIISSitePhysicalPathRequestHandler>();
 		services.AddTransient<GitSyncCommand>();
+
 		services.AddTransient<DeactivatePackageCommand>();
 		services.AddTransient<PublishWorkspaceCommand>();
 		services.AddTransient<ActivatePackageCommand>();
@@ -861,6 +865,20 @@ public class BindingsModule {
 
 		RegisterFluentValidators(services);
 		return settingsRepository;
+	}
+
+	private static void RegisterIisHttpsServices(IServiceCollection services) {
+		services.AddTransient<INetFrameworkHttpsConfigurator, NetFrameworkHttpsConfigurator>();
+		services.AddTransient<IIisCertificateResolver, IisCertificateResolver>();
+		services.AddTransient<ICertificateSelectionPrompt, ConsoleCertificateSelectionPrompt>();
+		if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) {
+			services.AddTransient<IIisCertificateProvider, WindowsIisCertificateProvider>();
+			services.AddTransient<IIisCertificateBindingService, WindowsIisCertificateBindingService>();
+		}
+		else {
+			services.AddTransient<IIisCertificateProvider, NonWindowsIisCertificateProvider>();
+			services.AddTransient<IIisCertificateBindingService, NonWindowsIisCertificateBindingService>();
+		}
 	}
 
 	// Fallback base address for the no-credential local bootstrap case only (never a multi-tenant

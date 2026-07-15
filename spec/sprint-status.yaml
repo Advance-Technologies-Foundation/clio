@@ -2005,3 +2005,17 @@ stories:
     note: "Integrated onto merged issue #881 warning vocabulary and fail-closed shared-pool uninstall semantics."
     depends_on: []
     blocks: []
+
+  - id: story-iis-https-deployment-1
+    title: "Deliver opportunistic IIS HTTPS deployment and certificate pinning"
+    feature: "iis-https-deployment"
+    repo: "clio"
+    size: L
+    status: done
+    issue: 887
+    file: spec/iis-https-deployment/iis-https-deployment-story.md
+    prd: spec/iis-https-deployment/iis-https-deployment-prd.md
+    adr: spec/iis-https-deployment/iis-https-deployment-adr.md
+    test_plan: spec/iis-https-deployment/iis-https-deployment-test-plan.md
+    depends_on: []
+    blocks: []

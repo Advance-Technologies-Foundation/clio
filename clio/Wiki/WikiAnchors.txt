@@ -49,6 +49,7 @@ delete-schema:delete-schema
 delete-toolkit:delete-toolkit
 deploy-application:deploy-application,deploy-app
 deploy-creatio:deploy-creatio,dc,ic,install-creatio
+pin-certificate:pin-certificate
 deploy-identity:deploy-identity
 get-identity-service-config:get-identity-service-config
 resolve-oauth-system-user:resolve-oauth-system-user
