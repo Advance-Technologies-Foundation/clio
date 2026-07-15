@@ -106,12 +106,14 @@ Custom application installation path
 Default: Windows %ProgramFiles%/Creatio, macOS ~/creatio, Linux /opt/creatio
 
 --use-https
-Enable HTTPS for the application
+Prefer HTTPS for the application. For local IIS, clio selects a usable
+LocalMachine/My certificate matching the host. If none is installed, deployment
+warns and continues over HTTP. Use `pin-certificate` to choose among multiple matches.
 Default: false (HTTP only)
 
 --cert-path PATH
 Path to SSL certificate file (.pem or .pfx format)
-Required if --use-https is specified
+Used by dotnet deployment; IIS uses the Windows certificate store
 
 --cert-password PASSWORD
 Password for SSL certificate (if certificate is password-protected)
@@ -212,6 +214,11 @@ clio deploy-creatio --site-name "LegacyApp" --platform netframework \\
 clio deploy-creatio --site-name "SecureApp" --no-iis --use-https \\
 --cert-path "C:\certs\app.pem" --zip-file "C:\creatio-app.zip"
 
+4a. Prefer HTTPS for local IIS (falls back to HTTP when no usable certificate exists):
+clio pin-certificate
+clio deploy-creatio --site-name "SecureIis" --site-port 40087 --use-https \
+--zip-file "C:\creatio-app.zip"
+
 5. Deploy to custom path on macOS:
 clio deploy-creatio --site-name "CreatioApp" --app-path "/var/creatio" \\
 --zip-file "/Users/downloads/creatio-app.zip"
@@ -296,7 +303,11 @@ Password Reset Script (Creatio >= 8.3.3):
 
 Windows (Default - IIS):
 - Creates IIS Application Pool
-- Creates IIS Website with HTTP/HTTPS bindings
+- Creates IIS Website with exactly one HTTP or HTTPS binding
+- HTTPS selects the pinned usable host certificate or the matching certificate
+with the latest expiration; missing certificates warn and fall back to HTTP
+- .NET Framework HTTPS switches ServiceModel config sources to `https` and sets
+the Microsoft `wsService` `encrypted` attribute to `true`
 - Configures application pool identity and recycling
 - Returns application URL in format: http(s)://FQDN:port
 

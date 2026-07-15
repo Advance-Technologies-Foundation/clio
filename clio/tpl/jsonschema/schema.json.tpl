@@ -5,6 +5,12 @@
 			"type": "string",
 			"description": "Default IIS folder where Creatio instances will run from"
 		},
+		"iis-certificate-thumbprint": {
+			"type": "string",
+			"pattern": "^[A-F0-9]{40}$",
+			"description": "Optional normalized LocalMachine/My certificate thumbprint preferred when multiple usable IIS HTTPS certificates match the machine FQDN",
+			"examples": ["DFC3141FAA198BA485538E2406CF52D90E812709"]
+		},
 		"workspaces-root": {
 			"type": "string",
 			"description": "Default absolute base directory for create-workspace --empty when --directory is omitted"

@@ -59,8 +59,11 @@ public sealed class DeployCreatioToolE2ETests : McpContractFixtureBase
 		contract.Description.Should().Contain("existing forced-password-change state",
 			because: "the real MCP contract should disclose the preserved database behavior used by Ring");
 		contract.InputSchema.Properties.Select(property => property.Name).Should().BeEquivalentTo(
-			["siteName", "zipFile", "sitePort", "dbServerName", "redisServerName"],
-			because: "the full deploy-creatio contract should only expose the five approved arguments");
+			["siteName", "zipFile", "sitePort", "dbServerName", "redisServerName", "useHttps"],
+			because: "the full deploy-creatio contract should only expose the six approved arguments");
+		contract.InputSchema.Properties.Single(property => property.Name == "useHttps").Description.Should()
+			.Contain("falls back to HTTP",
+				because: "agents need the non-failing HTTPS fallback contract before invoking deployment");
 	}
 
 	[Test]
@@ -87,7 +90,8 @@ public sealed class DeployCreatioToolE2ETests : McpContractFixtureBase
 				["args"] = new Dictionary<string, object?> {
 					["siteName"] = $"e2e-{Guid.NewGuid():N}",
 					["zipFile"] = missingZipFile,
-					["sitePort"] = 5001
+					["sitePort"] = 5001,
+					["useHttps"] = true
 				}
 			},
 			arrangeContext.CancellationTokenSource.Token);

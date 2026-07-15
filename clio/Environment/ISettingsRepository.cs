@@ -179,6 +179,14 @@ namespace Clio.UserEnvironment
 		/// <param name="defaults">The defaults to persist, or <c>null</c>/empty to clear them.</param>
 		void SetDeployCreatioDefaults(DeployCreatioDefaults defaults);
 
+		/// <summary>Gets the preferred LocalMachine/My certificate thumbprint for IIS HTTPS deployment.</summary>
+		/// <returns>The normalized thumbprint, or <c>null</c> when no preference is configured.</returns>
+		string GetPinnedIisCertificateThumbprint();
+
+		/// <summary>Persists or clears the preferred LocalMachine/My certificate thumbprint.</summary>
+		/// <param name="thumbprint">The normalized thumbprint, or <c>null</c> to clear it.</param>
+		void SetPinnedIisCertificateThumbprint(string thumbprint);
+
 		/// <summary>Gets a detached snapshot of the local dbHub integration settings.</summary>
 		/// <returns>Configured settings, or safe disabled defaults when absent.</returns>
 		DbHubSettings GetDbHubSettings();

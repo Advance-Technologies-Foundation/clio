@@ -6310,3 +6310,10 @@ Decision: Fall back to Npgsql when the generic connection string is not valid SQ
 Discovery: Microsoft.Data.SqlClient defaults cannot distinguish explicit options through ContainsKey; ShouldSerialize identifies whether TLS fields were actually supplied.
 Files: clio/Common/DbHub/DbHubConnectionSourceFactory.cs, clio/Common/DbHub/DbHubTomlStore.cs, clio.tests/Common/DbHub/
 Impact: clio-generated local connections synchronize without weakening transport security, and live verification cannot succeed against a pre-existing colliding tool.
+
+## 2026-07-15 23:23 – Support opportunistic HTTPS for local IIS deployment
+Context: Issue #887 requested corporate machine-certificate HTTPS for local Creatio while preserving non-failing deployment on machines without a usable certificate.
+Decision: Resolve eligible LocalMachine/My certificates by FQDN with optional thumbprint pinning and deterministic expiration ordering, create one actual HTTP or HTTPS binding, transform the three required .NET Framework settings only for actual HTTPS, and propagate the actual scheme through registration, receipts, browser launch, MCP, and ClioRing.
+Discovery: Updating CertificateHash on an already-created Microsoft.Web.Administration binding did not populate HTTP.sys; replacing the provisional HTTPS binding through BindingCollection.Add(bindingInformation, hash, store, sslFlags) produced the working SSL registration. A SAN extension with no DNS entries must not fall back to CN, and schema refresh must remain best-effort because schema.json is derived editor metadata.
+Files: clio/Common/IIS/, clio/Common/DeploymentStrategies/IISDeploymentStrategy.cs, clio/Common/ScenarioHandlers/CreateIISSite.cs, clio/Command/PinCertificateCommand.cs, clio/Environment/ConfigurationOptions.cs, clio/Command/McpServer/, clio-ring/, spec/iis-https-deployment/
+Impact: .NET Framework and .NET 8 local IIS deployments can use the corporate certificate end-to-end, missing candidates fall back to HTTP with an accurate URL, settings/schema/contracts stay aligned, and developer-local ZIP validation remains outside TeamCity.

@@ -4499,6 +4499,7 @@ internal static class ToolContractCatalog {
 	private const string SitePortFieldName = "sitePort";
 	private const string DbServerNameFieldName = "dbServerName";
 	private const string RedisServerNameFieldName = "redisServerName";
+	private const string UseHttpsFieldName = "useHttps";
 	private const string IdentitySitePortFieldName = "identitySitePort";
 	private const string IdentitySiteNameFieldName = "identitySiteName";
 	private const string IdentityPathFieldName = "identityPath";
@@ -4612,7 +4613,8 @@ internal static class ToolContractCatalog {
 					Field(ZipFileFieldName, StringType, "Absolute path to the Creatio build archive (.zip). Pick a build from the configured creatio-products folder when the path is unknown."),
 					Field(SitePortFieldName, NumberType, "Port where Creatio will be deployed. Use find-empty-iis-port to choose a safe local IIS port."),
 					Field(DbServerNameFieldName, StringType, "Optional local database server configuration name; omit to keep the default Kubernetes deployment path."),
-					Field(RedisServerNameFieldName, StringType, "Optional local Redis server configuration name.")
+					Field(RedisServerNameFieldName, StringType, "Optional local Redis server configuration name."),
+					Field(UseHttpsFieldName, BooleanType, "Prefer HTTPS for local IIS deployment. Uses a matching usable LocalMachine/My certificate and falls back to HTTP with a warning when none is available.")
 				]),
 			CommandExecutionOutput(),
 			CommonErrorContract,
@@ -4624,7 +4626,8 @@ internal static class ToolContractCatalog {
 					[ZipFileFieldName] = @"F:\CreatioBuilds\8.1.5.2176_StudioNet8_Softkey_PostgreSQL_ENU.zip",
 					[SitePortFieldName] = 40001,
 					[DbServerNameFieldName] = "postgres-local",
-					[RedisServerNameFieldName] = "redis-local"
+					[RedisServerNameFieldName] = "redis-local",
+					[UseHttpsFieldName] = true
 				})
 			],
 			Flow(
