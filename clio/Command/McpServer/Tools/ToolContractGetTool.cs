@@ -3640,7 +3640,8 @@ internal static class ToolContractCatalog {
 			StructuredResultOutput(
 				Field("name", StringType, "Column name."),
 				Field("data-value-type", StringType, "Column type."),
-				Field("source", StringType, "Column source.")),
+				Field("source", StringType, "Column source."),
+				Field("usage-type", StringType, "Column usage type as a friendly name (General/Advanced/None), re-usable verbatim as a usage-type write input.")),
 			CommonErrorContract,
 			EnvironmentPackageSchemaAliases(
 				ColumnNameParameterAlias()),
@@ -3689,7 +3690,8 @@ internal static class ToolContractCatalog {
 					Field("required", BooleanType, "Optional required flag."),
 					Field("default-value-source", StringType, "Legacy optional default source shorthand. Supports only Const or None."),
 					Field("default-value", StringType, "Legacy optional default value shorthand for Const."),
-					Field(DefaultValueConfigFieldName, ObjectType, "Structured default value metadata with source None, Const, Settings, SystemValue, or Sequence. Settings value-source accepts code/name/id and resolves to code. SystemValue value-source accepts GUID/alias/caption and resolves to GUID. For a lookup column, a Const value is the referenced record GUID and is validated to exist in the referenced schema before save (an unknown GUID is rejected)."))),
+					Field(DefaultValueConfigFieldName, ObjectType, "Structured default value metadata with source None, Const, Settings, SystemValue, or Sequence. Settings value-source accepts code/name/id and resolves to code. SystemValue value-source accepts GUID/alias/caption and resolves to GUID. For a lookup column, a Const value is the referenced record GUID and is validated to exist in the referenced schema before save (an unknown GUID is rejected)."),
+					Field("usage-type", StringType, "Optional column usage type: General (default), Advanced, or None. Case-insensitive; applies to any column type. On modify, the stored value is left unchanged when omitted."))),
 			CommandExecutionOutput(),
 			CommonErrorContract,
 			EnvironmentPackageSchemaAliases(
