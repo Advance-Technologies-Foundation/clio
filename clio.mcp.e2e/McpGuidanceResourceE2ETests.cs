@@ -234,6 +234,10 @@ public sealed class McpGuidanceResourceE2ETests : McpContractFixtureBase {
 			because: "the guide owns the desktop editable-slot container rule (ENG-90489)");
 		article.Text.Should().Contain("Do NOT insert, update, or delete `Desktop` entity rows manually",
 			because: "the guide must forbid manual Desktop registry writes because the platform owns registration");
+		article.Text.Should().Contain("`layoutConfig.rowSpan` >= 3",
+			because: "the guide should carry the desktop widget-sizing rule (3-row hard floor per widget)");
+		article.Text.Should().Contain("<= 10 rows",
+			because: "the guide should carry the 10-row desktop height target with its escape hatch");
 	}
 
 	[Test]

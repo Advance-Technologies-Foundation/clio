@@ -1522,6 +1522,8 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide keeps the aggregation column path and enum rules; the structural aggregation.column nesting is now enforced by the registry-driven chart-widget validator");
 		article.Text.Should().Contain("FixedGridSlot_qwe4asds",
 			because: "the guide must steer Desktop chart placement into the exact editable slot FixedGridSlot_qwe4asds (CentralAreaDesktopTemplate), not the Main frame");
+		article.Text.Should().Contain("the desktop sizing rule replaces",
+			because: "on a desktop the 6-row chart floor is superseded by the desktop-page sizing rule (>=3 rows), so the chart guide must carve out that exception and point to desktop-page");
 		article.Text.Should().Contain("show values by DEFAULT",
 			because: "the guide must default data labels on (dataLabel.display:true) unless the user explicitly opts out");
 	}
@@ -1974,6 +1976,14 @@ public sealed class McpGuidanceResourceTests {
 			because: "restricting a desktop to roles is a record-rights change on the Desktop record, not a page edit");
 		article.Text.Should().Contain("Do NOT call `compile-creatio`",
 			because: "client-unit schema changes need no compilation and the guide must repeat the core invariant");
+		article.Text.Should().Contain("`layoutConfig.rowSpan` >= 3",
+			because: "the desktop sizing rule sets a hard 3-row floor per widget, charts included");
+		article.Text.Should().Contain("<= 10 rows",
+			because: "the desktop sizing rule targets a total height of 10 rows when the widget count allows");
+		article.Text.Should().Contain("PACK ACROSS COLUMNS FIRST",
+			because: "the sizing rule must tell the agent to use the 8-column width before growing the desktop taller");
+		article.Text.Should().Contain("grow PAST 10 rows",
+			because: "the escape hatch lets the desktop exceed 10 rows rather than shrink a widget below the 3-row floor");
 	}
 
 	[Test]

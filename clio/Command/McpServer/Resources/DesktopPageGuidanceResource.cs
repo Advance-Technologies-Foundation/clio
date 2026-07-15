@@ -71,6 +71,22 @@ public sealed class DesktopPageGuidanceResource {
 		       - Do NOT call `compile-creatio` after desktop page creation or body updates — client-unit
 		         schema changes need no compilation.
 
+		       WIDGET SIZING ON A DESKTOP (this OVERRIDES the chart-widget size floor)
+		       `FixedGridSlot_qwe4asds` is ~8 columns wide with 60px rows. Below, "rows" means grid rows
+		       (`layoutConfig.rowSpan`) and "desktop height" means the row extent of the lowest widget.
+		       - HEIGHT FLOOR (hard): every widget is >= 3 rows tall (`layoutConfig.rowSpan` >= 3),
+		         CHARTS INCLUDED. On a desktop this REPLACES the `chart-widget` guide's `rowSpan` >= 6
+		         floor — desktop widgets may be as short as 3 rows. Never go below 3.
+		       - HEIGHT TARGET (soft): keep the WHOLE desktop <= 10 rows tall when the widget count allows.
+		       - PACK ACROSS COLUMNS FIRST: use the 8-column width — place widgets SIDE BY SIDE (several
+		         per 3-row band via `colSpan`) to stay within 10 rows before growing the desktop taller.
+		       - ESCAPE HATCH: if there are too many widgets to fit in 10 rows without dropping any widget
+		         below 3 rows, let the desktop grow PAST 10 rows. The 3-row floor WINS over the 10-row
+		         target — never shrink a widget below 3 rows to save height.
+		       - DON'T LEAVE THEM TINY: with few widgets, make them TALLER than 3 to fill the ~10-row
+		         budget (e.g. two bands at ~5 rows each) rather than one band of 3-row widgets over empty
+		         space. 3 rows is the crowded-case minimum, not the default size.
+
 		       ACCESS AND VISIBILITY
 		       - The `Desktop` entity is administrated by records: the selector shows a user ONLY the
 		         desktop rows they can read. Restricting a desktop to specific roles is therefore a
