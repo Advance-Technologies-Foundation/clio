@@ -1,0 +1,54 @@
+COMMAND TYPE
+    Development commands
+
+NAME
+    list-schema-hierarchy - List every package schema of a client unit schema by name (base + all replacing schemas)
+
+ALIASES
+    schema-hierarchy-list
+
+SYNOPSIS
+    clio list-schema-hierarchy [OPTIONS]
+
+DESCRIPTION
+    Lists every package schema that shares one client unit schema name — the base
+    schema plus every replacing schema across packages — each with its package,
+    maintainer, InstallType, an is-client-editable flag, the base template, and a
+    HierarchyLevel. The schemas are ordered so the base comes first and replacing
+    schemas follow by depth.
+
+    This is the foundation for Classic->Freedom migration discovery: use it to see
+    the full override chain of a schema, pick which schema to read by UId with
+    get-classic-schema-by-uid, and identify the client-editable package to write
+    into.
+
+OPTIONS
+    --schema-name                      Client unit schema name shared across all
+                                       schemas, e.g. 'ContractPageV2' (required)
+
+    --manager-name                     SysSchema.ManagerName to filter by
+                                       (default: ClientUnitSchemaManager)
+
+    --uri                    -u       Application uri
+
+    --Password               -p       User password
+
+    --Login                  -l       User login (administrator permission required)
+
+    --Environment            -e       Environment name
+
+    --Maintainer             -m       Maintainer name
+
+EXAMPLES
+    clio list-schema-hierarchy --schema-name ContactPageV2 -e dev
+        List every package schema of ContactPageV2 with package, level and flags
+
+    clio schema-hierarchy-list --schema-name ContractPageV2 -e dev
+        Same using the alias
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio
+
+SEE ALSO
+    get-classic-schema-by-uid - Read a specific schema body by its UId
+    list-entity-client-schemas - Resolve the page-role graph of an entity
