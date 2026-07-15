@@ -344,9 +344,9 @@ public class BindingsModule {
 		services.AddTransient<ClientUnitSchemaCreateCommand>();
 		services.AddTransient<ClientUnitSchemaUpdateCommand>();
 		services.AddTransient<GetClientUnitSchemaCommand>();
-		services.AddTransient<GetClassicSchemaCommand>();
-		services.AddTransient<ListSchemaLayersCommand>();
-		services.AddTransient<ResolveMigrationUnitCommand>();
+		services.AddTransient<GetClassicSchemaByUidCommand>();
+		services.AddTransient<ListSchemaHierarchyCommand>();
+		services.AddTransient<ListEntityClientSchemasCommand>();
 		services.AddTransient<SqlSchemaCreateCommand>();
 		services.AddTransient<SqlSchemaGetCommand>();
 		services.AddTransient<SqlSchemaUpdateCommand>();
@@ -441,9 +441,9 @@ public class BindingsModule {
 		services.AddTransient<ClientUnitSchemaCreateTool>();
 		services.AddTransient<ClientUnitSchemaUpdateTool>();
 		services.AddTransient<GetClientUnitSchemaTool>();
-		services.AddTransient<GetClassicSchemaTool>();
-		services.AddTransient<ListSchemaLayersTool>();
-		services.AddTransient<ResolveMigrationUnitTool>();
+		services.AddTransient<GetClassicSchemaByUidTool>();
+		services.AddTransient<ListSchemaHierarchyTool>();
+		services.AddTransient<ListEntityClientSchemasTool>();
 		services.AddTransient<SqlSchemaCreateTool>();
 		services.AddTransient<SqlSchemaGetTool>();
 		services.AddTransient<SqlSchemaUpdateTool>();

@@ -9,20 +9,20 @@ namespace Clio.Tests.Command.McpServer;
 
 [TestFixture]
 [Property("Module", "McpServer")]
-public class ResolveMigrationUnitToolTests {
+public class ListEntityClientSchemasToolTests {
 
 	[Test]
 	[Category("Unit")]
 	public void Resolve_Should_Resolve_Command_For_Requested_Environment() {
 		ConsoleLogger.Instance.ClearMessages();
-		FakeResolveMigrationUnitCommand defaultCommand = new();
-		FakeResolveMigrationUnitCommand resolvedCommand = new();
+		FakeListEntityClientSchemasCommand defaultCommand = new();
+		FakeListEntityClientSchemasCommand resolvedCommand = new();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		commandResolver.Resolve<ResolveMigrationUnitCommand>(Arg.Any<ResolveMigrationUnitOptions>())
+		commandResolver.Resolve<ListEntityClientSchemasCommand>(Arg.Any<ListEntityClientSchemasOptions>())
 			.Returns(resolvedCommand);
-		ResolveMigrationUnitTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+		ListEntityClientSchemasTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
-		ResolveMigrationUnitResponse response = tool.Resolve(new ResolveMigrationUnitArgs("Contract") {
+		ListEntityClientSchemasResponse response = tool.Resolve(new ListEntityClientSchemasArgs("Contract") {
 			EnvironmentName = "dev" });
 
 		response.Success.Should().BeTrue();
@@ -37,13 +37,13 @@ public class ResolveMigrationUnitToolTests {
 	[Category("Unit")]
 	public void Resolve_Should_Return_Error_When_Command_Resolution_Fails() {
 		ConsoleLogger.Instance.ClearMessages();
-		FakeResolveMigrationUnitCommand defaultCommand = new();
+		FakeListEntityClientSchemasCommand defaultCommand = new();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		commandResolver.Resolve<ResolveMigrationUnitCommand>(Arg.Any<ResolveMigrationUnitOptions>())
+		commandResolver.Resolve<ListEntityClientSchemasCommand>(Arg.Any<ListEntityClientSchemasOptions>())
 			.Returns(_ => throw new System.InvalidOperationException("boom"));
-		ResolveMigrationUnitTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+		ListEntityClientSchemasTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
-		ResolveMigrationUnitResponse response = tool.Resolve(new ResolveMigrationUnitArgs("Contract") {
+		ListEntityClientSchemasResponse response = tool.Resolve(new ListEntityClientSchemasArgs("Contract") {
 			EnvironmentName = "dev" });
 
 		response.Success.Should().BeFalse();
@@ -62,19 +62,19 @@ public class ResolveMigrationUnitToolTests {
 	[TestCase(null, "unknown")]
 	[TestCase("", "unknown")]
 	public void ClassifyKind_Should_Split_Classic_And_Freedom(string template, string expected) {
-		ResolveMigrationUnitCommand.ClassifyKind(template).Should().Be(expected);
+		ListEntityClientSchemasCommand.ClassifyKind(template).Should().Be(expected);
 	}
 
-	private sealed class FakeResolveMigrationUnitCommand : ResolveMigrationUnitCommand {
-		public ResolveMigrationUnitOptions CapturedOptions { get; private set; }
+	private sealed class FakeListEntityClientSchemasCommand : ListEntityClientSchemasCommand {
+		public ListEntityClientSchemasOptions CapturedOptions { get; private set; }
 
-		public FakeResolveMigrationUnitCommand()
+		public FakeListEntityClientSchemasCommand()
 			: base(Substitute.For<IApplicationClient>(), Substitute.For<IServiceUrlBuilder>(), ConsoleLogger.Instance) {
 		}
 
-		public override bool TryResolve(ResolveMigrationUnitOptions options, out ResolveMigrationUnitResponse response) {
+		public override bool TryResolve(ListEntityClientSchemasOptions options, out ListEntityClientSchemasResponse response) {
 			CapturedOptions = options;
-			response = new ResolveMigrationUnitResponse { Success = true, Entity = options.EntityName };
+			response = new ListEntityClientSchemasResponse { Success = true, Entity = options.EntityName };
 			return true;
 		}
 	}

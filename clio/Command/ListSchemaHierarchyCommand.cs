@@ -8,13 +8,13 @@ using CommandLine;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
-[Verb("list-schema-layers", Aliases = ["schema-layers-list"],
-	HelpText = "List every package layer of a client unit schema by name (base + all replacing layers), " +
+[Verb("list-schema-hierarchy", Aliases = ["schema-hierarchy-list"],
+	HelpText = "List every package schema of a client unit schema by name (base + all replacing schemas), " +
 		"with package, maintainer, InstallType and an is-client-editable flag. " +
-		"Foundation for Classic->Freedom migration: pick the layer to read (get-classic-schema) and the editable package to write into.")]
-public class ListSchemaLayersOptions : EnvironmentOptions {
+		"Foundation for Classic->Freedom migration: pick the schema to read (get-classic-schema-by-uid) and the editable package to write into.")]
+public class ListSchemaHierarchyOptions : EnvironmentOptions {
 
-	[Option("schema-name", Required = true, HelpText = "Client unit schema name shared across all layers, e.g. 'ContractPageV2'")]
+	[Option("schema-name", Required = true, HelpText = "Client unit schema name shared across all schemas, e.g. 'ContractPageV2'")]
 	public string SchemaName { get; set; }
 
 	[Option("manager-name", Required = false, Default = "ClientUnitSchemaManager",
@@ -22,7 +22,7 @@ public class ListSchemaLayersOptions : EnvironmentOptions {
 	public string ManagerName { get; set; }
 }
 
-public sealed class SchemaLayerInfo {
+public sealed class SchemaHierarchyEntry {
 
 	[System.Text.Json.Serialization.JsonPropertyName("package")]
 	public string Package { get; set; }
@@ -46,14 +46,14 @@ public sealed class SchemaLayerInfo {
 	public string BaseTemplate { get; set; }
 
 	// SysPackage.HierarchyLevel — Creatio's materialized topological depth of the package in the
-	// global dependency DAG. Ascending order across a schema's layers == dependency (merge) order.
+	// global dependency DAG. Ascending order across a schema's schemas == dependency (merge) order.
 	// Null when the platform did not report it. Exposed as provenance so the merge module and the
 	// skill can see the ordering key and detect ties independently.
 	[System.Text.Json.Serialization.JsonPropertyName("hierarchyLevel")]
 	public int? HierarchyLevel { get; set; }
 }
 
-public sealed class ListSchemaLayersResponse {
+public sealed class ListSchemaHierarchyResponse {
 
 	[System.Text.Json.Serialization.JsonPropertyName("success")]
 	public bool Success { get; set; }
@@ -64,10 +64,10 @@ public sealed class ListSchemaLayersResponse {
 	[System.Text.Json.Serialization.JsonPropertyName("count")]
 	public int Count { get; set; }
 
-	[System.Text.Json.Serialization.JsonPropertyName("layers")]
-	public List<SchemaLayerInfo> Layers { get; set; }
+	[System.Text.Json.Serialization.JsonPropertyName("schemas")]
+	public List<SchemaHierarchyEntry> Schemas { get; set; }
 
-	// Non-fatal ordering caveats: ≥2 replacing layers that share a HierarchyLevel, or ≥2 with no
+	// Non-fatal ordering caveats: ≥2 replacing schemas that share a HierarchyLevel, or ≥2 with no
 	// reported level — in both cases their relative order is a stable-but-arbitrary tiebreak, not
 	// dependency-determined. Null/absent == no such caveat (order fully determined by depth).
 	[System.Text.Json.Serialization.JsonPropertyName("warnings")]
@@ -77,7 +77,7 @@ public sealed class ListSchemaLayersResponse {
 	public string Error { get; set; }
 }
 
-public class ListSchemaLayersCommand : Command<ListSchemaLayersOptions> {
+public class ListSchemaHierarchyCommand : Command<ListSchemaHierarchyOptions> {
 
 	private const string SelectQueryRoute = "/DataService/json/SyncReply/SelectQuery";
 
@@ -89,7 +89,7 @@ public class ListSchemaLayersCommand : Command<ListSchemaLayersOptions> {
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
 	private readonly ILogger _logger;
 
-	public ListSchemaLayersCommand(
+	public ListSchemaHierarchyCommand(
 		IApplicationClient applicationClient,
 		IServiceUrlBuilder serviceUrlBuilder,
 		ILogger logger) {
@@ -98,42 +98,42 @@ public class ListSchemaLayersCommand : Command<ListSchemaLayersOptions> {
 		_logger = logger;
 	}
 
-	public virtual bool TryListLayers(ListSchemaLayersOptions options, out ListSchemaLayersResponse response) {
+	public virtual bool TryListHierarchy(ListSchemaHierarchyOptions options, out ListSchemaHierarchyResponse response) {
 		try {
 			if (string.IsNullOrWhiteSpace(options.SchemaName)) {
-				response = new ListSchemaLayersResponse { Success = false, Error = "schema-name is required" };
+				response = new ListSchemaHierarchyResponse { Success = false, Error = "schema-name is required" };
 				return false;
 			}
 			string managerName = string.IsNullOrWhiteSpace(options.ManagerName)
 				? "ClientUnitSchemaManager" : options.ManagerName;
-			JObject query = BuildSelectLayersByName(options.SchemaName, managerName);
+			JObject query = BuildSelectHierarchyByName(options.SchemaName, managerName);
 			string url = _serviceUrlBuilder.Build(SelectQueryRoute);
 			string json = _applicationClient.ExecutePostRequest(url, query.ToString(Formatting.None));
 			JArray rows = JObject.Parse(json)["rows"] as JArray ?? [];
 
-			List<SchemaLayerInfo> layers = rows.Select(MapLayer).ToList();
+			List<SchemaHierarchyEntry> schemas = rows.Select(MapHierarchyEntry).ToList();
 
 			// Order == Creatio's own dependency-composition order.
 			// SysPackage.HierarchyLevel is the platform-materialized topological DEPTH of a package
 			// within the global package-dependency DAG (recomputed whenever dependencies change),
-			// so ascending HierarchyLevel across one schema's layers is a valid dependency order.
-			// Empirically strict for real stacks (e.g. Contract's 9 layers: 299 < 320 < ... < 607).
+			// so ascending HierarchyLevel across one schema's schemas is a valid dependency order.
+			// Empirically strict for real stacks (e.g. Contract's 9 schemas: 299 < 320 < ... < 607).
 			// (SysPackageInDependency — the raw edge table — is not exposed as an ESQ ObjectSchema,
 			// so HierarchyLevel is the authoritative ordering signal available here, not a mere proxy.)
 			// Base pinned first; a stable tiebreak by package name keeps output reproducible when two
-			// layers share a level (independent packages replacing one schema — surfaced in Warnings).
-			layers = layers
+			// schemas share a level (independent packages replacing one schema — surfaced in Warnings).
+			schemas = schemas
 				.OrderByDescending(l => l.IsBase)
 				.ThenBy(l => l.HierarchyLevel ?? int.MaxValue)
 				.ThenBy(l => l.Package, StringComparer.OrdinalIgnoreCase)
 				.ToList();
 
-			List<string> warnings = DetectOrderingAmbiguity(layers);
-			response = new ListSchemaLayersResponse {
+			List<string> warnings = DetectOrderingAmbiguity(schemas);
+			response = new ListSchemaHierarchyResponse {
 				Success = true,
 				SchemaName = options.SchemaName,
-				Count = layers.Count,
-				Layers = layers,
+				Count = schemas.Count,
+				Schemas = schemas,
 				// empty → null, matching the codebase convention (e.g. PageUpdateTool) so consumers can
 				// treat absent/null uniformly as "no ordering caveats".
 				Warnings = warnings.Count > 0 ? warnings : null
@@ -141,16 +141,16 @@ public class ListSchemaLayersCommand : Command<ListSchemaLayersOptions> {
 			return true;
 		}
 		catch (Exception ex) {
-			response = new ListSchemaLayersResponse { Success = false, Error = ex.Message };
+			response = new ListSchemaHierarchyResponse { Success = false, Error = ex.Message };
 			return false;
 		}
 	}
 
-	private static SchemaLayerInfo MapLayer(JToken row) {
+	private static SchemaHierarchyEntry MapHierarchyEntry(JToken row) {
 		string maintainer = row["Maintainer"]?.ToString();
 		int installType = row["InstallType"]?.Value<int?>() ?? 0;
 		bool isClientEditable = IsClientEditable(maintainer, installType);
-		return new SchemaLayerInfo {
+		return new SchemaHierarchyEntry {
 			Package = row["PackageName"]?.ToString(),
 			UId = row["UId"]?.ToString(),
 			Maintainer = maintainer,
@@ -162,28 +162,28 @@ public class ListSchemaLayersCommand : Command<ListSchemaLayersOptions> {
 		};
 	}
 
-	// Two replacing layers at the same HierarchyLevel are not ordered by dependency depth; Creatio
+	// Two replacing schemas at the same HierarchyLevel are not ordered by dependency depth; Creatio
 	// composes such siblings by install order (effectively undefined). Surface it so the caller knows
 	// the merge order between them is a stable-but-arbitrary tiebreak, not authoritative.
-	internal static List<string> DetectOrderingAmbiguity(List<SchemaLayerInfo> layers) {
-		List<SchemaLayerInfo> nonBase = layers.Where(l => !l.IsBase).ToList();
+	internal static List<string> DetectOrderingAmbiguity(List<SchemaHierarchyEntry> schemas) {
+		List<SchemaHierarchyEntry> nonBase = schemas.Where(l => !l.IsBase).ToList();
 		List<string> warnings = nonBase
 			.Where(l => l.HierarchyLevel.HasValue)
 			.GroupBy(l => l.HierarchyLevel.Value)
 			.Where(g => g.Count() > 1)
 			.Select(g =>
-				$"Layers [{string.Join(", ", g.Select(l => l.Package ?? "(unknown)"))}] share HierarchyLevel {g.Key}; " +
+				$"Schemas [{string.Join(", ", g.Select(l => l.Package ?? "(unknown)"))}] share HierarchyLevel {g.Key}; " +
 				"their relative merge order is not determined by dependency depth — applied a stable " +
-				"tiebreak by package name. Verify against actual package dependencies if these layers " +
+				"tiebreak by package name. Verify against actual package dependencies if these schemas " +
 				"modify the same elements.")
 			.ToList();
-		// Layers whose HierarchyLevel the platform did not report all collapse to the same "unknown"
+		// Schemas whose HierarchyLevel the platform did not report all collapse to the same "unknown"
 		// bucket and get an arbitrary name tiebreak — that is ALSO undetermined order, so it must warn
 		// too (otherwise empty Warnings would falsely imply a fully dependency-determined order).
-		List<SchemaLayerInfo> unknown = nonBase.Where(l => !l.HierarchyLevel.HasValue).ToList();
+		List<SchemaHierarchyEntry> unknown = nonBase.Where(l => !l.HierarchyLevel.HasValue).ToList();
 		if (unknown.Count > 1)
 			warnings.Add(
-				$"Layers [{string.Join(", ", unknown.Select(l => l.Package ?? "(unknown)"))}] have no HierarchyLevel; " +
+				$"Schemas [{string.Join(", ", unknown.Select(l => l.Package ?? "(unknown)"))}] have no HierarchyLevel; " +
 				"their relative merge order is undetermined — applied a stable tiebreak by package name. " +
 				"Verify against actual package dependencies.");
 		return warnings;
@@ -197,8 +197,8 @@ public class ListSchemaLayersCommand : Command<ListSchemaLayersOptions> {
 		&& !ProductMaintainers.Contains(maintainer)
 		&& installType == 0;
 
-	public override int Execute(ListSchemaLayersOptions options) {
-		bool success = TryListLayers(options, out ListSchemaLayersResponse response);
+	public override int Execute(ListSchemaHierarchyOptions options) {
+		bool success = TryListHierarchy(options, out ListSchemaHierarchyResponse response);
 		_logger.WriteInfo(System.Text.Json.JsonSerializer.Serialize(response));
 		return success ? 0 : 1;
 	}
@@ -217,7 +217,7 @@ public class ListSchemaLayersCommand : Command<ListSchemaLayersOptions> {
 		}
 	};
 
-	private static JObject BuildSelectLayersByName(string schemaName, string managerName) => new() {
+	private static JObject BuildSelectHierarchyByName(string schemaName, string managerName) => new() {
 		["rootSchemaName"] = "SysSchema",
 		["operationType"] = 0,
 		["columns"] = new JObject {

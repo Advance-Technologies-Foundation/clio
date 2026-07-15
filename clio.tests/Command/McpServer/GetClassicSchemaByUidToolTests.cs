@@ -9,7 +9,7 @@ namespace Clio.Tests.Command.McpServer;
 
 [TestFixture]
 [Property("Module", "McpServer")]
-public class GetClassicSchemaToolTests {
+public class GetClassicSchemaByUidToolTests {
 
 	private const string SampleUId = "948080fc-031e-4d88-9239-47bcedaa92bc";
 
@@ -17,14 +17,14 @@ public class GetClassicSchemaToolTests {
 	[Category("Unit")]
 	public void GetSchema_Should_Resolve_Command_For_Requested_Environment() {
 		ConsoleLogger.Instance.ClearMessages();
-		FakeGetClassicSchemaCommand defaultCommand = new();
-		FakeGetClassicSchemaCommand resolvedCommand = new();
+		FakeGetClassicSchemaByUidCommand defaultCommand = new();
+		FakeGetClassicSchemaByUidCommand resolvedCommand = new();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		commandResolver.Resolve<GetClassicSchemaCommand>(Arg.Any<GetClassicSchemaOptions>())
+		commandResolver.Resolve<GetClassicSchemaByUidCommand>(Arg.Any<GetClassicSchemaByUidOptions>())
 			.Returns(resolvedCommand);
-		GetClassicSchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+		GetClassicSchemaByUidTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
-		GetClassicSchemaResponse response = tool.GetSchema(new GetClassicSchemaArgs(SampleUId) {
+		GetClassicSchemaByUidResponse response = tool.GetSchema(new GetClassicSchemaByUidArgs(SampleUId) {
 			OutputFile = "/tmp/out.js", EnvironmentName = "dev" });
 
 		response.Success.Should().BeTrue();
@@ -40,13 +40,13 @@ public class GetClassicSchemaToolTests {
 	[Category("Unit")]
 	public void GetSchema_Should_Return_Error_When_Command_Resolution_Fails() {
 		ConsoleLogger.Instance.ClearMessages();
-		FakeGetClassicSchemaCommand defaultCommand = new();
+		FakeGetClassicSchemaByUidCommand defaultCommand = new();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		commandResolver.Resolve<GetClassicSchemaCommand>(Arg.Any<GetClassicSchemaOptions>())
+		commandResolver.Resolve<GetClassicSchemaByUidCommand>(Arg.Any<GetClassicSchemaByUidOptions>())
 			.Returns(_ => throw new System.InvalidOperationException("boom"));
-		GetClassicSchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+		GetClassicSchemaByUidTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
 
-		GetClassicSchemaResponse response = tool.GetSchema(new GetClassicSchemaArgs(SampleUId) {
+		GetClassicSchemaByUidResponse response = tool.GetSchema(new GetClassicSchemaByUidArgs(SampleUId) {
 			EnvironmentName = "dev" });
 
 		response.Success.Should().BeFalse();
@@ -54,16 +54,16 @@ public class GetClassicSchemaToolTests {
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
-	private sealed class FakeGetClassicSchemaCommand : GetClassicSchemaCommand {
-		public GetClassicSchemaOptions CapturedOptions { get; private set; }
+	private sealed class FakeGetClassicSchemaByUidCommand : GetClassicSchemaByUidCommand {
+		public GetClassicSchemaByUidOptions CapturedOptions { get; private set; }
 
-		public FakeGetClassicSchemaCommand()
+		public FakeGetClassicSchemaByUidCommand()
 			: base(Substitute.For<IApplicationClient>(), Substitute.For<IServiceUrlBuilder>(), ConsoleLogger.Instance) {
 		}
 
-		public override bool TryGetSchema(GetClassicSchemaOptions options, out GetClassicSchemaResponse response) {
+		public override bool TryGetSchema(GetClassicSchemaByUidOptions options, out GetClassicSchemaByUidResponse response) {
 			CapturedOptions = options;
-			response = new GetClassicSchemaResponse {
+			response = new GetClassicSchemaByUidResponse {
 				Success = true,
 				SchemaUId = options.SchemaUId
 			};

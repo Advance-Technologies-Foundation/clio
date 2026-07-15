@@ -8,26 +8,26 @@ using ModelContextProtocol.Server;
 namespace Clio.Command.McpServer.Tools;
 
 [McpServerToolType]
-public sealed class ListSchemaLayersTool(
-	ListSchemaLayersCommand command,
+public sealed class ListSchemaHierarchyTool(
+	ListSchemaHierarchyCommand command,
 	ILogger logger,
 	IToolCommandResolver commandResolver)
-	: BaseTool<ListSchemaLayersOptions>(command, logger, commandResolver) {
+	: BaseTool<ListSchemaHierarchyOptions>(command, logger, commandResolver) {
 
-	internal const string ToolName = "list-schema-layers";
+	internal const string ToolName = "list-schema-hierarchy";
 
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description(
-		"List every package layer of a client unit schema by name (base + all replacing layers), each with " +
+		"List the full package hierarchy of a client unit schema by name (the base schema plus all replacing schemas), each with " +
 		"package, maintainer, InstallType, is-base and is-client-editable. " +
-		"Use in Classic->Freedom migration to enumerate a schema's layers (read each with get-classic-schema by UId) " +
+		"Use in Classic->Freedom migration to enumerate a schema's full hierarchy (read each entry with get-classic-schema-by-uid) " +
 		"and to find the client-editable package to write Freedom artifacts into. " +
 		"Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
-	public ListSchemaLayersResponse ListLayers(
+	public ListSchemaHierarchyResponse ListHierarchy(
 		[Description("Parameters: schema-name (required); manager-name (optional, default ClientUnitSchemaManager); environment-name preferred; uri/login/password emergency fallback only.")]
 		[Required]
-		ListSchemaLayersArgs args) {
-		ListSchemaLayersOptions options = new() {
+		ListSchemaHierarchyArgs args) {
+		ListSchemaHierarchyOptions options = new() {
 			SchemaName = args.SchemaName,
 			ManagerName = string.IsNullOrWhiteSpace(args.ManagerName) ? "ClientUnitSchemaManager" : args.ManagerName,
 			Environment = args.EnvironmentName,
@@ -36,14 +36,14 @@ public sealed class ListSchemaLayersTool(
 			Password = args.Password
 		};
 		return ExecuteWithCleanLog(() => {
-			ListSchemaLayersCommand resolvedCommand;
+			ListSchemaHierarchyCommand resolvedCommand;
 			try {
-				resolvedCommand = ResolveCommand<ListSchemaLayersCommand>(options);
+				resolvedCommand = ResolveCommand<ListSchemaHierarchyCommand>(options);
 			}
 			catch (Exception ex) {
-				return new ListSchemaLayersResponse { Success = false, Error = SensitiveErrorTextRedactor.Redact(ex.Message) };
+				return new ListSchemaHierarchyResponse { Success = false, Error = SensitiveErrorTextRedactor.Redact(ex.Message) };
 			}
-			resolvedCommand.TryListLayers(options, out ListSchemaLayersResponse response);
+			resolvedCommand.TryListHierarchy(options, out ListSchemaHierarchyResponse response);
 			if (!response.Success && !string.IsNullOrEmpty(response.Error))
 				response.Error = SensitiveErrorTextRedactor.Redact(response.Error);
 			return response;
@@ -51,9 +51,9 @@ public sealed class ListSchemaLayersTool(
 	}
 }
 
-public sealed record ListSchemaLayersArgs(
+public sealed record ListSchemaHierarchyArgs(
 	[property: JsonPropertyName("schema-name")]
-	[property: Description("Client unit schema name shared across all layers, e.g. 'ContractPageV2'")]
+	[property: Description("Client unit schema name shared across all schemas, e.g. 'ContractPageV2'")]
 	[property: Required]
 	string SchemaName
 ) {

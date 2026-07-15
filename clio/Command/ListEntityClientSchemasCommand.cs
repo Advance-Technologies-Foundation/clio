@@ -8,11 +8,11 @@ using CommandLine;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
-[Verb("resolve-migration-unit", Aliases = ["migration-unit-resolve"],
+[Verb("list-entity-client-schemas", Aliases = ["migration-unit-resolve"],
 	HelpText = "Resolve the page-role graph of an entity for a Classic->Freedom migration: its Classic sections, " +
 		"edit pages (including per-type/typed pages), and add mini pages, each classified Classic vs Freedom. " +
 		"One level only — the skill recurses into detail entities. Pure ESQ; no schema-body parsing.")]
-public class ResolveMigrationUnitOptions : EnvironmentOptions {
+public class ListEntityClientSchemasOptions : EnvironmentOptions {
 
 	[Option("entity-name", Required = true, HelpText = "Entity schema name, e.g. 'Contract' or 'SupportUnit'")]
 	public string EntityName { get; set; }
@@ -36,7 +36,7 @@ public sealed class MigrationEditPageInfo {
 	[System.Text.Json.Serialization.JsonPropertyName("miniPageModes")] public string MiniPageModes { get; set; }
 }
 
-public sealed class ResolveMigrationUnitResponse {
+public sealed class ListEntityClientSchemasResponse {
 	[System.Text.Json.Serialization.JsonPropertyName("success")] public bool Success { get; set; }
 	[System.Text.Json.Serialization.JsonPropertyName("entity")] public string Entity { get; set; }
 	[System.Text.Json.Serialization.JsonPropertyName("entityUId")] public string EntityUId { get; set; }
@@ -46,7 +46,7 @@ public sealed class ResolveMigrationUnitResponse {
 	[System.Text.Json.Serialization.JsonPropertyName("error")] public string Error { get; set; }
 }
 
-public class ResolveMigrationUnitCommand : Command<ResolveMigrationUnitOptions> {
+public class ListEntityClientSchemasCommand : Command<ListEntityClientSchemasOptions> {
 
 	private const string SelectQueryRoute = "/DataService/json/SyncReply/SelectQuery";
 	private const string EmptyGuid = "00000000-0000-0000-0000-000000000000";
@@ -55,22 +55,22 @@ public class ResolveMigrationUnitCommand : Command<ResolveMigrationUnitOptions> 
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
 	private readonly ILogger _logger;
 
-	public ResolveMigrationUnitCommand(
+	public ListEntityClientSchemasCommand(
 		IApplicationClient applicationClient, IServiceUrlBuilder serviceUrlBuilder, ILogger logger) {
 		_applicationClient = applicationClient;
 		_serviceUrlBuilder = serviceUrlBuilder;
 		_logger = logger;
 	}
 
-	public virtual bool TryResolve(ResolveMigrationUnitOptions options, out ResolveMigrationUnitResponse response) {
+	public virtual bool TryResolve(ListEntityClientSchemasOptions options, out ListEntityClientSchemasResponse response) {
 		try {
 			if (string.IsNullOrWhiteSpace(options.EntityName)) {
-				response = new ResolveMigrationUnitResponse { Success = false, Error = "entity-name is required" };
+				response = new ListEntityClientSchemasResponse { Success = false, Error = "entity-name is required" };
 				return false;
 			}
 			string entityUId = ResolveEntityUId(options.EntityName);
 			if (entityUId == null) {
-				response = new ResolveMigrationUnitResponse {
+				response = new ListEntityClientSchemasResponse {
 					Success = false, Error = $"Entity '{options.EntityName}' not found (ManagerName='EntitySchemaManager')" };
 				return false;
 			}
@@ -117,7 +117,7 @@ public class ResolveMigrationUnitCommand : Command<ResolveMigrationUnitOptions> 
 			}).ToList();
 
 			bool empty = sections.Count == 0 && editPages.Count == 0;
-			response = new ResolveMigrationUnitResponse {
+			response = new ListEntityClientSchemasResponse {
 				Success = true,
 				Entity = options.EntityName,
 				EntityUId = entityUId,
@@ -128,12 +128,12 @@ public class ResolveMigrationUnitCommand : Command<ResolveMigrationUnitOptions> 
 						  "section, or the entity name/UId is off. This is NOT the same as 'nothing to migrate'; verify before skipping. "
 						: "") +
 					"One level only. Details on each card and Freedom counterparts are read from the card body/page model " +
-					"(pure merge module); recurse into detail entities by calling resolve-migration-unit per detail entity."
+					"(pure merge module); recurse into detail entities by calling list-entity-client-schemas per detail entity."
 			};
 			return true;
 		}
 		catch (Exception ex) {
-			response = new ResolveMigrationUnitResponse { Success = false, Error = ex.Message };
+			response = new ListEntityClientSchemasResponse { Success = false, Error = ex.Message };
 			return false;
 		}
 	}
@@ -166,8 +166,8 @@ public class ResolveMigrationUnitCommand : Command<ResolveMigrationUnitOptions> 
 		return JObject.Parse(json)["rows"] as JArray ?? [];
 	}
 
-	public override int Execute(ResolveMigrationUnitOptions options) {
-		bool success = TryResolve(options, out ResolveMigrationUnitResponse response);
+	public override int Execute(ListEntityClientSchemasOptions options) {
+		bool success = TryResolve(options, out ListEntityClientSchemasResponse response);
 		_logger.WriteInfo(System.Text.Json.JsonSerializer.Serialize(response));
 		return success ? 0 : 1;
 	}
