@@ -17,6 +17,7 @@
         <SolidColorBrush x:Key="Running" Color="#F97316" />
         <SolidColorBrush x:Key="Success" Color="#3FB950" />
         <SolidColorBrush x:Key="Failure" Color="#F85149" />
+		<SolidColorBrush x:Key="Warning" Color="#D29922" />
         <SolidColorBrush x:Key="SkipNa" Color="#8B949E" />
         <SolidColorBrush x:Key="SkipAfter" Color="#D29922" />
     </UserControl.Resources>
@@ -35,6 +36,9 @@
         <Style Selector="Border.step.failed Path.glyph">
             <Setter Property="Stroke" Value="{StaticResource Failure}" />
         </Style>
+		<Style Selector="Border.step.warning Path.glyph">
+			<Setter Property="Stroke" Value="{StaticResource Warning}" />
+		</Style>
         <Style Selector="Border.step.skipNa Path.glyph">
             <Setter Property="Stroke" Value="{StaticResource SkipNa}" />
         </Style>
@@ -48,6 +52,9 @@
         <Style Selector="Border.step.failed">
             <Setter Property="BorderBrush" Value="#66F85149" />
         </Style>
+		<Style Selector="Border.step.warning">
+			<Setter Property="BorderBrush" Value="#66D29922" />
+		</Style>
 
         <Style Selector="TextBlock.stateBadge">
             <Setter Property="FontSize" Value="10" />
@@ -63,12 +70,18 @@
         <Style Selector="Border.step.failed TextBlock.stateBadge">
             <Setter Property="Foreground" Value="{StaticResource Failure}" />
         </Style>
+		<Style Selector="Border.step.warning TextBlock.stateBadge">
+			<Setter Property="Foreground" Value="{StaticResource Warning}" />
+		</Style>
         <Style Selector="Border.step.skipNa TextBlock.stateBadge">
             <Setter Property="Foreground" Value="{StaticResource SkipNa}" />
         </Style>
         <Style Selector="Border.step.skipAfter TextBlock.stateBadge">
             <Setter Property="Foreground" Value="{StaticResource SkipAfter}" />
         </Style>
+		<Style Selector="Border.runState.warning TextBlock">
+			<Setter Property="Foreground" Value="{StaticResource Warning}" />
+		</Style>
     </UserControl.Styles>
 
     <Grid Margin="16" RowDefinitions="Auto,*" Background="#0E1117">
@@ -83,7 +96,8 @@
                         <TextBlock Text="{Binding Operation}" FontSize="12" Foreground="#8B949E" VerticalAlignment="Center"
                                    FontFamily="Cascadia Code,Consolas,monospace"/>
                     </StackPanel>
-                    <Border Grid.Column="1" CornerRadius="6" Padding="8,2" VerticalAlignment="Center" Background="#1F2937"
+					<Border Grid.Column="1" Classes="runState" Classes.warning="{Binding IsSucceededWithWarnings}"
+							CornerRadius="6" Padding="8,2" VerticalAlignment="Center" Background="#1F2937"
                             IsVisible="{Binding RunStateLabel, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
                         <TextBlock Text="{Binding RunStateLabel}" FontSize="11" FontWeight="SemiBold" Foreground="#E6EDF3"/>
                     </Border>
@@ -133,6 +147,7 @@
                                 Classes.running="{Binding IsRunning}"
                                 Classes.done="{Binding IsDone}"
                                 Classes.failed="{Binding IsFailed}"
+								Classes.warning="{Binding IsWarning}"
                                 Classes.skipNa="{Binding IsSkippedNotApplicable}"
                                 Classes.skipAfter="{Binding IsSkippedAfterFailure}">
                             <Grid RowDefinitions="Auto,Auto">

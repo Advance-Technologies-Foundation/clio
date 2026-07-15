@@ -370,4 +370,44 @@ public class StageEventEmitterTests {
 		terminalEvents[0].RunCompleted!.ErrorCode.Should().Be("deployment-execution-failed",
 			because: "the first terminal failure remains authoritative");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A best-effort warning stage emits warning without cascading later stages as failed or skipped.")]
+	public void WarnStage_ShouldEmitWarningWithoutFailureCascade_WhenCleanupIsBestEffort() {
+		// Arrange
+		(StageEventEmitter emitter, List<ClioStageEvent> events) = CreateEmitter();
+
+		// Act
+		emitter.WarnStage(StageIds.StageBuild, "Profile could not be removed", "Access is denied",
+			"APPPOOL_PROFILE_DELETE_FAILED");
+
+		// Assert
+		ClioStageDetail warning = events.Single(stageEvent => stageEvent.Stage?.Status ==
+			ClioStageEventContract.StageStatuses.Warning).Stage!;
+		warning.ErrorCode.Should().Be("APPPOOL_PROFILE_DELETE_FAILED",
+			because: "warning consumers need a stable profile-cleanup classification");
+		events.Should().NotContain(stageEvent => stageEvent.Stage != null && stageEvent.Stage.SkipReason ==
+			ClioStageEventContract.SkipReasons.AfterFailure,
+			because: "a warning must never trigger the failed-stage cascade");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A successful run that retained warnings emits the dedicated success-with-warnings terminal.")]
+	public void CompleteSuccessWithWarnings_ShouldEmitSuccessfulWarningOutcome_WhenWarningWasRetained() {
+		// Arrange
+		(StageEventEmitter emitter, List<ClioStageEvent> events) = CreateEmitter();
+
+		// Act
+		emitter.CompleteSuccessWithWarnings("Uninstall completed with warnings", "Access is denied",
+			"APPPOOL_PROFILE_DELETE_FAILED", @"C:\inetpub\wwwroot\work");
+
+		// Assert
+		ClioRunCompleted terminal = events.Last().RunCompleted!;
+		terminal.Outcome.Should().Be(ClioStageEventContract.RunOutcomes.SuccessWithWarnings,
+			because: "consumers need an explicit successful terminal that preserves the warning outcome");
+		terminal.ErrorCode.Should().Be("APPPOOL_PROFILE_DELETE_FAILED",
+			because: "the warning remains machine-classifiable at terminal completion");
+	}
 }

@@ -15,12 +15,14 @@ uc
 ## Description
 
 uninstall-creatio command removes a local Creatio instance from your machine,
-including the IIS site and application pool, database (both local and
-containerized), and application files.
+including the target IIS site or application, database (both local and
+containerized), and application files. The application pool is removed only
+when no other IIS application uses it.
 
-Note: deletion of the application pool user profile directory is NOT performed
-today. The step is surfaced as skipped / not-supported; real profile deletion
-is a separate future change.
+On Windows, the command also attempts to remove the registered IIS
+application-pool virtual-account profile. This is best-effort: a locked,
+access-denied, or otherwise undeletable profile produces one warning after
+three attempts, while the uninstall continues and exits successfully.
 
 The command reads the database connection string from ConnectionStrings.config
 in the Creatio installation directory and uses it to connect and drop the
@@ -43,17 +45,16 @@ This operation cannot be undone.
         4. Proceeds with uninstall operations
 
     Uninstall operations (all methods):
-        1. Stops IIS application and application pool
-        2. Deletes IIS site and application pool
-        3. Extracts database connection string from ConnectionStrings.config
-        4. Parses connection parameters (host, port, username, password)
-        5. Connects and drops the database (local or Kubernetes/Rancher)
-        6. Deletes all files in installation directory
-        7. Unregisters the environment (final step, only after cleanup succeeds)
-
-    Note: an application pool user profile directory is NOT deleted. When a
-    profile exists the step is reported as skipped / not-supported; real
-    profile deletion is a separate future change.
+        1. Extracts database connection string from ConnectionStrings.config
+        2. Parses connection parameters (host, port, username, password)
+        3. Validates that the target IIS site/application can be removed without siblings
+        4. Stops the target site when supported and deletes the target site/application
+        5. Verifies target removal, then rechecks and deletes the pool only when unused
+        6. Connects and drops the database (local or Kubernetes/Rancher)
+        7. Deletes all files in installation directory
+        8. Deletes the registered IIS application-pool profile on Windows
+           (best-effort; missing/non-Windows is not applicable)
+        9. Unregisters the environment (final step, including after a profile warning)
 
 ## Synopsis
 
@@ -102,7 +103,15 @@ clio uninstall-creatio --physicalPath C:\inetpub\wwwroot\creatio-dev
         [INF] - Using local database connection from ConnectionStrings.config
         [INF] - Postgres DB: CreatioDB dropped
         [INF] - Directory: C:\inetpub\wwwroot\mysite deleted
+		[INF] - Application-pool profile 'C:\Users\mysite-pool' deleted
         [INF] - Done removing Creatio instance
+
+    If Windows keeps the profile locked, the command writes exactly one final
+    warning after its retries and still exits with code 0:
+        [WAR] - Creatio was uninstalled, but application-pool profile
+                'C:\Users\mysite-pool' could not be removed because it is
+                currently in use or Windows denied access. Delete it manually
+                after the locking process exits.
 
 ## Common Errors
 
@@ -121,6 +130,11 @@ clio uninstall-creatio --physicalPath C:\inetpub\wwwroot\creatio-dev
     Insufficient permissions:
         [ERR] - Access denied: Administrator privileges required
         Solution: Run terminal as Administrator
+
+    Application-pool profile could not be deleted:
+        Result: The command retries three times, writes one warning, completes
+                remaining cleanup and environment unregistration, and exits 0
+        Solution: Delete the named profile manually after the locking process exits
 
     No IIS site found:
         [ERR] - The registered environment URI could not be correlated with an IIS site
@@ -184,8 +198,8 @@ clio uninstall-creatio --physicalPath C:\inetpub\wwwroot\creatio-dev
 - No confirmation prompt - command executes immediately
 - Consider using 'clear-local-env' if you want to clean data without
 destroying the entire instance
-- The command does not modify clio environment registration - use
-'unreg-web-app' separately if needed
+- When `-e` is used, environment unregistration is the final stage and still
+  runs after a profile-cleanup warning
 
 ## Progress and Stage Events (MCP)
 
@@ -197,9 +211,10 @@ destroying the entire instance
 
     The stream is:
     - one "manifest" event up front listing every stage that will run, in order
-    - a "stage" event per transition (running -> done / failed / skipped, with
+    - a "stage" event per transition (running -> done / failed / warning / skipped, with
       index / total / durationMs)
-    - one terminal "run-completed" event with outcome = success or failure
+    - one terminal "run-completed" event with outcome = success,
+      success-with-warnings, or failure; warning detail is carried by a warning stage
 
     Uninstall stages (in order):
         read-config             Read the environment / connection configuration
@@ -207,11 +222,20 @@ destroying the entire instance
         delete-iis              Delete the IIS site / application pool
         drop-db                 Drop the application database
         delete-files            Delete the application files
-        unregister              Unregister the environment (final, only after
-                                cleanup succeeds)
-        delete-apppool-profile  Conditional: present only when an application pool
-                                profile exists; reported skipped / not-supported
-                                (profile deletion is not implemented today)
+        delete-apppool-profile  Conditional: delete the SID-validated registered
+                                IIS virtual-account profile; warning after retries,
+                                or skipped / not-applicable when absent/non-Windows
+        unregister              Unregister the environment last, including after
+                                a non-fatal profile warning
+
+    A profile cleanup warning uses status = warning and stable error code
+    APPPOOL_PROFILE_DELETE_FAILED. The terminal outcome is success-with-warnings,
+    while the warning stage retains the detail. The MCP command result keeps exit code 0 and the tool
+    response is not marked as an error.
+
+    If another IIS application shares the target application pool, uninstall removes
+    only the target site/application and leaves the shared pool and its Windows profile intact;
+    delete-apppool-profile is skipped as not applicable.
 
     Honest failure: read-config runs before stop-iis. If it fails, the run aborts safely
     (the site remains running, the environment is NOT unregistered, and success is NOT

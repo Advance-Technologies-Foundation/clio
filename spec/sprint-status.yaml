@@ -1976,3 +1976,17 @@ stories:
     test_plan: spec/virtual-entity-schema/virtual-entity-schema-qa.md
     depends_on: []
     blocks: []
+
+  - id: story-apppool-profile-cleanup-1
+    title: "Best-effort IIS application-pool profile cleanup during uninstall"
+    feature: "apppool-profile-cleanup"
+    repo: "clio"
+    size: L
+    status: done
+    issue: 881
+    file: spec/apppool-profile-cleanup/apppool-profile-cleanup-story.md
+    prd: spec/apppool-profile-cleanup/apppool-profile-cleanup-prd.md
+    adr: spec/apppool-profile-cleanup/apppool-profile-cleanup-adr.md
+    test_plan: spec/apppool-profile-cleanup/apppool-profile-cleanup-test-plan.md
+    depends_on: []
+    blocks: []
