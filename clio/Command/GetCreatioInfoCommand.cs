@@ -174,16 +174,21 @@ namespace Clio.Command
 				return false;
 			}
 			string trimmed = response.TrimStart();
-			// ApplicationInfoService must return an object. A broken object/array-shaped payload is
-			// therefore malformed JSON, while text such as "404 Not Found" is plainly a non-Creatio
-			// response even though JSON itself permits a top-level number or string.
-			return trimmed[0] is not ('{' or '[');
+			// ApplicationInfoService must return an object. Preserve malformed-JSON classification for
+			// every unmistakable JSON token prefix, but treat digit-prefixed text such as "404 Not Found"
+			// as non-Creatio. A valid numeric JSON scalar parses successfully and is rejected by shape.
+			char first = trimmed[0];
+			bool hasJsonStart = first is '{' or '[' or '"' or '-'
+				|| trimmed.StartsWith("true", StringComparison.Ordinal)
+				|| trimmed.StartsWith("false", StringComparison.Ordinal)
+				|| trimmed.StartsWith("null", StringComparison.Ordinal);
+			return !hasJsonStart;
 		}
 
-		private static bool IsExpectedRemoteFailure(Exception exception) =>
-			EnumerateExceptionChain(exception).Any(item => item is
-				UnauthorizedAccessException or TaskCanceledException or TimeoutException or
-				HttpRequestException or WebException or JsonException);
+		private static bool IsRecoverable(Exception exception) =>
+			!EnumerateExceptionChain(exception).Any(item => item is
+				OutOfMemoryException or StackOverflowException or AccessViolationException or
+				NullReferenceException or IndexOutOfRangeException);
 
 		private static bool IsConnectionFailure(WebException exception) => exception.Status is
 			WebExceptionStatus.ConnectFailure or
@@ -224,7 +229,7 @@ namespace Clio.Command
 				string appInfoUrl = RootPath + CreatioServicePaths.GetApplicationInfo;
 				response = ApplicationClient.ExecutePostRequest(
 					appInfoUrl, "{}", options.TimeOut, options.MaxAttempts, options.RetryDelay);
-			} catch (Exception exception) when (IsExpectedRemoteFailure(exception)) {
+			} catch (Exception exception) when (IsRecoverable(exception)) {
 				ReportBaseProbeFailure(ClassifyBaseProbeException(exception), targetUri, exception);
 				return false;
 			}
@@ -307,7 +312,7 @@ namespace Clio.Command
 			bool compatible;
 			try {
 				compatible = ClioGateWay.IsCompatibleWith(ClioGateMinVersion);
-			} catch (Exception exception) when (IsExpectedRemoteFailure(exception)) {
+			} catch (Exception exception) when (IsRecoverable(exception)) {
 				WriteSafeDebug("cliogate-compatibility", BaseProbeFailure.UnexpectedResponse, exception);
 				return CliogateEnrichmentState.CompatibilityUnknown;
 			}
@@ -337,7 +342,7 @@ namespace Clio.Command
 				string response = ApplicationClient.ExecutePostRequest(
 					url, "{}", options.TimeOut, maxAttempts: 1, delaySec: 0);
 				JObject info = JObject.Parse(response);
-				if (info["success"]?.Value<bool>() != true){
+				if (info["success"]?.Type != JTokenType.Boolean || info["success"]?.Value<bool>() != true){
 					return;
 				}
 				foreach (string field in new[] { "dbEngineType", "frameworkKind", "frameworkDescription" }){
@@ -345,7 +350,7 @@ namespace Clio.Command
 						report[field] = value;
 					}
 				}
-			} catch (Exception e) when (IsExpectedRemoteFailure(e)){
+			} catch (Exception e) when (IsRecoverable(e)){
 				// Degrade silently — the ApplicationInfoService base is already reported. Surface the reason
 				// only under --debug so an access/transport failure is diagnosable without polluting normal output.
 				WriteSafeDebug("system-environment-enrichment", BaseProbeFailure.UnexpectedResponse, e);
@@ -385,7 +390,7 @@ namespace Clio.Command
 					report["frameworkKind"] = sysInfo["IsNetCore"].Value<bool>() ? "Net" : "NetFramework";
 				}
 				return true;
-			} catch (Exception e) when (IsExpectedRemoteFailure(e)){
+			} catch (Exception e) when (IsRecoverable(e)){
 				// Degrade silently — the base + GetSystemEnvironmentInfo data is already reported. Surface the
 				// reason only under --debug so an access/transport failure is diagnosable.
 				WriteSafeDebug("cliogate-sysinfo-enrichment", BaseProbeFailure.UnexpectedResponse, e);

@@ -334,6 +334,65 @@ public class GetInfoCommandTests : BaseCommandTests<GetCreatioInfoCommandOptions
 	}
 
 	[Test]
+	[Description("Classifies a truncated quoted JSON scalar as malformed rather than non-Creatio plain text.")]
+	public void Execute_ShouldReportUnexpectedResponse_WhenQuotedBaseJsonIsMalformed()
+	{
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("\"unterminated");
+		ILogger logger = Substitute.For<ILogger>();
+		GetCreatioInfoCommand command = CreateCommand(client, gateway: null, logger);
+
+		// Act
+		int result = command.Execute(new GetCreatioInfoCommandOptions());
+
+		// Assert
+		result.Should().Be(1, because: "a JSON-token prefix with invalid syntax is a malformed response");
+		logger.Received(1).WriteError("The Creatio ApplicationInfoService returned an unexpected response.");
+	}
+
+	[Test]
+	[Description("Maps an unexpected recoverable base-client exception to a stable secret-safe response.")]
+	public void Execute_ShouldKeepUnexpectedBaseFailureSecretSafe_WhenClientThrowsRecoverableException()
+	{
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Throws(new InvalidOperationException("token=base-secret"));
+		ILogger logger = Substitute.For<ILogger>();
+		GetCreatioInfoCommand command = CreateCommand(client, gateway: null, logger);
+
+		// Act
+		int result = command.Execute(new GetCreatioInfoCommandOptions());
+
+		// Assert
+		result.Should().Be(1, because: "recoverable library failures cannot bypass the classified command boundary");
+		logger.Received(1).WriteError("The Creatio ApplicationInfoService returned an unexpected response.");
+		logger.DidNotReceive().WriteError(Arg.Is<string>(message => message.Contains("base-secret", StringComparison.Ordinal)));
+	}
+
+	[Test]
+	[Description("Keeps the base report when system-environment enrichment returns an invalid success value.")]
+	public void Execute_ShouldReturnBaseReport_WhenSystemEnvironmentInfoSuccessValueIsMalformed()
+	{
+		// Arrange
+		IApplicationClient client = SubstituteClient();
+		StubSystemEnvironmentInfo(client, """{ "success": "not-a-bool", "dbEngineType": "secret-value" }""");
+		ILogger logger = Substitute.For<ILogger>();
+		GetCreatioInfoCommand command = CreateCommand(client, gateway: null, logger);
+
+		// Act
+		int result = command.Execute(new GetCreatioInfoCommandOptions());
+
+		// Assert
+		result.Should().Be(0, because: "malformed optional enrichment cannot invalidate a valid base report");
+		logger.Received(1).WriteLine(Arg.Is<string>(message =>
+			message.Contains("coreVersion", StringComparison.Ordinal)
+			&& !message.Contains("secret-value", StringComparison.Ordinal)));
+	}
+
+	[Test]
 	[Description("Classifies an HTTP transport exception as an unavailable Creatio target.")]
 	public void Execute_ShouldReportConnectionFailure_WhenBaseProbeThrowsHttpRequestException()
 	{
@@ -504,7 +563,7 @@ public class GetInfoCommandTests : BaseCommandTests<GetCreatioInfoCommandOptions
 		// Arrange
 		IApplicationClient client = SubstituteClient();
 		IClioGateway gateway = Substitute.For<IClioGateway>();
-		gateway.IsCompatibleWith(Arg.Any<string>()).Throws(new HttpRequestException("secret cliogate failure"));
+		gateway.IsCompatibleWith(Arg.Any<string>()).Throws(new InvalidOperationException("secret cliogate failure"));
 		ILogger logger = Substitute.For<ILogger>();
 		GetCreatioInfoCommand command = CreateCommand(client, gateway, logger);
 
@@ -516,6 +575,30 @@ public class GetInfoCommandTests : BaseCommandTests<GetCreatioInfoCommandOptions
 		logger.Received(1).WriteLine(Arg.Is<string>(message => message.Contains("coreVersion", StringComparison.Ordinal)));
 		logger.Received(1).WriteWarning(Arg.Is<string>(message =>
 			message.Contains("compatibility could not be determined", StringComparison.Ordinal)));
+		logger.DidNotReceive().WriteError(Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("Keeps a successful base report when ClioGate package-list JSON cannot be deserialized.")]
+	public void Execute_ShouldReturnBaseReport_WhenCliogateCompatibilityJsonIsMalformed()
+	{
+		// Arrange
+		IApplicationClient client = SubstituteClient();
+		IClioGateway gateway = Substitute.For<IClioGateway>();
+		gateway.IsCompatibleWith(Arg.Any<string>())
+			.Throws(new System.Text.Json.JsonException("token=cliogate-json-secret"));
+		ILogger logger = Substitute.For<ILogger>();
+		GetCreatioInfoCommand command = CreateCommand(client, gateway, logger);
+
+		// Act
+		int result = command.Execute(new GetCreatioInfoCommandOptions());
+
+		// Assert
+		result.Should().Be(0, because: "package-list JSON is optional after the base report succeeds");
+		logger.Received(1).WriteLine(Arg.Is<string>(message => message.Contains("coreVersion", StringComparison.Ordinal)));
+		logger.Received(1).WriteWarning(Arg.Is<string>(message =>
+			message.Contains("compatibility could not be determined", StringComparison.Ordinal)
+			&& !message.Contains("cliogate-json-secret", StringComparison.Ordinal)));
 		logger.DidNotReceive().WriteError(Arg.Any<string>());
 	}
 }

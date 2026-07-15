@@ -6036,3 +6036,10 @@ Decision: Treat only object/array-prefixed parse failures as malformed JSON, req
 Discovery: JSON permits scalar top-level values, but ApplicationInfoService does not; using generic JSON scalar prefixes caused text such as `404 Not Found` to be misclassified.
 Files: clio/Command/GetCreatioInfoCommand.cs, clio.tests/Command/GetInfoCommand.cs, clio/help/en/get-info.txt, spec/sprint-status.yaml
 Impact: Digit-prefixed non-Creatio responses and empty sysValues envelopes now fail with the correct stable classification, while programming defects are no longer swallowed by remote-operation boundaries.
+
+## 2026-07-15 09:44 – Make secret-safe boundaries recoverable by policy
+Context: Final re-review traced real ClioGate compatibility failures through package-list parsing and found recoverable exception types beyond the transport whitelist.
+Decision: Catch every recoverable exception at base and optional remote-operation boundaries while explicitly propagating fatal runtime conditions and clear programming defects; validate optional success tokens by type before conversion.
+Discovery: ClioGate compatibility can throw InvalidOperationException or System.Text.Json parsing errors before GetSysInfo, so a narrow HTTP/Newtonsoft exception list cannot guarantee nonfatal enrichment or secret-safe MCP output.
+Files: clio/Command/GetCreatioInfoCommand.cs, clio.tests/Command/GetInfoCommand.cs
+Impact: Recoverable client/library failures now remain classified and redacted, while fatal or programming-defect exceptions still propagate for diagnosis.
