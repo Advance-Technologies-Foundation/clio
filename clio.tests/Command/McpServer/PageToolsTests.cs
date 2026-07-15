@@ -125,7 +125,7 @@ public class PageToolsTests
 	}
 
 	[Test]
-	[Description("TryParseSchemaType maps every recognized web/mobile alias to its schema type, case- and whitespace-insensitively, so the MCP tool and the command accept the same documented filter values.")]
+	[Description("TryParseSchemaType maps every recognized web/mobile/desktop alias to its schema type, case- and whitespace-insensitively, so the MCP tool and the command accept the same documented filter values.")]
 	[TestCase("web", PageSchemaType.Web)]
 	[TestCase("freedomuipage", PageSchemaType.Web)]
 	[TestCase("page", PageSchemaType.Web)]
@@ -135,6 +135,8 @@ public class PageToolsTests
 	[TestCase("mobilepage", PageSchemaType.Mobile)]
 	[TestCase("10", PageSchemaType.Mobile)]
 	[TestCase("MoBiLe", PageSchemaType.Mobile)]
+	[TestCase("desktop", PageSchemaType.Web)]
+	[TestCase("  DeSkToP  ", PageSchemaType.Web)]
 	public void TryParseSchemaType_ShouldParseRecognizedAlias_WhenValueIsKnown(string value, PageSchemaType expected) {
 		// Act
 		bool parsed = PageTemplatesListCommand.TryParseSchemaType(value, out PageSchemaType schemaType, out string error);
@@ -150,7 +152,7 @@ public class PageToolsTests
 	[TestCase(null)]
 	[TestCase("")]
 	[TestCase("   ")]
-	[TestCase("desktop")]
+	[TestCase("tablet")]
 	public void TryParseSchemaType_ShouldReturnFalseWithMessage_WhenValueIsNullBlankOrUnknown(string value) {
 		// Act
 		bool parsed = PageTemplatesListCommand.TryParseSchemaType(value, out PageSchemaType schemaType, out string error);
@@ -159,6 +161,52 @@ public class PageToolsTests
 		parsed.Should().BeFalse(because: "null, blank, or unrecognized input is not a valid schema-type");
 		schemaType.Should().Be(default(PageSchemaType), because: "an unparsed value must leave the out parameter at its default instead of a partial result");
 		error.Should().Contain("Unknown schema-type", because: "the caller needs an actionable message naming the accepted values");
+		error.Should().Contain("desktop", because: "the accepted-values list must advertise the desktop filter");
+	}
+
+	[Test]
+	[Description("TryParseTemplateFilter maps 'desktop' to the web catalog narrowed to the Desktop template group, and leaves the group filter empty for plain schema types.")]
+	public void TryParseTemplateFilter_ShouldReturnDesktopGroupFilter_WhenValueIsDesktop() {
+		// Act
+		bool parsedDesktop = PageTemplatesListCommand.TryParseTemplateFilter(
+			"desktop", out PageSchemaType desktopSchemaType, out string desktopGroup, out string desktopError);
+		bool parsedWeb = PageTemplatesListCommand.TryParseTemplateFilter(
+			"web", out PageSchemaType webSchemaType, out string webGroup, out string webError);
+
+		// Assert
+		parsedDesktop.Should().BeTrue(because: "'desktop' is a documented template filter");
+		desktopSchemaType.Should().Be(PageSchemaType.Web, because: "desktop pages are ordinary web schemas distinguished only by group");
+		desktopGroup.Should().Be("Desktop", because: "the desktop filter narrows the web catalog to Desktop-group templates");
+		desktopError.Should().BeNull(because: "a recognized filter produces no parse error");
+		parsedWeb.Should().BeTrue(because: "'web' remains a documented plain schema type");
+		webSchemaType.Should().Be(PageSchemaType.Web, because: "'web' maps to the web schema type");
+		webGroup.Should().BeNull(because: "a plain schema type applies no group narrowing");
+		webError.Should().BeNull(because: "a recognized filter produces no parse error");
+	}
+
+	[Test]
+	[Description("TryListTemplates with the desktop filter returns only Desktop-group web templates, so agents see exactly the valid create-page desktop parents.")]
+	public void TryListTemplates_ShouldReturnOnlyDesktopGroupTemplates_WhenFilterIsDesktop() {
+		// Arrange
+		ISchemaTemplateCatalog catalog = Substitute.For<ISchemaTemplateCatalog>();
+		catalog.GetTemplates(PageSchemaType.Web).Returns(new List<PageTemplateInfo> {
+			new() { Name = "BlankPageTemplate", GroupName = "Page", SchemaType = 9 },
+			new() { Name = "CentralAreaDesktopTemplate", GroupName = "Desktop", SchemaType = 9 },
+			new() { Name = "BaseDashboardTemplate", GroupName = "DashboardPage", SchemaType = 9 }
+		});
+		PageTemplatesListCommand command = new(catalog, ConsoleLogger.Instance);
+
+		// Act
+		bool result = command.TryListTemplates(
+			new PageTemplatesListOptions { SchemaType = "desktop" }, out PageTemplateListResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "the desktop filter is valid input");
+		response.Success.Should().BeTrue(because: "the catalog resolved successfully");
+		response.Items.Should().ContainSingle(because: "only the Desktop-group template matches the filter")
+			.Which.Name.Should().Be("CentralAreaDesktopTemplate",
+				because: "the desktop filter must surface the create-page desktop default parent");
+		response.Count.Should().Be(1, because: "the count must reflect the narrowed list, not the full web catalog");
 	}
 
 	[Test]

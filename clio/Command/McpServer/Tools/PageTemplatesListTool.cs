@@ -16,9 +16,9 @@ public sealed class PageTemplatesListTool(
 	internal const string ToolName = "list-page-templates";
 
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
-	[Description("List Freedom UI page templates advertised by the target Creatio environment. Call this before create-page to discover valid `template` values. The web catalog always includes `BaseDashboardTemplate` (title `Dashboard`, groupName `DashboardPage`) — use it as the `template` for a dashboard. Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
+	[Description("List Freedom UI page templates advertised by the target Creatio environment. Call this before create-page to discover valid `template` values. The web catalog always includes `BaseDashboardTemplate` (title `Dashboard`, groupName `DashboardPage`) — use it as the `template` for a dashboard — and `CentralAreaDesktopTemplate` (title `Desktop`, groupName `Desktop`) — use it as the `template` for a desktop (see get-guidance `desktop-page`). Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
 	public PageTemplateListResponse ListPageTemplates(
-		[Description("Optional schema-type filter ('web' or 'mobile'); environment-name preferred; uri/login/password emergency fallback only.")]
+		[Description("Optional schema-type filter ('web', 'mobile' or 'desktop'); environment-name preferred; uri/login/password emergency fallback only.")]
 		PageTemplatesListArgs args) {
 		args ??= new PageTemplatesListArgs(null, null, null, null, null);
 		PageTemplatesListOptions options = new() {
@@ -33,7 +33,7 @@ public sealed class PageTemplatesListTool(
 			// bad schema-type is reported as a schema-type error instead of being masked by an
 			// environment-resolution failure (ENG-91825 env-validation order).
 			if (!string.IsNullOrWhiteSpace(options.SchemaType) &&
-				!PageTemplatesListCommand.TryParseSchemaType(options.SchemaType, out _, out string schemaTypeError)) {
+				!PageTemplatesListCommand.TryParseTemplateFilter(options.SchemaType, out _, out _, out string schemaTypeError)) {
 				return new PageTemplateListResponse { Success = false, Error = schemaTypeError };
 			}
 
@@ -51,7 +51,7 @@ public sealed class PageTemplatesListTool(
 
 public sealed record PageTemplatesListArgs(
 	[property: JsonPropertyName("schema-type")]
-	[property: Description("Optional schema-type filter: 'web' (Freedom UI page) or 'mobile' (mobile page). Defaults to all.")]
+	[property: Description("Optional schema-type filter: 'web' (Freedom UI page), 'mobile' (mobile page) or 'desktop' (web templates with group Desktop). Defaults to all.")]
 	string? SchemaType,
 
 	[property: JsonPropertyName("environment-name")]

@@ -17,7 +17,7 @@ namespace Clio.Command {
 		[Option("schema-name", Required = true, HelpText = "New page schema name, e.g. 'UsrMyApp_BlankPage'")]
 		public string SchemaName { get; set; }
 
-		[Option("template", Required = true, HelpText = "Template name or UId from list-page-templates (e.g. 'BlankPageTemplate')")]
+		[Option("template", Required = true, HelpText = "Template name or UId from list-page-templates (e.g. 'BlankPageTemplate'). For a desktop page use 'CentralAreaDesktopTemplate'")]
 		public string Template { get; set; }
 
 		[Option("package-name", Required = true, HelpText = "Target package name that will own the new page schema")]

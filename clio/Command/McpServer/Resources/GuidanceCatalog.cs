@@ -159,6 +159,10 @@ internal static class GuidanceCatalog {
 				"mobile-page-modification",
 				"Mobile-specific differences from the base page-modification guidance: plain JSON body format (no AMD), Scaffold root element rules, mobile component registry, naming conventions, and template hierarchy.",
 				MobilePageGuidanceResource.Guide),
+			["desktop-page"] = Create(
+				"desktop-page",
+				"Canonical MCP guidance for Creatio desktop pages (desktop-selector workspaces): create-page with template CentralAreaDesktopTemplate, the Desktop schema-group invariant, automatic Desktop-entity registration by the platform, the FixedGridSlot_qwe4asds editable-slot rule, and record-rights-based selector visibility.",
+				DesktopPageGuidanceResource.Guide),
 			["sys-settings"] = Create(
 				"sys-settings",
 				"""

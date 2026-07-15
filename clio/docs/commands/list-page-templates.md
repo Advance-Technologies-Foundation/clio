@@ -28,6 +28,11 @@ Freedom UI dashboard page. It appears with `title` `Dashboard` (its
 `groupName` is `DashboardPage`) and is a valid `--template` value for
 `create-page`.
 
+The web catalog also always includes `CentralAreaDesktopTemplate`, the
+parent for a desktop page (a desktop-selector workspace). It appears with
+`title` `Desktop` and `groupName` `Desktop`, and is the default template
+when creating a desktop page with `create-page --template CentralAreaDesktopTemplate`.
+
 ## Synopsis
 
 ```bash
@@ -37,8 +42,10 @@ clio list-page-templates [options]
 ## Options
 
 ```bash
---schema-type                      Optional filter: 'web' (FreedomUIPage=9)
-                                   or 'mobile' (MobilePage=10). Defaults to all
+--schema-type                      Optional filter: 'web' (FreedomUIPage=9),
+                                   'mobile' (MobilePage=10) or 'desktop'
+                                   (web templates whose group is Desktop).
+                                   Defaults to all
 
 --uri                    -u       Application uri
 
@@ -62,6 +69,9 @@ list only web Freedom UI templates visible in the dev environment
 
 clio list-page-templates --schema-type mobile -e dev
 list only mobile Freedom UI templates visible in the dev environment
+
+clio list-page-templates --schema-type desktop -e dev
+list only Desktop-group templates (the valid create-page desktop parents)
 ```
 
 ## Reporting Bugs

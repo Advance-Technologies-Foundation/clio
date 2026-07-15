@@ -1946,4 +1946,104 @@ public sealed class McpGuidanceResourceTests {
 		article.Text.Should().Contain("runs a business process",
 			because: "the routing row must be keyed to the task wording so the agent recognizes it");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the canonical desktop-page guide carrying the ENG-90489 invariants: the Desktop group trigger, automatic selector registration, the FixedGridSlot container rule, and record-rights visibility.")]
+	public void DesktopPageGuidanceResource_Should_Return_Canonical_Desktop_Page_Guide() {
+		// Arrange
+		DesktopPageGuidanceResource resource = new();
+
+		// Act
+		TextResourceContents article = resource.GetGuide().Should().BeOfType<TextResourceContents>().Subject;
+
+		// Assert
+		article.Uri.Should().Be("docs://mcp/guides/desktop-page",
+			because: "the guide must be addressable at its canonical docs URI");
+		article.Text.Should().Contain("schema group `Desktop`",
+			because: "the guide must state that the schema group — not the parent template — triggers platform registration");
+		article.Text.Should().Contain("DesktopAppEventListener",
+			because: "the guide must name the platform mechanism so the agent trusts that registration is automatic");
+		article.Text.Should().Contain("template: \"CentralAreaDesktopTemplate\"",
+			because: "the guide must teach that a desktop is created from the CentralAreaDesktopTemplate, like any other page");
+		article.Text.Should().Contain("Do NOT insert, update, or delete `Desktop` entity rows manually",
+			because: "a manual Desktop row duplicates the platform-owned registration and corrupts the selector");
+		article.Text.Should().Contain("FixedGridSlot_qwe4asds",
+			because: "the guide owns the desktop-only editable-slot rule moved out of the containers guide (ENG-90489)");
+		article.Text.Should().Contain("RECORD-RIGHTS operation",
+			because: "restricting a desktop to roles is a record-rights change on the Desktop record, not a page edit");
+		article.Text.Should().Contain("Do NOT call `compile-creatio`",
+			because: "client-unit schema changes need no compilation and the guide must repeat the core invariant");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("GuidanceCatalog exposes desktop-page so AI callers can retrieve the desktop guidance by name (ENG-90489).")]
+	public void GuidanceCatalog_Should_Include_Desktop_Page_Entry() {
+		// Act
+		bool found = GuidanceCatalog.TryGet("desktop-page", out GuidanceCatalogEntry entry);
+
+		// Assert
+		found.Should().BeTrue(
+			because: "the catalog must expose desktop-page so get-guidance can return it by name");
+		entry.Name.Should().Be("desktop-page",
+			because: "the catalog entry name must match the lookup key exactly");
+		entry.Article.Uri.Should().Be("docs://mcp/guides/desktop-page",
+			because: "the article URI in the catalog must match the resource URI");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The routing map points desktop-page tasks at the desktop-page guide so an agent reaches it from the Pages domain (ENG-90489).")]
+	public void RoutingGuidanceResource_Should_Route_Desktop_Page_Task() {
+		// Arrange
+		RoutingGuidanceResource resource = new();
+
+		// Act
+		TextResourceContents article = resource.GetGuide().Should().BeOfType<TextResourceContents>().Subject;
+
+		// Assert
+		article.Text.Should().Contain("name=desktop-page",
+			because: "the routing map must direct the agent to the desktop-page guide");
+		article.Text.Should().Contain("desktop-selector workspace",
+			because: "the routing row must be keyed to the task wording so the agent recognizes a desktop request");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The containers sub-guide keeps only a pointer to desktop-page for the desktop slot rule; the temporary ENG-90489 inline rule and its TODO marker are gone.")]
+	public void PageModificationContainersGuidanceResource_Should_Point_Desktop_Rule_To_Desktop_Page_Guide() {
+		// Arrange
+		PageModificationContainersGuidanceResource resource = new();
+
+		// Act
+		TextResourceContents article = resource.GetGuide().Should().BeOfType<TextResourceContents>().Subject;
+
+		// Assert
+		article.Text.Should().Contain("desktop-page",
+			because: "the containers guide must route desktop container placement to the dedicated guide");
+		article.Text.Should().Contain("FixedGridSlot_qwe4asds",
+			because: "the pointer must name the slot so an agent scanning the containers guide still recognizes the desktop case");
+		article.Text.Should().NotContain("TODO(ENG-90489)",
+			because: "the temporary marker must be removed once the dedicated desktop guide ships");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The page-modification gate (STEP 0) carries a desktop pointer at desktop-page, mirroring the mobile pass (ENG-90489 routing pointer requirement).")]
+	public void PageModificationGuidanceResource_Should_Carry_Desktop_Pointer_In_Step0() {
+		// Arrange
+		PageModificationGuidanceResource resource = new();
+
+		// Act
+		TextResourceContents article = resource.GetGuide().Should().BeOfType<TextResourceContents>().Subject;
+
+		// Assert
+		article.Text.Should().Contain("DESKTOP page",
+			because: "the pre-edit gate must route desktop pages before any body work, like the mobile pass does");
+		article.Text.Should().Contain("read `desktop-page` first",
+			because: "the desktop pointer must name the guide to read first");
+		article.Text.Should().Contain("CentralAreaDesktopTemplate",
+			because: "the pointer must be keyed to the desktop parent template so the agent recognizes the page kind");
+	}
 }

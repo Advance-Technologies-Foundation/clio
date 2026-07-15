@@ -162,7 +162,7 @@ public sealed class ChartWidgetGuidanceResource {
 		       - On a DESKTOP page whose parent is `CentralAreaDesktopTemplate`, insert the chart into the slot
 		         `FixedGridSlot_qwe4asds` (the template's editable area; an ~8-column, 60px-row grid — fixed name, not a
 		         per-page id), NOT the top `Main` (the template's locked frame) — else the chart can't be moved, resized,
-		         or deleted in the designer. `parentName: "FixedGridSlot_qwe4asds"`. See `page-modification`.
+		         or deleted in the designer. `parentName: "FixedGridSlot_qwe4asds"`. See `desktop-page`.
 		       - Before saving, validate each series' aggregation + filter with `execute-esq` against the
 		         target environment to confirm the returned data matches the intended metric. For a by-date-part
 		         chart, sanity-check the periods against the real data — a single period is FINE when the data
