@@ -1,6 +1,6 @@
 # IIS HTTPS deployment story
 
-Status: review
+Status: done
 Issue: #887
 
 As a Windows developer, I want clio to use an installed machine certificate for IIS deployments when available, so HTTPS works for both .NET Framework and .NET 8 without making certificate absence block local development.

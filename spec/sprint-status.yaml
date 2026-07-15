@@ -2011,7 +2011,7 @@ stories:
     feature: "iis-https-deployment"
     repo: "clio"
     size: L
-    status: review
+    status: done
     issue: 887
     file: spec/iis-https-deployment/iis-https-deployment-story.md
     prd: spec/iis-https-deployment/iis-https-deployment-prd.md
