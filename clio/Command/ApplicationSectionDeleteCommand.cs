@@ -37,6 +37,20 @@ public interface IApplicationSectionDeleteService {
 	/// <param name="request">Section delete request payload.</param>
 	/// <returns>Structured result with deleted section metadata.</returns>
 	ApplicationSectionDeleteResult DeleteSection(string environmentName, ApplicationSectionDeleteRequest request);
+
+	/// <summary>
+	/// Deletes a section from an existing installed application against an already-resolved
+	/// environment. Behaves identically to <see cref="DeleteSection(string, ApplicationSectionDeleteRequest)"/>
+	/// except it never consults <see cref="Clio.UserEnvironment.ISettingsRepository"/> — the caller
+	/// supplies the settings directly (e.g. an MCP passthrough tenant resolved from request headers) —
+	/// and the nested application lookup uses the settings-based overload of
+	/// <see cref="IApplicationInfoService"/>, never the name-based one (ENG-93347, ADR OQ-01 c1 rule).
+	/// </summary>
+	/// <param name="environmentSettings">The already-resolved environment settings; must not be <c>null</c>.</param>
+	/// <param name="request">Section delete request payload.</param>
+	/// <returns>Structured result with deleted section metadata.</returns>
+	/// <exception cref="ArgumentNullException"><paramref name="environmentSettings"/> is <c>null</c>.</exception>
+	ApplicationSectionDeleteResult DeleteSection(EnvironmentSettings environmentSettings, ApplicationSectionDeleteRequest request);
 }
 
 /// <summary>
@@ -73,9 +87,36 @@ public sealed class ApplicationSectionDeleteService(
 				EnvironmentNotFoundError.Build(environmentName, settingsRepository));
 		}
 
+		// The name-based path keeps its pre-change nested call byte-for-byte (name-based application
+		// lookup) so stdio / registered-environment behavior is untouched (ENG-93347 AC-05).
+		return DeleteSectionCore(
+			environmentSettings,
+			request,
+			() => applicationInfoService.FindApplicationId(environmentName, request.ApplicationCode));
+	}
+
+	/// <inheritdoc />
+	public ApplicationSectionDeleteResult DeleteSection(EnvironmentSettings environmentSettings, ApplicationSectionDeleteRequest request) {
+		ArgumentNullException.ThrowIfNull(environmentSettings);
+		ArgumentNullException.ThrowIfNull(request);
+		ValidateRequest(request);
+
+		// ADR OQ-01 (c1) rule: a settings-based overload never calls a name-based overload or
+		// ISettingsRepository — the nested application lookup goes through the Story-2
+		// settings-based overload.
+		return DeleteSectionCore(
+			environmentSettings,
+			request,
+			() => applicationInfoService.FindApplicationId(environmentSettings, request.ApplicationCode));
+	}
+
+	private ApplicationSectionDeleteResult DeleteSectionCore(
+		EnvironmentSettings environmentSettings,
+		ApplicationSectionDeleteRequest request,
+		Func<InstalledAppSummary> findApplication) {
 		IApplicationClient client = applicationClientFactory.CreateEnvironmentClient(environmentSettings);
 		logger.WriteInfo($"Resolving application '{request.ApplicationCode}'...");
-		InstalledAppSummary appSummary = applicationInfoService.FindApplicationId(environmentName, request.ApplicationCode);
+		InstalledAppSummary appSummary = findApplication();
 		string applicationId = appSummary.Id;
 		logger.WriteInfo($"Application found: {appSummary.Name} ({appSummary.Code})");
 		logger.WriteInfo($"Looking up section '{request.SectionCode}'...");

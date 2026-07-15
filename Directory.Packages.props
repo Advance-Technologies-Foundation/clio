@@ -36,6 +36,23 @@ See docs: https://devblogs.microsoft.com/dotnet/introducing-central-package-mana
     <PackageVersion Include="Microsoft.Extensions.Configuration.FileExtensions" Version="$(MsPackageVersion)" />
     <PackageVersion Include="Microsoft.Extensions.Configuration.Json" Version="$(MsPackageVersion)" />
     <PackageVersion Include="Microsoft.AspNetCore.SignalR.Client" Version="$(MsPackageVersion)" />
+    <!-- JwtBearer ships per ASP.NET Core major (10.0.x is net10-only); pin per TFM so the
+         net8.0 target restores a net8-compatible build (ENG-93386).
+         NOTE (runtime hygiene): clio references ASP.NET Core via <FrameworkReference Include="Microsoft.AspNetCore.App" />,
+         so the Kestrel/JwtBearer assemblies actually LOADED come from the installed shared runtime, not this pin —
+         this version is effectively a build-time floor, not the operative security control. The mcp-http OAuth edge
+         exposes a public Kestrel endpoint, and CVE-2025-55315 (request-smuggling / security-feature-bypass, CVSS 9.9)
+         affects ASP.NET Core 8 runtimes <= 8.0.20. The real control is deploying on a PATCHED runtime:
+         .NET 8 >= 8.0.21 (current servicing) or .NET 10 >= 10.0.9. See docs/commands/mcp-http.md (Deployment / runtime). -->
+    <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="$(MsPackageVersion)"
+                    Condition="'$(TargetFramework)' == 'net10.0'" />
+    <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.11"
+                    Condition="'$(TargetFramework)' != 'net10.0'" />
+    <!-- Test-only in-memory ASP.NET Core pipeline (ENG-93386); same per-TFM split as JwtBearer above. -->
+    <PackageVersion Include="Microsoft.AspNetCore.TestHost" Version="$(MsPackageVersion)"
+                    Condition="'$(TargetFramework)' == 'net10.0'" />
+    <PackageVersion Include="Microsoft.AspNetCore.TestHost" Version="8.0.11"
+                    Condition="'$(TargetFramework)' != 'net10.0'" />
     <PackageVersion Include="System.Security.Cryptography.Xml" Version="$(MsPackageVersion)" />
     <PackageVersion Include="System.IO.Abstractions" Version="$(SIOVersion)" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="5.6.0" />

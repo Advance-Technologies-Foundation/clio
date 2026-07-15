@@ -69,9 +69,12 @@ public class CreateThemeTool(
 		return ExecuteResolved<CreateThemeCommand, CreateThemeResult>(options,
 			resolvedCommand => {
 				if (!resolvedCommand.TryCreateTheme(options, out string createdId, out string errorMessage)) {
+					// Review (b-horodyskyi): errorMessage can carry a server-supplied ThemeService error body
+					// (ThemeServiceResponseParser/ThemeServiceResponse), so redact it the same as an exception
+					// message before it crosses into the MCP client transcript.
 					return CreateThemeResult.Failure(string.IsNullOrWhiteSpace(errorMessage)
 						? "CreateTheme returned success=false."
-						: errorMessage);
+						: SensitiveErrorTextRedactor.Redact(errorMessage));
 				}
 				return CreateThemeResult.Successful(createdId);
 			},

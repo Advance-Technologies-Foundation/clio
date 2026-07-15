@@ -111,6 +111,33 @@ namespace Clio
 			}
 		}
 
+		// Credential-passthrough secret fields (FR-01/FR-02/FR-18). Carried on an ephemeral,
+		// per-request EnvironmentSettings only; mirror the SimpleloginUri secret discipline
+		// ([YamlIgnore] + [Newtonsoft.Json.JsonIgnore]) so they are never persisted to
+		// appsettings.json and never appear in ShowSettingsTo output. Also [System.Text.Json...JsonIgnore]
+		// (review, belt-and-suspenders) so a future System.Text.Json serialization of these settings — the
+		// serializer the MCP tool DTOs use — can never emit the transient token/cookie either.
+		[YamlIgnore]
+		[Newtonsoft.Json.JsonIgnore]
+		[System.Text.Json.Serialization.JsonIgnore]
+		public string AccessToken {
+			get; set;
+		}
+
+		[YamlIgnore]
+		[Newtonsoft.Json.JsonIgnore]
+		[System.Text.Json.Serialization.JsonIgnore]
+		public string AccessTokenType {
+			get; set;
+		} = Clio.Common.AuthenticationScheme.Bearer;
+
+		[YamlIgnore]
+		[Newtonsoft.Json.JsonIgnore]
+		[System.Text.Json.Serialization.JsonIgnore]
+		public string Cookie {
+			get; set;
+		}
+
 		internal void Merge(EnvironmentSettings environment) {
 			if (!string.IsNullOrEmpty(environment.Login)) {
 				Login = environment.Login;

@@ -6,23 +6,29 @@ using System.Text.Json.Serialization;
 namespace Clio.Command.McpServer.Tools;
 
 /// <summary>
-/// MCP arguments for the <c>list-apps</c> tool.
+/// MCP arguments for the <c>list-apps</c> tool. <c>environment-name</c> is schema-optional (FR-05a,
+/// ENG-93347): under credential passthrough the target tenant comes from the
+/// <c>X-Integration-Credentials</c> header, while on non-passthrough transports runtime requiredness
+/// is enforced by the resolver (<see cref="EnvironmentResolutionException"/> when no environment or
+/// URI is resolvable).
 /// </summary>
 public sealed record ApplicationGetListArgs(
 	[property: JsonPropertyName("environment-name")]
-	[property: Description(McpToolDescriptions.EnvironmentName)]
-	[property: Required]
+	[property: Description(McpToolDescriptions.EnvironmentName + " Optional under credential passthrough.")]
 	string? EnvironmentName = null
 );
 
 /// <summary>
-/// MCP arguments for the <c>get-app-info</c> tool.
+/// MCP arguments for the <c>get-app-info</c> tool. <c>environment-name</c> is schema-optional (FR-05a,
+/// ENG-93347): under credential passthrough the target tenant comes from the
+/// <c>X-Integration-Credentials</c> header, while on non-passthrough transports runtime requiredness
+/// is enforced by the resolver (<see cref="EnvironmentResolutionException"/> when no environment or
+/// URI is resolvable).
 /// </summary>
 public sealed record ApplicationGetInfoArgs(
 	[property: JsonPropertyName("environment-name")]
-	[property: Description(McpToolDescriptions.EnvironmentName)]
-	[property: Required]
-	string EnvironmentName,
+	[property: Description(McpToolDescriptions.EnvironmentName + " Optional under credential passthrough.")]
+	string? EnvironmentName = null,
 
 	[property: JsonPropertyName("id")]
 	[property: Description("Application ID (GUID). Optional filter.")]
@@ -34,14 +40,14 @@ public sealed record ApplicationGetInfoArgs(
 );
 
 /// <summary>
-/// MCP arguments for the <c>create-app</c> tool.
+/// MCP arguments for the <c>create-app</c> tool. <c>environment-name</c> is schema-optional (FR-05a,
+/// ENG-93347): under credential passthrough the target tenant comes from the
+/// <c>X-Integration-Credentials</c> header, while on non-passthrough transports runtime requiredness
+/// is enforced by the resolver (<see cref="EnvironmentResolutionException"/> when no environment or
+/// URI is resolvable). Declared after the required <c>name</c>/<c>code</c> parameters because C#
+/// optional parameters must follow required ones; every call site uses named arguments.
 /// </summary>
 public sealed record ApplicationCreateArgs(
-	[property: JsonPropertyName("environment-name")]
-	[property: Description(McpToolDescriptions.EnvironmentName)]
-	[property: Required]
-	string EnvironmentName,
-
 	[property: JsonPropertyName("name")]
 	[property: Description("Application display name, e.g. 'My App'")]
 	[property: Required]
@@ -57,6 +63,10 @@ public sealed record ApplicationCreateArgs(
 		"Creatio derives the package name, main entity schema name, and page schema names ({prefix}{code}_FormPage, {prefix}{code}_ListPage, etc.) directly from this code.")]
 	[property: Required]
 	string Code,
+
+	[property: JsonPropertyName("environment-name")]
+	[property: Description(McpToolDescriptions.EnvironmentName + " Optional under credential passthrough.")]
+	string? EnvironmentName = null,
 
 	[property: JsonPropertyName("template-code")]
 	[property: Description("Technical template name (NOT display name). Known values: AppFreedomUI, AppFreedomUIv2, AppWithHomePage, EmptyApp. Defaults to AppFreedomUI when omitted — use this default unless you have a specific reason to change it.")]
@@ -118,14 +128,14 @@ public sealed record ApplicationOptionalTemplateDataJsonArgs(
 	string? AppSectionDescription = null);
 
 /// <summary>
-/// MCP arguments for the <c>create-app-section</c> tool.
+/// MCP arguments for the <c>create-app-section</c> tool. <c>environment-name</c> is schema-optional (FR-05a,
+/// ENG-93347): under credential passthrough the target tenant comes from the
+/// <c>X-Integration-Credentials</c> header, while on non-passthrough transports runtime requiredness
+/// is enforced by the resolver (<see cref="EnvironmentResolutionException"/> when no environment or
+/// URI is resolvable). Declared after the required <c>application-code</c>/<c>caption</c> parameters
+/// because C# optional parameters must follow required ones; every call site uses named arguments.
 /// </summary>
 public sealed record ApplicationSectionCreateArgs(
-	[property: JsonPropertyName("environment-name")]
-	[property: Description(McpToolDescriptions.EnvironmentName)]
-	[property: Required]
-	string EnvironmentName,
-
 	[property: JsonPropertyName("application-code")]
 	[property: Description("Installed application code.")]
 	[property: Required]
@@ -134,7 +144,11 @@ public sealed record ApplicationSectionCreateArgs(
 	[property: JsonPropertyName("caption")]
 	[property: Description("Section caption, e.g. 'Orders'")]
 	[property: Required]
-	string Caption = "",
+	string Caption,
+
+	[property: JsonPropertyName("environment-name")]
+	[property: Description(McpToolDescriptions.EnvironmentName + " Optional under credential passthrough.")]
+	string? EnvironmentName = null,
 
 	[property: JsonPropertyName("description")]
 	[property: Description("Optional section description")]
@@ -181,11 +195,6 @@ public sealed record ApplicationSectionCreateArgs(
 /// MCP arguments for the <c>delete-app-section</c> tool.
 /// </summary>
 public sealed record ApplicationSectionDeleteArgs(
-	[property: JsonPropertyName("environment-name")]
-	[property: Description(McpToolDescriptions.EnvironmentName)]
-	[property: Required]
-	string EnvironmentName,
-
 	[property: JsonPropertyName("application-code")]
 	[property: Description("Installed application code.")]
 	[property: Required]
@@ -195,36 +204,40 @@ public sealed record ApplicationSectionDeleteArgs(
 	[property: Description("Existing section code inside the installed application.")]
 	[property: Required]
 	string SectionCode,
+
+	[property: JsonPropertyName("environment-name")]
+	[property: Description(McpToolDescriptions.EnvironmentName + " Optional under credential passthrough.")]
+	string? EnvironmentName = null,
 
 	[property: JsonPropertyName("delete-entity-schema")]
 	[property: Description("When true, also deletes the entity schema record. Requires explicit opt-in. WARNING: destructive and irreversible.")]
-	bool? DeleteEntitySchema
+	bool? DeleteEntitySchema = null
 );
 
 /// <summary>
-/// MCP arguments for the <c>application-section-get-list</c> tool.
+/// MCP arguments for the <c>list-app-sections</c> tool.
 /// </summary>
 public sealed record ApplicationSectionGetListArgs(
-	[property: JsonPropertyName("environment-name")]
-	[property: Description(McpToolDescriptions.EnvironmentName)]
-	[property: Required]
-	string EnvironmentName,
-
 	[property: JsonPropertyName("application-code")]
 	[property: Description("Installed application code.")]
 	[property: Required]
-	string ApplicationCode
+	string ApplicationCode,
+
+	[property: JsonPropertyName("environment-name")]
+	[property: Description(McpToolDescriptions.EnvironmentName + " Optional under credential passthrough.")]
+	string? EnvironmentName = null
 );
 
 /// <summary>
-/// MCP arguments for the <c>update-app-section</c> tool.
+/// MCP arguments for the <c>update-app-section</c> tool. <c>environment-name</c> is schema-optional
+/// (FR-05a, ENG-93347): under credential passthrough the target tenant comes from the
+/// <c>X-Integration-Credentials</c> header, while on non-passthrough transports runtime requiredness
+/// is enforced by the resolver (<see cref="EnvironmentResolutionException"/> when no environment or
+/// URI is resolvable). Declared after the required <c>application-code</c>/<c>section-code</c>
+/// parameters because C# optional parameters must follow required ones; every call site uses named
+/// arguments.
 /// </summary>
 public sealed record ApplicationSectionUpdateArgs(
-	[property: JsonPropertyName("environment-name")]
-	[property: Description(McpToolDescriptions.EnvironmentName)]
-	[property: Required]
-	string EnvironmentName,
-
 	[property: JsonPropertyName("application-code")]
 	[property: Description("Installed application code.")]
 	[property: Required]
@@ -234,6 +247,10 @@ public sealed record ApplicationSectionUpdateArgs(
 	[property: Description("Existing section code inside the installed application.")]
 	[property: Required]
 	string SectionCode,
+
+	[property: JsonPropertyName("environment-name")]
+	[property: Description(McpToolDescriptions.EnvironmentName + " Optional under credential passthrough.")]
+	string? EnvironmentName = null,
 
 	[property: JsonPropertyName("caption")]
 	[property: Description("Optional updated section caption.")]
