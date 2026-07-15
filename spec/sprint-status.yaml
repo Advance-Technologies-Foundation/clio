@@ -1996,7 +1996,7 @@ stories:
     feature: "dbhub-integration"
     repo: "clio"
     size: L
-    status: review
+    status: done
     issue: 882
     file: spec/dbhub-integration/dbhub-integration-story.md
     prd: spec/dbhub-integration/dbhub-integration-prd.md

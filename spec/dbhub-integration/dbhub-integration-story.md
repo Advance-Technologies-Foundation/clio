@@ -5,7 +5,7 @@
 **FR coverage**: FR-01 through FR-18
 **PRD**: [dbhub-integration-prd.md](dbhub-integration-prd.md)
 **ADR**: [dbhub-integration-adr.md](dbhub-integration-adr.md)
-**Status**: review
+**Status**: done
 **Size**: L
 
 ---
