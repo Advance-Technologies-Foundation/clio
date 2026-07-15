@@ -19,7 +19,7 @@
 
 ### Out of scope
 
-- Real cloud environments, SQL Server integrated identity, dbHub restart behavior, and MCP-exposed workstation installation/manual sync.
+- Real cloud environments, SQL Server integrated identity, and MCP-exposed workstation installation/manual sync.
 
 ## Risk Assessment
 
@@ -39,7 +39,7 @@
 | TC-U-01 | dbHub settings default disabled/no path and explicit values round-trip through repository |
 | TC-U-02 | install validation rejects non-Windows, non-loopback host, invalid port, missing/old Node, and missing npm with actionable messages |
 | TC-U-03 | installer installs exact `@bytebase/dbhub@0.23.0` only when absent and resolves shim through `npm prefix -g` |
-| TC-U-04 | compatible install/task/config adopts as no-op; unsafe/mismatched owned launcher/task repairs idempotently |
+| TC-U-04 | compatible install/task/config proves exact task identity before adoption; unsafe or mismatched listeners fail closed and task repair restarts the verified owned process |
 | TC-U-05 | port conflict, task failure, health failure, and MCP failure report the failing step without secrets |
 | TC-U-06 | source IDs normalize to lowercase underscore form; raw and normalized collisions are refused |
 | TC-U-07 | PostgreSQL and SQL Server builders map correct individual fields and escape TOML strings |
@@ -63,7 +63,7 @@
 | TC-I-01 | real temp TOML add/update/remove preserves manual sources, comments, ordering, tools, and unknown fields |
 | TC-I-02 | candidate parse failure/write failure leaves original byte-identical and cleans temporary files |
 | TC-I-03 | concurrent mutation serializes without lost updates and an unavailable lock times out safely |
-| TC-I-04 | existing file ACL/mode is preserved and symlink/reparse targets are refused |
+| TC-I-04 | existing file ACL/mode is preserved, new credential files receive a protected owner/system/admin ACL, and UNC/device/reparse ancestors are refused |
 | TC-I-05 | generated Scheduled Task XML carries hidden logon trigger, current-user principal, absolute shim, explicit loopback/port/config, and safe quoting |
 | TC-I-06 | settings JSON schema accepts valid dbHub settings and rejects invalid host/port/types |
 
@@ -75,7 +75,11 @@
 | TC-E-02 | uninstall automatic removal failure does the same and still unregisters |
 | TC-E-03 | mirrored contract fixture includes warning vocabulary and remains ordered/byte compatible |
 
-Run TC-E locally for both net8.0 and net10.0; do not wait for TeamCity MCP E2E.
+TC-E-01 through TC-E-03 are non-destructive contract tests suitable for CI. The archive-backed
+`DbHubLifecycleWarningE2ETests` fixture is separate developer-local evidence: it is marked NUnit
+`Explicit` plus `LocalOnly`, requires destructive opt-in and a configured sandbox, and has an
+additional hard guard that skips whenever `TEAMCITY_VERSION` is present. It must never be added to
+the TeamCity pipeline. Run it manually on the developer workstation for net8.0 and net10.0 only.
 
 ## Local Runtime Validation
 
@@ -90,6 +94,9 @@ Run TC-E locally for both net8.0 and net10.0; do not wait for TeamCity MCP E2E.
 - Verified online deploy hot-adds the Creatio PostgreSQL source, returns HTTP 200 from the deployed site, and produces credential-free output.
 - Verified dbHub 0.23.0 rejects PostgreSQL `prefer`/`allow` TLS modes and an empty source inventory; the implementation maps those modes to supported values and maintains a marked lazy in-memory `clio_control` source.
 - Ran the destructive MCP uninstall scenario locally: it returned success-with-warnings for the independent profile warning, preserved strict stage order, removed the exact managed dbHub source, and hot-reloaded dbHub back to only `clio_control`.
+- Repeated the strict destructive MCP uninstall scenario after rebasing onto merged issue #881 under both net10.0 and net8.0 test hosts (1/1 each). Each disposable stand returned HTTP 200 before uninstall, had a registered IIS virtual-account profile and live managed dbHub source, then removed the site, files, database, environment registration, profile, and exact source.
+- Added and ran `DbHubLifecycleWarningE2ETests` under both net10.0 and net8.0 (1/1 each) with isolated settings, IIS roots, ports, and the supplied Creatio archive. Each real MCP run deployed with the configured dbHub endpoint offline, emitted `sync-dbhub-source` warning plus `success-with-warnings`, then uninstalled with `remove-dbhub-source` warning plus `success-with-warnings`.
+- Independently verified after each warning lifecycle run that the IIS site, application files, clio registration, PostgreSQL database, and managed TOML source were absent, then removed both isolated runtime roots.
 - Verified the disposable site, files, clio environment registration, managed TOML source, isolated settings, and isolated dbHub processes were removed after the run.
 
 ## Regression and Delivery Gates
@@ -100,14 +107,17 @@ dotnet test clio.tests/clio.tests.csproj --filter "Category=Unit"
 dotnet test clio.tests/clio.tests.csproj --filter "Category=Integration&FullyQualifiedName~DbHub"
 dotnet test clio.mcp.e2e/clio.mcp.e2e.csproj -c Release -f net8.0 --filter "FullyQualifiedName~DeployUninstallProgressTests"
 dotnet test clio.mcp.e2e/clio.mcp.e2e.csproj -c Release -f net10.0 --filter "FullyQualifiedName~DeployUninstallProgressTests"
+# Developer-local only; explicitly forbidden in TeamCity:
+dotnet test clio.mcp.e2e/clio.mcp.e2e.csproj -c Release -f net8.0 --filter "FullyQualifiedName~DbHubLifecycleWarningE2ETests"
+dotnet test clio.mcp.e2e/clio.mcp.e2e.csproj -c Release -f net10.0 --filter "FullyQualifiedName~DbHubLifecycleWarningE2ETests"
 dotnet test clio-ring/ClioRing.Tests/ClioRing.Tests.csproj -c Release
 dotnet publish clio-ring/ClioRing.Desktop/ClioRing.Desktop.csproj -c Release -r win-x64 --self-contained true -p:PublishAot=true
 ```
 
 ## Definition of Done for QA
 
-- [ ] Every TC-U and TC-I case is implemented and green.
-- [ ] Relevant TC-E cases pass locally on both target frameworks.
-- [ ] Disposable runtime state is verified and cleaned or explicitly not required with evidence.
-- [ ] Full unit gate passes because shared `Common`, `BindingsModule`, and multiple modules change.
-- [ ] Ring tests and Windows x64 NativeAOT publish pass without IL2026/IL3050 warnings.
+- [x] Every TC-U and TC-I case is implemented and green.
+- [x] Relevant TC-E cases pass locally on both target frameworks.
+- [x] Disposable runtime state is verified and cleaned or explicitly not required with evidence.
+- [x] Full unit gate passes because shared `Common`, `BindingsModule`, and multiple modules change (6,059 passed and 25 skipped on each of net8.0 and net10.0).
+- [x] Ring tests and Windows x64 NativeAOT publish pass without IL2026/IL3050 warnings (101/101 tests plus successful Windows x64 publish).

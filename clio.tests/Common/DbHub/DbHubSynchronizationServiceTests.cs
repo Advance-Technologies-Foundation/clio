@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
 using Clio.Common.DbHub;
 using Clio.Tests.Command;
 using Clio.UserEnvironment;
@@ -180,6 +181,25 @@ public sealed class DbHubSynchronizationServiceTests : BaseClioModuleTests {
 	}
 
 	[Test]
+	[Description("Automatic deployment synchronization refuses two registered environments with the same normalized source id.")]
+	public void SynchronizeEnvironment_ShouldSkipNormalizedCollision() {
+		// Arrange
+		_settingsRepository.GetAllEnvironments().Returns(new Dictionary<string, EnvironmentSettings> {
+			["dev-one"] = new() { EnvironmentPath = "first" },
+			["dev one"] = new() { EnvironmentPath = "second" }
+		});
+
+		// Act
+		DbHubSyncResult result = _sut.SynchronizeEnvironment("dev one");
+
+		// Assert
+		result.Skipped.Should().BeTrue(because: "automatic sync must not steal another registered source identity");
+		result.Warning.ErrorCode.Should().Be("DBHUB_SOURCE_ID_COLLISION",
+			because: "the collision must use the same stable diagnostic as full reconciliation");
+		_tomlStore.DidNotReceive().Upsert(Arg.Any<string>(), Arg.Any<DbHubSourceDefinition>());
+	}
+
+	[Test]
 	[Description("Manual synchronization refuses a non-loopback endpoint configured outside the installer.")]
 	public void Synchronize_ShouldRefuseUnsafeEndpoint() {
 		// Arrange
@@ -217,7 +237,7 @@ public sealed class DbHubSynchronizationServiceTests : BaseClioModuleTests {
 	[Description("Automatic deployment synchronization converts unexpected integration errors into safe warnings.")]
 	public void SynchronizeEnvironment_ShouldReturnSafeWarning_WhenDependencyThrows() {
 		// Arrange
-		_settingsRepository.GetAllEnvironments().Returns(_ => throw new InvalidOperationException(
+		_settingsRepository.GetAllEnvironments().Returns(_ => throw new HttpRequestException(
 			"Password=super-secret-value"));
 
 		// Act

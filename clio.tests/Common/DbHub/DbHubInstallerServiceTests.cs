@@ -46,6 +46,8 @@ public sealed class DbHubInstallerServiceTests : BaseClioModuleTests {
 			Task.FromResult(ResultFor(call.Arg<ProcessExecutionOptions>())));
 		_taskManager.EnsureAndStart(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DbHubSettings>(), out Arg.Any<string>())
 			.Returns(call => { call[3] = null; return true; });
+		_taskManager.IsCompatible(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DbHubSettings>()).Returns(true);
+		_taskManager.StopIfExists(out Arg.Any<string>()).Returns(call => { call[0] = null; return true; });
 		_httpClient.VerifyServer(Arg.Any<DbHubSettings>()).Returns(new DbHubVerificationResult(true, true));
 		_sut = Container.GetRequiredService<IDbHubInstallerService>();
 	}
@@ -124,7 +126,7 @@ public sealed class DbHubInstallerServiceTests : BaseClioModuleTests {
 		// Arrange
 		_installedVersion = DbHubInstallerService.PinnedDbHubVersion;
 		DbHubInstallRequest request = Request();
-		const string userToml = "# user-owned\n[[sources]]\nid = \"manual\"\ntype = \"postgres\"\ndsn = \"postgres://manual\"\n";
+		const string userToml = "# user-owned\n[[sources]]\nid = \"manual\"\ntype = \"postgres\"\ndsn = \"postgres://manual\"\n[[tools]]\nname = \"execute_sql\"\nsource = \"manual\"\nreadonly = true\n";
 		File.WriteAllText(request.ConfigPath, userToml);
 
 		// Act
@@ -136,7 +138,8 @@ public sealed class DbHubInstallerServiceTests : BaseClioModuleTests {
 			options.Arguments.Contains("npm.cmd install", StringComparison.Ordinal)));
 		File.ReadAllText(request.ConfigPath).Should().Be(userToml,
 			because: "adoption must never rewrite an existing valid user configuration");
-		_taskManager.Received(1).EnsureAndStart(Arg.Any<string>(), Arg.Any<string>(),
+		_taskManager.DidNotReceive().StopIfExists(out Arg.Any<string>());
+		_taskManager.DidNotReceive().EnsureAndStart(Arg.Any<string>(), Arg.Any<string>(),
 			Arg.Any<DbHubSettings>(), out Arg.Any<string>());
 	}
 
@@ -177,6 +180,25 @@ public sealed class DbHubInstallerServiceTests : BaseClioModuleTests {
 			because: "failed adoption must leave the user's original file intact");
 		_taskManager.DidNotReceive().EnsureAndStart(Arg.Any<string>(), Arg.Any<string>(),
 			Arg.Any<DbHubSettings>(), out Arg.Any<string>());
+		_processExecutor.DidNotReceive().ExecuteAndCaptureAsync(Arg.Is<ProcessExecutionOptions>(options =>
+			options.Arguments.Contains("npm.cmd install", StringComparison.Ordinal)));
+	}
+
+	[Test]
+	[Description("Refuses to adopt a healthy listener that is not owned by the exact clio Scheduled Task.")]
+	public void InstallOrRepair_ShouldRejectUnownedHealthyListener() {
+		// Arrange
+		_taskManager.IsCompatible(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DbHubSettings>()).Returns(false);
+		DbHubInstallRequest request = Request();
+
+		// Act
+		DbHubInstallationResult result = _sut.InstallOrRepair(request);
+
+		// Assert
+		result.Success.Should().BeFalse(because: "a healthy response does not prove process ownership or config identity");
+		result.Message.Should().Contain("not owned", because: "the user needs to stop the conflicting listener");
+		_processExecutor.DidNotReceive().ExecuteAndCaptureAsync(Arg.Is<ProcessExecutionOptions>(options =>
+			options.Arguments.Contains("npm.cmd install", StringComparison.Ordinal)));
 	}
 
 	[Test]
@@ -203,6 +225,45 @@ public sealed class DbHubInstallerServiceTests : BaseClioModuleTests {
 			because: "the task must run only in the current user session without storing credentials");
 		document.Descendants(ns + "RunLevel").Single().Value.Should().Be("LeastPrivilege",
 			because: "dbHub does not require an elevated task");
+	}
+
+	[Test]
+	[Description("The exact generated Scheduled Task document satisfies every adoption invariant.")]
+	public void IsTaskDocumentCompatible_ShouldReturnTrue_ForGeneratedDocument() {
+		// Arrange
+		DbHubSettings settings = new() { ConfigPath = @"C:\Users\tester\dbhub.toml", Host = "127.0.0.1", Port = 7999 };
+		XDocument expected = DbHubScheduledTaskManager.CreateTaskDocument(@"C:\Program Files\nodejs\node.exe",
+			@"C:\npm\node_modules\@bytebase\dbhub\dist\index.js", settings);
+		XDocument actual = XDocument.Parse(expected.ToString());
+
+		// Act
+		bool compatible = DbHubScheduledTaskManager.IsTaskDocumentCompatible(actual, expected);
+
+		// Assert
+		compatible.Should().BeTrue(because: "an unchanged clio-created task must be adopted idempotently");
+	}
+
+	[TestCase("Enabled", "false")]
+	[TestCase("Hidden", "false")]
+	[TestCase("StartWhenAvailable", "false")]
+	[TestCase("ExecutionTimeLimit", "PT1H")]
+	[TestCase("MultipleInstancesPolicy", "Parallel")]
+	[Description("Scheduled Task adoption rejects drift in every required trigger and durability setting.")]
+	public void IsTaskDocumentCompatible_ShouldReturnFalse_WhenOwnedSettingDrifts(string elementName,
+		string driftedValue) {
+		// Arrange
+		DbHubSettings settings = new() { ConfigPath = @"C:\Users\tester\dbhub.toml", Host = "127.0.0.1", Port = 7999 };
+		XDocument expected = DbHubScheduledTaskManager.CreateTaskDocument(@"C:\Program Files\nodejs\node.exe",
+			@"C:\npm\node_modules\@bytebase\dbhub\dist\index.js", settings);
+		XDocument actual = XDocument.Parse(expected.ToString());
+		XNamespace ns = actual.Root.Name.Namespace;
+		actual.Descendants(ns + elementName).Single().Value = driftedValue;
+
+		// Act
+		bool compatible = DbHubScheduledTaskManager.IsTaskDocumentCompatible(actual, expected);
+
+		// Assert
+		compatible.Should().BeFalse(because: "a drifted owned task contract must be repaired before adoption");
 	}
 
 	[TestCase(true, true, DbHubScheduledTaskManager.LegacyTaskName, DbHubScheduledTaskManager.TaskName)]

@@ -36,8 +36,8 @@ public class UninstallCreatioTool(
 				 profile is returned as a warning with successful tool completion. When automatic
 				 dbHub synchronization is enabled, it removes the clio-owned source after cleanup
 				 and before unregistering; an offline or failed dbHub verification is also a
-				 non-fatal warning with success-with-warnings completion. A shared application
-				 pool and its profile are preserved.
+				 non-fatal warning with success-with-warnings completion.
+				 A shared application pool and its profile are preserved.
 
 				 The command reads the database connection string from ConnectionStrings.config
 				 in the Creatio installation directory and uses it to connect and drop the

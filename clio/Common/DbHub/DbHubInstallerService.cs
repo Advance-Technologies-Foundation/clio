@@ -5,11 +5,9 @@ using System.Net;
 using System.Net.NetworkInformation;
 using System.Runtime.InteropServices;
 using System.Security.Principal;
-using System.Text;
 using System.Threading;
 using System.Xml.Linq;
 using Newtonsoft.Json.Linq;
-using Tomlyn;
 
 namespace Clio.Common.DbHub;
 
@@ -21,6 +19,12 @@ public interface IDbHubInstallerService {
 
 /// <summary>Creates or repairs the current-user dbHub logon task.</summary>
 public interface IDbHubScheduledTaskManager {
+	/// <summary>Checks whether an existing clio-owned task has the exact requested process identity.</summary>
+	bool IsCompatible(string nodePath, string dbHubEntryPath, DbHubSettings settings);
+
+	/// <summary>Stops the adopted task before repair so listener ownership can be proven.</summary>
+	bool StopIfExists(out string error);
+
 	/// <summary>Ensures the task uses the supplied executable and settings, then starts it.</summary>
 	bool EnsureAndStart(string nodePath, string dbHubEntryPath, DbHubSettings settings, out string error);
 }
@@ -30,14 +34,14 @@ public sealed class DbHubInstallerService(
 	IProcessExecutor processExecutor,
 	IDbHubScheduledTaskManager scheduledTaskManager,
 	IDbHubHttpClient httpClient,
-	IDbHubAtomicFileWriter atomicFileWriter) : IDbHubInstallerService {
+	IDbHubTomlStore tomlStore) : IDbHubInstallerService {
 	/// <summary>Exact dbHub version installed by this clio release.</summary>
 	public const string PinnedDbHubVersion = "0.23.0";
 	private static readonly Version MinimumNodeVersion = new(22, 5);
 	private readonly IProcessExecutor _processExecutor = processExecutor;
 	private readonly IDbHubScheduledTaskManager _scheduledTaskManager = scheduledTaskManager;
 	private readonly IDbHubHttpClient _httpClient = httpClient;
-	private readonly IDbHubAtomicFileWriter _atomicFileWriter = atomicFileWriter;
+	private readonly IDbHubTomlStore _tomlStore = tomlStore;
 
 	/// <inheritdoc />
 	public DbHubInstallationResult InstallOrRepair(DbHubInstallRequest request) {
@@ -49,15 +53,6 @@ public sealed class DbHubInstallerService(
 		}
 		if (request.Port is < 1 or > 65535) {
 			return Failure("The dbHub port must be between 1 and 65535.");
-		}
-
-		ProcessExecutionResult node = Run("node", "--version");
-		if (!IsSupportedNode(node)) {
-			return Failure("Node.js 22.5 or later is required. Install it and ensure 'node' is on PATH.");
-		}
-		ProcessExecutionResult npm = RunNpm("--version");
-		if (!Succeeded(npm)) {
-			return Failure("npm is required. Install npm and ensure it is on PATH.");
 		}
 
 		DbHubSettings settings;
@@ -73,23 +68,19 @@ public sealed class DbHubInstallerService(
 		catch (Exception exception) when (exception is ArgumentException or NotSupportedException) {
 			return Failure("The dbHub config path is invalid.");
 		}
-		DbHubVerificationResult currentServer = _httpClient.VerifyServer(settings);
-		if (currentServer.Verified && HasWildcardListener(request.Port)) {
-			return Failure("An existing dbHub server is exposed beyond loopback. Stop it, then rerun install-dbhub so clio can repair it safely.");
-		}
-		if (!currentServer.Online && IsPortInUse(request.Port)) {
-			return Failure($"Port {request.Port} is already in use by another process. Choose another --port.");
+		DbHubSyncResult preflight = _tomlStore.ValidateForInstallation(settings.ConfigPath);
+		if (preflight.Warning is not null) {
+			return Failure(preflight.Warning.Detail ?? "The dbHub TOML file could not be validated.");
 		}
 
-		ProcessExecutionResult installed = RunNpm("list -g @bytebase/dbhub --depth=0 --json");
-		if (!IsPinnedInstallation(installed)) {
-			ProcessExecutionResult install = RunNpm($"install -g @bytebase/dbhub@{PinnedDbHubVersion}",
-				TimeSpan.FromMinutes(5));
-			if (!Succeeded(install)) {
-				return Failure($"dbHub {PinnedDbHubVersion} could not be installed with npm.");
-			}
+		ProcessExecutionResult node = Run("node", "--version");
+		if (!IsSupportedNode(node)) {
+			return Failure("Node.js 22.5 or later is required. Install it and ensure 'node' is on PATH.");
 		}
-
+		ProcessExecutionResult npm = RunNpm("--version");
+		if (!Succeeded(npm)) {
+			return Failure("npm is required. Install npm and ensure it is on PATH.");
+		}
 		ProcessExecutionResult prefixResult = RunNpm("prefix -g");
 		ProcessExecutionResult nodePathResult = Run("where.exe", "node.exe");
 		if (!Succeeded(prefixResult) || !Succeeded(nodePathResult)) {
@@ -100,22 +91,60 @@ public sealed class DbHubInstallerService(
 		string nodePath = nodePathResult.StandardOutput.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
 			.FirstOrDefault()?.Trim();
 		string entryPath = Path.Combine(prefix ?? string.Empty, "node_modules", "@bytebase", "dbhub", "dist", "index.js");
+		DbHubVerificationResult currentServer = _httpClient.VerifyServer(settings);
+		if (currentServer.Online && HasUnsafeListener(request.Port)) {
+			return Failure("An existing dbHub server is exposed beyond loopback. Stop it, then rerun install-dbhub so clio can repair it safely.");
+		}
+		if (currentServer.Verified && !_scheduledTaskManager.IsCompatible(nodePath, entryPath, settings)) {
+			return Failure("A healthy dbHub listener is not owned by the expected clio Scheduled Task. Stop it before installing or repairing dbHub.");
+		}
+		if (!currentServer.Verified && IsPortInUse(request.Port)) {
+			return Failure($"Port {request.Port} is already in use by another process. Choose another --port.");
+		}
+
+		ProcessExecutionResult installed = RunNpm("list -g @bytebase/dbhub --depth=0 --json");
+		bool packageChanged = !IsPinnedInstallation(installed);
+		if (packageChanged) {
+			ProcessExecutionResult install = RunNpm($"install -g @bytebase/dbhub@{PinnedDbHubVersion}",
+				TimeSpan.FromMinutes(5));
+			if (!Succeeded(install)) {
+				return Failure($"dbHub {PinnedDbHubVersion} could not be installed with npm.");
+			}
+		}
+
 		if (string.IsNullOrWhiteSpace(nodePath) || !File.Exists(entryPath)) {
 			return Failure("The installed dbHub package entry point could not be located.");
 		}
 
-		if (!EnsureConfigFile(settings.ConfigPath, out string configError)) {
-			return Failure(configError);
+		DbHubSyncResult runnable = _tomlStore.EnsureRunnable(settings.ConfigPath);
+		if (runnable.Warning is not null) {
+			return Failure(runnable.Warning.Detail ?? "The dbHub TOML file could not be prepared.");
 		}
+		if (currentServer.Verified && !packageChanged && !runnable.Changed) {
+			DbHubVerificationResult adopted = _httpClient.VerifyServer(settings);
+			return adopted.Verified && !HasUnsafeListener(request.Port)
+				? Success(settings)
+				: Failure("The adopted dbHub endpoint did not remain healthy exclusively on loopback.");
+		}
+		if (currentServer.Verified) {
+			if (!_scheduledTaskManager.StopIfExists(out string stopError)) {
+				return Failure(stopError);
+			}
+			if (!WaitForPortAvailable(request.Port)) {
+				return Failure("The healthy listener remained active after the owned clio task stopped. Stop the unowned process before repairing dbHub.");
+			}
+		}
+
 		if (!_scheduledTaskManager.EnsureAndStart(nodePath, entryPath, settings, out string taskError)) {
 			return Failure(taskError);
 		}
 
-		DbHubVerificationResult verification = currentServer.Verified ? currentServer : WaitForServer(settings);
-		return verification.Verified
-			? new DbHubInstallationResult(true,
-				$"dbHub is installed and healthy at http://{settings.Host}:{settings.Port}/mcp.", settings)
-			: Failure("dbHub was installed, but its /healthz or MCP endpoint did not become healthy.");
+		DbHubVerificationResult verification = WaitForServer(settings);
+		if (verification.Verified && !HasUnsafeListener(request.Port)) {
+			return Success(settings);
+		}
+		_ = _scheduledTaskManager.StopIfExists(out _);
+		return Failure("dbHub was installed, but its endpoint did not become healthy exclusively on loopback.");
 	}
 
 	private DbHubVerificationResult WaitForServer(DbHubSettings settings) {
@@ -128,36 +157,6 @@ public sealed class DbHubInstallerService(
 			Thread.Sleep(500);
 		}
 		return result;
-	}
-
-	private bool EnsureConfigFile(string path, out string error) {
-		error = null;
-		try {
-			FileInfo info = new(path);
-			if (info.LinkTarget is not null
-				|| (info.Exists && info.Attributes.HasFlag(FileAttributes.ReparsePoint))) {
-				error = "The dbHub TOML path resolves through a symbolic link or reparse point and was refused.";
-				return false;
-			}
-			if (info.Exists) {
-				string content = File.ReadAllText(path, Encoding.UTF8);
-				string runnable = DbHubTomlStore.EnsureRunnableContent(content);
-				if (!string.Equals(content, runnable, StringComparison.Ordinal)) {
-					_atomicFileWriter.Commit(path, runnable);
-				}
-				return true;
-			}
-			Directory.CreateDirectory(Path.GetDirectoryName(path) ?? Environment.CurrentDirectory);
-			string initial = DbHubTomlStore.EnsureRunnableContent(
-				"# dbHub configuration managed jointly by the user and clio.\n");
-			_atomicFileWriter.Commit(path, initial);
-			return true;
-		}
-		catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException
-			or TomlException or InvalidOperationException) {
-			error = "The dbHub TOML file could not be created, read, or validated.";
-			return false;
-		}
 	}
 
 	private ProcessExecutionResult Run(string program, string arguments, TimeSpan? timeout = null) =>
@@ -195,30 +194,94 @@ public sealed class DbHubInstallerService(
 	private static bool IsPortInUse(int port) => IPGlobalProperties.GetIPGlobalProperties()
 		.GetActiveTcpListeners().Any(endpoint => endpoint.Port == port);
 
-	private static bool HasWildcardListener(int port) => IPGlobalProperties.GetIPGlobalProperties()
+	private static bool WaitForPortAvailable(int port) {
+		for (int attempt = 0; attempt < 20; attempt++) {
+			if (!IsPortInUse(port)) {
+				return true;
+			}
+			Thread.Sleep(100);
+		}
+		return false;
+	}
+
+	private static bool HasUnsafeListener(int port) => IPGlobalProperties.GetIPGlobalProperties()
 		.GetActiveTcpListeners().Any(endpoint => endpoint.Port == port
-			&& (endpoint.Address.Equals(IPAddress.Any) || endpoint.Address.Equals(IPAddress.IPv6Any)));
+			&& !IPAddress.IsLoopback(endpoint.Address));
 
 	private static DbHubInstallationResult Failure(string message) => new(false, message);
+
+	private static DbHubInstallationResult Success(DbHubSettings settings) => new(true,
+		$"dbHub is installed and healthy at http://{settings.Host}:{settings.Port}/mcp.", settings);
 }
 
 /// <inheritdoc />
-public sealed class DbHubScheduledTaskManager(IProcessExecutor processExecutor) : IDbHubScheduledTaskManager {
+public sealed class DbHubScheduledTaskManager(IProcessExecutor processExecutor,
+	IDbHubAtomicFileWriter atomicFileWriter) : IDbHubScheduledTaskManager {
 	internal const string TaskName = "Clio dbHub MCP Server";
 	internal const string LegacyTaskName = "Start dbHub MCP Server";
 	private readonly IProcessExecutor _processExecutor = processExecutor;
+	private readonly IDbHubAtomicFileWriter _atomicFileWriter = atomicFileWriter;
+
+	/// <inheritdoc />
+	public bool IsCompatible(string nodePath, string dbHubEntryPath, DbHubSettings settings) {
+		try {
+			bool legacyExists = TaskExists(LegacyTaskName);
+			bool canonicalExists = TaskExists(TaskName);
+			if (legacyExists == canonicalExists) {
+				return false;
+			}
+			(string taskName, _) = SelectTaskNames(legacyExists, canonicalExists);
+			ProcessExecutionResult query = Run($"/Query /TN {Quote(taskName)} /XML");
+			if (!Succeeded(query) || string.IsNullOrWhiteSpace(query.StandardOutput)) {
+				return false;
+			}
+			XDocument actual = XDocument.Parse(query.StandardOutput);
+			XDocument expected = CreateTaskDocument(nodePath, dbHubEntryPath, settings);
+			return IsTaskDocumentCompatible(actual, expected) && IsTaskRunning(taskName);
+		}
+		catch (Exception exception) when (exception is System.Xml.XmlException or InvalidOperationException
+			or PlatformNotSupportedException) {
+			return false;
+		}
+	}
+
+	/// <inheritdoc />
+	public bool StopIfExists(out string error) {
+		error = null;
+		try {
+			bool legacyExists = TaskExists(LegacyTaskName);
+			bool canonicalExists = TaskExists(TaskName);
+			if (!legacyExists && !canonicalExists) {
+				return true;
+			}
+			(string taskName, _) = SelectTaskNames(legacyExists, canonicalExists);
+			if (!Succeeded(Run($"/End /TN {Quote(taskName)}"))) {
+				error = "The current-user dbHub Scheduled Task could not be stopped for safe repair.";
+				return false;
+			}
+			return true;
+		}
+		catch (Exception exception) when (exception is PlatformNotSupportedException) {
+			error = "The current-user dbHub Scheduled Task could not be inspected safely.";
+			return false;
+		}
+	}
 
 	/// <inheritdoc />
 	public bool EnsureAndStart(string nodePath, string dbHubEntryPath, DbHubSettings settings, out string error) {
 		error = null;
 		try {
-			(string taskName, string redundantTaskName) = SelectTaskNames(
-				TaskExists(LegacyTaskName), TaskExists(TaskName));
+			bool legacyExists = TaskExists(LegacyTaskName);
+			bool canonicalExists = TaskExists(TaskName);
+			(string taskName, string redundantTaskName) = SelectTaskNames(legacyExists, canonicalExists);
+			if (legacyExists || canonicalExists) {
+				_ = Run($"/End /TN {Quote(taskName)}");
+			}
 			string taskDirectory = Path.Combine(SettingsRepository.AppSettingsFolderPath, "dbhub");
 			Directory.CreateDirectory(taskDirectory);
 			string xmlPath = Path.Combine(taskDirectory, "dbhub-task.xml");
 			XDocument document = CreateTaskDocument(nodePath, dbHubEntryPath, settings);
-			File.WriteAllText(xmlPath, document.ToString(SaveOptions.DisableFormatting), new UTF8Encoding(false));
+			_atomicFileWriter.Commit(xmlPath, document.ToString(SaveOptions.DisableFormatting));
 			ProcessExecutionResult create = Run($"/Create /TN {Quote(taskName)} /XML {Quote(xmlPath)} /F");
 			if (!Succeeded(create)) {
 				error = "The current-user dbHub Scheduled Task could not be created or repaired.";
@@ -229,7 +292,11 @@ public sealed class DbHubScheduledTaskManager(IProcessExecutor processExecutor) 
 				error = "A redundant clio dbHub Scheduled Task could not be removed safely.";
 				return false;
 			}
-			_ = Run($"/Run /TN {Quote(taskName)}");
+			ProcessExecutionResult start = Run($"/Run /TN {Quote(taskName)}");
+			if (!Succeeded(start)) {
+				error = "The current-user dbHub Scheduled Task was repaired but could not be started.";
+				return false;
+			}
 			return true;
 		}
 		catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
@@ -266,7 +333,52 @@ public sealed class DbHubScheduledTaskManager(IProcessExecutor processExecutor) 
 				new XElement(ns + "Command", nodePath), new XElement(ns + "Arguments", arguments)))));
 	}
 
+	internal static bool IsTaskDocumentCompatible(XDocument actual, XDocument expected) {
+		XNamespace ns = expected.Root?.Name.Namespace ?? XNamespace.None;
+		XElement actualTrigger = SingleChild(SingleChild(actual.Root, ns + "Triggers"), ns + "LogonTrigger");
+		XElement expectedTrigger = SingleChild(SingleChild(expected.Root, ns + "Triggers"), ns + "LogonTrigger");
+		XElement actualPrincipal = SingleChild(SingleChild(actual.Root, ns + "Principals"), ns + "Principal");
+		XElement expectedPrincipal = SingleChild(SingleChild(expected.Root, ns + "Principals"), ns + "Principal");
+		XElement actualSettings = SingleChild(actual.Root, ns + "Settings");
+		XElement expectedSettings = SingleChild(expected.Root, ns + "Settings");
+		XElement actualExec = SingleChild(SingleChild(actual.Root, ns + "Actions"), ns + "Exec");
+		XElement expectedExec = SingleChild(SingleChild(expected.Root, ns + "Actions"), ns + "Exec");
+		if (actualTrigger is null || expectedTrigger is null || actualPrincipal is null || expectedPrincipal is null
+			|| actualSettings is null || expectedSettings is null || actualExec is null || expectedExec is null) {
+			return false;
+		}
+		return ValuesMatch(actualTrigger, expectedTrigger, ns + "Enabled", StringComparison.OrdinalIgnoreCase)
+			&& ValuesMatch(actualTrigger, expectedTrigger, ns + "UserId", StringComparison.OrdinalIgnoreCase)
+			&& ValuesMatch(actualPrincipal, expectedPrincipal, ns + "UserId", StringComparison.OrdinalIgnoreCase)
+			&& ValuesMatch(actualPrincipal, expectedPrincipal, ns + "LogonType", StringComparison.Ordinal)
+			&& ValuesMatch(actualPrincipal, expectedPrincipal, ns + "RunLevel", StringComparison.Ordinal)
+			&& ValuesMatch(actualSettings, expectedSettings, ns + "MultipleInstancesPolicy", StringComparison.Ordinal)
+			&& ValuesMatch(actualSettings, expectedSettings, ns + "DisallowStartIfOnBatteries", StringComparison.OrdinalIgnoreCase)
+			&& ValuesMatch(actualSettings, expectedSettings, ns + "StopIfGoingOnBatteries", StringComparison.OrdinalIgnoreCase)
+			&& ValuesMatch(actualSettings, expectedSettings, ns + "StartWhenAvailable", StringComparison.OrdinalIgnoreCase)
+			&& ValuesMatch(actualSettings, expectedSettings, ns + "Hidden", StringComparison.OrdinalIgnoreCase)
+			&& ValuesMatch(actualSettings, expectedSettings, ns + "ExecutionTimeLimit", StringComparison.Ordinal)
+			&& ValuesMatch(actualExec, expectedExec, ns + "Command", StringComparison.OrdinalIgnoreCase)
+			&& ValuesMatch(actualExec, expectedExec, ns + "Arguments", StringComparison.Ordinal);
+	}
+
 	private bool TaskExists(string taskName) => Succeeded(Run($"/Query /TN {Quote(taskName)}"));
+
+	private bool IsTaskRunning(string taskName) {
+		string script = "$service=New-Object -ComObject 'Schedule.Service';$service.Connect();"
+			+ $"$service.GetFolder('\\').GetTask('{taskName.Replace("'", "''")}').State";
+		ProcessExecutionResult result = _processExecutor.ExecuteAndCaptureAsync(new ProcessExecutionOptions(
+			"powershell.exe", $"-NoProfile -NonInteractive -Command {Quote(script)}") {
+			Timeout = TimeSpan.FromSeconds(30), SuppressErrors = true
+		}).GetAwaiter().GetResult();
+		return Succeeded(result) && string.Equals(result.StandardOutput?.Trim(), "4", StringComparison.Ordinal);
+	}
+
+	private static XElement SingleChild(XElement parent, XName name) => parent?.Elements(name).SingleOrDefault();
+
+	private static bool ValuesMatch(XElement actual, XElement expected, XName name,
+		StringComparison comparison) => string.Equals(SingleChild(actual, name)?.Value,
+		SingleChild(expected, name)?.Value, comparison);
 
 	private ProcessExecutionResult Run(string arguments) => _processExecutor.ExecuteAndCaptureAsync(
 		new ProcessExecutionOptions("schtasks.exe", arguments) { Timeout = TimeSpan.FromSeconds(30), SuppressErrors = true })

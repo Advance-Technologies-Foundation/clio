@@ -5,7 +5,7 @@
 **FR coverage**: FR-01 through FR-18
 **PRD**: [dbhub-integration-prd.md](dbhub-integration-prd.md)
 **ADR**: [dbhub-integration-adr.md](dbhub-integration-adr.md)
-**Status**: in-progress
+**Status**: review
 **Size**: L
 
 ---
@@ -24,10 +24,10 @@ database access remains safe, current, and visible across CLI, MCP, and ClioRing
 
 ## Acceptance Criteria
 
-- [ ] Settings, install/adopt/repair, task, health, and pinned-package acceptance criteria AC-01 through AC-05 are implemented.
-- [ ] Source discovery, ownership, preservation, collision, locking, atomicity, and manual sync acceptance criteria AC-06 through AC-09 are implemented.
-- [ ] Deploy/uninstall ordering, best-effort warning, hot reload/offline, and secret-safety acceptance criteria AC-10 through AC-14 are implemented.
-- [ ] Documentation, MCP E2E, Ring contract/tests, and NativeAOT acceptance criterion AC-15 is implemented.
+- [x] Settings, install/adopt/repair, task, health, and pinned-package acceptance criteria AC-01 through AC-05 are implemented.
+- [x] Source discovery, ownership, preservation, collision, locking, atomicity, and manual sync acceptance criteria AC-06 through AC-09 are implemented.
+- [x] Deploy/uninstall ordering, best-effort warning, hot reload/offline, and secret-safety acceptance criteria AC-10 through AC-14 are implemented.
+- [x] Documentation, MCP E2E, Ring contract/tests, and NativeAOT acceptance criterion AC-15 is implemented.
 
 ## Implementation Notes
 
@@ -39,19 +39,19 @@ All `TC-U-*` and `TC-I-*` cases in [dbhub-integration-test-plan.md](dbhub-integr
 
 ## Definition of Done
 
-- [ ] Code builds with no new CLIO diagnostics.
-- [ ] Public API has XML documentation; CLI flags are kebab-case.
-- [ ] Unit/integration/E2E/runtime/Ring gates in the test plan pass.
-- [ ] Secrets are absent from every observable surface.
-- [ ] Command docs/help/index/wiki anchors and settings schema are aligned.
-- [ ] MCP reviewed; no dedicated installer/sync tool added; existing lifecycle E2E updated.
-- [ ] ClioRing compatibility reviewed and required exact commands pass.
-- [ ] Comprehensive agentic review has no Blocker/High findings.
+- [x] Code builds with no new CLIO diagnostics.
+- [x] Public API has XML documentation; CLI flags are kebab-case.
+- [x] Unit/integration/E2E/runtime/Ring gates in the test plan pass.
+- [x] Secrets are absent from every observable surface.
+- [x] Command docs/help/index/wiki anchors and settings schema are aligned.
+- [x] MCP reviewed; no dedicated installer/sync tool added; existing lifecycle E2E updated.
+- [x] ClioRing compatibility reviewed and required exact commands pass.
+- [x] Comprehensive agentic review has no Blocker/High findings.
 - [ ] Ready PR references `Fixes #882`, is assigned, and auto-merge is armed.
 
 ## Dev Agent Record
 
 - Implementation started: 2026-07-15
-- Implementation completed:
-- Tests passing:
-- Notes: Autonomous single-PR delivery per issue scope.
+- Implementation completed: 2026-07-15
+- Tests passing: full Unit net10.0/net8.0 (6059 passed, 25 skipped each); MCP lifecycle E2E (5 each); developer-local explicit archive lifecycle E2E (1 each); ClioRing (101); Windows x64 NativeAOT publish.
+- Notes: Rebased onto merged issue #881 safety semantics; comprehensive quality, correctness, and security review is clear. The archive-backed lifecycle fixture is explicitly local-only and forbidden in TeamCity.

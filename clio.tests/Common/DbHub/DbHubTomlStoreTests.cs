@@ -35,7 +35,7 @@ public sealed class DbHubTomlStoreTests : BaseClioModuleTests {
 	[Description("Adds a managed source without altering user-authored TOML content.")]
 	public void Upsert_ShouldPreserveUserContent() {
 		// Arrange
-		const string userContent = "# user comment\ncustom-setting = \"preserve-me\"\n\n[[sources]]\nid = \"manual\"\ntype = \"postgres\"\ndsn = \"postgres://manual\"\n\n[tools]\nreadonly = true\n";
+		const string userContent = "# user comment\ncustom-setting = \"preserve-me\"\n\n[[sources]]\nid = \"manual\"\ntype = \"postgres\"\ndsn = \"postgres://manual\"\n\n[[tools]]\nname = \"execute_sql\"\nsource = \"manual\"\nreadonly = true\n";
 		File.WriteAllText(_configPath, userContent);
 
 		// Act
@@ -82,6 +82,56 @@ public sealed class DbHubTomlStoreTests : BaseClioModuleTests {
 			because: "dbHub must retain the requested TLS verification mode");
 		content.Should().Contain("sslrootcert = \"C:\\\\certs\\\\ca.pem\"",
 			because: "TOML rendering must preserve the trust-root path");
+		content.Should().Contain("readonly = true",
+			because: "persistent unauthenticated dbHub tools must not permit database writes");
+	}
+
+	[Test]
+	[Description("Marker-looking lines inside a TOML multiline string remain user data, not clio ownership metadata.")]
+	public void Upsert_ShouldPreserveMarkersInsideMultilineString() {
+		// Arrange
+		const string userContent = "note = \"\"\"\n# clio-managed-source begin environment=ZGV2 source=dev\nuser text\n# clio-managed-source end environment=ZGV2\n\"\"\"\n";
+		File.WriteAllText(_configPath, userContent);
+
+		// Act
+		DbHubSyncResult result = _sut.Upsert(_configPath, Source("dev", "dev"));
+
+		// Assert
+		result.Changed.Should().BeTrue(because: "marker-shaped user text does not represent an owned source");
+		File.ReadAllText(_configPath).Should().StartWith(userContent,
+			because: "clio must preserve multiline user values byte-for-byte");
+	}
+
+	[Test]
+	[Description("Repairs duplicate clio-owned blocks into one stable managed source.")]
+	public void Upsert_ShouldCollapseDuplicateOwnedBlocks() {
+		// Arrange
+		_sut.Upsert(_configPath, Source("dev", "dev"));
+		string block = File.ReadAllText(_configPath);
+		File.AppendAllText(_configPath, block);
+
+		// Act
+		DbHubSyncResult result = _sut.Upsert(_configPath, Source("dev", "dev"));
+
+		// Assert
+		result.Changed.Should().BeTrue(because: "duplicate ownership blocks require deterministic repair");
+		File.ReadAllText(_configPath).Split("clio-managed-source begin").Should().HaveCount(2,
+			because: "exactly one managed block must remain after repair");
+	}
+
+	[Test]
+	[Description("A case-only environment rename retains ownership of the same normalized source id.")]
+	public void Upsert_ShouldMigrateCaseOnlyEnvironmentRename() {
+		// Arrange
+		_sut.Upsert(_configPath, Source("Dev", "dev"));
+
+		// Act
+		DbHubSyncResult result = _sut.Upsert(_configPath, Source("dev", "dev"));
+
+		// Assert
+		result.Changed.Should().BeTrue(because: "clio owns the existing source id and may update its environment identity");
+		_sut.GetOwnedSources(_configPath).EnvironmentNames.Should().Equal(["dev"],
+			because: "the stale case variant must not survive reconciliation");
 	}
 
 	[Test]
@@ -170,6 +220,8 @@ public sealed class DbHubTomlStoreTests : BaseClioModuleTests {
 		content.Should().NotContain("source=only", because: "the exact environment ownership block was removed");
 		content.Should().Contain($"id = \"{DbHubTomlStore.ControlSourceId}\"",
 			because: "dbHub 0.23 rejects and does not hot-reload a configuration with zero sources");
+		content.Should().Contain("readonly = true",
+			because: "the in-memory control source must also make its SQL policy explicit");
 		_sut.GetOwnedSources(_configPath).EnvironmentNames.Should().BeEmpty(
 			because: "the control source is infrastructure, not an environment ownership mapping");
 	}
@@ -192,6 +244,92 @@ public sealed class DbHubTomlStoreTests : BaseClioModuleTests {
 			because: "every distinct concurrent source must be committed exactly once");
 		inventory.EnvironmentNames.Should().BeEquivalentTo(sources.Select(source => source.EnvironmentName),
 			because: "the adjacent lock must prevent lost updates");
+	}
+
+	[Test]
+	[Description("Installer validation preserves a manually maintained source without imposing clio tool policy.")]
+	public void ValidateForInstallation_ShouldAllowManualSourceWithoutReadonlySqlTool() {
+		// Arrange
+		const string content = "[[sources]]\nid = \"manual\"\ntype = \"postgres\"\ndsn = \"postgres://manual\"\n";
+		File.WriteAllText(_configPath, content);
+
+		// Act
+		DbHubSyncResult result = _sut.ValidateForInstallation(_configPath);
+
+		// Assert
+		result.Warning.Should().BeNull(
+			because: "clio must preserve user-maintained sources and custom tool policy outside managed blocks");
+		File.ReadAllText(_configPath).Should().Be(content,
+			because: "installation validation must not rewrite user-owned configuration");
+	}
+
+	[Test]
+	[Description("Installer validation refuses a clio-managed source whose generated SQL tool is not explicitly read-only.")]
+	public void ValidateForInstallation_ShouldRefuseManagedSourceWithoutReadonlySqlTool() {
+		// Arrange
+		const string content = "# clio-managed-source begin environment=managed source=managed\n[[sources]]\nid = \"managed\"\ntype = \"postgres\"\ndsn = \"postgres://managed\"\n# clio-managed-source end environment=managed\n";
+		File.WriteAllText(_configPath, content);
+
+		// Act
+		DbHubSyncResult result = _sut.ValidateForInstallation(_configPath);
+
+		// Assert
+		result.Warning.Should().NotBeNull(
+			because: "clio-owned source blocks must retain the generated read-only SQL contract");
+		File.ReadAllText(_configPath).Should().Be(content,
+			because: "failed validation must not rewrite the existing configuration");
+	}
+
+	[Test]
+	[Description("Control-source validation remains bounded when user-maintained sources and custom tools follow it.")]
+	public void ValidateForInstallation_ShouldAllowManualToolsAfterControlSource() {
+		// Arrange
+		const string content = "# clio-managed-control-source: keeps dbHub configuration valid when no database environments exist\n[[sources]]\nid = \"clio_control\"\ntype = \"sqlite\"\ndsn = \"sqlite:///:memory:\"\nlazy = true\n[[tools]]\nname = \"execute_sql\"\nsource = \"clio_control\"\nreadonly = true\n\n[[sources]]\nid = \"manual\"\ntype = \"postgres\"\ndsn = \"postgres://manual\"\n[[tools]]\nname = \"custom_manual_tool\"\nsource = \"manual\"\n";
+		File.WriteAllText(_configPath, content);
+
+		// Act
+		DbHubSyncResult result = _sut.ValidateForInstallation(_configPath);
+
+		// Assert
+		result.Warning.Should().BeNull(
+			because: "control validation must not absorb later user-owned sources or custom tools");
+		File.ReadAllText(_configPath).Should().Be(content,
+			because: "manual content after the bounded control block must remain byte-for-byte unchanged");
+	}
+
+	[Test]
+	[Description("Refuses a manual source whose normalized dbHub tool name collides with the managed source.")]
+	public void Upsert_ShouldRefuseNormalizedManualToolCollision() {
+		// Arrange
+		const string content = "[[sources]]\nid = \"dev-one\"\ntype = \"postgres\"\ndsn = \"postgres://manual\"\n";
+		File.WriteAllText(_configPath, content);
+
+		// Act
+		DbHubSyncResult result = _sut.Upsert(_configPath, Source("dev one", "dev_one"));
+
+		// Assert
+		result.Warning.ErrorCode.Should().Be("DBHUB_SOURCE_OWNERSHIP_CONFLICT",
+			because: "dbHub maps both source ids to the same execute_sql_dev_one tool name");
+		File.ReadAllText(_configPath).Should().Be(content,
+			because: "clio must not shadow or rewrite the manual source");
+	}
+
+	[Test]
+	[Description("Installer preparation and source synchronization share one lock without losing the source update.")]
+	public async Task EnsureRunnable_ShouldSerializeWithConcurrentUpsert() {
+		// Arrange
+		File.WriteAllText(_configPath, "# user comment\n");
+
+		// Act
+		DbHubSyncResult[] results = await Task.WhenAll(
+			Task.Run(() => _sut.EnsureRunnable(_configPath)),
+			Task.Run(() => _sut.Upsert(_configPath, Source("dev", "dev"))));
+
+		// Assert
+		results.Should().OnlyContain(result => result.Warning == null,
+			because: "both lock-owning operations should complete without a lost-update race");
+		_sut.GetOwnedSources(_configPath).EnvironmentNames.Should().Contain("dev",
+			because: "installer preparation must not overwrite a concurrent lifecycle source update");
 	}
 
 	[Test]

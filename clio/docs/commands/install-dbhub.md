@@ -21,7 +21,9 @@ a current-user Windows Scheduled Task. The task invokes Node.js directly,
 starts dbHub at logon, and binds its unauthenticated HTTP server to
 `127.0.0.1`.
 
-Existing valid TOML is adopted and preserved. When `--config-path` is omitted,
+Existing valid TOML is adopted and preserved only when every source explicitly
+keeps clio-managed `execute_sql` tools at `readonly = true`,
+and the credential file is not broadly readable. When `--config-path` is omitted,
 clio uses the persisted path, then `~/dbhub.toml` when it exists, then a
 clio-owned config under the appsettings directory.
 
@@ -61,9 +63,15 @@ clio install-dbhub --sync-local-environments false
 - Verifies `/healthz` and the MCP initialize handshake.
 - Persists settings only after verification succeeds.
 - Refuses non-loopback binding and wildcard-bound existing servers.
+- Writes clio-generated SQL tools in read-only mode and refuses adopted writable/default SQL tools,
+  writable clio-managed tools. User-maintained sources, custom tools, and permissions outside clio
+  markers are preserved and remain the user's responsibility.
 
-dbHub HTTP does not provide authentication. Do not expose this listener beyond
-loopback or forward its port to another host.
+Running this command is an explicit opt-in to a local data-access service. dbHub
+HTTP does not provide authentication: loopback prevents remote access but does
+not isolate other users or processes on the same machine. Read-only SQL prevents
+database mutation, not sensitive-data reads. Use this integration only on a
+trusted single-user workstation; do not expose or forward its port.
 
 ## Persisted Settings
 

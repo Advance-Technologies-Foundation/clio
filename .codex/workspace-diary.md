@@ -6282,3 +6282,24 @@ Decision: Require strict AppCmd XML, bind stop/delete to name plus normalized pa
 Discovery: AppCmd cannot stop a nested application, and its process wrapper does not expose exit status; safe orchestration therefore uses a nested no-op and proves every destructive result from fresh IIS state.
 Files: clio/Requests/IISScannerRequest.cs, clio/Common/CreatioUninstaller.cs, clio.tests/Requests/IisScannerHandlerValidationTests.cs, clio.tests/Common/CreatioUninstallerTestFixture.cs
 Impact: Same-name replacements and sibling applications are not mutated, error-shaped output fails closed, and profile cleanup remains gated on verified pool absence.
+
+## 2026-07-15 11:58 – Integrate dbHub with local Creatio lifecycle
+Context: Issue #882 requested Windows-first dbHub installation plus safe automatic source synchronization for local deploy and uninstall.
+Decision: Pin dbHub 0.23.0, bind its unauthenticated HTTP server to loopback, reconcile only marked clio-owned TOML blocks through locked atomic writes, retain a lazy in-memory control source for dbHub's non-empty-source requirement, and treat lifecycle verification failures as typed non-fatal warnings.
+Discovery: dbHub 0.23.0 rejects PostgreSQL `prefer`/`allow` TLS tokens and zero-source configurations; deploy previously printed database and Redis connection strings, so lifecycle validation also required credential-free connection output.
+Files: clio/Common/DbHub/, clio/Command/InstallDbHubCommand.cs, clio/Command/SyncDbHubCommand.cs, clio/Command/CreatioInstallCommand/CreatioInstallerService.cs, clio/Common/CreatioUninstaller.cs, clio.mcp.e2e/, clio-ring/, spec/dbhub-integration/
+Impact: Local environments hot-add/remove dbHub sources after successful lifecycle stages, manual TOML content and shared IIS resources remain protected, offline dbHub does not fail the primary operation, and both net8.0/net10.0 destructive local E2E paths prove complete cleanup without secret output.
+
+## 2026-07-15 13:23 – Harden dbHub adoption and lifecycle verification
+Context: Comprehensive review of issue #882 found collision, no-op restart, TOML parsing, local disclosure, permission, and process-ownership gaps before PR delivery.
+Decision: Require explicit read-only SQL tools and safe ACLs for adopted TOML, detect dbHub-normalized source collisions, preserve healthy compatible installs as true no-ops, lex TOML strings before marker recognition, and prove scheduled-task identity plus listener ownership around repair.
+Discovery: dbHub normalizes every non-alphanumeric source character to underscore and exposes an unsuffixed `execute_sql` tool for a single source; verification must derive the live tool name from the complete inventory rather than assume a suffix.
+Files: clio/Common/DbHub/, clio.tests/Common/DbHub/, clio.mcp.e2e/DbHubLifecycleWarningE2ETests.cs, clio/docs/commands/install-dbhub.md, spec/dbhub-integration/
+Impact: Manual configuration is adopted only under an explicit least-privilege contract, lifecycle sync cannot steal a normalized ID, healthy installs remain uninterrupted, and real net8.0/net10.0 warning-path deployment proves bounded cleanup.
+
+## 2026-07-15 14:12 – Keep archive lifecycle proof developer-local
+Context: The Creatio archive-backed dbHub lifecycle proof cannot run in the TeamCity environment and opened the disposable site in the workstation browser.
+Decision: Mark the fixture NUnit Explicit and LocalOnly, require destructive sandbox opt-in, and hard-skip whenever TEAMCITY_VERSION is present; CI retains only non-destructive MCP contract coverage.
+Discovery: MCP deploy-creatio intentionally auto-runs the deployed application, so archive lifecycle validation is disruptive even when all IIS, database, settings, and TOML state is isolated.
+Files: clio.mcp.e2e/DbHubLifecycleWarningE2ETests.cs, spec/dbhub-integration/dbhub-integration-test-plan.md
+Impact: TeamCity cannot install Creatio through this fixture, while a developer can still run the verified net8.0/net10.0 proof manually when explicitly requested.

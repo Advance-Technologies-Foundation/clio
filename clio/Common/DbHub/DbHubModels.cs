@@ -38,8 +38,8 @@ public sealed class DbHubSettings {
 	public DbHubSettings Clone() => new() {
 		Enabled = Enabled,
 		ConfigPath = ConfigPath,
-		Host = string.IsNullOrWhiteSpace(Host) ? DefaultHost : Host,
-		Port = Port is > 0 and <= 65535 ? Port : DefaultPort,
+		Host = Host,
+		Port = Port,
 		SyncLocalEnvironments = SyncLocalEnvironments
 	};
 }

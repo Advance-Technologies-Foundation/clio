@@ -80,7 +80,8 @@ public sealed class DbHubHttpClientTests : BaseClioModuleTests {
 	[Description("Source verification recognizes source-scoped tools returned by dbHub hot reload.")]
 	public void VerifySource_ShouldRecognizeSourceScopedTool() {
 		// Arrange
-		_handler.Responses.Enqueue(JsonResponse("[{\"id\":\"local_dev\",\"type\":\"postgres\"}]"));
+		_handler.Responses.Enqueue(JsonResponse(
+			"[{\"id\":\"clio_control\",\"type\":\"sqlite\"},{\"id\":\"local_dev\",\"type\":\"postgres\"}]"));
 		_handler.Responses.Enqueue(JsonResponse("{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"tools\":[{\"name\":\"execute_sql_local_dev\"}]}}"));
 
 		// Act
@@ -89,6 +90,61 @@ public sealed class DbHubHttpClientTests : BaseClioModuleTests {
 
 		// Assert
 		result.Verified.Should().BeTrue(because: "the inventory contains the exact source and MCP exposes tools");
+	}
+
+	[Test]
+	[Description("Source verification recognizes dbHub's unsuffixed SQL tool for a single-source configuration.")]
+	public void VerifySource_ShouldRecognizeUnsuffixedToolForSingleSource() {
+		// Arrange
+		_handler.Responses.Enqueue(JsonResponse("[{\"id\":\"local_dev\",\"type\":\"postgres\"}]"));
+		_handler.Responses.Enqueue(JsonResponse(
+			"{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"tools\":[{\"name\":\"execute_sql\"}]}}"));
+
+		// Act
+		DbHubVerificationResult result = _sut.VerifySource(Settings(), "local_dev", expectedPresent: true,
+			waitForReload: false);
+
+		// Assert
+		result.Verified.Should().BeTrue(
+			because: "dbHub intentionally omits the source suffix when exactly one source exists");
+	}
+
+	[Test]
+	[Description("Source verification rejects an unrelated tool even when the source inventory is correct.")]
+	public void VerifySource_ShouldRejectUnrelatedTool() {
+		// Arrange
+		for (int attempt = 0; attempt < 5; attempt++) {
+			_handler.Responses.Enqueue(JsonResponse("[{\"id\":\"local_dev\",\"type\":\"postgres\"}]"));
+			_handler.Responses.Enqueue(JsonResponse(
+				"{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"tools\":[{\"name\":\"execute_sql_clio_control\"}]}}"));
+		}
+
+		// Act
+		DbHubVerificationResult result = _sut.VerifySource(Settings(), "local_dev", expectedPresent: true,
+			waitForReload: false);
+
+		// Assert
+		result.Verified.Should().BeFalse(
+			because: "the permanent control source must not prove that the requested source is usable");
+	}
+
+	[Test]
+	[Description("Source removal verification rejects a stale source-scoped tool after inventory removal.")]
+	public void VerifySource_ShouldRejectStaleToolAfterRemoval() {
+		// Arrange
+		for (int attempt = 0; attempt < 5; attempt++) {
+			_handler.Responses.Enqueue(JsonResponse("[{\"id\":\"clio_control\",\"type\":\"sqlite\"}]"));
+			_handler.Responses.Enqueue(JsonResponse(
+				"{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"tools\":[{\"name\":\"execute_sql_local_dev\"}]}}"));
+		}
+
+		// Act
+		DbHubVerificationResult result = _sut.VerifySource(Settings(), "local_dev", expectedPresent: false,
+			waitForReload: false);
+
+		// Assert
+		result.Verified.Should().BeFalse(
+			because: "a stale MCP tool still exposes the supposedly removed database source");
 	}
 
 	[Test]

@@ -65,12 +65,10 @@ public sealed class DbHubHttpClient(IHttpClientFactory httpClientFactory) : IDbH
 				}
 				string inventoryJson = await inventoryResponse.Content.ReadAsStringAsync();
 				bool present = ContainsSourceInventory(inventoryJson, sourceId);
+				int sourceCount = CountSources(inventoryJson);
 				if (present != expectedPresent) {
 					await Task.Delay(TimeSpan.FromMilliseconds(250));
 					continue;
-				}
-				if (!expectedPresent) {
-					return new DbHubVerificationResult(true, true);
 				}
 				using HttpResponseMessage response = await PostMcp(client,
 					"{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{}}");
@@ -78,7 +76,7 @@ public sealed class DbHubHttpClient(IHttpClientFactory httpClientFactory) : IDbH
 					return Offline("dbHub MCP source verification failed.");
 				}
 				string json = await response.Content.ReadAsStringAsync();
-				if (ContainsAnyTool(json)) {
+				if (ContainsSourceTool(json, sourceId, expectedPresent && sourceCount == 1) == expectedPresent) {
 					return new DbHubVerificationResult(true, true);
 				}
 				await Task.Delay(TimeSpan.FromMilliseconds(250));
@@ -112,14 +110,16 @@ public sealed class DbHubHttpClient(IHttpClientFactory httpClientFactory) : IDbH
 		return await client.SendAsync(request);
 	}
 
-	private static bool ContainsAnyTool(string json) {
+	private static bool ContainsSourceTool(string json, string sourceId, bool singleSource) {
 		using JsonDocument document = JsonDocument.Parse(json);
 		if (!document.RootElement.TryGetProperty("result", out JsonElement result)
 			|| !result.TryGetProperty("tools", out JsonElement tools)
 			|| tools.ValueKind != JsonValueKind.Array) {
 			return false;
 		}
-		return tools.EnumerateArray().Any();
+		string expectedName = singleSource ? "execute_sql" : $"execute_sql_{sourceId}";
+		return tools.EnumerateArray().Any(tool => tool.TryGetProperty("name", out JsonElement name)
+			&& string.Equals(name.GetString(), expectedName, StringComparison.Ordinal));
 	}
 
 	private static bool ContainsMcpResult(string json) {
@@ -135,6 +135,13 @@ public sealed class DbHubHttpClient(IHttpClientFactory httpClientFactory) : IDbH
 			&& document.RootElement.EnumerateArray().Any(source =>
 				source.TryGetProperty("id", out JsonElement id)
 				&& string.Equals(id.GetString(), sourceId, StringComparison.Ordinal));
+	}
+
+	private static int CountSources(string json) {
+		using JsonDocument document = JsonDocument.Parse(json);
+		return document.RootElement.ValueKind == JsonValueKind.Array
+			? document.RootElement.GetArrayLength()
+			: 0;
 	}
 
 	private static DbHubVerificationResult Offline(string detail) => new(false, false,

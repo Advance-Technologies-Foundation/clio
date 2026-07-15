@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using Clio.UserEnvironment;
 
@@ -37,7 +38,7 @@ public sealed class DbHubSynchronizationService(
 		try {
 			return IsAutomaticSyncEnabled(_settingsRepository.GetDbHubSettings());
 		}
-		catch (Exception) {
+		catch (Exception exception) when (!IsProcessFatal(exception)) {
 			return false;
 		}
 	}
@@ -47,7 +48,7 @@ public sealed class DbHubSynchronizationService(
 		try {
 			return SynchronizeCore(environmentName);
 		}
-		catch (Exception) {
+		catch (Exception exception) when (!IsProcessFatal(exception)) {
 			return new DbHubSyncSummary(0, 0, 1, [new DbHubWarning(
 				"dbHub synchronization could not be completed.", "No configuration changes were confirmed.",
 				"DBHUB_SYNC_FAILED")]);
@@ -142,13 +143,23 @@ public sealed class DbHubSynchronizationService(
 			if (!IsAutomaticSyncEnabled(settings)) {
 				return DbHubSyncResult.Skip();
 			}
-			EnvironmentSettings environment = FindEnvironment(environmentName);
-			return environment is null
+			Dictionary<string, EnvironmentSettings> environments = _settingsRepository.GetAllEnvironments();
+			KeyValuePair<string, EnvironmentSettings> selected = environments.FirstOrDefault(pair =>
+				string.Equals(pair.Key, environmentName, StringComparison.OrdinalIgnoreCase));
+			if (selected.Value is null) {
+				return DbHubSyncResult.Skip(new DbHubWarning("dbHub source synchronization was skipped.",
+					"The deployed environment is not registered.", "DBHUB_ENVIRONMENT_NOT_FOUND"));
+			}
+			string sourceId = DbHubConnectionSourceFactory.NormalizeSourceId(selected.Key);
+			int collisionCount = environments.Count(pair => !string.IsNullOrWhiteSpace(pair.Value?.EnvironmentPath)
+				&& string.Equals(DbHubConnectionSourceFactory.NormalizeSourceId(pair.Key), sourceId,
+					StringComparison.Ordinal));
+			return collisionCount > 1
 				? DbHubSyncResult.Skip(new DbHubWarning("dbHub source synchronization was skipped.",
-					"The deployed environment is not registered.", "DBHUB_ENVIRONMENT_NOT_FOUND"))
-				: Synchronize(settings, environmentName, environment);
+					$"Multiple registered environment names normalize to source id '{sourceId}'.", CollisionCode))
+				: Synchronize(settings, selected.Key, selected.Value);
 		}
-		catch (Exception) {
+		catch (Exception exception) when (!IsProcessFatal(exception)) {
 			return AutomaticFailure("synchronized");
 		}
 	}
@@ -164,7 +175,7 @@ public sealed class DbHubSynchronizationService(
 			return WithVerification(settings, DbHubConnectionSourceFactory.NormalizeSourceId(environmentName),
 				expectedPresent: false, mutation);
 		}
-		catch (Exception) {
+		catch (Exception exception) when (!IsProcessFatal(exception)) {
 			return AutomaticFailure("removed");
 		}
 	}
@@ -199,9 +210,6 @@ public sealed class DbHubSynchronizationService(
 		return verification.Verified ? mutation : mutation with { Warning = verification.Warning };
 	}
 
-	private EnvironmentSettings FindEnvironment(string environmentName) => _settingsRepository.GetAllEnvironments()
-		.FirstOrDefault(pair => string.Equals(pair.Key, environmentName, StringComparison.OrdinalIgnoreCase)).Value;
-
 	private static bool IsAutomaticSyncEnabled(DbHubSettings settings) => settings.Enabled
 		&& settings.SyncLocalEnvironments && !string.IsNullOrWhiteSpace(settings.ConfigPath)
 		&& HasSafeEndpoint(settings);
@@ -209,6 +217,13 @@ public sealed class DbHubSynchronizationService(
 	private static bool HasSafeEndpoint(DbHubSettings settings) =>
 		string.Equals(settings.Host, DbHubSettings.DefaultHost, StringComparison.Ordinal)
 		&& settings.Port is > 0 and <= 65535;
+
+	// Automatic dbHub integration is explicitly best-effort. Dependency/configuration libraries may
+	// surface many exception types, so contain every recoverable failure while allowing runtime-fatal
+	// conditions to propagate instead of masking a damaged process.
+	private static bool IsProcessFatal(Exception exception) => exception is OutOfMemoryException
+		or StackOverflowException or AccessViolationException or AppDomainUnloadedException
+		or BadImageFormatException or CannotUnloadAppDomainException;
 
 	private static void Count(DbHubSyncResult result, ref int changed, ref int unchanged, ref int skipped,
 		ICollection<DbHubWarning> warnings) {

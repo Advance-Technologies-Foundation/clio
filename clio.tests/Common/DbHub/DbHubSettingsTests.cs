@@ -32,4 +32,18 @@ public sealed class DbHubSettingsTests {
 			because: "every persisted dbHub option must survive clio configuration serialization");
 		json.Should().Contain("\"config-path\"", because: "the JSON contract uses documented kebab-case names");
 	}
+
+	[Test]
+	[Description("Cloning preserves explicitly invalid endpoint values so safety validation cannot be bypassed.")]
+	public void Clone_ShouldPreserveInvalidEndpointValues() {
+		// Arrange
+		DbHubSettings settings = new() { Host = "0.0.0.0", Port = 0 };
+
+		// Act
+		DbHubSettings clone = settings.Clone();
+
+		// Assert
+		clone.Host.Should().Be("0.0.0.0", because: "an unsafe explicit host must reach the refusal boundary");
+		clone.Port.Should().Be(0, because: "an invalid explicit port must reach the refusal boundary");
+	}
 }

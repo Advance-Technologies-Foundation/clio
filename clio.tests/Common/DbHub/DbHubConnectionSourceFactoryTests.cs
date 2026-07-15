@@ -138,6 +138,26 @@ public sealed class DbHubConnectionSourceFactoryTests : BaseClioModuleTests {
 		result.Warning.Detail.Should().NotContain("sql.local", because: "warnings must not expose connection data");
 	}
 
+	[TestCase("sql.local,0")]
+	[TestCase("sql.local,65536")]
+	[TestCase("sql.local,not-a-port")]
+	[Description("Skips malformed SQL Server ports instead of emitting an invalid dbHub source.")]
+	public void Create_ShouldSkipInvalidSqlServerPort(string dataSource) {
+		// Arrange
+		WriteConfig("db",
+			$"Data Source={dataSource};Initial Catalog=creatio;User ID=sa;Password=secret;Encrypt=false");
+
+		// Act
+		DbHubSourceDiscoveryResult result = _sut.Create("Invalid SQL", new EnvironmentSettings {
+			EnvironmentPath = _directory
+		});
+
+		// Assert
+		result.Success.Should().BeFalse(because: "dbHub cannot connect through an invalid TCP port");
+		result.Warning.ErrorCode.Should().Be("DBHUB_CONNECTION_CONFIG_UNAVAILABLE",
+			because: "malformed connection configuration uses the stable safe skip classification");
+	}
+
 	[Test]
 	[Description("Skips SQL Server identity-provider authentication that cannot be transferred safely.")]
 	public void Create_ShouldSkipActiveDirectorySqlAuthentication() {

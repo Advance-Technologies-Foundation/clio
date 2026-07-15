@@ -143,8 +143,11 @@ public sealed class DbHubConnectionSourceFactory : IDbHubConnectionSourceFactory
 		}
 		int port = 1433;
 		int comma = value.LastIndexOf(',');
-		if (comma > 0 && int.TryParse(value[(comma + 1)..], NumberStyles.None, CultureInfo.InvariantCulture,
-			out int parsedPort)) {
+		if (comma > 0) {
+			if (!int.TryParse(value[(comma + 1)..], NumberStyles.None, CultureInfo.InvariantCulture,
+				out int parsedPort) || parsedPort is < 1 or > 65535) {
+				throw new ArgumentException("The SQL Server port is invalid.", nameof(dataSource));
+			}
 			port = parsedPort;
 			value = value[..comma];
 		}
@@ -153,6 +156,9 @@ public sealed class DbHubConnectionSourceFactory : IDbHubConnectionSourceFactory
 		if (slash >= 0) {
 			instance = value[(slash + 1)..];
 			value = value[..slash];
+		}
+		if (string.IsNullOrWhiteSpace(value) || (slash >= 0 && string.IsNullOrWhiteSpace(instance))) {
+			throw new ArgumentException("The SQL Server data source is invalid.", nameof(dataSource));
 		}
 		return (value, port, instance);
 	}
