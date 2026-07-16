@@ -237,7 +237,7 @@ public sealed class UninstallWarningIisApplicationPoolResolverE2ETests {
 	[Description("Reads a TeamCity configuration parameter through its Java-properties file indirection.")]
 	[AllureTag(ToolName)]
 	[AllureName("Uninstall warning harness reads TeamCity application pool parameter")]
-	public void TeamCityBuildParameterResolve_ShouldReturnApplicationPoolName() {
+	public void TeamCityBuildParameterResolve_ShouldReturnApplicationPoolName_WhenConfigurationFileDefinesParameter() {
 		// Arrange
 		const string buildPropertiesPath = "build.properties";
 		const string configurationPropertiesPath = @"C:\TeamCity\temp\configuration.properties";
