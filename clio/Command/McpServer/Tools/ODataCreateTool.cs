@@ -83,45 +83,15 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver) {
 	}
 
 	private static ODataRowResult ParseCreated(string json, int index) {
-		if (string.IsNullOrWhiteSpace(json)) {
-			return new ODataRowResult { Index = index, Success = true };
-		}
-		try {
-			using JsonDocument doc = JsonDocument.Parse(json);
-			JsonElement root = doc.RootElement;
-			if (ODataResponseError.TryDetect(root, out string serverError)) {
-				return new ODataRowResult { Index = index, Success = false, Error = serverError };
-			}
-			// The primary key is normally a GUID string, but some entities key on a numeric column;
-			// accept either representation so a created record is never misreported as a failure.
-			string? id = root.TryGetProperty("Id", out JsonElement idEl)
-				? idEl.ValueKind switch {
-					JsonValueKind.String => idEl.GetString(),
-					JsonValueKind.Number => idEl.GetRawText(),
-					_ => null
-				}
-				: null;
-			if (string.IsNullOrEmpty(id)) {
-				// A successful OData create always echoes the new record with its Id; its absence
-				// means the body is not a created record (an unrecognized error or empty payload).
-				return new ODataRowResult {
-					Index = index,
-					Success = false,
-					Error = $"OData create did not return a record Id. Response: {Truncate(json)}"
-				};
-			}
-			return new ODataRowResult { Index = index, Success = true, Id = id };
-		} catch (JsonException) {
-			// A non-JSON body on a successful POST still means the record was created.
-			return new ODataRowResult { Index = index, Success = true };
-		}
-	}
-
-	private static string Truncate(string value) {
-		if (string.IsNullOrEmpty(value)) {
-			return "<empty>";
-		}
-		return value.Length > 500 ? value[..500] + "..." : value;
+		// Delegate the shared OData create-response parsing (server-error detection, string/numeric
+		// Id extraction, empty-body handling) to ODataResponseParser, then map to the per-row result.
+		ODataWriteResponse parsed = ODataResponseParser.ParseODataCreated(json);
+		return new ODataRowResult {
+			Index = index,
+			Success = parsed.Success,
+			Id = parsed.Id,
+			Error = parsed.Error
+		};
 	}
 }
 
