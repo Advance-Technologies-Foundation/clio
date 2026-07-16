@@ -5003,6 +5003,30 @@ public class PageToolsTests
 		}
 	}
 
+	[Test]
+	[Description("update-page append: a body that is BOTH full-config form AND syntactically invalid yields the append/full-config prefix — the guard runs before the JS-syntax gate, locking the RC-12 ordering (ENG-93090 RC-16)")]
+	[Category("Unit")]
+	public async System.Threading.Tasks.Task UpdatePage_ShouldPreferAppendRejection_OverSyntaxError_WhenBodyIsFullConfigAndMalformed() {
+		// Arrange — the full-config SCHEMA_VIEW_MODEL_CONFIG marker pair is present (regex-detected by the
+		// guard), but the surrounding JavaScript is deliberately broken so the syntax gate would also fire.
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		PageUpdateTool tool = BuildAppendGuardTool(applicationClient);
+		string fullConfigButMalformed =
+			"define(\"UsrX_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
+			"viewModelConfig: /**SCHEMA_VIEW_MODEL_CONFIG*/{}/**SCHEMA_VIEW_MODEL_CONFIG*/, @@@ not valid javascript (((";
+		PageUpdateArgs args = new("UsrX_FormPage", fullConfigButMalformed, null, false, "dev", null, null, null, SkipSampling: true, Mode: "append");
+
+		// Act
+		PageUpdateResponse response = await tool.UpdatePage(args, null);
+
+		// Assert
+		response.Success.Should().BeFalse(because: "a full-config append body must be rejected");
+		response.Error.Should().StartWith(PageUpdateTool.AppendFullConfigRejectionPrefix,
+			because: "the append/full-config guard runs before the JS-syntax gate, so the actionable form-mismatch hint wins over a generic syntax error and a future reorder would fail this test (ENG-93090 RC-12/RC-16)");
+		applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
 	// Shared full-config web body for the append-guard tests (ENG-93090): valid AMD JS carrying the
 	// non-diff SCHEMA_VIEW_MODEL_CONFIG / SCHEMA_MODEL_CONFIG markers that append merge cannot process.
 	private const string FullConfigWebBody =

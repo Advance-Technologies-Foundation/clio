@@ -6356,3 +6356,13 @@ Decision: Join deliberately detached heartbeat test work before disposing its sy
 Discovery: TS1-MRKT-WEB01 is current on .NET SDK 10.0.301/runtime 10.0.9 but its GitHub runner 2.333.0 trails 2.335.1. The first failure was concurrent StringBuilder access; the retry captured a late cancelled-operation fault in the next test, confirming background-work isolation rather than product behavior.
 Files: clio.tests/CommonProgramTest.cs, clio.tests/Command/McpServer/McpProgressHeartbeatTests.cs
 Impact: Core and MCP Server tests no longer dispose gates under detached work or read console buffers during background writes, improving deterministic execution across self-hosted runner speeds.
+
+## 2026-07-12 – ENG-93090 PR #850 review round 3 (tetiana APPROVED; Kravchuk RC-13..RC-16)
+Context: tetiana-moshon APPROVED (round-1 Major resolved). Kravchuk CHANGES_REQUESTED with RC-13 (Major): ClioRing MCP compatibility gate not declared for the changed update-page error envelope; RC-14/15/16 minor.
+Decision & evidence:
+- RC-13 (ClioRing gate): searched clio-ring/ClioRing.Ipc, clio-ring/ClioRing, clio-ring/ClioRing.Desktop/actions.json — Ring consumes only deploy-creatio, get-info, uninstall-creatio, restart-web-app, deploy-app; NO reference to update-page or any append/full-config error string. Ran ClioRing.Tests (-p:NuGetAudit=false to bypass the unreachable private Nexus audit feed) → 111 passed. Conclusion: "ClioRing compatibility reviewed, no Ring-consumed contract changed."
+- RC-14: extracted the docs-pointer sentence into AppendFullConfigDocsPointer const (single owner for the guide URI).
+- RC-15: already covered — PageBodyMerger_Web_Should_Throw_When_Current_Uses_Full_ViewModelConfig_Marker/_ModelConfig_Marker call Merge() with a WEB full-config current body and still pass post-RC-9/10 relocation; no duplicate added.
+- RC-16: added UpdatePage_ShouldPreferAppendRejection_OverSyntaxError_WhenBodyIsFullConfigAndMalformed to lock the guard-before-syntax ordering (RC-12).
+Files: clio/Command/McpServer/Tools/PageUpdateTool.cs, clio.tests/Command/McpServer/PageToolsTests.cs
+Impact: ClioRing gate satisfied and declared; guide URI single-owner; RC-12 ordering test-locked. Validated: targeted merge/guard filter → 42 passed; ClioRing.Tests → 111 passed.

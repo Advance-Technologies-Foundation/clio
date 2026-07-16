@@ -39,6 +39,11 @@ public sealed class PageUpdateTool(
 	// e2e tests assert against it instead of a duplicated string literal (ENG-93090 RC-5).
 	internal const string AppendFullConfigRejectionPrefix = "Append merge cannot use this body: ";
 
+	// The page-modification guide pointer appended to the append/full-config hint. Kept as one constant
+	// so a guide-path rename has a single owner and prefix-only test assertions cannot mask drift (ENG-93090 RC-14).
+	private const string AppendFullConfigDocsPointer =
+		" See docs://mcp/guides/page-modification for the append diff-form contract.";
+
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[Description("Update a Freedom UI page schema body. environment-name preferred; uri/login/password fallback only. " +
 		"On a successful non-dry-run save it also best-effort notifies active Creatio designers (Designer Presence); the save still succeeds if that notification is skipped (carried as a warning). " +
@@ -145,8 +150,7 @@ public sealed class PageUpdateTool(
 		// what it lacks — the docs pointer — instead of re-stating those actions (ENG-93090 RC-3).
 		return new PageUpdateResponse {
 			Success = false,
-			Error = AppendFullConfigRejectionPrefix + message
-				+ " See docs://mcp/guides/page-modification for the append diff-form contract."
+			Error = AppendFullConfigRejectionPrefix + message + AppendFullConfigDocsPointer
 		};
 	}
 
