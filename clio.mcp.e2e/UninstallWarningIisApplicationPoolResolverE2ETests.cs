@@ -86,6 +86,36 @@ public sealed class UninstallWarningIisApplicationPoolResolverE2ETests {
 	}
 
 	[Test]
+	[Description("Rejects TeamCity's routed pool when multiple applications share the sandbox profile.")]
+	[AllureTag(ToolName)]
+	[AllureName("Uninstall warning harness identifies routed shared pool as non-applicable")]
+	public void Resolve_ShouldThrowSharedPoolException_WhenRoutedPoolIsSharedWithinSandboxSite() {
+		// Arrange
+		Uri environmentUri = new("http://ts1-agent54:88/studioenu_15736978_0716");
+		const string sitesXml = """
+			<appcmd>
+			  <SITE SITE.NAME="studioenu_15736978_0716" bindings="http/*:40120:" state="Started" />
+			</appcmd>
+			""";
+		const string applicationsXml = """
+			<appcmd>
+			  <APP path="/" APP.NAME="studioenu_15736978_0716/" APPPOOL.NAME="studioenu_15736978_0716" SITE.NAME="studioenu_15736978_0716" />
+			  <APP path="/0" APP.NAME="studioenu_15736978_0716/0" APPPOOL.NAME="studioenu_15736978_0716" SITE.NAME="studioenu_15736978_0716" />
+			</appcmd>
+			""";
+
+		// Act
+		Action act = () => IisApplicationPoolResolver.Resolve(
+			environmentUri, sitesXml, applicationsXml, "studioenu_15736978_0716",
+			host => host == "ts1-agent54");
+
+		// Assert
+		act.Should().Throw<SharedIisApplicationPoolException>(
+				because: "locking a profile shared by multiple applications cannot exercise safe pool deletion")
+			.WithMessage("*assigned to 2 IIS applications*");
+	}
+
+	[Test]
 	[Description("Uses an explicit pool when a local root-site URL matches the pool's sole IIS application.")]
 	[AllureTag(ToolName)]
 	[AllureName("Uninstall warning harness resolves explicit local root-site pool")]
@@ -137,10 +167,10 @@ public sealed class UninstallWarningIisApplicationPoolResolverE2ETests {
 	}
 
 	[Test]
-	[Description("Rejects an explicitly named application pool that is shared by multiple IIS applications.")]
+	[Description("Rejects an unrelated explicitly named pool even when multiple IIS applications share it.")]
 	[AllureTag(ToolName)]
-	[AllureName("Uninstall warning harness rejects shared explicit pool")]
-	public void Resolve_ShouldThrow_WhenExpectedPoolHasMultipleAssignments() {
+	[AllureName("Uninstall warning harness rejects unrelated shared explicit pool")]
+	public void Resolve_ShouldThrow_WhenUnrelatedExpectedPoolHasMultipleAssignments() {
 		// Arrange
 		Uri environmentUri = new("http://ts1-agent54:88/studioenu_15736567_0716");
 		const string applicationsXml = """
@@ -157,8 +187,8 @@ public sealed class UninstallWarningIisApplicationPoolResolverE2ETests {
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>(
-				because: "the warning proof must never lock a profile shared by another IIS application")
-			.WithMessage("*assigned to 2 IIS applications*");
+				because: "a shared-pool skip must not mask an explicit pool unrelated to the registered sandbox")
+			.WithMessage("*does not match the registered URI target*");
 	}
 
 	[Test]
