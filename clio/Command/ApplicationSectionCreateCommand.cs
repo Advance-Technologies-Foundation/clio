@@ -134,7 +134,8 @@ public sealed class ApplicationSectionCreateService(
 	Func<EnvironmentSettings, ISysSettingsManager> sysSettingsManagerFactory,
 	ILogger logger,
 	ICaptionCultureResolver captionCultureResolver,
-	ISectionCreateSerializationGuard sectionCreateSerializationGuard)
+	ISectionCreateSerializationGuard sectionCreateSerializationGuard,
+	Action<TimeSpan>? contentionDelay = null)
 	: IApplicationSectionCreateService {
 	private const string ApplicationSectionSchemaName = "ApplicationSection";
 	private const string ApplicationIdJsonField = "ApplicationId";
@@ -233,6 +234,11 @@ public sealed class ApplicationSectionCreateService(
 		DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
 		PropertyNameCaseInsensitive = true
 	};
+
+	// Sleep seam: production uses Thread.Sleep; unit tests inject a no-op (via the optional constructor
+	// parameter) so the contention backoff, the settle/poll verify loop, and the readback poll run at zero
+	// delay — keeping the suite under the smart-regression budget without changing production timing.
+	private readonly Action<TimeSpan> _delay = contentionDelay ?? System.Threading.Thread.Sleep;
 
 	/// <inheritdoc />
 	public ApplicationSectionCreateResult CreateSection(string environmentName, ApplicationSectionCreateRequest request,
@@ -471,7 +477,7 @@ public sealed class ApplicationSectionCreateService(
 		// short fixed backoff. The backoff runs with the guard NOT held.
 		logger.WriteInfo(
 			$"Section insert was aborted without detail (contention); retrying once for section '{resolvedRequest.SectionCode}'...");
-		Thread.Sleep(PollDelay);
+		_delay(PollDelay);
 
 		// Retry insert — the guard is re-acquired for just this second destructive insert.
 		bool retryCommitted;
@@ -982,8 +988,8 @@ public sealed class ApplicationSectionCreateService(
 	// Bounded settle+poll for the CONTENTION verify: after a detail-less rejection a committed row may not
 	// be visible yet, and a false "absent" would trigger a destructive retry, so retry the id-matched verify
 	// a few times (PollDelay between attempts) before concluding absent. Returns true as soon as the section
-	// is visible, null when the LAST verify call itself errored (unknown state), and false only after the
-	// whole window still shows the section absent.
+	// is visible, false if ANY attempt definitively proved the section absent (retry-safe), and null only when
+	// NO attempt produced a definitive answer (every attempt errored — genuinely unknown state).
 	private const int ContentionVerifyAttempts = 3;
 
 	/// <summary>
@@ -992,27 +998,37 @@ public sealed class ApplicationSectionCreateService(
 	/// misread as absent before the destructive contention retry.
 	/// </summary>
 	/// <returns>
-	/// <c>true</c> as soon as the section is visible; <c>false</c> when the bounded window still shows it
-	/// absent; <c>null</c> when the final verify call itself failed (section state unknown).
+	/// Returns the MOST-INFORMATIVE outcome across all attempts (not merely the last): <c>true</c> as soon as
+	/// any attempt finds the section visible; <c>false</c> when ANY attempt definitively proved the section
+	/// absent (retry-safe) and none found it visible; <c>null</c> ONLY when no attempt produced a definitive
+	/// answer (every attempt errored / returned <c>null</c>, so the section state is genuinely unknown). This
+	/// means a sequence such as <c>[false, false, null]</c> returns <c>false</c>, not <c>null</c>, so the
+	/// caller's id-matched auto-retry is not suppressed under the heavy same-app load this path exists to
+	/// recover from (ENG-93089 #3595964299).
 	/// </returns>
 	private bool? TryVerifySectionExistsWithSettle(
 		IApplicationClient client,
 		EnvironmentSettings environmentSettings,
 		ResolvedApplicationSectionCreateRequest request) {
-		bool? lastOutcome = null;
+		bool sawDefinitiveAbsent = false;
 		for (int attempt = 1; attempt <= ContentionVerifyAttempts; attempt++) {
 			bool? sectionVisible = TryVerifySectionExists(client, environmentSettings, request);
 			if (sectionVisible == true) {
 				return true;
 			}
 
-			lastOutcome = sectionVisible;
+			if (sectionVisible == false) {
+				sawDefinitiveAbsent = true;
+			}
+
 			if (attempt < ContentionVerifyAttempts) {
-				Thread.Sleep(PollDelay);
+				_delay(PollDelay);
 			}
 		}
 
-		return lastOutcome;
+		// Prefer a definitive "absent" over "unknown": if any attempt proved absence, the id-matched retry is
+		// PK-safe, so return false. null is reserved for the case where no attempt ever answered.
+		return sawDefinitiveAbsent ? false : (bool?)null;
 	}
 
 	/// <summary>
@@ -1153,7 +1169,7 @@ public sealed class ApplicationSectionCreateService(
 			} catch (Exception exception) {
 				lastError = exception;
 				if (attempt < PollAttempts) {
-					System.Threading.Thread.Sleep(PollDelay);
+					_delay(PollDelay);
 				}
 			}
 		}

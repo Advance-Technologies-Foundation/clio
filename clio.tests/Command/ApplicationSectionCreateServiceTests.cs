@@ -568,7 +568,9 @@ public sealed class ApplicationSectionCreateServiceTests {
 			_ => _sysSettingsManager,
 			_logger,
 			resolver,
-			new SectionCreateSerializationGuard(_logger));
+			new SectionCreateSerializationGuard(_logger),
+			// No-op delay seam: run the contention backoff and settle/poll loops instantly under test.
+			contentionDelay: _ => { });
 	}
 
 	private ApplicationSectionCreateService CreateSutWithGuard(ISectionCreateSerializationGuard guard) {
@@ -583,7 +585,9 @@ public sealed class ApplicationSectionCreateServiceTests {
 			_ => _sysSettingsManager,
 			_logger,
 			_captionCultureResolver,
-			guard);
+			guard,
+			// No-op delay seam: run the contention backoff and settle/poll loops instantly under test.
+			contentionDelay: _ => { });
 	}
 
 	[Test]
@@ -978,6 +982,123 @@ public sealed class ApplicationSectionCreateServiceTests {
 		exception.FailureClass.Should().Be(ApplicationSectionCreateFailureClass.Contention,
 			because: "a verified-absent detail-less rejection is still classified contention when the retry is disabled");
 		_applicationClient.Received(1).ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal)
+				&& body.Contains("\"columnValues\"", StringComparison.Ordinal)
+				&& !body.Contains("\"filters\"", StringComparison.Ordinal)),
+			Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("Retry-recovery leg (ENG-93089 #3595964463 leg 1): on the contention-prone path, when the retry insert ALSO aborts detail-lessly but the post-retry re-verify finds the section present, clio recovers via readback (sectionVisibleAfterRetry==true) — it issues exactly 2 inserts (no third) and returns the created section.")]
+	public void CreateSection_Should_Recover_When_Retry_Aborts_DetailLess_But_Section_Visible_On_PostRetry_Verify() {
+		// Arrange
+		SetUpBothInsertsDetailLessThenVisibleOnPostRetryVerify();
+
+		// Act — enableContentionRetry:true takes the retry leg; the retry also aborts detail-lessly, but the
+		// post-retry re-verify then finds the section committed.
+		ApplicationSectionCreateResult result = _sut.CreateSection(
+			"sandbox", CreateReuseEntityRequest(), enableContentionRetry: true);
+
+		// Assert
+		result.Section.Code.Should().Be("UsrOrders",
+			because: "a section that committed on the retry despite a detail-less rejection must be returned via readback, not re-created");
+		_applicationClient.Received(2).ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal)
+				&& body.Contains("\"columnValues\"", StringComparison.Ordinal)
+				&& !body.Contains("\"filters\"", StringComparison.Ordinal)),
+			Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("Retry-recovery leg (ENG-93089 #3595964463 leg 2): on the contention-prone path, when the retry insert throws a TERMINAL detailed ServerError and the id re-verify STILL finds the section absent, the ServerError is rethrown unchanged rather than swallowed — the absent/rethrow complement of the section-visible swallow case.")]
+	public void CreateSection_Should_Rethrow_Retry_Terminal_ServerError_When_Section_Still_Absent() {
+		// Arrange
+		SetUpDetailLessThenServerErrorInsertWithAbsentSection();
+
+		// Act — enableContentionRetry:true takes the retry leg; the retry's detailed ServerError is re-verified
+		// by id and, because the section is still absent, must surface unchanged.
+		Action action = () => _sut.CreateSection(
+			"sandbox", CreateReuseEntityRequest(), enableContentionRetry: true);
+
+		// Assert
+		ApplicationSectionCreateException exception = action.Should().Throw<ApplicationSectionCreateException>(
+			because: "a genuine terminal ServerError on the retry with the section verified absent must surface, not be swallowed").Which;
+		exception.FailureClass.Should().Be(ApplicationSectionCreateFailureClass.ServerError,
+			because: "the retry's detailed rejection is a genuine server error when the section is not visible on re-verify");
+		exception.SectionCreated.Should().BeFalse(
+			because: "a detailed rejection with the section verified absent guarantees the section was not created");
+		exception.Message.Should().Contain("Section with this code already exists",
+			because: "the terminal ServerError must be rethrown unchanged, preserving the detailed server message");
+		_applicationClient.Received(2).ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal)
+				&& body.Contains("\"columnValues\"", StringComparison.Ordinal)
+				&& !body.Contains("\"filters\"", StringComparison.Ordinal)),
+			Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("Retry-recovery leg (ENG-93089 #3595964463 leg 3): on the contention-prone path, when the retry insert aborts detail-lessly and the post-retry re-verify ITSELF fails (returns null), clio throws the classified contention failure with section-created=null — the final BuildContentionFailure(null) throw path.")]
+	public void CreateSection_Should_Throw_Contention_With_Null_State_When_PostRetry_Verify_Fails() {
+		// Arrange
+		SetUpBothInsertsDetailLessThenNullPostRetryVerify();
+
+		// Act
+		Action action = () => _sut.CreateSection(
+			"sandbox", CreateReuseEntityRequest(), enableContentionRetry: true);
+
+		// Assert
+		ApplicationSectionCreateException exception = action.Should().Throw<ApplicationSectionCreateException>(
+			because: "a detail-less retry whose re-verify cannot answer must surface as a contention failure with unknown state").Which;
+		exception.FailureClass.Should().Be(ApplicationSectionCreateFailureClass.Contention,
+			because: "a persistent detail-less rejection is contention, not a terminal server error");
+		exception.SectionCreated.Should().BeNull(
+			because: "the post-retry verification could not answer, so the section state is unknown, not proven absent");
+		_applicationClient.Received(2).ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal)
+				&& body.Contains("\"columnValues\"", StringComparison.Ordinal)
+				&& !body.Contains("\"filters\"", StringComparison.Ordinal)),
+			Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("Settle-loop purpose (ENG-93089 #3595964463 leg 4): when the first contention verify attempt reports the section absent but a LATER attempt finds it present, clio treats it as committed and recovers via readback with NO retry (exactly 1 insert).")]
+	public void CreateSection_Should_Recover_When_Section_Becomes_Visible_On_Later_Settle_Attempt() {
+		// Arrange
+		SetUpDetailLessInsertVisibleOnSecondSettleAttempt();
+
+		// Act
+		ApplicationSectionCreateResult result = _sut.CreateSection(
+			"sandbox", CreateReuseEntityRequest(), enableContentionRetry: true);
+
+		// Assert
+		result.Section.Code.Should().Be("UsrOrders",
+			because: "a section that becomes visible on a later settle attempt must be recovered via readback without a destructive retry");
+		_applicationClient.Received(1).ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal)
+				&& body.Contains("\"columnValues\"", StringComparison.Ordinal)
+				&& !body.Contains("\"filters\"", StringComparison.Ordinal)),
+			Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("Regression guard for ENG-93089 #3595964299: a pre-retry verify sequence [absent, absent, error] (false, false, null) must make TryVerifySectionExistsWithSettle return false (retry proceeds), NOT null (which would throw Contention(null) immediately) — so the id-matched auto-retry insert is issued and recovers (2 inserts).")]
+	public void CreateSection_Should_Retry_When_Settle_Sequence_Is_Absent_Absent_Error() {
+		// Arrange
+		SetUpDetailLessThenSuccessWithAbsentAbsentErrorPreRetryVerify();
+
+		// Act
+		ApplicationSectionCreateResult result = _sut.CreateSection(
+			"sandbox", CreateReuseEntityRequest(), enableContentionRetry: true);
+
+		// Assert
+		result.Section.Code.Should().Be("UsrOrders",
+			because: "a [false,false,null] settle sequence proves absence, so the PK-safe auto-retry must proceed and recover instead of throwing Contention(null)");
+		_applicationClient.Received(2).ExecutePostRequest(
 			Arg.Any<string>(),
 			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal)
 				&& body.Contains("\"columnValues\"", StringComparison.Ordinal)
@@ -1761,6 +1882,189 @@ public sealed class ApplicationSectionCreateServiceTests {
 				_ => """{"success":true,"rows":[]}""",
 				_ => """{"success":true,"rows":[]}""",
 				_ => """{"success":true,"rows":[]}""",
+				_ => $$"""{"success":true,"rows":[{"Id":"{{ExtractGeneratedSectionId()}}","ApplicationId":"app-id","Caption":"Orders","Code":"UsrOrders","Description":"Order workspace","EntitySchemaName":"UsrOrders","PackageId":"pkg-uid","SectionSchemaUId":"section-schema-uid","LogoId":"icon-id","IconBackground":null,"ClientTypeId":null}]}""");
+		_applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+					body.Contains("\"columnValues\"", StringComparison.Ordinal) &&
+					body.Contains("\"IconBackground\"", StringComparison.Ordinal) &&
+					body.Contains("\"filters\"", StringComparison.Ordinal)),
+				Arg.Any<int>())
+			.Returns("""{"success":true}""");
+	}
+
+	// A SectionSchemaUId select whose success=false makes SelectQueryHelper.ExecuteSelectQuery fail, so
+	// TryVerifySectionExists returns null (verification could not answer) — the "unknown" verify outcome.
+	private const string VerifyReadbackFailedJson =
+		"""{"success":false,"errorInfo":{"message":"Verification failed"}}""";
+
+	// Both inserts abort detail-lessly; the pre-retry settle (3 calls) sees the section absent, but the
+	// post-retry re-verify (4th SectionSchemaUId call onward, which NSubstitute repeats) finds the section by
+	// its generated id, so clio recovers via readback with NO third insert. Used by leg-1 (#3595964463).
+	private void SetUpBothInsertsDetailLessThenVisibleOnPostRetryVerify() {
+		SetUpCommonReadMocks();
+		_capturedInsertBody = null;
+		_applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+					body.Contains("\"columnValues\"", StringComparison.Ordinal) &&
+					!body.Contains("\"filters\"", StringComparison.Ordinal)),
+				Arg.Any<int>())
+			.Returns(callInfo => {
+				_capturedInsertBody = callInfo.ArgAt<string>(1);
+				return """{"success":false}""";
+			});
+		_applicationInfoService.GetApplicationInfo("sandbox", null, "UsrOrdersApp")
+			.Returns(CreateBeforeInfo(), CreateBeforeInfo());
+		_applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+					body.Contains("\"SectionSchemaUId\"", StringComparison.Ordinal)),
+				Arg.Any<int>())
+			.Returns(
+				_ => """{"success":true,"rows":[]}""",
+				_ => """{"success":true,"rows":[]}""",
+				_ => """{"success":true,"rows":[]}""",
+				_ => $$"""{"success":true,"rows":[{"Id":"{{ExtractGeneratedSectionId()}}","ApplicationId":"app-id","Caption":"Orders","Code":"UsrOrders","Description":"Order workspace","EntitySchemaName":"UsrOrders","PackageId":"pkg-uid","SectionSchemaUId":"section-schema-uid","LogoId":"icon-id","IconBackground":null,"ClientTypeId":null}]}""");
+		_applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+					body.Contains("\"columnValues\"", StringComparison.Ordinal) &&
+					body.Contains("\"IconBackground\"", StringComparison.Ordinal) &&
+					body.Contains("\"filters\"", StringComparison.Ordinal)),
+				Arg.Any<int>())
+			.Returns("""{"success":true}""");
+	}
+
+	// Insert #1 aborts detail-lessly; the retry insert returns a DETAILED ServerError, and every verify (the
+	// pre-retry settle AND the post-ServerError re-verify) reports the section absent, so the terminal
+	// ServerError is genuine and must be rethrown unchanged. Used by leg-2 (#3595964463).
+	private void SetUpDetailLessThenServerErrorInsertWithAbsentSection() {
+		SetUpCommonReadMocks();
+		_capturedInsertBody = null;
+		_applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+					body.Contains("\"columnValues\"", StringComparison.Ordinal) &&
+					!body.Contains("\"filters\"", StringComparison.Ordinal)),
+				Arg.Any<int>())
+			.Returns(
+				callInfo => {
+					_capturedInsertBody = callInfo.ArgAt<string>(1);
+					return """{"success":false}""";
+				},
+				callInfo => {
+					_capturedInsertBody = callInfo.ArgAt<string>(1);
+					return """{"success":false,"errorInfo":{"message":"Section with this code already exists"}}""";
+				});
+		_applicationInfoService.GetApplicationInfo("sandbox", null, "UsrOrdersApp")
+			.Returns(CreateBeforeInfo(), CreateBeforeInfo());
+		_applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+					body.Contains("\"SectionSchemaUId\"", StringComparison.Ordinal)),
+				Arg.Any<int>())
+			.Returns("""{"success":true,"rows":[]}""");
+	}
+
+	// Both inserts abort detail-lessly; the pre-retry settle (3 calls) proves the section absent, but the
+	// post-retry re-verify (4th SectionSchemaUId call onward) FAILS (error response → null), so clio throws
+	// the classified contention failure with section-created=null. Used by leg-3 (#3595964463).
+	private void SetUpBothInsertsDetailLessThenNullPostRetryVerify() {
+		SetUpCommonReadMocks();
+		_capturedInsertBody = null;
+		_applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+					body.Contains("\"columnValues\"", StringComparison.Ordinal) &&
+					!body.Contains("\"filters\"", StringComparison.Ordinal)),
+				Arg.Any<int>())
+			.Returns(callInfo => {
+				_capturedInsertBody = callInfo.ArgAt<string>(1);
+				return """{"success":false}""";
+			});
+		_applicationInfoService.GetApplicationInfo("sandbox", null, "UsrOrdersApp")
+			.Returns(CreateBeforeInfo(), CreateBeforeInfo());
+		_applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+					body.Contains("\"SectionSchemaUId\"", StringComparison.Ordinal)),
+				Arg.Any<int>())
+			.Returns(
+				_ => """{"success":true,"rows":[]}""",
+				_ => """{"success":true,"rows":[]}""",
+				_ => """{"success":true,"rows":[]}""",
+				_ => VerifyReadbackFailedJson);
+	}
+
+	// Insert aborts detail-lessly; the FIRST settle attempt reports the section absent, but the SECOND (and
+	// later) attempt finds it by its generated id, so the pre-retry settle returns visible and clio recovers
+	// with NO retry (exactly 1 insert). Used by leg-4 (#3595964463).
+	private void SetUpDetailLessInsertVisibleOnSecondSettleAttempt() {
+		SetUpCommonReadMocks();
+		_capturedInsertBody = null;
+		_applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+					body.Contains("\"columnValues\"", StringComparison.Ordinal) &&
+					!body.Contains("\"filters\"", StringComparison.Ordinal)),
+				Arg.Any<int>())
+			.Returns(callInfo => {
+				_capturedInsertBody = callInfo.ArgAt<string>(1);
+				return """{"success":false}""";
+			});
+		_applicationInfoService.GetApplicationInfo("sandbox", null, "UsrOrdersApp")
+			.Returns(CreateBeforeInfo(), CreateBeforeInfo());
+		_applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+					body.Contains("\"SectionSchemaUId\"", StringComparison.Ordinal)),
+				Arg.Any<int>())
+			.Returns(
+				_ => """{"success":true,"rows":[]}""",
+				_ => $$"""{"success":true,"rows":[{"Id":"{{ExtractGeneratedSectionId()}}","ApplicationId":"app-id","Caption":"Orders","Code":"UsrOrders","Description":"Order workspace","EntitySchemaName":"UsrOrders","PackageId":"pkg-uid","SectionSchemaUId":"section-schema-uid","LogoId":"icon-id","IconBackground":null,"ClientTypeId":null}]}""");
+		_applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+					body.Contains("\"columnValues\"", StringComparison.Ordinal) &&
+					body.Contains("\"IconBackground\"", StringComparison.Ordinal) &&
+					body.Contains("\"filters\"", StringComparison.Ordinal)),
+				Arg.Any<int>())
+			.Returns("""{"success":true}""");
+	}
+
+	// Insert #1 aborts detail-lessly; the pre-retry settle sees [absent, absent, error] = [false, false, null].
+	// The #3595964299 fix makes that return false (definitive absence seen), so the retry proceeds; insert #2
+	// succeeds and the outside readback (4th SectionSchemaUId call onward) returns the created section.
+	private void SetUpDetailLessThenSuccessWithAbsentAbsentErrorPreRetryVerify() {
+		SetUpCommonReadMocks();
+		_capturedInsertBody = null;
+		_applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+					body.Contains("\"columnValues\"", StringComparison.Ordinal) &&
+					!body.Contains("\"filters\"", StringComparison.Ordinal)),
+				Arg.Any<int>())
+			.Returns(
+				callInfo => {
+					_capturedInsertBody = callInfo.ArgAt<string>(1);
+					return """{"success":false}""";
+				},
+				callInfo => {
+					_capturedInsertBody = callInfo.ArgAt<string>(1);
+					return """{"success":true}""";
+				});
+		_applicationInfoService.GetApplicationInfo("sandbox", null, "UsrOrdersApp")
+			.Returns(CreateBeforeInfo(), CreateBeforeInfo());
+		_applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+					body.Contains("\"SectionSchemaUId\"", StringComparison.Ordinal)),
+				Arg.Any<int>())
+			.Returns(
+				_ => """{"success":true,"rows":[]}""",
+				_ => """{"success":true,"rows":[]}""",
+				_ => VerifyReadbackFailedJson,
 				_ => $$"""{"success":true,"rows":[{"Id":"{{ExtractGeneratedSectionId()}}","ApplicationId":"app-id","Caption":"Orders","Code":"UsrOrders","Description":"Order workspace","EntitySchemaName":"UsrOrders","PackageId":"pkg-uid","SectionSchemaUId":"section-schema-uid","LogoId":"icon-id","IconBackground":null,"ClientTypeId":null}]}""");
 		_applicationClient.ExecutePostRequest(
 				Arg.Any<string>(),
