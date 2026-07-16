@@ -1,4 +1,6 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E.Support.Configuration;
@@ -11,8 +13,11 @@ using ModelContextProtocol.Protocol;
 namespace Clio.Mcp.E2E.Support.Mcp;
 
 internal sealed class McpServerSession : IAsyncDisposable {
+	private const int MaxDiagnosticNotifications = 20;
 	private readonly StdioClientTransport _transport;
 	private readonly ConcurrentQueue<JsonNode> _capturedProgressParams = new();
+	private readonly object _progressCapturedSignalLock = new();
+	private TaskCompletionSource<bool> _progressCapturedSignal = CreateProgressCapturedSignal();
 	private IAsyncDisposable? _progressCaptureRegistration;
 	private bool _progressCaptureRegistered;
 	private HashSet<string>? _advertisedToolNames;
@@ -89,6 +94,7 @@ internal sealed class McpServerSession : IAsyncDisposable {
 			JsonNode? paramsNode = notification.Params?.DeepClone();
 			if (paramsNode is not null) {
 				_capturedProgressParams.Enqueue(paramsNode);
+				SignalProgressCaptured();
 			}
 
 			return default;
@@ -103,29 +109,99 @@ internal sealed class McpServerSession : IAsyncDisposable {
 
 	/// <summary>
 	/// Waits for asynchronously dispatched progress notifications to satisfy <paramref name="condition"/>,
-	/// returning the latest snapshot when the condition is met or the timeout expires. Tool completion and
-	/// notification dispatch use independent SDK continuations, so a completed call does not guarantee that
-	/// the raw notification handler has drained its queue yet.
+	/// returning the snapshot that satisfied the condition. Tool completion and notification dispatch use
+	/// independent SDK continuations, so a completed call does not guarantee that the raw notification handler
+	/// has drained its queue yet. Throws a diagnostic <see cref="TimeoutException"/> when the condition remains
+	/// unsatisfied after one final snapshot at the timeout boundary.
 	/// </summary>
 	public async Task<IReadOnlyList<JsonNode>> WaitForCapturedProgressAsync(
+		ProgressToken progressToken,
 		Func<IReadOnlyList<JsonNode>, bool> condition,
 		TimeSpan timeout,
 		CancellationToken cancellationToken) {
 		ArgumentNullException.ThrowIfNull(condition);
-		using CancellationTokenSource timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-		timeoutSource.CancelAfter(timeout);
-		IReadOnlyList<JsonNode> snapshot = CapturedProgressParams;
-		while (!condition(snapshot) && !timeoutSource.IsCancellationRequested) {
-			try {
-				await Task.Delay(TimeSpan.FromMilliseconds(20), timeoutSource.Token);
-			}
-			catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) {
-				break;
-			}
-			snapshot = CapturedProgressParams;
+		if (timeout <= TimeSpan.Zero) {
+			throw new ArgumentOutOfRangeException(nameof(timeout), timeout, "Progress wait timeout must be positive.");
 		}
-		cancellationToken.ThrowIfCancellationRequested();
-		return snapshot;
+
+		Stopwatch stopwatch = Stopwatch.StartNew();
+		while (true) {
+			cancellationToken.ThrowIfCancellationRequested();
+			Task progressCaptured = GetProgressCapturedSignalTask();
+			IReadOnlyList<JsonNode> snapshot = GetCapturedProgressParams(progressToken);
+			if (condition(snapshot)) {
+				return snapshot;
+			}
+
+			TimeSpan remaining = timeout - stopwatch.Elapsed;
+			try {
+				if (remaining <= TimeSpan.Zero) {
+					throw new TimeoutException();
+				}
+				await progressCaptured.WaitAsync(remaining, cancellationToken);
+			}
+			catch (TimeoutException) {
+				IReadOnlyList<JsonNode> finalSnapshot = GetCapturedProgressParams(progressToken);
+				if (condition(finalSnapshot)) {
+					return finalSnapshot;
+				}
+
+				throw new TimeoutException(BuildProgressTimeoutMessage(timeout, finalSnapshot));
+			}
+		}
+	}
+
+	private IReadOnlyList<JsonNode> GetCapturedProgressParams(ProgressToken progressToken) {
+		return [.. _capturedProgressParams.Where(node => HasProgressToken(node, progressToken))];
+	}
+
+	internal static bool HasProgressToken(JsonNode node, ProgressToken expectedToken) {
+		ProgressToken? capturedToken = node["progressToken"]?.Deserialize<ProgressToken>();
+		return capturedToken.HasValue && capturedToken.Value.Equals(expectedToken);
+	}
+
+	private void SignalProgressCaptured() {
+		TaskCompletionSource<bool> signal;
+		lock (_progressCapturedSignalLock) {
+			signal = _progressCapturedSignal;
+			_progressCapturedSignal = CreateProgressCapturedSignal();
+		}
+		signal.TrySetResult(true);
+	}
+
+	private Task GetProgressCapturedSignalTask() {
+		lock (_progressCapturedSignalLock) {
+			return _progressCapturedSignal.Task;
+		}
+	}
+
+	private static TaskCompletionSource<bool> CreateProgressCapturedSignal() =>
+		new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+	private static string BuildProgressTimeoutMessage(TimeSpan timeout, IReadOnlyList<JsonNode> snapshot) {
+		int omittedCount = Math.Max(0, snapshot.Count - MaxDiagnosticNotifications);
+		IEnumerable<JsonNode> diagnosticTail = snapshot.Skip(omittedCount);
+		string events = snapshot.Count == 0
+			? "none"
+			: string.Join(", ", diagnosticTail.Select(DescribeProgressNotification));
+		string omitted = omittedCount == 0 ? string.Empty : $" {omittedCount} earlier notification(s) omitted.";
+		return $"Timed out after {timeout.TotalSeconds:0.###} seconds waiting for MCP progress condition. "
+			+ $"Captured {snapshot.Count} notification(s): {events}.{omitted}";
+	}
+
+	private static string DescribeProgressNotification(JsonNode node) {
+		JsonNode? stageEvent = node["_meta"]?["clioStageEvent"];
+		if (stageEvent is null) {
+			return "untyped";
+		}
+
+		string eventType = stageEvent["eventType"]?.ToString() ?? "missing-event-type";
+		string runId = stageEvent["runId"]?.ToString() ?? "missing-run-id";
+		string sequence = stageEvent["sequence"]?.ToString() ?? "missing-sequence";
+		string stageId = stageEvent["stage"]?["stageId"]?.ToString() ?? "none";
+		string status = stageEvent["stage"]?["status"]?.ToString() ?? "none";
+		string outcome = stageEvent["runCompleted"]?["outcome"]?.ToString() ?? "none";
+		return $"{eventType}(runId={runId}, sequence={sequence}, stage={stageId}, status={status}, outcome={outcome})";
 	}
 
 	public async Task<IList<McpClientTool>> ListToolsAsync(CancellationToken cancellationToken) =>
@@ -203,9 +279,10 @@ internal sealed class McpServerSession : IAsyncDisposable {
 	public async Task<CallToolResult> CallToolWithRawProgressAsync(
 		string toolName,
 		IReadOnlyDictionary<string, object?> arguments,
+		ProgressToken progressToken,
 		CancellationToken cancellationToken) {
 		RequestOptions options = new() {
-			ProgressToken = new ProgressToken($"clio-mcp-e2e-{Guid.NewGuid():N}")
+			ProgressToken = progressToken
 		};
 		if (await IsToolAdvertisedAsync(toolName, cancellationToken)) {
 			return await Client.CallToolAsync(

@@ -41,6 +41,7 @@ public sealed class PageCreationGuidanceResource {
 			         * `BaseSidebarTemplate` — Sidebar page (feature-flagged)
 			         * `ListPageV3Template` or `ListPageV2Template` — List page (feature-flagged)
 			         * `BlankPageTemplate` — Blank page
+			         * `CentralAreaDesktopTemplate` — Desktop (a desktop-selector workspace; read get-guidance name `desktop-page` FIRST)
 			       - Mobile (schema-type: mobile, schemaType=10):
 			         * `MobilePageWithTabsFreedomTemplate`
 			         * `BaseMobilePageTemplate`
@@ -55,7 +56,7 @@ public sealed class PageCreationGuidanceResource {
 			       Optional inputs
 			       - `caption`: human-readable caption. Defaults to `schema-name` when omitted.
 			       - `description`: free-form description.
-			       - `entity-schema-name`: existing entity schema. When set, the new page records the entity in its dependencies; leave blank for template-pure pages (dashboards, blank pages, custom pages).
+			       - `entity-schema-name`: existing entity schema. When set, the new page records the entity in its dependencies; leave blank for template-pure pages (dashboards, desktops, blank pages, custom pages).
 
 			       Validation and failure modes
 			       - Unknown template: `create-page` rejects the call with a readable error; always call `list-page-templates` first when unsure.

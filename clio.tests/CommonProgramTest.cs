@@ -213,7 +213,7 @@ internal class CommonProgramTest : BaseClioModuleTests{
 	[Description("Prints a compatibility version line for legacy callers that still invoke clio with the root --version flag.")]
 	public void Main_WithRootVersionFlag_ShouldReturnZeroAndPrintCompatibilityVersion() {
 		// Arrange
-		StringWriter consoleOutput = new();
+		ThreadSafeStringWriter consoleOutput = new();
 		Console.SetOut(consoleOutput);
 		string[] args = ["--version"];
 
@@ -230,7 +230,7 @@ internal class CommonProgramTest : BaseClioModuleTests{
 	[Test]
 	[Description("Prints up to ten alphabetically sorted suggestions and help hints for an unknown top-level command.")]
 	public void ExecuteCommands_WithUnknownVerb_ShouldPrintSuggestionsAndKeepExitCodeOne() {
-		StringWriter consoleOutput = new();
+		ThreadSafeStringWriter consoleOutput = new();
 		Console.SetOut(consoleOutput);
 		Console.SetError(consoleOutput);
 		string[] args = ["get-list"];
@@ -262,7 +262,7 @@ internal class CommonProgramTest : BaseClioModuleTests{
 	[Test]
 	[Description("Surfaces the shortest matching alias instead of the canonical name when the alias is a closer fit.")]
 	public void ExecuteCommands_WithAliasLikeInput_ShouldSuggestShortestMatchingAlias() {
-		StringWriter consoleOutput = new();
+		ThreadSafeStringWriter consoleOutput = new();
 		Console.SetOut(consoleOutput);
 		Console.SetError(consoleOutput);
 		string[] args = ["envss"];
@@ -285,7 +285,7 @@ internal class CommonProgramTest : BaseClioModuleTests{
 	[Test]
 	[Description("Reflects the alias closest to a typo such as 'encvs' instead of forcing the user to read the canonical name.")]
 	public void ExecuteCommands_WithTypoNearShortAlias_ShouldSuggestThatAlias() {
-		StringWriter consoleOutput = new();
+		ThreadSafeStringWriter consoleOutput = new();
 		Console.SetOut(consoleOutput);
 		Console.SetError(consoleOutput);
 		string[] args = ["encvs"];
@@ -308,7 +308,7 @@ internal class CommonProgramTest : BaseClioModuleTests{
 	[Test]
 	[Description("Downweights short aliases for longer unknown commands so relevant skill commands remain visible.")]
 	public void ExecuteCommands_WithSkillInput_ShouldPreferSkillCommandsOverShortAliasMatches() {
-		StringWriter consoleOutput = new();
+		ThreadSafeStringWriter consoleOutput = new();
 		Console.SetOut(consoleOutput);
 		Console.SetError(consoleOutput);
 		string[] args = ["skill"];
@@ -337,7 +337,7 @@ internal class CommonProgramTest : BaseClioModuleTests{
 	[Test]
 	[Description("Renders flat top-level help with canonical commands sorted alphabetically.")]
 	public void ExecuteCommands_WithHelpArgument_ShouldRenderAlphabeticalCanonicalRootHelp() {
-		StringWriter consoleOutput = new();
+		ThreadSafeStringWriter consoleOutput = new();
 		Console.SetOut(consoleOutput);
 		Console.SetError(consoleOutput);
 
@@ -373,7 +373,7 @@ internal class CommonProgramTest : BaseClioModuleTests{
 	[Test]
 	[Description("Shows canonical command help when help is requested through an alias.")]
 	public void ExecuteCommands_WithAliasHelp_ShouldRenderCanonicalCommandHelp() {
-		StringWriter consoleOutput = new();
+		ThreadSafeStringWriter consoleOutput = new();
 		Console.SetOut(consoleOutput);
 		Console.SetError(consoleOutput);
 
@@ -396,7 +396,7 @@ internal class CommonProgramTest : BaseClioModuleTests{
 	[Test]
 	[Description("Renders the rich manual add-item help when command help is requested through the built-in help command.")]
 	public void ExecuteCommands_WithBuiltInAddItemHelp_ShouldRenderManualHelpText() {
-		StringWriter consoleOutput = new();
+		ThreadSafeStringWriter consoleOutput = new();
 		Console.SetOut(consoleOutput);
 		Console.SetError(consoleOutput);
 
@@ -419,7 +419,7 @@ internal class CommonProgramTest : BaseClioModuleTests{
 	[Test]
 	[Description("Renders the rich manual add-item help when help is requested through the command parser path.")]
 	public void ExecuteCommands_WithAddItemHelpSwitch_ShouldRenderManualHelpText() {
-		StringWriter consoleOutput = new();
+		ThreadSafeStringWriter consoleOutput = new();
 		Console.SetOut(consoleOutput);
 		Console.SetError(consoleOutput);
 
@@ -442,7 +442,7 @@ internal class CommonProgramTest : BaseClioModuleTests{
 	[Test]
 	[Description("Keeps sparse manual help unchanged instead of appending generated syntax sections at runtime.")]
 	public void ExecuteCommands_WithSparseManualHelp_ShouldPreferManualHelpOnly() {
-		StringWriter consoleOutput = new();
+		ThreadSafeStringWriter consoleOutput = new();
 		Console.SetOut(consoleOutput);
 		Console.SetError(consoleOutput);
 
@@ -461,7 +461,7 @@ internal class CommonProgramTest : BaseClioModuleTests{
 	[Test]
 	[Description("Excludes hidden commands from the unknown-command suggestions.")]
 	public void ExecuteCommands_WithHiddenCommandAlias_ShouldNotSuggestHiddenCommand() {
-		StringWriter consoleOutput = new();
+		ThreadSafeStringWriter consoleOutput = new();
 		Console.SetOut(consoleOutput);
 		Console.SetError(consoleOutput);
 		string[] args = ["execc"];
@@ -481,7 +481,7 @@ internal class CommonProgramTest : BaseClioModuleTests{
 	[Description("Keeps disabled experimental commands out of unknown-command suggestions.")]
 	public void ExecuteCommands_WithDisabledExperimentalCommand_ShouldNotSuggestExperimentalCommand() {
 		// Arrange
-		StringWriter consoleOutput = new();
+		ThreadSafeStringWriter consoleOutput = new();
 		Console.SetOut(consoleOutput);
 		Console.SetError(consoleOutput);
 
@@ -497,7 +497,7 @@ internal class CommonProgramTest : BaseClioModuleTests{
 	[Test]
 	[Description("Falls back to generic help when the input is too dissimilar to any visible command.")]
 	public void ExecuteCommands_WithLowConfidenceUnknownVerb_ShouldShowOnlyHelpHints() {
-		StringWriter consoleOutput = new();
+		ThreadSafeStringWriter consoleOutput = new();
 		Console.SetOut(consoleOutput);
 		Console.SetError(consoleOutput);
 		string[] args = ["zzzzzz"];
@@ -545,6 +545,40 @@ internal class CommonProgramTest : BaseClioModuleTests{
 		EnvironmentOptions environmentOptionsFromManifestFile
 			= Program.ReadEnvironmentOptionsFromManifestFile(manifestFilePath, commonFileSystem);
 		environmentOptionsFromManifestFile.Should().BeNull();
+	}
+
+	private sealed class ThreadSafeStringWriter : StringWriter {
+		private readonly object _sync = new();
+
+		public override void Write(char value) {
+			lock (_sync) {
+				base.Write(value);
+			}
+		}
+
+		public override void Write(char[] buffer, int index, int count) {
+			lock (_sync) {
+				base.Write(buffer, index, count);
+			}
+		}
+
+		public override void Write(string value) {
+			lock (_sync) {
+				base.Write(value);
+			}
+		}
+
+		public override void WriteLine(string value) {
+			lock (_sync) {
+				base.WriteLine(value);
+			}
+		}
+
+		public override string ToString() {
+			lock (_sync) {
+				return base.ToString();
+			}
+		}
 	}
 
 	#endregion

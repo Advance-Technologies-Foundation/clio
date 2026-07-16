@@ -53,9 +53,12 @@ public class ListThemesTool(
 			resolvedCommand => {
 				if (!resolvedCommand.TryGetAvailableThemes(options,
 						out IReadOnlyList<ThemeDescriptor> themes, out string errorMessage)) {
+					// Review (b-horodyskyi): errorMessage can carry a server-supplied ThemeService error body
+					// (ThemeServiceResponseParser/ThemeServiceResponse), so redact it the same as an exception
+					// message before it crosses into the MCP client transcript.
 					return ListThemesResult.Failure(string.IsNullOrWhiteSpace(errorMessage)
 						? "GetAvailableThemes returned success=false."
-						: errorMessage);
+						: SensitiveErrorTextRedactor.Redact(errorMessage));
 				}
 				return ListThemesResult.Successful(themes);
 			},

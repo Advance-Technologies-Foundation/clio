@@ -41,7 +41,7 @@ public sealed class ClientUnitSchemaUpdateTool(
 			Login = args.Login,
 			Password = args.Password
 		};
-		return ExecuteWithCleanLog(() => {
+		return ExecuteWithCleanLog(options, () => {
 			ClientUnitSchemaUpdateCommand resolvedCommand;
 			try {
 				resolvedCommand = ResolveCommand<ClientUnitSchemaUpdateCommand>(options);

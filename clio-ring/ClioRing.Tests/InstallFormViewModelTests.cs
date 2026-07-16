@@ -231,6 +231,7 @@ public sealed class InstallFormViewModelTests {
 		capturedRequest.Should().Contain("deploy-creatio", because: "the Install click deploys Creatio");
 		capturedRequest.Should().NotContain("dbServerName", because: "the Rancher source uses the default Kubernetes database and omits it");
 		capturedRequest.Should().NotContain("redisServerName", because: "the Rancher source uses the default Kubernetes Redis and omits it");
+		capturedRequest.Should().NotContain("useHttps", because: "HTTPS certificate selection applies only to local IIS deployments");
 	}
 
 	[Test]
@@ -273,6 +274,7 @@ public sealed class InstallFormViewModelTests {
 		InstallFormViewModel sut = NewSut(liveDeployEnabled: true);
 		await sut.InitializeAsync();
 		sut.Local = true;
+		sut.UseHttps = true;
 		sut.InstanceName = "creatio-demo";
 
 		string? capturedRequest = null;
@@ -287,6 +289,7 @@ public sealed class InstallFormViewModelTests {
 		capturedRequest.Should().Contain("rec-db", because: "the selected database name is sent");
 		capturedRequest.Should().Contain("redisServerName", because: "a Local install provides the Redis server name");
 		capturedRequest.Should().Contain("rec-redis", because: "the selected Redis name is sent");
+		capturedRequest.Should().Contain("\"useHttps\":true", because: "the local HTTPS preference must cross the Ring-to-clio contract");
 	}
 
 	[Test]

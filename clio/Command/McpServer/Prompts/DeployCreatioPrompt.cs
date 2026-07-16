@@ -25,7 +25,9 @@ public static class DeployCreatioPrompt
 		string zipFile,
 		[Required]
 		[Description("Port where Creatio will be deployed")]
-		int sitePort) =>
+		int sitePort,
+		[Description("Prefer HTTPS for local IIS deployment; falls back to HTTP when no usable certificate is installed")]
+		bool useHttps = false) =>
 		$"""
 		 Before calling `{InstallerCommandTool.DeployCreatioToolName}`, first run `assert-infrastructure`
 		 to review all passing and failing infrastructure, then run `show-passing-infrastructure` to get
@@ -35,6 +37,8 @@ public static class DeployCreatioPrompt
 		 The deployment preserves the build database's existing forced-password-change state and does not
 		 clear it automatically.
 		 After that preflight, call `{InstallerCommandTool.DeployCreatioToolName}` with site name `{siteName}`,
-		 zip file `{zipFile}`, site port `{sitePort}`, and the selected or recommended server-name arguments.
+		 zip file `{zipFile}`, site port `{sitePort}`, useHttps `{useHttps.ToString().ToLowerInvariant()}`, and the selected or recommended server-name arguments.
+		 For local IIS, useHttps is opportunistic: clio uses one usable LocalMachine/My certificate matching
+		 the host, or warns and continues with HTTP when none is available.
 		 """;
 }

@@ -38,7 +38,7 @@ public sealed class McpGuidanceForcingTests {
 		"core-rules", "routing", "page-modification",
 		"page-modification-overview", "page-modification-field-contract", "page-modification-containers", "page-modification-components",
 		"business-rules", "business-rule-filters", "dashboards", "dashboard-creation", "dashboard-design", "widget-layout", "indicator-widget",
-		"app-modeling", "esq", "esq-filters", "data-bindings"
+		"app-modeling", "esq", "esq-filters", "data-bindings", "desktop-page"
 	];
 
 	private static string ToolDescription<TTool>() {

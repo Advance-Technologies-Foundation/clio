@@ -21,7 +21,11 @@ deployment with optional HTTPS configuration and automatic service management.
 When `--site-name` and the configured `deploy-site-name` default are both
 omitted, interactive deployment prompts for the site name. The Windows Explorer
 "clio: deploy Creatio" action uses this prompt instead of deriving a name from
-the selected ZIP archive.
+the selected ZIP archive. When exactly one local database server is enabled and
+no deploy-specific database default exists, the Explorer action selects that
+server. Clio waits for a key press after any failed Explorer deployment, including
+early validation errors and exceptions, so the error remains visible without
+passing the ZIP filename through a command shell.
 
 Every deploy-creatio run creates a temp database-operation log file for the
 database restore portion of deployment. The final CLI output includes the
@@ -29,7 +33,9 @@ absolute path in a "Database operation log:" line. For MCP tool execution,
 the same path is returned in the structured response as log-file-path.
 
 Database restore mode:
-- Without --db-server-name: existing Kubernetes restore flow
+- Without --db-server-name: uses a configured deploy default; the Explorer action
+  then uses the sole enabled local database server, while other callers keep the
+  existing Kubernetes restore flow
 - With --db-server-name: configured local/local-style DB server from appsettings.json
 
 PostgreSQL running in Docker is supported through --db-server-name when the
@@ -43,7 +49,9 @@ Clio does not docker exec into the container.
 For PostgreSQL local restore, pg_restore must be installed on the machine
 running clio and available in PATH or via db.pgToolsPath.
 
-If Kubernetes is not available, --db-server-name is required.
+If Kubernetes is not available, configure a deploy default or pass
+--db-server-name explicitly. The Explorer action also selects a sole enabled local
+database server automatically.
 
 ## Synopsis
 
@@ -54,9 +62,6 @@ clio deploy-creatio [OPTIONS]
 ## Options
 
 ```bash
--e, --environment-name NAME
-Required. Environment/site name for the deployment
-
 --db DATABASE_TYPE
 Database type: pg (PostgreSQL) or mssql (MS SQL Server)
 Default: pg
@@ -101,12 +106,14 @@ Custom application installation path
 Default: Windows %ProgramFiles%/Creatio, macOS ~/creatio, Linux /opt/creatio
 
 --use-https
-Enable HTTPS for the application
+Prefer HTTPS for the application. For local IIS, clio selects a usable
+LocalMachine/My certificate matching the host. If none is installed, deployment
+warns and continues over HTTP. Use `pin-certificate` to choose among multiple matches.
 Default: false (HTTP only)
 
 --cert-path PATH
 Path to SSL certificate file (.pem or .pfx format)
-Required if --use-https is specified
+Used by dotnet deployment; IIS uses the Windows certificate store
 
 --cert-password PASSWORD
 Password for SSL certificate (if certificate is password-protected)
@@ -196,55 +203,60 @@ Default: false
 clio deploy-creatio --site-name "Default" --zip-file "C:\creatio-app.zip" --site-port 40001 --silent
 
 2. Deploy with MS SQL and custom port:
-clio deploy-creatio -e "Production" --db mssql --site-port 8080 \\
+clio deploy-creatio --site-name "Production" --db mssql --site-port 8080 \\
 --zip-file "/path/to/creatio-app.zip"
 
 3. Deploy with .NET Framework (Windows):
-clio deploy-creatio -e "LegacyApp" --platform netframework \\
+clio deploy-creatio --site-name "LegacyApp" --platform netframework \\
 --zip-file "C:\creatio-framework.zip"
 
 4. Deploy with HTTPS on Windows using dotnet (no IIS):
-clio deploy-creatio -e "SecureApp" --no-iis --use-https \\
+clio deploy-creatio --site-name "SecureApp" --no-iis --use-https \\
 --cert-path "C:\certs\app.pem" --zip-file "C:\creatio-app.zip"
 
+4a. Prefer HTTPS for local IIS (falls back to HTTP when no usable certificate exists):
+clio pin-certificate
+clio deploy-creatio --site-name "SecureIis" --site-port 40087 --use-https \
+--zip-file "C:\creatio-app.zip"
+
 5. Deploy to custom path on macOS:
-clio deploy-creatio -e "CreatioApp" --app-path "/var/creatio" \\
+clio deploy-creatio --site-name "CreatioApp" --app-path "/var/creatio" \\
 --zip-file "/Users/downloads/creatio-app.zip"
 
 6. Deploy on Linux with systemd service management:
-clio deploy-creatio -e "LinuxApp" --deployment dotnet \\
+clio deploy-creatio --site-name "LinuxApp" --deployment dotnet \\
 --app-path "/opt/creatio-prod" --zip-file "/home/admin/creatio-app.zip"
 
 7. Deploy without auto-launching browser:
-clio deploy-creatio -e "BackgroundApp" --auto-run false \\
+clio deploy-creatio --site-name "BackgroundApp" --auto-run false \\
 --zip-file "C:\creatio-app.zip"
 
 8. Silent deployment with all parameters:
-clio deploy-creatio -e "AutoDeploy" --db pg --platform net6 \\
---site-name "AutoCreatio" --site-port 8443 --use-https \\
+clio deploy-creatio --site-name "AutoDeploy" --db pg --platform net6 \\
+--site-port 8443 --use-https \\
 --cert-path "/certs/server.pem" --zip-file "/app/creatio.zip" --silent
 
 9. Deploy with specific Redis database (when auto-detection fails):
-clio deploy-creatio -e "RedisApp" --zip-file "C:\creatio-app.zip" --redis-db 5
+clio deploy-creatio --site-name "RedisApp" --zip-file "C:\creatio-app.zip" --redis-db 5
 
 10. Deploy in production with manual Redis DB to avoid conflicts:
-clio deploy-creatio -e "Production" --db mssql --site-port 8080 \\
+clio deploy-creatio --site-name "Production" --db mssql --site-port 8080 \\
 --redis-db 3 --zip-file "/path/to/creatio-app.zip"
 
 11. Deploy to local database server (automatic database restore):
 # Configure database server in appsettings.json first (see DATABASE RESTORATION)
 # Single command deploys everything: extract -> restore DB -> deploy app -> configure
-clio deploy-creatio -e "LocalDev" --db mssql --site-port 40001 \\
+clio deploy-creatio --site-name "LocalDev" --db mssql --site-port 40001 \\
 --db-server-name my-local-mssql \\
 --zip-file "C:\Creatio\8.3.3.1343_Studio_MSSQL_ENU.zip"
 
 12. Deploy PostgreSQL to local server with automatic DB drop:
-clio deploy-creatio -e "QA" --db pg --site-port 8080 \\
+clio deploy-creatio --site-name "QA" --db pg --site-port 8080 \\
 --db-server-name my-local-postgres --drop-if-exists \\
 --zip-file "C:\Creatio\8.3.3.1343_Studio_PG_ENU.zip"
 
 13. Deploy PostgreSQL running in Docker via published host port:
-clio deploy-creatio -e "DockerDev" --db pg --site-port 8080 \\
+clio deploy-creatio --site-name "DockerDev" --db pg --site-port 8080 \\
 --db-server-name docker-postgres --drop-if-exists \\
 --zip-file "C:\Creatio\8.3.3.1343_Studio_PG_ENU.zip"
 
@@ -256,12 +268,12 @@ clio deploy-creatio --site-name "AutoDeploy" --db mssql --site-port 8443 \\
 
 15. Deploy PostgreSQL with long filename (template reuse):
 # First deployment: Creates template from backup (slower)
-clio deploy-creatio -e "Dev" --db pg --site-port 8080 \\
+clio deploy-creatio --site-name "Dev" --db pg --site-port 8080 \\
 --db-server-name my-local-postgres \\
 --zip-file "C:\Creatio\8.3.3.5678_Studio_Enterprise_Marketing_PostgreSQL_ENU.zip"
 
 # Subsequent deployments: Reuses template (faster)
-clio deploy-creatio -e "Dev2" --db pg --site-port 8081 \\
+clio deploy-creatio --site-name "Dev2" --db pg --site-port 8081 \\
 --db-server-name my-local-postgres \\
 --zip-file "C:\Creatio\8.3.3.5678_Studio_Enterprise_Marketing_PostgreSQL_ENU.zip"
 ```
@@ -273,6 +285,7 @@ Database Restoration (Automatic):
 - WITH --db-server-name: Restores database to local server from appsettings.json
 - Database is extracted from db/*.bak (MSSQL) or db/*.backup (PostgreSQL) in zip
 - Connection strings are automatically updated to point to target database
+- Database and Redis connection values are written to the deployed configuration but never printed in command output
 - PostgreSQL/MSSQL native restore output is written into the temp database
 operation log artifact
 
@@ -290,7 +303,11 @@ Password Reset Script (Creatio >= 8.3.3):
 
 Windows (Default - IIS):
 - Creates IIS Application Pool
-- Creates IIS Website with HTTP/HTTPS bindings
+- Creates IIS Website with exactly one HTTP or HTTPS binding
+- HTTPS selects the pinned usable host certificate or the matching certificate
+with the latest expiration; missing certificates warn and fall back to HTTP
+- .NET Framework HTTPS switches ServiceModel config sources to `https` and sets
+the Microsoft `wsService` `encrypted` attribute to `true`
 - Configures application pool identity and recycling
 - Returns application URL in format: http(s)://FQDN:port
 
@@ -422,7 +439,7 @@ Linux:
     WORKFLOW:
     1. Configure database server in appsettings.json (if using local database)
     2. Run deploy-creatio with --db-server-name to automatically restore and deploy:
-       clio deploy-creatio -e "LocalDev" --db mssql --site-port 40001 \\
+       clio deploy-creatio --site-name "LocalDev" --db mssql --site-port 40001 \\
            --db-server-name my-local-mssql --zip-file "C:\Creatio\app.zip"
     3. The command will:
        a. Extract the zip file
@@ -484,9 +501,10 @@ Linux:
 
     The stream is:
     - one "manifest" event up front listing every stage that will run, in order
-    - a "stage" event per transition (running -> done / failed / skipped, with
+    - a "stage" event per transition (running -> done / warning / failed / skipped, with
       index / total / durationMs)
-    - one terminal "run-completed" event with outcome = success or failure
+    - one terminal "run-completed" event with outcome = success, success-with-warnings,
+      or failure
 
     Deploy stages (in order):
         stage-build            Build/prepare the source (network-drive source only;
@@ -498,10 +516,16 @@ Linux:
         configure-conn-strings Configure database and Redis connection strings
         register-env           Register the environment with clio
         wait-ready             Wait until the application reports ready
+        sync-dbhub-source      Reconcile the local database source when automatic dbHub
+                               synchronization is enabled (otherwise absent)
 
     Honest failure: a stage that fails is emitted failed, the remaining stages are
     emitted skipped (after-failure), and the run ends run-completed / failure. A
     non-zero stage result is surfaced as a failure and is never masked as success.
+
+    dbHub synchronization runs only after wait-ready succeeds. Its TOML/live-verification
+    failures are best effort: the stage is emitted warning, CLI output includes the safe
+    warning, and the run ends success-with-warnings without exposing database credentials.
 
     The envelope carries a schemaVersion field (currently 1) and is forward-compatible.
 

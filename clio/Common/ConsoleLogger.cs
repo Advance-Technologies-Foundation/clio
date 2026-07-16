@@ -22,17 +22,54 @@ public class ConsoleLogger : ILogger, IDisposable{
 	private ILogStreamer _creatioLogStreamer;
 	private static readonly Lazy<ILogger> Lazy = new(() => new ConsoleLogger());
 	private readonly ConcurrentQueue<LogMessage> _logQueue = new();
-	private readonly object _scopedSinksLock = new();
 	private readonly object _messageBufferLock = new();
 	private readonly ConsoleColor _defaultConsoleColor = Console.ForegroundColor;
-	private readonly Dictionary<Guid, SharedAppendFileSinkLease> _scopedFileSinks = new();
+	// FR-06 (ENG-93208): scoped file sinks are per async-flow so a scoped artifact (opened by
+	// restore-db / deploy-creatio via BeginScopedFileSink) receives ONLY the log lines produced by the
+	// flow that opened it. Each enqueued message captures its producing flow's active sinks onto
+	// LogMessage.ScopedSinks (at enqueue, on the producing flow), and the drain writes each message to
+	// ITS OWN sinks — never to every registered sink — so a concurrent tenant's lines can never bleed
+	// into another flow's artifact. A drain-time flow-local read would resolve to nothing: the drain
+	// runs on the shared _printThread whose async-flow slot differs from the producer's.
+	private readonly AsyncLocal<List<SharedAppendFileSinkLease>> _flowScopedSinks = new();
+	// Scoped sinks of the message currently being drained. Assigned under _messageBufferLock in
+	// FlushQueueCore (the drain is single-threaded and always runs under that lock), read by
+	// WriteToAdditionalSinks. It carries the sinks already resolved onto the message at enqueue time.
+	private IReadOnlyList<SharedAppendFileSinkLease> _drainingScopedSinks;
 	private static readonly string[] SpinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 	private volatile bool _spinnerActive;
 	private string _spinnerMessage = string.Empty;
 	private Thread? _spinnerThread;
 	private CancellationTokenSource? _spinnerCts;
-	public List<LogMessage> LogMessages { get; private set; } = [];
-	public bool PreserveMessages { get; set; }
+	// FR-06 (ENG-93208): capture state is per async-flow, not process-wide, so concurrent MCP tool
+	// invocations (different tenants under the per-tenant execution lock) never see each other's
+	// captured log lines. Console RENDERING stays on the shared _printThread; only the capture buffer
+	// and its enable flag are flow-local. Capture happens at ENQUEUE time (on the producing flow inside
+	// the Write* methods), NOT at drain time — the drain runs on the background _printThread whose
+	// async-flow slot differs from the producer's, so a drain-time capture into flow-local storage
+	// would capture nothing.
+	private readonly AsyncLocal<bool> _preserveMessages = new();
+	private readonly AsyncLocal<List<LogMessage>> _captureBuffer = new();
+
+	/// <summary>
+	/// The current async-flow's captured log buffer, lazily created per flow.
+	/// </summary>
+	public List<LogMessage> LogMessages => _captureBuffer.Value ??= [];
+
+	/// <summary>
+	/// Enables or disables log capture for the CURRENT async-flow. Setting <see langword="true"/>
+	/// establishes a FRESH per-flow buffer so each tool-execution scope is isolated and never inherits
+	/// the process-wide MCP-mode set (see <c>Program</c>) or a parent flow's captured lines.
+	/// </summary>
+	public bool PreserveMessages {
+		get => _preserveMessages.Value;
+		set {
+			_preserveMessages.Value = value;
+			if (value) {
+				_captureBuffer.Value = [];
+			}
+		}
+	}
 
 	#endregion
 
@@ -71,9 +108,10 @@ public class ConsoleLogger : ILogger, IDisposable{
 
 	private void FlushQueueCore() {
 		while (_logQueue.TryDequeue(out LogMessage item)) {
-			if (PreserveMessages) {
-				LogMessages.Add(item);
-			}
+			// Route the additional-sink writes to the sinks this message captured at enqueue time (the
+			// producing flow's scoped sinks) — never the whole registry — so each artifact receives only
+			// its own flow's lines (FR-06). Safe as a field: the drain is single-threaded under _messageBufferLock.
+			_drainingScopedSinks = item.ScopedSinks;
 			Action action = item switch {
 				InfoMessage infoMessage => () => WriteInfoInternal(infoMessage.Value.ToString()),
 				ErrorMessage errorMessage => () => WriteErrorInternal(errorMessage.Value.ToString()),
@@ -86,8 +124,34 @@ public class ConsoleLogger : ILogger, IDisposable{
 			try {
 				action.Invoke();
 			} catch (ObjectDisposedException) {
+			} finally {
+				_drainingScopedSinks = null;
 			}
 		}
+	}
+
+	// Captures a message into the CURRENT async-flow's buffer at enqueue time (on the producing flow),
+	// gated by the flow-local PreserveMessages flag. Runs under _messageBufferLock so a concurrent
+	// snapshot/clear (FlushAndSnapshotMessages/ClearMessages) or a child-flow write never races the add.
+	private void CaptureMessage(LogMessage message) {
+		// Attach the producing flow's active scoped sinks at ENQUEUE time (on this flow), so the drain —
+		// which runs on the shared _printThread whose async-flow slot differs — writes the line only to
+		// the sinks of the flow that produced it (FR-06). Runs regardless of PreserveMessages: the
+		// db-operation artifact sink must receive lines even when MCP capture is off.
+		message.ScopedSinks = SnapshotFlowScopedSinks();
+		if (!_preserveMessages.Value) {
+			return;
+		}
+		lock (_messageBufferLock) {
+			(_captureBuffer.Value ??= []).Add(message);
+		}
+	}
+
+	// Stable snapshot of the current flow's active scoped sinks (empty when the flow opened none), so
+	// a later Begin/Dispose on the same flow cannot mutate what an already-enqueued message carries.
+	private IReadOnlyList<SharedAppendFileSinkLease> SnapshotFlowScopedSinks() {
+		List<SharedAppendFileSinkLease> sinks = _flowScopedSinks.Value;
+		return sinks is { Count: > 0 } ? sinks.ToArray() : [];
 	}
 
 	private void PrintInternal(){
@@ -114,10 +178,15 @@ public class ConsoleLogger : ILogger, IDisposable{
 	}
 
 	private void WriteToAdditionalSinks(string value) {
-		lock (_scopedSinksLock) {
-			foreach (SharedAppendFileSinkLease sink in _scopedFileSinks.Values) {
-				sink.WriteLine(value);
-			}
+		// Write only to the sinks the currently-draining message captured from its producing flow
+		// (FR-06). A sink lease disposed since enqueue throws ObjectDisposedException, which the drain
+		// loop swallows — matching the prior best-effort behavior when the registry entry was removed.
+		IReadOnlyList<SharedAppendFileSinkLease> sinks = _drainingScopedSinks;
+		if (sinks is null) {
+			return;
+		}
+		foreach (SharedAppendFileSinkLease sink in sinks) {
+			sink.WriteLine(value);
 		}
 	}
 
@@ -224,15 +293,20 @@ public class ConsoleLogger : ILogger, IDisposable{
 	}
 
 	public void PrintTable(ConsoleTable table){
-		_logQueue.Enqueue(new TableMessage(table));
+		TableMessage message = new(table);
+		CaptureMessage(message);
+		_logQueue.Enqueue(message);
 	}
 
 	internal IReadOnlyList<LogMessage> FlushAndSnapshotMessages(bool clearMessages = false) {
 		lock (_messageBufferLock) {
+			// Drain the queue so any still-pending messages are rendered to the console before we hand
+			// back the snapshot; capture itself already happened at enqueue time into the flow buffer.
 			FlushQueueCore();
-			List<LogMessage> snapshot = [.. LogMessages];
+			List<LogMessage> buffer = _captureBuffer.Value ??= [];
+			List<LogMessage> snapshot = [.. buffer];
 			if (clearMessages) {
-				LogMessages.Clear();
+				buffer.Clear();
 			}
 			return snapshot;
 		}
@@ -241,7 +315,7 @@ public class ConsoleLogger : ILogger, IDisposable{
 	public void ClearMessages() {
 		lock (_messageBufferLock) {
 			FlushQueueCore();
-			LogMessages.Clear();
+			(_captureBuffer.Value ??= []).Clear();
 		}
 	}
 
@@ -258,12 +332,12 @@ public class ConsoleLogger : ILogger, IDisposable{
 		}
 
 		SharedAppendFileSinkLease sink = SharedAppendFileSinkRegistry.Acquire(logFilePath);
-		Guid sinkId = Guid.NewGuid();
-		lock (_scopedSinksLock) {
-			_scopedFileSinks[sinkId] = sink;
-		}
+		// Register the sink on the CURRENT async-flow so only this flow's enqueued messages carry it
+		// (FR-06). The value is a per-flow list (each flow inherits the process-startup null slot), so a
+		// concurrent flow's sink registration is invisible here.
+		(_flowScopedSinks.Value ??= []).Add(sink);
 
-		return new ScopedFileSink(this, sinkId, sink);
+		return new ScopedFileSink(this, sink);
 	}
 
 	/// <summary>
@@ -317,7 +391,9 @@ public class ConsoleLogger : ILogger, IDisposable{
 		if(CancellationToken.IsCancellationRequested) {
 			return;
 		}
-		_logQueue.Enqueue(new UndecoratedMessage(value));
+		UndecoratedMessage message = new(value);
+		CaptureMessage(message);
+		_logQueue.Enqueue(message);
 	}
 
 	/// <summary>
@@ -328,8 +404,9 @@ public class ConsoleLogger : ILogger, IDisposable{
 		if(CancellationToken.IsCancellationRequested) {
 			return;
 		}
-		_logQueue.Enqueue(new ErrorMessage(value));
-		
+		ErrorMessage message = new(value);
+		CaptureMessage(message);
+		_logQueue.Enqueue(message);
 	}
 
 	/// <summary>
@@ -340,7 +417,9 @@ public class ConsoleLogger : ILogger, IDisposable{
 		if(CancellationToken.IsCancellationRequested) {
 			return;
 		}
-		_logQueue.Enqueue(new InfoMessage(value));
+		InfoMessage message = new(value);
+		CaptureMessage(message);
+		_logQueue.Enqueue(message);
 	}
 
 	/// <summary>
@@ -350,7 +429,9 @@ public class ConsoleLogger : ILogger, IDisposable{
 		if (CancellationToken.IsCancellationRequested) {
 			return;
 		}
-		_logQueue.Enqueue(new UndecoratedMessage(string.Empty));
+		UndecoratedMessage message = new(string.Empty);
+		CaptureMessage(message);
+		_logQueue.Enqueue(message);
 	}
 
 	/// <summary>
@@ -361,7 +442,9 @@ public class ConsoleLogger : ILogger, IDisposable{
 		if(CancellationToken.IsCancellationRequested) {
 			return;
 		}
-		_logQueue.Enqueue(new UndecoratedMessage(value));
+		UndecoratedMessage message = new(value);
+		CaptureMessage(message);
+		_logQueue.Enqueue(message);
 	}
 
 	/// <summary>
@@ -372,9 +455,11 @@ public class ConsoleLogger : ILogger, IDisposable{
 		if(CancellationToken.IsCancellationRequested) {
 			return;
 		}
-		_logQueue.Enqueue(new WarningMessage(value));
+		WarningMessage message = new(value);
+		CaptureMessage(message);
+		_logQueue.Enqueue(message);
 	}
-	
+
 	/// <summary>
 	/// Enqueues a debug message to the log queue.
 	/// </summary>
@@ -387,7 +472,9 @@ public class ConsoleLogger : ILogger, IDisposable{
 		if (!Program.IsDebugMode) {
 			return;
 		}
-		_logQueue.Enqueue(new DebugMessage(value));
+		DebugMessage message = new(value);
+		CaptureMessage(message);
+		_logQueue.Enqueue(message);
 	}
 
 	public void BeginSpinner(string message) {
@@ -449,10 +536,8 @@ public class ConsoleLogger : ILogger, IDisposable{
 		_logFileWriter = null;
 	}
 
-	private void RemoveScopedFileSink(Guid sinkId) {
-		lock (_scopedSinksLock) {
-			_scopedFileSinks.Remove(sinkId);
-		}
+	private void RemoveScopedFileSink(SharedAppendFileSinkLease sink) {
+		_flowScopedSinks.Value?.Remove(sink);
 	}
 
 	#endregion
@@ -488,7 +573,7 @@ public class ConsoleLogger : ILogger, IDisposable{
 		};
 	}
 
-	private sealed class ScopedFileSink(ConsoleLogger owner, Guid sinkId, SharedAppendFileSinkLease sink) : IDisposable {
+	private sealed class ScopedFileSink(ConsoleLogger owner, SharedAppendFileSinkLease sink) : IDisposable {
 		private bool _disposed;
 
 		public void Dispose() {
@@ -496,7 +581,7 @@ public class ConsoleLogger : ILogger, IDisposable{
 				return;
 			}
 
-			owner.RemoveScopedFileSink(sinkId);
+			owner.RemoveScopedFileSink(sink);
 			sink.Dispose();
 			_disposed = true;
 		}
@@ -587,6 +672,11 @@ public abstract class LogMessage(object value){
 
 	[Description("Value of the log message" )]
 	public object Value { get; set; } = value;
+
+	// FR-06 (ENG-93208): the producing flow's active scoped file sinks, resolved at enqueue time so the
+	// drain writes this message only to its own flow's artifact(s). Internal so System.Text.Json (the
+	// MCP serialization path) never touches it, and never carries a secret.
+	internal IReadOnlyList<SharedAppendFileSinkLease> ScopedSinks { get; set; }
 
 	#endregion
 }
