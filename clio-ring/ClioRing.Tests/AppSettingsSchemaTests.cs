@@ -61,13 +61,16 @@ public sealed class AppSettingsSchemaTests {
 		XElement? schemaItem = project.Descendants("None")
 			.SingleOrDefault(item => string.Equals(
 				(string?)item.Attribute("Update"), "app-settings.schema.json", StringComparison.Ordinal));
-		string? copyMode = (string?)schemaItem?.Element("CopyToOutputDirectory");
+		string? outputCopyMode = (string?)schemaItem?.Element("CopyToOutputDirectory");
+		string? publishCopyMode = (string?)schemaItem?.Element("CopyToPublishDirectory");
 
 		// Assert
 		schemaItem.Should().NotBeNull(
 			because: "the schema must be part of the Desktop project's real shipping contract, not only the test output");
-		copyMode.Should().Be("PreserveNewest",
-			because: "build and publish must copy the schema beside app-settings.json");
+		outputCopyMode.Should().Be("PreserveNewest",
+			because: "build output must copy the schema beside app-settings.json");
+		publishCopyMode.Should().Be("PreserveNewest",
+			because: "publish output must explicitly retain the schema beside app-settings.json");
 	}
 
 	[Test]
