@@ -56,7 +56,8 @@ public class GetRecordRightsCommandTests : BaseCommandTests<GetRecordRightsOptio
 		// Assert
 		exitCode.Should().Be(0, because: "a successful read returns exit code 0");
 		_rightsClient.Received(1).GetRecordRights("SysContactRight", "rec-1", Arg.Any<CreatioRequestOptions>());
-		_logger.Received().WriteInfo(Arg.Is<string>(m => m.Contains("edit") && m.Contains("delegated") && m.Contains("Everyone")));
+		// Output must include the rights-row Id (row-1) so callers can persist the grant as a data binding.
+		_logger.Received().WriteInfo(Arg.Is<string>(m => m.Contains("edit") && m.Contains("delegated") && m.Contains("Everyone") && m.Contains("row-1")));
 	}
 
 	[Test]

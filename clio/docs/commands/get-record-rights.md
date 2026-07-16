@@ -12,8 +12,9 @@ get-record-rights - read the record-level access rights of a single Creatio reco
 
 Reads and prints the record-level access rights of a single record, mirroring the read half
 of the Creatio UI's record-rights panel. Each grant is printed as
-`<operation> / <level> -> <grantee display name> (<grantee id>)`, where operation is
-`read`/`edit`/`delete` and level is `granted`/`delegated`.
+`<operation> / <level> -> <grantee display name> (<grantee id>) [id: <grant row id>]`, where
+operation is `read`/`edit`/`delete` and level is `granted`/`delegated`. The `[id: ...]` is the
+rights-row id, needed to persist a grant as a package data binding.
 
 Address the target with `--entity` and `--record-id` (both required). A client-unit
 schema/dashboard is addressed like any entity: `--entity SysSchemaAdminUnit --record-id <schema UId>`.

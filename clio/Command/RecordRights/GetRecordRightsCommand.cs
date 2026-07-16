@@ -46,7 +46,7 @@ public class GetRecordRightsCommand : Command<GetRecordRightsOptions> {
 				string granteeValue = row.SysAdminUnit?.Value ?? "(unknown)";
 				_logger.WriteInfo(
 					$"  {RecordRightsConverter.OperationToName(row.Operation)} / {RecordRightsConverter.LevelToName(row.RightLevel)}"
-					+ $" -> {grantee} ({granteeValue})");
+					+ $" -> {grantee} ({granteeValue}) [id: {row.Id}]");
 			}
 			return 0;
 		}
