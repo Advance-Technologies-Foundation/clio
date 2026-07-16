@@ -4,7 +4,6 @@ using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
-using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E;
@@ -19,25 +18,37 @@ namespace Clio.Mcp.E2E;
 [NonParallelizable]
 public sealed class PrintableToolE2ETests {
 
-	[TestCase(PrintableListTool.ToolName, true, false,
-		TestName = "list-printables MCP tool is advertised read-only and non-destructive")]
-	[TestCase(PrintableGetTool.ToolName, true, false,
-		TestName = "get-printable MCP tool is advertised read-only and non-destructive")]
-	[TestCase(PrintableCreateTool.ToolName, false, false,
-		TestName = "create-printable MCP tool is advertised non-read-only and non-destructive")]
-	[TestCase(PrintableUpdateTool.ToolName, false, true,
-		TestName = "update-printable MCP tool is advertised as destructive")]
-	[TestCase(PrintableDeleteTool.ToolName, false, true,
-		TestName = "delete-printable MCP tool is advertised as destructive")]
-	[TestCase(PrintableTemplateUploadTool.ToolName, false, true,
-		TestName = "upload-report-template MCP tool is advertised as destructive")]
-	[Description("Verifies that each printable MCP tool is advertised with the expected read-only and destructive annotations.")]
-	public async Task PrintableTool_Should_Be_Advertised(string toolName, bool expectedReadOnly, bool expectedDestructive) {
+	[TestCase(PrintableListTool.ToolName, false,
+		TestName = "list-printables MCP tool is discoverable and non-destructive on the lazy surface")]
+	[TestCase(PrintableGetTool.ToolName, false,
+		TestName = "get-printable MCP tool is discoverable and non-destructive on the lazy surface")]
+	[TestCase(PrintableCreateTool.ToolName, false,
+		TestName = "create-printable MCP tool is discoverable and non-destructive on the lazy surface")]
+	[TestCase(PrintableUpdateTool.ToolName, true,
+		TestName = "update-printable MCP tool is discoverable and destructive on the lazy surface")]
+	[TestCase(PrintableDeleteTool.ToolName, true,
+		TestName = "delete-printable MCP tool is discoverable and destructive on the lazy surface")]
+	[TestCase(PrintableTemplateUploadTool.ToolName, true,
+		TestName = "upload-report-template MCP tool is discoverable and destructive on the lazy surface")]
+	[Description("Verifies that each printable MCP tool is discoverable via the get-tool-contract compact index with the expected destructive safety flag on the lazy tool surface.")]
+	public async Task PrintableTool_Should_Be_Advertised(string toolName, bool expectedDestructive) {
 		await using McpSessionArrangeContext arrange = await McpSessionArrangeContext.ArrangeAsync(TimeSpan.FromMinutes(3));
-		IList<McpClientTool> tools = await arrange.Session.ListToolsAsync(arrange.CancellationTokenSource.Token);
-		McpClientTool tool = tools.Single(t => t.Name == toolName);
-		tool.ProtocolTool.Annotations!.ReadOnlyHint.Should().Be(expectedReadOnly);
-		tool.ProtocolTool.Annotations.DestructiveHint.Should().Be(expectedDestructive);
+		// Printable tools are hidden long-tail tools: they never sit in tools/list and are reached via
+		// clio-run / clio-run-destructive. The lazy surface exposes them only through the get-tool-contract
+		// compact index, which carries the destructive flag; the read-only hint is no longer observable for
+		// non-resident tools.
+		IReadOnlyList<ToolContractIndexEntry> index =
+			await arrange.Session.GetToolContractIndexAsync(arrange.CancellationTokenSource.Token);
+		ToolContractIndexEntry entry = index.Should().ContainSingle(entry => entry.Name == toolName,
+			because: $"{toolName} must be discoverable via the get-tool-contract compact index on the lazy surface")
+			.Which;
+		if (expectedDestructive) {
+			entry.Destructive.Should().BeTrue(
+				because: $"{toolName} modifies or deletes data and must be flagged destructive");
+		} else {
+			entry.Destructive.Should().NotBe(true,
+				because: $"{toolName} does not modify or delete data and must not be flagged destructive");
+		}
 	}
 
 	[Test]
