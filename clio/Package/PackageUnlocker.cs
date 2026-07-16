@@ -68,7 +68,19 @@ namespace Clio.Package
 				new Dictionary<string, object> { [paramName] = payload },
 				JsonOptions);
 			string response = CreateApplicationClient().ExecutePostRequest(url, body);
-			bool success = JsonSerializer.Deserialize<bool>(response, JsonOptions);
+			if (string.IsNullOrEmpty(response)) {
+				throw new InvalidOperationException(
+					$"ClioGate {route} returned an empty response. " +
+					"Check the Creatio application logs (Error.log) and verify the installed cliogate version is current.");
+			}
+			bool success;
+			try {
+				success = JsonSerializer.Deserialize<bool>(response, JsonOptions);
+			} catch (JsonException ex) {
+				throw new InvalidOperationException(
+					$"ClioGate {route} returned a non-JSON response (likely an HTTP error page). " +
+					"Check the Creatio application logs (Error.log) and verify the installed cliogate version is current.", ex);
+			}
 			if (!success) {
 				throw new InvalidOperationException(
 					$"ClioGate {route} returned false. Check the Creatio application logs for details.");

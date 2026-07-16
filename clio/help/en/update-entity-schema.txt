@@ -66,6 +66,8 @@ NOTES
     - a modify on an INHERITED column may override only its caption/description
       (title-localizations/description-localizations); changing its name, type, or
       flags is rejected, and stops the batch on that operation
+    - each operation may set usage-type (General, Advanced, or None; any column
+      type); on modify the stored value is left unchanged when omitted
     - execution stops on the first failed operation
     - the batch is saved and materialized once after all operations are applied
     - post-save verification checks the final ordered batch state, so a later add may

@@ -223,7 +223,8 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			column.ValueMasked || column.Masked,
 			column.FormatValidated,
 			column.UseSeconds,
-			defaultValueConfig);
+			defaultValueConfig,
+			EntitySchemaDesignerSupport.GetFriendlyUsageType(column.UsageType));
 	}
 
 	/// <summary>
@@ -283,6 +284,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		WriteInfo($"Masked: {FormatBoolean(column.Masked)}");
 		WriteInfo($"Format validated: {FormatBoolean(column.FormatValidated)}");
 		WriteInfo($"Use seconds: {FormatBoolean(column.UseSeconds)}");
+		WriteInfo($"Usage type: {column.UsageType}");
 	}
 
 	public EntitySchemaPropertiesInfo GetSchemaProperties(GetEntitySchemaPropertiesOptions options) {
@@ -506,6 +508,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		}
 
 		ApplyDefaultValue(column, options, preserveWhenUnspecified: false, options);
+		ApplyUsageType(column, options);
 
 		List<EntitySchemaColumnDto> ownColumns = schema.Columns?.ToList() ?? [];
 		ownColumns.Add(column);
@@ -595,7 +598,8 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			|| options.UseSeconds.HasValue
 			|| options.SimpleLookup.HasValue
 			|| options.Cascade.HasValue
-			|| options.DoNotControlIntegrity.HasValue;
+			|| options.DoNotControlIntegrity.HasValue
+			|| !string.IsNullOrWhiteSpace(options.UsageType);
 	}
 
 	/// <summary>
@@ -667,6 +671,22 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		if (options.UseSeconds.HasValue) {
 			column.UseSeconds = options.UseSeconds.Value;
 		}
+		ApplyUsageType(column, options);
+	}
+
+	/// <summary>
+	/// Applies the optional <c>--usage-type</c> value to the column when supplied, mapping the friendly name
+	/// to its backend ordinal. When omitted the column's current UsageType is left unchanged. Throws a
+	/// user-friendly <see cref="EntitySchemaDesignerException"/> on an unrecognized value, before any save.
+	/// </summary>
+	private static void ApplyUsageType(EntitySchemaColumnDto column, ModifyEntitySchemaColumnOptions options) {
+		if (string.IsNullOrWhiteSpace(options.UsageType)) {
+			return;
+		}
+		if (!EntitySchemaDesignerSupport.TryParseUsageType(options.UsageType, out int usageType)) {
+			throw new EntitySchemaDesignerException("usage-type must be one of: General, Advanced, None.");
+		}
+		column.UsageType = usageType;
 	}
 
 	/// <summary>

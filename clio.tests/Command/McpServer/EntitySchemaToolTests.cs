@@ -509,6 +509,35 @@ public sealed class EntitySchemaToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Serializes the usage-type field in update-entity-schema batch operations so the batch command can apply it.")]
+	public async Task UpdateEntitySchema_Should_Serialize_UsageType() {
+		// Arrange
+		FakeUpdateEntitySchemaCommand defaultCommand = new();
+		FakeUpdateEntitySchemaCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(resolvedCommand);
+		UpdateEntitySchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = await tool.UpdateEntitySchema(new UpdateEntitySchemaArgs(
+			"dev",
+			"UsrPkg",
+			"UsrVehicle",
+			[
+				new UpdateEntitySchemaOperationArgs("modify", "UsrStatus") { UsageType = "Advanced" }
+			]));
+
+		// Assert
+		result.ExitCode.Should().Be(0,
+			because: "a batch operation carrying usage-type should be accepted");
+		string operation = resolvedCommand.CapturedOptions!.Operations!.Single();
+		operation.Should().Contain("\"usage-type\":\"Advanced\"",
+			because: "usage-type must survive MCP batch serialization so the batch command can apply it");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Preserves add, modify, and remove operations in order when update-entity-schema serializes the batch payload.")]
 	public async Task UpdateEntitySchema_Should_Preserve_Mixed_Operation_Order() {
 		// Arrange
@@ -618,6 +647,32 @@ public sealed class EntitySchemaToolTests {
 			because: "default-value-source should be mapped for mutation flows that need explicit clearing or const defaults");
 		resolvedCommand.CapturedOptions.LocalizableText.Should().BeTrue(
 			because: "text-specific options should be mapped");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Maps the usage-type MCP argument onto modify-entity-schema-column command options.")]
+	public void ModifyEntitySchemaColumn_Should_Map_UsageType() {
+		// Arrange
+		FakeModifyEntitySchemaColumnCommand defaultCommand = new();
+		FakeModifyEntitySchemaColumnCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<ModifyEntitySchemaColumnCommand>(Arg.Any<ModifyEntitySchemaColumnOptions>())
+			.Returns(resolvedCommand);
+		ModifyEntitySchemaColumnTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.ModifyEntitySchemaColumn(
+			new ModifyEntitySchemaColumnArgs("dev", "UsrPkg", "UsrVehicle", "modify", "Name") {
+				UsageType = "Advanced"
+			});
+
+		// Assert
+		result.ExitCode.Should().Be(0, because: "a usage-type-only modify is a valid mutation request");
+		resolvedCommand.CapturedOptions.Should().NotBeNull(
+			because: "the resolved command should receive the mapped mutation options");
+		resolvedCommand.CapturedOptions!.UsageType.Should().Be("Advanced",
+			because: "the MCP usage-type argument must be forwarded to the command options unchanged");
 	}
 
 	[Test]

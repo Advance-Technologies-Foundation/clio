@@ -141,7 +141,7 @@ internal static class GuidanceCatalog {
 				DeployLifecycleGuidanceResource.Guide),
 			["describe-environment"] = Create(
 				"describe-environment",
-				"Canonical MCP guidance for describe-environment: the single source-independent environment report (coreVersion, db engine, framework, productName, licenseInfo, locale/workspace metadata), which source supplies each field, and the cliogate / CanManageSolution prerequisites.",
+				"Canonical MCP guidance for describe-environment: classified base-probe failures, the single source-independent environment report (coreVersion, db engine, framework, productName, licenseInfo, locale/workspace metadata), which source supplies each field, and the cliogate / CanManageSolution prerequisites.",
 				DescribeEnvironmentGuidanceResource.Guide),
 			["support-mode"] = Create(
 				"support-mode",
@@ -163,7 +163,7 @@ internal static class GuidanceCatalog {
 				"sys-settings",
 				"""
 				Canonical MCP guidance for the Creatio sys-settings CRU surface: tool order, supported value-type-names and aliases, 
-				Lookup resolution, SecureText masking, Date/Time TZ caveat, and Binary exclusion.
+				Lookup resolution, SecureText masking, Date/Time TZ caveat, and Binary (write-only, via value-file-path) upload.
 				""",
 				SysSettingsGuidanceResource.Guide),
 			["ui-project"] = Create(

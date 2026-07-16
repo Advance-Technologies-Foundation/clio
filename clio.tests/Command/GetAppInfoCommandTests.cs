@@ -74,7 +74,7 @@ public sealed class GetAppInfoCommandTests : BaseCommandTests<GetAppInfoOptions>
 
 		// Assert
 		exitCode.Should().Be(1, because: "omitting both --code and --id must fail with a non-zero exit code");
-		_service.DidNotReceiveWithAnyArgs().GetApplicationInfo(default!, default, default);
+		_service.DidNotReceiveWithAnyArgs().GetApplicationInfo(default(string)!, default, default);
 		_logger.Received(1).WriteError(Arg.Is<string>(m => m.Contains("--code") || m.Contains("--id")));
 	}
 
@@ -90,7 +90,7 @@ public sealed class GetAppInfoCommandTests : BaseCommandTests<GetAppInfoOptions>
 
 		// Assert
 		exitCode.Should().Be(1, because: "missing environment should yield a non-zero exit code");
-		_service.DidNotReceiveWithAnyArgs().GetApplicationInfo(default!, default, default);
+		_service.DidNotReceiveWithAnyArgs().GetApplicationInfo(default(string)!, default, default);
 	}
 
 	[Test]

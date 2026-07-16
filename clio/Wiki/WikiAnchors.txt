@@ -49,6 +49,7 @@ delete-schema:delete-schema
 delete-toolkit:delete-toolkit
 deploy-application:deploy-application,deploy-app
 deploy-creatio:deploy-creatio,dc,ic,install-creatio
+pin-certificate:pin-certificate
 deploy-identity:deploy-identity
 get-identity-service-config:get-identity-service-config
 resolve-oauth-system-user:resolve-oauth-system-user
@@ -103,6 +104,7 @@ idp-unbind:idp-unbind
 idp-upsert:idp-upsert
 info:info,get-version,i,ver
 install-application:install-application,install-app,push-app
+install-dbhub:install-dbhub
 install-gate:install-gate,gate,installgate,update-gate
 install-nuget-pkg:install-nuget-pkg,installng
 install-toolkit:install-toolkit
@@ -172,6 +174,7 @@ show-local-envs:show-local-envs,localenvs
 show-package-file-content:show-package-file-content,files,show-files
 list-environments:list-environments,show-web-app-list,env,envs,show-web-app
 start:start,sc,start-creatio,start-server
+sync-dbhub:sync-dbhub
 stop:stop,stop-creatio
 switch-nuget-to-dll-reference:switch-nuget-to-dll-reference,nuget2dll
 turn-farm-mode:turn-farm-mode,farm-mode,tfm

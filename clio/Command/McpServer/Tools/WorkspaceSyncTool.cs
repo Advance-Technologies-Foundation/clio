@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 using Clio.Common;
+using Clio.Workspaces;
 using ModelContextProtocol.Server;
 using IFileSystem = System.IO.Abstractions.IFileSystem;
 
@@ -19,7 +20,8 @@ public abstract class WorkspaceCommandToolBase<TOptions>(
 	: BaseTool<TOptions>(command, logger, commandResolver)
 	where TOptions : EnvironmentOptions {
 
-	protected CommandExecutionResult ExecuteInWorkspace(string workspacePath, Func<CommandExecutionResult> execute) {
+	protected CommandExecutionResult ExecuteInWorkspace(
+		string workspacePath, TOptions options, Func<CommandExecutionResult> execute) {
 		if (string.IsNullOrWhiteSpace(workspacePath)) {
 			return CreateFailureResult("Workspace path is required.");
 		}
@@ -36,16 +38,40 @@ public abstract class WorkspaceCommandToolBase<TOptions>(
 			return CreateFailureResult($"Workspace path not found: {workspacePath}");
 		}
 
-		lock (CommandExecutionSyncRoot) {
-			string originalDirectory = fileSystem.Directory.GetCurrentDirectory();
+		// ENG-93208 (H1 fix): route the workspace root through IWorkspacePathBuilder.RootPath — the same
+		// settable seam Workspace.PublishToFile/PublishToFolder already use — instead of pinning the
+		// PROCESS-WIDE working directory. IWorkspacePathBuilder is resolved from the per-tenant session
+		// container (ToolCommandResolver/SessionContainerCache), the SAME container execute()'s
+		// InternalExecute<TCommand> resolves the command from, so different tenants never share this
+		// instance; only THIS tenant's own concurrent calls could race on it, which ExecuteUnderTenantLock
+		// below serializes (same key InternalExecute<TCommand> reacquires reentrantly). The push/restore
+		// network operation therefore no longer touches process cwd at all, so it no longer contends with
+		// McpToolExecutionLock.CwdLock (held by PageSyncTool/PageFileWriter/PageBaselineGuard while
+		// anchoring page output to cwd) — removing the cross-tenant head-of-line blocking (review #4).
+		return ExecuteUnderTenantLock(options, () => {
+			// An unknown or unreachable environment must fail the SAME graceful way whether it surfaces
+			// resolving IWorkspacePathBuilder right below, or a moment later resolving the command itself
+			// inside execute() (BaseTool's own resolve path) — both go through the same per-tenant
+			// container and environment-settings lookup, so the exception shapes here mirror that path.
+			IWorkspacePathBuilder workspacePathBuilder;
 			try {
-				fileSystem.Directory.SetCurrentDirectory(workspacePath);
+				workspacePathBuilder = ResolveFromCallContainer<IWorkspacePathBuilder>(options);
+			}
+			catch (EnvironmentResolutionException e) {
+				return CommandExecutionResult.FromResolverError(e);
+			}
+			catch (Exception e) {
+				return CommandExecutionResult.FromException(e);
+			}
+
+			try {
+				workspacePathBuilder.RootPath = workspacePath;
 				return execute();
 			}
 			finally {
-				fileSystem.Directory.SetCurrentDirectory(originalDirectory);
+				workspacePathBuilder.RootPath = null;
 			}
-		}
+		});
 	}
 
 	private static CommandExecutionResult CreateFailureResult(string message) =>
@@ -99,7 +125,7 @@ public sealed class PushWorkspaceTool(
 			UseApplicationInstaller = true,
 			SkipBackup = args.SkipBackup
 		};
-		return ExecuteInWorkspace(args.WorkspacePath, () => InternalExecute<PushWorkspaceCommand>(options));
+		return ExecuteInWorkspace(args.WorkspacePath, options, () => InternalExecute<PushWorkspaceCommand>(options));
 	}
 }
 
@@ -127,7 +153,7 @@ public sealed class RestoreWorkspaceTool(
 		RestoreWorkspaceOptions options = new() {
 			Environment = args.EnvironmentName
 		};
-		return ExecuteInWorkspace(args.WorkspacePath, () => InternalExecute<RestoreWorkspaceCommand>(options));
+		return ExecuteInWorkspace(args.WorkspacePath, options, () => InternalExecute<RestoreWorkspaceCommand>(options));
 	}
 }
 

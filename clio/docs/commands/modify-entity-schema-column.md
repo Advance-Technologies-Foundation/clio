@@ -94,6 +94,8 @@ Set simple-lookup flag
 Set cascade-connection flag
 --do-not-control-integrity
 Set do-not-control-integrity flag
+--usage-type
+Column usage type: General (default), Advanced, or None (case-insensitive; applies to any column type). On modify the stored value is left unchanged when omitted.
 --timeout <NUMBER>
 Request timeout in milliseconds. Default: 100000.
 ```

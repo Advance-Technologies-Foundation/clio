@@ -441,6 +441,48 @@ internal static class EntitySchemaDesignerSupport
 		};
 	}
 
+	/// <summary>
+	/// Single source of truth mapping the friendly <c>UsageType</c> names to the backend
+	/// <c>EntitySchemaColumnUsageType</c> ordinals (General=0, Advanced=1, None=2). Used by both the
+	/// write path (name -&gt; ordinal on <see cref="EntitySchemaColumnDto.UsageType"/>) and the read path
+	/// (ordinal -&gt; name on the column-properties read model).
+	/// </summary>
+	private static readonly IReadOnlyDictionary<string, int> UsageTypeOrdinalByName =
+		new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase) {
+			["General"] = 0,
+			["Advanced"] = 1,
+			["None"] = 2
+		};
+
+	/// <summary>
+	/// Parses a friendly <c>UsageType</c> name (General/Advanced/None, case-insensitive) to its backend ordinal.
+	/// </summary>
+	/// <param name="name">The friendly usage type name.</param>
+	/// <param name="ordinal">The resolved ordinal when parsing succeeds.</param>
+	/// <returns><see langword="true"/> when the name is recognized; otherwise <see langword="false"/>.</returns>
+	internal static bool TryParseUsageType(string? name, out int ordinal) {
+		if (!string.IsNullOrWhiteSpace(name)
+			&& UsageTypeOrdinalByName.TryGetValue(name.Trim(), out ordinal)) {
+			return true;
+		}
+		ordinal = default;
+		return false;
+	}
+
+	/// <summary>
+	/// Maps a backend <c>UsageType</c> ordinal to its friendly name via the single-source-of-truth map
+	/// (0-&gt;General, 1-&gt;Advanced, 2-&gt;None). Falls back to the raw ordinal for any unexpected value; such a
+	/// value is not a valid write input (the backend enum is closed at General/Advanced/None).
+	/// </summary>
+	internal static string GetFriendlyUsageType(int ordinal) {
+		foreach (KeyValuePair<string, int> pair in UsageTypeOrdinalByName) {
+			if (pair.Value == ordinal) {
+				return pair.Key;
+			}
+		}
+		return ordinal.ToString();
+	}
+
 	internal static EntitySchemaColumnDefSource? ParseDefaultValueSource(string? defaultValueSource) {
 		if (string.IsNullOrWhiteSpace(defaultValueSource)) {
 			return null;

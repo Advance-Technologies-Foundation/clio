@@ -61,7 +61,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="describe"></a>
 <a id="describe-creatio"></a>
 <a id="instance-info"></a>
-- [`get-info`](docs/commands/get-info.md) - Show system information for a Creatio instance, `describe`, `describe-creatio`, `instance-info`
+- [`get-info`](docs/commands/get-info.md) - Validate and show system information for a Creatio instance with actionable target/auth/response errors, `describe`, `describe-creatio`, `instance-info`
 <a id="get-webservice-url"></a>
 <a id="gwu"></a>
 - [`get-webservice-url`](docs/commands/get-webservice-url.md) - Show the configured base URL for a web service, `gwu`
@@ -100,7 +100,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="ss"></a>
 <a id="sys-setting"></a>
 <a id="syssetting"></a>
-- [`set-syssetting`](docs/commands/set-syssetting.md) - Get or set a system setting value, `get-syssetting`, `ss`, `sys-setting`, `syssetting`
+- [`set-syssetting`](docs/commands/set-syssetting.md) - Get or set a system setting value (including blob-data settings such as the logo — pass a file path for Type Binary), `get-syssetting`, `ss`, `sys-setting`, `syssetting`
 <a id="set-webservice-url"></a>
 <a id="swu"></a>
 <a id="webservice"></a>
@@ -564,7 +564,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`turn-fsm`](docs/commands/turn-fsm.md) - Turn file system mode on or off for an environment, `fsm`, `tfsm`
 <a id="uninstall-creatio"></a>
 <a id="uc"></a>
-- [`uninstall-creatio`](docs/commands/uninstall-creatio.md) - Uninstall local instance of creatio, `uc`
+- [`uninstall-creatio`](docs/commands/uninstall-creatio.md) - Uninstall local Creatio with shared-pool-safe IIS profile and best-effort dbHub cleanup, `uc`
 <a id="upload-license"></a>
 <a id="license"></a>
 <a id="load-license"></a>
@@ -590,6 +590,10 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 
 ## Integrations & Tools
 
+<a id="install-dbhub"></a>
+- [`install-dbhub`](docs/commands/install-dbhub.md) - Install, adopt, or repair a local loopback dbHub HTTP MCP server
+<a id="sync-dbhub"></a>
+- [`sync-dbhub`](docs/commands/sync-dbhub.md) - Reconcile clio-owned dbHub sources with local Creatio environments
 <a id="ring"></a>
 - [`ring`](docs/commands/ring.md) - Manage the opt-in internal clio-ring desktop preview (experimental; Windows x64 only)
 <a id="delete-toolkit"></a>
@@ -609,7 +613,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="lps"></a>
 - [`link-package-store`](docs/commands/link-package-store.md) - Link PackageStore packages into an environment, `lps`
 <a id="mcp-http"></a>
-- [`mcp-http`](docs/commands/mcp-http.md) - Start the MCP server over HTTP
+- [`mcp-http`](docs/commands/mcp-http.md) - Start the MCP server over HTTP (Streamable HTTP), with standard OAuth 2.1 Resource-Server authorization (off by default; whole-endpoint when configured) and an optional multi-tenant per-request credential-passthrough edge (dev/offline platform-api-key fallback when OAuth is not configured)
 <a id="mcp-server"></a>
 <a id="mcp"></a>
 - [`mcp-server`](docs/commands/mcp-server.md) - Start the MCP server over stdio, `mcp`
@@ -654,6 +658,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`register`](docs/commands/register.md) - Register clio shell integrations
 <a id="config"></a>
 - [`config`](docs/commands/config.md) - View and set clio configuration defaults (e.g. deploy-creatio defaults used by the Explorer context menu)
+<a id="pin-certificate"></a>
+- [`pin-certificate`](docs/commands/pin-certificate.md) - Select the preferred local IIS certificate for HTTPS deployments
 <a id="set-app-icon"></a>
 <a id="ai"></a>
 <a id="appicon"></a>

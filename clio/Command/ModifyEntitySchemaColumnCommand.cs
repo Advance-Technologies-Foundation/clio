@@ -108,6 +108,9 @@ public class ModifyEntitySchemaColumnOptions : RemoteCommandOptions
 
 	[Option("do-not-control-integrity", Required = false, HelpText = "Set do-not-control-integrity flag")]
 	public bool? DoNotControlIntegrity { get; set; }
+
+	[Option("usage-type", Required = false, HelpText = "Column usage type: General (default), Advanced, or None. Case-insensitive. On modify, the stored value is left unchanged when omitted.")]
+	public string UsageType { get; set; }
 }
 
 /// <summary>
@@ -188,6 +191,7 @@ public class ModifyEntitySchemaColumnCommand : Command<ModifyEntitySchemaColumnO
 			|| options.UseSeconds.HasValue
 			|| options.SimpleLookup.HasValue
 			|| options.Cascade.HasValue
-			|| options.DoNotControlIntegrity.HasValue;
+			|| options.DoNotControlIntegrity.HasValue
+			|| !string.IsNullOrWhiteSpace(options.UsageType);
 	}
 }

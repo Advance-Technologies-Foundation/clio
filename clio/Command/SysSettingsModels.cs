@@ -77,7 +77,7 @@ public sealed record CreateSysSettingArgs(
 	[property: Required]
 	string Name,
 	[property: JsonPropertyName("value-type-name")]
-	[property: Description("Value type. Creatio internal name: Text, ShortText, MediumText, LongText, SecureText, MaxSizeText, Boolean, DateTime, Date, Time, Integer, Money, Float, Lookup. Aliases: Currency = Money, Decimal = Float. Binary sys-settings are not exposed by this tool set — they need a dedicated upload flow.")]
+	[property: Description("Value type. Creatio internal name: Text, ShortText, MediumText, LongText, SecureText, MaxSizeText, Boolean, DateTime, Date, Time, Integer, Money, Float, Lookup, Binary. Aliases: Currency = Money, Decimal = Float. Binary settings (a value stored as blob data, such as the logo) are write-only through MCP: set the value with update-sys-setting using value-file-path; MCP does not read the blob back (the CLI get-syssetting returns the raw Base64).")]
 	[property: Required]
 	string ValueTypeName,
 	[property: JsonPropertyName("value")]
@@ -123,12 +123,14 @@ public sealed record UpdateSysSettingArgs(
 	[property: Required]
 	string Code,
 	[property: JsonPropertyName("value")]
-	[property: Description("New value. Must match the setting's value-type-name (booleans, decimals, integers, ISO date/time, or a Guid/display-name for Lookup).")]
-	[property: Required]
-	string Value,
+	[property: Description("New value. Must match the setting's value-type-name (booleans, decimals, integers, ISO date/time, or a Guid/display-name for Lookup). For a Binary setting this is the raw Base64 payload. Provide either 'value' or 'value-file-path', not both. Optional only because 'value-file-path' is an alternative source.")]
+	string? Value = null,
 	[property: JsonPropertyName("value-type-name")]
 	[property: Description("Optional explicit value-type-name. Used as a fallback when the setting cannot be located on the target environment.")]
-	string? ValueTypeName = null);
+	string? ValueTypeName = null,
+	[property: JsonPropertyName("value-file-path")]
+	[property: Description("Local file path whose bytes clio reads and Base64-encodes into the value. Use this (instead of inline 'value') for Binary settings (blob data, such as the logo) so the blob stays on disk and never travels through the tool-call arguments. Mutually exclusive with 'value'.")]
+	string? ValueFilePath = null);
 
 /// <summary>
 /// Structured response of the update-sys-setting MCP tool: echoes the requested code and returns the assigned

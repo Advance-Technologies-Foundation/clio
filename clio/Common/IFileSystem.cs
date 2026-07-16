@@ -28,6 +28,9 @@ namespace Clio.Common
 			
 		byte[] ReadAllBytes(string filePath);
 		FileSystemStream FileOpenStream(string filePath, FileMode mode, FileAccess access, FileShare share);
+
+		/// <summary>Opens the file for reading and returns a forward-only stream over its bytes.</summary>
+		System.IO.Stream OpenReadStream(string filePath);
 		public IDirectoryInfo GetDirectoryInfo(string path);
 		
 

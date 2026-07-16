@@ -1,0 +1,42 @@
+COMMAND TYPE
+    System configuration
+
+NAME
+    pin-certificate - Select the preferred local IIS certificate for HTTPS deployments
+
+DESCRIPTION
+    Persists a preferred certificate thumbprint in clio appsettings.json as
+    "iis-certificate-thumbprint". Only usable certificates from
+    LocalMachine/My that match this machine's FQDN are eligible.
+
+    With no options, displays the eligible certificates and prompts for a
+    selection. An explicit thumbprint is normalized and must identify an
+    eligible installed certificate. The pin resolves ambiguity; deployment
+    still selects the best eligible certificate deterministically when no pin
+    is configured.
+
+SYNOPSIS
+    clio pin-certificate [--thumbprint THUMBPRINT | --clear]
+
+OPTIONS
+    --thumbprint THUMBPRINT
+        Pin an installed LocalMachine/My server certificate by SHA-1
+        thumbprint. Spaces and separators are ignored.
+
+    --clear
+        Remove the persisted certificate preference.
+
+EXAMPLES
+    clio pin-certificate
+    clio pin-certificate --thumbprint DFC3141FAA198BA485538E2406CF52D90E812709
+    clio pin-certificate --clear
+
+NOTES
+    The appsettings schema property is:
+
+      "iis-certificate-thumbprint": "DFC3141FAA198BA485538E2406CF52D90E812709"
+
+    It is optional and, when present, must contain exactly 40 uppercase
+    hexadecimal characters. If the pin is missing or stale, deploy-creatio
+    warns and uses the deterministic best eligible certificate. If no usable
+    certificate exists, --use-https warns and deploys over HTTP.
