@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using Clio.Command;
+using Clio.Command.McpServer.Resources;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using FluentAssertions;
@@ -22,12 +23,13 @@ public sealed class GetCreatioInfoToolTests {
 	// Builds the REAL (sealed) GetCreatioInfoCommand backed by a substituted client so the tool's
 	// resolve -> execute path runs end to end without I/O. The cliogate path is disabled (incompatible)
 	// so the command reports the ApplicationInfoService base and returns success.
-	private static GetCreatioInfoCommand CreateRealCommand(out IApplicationClient client) {
+	private static GetCreatioInfoCommand CreateRealCommand(out IApplicationClient client,
+		string applicationInfoResponse = ApplicationInfoResponse) {
 		client = Substitute.For<IApplicationClient>();
 		client.ExecutePostRequest(
 				Arg.Is<string>(url => url.Contains(ApplicationInfoMarker)),
 				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns(ApplicationInfoResponse);
+			.Returns(applicationInfoResponse);
 		IClioGateway gateway = Substitute.For<IClioGateway>();
 		gateway.IsCompatibleWith(Arg.Any<string>()).Returns(false);
 		EnvironmentSettings env = new() { Uri = "https://creatio.test", IsNetCore = true };
@@ -67,6 +69,41 @@ public sealed class GetCreatioInfoToolTests {
 				because: "the MCP tool should return the real describe-environment command exit code");
 			commandResolver.Received(1).Resolve<GetCreatioInfoCommand>(Arg.Is<EnvironmentOptions>(options =>
 				options.Environment == "sandbox"));
+		} finally {
+			ConsoleLogger.Instance.ClearMessages();
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the command's actionable non-Creatio classification as an Error log in the standard MCP execution envelope.")]
+	public void GetInfo_ShouldReturnClassifiedError_WhenResolvedCommandReceivesHtml() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		GetCreatioInfoCommand resolvedCommand = CreateRealCommand(
+			out _, "<html><body>not-creatio-secret-marker</body></html>");
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<GetCreatioInfoCommand>(Arg.Any<EnvironmentOptions>())
+			.Returns(resolvedCommand);
+		GetCreatioInfoTool tool = new(ConsoleLogger.Instance, commandResolver);
+
+		try {
+			// Act
+			CommandExecutionResult result = tool.GetInfo(new GetCreatioInfoArgs(EnvironmentName: "sandbox"));
+
+			// Assert
+			result.ExitCode.Should().Be(1,
+				because: "the MCP envelope must preserve the failed get-info command exit code");
+			result.Output.Should().Contain(message =>
+				message.LogDecoratorType == LogDecoratorType.Error
+				&& message.Value != null
+				&& message.Value.ToString()!.Contains(
+					"does not appear to be a Creatio application", System.StringComparison.Ordinal),
+				because: "MCP callers need the same actionable non-Creatio classification as CLI callers");
+			result.Output.Should().NotContain(message =>
+				message.Value != null
+				&& message.Value.ToString()!.Contains("not-creatio-secret-marker", System.StringComparison.Ordinal),
+				because: "raw response bodies must not cross the MCP error envelope");
 		} finally {
 			ConsoleLogger.Instance.ClearMessages();
 		}
@@ -155,5 +192,23 @@ public sealed class GetCreatioInfoToolTests {
 			because: "the description must state the shape is the same with or without cliogate");
 		description.Description.Should().Contain("get-guidance name=describe-environment",
 			because: "the description should point the agent at the field-catalogue guidance");
+		description.Description.Should().Contain("authentication failures",
+			because: "the tool contract should tell agents that required-probe failures are classified actionably");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Keeps describe-environment guidance aligned with the command's classified and secret-safe base-probe failures.")]
+	public void Guide_ShouldDescribeClassifiedFailures_WhenReadByMcpAgent() {
+		// Act
+		string guidance = DescribeEnvironmentGuidanceResource.Guide.Text;
+
+		// Assert
+		guidance.Should().Contain("REQUIRED BASE PROBE FAILURES",
+			because: "agents need a dedicated section for interpreting exit-code-1 base-probe results");
+		guidance.Should().Contain("Authentication",
+			because: "authentication failures must remain distinguishable from non-Creatio targets");
+		guidance.Should().Contain("never contains raw HTML",
+			because: "the guidance must preserve the secret-safe error-envelope contract");
 	}
 }

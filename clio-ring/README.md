@@ -48,6 +48,44 @@ clio ring
 
 The bootstrap installs versioned releases under `%LOCALAPPDATA%\Creatio\clio-ring` and verifies every ZIP against the SHA-256 in the GitHub release manifest.
 
+## Application settings and development clio
+
+`ClioRing.Desktop/app-settings.json` references the colocated `app-settings.schema.json`, so JSON-aware editors provide validation and hover descriptions. The `Channel` value is only the label shown in Ring's build badge; values such as `release`, `dev`, or `preview` do **not** select which clio executable Ring starts.
+
+To expose the experimental MCP-over-stdio UI and point it at a development build, use:
+
+```json
+{
+  "$schema": "./app-settings.schema.json",
+  "WorkspaceFolder": "C:\\Projects\\Workspaces",
+  "Channel": "release",
+  "Experiments": {
+    "ClioIpc": true
+  },
+  "DevClioPath": "C:\\Projects\\clio\\clio\\bin\\Debug\\net10.0\\clio.dll"
+}
+```
+
+Clio launch selection uses this precedence on the next Ring launch:
+
+1. A valid `DevClioPath` (`clio.dll` or `clio.exe`).
+2. An explicit `ClioIpc` block with `Command`, `Args`, and optional `WorkingDirectory`.
+3. Ring's machine default.
+
+`DevClioPath` and `ClioIpc.Command` are code-execution trust boundaries: Ring starts the selected program with your user privileges. Use only trusted local builds and commands, prefer absolute paths, and do not point them at downloaded binaries or locations writable by other users.
+
+For example, the equivalent explicit launch block is:
+
+```json
+"ClioIpc": {
+  "Command": "dotnet",
+  "Args": [
+    "C:\\Projects\\clio\\clio\\bin\\Debug\\net10.0\\clio.dll",
+    "mcp-server"
+  ]
+}
+```
+
 ## Deletion boundary
 
 Removing the experiment requires deleting this subtree, `.github/workflows/clio-ring-release.yml`, the `RingCommand` implementation and tests, its DI/dispatch/solution entries, and Ring command docs. No clio environment or settings migration is needed.

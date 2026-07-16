@@ -1,0 +1,50 @@
+COMMAND TYPE
+    Integrations and tools
+
+NAME
+    sync-dbhub - Reconcile clio-owned dbHub sources with local Creatio environments
+
+SYNOPSIS
+    sync-dbhub [--environment <name>]
+
+DESCRIPTION
+    Reads local Creatio database settings from ConnectionStrings.config and
+    reconciles clio-owned source blocks in the configured dbHub TOML file.
+    PostgreSQL and SQL-authenticated SQL Server connections are supported.
+    Unsupported SQL authentication or certificate-validation modes are skipped
+    with safe warnings.
+    PostgreSQL Prefer is tightened to dbHub require, while Allow maps to
+    disable, because dbHub 0.23.0 has no opportunistic TLS tokens.
+
+    User-authored TOML and user-owned sources are never rewritten or removed.
+    A full sync removes stale clio-owned blocks; a selected-environment sync
+    touches only that environment.
+
+OPTIONS
+    --environment <name>  Reconcile one registered local environment. When
+                          omitted, reconcile all eligible local environments.
+
+EXAMPLES
+    sync-dbhub
+    sync-dbhub --environment local-dev
+
+BEHAVIOR
+    - Generates deterministic lowercase source identifiers.
+    - Detects identifier collisions and user-source ownership conflicts.
+    - Uses an adjacent lock and atomic replace for TOML updates.
+    - Preserves the original file when validation or writing fails.
+    - Refuses a configured HTTP endpoint outside 127.0.0.1.
+    - Verifies dbHub tool discovery after its hot reload window.
+    - Reports changed, unchanged, and skipped counts without printing secrets.
+    - Leaves the harmless clio_control source after removing the last database
+      source so dbHub can hot-reload a valid non-empty source list.
+
+EXIT CODES
+    0   Reconciliation completed, including best-effort per-source warnings
+    1   Reconciliation could not run safely (configuration, endpoint, target, or internal failure)
+
+SEE ALSO
+    install-dbhub - Install or adopt dbHub and persist its configuration
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

@@ -112,6 +112,9 @@ internal sealed record UpdateEntitySchemaOperationDefinition
 
 	[JsonPropertyName("do-not-control-integrity")]
 	public bool? DoNotControlIntegrity { get; init; }
+
+	[JsonPropertyName("usage-type")]
+	public string UsageType { get; init; }
 }
 
 public class UpdateEntitySchemaCommand : Command<UpdateEntitySchemaOptions>
@@ -205,7 +208,8 @@ public class UpdateEntitySchemaCommand : Command<UpdateEntitySchemaOptions>
 				UseSeconds = operation.UseSeconds,
 				SimpleLookup = operation.SimpleLookup,
 				Cascade = operation.Cascade,
-				DoNotControlIntegrity = operation.DoNotControlIntegrity
+				DoNotControlIntegrity = operation.DoNotControlIntegrity,
+				UsageType = operation.UsageType
 			};
 			index++;
 		}

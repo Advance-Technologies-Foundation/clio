@@ -18,8 +18,6 @@ public class DownloadConfigurationTool(
 	IFileSystem fileSystem)
 	: BaseTool<DownloadConfigurationCommandOptions>(command, logger, commandResolver) {
 
-	private static readonly object WorkspaceExecutionLock = new();
-
 	internal const string DownloadConfigurationByEnvironmentToolName = "download-configuration-by-environment";
 	internal const string DownloadConfigurationByBuildToolName = "download-configuration-by-build";
 
@@ -35,7 +33,7 @@ public class DownloadConfigurationTool(
 		DownloadConfigurationCommandOptions options = new() {
 			Environment = args.EnvironmentName
 		};
-		return ExecuteInWorkspace(args.WorkspacePath, () => InternalExecute<DownloadConfigurationCommand>(options));
+		return ExecuteInWorkspace(args.WorkspacePath, options, () => InternalExecute<DownloadConfigurationCommand>(options));
 	}
 
 	/// <summary>
@@ -54,13 +52,14 @@ public class DownloadConfigurationTool(
 		DownloadConfigurationCommandOptions options = new() {
 			BuildZipPath = args.BuildPath
 		};
-		return ExecuteInWorkspace(args.WorkspacePath, () => InternalExecute(options));
+		return ExecuteInWorkspace(args.WorkspacePath, options, () => InternalExecute(options));
 	}
 
 	private static CommandExecutionResult CreateFailureResult(string message) =>
 		new(1, [new ErrorMessage(message)]);
 
-	private CommandExecutionResult ExecuteInWorkspace(string workspacePath, Func<CommandExecutionResult> execute) {
+	private CommandExecutionResult ExecuteInWorkspace(
+		string workspacePath, DownloadConfigurationCommandOptions options, Func<CommandExecutionResult> execute) {
 		if (string.IsNullOrWhiteSpace(workspacePath)) {
 			return CreateFailureResult("Workspace path is required.");
 		}
@@ -73,16 +72,23 @@ public class DownloadConfigurationTool(
 			return CreateFailureResult($"Workspace path not found: {workspacePath}");
 		}
 
-		lock (WorkspaceExecutionLock) {
-			string originalDirectory = fileSystem.Directory.GetCurrentDirectory();
-			try {
-				fileSystem.Directory.SetCurrentDirectory(workspacePath);
-				return execute();
+		// The working-directory pin mutates PROCESS-WIDE cwd, so it holds the single global CwdLock (H2 —
+		// this replaces the former private WorkspaceExecutionLock, which serialized only this tool and did
+		// not exclude the other cwd writers/readers). Lock ordering is per-tenant → CwdLock: take the
+		// per-tenant lock FIRST via ExecuteUnderTenantLock(options) — the same key the inner execute()
+		// resolves under, so the inner acquire is reentrant — THEN CwdLock around pin/execute/restore.
+		return ExecuteUnderTenantLock(options, () => {
+			lock (McpToolExecutionLock.CwdLock) {
+				string originalDirectory = fileSystem.Directory.GetCurrentDirectory();
+				try {
+					fileSystem.Directory.SetCurrentDirectory(workspacePath);
+					return execute();
+				}
+				finally {
+					fileSystem.Directory.SetCurrentDirectory(originalDirectory);
+				}
 			}
-			finally {
-				fileSystem.Directory.SetCurrentDirectory(originalDirectory);
-			}
-		}
+		});
 	}
 
 	private bool IsAbsolutePath(string path) {

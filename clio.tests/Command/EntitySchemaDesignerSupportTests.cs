@@ -112,6 +112,56 @@ internal sealed class EntitySchemaDesignerSupportTests {
 			because: "the binary Image type (code 14) must not be treated as ImageLookup");
 	}
 
+	[TestCase("General", 0)]
+	[TestCase("Advanced", 1)]
+	[TestCase("None", 2)]
+	[TestCase("advanced", 1)]
+	[TestCase("  none  ", 2)]
+	[Description("Parses the friendly UsageType names case-insensitively (and trimmed) to their backend ordinals.")]
+	public void TryParseUsageType_ShouldReturnOrdinal_WhenNameIsRecognized(string name, int expectedOrdinal) {
+		// Arrange
+
+		// Act
+		bool parsed = EntitySchemaDesignerSupport.TryParseUsageType(name, out int ordinal);
+
+		// Assert
+		parsed.Should().BeTrue(because: "General, Advanced, and None are the recognized usage type names");
+		ordinal.Should().Be(expectedOrdinal,
+			because: "the friendly name must map to the backend EntitySchemaColumnUsageType ordinal");
+	}
+
+	[TestCase("Foo")]
+	[TestCase("2")]
+	[TestCase("")]
+	[TestCase(null)]
+	[Description("Rejects unrecognized, numeric, empty, and null UsageType inputs so callers can raise a friendly error.")]
+	public void TryParseUsageType_ShouldReturnFalse_WhenNameIsUnrecognized(string name) {
+		// Arrange
+
+		// Act
+		bool parsed = EntitySchemaDesignerSupport.TryParseUsageType(name, out int ordinal);
+
+		// Assert
+		parsed.Should().BeFalse(because: "only General/Advanced/None friendly names are accepted, not raw ints or junk");
+		ordinal.Should().Be(0, because: "the out ordinal must be the default when parsing fails");
+	}
+
+	[TestCase(0, "General")]
+	[TestCase(1, "Advanced")]
+	[TestCase(2, "None")]
+	[TestCase(99, "99")]
+	[Description("Maps UsageType ordinals to friendly names and falls back to the raw ordinal for unexpected values.")]
+	public void GetFriendlyUsageType_ShouldReturnFriendlyName_WhenOrdinalIsKnown(int ordinal, string expectedName) {
+		// Arrange
+
+		// Act
+		string name = EntitySchemaDesignerSupport.GetFriendlyUsageType(ordinal);
+
+		// Assert
+		name.Should().Be(expectedName,
+			because: "the read path surfaces UsageType as a friendly, round-trippable name (or the raw ordinal when unknown)");
+	}
+
 	[Description("Builds the implicit SysImage reference schema that every ImageLookup column points at.")]
 	[Test]
 	public void CreateSysImageReferenceSchema_Should_Reference_SysImage_Schema() {

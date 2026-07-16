@@ -232,10 +232,12 @@ public sealed class McpProgressHeartbeatTests {
 		// via cancellation, not completion (no wall-clock sleep, deterministic on any agent).
 		using CancellationTokenSource cts = new CancellationTokenSource();
 		using ManualResetEventSlim workStarted = new ManualResetEventSlim(false);
-		using ManualResetEventSlim neverReleased = new ManualResetEventSlim(false);
+		using ManualResetEventSlim releaseWork = new ManualResetEventSlim(false);
+		using ManualResetEventSlim workCompleted = new ManualResetEventSlim(false);
 		Func<int> work = () => {
 			workStarted.Set();
-			neverReleased.Wait(StopGuard);
+			releaseWork.Wait(StopGuard);
+			workCompleted.Set();
 			return 1;
 		};
 
@@ -252,8 +254,18 @@ public sealed class McpProgressHeartbeatTests {
 		cts.Cancel();
 
 		// Assert
-		await act.Should().ThrowAsync<OperationCanceledException>(
-			because: "a cancelled request (or server shutdown) must surface as cancellation, not a fabricated 150 s deadline whose 'work continues, keep polling' guidance would be false").ConfigureAwait(false);
+		try {
+			await act.Should().ThrowAsync<OperationCanceledException>(
+				because: "a cancelled request (or server shutdown) must surface as cancellation, not a fabricated 150 s deadline whose 'work continues, keep polling' guidance would be false").ConfigureAwait(false);
+		}
+		finally {
+			// RunWithProgressAndDeadlineAsync deliberately detaches work from the request lifetime.
+			// Release and join it before disposing its wait handles so no late fault can leak into
+			// another test's process-wide stderr capture.
+			releaseWork.Set();
+			workCompleted.Wait(StopGuard).Should().BeTrue(
+				because: "the detached test work must finish before its synchronization primitives are disposed");
+		}
 	}
 
 	[Test]

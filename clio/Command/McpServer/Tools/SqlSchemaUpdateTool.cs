@@ -35,7 +35,7 @@ public sealed class SqlSchemaUpdateTool(
 			Login = args.Login,
 			Password = args.Password
 		};
-		return ExecuteWithCleanLog(() => {
+		return ExecuteWithCleanLog(options, () => {
 			SqlSchemaUpdateCommand resolvedCommand;
 			try {
 				resolvedCommand = ResolveCommand<SqlSchemaUpdateCommand>(options);

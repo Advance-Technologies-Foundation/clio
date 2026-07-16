@@ -65,6 +65,9 @@ public static class ClioStageEventContract {
 
 		/// <summary>The stage was skipped (see <see cref="ClioStageDetail.SkipReason"/>).</summary>
 		public const string Skipped = "skipped";
+
+		/// <summary>The stage could not finish, but the best-effort run may continue successfully.</summary>
+		public const string Warning = "warning";
 	}
 
 	/// <summary>Allowed <see cref="ClioRunCompleted.Outcome"/> values.</summary>
@@ -75,6 +78,9 @@ public static class ClioStageEventContract {
 
 		/// <summary>The run failed.</summary>
 		public const string Failure = "failure";
+
+		/// <summary>The run completed successfully while retaining one or more visible warnings.</summary>
+		public const string SuccessWithWarnings = "success-with-warnings";
 	}
 
 	/// <summary>Allowed <see cref="ClioStageDetail.SkipReason"/> values.</summary>
