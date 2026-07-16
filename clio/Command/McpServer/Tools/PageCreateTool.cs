@@ -77,7 +77,7 @@ public sealed record PageCreateArgs(
 	string SchemaName,
 
 	[property: JsonPropertyName("template")]
-	[property: Description("Template name or UId returned by list-page-templates, e.g. 'BlankPageTemplate'. For a desktop page use 'CentralAreaDesktopTemplate'.")]
+	[property: Description("Template name or UId returned by list-page-templates, e.g. 'BlankPageTemplate'.")]
 	[property: Required]
 	string Template,
 
