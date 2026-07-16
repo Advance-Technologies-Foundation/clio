@@ -32,7 +32,7 @@ public sealed class RequestInfoTool(
 	IRequestInfoCatalog catalog,
 	IComponentRegistryDocsClient docsClient,
 	IPlatformVersionResolverFactory resolverFactory,
-	ISettingsRepository settingsRepository) {
+	IToolCommandResolver commandResolver) {
 
 	internal const string ToolName = "get-request-info";
 
@@ -175,18 +175,35 @@ public sealed class RequestInfoTool(
 		}
 
 		if (hasEnvironment) {
-			EnvironmentOptions options = new() {
-				Environment = args.EnvironmentName,
-				Uri = args.Uri,
-				Login = args.Login,
-				Password = args.Password
-			};
-			EnvironmentSettings settings = settingsRepository.GetEnvironment(options);
+			EnvironmentSettings settings = ResolveEnvironmentSettings(args);
 			IPlatformVersionResolver resolver = resolverFactory.Create(settings);
 			return resolver.ResolveAsync(cancellationToken);
 		}
 
 		return Task.FromResult(ComponentInfoResolution.CreateNoActiveEnvironmentFallback());
+	}
+
+	/// <summary>
+	/// Builds the <see cref="EnvironmentSettings"/> for the cliogate probe from the per-call
+	/// arguments. Delegates to <see cref="IToolCommandResolver.Resolve{TCommand}(EnvironmentOptions)"/>
+	/// so this (the only <c>hasEnvironment</c>-supplied) branch shares the same ENG-93208
+	/// credential-passthrough seam every other resolver-routed tool uses — mirroring
+	/// <see cref="ComponentInfoTool"/>: on an authorized HTTP passthrough request the header tenant
+	/// wins and an explicit <c>environment-name</c>/<c>uri</c> is rejected before any
+	/// named-registered-tenant lookup, instead of the root
+	/// <see cref="ISettingsRepository.GetEnvironment(EnvironmentOptions)"/> probing the named
+	/// environment's stored credentials directly. Stdio and registered-environment <c>mcp-http</c>
+	/// keep resolving exactly as before — the resolver falls through to the same
+	/// registered-environment lookup/fill when no credential context is active.
+	/// </summary>
+	private EnvironmentSettings ResolveEnvironmentSettings(RequestInfoArgs args) {
+		EnvironmentOptions options = new() {
+			Environment = args.EnvironmentName,
+			Uri = args.Uri,
+			Login = args.Login,
+			Password = args.Password
+		};
+		return commandResolver.Resolve<EnvironmentSettings>(options);
 	}
 
 	/// <summary>

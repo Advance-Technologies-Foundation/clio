@@ -6,7 +6,6 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command.McpServer.Tools;
-using Clio.UserEnvironment;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
@@ -423,6 +422,108 @@ public sealed class RequestInfoToolTests {
 	}
 
 	[Test]
+	[Description("Passing environment-name routes the version probe through IToolCommandResolver.Resolve<EnvironmentSettings> (the ENG-93208 credential-passthrough seam every resolver-routed tool shares, mirroring get-component-info) — never through a direct settings-repository lookup.")]
+	public async Task GetRequestInfo_ShouldRouteEnvironmentProbeThroughCommandResolver_WhenEnvironmentNameProvided() {
+		// Arrange
+		RequestInfoCatalog catalog = new(new InMemoryRequestRegistryClient(TestRegistryJson));
+		IPlatformVersionResolverFactory factory = Substitute.For<IPlatformVersionResolverFactory>();
+		IPlatformVersionResolver resolver = Substitute.For<IPlatformVersionResolver>();
+		resolver.ResolveAsync(Arg.Any<CancellationToken>())
+			.Returns(new PlatformVersionResolution("8.3.4", VersionResolutionSource.Environment));
+		factory.Create(Arg.Any<EnvironmentSettings>()).Returns(resolver);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>())
+			.Returns(new EnvironmentSettings { Uri = "http://prod-stand" });
+		RequestInfoTool tool = new(catalog, new FakeDocsClient(), factory, commandResolver);
+
+		// Act
+		RequestInfoResponse response = await tool.GetRequestInfo(new RequestInfoArgs(EnvironmentName: "prod-stand"));
+
+		// Assert
+		response.ResolvedTargetVersion.Should().Be("8.3.4",
+			because: "the version must come from the probe of the environment passed in the call, not from ambient state");
+		response.ResolvedFrom.Should().Be("environment",
+			because: "an environment-name-driven probe that matches the catalog is the 'environment' tier");
+		commandResolver.Received(1).Resolve<EnvironmentSettings>(
+			Arg.Is<EnvironmentOptions>(o => o.Environment == "prod-stand"));
+		factory.Received(1).Create(Arg.Any<EnvironmentSettings>());
+	}
+
+	[Test]
+	[Description("Passing uri (with no environment-name) is also a hasEnvironment call — it routes version resolution through IToolCommandResolver.Resolve<EnvironmentSettings>, not just the environment-name spelling, mirroring get-component-info's AC-02 uri-only proof.")]
+	public async Task GetRequestInfo_ShouldRouteEnvironmentProbeThroughCommandResolver_WhenUriProvided() {
+		// Arrange
+		RequestInfoCatalog catalog = new(new InMemoryRequestRegistryClient(TestRegistryJson));
+		IPlatformVersionResolverFactory factory = Substitute.For<IPlatformVersionResolverFactory>();
+		IPlatformVersionResolver resolver = Substitute.For<IPlatformVersionResolver>();
+		resolver.ResolveAsync(Arg.Any<CancellationToken>())
+			.Returns(new PlatformVersionResolution("8.3.4", VersionResolutionSource.Environment));
+		factory.Create(Arg.Any<EnvironmentSettings>()).Returns(resolver);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>())
+			.Returns(new EnvironmentSettings { Uri = "http://explicit-uri" });
+		RequestInfoTool tool = new(catalog, new FakeDocsClient(), factory, commandResolver);
+
+		// Act
+		RequestInfoResponse response = await tool.GetRequestInfo(new RequestInfoArgs(Uri: "http://explicit-uri"));
+
+		// Assert
+		response.ResolvedTargetVersion.Should().Be("8.3.4",
+			because: "an explicit uri (without environment-name) must still probe through the resolver, mirroring the CLI verb's uri fallback");
+		response.ResolvedFrom.Should().Be("environment",
+			because: "a successful probe from an explicit uri is still the 'environment' tier");
+		// The uri-only call must reach IToolCommandResolver.Resolve — the SAME hasEnvironment
+		// branch environment-name uses — instead of a settings-repository-only path.
+		commandResolver.Received(1).Resolve<EnvironmentSettings>(
+			Arg.Is<EnvironmentOptions>(o => o.Uri == "http://explicit-uri" && string.IsNullOrEmpty(o.Environment)));
+	}
+
+	[Test]
+	[Description("Mixed input (an explicit environment-name alongside an active passthrough header) is rejected by IToolCommandResolver's transport policy BEFORE any named-tenant probe — the platform-version resolver factory is never invoked and the rejection surfaces as a redacted error envelope, mirroring get-component-info.")]
+	public async Task GetRequestInfo_ShouldRejectMixedInput_BeforeNamedTenantProbe() {
+		// Arrange
+		const string rejectionMessage =
+			"Explicit credential or environment arguments (uri/login/password/client-id/client-secret/environment) "
+			+ "are not accepted when credential passthrough is enabled over HTTP. Supply the target environment "
+			+ "and credentials via the X-Integration-Credentials header, not tool arguments.";
+		RequestInfoCatalog catalog = new(new InMemoryRequestRegistryClient(TestRegistryJson));
+		IPlatformVersionResolverFactory factory = Substitute.For<IPlatformVersionResolverFactory>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<EnvironmentSettings>(
+				Arg.Is<EnvironmentOptions>(o => o.Environment == "other-registered-env"))
+			.Returns(_ => throw new EnvironmentResolutionException(rejectionMessage));
+		RequestInfoTool tool = new(catalog, new FakeDocsClient(), factory, commandResolver);
+
+		// Act
+		RequestInfoResponse response = await tool.GetRequestInfo(
+			new RequestInfoArgs(EnvironmentName: "other-registered-env"));
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "mixed header + environment-name input must be rejected instead of silently succeeding against the named tenant");
+		response.Error.Should().Contain("X-Integration-Credentials",
+			because: "the rejection must teach the caller the correct credential channel, matching the sibling matrix tools' fail-soft error shape");
+		factory.DidNotReceiveWithAnyArgs().Create(Arg.Any<EnvironmentSettings>());
+	}
+
+	[Test]
+	[Description("A header-only call (neither environment-name nor uri) never calls IToolCommandResolver — it stays on the CreateNoActiveEnvironmentFallback path, mirroring get-component-info's compliant no-environment branch.")]
+	public async Task GetRequestInfo_ShouldNeverCallCommandResolver_WhenHeaderOnly() {
+		// Arrange
+		RequestInfoCatalog catalog = new(new InMemoryRequestRegistryClient(TestRegistryJson));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		RequestInfoTool tool = BuildTool(catalog, commandResolver: commandResolver);
+
+		// Act
+		RequestInfoResponse response = await tool.GetRequestInfo(new RequestInfoArgs());
+
+		// Assert
+		response.ResolvedFrom.Should().Be("latest-fallback",
+			because: "the header-only, no-environment branch must keep degrading to the loud latest-fallback marker unchanged");
+		commandResolver.DidNotReceiveWithAnyArgs().Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>());
+	}
+
+	[Test]
 	[Description("When the registry chain is exhausted the tool converts ComponentRegistryUnavailableException into a graceful MCP error response that points the operator at the requests-flavor local-override env var.")]
 	public async Task GetRequestInfo_ShouldReturnGracefulError_WhenRegistryChainIsExhausted() {
 		// Arrange
@@ -462,7 +563,8 @@ public sealed class RequestInfoToolTests {
 		IRequestInfoCatalog catalog,
 		IComponentRegistryDocsClient? docsClient = null,
 		string? environmentVersion = null,
-		PlatformVersionResolution? resolution = null) {
+		PlatformVersionResolution? resolution = null,
+		IToolCommandResolver? commandResolver = null) {
 		IPlatformVersionResolverFactory factory = Substitute.For<IPlatformVersionResolverFactory>();
 		if (resolution is not null || environmentVersion is not null) {
 			IPlatformVersionResolver resolver = Substitute.For<IPlatformVersionResolver>();
@@ -470,14 +572,16 @@ public sealed class RequestInfoToolTests {
 				.Returns(resolution ?? new PlatformVersionResolution(environmentVersion!, VersionResolutionSource.Environment));
 			factory.Create(Arg.Any<EnvironmentSettings>()).Returns(resolver);
 		}
-		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
-		settingsRepository.GetEnvironment(Arg.Any<EnvironmentOptions>())
-			.Returns(new EnvironmentSettings { Uri = "http://test-stand" });
+		if (commandResolver is null) {
+			commandResolver = Substitute.For<IToolCommandResolver>();
+			commandResolver.Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>())
+				.Returns(new EnvironmentSettings { Uri = "http://test-stand" });
+		}
 		return new RequestInfoTool(
 			catalog,
 			docsClient ?? new FakeDocsClient(),
 			factory,
-			settingsRepository);
+			commandResolver);
 	}
 
 	/// <summary>
