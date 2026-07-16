@@ -2070,6 +2070,20 @@ stories:
     depends_on: []
     blocks: []
 
+  - id: story-uninstall-warning-e2e-uri-resolution-1
+    title: "Resolve uninstall warning E2E IIS target without EnvironmentPath"
+    feature: "uninstall-warning-e2e-uri-resolution"
+    repo: "clio"
+    size: S
+    status: done
+    issue: 893
+    file: spec/uninstall-warning-e2e-uri-resolution/uninstall-warning-e2e-uri-resolution-story.md
+    prd: spec/uninstall-warning-e2e-uri-resolution/uninstall-warning-e2e-uri-resolution-prd.md
+    adr: spec/uninstall-warning-e2e-uri-resolution/uninstall-warning-e2e-uri-resolution-adr.md
+    test_plan: spec/uninstall-warning-e2e-uri-resolution/uninstall-warning-e2e-uri-resolution-test-plan.md
+    depends_on: [story-apppool-profile-cleanup-1]
+    blocks: []
+
   - id: story-dbhub-integration-1
     title: "Deliver dbHub installation and automatic Creatio source synchronization"
     feature: "dbhub-integration"

@@ -6364,3 +6364,22 @@ Decision: (1) Added SectionCreateSerializationGuard.BuildEnvironmentKey(Environm
 Discovery: The guard's BuildKey lowercases both parts, so BuildEnvironmentKey normalization is idempotent with it. KeyedSemaphore is shared with ComponentRegistryClient, so the waiter bound had to live in the guard, not KeyedSemaphore. Holder counts toward the in-flight bound, so bound-1 same-key callers park and the rest run best-effort.
 Files: clio/Command/ApplicationSectionCreateSerializationGuard.cs, clio/Command/ApplicationSectionCreateCommand.cs, clio.tests/Command/SectionCreateSerializationGuardTests.cs, clio.tests/Command/ApplicationSectionCreateServiceTests.cs
 Impact: create-app-section now serializes same-server creates across both overloads and cannot starve the MCP thread pool under a deep same-app fan-out; ComponentRegistryClient unaffected.
+## 2026-07-16 13:55 – Resolve uninstall warning E2E target without EnvironmentPath
+Context: TeamCity master build 15735619 failed the issue #881 locked-profile MCP E2E before uninstall because the registered `dev` environment had an empty `EnvironmentPath`.
+Decision: Resolve the registered environment URI through the fresh clio process, then fail-closed match its scheme, port, host binding, and application path to exactly one IIS application pool; keep file-reading sandbox helpers path-based.
+Discovery: TeamCity exposes `dev` at `http://<agent>:88/<application>` with a wildcard IIS binding and no path metadata. The disposable 10.0.0.802 Studio NET8 PostgreSQL run proved URI resolution, warning propagation, successful uninstall, and complete cleanup.
+Files: clio.mcp.e2e/Support/Configuration/ClioEnvironmentCommandResolver.cs, clio.mcp.e2e/Support/Configuration/IisApplicationPoolResolver.cs, clio.mcp.e2e/UninstallCreatioWarningE2ETests.cs, clio.mcp.e2e/UninstallWarningIisApplicationPoolResolverE2ETests.cs, spec/uninstall-warning-e2e-uri-resolution/
+Impact: The warning E2E no longer depends on unrelated `EnvironmentPath` metadata and aborts safely on unmatched, ambiguous, or pool-less IIS targets.
+
+## 2026-07-16 14:10 – Bind uninstall warning E2E to the local machine
+Context: Final security review found that a wildcard IIS binding could accept a stale URI hostname for another machine and still select a local pool.
+Decision: Require the registered URI host to identify the current machine by machine name, FQDN, loopback, or DNS/local-interface intersection before IIS matching; reject URI user information and sanitize query/fragment data from diagnostics.
+Discovery: The final worktree code passed 8 resolver/security regressions on net8.0 and net10.0, then the repeated 10.0.0.802 locked-profile E2E passed against the local FQDN and cleaned all recorded resources.
+Files: clio.mcp.e2e/Support/Configuration/IisApplicationPoolResolver.cs, clio.mcp.e2e/UninstallWarningIisApplicationPoolResolverE2ETests.cs, spec/uninstall-warning-e2e-uri-resolution/
+Impact: Wildcard bindings no longer authorize foreign-host targets, and secret-bearing URI components cannot leak through failure messages.
+## 2026-07-16 15:20 – Resolve routed TeamCity uninstall-warning sandbox pool
+Context: TeamCity build 15736567 showed that the issue #893 URI resolver still assumed the public `DeployedUrl` mirrored local IIS bindings and application paths.
+Decision: Read TeamCity's existing `ApplicationPoolName` through its configuration-properties file, then require the explicit pool to match the routed URI target or direct IIS topology and have exactly one live application assignment.
+Discovery: TeamCity exposes the sandbox as `http://<agent>:88/<pool>` while the agent-local IIS application can be a root app behind different bindings; public URL inference alone cannot identify the pool safely.
+Files: clio.mcp.e2e/Support/Configuration/TeamCityBuildParameterResolver.cs, clio.mcp.e2e/Support/Configuration/IisApplicationPoolResolver.cs, clio.mcp.e2e/UninstallCreatioWarningE2ETests.cs, clio.mcp.e2e/UninstallWarningIisApplicationPoolResolverE2ETests.cs, spec/uninstall-warning-e2e-uri-resolution/
+Impact: The destructive warning E2E supports TeamCity routing without trusting an unrelated/shared/missing-site pool; 17 resolver tests pass on net8/net10 and the exact locked-profile test passed against a disposable 10.0.0.802 deployment with complete cleanup.
