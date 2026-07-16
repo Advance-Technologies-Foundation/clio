@@ -30,6 +30,13 @@ internal sealed class DataForgeSettings {
 internal sealed class SandboxSettings {
 	public string? EnvironmentName { get; set; }
 
+	/// <summary>
+	/// Explicit IIS application-pool name for the disposable uninstall sandbox. TeamCity resolves this
+	/// from its <c>ApplicationPoolName</c> build parameter because the externally routed environment URL
+	/// does not necessarily match the agent's local IIS bindings or application path.
+	/// </summary>
+	public string? ApplicationPoolName { get; set; }
+
 	/// <summary>Archive used by the opt-in destructive deploy/uninstall lifecycle proof.</summary>
 	public string? DeploymentArchivePath { get; set; }
 
