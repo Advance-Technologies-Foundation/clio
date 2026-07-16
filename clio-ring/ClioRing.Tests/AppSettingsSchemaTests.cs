@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Xml.Linq;
 using ClioRing.Models;
 using FluentAssertions;
 using Json.Schema;
@@ -19,6 +20,7 @@ public sealed class AppSettingsSchemaTests {
 	private static readonly Lazy<JsonSchema> Schema = new(LoadSchema);
 	private static string SettingsPath => Path.Combine(AppContext.BaseDirectory, "app-settings.json");
 	private static string SchemaPath => Path.Combine(AppContext.BaseDirectory, "app-settings.schema.json");
+	private static string DesktopProjectPath => Path.Combine(AppContext.BaseDirectory, "ClioRing.Desktop.csproj");
 
 	[Test]
 	[Description("The shipped application settings satisfy the valid Draft 2020-12 schema copied beside the Ring test binaries.")]
@@ -47,6 +49,25 @@ public sealed class AppSettingsSchemaTests {
 		// Assert
 		schemaReference.Should().Be("./app-settings.schema.json",
 			because: "a relative reference continues to work after build, publish, or local installation");
+	}
+
+	[Test]
+	[Description("The Desktop shipping project copies the application-settings schema into build and publish output.")]
+	public void DesktopProject_ShouldCopySchema_WhenBuiltOrPublished() {
+		// Arrange
+		XDocument project = XDocument.Load(DesktopProjectPath);
+
+		// Act
+		XElement? schemaItem = project.Descendants("None")
+			.SingleOrDefault(item => string.Equals(
+				(string?)item.Attribute("Update"), "app-settings.schema.json", StringComparison.Ordinal));
+		string? copyMode = (string?)schemaItem?.Element("CopyToOutputDirectory");
+
+		// Assert
+		schemaItem.Should().NotBeNull(
+			because: "the schema must be part of the Desktop project's real shipping contract, not only the test output");
+		copyMode.Should().Be("PreserveNewest",
+			because: "build and publish must copy the schema beside app-settings.json");
 	}
 
 	[Test]

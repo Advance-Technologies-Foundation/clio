@@ -37,6 +37,9 @@
 		<None Include="..\ClioRing.Desktop\app-settings.schema.json" Link="app-settings.schema.json">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</None>
+		<None Include="..\ClioRing.Desktop\ClioRing.Desktop.csproj" Link="ClioRing.Desktop.csproj">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
 		<!-- Cross-repo contract anchor: clio's committed ClioStageEvent fixture copied byte-identically.
 		     The parity test round-trips each NDJSON line through the Ring mirror and asserts the bytes
 		     match, guarding against silent drift between the two repos (TC-U-30). -->
