@@ -86,9 +86,17 @@ public interface IApplicationSectionCreateService {
 	/// When <see langword="null"/> (the synchronous CLI path) the readback keeps its
 	/// <see cref="Timeout.Infinite"/> default; non-positive values fall through to that default too.
 	/// </param>
+	/// <param name="enableContentionRetry">
+	/// When <see langword="true"/> a detail-less <c>InsertQuery failed</c> rejection whose section is
+	/// verified absent triggers exactly one automatic retry (after a short backoff). This is the
+	/// cross-caller-contention path — the MCP/background tool, where several <c>create-app-section</c>
+	/// calls can target the same application in one process. When <see langword="false"/> (the default,
+	/// used by the bare synchronous CLI verb, which runs one command per process and never contends
+	/// in-process) the retry is skipped and a verified-absent detail-less rejection fails fast.
+	/// </param>
 	/// <returns>Structured data for the created section, entity, and pages.</returns>
 	ApplicationSectionCreateResult CreateSection(string environmentName, ApplicationSectionCreateRequest request,
-		int? insertTimeoutMsOverride = null, int? readbackTimeoutMsOverride = null);
+		int? insertTimeoutMsOverride = null, int? readbackTimeoutMsOverride = null, bool enableContentionRetry = false);
 }
 
 /// <summary>
@@ -207,7 +215,7 @@ public sealed class ApplicationSectionCreateService(
 
 	/// <inheritdoc />
 	public ApplicationSectionCreateResult CreateSection(string environmentName, ApplicationSectionCreateRequest request,
-		int? insertTimeoutMsOverride = null, int? readbackTimeoutMsOverride = null) {
+		int? insertTimeoutMsOverride = null, int? readbackTimeoutMsOverride = null, bool enableContentionRetry = false) {
 		if (string.IsNullOrWhiteSpace(environmentName)) {
 			throw new ArgumentException("Environment name is required.", nameof(environmentName));
 		}
@@ -275,31 +283,32 @@ public sealed class ApplicationSectionCreateService(
 		// cannot hold a thread + HTTP connection for the life of the server process (ENG-91316).
 		int readbackTimeoutMs = ResolveReadbackTimeout(readbackTimeoutMsOverride);
 
-		// Serialize ONLY the destructive commit (insert + contention-verify + at-most-one retry) per
-		// environment + application so concurrent create-app-section calls in one process cannot contend
-		// server-side into a spurious "InsertQuery failed" (ENG-93089, Option A). The read-only success
-		// readback runs OUTSIDE the guard so queued readbacks overlap and the critical section stays as
-		// narrow as possible. The wait is bounded and degrades to best-effort on timeout, so it never
-		// introduces a new failure mode — any residual contention (including the cross-process case the
-		// in-process guard cannot cover) is recovered by the reclassify/verify/retry path in
-		// CommitSectionWithContentionRecovery (Option B). The preparation reads above stay OUTSIDE the guard
-		// so invalid inputs still fail fast in parallel. The auto-retry is gated on an explicit insert-timeout
-		// override (the MCP/background path, which is also where genuine cross-caller contention arises); the
-		// bare synchronous CLI verb never contends, so it skips the second insert and fails fast instead.
-		sectionCreateSerializationGuard.Run(
+		// Serialize ONLY each destructive insert (the ExecutePostRequest that actually writes the section)
+		// per environment + application so concurrent create-app-section calls in one process cannot contend
+		// server-side into a spurious "InsertQuery failed" (ENG-93089, Option A). Everything else — the
+		// read-only contention-verify, the fixed backoff between the two inserts, the retry-decision
+		// orchestration, and the success readback — runs OUTSIDE the guard: those steps read strictly by the
+		// section id generated for THIS call, so they are safe unserialized, and holding them under the guard
+		// would inflate the held span past the bounded wait cap and starve a second concurrent same-app
+		// caller into timing out and inserting unserialized. The wait is bounded and degrades to best-effort
+		// on timeout, so it never introduces a new failure mode — any residual contention (including the
+		// cross-process case the in-process guard cannot cover) is recovered by the reclassify/verify/retry
+		// path in CommitSectionWithContentionRecovery (Option B). The preparation reads above stay OUTSIDE the
+		// guard so invalid inputs still fail fast in parallel. The auto-retry is gated on the explicit
+		// enableContentionRetry flag (the MCP/background path, which is also where genuine cross-caller
+		// contention arises); the bare synchronous CLI verb never contends, so it skips the second insert and
+		// fails fast instead.
+		TimeSpan serializationWait = TimeSpan.FromMilliseconds(Math.Min(insertTimeoutMs, MaxSerializationWaitMs));
+		CommitSectionWithContentionRecovery(
 			environmentName,
 			request.ApplicationCode,
-			TimeSpan.FromMilliseconds(Math.Min(insertTimeoutMs, MaxSerializationWaitMs)),
-			() => {
-				CommitSectionWithContentionRecovery(
-					resolvedRequest,
-					requestBody,
-					client,
-					environmentSettings,
-					insertTimeoutMs,
-					contentionRetryEnabled: insertTimeoutMsOverride.HasValue);
-				return 0;
-			});
+			resolvedRequest,
+			requestBody,
+			client,
+			environmentSettings,
+			insertTimeoutMs,
+			serializationWait,
+			contentionRetryEnabled: enableContentionRetry);
 
 		return LoadCreatedSection(
 			environmentName,
@@ -312,42 +321,59 @@ public sealed class ApplicationSectionCreateService(
 	}
 
 	/// <summary>
-	/// Ensures the section is committed server-side inside the serialization guard: runs the destructive
-	/// insert and, on a detail-less <c>InsertQuery failed</c> contention rejection, verifies by the
-	/// generated section id (bounded settle+poll) and — when <paramref name="contentionRetryEnabled"/> is
-	/// set — auto-retries at most once before surfacing the failure. Returns normally when the section is
-	/// committed (insert acknowledged, contention-verified-present, retry acknowledged, or
-	/// timeout-recovered-visible), leaving the spinner ended on success; throws a classified
+	/// Ensures the section is committed server-side: runs the destructive insert and, on a detail-less
+	/// <c>InsertQuery failed</c> contention rejection, verifies by the generated section id (bounded
+	/// settle+poll) and — when <paramref name="contentionRetryEnabled"/> is set — auto-retries at most once
+	/// before surfacing the failure. Only each destructive insert (<see cref="TryCommitAttempt"/>) runs under
+	/// the per-application serialization guard (acquired separately for insert #1 and the retry); the
+	/// read-only verify, the fixed backoff, and the retry-decision orchestration run OUTSIDE the guard so the
+	/// held span stays narrow and never starves a concurrent same-app caller (ENG-93089). Returns normally
+	/// when the section is committed (insert acknowledged, contention-verified-present, retry acknowledged,
+	/// or timeout-recovered-visible), leaving the spinner ended on success; throws a classified
 	/// <see cref="ApplicationSectionCreateFailureClass"/> failure otherwise. It never runs the read-only
-	/// success readback — that happens outside the guard so queued readbacks overlap (ENG-93089).
+	/// success readback — that happens outside so queued readbacks overlap.
 	/// </summary>
+	/// <param name="environmentName">Registered clio environment name (part of the guard key).</param>
+	/// <param name="applicationCode">Installed application code (part of the guard key).</param>
 	/// <param name="resolvedRequest">Resolved section-create request (carries the generated section id).</param>
 	/// <param name="requestBody">Serialized InsertQuery body for the section.</param>
 	/// <param name="client">Environment-scoped application client.</param>
 	/// <param name="environmentSettings">Resolved environment settings.</param>
 	/// <param name="insertTimeoutMs">Per-request budget for each insert HTTP call.</param>
+	/// <param name="serializationWait">Bounded wait for the per-application serialization guard per insert.</param>
 	/// <param name="contentionRetryEnabled">
-	/// When <see langword="true"/> (an explicit insert-timeout override was supplied — the MCP/background
-	/// path where genuine cross-caller contention arises) a verified-absent detail-less rejection triggers
-	/// exactly one retry. When <see langword="false"/> (the bare synchronous CLI verb, which never contends
-	/// in-process) the retry is skipped: a first-attempt detail-less rejection that verifies absent fails
-	/// fast with the classified contention failure — no backoff, no second insert.
+	/// When <see langword="true"/> (the MCP/background path where genuine cross-caller contention arises) a
+	/// verified-absent detail-less rejection triggers exactly one retry. When <see langword="false"/> (the
+	/// bare synchronous CLI verb, which never contends in-process) the retry is skipped: a first-attempt
+	/// detail-less rejection that verifies absent fails fast with the classified contention failure — no
+	/// backoff, no second insert.
 	/// </param>
 	private void CommitSectionWithContentionRecovery(
+		string environmentName,
+		string applicationCode,
 		ResolvedApplicationSectionCreateRequest resolvedRequest,
 		string requestBody,
 		IApplicationClient client,
 		EnvironmentSettings environmentSettings,
 		int insertTimeoutMs,
+		TimeSpan serializationWait,
 		bool contentionRetryEnabled) {
-		if (TryCommitAttempt(resolvedRequest, requestBody, client, environmentSettings, insertTimeoutMs)) {
+		// Insert #1 — the guard wraps ONLY this destructive insert; it is released the moment the insert
+		// returns so the verify/backoff below never runs while the lock is held.
+		bool committed = sectionCreateSerializationGuard.Run(
+			environmentName,
+			applicationCode,
+			serializationWait,
+			() => TryCommitAttempt(resolvedRequest, requestBody, client, environmentSettings, insertTimeoutMs));
+		if (committed) {
 			logger.EndSpinner(true);
 			return;
 		}
 
 		// Detail-less contention rejection: verify by the id generated for THIS call (bounded settle+poll so
 		// a committed-but-not-yet-visible row is not misread as absent) before any retry, so a section that
-		// committed despite the aborted response is never duplicated (matches strictly by id).
+		// committed despite the aborted response is never duplicated (matches strictly by id). This verify is
+		// read-only and runs with the guard NOT held.
 		bool? sectionVisible = TryVerifySectionExistsWithSettle(client, environmentSettings, resolvedRequest);
 		if (sectionVisible == true) {
 			logger.EndSpinner(true);
@@ -371,11 +397,43 @@ public sealed class ApplicationSectionCreateService(
 		}
 
 		// Verified absent on the contention-prone path → safe to retry exactly once (Jira "once") after a
-		// short fixed backoff.
+		// short fixed backoff. The backoff runs with the guard NOT held.
 		logger.WriteInfo(
 			$"Section insert was aborted without detail (contention); retrying once for section '{resolvedRequest.SectionCode}'...");
 		Thread.Sleep(PollDelay);
-		if (TryCommitAttempt(resolvedRequest, requestBody, client, environmentSettings, insertTimeoutMs)) {
+
+		// Retry insert — the guard is re-acquired for just this second destructive insert.
+		bool retryCommitted;
+		try {
+			retryCommitted = sectionCreateSerializationGuard.Run(
+				environmentName,
+				applicationCode,
+				serializationWait,
+				() => TryCommitAttempt(resolvedRequest, requestBody, client, environmentSettings, insertTimeoutMs));
+		} catch (ApplicationSectionCreateException retryException)
+			when (retryException.FailureClass == ApplicationSectionCreateFailureClass.ServerError) {
+			// The retry surfaced a TERMINAL detailed server rejection (e.g. a duplicate/constraint error).
+			// That can happen when insert #1 actually committed but answered detail-less and the settle
+			// window false-negatived "absent", so the retry collided with the row insert #1 created. Re-verify
+			// by the generated id before surfacing: if the section is now visible, treat it as committed and
+			// swallow the ServerError; otherwise the rejection is genuine, so rethrow it unchanged. Only the
+			// ServerError class is gated here — transport/timeout classes are never swallowed.
+			bool? sectionVisibleAfterServerError =
+				TryVerifySectionExistsWithSettle(client, environmentSettings, resolvedRequest);
+			if (sectionVisibleAfterServerError == true) {
+				// TryCommitAttempt already ended the spinner false on its throw; this EndSpinner(true) is a
+				// no-op guarded by the logger (do not double-end) and only documents the recovered intent.
+				logger.EndSpinner(true);
+				logger.WriteInfo(
+					$"Section '{resolvedRequest.SectionCode}' is visible despite a terminal rejection on the retry — "
+					+ "insert #1 committed; continuing with readback.");
+				return;
+			}
+
+			throw;
+		}
+
+		if (retryCommitted) {
 			logger.EndSpinner(true);
 			return;
 		}

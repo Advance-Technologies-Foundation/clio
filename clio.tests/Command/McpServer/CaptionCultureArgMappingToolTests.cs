@@ -123,7 +123,7 @@ public sealed class CaptionCultureArgMappingToolTests {
 		// Arrange
 		ApplicationSectionCreateRequest? capturedRequest = null;
 		IApplicationSectionCreateService service = Substitute.For<IApplicationSectionCreateService>();
-		service.CreateSection(Arg.Any<string>(), Arg.Do<ApplicationSectionCreateRequest>(request => capturedRequest = request), Arg.Any<int?>(), Arg.Any<int?>());
+		service.CreateSection(Arg.Any<string>(), Arg.Do<ApplicationSectionCreateRequest>(request => capturedRequest = request), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<bool>());
 		ApplicationSectionCreateTool tool = new(service);
 		ApplicationSectionCreateArgs args = new("dev", "UsrApp", "Orders", CaptionCulture: CaptionCultureValue);
 

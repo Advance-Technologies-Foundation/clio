@@ -354,7 +354,7 @@ public sealed class ApplicationToolTests {
 	public void ApplicationSectionCreate_Should_Return_Structured_Success_Envelope() {
 		// Arrange
 		IApplicationSectionCreateService applicationSectionCreateService = Substitute.For<IApplicationSectionCreateService>();
-		applicationSectionCreateService.CreateSection("sandbox", Arg.Any<ApplicationSectionCreateRequest>(), Arg.Any<int?>(), Arg.Any<int?>())
+		applicationSectionCreateService.CreateSection("sandbox", Arg.Any<ApplicationSectionCreateRequest>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<bool>())
 			.Returns(new ApplicationSectionCreateResult(
 				"pkg-uid",
 				"UsrOrdersApp",
@@ -407,7 +407,8 @@ public sealed class ApplicationToolTests {
 				request.EntitySchemaName == "UsrOrder" &&
 				request.WithMobilePages),
 			ApplicationSectionCreateTool.BackgroundInsertTimeoutMs,
-			ApplicationSectionCreateTool.BackgroundReadbackTimeoutMs);
+			ApplicationSectionCreateTool.BackgroundReadbackTimeoutMs,
+			true);
 		result.Success.Should().BeTrue(
 			because: "a successful section-create call should be wrapped in a core-style success envelope");
 		result.Section.Should().NotBeNull(
@@ -448,7 +449,7 @@ public sealed class ApplicationToolTests {
 	public void ApplicationSectionCreate_Should_Return_Classified_Error_Envelope_When_Service_Throws_Typed_Exception() {
 		// Arrange
 		IApplicationSectionCreateService applicationSectionCreateService = Substitute.For<IApplicationSectionCreateService>();
-		applicationSectionCreateService.CreateSection("sandbox", Arg.Any<ApplicationSectionCreateRequest>(), Arg.Any<int?>(), Arg.Any<int?>())
+		applicationSectionCreateService.CreateSection("sandbox", Arg.Any<ApplicationSectionCreateRequest>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<bool>())
 			.Returns(_ => throw new ApplicationSectionCreateException(
 				"Creatio did not respond within 90s while creating section 'Orders' (code 'UsrOrders').",
 				ApplicationSectionCreateFailureClass.CreatioTimeout,
@@ -512,7 +513,7 @@ public sealed class ApplicationToolTests {
 		// Arrange — substitute the service to throw the deadline exception the heartbeat wrapper
 		// raises when the work outlives the response budget, exercising the tool's deadline branch.
 		IApplicationSectionCreateService applicationSectionCreateService = Substitute.For<IApplicationSectionCreateService>();
-		applicationSectionCreateService.CreateSection("sandbox", Arg.Any<ApplicationSectionCreateRequest>(), Arg.Any<int?>(), Arg.Any<int?>())
+		applicationSectionCreateService.CreateSection("sandbox", Arg.Any<ApplicationSectionCreateRequest>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<bool>())
 			.Returns(_ => throw new McpResponseDeadlineExceededException(
 				ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
 				TimeSpan.FromSeconds(150)));
@@ -545,7 +546,7 @@ public sealed class ApplicationToolTests {
 	public void ApplicationSectionCreate_Should_Report_Unknown_Section_State_When_Verification_Was_Not_Possible() {
 		// Arrange
 		IApplicationSectionCreateService applicationSectionCreateService = Substitute.For<IApplicationSectionCreateService>();
-		applicationSectionCreateService.CreateSection("sandbox", Arg.Any<ApplicationSectionCreateRequest>(), Arg.Any<int?>(), Arg.Any<int?>())
+		applicationSectionCreateService.CreateSection("sandbox", Arg.Any<ApplicationSectionCreateRequest>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<bool>())
 			.Returns(_ => throw new ApplicationSectionCreateException(
 				"Creatio did not respond and verification also failed.",
 				ApplicationSectionCreateFailureClass.CreatioTimeout,
@@ -572,7 +573,7 @@ public sealed class ApplicationToolTests {
 	public void ApplicationSectionCreate_Should_Return_Plain_Error_Envelope_When_Service_Throws_Plain_Exception() {
 		// Arrange
 		IApplicationSectionCreateService applicationSectionCreateService = Substitute.For<IApplicationSectionCreateService>();
-		applicationSectionCreateService.CreateSection("sandbox", Arg.Any<ApplicationSectionCreateRequest>(), Arg.Any<int?>(), Arg.Any<int?>())
+		applicationSectionCreateService.CreateSection("sandbox", Arg.Any<ApplicationSectionCreateRequest>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<bool>())
 			.Returns(_ => throw new InvalidOperationException("Application id was not returned by get-app-info."));
 		ApplicationSectionCreateTool tool = new(applicationSectionCreateService);
 
@@ -1996,7 +1997,7 @@ public sealed class ApplicationToolTests {
 	public async Task ApplicationSectionCreate_ShouldReturnStructuredResult_AndCallServiceOnce_WhenInvokedThroughHeartbeatContract() {
 		// Arrange
 		IApplicationSectionCreateService applicationSectionCreateService = Substitute.For<IApplicationSectionCreateService>();
-		applicationSectionCreateService.CreateSection("sandbox", Arg.Any<ApplicationSectionCreateRequest>(), Arg.Any<int?>(), Arg.Any<int?>())
+		applicationSectionCreateService.CreateSection("sandbox", Arg.Any<ApplicationSectionCreateRequest>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<bool>())
 			.Returns(new ApplicationSectionCreateResult(
 				"pkg-uid",
 				"UsrOrdersApp",
@@ -2033,7 +2034,8 @@ public sealed class ApplicationToolTests {
 			"sandbox",
 			Arg.Is<ApplicationSectionCreateRequest>(request => request.ApplicationCode == "UsrOrdersApp"),
 			ApplicationSectionCreateTool.BackgroundInsertTimeoutMs,
-			ApplicationSectionCreateTool.BackgroundReadbackTimeoutMs);
+			ApplicationSectionCreateTool.BackgroundReadbackTimeoutMs,
+			true);
 		result.Success.Should().BeTrue(
 			because: "the heartbeat wrapper must be transparent and must not alter a successful section-create response");
 		result.Section!.Code.Should().Be("UsrOrders",

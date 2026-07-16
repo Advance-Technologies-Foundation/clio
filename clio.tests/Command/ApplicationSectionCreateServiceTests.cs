@@ -790,14 +790,15 @@ public sealed class ApplicationSectionCreateServiceTests {
 	}
 
 	[Test]
-	[Description("On the contention-prone path (an explicit insert-timeout override is supplied), a detail-less contention rejection with the section verified absent makes clio retry the insert exactly once and return the recovered section (ENG-93089 AC-04, F9).")]
+	[Description("On the contention-prone path (enableContentionRetry:true — the MCP/background path), a detail-less contention rejection with the section verified absent makes clio retry the insert exactly once and return the recovered section (ENG-93089 AC-04, F9).")]
 	public void CreateSection_Should_Retry_Once_And_Recover_When_Contention_Section_Is_Absent() {
 		// Arrange
 		SetUpDetailLessThenSuccessfulInsertWithReadback();
 
-		// Act — the override enables the auto-retry (the MCP/background path).
+		// Act — enableContentionRetry:true turns on the auto-retry (the MCP/background path); it is an
+		// explicit flag now, no longer derived from the insert-timeout override.
 		ApplicationSectionCreateResult result = _sut.CreateSection(
-			"sandbox", CreateReuseEntityRequest(), insertTimeoutMsOverride: 600_000);
+			"sandbox", CreateReuseEntityRequest(), insertTimeoutMsOverride: 600_000, enableContentionRetry: true);
 
 		// Assert
 		result.Section.Code.Should().Be("UsrOrders",
@@ -816,9 +817,9 @@ public sealed class ApplicationSectionCreateServiceTests {
 		// Arrange
 		SetUpDetailLessInsertWithReadback(sectionVisibleOnVerify: false);
 
-		// Act — the override enables the auto-retry path that this test exercises.
+		// Act — enableContentionRetry:true turns on the auto-retry path that this test exercises.
 		Action action = () => _sut.CreateSection(
-			"sandbox", CreateReuseEntityRequest(), insertTimeoutMsOverride: 600_000);
+			"sandbox", CreateReuseEntityRequest(), insertTimeoutMsOverride: 600_000, enableContentionRetry: true);
 
 		// Assert
 		ApplicationSectionCreateException exception = action.Should().Throw<ApplicationSectionCreateException>(
@@ -851,6 +852,72 @@ public sealed class ApplicationSectionCreateServiceTests {
 			because: "a detail-less rejection is still contention even when the retry is skipped");
 		exception.SectionCreated.Should().BeFalse(
 			because: "the section was verified absent, so it was never created");
+		_applicationClient.Received(1).ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal)
+				&& body.Contains("\"columnValues\"", StringComparison.Ordinal)
+				&& !body.Contains("\"filters\"", StringComparison.Ordinal)),
+			Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("FIX B (ENG-93089 #3581998934): when the retry insert throws a TERMINAL detailed ServerError (a duplicate/constraint rejection) but the section is nonetheless visible by its generated id on re-verify — insert #1 committed yet answered detail-less — clio treats it as committed, swallows the ServerError, and returns the section via the outside readback instead of surfacing a terminal failure.")]
+	public void CreateSection_Should_Recover_When_Retry_Terminal_ServerError_But_Section_Is_Visible() {
+		// Arrange
+		SetUpDetailLessThenServerErrorInsertWithVisibleSection();
+
+		// Act — enableContentionRetry:true takes the retry leg; the retry's detailed ServerError is
+		// re-verified by id before surfacing.
+		ApplicationSectionCreateResult result = _sut.CreateSection(
+			"sandbox", CreateReuseEntityRequest(), enableContentionRetry: true);
+
+		// Assert
+		result.Section.Code.Should().Be("UsrOrders",
+			because: "the section committed by insert #1 must be returned via readback rather than surfaced as the retry's terminal ServerError");
+		_applicationClient.Received(2).ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal)
+				&& body.Contains("\"columnValues\"", StringComparison.Ordinal)
+				&& !body.Contains("\"filters\"", StringComparison.Ordinal)),
+			Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("FIX C (ENG-93089 #3581998739): the auto-retry is driven by the explicit enableContentionRetry flag, decoupled from the insert-timeout override — enableContentionRetry:true retries after a verified-absent detail-less rejection even with NO insert-timeout override supplied.")]
+	public void CreateSection_Should_Retry_When_ContentionRetry_Enabled_Without_Timeout_Override() {
+		// Arrange
+		SetUpDetailLessThenSuccessfulInsertWithReadback();
+
+		// Act — no insertTimeoutMsOverride; retry is enabled purely by the explicit flag.
+		ApplicationSectionCreateResult result = _sut.CreateSection(
+			"sandbox", CreateReuseEntityRequest(), enableContentionRetry: true);
+
+		// Assert
+		result.Section.Code.Should().Be("UsrOrders",
+			because: "the explicit enableContentionRetry flag must enable the retry independently of the insert-timeout override");
+		_applicationClient.Received(2).ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal)
+				&& body.Contains("\"columnValues\"", StringComparison.Ordinal)
+				&& !body.Contains("\"filters\"", StringComparison.Ordinal)),
+			Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("FIX C (ENG-93089 #3581998739): supplying an insert-timeout override alone no longer enables the auto-retry — with enableContentionRetry left at its default false, a verified-absent detail-less rejection fails fast and issues NO second insert even when a generous insert-timeout override is set.")]
+	public void CreateSection_Should_Not_Retry_When_Timeout_Override_Set_But_ContentionRetry_Disabled() {
+		// Arrange
+		SetUpDetailLessInsertWithReadback(sectionVisibleOnVerify: false);
+
+		// Act — a generous override but the retry flag stays default false, so the retry must be skipped.
+		Action action = () => _sut.CreateSection(
+			"sandbox", CreateReuseEntityRequest(), insertTimeoutMsOverride: 600_000);
+
+		// Assert
+		ApplicationSectionCreateException exception = action.Should().Throw<ApplicationSectionCreateException>(
+			because: "the insert-timeout override no longer implies contention retry, so a verified-absent rejection fails fast").Which;
+		exception.FailureClass.Should().Be(ApplicationSectionCreateFailureClass.Contention,
+			because: "a verified-absent detail-less rejection is still classified contention when the retry is disabled");
 		_applicationClient.Received(1).ExecutePostRequest(
 			Arg.Any<string>(),
 			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal)
@@ -1578,6 +1645,54 @@ public sealed class ApplicationSectionCreateServiceTests {
 		// The settle+poll verify makes up to ContentionVerifyAttempts (3) calls before the retry; all must
 		// report the section absent. Only the readback that runs AFTER the successful retry (the 4th call
 		// onwards, which NSubstitute repeats) returns the created section by its generated id.
+		_applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+					body.Contains("\"SectionSchemaUId\"", StringComparison.Ordinal)),
+				Arg.Any<int>())
+			.Returns(
+				_ => """{"success":true,"rows":[]}""",
+				_ => """{"success":true,"rows":[]}""",
+				_ => """{"success":true,"rows":[]}""",
+				_ => $$"""{"success":true,"rows":[{"Id":"{{ExtractGeneratedSectionId()}}","ApplicationId":"app-id","Caption":"Orders","Code":"UsrOrders","Description":"Order workspace","EntitySchemaName":"UsrOrders","PackageId":"pkg-uid","SectionSchemaUId":"section-schema-uid","LogoId":"icon-id","IconBackground":null,"ClientTypeId":null}]}""");
+		_applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+					body.Contains("\"columnValues\"", StringComparison.Ordinal) &&
+					body.Contains("\"IconBackground\"", StringComparison.Ordinal) &&
+					body.Contains("\"filters\"", StringComparison.Ordinal)),
+				Arg.Any<int>())
+			.Returns("""{"success":true}""");
+	}
+
+	// First insert returns the detail-less contention rejection; the bounded settle+poll verify (3 attempts)
+	// finds the section absent, so clio retries once — but the RETRY insert returns a DETAILED server
+	// rejection (a duplicate/constraint error) because insert #1 actually committed and answered detail-less.
+	// The section becomes visible on the FIX B re-verify (4th readback onward), so the terminal ServerError is
+	// swallowed and the outside readback returns the created section. Used by the ENG-93089 FIX B test.
+	private void SetUpDetailLessThenServerErrorInsertWithVisibleSection() {
+		SetUpCommonReadMocks();
+		_capturedInsertBody = null;
+		_applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+					body.Contains("\"columnValues\"", StringComparison.Ordinal) &&
+					!body.Contains("\"filters\"", StringComparison.Ordinal)),
+				Arg.Any<int>())
+			.Returns(
+				callInfo => {
+					_capturedInsertBody = callInfo.ArgAt<string>(1);
+					return """{"success":false}""";
+				},
+				callInfo => {
+					_capturedInsertBody = callInfo.ArgAt<string>(1);
+					return """{"success":false,"errorInfo":{"message":"Section with this code already exists"}}""";
+				});
+		_applicationInfoService.GetApplicationInfo("sandbox", null, "UsrOrdersApp")
+			.Returns(CreateBeforeInfo(), CreateBeforeInfo());
+		// The pre-retry settle+poll verify makes up to 3 calls (all absent); the FIX B re-verify after the
+		// retry's terminal ServerError (the 4th call onward, which NSubstitute repeats) finds the section by
+		// its generated id, and the outside readback then returns it.
 		_applicationClient.ExecutePostRequest(
 				Arg.Any<string>(),
 				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&

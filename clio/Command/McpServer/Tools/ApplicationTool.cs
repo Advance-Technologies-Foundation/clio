@@ -259,7 +259,8 @@ public sealed class ApplicationSectionCreateTool(IApplicationSectionCreateServic
 						args.CaptionCulture,
 						args.Code),
 					BackgroundInsertTimeoutMs,
-					BackgroundReadbackTimeoutMs),
+					BackgroundReadbackTimeoutMs,
+					enableContentionRetry: true),
 				deadline: null,
 				cancellationToken: cancellationToken).ConfigureAwait(false);
 			return ApplicationToolHelper.CreateSectionContextResponse(ApplicationToolResultMapper.Map(result));

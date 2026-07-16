@@ -14,8 +14,10 @@ namespace Clio.Command;
 /// application: each section insert takes ~90–100 s, so overlapping inserts collide. This guard makes
 /// creations for the same <c>environment + application-code</c> run one at a time within a single
 /// <c>clio</c> process, while creations for different applications or environments stay fully parallel.
-/// It does NOT serialize across separate <c>clio</c> processes — that cross-process case is covered by
-/// the reclassify/verify/retry recovery in <see cref="ApplicationSectionCreateService"/> (ENG-93089, Option B).
+/// It does NOT serialize across separate <c>clio</c> processes — that cross-process case is covered by the
+/// reclassify + verify recovery in <see cref="ApplicationSectionCreateService"/> (and, on the MCP path only,
+/// a bounded one-shot retry). Pure cross-process CLI-vs-CLI contention therefore gets reclassify + verify but
+/// not the retry, because the retry leg is gated to the MCP/background caller (ENG-93089, Option B).
 /// </remarks>
 public interface ISectionCreateSerializationGuard {
 	/// <summary>
