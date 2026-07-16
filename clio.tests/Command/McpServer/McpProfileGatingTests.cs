@@ -3,11 +3,13 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Text.Json;
+using Clio.Command;
 using Clio.Command.McpServer;
 using Clio.Command.McpServer.Tools;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Server;
+using NSubstitute;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command.McpServer;
@@ -38,14 +40,40 @@ public sealed class McpProfileGatingTests
 	// surface. We measure the serialized ProtocolTool set (name + description + input schema) as a
 	// proxy for the tools/list payload. Story 2 slimmed the core descriptions (and the ubiquitous
 	// environment-name/uri/login/password params), dropping the payload from ~37.4k to ~30.1k bytes;
-	// the remaining bulk is the input-schema bodies, which Story 2 does not touch. The ratchet was
-	// tightened to 34k bytes — below the post-slim measurement with headroom for master's growth
-	// (validate-page version param + composites data) — to lock in the win and catch any silent
-	// re-growth. Raised to 35328 (34.5k): conditional-requiredness descriptions for credential
-	// passthrough exhausted the previous headroom (ENG-93347 FR-05a).
-	private const int MaxLazyToolsSerializedBytes = 35_328;
+	// the remaining bulk is the input-schema bodies, which Story 2 does not touch. The 34k ratchet
+	// locked that win in. get-request-info (the Freedom UI request catalog, ~3.1k of description +
+	// schema) is a resident CORE tool but is GATED behind the requests-registry feature, so while that
+	// feature is off it does NOT ship in the DEFAULT tools/list and does NOT consume this budget — removing
+	// its [FeatureToggle] at real graduation would add ~3.1k and trip the ceiling (the deliberate budget gate).
+	// The ceiling grew from 34*1024 to 35*1024 because origin/master added resident tools (desktop-page,
+	// related-page-binding, business-rule CRUD, ...) — this branch is rebased onto it; the get-request-info-free
+	// default surface measures ~35.2k.
+	private const int MaxLazyToolsSerializedBytes = 35 * 1024;
 
 	private static Assembly ClioAssembly => typeof(McpFeatureToggleFilter).Assembly;
+
+	/// <summary>
+	/// The default-surface predicate for the budget ratchets: every ungated type is enabled,
+	/// every <see cref="FeatureToggleAttribute"/>-gated type is disabled — exactly the
+	/// fail-closed default of <c>IFeatureToggleService</c> in a fresh install. Gated
+	/// experimental CORE tools do not ship in the default <c>tools/list</c>, so they must
+	/// not consume the byte budget until they graduate; removing the <c>[FeatureToggle]</c>
+	/// at graduation lands their cost on the ratchet at exactly the moment the deliberate
+	/// budget decision is due (get-request-info rides this path again after its ENG-93187
+	/// graduation was reversed and re-gated behind the requests-registry feature).
+	/// </summary>
+	private static bool DefaultSurfaceEnabled(Type type) =>
+		type.GetCustomAttribute<FeatureToggleAttribute>() is null;
+
+	// Registers the DEFAULT-or-supplied surface and returns the tool NAMES that land in tools/list, so a
+	// membership test can assert a gated tool is hidden by default and surfaced once its gate is enabled.
+	private static string[] RegisteredToolNames(Func<Type, bool> isEnabled) {
+		ServiceCollection services = new();
+		IMcpServerBuilder builder = services.AddMcpServer();
+		McpFeatureToggleFilter.RegisterEnabledPrimitives(builder, ClioAssembly, isEnabled, JsonSerializerOptions.Default);
+		using ServiceProvider provider = services.BuildServiceProvider();
+		return provider.GetServices<McpServerTool>().Select(tool => tool.ProtocolTool.Name).ToArray();
+	}
 
 	private static Type[] EnabledToolTypes() =>
 		McpFeatureToggleFilter.GetEnabledTypes(
@@ -137,7 +165,7 @@ public sealed class McpProfileGatingTests
 
 	[Test]
 	[Category("Unit")]
-	[Description("Registering yields a tools/list whose tool count is within the budget cap, guarding against silent core-set bloat.")]
+	[Description("Registering the DEFAULT surface (feature-gated types off, matching a fresh install) yields a tools/list whose tool count is within the budget cap, guarding against silent core-set bloat.")]
 	public void RegisterEnabledPrimitives_ShouldKeepToolCountWithinBudget_WhenCalled() {
 		// Arrange
 		ServiceCollection services = new();
@@ -145,7 +173,7 @@ public sealed class McpProfileGatingTests
 
 		// Act
 		McpFeatureToggleFilter.RegisterEnabledPrimitives(
-			builder, ClioAssembly, _ => true, JsonSerializerOptions.Default);
+			builder, ClioAssembly, DefaultSurfaceEnabled, JsonSerializerOptions.Default);
 		int lazyToolCount = services.Count(descriptor => descriptor.ServiceType == typeof(McpServerTool));
 
 		// Assert
@@ -157,13 +185,13 @@ public sealed class McpProfileGatingTests
 
 	[Test]
 	[Category("Unit")]
-	[Description("The serialized tools/list payload stays within the byte budget, ratcheting the context cost of the core set.")]
+	[Description("The serialized DEFAULT-surface tools/list payload (feature-gated types off, matching a fresh install) stays within the byte budget, ratcheting the context cost of the core set.")]
 	public void RegisterEnabledPrimitives_ShouldKeepToolsSerializedSizeWithinBudget_WhenCalled() {
 		// Arrange
 		ServiceCollection services = new();
 		IMcpServerBuilder builder = services.AddMcpServer();
 		McpFeatureToggleFilter.RegisterEnabledPrimitives(
-			builder, ClioAssembly, _ => true, JsonSerializerOptions.Default);
+			builder, ClioAssembly, DefaultSurfaceEnabled, JsonSerializerOptions.Default);
 		using ServiceProvider provider = services.BuildServiceProvider();
 
 		// Act
@@ -177,5 +205,47 @@ public sealed class McpProfileGatingTests
 			because: "the surface advertises a non-empty tools/list");
 		payloadBytes.Should().BeLessThanOrEqualTo(MaxLazyToolsSerializedBytes,
 			because: $"the tools/list payload must stay under {MaxLazyToolsSerializedBytes} bytes (~ADR token budget) to deliver the context-reduction goal");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("get-request-info is gated under requests-registry: it is absent from the DEFAULT (feature-off) tools/list and present once the gate is enabled — pinning the ENG-93187 re-gating so a regression that silently re-graduates it is caught.")]
+	public void RegisterEnabledPrimitives_ShouldGateRequestInfoTool_ByRequestsRegistryFeature() {
+		// Arrange — the default fresh-install surface, and the same surface with the requests-registry gate on.
+		static bool WithRequestsRegistry(Type type) =>
+			DefaultSurfaceEnabled(type) || type == typeof(RequestInfoTool);
+
+		// Act
+		string[] defaultNames = RegisteredToolNames(DefaultSurfaceEnabled);
+		string[] enabledNames = RegisteredToolNames(WithRequestsRegistry);
+
+		// Assert
+		defaultNames.Should().NotContain(RequestInfoTool.ToolName,
+			because: "get-request-info is gated behind requests-registry and must not ship in the default fresh-install tools/list");
+		enabledNames.Should().Contain(RequestInfoTool.ToolName,
+			because: "enabling the requests-registry gate must surface get-request-info in tools/list — it stays a resident core tool while the feature is on");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("list-printables is gated under requests-registry on the clio-run DISPATCH surface: the feature-filtered invoker registry omits it on the default (feature-off) surface and carries it once the gate is enabled — pinning the [FeatureToggle] on the non-resident ListPrintablesTool, which the tools/list membership and byte ratchets cannot see.")]
+	public void McpToolInvokerRegistry_ShouldGateListPrintables_ByRequestsRegistryFeature() {
+		// Arrange — the default fresh-install predicate, and the same predicate with the requests-registry gate on.
+		IServiceProvider provider = Substitute.For<IServiceProvider>();
+		IFeatureToggleService defaultToggles = Substitute.For<IFeatureToggleService>();
+		defaultToggles.IsEnabled(Arg.Any<Type>()).Returns(call => DefaultSurfaceEnabled(call.Arg<Type>()));
+		IFeatureToggleService requestsRegistryEnabled = Substitute.For<IFeatureToggleService>();
+		requestsRegistryEnabled.IsEnabled(Arg.Any<Type>())
+			.Returns(call => DefaultSurfaceEnabled(call.Arg<Type>()) || call.Arg<Type>() == typeof(ListPrintablesTool));
+
+		// Act
+		McpToolInvokerRegistry offRegistry = new(provider, ClioAssembly, defaultToggles, JsonSerializerOptions.Default);
+		McpToolInvokerRegistry onRegistry = new(provider, ClioAssembly, requestsRegistryEnabled, JsonSerializerOptions.Default);
+
+		// Assert
+		offRegistry.ToolNames.Should().NotContain(ListPrintablesTool.ToolName,
+			because: "the gated probe must not be dispatchable through clio-run while requests-registry is off");
+		onRegistry.ToolNames.Should().Contain(ListPrintablesTool.ToolName,
+			because: "enabling requests-registry must make the probe dispatchable through clio-run");
 	}
 }

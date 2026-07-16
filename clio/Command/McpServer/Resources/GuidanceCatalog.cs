@@ -22,7 +22,11 @@ internal static class GuidanceCatalog {
 			["routing"] = Create(
 				"routing",
 				"The canonical clio MCP routing map: a two-level, names-only table that maps a task (pages, entities, data, applications) to the get-guidance article(s) to read before acting. The server instructions mandate reading this first on any operation.",
-				RoutingGuidanceResource.Guide),
+				RoutingGuidanceResource.Guide,
+				// Feature-aware: the request-wiring rows appear only while the requests-registry feature is on,
+				// so the map never routes an agent to the gated (hidden) get-request-info / when-to-use-requests.
+				articleBuilder: toggles => RoutingGuidanceResource.BuildGuide(
+					includeRequestWiring: toggles.IsEnabled(typeof(WhenToUseRequestsGuidanceResource)))),
 			["app-modeling"] = Create(
 				"app-modeling",
 				"Canonical MCP guidance for Creatio application modeling, schema design, and page modification workflows.",
@@ -82,7 +86,11 @@ internal static class GuidanceCatalog {
 			["page-modification"] = Create(
 				"page-modification",
 				"Entry guidance for Freedom UI page modification: the mandatory pre-edit GATE checklist and canonical flow, routing the detailed mechanics to the page-modification-overview / -field-contract / -containers / -components sub-guides (each kept small so one get-guidance response fits the agent token limit).",
-				PageModificationGuidanceResource.Guide),
+				PageModificationGuidanceResource.Guide,
+				// Feature-aware content: the GATE row mandating when-to-use-requests / get-request-info is
+				// served only while the requests-registry feature is on (never mandate a hidden surface).
+				articleBuilder: toggles => PageModificationGuidanceResource.BuildGuide(
+					includeRequestWiring: toggles.IsEnabled(typeof(WhenToUseRequestsGuidanceResource)))),
 			["page-modification-overview"] = Create(
 				"page-modification-overview",
 				"Page-body save-lifecycle sub-guide of the page-modification family: canonical get-page/update-page/sync-pages flow, replacing-schema concept, design-package resolution, write modes (replace/append/diff), do-not-resend-full-body, external-modification conflicts, body formatting, and known limitations.",
@@ -174,7 +182,11 @@ internal static class GuidanceCatalog {
 			["mobile-page-modification"] = Create(
 				"mobile-page-modification",
 				"Mobile-specific differences from the base page-modification guidance: plain JSON body format (no AMD), Scaffold root element rules, mobile component registry, naming conventions, and template hierarchy.",
-				MobilePageGuidanceResource.Guide),
+				MobilePageGuidanceResource.Guide,
+				// Feature-aware content: the get-request-info catalog pointer is served only while the
+				// requests-registry feature is on (never route an agent to a hidden tool).
+				articleBuilder: toggles => MobilePageGuidanceResource.BuildGuide(
+					includeRequestWiring: toggles.IsEnabled(typeof(WhenToUseRequestsGuidanceResource)))),
 			["desktop-page"] = Create(
 				"desktop-page",
 				"Canonical MCP guidance for Creatio desktop pages (desktop-selector workspaces): create-page with template CentralAreaDesktopTemplate, the Desktop schema-group invariant, automatic Desktop-entity registration by the platform, the FixedGridSlot_qwe4asds editable-slot rule, and record-rights-based selector visibility.",
@@ -210,15 +222,17 @@ internal static class GuidanceCatalog {
 				"theming",
 				"Canonical MCP guidance for managing custom Creatio themes with clio — create, restyle, delete, list, and set the default — and shipping them to a Creatio environment.",
 				ThemingGuidanceResource.Guide),
-			["run-process-button"] = Create(
-				"run-process-button",
+			["when-to-use-requests"] = Create(
+				"when-to-use-requests",
 				"""
-				Canonical MCP guidance for adding a Freedom UI button that runs a business process
-				(crt.RunBusinessProcessRequest) via update-page: get-process-signature first, parameter
-				key = CODE not caption (silent-skip warning), and the static-constant /
-				view-model-attribute-binding / current-record variants.
+				Canonical MCP guidance for wiring Freedom UI page actions to platform requests:
+				when to reuse a built-in crt.*Request vs chain a handler vs author a usr.*Request,
+				and the mandatory get-request-info catalog discipline — parameters as the only
+				authorable keys (empty map = no params block), platform-injected baseParameters
+				never in params, per-request documentation, and version scoping.
 				""",
-				RunProcessButtonGuidanceResource.Guide),
+				WhenToUseRequestsGuidanceResource.Guide,
+				featureGateType: typeof(WhenToUseRequestsGuidanceResource)),
 			["identity-assertion"] = Create(
 				"identity-assertion",
 				"Canonical MCP guidance for the Creatio identity-assertion / Identity Service V3 token-exchange "
@@ -293,22 +307,37 @@ internal static class GuidanceCatalog {
 	internal static bool IsVisible(GuidanceCatalogEntry entry, IFeatureToggleService toggles) =>
 		entry.FeatureGateType is null || toggles.IsEnabled(entry.FeatureGateType);
 
-	private static GuidanceCatalogEntry Create(string name, string description, ResourceContents contents, Type featureGateType = null) {
+	private static GuidanceCatalogEntry Create(
+		string name,
+		string description,
+		ResourceContents contents,
+		Type featureGateType = null,
+		Func<IFeatureToggleService, TextResourceContents> articleBuilder = null) {
 		if (contents is not TextResourceContents article) {
 			throw new InvalidOperationException(
 				$"Guidance '{name}' must return {nameof(TextResourceContents)}.");
 		}
 
-		return new GuidanceCatalogEntry(name, description, article, featureGateType);
+		return new GuidanceCatalogEntry(name, description, article, featureGateType, articleBuilder);
 	}
 }
 
 /// <summary>
 /// Metadata and content for one named clio MCP guidance article.
 /// </summary>
+/// <param name="Name">Canonical guidance name (the get-guidance lookup key).</param>
+/// <param name="Description">Human-facing one-line description of the article.</param>
+/// <param name="Article">The static article content, and the feature-off baseline for a dynamic entry.</param>
+/// <param name="FeatureGateType">Optional feature-gate type; when set, the entry is hidden while the gate is off.</param>
+/// <param name="ArticleBuilder">
+/// Optional feature-aware content builder. When set, <c>get-guidance</c> serves its result (evaluated against the
+/// current feature-toggle state) instead of <paramref name="Article"/>, so a guide whose CONTENT depends on which
+/// features are enabled (the routing map) stays correct without duplicating the article. Null for static entries.
+/// </param>
 internal sealed record GuidanceCatalogEntry(
 	string Name,
 	string Description,
 	TextResourceContents Article,
-	Type FeatureGateType = null
+	Type FeatureGateType = null,
+	Func<IFeatureToggleService, TextResourceContents> ArticleBuilder = null
 );

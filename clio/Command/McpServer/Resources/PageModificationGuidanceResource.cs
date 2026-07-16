@@ -12,18 +12,21 @@ namespace Clio.Command.McpServer.Resources;
 /// each kept small so a single <c>get-guidance</c> response stays within the agent token limit.
 /// </summary>
 [McpServerResourceType]
-public sealed class PageModificationGuidanceResource {
+public sealed class PageModificationGuidanceResource(IFeatureToggleService featureToggleService) {
 	private const string DocsScheme = "docs";
 	private const string ResourcePath = "mcp/guides/page-modification";
 	private const string ResourceUri = DocsScheme + "://" + ResourcePath;
 
 	/// <summary>
-	/// Canonical guidance article accessible by name through <c>get-guidance</c>.
+	/// Marker of the requests-registry-gated GATE row (the one mandating the `when-to-use-requests`
+	/// guide + the `get-request-info` catalog for run-process buttons). <see cref="BuildGuide"/> removes
+	/// that line for the feature-off baseline — an always-on guide must never hard-mandate a hidden
+	/// surface (a "you MUST call X" pointing at a guide that resolves as unknown is a mandated dead-end).
 	/// </summary>
-	internal static readonly TextResourceContents Guide = new() {
-		Uri = ResourceUri,
-		MimeType = "text/plain",
-		Text = """
+	private const string RunProcessGateRowMarker = "| `when-to-use-requests` |";
+
+	// Full (feature-on) article text; the feature-off variant is derived by BuildGuide.
+	private const string FullText = """
 		       clio MCP page modification guide
 
 		       ENTRY guide for editing a Freedom UI page: run the pre-edit GATE checklist below, then read the ONE sub-guide matching your edit (each fits a single get-guidance response):
@@ -45,8 +48,8 @@ public sealed class PageModificationGuidanceResource {
 		       | restricting / filtering which records a lookup or ComboBox field offers (e.g. "limit a lookup to records whose <field> equals <value>", "show only records created within a relative period", "only <records> that have at least one related <child>", "show the <Field> only for <records> where <condition>") | `business-rules` | Lookup record-set restriction is an ENTITY business rule (`apply-static-filter`), NOT a page edit. Do NOT add `filterConfig` / `staticFilters` / `dataSourceFilters` to a datasource list attribute for this — call `create-entity-business-rules`. The entity rule applies everywhere the lookup is used and is validated; hand-edited page filters are page-scoped and brittle. This holds for ANY constraint mechanism — attribute value, now-relative period (date macro), fixed calendar/clock part such as a time of day (datePart), existence/count of related child records, or gating by another field's value — all are apply-static-filter, never a handler/crt.InitRequest; classify the mechanism, not the wording. A gated constraint puts the gate (X = Y) in the rule's condition group with the apply-static-filter action on the target lookup. |
 		       | email as mailto link, phone as tel link, text uppercase/lowercase, boolean inversion, number/currency formatting, any display-only transformation | `page-schema-converters` | Determines whether a converter is the right tool BEFORE you choose a component type. Skipping this causes AI to use crt.EmailInput instead of crt.ToEmailLink, or crt.Label instead of a converter binding. |
 		       | business logic, cross-field orchestration, async data loading, side effects | `page-schema-handlers` | Handlers are NOT the same as converters. NOTE: restricting which records a lookup/ComboBox offers is NEVER handler "business logic" — regardless of the constraint mechanism (attribute value, relative period, fixed time-of-day, child existence/count, or gating by another field); it is an entity business rule (apply-static-filter). See the lookup-restriction row above. |
-		       | showing a user-facing message/confirmation/info/success/error popup when a button or menu item is clicked (e.g. "just show a short confirmation message", "Approved." / "Saved.") | `page-schema-handlers` | This is a `crt.ShowDialogRequest` dispatched from a handler (message/actions under `dialogConfig.data`), and needs `@creatio-devkit/common` in `SCHEMA_DEPS` + the `sdk` alias in `SCHEMA_ARGS`. NEVER use `alert(...)`, `window.alert(...)`, `confirm(...)`, or `prompt(...)` (raw browser primitives, not the Freedom UI dialog). |
-		       | add a button/menu item that runs a business process (`clicked` -> `crt.RunBusinessProcessRequest`) | `run-process-button` | Resolve the process with `get-process-signature` FIRST; every parameter key (in `processParameters` / `parameterMappings` / `recordIdProcessParameterName`) must be the process parameter CODE, not the caption — the platform silently drops values keyed by an unknown code. `processRunType` is required. No custom handler needed. |
+		       | showing a user-facing message/confirmation/info/success/error popup when a button or menu item is clicked (e.g. "just show a short confirmation message", "Approved." / "Saved.") | `page-schema-handlers` | This is a `crt.ShowDialogRequest` dispatched from a handler (message/actions under `dialogConfig.data`), and needs `@creatio-devkit/common` in `SCHEMA_DEPS` + the `sdk` alias in `SCHEMA_ARGS`. NEVER use `alert(...)`, `window.alert(...)`, `confirm(...)`, or `prompt(...)` — they are raw browser primitives, not the Freedom UI dialog, and are not acceptable in deployed page-body handlers. |
+		       | add a button/menu item that runs a business process (`clicked` -> `crt.RunBusinessProcessRequest`) | `when-to-use-requests` | Resolve the process with `get-process-signature` FIRST; the FULL parameter contract lives in the request catalog — get-request-info `crt.RunBusinessProcessRequest` (its `documentation` carries the authoring recipe). Every parameter key (in `processParameters` / `parameterMappings` / `recordIdProcessParameterName`) must be the process parameter CODE, not the caption — the platform silently drops values keyed by an unknown code. `processRunType` is required. No custom handler needed. |
 		       | required field, max length, format enforcement with error message | `page-schema-validators` | Validators write to viewModelConfigDiff, not viewConfigDiff. |
 		       | SDK service calls (SysSettingsService, HttpClientService, etc.) | `page-schema-creatio-devkit-common` | Correct import syntax and async patterns. |
 		       | any static/generated filter where path normalization, lookup GUID resolution, date-relative wording, or child-record conditions are involved | `esq-filters-frontend` | Filter generation frequently fails on `...Id` path usage, lookup value shape, relative-date semantics, and missing EXISTS/backward-reference modeling. Read the dedicated serialized-filter guide before writing the payload. |
@@ -71,13 +74,34 @@ public sealed class PageModificationGuidanceResource {
 		       STOP. Adding a related/child list (a "detail"), or making a list show only the records that belong to the current/open record ("filter by page data"), is NOT a single-component insert and NOT an inline `filter` on the list attribute. It is a master-detail composite — fetch its structure with `get-component-info composite="Expanded list"` plus a child `crt.EntityDataSource`, an `isCollection` attribute, and a declarative `modelConfig.dependencies` entry (`attributePath` = child foreign-key column, `relationPath` = master id path such as `PDS.Id`). Read `get-guidance` with name `related-list` before writing the body. Do NOT scope the list with a `crt.HandleViewModelInitRequest` handler, a seeded empty-Guid filter, or a `filterAttributes` entry — the platform applies the dependency filter for you and waits for the master to load.
 
 		       Canonical flow: `list-pages` -> `get-page` -> `get-component-info` for EVERY type you insert (verify it exists — see the COMPONENT-TYPE VERIFICATION step above) -> edit raw.body -> `update-page`/`sync-pages` (optionally `verify:true`). Do NOT resend the full raw.body. Full flow + response shapes: `page-modification-overview`.
-		       """
-	};
+		       """;
 
-	/// <summary>
-	/// Returns the canonical guidance article for Freedom UI page modification.
-	/// </summary>
-	[McpServerResource(UriTemplate = ResourceUri, Name = "page-modification-guidance")]
-	[Description("Returns the entry guidance for Freedom UI page modification: the mandatory pre-edit GATE checklist and canonical flow, routing the detailed mechanics to the page-modification-overview / -field-contract / -containers / -components sub-guides.")]
-	public ResourceContents GetGuide() => Guide;
+/// <summary>
+/// Builds the page-modification article. The GATE row that mandates the requests-registry-gated
+/// <c>when-to-use-requests</c> guide + <c>get-request-info</c> catalog is included only while that
+/// feature is enabled, so the always-on guide never routes an agent to a hidden surface.
+/// </summary>
+/// <param name="includeRequestWiring">Whether to include the gated run-process GATE row.</param>
+internal static TextResourceContents BuildGuide(bool includeRequestWiring) => new() {
+	Uri = ResourceUri,
+	MimeType = "text/plain",
+	Text = includeRequestWiring
+		? GuidanceArticleText.NormalizeNewlines(FullText)
+		: GuidanceArticleText.RemoveUniqueLine(FullText, RunProcessGateRowMarker)
+};
+
+/// <summary>
+/// Canonical guidance article accessible by name through <c>get-guidance</c> — the feature-off
+/// baseline; feature-aware content is produced by <see cref="BuildGuide"/> at serve time.
+/// </summary>
+internal static readonly TextResourceContents Guide = BuildGuide(includeRequestWiring: false);
+
+/// <summary>
+/// Returns the canonical guidance article for Freedom UI page modification, with the
+/// requests-registry-gated GATE row included only while that feature is enabled.
+/// </summary>
+[McpServerResource(UriTemplate = ResourceUri, Name = "page-modification-guidance")]
+[Description("Returns the entry guidance for Freedom UI page modification: the mandatory pre-edit GATE checklist and canonical flow, routing the detailed mechanics to the page-modification-overview / -field-contract / -containers / -components sub-guides.")]
+public ResourceContents GetGuide() =>
+	BuildGuide(includeRequestWiring: featureToggleService.IsEnabled(typeof(WhenToUseRequestsGuidanceResource)));
 }

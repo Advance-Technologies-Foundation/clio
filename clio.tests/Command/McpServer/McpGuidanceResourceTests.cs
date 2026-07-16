@@ -1,6 +1,8 @@
+using Clio.Command;
 using Clio.Command.McpServer.Resources;
 using FluentAssertions;
 using ModelContextProtocol.Protocol;
+using NSubstitute;
 using NUnit.Framework;
 using System.Collections.Generic;
 using System.Linq;
@@ -484,8 +486,8 @@ public sealed class McpGuidanceResourceTests {
 			because: "handler guidance should expose the source-backed delete-record request fields");
 		article.Text.Should().Contain("| `crt.CancelRecordChangesRequest` | config | `none` | cancel edits |",
 			because: "handler guidance should expose the cancel-edits request contract");
-		article.Text.Should().Contain("| `crt.RunBusinessProcessRequest` | config | `processName` + `processRunType` required — FULL parameter contract lives in the `run-process-button` guide (single source of truth) | Keys in `processParameters` / `parameterMappings` / `recordIdProcessParameterName` are process parameter CODES, NOT captions — a wrong code is silently dropped. Resolve with `get-process-signature` and get-guidance `run-process-button` before authoring this button |",
-			because: "the handler catalog should point to the single-source-of-truth run-process-button guide and carry the CODE-not-caption rule instead of restating the full param list");
+		article.Text.Should().Contain("| `crt.RunBusinessProcessRequest` | config | `processName` + `processRunType` required — FULL parameter contract lives in the request catalog: get-request-info `crt.RunBusinessProcessRequest` (single source of truth) | Keys in `processParameters` / `parameterMappings` / `recordIdProcessParameterName` are process parameter CODES, NOT captions — a wrong code is silently dropped. Resolve with `get-process-signature` and get-request-info `crt.RunBusinessProcessRequest` before authoring this button |",
+			because: "the handler catalog should point to the single-source-of-truth request catalog (get-request-info crt.RunBusinessProcessRequest) and carry the CODE-not-caption rule instead of restating the full param list");
 		article.Text.Should().Contain("| `crt.CreateEmailRequest` | config | `recordId?`, `bindingColumns?` | compose an email from current context |",
 			because: "handler guidance should expose the create-email request contract");
 		article.Text.Should().Contain("| `crt.CopyClipboardRequest` | config | `value` required | copy a prepared literal value |",
@@ -2038,8 +2040,9 @@ public sealed class McpGuidanceResourceTests {
 	[Category("Unit")]
 	[Description("Returns a canonical MCP guidance article for mobile page editing that explicitly documents business-rule support and offline limitations.")]
 	public void MobilePageGuidanceResource_Should_Return_Canonical_Mobile_Page_Guide() {
-		// Arrange
-		MobilePageGuidanceResource resource = new();
+		// Arrange — a bare substitute (all features off); the asserted content is not feature-gated.
+		IFeatureToggleService featureToggleService = Substitute.For<IFeatureToggleService>();
+		MobilePageGuidanceResource resource = new(featureToggleService);
 
 		// Act
 		ResourceContents result = resource.GetGuide();
@@ -2067,6 +2070,84 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should keep detailed business-rule semantics in the dedicated shared guidance instead of duplicating them here");
 		article.Text.Should().Contain("Mobile pages do not support validators at all",
 			because: "the guide should preserve the validator limitation while clarifying business-rule support");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The page-modification resource omits the run-process GATE row while requests-registry is disabled: an always-on guide must not hard-mandate the hidden when-to-use-requests guide or get-request-info catalog (a mandated dead-end).")]
+	public void PageModificationGuidanceResource_Should_Omit_RunProcessGateRow_When_RequestsRegistryDisabled() {
+		// Arrange — a bare substitute: IsEnabled(...) returns false, so the gated GATE row must be absent.
+		IFeatureToggleService featureToggleService = Substitute.For<IFeatureToggleService>();
+		PageModificationGuidanceResource resource = new(featureToggleService);
+
+		// Act
+		TextResourceContents article = resource.GetGuide().Should().BeOfType<TextResourceContents>().Subject;
+
+		// Assert
+		article.Text.Should().NotContain("when-to-use-requests",
+			because: "the GATE table must not mandate the gated guide while requests-registry is off");
+		article.Text.Should().NotContain("get-request-info",
+			because: "the guide must not route to the gated request catalog while requests-registry is off");
+		article.Text.Should().Contain("GATE: if ANY row in the table below matches your change",
+			because: "removing the gated row must leave the rest of the GATE table intact");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The page-modification resource includes the run-process GATE row once requests-registry is enabled, restoring the mandated route to when-to-use-requests and the request catalog.")]
+	public void PageModificationGuidanceResource_Should_Include_RunProcessGateRow_When_RequestsRegistryEnabled() {
+		// Arrange — enable the requests-registry gate so the feature-aware GATE row must appear.
+		IFeatureToggleService featureToggleService = Substitute.For<IFeatureToggleService>();
+		featureToggleService.IsEnabled(typeof(WhenToUseRequestsGuidanceResource)).Returns(true);
+		PageModificationGuidanceResource resource = new(featureToggleService);
+
+		// Act
+		TextResourceContents article = resource.GetGuide().Should().BeOfType<TextResourceContents>().Subject;
+
+		// Assert
+		article.Text.Should().Contain("| `when-to-use-requests` |",
+			because: "with requests-registry enabled the GATE table must route the run-process task to the selection guide");
+		article.Text.Should().Contain("runs a business process (`clicked` -> `crt.RunBusinessProcessRequest`)",
+			because: "the restored row must be keyed to the run-process requirement wording");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The mobile page resource swaps the request-catalog pointer for the ungated get-process-signature route while requests-registry is disabled, so the always-on mobile guide never routes to the hidden get-request-info tool.")]
+	public void MobilePageGuidanceResource_Should_Omit_RequestCatalogPointer_When_RequestsRegistryDisabled() {
+		// Arrange — a bare substitute: IsEnabled(...) returns false, so the gated pointer must be absent.
+		IFeatureToggleService featureToggleService = Substitute.For<IFeatureToggleService>();
+		MobilePageGuidanceResource resource = new(featureToggleService);
+
+		// Act
+		TextResourceContents article = resource.GetGuide().Should().BeOfType<TextResourceContents>().Subject;
+
+		// Assert
+		article.Text.Should().NotContain("get-request-info",
+			because: "the mobile guide must not route to the gated request catalog while requests-registry is off");
+		article.Text.Should().Contain("Resolve the process with get-process-signature FIRST.",
+			because: "the ungated get-process-signature probe remains the resolution path while the catalog is hidden");
+		article.Text.Should().Contain("crt.RunBusinessProcessRequest",
+			because: "the mobile request listing itself stays — only the catalog pointer is gated");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The mobile page resource includes the request-catalog pointer once requests-registry is enabled, restoring get-request-info as the single source of truth for the run-process parameter contract.")]
+	public void MobilePageGuidanceResource_Should_Include_RequestCatalogPointer_When_RequestsRegistryEnabled() {
+		// Arrange — enable the requests-registry gate so the feature-aware pointer must appear.
+		IFeatureToggleService featureToggleService = Substitute.For<IFeatureToggleService>();
+		featureToggleService.IsEnabled(typeof(WhenToUseRequestsGuidanceResource)).Returns(true);
+		MobilePageGuidanceResource resource = new(featureToggleService);
+
+		// Act
+		TextResourceContents article = resource.GetGuide().Should().BeOfType<TextResourceContents>().Subject;
+
+		// Assert
+		article.Text.Should().Contain("FULL parameter contract is the request catalog (single source of truth)",
+			because: "with requests-registry enabled the catalog pointer must return as the authoritative contract source");
+		article.Text.Should().Contain("get-request-info request-type=crt.RunBusinessProcessRequest",
+			because: "the restored pointer must name the exact catalog call for the run-process request");
 	}
 
 	[Test]
@@ -2232,8 +2313,9 @@ public sealed class McpGuidanceResourceTests {
 	[Category("Unit")]
 	[Description("The routing map points the package-dependencies symptom at its guide so an agent reaches it from the schema-designer failure (ENG-91314).")]
 	public void RoutingGuidanceResource_Should_Route_Package_Dependencies_Symptom() {
-		// Arrange
-		RoutingGuidanceResource resource = new();
+		// Arrange — an always-on row, independent of feature state; a bare substitute (all features off) is enough.
+		IFeatureToggleService featureToggleService = Substitute.For<IFeatureToggleService>();
+		RoutingGuidanceResource resource = new(featureToggleService);
 
 		// Act
 		TextResourceContents article = resource.GetGuide().Should().BeOfType<TextResourceContents>().Subject;
@@ -2247,19 +2329,43 @@ public sealed class McpGuidanceResourceTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The routing map points the run-a-process-button task at the run-process-button guide so an agent reaches the shipped contract from the Pages domain.")]
-	public void RoutingGuidanceResource_Should_Route_RunProcessButton_Task() {
-		// Arrange
-		RoutingGuidanceResource resource = new();
+	[Description("The routing resource omits the request-wiring rows while the requests-registry feature is disabled: the map must not advertise the hidden get-request-info / when-to-use-requests surface or the run-a-process-button task (mirrors the deliberately omitted process-modeling row).")]
+	public void RoutingGuidanceResource_Should_Omit_RequestWiring_Rows_When_Feature_Disabled() {
+		// Arrange — a bare substitute: IsEnabled(...) returns false, so the gated request rows must be absent.
+		IFeatureToggleService featureToggleService = Substitute.For<IFeatureToggleService>();
+		RoutingGuidanceResource resource = new(featureToggleService);
 
 		// Act
 		TextResourceContents article = resource.GetGuide().Should().BeOfType<TextResourceContents>().Subject;
 
 		// Assert
-		article.Text.Should().Contain("name=run-process-button",
-			because: "the routing map must direct the agent to the run-process-button guide");
+		article.Text.Should().NotContain("get-request-info",
+			because: "the routing map must not advertise the gated request catalog while requests-registry is off");
+		article.Text.Should().NotContain("when-to-use-requests",
+			because: "the routing map must not advertise the gated request-wiring guide while requests-registry is off");
+		article.Text.Should().NotContain("runs a business process",
+			because: "the run-a-process-button routing row must not surface while the request surface is gated off");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The routing resource includes the request-wiring rows once the requests-registry feature is enabled, so an agent with the feature on is still deterministically routed to get-request-info and the when-to-use-requests guide.")]
+	public void RoutingGuidanceResource_Should_Include_RequestWiring_Rows_When_Feature_Enabled() {
+		// Arrange — enable the requests-registry gate so the feature-aware rows must appear.
+		IFeatureToggleService featureToggleService = Substitute.For<IFeatureToggleService>();
+		featureToggleService.IsEnabled(typeof(WhenToUseRequestsGuidanceResource)).Returns(true);
+		RoutingGuidanceResource resource = new(featureToggleService);
+
+		// Act
+		TextResourceContents article = resource.GetGuide().Should().BeOfType<TextResourceContents>().Subject;
+
+		// Assert
+		article.Text.Should().Contain("-> get-request-info + name=when-to-use-requests",
+			because: "with requests-registry enabled the map must route button/menu action wiring to the request catalog and selection guide");
+		article.Text.Should().Contain("get-request-info (crt.RunBusinessProcessRequest)",
+			because: "with requests-registry enabled the run-a-process-button task must route to get-process-signature + the request catalog");
 		article.Text.Should().Contain("runs a business process",
-			because: "the routing row must be keyed to the task wording so the agent recognizes it");
+			because: "the run-a-process-button routing row must be keyed to the task wording once the feature is on");
 	}
 
 	[Test]

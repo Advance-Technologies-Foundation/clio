@@ -774,9 +774,9 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 
 	[Test]
 	[AllureTag(GuidanceGetTool.ToolName)]
-	[AllureName("get-guidance hides process-modeling while the process-designer feature is off, but still serves run-process-button")]
-	[Description("Verifies that with the default (process-designer disabled) configuration the always-on get-guidance tool treats process-modeling as an unknown guide and omits it from availableGuides, while the deliberately ungated run-process-button guide (the shipped run-process scenario consumed by update-page and the page guides) still resolves.")]
-	public async Task GuidanceGet_Should_Hide_ProcessModeling_But_Serve_RunProcessButton_When_Feature_Disabled() {
+	[AllureName("get-guidance hides process-modeling while the process-designer feature is off and treats the removed run-process-button guide as unknown")]
+	[Description("Verifies that with the default (process-designer disabled) configuration the always-on get-guidance tool treats process-modeling as an unknown guide and omits it from availableGuides, while ungated guides stay advertised. Also pins the ENG-93187 removal of the standalone run-process-button guide (removed with no alias, so it resolves as unknown and is no longer advertised). The requests-registry successor surface (when-to-use-requests) has its own gating coverage in RequestRegistryGatingE2ETests.")]
+	public async Task GuidanceGet_Should_Hide_ProcessModeling_And_Treat_RemovedRunProcessButton_As_Unknown_When_Feature_Disabled() {
 		// Arrange
 		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
@@ -803,14 +803,12 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "the disabled process-modeling guide must not be advertised in availableGuides");
 		processModeling.AvailableGuides.Should().Contain("page-schema-handlers",
 			because: "ungated guides must stay advertised while the process-designer feature is off");
-		processModeling.AvailableGuides.Should().Contain("run-process-button",
-			because: "run-process-button is deliberately ungated and must stay advertised while the feature is off");
-		runProcessButton.Success.Should().BeTrue(
-			because: "run-process-button documents the shipped run-process scenario and must resolve while the process-designer feature is off");
-		runProcessButton.Article.Should().NotBeNull(
-			because: "the ungated guide must return its article over the real MCP transport");
-		runProcessButton.Article!.Uri.Should().Be("docs://mcp/guides/run-process-button",
-			because: "the canonical run-process-button article URI must be stable");
+		processModeling.AvailableGuides.Should().NotContain("run-process-button",
+			because: "the standalone run-process-button guide was removed under ENG-93187 with no alias and must no longer be advertised in availableGuides");
+		runProcessButton.Success.Should().BeFalse(
+			because: "the standalone run-process-button guide was removed under ENG-93187 with no alias and must now resolve as an unknown guidance name");
+		runProcessButton.Article.Should().BeNull(
+			because: "an unknown guidance name must not return an article over the real MCP transport");
 	}
 
 	[Test]

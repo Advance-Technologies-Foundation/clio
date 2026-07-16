@@ -268,6 +268,7 @@ same async pipeline, same `CreateDetailResponse`, same response shape
 |---|---|---|---|---|
 | Web (default) | `{base}/{version}/ComponentRegistry.json` | `~/.clio/cache/component-registry/` | `CLIO_COMPONENT_REGISTRY_LOCAL_FILE` | none (exhaustion → `ComponentRegistryUnavailableException`) |
 | Mobile | `{base}/{version}/MobileComponentRegistry.json` | `~/.clio/cache/component-registry/mobile/` | `CLIO_MOBILE_COMPONENT_REGISTRY_LOCAL_FILE` | `Command/McpServer/Data/MobileComponentRegistry.json` (transitional, while producer rolls out) |
+| Requests (`get-request-info`) | `{base}/{version}/RequestRegistry.json` | `~/.clio/cache/component-registry/requests/` | `CLIO_REQUEST_REGISTRY_LOCAL_FILE` | none (exhaustion → `ComponentRegistryUnavailableException` naming the requests env var) |
 
 The mobile fallback is a deliberate, narrowly-scoped concession: the academy
 mirror does not yet serve `MobileComponentRegistry.json` (the producer-side
@@ -294,6 +295,97 @@ services.AddSingleton<IMobileComponentRegistryClient>(sp => new MobileComponentR
 `IComponentRegistryClient` — it exists so the DI container can distinguish the
 two singleton registrations at injection time. The implementation
 (`MobileComponentRegistryClient`) inherits verbatim from the web type.
+
+### Request registry data source (`get-request-info`)
+
+The Freedom UI request catalog (`crt.*Request` types wired through a view element's
+request bindings, e.g. a button's `clicked`; OOTB button-action requests initiative,
+ENG-93187) is the third `RegistryFlavor`
+(`RegistryFlavor.Requests`, see the flavor table above) served by the same
+transport chain: local-override env var → file cache → CDN → `latest` fallback →
+`ComponentRegistryUnavailableException`. Only the byte transport is shared —
+the envelope differs from components, so parsing lives in its own
+`Tools/RequestInfoCatalog.cs` (`{ "requests": [...], "references": { "baseParameters",
+"typeDefinitions" } }`; there is no legacy top-level-array generation and the
+`requests` array is mandatory).
+
+Consumer rules that differ from the component catalog — do not "unify" them away:
+
+- **`baseParameters` are NOT merged into `parameters`.** The component catalog
+  merges `baseInputs` into `inputs` because base inputs are authorable. The request
+  catalog's base fields (`$context`, `scopes`, `type`) are platform-injected at
+  dispatch time; merging them would teach an AI consumer to pass them through the
+  binding's `params` block. `RequestInfoTool.CreateDetailResponse` surfaces them as
+  a SEPARATE `baseParameters` response field instead.
+- **An empty `parameters` map is meaningful and stays on the wire.** It says "this
+  request accepts NO parameters" (e.g. `crt.ClosePageRequest`); absence of the field
+  would read as "unknown".
+- **The detail response always seeds the type-definition closure with
+  `RequestBindingConfig`** — the wiring contract of every request — so a
+  parameterless request still returns a self-contained wiring schema.
+- **Request docs live under the `request-docs/` namespace**
+  (`request-docs/<basename>.request.md`, flat URL next to the registry). The shared
+  `Tools/ComponentRegistryDocsPath.cs` validator accepts exactly the `docs/` and
+  `request-docs/` prefixes; the docs pipeline (`ComponentRegistryDocsClient` +
+  `ComponentDocumentationLoader`) is reused verbatim.
+- **The surface is gated behind the `requests-registry` feature** (ENG-93187; the earlier
+  graduation to an always-on surface was REVERSED so the prototype stays hidden until it is
+  review/QA-ready). Every request-surface class carries `[FeatureToggle("requests-registry")]` so the
+  whole surface hides together while the feature is off: `RequestInfoTool` (still in
+  `McpCoreToolProfile.CoreToolTypes`, so it is resident in `tools/list` when the feature is ON and
+  absent when OFF — the "gated experimental core tool" pattern in `McpProfileGatingTests`), the
+  `ListPrintablesTool` probe, and the `WhenToUseRequestsGuidanceResource` guide (whose `GuidanceCatalog`
+  entry carries `featureGateType: typeof(WhenToUseRequestsGuidanceResource)`). The `RoutingGuidanceResource`
+  map is feature-AWARE, not simply row-less: its request-wiring rows are emitted only while the feature is
+  on, via `RoutingGuidanceResource.BuildGuide(bool)` — consumed by the `GuidanceCatalog` dynamic
+  `ArticleBuilder` (the `get-guidance` path) and by the constructor-injected `IFeatureToggleService` (the
+  direct MCP-resource path) — so the map never routes an agent to a hidden guide/tool but still surfaces the
+  rows once the feature is enabled. The same content-gating applies to the two always-on page guides that
+  point at the request surface: `PageModificationGuidanceResource` serves its run-process GATE row (the one
+  MANDATING `when-to-use-requests` + `get-request-info`) and `MobilePageGuidanceResource` serves its
+  request-catalog pointer only while the feature is on, via their own `BuildGuide(bool)` + per-entry
+  `GuidanceCatalog` `ArticleBuilder` + ctor-injected `IFeatureToggleService` — an always-on guide must never
+  hard-mandate a hidden surface (a "you MUST call X" whose X resolves as unknown is a mandated dead-end).
+  All anchored splicing goes through `GuidanceArticleText` (`ReplaceUnique` / `RemoveUniqueLine`), which
+  throws on anchor drift so a stale anchor fails every unit run loudly instead of silently dropping the
+  gated fragment. `ToolContractGetTool` still carries a curated `BuildRequestInfo` contract
+  and the `page-schema-handlers` parameter table still names `get-request-info` as the authoritative contract;
+  these two DISCOVERY surfaces are deliberately NOT re-gated — that is the known get-tool-contract /
+  clio-run-suggestion discovery-vs-dispatch leak (a gated-off tool stays *knowable* via the ungated schema
+  catalog but is not *runnable*; tracked separately, do not "fix" it by gating the shared catalog). Enable
+  the feature to test: `clio experimental --name requests-registry --enable`. The guide owns the
+  request-selection decision rules and the catalog discipline; handler mechanics stay in
+  `page-schema-handlers` (never duplicate). There is deliberately NO CLI twin verb;
+  `component-registry-refresh` covers the requests cache flavor alongside web and mobile. Offline iteration
+  goes through `CLIO_REQUEST_REGISTRY_LOCAL_FILE`.
+- **Snapshot guard is symmetric**: `RequestRegistrySnapshotTests` pins
+  `clio.tests/Command/McpServer/Fixtures/RequestRegistry.live-snapshot.json`
+  (the live academy CDN payload — the producer now publishes it; refresh whenever a new
+  one ships via `curl -s https://academy.creatio.com/api/mcp/latest/RequestRegistry.json > <that fixture>`)
+  and fails on any non-empty `UnmappedExtensions` bucket.
+- **Environment-dependent parameter values come from PROBE tools, never from the
+  catalog.** A registry parameter whose value lives in the target environment carries a
+  `valueSource` annotation (`{ "kind": "environment", "tool": "<probe>" }`) inside its
+  parameter blob — e.g. `crt.PrintablesRequest.templateId` -> `list-printables`,
+  `crt.RunBusinessProcessRequest.processName` -> `get-process-signature`. Probes are
+  dedicated read-only, per-call environment-scoped tools (the `get-process-signature`
+  pattern): one probe per RESOURCE CLASS (process signatures, printables, …), never one
+  per request and never a generic env-reader. New probes derive their response from
+  `Tools/EnvironmentProbeResponse.cs` (`success` / `resolutionFailed` hard-vs-transient
+  lever / `error` with candidates) and are deliberately NOT resident in `tools/list` —
+  the per-request docs and the `when-to-use-requests` guide route agents to them. The
+  agent-facing hard rule (carried by the guide and every probe description): fill such
+  values ONLY from the probe result; never invent them; on empty/ambiguous results ask
+  the user. NOTE the two probes differ on gating, and the differentiator is provenance, NOT what
+  they read (both are read-only built-in-DataService reads): `list-printables` is gated under
+  `requests-registry` because it is a feature-INTERNAL probe born with ENG-93187 — MCP-only (no
+  registered CLI verb, no `help`/`docs`), with no purpose outside crt.PrintablesRequest wiring — so it
+  gates with the feature it belongs to. `get-process-signature` stays UNGATED because it is a
+  pre-existing GA command the feature merely REUSES: a registered, documented standalone CLI verb
+  (`Program.cs` verb table + dispatch, aliases `gps`, its own `help`/`docs`), so gating it would hide a
+  shipped CLI command, and the feature-off guide variants deliberately route to it as the still-available
+  resolution path. Rule of thumb: gate feature-internal probes with their feature; leave a reused,
+  independently-shipped GA tool ungated.
 
 ### Snapshot guard against silent data loss
 

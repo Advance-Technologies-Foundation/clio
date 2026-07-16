@@ -397,8 +397,8 @@ public class PageToolsTests
 			because: "update-page must keep the explicit conflict-override instruction so a model does not blindly retry the same body");
 		description.Should().Contain("INSERTED-FIELD CONTRACT",
 			because: "update-page must keep the inserted-field contract summary, which is the authoritative write-time contract reused across tools");
-		description.Should().Contain("`run-process-button`",
-			because: "update-page should still name the run-process-button guide so process-button work resolves codes via get-process-signature first");
+		description.Should().Contain("get-request-info `crt.RunBusinessProcessRequest`",
+			because: "update-page should route run-process buttons to the request catalog (get-request-info crt.RunBusinessProcessRequest), resolving parameter codes via get-process-signature first");
 	}
 
 	[Test]

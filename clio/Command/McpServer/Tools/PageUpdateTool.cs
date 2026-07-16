@@ -39,7 +39,7 @@ public sealed class PageUpdateTool(
 	[Description("Update a Freedom UI page schema body. environment-name preferred; uri/login/password fallback only. " +
 		"On a successful non-dry-run save it also best-effort notifies active Creatio designers (Designer Presence); the save still succeeds if that notification is skipped (carried as a warning). " +
 		"CONFLICT DETECTION: if get-page stored a checksum baseline for the same environment and the schema changed outside this session, the save is blocked with `conflict: true` + `conflictDetails` — do NOT retry the same body; re-run get-page, re-apply your change, retry, and set force=true only after the user confirms overwriting. " +
-		"BEFORE editing the body call get-guidance `page-modification` and follow its pre-edit checklist — it routes visibility/required/value-set and lookup-filter work to business rules (not handlers/validators), display-only transforms to converters, run-process buttons to `run-process-button` (resolve parameter CODEs with get-process-signature first), and localizable strings to `page-schema-resources`. " +
+		"BEFORE editing the body call get-guidance `page-modification` and follow its pre-edit checklist — it routes visibility/required/value-set and lookup-filter work to business rules (not handlers/validators), display-only transforms to converters, run-process buttons to get-request-info `crt.RunBusinessProcessRequest` (resolve parameter CODEs with get-process-signature first), and localizable strings to `page-schema-resources`. " +
 		"INSERTED-FIELD CONTRACT: " + SchemaValidationService.InsertedFieldContractSummary)]
 	public async Task<PageUpdateResponse> UpdatePage(
 		[Description("schema-name, body (required); resources, dry-run (optional); environment-name preferred; uri/login/password fallback only. " +
@@ -395,6 +395,13 @@ public sealed class PageUpdateTool(
 	// internal (not private) so the run-process orchestration — environment gating, signature
 	// caching, hard-fail vs. warning routing, and warning aggregation — is unit-testable without
 	// driving the full UpdatePage body-validation pipeline. See PageUpdateToolRunProcessTests.
+	// TODO ENG-93449: this run-process-specific gate is the plug-in point for the planned generic
+	// request-parameter validation driven by the request registry (get-request-info catalog): a
+	// generic reader extracts every clicked.request config from the body and validates its params
+	// against the cataloged contract (missing required = error, unknown key = warning, fail-open
+	// when the registry is unavailable). Until that lands, this method and its
+	// RunProcessButtonConfigReader / RunProcessButtonSignatureValidator pair stay as-is — they are
+	// the shipped regression baseline the generic mechanism must reproduce.
 	internal (PageUpdateResponse Failure, IReadOnlyList<string> Warnings) ValidateRunProcessButtons(
 		PageUpdateOptions options) {
 		IReadOnlyList<RunProcessButtonConfig> configs = RunProcessButtonConfigReader.Read(options.Body);
