@@ -10,6 +10,7 @@
 - Reject foreign hosts even when a wildcard IIS binding and application path match.
 - Reject URI user information and redact query/fragment values from failure diagnostics.
 - Read `ApplicationPoolName` from TeamCity's referenced configuration-properties file.
+- Report the warning scenario ignored when multiple IIS applications share the configured sandbox pool.
 - Resolve an externally routed TeamCity URL by explicit pool name and one live IIS assignment.
 - Resolve a directly bound local root site when the explicit pool is supplied.
 - Reject an explicit pool that is unrelated to the URI or shared by multiple IIS applications.
@@ -33,10 +34,12 @@
 
 - `dotnet build clio.mcp.e2e/clio.mcp.e2e.csproj -c Debug --no-restore`: passed for
   `net8.0` and `net10.0`; only pre-existing warnings outside the changed files were emitted.
-- Resolver regression filter after the TeamCity routing correction: 17 passed, 0 failed, 0 skipped
+- Resolver regression filter after the shared-pool correction: 18 passed, 0 failed, 0 skipped
   on both `net8.0` and `net10.0`.
-- Disposable `10.0.0.802` Studio NET8 PostgreSQL deployment returned HTTP 200.
-- The exact locked-profile MCP E2E passed again on `net10.0` with the explicit pool path and verified
-  the warning terminal contract.
+- Disposable `10.0.0.802` Studio NET8 PostgreSQL deployment returned HTTP 200; adding a same-site `/0`
+  application produced exactly two assignments and the exact TeamCity test was ignored with the
+  shared-pool prerequisite reason.
+- After removing only the synthetic `/0` assignment, the exact locked-profile MCP E2E passed on
+  `net8.0` with the explicit pool and verified the warning terminal contract.
 - Cleanup verification found no remaining environment, IIS site, application pool, files, database,
-  or profile registration for both disposable validation targets.
+  or profile registration for the disposable validation target.

@@ -7,7 +7,9 @@ Issue: [#893](https://github.com/Advance-Technologies-Foundation/clio/issues/893
 The destructive uninstall warning E2E originally required `EnvironmentPath` only to discover the
 sandbox IIS application pool. The first URI-based correction still assumed TeamCity's public
 `DeployedUrl` mapped directly to the agent's local IIS binding and application path. Build 15736567
-proved that routing assumption false, so the test still failed before invoking `uninstall-creatio`.
+proved that routing assumption false. Build 15736978 then proved the configured pool can have two
+live IIS assignments; production uninstall deliberately preserves such a pool and never attempts its
+profile deletion, so the locked-profile warning scenario is not applicable to that sandbox.
 
 ## Requirements
 
@@ -18,7 +20,10 @@ proved that routing assumption false, so the test still failed before invoking `
 - Read TeamCity's explicit `ApplicationPoolName` configuration parameter through its documented
   build-properties-file indirection when no environment override is supplied.
 - Cross-check an explicit pool against the URI target and require exactly one live IIS application
-  assignment, while supporting both externally routed TeamCity URLs and directly bound local sites.
+  assignment for warning-path execution, while supporting both externally routed TeamCity URLs and
+  directly bound local sites.
+- Report the destructive warning scenario ignored when the configured pool is shared, without
+  weakening the resolver or production shared-pool protections.
 - Fail before destructive execution when the URI is invalid, unmatched, ambiguous, or lacks a pool.
 - Keep `SandboxEnvironmentResolver` and its `EnvironmentPath` contract unchanged for tests that read
   files from the deployed Creatio root.
@@ -29,6 +34,7 @@ proved that routing assumption false, so the test still failed before invoking `
 
 - The TeamCity shape `http://<agent>:<public-port>/<application-pool>` resolves without assuming the
   public port/path equals local IIS topology.
+- A shared TeamCity pool makes the warning-path test ignored instead of failed or unsafe.
 - Resolver tests cover a successful wildcard binding plus unmatched and ambiguous safety failures.
 - The existing locked-profile test still proves warning output, exit code 0, `IsError=false`, the
   warning stage, and the `success-with-warnings` terminal.
