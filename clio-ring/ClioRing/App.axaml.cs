@@ -24,6 +24,11 @@ public partial class App : Application {
 	private InstallWindow? _installWindow;
 	private UninstallWindow? _uninstallWindow;
 
+	/// <summary>Returns whether a terminal stage outcome represents successful completion.</summary>
+	public static bool IsSuccessfulRunOutcome(string? outcome) =>
+		outcome is ClioStageEventContract.RunOutcomes.Success
+			or ClioStageEventContract.RunOutcomes.SuccessWithWarnings;
+
 	public override void Initialize() {
 		AvaloniaXamlLoader.Load(this);
 	}
@@ -198,7 +203,7 @@ public partial class App : Application {
 			// Story 10: record every stage event the pipeline renders to the per-run NDJSON receipt.
 			vm.Pipeline.StageEventObserved += _services.GetRequiredService<DeploymentReceipt>().Observe;
 			vm.Pipeline.StageEventObserved += stageEvent => {
-				if (stageEvent.RunCompleted?.Outcome == ClioStageEventContract.RunOutcomes.Success) {
+				if (IsSuccessfulRunOutcome(stageEvent.RunCompleted?.Outcome)) {
 					_window?.RefreshEnvironments();
 				}
 			};
@@ -224,7 +229,7 @@ public partial class App : Application {
 			// Story 10: record every stage event the pipeline renders to the per-run NDJSON receipt.
 			vm.Pipeline.StageEventObserved += _services.GetRequiredService<DeploymentReceipt>().Observe;
 			vm.Pipeline.StageEventObserved += stageEvent => {
-				if (stageEvent.RunCompleted?.Outcome == ClioStageEventContract.RunOutcomes.Success) {
+				if (IsSuccessfulRunOutcome(stageEvent.RunCompleted?.Outcome)) {
 					_window?.RefreshEnvironments();
 				}
 			};

@@ -83,7 +83,8 @@ public sealed class InstallerCommandToolTests
 			ZipFile: @"C:\temp\creatio.zip",
 			SitePort: 8080,
 			DbServerName: "sql-main",
-			RedisServerName: "redis-main");
+			RedisServerName: "redis-main",
+			UseHttps: true);
 
 		// Act
 		CommandExecutionResult result = tool.DeployCreatio((ProgressToken?)null, args);
@@ -105,6 +106,8 @@ public sealed class InstallerCommandToolTests
 			because: "local DB server selection should be forwarded when provided");
 		command.ReceivedOptions.RedisServerName.Should().Be("redis-main",
 			because: "local Redis server selection should be forwarded when provided");
+		command.ReceivedOptions.UseHttps.Should().BeTrue(
+			because: "the MCP HTTPS preference should map into the installer options");
 		command.ReceivedOptions.RedisDb.Should().Be(-1,
 			because: "the reduced MCP contract should keep automatic Redis DB detection");
 		command.ReceivedOptions.DisableResetPassword.Should().BeFalse(
@@ -133,7 +136,7 @@ public sealed class InstallerCommandToolTests
 
 	[Test]
 	[Category("Unit")]
-	[Description("Keeps db-server-name optional and limits the deploy-creatio MCP argument type to the five approved fields.")]
+	[Description("Keeps local server names optional and limits the deploy-creatio MCP argument type to the six approved fields.")]
 	public void DeployCreatio_Should_Keep_DbServerName_Optional_And_Expose_Only_Approved_Fields()
 	{
 		// Arrange
@@ -159,8 +162,10 @@ public sealed class InstallerCommandToolTests
 		command.ReceivedOptions.RedisDb.Should().Be(-1,
 			because: "redis-db should default to auto-detection when omitted");
 		typeof(DeployCreatioArgs).GetProperties().Select(property => property.Name).Should().BeEquivalentTo(
-			["SiteName", "ZipFile", "SitePort", "DbServerName", "RedisServerName"],
-			because: "the MCP deploy-creatio argument type should expose only the five approved arguments");
+			["SiteName", "ZipFile", "SitePort", "DbServerName", "RedisServerName", "UseHttps"],
+			because: "the MCP deploy-creatio argument type should expose only the six approved arguments");
+		command.ReceivedOptions.UseHttps.Should().BeFalse(
+			because: "HTTPS remains opt-in when the MCP argument is omitted");
 	}
 
 	[Test]
@@ -184,6 +189,8 @@ public sealed class InstallerCommandToolTests
 			because: "the prompt should conclude with the actual deployment call");
 		prompt.Should().Contain("existing forced-password-change state",
 			because: "the prompt should disclose that deployment preserves the database's existing state");
+		prompt.Should().Contain("opportunistic",
+			because: "the prompt should disclose the HTTPS-to-HTTP fallback behavior");
 	}
 
 	private static McpServerToolAttribute GetDeployCreatioAttribute()

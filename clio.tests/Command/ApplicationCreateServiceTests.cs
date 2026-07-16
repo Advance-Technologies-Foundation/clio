@@ -21,6 +21,7 @@ public sealed class ApplicationCreateServiceTests {
 	private IServiceUrlBuilder _serviceUrlBuilder = null!;
 	private IApplicationInfoService _applicationInfoService = null!;
 	private ISysSettingsManager _sysSettingsManager = null!;
+	private ICaptionCultureResolver _captionCultureResolver = null!;
 	private ILogger _logger = null!;
 	private ApplicationCreateService _sut = null!;
 	private EnvironmentSettings _environment = null!;
@@ -60,8 +61,9 @@ public sealed class ApplicationCreateServiceTests {
 		_applicationClientFactory.CreateEnvironmentClient(_environment).Returns(_applicationClient);
 		_serviceUrlBuilder.Build(Arg.Any<string>(), Arg.Any<EnvironmentSettings>())
 			.Returns(callInfo => $"https://example.invalid/{callInfo.ArgAt<string>(0)}");
-		ICaptionCultureResolver captionCultureResolver = Substitute.For<ICaptionCultureResolver>();
-		captionCultureResolver.Resolve(Arg.Any<EnvironmentOptions>(), Arg.Any<string?>()).Returns("en-US");
+		_captionCultureResolver = Substitute.For<ICaptionCultureResolver>();
+		_captionCultureResolver.Resolve(Arg.Any<EnvironmentOptions>(), Arg.Any<string?>()).Returns("en-US");
+		_captionCultureResolver.Resolve(Arg.Any<EnvironmentSettings>(), Arg.Any<string?>()).Returns("en-US");
 		_sut = new ApplicationCreateService(
 			_settingsRepository,
 			_applicationClientFactory,
@@ -69,7 +71,7 @@ public sealed class ApplicationCreateServiceTests {
 			_applicationInfoService,
 			_ => _sysSettingsManager,
 			_logger,
-			captionCultureResolver);
+			_captionCultureResolver);
 	}
 
 	[Test]
@@ -427,7 +429,7 @@ public sealed class ApplicationCreateServiceTests {
 		action.Should().Throw<InvalidOperationException>()
 			.WithMessage("*invalid application identifier*",
 				because: "the create flow must validate the returned app id before reading application info");
-		_applicationInfoService.DidNotReceiveWithAnyArgs().GetApplicationInfo(default!, default, default);
+		_applicationInfoService.DidNotReceiveWithAnyArgs().GetApplicationInfo(default(string)!, default, default);
 	}
 
 	[Test]
@@ -847,6 +849,71 @@ public sealed class ApplicationCreateServiceTests {
 			Arg.Is<string>(body =>
 				body.Contains("\"clientTypeId\":\"22222222-2222-2222-2222-222222222222\"", StringComparison.Ordinal) &&
 				!body.Contains("195785B4-F55A-4E72-ACE3-6480B54C8FA5", StringComparison.Ordinal)));
+	}
+
+	[Test]
+	[Description("Settings-based overload (ENG-93347 Story 5): rejects a null EnvironmentSettings with ArgumentNullException before any client factory or remote call is attempted.")]
+	public void CreateApplication_ShouldThrowArgumentNullException_WhenEnvironmentSettingsAreNull() {
+		// Arrange
+		EnvironmentSettings environmentSettings = null!;
+
+		// Act
+		Action action = () => _sut.CreateApplication(environmentSettings, _fullRequest);
+
+		// Assert
+		action.Should().Throw<ArgumentNullException>(
+			because: "the settings-based overload must fail fast on a null tenant before any factory invocation");
+		_applicationClientFactory.DidNotReceiveWithAnyArgs().CreateEnvironmentClient(default!);
+	}
+
+	[Test]
+	[Description("Settings-based overload (ENG-93347 Story 5, AC-03/AC-04): creates the application against the supplied settings without ever consulting ISettingsRepository, and routes BOTH nested calls — the caption-culture resolution and the application-info readback — through the settings-based overloads, never the name-based ones.")]
+	public void CreateApplication_ShouldUseSettingsBasedNestedCalls_WhenEnvironmentSettingsSupplied() {
+		// Arrange
+		ApplicationInfoResult expectedResult = new("pkg-uid", "PrimaryPkg", [], SchemaNamePrefix: "Usr");
+		ConfigureCreateSuccessForCode("UsrCodexApp");
+		_applicationInfoService.GetApplicationInfo(_environment, "33333333-3333-3333-3333-333333333333", "UsrCodexApp")
+			.Returns(expectedResult);
+
+		// Act
+		ApplicationInfoResult result = _sut.CreateApplication(_environment, _fullRequest);
+
+		// Assert
+		result.Should().Be(expectedResult,
+			because: "the settings-based overload must return the same structured application-info result as the name-based path");
+		_settingsRepository.DidNotReceiveWithAnyArgs().FindEnvironment(default);
+		_settingsRepository.DidNotReceiveWithAnyArgs().GetEnvironment(default(EnvironmentOptions)!);
+		_captionCultureResolver.Received(1).Resolve(_environment, null);
+		_captionCultureResolver.DidNotReceiveWithAnyArgs().Resolve(default(EnvironmentOptions)!, default);
+		_applicationInfoService.Received(1)
+			.GetApplicationInfo(_environment, "33333333-3333-3333-3333-333333333333", "UsrCodexApp");
+		_applicationInfoService.DidNotReceiveWithAnyArgs().GetApplicationInfo(default(string)!, default, default);
+	}
+
+	[Test]
+	[Description("Settings-based overload (ENG-93347 Story 5, AC-04): when CreateApp times out, the timeout-recovery polling loop reads the application back through the settings-based GetApplicationInfo overload — never through the name-based one.")]
+	public void CreateApplication_ShouldPollThroughSettingsOverload_WhenCreateAppTimesOutWithSettingsSupplied() {
+		// Arrange
+		ApplicationInfoResult expectedResult = new("pkg-uid", "PrimaryPkg", [], SchemaNamePrefix: "Usr");
+		_applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.EndsWith("CreateApp", StringComparison.Ordinal)),
+				Arg.Any<string>())
+			.Returns(_ => throw new InvalidOperationException(
+				"App Installer CreateApp request failed for https://example.invalid with timeout of 30000ms exceeded."));
+		_applicationInfoService.GetApplicationInfo(_environment, null, "UsrCodexApp")
+			.Returns(
+				_ => throw new InvalidOperationException("Application 'UsrCodexApp' not found."),
+				_ => expectedResult);
+
+		// Act
+		ApplicationInfoResult result = _sut.CreateApplication(_environment, _fullRequest);
+
+		// Assert
+		result.Should().Be(expectedResult,
+			because: "timeout recovery on the settings-based path should return the created application once the settings-based readback resolves it");
+		_applicationInfoService.Received(2).GetApplicationInfo(_environment, null, "UsrCodexApp");
+		_applicationInfoService.DidNotReceiveWithAnyArgs().GetApplicationInfo(default(string)!, default, default);
+		_settingsRepository.DidNotReceiveWithAnyArgs().FindEnvironment(default);
 	}
 
 	private void ConfigureCreateSuccessForCode(string appCode = "UsrCodexApp")

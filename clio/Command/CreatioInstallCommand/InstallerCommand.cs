@@ -184,9 +184,11 @@ public class PfInstallerOptions : EnvironmentNameOptions{
 	public string AppPath { get; set; }
 
 	/// <summary>
-	/// Gets or sets a value indicating whether HTTPS should be used for dotnet deployment.
+	/// Gets or sets a value indicating whether HTTPS is preferred for deployment.
 	/// </summary>
-	[Option("use-https", Required = false, Default = false, HelpText = "Use HTTPS (requires certificate for dotnet)")]
+	/// <remarks>Local IIS falls back to HTTP when no usable machine certificate is available.</remarks>
+	[Option("use-https", Required = false, Default = false,
+		HelpText = "Prefer HTTPS (local IIS falls back to HTTP when no usable machine certificate exists)")]
 	public bool UseHttps { get; set; }
 
 	/// <summary>

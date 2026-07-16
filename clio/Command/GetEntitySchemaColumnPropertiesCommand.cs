@@ -107,6 +107,7 @@ public class GetEntitySchemaColumnPropertiesCommand : Command<GetEntitySchemaCol
 		_logger.WriteInfo($"Masked: {FormatBoolean(properties.Masked)}");
 		_logger.WriteInfo($"Format validated: {FormatBoolean(properties.FormatValidated)}");
 		_logger.WriteInfo($"Use seconds: {FormatBoolean(properties.UseSeconds)}");
+		_logger.WriteInfo($"Usage type: {FormatText(properties.UsageType)}");
 	}
 
 	private static string FormatBoolean(bool value) {

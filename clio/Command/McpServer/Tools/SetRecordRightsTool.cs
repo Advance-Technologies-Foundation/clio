@@ -40,14 +40,12 @@ public sealed class SetRecordRightsTool(
 				// so confirm the apply here (the command otherwise refuses in a non-interactive run).
 				Confirm = true
 			};
-			lock (CommandExecutionSyncRoot) {
-				CommandExecutionResult result = InternalExecute<SetRecordRightsCommand>(options);
-				return new SetRecordRightsResponse {
-					Success = result.ExitCode == 0,
-					Output = result.ExitCode == 0 ? ResolveMessages(result) : null,
-					Error = result.ExitCode == 0 ? null : ResolveMessages(result)
-				};
-			}
+			CommandExecutionResult result = InternalExecute<SetRecordRightsCommand>(options);
+			return new SetRecordRightsResponse {
+				Success = result.ExitCode == 0,
+				Output = result.ExitCode == 0 ? ResolveMessages(result) : null,
+				Error = result.ExitCode == 0 ? null : ResolveMessages(result)
+			};
 		} catch (Exception ex) {
 			return new SetRecordRightsResponse {
 				Success = false,

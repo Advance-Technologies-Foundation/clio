@@ -32,14 +32,12 @@ public sealed class GetRecordRightsTool(
 				Entity = args.Entity,
 				RecordId = args.RecordId
 			};
-			lock (CommandExecutionSyncRoot) {
-				CommandExecutionResult result = InternalExecute<GetRecordRightsCommand>(options);
-				return new GetRecordRightsResponse {
-					Success = result.ExitCode == 0,
-					Error = result.ExitCode == 0 ? null : ResolveMessages(result),
-					Output = result.ExitCode == 0 ? ResolveMessages(result) : null
-				};
-			}
+			CommandExecutionResult result = InternalExecute<GetRecordRightsCommand>(options);
+			return new GetRecordRightsResponse {
+				Success = result.ExitCode == 0,
+				Error = result.ExitCode == 0 ? null : ResolveMessages(result),
+				Output = result.ExitCode == 0 ? ResolveMessages(result) : null
+			};
 		} catch (Exception ex) {
 			return new GetRecordRightsResponse {
 				Success = false,
