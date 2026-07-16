@@ -137,8 +137,8 @@ public sealed class DesktopPageGuidanceResource {
 		         grantee=<SysAdminUnit id> operation=read`, and `revoke` the default `All employees` grant if one is
 		         present (check with `get-record-rights` first). See `get-guidance name=record-rights`.
 		       - The `Desktop` record is auto-created per environment (see above), so its record id is env-local:
-		         do NOT ship these grants as a package data binding (unlike dashboard grants — see
-		         `get-guidance name=dashboard-rights`); re-apply `set-record-rights` on each target environment.
+		         do NOT ship these grants as a package data binding; re-apply `set-record-rights` on each target
+		         environment.
 
 		       DO NOT
 		       - Do not create ordinary `Page`-group schemas for desktop requests (they never appear in
