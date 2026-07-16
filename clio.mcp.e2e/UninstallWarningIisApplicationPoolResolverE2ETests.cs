@@ -49,7 +49,8 @@ public sealed class UninstallWarningIisApplicationPoolResolverE2ETests {
 			""";
 
 		// Act
-		string result = IisApplicationPoolResolver.Resolve(environmentUri, sitesXml, ApplicationsXml);
+		string result = IisApplicationPoolResolver.Resolve(
+			environmentUri, sitesXml, ApplicationsXml, host => host == "ts1-agent80");
 
 		// Assert
 		result.Should().Be("studio-pool",
@@ -62,7 +63,7 @@ public sealed class UninstallWarningIisApplicationPoolResolverE2ETests {
 	[AllureName("Uninstall warning harness rejects unmatched IIS binding")]
 	public void Resolve_ShouldThrow_WhenBindingDoesNotMatch() {
 		// Arrange
-		Uri environmentUri = new("http://ts1-agent80:88/studio");
+		Uri environmentUri = new("http://ts1-agent80:88/studio?access_token=secret-sentinel");
 		const string sitesXml = """
 			<appcmd>
 			  <SITE SITE.NAME="Default Web Site" bindings="http/*:88:other-agent" state="Started" />
@@ -70,12 +71,15 @@ public sealed class UninstallWarningIisApplicationPoolResolverE2ETests {
 			""";
 
 		// Act
-		Action act = () => IisApplicationPoolResolver.Resolve(environmentUri, sitesXml, ApplicationsXml);
+		Action act = () => IisApplicationPoolResolver.Resolve(
+			environmentUri, sitesXml, ApplicationsXml, host => host == "ts1-agent80");
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>(
 				because: "an unmatched target must fail before the destructive MCP call")
-			.WithMessage("*matched 0 IIS applications*");
+			.WithMessage("*matched 0 IIS applications*")
+			.And.Message.Should().NotContain("secret-sentinel",
+				because: "query credentials must not be written into TeamCity failure diagnostics");
 	}
 
 	[Test]
@@ -99,7 +103,8 @@ public sealed class UninstallWarningIisApplicationPoolResolverE2ETests {
 			""";
 
 		// Act
-		Action act = () => IisApplicationPoolResolver.Resolve(environmentUri, sitesXml, applicationsXml);
+		Action act = () => IisApplicationPoolResolver.Resolve(
+			environmentUri, sitesXml, applicationsXml, host => host == "ts1-agent80");
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>(
@@ -126,11 +131,74 @@ public sealed class UninstallWarningIisApplicationPoolResolverE2ETests {
 			""";
 
 		// Act
-		Action act = () => IisApplicationPoolResolver.Resolve(environmentUri, sitesXml, applicationsXml);
+		Action act = () => IisApplicationPoolResolver.Resolve(
+			environmentUri, sitesXml, applicationsXml, host => host == "ts1-agent80");
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>(
 				because: "a target without an explicit pool must fail before the destructive MCP call")
 			.WithMessage("*has no application-pool name*");
+	}
+
+	[Test]
+	[Description("Rejects a foreign registered hostname even when a wildcard IIS binding and application path match.")]
+	[AllureTag(ToolName)]
+	[AllureName("Uninstall warning harness rejects foreign host on wildcard binding")]
+	public void Resolve_ShouldThrow_WhenRegisteredHostIsNotLocal() {
+		// Arrange
+		Uri environmentUri = new("http://other-agent:88/studio");
+		const string sitesXml = """
+			<appcmd>
+			  <SITE SITE.NAME="Default Web Site" bindings="http/*:88:" state="Started" />
+			</appcmd>
+			""";
+
+		// Act
+		Action act = () => IisApplicationPoolResolver.Resolve(
+			environmentUri, sitesXml, ApplicationsXml, _ => false);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+				because: "a wildcard binding must not authorize a stale URI for another machine")
+			.WithMessage("*does not identify the current machine*");
+	}
+
+	[Test]
+	[Description("Recognizes the current machine name as a local destructive E2E target.")]
+	[AllureTag(ToolName)]
+	[AllureName("Uninstall warning harness recognizes current machine name")]
+	public void HostIdentifiesCurrentMachine_ShouldReturnTrue_WhenHostIsMachineName() {
+		// Arrange
+		string host = Environment.MachineName;
+
+		// Act
+		bool result = IisApplicationPoolResolver.HostIdentifiesCurrentMachine(host);
+
+		// Assert
+		result.Should().BeTrue(
+			because: "TeamCity registers the sandbox with the build agent machine name");
+	}
+
+	[Test]
+	[Description("Rejects user information in the registered sandbox URI without leaking it into diagnostics.")]
+	[AllureTag(ToolName)]
+	[AllureName("Uninstall warning harness rejects URI user information safely")]
+	public void Resolve_ShouldThrowWithoutSecret_WhenUriContainsUserInformation() {
+		// Arrange
+		Uri environmentUri = new("http://secret-user:secret-password@ts1-agent80:88/studio");
+
+		// Act
+		Action act = () => IisApplicationPoolResolver.Resolve(
+			environmentUri, "<appcmd />", "<appcmd />", host => host == "ts1-agent80");
+
+		// Assert
+		InvalidOperationException exception = act.Should().Throw<InvalidOperationException>(
+				because: "IIS target URIs never require embedded credentials")
+			.WithMessage("*must not contain user information*")
+			.Which;
+		exception.Message.Should().NotContain("secret-user",
+			because: "URI usernames must not be written into TeamCity failure diagnostics");
+		exception.Message.Should().NotContain("secret-password",
+			because: "URI passwords must not be written into TeamCity failure diagnostics");
 	}
 }

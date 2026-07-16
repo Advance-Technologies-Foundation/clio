@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Net;
+using System.Net.NetworkInformation;
+using System.Net.Sockets;
 using System.Xml.Linq;
 
 namespace Clio.Mcp.E2E.Support.Configuration;
@@ -11,8 +13,7 @@ internal static class IisApplicationPoolResolver {
 			throw new PlatformNotSupportedException("IIS application-pool resolution requires Windows.");
 		}
 		if (!Uri.TryCreate(environmentUri, UriKind.Absolute, out Uri? uri)) {
-			throw new InvalidOperationException(
-				$"Registered sandbox URI '{environmentUri}' is not a valid absolute URI.");
+			throw new InvalidOperationException("The registered sandbox URI is not a valid absolute URI.");
 		}
 
 		string appCmd = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows),
@@ -22,10 +23,22 @@ internal static class IisApplicationPoolResolver {
 		}
 
 		return Resolve(uri, RunAppCmd(appCmd, "list", "site", "/xml"),
-			RunAppCmd(appCmd, "list", "app", "/xml"));
+			RunAppCmd(appCmd, "list", "app", "/xml"), HostIdentifiesCurrentMachine);
 	}
 
-	internal static string Resolve(Uri environmentUri, string sitesXml, string applicationsXml) {
+	internal static string Resolve(Uri environmentUri, string sitesXml, string applicationsXml,
+		Func<string, bool> hostIdentifiesCurrentMachine) {
+		string safeTarget = FormatSafeTarget(environmentUri);
+		if (!string.IsNullOrWhiteSpace(environmentUri.UserInfo)) {
+			throw new InvalidOperationException(
+				$"Registered sandbox URI '{safeTarget}' must not contain user information.");
+		}
+		if (!hostIdentifiesCurrentMachine(environmentUri.Host)) {
+			throw new InvalidOperationException(
+				$"Registered sandbox URI '{safeTarget}' does not identify the current machine; " +
+				"destructive E2E execution is refused.");
+		}
+
 		XElement sitesRoot = XElement.Parse(sitesXml);
 		XElement applicationsRoot = XElement.Parse(applicationsXml);
 		HashSet<string> matchingSites = sitesRoot.Elements("SITE")
@@ -44,16 +57,49 @@ internal static class IisApplicationPoolResolver {
 
 		if (matchingApplications.Length != 1) {
 			throw new InvalidOperationException(
-				$"Registered sandbox URI '{environmentUri}' matched {matchingApplications.Length} IIS applications; " +
+				$"Registered sandbox URI '{safeTarget}' matched {matchingApplications.Length} IIS applications; " +
 				"exactly one match is required before destructive E2E execution.");
 		}
 
 		string? applicationPoolName = matchingApplications[0].Attribute("APPPOOL.NAME")?.Value;
 		if (string.IsNullOrWhiteSpace(applicationPoolName)) {
 			throw new InvalidOperationException(
-				$"The IIS application matched by '{environmentUri}' has no application-pool name.");
+				$"The IIS application matched by '{safeTarget}' has no application-pool name.");
 		}
 		return applicationPoolName;
+	}
+
+	internal static bool HostIdentifiesCurrentMachine(string host) {
+		if (string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(host, Environment.MachineName, StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(host, Dns.GetHostName(), StringComparison.OrdinalIgnoreCase)) {
+			return true;
+		}
+
+		IPGlobalProperties properties = IPGlobalProperties.GetIPGlobalProperties();
+		if (!string.IsNullOrWhiteSpace(properties.DomainName)
+			&& string.Equals(host, $"{properties.HostName}.{properties.DomainName}",
+				StringComparison.OrdinalIgnoreCase)) {
+			return true;
+		}
+
+		HashSet<IPAddress> localAddresses = NetworkInterface.GetAllNetworkInterfaces()
+			.SelectMany(networkInterface => networkInterface.GetIPProperties().UnicastAddresses)
+			.Select(address => address.Address)
+			.ToHashSet();
+		IPAddress[] targetAddresses;
+		try {
+			if (IPAddress.TryParse(host, out IPAddress? literal)) {
+				targetAddresses = [literal];
+			}
+			else {
+				targetAddresses = Dns.GetHostAddresses(host);
+			}
+		}
+		catch (SocketException) {
+			return false;
+		}
+		return targetAddresses.Any(address => IPAddress.IsLoopback(address) || localAddresses.Contains(address));
 	}
 
 	private static bool SiteMatches(XElement site, Uri environmentUri) {
@@ -103,6 +149,17 @@ internal static class IisApplicationPoolResolver {
 			normalized = "/" + normalized;
 		}
 		return normalized.Length == 1 ? normalized : normalized.TrimEnd('/');
+	}
+
+	private static string FormatSafeTarget(Uri environmentUri) {
+		UriBuilder safeTarget = new(environmentUri.Scheme, environmentUri.Host, environmentUri.Port,
+			environmentUri.AbsolutePath) {
+			UserName = string.Empty,
+			Password = string.Empty,
+			Query = string.Empty,
+			Fragment = string.Empty
+		};
+		return safeTarget.Uri.AbsoluteUri.TrimEnd('/');
 	}
 
 	private static string RunAppCmd(string appCmd, params string[] arguments) {

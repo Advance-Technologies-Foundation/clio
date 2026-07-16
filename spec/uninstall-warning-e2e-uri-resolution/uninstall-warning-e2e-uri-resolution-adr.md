@@ -15,10 +15,12 @@ or inspect `EnvironmentPath`, because that path is not part of the behavior unde
 ## Safety
 
 - Destructive execution remains explicitly opted in and bound to the configured sandbox name.
+- The registered URI host must identify the current machine before wildcard IIS bindings are considered.
 - URI-to-IIS resolution requires exactly one application match and a non-empty pool name.
 - Host-specific bindings must match the URI host; wildcard IP and empty host-header bindings remain
   valid for TeamCity's agent-host URL.
 - Any malformed IIS XML or ambiguous topology fails before the MCP uninstall call.
+- URI user information is rejected, and query/fragment data is removed from failure diagnostics.
 
 ## Compatibility
 

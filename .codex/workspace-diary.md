@@ -6345,3 +6345,10 @@ Decision: Resolve the registered environment URI through the fresh clio process,
 Discovery: TeamCity exposes `dev` at `http://<agent>:88/<application>` with a wildcard IIS binding and no path metadata. The disposable 10.0.0.802 Studio NET8 PostgreSQL run proved URI resolution, warning propagation, successful uninstall, and complete cleanup.
 Files: clio.mcp.e2e/Support/Configuration/ClioEnvironmentCommandResolver.cs, clio.mcp.e2e/Support/Configuration/IisApplicationPoolResolver.cs, clio.mcp.e2e/UninstallCreatioWarningE2ETests.cs, clio.mcp.e2e/UninstallWarningIisApplicationPoolResolverE2ETests.cs, spec/uninstall-warning-e2e-uri-resolution/
 Impact: The warning E2E no longer depends on unrelated `EnvironmentPath` metadata and aborts safely on unmatched, ambiguous, or pool-less IIS targets.
+
+## 2026-07-16 14:10 – Bind uninstall warning E2E to the local machine
+Context: Final security review found that a wildcard IIS binding could accept a stale URI hostname for another machine and still select a local pool.
+Decision: Require the registered URI host to identify the current machine by machine name, FQDN, loopback, or DNS/local-interface intersection before IIS matching; reject URI user information and sanitize query/fragment data from diagnostics.
+Discovery: The final worktree code passed 8 resolver/security regressions on net8.0 and net10.0, then the repeated 10.0.0.802 locked-profile E2E passed against the local FQDN and cleaned all recorded resources.
+Files: clio.mcp.e2e/Support/Configuration/IisApplicationPoolResolver.cs, clio.mcp.e2e/UninstallWarningIisApplicationPoolResolverE2ETests.cs, spec/uninstall-warning-e2e-uri-resolution/
+Impact: Wildcard bindings no longer authorize foreign-host targets, and secret-bearing URI components cannot leak through failure messages.
