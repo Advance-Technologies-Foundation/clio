@@ -86,6 +86,7 @@ See docs: https://devblogs.microsoft.com/dotnet/introducing-central-package-mana
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.7.0" />
     <PackageVersion Include="System.IO.Abstractions.TestingHelpers" Version="$(SIOVersion)" />
     <PackageVersion Include="FluentAssertions" Version="[7.2.0]" />
+    <PackageVersion Include="JsonSchema.Net" Version="9.2.2" />
     <PackageVersion Include="nunit" Version="4.6.1" />
     <PackageVersion Include="NUnit3TestAdapter" Version="6.2.0" />
     <PackageVersion Include="ATF.Repository.Mock" Version="2.0.3.1" />

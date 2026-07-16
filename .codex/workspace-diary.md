@@ -6324,3 +6324,17 @@ Decision: Extract IIS HTTPS DI registration, evaluate both XML transformations e
 Discovery: `--use-https` is an IIS binding option; allowing it to affect DotNetDeploymentStrategy registration points readiness at an endpoint that the strategy deliberately removes from appsettings. Normalization can turn an all-nonhex explicit thumbprint into an empty value, which must not share interactive-cancellation semantics.
 Files: clio/BindingsModule.cs, clio/Common/IIS/NetFrameworkHttpsConfigurator.cs, clio/Common/DeploymentStrategies/DotNetDeploymentStrategy.cs, clio/Command/PinCertificateCommand.cs, clio.tests/Common/DotNetDeploymentStrategyTests.cs, clio.tests/Command/PinCertificateCommandTests.cs
 Impact: All reported review findings are covered by focused net8.0/net10.0 tests without broadening HTTPS beyond IIS.
+
+## 2026-07-16 06:20 – Add a ClioRing app-settings schema and dev-clio guidance
+Context: Issue #890 requested editor validation for Ring settings and an explanation of how a release-labeled Ring can launch a development clio IPC build.
+Decision: Ship a Draft 2020-12 schema beside the desktop executable, reference it from the sample settings, document launch precedence and trust boundaries, and validate schema/model parity with JsonSchema.Net integration tests.
+Discovery: `Channel` is only a Ring display label; clio selection is valid `DevClioPath`, then complete `ClioIpc`, then the machine default. Existing local settings can be preserved while refreshing the NativeAOT program files.
+Files: clio-ring/ClioRing.Desktop/app-settings.schema.json, clio-ring/ClioRing.Tests/AppSettingsSchemaTests.cs, clio-ring/README.md, spec/ring-app-settings-schema/
+Impact: Editors now catch unknown, incomplete, and whitespace-only settings, developers can intentionally target a trusted local clio build, and `C:\Tools\clio-ring` has been refreshed without losing its IPC configuration.
+
+## 2026-07-16 06:55 – Stabilize unit tests on the dev self-hosted runner
+Context: PR #891 passed on TS1-CORE-DEV24 but two consecutive runs on TS1-MRKT-WEB01 failed in different tests and target frameworks while the Ring-only tests remained green.
+Decision: Join deliberately detached heartbeat test work before disposing its synchronization handles, and use a locked StringWriter for process-wide console capture in CommonProgramTest.
+Discovery: TS1-MRKT-WEB01 is current on .NET SDK 10.0.301/runtime 10.0.9 but its GitHub runner 2.333.0 trails 2.335.1. The first failure was concurrent StringBuilder access; the retry captured a late cancelled-operation fault in the next test, confirming background-work isolation rather than product behavior.
+Files: clio.tests/CommonProgramTest.cs, clio.tests/Command/McpServer/McpProgressHeartbeatTests.cs
+Impact: Core and MCP Server tests no longer dispose gates under detached work or read console buffers during background writes, improving deterministic execution across self-hosted runner speeds.

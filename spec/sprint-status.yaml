@@ -2019,3 +2019,17 @@ stories:
     test_plan: spec/iis-https-deployment/iis-https-deployment-test-plan.md
     depends_on: []
     blocks: []
+
+  - id: story-ring-app-settings-schema-1
+    title: "Ship ClioRing app-settings schema and dev-clio guidance"
+    feature: "ring-app-settings-schema"
+    repo: "clio"
+    size: S
+    status: review
+    issue: 890
+    file: spec/ring-app-settings-schema/ring-app-settings-schema-story.md
+    prd: spec/ring-app-settings-schema/ring-app-settings-schema-spec.md
+    adr: spec/ring-app-settings-schema/ring-app-settings-schema-adr.md
+    test_plan: spec/ring-app-settings-schema/ring-app-settings-schema-test-plan.md
+    depends_on: []
+    blocks: []
