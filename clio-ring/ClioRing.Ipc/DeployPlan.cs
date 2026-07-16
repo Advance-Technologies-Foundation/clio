@@ -25,6 +25,9 @@ public sealed record DeployPlan {
 	/// <summary>True = Local infra (db+redis provided); false = Rancher/default Kubernetes (db/redis omitted).</summary>
 	public bool Local { get; init; }
 
+	/// <summary>Prefer HTTPS for a local IIS deployment; clio falls back to HTTP when no usable certificate exists.</summary>
+	public bool UseHttps { get; init; }
+
 	/// <summary>Local database server configuration name (required only when <see cref="Local"/>).</summary>
 	public string? DbServerName { get; init; }
 
@@ -74,7 +77,7 @@ public static class DeployRequestBuilder {
 
 	/// <summary>
 	/// Builds the inner deploy-creatio arguments object (siteName, zipFile, sitePort, and — only for
-	/// Local — dbServerName + redisServerName). Rancher omits db/redis entirely.
+	/// Local — dbServerName, redisServerName, and useHttps). Rancher omits all local-only fields.
 	/// </summary>
 	public static string BuildDeployArgsJson(DeployPlan plan) {
 		ArgumentNullException.ThrowIfNull(plan);
@@ -87,6 +90,7 @@ public static class DeployRequestBuilder {
 			if (plan.Local) {
 				writer.WriteString("dbServerName", plan.DbServerName ?? string.Empty);
 				writer.WriteString("redisServerName", plan.RedisServerName ?? string.Empty);
+				writer.WriteBoolean("useHttps", plan.UseHttps);
 			}
 			writer.WriteEndObject();
 		}
@@ -111,6 +115,7 @@ public static class DeployRequestBuilder {
 			if (plan.Local) {
 				writer.WriteString("dbServerName", plan.DbServerName ?? string.Empty);
 				writer.WriteString("redisServerName", plan.RedisServerName ?? string.Empty);
+				writer.WriteBoolean("useHttps", plan.UseHttps);
 			}
 			writer.WriteEndObject();
 			writer.WriteEndObject();
@@ -131,6 +136,7 @@ public static class DeployRequestBuilder {
 		if (plan.Local) {
 			sb.AppendLine($"db server   : {plan.DbServerName}");
 			sb.AppendLine($"redis server: {plan.RedisServerName}");
+			sb.AppendLine($"protocol    : {(plan.UseHttps ? "HTTPS preferred (HTTP fallback)" : "HTTP")}");
 		}
 		else {
 			sb.AppendLine("db/redis    : omitted (default Kubernetes path)");

@@ -89,6 +89,26 @@ public interface IApplicationSectionCreateService {
 	/// <returns>Structured data for the created section, entity, and pages.</returns>
 	ApplicationSectionCreateResult CreateSection(string environmentName, ApplicationSectionCreateRequest request,
 		int? insertTimeoutMsOverride = null, int? readbackTimeoutMsOverride = null);
+
+	/// <summary>
+	/// Creates a section against an already-resolved environment. Behaves identically to
+	/// <see cref="CreateSection(string, ApplicationSectionCreateRequest, int?, int?)"/> except it never
+	/// consults <see cref="Clio.UserEnvironment.ISettingsRepository"/> — the caller supplies the settings
+	/// directly (e.g. an MCP passthrough tenant resolved from request headers) — and every nested call it
+	/// makes (BOTH caption-culture resolutions — the readback-culture and profile-validation sites — and
+	/// BOTH application-info reads — the pre-insert validation and the polling readback) uses the
+	/// settings-based overloads of <see cref="Clio.Command.EntitySchemaDesigner.ICaptionCultureResolver"/>
+	/// and <see cref="IApplicationInfoService"/>, never the name-based ones (ENG-93347, ADR OQ-01 c1 rule).
+	/// </summary>
+	/// <param name="environmentSettings">The already-resolved environment settings; must not be <c>null</c>.</param>
+	/// <param name="request">Section creation request payload.</param>
+	/// <param name="insertTimeoutMsOverride">Optional override (ms) for the section-insert budget; see the name-based overload.</param>
+	/// <param name="readbackTimeoutMsOverride">Optional override (ms) for the post-insert readback; see the name-based overload.</param>
+	/// <returns>Structured data for the created section, entity, and pages.</returns>
+	/// <exception cref="ArgumentNullException"><paramref name="environmentSettings"/> is <c>null</c>.</exception>
+	ApplicationSectionCreateResult CreateSection(EnvironmentSettings environmentSettings,
+		ApplicationSectionCreateRequest request,
+		int? insertTimeoutMsOverride = null, int? readbackTimeoutMsOverride = null);
 }
 
 /// <summary>
@@ -196,17 +216,57 @@ public sealed class ApplicationSectionCreateService(
 				EnvironmentNotFoundError.Build(environmentName, settingsRepository));
 		}
 
+		// The name-based path keeps its pre-change nested calls byte-for-byte (name-based culture
+		// resolution at both call sites and name-based validation/polling application-info reads) so
+		// stdio / registered-environment behavior is untouched (ENG-93347 AC-08).
+		EnvironmentOptions cultureOptions = new() { Environment = environmentName };
+		return CreateSectionCore(
+			environmentSettings,
+			request,
+			overrideCulture => captionCultureResolver.Resolve(cultureOptions, overrideCulture),
+			(id, code) => applicationInfoService.GetApplicationInfo(environmentName, id, code),
+			insertTimeoutMsOverride,
+			readbackTimeoutMsOverride);
+	}
+
+	/// <inheritdoc />
+	public ApplicationSectionCreateResult CreateSection(EnvironmentSettings environmentSettings,
+		ApplicationSectionCreateRequest request,
+		int? insertTimeoutMsOverride = null, int? readbackTimeoutMsOverride = null) {
+		ArgumentNullException.ThrowIfNull(environmentSettings);
+		ArgumentNullException.ThrowIfNull(request);
+		ValidateRequest(request);
+
+		// ADR OQ-01 (c1) rule: a settings-based overload never calls a name-based overload or
+		// ISettingsRepository — all FOUR nested calls (the readback-culture and profile-validation
+		// caption-culture resolutions, and the validation + polling application-info reads) go through
+		// the Story-2 settings-based overloads.
+		return CreateSectionCore(
+			environmentSettings,
+			request,
+			overrideCulture => captionCultureResolver.Resolve(environmentSettings, overrideCulture),
+			(id, code) => applicationInfoService.GetApplicationInfo(environmentSettings, id, code),
+			insertTimeoutMsOverride,
+			readbackTimeoutMsOverride);
+	}
+
+	private ApplicationSectionCreateResult CreateSectionCore(
+		EnvironmentSettings environmentSettings,
+		ApplicationSectionCreateRequest request,
+		Func<string?, string> resolveCaptionCulture,
+		Func<string?, string?, ApplicationInfoResult> loadApplicationInfo,
+		int? insertTimeoutMsOverride,
+		int? readbackTimeoutMsOverride) {
 		IApplicationClient client = applicationClientFactory.CreateEnvironmentClient(environmentSettings);
 		// The stored section caption is localized server-side under the connected user's profile.
 		// This effective culture only drives which value the readback surfaces (override > profile > en-US).
-		EnvironmentOptions cultureOptions = new() { Environment = environmentName };
-		string effectiveCultureName = captionCultureResolver.Resolve(cultureOptions, request.CaptionCulture);
+		string effectiveCultureName = resolveCaptionCulture(request.CaptionCulture);
 		// ENG-91044: the stored section caption is localized server-side under the connected user's
 		// PROFILE culture — the caption-culture override only selects which value the readback surfaces,
 		// not the stored language. Validate the written text against the profile culture (override =
 		// null), so a non-matching --caption-culture cannot smuggle the wrong language past the guard
 		// (e.g. Cyrillic text stored under an 'en-US' profile).
-		string profileCultureForCaption = captionCultureResolver.Resolve(cultureOptions, null);
+		string profileCultureForCaption = resolveCaptionCulture(null);
 		CaptionCultureScriptGuard.EnsureCaptionMatchesCulture(profileCultureForCaption, request.Caption, "caption");
 		CaptionCultureScriptGuard.EnsureCaptionMatchesCulture(profileCultureForCaption, request.Description, "description");
 		ISysSettingsManager sysSettingsManager = sysSettingsManagerFactory(environmentSettings);
@@ -216,10 +276,7 @@ public sealed class ApplicationSectionCreateService(
 		try {
 			string schemaNamePrefix = SysSettingCodes.ReadSchemaNamePrefix(sysSettingsManager);
 			logger.WriteInfo($"Loading application info for '{request.ApplicationCode}'...");
-			beforeInfo = applicationInfoService.GetApplicationInfo(
-				environmentName,
-				null,
-				request.ApplicationCode);
+			beforeInfo = loadApplicationInfo(null, request.ApplicationCode);
 			resolvedRequest = ResolveRequest(
 				request,
 				beforeInfo,
@@ -258,12 +315,12 @@ public sealed class ApplicationSectionCreateService(
 			}
 			if (failureClass == ApplicationSectionCreateFailureClass.CreatioTimeout) {
 				return RecoverFromInsertTimeout(
-					environmentName,
 					beforeInfo,
 					resolvedRequest,
 					client,
 					environmentSettings,
 					effectiveCultureName,
+					loadApplicationInfo,
 					insertTimeoutMs,
 					exception);
 			}
@@ -279,12 +336,12 @@ public sealed class ApplicationSectionCreateService(
 		// default; the MCP/background path passes a finite per-request budget so a wedged readback
 		// cannot hold a thread + HTTP connection for the life of the server process (ENG-91316).
 		return LoadCreatedSection(
-			environmentName,
 			beforeInfo,
 			resolvedRequest,
 			client,
 			environmentSettings,
 			effectiveCultureName,
+			loadApplicationInfo,
 			ResolveReadbackTimeout(readbackTimeoutMsOverride));
 	}
 
@@ -607,12 +664,12 @@ public sealed class ApplicationSectionCreateService(
 	/// section is already visible despite the timeout, otherwise throws the classified failure.
 	/// </summary>
 	private ApplicationSectionCreateResult RecoverFromInsertTimeout(
-		string environmentName,
 		ApplicationInfoResult beforeInfo,
 		ResolvedApplicationSectionCreateRequest resolvedRequest,
 		IApplicationClient client,
 		EnvironmentSettings environmentSettings,
 		string effectiveCultureName,
+		Func<string?, string?, ApplicationInfoResult> loadApplicationInfo,
 		int insertTimeoutMs,
 		Exception cause) {
 		bool? sectionVisible = TryVerifySectionExists(client, environmentSettings, resolvedRequest);
@@ -624,12 +681,12 @@ public sealed class ApplicationSectionCreateService(
 			// The server already proved slow, so the recovery readback runs bounded too —
 			// otherwise the budget guarantee would be lost right after the timeout.
 			return LoadCreatedSection(
-				environmentName,
 				beforeInfo,
 				resolvedRequest,
 				client,
 				environmentSettings,
 				effectiveCultureName,
+				loadApplicationInfo,
 				VerificationTimeoutMs);
 		}
 
@@ -723,21 +780,18 @@ public sealed class ApplicationSectionCreateService(
 		exception.GetBaseException().Message;
 
 	private ApplicationSectionCreateResult LoadCreatedSection(
-		string environmentName,
 		ApplicationInfoResult beforeInfo,
 		ResolvedApplicationSectionCreateRequest request,
 		IApplicationClient client,
 		EnvironmentSettings environmentSettings,
 		string effectiveCultureName,
+		Func<string?, string?, ApplicationInfoResult> loadApplicationInfo,
 		int readbackTimeout = Timeout.Infinite) {
 		Exception? lastError = null;
 		for (int attempt = 1; attempt <= PollAttempts; attempt++) {
 			try {
 				logger.WriteInfo($"Waiting for section '{request.SectionCode}' to be ready... (attempt {attempt}/{PollAttempts})");
-				ApplicationInfoResult afterInfo = applicationInfoService.GetApplicationInfo(
-					environmentName,
-					null,
-					request.ApplicationCode);
+				ApplicationInfoResult afterInfo = loadApplicationInfo(null, request.ApplicationCode);
 				ApplicationSectionRecord createdSection = GetSectionRecord(
 					client,
 					environmentSettings,

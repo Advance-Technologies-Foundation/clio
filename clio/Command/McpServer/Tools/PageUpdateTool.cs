@@ -46,7 +46,8 @@ public sealed class PageUpdateTool(
 		"BEFORE editing the body call get-guidance `page-modification` and follow its pre-edit checklist — it routes visibility/required/value-set and lookup-filter work to business rules (not handlers/validators), display-only transforms to converters, run-process buttons to `run-process-button` (resolve parameter CODEs with get-process-signature first), and localizable strings to `page-schema-resources`. " +
 		"INSERTED-FIELD CONTRACT: " + SchemaValidationService.InsertedFieldContractSummary)]
 	public async Task<PageUpdateResponse> UpdatePage(
-		[Description("schema-name, body (required); resources, dry-run (optional); environment-name preferred; uri/login/password fallback only.")]
+		[Description("schema-name, body (required); resources, dry-run (optional); environment-name preferred; uri/login/password fallback only. " +
+			"Optional under credential passthrough — omit environment-name/uri/login/password so the header-supplied tenant is used; supplying any of them together with an active passthrough header is rejected, not silently honored.")]
 		[Required] PageUpdateArgs args,
 		McpServerLib.McpServer server,
 		CancellationToken cancellationToken = default) {
@@ -62,7 +63,7 @@ public sealed class PageUpdateTool(
 		if (earlyFailure != null)
 			return earlyFailure;
 		(string metaFilePath, bool baselineArmed) = pageBaselineGuard.TryArm(options, args.OutputDirectory);
-		PageUpdateResponse response = ExecuteWithCleanLog(() => {
+		PageUpdateResponse response = ExecuteWithCleanLog(options, () => {
 			PageUpdateCommand resolvedCommand;
 			try {
 				resolvedCommand = ResolveCommand<PageUpdateCommand>(options);
@@ -301,7 +302,7 @@ public sealed class PageUpdateTool(
 			return null;
 		}
 		try {
-			EnvironmentSettings settings = settingsRepository.GetEnvironment(new EnvironmentOptions {
+			EnvironmentSettings settings = commandResolver.Resolve<EnvironmentSettings>(new EnvironmentOptions {
 				Environment = options.Environment,
 				Uri = options.Uri,
 				Login = options.Login,
@@ -445,7 +446,7 @@ public sealed class PageUpdateTool(
 		// lock (no network inside) so they do not leak into the next tool response.
 		(PageUpdateResponse Failure, IReadOnlyList<string> Warnings) result =
 			ValidateRunProcessButtonsAgainstSignatures(options, configs);
-		return ExecuteWithCleanLog(() => result);
+		return ExecuteWithCleanLog(options, () => result);
 	}
 
 	internal (PageUpdateResponse Failure, IReadOnlyList<string> Warnings) ValidateRunProcessButtonsAgainstSignatures(

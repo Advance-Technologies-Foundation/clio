@@ -68,6 +68,7 @@ Commands:
   hosts                                List all Creatio hosts and their status, list-hosts
   info                                 Show clio, cliogate, and .NET runtime versions, get-version, i, ver
   install-application                  Install an application package into Creatio, install-app, push-app
+  install-dbhub                        Install, adopt, or repair a local loopback dbHub HTTP MCP server
   install-gate                         Install or update cliogate in Creatio, gate, installgate, update-gate
   install-nuget-pkg                    Install NuGet package to a web application (website), installng
   install-toolkit                      Install the Creatio AI App Development Toolkit for all detected coding agents
@@ -131,6 +132,7 @@ Commands:
   start                                Start local Creatio application, sc, start-creatio, start-server
   stop                                 Stop Creatio application(s) and remove services, stop-creatio
   switch-nuget-to-dll-reference        Switches nuget references to dll references in csproj files, nuget2dll
+  sync-dbhub                           Reconcile clio-owned dbHub sources with local Creatio environments
   turn-farm-mode                       Configure IIS site for Creatio web farm deployment, farm-mode, tfm
   turn-fsm                             Turn file system mode on or off for an environment, fsm, tfsm
   uninstall-app-remote                 Uninstall an application package from Creatio, uninstall

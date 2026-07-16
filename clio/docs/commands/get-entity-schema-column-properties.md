@@ -50,6 +50,8 @@ clio get-entity-schema-column-properties -e dev --package Custom --schema-name U
 
 - output is human-readable text, not JSON
 - the report includes whether the column is own or inherited
+- the report includes the usage type (`General`, `Advanced`, or `None`) as a friendly
+  name that can be passed back to `modify-entity-schema-column --usage-type`
 - the report includes default-value-source, default-value, and
 structured default-value-config
 - structured default-value-config includes `resolved-value-source` for canonical
