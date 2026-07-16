@@ -43,6 +43,11 @@ internal static class IisApplicationPoolResolver {
 				$"Registered sandbox URI '{safeTarget}' does not identify the current machine; " +
 				"destructive E2E execution is refused.");
 		}
+		if (!string.Equals(environmentUri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
+			&& !string.Equals(environmentUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)) {
+			throw new InvalidOperationException(
+				$"Registered sandbox URI '{safeTarget}' must use HTTP or HTTPS for IIS resolution.");
+		}
 
 		XElement sitesRoot = XElement.Parse(sitesXml);
 		XElement applicationsRoot = XElement.Parse(applicationsXml);
@@ -97,12 +102,30 @@ internal static class IisApplicationPoolResolver {
 			targetName, expectedApplicationPoolName, StringComparison.OrdinalIgnoreCase);
 		bool directIisTargetMatches = SiteMatchesAssignment(
 			sitesRoot, assignments[0], environmentUri);
-		if (!routedTargetMatches && !directIisTargetMatches) {
+		bool assignmentIdentityMatches = AssignmentIdentifiesExpectedTarget(
+			sitesRoot, assignments[0], expectedApplicationPoolName);
+		if (!(routedTargetMatches && assignmentIdentityMatches) && !directIisTargetMatches) {
 			throw new InvalidOperationException(
 				$"The configured sandbox application pool '{expectedApplicationPoolName}' does not match " +
 				$"the registered URI target '{safeTarget}'.");
 		}
 		return expectedApplicationPoolName;
+	}
+
+	private static bool AssignmentIdentifiesExpectedTarget(XElement sitesRoot, XElement application,
+		string expectedApplicationPoolName) {
+		string siteName = application.Attribute("SITE.NAME")?.Value ?? string.Empty;
+		bool siteExists = sitesRoot.Elements("SITE").Any(site =>
+			string.Equals(site.Attribute("SITE.NAME")?.Value, siteName, StringComparison.OrdinalIgnoreCase));
+		if (!siteExists) {
+			return false;
+		}
+
+		string applicationTarget = NormalizeApplicationPath(application.Attribute("path")?.Value ?? string.Empty)
+			.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+			.LastOrDefault() ?? string.Empty;
+		return string.Equals(siteName, expectedApplicationPoolName, StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(applicationTarget, expectedApplicationPoolName, StringComparison.OrdinalIgnoreCase);
 	}
 
 	private static bool SiteMatchesAssignment(XElement sitesRoot, XElement application, Uri environmentUri) {

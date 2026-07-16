@@ -27,6 +27,8 @@ or inspect `EnvironmentPath`, because that path is not part of the behavior unde
 - Any malformed IIS XML or ambiguous topology fails before the MCP uninstall call.
 - An explicit pool is rejected when it is unrelated to the registered URI or shared by multiple IIS
   applications.
+- Routed matching requires HTTP(S), a live referenced IIS site, and a site name or application path
+  that identifies the expected pool/URI target.
 - URI user information is rejected, and query/fragment data is removed from failure diagnostics.
 
 ## Compatibility

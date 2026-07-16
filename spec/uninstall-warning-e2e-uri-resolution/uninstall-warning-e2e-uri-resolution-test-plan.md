@@ -13,6 +13,7 @@
 - Resolve an externally routed TeamCity URL by explicit pool name and one live IIS assignment.
 - Resolve a directly bound local root site when the explicit pool is supplied.
 - Reject an explicit pool that is unrelated to the URI or shared by multiple IIS applications.
+- Reject routed matches with an unrelated assignment identity, an absent site, or a non-HTTP(S) URI.
 
 ## End to end
 
@@ -32,7 +33,7 @@
 
 - `dotnet build clio.mcp.e2e/clio.mcp.e2e.csproj -c Debug --no-restore`: passed for
   `net8.0` and `net10.0`; only pre-existing warnings outside the changed files were emitted.
-- Resolver regression filter after the TeamCity routing correction: 14 passed, 0 failed, 0 skipped
+- Resolver regression filter after the TeamCity routing correction: 17 passed, 0 failed, 0 skipped
   on both `net8.0` and `net10.0`.
 - Disposable `10.0.0.802` Studio NET8 PostgreSQL deployment returned HTTP 200.
 - The exact locked-profile MCP E2E passed again on `net10.0` with the explicit pool path and verified
