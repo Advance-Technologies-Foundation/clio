@@ -6357,3 +6357,10 @@ Decision: Join deliberately detached heartbeat test work before disposing its sy
 Discovery: TS1-MRKT-WEB01 is current on .NET SDK 10.0.301/runtime 10.0.9 but its GitHub runner 2.333.0 trails 2.335.1. The first failure was concurrent StringBuilder access; the retry captured a late cancelled-operation fault in the next test, confirming background-work isolation rather than product behavior.
 Files: clio.tests/CommonProgramTest.cs, clio.tests/Command/McpServer/McpProgressHeartbeatTests.cs
 Impact: Core and MCP Server tests no longer dispose gates under detached work or read console buffers during background writes, improving deterministic execution across self-hosted runner speeds.
+
+## 2026-07-16 00:00 – Section-create guard: canonical env key + waiter bound (ENG-93089)
+Context: Two PR-review fixes on feature/ENG-93089 for the create-app-section serialization guard.
+Decision: (1) Added SectionCreateSerializationGuard.BuildEnvironmentKey(EnvironmentSettings) (trim/lower/strip one trailing '/', empty on null) and used it in BOTH CreateSection overloads so registered-name and settings/MCP-passthrough calls to one server share a gate. (2) Layered a per-key in-flight counter (ConcurrentDictionary<string,int>) with MaxConcurrentWaiters=8 over KeyedSemaphore in the guard: an excess caller degrades to best-effort immediately instead of parking a thread-pool worker on the synchronous Wait.
+Discovery: The guard's BuildKey lowercases both parts, so BuildEnvironmentKey normalization is idempotent with it. KeyedSemaphore is shared with ComponentRegistryClient, so the waiter bound had to live in the guard, not KeyedSemaphore. Holder counts toward the in-flight bound, so bound-1 same-key callers park and the rest run best-effort.
+Files: clio/Command/ApplicationSectionCreateSerializationGuard.cs, clio/Command/ApplicationSectionCreateCommand.cs, clio.tests/Command/SectionCreateSerializationGuardTests.cs, clio.tests/Command/ApplicationSectionCreateServiceTests.cs
+Impact: create-app-section now serializes same-server creates across both overloads and cannot starve the MCP thread pool under a deep same-app fan-out; ComponentRegistryClient unaffected.

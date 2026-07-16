@@ -571,6 +571,63 @@ public sealed class ApplicationSectionCreateServiceTests {
 			new SectionCreateSerializationGuard(_logger));
 	}
 
+	private ApplicationSectionCreateService CreateSutWithGuard(ISectionCreateSerializationGuard guard) {
+		IServiceUrlBuilderFactory serviceUrlBuilderFactory = Substitute.For<IServiceUrlBuilderFactory>();
+		serviceUrlBuilderFactory.Create(Arg.Any<EnvironmentSettings>()).Returns(_serviceUrlBuilder);
+		return new ApplicationSectionCreateService(
+			_settingsRepository,
+			_applicationClientFactory,
+			_serviceUrlBuilder,
+			serviceUrlBuilderFactory,
+			_applicationInfoService,
+			_ => _sysSettingsManager,
+			_logger,
+			_captionCultureResolver,
+			guard);
+	}
+
+	[Test]
+	[Description("Both create-app-section overloads (registered-name and settings/MCP passthrough) derive the SAME serialization guard key for one physical server, so concurrent creates via different overloads serialize against each other instead of drifting onto different gates (ENG-93089 #3594140065).")]
+	public void CreateSection_ShouldUseSameGuardKeyForBothOverloads_WhenTargetingSameServer() {
+		// Arrange — a recording guard captures the environment-key part both overloads pass to Run, then
+		// unwinds with a sentinel once the key is captured so the destructive insert is never reached.
+		List<string> capturedEnvironmentKeys = new();
+		ISectionCreateSerializationGuard recordingGuard = Substitute.For<ISectionCreateSerializationGuard>();
+		recordingGuard.Run(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan>(), Arg.Any<Func<bool>>())
+			.Returns(callInfo => {
+				capturedEnvironmentKeys.Add(callInfo.ArgAt<string>(0));
+				throw new NotSupportedException("sentinel: stop before the destructive insert once the guard key is captured");
+			});
+		ApplicationSectionCreateService sut = CreateSutWithGuard(recordingGuard);
+		SetUpCommonReadMocks();
+		// The settings-based overload reads application info through the EnvironmentSettings overload.
+		_applicationInfoService.GetApplicationInfo(_environmentSettings, null, "UsrOrdersApp")
+			.Returns(CreateBeforeInfo());
+		ApplicationSectionCreateRequest request = CreateReuseEntityRequest();
+
+		// Act — drive each overload up to the guard; the sentinel unwinds each call after key capture.
+		try {
+			sut.CreateSection("sandbox", request);
+		} catch (NotSupportedException) {
+			// expected sentinel from the recording guard
+		}
+
+		try {
+			sut.CreateSection(_environmentSettings, request);
+		} catch (NotSupportedException) {
+			// expected sentinel from the recording guard
+		}
+
+		// Assert
+		capturedEnvironmentKeys.Should().HaveCount(2,
+			because: "both overloads must reach the serialization guard for the same application");
+		capturedEnvironmentKeys[0].Should().Be(capturedEnvironmentKeys[1],
+			because: "a registered-name call and a settings-based passthrough call to the same server must resolve to the SAME guard key so they serialize against each other");
+		capturedEnvironmentKeys[0].Should().Be(
+			SectionCreateSerializationGuard.BuildEnvironmentKey(_environmentSettings),
+			because: "both overloads must key the guard off the canonical normalized environment identity, not the registered name or the raw Uri");
+	}
+
 	[Test]
 	[Description("Propagates the Creatio server error message and appends an actionable hint when the section insert is rejected for a reused entity.")]
 	public void CreateSection_Should_Throw_Actionable_Error_When_Insert_Fails_With_Server_Message() {

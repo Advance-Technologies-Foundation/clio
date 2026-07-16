@@ -3,6 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command;
 using Clio.Common;
+using Clio.UserEnvironment;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
@@ -228,5 +229,119 @@ public sealed class SectionCreateSerializationGuardTests {
 		// Assert
 		nullWork.Should().Throw<ArgumentNullException>(
 			because: "the guard cannot run a null work delegate");
+	}
+
+	[Test]
+	[Description("BuildEnvironmentKey normalizes equivalent environment Uris (trailing '/', casing, surrounding whitespace) to the SAME canonical identity so both create-app-section overloads serialize against the same server (ENG-93089 #3594140065).")]
+	[TestCase("https://x/0")]
+	[TestCase("https://x/0/")]
+	[TestCase("HTTPS://X/0")]
+	[TestCase("  https://x/0  ")]
+	[TestCase("https://X/0/")]
+	public void BuildEnvironmentKey_ShouldReturnSameCanonicalKey_WhenUrisAreEquivalent(string uri) {
+		// Arrange
+		EnvironmentSettings settings = new() { Uri = uri };
+
+		// Act
+		string key = SectionCreateSerializationGuard.BuildEnvironmentKey(settings);
+
+		// Assert
+		key.Should().Be("https://x/0",
+			because: "a single trailing '/', casing, and surrounding whitespace must not change the canonical environment identity");
+	}
+
+	[Test]
+	[Description("BuildEnvironmentKey returns different identities for different hosts so unrelated environments map to different gates and are never serialized against each other (ENG-93089 #3594140065).")]
+	public void BuildEnvironmentKey_ShouldReturnDifferentKeys_WhenHostsDiffer() {
+		// Arrange
+		EnvironmentSettings hostA = new() { Uri = "https://host-a/0" };
+		EnvironmentSettings hostB = new() { Uri = "https://host-b/0" };
+
+		// Act
+		string keyA = SectionCreateSerializationGuard.BuildEnvironmentKey(hostA);
+		string keyB = SectionCreateSerializationGuard.BuildEnvironmentKey(hostB);
+
+		// Assert
+		keyA.Should().NotBe(keyB,
+			because: "distinct servers must map to distinct gates so their section creations run in parallel");
+	}
+
+	[Test]
+	[Description("BuildEnvironmentKey falls back to an empty identity when the environment Uri is null, empty, or whitespace.")]
+	[TestCase(null)]
+	[TestCase("")]
+	[TestCase("   ")]
+	public void BuildEnvironmentKey_ShouldReturnEmpty_WhenUriIsNullOrBlank(string? uri) {
+		// Arrange
+		EnvironmentSettings settings = new() { Uri = uri! };
+
+		// Act
+		string key = SectionCreateSerializationGuard.BuildEnvironmentKey(settings);
+
+		// Assert
+		key.Should().BeEmpty(
+			because: "a null/blank Uri has no canonical identity, so it falls back to empty per the normalizer contract");
+	}
+
+	[Test]
+	[Description("Bounds concurrently-parked same-key waiters: with the gate held, issuing MaxConcurrentWaiters + 2 concurrent same-key Run calls makes the excess callers past the bound run best-effort (unserialized) WITHOUT blocking, while within-bound callers stay parked; the semaphore is never over-released and a different key overlaps freely (ENG-93089 #3594140171).")]
+	public void Run_ShouldRunExcessWaitersBestEffort_WhenSameKeyQueueExceedsBound() {
+		// Arrange
+		ILogger logger = Substitute.For<ILogger>();
+		SectionCreateSerializationGuard guard = new(logger);
+		int bound = SectionCreateSerializationGuard.MaxConcurrentWaiters;
+		int callerCount = bound + 2;
+		// The holder counts toward the in-flight bound, so bound-1 callers park and the rest run best-effort.
+		int expectedBestEffort = callerCount - (bound - 1);
+		using ManualResetEventSlim holderEntered = new(false);
+		using ManualResetEventSlim releaseHolder = new(false);
+		using ManualResetEventSlim releaseCallers = new(false);
+		using ManualResetEventSlim otherKeyEntered = new(false);
+		using SemaphoreSlim enteredWork = new(0);
+
+		// The holder occupies the per-key gate (in-flight = 1) so every subsequent same-key caller must queue.
+		Task holder = Task.Run(() => guard.Run("prod", "UsrApp", GenerousWait, () => {
+			holderEntered.Set();
+			releaseHolder.Wait(GenerousWait);
+			return 0;
+		}));
+		holderEntered.Wait(SignalWait).Should().BeTrue(
+			because: "the holder must occupy the per-key gate before the fan-out queues behind it");
+
+		// Act — fan out callerCount same-key callers; each signals when it ENTERS its work, then parks.
+		Task[] callers = new Task[callerCount];
+		for (int i = 0; i < callerCount; i++) {
+			callers[i] = Task.Run(() => guard.Run("prod", "UsrApp", GenerousWait, () => {
+				enteredWork.Release();
+				releaseCallers.Wait(GenerousWait);
+				return 0;
+			}));
+		}
+
+		// A different application key must never be affected by the same-key back-pressure.
+		Task otherKey = Task.Run(() => guard.Run("prod", "UsrOther", GenerousWait, () => {
+			otherKeyEntered.Set();
+			return 0;
+		}));
+
+		// Assert
+		for (int i = 0; i < expectedBestEffort; i++) {
+			enteredWork.Wait(SignalWait).Should().BeTrue(
+				because: "each excess same-key caller past the bound must run best-effort without waiting for the holder to release");
+		}
+
+		enteredWork.Wait(NonEntryWindow).Should().BeFalse(
+			because: "callers within the bound must stay parked on the gate while the holder still holds it (serialization is preserved for them)");
+		otherKeyEntered.Wait(SignalWait).Should().BeTrue(
+			because: "a different application key must overlap freely — the same-key waiter bound must not spill onto it");
+
+		releaseHolder.Set();
+		releaseCallers.Set();
+		Task[] all = [holder, otherKey, .. callers];
+		Action drain = () => Task.WaitAll(all, GenerousWait);
+		drain.Should().NotThrow(
+			because: "releasing the holder must let the parked callers complete with no SemaphoreFullException — the gate is never over-released");
+		logger.Received().WriteWarning(Arg.Is<string>(message =>
+			message.Contains("without serialization", StringComparison.OrdinalIgnoreCase)));
 	}
 }

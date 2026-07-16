@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Concurrent;
 using System.Threading;
 using Clio.Common;
+using Clio.UserEnvironment;
 
 namespace Clio.Command;
 
@@ -25,8 +27,11 @@ public interface ISectionCreateSerializationGuard {
 	/// <paramref name="environmentName"/> + <paramref name="applicationCode"/> (case-insensitive).
 	/// The wait for the mutex is bounded by <paramref name="waitTimeout"/>; on timeout the work runs
 	/// <b>unserialized</b> (best-effort) so a deep queue never becomes a hard failure — any resulting
-	/// contention is recovered by the caller's retry/verify path. The mutex is always released when the
-	/// work completes or throws.
+	/// contention is recovered by the caller's retry/verify path. Additionally, when too many callers
+	/// are already queued on the same key, an excess caller degrades to best-effort <b>immediately</b>
+	/// (fail-fast, without blocking on the mutex) so a deep same-key fan-out cannot park a thread-pool
+	/// worker per waiter and starve unrelated work in a long-lived server process. The mutex is always
+	/// released when the work completes or throws.
 	/// </summary>
 	/// <typeparam name="T">Return type of the guarded work.</typeparam>
 	/// <param name="environmentName">Registered clio environment name (part of the mutex key).</param>
@@ -48,26 +53,84 @@ public sealed class SectionCreateSerializationGuard(ILogger logger) : ISectionCr
 	// (tens at most), and ref-counted removal would race Release against the next GetOrAdd (see its docs).
 	private readonly KeyedSemaphore _sectionCreateLocks = new();
 
+	// Per-key count of callers currently inside the guarded region (the holder plus every caller blocked
+	// on Wait). It bounds how many thread-pool workers a single deep same-key fan-out can park. The
+	// waiter-bound is layered HERE, over the shared KeyedSemaphore, on purpose: KeyedSemaphore is also used
+	// by ComponentRegistryClient, so this create-section-specific back-pressure must not leak into it.
+	private readonly ConcurrentDictionary<string, int> _inFlightPerKey = new(StringComparer.Ordinal);
+
+	// Fail-fast bound on concurrently-parked same-key callers. The guard waits SYNCHRONOUSLY
+	// (SemaphoreSlim.Wait up to waitTimeout, which can be ~120 s) on a thread-pool worker; under a deep
+	// same-application fan-out that would otherwise park N-1 workers for the full wait, risking thread-pool
+	// starvation of unrelated MCP tools in the long-lived server. Once this many callers are already
+	// in-flight for a key, an excess caller runs best-effort (unserialized) immediately instead of parking
+	// another worker — mirroring the existing wait-timeout degrade — and any residual contention is
+	// recovered by the caller's verify/retry path. A small bound is enough: it caps parked workers while
+	// still serializing the shallow bursts that are the actual repro. A full async WaitAsync acquire (which
+	// would not hold a worker while queued) is the deferred alternative and is intentionally out of scope.
+	internal const int MaxConcurrentWaiters = 8;
+
 	/// <inheritdoc />
 	public T Run<T>(string environmentName, string applicationCode, TimeSpan waitTimeout, Func<T> work) {
 		ArgumentNullException.ThrowIfNull(work);
 		string key = BuildKey(environmentName, applicationCode);
-		SemaphoreSlim gate = _sectionCreateLocks.GetOrAdd(key);
-		bool acquired = gate.Wait(waitTimeout);
-		if (!acquired) {
-			logger.WriteWarning(
-				$"Could not acquire the section-create lock for '{applicationCode}' within "
-				+ $"{waitTimeout.TotalSeconds:0}s; proceeding without serialization (best-effort). "
-				+ "Any resulting contention is recovered automatically.");
+		// Reserve a slot BEFORE waiting so the bound counts this caller too; ALWAYS release it in finally.
+		int inFlight = _inFlightPerKey.AddOrUpdate(key, 1, static (_, current) => current + 1);
+		try {
+			if (inFlight > MaxConcurrentWaiters) {
+				// Deep same-key queue: do NOT park another thread-pool worker on Wait. Degrade to best-effort
+				// (unserialized) exactly like the wait-timeout path; residual contention is recovered by the
+				// caller's verify/retry path. This fail-fast bounds parked workers so a deep queue cannot
+				// exhaust the pool; an async acquire is the deferred, non-parking alternative.
+				logger.WriteWarning(
+					$"Section-create queue for '{applicationCode}' is deep ({inFlight} concurrent callers, "
+					+ $"bound {MaxConcurrentWaiters}); proceeding without serialization (best-effort) to avoid "
+					+ "parking a thread-pool worker. Any resulting contention is recovered automatically.");
+				return work();
+			}
+
+			SemaphoreSlim gate = _sectionCreateLocks.GetOrAdd(key);
+			bool acquired = gate.Wait(waitTimeout);
+			if (!acquired) {
+				logger.WriteWarning(
+					$"Could not acquire the section-create lock for '{applicationCode}' within "
+					+ $"{waitTimeout.TotalSeconds:0}s; proceeding without serialization (best-effort). "
+					+ "Any resulting contention is recovered automatically.");
+			}
+
+			try {
+				return work();
+			} finally {
+				if (acquired) {
+					gate.Release();
+				}
+			}
+		} finally {
+			_inFlightPerKey.AddOrUpdate(key, 0, static (_, current) => current - 1);
+		}
+	}
+
+	/// <summary>
+	/// Derives the canonical per-environment part of the guard key from resolved environment settings so
+	/// that BOTH <c>create-app-section</c> overloads — the registered-name path and the settings-based
+	/// MCP-HTTP passthrough path — map the same physical Creatio server onto the SAME serialization gate.
+	/// Normalizes the connection identity from <see cref="EnvironmentSettings.Uri"/>: trims surrounding
+	/// whitespace, lower-cases, and strips a single trailing <c>'/'</c>; a <c>null</c>/blank Uri falls back
+	/// to <see cref="string.Empty"/>. Without a single canonical identity the two overloads keyed off
+	/// different strings (registered name vs. raw Uri) and same-server creates via different overloads were
+	/// not serialized against each other (ENG-93089, #3594140065).
+	/// </summary>
+	/// <param name="settings">Resolved environment settings; must not be <c>null</c>.</param>
+	/// <returns>The normalized environment identity used as the first part of the guard key.</returns>
+	internal static string BuildEnvironmentKey(EnvironmentSettings settings) {
+		ArgumentNullException.ThrowIfNull(settings);
+		string uri = settings.Uri?.Trim() ?? string.Empty;
+		if (uri.Length == 0) {
+			return string.Empty;
 		}
 
-		try {
-			return work();
-		} finally {
-			if (acquired) {
-				gate.Release();
-			}
-		}
+		uri = uri.ToLowerInvariant();
+		return uri.EndsWith('/') ? uri[..^1] : uri;
 	}
 
 	// The key joins the lower-cased environment name and application code so callers that differ only by

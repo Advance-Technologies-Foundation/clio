@@ -255,8 +255,12 @@ public sealed class ApplicationSectionCreateService(
 		// resolution at both call sites and name-based validation/polling application-info reads) so
 		// stdio / registered-environment behavior is untouched (ENG-93347 AC-08).
 		EnvironmentOptions cultureOptions = new() { Environment = environmentName };
+		// Key the serialization guard off the CANONICAL environment identity (normalized Uri), NOT the
+		// registered name, so a registered-name call and a settings-based MCP-HTTP passthrough call to the
+		// SAME physical server resolve to the SAME per-application gate and serialize against each other
+		// (ENG-93089, #3594140065).
 		return CreateSectionCore(
-			environmentName,
+			SectionCreateSerializationGuard.BuildEnvironmentKey(environmentSettings),
 			environmentSettings,
 			request,
 			overrideCulture => captionCultureResolver.Resolve(cultureOptions, overrideCulture),
@@ -277,10 +281,12 @@ public sealed class ApplicationSectionCreateService(
 		// ADR OQ-01 (c1) rule: a settings-based overload never calls a name-based overload or
 		// ISettingsRepository — all FOUR nested calls (the readback-culture and profile-validation
 		// caption-culture resolutions, and the validation + polling application-info reads) go through
-		// the Story-2 settings-based overloads. The serialization guard is keyed off the environment URI
-		// here (no registered name is available on the passthrough path) plus the application code.
+		// the Story-2 settings-based overloads. The serialization guard is keyed off the CANONICAL
+		// environment identity (normalized Uri) plus the application code — the SAME derivation the
+		// name-based overload uses — so both overloads serialize against each other for one server
+		// (ENG-93089, #3594140065).
 		return CreateSectionCore(
-			environmentSettings.Uri ?? string.Empty,
+			SectionCreateSerializationGuard.BuildEnvironmentKey(environmentSettings),
 			environmentSettings,
 			request,
 			overrideCulture => captionCultureResolver.Resolve(environmentSettings, overrideCulture),
@@ -398,7 +404,7 @@ public sealed class ApplicationSectionCreateService(
 	/// <see cref="ApplicationSectionCreateFailureClass"/> failure otherwise. It never runs the read-only
 	/// success readback — that happens outside so queued readbacks overlap.
 	/// </summary>
-	/// <param name="serializationGuardKey">Per-environment part of the guard key (registered clio environment name on the name-based path, environment URI on the settings-based passthrough path).</param>
+	/// <param name="serializationGuardKey">Canonical per-environment part of the guard key (the normalized environment Uri from <see cref="SectionCreateSerializationGuard.BuildEnvironmentKey"/>) — identical for both overloads so same-server creates serialize (ENG-93089, #3594140065).</param>
 	/// <param name="applicationCode">Installed application code (part of the guard key).</param>
 	/// <param name="resolvedRequest">Resolved section-create request (carries the generated section id).</param>
 	/// <param name="requestBody">Serialized InsertQuery body for the section.</param>
