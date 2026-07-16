@@ -34,6 +34,9 @@ public sealed class RecordRightsGuidanceResource {
 		       - A DASHBOARD (or any client-unit schema): --entity SysSchemaAdminUnit --record-id <schema UId>.
 		         Resolve the schema UId from its name yourself with execute-esq: select UId where Name = '<SchemaName>'
 		         on SysUserLevelSchema (personal schemas) first, then SysSchema (configuration schemas).
+		         For a DASHBOARD, ALSO read `get-guidance name=dashboard-rights` — grants are DATA (lost when the
+		         package moves to another environment); it covers re-applying them on the target vs shipping them
+		         as a package data binding.
 
 		       Grantee is a SysAdminUnit GUID (a role or user id). Resolve a name to its id yourself (e.g. execute-esq
 		       on SysAdminUnit by Name) — names are NOT unique, so the tools take the id, not a name.
