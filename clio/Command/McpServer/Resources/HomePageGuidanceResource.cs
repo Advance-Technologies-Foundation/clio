@@ -51,18 +51,23 @@ public sealed class HomePageGuidanceResource {
 		          sizes as a dashboard. Author each widget's payload per `indicator-widget` (metrics) /
 		          `chart-widget` (charts) and edit the page body per `page-modification`. A home page is
 		          standalone: it has no `DashboardDS` page-data filter, so ignore that dashboard-only binding.
-		       5. Identify the target workplace(s): read `SysWorkplace` with `odata-read` (select `Id`, `Name`,
-		          `HomePageUId`) to get each workplace `Id` and its current home page. Prefer `odata-read` here —
-		          `SysWorkplace` is a restricted system object and `execute-esq` (DataService) can return 401 on
-		          it. A workplace has one home page, so bind each workplace the page should apply to. If the user
-		          did NOT name a target workplace, do not pick one yourself — present the `Name` list (mark which
-		          already have a home page, since binding replaces it) and ask which workplace(s) to bind before
-		          mutating. The workplace must ALREADY exist — if a named one is not found, stop and ask the user
-		          rather than creating it: a workplace spans several tables (`SysWorkplace` +
-		          `SysModuleInWorkplace` sections + `SysAdminUnitInWorkplace` access), clio has no tool to create
-		          one, and it is set up in the Creatio UI. This is the app workplace `SysWorkplace` — NOT clio's
-		          `create-workspace` (a local project folder) and NOT the dev `SysWorkspace` table; do not use
-		          those here.
+		       5. Choose and read the target workplace(s): read `SysWorkplace` (select `Id`, `Name`, `HomePageUId`)
+		          via `odata-read` or `execute-esq` — if one path errors, try the other. A workplace has one home
+		          page, so bind each workplace the page should apply to.
+		          - If the user did NOT name a workplace, do not pick one yourself — present the `Name` list (mark
+		            which already have a home page, since binding replaces it) and ask.
+		          - The workplace(s) where the page's app registers its SECTIONS (`SysModuleInWorkplace` — e.g.
+		            `My applications` or `Studio` for a composable app in development) are NATURAL candidates:
+		            offer and highlight them, but don't silently auto-pick and don't treat any workplace as
+		            off-limits. Choosing the workplace is a separate decision from where the sections live.
+		          - Reconcile with the requested audience: if the request scopes the page to a role (e.g. "only
+		            Sales Manager"), the target should be a workplace whose audience matches (see Access / roles
+		            below). If the app's own workplace doesn't match that role, surface it and confirm.
+		          - The workplace must ALREADY exist — if a named one is not found, stop and ask rather than
+		            creating it: a workplace spans several tables (`SysWorkplace` + `SysModuleInWorkplace` sections +
+		            `SysAdminUnitInWorkplace` access), clio has no tool to create one, and it is set up in the
+		            Creatio UI. This is the app workplace `SysWorkplace` — NOT clio's `create-workspace` (a local
+		            project folder) and NOT the dev `SysWorkspace` table.
 		       6. Point each target workplace at the page and persist it as a DB-first package data binding so it
 		          ships with the package. You are UPDATING an existing workplace row (not creating one):
 		          a. `create-data-binding-db` (schema `SysWorkplace`, your `package`) to establish the binding. It
@@ -77,6 +82,17 @@ public sealed class HomePageGuidanceResource {
 		       To UNSET a workplace's home page later, upsert `HomePageUId` back to
 		       `00000000-0000-0000-0000-000000000000`. Do NOT use `remove-data-binding-row-db` for this: it
 		       DELETES the whole `SysWorkplace` row (the entire workplace), not just the home-page value.
+
+		       ## Access / roles
+
+		       A home page is NOT role-secured on its own — a user sees it because they opened a workplace whose
+		       `HomePageUId` points at it. Its audience therefore equals the audience of the workplace(s) you bind
+		       it to, controlled by `SysAdminUnitInWorkplace` (which roles/users see the workplace). To scope a home
+		       page to specific roles, bind it to a workplace whose audience is those roles. To ADD a role to an
+		       existing workplace, insert a `SysAdminUnitInWorkplace` row via `create-data-binding-db` (schema
+		       `SysAdminUnitInWorkplace`, `rows` a new `{Id, SysWorkplaceId, SysAdminUnitId}`; resolve the role
+		       `Id` from `SysAdminUnit` by name) — a security-relevant write, so confirm with the user first. clio
+		       has no tool to CREATE a workplace or its sections — that stays in the Creatio UI.
 		       """
 	};
 
