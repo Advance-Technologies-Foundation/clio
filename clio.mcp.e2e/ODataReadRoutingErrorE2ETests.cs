@@ -33,6 +33,7 @@ public sealed class ODataReadRoutingErrorE2ETests {
 		// Arrange
 		string tempHome = Path.Combine(Path.GetTempPath(), $"clio-odata-routing-e2e-{Guid.NewGuid():N}");
 		Directory.CreateDirectory(tempHome);
+		try {
 		string envVarName = OperatingSystem.IsWindows() ? "LOCALAPPDATA" : "HOME";
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
@@ -81,8 +82,22 @@ public sealed class ODataReadRoutingErrorE2ETests {
 			because: "a {Message, MessageDetail} routing body must be surfaced as a failure, not wrapped as a single-entity success");
 		response.Error.Should().Contain($"controller named '{UnregisteredEntity}'",
 			because: "the MessageDetail should be surfaced so the caller sees the unregistered-controller cause");
-		response.Error.Should().Contain("compiled and the application is restarted",
-			because: "the unregistered-entity hint should steer the agent away from reading this as a data gap");
+		response.Error.Should().Contain(ODataResponseError.UnregisteredEntityHint,
+			because: "the unregistered-entity hint (asserted via the shared constant to avoid literal drift) should steer the agent to wait-and-retry, not read this as a data gap");
+		}
+		finally {
+			TryDeleteDirectory(tempHome);
+		}
+	}
+
+	private static void TryDeleteDirectory(string path) {
+		try {
+			if (Directory.Exists(path)) {
+				Directory.Delete(path, recursive: true);
+			}
+		} catch {
+			// Best-effort cleanup of the isolated home directory; a leaked temp dir must not fail the test.
+		}
 	}
 
 	private static async Task RegisterEnvironmentAsync(

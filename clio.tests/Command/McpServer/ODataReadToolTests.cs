@@ -505,8 +505,8 @@ public sealed class ODataReadToolTests {
 			because: "a {Message, MessageDetail} 404 routing body must not be reported as a successful single-entity read");
 		response.Error.Should().Contain("controller named 'UsrCustomerStatus'",
 			because: "the MessageDetail should be surfaced so the caller sees the unregistered-controller cause");
-		response.Error.Should().Contain("compiled and the application is restarted",
-			because: "the unregistered-entity hint should steer the agent away from reading this as a data gap");
+		response.Error.Should().Contain(ODataResponseError.UnregisteredEntityHint,
+			because: "the unregistered-entity hint (asserted via the shared constant to avoid literal drift) should steer the agent to wait-and-retry, not read this as a data gap");
 	}
 
 	[Test]
@@ -532,7 +532,7 @@ public sealed class ODataReadToolTests {
 			because: "a bare {Message} body with no entity members is an error, not a single-entity record");
 		response.Error.Should().Contain("Authorization has been denied",
 			because: "the Message text should be surfaced verbatim to the caller");
-		response.Error.Should().NotContain("compiled and the application is restarted",
+		response.Error.Should().NotContain(ODataResponseError.UnregisteredEntityHint,
 			because: "without MessageDetail the failure is not identifiable as a routing error, so the registration hint must not be appended");
 	}
 
@@ -563,5 +563,30 @@ public sealed class ODataReadToolTests {
 			because: "the entity payload must be preserved verbatim, including its Message column");
 		messageColumn.GetString().Should().Be("Hello there",
 			because: "the real Message column value must not be swallowed by the routing-error detection");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The absolute request URI carried by a bare-Message routing body (the shape hardened sites return once MessageDetail is stripped) is redacted before reaching the caller, matching the sibling error paths.")]
+	public void Read_Should_Redact_Server_Uri_In_Routing_Error() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		commandResolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://secret-host:88/prod-app/0/odata/UsrCustomerStatus?$top=25");
+		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"Message\":\"No HTTP resource was found that matches the request URI 'http://secret-host:88/prod-app/0/odata/UsrCustomerStatus'.\"}");
+		ODataReadTool tool = new(commandResolver);
+
+		// Act
+		ODataReadResponse response = tool.Read(new ODataReadArgs { EnvironmentName = "dev", Entity = "UsrCustomerStatus" });
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a bare-Message routing body must still be surfaced as a failure");
+		response.Error.Should().NotContain("secret-host",
+			because: "the environment host embedded in the routing Message must be redacted like every sibling error path, not leaked into the transcript");
 	}
 }

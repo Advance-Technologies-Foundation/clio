@@ -14,13 +14,17 @@ namespace Clio.Command.McpServer.Tools;
 internal static class ODataResponseError {
 	/// <summary>
 	/// Hint appended to a detected routing error. A 404 "no controller found" is the shape Creatio
-	/// returns for an OData entity set that is not registered yet — most commonly a freshly-created
-	/// custom object or lookup whose schema has not been compiled/published, so it must not be read
-	/// as a data gap.
+	/// returns for an OData entity set that is not queryable yet. Its most common cause is the
+	/// asynchronous OData rebuild that follows create-entity-schema/create-lookup, so the wording is
+	/// deliberately retry-first (aligned with the core-rules guidance) and only escalates to
+	/// compile/restart when a retry does not resolve it — never steering the agent to restart the
+	/// whole application for what is usually a ~1-2 minute wait.
 	/// </summary>
 	internal const string UnregisteredEntityHint =
-		"The OData entity set may not be registered: a freshly-created custom object or lookup is not "
-		+ "queryable by OData entity name until its schema is compiled and the application is restarted.";
+		"The OData entity set is not queryable yet. If it was just created with create-entity-schema or "
+		+ "create-lookup, this is the expected ~1-2 min asynchronous OData rebuild: wait briefly and retry, "
+		+ "do not compile or restart. Compile and restart only if it still fails after retrying (for example "
+		+ "an entity deployed without compilation).";
 
 	/// <summary>
 	/// Attempts to recognize a Creatio error body that the transport returned with a non-failing
@@ -58,19 +62,28 @@ internal static class ODataResponseError {
 
 		// ASP.NET Web API routing error: { "Message": ..., "MessageDetail": ... } with no exception
 		// members. This is a 404 "No HTTP resource / no controller found" for an unregistered entity
-		// set. A real OData response always carries other members (@odata.context, value, entity
-		// columns), so a body whose only members are Message (+ MessageDetail) is an error, not data.
-		// The detection is deliberately locked to that shape: it must never pre-empt a real payload.
+		// set. Detection is deliberately locked to that shape and must never pre-empt a real payload:
+		// a genuine OData response always carries another member — an @odata.context annotation
+		// (present under the default OData metadata level this tool relies on), a value collection
+		// wrapper, or the created record's Id — so a body whose only members are Message (+
+		// MessageDetail) is an error, not data. NOTE: this safety rests on default OData metadata; a
+		// single-entity read served with odata.metadata=none that selected only a Message-named column
+		// would lose its distinguishing member and be misclassified. No current call site does that
+		// (odata-read hits the collection endpoint; odata-create echoes an Id), so the precondition is
+		// safe today — revisit this branch before adding a by-key/metadata=none read path.
 		if (root.TryGetProperty("Message", out JsonElement bareMessage)
 			&& bareMessage.ValueKind == JsonValueKind.String
 			&& !HasNonRoutingErrorMembers(root)) {
 			// MessageDetail ("No type was found that matches the controller named 'X'") is the routing
 			// discriminator, so the unregistered-entity hint is appended only when it is present; a bare
 			// Message body is surfaced verbatim to avoid misattributing an unrelated error's cause.
-			message = root.TryGetProperty("MessageDetail", out JsonElement detail)
-				&& detail.ValueKind == JsonValueKind.String
-				? $"{detail.GetString()} {UnregisteredEntityHint}"
-				: bareMessage.GetString()!;
+			string? detail = First(root, "MessageDetail");
+			if (!string.IsNullOrEmpty(detail)) {
+				message = $"{detail} {UnregisteredEntityHint}";
+			} else {
+				string? bare = First(root, "Message");
+				message = string.IsNullOrEmpty(bare) ? "Creatio returned an empty error response." : bare!;
+			}
 			return true;
 		}
 

@@ -90,7 +90,9 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver) {
 			using JsonDocument doc = JsonDocument.Parse(json);
 			JsonElement root = doc.RootElement;
 			if (ODataResponseError.TryDetect(root, out string serverError)) {
-				return new ODataRowResult { Index = index, Success = false, Error = serverError };
+				// Redact like the sibling error paths: a routing Message can embed the absolute request
+				// URI (host/port/app path), which must not leak into the MCP transcript or logs.
+				return new ODataRowResult { Index = index, Success = false, Error = SensitiveErrorTextRedactor.Redact(serverError) };
 			}
 			// The primary key is normally a GUID string, but some entities key on a numeric column;
 			// accept either representation so a created record is never misreported as a failure.
