@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Xml.Linq;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Progress;
 using Clio.Command.McpServer.Tools;
@@ -44,10 +43,9 @@ public sealed class UninstallCreatioWarningE2ETests {
 			Assert.Fail("Configure McpE2E:Sandbox:EnvironmentName for the explicitly opted-in disposable uninstall sandbox.");
 		}
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		string environmentPath = string.IsNullOrWhiteSpace(settings.Sandbox.EnvironmentPath)
-			? ClioEnvironmentCommandResolver.ResolveEnvironmentPath(settings, settings.Sandbox.EnvironmentName!)
-			: Path.GetFullPath(settings.Sandbox.EnvironmentPath);
-		string appPoolName = ResolveAppPoolName(environmentPath);
+		string environmentUri = ClioEnvironmentCommandResolver.ResolveEnvironmentUri(
+			settings, settings.Sandbox.EnvironmentName!);
+		string appPoolName = IisApplicationPoolResolver.Resolve(environmentUri);
 		using ServiceProvider services = new ServiceCollection()
 			.AddSingleton<IWindowsUserProfileApi, WindowsUserProfileApi>()
 			.BuildServiceProvider();
@@ -199,47 +197,6 @@ public sealed class UninstallCreatioWarningE2ETests {
 			File.Delete(entry);
 		}
 		Directory.Delete(path, recursive: false);
-	}
-
-	private static string ResolveAppPoolName(string environmentPath) {
-		string appCmd = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows),
-			"System32", "inetsrv", "appcmd.exe");
-		string vdirsXml = RunAppCmd(appCmd, "list", "vdir", "/xml");
-		XElement root = XElement.Parse(vdirsXml);
-		string normalizedTarget = Path.GetFullPath(environmentPath).TrimEnd(Path.DirectorySeparatorChar);
-		XElement vdir = root.Elements("VDIR").Single(element => {
-			string physicalPath = element.Attribute("physicalPath")?.Value ?? string.Empty;
-			return string.Equals(Path.GetFullPath(physicalPath).TrimEnd(Path.DirectorySeparatorChar),
-				normalizedTarget, StringComparison.OrdinalIgnoreCase);
-		});
-		string appName = vdir.Attribute("APP.NAME")?.Value
-			?? throw new InvalidOperationException("The sandbox IIS virtual directory has no APP.NAME.");
-		return RunAppCmd(appCmd, "list", "app", appName, "/text:applicationPool").Trim();
-	}
-
-	private static string RunAppCmd(string appCmd, params string[] arguments) {
-		return RunProcess(appCmd, arguments);
-	}
-
-	private static string RunProcess(string executable, IEnumerable<string> arguments) {
-		ProcessStartInfo startInfo = new(executable) {
-			UseShellExecute = false,
-			RedirectStandardOutput = true,
-			RedirectStandardError = true,
-			CreateNoWindow = true
-		};
-		foreach (string argument in arguments) {
-			startInfo.ArgumentList.Add(argument);
-		}
-		using Process process = Process.Start(startInfo)
-			?? throw new InvalidOperationException("Could not start IIS appcmd.exe.");
-		string output = process.StandardOutput.ReadToEnd();
-		string error = process.StandardError.ReadToEnd();
-		process.WaitForExit();
-		if (process.ExitCode != 0) {
-			throw new InvalidOperationException($"{Path.GetFileName(executable)} failed with exit code {process.ExitCode}: {error}");
-		}
-		return output;
 	}
 
 	private static bool HasWarningTerminalStream(IReadOnlyList<JsonNode> rawParams) {
