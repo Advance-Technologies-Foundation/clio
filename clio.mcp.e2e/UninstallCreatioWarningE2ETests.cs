@@ -45,7 +45,12 @@ public sealed class UninstallCreatioWarningE2ETests {
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string environmentUri = ClioEnvironmentCommandResolver.ResolveEnvironmentUri(
 			settings, settings.Sandbox.EnvironmentName!);
-		string appPoolName = IisApplicationPoolResolver.Resolve(environmentUri);
+		string? expectedApplicationPoolName = settings.Sandbox.ApplicationPoolName;
+		if (string.IsNullOrWhiteSpace(expectedApplicationPoolName)) {
+			expectedApplicationPoolName = TeamCityBuildParameterResolver.Resolve("ApplicationPoolName");
+		}
+		string appPoolName = IisApplicationPoolResolver.Resolve(
+			environmentUri, expectedApplicationPoolName);
 		using ServiceProvider services = new ServiceCollection()
 			.AddSingleton<IWindowsUserProfileApi, WindowsUserProfileApi>()
 			.BuildServiceProvider();
