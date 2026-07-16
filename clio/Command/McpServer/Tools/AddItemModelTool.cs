@@ -21,7 +21,6 @@ public sealed class AddItemModelTool(
 	ILogger logger,
 	IToolCommandResolver commandResolver,
 	IFileSystem fileSystem) {
-	private static readonly object CommandExecutionLock = new();
 
 	/// <summary>
 	/// Stable MCP tool name for all-model generation.
@@ -65,24 +64,34 @@ public sealed class AddItemModelTool(
 
 	private CommandExecutionResult Execute(AddItemCommand command, AddItemOptions options, string outputFolderPath) {
 		int exitCode = -1;
-		lock (CommandExecutionLock) {
+		// FR-05: per-tenant lock keyed by the environment the model generation resolves under (replaces
+		// the former tool-local static lock that serialized add-item model across ALL tenants).
+		string tenantKey = commandResolver.GetTenantKey(options);
+		lock (McpToolExecutionLock.GetLock(tenantKey)) {
+			McpToolExecutionLock.MarkInUse(tenantKey);
 			bool previousPreserveMessages = logger.PreserveMessages;
 			logger.PreserveMessages = true;
 			try {
 				exitCode = command.Execute(options);
 				Thread.Sleep(500);
-				CommandExecutionResult result = new(exitCode, [.. logger.LogMessages.ToList()]);
+				// FR-11 (review): redact the self-captured snapshot on a passthrough request (no-op off
+				// passthrough), matching the main path's RunCommandUnderHeldLock redaction.
+				CommandExecutionResult result = new(exitCode,
+					[.. McpPassthroughRedaction.SanitizeAndRedact([.. logger.LogMessages], tenantKey)]);
 				logger.ClearMessages();
 				return AddItemModelToolOutputCompactor.Compact(result, fileSystem, outputFolderPath);
 			}
 			catch (Exception exception) {
-				List<LogMessage> logMessages = [.. logger.LogMessages, new ErrorMessage(SensitiveErrorTextRedactor.Redact(exception.Message))];
+				List<LogMessage> logMessages = [
+					.. McpPassthroughRedaction.SanitizeAndRedact([.. logger.LogMessages], tenantKey),
+					new ErrorMessage(SensitiveErrorTextRedactor.Redact(exception.Message))];
 				CommandExecutionResult result = new(1, logMessages);
 				logger.ClearMessages();
 				return AddItemModelToolOutputCompactor.Compact(result, fileSystem, outputFolderPath);
 			}
 			finally {
 				logger.PreserveMessages = previousPreserveMessages;
+				McpToolExecutionLock.MarkAvailable(tenantKey);
 			}
 		}
 	}

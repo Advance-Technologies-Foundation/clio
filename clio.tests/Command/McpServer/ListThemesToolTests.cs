@@ -195,6 +195,33 @@ public class ListThemesToolTests {
 	}
 
 	[Test]
+	[Description("Redacts a sensitive ThemeService error body before it crosses into the MCP client transcript (review: b-horodyskyi — the TryGetAvailableThemes errorMessage out-param bypassed ExecuteResolved's exception handling entirely).")]
+	[Category("Unit")]
+	public void ListThemes_ShouldRedactSensitiveText_WhenCommandReportsFailure() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeListThemesCommand defaultCommand = new();
+		FakeListThemesCommand resolvedCommand = new(themes: null, success: false,
+			error: "Unexpected response from server: https://internal-host.example/ThemeService?token=sekret123");
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<ListThemesCommand>(Arg.Any<ListThemesOptions>()).Returns(resolvedCommand);
+		commandResolver.Resolve<ICreatioVersionChecker>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ICreatioVersionChecker>());
+		ListThemesTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		ListThemesResult result = tool.ListThemes(new ListThemesArgs(EnvironmentName: "docker_fix2"));
+
+		// Assert
+		result.Success.Should().BeFalse(because: "an explicit success=false read must surface as a tool failure");
+		result.Error.Should().NotContain("internal-host.example",
+			because: "the server-provided errorMessage can carry a target host, so it must be redacted before crossing the MCP boundary");
+		result.Error.Should().NotContain("sekret123",
+			because: "the server-provided errorMessage can carry a credential value, so it must be redacted before crossing the MCP boundary");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
 	[Description("Returns a structured failure naming environment-name when the required environment name is omitted.")]
 	[Category("Unit")]
 	public void ListThemes_ShouldReturnFailure_WhenEnvironmentNameIsMissing() {

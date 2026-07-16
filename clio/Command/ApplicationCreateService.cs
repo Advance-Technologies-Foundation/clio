@@ -25,6 +25,21 @@ public interface IApplicationCreateService
 	/// <param name="request">Application creation request payload.</param>
 	/// <returns>The created application's structured metadata.</returns>
 	ApplicationInfoResult CreateApplication(string environmentName, ApplicationCreateRequest request);
+
+	/// <summary>
+	/// Creates a new Creatio application against an already-resolved environment.
+	/// Behaves identically to <see cref="CreateApplication(string, ApplicationCreateRequest)"/> except it
+	/// never consults <see cref="Clio.UserEnvironment.ISettingsRepository"/> — the caller supplies the
+	/// settings directly (e.g. an MCP passthrough tenant resolved from request headers) — and every
+	/// nested call it makes (the caption-culture resolution and the application-info polling/readback)
+	/// uses the settings-based overloads of <see cref="ICaptionCultureResolver"/> and
+	/// <see cref="IApplicationInfoService"/>, never the name-based ones (ENG-93347, ADR OQ-01 c1 rule).
+	/// </summary>
+	/// <param name="environmentSettings">The already-resolved environment settings; must not be <c>null</c>.</param>
+	/// <param name="request">Application creation request payload.</param>
+	/// <returns>The created application's structured metadata.</returns>
+	/// <exception cref="ArgumentNullException"><paramref name="environmentSettings"/> is <c>null</c>.</exception>
+	ApplicationInfoResult CreateApplication(EnvironmentSettings environmentSettings, ApplicationCreateRequest request);
 }
 
 /// <summary>
@@ -82,11 +97,43 @@ public sealed class ApplicationCreateService(
 				EnvironmentNotFoundError.Build(environmentName, settingsRepository));
 		}
 
+		// The name-based path keeps its pre-change nested calls byte-for-byte (name-based culture
+		// resolution and name-based polling/readback) so stdio / registered-environment behavior is
+		// untouched (ENG-93347 AC-07).
+		return CreateApplicationCore(
+			environmentSettings,
+			request,
+			() => captionCultureResolver.Resolve(new EnvironmentOptions { Environment = environmentName }, null),
+			(appId, appCode) => applicationInfoService.GetApplicationInfo(environmentName, appId, appCode));
+	}
+
+	/// <inheritdoc />
+	public ApplicationInfoResult CreateApplication(EnvironmentSettings environmentSettings, ApplicationCreateRequest request)
+	{
+		ArgumentNullException.ThrowIfNull(environmentSettings);
+		ArgumentNullException.ThrowIfNull(request);
+		ValidateRequest(request);
+
+		// ADR OQ-01 (c1) rule: a settings-based overload never calls a name-based overload or
+		// ISettingsRepository — both nested calls (caption culture at the guard below, application-info
+		// polling/readback in the retry loop) go through the Story-2 settings-based overloads.
+		return CreateApplicationCore(
+			environmentSettings,
+			request,
+			() => captionCultureResolver.Resolve(environmentSettings, null),
+			(appId, appCode) => applicationInfoService.GetApplicationInfo(environmentSettings, appId, appCode));
+	}
+
+	private ApplicationInfoResult CreateApplicationCore(
+		EnvironmentSettings environmentSettings,
+		ApplicationCreateRequest request,
+		Func<string> resolveProfileCulture,
+		Func<string?, string, ApplicationInfoResult> loadApplicationInfo)
+	{
 		// ENG-91044: the application name/description are localized server-side under the connected
 		// user's profile culture (create-app is scalar-only with no caption-culture knob), so reject
 		// text whose script does not match the profile culture (e.g. Cyrillic under an en-US profile).
-		string profileCultureForCaption = captionCultureResolver.Resolve(
-			new EnvironmentOptions { Environment = environmentName }, null);
+		string profileCultureForCaption = resolveProfileCulture();
 		CaptionCultureScriptGuard.EnsureCaptionMatchesCulture(profileCultureForCaption, request.Name, "name");
 		CaptionCultureScriptGuard.EnsureCaptionMatchesCulture(profileCultureForCaption, request.Description, "description");
 
@@ -107,7 +154,7 @@ public sealed class ApplicationCreateService(
 		{
 			logger.EndSpinner(false);
 			logger.WriteInfo($"Request timed out, polling for application '{resolvedRequest.Code}'...");
-			return PollApplicationInfo(environmentName, resolvedRequest.Code, exception, schemaNamePrefix);
+			return PollApplicationInfo(loadApplicationInfo, resolvedRequest.Code, exception, schemaNamePrefix);
 		}
 		catch
 		{
@@ -129,7 +176,7 @@ public sealed class ApplicationCreateService(
 		}
 
 		logger.EndSpinner(true);
-		return LoadCreatedApplication(environmentName, resolvedRequest.Code, response.Value, schemaNamePrefix);
+		return LoadCreatedApplication(loadApplicationInfo, resolvedRequest.Code, response.Value, schemaNamePrefix);
 	}
 
 	private static void ValidateRequest(ApplicationCreateRequest request)
@@ -442,11 +489,12 @@ public sealed class ApplicationCreateService(
 	private static string ReadSchemaNamePrefix(ISysSettingsManager sysSettingsManager) =>
 		SysSettingCodes.ReadSchemaNamePrefix(sysSettingsManager);
 
-	private ApplicationInfoResult LoadCreatedApplication(string environmentName, string appCode, string appId,
+	private ApplicationInfoResult LoadCreatedApplication(
+		Func<string?, string, ApplicationInfoResult> loadApplicationInfo, string appCode, string appId,
 		string schemaNamePrefix)
 	{
 		ApplicationInfoResult result = LoadApplicationInfoWithRetry(
-			environmentName,
+			loadApplicationInfo,
 			appId,
 			appCode,
 			$"Application '{appCode}' was created but its metadata could not be loaded");
@@ -454,13 +502,13 @@ public sealed class ApplicationCreateService(
 	}
 
 	private ApplicationInfoResult PollApplicationInfo(
-		string environmentName,
+		Func<string?, string, ApplicationInfoResult> loadApplicationInfo,
 		string appCode,
 		Exception timeoutException,
 		string schemaNamePrefix)
 	{
 		ApplicationInfoResult result = LoadApplicationInfoWithRetry(
-			environmentName,
+			loadApplicationInfo,
 			null,
 			appCode,
 			$"CreateApp request timed out and application '{appCode}' could not be loaded",
@@ -469,7 +517,7 @@ public sealed class ApplicationCreateService(
 	}
 
 	private ApplicationInfoResult LoadApplicationInfoWithRetry(
-		string environmentName,
+		Func<string?, string, ApplicationInfoResult> loadApplicationInfo,
 		string? appId,
 		string appCode,
 		string failurePrefix,
@@ -481,7 +529,7 @@ public sealed class ApplicationCreateService(
 			try
 			{
 				logger.WriteInfo($"Waiting for application '{appCode}' to be ready... (attempt {attempt}/{PollAttempts})");
-				return applicationInfoService.GetApplicationInfo(environmentName, appId, appCode);
+				return loadApplicationInfo(appId, appCode);
 			}
 			catch (InvalidOperationException exception)
 			{

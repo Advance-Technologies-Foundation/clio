@@ -48,6 +48,10 @@ public class InstallerCommandTool(
 				 `show-passing-infrastructure`, and then call `deploy-creatio` with the selected arguments.
 				 Deployment preserves the build database's existing forced-password-change state and does not
 				 clear it automatically.
+				 For local IIS, `useHttps` prefers a matching usable LocalMachine/My certificate and falls back
+				 to HTTP with a warning when no usable certificate is installed.
+				 When local dbHub synchronization is enabled, deployment reconciles its database source only after
+				 readiness succeeds; a dbHub warning is non-fatal and produces success-with-warnings progress.
 				 """)]
 	public CommandExecutionResult DeployCreatio(
 		RequestContext<CallToolRequestParams> requestContext,
@@ -65,6 +69,7 @@ public class InstallerCommandTool(
 			SitePort = args.SitePort,
 			DbServerName = args.DbServerName,
 			RedisServerName = args.RedisServerName,
+			UseHttps = args.UseHttps,
 			RedisDb = -1,
 			DisableResetPassword = false,
 			AutoRun = true,
@@ -110,5 +115,9 @@ public sealed record DeployCreatioArgs(
 
 	[property: JsonPropertyName("redisServerName")]
 	[property: Description("Optional local Redis server configuration name")]
-	string? RedisServerName
+	string? RedisServerName,
+
+	[property: JsonPropertyName("useHttps")]
+	[property: Description("Prefer HTTPS for local IIS deployment; falls back to HTTP when no usable certificate is installed")]
+	bool UseHttps = false
 );

@@ -7,6 +7,7 @@ using System.Reflection;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Clio;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using Clio.Theming;
@@ -245,42 +246,53 @@ public sealed class BuildThemeToolTests
 	}
 
 	[Test]
-	[Description("Resolves the template version from the named environment via the platform-version resolver.")]
+	[Description("AC-06 (registered-env-via-tool, ADR Consequences note on ResolveSettingsAndKey's Fill step): given a registered environment supplied via environment-name (non-passthrough) with a commandResolver, the TOOL's commandResolver.Resolve performs the registry lookup, and the command resolves the version against the returned settings directly via _resolverFactory (no repository call from the command).")]
 	public void BuildTheme_ShouldResolveVersionFromEnvironment_WhenEnvironmentNameProvided() {
 		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		EnvironmentSettings env = new() { Uri = "http://env" };
-		_settingsRepository.FindEnvironment("dev").Returns(env);
+		commandResolver.Resolve<EnvironmentSettings>(Arg.Is<EnvironmentOptions>(o => o.Environment == "dev")).Returns(env);
 		IPlatformVersionResolver resolver = Substitute.For<IPlatformVersionResolver>();
 		resolver.ResolveAsync(Arg.Any<CancellationToken>())
 			.Returns(Task.FromResult(new PlatformVersionResolution("10.0.1", VersionResolutionSource.Environment)));
 		_resolverFactory.Create(env).Returns(resolver);
+		BuildThemeCommand command = new(_themeCssBuilder, _themeTemplateProvider, _resolverFactory, _settingsRepository,
+			_workspacePathBuilder, _fileSystem, Substitute.For<ILogger>());
+		BuildThemeTool tool = new(command, Substitute.For<ILogger>(), commandResolver);
 
 		// Act
-		_tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme", EnvironmentName: "dev"));
+		BuildThemeResult result = tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme", EnvironmentName: "dev"));
 
 		// Assert
+		result.Success.Should().BeTrue(because: "a resolvable registered environment builds a valid theme");
+		commandResolver.Received(1).Resolve<EnvironmentSettings>(Arg.Is<EnvironmentOptions>(o => o.Environment == "dev"));
 		_themeTemplateProvider.Received(1).GetCssTemplate("10.0.1");
+		_settingsRepository.DidNotReceive().FindEnvironment(Arg.Any<string>());
 	}
 
 	[Test]
-	[Description("Returns a failure result when the named environment's Creatio version cannot be determined (resolver latest-fallback), instead of silently building from the highest bundled template.")]
-	public void BuildTheme_ShouldReturnFailure_WhenEnvironmentVersionUnresolved() {
+	[Description("AC-02/Pattern-B fail-soft: fails soft to the LatestFallback template (success, not failure) when the resolved environment's Creatio version cannot be determined — Pattern B never hard-fails the tool on an unresolvable probe, unlike the CLI's by-name path (still covered by BuildThemeCommandTests.Execute_ShouldFail_WhenEnvironmentVersionUnresolved).")]
+	public void BuildTheme_ShouldFailSoftToLatestFallback_WhenEnvironmentVersionUnresolved() {
 		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		EnvironmentSettings env = new() { Uri = "http://env" };
-		_settingsRepository.FindEnvironment("dev").Returns(env);
+		commandResolver.Resolve<EnvironmentSettings>(Arg.Is<EnvironmentOptions>(o => o.Environment == "dev")).Returns(env);
 		IPlatformVersionResolver resolver = Substitute.For<IPlatformVersionResolver>();
 		resolver.ResolveAsync(Arg.Any<CancellationToken>())
 			.Returns(Task.FromResult(new PlatformVersionResolution("latest", VersionResolutionSource.LatestFallback)));
 		_resolverFactory.Create(env).Returns(resolver);
+		BuildThemeCommand command = new(_themeCssBuilder, _themeTemplateProvider, _resolverFactory, _settingsRepository,
+			_workspacePathBuilder, _fileSystem, Substitute.For<ILogger>());
+		BuildThemeTool tool = new(command, Substitute.For<ILogger>(), commandResolver);
 
 		// Act
-		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme",
+		BuildThemeResult result = tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme",
 			EnvironmentName: "dev"));
 
 		// Assert
-		result.Success.Should().BeFalse(because: "an undeterminable environment version must not silently fall back to the highest bundled template");
-		result.Error.Should().Contain("could not determine", because: "the failure must explain that the environment version could not be determined");
-		_themeTemplateProvider.DidNotReceive().GetCssTemplate(Arg.Any<string>());
+		result.Success.Should().BeTrue(because: "Pattern B fails soft to LatestFallback instead of hard-failing when the resolved environment's version cannot be determined");
+		result.Error.Should().BeNull(because: "a fail-soft LatestFallback build carries no error");
+		_themeTemplateProvider.Received(1).GetCssTemplate(null);
 	}
 
 	[Test]
@@ -297,19 +309,146 @@ public sealed class BuildThemeToolTests
 	}
 
 	[Test]
-	[Description("Fails with a clear error when the named environment is not registered.")]
-	public void BuildTheme_ShouldReturnFailure_WhenEnvironmentNotRegistered() {
+	[Description("AC-02/Pattern-B fail-soft: fails soft to the LatestFallback template (success, not failure) when the named environment is not registered — commandResolver.Resolve throws, caught by the tool's fail-soft catch, unlike the CLI's by-name path which still hard-fails (BuildThemeCommandTests.Execute_ShouldFail_WhenEnvironmentNotRegistered).")]
+	public void BuildTheme_ShouldFailSoftToLatestFallback_WhenEnvironmentNotRegistered() {
 		// Arrange
-		_settingsRepository.FindEnvironment("ghost").Returns((EnvironmentSettings)null);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<EnvironmentSettings>(Arg.Is<EnvironmentOptions>(o => o.Environment == "ghost"))
+			.Returns(_ => throw new EnvironmentResolutionException("build-theme: environment 'ghost' is not registered."));
+		BuildThemeCommand command = new(_themeCssBuilder, _themeTemplateProvider, _resolverFactory, _settingsRepository,
+			_workspacePathBuilder, _fileSystem, Substitute.For<ILogger>());
+		BuildThemeTool tool = new(command, Substitute.For<ILogger>(), commandResolver);
 
 		// Act
-		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme",
+		BuildThemeResult result = tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme",
 			EnvironmentName: "ghost"));
 
 		// Assert
-		result.Success.Should().BeFalse(because: "an unregistered environment cannot resolve a version");
-		result.Error.Should().Contain("not registered", because: "the error must name the unknown environment");
-		_themeTemplateProvider.DidNotReceive().GetCssTemplate(Arg.Any<string>());
+		result.Success.Should().BeTrue(because: "an unregistered environment fails soft to LatestFallback under Pattern B rather than hard-failing the tool");
+		result.Error.Should().BeNull(because: "a fail-soft LatestFallback build carries no error");
+		_themeTemplateProvider.Received(1).GetCssTemplate(null);
+		_settingsRepository.DidNotReceive().FindEnvironment(Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("Review follow-up (BuildThemeTool.cs thread): the fail-soft LatestFallback is no longer SILENT — when the caller explicitly named an environment that could not be resolved, the tool emits a non-fatal warning naming the environment so the drop to the newest template is visible (the CLI hard-fails; this tool's contract is never-fail, so the divergence surfaces as an advisory instead of a silent success).")]
+	public void BuildTheme_ShouldWarnAboutFallback_WhenNamedEnvironmentUnresolved() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<EnvironmentSettings>(Arg.Is<EnvironmentOptions>(o => o.Environment == "ghost"))
+			.Returns(_ => throw new EnvironmentResolutionException("build-theme: environment 'ghost' is not registered."));
+		BuildThemeCommand command = new(_themeCssBuilder, _themeTemplateProvider, _resolverFactory, _settingsRepository,
+			_workspacePathBuilder, _fileSystem, Substitute.For<ILogger>());
+		BuildThemeTool tool = new(command, Substitute.For<ILogger>(), commandResolver);
+
+		// Act
+		BuildThemeResult result = tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme",
+			EnvironmentName: "ghost"));
+
+		// Assert
+		result.Success.Should().BeTrue(because: "an unresolvable named environment still fails soft to LatestFallback");
+		result.Warnings.Should().NotBeNull(because: "the fallback must surface a warning instead of being silent");
+		result.Warnings.Should().Contain(w => w.Contains("ghost") && w.Contains("newest supported version"),
+			because: "the warning must name the unresolved environment and the newest-version fallback so the caller is not silently diverged from the CLI's hard error");
+	}
+
+	[Test]
+	[Description("Review follow-up (BuildThemeTool.cs thread): the resolution catch is narrowed to EnvironmentResolutionException, so an UNEXPECTED fault (a DI/wiring bug surfacing as e.g. InvalidOperationException) is NOT masked as a silent newest-version build — it propagates to a real error response, matching the resolver's expected-vs-unexpected (exit 1 vs -1) contract.")]
+	public void BuildTheme_ShouldNotSwallowUnexpectedException_WhenResolverFaultsUnexpectedly() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>())
+			.Returns(_ => throw new InvalidOperationException("unexpected DI wiring fault"));
+		BuildThemeCommand command = new(_themeCssBuilder, _themeTemplateProvider, _resolverFactory, _settingsRepository,
+			_workspacePathBuilder, _fileSystem, Substitute.For<ILogger>());
+		BuildThemeTool tool = new(command, Substitute.For<ILogger>(), commandResolver);
+
+		// Act
+		System.Action act = () => tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme",
+			EnvironmentName: "dev"));
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+			because: "an unexpected non-resolution fault must not be masked as a silent latest-fallback build; only EnvironmentResolutionException is caught");
+	}
+
+	[Test]
+	[Description("AC-01 (header-only): with commandResolver supplied, environment-name blank, and version blank, the tool resolves EnvironmentSettings via commandResolver — the header tenant under credential passthrough — and the command builds against ITS resolved version, not a header-blind name lookup.")]
+	public void BuildTheme_ShouldResolveVersionAgainstResolverSettings_WhenHeaderOnlyWithCommandResolver() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		EnvironmentSettings headerSettings = new() { Uri = "https://header-tenant.creatio.com" };
+		commandResolver.Resolve<EnvironmentSettings>(Arg.Is<EnvironmentOptions>(o => string.IsNullOrEmpty(o.Environment)))
+			.Returns(headerSettings);
+		IPlatformVersionResolver resolver = Substitute.For<IPlatformVersionResolver>();
+		resolver.ResolveAsync(Arg.Any<CancellationToken>())
+			.Returns(Task.FromResult(new PlatformVersionResolution("10.1.0", VersionResolutionSource.Environment)));
+		_resolverFactory.Create(headerSettings).Returns(resolver);
+		BuildThemeCommand command = new(_themeCssBuilder, _themeTemplateProvider, _resolverFactory, _settingsRepository,
+			_workspacePathBuilder, _fileSystem, Substitute.For<ILogger>());
+		BuildThemeTool tool = new(command, Substitute.For<ILogger>(), commandResolver);
+
+		// Act
+		BuildThemeResult result = tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme"));
+
+		// Assert
+		result.Success.Should().BeTrue(because: "the header tenant's resolved settings build a valid theme");
+		commandResolver.Received(1).Resolve<EnvironmentSettings>(Arg.Is<EnvironmentOptions>(o => string.IsNullOrEmpty(o.Environment)));
+		_themeTemplateProvider.Received(1).GetCssTemplate("10.1.0");
+		_settingsRepository.DidNotReceive().FindEnvironment(Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("AC-03 (mixed input, PRD AC-06): when commandResolver.Resolve throws (simulating the HasExplicitCredentialArgs rejection for header + explicit environment-name), the tool fails soft to LatestFallback — no exception escapes and no named-tenant probe (repository lookup or version-resolver factory call) occurs.")]
+	public void BuildTheme_ShouldFailSoftToLatestFallbackWithNoNamedTenantProbe_WhenResolverThrowsForMixedInput() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>())
+			.Returns(_ => throw new EnvironmentResolutionException(
+				"Explicit credential or environment arguments are not accepted when credential passthrough is enabled over HTTP."));
+		BuildThemeCommand command = new(_themeCssBuilder, _themeTemplateProvider, _resolverFactory, _settingsRepository,
+			_workspacePathBuilder, _fileSystem, Substitute.For<ILogger>());
+		BuildThemeTool tool = new(command, Substitute.For<ILogger>(), commandResolver);
+		BuildThemeResult result = null;
+
+		// Act
+		Action act = () => result = tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme", EnvironmentName: "dev"));
+
+		// Assert
+		act.Should().NotThrow(because: "a resolver rejection must fail soft to LatestFallback, never escape as an exception");
+		result!.Success.Should().BeTrue(because: "a fail-soft LatestFallback still builds a valid theme from the highest bundled template");
+		_themeTemplateProvider.Received(1).GetCssTemplate(null);
+		_settingsRepository.DidNotReceive().FindEnvironment(Arg.Any<string>());
+		_resolverFactory.DidNotReceive().Create(Arg.Any<EnvironmentSettings>());
+	}
+
+	[Test]
+	[Description("AC-04 (regression guard, ADR verification #5): the existing direct-construction path (no commandResolver supplied) keeps building against LatestFallback unchanged — the new optional constructor parameter must not alter behavior when omitted.")]
+	public void BuildTheme_ShouldUseLatestFallbackUnchanged_WhenCommandResolverNotSupplied() {
+		// Act
+		BuildThemeResult result = _tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme"));
+
+		// Assert
+		result.Success.Should().BeTrue(because: "omitting commandResolver must not change behavior — LatestFallback still builds");
+		_themeTemplateProvider.Received(1).GetCssTemplate(null);
+	}
+
+	[Test]
+	[Description("AC-07 (explicit --version precedence): a non-blank version wins and skips settings resolution entirely — commandResolver.Resolve is never called, even when a resolver is supplied.")]
+	public void BuildTheme_ShouldSkipResolutionEntirely_WhenVersionExplicit() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		BuildThemeCommand command = new(_themeCssBuilder, _themeTemplateProvider, _resolverFactory, _settingsRepository,
+			_workspacePathBuilder, _fileSystem, Substitute.For<ILogger>());
+		BuildThemeTool tool = new(command, Substitute.For<ILogger>(), commandResolver);
+
+		// Act
+		BuildThemeResult result = tool.BuildTheme(new BuildThemeArgs(Primary: "#004fd6", CssClassName: "MyTheme", Version: "11.0"));
+
+		// Assert
+		result.Success.Should().BeTrue(because: "an explicit version is a valid, self-sufficient input");
+		commandResolver.DidNotReceive().Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>());
+		_themeTemplateProvider.Received(1).GetCssTemplate("11.0");
 	}
 
 	[Test]

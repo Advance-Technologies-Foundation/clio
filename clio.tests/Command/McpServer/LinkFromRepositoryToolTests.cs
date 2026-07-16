@@ -28,9 +28,9 @@ public class LinkFromRepositoryToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.LinkFromRepositoryByEnvironment(
-			"dev",
 			@"C:\Repo",
-			"PkgA,PkgB");
+			"PkgA,PkgB",
+			environmentName: "dev");
 
 		// Assert
 		result.ExitCode.Should().Be(0, because: "the MCP tool should forward a valid link-from-repository payload");
@@ -76,15 +76,13 @@ public class LinkFromRepositoryToolTests {
 	}
 
 	[Test]
-	[Description("Marks each required link-from-repository MCP parameter with Required so the MCP contract advertises the mandatory inputs clearly.")]
+	[Description("Marks each required link-from-repository MCP parameter with Required so the MCP contract advertises the mandatory inputs clearly. environmentName is deliberately absent: it is schema-optional since ENG-93347 (required outside credential passthrough via an explicit tool-level check).")]
 	[Category("Unit")]
-	[TestCase(nameof(LinkFromRepositoryTool.LinkFromRepositoryByEnvironment), "environmentName")]
 	[TestCase(nameof(LinkFromRepositoryTool.LinkFromRepositoryByEnvironment), "repoPath")]
 	[TestCase(nameof(LinkFromRepositoryTool.LinkFromRepositoryByEnvironment), "packages")]
 	[TestCase(nameof(LinkFromRepositoryTool.LinkFromRepositoryByEnvPackagePath), "envPkgPath")]
 	[TestCase(nameof(LinkFromRepositoryTool.LinkFromRepositoryByEnvPackagePath), "repoPath")]
 	[TestCase(nameof(LinkFromRepositoryTool.LinkFromRepositoryByEnvPackagePath), "packages")]
-	[TestCase(nameof(LinkFromRepositoryTool.LinkFromRepositoryUnlocked), "environmentName")]
 	[TestCase(nameof(LinkFromRepositoryTool.LinkFromRepositoryUnlocked), "repoPath")]
 	public void LinkFromRepository_Methods_Should_Expose_Required_Parameters(string methodName, string parameterName) {
 		// Arrange
@@ -134,8 +132,8 @@ public class LinkFromRepositoryToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.LinkFromRepositoryUnlocked(
-			"dev",
-			@"C:\Repo");
+			@"C:\Repo",
+			environmentName: "dev");
 
 		// Assert
 		result.ExitCode.Should().Be(0);
@@ -162,8 +160,8 @@ public class LinkFromRepositoryToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.LinkFromRepositoryUnlocked(
-			"dev",
 			@"C:\Repo",
+			environmentName: "dev",
 			dryRun: true);
 
 		// Assert
@@ -185,9 +183,9 @@ public class LinkFromRepositoryToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.LinkFromRepositoryByEnvironment(
-			"dev",
 			@"C:\Repo",
 			"PkgA",
+			environmentName: "dev",
 			dryRun: true,
 			skipPreparation: true);
 
@@ -236,7 +234,7 @@ public class LinkFromRepositoryToolTests {
 		LinkFromRepositoryTool tool = new(command, ConsoleLogger.Instance);
 
 		// Act
-		tool.LinkFromRepositoryByEnvironment("dev", @"C:\Repo", "PkgA");
+		tool.LinkFromRepositoryByEnvironment(@"C:\Repo", "PkgA", environmentName: "dev");
 
 		// Assert
 		command.CapturedOptions!.DryRun.Should().BeFalse(

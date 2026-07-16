@@ -62,7 +62,7 @@ public sealed class PageListTool(
 			Login = args.Login,
 			Password = args.Password
 		};
-		return ExecuteWithCleanLog(() => {
+		return ExecuteWithCleanLog(options, () => {
 			PageListCommand resolvedCommand;
 			try {
 				resolvedCommand = ResolveCommand<PageListCommand>(options);
