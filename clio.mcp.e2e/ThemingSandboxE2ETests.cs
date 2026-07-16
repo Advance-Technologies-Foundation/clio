@@ -142,6 +142,73 @@ public sealed class ThemingSandboxE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[AllureTag(SetUserThemeTool.ToolName)]
+	[AllureName("set-user-theme applies a theme to the current user and resets it on the sandbox environment")]
+	[Description("Runs the live per-user apply flow against the configured sandbox environment: create a theme, set-user-theme applies it to the current user (the tool succeeds only after the command's read-back verification passes), an unknown theme id is rejected, and set-user-theme reset clears the selection. Ignored when the stand lacks theming access, or when set-user-theme's extra gates (CanChangeOwnTheme operation / the ChangeTheme feature) are not present.")]
+	public async Task SetUserTheme_Should_Apply_And_Reset_When_Theming_Access_Is_Granted() {
+		// Arrange
+		string environmentName = await ResolveReachableSandboxEnvironmentAsync();
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(5));
+		await EnsureThemingAccessAsync(context, environmentName);
+		string themeId = $"e2e-user-theme-{Guid.NewGuid():N}";
+		const string caption = "Clio MCP E2E user-apply";
+		_environmentNameForCleanup = environmentName;
+
+		// Arrange — create the theme to apply (unique id, so the selector is unambiguous)
+		CreateThemeResult created = EntitySchemaStructuredResultParser.Extract<CreateThemeResult>(
+			await CallToolAsync(context, CreateThemeTool.ToolName, new Dictionary<string, object?> {
+				["environment-name"] = environmentName,
+				["id"] = themeId,
+				["caption"] = caption,
+				["css-class-name"] = themeId,
+				["css-content"] = $".{themeId}{{color:#0a6cff}}"
+			}));
+		created.Success.Should().BeTrue(because: $"the theme to apply must be created first (error: {created.Error})");
+		_createdThemeId = themeId;
+
+		// Act — apply the theme to the current user by its id
+		SetUserThemeResult applied = await SetUserThemeAsync(context, environmentName,
+			new Dictionary<string, object?> { ["theme"] = themeId });
+
+		// The apply needs the CanChangeOwnTheme operation and the server-side ChangeTheme feature on top of
+		// the branding license; ignore (do not fail) on a stand that grants theme management but not those.
+		if (!applied.Success &&
+			(applied.Error?.Contains("ChangeTheme", StringComparison.OrdinalIgnoreCase) == true ||
+				applied.Error?.Contains("CanChangeOwnTheme", StringComparison.OrdinalIgnoreCase) == true)) {
+			Assert.Ignore($"The sandbox environment '{environmentName}' does not allow the current user to change " +
+				$"their own theme (error: {applied.Error}). set-user-theme needs the CanChangeOwnTheme operation " +
+				"and the ChangeTheme feature enabled.");
+		}
+
+		// Assert — apply succeeded and the tool echoes the resolved theme (verified by the command's read-back)
+		applied.Success.Should().BeTrue(
+			because: $"applying a known theme to the current user must succeed once the read-back verifies it (error: {applied.Error})");
+		applied.Id.Should().Be(themeId,
+			because: "the tool must report the theme id it wrote to the profile");
+
+		// Act / Assert — an unknown theme id is rejected, not silently accepted
+		SetUserThemeResult unknown = await SetUserThemeAsync(context, environmentName,
+			new Dictionary<string, object?> { ["theme"] = $"missing-{Guid.NewGuid():N}" });
+		unknown.Success.Should().BeFalse(because: "an unknown theme selector must not be applied");
+		unknown.Error.Should().NotBeNullOrEmpty(because: "the caller must be told why the unknown theme was rejected");
+
+		// Act / Assert — reset clears the selection (read-back confirms the empty value)
+		SetUserThemeResult reset = await SetUserThemeAsync(context, environmentName,
+			new Dictionary<string, object?> { ["reset"] = true });
+		reset.Success.Should().BeTrue(
+			because: $"resetting the current user's theme must succeed and verify as cleared (error: {reset.Error})");
+
+		// Cleanup — remove the throwaway theme (teardown covers the failure path)
+		CommandExecutionEnvelope deleteResponse = McpCommandExecutionParser.Extract(
+			await CallToolAsync(context, DeleteThemeTool.ToolName, new Dictionary<string, object?> {
+				["environment-name"] = environmentName,
+				["id"] = themeId
+			}));
+		deleteResponse.ExitCode.Should().Be(0, because: "the throwaway theme must be removed from the shared stand");
+		_createdThemeId = null;
+	}
+
+	[Test]
 	[AllureTag(ClearThemesCacheTool.ToolName)]
 	[AllureName("clear-themes-cache refreshes the live theme catalog cache on the sandbox environment")]
 	[Description("Calls clear-themes-cache against the configured sandbox environment and verifies the refresh completes with exit code 0. Ignored when the stand lacks theming access.")]
@@ -209,6 +276,15 @@ public sealed class ThemingSandboxE2ETests : McpContractFixtureBase {
 		result.Success.Should().BeTrue(
 			because: $"reading the live theme catalog must succeed (error: {result.Error})");
 		return result;
+	}
+
+	private async Task<SetUserThemeResult> SetUserThemeAsync(
+		ArrangeContext context, string environmentName, Dictionary<string, object?> args) {
+		Dictionary<string, object?> callArgs = new(args) { ["environment-name"] = environmentName };
+		CallToolResult callResult = await CallToolAsync(context, SetUserThemeTool.ToolName, callArgs);
+		callResult.IsError.Should().NotBeTrue(
+			because: "set-user-theme reports its outcome as a structured payload, not an MCP protocol error");
+		return EntitySchemaStructuredResultParser.Extract<SetUserThemeResult>(callResult);
 	}
 
 	private static Task<CallToolResult> CallToolAsync(

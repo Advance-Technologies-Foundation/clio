@@ -208,8 +208,14 @@ public class SetUserThemeCommand : RemoteCommand<SetUserThemeOptions>
 
 	private static string BuildUnknownThemeMessage(string selector, IReadOnlyList<ThemeDescriptor> themes) {
 		if (themes.Count == 0) {
-			return $"Theme '{selector}' was not found and no custom themes are available on this environment. " +
-				"Create one with create-theme, or use --reset to restore the environment default.";
+			// list-themes returns an empty catalog both when the environment genuinely has no custom themes
+			// AND when the caller lacks the CanCustomizeBranding license (the service returns an empty list
+			// rather than an error in that case), so an empty catalog cannot be treated as definitively
+			// empty — name the license possibility alongside the create-a-theme hint.
+			return $"Theme '{selector}' was not found and no custom themes are listed on this environment. " +
+				"This can also mean the CanCustomizeBranding license is missing (list-themes returns an empty " +
+				"catalog in that case) — verify access with check-theming-access. Otherwise create a theme with " +
+				"create-theme, or use --reset to restore the environment default.";
 		}
 		IEnumerable<string> available = themes
 			.Where(theme => !string.IsNullOrWhiteSpace(theme.Id))

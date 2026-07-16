@@ -13,11 +13,12 @@ using ModelContextProtocol.Protocol;
 namespace Clio.Mcp.E2E;
 
 /// <summary>
-/// End-to-end coverage for the set-user-theme MCP tool. Actually applying a theme requires a live Creatio
-/// environment with branding licensing and the CanChangeOwnTheme operation, so the hermetic CI-safe
-/// assertions are that the real clio MCP server advertises set-user-theme on the lazy surface, binds the
-/// args wrapper, and rejects a camelCase alias with a structured rename hint; the live behavior is covered
-/// by the theming sandbox suite.
+/// Hermetic (NoEnvironment) end-to-end coverage for the set-user-theme MCP tool: the real clio MCP server
+/// advertises set-user-theme on the lazy surface, binds the args wrapper, and rejects a camelCase alias with
+/// a structured rename hint — none of which needs a live Creatio environment. The live apply/reset/unknown
+/// behavior (which requires branding licensing plus the CanChangeOwnTheme operation and the ChangeTheme
+/// feature) is exercised by ThemingSandboxE2ETests.SetUserTheme_Should_Apply_And_Reset_When_Theming_Access_Is_Granted
+/// against the configured sandbox environment.
 /// </summary>
 [TestFixture]
 [Category("McpE2E.NoEnvironment")]
