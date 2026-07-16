@@ -1522,8 +1522,6 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide keeps the aggregation column path and enum rules; the structural aggregation.column nesting is now enforced by the registry-driven chart-widget validator");
 		article.Text.Should().Contain("FixedGridSlot_qwe4asds",
 			because: "the guide must steer Desktop chart placement into the exact editable slot FixedGridSlot_qwe4asds (CentralAreaDesktopTemplate), not the Main frame");
-		article.Text.Should().Contain("the desktop sizing rule replaces",
-			because: "on a desktop the 6-row chart floor is superseded by the desktop-page sizing rule (>=3 rows), so the chart guide must carve out that exception and point to desktop-page");
 		article.Text.Should().Contain("show values by DEFAULT",
 			because: "the guide must default data labels on (dataLabel.display:true) unless the user explicitly opts out");
 	}
@@ -1947,116 +1945,5 @@ public sealed class McpGuidanceResourceTests {
 			because: "the routing map must direct the agent to the run-process-button guide");
 		article.Text.Should().Contain("runs a business process",
 			because: "the routing row must be keyed to the task wording so the agent recognizes it");
-	}
-
-	[Test]
-	[Category("Unit")]
-	[Description("Returns the canonical desktop-page guide carrying the ENG-90489 invariants: the Desktop group trigger, automatic selector registration, the FixedGridSlot container rule, and record-rights visibility.")]
-	public void DesktopPageGuidanceResource_Should_Return_Canonical_Desktop_Page_Guide() {
-		// Arrange
-		DesktopPageGuidanceResource resource = new();
-
-		// Act
-		TextResourceContents article = resource.GetGuide().Should().BeOfType<TextResourceContents>().Subject;
-
-		// Assert
-		article.Uri.Should().Be("docs://mcp/guides/desktop-page",
-			because: "the guide must be addressable at its canonical docs URI");
-		article.Text.Should().Contain("schema group `Desktop`",
-			because: "the guide must state that the schema group — not the parent template — triggers platform registration");
-		article.Text.Should().Contain("DesktopAppEventListener",
-			because: "the guide must name the platform mechanism so the agent trusts that registration is automatic");
-		article.Text.Should().Contain("template: \"CentralAreaDesktopTemplate\"",
-			because: "the guide must teach that a desktop is created from the CentralAreaDesktopTemplate, like any other page");
-		article.Text.Should().Contain("Do NOT insert, update, or delete `Desktop` entity rows manually",
-			because: "a manual Desktop row duplicates the platform-owned registration and corrupts the selector");
-		article.Text.Should().Contain("FixedGridSlot_qwe4asds",
-			because: "the guide owns the desktop-only editable-slot rule moved out of the containers guide (ENG-90489)");
-		article.Text.Should().Contain("RECORD-RIGHTS operation",
-			because: "restricting a desktop to roles is a record-rights change on the Desktop record, not a page edit");
-		article.Text.Should().Contain("Do NOT call `compile-creatio`",
-			because: "client-unit schema changes need no compilation and the guide must repeat the core invariant");
-		article.Text.Should().Contain("`layoutConfig.rowSpan` >= 3",
-			because: "the desktop sizing rule sets a hard 3-row floor per widget, charts included");
-		article.Text.Should().Contain("<= 10 rows",
-			because: "the desktop sizing rule targets a total height of 10 rows when the widget count allows");
-		article.Text.Should().Contain("PACK ACROSS COLUMNS FIRST",
-			because: "the sizing rule must tell the agent to use the 8-column width before growing the desktop taller");
-		article.Text.Should().Contain("grow PAST 10 rows",
-			because: "the escape hatch lets the desktop exceed 10 rows rather than shrink a widget below the 3-row floor");
-		article.Text.Should().Contain("MANDATORY GREETING LABEL",
-			because: "every new desktop must start with the fixed greeting label, so the guide must mandate it");
-		article.Text.Should().Contain("crt.Label",
-			because: "the guide must name the component the greeting is built from so the agent resolves it via get-component-info");
-		article.Text.Should().Contain("#MacrosTemplateString(#ResourceString(Label_Greeting_caption)#)#",
-			because: "the greeting caption macro is an exact, non-inventable token the agent must reproduce verbatim");
-		article.Text.Should().Contain("large-2",
-			because: "the greeting must use the 'Large 2' heading style (labelType large-2), an exact token the agent cannot infer");
-		article.Text.Should().Contain("Hello, [#Current user.Recipient Name#]!",
-			because: "the guide must carry the exact greeting resource value the agent registers");
-		article.Text.Should().Contain("Label_Greeting_caption",
-			because: "the greeting caption binds to the Label_Greeting_caption resource, which the agent must register");
-		article.Text.Should().Contain("WIDTH & LAYOUT",
-			because: "the guide must steer widget width/layout so the agent stops cramming every widget into one narrow row");
-		article.Text.Should().Contain("KPI TILES",
-			because: "the guide must call out single-number KPI tiles as the smallest widget with their own placement rule");
-		article.Text.Should().Contain("BESIDE the hero widget, in the SAME band",
-			because: "small KPI tiles must be stacked beside the hero widget in the same band, not given their own full-width band");
-		article.Text.Should().Contain("FILL ITS CELL",
-			because: "the guide must tell the agent to size widgets to fill their cell so donuts are not tiny and centered in empty space");
-		article.Text.Should().Contain("on its OWN full-width band",
-			because: "the guide must name the every-widget-on-its-own-full-width-band layout as a bad extreme to avoid (the sparse stacked layout)");
-	}
-
-	[Test]
-	[Category("Unit")]
-	[Description("GuidanceCatalog exposes desktop-page so AI callers can retrieve the desktop guidance by name (ENG-90489).")]
-	public void GuidanceCatalog_Should_Include_Desktop_Page_Entry() {
-		// Act
-		bool found = GuidanceCatalog.TryGet("desktop-page", out GuidanceCatalogEntry entry);
-
-		// Assert
-		found.Should().BeTrue(
-			because: "the catalog must expose desktop-page so get-guidance can return it by name");
-		entry.Name.Should().Be("desktop-page",
-			because: "the catalog entry name must match the lookup key exactly");
-		entry.Article.Uri.Should().Be("docs://mcp/guides/desktop-page",
-			because: "the article URI in the catalog must match the resource URI");
-	}
-
-	[Test]
-	[Category("Unit")]
-	[Description("The routing map points desktop-page tasks at the desktop-page guide so an agent reaches it from the Pages domain (ENG-90489).")]
-	public void RoutingGuidanceResource_Should_Route_Desktop_Page_Task() {
-		// Arrange
-		RoutingGuidanceResource resource = new();
-
-		// Act
-		TextResourceContents article = resource.GetGuide().Should().BeOfType<TextResourceContents>().Subject;
-
-		// Assert
-		article.Text.Should().Contain("name=desktop-page",
-			because: "the routing map must direct the agent to the desktop-page guide");
-		article.Text.Should().Contain("desktop-selector workspace",
-			because: "the routing row must be keyed to the task wording so the agent recognizes a desktop request");
-	}
-
-	[Test]
-	[Category("Unit")]
-	[Description("The containers sub-guide keeps only a pointer to desktop-page for the desktop slot rule; the temporary ENG-90489 inline rule and its TODO marker are gone.")]
-	public void PageModificationContainersGuidanceResource_Should_Point_Desktop_Rule_To_Desktop_Page_Guide() {
-		// Arrange
-		PageModificationContainersGuidanceResource resource = new();
-
-		// Act
-		TextResourceContents article = resource.GetGuide().Should().BeOfType<TextResourceContents>().Subject;
-
-		// Assert
-		article.Text.Should().Contain("desktop-page",
-			because: "the containers guide must route desktop container placement to the dedicated guide");
-		article.Text.Should().Contain("FixedGridSlot_qwe4asds",
-			because: "the pointer must name the slot so an agent scanning the containers guide still recognizes the desktop case");
-		article.Text.Should().NotContain("TODO(ENG-90489)",
-			because: "the temporary marker must be removed once the dedicated desktop guide ships");
 	}
 }

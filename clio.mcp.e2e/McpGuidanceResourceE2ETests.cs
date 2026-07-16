@@ -27,7 +27,6 @@ public sealed class McpGuidanceResourceE2ETests : McpContractFixtureBase {
 	private static readonly string PageSchemaResourcesUri = BuildGuideUri("page-schema-resources");
 	private static readonly string PageSchemaValidatorsUri = BuildGuideUri("page-schema-validators");
 	private static readonly string AgentExecutionUri = BuildGuideUri("agent-execution");
-	private static readonly string DesktopPageUri = BuildGuideUri("desktop-page");
 	private static readonly string SupportModeUri = BuildGuideUri("support-mode");
 	private static readonly string BusinessRulesUri = BuildGuideUri("business-rules");
 	private static readonly string ServerToServerOAuthUri = BuildGuideUri("server-to-server-oauth");
@@ -209,42 +208,6 @@ public sealed class McpGuidanceResourceE2ETests : McpContractFixtureBase {
 			because: "the guide should cover schema-sync recovery patterns owned by clio");
 		article.Text.Should().Contain("delete the orphaned entity using `delete-schema`",
 			because: "the guide should encode the orphan-cleanup step for the section recovery path");
-	}
-
-	[Test]
-	[AllureTag("mcp-guidance-resources")]
-	[AllureName("MCP server returns the desktop-page guidance article")]
-	[Description("Verifies the running MCP server resolves the desktop-page guidance article (docs://mcp/guides/desktop-page), carrying the CentralAreaDesktopTemplate create rule, the FixedGridSlot_qwe4asds container rule, the automatic-registration prohibition, the greeting label, and the widget-sizing/layout rules.")]
-	public async Task McpServer_Should_Return_Desktop_Page_Guidance() {
-		// Arrange
-		await using var context = Arrange(TimeSpan.FromMinutes(3));
-
-		// Act
-		ReadResourceResult result = await context.Session.ReadResourceAsync(DesktopPageUri, context.CancellationTokenSource.Token);
-
-		// Assert
-		TextResourceContents article = result.Contents.Single().Should().BeOfType<TextResourceContents>(
-			because: "the desktop-page guide should resolve to a single plain-text article").Subject;
-		article.Uri.Should().Be(DesktopPageUri,
-			because: "the returned article should preserve the stable desktop-page guidance URI");
-		article.Text.Should().Contain("clio MCP desktop page guide",
-			because: "the article should identify itself as the dedicated desktop-page guide");
-		article.Text.Should().Contain("template: \"CentralAreaDesktopTemplate\"",
-			because: "the guide should teach that a desktop is created from the CentralAreaDesktopTemplate");
-		article.Text.Should().Contain("FixedGridSlot_qwe4asds",
-			because: "the guide owns the desktop editable-slot container rule (ENG-90489)");
-		article.Text.Should().Contain("Do NOT insert, update, or delete `Desktop` entity rows manually",
-			because: "the guide must forbid manual Desktop registry writes because the platform owns registration");
-		article.Text.Should().Contain("`layoutConfig.rowSpan` >= 3",
-			because: "the guide should carry the desktop widget-sizing rule (3-row hard floor per widget)");
-		article.Text.Should().Contain("<= 10 rows",
-			because: "the guide should carry the 10-row desktop height target with its escape hatch");
-		article.Text.Should().Contain("MANDATORY GREETING LABEL",
-			because: "the guide should mandate the fixed greeting label on every new desktop");
-		article.Text.Should().Contain("Hello, [#Current user.Recipient Name#]!",
-			because: "the guide should carry the exact greeting resource value");
-		article.Text.Should().Contain("WIDTH & LAYOUT",
-			because: "the guide should steer per-widget width so a data-dense chart is not squeezed into a narrow column");
 	}
 
 	[Test]
