@@ -33,7 +33,7 @@ public sealed class SqlSchemaGetTool(
 			Login = args.Login,
 			Password = args.Password
 		};
-		return ExecuteWithCleanLog(() => {
+		return ExecuteWithCleanLog(options, () => {
 			SqlSchemaGetCommand resolvedCommand;
 			try {
 				resolvedCommand = ResolveCommand<SqlSchemaGetCommand>(options);

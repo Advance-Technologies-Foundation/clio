@@ -23,13 +23,21 @@ public class UninstallCreatioTool(
 	ILogger logger,
 	IStageEventProgressForwarder progressForwarder,
 	ModelContextProtocol.Server.McpServer server) : BaseTool<UninstallCreatioCommandOptions>(command, logger) {
+	/// <summary>Stable MCP tool name used by discovery and tests.</summary>
+	public const string UninstallCreatioToolName = "uninstall-creatio";
 
-	[McpServerTool(Name = "uninstall-creatio", ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false )]
+	[McpServerTool(Name = UninstallCreatioToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false )]
 	[Description("""
 				 uninstall-creatio command completely removes local Creatio instance from
-				 the machine, including the IIS site and application pool, database (both
-				 local and containerized), and application files. Application-pool profile
-				 data is currently left in place and reported as skipped/not-supported.
+				 the machine, including the target IIS site or application, database (both
+				 local and containerized), and application files. Its application pool is
+				 removed only when no other IIS application uses it. On Windows it also attempts
+				 to remove the registered IIS application-pool profile. A locked or denied
+				 profile is returned as a warning with successful tool completion. When automatic
+				 dbHub synchronization is enabled, it removes the clio-owned source after cleanup
+				 and before unregistering; an offline or failed dbHub verification is also a
+				 non-fatal warning with success-with-warnings completion.
+				 A shared application pool and its profile are preserved.
 
 				 The command reads the database connection string from ConnectionStrings.config
 				 in the Creatio installation directory and uses it to connect and drop the

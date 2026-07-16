@@ -80,17 +80,22 @@ public class CreateUiProjectTool(
 		// Pin the process working directory to the supplied workspace for the duration of the
 		// command. IWorkingDirectoriesProvider / IWorkspacePathBuilder both read Environment.CurrentDirectory
 		// at resolution time, so without this any agent invoking the tool from an arbitrary cwd would
-		// scaffold packages/projects under the wrong (or non-workspace) folder.
-		// The execution lock is reentrant on the same thread, so InternalExecute re-acquiring it is safe.
-		lock (CommandExecutionSyncRoot) {
-			string previousDirectory = Directory.GetCurrentDirectory();
-			try {
-				Directory.SetCurrentDirectory(args.WorkspaceDirectory);
-				return InternalExecute<CreateUiProjectCommand>(options);
-			} finally {
-				Directory.SetCurrentDirectory(previousDirectory);
+		// scaffold packages/projects under the wrong (or non-workspace) folder. The process-wide cwd
+		// mutation runs under the single global CwdLock (H1). Lock ordering is per-tenant → CwdLock:
+		// ExecuteUnderTenantLock takes the tenant lock first (CreateUiProject is environment-less, so the
+		// shared-fallback key — the same key the inner InternalExecute reacquires reentrantly), then we
+		// take CwdLock inside; no path takes CwdLock and then a per-tenant lock, so there is no deadlock.
+		return ExecuteUnderTenantLock(options, () => {
+			lock (McpToolExecutionLock.CwdLock) {
+				string previousDirectory = Directory.GetCurrentDirectory();
+				try {
+					Directory.SetCurrentDirectory(args.WorkspaceDirectory);
+					return InternalExecute<CreateUiProjectCommand>(options);
+				} finally {
+					Directory.SetCurrentDirectory(previousDirectory);
+				}
 			}
-		}
+		});
 	}
 }
 

@@ -31,6 +31,16 @@ public sealed class DescribeEnvironmentGuidanceResource {
 		       - Target the environment with environment-name (PREFERRED). uri/login/password is an emergency
 		         fallback only when no environment is registered.
 
+		       REQUIRED BASE PROBE FAILURES (exit 1)
+		       - Invalid URI          -> use an absolute HTTP or HTTPS application URL.
+		       - Unreachable/timeout  -> verify the URL and make sure the application is running.
+		       - Authentication       -> verify credentials and authentication settings.
+		       - Reachable non-Creatio content -> the URL does not appear to be a Creatio application.
+		       - Malformed/unusable ApplicationInfoService response -> stable unexpected-response error.
+		       These classifications are identical through CLI aliases and the MCP error envelope. Normal output
+		       never contains raw HTML, response bodies, parser exceptions, credentials, cookies, or tokens.
+		       Debug output adds only safe classification/type/status metadata.
+
 		       BEST-EFFORT CONTRACT (exit 0 even when an optional source is missing)
 		       The report is assembled from up to three sources, in order. A field's ABSENCE means the source
 		       that supplies it was unavailable (older Creatio, cliogate not installed, or the caller lacks the
