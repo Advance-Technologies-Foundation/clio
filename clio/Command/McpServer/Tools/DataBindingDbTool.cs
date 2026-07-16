@@ -18,7 +18,7 @@ public class CreateDataBindingDbTool(
 
 	[McpServerTool(Name = CreateDataBindingDbToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
-	[Description("Creates a DB-first package data binding by saving data directly to the remote Creatio database.")]
+	[Description("Creates a DB-first package data binding by saving data directly to the remote Creatio database. A row that already exists in the table is adopted into the binding instead of re-inserted — matched by Name when the schema has a Name column, otherwise by Id — so an existing keyed row (e.g. a SysSchemaAdminUnitRight grant) can be bound by passing its Id without creating a duplicate.")]
 	public CommandExecutionResult CreateDataBindingDb(
 		[Description("Parameters: environment-name, package-name, schema-name (all required); binding-name, rows (optional)")]
 		[Required]
