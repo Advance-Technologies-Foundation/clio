@@ -7,6 +7,11 @@ using System.Xml.Linq;
 
 namespace Clio.Mcp.E2E.Support.Configuration;
 
+internal sealed class SharedIisApplicationPoolException(string applicationPoolName, int assignmentCount)
+	: InvalidOperationException(
+		$"The configured sandbox application pool '{applicationPoolName}' is assigned to " +
+		$"{assignmentCount} IIS applications; exactly one assignment is required before destructive E2E execution.");
+
 internal static class IisApplicationPoolResolver {
 	public static string Resolve(string environmentUri, string? expectedApplicationPoolName = null) {
 		if (!OperatingSystem.IsWindows()) {
@@ -92,22 +97,24 @@ internal static class IisApplicationPoolResolver {
 			.Where(application => string.Equals(application.Attribute("APPPOOL.NAME")?.Value,
 				expectedApplicationPoolName, StringComparison.OrdinalIgnoreCase))
 			.ToArray();
-		if (assignments.Length != 1) {
+		if (assignments.Length == 0) {
 			throw new InvalidOperationException(
 				$"The configured sandbox application pool '{expectedApplicationPoolName}' is assigned to " +
-				$"{assignments.Length} IIS applications; exactly one assignment is required before destructive E2E execution.");
+				"0 IIS applications; at least one assignment is required before destructive E2E execution.");
 		}
-
 		bool routedTargetMatches = string.Equals(
 			targetName, expectedApplicationPoolName, StringComparison.OrdinalIgnoreCase);
-		bool directIisTargetMatches = SiteMatchesAssignment(
-			sitesRoot, assignments[0], environmentUri);
-		bool assignmentIdentityMatches = AssignmentIdentifiesExpectedTarget(
-			sitesRoot, assignments[0], expectedApplicationPoolName);
+		bool directIisTargetMatches = assignments.Any(assignment =>
+			SiteMatchesAssignment(sitesRoot, assignment, environmentUri));
+		bool assignmentIdentityMatches = assignments.Any(assignment =>
+			AssignmentIdentifiesExpectedTarget(sitesRoot, assignment, expectedApplicationPoolName));
 		if (!(routedTargetMatches && assignmentIdentityMatches) && !directIisTargetMatches) {
 			throw new InvalidOperationException(
 				$"The configured sandbox application pool '{expectedApplicationPoolName}' does not match " +
 				$"the registered URI target '{safeTarget}'.");
+		}
+		if (assignments.Length > 1) {
+			throw new SharedIisApplicationPoolException(expectedApplicationPoolName, assignments.Length);
 		}
 		return expectedApplicationPoolName;
 	}

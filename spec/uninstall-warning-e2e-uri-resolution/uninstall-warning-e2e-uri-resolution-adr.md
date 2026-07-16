@@ -14,7 +14,9 @@ For TeamCity, read the existing `ApplicationPoolName` configuration parameter th
 explicit target hint, not unchecked authority: the pool name must match the routed URI target or a
 direct IIS binding/path, and AppCmd must show exactly one application assignment to that pool.
 
-The locked-profile fixture will use the resulting `APPPOOL.NAME` directly. It will no longer resolve
+The locked-profile fixture will use the resulting `APPPOOL.NAME` directly. If that pool has multiple
+live IIS assignments, the fixture is not applicable and is reported ignored: uninstall intentionally
+preserves shared pools and therefore cannot exercise profile deletion. It will no longer resolve
 or inspect `EnvironmentPath`, because that path is not part of the behavior under test.
 
 ## Safety
