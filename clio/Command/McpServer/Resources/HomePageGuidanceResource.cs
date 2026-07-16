@@ -68,18 +68,21 @@ public sealed class HomePageGuidanceResource {
 		            `SysAdminUnitInWorkplace` access), clio has no tool to create one, and it is set up in the
 		            Creatio UI. This is the app workplace `SysWorkplace` — NOT clio's `create-workspace` (a local
 		            project folder) and NOT the dev `SysWorkspace` table.
-		       6. Point each target workplace at the page and persist it as a DB-first package data binding so it
-		          ships with the package. You are UPDATING an existing workplace row (not creating one):
-		          a. `create-data-binding-db` (schema `SysWorkplace`, your `package`) to establish the binding. It
-		             may be empty (no `rows`) — this only creates the binding that step 6b writes into.
-		          b. `upsert-data-binding-row-db` (binding `SysWorkplace`) with
-		             `values` = `{"Id":"<workplace-id>","HomePageUId":"<page schemaUId from step 2>"}`. Because the
-		             workplace row already exists in the table, upsert UPDATES it (matched by `Id`) rather than
-		             inserting. Read `data-bindings` for the tool contract.
+		       6. Point each target workplace at the page and persist it as a package data binding so it ships.
+		          You are UPDATING an existing workplace row (not creating one) and then shipping it:
+		          a. `odata-update` `SysWorkplace` with `id` = the workplace `Id`,
+		             `data` = `{"HomePageUId":"<page schemaUId from step 2>"}`, `confirm` = true. This updates the
+		             live workplace row (matched by `Id`).
+		          b. `create-data-binding-db` (schema `SysWorkplace`, your `package`) with
+		             `rows` = `[{"values":{"Id":"<workplace-id>","HomePageUId":"<page schemaUId from step 2>"}}]`.
+		             The row already exists, so create ADOPTS it by `Id` into the binding (no duplicate insert; it
+		             does not re-write the row) and the package ships the row with its `HomePageUId`. Include
+		             `HomePageUId` in the row so that column is part of the binding projection. Read `data-bindings`
+		             for the tool contract.
 		       7. Read `SysWorkplace.HomePageUId` back with `odata-read` to confirm the value; do not treat the
 		          install log as proof.
 
-		       To UNSET a workplace's home page later, upsert `HomePageUId` back to
+		       To UNSET a workplace's home page later, `odata-update` `HomePageUId` back to
 		       `00000000-0000-0000-0000-000000000000`. Do NOT use `remove-data-binding-row-db` for this: it
 		       DELETES the whole `SysWorkplace` row (the entire workplace), not just the home-page value.
 
