@@ -1446,6 +1446,20 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide must offer the inverse is-not-filled-in token so callers model both directions of a show/hide-until-filled rule");
 		article.Text.Should().Contain("Do NOT toggle element visibility from a handler",
 			because: "the guide must name the visible-bound-attribute-toggled-from-a-handler anti-pattern from ENG-92154 and keep element visibility on a business rule");
+		article.Text.Should().Contain(@"Post-creation verification",
+			because: @"the guide must carry a dedicated post-creation verification section (ENG-89971)");
+		article.Text.Should().Contain(@"do NOT automatically open a browser",
+			because: @"the guide must stop the agent from auto-opening a browser to verify a created rule (ENG-89971)");
+		article.Text.Should().Contain(@"automatically (I open the app and check) or manually (you check)",
+			because: @"the guide must make the agent ask the user to choose automatic vs manual verification (ENG-89971)");
+		article.Text.Should().Contain(@"business-rule verification",
+			because: @"the guide must key the persisted preference under a stable name so it is not re-asked each time (ENG-89971)");
+		article.Text.Should().Contain(@"do NOT ask again",
+			because: @"the guide must tell the agent to reuse a saved preference and not re-prompt (ENG-89971)");
+		article.Text.Should().Contain(@"manualCheckPending",
+			because: @"the manual path must report the outcome through the agent-execution manualCheckPending bucket (ENG-89971)");
+		article.Text.Should().Contain(@"Do NOT auto-open a browser to verify a business-rule change",
+			because: @"the common-mistakes list must forbid auto-opening a browser before the preference is read or asked (ENG-89971)");
 	}
 
 	[Test]

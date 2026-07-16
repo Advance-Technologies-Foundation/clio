@@ -114,7 +114,16 @@ public sealed class BusinessRulesGuidanceResource {
 		          - For `apply-filter`, use an empty condition group and put the lookup-filter configuration into the action payload.
 		          - If the user did not specify otherwise and the scenario is a normal dependent lookup, default `populateValue` to `true` so the reverse helper child rule is generated too.
 		       7. Call the target tool (`create-…`, `update-…`, or `delete-…-business-rules`).
-		       8. Verify by checking the entity or page on the environment.
+		       8. Post-creation verification: do NOT auto-open a browser to confirm the rule. Follow the "Post-creation verification" section below - read the saved preference, or ask the user automatic-vs-manual first.
+
+		       Post-creation verification (ASK first; do NOT auto-open a browser)
+		       - After a business-rule tool (`create-...`, `update-...`, or `delete-...-business-rules`) returns success, do NOT automatically open a browser, Playwright, or navigate the app to confirm the change. That is time-consuming and often unwanted.
+		       - First read the saved verification preference from your own persistent memory (for example the coding-agent memory or the project AGENTS.md): the stored choice for "business-rule verification" is either `automatic` or `manual`.
+		         - If a preference is saved, follow it silently and do NOT ask again.
+		         - If none is saved, ask the user exactly once: "How should I verify the business rule(s) - automatically (I open the app and check) or manually (you check)?" Then persist their answer under "business-rule verification" so future rule changes do not re-ask. If you cannot persist it, honor the choice for this session and continue.
+		       - automatic: run the browser/environment check ONLY when verification tools and an environment are actually available (for example `get-browser-session`, then open the app). If they are not available, fall back to manual and say so.
+		       - manual: do NOT open a browser. Give a short summary of each affected rule (caption, target entity/page, condition, action(s), and the `name` from the response) plus clear, numbered steps to check it (open the entity/page in the environment, trigger the condition, confirm the action fires). Report the outcome as `manualCheckPending` (see the agent-execution evidence buckets).
+		       - On a partial batch, summarize and verify only the rules the response reports as changed; keep each failed rule with its own error. One preference prompt covers the whole batch.
 
 		       Common mistakes to avoid
 		       - Do NOT add visibility/editability/required toggling logic in SCHEMA_HANDLERS — use business rules.
@@ -134,6 +143,7 @@ public sealed class BusinessRulesGuidanceResource {
 		       - Do NOT use kebab-case comparison tokens (`equal`, `is-filled-in`) inside an apply-static-filter leaf `comparisonType`; that field uses UPPER_SNAKE_CASE (`EQUAL`, `IS_NOT_NULL`).
 		       - Do NOT root apply-static-filter `columnPath` on the rule's entity; it is rooted on the target lookup's reference schema.
 		       - Do NOT use a backward EXISTS to express a simple "field is filled" check; use IS_NOT_NULL on the column.
+		       - Do NOT auto-open a browser to verify a business-rule change before reading the saved verification preference or asking the user automatic-vs-manual (ENG-89971).
 		       """
 	};
 }
