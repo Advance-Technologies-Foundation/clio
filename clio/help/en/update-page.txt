@@ -46,6 +46,12 @@ DESCRIPTION
       literal. Bind via $Resources.Strings.<Key> (or #ResourceString(<Key>)#
       for grid column captions / validator messages) and register the key's
       default-language value with --resources. Inline literals are rejected.
+    - Inserted widget/metric titles must resolve. A title/caption/tooltip/
+      placeholder on a freshly inserted (operation:"insert") widget bound as
+      $Resources.Strings.<Key> or #ResourceString(<Key>)# is rejected when <Key>
+      is not registered via --resources and is not Usr*/DS-bound. A metric title
+      #ResourceString(IndicatorWidget_<slug>_title)# is registered only when you
+      pass it in --resources; otherwise it renders raw.
     A malformed VendorPrefix.Name causes a Creatio runtime error:
       "Error when register X. Type property should have format VendorPrefix.TypeName"
     - Call `clio get-guidance --name page-schema-converters` for converter details

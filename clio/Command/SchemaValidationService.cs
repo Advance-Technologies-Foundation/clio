@@ -176,6 +176,41 @@ public static class SchemaValidationService
 	};
 
 	/// <summary>
+	/// User-visible caption properties on inserted view nodes whose localizable-string bindings are
+	/// checked for resolvability by the widget-caption validators. Deliberately EXCLUDES <c>label</c>:
+	/// <see cref="ValidateInsertedFieldSelfConsistency"/> already resolvability-checks <c>label</c> for
+	/// STANDARD FIELD components (<see cref="StandardFieldComponentTypes"/>), so re-checking it here would
+	/// double-report on those. The residual seam — a <c>label</c> bound to an unresolvable key on a
+	/// NON-standard inserted node (a widget/container/custom component) — is not resolvability-checked by
+	/// either validator (only its inline-literal form is, by <see cref="ValidateLocalizableTextLiterals"/>);
+	/// that is accepted because a non-field node carrying a bound <c>label</c> is rare, whereas this set owns
+	/// the common widget/container caption surface (most importantly a metric or chart widget's <c>title</c>).
+	/// </summary>
+	private static readonly HashSet<string> InsertedWidgetCaptionProperties = new(StringComparer.OrdinalIgnoreCase) {
+		"title",
+		"caption",
+		"tooltip",
+		"placeholder"
+	};
+
+	/// <summary>
+	/// Canonical clause describing the widget-caption rule, authored here and embedded verbatim in the
+	/// per-occurrence diagnostic (<see cref="BuildUnresolvedCaptionError"/>). The agent-facing surfaces
+	/// (the update-page / sync-pages / validate-page tool <c>resources</c> descriptions and the
+	/// <c>page-schema-resources</c> / <c>indicator-widget</c> guidance) restate the same rule in their own
+	/// prose and are maintained alongside this const rather than derived from it — keep them in sync when the
+	/// rule changes. Kept <c>const</c> so it stays usable inside <c>[Description]</c> attributes (compile-time
+	/// constants only).
+	/// </summary>
+	internal const string InsertedWidgetCaptionClause =
+		"a user-visible caption on a freshly inserted widget/container (title, caption, tooltip, placeholder) " +
+		"bound via $Resources.Strings.<Key> or #ResourceString(<Key>)# must resolve: register <Key> with its " +
+		"default-language value through the 'resources' parameter (e.g. resources: '{\"<Key>\": \"<text>\"}'), " +
+		"unless it is a DS-bound attribute the platform auto-provides or a Usr* key clio auto-derives. A metric " +
+		"or chart widget title (e.g. IndicatorWidget_<slug>_title) is NONE of these, so it MUST be registered — " +
+		"otherwise the binding renders raw (e.g. \"$Resources.Strings.IndicatorWidget_<slug>_title\") instead of the title";
+
+	/// <summary>
 	/// Canonical clause describing the localizable-text rule enforced by
 	/// <see cref="ValidateLocalizableTextLiterals"/>. Authored ONCE here and reused by the per-occurrence
 	/// diagnostic (<see cref="BuildTextLiteralError"/>) and surfaced verbatim to MCP agents through the
@@ -1470,6 +1505,177 @@ public static class SchemaValidationService
 		}
 		return result;
 	}
+
+	/// <summary>
+	/// Validates that every user-visible caption on a freshly inserted widget/container in a web page
+	/// body's <c>viewConfigDiff</c> — <c>title</c>, <c>caption</c>, <c>tooltip</c>, <c>placeholder</c> —
+	/// that is authored as a localizable-string binding (<c>$Resources.Strings.&lt;Key&gt;</c> or a
+	/// <c>#ResourceString(&lt;Key&gt;)#</c> macro) references a key that will actually resolve at runtime.
+	/// A key resolves when it is passed in <paramref name="explicitResources"/>, is a DS-bound attribute the
+	/// platform auto-provides, or is a <c>Usr</c>-prefixed key clio auto-derives (see
+	/// <see cref="ResourceStringHelper.WillResolve"/>).
+	/// </summary>
+	/// <remarks>
+	/// This closes the metric/chart-widget-title gap (ENG-93098): the widget title is emitted as
+	/// <c>config.title: "#ResourceString(IndicatorWidget_&lt;slug&gt;_title)#"</c>, whose key never starts
+	/// with <c>Usr</c> and is not DS-bound, so <see cref="ResourceStringHelper.CleanAndMerge"/> silently
+	/// leaves it unregistered when the caller omits it from <c>resources</c>; the platform then compiles the
+	/// macro to a <c>$Resources.Strings.&lt;Key&gt;</c> binding that renders raw. Unlike
+	/// <see cref="ValidateLocalizableTextLiterals"/> (which only rejects inline literals), this validator
+	/// rejects an unresolvable BINDING, scoped to <c>operation: "insert"</c> entries only (a <c>merge</c> may
+	/// legitimately reference a key already registered on the schema).
+	/// <para>
+	/// This body-only overload is a PRE-FLIGHT HEURISTIC — it sees only the body + <paramref name="explicitResources"/>,
+	/// NOT the target schema's pre-existing <c>localizableStrings</c>. It therefore over-reports a re-inserted
+	/// caption whose key a prior save already registered, so callers surface it as a WARNING
+	/// (validate-page, sync-pages pre-flight), never as a hard reject. The authoritative hard gate is
+	/// <see cref="ValidateInsertedWidgetCaptionsRegistered"/>, run on the save path against the final merged
+	/// registration set where that false positive cannot occur.
+	/// </para>
+	/// </remarks>
+	/// <param name="jsBody">Raw JavaScript body of a Freedom UI page schema (marker-delimited).</param>
+	/// <param name="explicitResources">Explicit resources passed to the save, or <c>null</c>.</param>
+	/// <returns>
+	/// A <see cref="SchemaValidationResult"/> that is invalid when an inserted widget caption binds an
+	/// unregistered, unresolvable localizable key.
+	/// </returns>
+	public static SchemaValidationResult ValidateInsertedWidgetCaptionResources(
+		string jsBody,
+		IReadOnlyDictionary<string, string>? explicitResources = null) {
+		if (string.IsNullOrEmpty(jsBody)) {
+			return new SchemaValidationResult { IsValid = true };
+		}
+		var dsBoundKeys = CollectViewModelPaths(jsBody).Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
+		return ScanInsertedWidgetCaptions(
+			jsBody, key => ResourceStringHelper.WillResolve(key, explicitResources, dsBoundKeys));
+	}
+
+	/// <summary>
+	/// Authoritative, drift-free variant of <see cref="ValidateInsertedWidgetCaptionResources"/> used by the
+	/// SAVE path once the final localizable-string set is known (after
+	/// <see cref="ResourceStringHelper.CleanAndMerge"/>). A caption key resolves iff it is present in
+	/// <paramref name="registeredNames"/> (the saved schema's <c>localizableStrings</c> — which already
+	/// folds in existing entries, explicit <c>resources</c>, and auto-derived <c>Usr</c> keys) or is a
+	/// DS-bound attribute the platform auto-provides. Because it reads the real post-merge registration
+	/// outcome, it CANNOT false-positive on a re-inserted caption whose key was registered by a prior save —
+	/// the gap that makes the body-only <see cref="ValidateInsertedWidgetCaptionResources"/> a pre-flight
+	/// heuristic (warning) rather than the hard gate.
+	/// </summary>
+	/// <param name="jsBody">Raw JavaScript body being saved (the merged body in append mode).</param>
+	/// <param name="registeredNames">Names present in the final <c>localizableStrings</c> to be saved.</param>
+	/// <param name="dsBoundKeys">View-model attribute names bound to a data source.</param>
+	/// <returns>A <see cref="SchemaValidationResult"/> invalid when a saved inserted widget caption would render raw.</returns>
+	public static SchemaValidationResult ValidateInsertedWidgetCaptionsRegistered(
+		string jsBody,
+		IReadOnlySet<string> registeredNames,
+		IReadOnlySet<string> dsBoundKeys) =>
+		ScanInsertedWidgetCaptions(
+			jsBody,
+			key => (registeredNames != null && registeredNames.Contains(key)) ||
+			       (dsBoundKeys != null && dsBoundKeys.Contains(key)));
+
+	// Shared engine for both the body-only (pre-flight) and the registered-set (save-gate) checks: walks
+	// every operation:"insert" entry's values subtree and flags a widget caption (title/caption/tooltip/
+	// placeholder) whose localizable key does not satisfy <paramref name="resolves"/>. Merges are skipped
+	// (a merge may target a caption a parent schema already provides). Fail-open on empty/missing marker/
+	// unparseable body, matching the sibling content validators.
+	private static SchemaValidationResult ScanInsertedWidgetCaptions(string jsBody, Func<string, bool> resolves) {
+		var result = new SchemaValidationResult { IsValid = true };
+		if (string.IsNullOrEmpty(jsBody)) {
+			return result;
+		}
+		if (!PageSchemaSectionReader.TryRead(jsBody, out string vcdContent, SchemaViewConfigDiff, SchemaDiffMarker)) {
+			return result;
+		}
+		if (!TryParseJsonDocument(vcdContent, out JsonDocument vcdDoc, out _)) {
+			return result;
+		}
+		using (vcdDoc) {
+			if (vcdDoc.RootElement.ValueKind != JsonValueKind.Array) {
+				return result;
+			}
+			foreach (JsonElement entry in vcdDoc.RootElement.EnumerateArray()) {
+				if (entry.ValueKind != JsonValueKind.Object || !IsInsertOperation(entry)) {
+					continue;
+				}
+				if (!entry.TryGetProperty(ValuesPropertyName, out JsonElement values) ||
+				    values.ValueKind != JsonValueKind.Object) {
+					continue;
+				}
+				string ownerName = TryGetNodeName(entry, out string entryName) ? entryName : string.Empty;
+				ScanNodeForUnresolvedCaptionBindings(values, ownerName, resolves, result);
+			}
+		}
+		if (result.Errors.Count > 0) {
+			result.IsValid = false;
+		}
+		return result;
+	}
+
+	private static void ScanNodeForUnresolvedCaptionBindings(
+		JsonElement node,
+		string ownerName,
+		Func<string, bool> resolves,
+		SchemaValidationResult result) {
+		switch (node.ValueKind) {
+			case JsonValueKind.Object:
+				string currentName = TryGetNodeName(node, out string nodeName) ? nodeName : ownerName;
+				foreach (JsonProperty property in node.EnumerateObject()) {
+					if (property.Value.ValueKind == JsonValueKind.String &&
+					    InsertedWidgetCaptionProperties.Contains(property.Name)) {
+						CheckCaptionBinding(currentName, property.Name, property.Value.GetString()!, resolves, result);
+					}
+					ScanNodeForUnresolvedCaptionBindings(property.Value, currentName, resolves, result);
+				}
+				break;
+			case JsonValueKind.Array:
+				foreach (JsonElement item in node.EnumerateArray()) {
+					ScanNodeForUnresolvedCaptionBindings(item, ownerName, resolves, result);
+				}
+				break;
+		}
+	}
+
+	private static void CheckCaptionBinding(
+		string ownerName,
+		string property,
+		string value,
+		Func<string, bool> resolves,
+		SchemaValidationResult result) {
+		// ExtractKeys returns the keys referenced by both binding forms ($Resources.Strings.K and
+		// #ResourceString(K)#). A literal (no resource reference) yields no keys and is left to
+		// ValidateLocalizableTextLiterals; a non-resource binding ($SomeAttr) also yields no keys.
+		// Fail-open on a regex timeout (mirrors ValidateContextAccessAwait): an advisory/gate heuristic
+		// must never surface a pathological body as an unhandled crash.
+		HashSet<string> keys;
+		try {
+			keys = ResourceStringHelper.ExtractKeys(value);
+		} catch (RegexMatchTimeoutException) {
+			return;
+		}
+		foreach (string key in keys) {
+			if (!resolves(key)) {
+				result.Errors.Add(BuildUnresolvedCaptionError(ownerName, property, key));
+			}
+		}
+	}
+
+	private static string BuildUnresolvedCaptionError(string ownerName, string property, string key) {
+		// Cap the echoed body-supplied values (mirrors BuildTextLiteralError): the key comes from an
+		// unbounded #ResourceString([^)]+)# / $Resources.Strings.<...> match and is echoed into the MCP
+		// transcript and the update-page log, so truncate it to keep the diagnostic bounded and avoid
+		// newline/oversize log noise.
+		string shownOwner = Truncate(ownerName);
+		string shownKey = Truncate(key);
+		string node = string.IsNullOrWhiteSpace(shownOwner) ? "a view node" : $"'{shownOwner}'";
+		return $"View node {node} binds user-visible text property '{property}' to localizable key '{shownKey}', " +
+			"but that key will not be registered and the binding will render raw " +
+			$"(e.g. \"{ResourceBindingPrefix}{shownKey}\") instead of the localized text. Rule: {InsertedWidgetCaptionClause}. " +
+			"See the page-schema-resources guide.";
+	}
+
+	private static string Truncate(string value) =>
+		string.IsNullOrEmpty(value) || value.Length <= 60 ? value : value[..60] + "…";
 
 	/// <summary>
 	/// Mobile counterpart of <see cref="ValidateLocalizableTextLiterals"/>. Reads <c>viewConfigDiff</c>

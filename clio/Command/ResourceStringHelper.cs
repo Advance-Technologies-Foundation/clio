@@ -49,6 +49,51 @@ internal static class ResourceStringHelper {
 		return keys;
 	}
 
+	/// <summary>
+	/// Reports whether a localizable-string <paramref name="key"/> referenced by a freshly-inserted
+	/// view node will resolve to a caption at runtime. It mirrors the register-missing-body-key decision
+	/// in <see cref="TryResolveResourceValue"/> and additionally treats DS-bound keys as resolving (the
+	/// platform auto-provides their caption even though clio does not register them). A key resolves when
+	/// it is:
+	/// <list type="bullet">
+	///   <item>passed explicitly in <paramref name="resources"/> (clio registers it verbatim), or</item>
+	///   <item>a DS-bound view-model attribute (the platform auto-provides the column caption), or</item>
+	///   <item>a <c>Usr</c>-prefixed key (clio auto-derives a caption via <see cref="DeriveCaption"/>).</item>
+	/// </list>
+	/// Any other key (e.g. a widget title such as <c>IndicatorWidget_Foo_title</c>) is NOT registered and
+	/// the binding renders raw — that is the case callers must reject or register. This intentionally does
+	/// NOT consult the target schema's pre-existing <c>localizableStrings</c> (those are preserved by
+	/// <see cref="CleanAndMerge"/>'s <c>CopyExistingEntries</c> but not visible from the body alone): a
+	/// freshly inserted node must self-provide its caption resource, matching the insert-only contract
+	/// enforced for fields elsewhere.
+	/// </summary>
+	/// <param name="key">Localizable-string key referenced by the body.</param>
+	/// <param name="resources">Explicit resources passed to the save, or <c>null</c>.</param>
+	/// <param name="dsBoundKeys">View-model attribute names bound to a data source, or <c>null</c>.</param>
+	/// <returns><c>true</c> when the key resolves to a caption at runtime; otherwise <c>false</c>.</returns>
+	public static bool WillResolve(
+		string key,
+		IReadOnlyDictionary<string, string> resources,
+		IReadOnlySet<string> dsBoundKeys) {
+		if (string.IsNullOrEmpty(key)) {
+			return false;
+		}
+		if (resources != null && resources.ContainsKey(key)) {
+			return true;
+		}
+		if (dsBoundKeys != null && dsBoundKeys.Contains(key)) {
+			return true;
+		}
+		return IsUsrPrefixed(key);
+	}
+
+	/// <summary>
+	/// Single definition of the "<c>Usr</c>-prefixed key clio auto-derives a caption for" test, shared by
+	/// <see cref="WillResolve"/> and <see cref="TryResolveResourceValue"/> so the read-side verdict and the
+	/// write-side registration cannot drift on the prefix comparison.
+	/// </summary>
+	private static bool IsUsrPrefixed(string key) => key.StartsWith("Usr", StringComparison.Ordinal);
+
 	public static string DeriveCaption(string key) {
 		string result = key;
 		if (result.EndsWith("_caption")) {
@@ -143,7 +188,7 @@ internal static class ResourceStringHelper {
 			value = null;
 			return false;
 		}
-		if (key.StartsWith("Usr")) {
+		if (IsUsrPrefixed(key)) {
 			value = DeriveCaption(key);
 			return true;
 		}

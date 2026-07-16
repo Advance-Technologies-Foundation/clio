@@ -186,6 +186,8 @@ namespace Clio.Command {
 				if (!TryResolveBodyToWrite(schemaToSave, options, out string bodyToWrite, out response)) return false;
 				IReadOnlyList<string> downgradeWarnings = PageInsertDowngradeDetector.Detect(schemaToSave["body"]?.ToString(), bodyToWrite);
 				List<string> registeredKeys = UpdateSchemaBody(schemaToSave, bodyToWrite, context.SchemaType, explicitResources, parsedOptionalProperties);
+				PageUpdateResponse captionError = ValidateInsertedWidgetCaptionsResolve(schemaToSave, bodyToWrite, context.SchemaType);
+				if (captionError != null) { response = captionError; return false; }
 				if (!TrySaveSchema(schemaToSave, out response)) return false;
 				response = CreateSuccessResponse(options, dryRun: false, registeredKeys);
 				response.Warnings = downgradeWarnings.Count > 0 ? downgradeWarnings : null;
@@ -505,6 +507,37 @@ namespace Clio.Command {
 			(JArray cleaned, List<string> registered) = ResourceStringHelper.CleanAndMerge(existingStrings, explicitResources, bodyKeys, dsBoundKeys);
 			schemaToSave[LocalizableStringsKey] = cleaned;
 			return registered.Count > 0 ? registered : null;
+		}
+
+		/// <summary>
+		/// Authoritative widget-caption resolvability gate (ENG-93098). After <see cref="UpdateSchemaBody"/>
+		/// has produced the final <c>localizableStrings</c>, this rejects the save when a freshly inserted
+		/// widget/container caption (title/caption/tooltip/placeholder) binds a localizable key that is neither
+		/// present in that final set nor auto-provided by a DS-bound attribute — such a binding would compile to
+		/// <c>$Resources.Strings.&lt;Key&gt;</c> and render raw. Because it checks the real post-merge
+		/// registration outcome (existing entries + explicit resources + auto-derived Usr keys, all folded in by
+		/// <see cref="ResourceStringHelper.CleanAndMerge"/>), it never false-positives on a re-inserted caption
+		/// whose key a prior save already registered. Web bodies only — a mobile body has no marker-delimited
+		/// <c>viewConfigDiff</c> section for the scan to read.
+		/// </summary>
+		/// <returns>A failure response when a saved inserted widget caption would render raw; otherwise <c>null</c>.</returns>
+		private static PageUpdateResponse ValidateInsertedWidgetCaptionsResolve(
+				JObject schemaToSave, string body, PageSchemaType schemaType) {
+			if (schemaType == PageSchemaType.Mobile) {
+				return null;
+			}
+			HashSet<string> registeredNames = ResourceStringHelper.GetExistingKeys(schemaToSave[LocalizableStringsKey] as JArray);
+			HashSet<string> dsBoundKeys = SchemaValidationService.CollectViewModelPaths(body).Keys
+				.ToHashSet(StringComparer.OrdinalIgnoreCase);
+			SchemaValidationResult result = SchemaValidationService.ValidateInsertedWidgetCaptionsRegistered(
+				body, registeredNames, dsBoundKeys);
+			if (result.IsValid) {
+				return null;
+			}
+			return new PageUpdateResponse {
+				Success = false,
+				Error = $"Body contains inserted widget captions bound to unregistered localizable strings: {string.Join("; ", result.Errors)}"
+			};
 		}
 
 		private static void MergeOptionalProperties(JObject schemaToSave, JArray incoming) {
