@@ -238,6 +238,31 @@ public sealed class SensitiveErrorTextRedactorTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("ENG-93386 Story 6 FR-13: redacts a Creatio-plane secret (tenant access token in a connection-style message) and an MCP/gateway-plane secret (a bearer JWT) when BOTH appear in the same message, proving neither redaction pass is scoped to only one credential plane and one plane's pattern does not shadow the other's.")]
+	public void Redact_ShouldRedactBothCreatioCredentialAndMcpGatewayToken_WhenBothPlanesAppearInSameMessage() {
+		// Arrange
+		const string message =
+			"Passthrough call to https://tenant.creatio.com failed: token=tenant-secret-abc "
+			+ "while handling gateway request Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJnYXRld2F5In0.sig123";
+
+		// Act
+		string result = SensitiveErrorTextRedactor.Redact(message);
+
+		// Assert
+		result.Should().NotContain("tenant.creatio.com",
+			because: "the Creatio-plane tenant host must not leak");
+		result.Should().NotContain("tenant-secret-abc",
+			because: "the Creatio-plane access token must not leak");
+		result.Should().NotContain("eyJhbGciOiJIUzI1NiJ9",
+			because: "the MCP/gateway-plane JWT header segment must not leak");
+		result.Should().NotContain("eyJzdWIiOiJnYXRld2F5In0",
+			because: "the MCP/gateway-plane JWT payload segment must not leak");
+		result.Should().Contain("failed",
+			because: "the trailing logical detail must survive redaction of both planes' secrets");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Does not over-redact a safe /DataService/ URL path prefix, which is a public API route and not a sensitive filesystem path.")]
 	public void Redact_ShouldNotRedactDataServiceUrlPath() {
 		// Arrange

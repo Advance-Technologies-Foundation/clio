@@ -69,12 +69,18 @@ public sealed class PageFileWriter : IPageFileWriter {
 				Error = $"Invalid schema name '{schemaName}': only letters, digits and underscore are allowed."
 			};
 		}
-		string anchor = PageOutputDirectoryResolver.ResolveAnchor(
-			_fileSystem,
-			_fileSystem.Directory.GetCurrentDirectory(),
-			Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-			ClioRuntimePaths.Home,
-			outputDirectory);
+		// H1: reading the process-global cwd to anchor page output must serialize against the MCP
+		// workspace tools that PIN cwd. In the MCP path (get-page) this runs under the per-tenant lock
+		// (ordering per-tenant → CwdLock); in the single-threaded CLI path CwdLock is uncontended.
+		string anchor;
+		lock (McpServer.Tools.McpToolExecutionLock.CwdLock) {
+			anchor = PageOutputDirectoryResolver.ResolveAnchor(
+				_fileSystem,
+				_fileSystem.Directory.GetCurrentDirectory(),
+				Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+				ClioRuntimePaths.Home,
+				outputDirectory);
+		}
 		string rootDir = _fileSystem.Path.Combine(anchor, ClioPagesDirectoryName);
 		string schemaDir = _fileSystem.Path.Combine(rootDir, schemaName);
 		try {

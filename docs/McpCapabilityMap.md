@@ -32,9 +32,11 @@ is discovered through `get-tool-contract`, not `tools/list`:
 
 Important shape of the surface:
 
-- Transports: stdio (the shipped default) and an HTTP host (`mcp-http`, not yet released). The durable unmatched-name handling described below is registered on the stdio transport only.
-- Discovery returns only the enabled surface: feature-gated tools, prompts, and resources are omitted while their feature flag is off, so the advertised counts reflect the default flag state.
-- Every tool declares explicit `ReadOnly` / `Destructive` / `Idempotent` safety metadata, so a client can rely on those flags when deciding what is safe to invoke.
+- Two transports: **stdio** (`clio mcp` / `mcp-server`) and **Streamable HTTP** (`clio mcp-http`), sharing the same tool surface. The HTTP host additionally offers the credential-passthrough edge (see the targeting-mode note above). The durable unmatched-name handling described below is registered on the stdio transport only.
+- Registration goes through `McpFeatureToggleFilter.RegisterEnabledPrimitives` (feature-toggle-aware; `IEnumerable<Type>` into `WithTools`/`WithPrompts`/`WithResources`) — the assembly-wide `*FromAssembly` helpers are no longer used. Discovery returns only the enabled surface: feature-gated tools, prompts, and resources are omitted while their feature flag is off, so the advertised counts reflect the default flag state.
+- The tool layer is mixed-generation:
+  - newer tools are strongly typed and usually expose `ReadOnly`, `Destructive`, `Idempotent`, and `OpenWorld`
+  - older lifecycle tools still expose valid MCP tools, but without the same metadata richness
 
 ## Durable Invocation (forgiving unmatched-name handling, ENG-93370)
 
@@ -115,8 +117,83 @@ Typical examples:
 
 - `component-info`
 - `create-workspace`
-- `show-webApp-list`
+- `list-environments`
 - `find-empty-iis-port`
+
+### 4. HTTP credential-passthrough edge (multi-tenant) + standard OAuth authorization
+
+The `mcp-http` HTTP host adds a fourth, opt-in targeting mode: **per-request credential
+passthrough**. Instead of a pre-registered environment, a gateway supplies the target tenant
+URL, credentials, and an explicit `isNetCore` runtime boolean on each request via an
+`X-Integration-Credentials: <base64 JSON>` header. `true` selects the root .NET Core/NET 8
+routes; `false` selects the .NET Framework layout with exactly one `/0/` segment. The runtime
+field is required, is matched case-insensitively by property name, and is header context
+rather than an MCP tool argument. Missing or non-boolean values are rejected with HTTP 400
+before target validation, client creation, or outbound calls; clio never defaults or probes the
+tenant runtime. The runtime is part of the in-memory cache and lock identity.
+Most of the registered tool surface then executes against an **ephemeral, in-memory** per-tenant
+container (nothing persisted; pooled with idle-TTL / LRU eviction) — but not every tool honors
+the header yet: see "Per-tool passthrough support (ENG-93347)" immediately below for the audited
+exceptions.
+
+`mcp-http` also supports **standard MCP OAuth 2.1 Resource-Server authorization**
+(`--auth-authority`; off by default): when configured, EVERY request to the endpoint —
+passthrough and pre-registered `-e <env>` access alike — requires a valid bearer JWT, and the
+edge serves Protected Resource Metadata (RFC 9728) at `/.well-known/oauth-protected-resource`
+for discovery. The legacy `--platform-api-key` gate is retained only as a non-OAuth dev/offline
+fallback: with `--auth-authority` configured it is bypassed entirely (the two schemes cannot
+share one `Authorization` header); with no OAuth configured (default) it is the sole gate for
+the passthrough leg, fail-closed and off by default — with no key configured the credential
+header is ignored and `mcp-http` behaves as stdio-parity. The inbound MCP/gateway bearer token
+is never forwarded to Creatio; the tenant credential is a separate, distinct plane. See
+[`docs/commands/mcp-http.md`](../clio/docs/commands/mcp-http.md) for the full contract (header
+shapes, SSRF allowlist, the mode-gated plaintext-arg policy, and the OAuth option reference).
+
+#### Per-tool passthrough support (ENG-93347)
+
+ENG-93347 audited every resident tool that reaches — or derives target-specific information
+from — a Creatio environment, and brought each into one of two states below. This is **not**
+the PRD's full out-of-scope audit; the remaining ~135 tools were already passthrough-capable
+before this feature (class a/b in the PRD's classification: they already resolve their
+target-scoped service per request through `IToolCommandResolver`) or are not
+environment-sensitive at all (telemetry, guidance, local infra, `list-environments`, etc.).
+
+**Passthrough-supported** — executes against the header tenant; `environment-name` (and, where
+the tool accepts them, `uri`/`login`/`password`) becomes optional, and supplying it **together**
+with an active passthrough header is rejected ("not accepted when credential passthrough is
+enabled") rather than silently honored:
+
+- `list-apps`, `get-app-info`, `create-app`, `create-app-section`, `update-app-section`,
+  `delete-app-section`, `list-app-sections` — the application-lifecycle family, including every
+  nested lookup each tool performs (caption-culture resolution, polling/readback).
+- `get-user-culture` — profile-culture lookup; previously the one real active-tenant data leak
+  in this audit (a header-only call with no active environment configured would silently read
+  the configured active environment's culture with its stored credentials), now closed.
+- `update-page`, `sync-pages` — the platform-version probe that scopes chart-widget/component
+  validation to the target's real version. Each tool's page-write path was already
+  passthrough-capable before this feature.
+- `get-component-info` — the `environment-name`/`uri` (mixed-input) path. The header-only,
+  no-argument path was already compliant before this feature (documented `latest-fallback`).
+- `build-theme` — the version-resolution probe only. Falls back **soft** (not an error) to the
+  newest bundled template when no header-derived tenant is available, and on mixed input (a
+  header plus an explicit `environment-name`) — never a header-blind name lookup. The soft
+  fallback is not silent: when the caller explicitly named an `environment-name` that could not
+  be resolved, the result carries a non-fatal `warnings` entry naming the environment and the
+  newest-version fallback (the resolution catch is scoped to `EnvironmentResolutionException`, so
+  an unexpected fault surfaces as a real error rather than a silent newest-version build).
+
+**Passthrough-unsupported** — fails fast with one uniform error naming the tool and the
+alternative (register the target environment and use the stdio path, or a non-passthrough
+`mcp-http` request), returned **before** any Creatio-reaching call:
+
+- `link-from-repository-by-environment`
+- `link-from-repository-unlocked`
+- `link-from-repository-by-env-package-path` — **except** its local-only `skip-preparation=true`
+  branch, which never reaches Creatio and is unaffected by passthrough.
+
+These three remain unsupported by design: the environment name doubles as a local
+package-directory selector with no passthrough equivalent, and routing was judged
+disproportionate for v1 (see the ADR's decision matrix for `link-from-repository-*`).
 
 ## What An AI Learns About Execution Semantics
 
@@ -410,7 +487,7 @@ This part is small but important because many other tools depend on it.
 
 - `reg-web-app`
   Register or update a local clio environment definition.
-- `show-webApp-list`
+- `list-environments`
   Return registered local environments and settings as structured JSON.
 - `get-pkg-list`
   Read remote package inventory from the selected environment.
@@ -427,7 +504,9 @@ This part is small but important because many other tools depend on it.
   `frameworkDescription` are added WITHOUT cliogate via the admin-gated
   `GetSystemEnvironmentInfo` (needs `CanManageSolution`); `productName` and `licenseInfo` are added
   only when cliogate `>= 2.0.0.32` is installed. Best-effort: an unavailable source is skipped and
-  the call still succeeds. Read `get-guidance name=describe-environment` for the full field catalogue.
+  the call still succeeds. The required base probe returns classified, secret-safe Error logs for
+  invalid/unavailable targets, authentication failures, non-Creatio content, and unusable Creatio
+  responses. Read `get-guidance name=describe-environment` for the full field catalogue.
 
 What an external AI can practically do here:
 
@@ -439,7 +518,10 @@ What an external AI can practically do here:
 
 Important note:
 
-- `show-webApp-list` explicitly returns unmasked settings, which is powerful but sensitive
+- `list-environments` explicitly returns unmasked settings, which is powerful but sensitive
+- dbHub installation and source reconciliation are intentionally CLI-only. `install-dbhub` creates or repairs
+  a current-user Scheduled Task, while `sync-dbhub` reads secret-bearing local database configuration and mutates
+  a workstation TOML file. Neither operation is exposed as an MCP tool without a concrete authorization model.
 
 ### 8. Deployment, Restore, And Infrastructure Preflight
 
@@ -479,15 +561,25 @@ emit a versioned, typed progress stream over MCP `notifications/progress` in the
 live, GitHub-Actions-style step list instead of parsing log lines. The stream is:
 
 - one `manifest` event up front listing every stage that will run, in order;
-- a `stage` event per transition (`running` → `done` / `failed` / `skipped`, carrying
+- a `stage` event per transition (`running` → `done` / `failed` / `warning` / `skipped`, carrying
   `index` / `total` / `durationMs`);
-- one terminal `run-completed` event with `outcome` = `success` / `failure`.
+- one terminal `run-completed` event with `outcome` = `success` / `success-with-warnings` / `failure`.
 
 Deploy stages: `stage-build` (network-source only; otherwise `skipped` `not-applicable`) →
 `unzip` → `copy-files` → `restore-db` → `deploy-app` → `configure-conn-strings` →
-`register-env` → `wait-ready`. Uninstall stages: `read-config` → `stop-iis` → `delete-iis` →
-`drop-db` → `delete-files` → `unregister` (final, only after cleanup succeeds), plus a
-conditional `delete-apppool-profile` reported `skipped` `not-supported` when a profile exists.
+`register-env` → `wait-ready` → conditional `sync-dbhub-source`. Uninstall stages: `read-config` →
+`stop-iis` → `delete-iis` → `drop-db` → `delete-files` → conditional `delete-apppool-profile` →
+conditional `remove-dbhub-source` → `unregister` (final).
+The profile stage resolves only the registered `IIS APPPOOL\<name>` SID/profile. Missing and
+non-Windows profiles are `skipped` `not-applicable`; exhausted deletion retries emit `warning`
+with `APPPOOL_PROFILE_DELETE_FAILED`, while the tool keeps exit code 0, returns `IsError=false`,
+and terminates with `success-with-warnings`; the warning stage retains the detail.
+The target IIS site/application is validated before removal. Pool assignments are rechecked after
+target deletion; a pool still used by another application and its Windows profile are preserved,
+and the profile stage is `skipped` `not-applicable`.
+dbHub lifecycle stages are included only when automatic local synchronization is enabled. TOML
+mutation is best effort: offline hot-reload verification emits `warning` and retains the primary
+deploy/uninstall success; a failed primary operation never adds/removes the source.
 Failure is honest: a stage that fails is emitted `failed`, the remaining stages `skipped`
 (`after-failure`), and the run ends `run-completed` `failure` — a non-zero stage result is
 never masked as success. The envelope is stamped with `schemaVersion` (currently `1`), is
@@ -681,7 +773,9 @@ This surface is powerful, but a third-party AI will still notice several inconsi
 All tool names now use strict kebab-case. Previous inconsistencies such as
 `restart-by-environmentName`, `StopAllCreatio`, and `show-webApp-list` have been
 corrected to `restart-by-environment-name`, `stop-all-creatio`, and
-`show-web-app-list` respectively.
+`show-web-app-list` respectively. The tool has since been renamed again to its current
+MCP name, `list-environments` (`show-web-app-list`/`show-web-app`/`env`/`envs` remain valid
+CLI-only aliases of the `list-environments` verb, per `Commands.md`).
 
 ### 2. Mixed argument styles
 
