@@ -58,6 +58,6 @@ public sealed class RecordRightsGuidanceResource {
 	/// Returns the record-rights guide that explains reading and changing record-level access rights.
 	/// </summary>
 	[McpServerResource(UriTemplate = ResourceUri, Name = "record-rights-guidance")]
-	[Description("Returns the clio MCP record-rights guide: how to read/change record-level access rights on a record or dashboard with get-record-rights / set-record-rights, how to address a dashboard (SysSchemaAdminUnit + schema UId), and the record-level (SysSchemaAdminUnitRight) vs operation-level (SysSchemaOperationRight) distinction.")]
+	[Description("Returns the clio MCP record-rights guide: how to read/change record-level access rights on a record or dashboard with get-record-rights / set-record-rights.")]
 	public ResourceContents GetGuide() => Guide;
 }
