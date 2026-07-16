@@ -181,7 +181,11 @@ namespace Clio.Command {
 				if (!TryCheckForExternalModification(options, context, out response)) return false;
 				PageUpdateResponse validationError = ValidateInput(options, context.SchemaType, explicitResources);
 				if (validationError != null) { response = validationError; return false; }
-				if (options.DryRun) { response = CreateSuccessResponse(options, dryRun: true, registeredKeys: null); return true; }
+				if (options.DryRun) {
+					response = CreateSuccessResponse(options, dryRun: true, registeredKeys: null);
+					response.Warnings = BuildDryRunWidgetCaptionWarnings(options.Body, context.SchemaType, explicitResources);
+					return true;
+				}
 				if (!TryLoadSchemaForSave(options.SchemaName, context, out JObject schemaToSave, out response)) return false;
 				if (!TryResolveBodyToWrite(schemaToSave, options, out string bodyToWrite, out response)) return false;
 				IReadOnlyList<string> downgradeWarnings = PageInsertDowngradeDetector.Detect(schemaToSave["body"]?.ToString(), bodyToWrite);
@@ -521,6 +525,25 @@ namespace Clio.Command {
 		/// <c>viewConfigDiff</c> section for the scan to read.
 		/// </summary>
 		/// <returns>A failure response when a saved inserted widget caption would render raw; otherwise <c>null</c>.</returns>
+		/// <summary>
+		/// Dry-run analog of <see cref="ValidateInsertedWidgetCaptionsResolve"/>. A dry run validates without
+		/// loading or saving the schema, so the authoritative post-merge gate cannot run; instead surface the
+		/// body-only heuristic (<see cref="SchemaValidationService.ValidateInsertedWidgetCaptionResources"/>)
+		/// as a WARNING so <c>update-page --dry-run</c> no longer reports green for exactly the ENG-93098 body
+		/// a real save rejects. Kept a warning (not an error) because — like validate-page — a dry run has no
+		/// schema context and a hard reject here would false-positive on a re-inserted caption whose key a
+		/// prior save already registered. Web bodies only (a mobile body carries no marker-delimited section).
+		/// </summary>
+		/// <returns>The advisory warning messages, or <c>null</c> when there is nothing to warn about.</returns>
+		private static List<string> BuildDryRunWidgetCaptionWarnings(
+				string body, PageSchemaType schemaType, Dictionary<string, string> explicitResources) {
+			if (schemaType == PageSchemaType.Mobile) {
+				return null;
+			}
+			SchemaValidationResult result = SchemaValidationService.ValidateInsertedWidgetCaptionResources(body, explicitResources);
+			return result.IsValid ? null : new List<string>(result.Errors);
+		}
+
 		private static PageUpdateResponse ValidateInsertedWidgetCaptionsResolve(
 				JObject schemaToSave, string body, PageSchemaType schemaType) {
 			if (schemaType == PageSchemaType.Mobile) {
