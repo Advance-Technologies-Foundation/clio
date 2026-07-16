@@ -6338,3 +6338,10 @@ Decision: Join deliberately detached heartbeat test work before disposing its sy
 Discovery: TS1-MRKT-WEB01 is current on .NET SDK 10.0.301/runtime 10.0.9 but its GitHub runner 2.333.0 trails 2.335.1. The first failure was concurrent StringBuilder access; the retry captured a late cancelled-operation fault in the next test, confirming background-work isolation rather than product behavior.
 Files: clio.tests/CommonProgramTest.cs, clio.tests/Command/McpServer/McpProgressHeartbeatTests.cs
 Impact: Core and MCP Server tests no longer dispose gates under detached work or read console buffers during background writes, improving deterministic execution across self-hosted runner speeds.
+
+## 2026-07-16 13:55 – Resolve uninstall warning E2E target without EnvironmentPath
+Context: TeamCity master build 15735619 failed the issue #881 locked-profile MCP E2E before uninstall because the registered `dev` environment had an empty `EnvironmentPath`.
+Decision: Resolve the registered environment URI through the fresh clio process, then fail-closed match its scheme, port, host binding, and application path to exactly one IIS application pool; keep file-reading sandbox helpers path-based.
+Discovery: TeamCity exposes `dev` at `http://<agent>:88/<application>` with a wildcard IIS binding and no path metadata. The disposable 10.0.0.802 Studio NET8 PostgreSQL run proved URI resolution, warning propagation, successful uninstall, and complete cleanup.
+Files: clio.mcp.e2e/Support/Configuration/ClioEnvironmentCommandResolver.cs, clio.mcp.e2e/Support/Configuration/IisApplicationPoolResolver.cs, clio.mcp.e2e/UninstallCreatioWarningE2ETests.cs, clio.mcp.e2e/UninstallWarningIisApplicationPoolResolverE2ETests.cs, spec/uninstall-warning-e2e-uri-resolution/
+Impact: The warning E2E no longer depends on unrelated `EnvironmentPath` metadata and aborts safely on unmatched, ambiguous, or pool-less IIS targets.
