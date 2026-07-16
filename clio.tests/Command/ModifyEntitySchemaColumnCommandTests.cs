@@ -160,4 +160,25 @@ internal class ModifyEntitySchemaColumnCommandTests : BaseCommandTests<ModifyEnt
 		_logger.Received(1).WriteInfo("Done");
 	}
 
+	[Test]
+	[Description("Treats usage-type as a mutable option so a modify whose only supplied property is usage-type is accepted.")]
+	public void Execute_CallsColumnManager_WhenModifyOnlyChangesUsageType() {
+		// Arrange
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			Action = "modify",
+			ColumnName = "Name",
+			UsageType = "Advanced"
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "changing only the usage type should count as a valid modification request");
+		_columnManager.Received(1).ModifyColumn(options);
+		_logger.Received(1).WriteInfo("Done");
+	}
+
 }

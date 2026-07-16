@@ -43,7 +43,7 @@ public sealed class SchemaCreateTool(
 				Error = PageSchemaMetadataHelper.SchemaNameFormatError
 			};
 		}
-		return ExecuteWithCleanLog(() => {
+		return ExecuteWithCleanLog(options, () => {
 			SourceCodeSchemaCreateCommand resolvedCommand;
 			try {
 				resolvedCommand = ResolveCommand<SourceCodeSchemaCreateCommand>(options);

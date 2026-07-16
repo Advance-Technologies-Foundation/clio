@@ -376,4 +376,68 @@ public sealed class DeployPipelineViewModelTests {
 		_sut.Steps.Count.Should().Be(stepsAfterRun, because: "the sink auto-disposed on the terminal event, so later beats are ignored");
 		_sut.RunState.Should().Be(PipelineRunState.Succeeded, because: "the terminal state is preserved after the run's sink is disposed");
 	}
+
+	[Test]
+	[Description("A warning stage renders as a yellow warning state with friendly and expandable technical detail.")]
+	public void Ingest_ShouldRenderWarningStep_WhenStageStatusIsWarning() {
+		// Arrange
+		_sut.Ingest(Manifest(_runId, ThreeStageManifest()));
+
+		// Act
+		_sut.Ingest(Stage(_runId, "restore-db", ClioStageEventContract.StageStatuses.Warning,
+			message: "Application-pool profile could not be removed.", detail: "Access is denied.",
+			errorCode: "APPPOOL_PROFILE_DELETE_FAILED"));
+
+		// Assert
+		PipelineStepViewModel step = Step("restore-db");
+		step.State.Should().Be(PipelineStepState.Warning,
+			because: "warning is a dedicated state rather than a failed or skipped workaround");
+		step.StateLabel.Should().Be("WARNING", because: "the row visibly communicates the warning");
+		step.HasTechnicalDetail.Should().BeTrue(because: "safe detail is available behind the expander");
+	}
+
+	[Test]
+	[Description("A success-with-warnings terminal renders the dedicated successful warning state.")]
+	public void Ingest_ShouldCompleteSuccessfullyWithWarnings_WhenTerminalOutcomeRetainsWarning() {
+		// Arrange
+		_sut.Ingest(Manifest(_runId, ThreeStageManifest()));
+		_sut.Ingest(Stage(_runId, "restore-db", ClioStageEventContract.StageStatuses.Warning));
+
+		// Act
+		_sut.Ingest(RunCompleted(_runId, ClioStageEventContract.RunOutcomes.SuccessWithWarnings,
+			"Creatio was uninstalled, but its application-pool profile could not be removed."));
+
+		// Assert
+		_sut.RunState.Should().Be(PipelineRunState.SucceededWithWarnings,
+			because: "the terminal is successful without hiding the warning");
+		_sut.IsSucceeded.Should().BeTrue(because: "normal post-success refresh behavior must still run");
+		_sut.RunStateLabel.Should().Be("COMPLETED WITH WARNINGS",
+			because: "the terminal badge visibly communicates the retained warning");
+	}
+
+	[Test]
+	[Description("A conditional dbHub stage and its warning render through the generic Ring stage contract.")]
+	public void Ingest_ShouldRenderDbHubWarningAndPreserveDeployUrl_WhenAutomaticSyncWarns() {
+		// Arrange
+		ClioStageManifestEntry[] manifest = [
+			new("wait-ready", "Wait until ready", 0, 2, false),
+			new("sync-dbhub-source", "Synchronize dbHub source", 1, 2, true)
+		];
+		_sut.Ingest(Manifest(_runId, manifest));
+
+		// Act
+		_sut.Ingest(Stage(_runId, "sync-dbhub-source", ClioStageEventContract.StageStatuses.Warning,
+			message: "dbHub live verification was skipped.", detail: "The TOML update was retained.",
+			errorCode: "DBHUB_LIVE_VERIFICATION_SKIPPED"));
+		_sut.Ingest(RunCompleted(_runId, ClioStageEventContract.RunOutcomes.SuccessWithWarnings,
+			"Deployment completed with a dbHub warning.", derivedUrl: "http://127.0.0.1:40882"));
+
+		// Assert
+		Step("sync-dbhub-source").State.Should().Be(PipelineStepState.Warning,
+			because: "Ring renders provider-defined conditional stages without special-case code");
+		_sut.RunState.Should().Be(PipelineRunState.SucceededWithWarnings,
+			because: "the dbHub warning does not turn a successful deploy into failure");
+		_sut.DerivedUrl.Should().Be("http://127.0.0.1:40882",
+			because: "the deployed application remains navigable after best-effort synchronization warns");
+	}
 }

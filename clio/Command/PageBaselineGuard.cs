@@ -65,14 +65,19 @@ public sealed class PageBaselineGuard : IPageBaselineGuard {
 		bool callerPinnedChecksum = !string.IsNullOrWhiteSpace(options.ExpectedChecksum);
 		string metaFilePath;
 		try {
-			metaFilePath = PageBaselineStore.ResolveMetaFilePath(
-				_fileSystem,
-				_fileSystem.Directory.GetCurrentDirectory(),
-				Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-				ClioRuntimePaths.Home,
-				outputDirectory,
-				options.BodyFile,
-				options.SchemaName);
+			// H1: reading the process-global cwd to resolve the meta.json anchor must serialize against
+			// the MCP workspace tools that PIN cwd. In the MCP path this runs under the per-tenant lock
+			// (ordering per-tenant → CwdLock); in the single-threaded CLI path CwdLock is uncontended.
+			lock (McpServer.Tools.McpToolExecutionLock.CwdLock) {
+				metaFilePath = PageBaselineStore.ResolveMetaFilePath(
+					_fileSystem,
+					_fileSystem.Directory.GetCurrentDirectory(),
+					Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+					ClioRuntimePaths.Home,
+					outputDirectory,
+					options.BodyFile,
+					options.SchemaName);
+			}
 		} catch {
 			// A malformed anchor/body-file path must not break the write — degrade to no check.
 			return (null, false);

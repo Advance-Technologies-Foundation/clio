@@ -96,6 +96,10 @@ public sealed partial class InstallFormViewModel : ViewModelBase {
 	/// <summary>True when the Local source is selected (drives the database/Redis picker visibility).</summary>
 	public bool IsLocal => Local;
 
+	/// <summary>Whether local IIS deployment should prefer HTTPS when a usable certificate is installed.</summary>
+	[ObservableProperty]
+	private bool _useHttps;
+
 	/// <summary>Human label for the source toggle.</summary>
 	public string SourceLabel => Local
 		? "Local — a database and Redis on this machine"
@@ -403,6 +407,7 @@ public sealed partial class InstallFormViewModel : ViewModelBase {
 			ZipFile = SelectedBuild?.FullPath ?? string.Empty,
 			SitePort = port,
 			Local = Local,
+			UseHttps = Local && UseHttps,
 			DbServerName = Local ? SelectedDatabase?.DbServerName : null,
 			RedisServerName = Local ? SelectedRedis?.RedisServerName : null
 		};

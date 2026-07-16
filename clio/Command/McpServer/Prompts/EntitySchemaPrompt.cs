@@ -152,7 +152,9 @@ public static class EntitySchemaPrompt {
 		 `default-value-config` source `Sequence` only for text columns. For `Settings`, `value-source`
 		 accepts setting code, display name, or id and clio normalizes it to setting code before save.
 		 For `SystemValue`, `value-source` accepts GUID, enum alias, or display caption and clio
-		 normalizes it to GUID before save. For create + seed + update workflows,
+		 normalizes it to GUID before save. Each operation may set `usage-type` = `General` (default), `Advanced`,
+		 or `None` (case-insensitive, any column type); on `modify` the stored value is left unchanged when omitted.
+		 For create + seed + update workflows,
 		 prefer `sync-schemas`. Seed rows create data only; model default requirements separately as
 		 `schema default` or `ui default`. For existing-app maintenance guidance, call
 		 `{GuidanceGetTool.ToolName}` with `name` set to `existing-app-maintenance`.
@@ -212,6 +214,7 @@ public static class EntitySchemaPrompt {
 		 structured properties for column `{columnName}` in entity schema `{schemaName}` from package
 		 `{packageName}` on environment `{environmentName}`.
 		 Pass `package-name`, `schema-name`, `column-name`, and `environment-name` exactly as provided.
+		 The result includes `usage-type` as a friendly name (General/Advanced/None) that can be sent back verbatim as a `usage-type` write input.
 		 For the canonical discover -> inspect -> mutate flow, call `{GuidanceGetTool.ToolName}` with `name` set to `existing-app-maintenance`.
 		 Use this read step before and after `modify-entity-schema-column` when the requested change is scoped to one column.
 		 """;
@@ -262,6 +265,8 @@ public static class EntitySchemaPrompt {
 		 accepts setting code, display name, or id and clio normalizes it to setting code before save.
 		 For `SystemValue`, `value-source` accepts GUID, enum alias, or display caption and clio
 		 normalizes it to GUID before save.
+		 To set the column usage type pass `usage-type` = `General` (default), `Advanced`, or `None` (case-insensitive);
+		 it applies to any column type. On `modify` the stored value is left unchanged when `usage-type` is omitted.
 		 For the canonical discover -> inspect -> mutate flow, call `{GuidanceGetTool.ToolName}` with `name` set to `existing-app-maintenance`.
 		 Prefer reading current metadata with `{GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName}` first and reading it back after the mutation when explicit verification is needed.
 		 """;

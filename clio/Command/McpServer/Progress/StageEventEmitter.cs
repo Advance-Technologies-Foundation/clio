@@ -73,6 +73,13 @@ public interface IStageEventEmitter {
 	/// <param name="skipReason">One of <see cref="ClioStageEventContract.SkipReasons"/> (e.g. <c>not-applicable</c>).</param>
 	void SkipStage(string stageId, string skipReason);
 
+	/// <summary>Emits a non-fatal warning transition without triggering the failed-stage cascade.</summary>
+	/// <param name="stageId">The stage key; must be present in the current manifest.</param>
+	/// <param name="message">Friendly warning message.</param>
+	/// <param name="detail">Safe technical detail.</param>
+	/// <param name="errorCode">Stable machine-readable warning code.</param>
+	void WarnStage(string stageId, string message, string detail, string errorCode);
+
 	/// <summary>
 	/// Emits the terminal <c>run-completed</c> event with <c>outcome=success</c>.
 	/// </summary>
@@ -80,6 +87,15 @@ public interface IStageEventEmitter {
 	/// <param name="derivedUrl">Optional URL derived from the run (e.g. the deployed application URL).</param>
 	/// <param name="derivedPath">Optional path derived from the run (e.g. the install directory).</param>
 	void CompleteSuccess(string summary, string derivedUrl = null, string derivedPath = null);
+
+	/// <summary>Emits a successful-with-warnings terminal after one or more warning stages.</summary>
+	/// <param name="summary">Short, non-secret human-readable summary of the run.</param>
+	/// <param name="detail">Optional safe warning detail.</param>
+	/// <param name="errorCode">Optional stable machine-readable warning code.</param>
+	/// <param name="derivedPath">Optional path derived from the run.</param>
+	/// <param name="derivedUrl">Optional URL derived from the run.</param>
+	void CompleteSuccessWithWarnings(string summary, string detail = null, string errorCode = null,
+		string derivedPath = null, string derivedUrl = null);
 
 	/// <summary>
 	/// Completes a run that failed outside an individual stage wrapper. Any manifest stages that have not
@@ -212,6 +228,14 @@ public sealed class StageEventEmitter : IStageEventEmitter {
 	}
 
 	/// <inheritdoc />
+	public void WarnStage(string stageId, string message, string detail, string errorCode) {
+		ClioStageManifestEntry entry = Find(stageId);
+		_emitted.Add(entry.StageId);
+		EmitStage(entry, ClioStageEventContract.StageStatuses.Warning, message: message, detail: detail,
+			errorCode: errorCode);
+	}
+
+	/// <inheritdoc />
 	public void CompleteSuccess(string summary, string derivedUrl = null, string derivedPath = null) {
 		if (_completed) {
 			return;
@@ -222,6 +246,20 @@ public sealed class StageEventEmitter : IStageEventEmitter {
 			_runId, 0, _operation,
 			RunCompleted: new ClioRunCompleted(ClioStageEventContract.RunOutcomes.Success, summary,
 				DerivedUrl: derivedUrl, DerivedPath: derivedPath)));
+	}
+
+	/// <inheritdoc />
+	public void CompleteSuccessWithWarnings(string summary, string detail = null, string errorCode = null,
+		string derivedPath = null, string derivedUrl = null) {
+		if (_completed) {
+			return;
+		}
+
+		_completed = true;
+		Emit(new ClioStageEvent(ClioStageEventContract.SchemaVersion, ClioStageEventContract.EventTypes.RunCompleted,
+			_runId, 0, _operation,
+			RunCompleted: new ClioRunCompleted(ClioStageEventContract.RunOutcomes.SuccessWithWarnings, summary,
+				Detail: detail, ErrorCode: errorCode, DerivedUrl: derivedUrl, DerivedPath: derivedPath)));
 	}
 
 	/// <inheritdoc />
