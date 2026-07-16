@@ -279,6 +279,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["get-client-unit-schema"] = PassthroughClassification.NotApplicable,
 			["get-entity-schema-column-properties"] = PassthroughClassification.NotApplicable,
 			["get-entity-schema-properties"] = PassthroughClassification.NotApplicable,
+			["set-entity-schema-properties"] = PassthroughClassification.NotApplicable,
 			["get-fsm-mode"] = PassthroughClassification.NotApplicable,
 			["get-identity-assertion"] = PassthroughClassification.NotApplicable,
 			["get-identity-public-jwk"] = PassthroughClassification.NotApplicable,
