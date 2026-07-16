@@ -532,6 +532,61 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 			Arg.Is<string>(msg => msg.Contains("Created row") && msg.Contains("New")));
 	}
 
+	[Test]
+	[Description("Skips InsertQuery and binds an already-existing row by Id when the row has no Name to match on, so a keyed row (e.g. SysSchemaAdminUnitRight) is adopted instead of inserting a duplicate.")]
+	public void CreateDataBindingDb_Should_Skip_Insert_And_Bind_By_Id_When_Row_Exists_In_Table() {
+		// Arrange - the row carries an explicit Id that already exists in the entity table (matched by Id, not Name)
+		const string existingRowId = "bbbbbbbb-cccc-dddd-eeee-ffffffffffff";
+		_existingEntityNamesJson = $$"""{"rows":[{"Id":"{{existingRowId}}"}],"success":true}""";
+		CreateDataBindingDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			SchemaName = "SysSettings",
+			BindingName = "UsrByIdBinding",
+			RowsJson = "[{\"values\":{\"Id\":\"" + existingRowId + "\"}}]"
+		};
+
+		// Act
+		int result = _createCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(0,
+			because: "create-data-binding-db should register a row that already exists in the table by Id without inserting a duplicate");
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			"http://localhost/0/DataService/json/SyncReply/InsertQuery",
+			Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		_applicationClient.Received(1).ExecutePostRequest(
+			"http://localhost/0/ServiceModel/SchemaDataDesignerService.svc/SaveSchema",
+			Arg.Is<string>(body => body.Contains(existingRowId)),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("Inserts through create-data-binding-db when the row carries an explicit Id that is NOT present in the table, preserving the insert path for brand-new keyed records.")]
+	public void CreateDataBindingDb_Should_Insert_When_Explicit_Id_Not_In_Table() {
+		// Arrange - explicit Id that is not present in the table
+		const string newRowId = "cccccccc-1111-2222-3333-444444444444";
+		_existingEntityNamesJson = """{"rows":[],"success":true}""";
+		CreateDataBindingDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			SchemaName = "SysSettings",
+			BindingName = "UsrNewIdBinding",
+			RowsJson = "[{\"values\":{\"Id\":\"" + newRowId + "\"}}]"
+		};
+
+		// Act
+		int result = _createCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(0,
+			because: "create-data-binding-db should still insert a keyed row when its Id is not present in the table");
+		_applicationClient.Received(1).ExecutePostRequest(
+			"http://localhost/0/DataService/json/SyncReply/InsertQuery",
+			Arg.Is<string>(body => body.Contains(newRowId)),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
 	private string BuildApplicationClientResponse(string url, string requestBody) {
 		if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
 			return _schemaResponseJson;
@@ -544,7 +599,17 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 
 		if (url.Contains("SelectQuery", StringComparison.Ordinal) &&
 			!requestBody.Contains("\"rootSchemaName\":\"SysPackageSchemaData\"", StringComparison.Ordinal)) {
-			return _existingEntityNamesJson;
+			// FetchExistingEntityNameToId selects the Name column; RowExistsInTable selects only Id and filters
+			// by Id. Route the name-map fetch to the full response, and answer an Id-existence probe positively
+			// only when the probed Id is among the known existing rows.
+			if (requestBody.Contains("\"columnPath\":\"Name\"", StringComparison.Ordinal)) {
+				return _existingEntityNamesJson;
+			}
+			string? existingId = ExtractExistingIds(_existingEntityNamesJson)
+				.FirstOrDefault(id => requestBody.Contains(id, StringComparison.OrdinalIgnoreCase));
+			return existingId is null
+				? """{"rows":[],"success":true}"""
+				: "{\"rows\":[{\"Id\":\"" + existingId + "\"}],\"success\":true}";
 		}
 
 		if (url.Contains("GetBoundSchemaData", StringComparison.Ordinal)) {
@@ -566,6 +631,23 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 		}
 
 		return """{"success":true}""";
+	}
+
+	private static IEnumerable<string> ExtractExistingIds(string json) {
+		using JsonDocument document = JsonDocument.Parse(json);
+		if (!document.RootElement.TryGetProperty("rows", out JsonElement rows) ||
+			rows.ValueKind != JsonValueKind.Array) {
+			yield break;
+		}
+		foreach (JsonElement row in rows.EnumerateArray()) {
+			if (row.TryGetProperty("Id", out JsonElement idElement) &&
+				idElement.ValueKind == JsonValueKind.String) {
+				string? id = idElement.GetString();
+				if (!string.IsNullOrWhiteSpace(id)) {
+					yield return id;
+				}
+			}
+		}
 	}
 
 	private static string BuildBindingLookupResponse(string schemaName, string? bindingName = null) {

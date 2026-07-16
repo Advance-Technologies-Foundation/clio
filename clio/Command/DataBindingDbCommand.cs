@@ -535,6 +535,17 @@ internal sealed class DataBindingDbService(
 				Dictionary<string, string?> skippedValues = row.ToDictionary(kv => kv.Key, kv => kv.Value?.ToString());
 				skippedValues["Id"] = existingId;
 				skippedRows.Add(new DataBindingCreatedRow(existingId, skippedValues));
+			} else if (RowExistsInTable(schemaName, rowId)) {
+				// Row already exists in the table (matched by Id): register the binding for it without
+				// rewriting the row. Lets a row with no Name column (e.g. SysSchemaAdminUnitRight) be bound
+				// by Id, the same way a Named row is adopted above, instead of inserting a duplicate.
+				if (rowName is not null) {
+					existingNameToId[rowName] = rowId;
+				}
+				AddToBoundIds(boundRecordIds, rowId);
+				skippedRows.Add(new DataBindingCreatedRow(
+					rowId,
+					row.ToDictionary(kv => kv.Key, kv => kv.Value?.ToString())));
 			} else {
 				InsertEntityRow(schemaName, row, schema.SchemaColumns);
 				if (rowName is not null) {
