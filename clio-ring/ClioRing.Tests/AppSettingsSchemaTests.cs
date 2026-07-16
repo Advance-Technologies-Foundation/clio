@@ -89,6 +89,7 @@ public sealed class AppSettingsSchemaTests {
 	}
 
 	[TestCase("""{"WorkspaceFolder":"C:\\Workspaces","Unexpected":true}""")]
+	[TestCase("""{"WorkspaceFolder":"   "}""")]
 	[TestCase("""{"WorkspaceFolder":"C:\\Workspaces","ClioIpc":{"Command":"dotnet"}}""")]
 	[TestCase("""{"WorkspaceFolder":"C:\\Workspaces","Channel":"   "}""")]
 	[TestCase("""{"WorkspaceFolder":"C:\\Workspaces","ClioIpc":{"Command":"   ","Args":["mcp-server"]}}""")]

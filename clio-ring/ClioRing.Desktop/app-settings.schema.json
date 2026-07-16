@@ -17,6 +17,7 @@
       "title": "Workspace folder",
       "description": "Absolute folder scanned for clio workspaces.",
       "minLength": 1,
+      "pattern": "\\S",
       "examples": [ "C:\\Projects\\Workspaces" ]
     },
     "Hotkey": {
