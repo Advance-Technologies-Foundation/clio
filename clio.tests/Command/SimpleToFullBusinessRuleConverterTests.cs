@@ -2,16 +2,18 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Clio.Command.BusinessRules;
 using Clio.Command.EntitySchemaDesigner;
 using FluentAssertions;
 using NUnit.Framework;
+using Clio.Command.BusinessRules.Converters;
 
 namespace Clio.Tests.Command;
 
 [TestFixture]
 [Property("Module", "Command")]
-public sealed class BusinessRuleMetadataConverterTests {
+public sealed class SimpleToFullBusinessRuleConverterTests {
 	[TestCase("is-not-filled-in", BusinessRuleConstants.ComparisonIsNotFilledIn, false)]
 	[TestCase("is-filled-in", BusinessRuleConstants.ComparisonIsFilledIn, false)]
 	[TestCase("equal", BusinessRuleConstants.ComparisonEqual, true)]
@@ -47,7 +49,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			]);
 
 		// Act
-		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
+		BusinessRuleMetadataDto metadata = SimpleToFullBusinessRuleConverter.ToMetadata(columnMap, rule, "UsrTask");
 
 		// Assert
 		BusinessRuleGroupConditionMetadataDto conditionGroup = metadata.Cases[0].Condition!
@@ -95,7 +97,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			]);
 
 		// Act
-		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
+		BusinessRuleMetadataDto metadata = SimpleToFullBusinessRuleConverter.ToMetadata(columnMap, rule, "UsrTask");
 
 		// Assert
 		metadata.Name.Should().StartWith("BusinessRule_",
@@ -188,7 +190,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			]);
 
 		// Act
-		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
+		BusinessRuleMetadataDto metadata = SimpleToFullBusinessRuleConverter.ToMetadata(columnMap, rule, "UsrTask");
 
 		// Assert
 		BusinessRuleGroupConditionMetadataDto conditionGroup = metadata.Cases[0].Condition!
@@ -230,7 +232,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			]);
 
 		// Act
-		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
+		BusinessRuleMetadataDto metadata = SimpleToFullBusinessRuleConverter.ToMetadata(columnMap, rule, "UsrTask");
 
 		// Assert
 		BusinessRuleGroupConditionMetadataDto conditionGroup = metadata.Cases[0].Condition!
@@ -280,7 +282,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			]);
 
 		// Act
-		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToPageMetadata(attributeMap, rule);
+		BusinessRuleMetadataDto metadata = SimpleToFullBusinessRuleConverter.ToPageMetadata(attributeMap, rule);
 
 		// Assert
 		BusinessRuleConditionMetadataDto condition = metadata.Cases[0].Condition!
@@ -332,7 +334,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			]);
 
 		// Act
-		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToPageMetadata(attributeMap, rule);
+		BusinessRuleMetadataDto metadata = SimpleToFullBusinessRuleConverter.ToPageMetadata(attributeMap, rule);
 
 		// Assert
 		BusinessRuleConditionMetadataDto condition = metadata.Cases[0].Condition!
@@ -373,7 +375,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			]);
 
 		// Act
-		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToPageMetadata(attributeMap, rule);
+		BusinessRuleMetadataDto metadata = SimpleToFullBusinessRuleConverter.ToPageMetadata(attributeMap, rule);
 
 		// Assert
 		BusinessRuleGroupConditionMetadataDto conditionGroup = metadata.Cases[0].Condition!
@@ -417,7 +419,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			]);
 
 		// Act
-		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
+		BusinessRuleMetadataDto metadata = SimpleToFullBusinessRuleConverter.ToMetadata(columnMap, rule, "UsrTask");
 
 		// Assert
 		BusinessRuleGroupConditionMetadataDto conditionGroup = metadata.Cases[0].Condition!
@@ -452,7 +454,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			]);
 
 		// Act
-		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToPageMetadata(attributeMap, rule);
+		BusinessRuleMetadataDto metadata = SimpleToFullBusinessRuleConverter.ToPageMetadata(attributeMap, rule);
 
 		// Assert
 		BusinessRuleGroupConditionMetadataDto conditionGroup = metadata.Cases[0].Condition!
@@ -496,7 +498,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			]);
 
 		// Act
-		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToPageMetadata(attributeMap, rule);
+		BusinessRuleMetadataDto metadata = SimpleToFullBusinessRuleConverter.ToPageMetadata(attributeMap, rule);
 
 		// Assert
 		BusinessRuleGroupConditionMetadataDto conditionGroup = metadata.Cases[0].Condition!
@@ -535,7 +537,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			]);
 
 		// Act
-		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToPageMetadata(attributeMap, rule);
+		BusinessRuleMetadataDto metadata = SimpleToFullBusinessRuleConverter.ToPageMetadata(attributeMap, rule);
 
 		// Assert
 		metadata.Cases.Single().Actions.Select(action => action.TypeName).Should().Equal([
@@ -609,7 +611,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			]);
 
 		// Act
-		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
+		BusinessRuleMetadataDto metadata = SimpleToFullBusinessRuleConverter.ToMetadata(columnMap, rule, "UsrTask");
 
 		// Assert
 		FieldSelectionBusinessRuleActionMetadataDto action = metadata.Cases[0].Actions.Single()
@@ -697,7 +699,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			]);
 
 		// Act
-		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
+		BusinessRuleMetadataDto metadata = SimpleToFullBusinessRuleConverter.ToMetadata(columnMap, rule, "UsrTask");
 
 		// Assert
 		FieldSelectionBusinessRuleActionMetadataDto action = metadata.Cases[0].Actions.Single()
@@ -779,7 +781,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			]);
 
 		// Act
-		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(attributeMap, rule, "UsrTask");
+		BusinessRuleMetadataDto metadata = SimpleToFullBusinessRuleConverter.ToMetadata(attributeMap, rule, "UsrTask");
 
 		// Assert
 		FieldSelectionBusinessRuleActionMetadataDto action = metadata.Cases[0].Actions.Single()
@@ -845,7 +847,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			]);
 
 		// Act
-		IReadOnlyList<BusinessRuleMetadataDto> metadata = BusinessRuleMetadataConverter.ToEntityMetadata(attributeMap, rule, "UsrOrder");
+		IReadOnlyList<BusinessRuleMetadataDto> metadata = SimpleToFullBusinessRuleConverter.ToEntityMetadata(attributeMap, rule, "UsrOrder");
 
 		// Assert
 		metadata.Should().HaveCount(2,
@@ -934,7 +936,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			because: "the empty lookup expression should preserve its lookup type metadata");
 		clearItems.Single().Value.Value.Should().Be(Guid.Empty.ToString(),
 			because: "UI parity requires clear child rules to assign the zero GUID empty lookup value");
-		BusinessRuleMetadataDto populateRule = BusinessRuleMetadataConverter.ToEntityMetadata(
+		BusinessRuleMetadataDto populateRule = SimpleToFullBusinessRuleConverter.ToEntityMetadata(
 			attributeMap,
 			new BusinessRule(
 				rule.Caption,
@@ -1003,7 +1005,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			]);
 
 		// Act
-		IReadOnlyList<BusinessRuleMetadataDto> metadata = BusinessRuleMetadataConverter.ToEntityMetadata(attributeMap, rule, "UsrOrder");
+		IReadOnlyList<BusinessRuleMetadataDto> metadata = SimpleToFullBusinessRuleConverter.ToEntityMetadata(attributeMap, rule, "UsrOrder");
 
 		// Assert
 		BusinessRuleConditionMetadataDto clearCondition = metadata[1].Cases.Single().Condition!
@@ -1040,7 +1042,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			]);
 
 		// Act
-		IReadOnlyList<BusinessRuleMetadataDto> metadata = BusinessRuleMetadataConverter.ToEntityMetadata(attributeMap, rule, "UsrOrder");
+		IReadOnlyList<BusinessRuleMetadataDto> metadata = SimpleToFullBusinessRuleConverter.ToEntityMetadata(attributeMap, rule, "UsrOrder");
 
 		// Assert
 		BusinessRuleFilterLookupActionMetadataDto parentAction = metadata[0].Cases.Single().Actions.Single()
@@ -1090,7 +1092,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			]);
 
 		// Act
-		IReadOnlyList<BusinessRuleMetadataDto> metadata = BusinessRuleMetadataConverter.ToEntityMetadata(attributeMap, rule, "Ninja");
+		IReadOnlyList<BusinessRuleMetadataDto> metadata = SimpleToFullBusinessRuleConverter.ToEntityMetadata(attributeMap, rule, "Ninja");
 
 		// Assert
 		BusinessRuleMetadataDto parentRule = metadata[0];
@@ -1125,7 +1127,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 		BusinessRule rule = CreateFormulaRule("Score", "BaseScore + MissingScore");
 
 		// Act
-		Action act = () => BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
+		Action act = () => SimpleToFullBusinessRuleConverter.ToMetadata(columnMap, rule, "UsrTask");
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
@@ -1146,7 +1148,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 		BusinessRule rule = CreateFormulaRule("NumberOfDays", "EndDate - StartDate + 1");
 
 		// Act
-		Action act = () => BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrLeaveRequest");
+		Action act = () => SimpleToFullBusinessRuleConverter.ToMetadata(columnMap, rule, "UsrLeaveRequest");
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
@@ -1165,7 +1167,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 		BusinessRule rule = CreateFormulaRule("Score", "1 + 2");
 
 		// Act
-		Action act = () => BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
+		Action act = () => SimpleToFullBusinessRuleConverter.ToMetadata(columnMap, rule, "UsrTask");
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
@@ -1185,7 +1187,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 		BusinessRule rule = CreateFormulaRule("Score", "If(BaseScore > 0, BaseScore, 0)");
 
 		// Act
-		Action act = () => BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
+		Action act = () => SimpleToFullBusinessRuleConverter.ToMetadata(columnMap, rule, "UsrTask");
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
@@ -1205,7 +1207,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 		BusinessRule rule = CreateFormulaRule("Score", "BaseScore > 0");
 
 		// Act
-		Action act = () => BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
+		Action act = () => SimpleToFullBusinessRuleConverter.ToMetadata(columnMap, rule, "UsrTask");
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
@@ -1235,7 +1237,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			]);
 
 		// Act
-		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
+		BusinessRuleMetadataDto metadata = SimpleToFullBusinessRuleConverter.ToMetadata(columnMap, rule, "UsrTask");
 		string json = JsonSerializer.Serialize(metadata, BusinessRuleConstants.JsonOptions);
 
 		// Assert
@@ -1303,7 +1305,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			]);
 
 		// Act
-		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
+		BusinessRuleMetadataDto metadata = SimpleToFullBusinessRuleConverter.ToMetadata(columnMap, rule, "UsrTask");
 		BusinessRuleGroupConditionMetadataDto dateConditionGroup = metadata.Cases[0].Condition!
 			.Should().BeOfType<BusinessRuleGroupConditionMetadataDto>(
 				because: "standard business rules should still persist grouped case conditions").Subject;
@@ -1351,7 +1353,7 @@ public sealed class BusinessRuleMetadataConverterTests {
 			]);
 
 		// Act
-		BusinessRuleMetadataDto metadata = BusinessRuleMetadataConverter.ToMetadata(columnMap, rule, "UsrTask");
+		BusinessRuleMetadataDto metadata = SimpleToFullBusinessRuleConverter.ToMetadata(columnMap, rule, "UsrTask");
 		BusinessRuleGroupConditionMetadataDto timeConditionGroup = metadata.Cases[0].Condition!
 			.Should().BeOfType<BusinessRuleGroupConditionMetadataDto>(
 				because: "standard business rules should still persist grouped case conditions").Subject;
@@ -1375,6 +1377,417 @@ public sealed class BusinessRuleMetadataConverterTests {
 			.Be("0001-01-01T10:00:00Z",
 				because: "normalized time constants should serialize as stable UTC strings in add-on metadata");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Honors the caller-supplied rule name (trimmed) and explicit enabled=false flag instead of generating a name and defaulting to enabled.")]
+	public void ToMetadata_Should_Honor_Rule_Name_And_Enabled() {
+		// Arrange
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("Status", 1));
+		BusinessRule rule = new(
+			"Named rule",
+			new BusinessRuleConditionGroup(
+				"AND",
+				[
+					new BusinessRuleCondition(
+						new BusinessRuleExpression("AttributeValue", "Status", null),
+						"equal",
+						new BusinessRuleExpression("Const", null, Json("Draft")))
+				]),
+			[
+				new MakeReadOnlyBusinessRuleAction(["Status"])
+			]) {
+			Name = " BusinessRule_named ",
+			Enabled = false
+		};
+
+		// Act
+		BusinessRuleMetadataDto metadata = SimpleToFullBusinessRuleConverter.ToMetadata(columnMap, rule, "UsrTask");
+
+		// Assert
+		metadata.Name.Should().Be("BusinessRule_named",
+			because: "the caller-supplied rule name must be trimmed and persisted as the match key");
+		metadata.Enabled.Should().BeFalse(
+			because: "the caller's explicit enabled=false intent must be persisted instead of the default");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Generates an internal rule name when the caller-supplied name is whitespace.")]
+	public void ToMetadata_Should_Generate_Name_When_Name_Is_Whitespace() {
+		// Arrange
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("Status", 1));
+		BusinessRule rule = new(
+			"Whitespace name",
+			new BusinessRuleConditionGroup(
+				"AND",
+				[
+					new BusinessRuleCondition(
+						new BusinessRuleExpression("AttributeValue", "Status", null),
+						"equal",
+						new BusinessRuleExpression("Const", null, Json("Draft")))
+				]),
+			[
+				new MakeReadOnlyBusinessRuleAction(["Status"])
+			]) {
+			Name = "   "
+		};
+
+		// Act
+		BusinessRuleMetadataDto metadata = SimpleToFullBusinessRuleConverter.ToMetadata(columnMap, rule, "UsrTask");
+
+		// Assert
+		metadata.Name.Should().StartWith("BusinessRule_",
+			because: "a whitespace name is treated as omitted and a fresh internal name is generated");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Honors valid caller-supplied block uIds on conditions, expressions, actions, and set-value items, normalizing them to canonical lowercase GUID form.")]
+	public void ToMetadata_Should_Honor_Valid_Caller_Block_UIds() {
+		// Arrange
+		const string conditionUId = "AAAAAAAA-0000-0000-0000-000000000001";
+		const string leftExpressionUId = "AAAAAAAA-0000-0000-0000-000000000002";
+		const string rightExpressionUId = "AAAAAAAA-0000-0000-0000-000000000003";
+		const string readOnlyActionUId = "AAAAAAAA-0000-0000-0000-000000000004";
+		const string setValuesActionUId = "AAAAAAAA-0000-0000-0000-000000000005";
+		const string setValueItemUId = "AAAAAAAA-0000-0000-0000-000000000006";
+		const string itemExpressionUId = "AAAAAAAA-0000-0000-0000-000000000007";
+		const string itemValueUId = "AAAAAAAA-0000-0000-0000-000000000008";
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("Status", 1),
+			CreateColumn("Amount", 6));
+		BusinessRule rule = new(
+			"Stable identity",
+			new BusinessRuleConditionGroup(
+				"AND",
+				[
+					new BusinessRuleCondition(
+						new BusinessRuleExpression("AttributeValue", "Status", null) { UId = leftExpressionUId },
+						"equal",
+						new BusinessRuleExpression("Const", null, Json("Draft")) { UId = rightExpressionUId }) {
+						UId = conditionUId
+					}
+				]),
+			[
+				new MakeReadOnlyBusinessRuleAction(["Status"]) { UId = readOnlyActionUId },
+				new SetValuesBusinessRuleAction([
+					new BusinessRuleSetValueItem(
+						new BusinessRuleExpression("AttributeValue", "Amount", null) { UId = itemExpressionUId },
+						new BusinessRuleExpression("Const", null, Json(5)) { UId = itemValueUId }) {
+						UId = setValueItemUId
+					}
+				]) { UId = setValuesActionUId }
+			]);
+
+		// Act
+		BusinessRuleMetadataDto metadata = SimpleToFullBusinessRuleConverter.ToMetadata(columnMap, rule, "UsrTask");
+
+		// Assert
+		BusinessRuleGroupConditionMetadataDto group =
+			(BusinessRuleGroupConditionMetadataDto)metadata.Cases[0].Condition!;
+		group.Conditions[0].UId.Should().Be(conditionUId.ToLowerInvariant(),
+			because: "the caller-supplied condition uId must be honored (normalized to canonical GUID form)");
+		group.Conditions[0].LeftExpression.UId.Should().Be(leftExpressionUId.ToLowerInvariant(),
+			because: "the caller-supplied left expression uId must be honored");
+		group.Conditions[0].RightExpression!.UId.Should().Be(rightExpressionUId.ToLowerInvariant(),
+			because: "the caller-supplied right expression uId must be honored");
+		metadata.Cases[0].Actions[0].UId.Should().Be(readOnlyActionUId.ToLowerInvariant(),
+			because: "the caller-supplied field-selection action uId must be honored");
+		metadata.Cases[0].Actions[1].UId.Should().Be(setValuesActionUId.ToLowerInvariant(),
+			because: "the caller-supplied set-values action uId must be honored");
+		List<BusinessRuleSetValueItemMetadataDto> items =
+			(List<BusinessRuleSetValueItemMetadataDto>)((FieldSelectionBusinessRuleActionMetadataDto)metadata.Cases[0].Actions[1]).Items!;
+		items[0].UId.Should().Be(setValueItemUId.ToLowerInvariant(),
+			because: "the caller-supplied set-value item uId must be honored");
+		items[0].Expression.UId.Should().Be(itemExpressionUId.ToLowerInvariant(),
+			because: "the caller-supplied item target expression uId must be honored");
+		items[0].Value.UId.Should().Be(itemValueUId.ToLowerInvariant(),
+			because: "the caller-supplied item value expression uId must be honored");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Throws when a caller-supplied block uId is not a valid GUID instead of persisting a broken block identity.")]
+	public void ToMetadata_Should_Throw_When_Block_UId_Is_Not_A_Guid() {
+		// Arrange
+		IReadOnlyDictionary<string, EntitySchemaColumnDto> columnMap = CreateColumnMap(
+			CreateColumn("Status", 1));
+		BusinessRule rule = new(
+			"Broken identity",
+			new BusinessRuleConditionGroup(
+				"AND",
+				[
+					new BusinessRuleCondition(
+						new BusinessRuleExpression("AttributeValue", "Status", null),
+						"equal",
+						new BusinessRuleExpression("Const", null, Json("Draft"))) {
+						UId = "not-a-guid"
+					}
+				]),
+			[
+				new MakeReadOnlyBusinessRuleAction(["Status"])
+			]);
+
+		// Act
+		Action act = () => SimpleToFullBusinessRuleConverter.ToMetadata(columnMap, rule, "UsrTask");
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>()
+			.WithMessage("Block uId 'not-a-guid' is not a valid GUID.",
+				because: "a malformed caller-supplied block uId must fail conversion instead of persisting a broken identity");
+	}
+
+	private const string ExistingRuleUId = "11111111-1111-1111-1111-111111111111";
+	private const string ExistingCaseUId = "22222222-2222-2222-2222-222222222222";
+	private const string ExistingGroupUId = "33333333-3333-3333-3333-333333333333";
+
+	[Test]
+	[Category("Unit")]
+	[Description("Produces the updated rule with the existing persisted rule, case, and top-level group-condition uIds when an existingRule is supplied, discarding the throwaway generated identities.")]
+	public void ToEntityMetadata_Should_Carry_Existing_Rule_Case_And_Group_UIds_When_ExistingRule_Provided() {
+		// Arrange
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap =
+			new Dictionary<string, BusinessRuleAttributeDescriptor>(StringComparer.Ordinal) {
+				["Status"] = new("Status", "Text", null)
+			};
+		BusinessRule rule = CreateStandardRule();
+		JsonObject existingRule = CreateExistingRule();
+
+		// Act
+		IReadOnlyList<BusinessRuleMetadataDto> metadata = SimpleToFullBusinessRuleConverter.ToEntityMetadata(
+			attributeMap, rule, "UsrTask", filterSchemaProvider: null, lookupValueResolver: null, existingRule);
+
+		// Assert
+		metadata[0].UId.Should().Be(ExistingRuleUId,
+			because: "the replacement rule must carry the persisted rule uId produced during construction");
+		metadata[0].Cases[0].UId.Should().Be(ExistingCaseUId,
+			because: "the single generated case must carry the persisted case uId");
+		metadata[0].Cases[0].Condition!.UId.Should().Be(ExistingGroupUId,
+			because: "the top-level group condition must carry the persisted group uId");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Mints fresh rule, case, and group uIds on the create path when no existingRule is supplied.")]
+	public void ToEntityMetadata_Should_Mint_Fresh_UIds_When_No_ExistingRule() {
+		// Arrange
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap =
+			new Dictionary<string, BusinessRuleAttributeDescriptor>(StringComparer.Ordinal) {
+				["Status"] = new("Status", "Text", null)
+			};
+		BusinessRule rule = CreateStandardRule();
+
+		// Act
+		IReadOnlyList<BusinessRuleMetadataDto> metadata = SimpleToFullBusinessRuleConverter.ToEntityMetadata(
+			attributeMap, rule, "UsrTask", filterSchemaProvider: null, lookupValueResolver: null);
+
+		// Assert
+		metadata[0].UId.Should().NotBe(ExistingRuleUId,
+			because: "the create path mints a fresh rule uId instead of reusing a persisted one");
+		Guid.TryParse(metadata[0].UId, out _).Should().BeTrue(
+			because: "the freshly minted rule uId must be a valid GUID");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Carries the existing trigger uIds onto generated triggers matched by case-insensitive name plus type, keeps fresh uIds where nothing matches, and consumes each existing trigger uId at most once.")]
+	public void ToEntityMetadata_Should_Carry_Existing_Trigger_UIds_Matched_By_Name_And_Type() {
+		// Arrange
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap =
+			new Dictionary<string, BusinessRuleAttributeDescriptor>(StringComparer.Ordinal) {
+				["Status"] = new("Status", "Text", null)
+			};
+		BusinessRule rule = CreateStandardRule();
+		JsonObject existingRule = CreateExistingRule(triggersJson: $$"""
+			[
+			  { "typeName": "Trigger", "uId": "44444444-4444-4444-4444-444444444444", "name": "STATUS", "type": 0 },
+			  { "typeName": "Trigger", "uId": "55555555-5555-5555-5555-555555555555", "name": "", "type": 2 }
+			]
+			""");
+
+		// Act
+		IReadOnlyList<BusinessRuleMetadataDto> metadata = SimpleToFullBusinessRuleConverter.ToEntityMetadata(
+			attributeMap, rule, "UsrTask", filterSchemaProvider: null, lookupValueResolver: null, existingRule);
+
+		// Assert
+		BusinessRuleTriggerMetadataDto changeTrigger = metadata[0].Triggers.Single(trigger =>
+			trigger.Type == BusinessRuleConstants.ChangeAttributeValueTriggerType && trigger.Name == "Status");
+		changeTrigger.UId.Should().Be("44444444-4444-4444-4444-444444444444",
+			because: "a change trigger matching by case-insensitive name and type must carry the persisted trigger uId");
+		BusinessRuleTriggerMetadataDto dataLoadedTrigger = metadata[0].Triggers.Single(trigger =>
+			trigger.Type == BusinessRuleConstants.DataLoadedTriggerType);
+		dataLoadedTrigger.UId.Should().Be("55555555-5555-5555-5555-555555555555",
+			because: "the DataLoaded trigger (empty name, type 2) must carry the persisted trigger uId");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Matches a persisted change trigger whose zero-valued 'type' property was stripped by the platform's addon-metadata normalization, treating an absent type as ChangeAttributeValue (0).")]
+	public void ToEntityMetadata_Should_Match_Change_Trigger_When_Persisted_Type_Property_Is_Absent() {
+		// Arrange - Creatio omits zero-valued properties on read-back, so change triggers (type 0)
+		// come back without a "type" property at all.
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap =
+			new Dictionary<string, BusinessRuleAttributeDescriptor>(StringComparer.Ordinal) {
+				["Status"] = new("Status", "Text", null)
+			};
+		BusinessRule rule = CreateStandardRule();
+		JsonObject existingRule = CreateExistingRule(triggersJson: """
+			[
+			  { "typeName": "Trigger", "uId": "44444444-4444-4444-4444-444444444444", "name": "Status" }
+			]
+			""");
+
+		// Act
+		IReadOnlyList<BusinessRuleMetadataDto> metadata = SimpleToFullBusinessRuleConverter.ToEntityMetadata(
+			attributeMap, rule, "UsrTask", filterSchemaProvider: null, lookupValueResolver: null, existingRule);
+
+		// Assert
+		metadata[0].Triggers.Single(trigger => trigger.Name == "Status").UId
+			.Should().Be("44444444-4444-4444-4444-444444444444",
+				because: "a persisted change trigger stripped of its zero-valued type must still match a generated type-0 trigger");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Throws when the existing persisted rule carries no uId, because identity cannot be preserved without it.")]
+	public void ToEntityMetadata_Should_Throw_When_Existing_Rule_Has_No_UId() {
+		// Arrange
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap =
+			new Dictionary<string, BusinessRuleAttributeDescriptor>(StringComparer.Ordinal) {
+				["Status"] = new("Status", "Text", null)
+			};
+		BusinessRule rule = CreateStandardRule();
+		JsonObject existingRule = (JsonObject)JsonNode.Parse("""{ "name": "Rule_A", "enabled": true }""")!;
+
+		// Act
+		Action act = () => SimpleToFullBusinessRuleConverter.ToEntityMetadata(
+			attributeMap, rule, "UsrTask", filterSchemaProvider: null, lookupValueResolver: null, existingRule);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>()
+			.WithMessage("Existing business rule has no uId.",
+				because: "a persisted rule without a uId cannot donate its identity to the replacement");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Builds apply-filter child rules anchored to the existing parent uId from the start, so child parentUId, autogenerated names, and captions embed the persisted uId without a post-conversion re-anchor.")]
+	public void ToEntityMetadata_Should_Anchor_ApplyFilter_Children_To_Existing_UId_When_ExistingRule_Provided() {
+		// Arrange
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap =
+			new Dictionary<string, BusinessRuleAttributeDescriptor>(StringComparer.Ordinal) {
+				["Country"] = new("Country", "Lookup", "Country"),
+				["City"] = new("City", "Lookup", "City"),
+				["City.Country"] = new("City.Country", "Lookup", "Country")
+			};
+		BusinessRule rule = new(
+			"Filter city by country",
+			new BusinessRuleConditionGroup("AND", []),
+			[
+				new ApplyFilterBusinessRuleAction(
+					"City",
+					"Country",
+					"Country",
+					null,
+					clearValue: true,
+					populateValue: true)
+			]);
+		JsonObject existingRule = CreateExistingRule();
+
+		// Act
+		IReadOnlyList<BusinessRuleMetadataDto> metadata = SimpleToFullBusinessRuleConverter.ToEntityMetadata(
+			attributeMap, rule, "UsrOrder", filterSchemaProvider: null, lookupValueResolver: null, existingRule);
+
+		// Assert
+		metadata[0].UId.Should().Be(ExistingRuleUId,
+			because: "the apply-filter parent rule must carry the persisted rule uId");
+		metadata.Skip(1).Should().OnlyContain(child => child.ParentUId == ExistingRuleUId,
+			because: "every apply-filter child must be anchored to the existing parent uId from construction");
+		metadata[1].Name.Should().Be($"Autogenerated_{ExistingRuleUId}_ClearValue",
+			because: "the parent uId embedded in the autogenerated clear child name must be the persisted uId");
+		metadata[1].Caption.Should().Be($"ChildRule-{ExistingRuleUId}-ClearValue",
+			because: "the parent uId embedded in the autogenerated clear child caption must be the persisted uId");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Carries the existing rule, case, and group uIds onto a page rule when an existingRule is supplied.")]
+	public void ToPageMetadata_Should_Carry_Existing_UIds_When_ExistingRule_Provided() {
+		// Arrange
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap =
+			new Dictionary<string, BusinessRuleAttributeDescriptor>(StringComparer.Ordinal) {
+				["PDS_Status"] = new("PDS_Status", "Text", null)
+			};
+		BusinessRule rule = new(
+			"Change page element state",
+			new BusinessRuleConditionGroup(
+				"AND",
+				[
+					new BusinessRuleCondition(
+						new BusinessRuleExpression("AttributeValue", "PDS_Status", null),
+						"is-filled-in")
+				]),
+			[
+				new ShowElementBusinessRuleAction(["NameInput"])
+			]);
+		JsonObject existingRule = CreateExistingRule();
+
+		// Act
+		BusinessRuleMetadataDto metadata = SimpleToFullBusinessRuleConverter.ToPageMetadata(attributeMap, rule, existingRule);
+
+		// Assert
+		metadata.UId.Should().Be(ExistingRuleUId,
+			because: "the page replacement rule must carry the persisted rule uId");
+		metadata.Cases[0].UId.Should().Be(ExistingCaseUId,
+			because: "the single page case must carry the persisted case uId");
+		metadata.Cases[0].Condition!.UId.Should().Be(ExistingGroupUId,
+			because: "the top-level page group condition must carry the persisted group uId");
+	}
+
+	private static BusinessRule CreateStandardRule() =>
+		new(
+			"Readonly status",
+			new BusinessRuleConditionGroup(
+				"AND",
+				[
+					new BusinessRuleCondition(
+						new BusinessRuleExpression("AttributeValue", "Status", null),
+						"equal",
+						new BusinessRuleExpression("Const", null, Json("Draft")))
+				]),
+			[
+				new MakeReadOnlyBusinessRuleAction(["Status"])
+			]) {
+			Name = "Rule_A"
+		};
+
+	private static JsonObject CreateExistingRule(bool enabled = true, string triggersJson = "[]") =>
+		(JsonObject)JsonNode.Parse($$"""
+			{
+			  "typeName": "{{BusinessRuleConstants.BusinessRuleTypeName}}",
+			  "uId": "{{ExistingRuleUId}}",
+			  "name": "Rule_A",
+			  "enabled": {{(enabled ? "true" : "false")}},
+			  "caption": "Rule A",
+			  "cases": [
+			    {
+			      "typeName": "{{BusinessRuleConstants.BusinessRuleCaseTypeName}}",
+			      "uId": "{{ExistingCaseUId}}",
+			      "condition": {
+			        "typeName": "{{BusinessRuleConstants.BusinessRuleGroupConditionTypeName}}",
+			        "uId": "{{ExistingGroupUId}}",
+			        "logicalOperation": 1,
+			        "conditions": []
+			      },
+			      "actions": []
+			    }
+			  ],
+			  "triggers": {{triggersJson}}
+			}
+			""")!;
 
 	private static IReadOnlyDictionary<string, EntitySchemaColumnDto> CreateColumnMap(params EntitySchemaColumnDto[] columns) {
 		Dictionary<string, EntitySchemaColumnDto> result = new(StringComparer.Ordinal);

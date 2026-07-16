@@ -43,7 +43,8 @@ clio create-page [options]
                                    letters, digits, or underscores
 
 --template                         Template name or UId returned by
-                                   list-page-templates, e.g. BlankPageTemplate
+                                   list-page-templates, e.g. BlankPageTemplate.
+                                   For a desktop page use CentralAreaDesktopTemplate
 
 --package-name                     Target package name that will own the
                                    new page schema
@@ -90,6 +91,9 @@ create a mobile Freedom UI page from the BlankMobilePageTemplate parent
 
 clio create-page --schema-name UsrDemo_Dashboard --template BaseDashboardTemplate --package-name Custom --optional-properties "[{\"key\":\"DashboardsEntitySchemaName\",\"value\":\"Contact\"},{\"key\":\"DashboardsElementName\",\"value\":\"Dashboards\"},{\"key\":\"DashboardsClientUnitSchemaUId\",\"value\":\"<root-schema-uid>\"}]" -e dev
 create a dashboard from BaseDashboardTemplate and seed its link-back optional properties
+
+clio create-page --schema-name UsrSalesDesktop --template CentralAreaDesktopTemplate --package-name Custom --caption "Sales desktop" -e dev
+create a desktop (a desktop-selector workspace) from the CentralAreaDesktopTemplate parent
 ```
 
 ## Notes
@@ -97,6 +101,7 @@ create a dashboard from BaseDashboardTemplate and seed its link-back optional pr
 - The page caption is stored under the resolved culture (`--caption-culture` override > the connected user's profile culture > `en-US`). A caption whose script does not match a Latin-script culture (for example Cyrillic under `en-US`) is rejected with an actionable error; pass `--caption-culture` to author the caption in a specific language.
 - `--optional-properties` accepts a JSON array of `{key, value}` objects that are written verbatim into the new schema's `optionalProperties`. A malformed payload fails before any remote call.
 - To create a **dashboard**, use `--template BaseDashboardTemplate` and pass its link-back properties (`DashboardsEntitySchemaName`, `DashboardsElementName`, `DashboardsClientUnitSchemaUId`) through `--optional-properties`. When the host page has replacements, `DashboardsClientUnitSchemaUId` must be the root schema's UId. MCP callers should read the `dashboard-creation` guidance (`get-guidance name=dashboard-creation`) for how to retrieve each value.
+- To create a **desktop** (a workspace listed in the desktop selector), use `--template CentralAreaDesktopTemplate`. The created schema gets group `Desktop`, and the schema group is what makes the platform (`DesktopAppEventListener`) auto-register the desktop in the `Desktop` entity; clio never writes that record itself. Note that inheriting the template as a *parent* is not enough on its own — a page that keeps a non-`Desktop` group (e.g. the template's own `DesktopTemplate` group, which the generic page designer copies) will not appear in the selector; `create-page` stamps group `Desktop` for you. Deleting the desktop schema (`delete-schema --remote`) auto-removes its selector record. MCP callers should read the `desktop-page` guidance (`get-guidance name=desktop-page`) first.
 
 ## Reporting Bugs
 
