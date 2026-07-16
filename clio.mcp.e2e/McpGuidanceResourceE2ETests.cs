@@ -214,6 +214,7 @@ public sealed class McpGuidanceResourceE2ETests : McpContractFixtureBase {
 	[Test]
 	[AllureTag("mcp-guidance-resources")]
 	[AllureName("MCP server returns the desktop-page guidance article")]
+	[Description("Verifies the running MCP server resolves the desktop-page guidance article (docs://mcp/guides/desktop-page), carrying the CentralAreaDesktopTemplate create rule, the FixedGridSlot_qwe4asds container rule, the automatic-registration prohibition, the greeting label, and the widget-sizing/layout rules.")]
 	public async Task McpServer_Should_Return_Desktop_Page_Guidance() {
 		// Arrange
 		await using var context = Arrange(TimeSpan.FromMinutes(3));
