@@ -6331,3 +6331,10 @@ Decision: Ship a Draft 2020-12 schema beside the desktop executable, reference i
 Discovery: `Channel` is only a Ring display label; clio selection is valid `DevClioPath`, then complete `ClioIpc`, then the machine default. Existing local settings can be preserved while refreshing the NativeAOT program files.
 Files: clio-ring/ClioRing.Desktop/app-settings.schema.json, clio-ring/ClioRing.Tests/AppSettingsSchemaTests.cs, clio-ring/README.md, spec/ring-app-settings-schema/
 Impact: Editors now catch unknown, incomplete, and whitespace-only settings, developers can intentionally target a trusted local clio build, and `C:\Tools\clio-ring` has been refreshed without losing its IPC configuration.
+
+## 2026-07-16 06:55 – Stabilize unit tests on the dev self-hosted runner
+Context: PR #891 passed on TS1-CORE-DEV24 but two consecutive runs on TS1-MRKT-WEB01 failed in different tests and target frameworks while the Ring-only tests remained green.
+Decision: Join deliberately detached heartbeat test work before disposing its synchronization handles, and use a locked StringWriter for process-wide console capture in CommonProgramTest.
+Discovery: TS1-MRKT-WEB01 is current on .NET SDK 10.0.301/runtime 10.0.9 but its GitHub runner 2.333.0 trails 2.335.1. The first failure was concurrent StringBuilder access; the retry captured a late cancelled-operation fault in the next test, confirming background-work isolation rather than product behavior.
+Files: clio.tests/CommonProgramTest.cs, clio.tests/Command/McpServer/McpProgressHeartbeatTests.cs
+Impact: Core and MCP Server tests no longer dispose gates under detached work or read console buffers during background writes, improving deterministic execution across self-hosted runner speeds.
