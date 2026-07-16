@@ -12,6 +12,10 @@ unrelated `EnvironmentPath` metadata.
 
 - The fixture resolves the environment URI through the fresh clio executable.
 - IIS URI matching is strict, deterministic, and covered by no-environment E2E harness tests.
+- TeamCity's explicit application-pool parameter supports public URL routing that differs from local
+  IIS topology without weakening fail-closed target validation.
+- A shared sandbox pool is reported as a non-applicable warning scenario because production uninstall
+  intentionally preserves its profile.
 - The existing destructive warning scenario passes against an explicitly opted-in disposable stand.
 - Documentation, MCP production surface, and ClioRing compatibility are reviewed and recorded.
 - Final comprehensive agentic review has no unresolved Blocker or High findings.

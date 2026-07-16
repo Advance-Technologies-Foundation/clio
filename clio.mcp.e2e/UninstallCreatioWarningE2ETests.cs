@@ -45,7 +45,20 @@ public sealed class UninstallCreatioWarningE2ETests {
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string environmentUri = ClioEnvironmentCommandResolver.ResolveEnvironmentUri(
 			settings, settings.Sandbox.EnvironmentName!);
-		string appPoolName = IisApplicationPoolResolver.Resolve(environmentUri);
+		string? expectedApplicationPoolName = settings.Sandbox.ApplicationPoolName;
+		if (string.IsNullOrWhiteSpace(expectedApplicationPoolName)) {
+			expectedApplicationPoolName = TeamCityBuildParameterResolver.Resolve("ApplicationPoolName");
+		}
+		string appPoolName;
+		try {
+			appPoolName = IisApplicationPoolResolver.Resolve(
+				environmentUri, expectedApplicationPoolName);
+		}
+		catch (SharedIisApplicationPoolException exception) {
+			Assert.Ignore(
+				$"The locked-profile warning scenario requires an exclusive disposable IIS pool. {exception.Message}");
+			return;
+		}
 		using ServiceProvider services = new ServiceCollection()
 			.AddSingleton<IWindowsUserProfileApi, WindowsUserProfileApi>()
 			.BuildServiceProvider();
