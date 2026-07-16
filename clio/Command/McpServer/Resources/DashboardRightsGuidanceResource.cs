@@ -60,17 +60,16 @@ public sealed class DashboardRightsGuidanceResource {
 		       for a role. (This matches Creatio's own binding names.)
 
 		       Bind each grant GRANT-ROW-FIRST; bind the grantee role ONLY if the grant bind proves it is not bound yet:
-		       1. Bind the grant row — create the binding, then register the existing row by Id:
-		          `create-data-binding-db --schema SysSchemaAdminUnitRight --binding-name SysSchemaAdminUnitRight_<DashboardSchemaName>`,
-		          then `upsert-data-binding-row-db --binding-name SysSchemaAdminUnitRight_<DashboardSchemaName> --values
-		          '{"Id":"<grant id>","RecordId":"<dashboard UId>","SysAdminUnit":"<grantee id>","Operation":<0|1|2>,"RightLevel":<1|2>,"Position":0}'`.
-		          Get the grant `Id`/columns from `get-record-rights`; keying by the existing `Id` registers the row (no
-		          duplicate grant). A BASE grantee (All employees, All external/portal users, System administrators, ...) is
-		          already bound in base data, so this SUCCEEDS as-is — do NOT bind such a role (never ship base system data in a
-		          custom package).
+		       1. Bind the grant row in ONE call — clio adopts the existing row by Id (registers the binding without
+		          re-inserting it):
+		          `create-data-binding-db --schema SysSchemaAdminUnitRight --binding-name SysSchemaAdminUnitRight_<DashboardSchemaName> --rows '[{"values":{"Id":"<grant id>","RecordId":"<dashboard UId>","SysAdminUnit":"<grantee id>","Operation":<0|1|2>,"RightLevel":<1|2>,"Position":0}}]'`.
+		          Get the grant `Id`/columns from `get-record-rights`; the row already exists, so it is registered, not
+		          duplicated. A BASE grantee (All employees, All external/portal users, System administrators, ...) is
+		          already bound in base data, so this SUCCEEDS as-is — do NOT bind such a role (never ship base system
+		          data in a custom package).
 		       2. ONLY IF step 1 fails with `SaveSchema failed: Data is not bound for connected object "SysAdminUnit"`, the
 		          grantee is a CUSTOM role not yet bound. Confirm it is not base (no existing binding in any package), then bind
-		          it by NAME and retry the step-1 upsert:
+		          it by NAME and retry the step-1 grant bind:
 		          `create-data-binding-db --schema SysAdminUnit --binding-name SysAdminUnit_<RoleName> --rows '[{"values":{"Name":"<role name>"}}]'`.
 		          The role row already exists, so clio matches it by Name, SKIPS the table write, and registers only the binding
 		          (`Skipped existing row`). Matching by Name is REQUIRED: do NOT use `upsert-data-binding-row-db` for the role —
