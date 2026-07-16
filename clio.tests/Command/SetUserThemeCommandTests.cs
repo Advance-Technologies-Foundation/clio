@@ -164,6 +164,46 @@ public sealed class SetUserThemeCommandTests : BaseCommandTests<SetUserThemeOpti
 	}
 
 	[Test, Category("Unit")]
+	[Description("Fails with the candidate theme ids and posts no UpdateQuery when a caption matches more than one theme, instead of silently applying the first match.")]
+	public void SetUserTheme_ShouldFailWithCandidates_WhenCaptionIsAmbiguous() {
+		// Arrange
+		string secondOcean =
+			"{\"id\":\"ocean-2\",\"caption\":\"Ocean\",\"cssClassName\":\"ocean-two\",\"cssFilePath\":\"b/theme.css\"}";
+		StubAvailableThemes(OceanThemeJson + "," + secondOcean);
+		SetUserThemeOptions options = new() { Theme = "Ocean" };
+
+		// Act
+		bool succeeded = _command.TrySetUserTheme(options, out _, out string error);
+
+		// Assert
+		succeeded.Should().BeFalse(because: "an ambiguous caption must not be silently resolved to the first match");
+		error.Should().Contain("ocean-id", because: "the error must list the first candidate's id so the caller can disambiguate");
+		error.Should().Contain("ocean-2", because: "the error must list every candidate id, not just one");
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			Arg.Is<string>(u => u.Contains("UpdateQuery")),
+			Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test, Category("Unit")]
+	[Description("Resolves unambiguously by id even when two themes share the same caption, so the guidance-recommended id selector is never blocked by caption collisions.")]
+	public void SetUserTheme_ShouldResolveById_WhenCaptionAmbiguousButIdSupplied() {
+		// Arrange
+		string secondOcean =
+			"{\"id\":\"ocean-2\",\"caption\":\"Ocean\",\"cssClassName\":\"ocean-two\",\"cssFilePath\":\"b/theme.css\"}";
+		StubAvailableThemes(OceanThemeJson + "," + secondOcean);
+		StubProfileSelect(ProfileId, "ocean-2");
+		StubUpdateSuccess();
+		SetUserThemeOptions options = new() { Theme = "ocean-2" };
+
+		// Act
+		bool succeeded = _command.TrySetUserTheme(options, out AppliedUserTheme applied, out _);
+
+		// Assert
+		succeeded.Should().BeTrue(because: "an exact id is unambiguous regardless of duplicate captions");
+		applied.Id.Should().Be("ocean-2", because: "the theme matched by its unique id is the one applied");
+	}
+
+	[Test, Category("Unit")]
 	[Description("Fails fast without any HTTP call when both a theme argument and --reset are supplied.")]
 	public void SetUserTheme_ShouldFailFastWithoutHttp_WhenThemeAndResetBothSupplied() {
 		// Arrange

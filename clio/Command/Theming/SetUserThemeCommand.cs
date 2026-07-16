@@ -150,12 +150,22 @@ public class SetUserThemeCommand : RemoteCommand<SetUserThemeOptions>
 		if (!listed) {
 			return false;
 		}
-		ThemeDescriptor match = themes.FirstOrDefault(theme =>
-				string.Equals(theme.Id, selector, StringComparison.OrdinalIgnoreCase))
-			?? themes.FirstOrDefault(theme =>
-				string.Equals(theme.CssClassName, selector, StringComparison.OrdinalIgnoreCase))
-			?? themes.FirstOrDefault(theme =>
-				string.Equals(theme.Caption, selector, StringComparison.OrdinalIgnoreCase));
+		// Resolve tier by tier (id, then css-class-name, then caption). Captions and css class names are
+		// not guaranteed unique in Creatio, so a tier that matches more than one theme is reported as an
+		// ambiguity (with the candidate ids) rather than silently applying whichever the server listed
+		// first — the id path stays unambiguous, so the guidance-recommended id selector is unaffected.
+		if (!TryMatchThemeTier(themes, selector, theme => theme.Id, "id", out ThemeDescriptor match,
+				out errorMessage)) {
+			return false;
+		}
+		if (match is null && !TryMatchThemeTier(themes, selector, theme => theme.CssClassName,
+				"css-class-name", out match, out errorMessage)) {
+			return false;
+		}
+		if (match is null && !TryMatchThemeTier(themes, selector, theme => theme.Caption, "caption",
+				out match, out errorMessage)) {
+			return false;
+		}
 		if (match is null) {
 			errorMessage = BuildUnknownThemeMessage(selector, themes);
 			return false;
@@ -168,6 +178,31 @@ public class SetUserThemeCommand : RemoteCommand<SetUserThemeOptions>
 			string.IsNullOrWhiteSpace(match.Caption) ? match.Id : match.Caption,
 			match.CssClassName ?? string.Empty,
 			match.Id);
+		return true;
+	}
+
+	// Matches themes at a single resolution tier (id / css-class-name / caption). Returns true with a null
+	// match when nothing matches (the caller falls through to the next tier), true with the single match
+	// when exactly one matches, and false with an ambiguity message listing the candidate ids when more
+	// than one theme matches the selector at this tier.
+	private static bool TryMatchThemeTier(IReadOnlyList<ThemeDescriptor> themes, string selector,
+		Func<ThemeDescriptor, string> field, string tierName, out ThemeDescriptor match, out string errorMessage) {
+		match = null;
+		errorMessage = null;
+		List<ThemeDescriptor> matches = themes
+			.Where(theme => string.Equals(field(theme), selector, StringComparison.OrdinalIgnoreCase))
+			.ToList();
+		if (matches.Count == 0) {
+			return true;
+		}
+		if (matches.Count > 1) {
+			IEnumerable<string> candidates = matches.Select(theme =>
+				$"'{theme.Caption}' (id '{theme.Id}', cssClassName '{theme.CssClassName}')");
+			errorMessage = $"Theme '{selector}' matches more than one theme by {tierName}: " +
+				$"{string.Join("; ", candidates)}. Specify the theme by its unique id instead.";
+			return false;
+		}
+		match = matches[0];
 		return true;
 	}
 

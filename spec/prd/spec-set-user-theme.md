@@ -82,7 +82,10 @@ Verified in `C:\Projects\Autodeploy\creatio10` (`Terrasoft.Configuration\Pkg\Crt
   - Accepts the theme by **name/caption or cssClassName or Id**; resolves it via the
     existing `ListThemes` surface and errors clearly when no match is found
     (listing available themes in the error message).
-  - Sends the `SysUserProfile` `UpdateQuery` with the resolved `cssClassName`.
+  - Sends the `SysUserProfile` `UpdateQuery` with the resolved theme **`Id`** (see §3 — the column
+    stores the Id; writing the `cssClassName` is stored faithfully but the Shell silently falls back to
+    the default). An ambiguous non-id selector (a caption or cssClassName shared by more than one theme)
+    is reported with the candidate ids rather than silently applying the first match.
   - Verifies success and reports the applied theme (`caption`, `cssClassName`) and
     the hint "refresh the page to see it".
 - **FR-2** Support **reset**: an explicit option (e.g. `--reset`) writes an empty

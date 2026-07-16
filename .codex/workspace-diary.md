@@ -6057,3 +6057,9 @@ Test gates: unit Category=Unit net8.0 5496/0/23 and net10.0 5496/0/23 (each trig
 Requirement audit: all FR-1..7, NFR-1..3, story-2 AC-01..05 covered. Built-in-theme alias map from story-1 prose intentionally dropped (built-ins use opaque GUIDs absent from list-themes; --reset covers default). NFR-2 (interface) satisfied via the RemoteCommand-family seam pattern (public virtual TrySetUserTheme), consistent with create-theme/list-themes.
 Files: clio/Command/Theming/SetUserThemeCommand.cs, clio/Command/McpServer/Tools/SetUserThemeTool.cs, clio/Command/McpServer/Resources/ThemingGuidanceResource.cs, clio.tests/Command/McpServer/SetUserThemeToolTests.cs.
 Impact: Feature (CLI + MCP tool) reviewed clean against #866-style flaws, live-verified, all gates green; opening PR.
+
+## 2026-07-16 – ENG-93302: PR #895 review follow-up (2 minors)
+Context: PR review raised two minors. Fixed both.
+Decision: (1) TryResolveTargetTheme no longer silently picks FirstOrDefault at a tier — new TryMatchThemeTier fails with the candidate ids when a caption/cssClassName matches >1 theme (captions are not unique in Creatio); the id tier stays unambiguous so the guidance-recommended id path is unaffected. (2) spec-set-user-theme.md FR-1 corrected: the command writes the resolved theme Id, not cssClassName (matches §3 + implementation).
+Files: clio/Command/Theming/SetUserThemeCommand.cs, spec/prd/spec-set-user-theme.md, clio.tests/Command/SetUserThemeCommandTests.cs (+2 tests: ambiguous-caption fails with candidates; id resolves despite duplicate captions).
+Impact: SetUserThemeCommandTests+SetUserThemeToolTests 27/0. Addresses PR #895 review.
