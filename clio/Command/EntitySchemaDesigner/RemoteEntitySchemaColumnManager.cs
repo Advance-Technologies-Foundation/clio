@@ -170,7 +170,8 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			column.ValueMasked || column.Masked,
 			column.FormatValidated,
 			column.UseSeconds,
-			defaultValueConfig);
+			defaultValueConfig,
+			EntitySchemaDesignerSupport.GetFriendlyUsageType(column.UsageType));
 	}
 
 	/// <summary>
@@ -230,6 +231,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		WriteInfo($"Masked: {FormatBoolean(column.Masked)}");
 		WriteInfo($"Format validated: {FormatBoolean(column.FormatValidated)}");
 		WriteInfo($"Use seconds: {FormatBoolean(column.UseSeconds)}");
+		WriteInfo($"Usage type: {column.UsageType}");
 	}
 
 	public EntitySchemaPropertiesInfo GetSchemaProperties(GetEntitySchemaPropertiesOptions options) {
@@ -453,6 +455,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		}
 
 		ApplyDefaultValue(column, options, preserveWhenUnspecified: false, options);
+		ApplyUsageType(column, options);
 
 		List<EntitySchemaColumnDto> ownColumns = schema.Columns?.ToList() ?? [];
 		ownColumns.Add(column);
@@ -553,6 +556,22 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		if (options.UseSeconds.HasValue) {
 			column.UseSeconds = options.UseSeconds.Value;
 		}
+		ApplyUsageType(column, options);
+	}
+
+	/// <summary>
+	/// Applies the optional <c>--usage-type</c> value to the column when supplied, mapping the friendly name
+	/// to its backend ordinal. When omitted the column's current UsageType is left unchanged. Throws a
+	/// user-friendly <see cref="EntitySchemaDesignerException"/> on an unrecognized value, before any save.
+	/// </summary>
+	private static void ApplyUsageType(EntitySchemaColumnDto column, ModifyEntitySchemaColumnOptions options) {
+		if (string.IsNullOrWhiteSpace(options.UsageType)) {
+			return;
+		}
+		if (!EntitySchemaDesignerSupport.TryParseUsageType(options.UsageType, out int usageType)) {
+			throw new EntitySchemaDesignerException("usage-type must be one of: General, Advanced, None.");
+		}
+		column.UsageType = usageType;
 	}
 
 	/// <summary>
@@ -969,37 +988,32 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	private static void VerifyColumnMutations(
 		EntityDesignSchemaDto reloadedSchema,
 		IEnumerable<ModifyEntitySchemaColumnOptions> operations) {
+		Dictionary<string, bool> expectedColumnPresence = new(StringComparer.OrdinalIgnoreCase);
 		foreach (ModifyEntitySchemaColumnOptions operation in operations) {
 			EntitySchemaColumnAction action = NormalizeAction(operation.Action);
-			VerifyColumnMutation(reloadedSchema, action, operation);
+			string columnName = operation.ColumnName.Trim();
+			if (action == EntitySchemaColumnAction.Modify && !string.IsNullOrWhiteSpace(operation.NewName)) {
+				expectedColumnPresence[columnName] = false;
+				expectedColumnPresence[operation.NewName.Trim()] = true;
+				continue;
+			}
+
+			expectedColumnPresence[columnName] = action != EntitySchemaColumnAction.Remove;
 		}
-	}
 
-	private static void VerifyColumnMutation(
-		EntityDesignSchemaDto reloadedSchema,
-		EntitySchemaColumnAction action,
-		ModifyEntitySchemaColumnOptions options) {
-		string expectedColumnName = !string.IsNullOrWhiteSpace(options.NewName)
-			? options.NewName.Trim()
-			: options.ColumnName.Trim();
-		bool ownColumnExists = (reloadedSchema.Columns?.ToList() ?? []).Any(column =>
-			string.Equals(column.Name, expectedColumnName, StringComparison.OrdinalIgnoreCase));
-
-		switch (action) {
-			case EntitySchemaColumnAction.Add:
-			case EntitySchemaColumnAction.Modify:
-				if (!ownColumnExists) {
-					throw new EntitySchemaDesignerException(
-						$"Column '{expectedColumnName}' could not be reloaded after save.");
-				}
-				break;
-			case EntitySchemaColumnAction.Remove:
-				if ((reloadedSchema.Columns?.ToList() ?? []).Any(column =>
-					string.Equals(column.Name, options.ColumnName, StringComparison.OrdinalIgnoreCase))) {
-					throw new EntitySchemaDesignerException(
-						$"Column '{options.ColumnName}' is still present after save.");
-				}
-				break;
+		HashSet<string> reloadedColumnNames = (reloadedSchema.Columns?.ToList() ?? [])
+			.Select(column => column.Name)
+			.ToHashSet(StringComparer.OrdinalIgnoreCase);
+		foreach ((string columnName, bool shouldExist) in expectedColumnPresence) {
+			bool columnExists = reloadedColumnNames.Contains(columnName);
+			if (shouldExist && !columnExists) {
+				throw new EntitySchemaDesignerException(
+					$"Column '{columnName}' could not be reloaded after save.");
+			}
+			if (!shouldExist && columnExists) {
+				throw new EntitySchemaDesignerException(
+					$"Column '{columnName}' is still present after save.");
+			}
 		}
 	}
 

@@ -47,6 +47,10 @@ internal static class GuidanceCatalog {
 				"configuration-webservice-tests",
 				"Canonical MCP guidance for testing Creatio configuration web services.",
 				ConfigurationWebServiceTestsGuidanceResource.Guide),
+			["integration-testing"] = Create(
+				"integration-testing",
+				"Canonical guidance for portable Creatio integration tests, CI authentication, ATF.Repository, Allure, process scenarios, cleanup, and optional browser testing.",
+				IntegrationTestingGuidanceResource.Guide),
 			["page-schema-converters"] = Create(
 				"page-schema-converters",
 				"Canonical MCP guidance for creating and editing Freedom UI page converters inside raw page schema bodies.",
@@ -123,6 +127,10 @@ internal static class GuidanceCatalog {
 				"related-list",
 				"Canonical MCP guidance for adding a Freedom UI related/child list and filtering it by the current page record (master-detail \"filter by page data\"): the declarative, dependencies-based scoping — no handler. Fetch the 'Expanded list' composite structure via get-component-info.",
 				RelatedListGuidanceResource.Guide),
+			["related-page-binding"] = Create(
+				"related-page-binding",
+				"Canonical MCP guidance for binding Freedom UI pages to an object via create-related-page-addon: choosing the default record page and the add-record page (optionally per role and type), name discovery, the replace-not-merge semantics, and error handling.",
+				RelatedPageBindingGuidanceResource.Guide),
 			["agent-execution"] = Create(
 				"agent-execution",
 				"Canonical MCP guidance for executing approved plans through clio MCP: transport, execution order, branching, and recovery patterns.",
@@ -133,7 +141,7 @@ internal static class GuidanceCatalog {
 				DeployLifecycleGuidanceResource.Guide),
 			["describe-environment"] = Create(
 				"describe-environment",
-				"Canonical MCP guidance for describe-environment: the single source-independent environment report (coreVersion, db engine, framework, productName, licenseInfo, locale/workspace metadata), which source supplies each field, and the cliogate / CanManageSolution prerequisites.",
+				"Canonical MCP guidance for describe-environment: classified base-probe failures, the single source-independent environment report (coreVersion, db engine, framework, productName, licenseInfo, locale/workspace metadata), which source supplies each field, and the cliogate / CanManageSolution prerequisites.",
 				DescribeEnvironmentGuidanceResource.Guide),
 			["support-mode"] = Create(
 				"support-mode",
@@ -155,7 +163,7 @@ internal static class GuidanceCatalog {
 				"sys-settings",
 				"""
 				Canonical MCP guidance for the Creatio sys-settings CRU surface: tool order, supported value-type-names and aliases, 
-				Lookup resolution, SecureText masking, Date/Time TZ caveat, and Binary exclusion.
+				Lookup resolution, SecureText masking, Date/Time TZ caveat, and Binary (write-only, via value-file-path) upload.
 				""",
 				SysSettingsGuidanceResource.Guide),
 			["ui-project"] = Create(

@@ -86,7 +86,7 @@ public sealed class GetBrowserSessionToolE2ETests : McpContractFixtureBase {
 				if (!cookie.TryGetProperty("value", out JsonElement valElem)) {
 					continue;
 				}
-				string cookieValue = valElem.GetString();
+				string? cookieValue = valElem.GetString();
 				if (string.IsNullOrEmpty(cookieValue)) {
 					continue;
 				}

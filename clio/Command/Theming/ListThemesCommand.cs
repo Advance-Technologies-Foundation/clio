@@ -13,6 +13,7 @@ namespace Clio.Command.Theming;
 /// </summary>
 [Verb("list-themes", Aliases = ["get-themes"],
 	HelpText = "List the custom Creatio themes available on the target environment")]
+[RequiresCreatioVersion(ThemeServiceRequirement.MinVersion)]
 public class ListThemesOptions : RemoteCommandOptions
 {
 }

@@ -8,8 +8,9 @@ DESCRIPTION
     delete-theme removes a custom theme from the target environment via the
     native ThemeService.svc/DeleteTheme endpoint. The theme is located by --id.
 
-    Requires the CanCustomizeBranding license and the CanManageThemes system
-    operation. Deleting an unknown id is reported as a failure (not idempotent).
+    Requires Creatio 10.0.0 or later on the target environment, the
+    CanCustomizeBranding license, and the CanManageThemes system operation.
+    Deleting an unknown id is reported as a failure (not idempotent).
 
     delete-theme does not change the DefaultTheme system setting. If you delete
     the theme that is currently the default, reset DefaultTheme to another theme

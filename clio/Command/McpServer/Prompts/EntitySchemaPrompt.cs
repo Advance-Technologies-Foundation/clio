@@ -41,6 +41,7 @@ public static class EntitySchemaPrompt {
 		 Set `parent-schema-name` only when inheritance or replacement behavior was explicitly requested.
 		 Set `extend-parent` to `true` only when the request is specifically for a replacement schema, and only
 		 together with `parent-schema-name`.
+		 Set `is-virtual` to `true` only when the entity must not have a physical database table; it defaults to `false`.
 		 Include `columns` only when the request explicitly describes initial fields. `title-localizations` is
 		 OPTIONAL for a column add; when omitted, `en-US` is auto-derived from a scalar title/caption or the
 		 column name. Provide `title-localizations` for a proper caption; the `en-US` value must be English.
@@ -151,7 +152,9 @@ public static class EntitySchemaPrompt {
 		 `default-value-config` source `Sequence` only for text columns. For `Settings`, `value-source`
 		 accepts setting code, display name, or id and clio normalizes it to setting code before save.
 		 For `SystemValue`, `value-source` accepts GUID, enum alias, or display caption and clio
-		 normalizes it to GUID before save. For create + seed + update workflows,
+		 normalizes it to GUID before save. Each operation may set `usage-type` = `General` (default), `Advanced`,
+		 or `None` (case-insensitive, any column type); on `modify` the stored value is left unchanged when omitted.
+		 For create + seed + update workflows,
 		 prefer `sync-schemas`. Seed rows create data only; model default requirements separately as
 		 `schema default` or `ui default`. For existing-app maintenance guidance, call
 		 `{GuidanceGetTool.ToolName}` with `name` set to `existing-app-maintenance`.
@@ -175,7 +178,7 @@ public static class EntitySchemaPrompt {
 		$"""
 		 Use clio mcp server `{GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName}` to read structured
 		 properties for entity schema `{schemaName}` from environment `{environmentName}`. The result is a schema
-		 summary object with a nested `columns` list for machine-readable column inspection.
+		 summary object with a `virtual` flag and a nested `columns` list for machine-readable column inspection.
 		 Pass `schema-name` and `environment-name` exactly as provided. Leave `package-name` empty to get the
 		 MERGED/EFFECTIVE schema with columns from ALL packages (this is what you want for column discovery,
 		 because custom columns are frequently added in a package other than the one that defines the schema).
@@ -211,6 +214,7 @@ public static class EntitySchemaPrompt {
 		 structured properties for column `{columnName}` in entity schema `{schemaName}` from package
 		 `{packageName}` on environment `{environmentName}`.
 		 Pass `package-name`, `schema-name`, `column-name`, and `environment-name` exactly as provided.
+		 The result includes `usage-type` as a friendly name (General/Advanced/None) that can be sent back verbatim as a `usage-type` write input.
 		 For the canonical discover -> inspect -> mutate flow, call `{GuidanceGetTool.ToolName}` with `name` set to `existing-app-maintenance`.
 		 Use this read step before and after `modify-entity-schema-column` when the requested change is scoped to one column.
 		 """;
@@ -261,6 +265,8 @@ public static class EntitySchemaPrompt {
 		 accepts setting code, display name, or id and clio normalizes it to setting code before save.
 		 For `SystemValue`, `value-source` accepts GUID, enum alias, or display caption and clio
 		 normalizes it to GUID before save.
+		 To set the column usage type pass `usage-type` = `General` (default), `Advanced`, or `None` (case-insensitive);
+		 it applies to any column type. On `modify` the stored value is left unchanged when `usage-type` is omitted.
 		 For the canonical discover -> inspect -> mutate flow, call `{GuidanceGetTool.ToolName}` with `name` set to `existing-app-maintenance`.
 		 Prefer reading current metadata with `{GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName}` first and reading it back after the mutation when explicit verification is needed.
 		 """;

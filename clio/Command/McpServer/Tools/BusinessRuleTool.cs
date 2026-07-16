@@ -39,7 +39,7 @@ public sealed class CreateEntityBusinessRuleTool(
 		[Description("environment-name, package-name, entity-schema-name, rules (all required).")]
 		[Required]
 		CreateEntityBusinessRulesArgs args) =>
-		ExecuteWithCleanLog(() => CreateRules(args));
+		ExecuteWithCleanLog(new EnvironmentOptions { Environment = args.EnvironmentName }, () => CreateRules(args));
 
 	private object CreateRules(CreateEntityBusinessRulesArgs args) {
 		if (args.Rules is not { Count: > 0 }) {
@@ -625,7 +625,7 @@ public sealed class CreatePageBusinessRuleTool(
 		[Description("Parameters: environment-name, package-name, page-schema-name, rules (all required).")]
 		[Required]
 		CreatePageBusinessRulesArgs args) =>
-		ExecuteWithCleanLog(() => CreateRules(args));
+		ExecuteWithCleanLog(new EnvironmentOptions { Environment = args.EnvironmentName }, () => CreateRules(args));
 
 	private object CreateRules(CreatePageBusinessRulesArgs args) {
 		if (args.Rules is not { Count: > 0 }) {

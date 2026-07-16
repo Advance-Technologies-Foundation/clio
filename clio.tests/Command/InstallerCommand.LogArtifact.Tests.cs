@@ -26,12 +26,14 @@ public sealed class InstallerCommandLogArtifactTests {
 		IDbOperationLogSessionFactory sessionFactory = new DbOperationLogSessionFactory(logger, contextAccessor);
 		ICreatioInstallerService installerService = Substitute.For<ICreatioInstallerService>();
 		installerService.Execute(Arg.Any<PfInstallerOptions>()).Returns(0);
-		InstallerCommand sut = new(installerService, logger, Substitute.For<IKubernetes>(), sessionFactory);
+		IDeployCreatioDefaultsResolver defaultsResolver = Substitute.For<IDeployCreatioDefaultsResolver>();
+		InstallerCommand sut = new(installerService, logger, Substitute.For<IKubernetes>(), defaultsResolver, sessionFactory);
 
 		// Act
 		int result = sut.Execute(new PfInstallerOptions {
 			IsSilent = true,
-			DbServerName = "local-pg"
+			DbServerName = "local-pg",
+			SiteName = "test-site"
 		});
 
 		// Assert
