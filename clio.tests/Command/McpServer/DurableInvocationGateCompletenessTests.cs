@@ -28,7 +28,9 @@ public sealed class DurableInvocationGateCompletenessTests {
 	// The reviewed baseline: every tool the durable handler will execute WITHOUT a confirmation
 	// round-trip even though it can write (ReadOnly=false) — because its own annotation says
 	// Destructive=false, exactly as the host treated it pre-#743. Reviewed 2026-07-10 (ENG-93370,
-	// decision: reproduce the pre-#743 per-tool gate as-is). If this test fails, either the new tool's
+	// decision: reproduce the pre-#743 per-tool gate as-is); extended 2026-07-16 with create-printable
+	// (ENG-90783 — a non-destructive OData insert, same shape as the already-baselined odata-create).
+	// If this test fails, either the new tool's
 	// annotation is wrong (a genuinely destructive tool must declare Destructive=true) or the baseline
 	// must be consciously extended in the same PR that adds the tool.
 	private static readonly IReadOnlyCollection<string> ReviewedSilentWriteCapableTools = new HashSet<string>(
@@ -39,6 +41,7 @@ public sealed class DurableInvocationGateCompletenessTests {
 		"clear-themes-cache",
 		"create-business-process",
 		"create-client-unit-schema",
+		"create-printable",
 		"create-schema",
 		"create-sql-schema",
 		"create-theme",

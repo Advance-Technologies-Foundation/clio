@@ -169,10 +169,10 @@ internal static class PassthroughToolClassificationRegistry {
 	/// One row per <c>[McpServerToolType]</c> tool name discovered in the current <c>clio</c> assembly
 	/// (verified against <see cref="Clio.Command.McpServer.McpFeatureToggleFilter.GetAttributedTypes"/>
 	/// expanded to <c>[McpServerTool(Name = ...)]</c> verb names — see
-	/// <see cref="PassthroughToolClassificationGuardTests"/>). 150 tools at authoring time (2026-07-11):
+	/// <see cref="PassthroughToolClassificationGuardTests"/>). 158 tools:
 	/// 12 <see cref="PassthroughClassification.Routed"/>, 3 <see cref="PassthroughClassification.Guarded"/>,
 	/// 20 <see cref="PassthroughClassification.NotEnvironmentSensitive"/> (PRD's literal out-of-scope audit,
-	/// matched to CURRENT tool names — several PRD names are stale, see the inline notes below), and 115
+	/// matched to CURRENT tool names — several PRD names are stale, see the inline notes below), and 123
 	/// <see cref="PassthroughClassification.NotApplicable"/> (class (a)/(b), no change required).
 	/// </summary>
 	internal static readonly IReadOnlyDictionary<string, PassthroughClassification> Classification =
@@ -220,7 +220,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["remove-data-binding-row"] = PassthroughClassification.NotEnvironmentSensitive,
 			["check-settings-health"] = PassthroughClassification.NotEnvironmentSensitive, // PRD prose: "get-settings-health"
 
-			// --- NotApplicable (116): class (a)/(b) — already passthrough-capable, out of this audit ---
+			// --- NotApplicable (123): class (a)/(b) — already passthrough-capable, out of this audit ---
 			["StopAllCreatio"] = PassthroughClassification.NotApplicable,
 			["add-item-model"] = PassthroughClassification.NotApplicable,
 			["add-package"] = PassthroughClassification.NotApplicable,
@@ -244,6 +244,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["create-oauth-technical-user"] = PassthroughClassification.NotApplicable,
 			["create-page"] = PassthroughClassification.NotApplicable,
 			["create-page-business-rules"] = PassthroughClassification.NotApplicable,
+			["create-printable"] = PassthroughClassification.NotApplicable,
 			["create-related-page-addon"] = PassthroughClassification.NotApplicable,
 			["create-schema"] = PassthroughClassification.NotApplicable,
 			["create-server-to-server-oauth-app"] = PassthroughClassification.NotApplicable,
@@ -261,6 +262,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["dataforge-status"] = PassthroughClassification.NotApplicable,
 			["dataforge-update"] = PassthroughClassification.NotApplicable,
 			["delete-app"] = PassthroughClassification.NotApplicable,
+			["delete-printable"] = PassthroughClassification.NotApplicable,
 			["delete-schema"] = PassthroughClassification.NotApplicable,
 			["delete-theme"] = PassthroughClassification.NotApplicable,
 			["deploy-identity"] = PassthroughClassification.NotApplicable,
@@ -284,6 +286,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["get-identity-public-jwk"] = PassthroughClassification.NotApplicable,
 			["get-identity-service-config"] = PassthroughClassification.NotApplicable,
 			["get-page"] = PassthroughClassification.NotApplicable,
+			["get-printable"] = PassthroughClassification.NotApplicable,
 			["get-process-signature"] = PassthroughClassification.NotApplicable,
 			["get-related-page-addon"] = PassthroughClassification.NotApplicable,
 			["get-schema"] = PassthroughClassification.NotApplicable,
@@ -296,6 +299,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["list-packages"] = PassthroughClassification.NotApplicable,
 			["list-page-templates"] = PassthroughClassification.NotApplicable,
 			["list-pages"] = PassthroughClassification.NotApplicable,
+			["list-printables"] = PassthroughClassification.NotApplicable,
 			["list-sys-settings"] = PassthroughClassification.NotApplicable,
 			["list-themes"] = PassthroughClassification.NotApplicable,
 			["list-user-tasks"] = PassthroughClassification.NotApplicable,
@@ -330,10 +334,12 @@ internal static class PassthroughToolClassificationRegistry {
 			["unlock-for-hotfix"] = PassthroughClassification.NotApplicable,
 			["update-client-unit-schema"] = PassthroughClassification.NotApplicable,
 			["update-entity-schema"] = PassthroughClassification.NotApplicable,
+			["update-printable"] = PassthroughClassification.NotApplicable,
 			["update-schema"] = PassthroughClassification.NotApplicable,
 			["update-sql-schema"] = PassthroughClassification.NotApplicable,
 			["update-sys-setting"] = PassthroughClassification.NotApplicable,
 			["update-theme"] = PassthroughClassification.NotApplicable,
+			["upload-report-template"] = PassthroughClassification.NotApplicable,
 			["upsert-data-binding-row-db"] = PassthroughClassification.NotApplicable,
 			["validate-page"] = PassthroughClassification.NotApplicable,
 			["validate-process-graph"] = PassthroughClassification.NotApplicable,
