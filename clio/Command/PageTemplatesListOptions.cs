@@ -11,7 +11,7 @@ namespace Clio.Command {
 	/// </summary>
 	[Verb("list-page-templates", Aliases = ["page-templates", "page-templates-list"], HelpText = "List Freedom UI page templates available for create-page")]
 	public class PageTemplatesListOptions : EnvironmentOptions {
-		[Option("schema-type", Required = false, HelpText = "Filter by schema type: 'web' (9), 'mobile' (10) or 'desktop' (web templates with group Desktop). Defaults to all.")]
+		[Option("schema-type", Required = false, HelpText = "Filter by schema type: 'web' (9) or 'mobile' (10). Defaults to all.")]
 		public string SchemaType { get; set; }
 	}
 
@@ -30,20 +30,14 @@ namespace Clio.Command {
 		public bool TryListTemplates(PageTemplatesListOptions options, out PageTemplateListResponse response) {
 			try {
 				PageSchemaType? schemaType = null;
-				string groupFilter = null;
 				if (!string.IsNullOrWhiteSpace(options.SchemaType)) {
-					if (!TryParseTemplateFilter(options.SchemaType, out PageSchemaType parsed, out groupFilter, out string parseError)) {
+					if (!TryParseSchemaType(options.SchemaType, out PageSchemaType parsed, out string parseError)) {
 						response = new PageTemplateListResponse { Success = false, Error = parseError };
 						return false;
 					}
 					schemaType = parsed;
 				}
 				IReadOnlyList<PageTemplateInfo> templates = _templateCatalog.GetTemplates(schemaType);
-				if (groupFilter != null) {
-					templates = templates
-						.Where(t => string.Equals(t.GroupName, groupFilter, StringComparison.OrdinalIgnoreCase))
-						.ToList();
-				}
 				response = new PageTemplateListResponse {
 					Success = true,
 					Count = templates.Count,
@@ -110,37 +104,18 @@ namespace Clio.Command {
 		/// Validates and parses a schema-type filter value. This is a pure input validation with no
 		/// environment dependency, so callers (e.g. the MCP tool) can reject an invalid schema-type
 		/// before resolving the target environment (ENG-91825 env-validation order).
-		/// Kept for source compatibility; new call sites should prefer
-		/// <see cref="TryParseTemplateFilter"/>, which also recognizes the <c>desktop</c> filter.
 		/// </summary>
 		/// <param name="value">The schema-type filter supplied by the caller.</param>
 		/// <param name="schemaType">The parsed schema type when the value is recognized.</param>
 		/// <param name="error">A human-readable error message when the value is not recognized.</param>
 		/// <returns><c>true</c> when the value is a recognized schema-type; otherwise <c>false</c>.</returns>
-		public static bool TryParseSchemaType(string value, out PageSchemaType schemaType, out string error) =>
-			TryParseTemplateFilter(value, out schemaType, out _, out error);
-
-		/// <summary>
-		/// Validates and parses a template filter value: a plain schema type (<c>web</c> / <c>mobile</c>)
-		/// or the <c>desktop</c> pseudo-filter, which maps to the web catalog narrowed to templates whose
-		/// group is <c>Desktop</c> (desktop pages are ordinary web schemas distinguished only by group).
-		/// Pure input validation with no environment dependency (ENG-91825 env-validation order).
-		/// </summary>
-		/// <param name="value">The schema-type filter supplied by the caller.</param>
-		/// <param name="schemaType">The parsed schema type when the value is recognized.</param>
-		/// <param name="groupFilter">The template group to narrow the catalog to, or <c>null</c> when the
-		/// value is a plain schema type.</param>
-		/// <param name="error">A human-readable error message when the value is not recognized.</param>
-		/// <returns><c>true</c> when the value is a recognized filter; otherwise <c>false</c>.</returns>
-		public static bool TryParseTemplateFilter(
-			string value, out PageSchemaType schemaType, out string groupFilter, out string error) {
+		public static bool TryParseSchemaType(string value, out PageSchemaType schemaType, out string error) {
 			schemaType = default;
-			groupFilter = null;
 			error = null;
 			if (string.IsNullOrWhiteSpace(value)) {
 				// The method is public and may be called without the IsNullOrWhiteSpace pre-guard, so it must
 				// be total over its input: a null/blank value is a clean "not recognized", never a NullReferenceException.
-				error = $"Unknown schema-type '{value}'. Use 'web', 'mobile' or 'desktop'.";
+				error = $"Unknown schema-type '{value}'. Use 'web' or 'mobile'.";
 				return false;
 			}
 			switch (value.Trim().ToLowerInvariant()) {
@@ -155,13 +130,8 @@ namespace Clio.Command {
 				case "10":
 					schemaType = PageSchemaType.Mobile;
 					return true;
-				case "desktop":
-				case "desktoppage":
-					schemaType = PageSchemaType.Web;
-					groupFilter = SchemaTemplateCatalog.DesktopGroupName;
-					return true;
 				default:
-					error = $"Unknown schema-type '{value}'. Use 'web', 'mobile' or 'desktop'.";
+					error = $"Unknown schema-type '{value}'. Use 'web' or 'mobile'.";
 					return false;
 			}
 		}

@@ -335,7 +335,7 @@ public sealed class PageCreateToolE2ETests : McpContractFixtureBase {
 			ListTemplatesToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
-					["schema-type"] = "tablet",
+					["schema-type"] = "desktop",
 					["environment-name"] = $"noop-{Guid.NewGuid():N}"
 				}
 			},
@@ -346,41 +346,6 @@ public sealed class PageCreateToolE2ETests : McpContractFixtureBase {
 		callResult.IsError.Should().NotBeTrue();
 		response.Success.Should().BeFalse();
 		response.Error.Should().Contain("Unknown schema-type");
-	}
-
-	[Category("McpE2E.Sandbox")]
-	[Test]
-	[Description("Lists only Desktop-group templates for the desktop schema-type filter, including the injected CentralAreaDesktopTemplate.")]
-	[AllureTag(ListTemplatesToolName)]
-	[AllureName("list-page-templates schema-type=desktop returns the Desktop-group catalog")]
-	public async Task PageTemplatesListTool_Should_Return_Desktop_Templates_For_Desktop_Filter() {
-		// Arrange
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		string environmentName = await ResolveReachableEnvironmentAsync(settings);
-		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
-
-		// Act
-		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
-			ListTemplatesToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["schema-type"] = "desktop",
-					["environment-name"] = environmentName
-				}
-			},
-			arrangeContext.CancellationTokenSource.Token);
-		PageTemplateListResponse response = EntitySchemaStructuredResultParser.Extract<PageTemplateListResponse>(callResult);
-
-		// Assert
-		callResult.IsError.Should().NotBeTrue();
-		response.Success.Should().BeTrue(because: "the desktop filter is a valid schema-type value");
-		response.Items.Should().NotBeNull().And.NotBeEmpty(
-			because: "clio injects CentralAreaDesktopTemplate when the platform endpoint omits it");
-		response.Items.Select(t => t.Name).Should().Contain("CentralAreaDesktopTemplate",
-			because: "the desktop filter must surface the create-page desktop default parent");
-		response.Items.Should().OnlyContain(t => string.Equals(t.GroupName, "Desktop", StringComparison.OrdinalIgnoreCase),
-			because: "the desktop filter narrows the catalog to Desktop-group templates only");
 	}
 
 	[Category("McpE2E.Sandbox")]

@@ -38,8 +38,7 @@ public sealed class DesktopPageGuidanceResource {
 		         page create — desktop is not a special mode). clio stamps the new schema's group as
 		         `Desktop`, which is what makes the platform register it in the selector.
 		       - Then `get-page` to read the merged body, and `update-page`/`sync-pages` to add content.
-		       - `list-page-templates` with `schema-type: "desktop"` lists the Desktop-group templates
-		         (currently just `CentralAreaDesktopTemplate`).
+		       - `list-page-templates` shows `CentralAreaDesktopTemplate` in the web catalog (it is the desktop parent).
 		       - The `group` is the ONLY thing that makes a page a desktop. A page that merely inherits
 		         `CentralAreaDesktopTemplate` as its parent but keeps a non-`Desktop` group (e.g. the
 		         template's own `DesktopTemplate` group, which the generic page designer copies) will

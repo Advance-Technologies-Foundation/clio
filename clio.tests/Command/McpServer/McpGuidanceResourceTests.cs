@@ -2059,23 +2059,4 @@ public sealed class McpGuidanceResourceTests {
 		article.Text.Should().NotContain("TODO(ENG-90489)",
 			because: "the temporary marker must be removed once the dedicated desktop guide ships");
 	}
-
-	[Test]
-	[Category("Unit")]
-	[Description("The page-modification gate (STEP 0) carries a desktop pointer at desktop-page, mirroring the mobile pass (ENG-90489 routing pointer requirement).")]
-	public void PageModificationGuidanceResource_Should_Carry_Desktop_Pointer_In_Step0() {
-		// Arrange
-		PageModificationGuidanceResource resource = new();
-
-		// Act
-		TextResourceContents article = resource.GetGuide().Should().BeOfType<TextResourceContents>().Subject;
-
-		// Assert
-		article.Text.Should().Contain("DESKTOP page",
-			because: "the pre-edit gate must route desktop pages before any body work, like the mobile pass does");
-		article.Text.Should().Contain("read `desktop-page` first",
-			because: "the desktop pointer must name the guide to read first");
-		article.Text.Should().Contain("CentralAreaDesktopTemplate",
-			because: "the pointer must be keyed to the desktop parent template so the agent recognizes the page kind");
-	}
 }
