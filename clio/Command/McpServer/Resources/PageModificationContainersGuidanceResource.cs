@@ -57,13 +57,7 @@ public sealed class PageModificationContainersGuidanceResource {
 		       - Never guess a container name. Use `bundle.containers` from `get-page` — a flat list of all containers discovered in `viewConfig`.
 		       - Each entry exposes: `name` (value to use as `parentName`), `type` (the container's live `crt.*` type as it appears in the page — call `get-component-info` for that type to learn how to insert into it), `childCount` (existing siblings), `path` (ancestor chain, useful for disambiguation when the same `name` appears in multiple branches).
 		       - Pick a container whose `path` matches the visual region you want to modify and whose `childCount` > 0 for consistency (existing sibling confirms the container is usable).
-		       """
-		       // TODO(ENG-90489): the DESKTOP CentralAreaDesktopTemplate / FixedGridSlot_qwe4asds rule below is
-		       // temporary in this guide — extract it into a dedicated desktop-page guidance resource.
-		       // https://creatio.atlassian.net/browse/ENG-90489
-		       + "\n"
-		       + """
-		       - On a DESKTOP page whose parent template is `CentralAreaDesktopTemplate`, do NOT insert into the top `Main` container — it is the template's locked frame, so widgets there render but cannot be selected, resized, or deleted in the page designer. Insert into the template's editable slot, named EXACTLY `FixedGridSlot_qwe4asds` (a `crt.GridContainer`, ~8 columns, 60px rows; a fixed template-defined name, NOT a per-page generated id — do not wildcard it). Use `parentName: "FixedGridSlot_qwe4asds"`.
+		       - On a DESKTOP page (parent template `CentralAreaDesktopTemplate`) the editable slot is fixed and the top `Main` frame is locked — read `desktop-page` (get-guidance) for the `FixedGridSlot_qwe4asds` slot rule BEFORE picking `parentName`.
 		       - Fallback: walk `bundle.viewConfig` tree manually when `bundle.containers` is empty (possible for pages built entirely via diffs without a root viewConfig node).
 		       - For how to insert and configure any `crt.*` component — including the child-collection slots a container exposes — `get-component-info` is the authoritative source. Call it for the exact type and build the insert from its response and embedded `documentation`; do not author component shape from this guide or from memory.
 

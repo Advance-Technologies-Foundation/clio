@@ -37,6 +37,9 @@ public static class StageIds {
 	/// <summary>Deploy stage: wait until the application reports ready.</summary>
 	public const string WaitReady = "wait-ready";
 
+	/// <summary>Deploy stage: synchronize the local Creatio database source with dbHub.</summary>
+	public const string SyncDbHubSource = "sync-dbhub-source";
+
 	/// <summary>Uninstall stage: stop the IIS site / application pool.</summary>
 	public const string StopIis = "stop-iis";
 
@@ -57,4 +60,7 @@ public static class StageIds {
 
 	/// <summary>Uninstall stage: delete the application-pool profile (reported skipped/not-supported).</summary>
 	public const string DeleteApppoolProfile = "delete-apppool-profile";
+
+	/// <summary>Uninstall stage: remove the clio-owned dbHub source.</summary>
+	public const string RemoveDbHubSource = "remove-dbhub-source";
 }

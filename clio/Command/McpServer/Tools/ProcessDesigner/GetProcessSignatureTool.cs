@@ -42,7 +42,7 @@ public sealed class GetProcessSignatureTool(
 			Login = args.Login,
 			Password = args.Password
 		};
-		return ExecuteWithCleanLog(() => {
+		return ExecuteWithCleanLog(options, () => {
 			GetProcessSignatureCommand resolvedCommand;
 			try {
 				resolvedCommand = ResolveCommand<GetProcessSignatureCommand>(options);

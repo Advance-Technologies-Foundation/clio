@@ -46,13 +46,13 @@ public sealed class ApplicationDeleteTool(
 				Login = args.Login,
 				Password = args.Password
 			};
-			lock (CommandExecutionSyncRoot) {
+			return ExecuteUnderTenantLock(options, () => {
 				CommandExecutionResult result = InternalExecute<UninstallAppCommand>(options);
 				return new ApplicationDeleteResponse {
 					Success = result.ExitCode == 0,
 					Error = ResolveError(result)
 				};
-			}
+			});
 		} catch (Exception ex) {
 			return new ApplicationDeleteResponse {
 				Success = false,

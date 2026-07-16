@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using Clio.Command;
 using Clio.Command.McpServer.Prompts;
 using Clio.Command.McpServer.Tools;
@@ -39,7 +40,7 @@ public sealed class WorkspaceSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Resolves a fresh push-workspace command for the requested environment and executes it from the requested workspace path.")]
+	[Description("Resolves a fresh push-workspace command for the requested environment and applies the requested workspace root to IWorkspacePathBuilder instead of the process working directory.")]
 	public void PushWorkspace_Should_Resolve_Command_And_Use_Requested_Workspace() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
@@ -47,9 +48,13 @@ public sealed class WorkspaceSyncToolTests {
 		string workspacePath = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), $"pushw-tool-{Guid.NewGuid():N}")).FullName;
 		FakePushWorkspaceCommand defaultCommand = new();
 		FakePushWorkspaceCommand resolvedCommand = new();
+		IWorkspacePathBuilder workspacePathBuilder = Substitute.For<IWorkspacePathBuilder>();
+		resolvedCommand.WorkspacePathBuilder = workspacePathBuilder;
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PushWorkspaceCommand>(Arg.Any<EnvironmentOptions>())
 			.Returns(resolvedCommand);
+		commandResolver.Resolve<IWorkspacePathBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns(workspacePathBuilder);
 		PushWorkspaceTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver, new System.IO.Abstractions.FileSystem());
 
 		try {
@@ -67,15 +72,16 @@ public sealed class WorkspaceSyncToolTests {
 				because: "the resolved push-workspace command should receive the forwarded options");
 			resolvedCommand.CapturedOptions!.Environment.Should().Be("dev",
 				because: "the requested environment name must be preserved for push-workspace");
-			NormalizeTempPathAlias(resolvedCommand.CapturedWorkingDirectory).Should().Be(
+			NormalizeTempPathAlias(resolvedCommand.CapturedRootPath).Should().Be(
 				NormalizeTempPathAlias(workspacePath),
-				because: "push-workspace must execute from the requested workspace path");
+				because: "push-workspace must apply the requested workspace root to IWorkspacePathBuilder (ENG-93208 H1 fix) instead of mutating the process working directory");
 			Directory.GetCurrentDirectory().Should().Be(originalDirectory,
-				because: "the MCP tool should restore the original working directory after push-workspace execution");
+				because: "push-workspace must never mutate the process-wide working directory");
+			workspacePathBuilder.RootPath.Should().BeNull(
+				because: "the tool must reset the explicit workspace root once execution completes");
 		}
 		finally {
 			ConsoleLogger.Instance.ClearMessages();
-			Directory.SetCurrentDirectory(originalDirectory);
 			Directory.Delete(workspacePath, recursive: true);
 		}
 	}
@@ -90,9 +96,13 @@ public sealed class WorkspaceSyncToolTests {
 		string workspacePath = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), $"pushw-skip-backup-{Guid.NewGuid():N}")).FullName;
 		FakePushWorkspaceCommand defaultCommand = new();
 		FakePushWorkspaceCommand resolvedCommand = new();
+		IWorkspacePathBuilder workspacePathBuilder = Substitute.For<IWorkspacePathBuilder>();
+		resolvedCommand.WorkspacePathBuilder = workspacePathBuilder;
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PushWorkspaceCommand>(Arg.Any<EnvironmentOptions>())
 			.Returns(resolvedCommand);
+		commandResolver.Resolve<IWorkspacePathBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns(workspacePathBuilder);
 		PushWorkspaceTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver, new System.IO.Abstractions.FileSystem());
 
 		try {
@@ -116,7 +126,7 @@ public sealed class WorkspaceSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Resolves a fresh restore-workspace command for the requested environment and executes it from the requested workspace path.")]
+	[Description("Resolves a fresh restore-workspace command for the requested environment and applies the requested workspace root to IWorkspacePathBuilder instead of the process working directory.")]
 	public void RestoreWorkspace_Should_Resolve_Command_And_Use_Requested_Workspace() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
@@ -124,9 +134,13 @@ public sealed class WorkspaceSyncToolTests {
 		string workspacePath = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), $"restorew-tool-{Guid.NewGuid():N}")).FullName;
 		FakeRestoreWorkspaceCommand defaultCommand = new();
 		FakeRestoreWorkspaceCommand resolvedCommand = new();
+		IWorkspacePathBuilder workspacePathBuilder = Substitute.For<IWorkspacePathBuilder>();
+		resolvedCommand.WorkspacePathBuilder = workspacePathBuilder;
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<RestoreWorkspaceCommand>(Arg.Any<EnvironmentOptions>())
 			.Returns(resolvedCommand);
+		commandResolver.Resolve<IWorkspacePathBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns(workspacePathBuilder);
 		RestoreWorkspaceTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver, new System.IO.Abstractions.FileSystem());
 
 		try {
@@ -144,15 +158,100 @@ public sealed class WorkspaceSyncToolTests {
 				because: "the resolved restore-workspace command should receive the forwarded options");
 			resolvedCommand.CapturedOptions!.Environment.Should().Be("dev",
 				because: "the requested environment name must be preserved for restore-workspace");
-			NormalizeTempPathAlias(resolvedCommand.CapturedWorkingDirectory).Should().Be(
+			NormalizeTempPathAlias(resolvedCommand.CapturedRootPath).Should().Be(
 				NormalizeTempPathAlias(workspacePath),
-				because: "restore-workspace must execute from the requested workspace path");
+				because: "restore-workspace must apply the requested workspace root to IWorkspacePathBuilder (ENG-93208 H1 fix) instead of mutating the process working directory");
 			Directory.GetCurrentDirectory().Should().Be(originalDirectory,
-				because: "the MCP tool should restore the original working directory after restore-workspace execution");
+				because: "restore-workspace must never mutate the process-wide working directory");
+			workspacePathBuilder.RootPath.Should().BeNull(
+				because: "the tool must reset the explicit workspace root once execution completes");
 		}
 		finally {
 			ConsoleLogger.Instance.ClearMessages();
-			Directory.SetCurrentDirectory(originalDirectory);
+			Directory.Delete(workspacePath, recursive: true);
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("push-workspace must not contend for the process-wide CwdLock, so a concurrent page-sync-style operation holding it never head-of-line-blocks a different tenant's workspace push (ENG-93208 cross-tenant isolation).")]
+	public void PushWorkspace_Should_Not_Block_On_CwdLock_Held_By_Concurrent_Operation() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		string workspacePath = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), $"pushw-cwdlock-{Guid.NewGuid():N}")).FullName;
+		FakePushWorkspaceCommand defaultCommand = new();
+		FakePushWorkspaceCommand resolvedCommand = new();
+		IWorkspacePathBuilder workspacePathBuilder = Substitute.For<IWorkspacePathBuilder>();
+		resolvedCommand.WorkspacePathBuilder = workspacePathBuilder;
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PushWorkspaceCommand>(Arg.Any<EnvironmentOptions>())
+			.Returns(resolvedCommand);
+		commandResolver.Resolve<IWorkspacePathBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns(workspacePathBuilder);
+		PushWorkspaceTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver, new System.IO.Abstractions.FileSystem());
+
+		using ManualResetEventSlim cwdLockHeld = new(false);
+		using ManualResetEventSlim releaseLock = new(false);
+		Thread cwdLockHolder = new(() => {
+			lock (McpToolExecutionLock.CwdLock) {
+				cwdLockHeld.Set();
+				releaseLock.Wait(TimeSpan.FromSeconds(5));
+			}
+		});
+
+		try {
+			// Act
+			cwdLockHolder.Start();
+			bool lockAcquiredByHolder = cwdLockHeld.Wait(TimeSpan.FromSeconds(5));
+			System.Diagnostics.Stopwatch stopwatch = System.Diagnostics.Stopwatch.StartNew();
+			CommandExecutionResult result = tool.PushWorkspace(new PushWorkspaceArgs("dev", workspacePath));
+			stopwatch.Stop();
+
+			// Assert
+			lockAcquiredByHolder.Should().BeTrue(
+				because: "the background thread must actually hold CwdLock before push-workspace runs, or this test proves nothing");
+			result.ExitCode.Should().Be(0,
+				because: "push-workspace should still succeed while a concurrent operation holds CwdLock");
+			stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(2),
+				because: "push-workspace must not wait on McpToolExecutionLock.CwdLock, which a concurrent page-sync-style operation holds for up to 5s in this test");
+		}
+		finally {
+			releaseLock.Set();
+			cwdLockHolder.Join(TimeSpan.FromSeconds(5));
+			ConsoleLogger.Instance.ClearMessages();
+			Directory.Delete(workspacePath, recursive: true);
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Reports an unknown environment as a graceful exit-code-1 failure when it surfaces while resolving IWorkspacePathBuilder, matching the failure shape execute() itself would produce a moment later for the same unresolvable environment.")]
+	public void PushWorkspace_Should_Report_Unresolvable_Environment_Gracefully() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		string workspacePath = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), $"pushw-badenv-{Guid.NewGuid():N}")).FullName;
+		FakePushWorkspaceCommand defaultCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<IWorkspacePathBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns(_ => throw new EnvironmentResolutionException("Environment 'missing' was not found."));
+		PushWorkspaceTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver, new System.IO.Abstractions.FileSystem());
+
+		try {
+			// Act
+			CommandExecutionResult result = tool.PushWorkspace(new PushWorkspaceArgs("missing", workspacePath));
+
+			// Assert
+			result.ExitCode.Should().Be(1,
+				because: "an unresolvable environment is an expected, caller-actionable failure (exit code 1), not an unexpected runtime crash");
+			result.Output.Should().Contain(message =>
+				message.GetType() == typeof(ErrorMessage) &&
+				((string)message.Value!).Contains("Environment 'missing' was not found."),
+				because: "the failure should surface the environment-resolution diagnostic to the caller");
+			defaultCommand.CapturedOptions.Should().BeNull(
+				because: "push-workspace must not execute the command when its workspace root cannot be resolved");
+		}
+		finally {
+			ConsoleLogger.Instance.ClearMessages();
 			Directory.Delete(workspacePath, recursive: true);
 		}
 	}
@@ -275,7 +374,9 @@ public sealed class WorkspaceSyncToolTests {
 	private sealed class FakePushWorkspaceCommand : PushWorkspaceCommand {
 		public PushWorkspaceCommandOptions? CapturedOptions { get; private set; }
 
-		public string? CapturedWorkingDirectory { get; private set; }
+		public IWorkspacePathBuilder? WorkspacePathBuilder { get; set; }
+
+		public string? CapturedRootPath { get; private set; }
 
 		public FakePushWorkspaceCommand()
 			: base(
@@ -295,7 +396,7 @@ public sealed class WorkspaceSyncToolTests {
 
 		public override int Execute(PushWorkspaceCommandOptions options) {
 			CapturedOptions = options;
-			CapturedWorkingDirectory = Directory.GetCurrentDirectory();
+			CapturedRootPath = WorkspacePathBuilder?.RootPath;
 			return 0;
 		}
 	}
@@ -313,7 +414,9 @@ public sealed class WorkspaceSyncToolTests {
 	private sealed class FakeRestoreWorkspaceCommand : RestoreWorkspaceCommand {
 		public RestoreWorkspaceOptions? CapturedOptions { get; private set; }
 
-		public string? CapturedWorkingDirectory { get; private set; }
+		public IWorkspacePathBuilder? WorkspacePathBuilder { get; set; }
+
+		public string? CapturedRootPath { get; private set; }
 
 		public FakeRestoreWorkspaceCommand()
 			: base(
@@ -331,7 +434,7 @@ public sealed class WorkspaceSyncToolTests {
 
 		public override int Execute(RestoreWorkspaceOptions options) {
 			CapturedOptions = options;
-			CapturedWorkingDirectory = Directory.GetCurrentDirectory();
+			CapturedRootPath = WorkspacePathBuilder?.RootPath;
 			return 0;
 		}
 	}

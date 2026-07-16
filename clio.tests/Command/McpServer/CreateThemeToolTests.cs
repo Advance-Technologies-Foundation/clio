@@ -153,6 +153,34 @@ public class CreateThemeToolTests {
 	}
 
 	[Test]
+	[Description("Redacts a sensitive ThemeService error body before it crosses into the MCP client transcript (review: b-horodyskyi — the TryCreateTheme errorMessage out-param bypassed ExecuteResolved's exception handling entirely).")]
+	[Category("Unit")]
+	public void CreateTheme_ShouldRedactSensitiveText_WhenCommandReportsFailure() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeCreateThemeCommand defaultCommand = new();
+		FakeCreateThemeCommand resolvedCommand = new(success: false,
+			error: "Unexpected response from server: https://internal-host.example/ThemeService?token=sekret123");
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateThemeCommand>(Arg.Any<CreateThemeOptions>()).Returns(resolvedCommand);
+		commandResolver.Resolve<ICreatioVersionChecker>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ICreatioVersionChecker>());
+		CreateThemeTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CreateThemeResult result = tool.CreateTheme(new CreateThemeArgs(
+			EnvironmentName: "docker_fix2", CssClassName: "ocean-theme", CssContent: ".ocean-theme{}", Caption: "Ocean"));
+
+		// Assert
+		result.Success.Should().BeFalse(because: "a command failure must surface as a tool failure");
+		result.Error.Should().NotContain("internal-host.example",
+			because: "the server-provided errorMessage can carry a target host, so it must be redacted before crossing the MCP boundary");
+		result.Error.Should().NotContain("sekret123",
+			because: "the server-provided errorMessage can carry a credential value, so it must be redacted before crossing the MCP boundary");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
 	[Description("Returns a structured failure naming css-content when the required CSS payload is omitted.")]
 	[Category("Unit")]
 	public void CreateTheme_ShouldReturnFailure_WhenCssContentIsMissing() {
