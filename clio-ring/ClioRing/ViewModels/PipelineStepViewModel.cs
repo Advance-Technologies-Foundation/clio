@@ -21,6 +21,9 @@ public enum PipelineStepState {
 	/// <summary>The stage failed.</summary>
 	Failed,
 
+	/// <summary>The best-effort stage retained a warning without failing the run.</summary>
+	Warning,
+
 	/// <summary>The stage was skipped (see <see cref="ClioRing.ViewModels.PipelineStepViewModel.SkipReason"/> for why).</summary>
 	Skipped
 }
@@ -61,6 +64,7 @@ public sealed partial class PipelineStepViewModel : ViewModelBase {
 	[NotifyPropertyChangedFor(nameof(IsRunning))]
 	[NotifyPropertyChangedFor(nameof(IsDone))]
 	[NotifyPropertyChangedFor(nameof(IsFailed))]
+	[NotifyPropertyChangedFor(nameof(IsWarning))]
 	[NotifyPropertyChangedFor(nameof(IsSkipped))]
 	[NotifyPropertyChangedFor(nameof(IsSkippedNotApplicable))]
 	[NotifyPropertyChangedFor(nameof(IsSkippedAfterFailure))]
@@ -101,6 +105,9 @@ public sealed partial class PipelineStepViewModel : ViewModelBase {
 
 	/// <summary>True once the step failed.</summary>
 	public bool IsFailed => State == PipelineStepState.Failed;
+
+	/// <summary>True when the stage completed with a non-fatal warning.</summary>
+	public bool IsWarning => State == PipelineStepState.Warning;
 
 	/// <summary>True once the step was skipped (for any reason).</summary>
 	public bool IsSkipped => State == PipelineStepState.Skipped;
@@ -143,6 +150,7 @@ public sealed partial class PipelineStepViewModel : ViewModelBase {
 		PipelineStepState.Running => "RUNNING",
 		PipelineStepState.Done => "DONE",
 		PipelineStepState.Failed => "FAILED",
+		PipelineStepState.Warning => "WARNING",
 		PipelineStepState.Skipped => IsSkippedAfterFailure ? "SKIPPED (after failure)"
 			: IsSkippedNotSupported ? "SKIPPED (not supported)"
 			: "SKIPPED (not applicable)",
@@ -153,6 +161,7 @@ public sealed partial class PipelineStepViewModel : ViewModelBase {
 	public string IconKey => State switch {
 		PipelineStepState.Done => "check",
 		PipelineStepState.Failed => "close",
+		PipelineStepState.Warning => "dot",
 		PipelineStepState.Running => "restart",
 		_ => "dot"
 	};
@@ -181,6 +190,16 @@ public sealed partial class PipelineStepViewModel : ViewModelBase {
 		ErrorCode = errorCode;
 		SkipReason = null;
 		State = PipelineStepState.Failed;
+	}
+
+	/// <summary>Transitions the step to warning while preserving friendly and expandable technical detail.</summary>
+	public void MarkWarning(string message, long? durationMs, string? detail, string? errorCode) {
+		DurationMs = durationMs;
+		Message = message;
+		Detail = detail;
+		ErrorCode = errorCode;
+		SkipReason = null;
+		State = PipelineStepState.Warning;
 	}
 
 	/// <summary>Transitions the step to skipped, recording the reason (not-applicable / after-failure / not-supported).</summary>

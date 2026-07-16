@@ -49,7 +49,7 @@ public sealed class PageCreateTool(
 				Error = PageSchemaMetadataHelper.SchemaNameFormatError
 			};
 		}
-		return ExecuteWithCleanLog(() => {
+		return ExecuteWithCleanLog(options, () => {
 			PageCreateCommand resolvedCommand;
 			try {
 				resolvedCommand = ResolveCommand<PageCreateCommand>(options);

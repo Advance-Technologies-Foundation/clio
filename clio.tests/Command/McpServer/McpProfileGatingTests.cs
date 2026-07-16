@@ -38,10 +38,12 @@ public sealed class McpProfileGatingTests
 	// surface. We measure the serialized ProtocolTool set (name + description + input schema) as a
 	// proxy for the tools/list payload. Story 2 slimmed the core descriptions (and the ubiquitous
 	// environment-name/uri/login/password params), dropping the payload from ~37.4k to ~30.1k bytes;
-	// the remaining bulk is the input-schema bodies, which Story 2 does not touch. The ratchet is
+	// the remaining bulk is the input-schema bodies, which Story 2 does not touch. The ratchet was
 	// tightened to 34k bytes — below the post-slim measurement with headroom for master's growth
-	// (validate-page version param + composites data) — to lock in the win and catch any silent re-growth.
-	private const int MaxLazyToolsSerializedBytes = 34 * 1024;
+	// (validate-page version param + composites data) — to lock in the win and catch any silent
+	// re-growth. Raised to 35328 (34.5k): conditional-requiredness descriptions for credential
+	// passthrough exhausted the previous headroom (ENG-93347 FR-05a).
+	private const int MaxLazyToolsSerializedBytes = 35_328;
 
 	private static Assembly ClioAssembly => typeof(McpFeatureToggleFilter).Assembly;
 

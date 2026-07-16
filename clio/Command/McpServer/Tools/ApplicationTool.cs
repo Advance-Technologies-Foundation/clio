@@ -11,10 +11,19 @@ using ModelContextProtocol.Server;
 namespace Clio.Command.McpServer.Tools;
 
 /// <summary>
-/// MCP tool surface for installed-application discovery.
+/// MCP tool surface for installed-application discovery. Resolves the target environment per request
+/// through <see cref="IToolCommandResolver"/> so the tool honors the mcp-http credential-passthrough
+/// header (<c>X-Integration-Credentials</c>) as well as registered-environment / stdio targets, and
+/// executes under the per-tenant lock and in-flight guard (FR-05, ENG-93347).
 /// </summary>
 [McpServerToolType]
-public sealed class ApplicationGetListTool(IApplicationListService applicationListService) {
+public sealed class ApplicationGetListTool(
+	ILogger logger,
+	IToolCommandResolver commandResolver,
+	IApplicationListService applicationListService)
+	: BaseTool<EnvironmentOptions>(null, logger, commandResolver) {
+
+	private readonly IToolCommandResolver _commandResolver = commandResolver;
 
 	/// <summary>
 	/// Stable MCP tool name for listing installed applications.
@@ -28,29 +37,45 @@ public sealed class ApplicationGetListTool(IApplicationListService applicationLi
 		OpenWorld = false)]
 	[Description("Gets list of all applications from Creatio through backend MCP.")]
 	public ApplicationListResponse ApplicationGetList(
-		[Description("Parameters: environment-name (required)")]
+		[Description("Parameters: environment-name (required unless credential passthrough supplies the tenant)")]
 		[Required]
 		ApplicationGetListArgs args) {
-		try {
-			return ApplicationToolHelper.CreateListResponse(
-				applicationListService.GetApplications(args.EnvironmentName!, null, null)
-					.Select(application => new ApplicationListItemResult(
-						application.Id.ToString(),
-						application.Name,
-						application.Code,
-						application.Version))
-					.ToList());
-		} catch (Exception ex) {
-			return ApplicationToolHelper.CreateListErrorResponse(SensitiveErrorTextRedactor.Redact(ex.Message));
-		}
+		EnvironmentOptions options = new() { Environment = args.EnvironmentName };
+		// ExecuteWithCleanLog(options, ...) — the OPTIONS-AWARE overload — keys the execution lock and
+		// the session-container in-flight guard off THIS call's tenant (FR-05), not the shared fallback.
+		return ExecuteWithCleanLog(options, () => {
+			try {
+				EnvironmentSettings settings = _commandResolver.Resolve<EnvironmentSettings>(options);
+				return ApplicationToolHelper.CreateListResponse(
+					applicationListService.GetApplications(settings, null, null)
+						.Select(application => new ApplicationListItemResult(
+							application.Id.ToString(),
+							application.Name,
+							application.Code,
+							application.Version))
+						.ToList());
+			} catch (Exception ex) {
+				return ApplicationToolHelper.CreateListErrorResponse(SensitiveErrorTextRedactor.Redact(ex.Message));
+			}
+		});
 	}
 }
 
 /// <summary>
-/// MCP tool surface for application context reads.
+/// MCP tool surface for application context reads. Resolves the target environment per request
+/// through <see cref="IToolCommandResolver"/> so the tool honors the mcp-http credential-passthrough
+/// header (<c>X-Integration-Credentials</c>) as well as registered-environment / stdio targets, and
+/// executes under the per-tenant lock and in-flight guard (FR-05, ENG-93347).
 /// </summary>
 [McpServerToolType]
-public sealed class ApplicationGetInfoTool(IApplicationInfoService applicationInfoService) {
+public sealed class ApplicationGetInfoTool(
+	ILogger logger,
+	IToolCommandResolver commandResolver,
+	IApplicationInfoService applicationInfoService)
+	: BaseTool<EnvironmentOptions>(null, logger, commandResolver) {
+
+	private readonly IToolCommandResolver _commandResolver = commandResolver;
+
 	/// <summary>
 	/// Stable MCP tool name for reading structured application info.
 	/// </summary>
@@ -66,7 +91,7 @@ public sealed class ApplicationGetInfoTool(IApplicationInfoService applicationIn
 		+ "no field renaming needed, and no separate get-tool-contract call is required to learn the write shape. "
 		+ "Long-running: streams notifications/progress while working — await completion and do not retry on a perceived timeout.")]
 	public async Task<ApplicationContextResponse> ApplicationGetInfo(
-		[Description("Parameters: environment-name (required), id or code (exactly one required)")]
+		[Description("Parameters: environment-name (required unless passthrough), id or code (exactly one required)")]
 		[Required]
 		ApplicationGetInfoArgs args,
 		global::ModelContextProtocol.Server.McpServer server,
@@ -79,14 +104,19 @@ public sealed class ApplicationGetInfoTool(IApplicationInfoService applicationIn
 				throw new ArgumentException("Provide exactly one identifier: id or code.");
 			}
 
+			EnvironmentOptions options = new() { Environment = args.EnvironmentName };
+			// ExecuteWithCleanLog(options, ...) — the OPTIONS-AWARE overload — keys the execution lock and
+			// the session-container in-flight guard off THIS call's tenant (FR-05), not the shared fallback.
+			// It runs INSIDE the heartbeat work delegate so the lock is held on the worker thread for the
+			// whole synchronous backend call and never across an await.
 			ApplicationInfoResult result = await McpProgressHeartbeat.RunWithProgressAsync(
 				server,
 				requestContext?.Params?.ProgressToken,
 				ApplicationGetInfoToolName,
-				() => applicationInfoService.GetApplicationInfo(
-					args.EnvironmentName,
-					args.Id,
-					args.Code),
+				() => ExecuteWithCleanLog(options, () => {
+					EnvironmentSettings settings = _commandResolver.Resolve<EnvironmentSettings>(options);
+					return applicationInfoService.GetApplicationInfo(settings, args.Id, args.Code);
+				}),
 				cancellationToken).ConfigureAwait(false);
 			return ApplicationToolHelper.CreateContextResponse(ApplicationToolResultMapper.Map(result));
 		} catch (Exception ex) {
@@ -96,12 +126,23 @@ public sealed class ApplicationGetInfoTool(IApplicationInfoService applicationIn
 }
 
 /// <summary>
-/// MCP tool surface for application creation.
+/// MCP tool surface for application creation. Resolves the target environment per request
+/// through <see cref="IToolCommandResolver"/> so the tool honors the mcp-http credential-passthrough
+/// header (<c>X-Integration-Credentials</c>) as well as registered-environment / stdio targets, and
+/// executes under the per-tenant lock and in-flight guard (FR-05, ENG-93347). The settings-based
+/// <see cref="IApplicationCreateService"/> overload routes the WHOLE nested call graph — including
+/// the caption-culture resolution and the timeout/polling readback — to the resolved tenant.
 /// </summary>
 [McpServerToolType]
 public sealed class ApplicationCreateTool(
+	ILogger logger,
+	IToolCommandResolver commandResolver,
 	IApplicationCreateService applicationCreateService,
-	IApplicationCreateEnrichmentService enrichmentService) {
+	IApplicationCreateEnrichmentService enrichmentService)
+	: BaseTool<EnvironmentOptions>(null, logger, commandResolver) {
+
+	private readonly IToolCommandResolver _commandResolver = commandResolver;
+
 	/// <summary>
 	/// Stable MCP tool name for creating Creatio applications.
 	/// </summary>
@@ -114,7 +155,7 @@ public sealed class ApplicationCreateTool(
 		OpenWorld = false)]
 	[Description("Creates a new application in Creatio through backend MCP and returns installed application identity plus the created package and entity context. Long-running: streams notifications/progress while working — await completion and do not retry on a perceived timeout.")]
 	public async Task<ApplicationContextResponse> ApplicationCreate(
-		[Description("Parameters: environment-name, name, code (required); template-code (optional, defaults to AppFreedomUI — the stable recommended template); description, icon-background, icon-id, client-type-id, with-mobile-pages (optional, defaults to true; set false for a web-only app to skip mobile pages)")]
+		[Description("Parameters: environment-name (required unless passthrough); name, code (required); template-code (optional, defaults to AppFreedomUI — the stable recommended template); description, icon-background, icon-id, client-type-id, with-mobile-pages (optional, defaults to true; set false for a web-only app to skip mobile pages)")]
 		[Required]
 		ApplicationCreateArgs args,
 		global::ModelContextProtocol.Server.McpServer server,
@@ -124,17 +165,27 @@ public sealed class ApplicationCreateTool(
 			ValidateCreateArgs(args);
 			string effectiveTemplateCode = string.IsNullOrWhiteSpace(args.TemplateCode) ? "AppFreedomUI" : args.TemplateCode.Trim();
 			ApplicationOptionalTemplateData? optionalTemplateData = ApplicationToolHelper.ParseOptionalTemplateData(args.OptionalTemplateDataJson);
+			EnvironmentOptions options = new() { Environment = args.EnvironmentName };
+			// ExecuteWithCleanLog(options, ...) — the OPTIONS-AWARE overload — keys the execution lock and
+			// the session-container in-flight guard off THIS call's tenant (FR-05), not the shared fallback.
+			// It runs INSIDE the heartbeat work delegate so the lock is held on the worker thread for the
+			// whole synchronous backend call and never across an await.
 			(ApplicationDataForgeResult dataForge, ApplicationInfoResult result) = await McpProgressHeartbeat.RunWithProgressAsync(
 				server,
 				requestContext?.Params?.ProgressToken,
 				ApplicationCreateToolName,
-				() => {
+				() => ExecuteWithCleanLog(options, () => {
+					// Resolve the tenant FIRST: mixed header + environment-name input is rejected here by
+					// the resolver's transport policy before ANY Creatio-reaching call in the graph (AC-06),
+					// including the class-(b) Data Forge enrichment probe below (which routes itself through
+					// the resolver and stays unchanged — ENG-93347 AC-05).
+					EnvironmentSettings settings = _commandResolver.Resolve<EnvironmentSettings>(options);
 					ApplicationDataForgeResult forge = enrichmentService.Enrich(
 						args,
 						optionalTemplateData,
 						cancellationToken);
 					ApplicationInfoResult created = applicationCreateService.CreateApplication(
-						args.EnvironmentName,
+						settings,
 						new ApplicationCreateRequest(
 							args.Name,
 							args.Code,
@@ -146,7 +197,7 @@ public sealed class ApplicationCreateTool(
 							optionalTemplateData,
 							args.WithMobilePages));
 					return (forge, created);
-				},
+				}),
 				cancellationToken).ConfigureAwait(false);
 			return ApplicationToolHelper.CreateContextResponse(
 				ApplicationToolResultMapper.Map(result),
@@ -193,10 +244,23 @@ public sealed class ApplicationCreateTool(
 }
 
 /// <summary>
-/// MCP tool surface for creating a section inside an existing application.
+/// MCP tool surface for creating a section inside an existing application. Resolves the target
+/// environment per request through <see cref="IToolCommandResolver"/> so the tool honors the mcp-http
+/// credential-passthrough header (<c>X-Integration-Credentials</c>) as well as registered-environment
+/// / stdio targets, and executes under the per-tenant lock and in-flight guard (FR-05, ENG-93347).
+/// The settings-based <see cref="IApplicationSectionCreateService"/> overload routes the WHOLE nested
+/// call graph — including both caption-culture resolutions and both application-info reads — to the
+/// resolved tenant.
 /// </summary>
 [McpServerToolType]
-public sealed class ApplicationSectionCreateTool(IApplicationSectionCreateService applicationSectionCreateService) {
+public sealed class ApplicationSectionCreateTool(
+	ILogger logger,
+	IToolCommandResolver commandResolver,
+	IApplicationSectionCreateService applicationSectionCreateService)
+	: BaseTool<EnvironmentOptions>(null, logger, commandResolver) {
+
+	private readonly IToolCommandResolver _commandResolver = commandResolver;
+
 	/// <summary>
 	/// Stable MCP tool name for creating sections in existing Creatio applications.
 	/// </summary>
@@ -243,24 +307,34 @@ public sealed class ApplicationSectionCreateTool(IApplicationSectionCreateServic
 				resolvedIconBackground = await SectionIconPalette.ResolveAsync(
 					server: null, args.IconBackground, args.Caption, cancellationToken).ConfigureAwait(false);
 			}
+			EnvironmentOptions options = new() { Environment = args.EnvironmentName };
+			// ExecuteWithCleanLog(options, ...) — the OPTIONS-AWARE overload — keys the execution lock and
+			// the session-container in-flight guard off THIS call's tenant (FR-05), not the shared fallback.
+			// It runs INSIDE the heartbeat work delegate so the lock is held on the worker thread for the
+			// whole synchronous backend call and never across an await.
 			ApplicationSectionCreateResult result = await McpProgressHeartbeat.RunWithProgressAndDeadlineAsync(
 				server,
 				requestContext?.Params?.ProgressToken,
 				ApplicationSectionCreateToolName,
-				() => applicationSectionCreateService.CreateSection(
-					args.EnvironmentName,
-					new ApplicationSectionCreateRequest(
-						args.ApplicationCode,
-						args.Caption,
-						args.Description,
-						args.EntitySchemaName,
-						args.WithMobilePages,
-						resolvedIconBackground,
-						args.CaptionCulture,
-						args.Code),
-					BackgroundInsertTimeoutMs,
-					BackgroundReadbackTimeoutMs,
-					enableContentionRetry: true),
+				() => ExecuteWithCleanLog(options, () => {
+					// Resolve the tenant FIRST: mixed header + environment-name input is rejected here by
+					// the resolver's transport policy before ANY Creatio-reaching call in the graph (AC-07).
+					EnvironmentSettings settings = _commandResolver.Resolve<EnvironmentSettings>(options);
+					return applicationSectionCreateService.CreateSection(
+						settings,
+						new ApplicationSectionCreateRequest(
+							args.ApplicationCode,
+							args.Caption,
+							args.Description,
+							args.EntitySchemaName,
+							args.WithMobilePages,
+							resolvedIconBackground,
+							args.CaptionCulture,
+							args.Code),
+						BackgroundInsertTimeoutMs,
+						BackgroundReadbackTimeoutMs,
+						enableContentionRetry: true);
+				}),
 				deadline: null,
 				cancellationToken: cancellationToken).ConfigureAwait(false);
 			return ApplicationToolHelper.CreateSectionContextResponse(ApplicationToolResultMapper.Map(result));
@@ -293,10 +367,23 @@ public sealed class ApplicationSectionCreateTool(IApplicationSectionCreateServic
 }
 
 /// <summary>
-/// MCP tool surface for updating metadata of a section inside an existing application.
+/// MCP tool surface for updating metadata of a section inside an existing application. Resolves the
+/// target environment per request through <see cref="IToolCommandResolver"/> so the tool honors the
+/// mcp-http credential-passthrough header (<c>X-Integration-Credentials</c>) as well as
+/// registered-environment / stdio targets, and executes under the per-tenant lock and in-flight guard
+/// (FR-05, ENG-93347). The settings-based <see cref="IApplicationSectionUpdateService"/> overload
+/// routes the nested call graph — the profile-culture resolution and the application-info read — to
+/// the resolved tenant.
 /// </summary>
 [McpServerToolType]
-public sealed class ApplicationSectionUpdateTool(IApplicationSectionUpdateService applicationSectionUpdateService) {
+public sealed class ApplicationSectionUpdateTool(
+	ILogger logger,
+	IToolCommandResolver commandResolver,
+	IApplicationSectionUpdateService applicationSectionUpdateService)
+	: BaseTool<EnvironmentOptions>(null, logger, commandResolver) {
+
+	private readonly IToolCommandResolver _commandResolver = commandResolver;
+
 	/// <summary>
 	/// Stable MCP tool name for updating sections in existing Creatio applications.
 	/// </summary>
@@ -309,7 +396,7 @@ public sealed class ApplicationSectionUpdateTool(IApplicationSectionUpdateServic
 		OpenWorld = false)]
 	[Description("Updates metadata of a section inside an existing application in Creatio through backend MCP and returns structured section readback data before and after the update. Long-running: streams notifications/progress while working — await completion and do not retry on a perceived timeout.")]
 	public async Task<ApplicationSectionUpdateContextResponse> ApplicationSectionUpdate(
-		[Description("Parameters: environment-name, application-code, section-code (required); caption, description, icon-id, icon-background (optional partial update fields)")]
+		[Description("Parameters: environment-name (required unless passthrough), application-code, section-code (required); caption, description, icon-id, icon-background (optional partial update fields)")]
 		[Required]
 		ApplicationSectionUpdateArgs args,
 		global::ModelContextProtocol.Server.McpServer server,
@@ -324,19 +411,29 @@ public sealed class ApplicationSectionUpdateTool(IApplicationSectionUpdateServic
 				resolvedIconBackground = await SectionIconPalette.ResolveAsync(
 					server: null, args.IconBackground, args.Caption ?? args.SectionCode, cancellationToken).ConfigureAwait(false);
 			}
+			EnvironmentOptions options = new() { Environment = args.EnvironmentName };
+			// ExecuteWithCleanLog(options, ...) — the OPTIONS-AWARE overload — keys the execution lock and
+			// the session-container in-flight guard off THIS call's tenant (FR-05), not the shared fallback.
+			// It runs INSIDE the heartbeat work delegate so the lock is held on the worker thread for the
+			// whole synchronous backend call and never across an await.
 			ApplicationSectionUpdateResult result = await McpProgressHeartbeat.RunWithProgressAsync(
 				server,
 				requestContext?.Params?.ProgressToken,
 				ApplicationSectionUpdateToolName,
-				() => applicationSectionUpdateService.UpdateSection(
-					args.EnvironmentName,
-					new ApplicationSectionUpdateRequest(
-						args.ApplicationCode,
-						args.SectionCode,
-						args.Caption,
-						args.Description,
-						args.IconId,
-						resolvedIconBackground)),
+				() => ExecuteWithCleanLog(options, () => {
+					// Resolve the tenant FIRST: mixed header + environment-name input is rejected here by
+					// the resolver's transport policy before ANY Creatio-reaching call (AC-05).
+					EnvironmentSettings settings = _commandResolver.Resolve<EnvironmentSettings>(options);
+					return applicationSectionUpdateService.UpdateSection(
+						settings,
+						new ApplicationSectionUpdateRequest(
+							args.ApplicationCode,
+							args.SectionCode,
+							args.Caption,
+							args.Description,
+							args.IconId,
+							resolvedIconBackground));
+				}),
 				cancellationToken).ConfigureAwait(false);
 			return ApplicationToolHelper.CreateSectionUpdateContextResponse(ApplicationToolResultMapper.Map(result));
 		} catch (Exception ex) {
@@ -372,10 +469,22 @@ public sealed class ApplicationSectionUpdateTool(IApplicationSectionUpdateServic
 }
 
 /// <summary>
-/// MCP tool surface for deleting a section from an existing application.
+/// MCP tool surface for deleting a section from an existing application. Resolves the target
+/// environment per request through <see cref="IToolCommandResolver"/> so the tool honors the
+/// mcp-http credential-passthrough header (<c>X-Integration-Credentials</c>) as well as
+/// registered-environment / stdio targets, and executes under the per-tenant lock and in-flight
+/// guard (FR-05, ENG-93347). The settings-based <see cref="IApplicationSectionDeleteService"/>
+/// overload routes the nested <c>FindApplicationId</c> call to the resolved tenant.
 /// </summary>
 [McpServerToolType]
-public sealed class ApplicationSectionDeleteTool(IApplicationSectionDeleteService applicationSectionDeleteService) {
+public sealed class ApplicationSectionDeleteTool(
+	ILogger logger,
+	IToolCommandResolver commandResolver,
+	IApplicationSectionDeleteService applicationSectionDeleteService)
+	: BaseTool<EnvironmentOptions>(null, logger, commandResolver) {
+
+	private readonly IToolCommandResolver _commandResolver = commandResolver;
+
 	/// <summary>
 	/// Stable MCP tool name for deleting sections from existing Creatio applications.
 	/// </summary>
@@ -388,7 +497,7 @@ public sealed class ApplicationSectionDeleteTool(IApplicationSectionDeleteServic
 		OpenWorld = false)]
 	[Description("Deletes a section from an existing application in Creatio through backend MCP and returns structured deleted-section readback data. Long-running: streams notifications/progress while working — await completion and do not retry on a perceived timeout.")]
 	public async Task<ApplicationSectionDeleteContextResponse> ApplicationSectionDelete(
-		[Description("Parameters: environment-name, application-code, section-code (all required)")]
+		[Description("Parameters: environment-name (required unless passthrough), application-code, section-code (all required)")]
 		[Required]
 		ApplicationSectionDeleteArgs args,
 		global::ModelContextProtocol.Server.McpServer server,
@@ -396,16 +505,26 @@ public sealed class ApplicationSectionDeleteTool(IApplicationSectionDeleteServic
 		CancellationToken cancellationToken = default) {
 		try {
 			ValidateSectionDeleteArgs(args);
+			EnvironmentOptions options = new() { Environment = args.EnvironmentName };
+			// ExecuteWithCleanLog(options, ...) — the OPTIONS-AWARE overload — keys the execution lock and
+			// the session-container in-flight guard off THIS call's tenant (FR-05), not the shared fallback.
+			// It runs INSIDE the heartbeat work delegate so the lock is held on the worker thread for the
+			// whole synchronous backend call and never across an await.
 			ApplicationSectionDeleteResult result = await McpProgressHeartbeat.RunWithProgressAsync(
 				server,
 				requestContext?.Params?.ProgressToken,
 				ApplicationSectionDeleteToolName,
-				() => applicationSectionDeleteService.DeleteSection(
-					args.EnvironmentName,
-					new ApplicationSectionDeleteRequest(
-						args.ApplicationCode,
-						args.SectionCode,
-						args.DeleteEntitySchema ?? false)),
+				() => ExecuteWithCleanLog(options, () => {
+					// Resolve the tenant FIRST: mixed header + environment-name input is rejected here by
+					// the resolver's transport policy before ANY Creatio-reaching call (AC-04).
+					EnvironmentSettings settings = _commandResolver.Resolve<EnvironmentSettings>(options);
+					return applicationSectionDeleteService.DeleteSection(
+						settings,
+						new ApplicationSectionDeleteRequest(
+							args.ApplicationCode,
+							args.SectionCode,
+							args.DeleteEntitySchema ?? false));
+				}),
 				cancellationToken).ConfigureAwait(false);
 			return ApplicationToolHelper.CreateSectionDeleteContextResponse(ApplicationToolResultMapper.Map(result));
 		} catch (Exception ex) {
@@ -425,10 +544,22 @@ public sealed class ApplicationSectionDeleteTool(IApplicationSectionDeleteServic
 }
 
 /// <summary>
-/// MCP tool surface for listing sections of an existing Creatio application.
+/// MCP tool surface for listing sections of an existing Creatio application. Resolves the target
+/// environment per request through <see cref="IToolCommandResolver"/> so the tool honors the
+/// mcp-http credential-passthrough header (<c>X-Integration-Credentials</c>) as well as
+/// registered-environment / stdio targets, and executes under the per-tenant lock and in-flight
+/// guard (FR-05, ENG-93347). The settings-based <see cref="IApplicationSectionGetListService"/>
+/// overload routes the nested <c>FindApplicationId</c> call to the resolved tenant.
 /// </summary>
 [McpServerToolType]
-public sealed class ApplicationSectionGetListTool(IApplicationSectionGetListService applicationSectionGetListService) {
+public sealed class ApplicationSectionGetListTool(
+	ILogger logger,
+	IToolCommandResolver commandResolver,
+	IApplicationSectionGetListService applicationSectionGetListService)
+	: BaseTool<EnvironmentOptions>(null, logger, commandResolver) {
+
+	private readonly IToolCommandResolver _commandResolver = commandResolver;
+
 	/// <summary>
 	/// Stable MCP tool name for listing sections of existing Creatio applications.
 	/// </summary>
@@ -441,7 +572,7 @@ public sealed class ApplicationSectionGetListTool(IApplicationSectionGetListServ
 		OpenWorld = false)]
 	[Description("Gets the list of sections inside an existing application in Creatio through backend MCP and returns structured section list data. Long-running: streams notifications/progress while working — await completion and do not retry on a perceived timeout.")]
 	public async Task<ApplicationSectionListContextResponse> ApplicationSectionGetList(
-		[Description("Parameters: environment-name, application-code (both required)")]
+		[Description("Parameters: application-code (required); environment-name (required unless passthrough)")]
 		[Required]
 		ApplicationSectionGetListArgs args,
 		global::ModelContextProtocol.Server.McpServer server,
@@ -452,13 +583,23 @@ public sealed class ApplicationSectionGetListTool(IApplicationSectionGetListServ
 				throw new ArgumentException("application-code is required.");
 			}
 
+			EnvironmentOptions options = new() { Environment = args.EnvironmentName };
+			// ExecuteWithCleanLog(options, ...) — the OPTIONS-AWARE overload — keys the execution lock and
+			// the session-container in-flight guard off THIS call's tenant (FR-05), not the shared fallback.
+			// It runs INSIDE the heartbeat work delegate so the lock is held on the worker thread for the
+			// whole synchronous backend call and never across an await.
 			ApplicationSectionGetListResult result = await McpProgressHeartbeat.RunWithProgressAsync(
 				server,
 				requestContext?.Params?.ProgressToken,
 				ApplicationSectionGetListToolName,
-				() => applicationSectionGetListService.GetSections(
-					args.EnvironmentName,
-					new ApplicationSectionGetListRequest(args.ApplicationCode)),
+				() => ExecuteWithCleanLog(options, () => {
+					// Resolve the tenant FIRST: mixed header + environment-name input is rejected here by
+					// the resolver's transport policy before ANY Creatio-reaching call (AC-04).
+					EnvironmentSettings settings = _commandResolver.Resolve<EnvironmentSettings>(options);
+					return applicationSectionGetListService.GetSections(
+						settings,
+						new ApplicationSectionGetListRequest(args.ApplicationCode));
+				}),
 				cancellationToken).ConfigureAwait(false);
 			return ApplicationToolHelper.CreateSectionListContextResponse(ApplicationToolResultMapper.Map(result));
 		} catch (Exception ex) {

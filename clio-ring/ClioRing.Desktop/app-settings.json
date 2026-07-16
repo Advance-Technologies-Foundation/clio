@@ -1,4 +1,5 @@
 {
+  "$schema": "./app-settings.schema.json",
   "WorkspaceFolder": "C:\\Projects\\Workspaces",
   "Hotkey": "Ctrl+Alt+C",
   "Channel": "dev",

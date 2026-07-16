@@ -71,7 +71,8 @@ public sealed class CreateAppSectionCommandTests {
 		// Assert
 		result.Should().Be(1,
 			because: "the command should fail fast when environment resolution input is missing");
-		applicationSectionCreateService.DidNotReceiveWithAnyArgs().CreateSection(default!, default!);
+		applicationSectionCreateService.DidNotReceiveWithAnyArgs().CreateSection(default(string)!, default!);
+		applicationSectionCreateService.DidNotReceiveWithAnyArgs().CreateSection(default(EnvironmentSettings)!, default!);
 		logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("Environment name is required")));
 	}
 }

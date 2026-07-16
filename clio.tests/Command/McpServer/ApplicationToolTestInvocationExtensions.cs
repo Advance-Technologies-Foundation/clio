@@ -50,6 +50,12 @@ internal static class ApplicationToolTestInvocationExtensions {
 	public static Task<ApplicationSectionUpdateContextResponse> ApplicationSectionUpdate(
 		this ApplicationSectionUpdateTool tool,
 		ApplicationSectionUpdateArgs args,
+		global::ModelContextProtocol.Server.McpServer server) =>
+		tool.ApplicationSectionUpdate(args, server, requestContext: null, cancellationToken: default);
+
+	public static Task<ApplicationSectionUpdateContextResponse> ApplicationSectionUpdate(
+		this ApplicationSectionUpdateTool tool,
+		ApplicationSectionUpdateArgs args,
 		global::ModelContextProtocol.Server.McpServer server,
 		CancellationToken cancellationToken) =>
 		tool.ApplicationSectionUpdate(args, server, requestContext: null, cancellationToken: cancellationToken);
@@ -59,8 +65,20 @@ internal static class ApplicationToolTestInvocationExtensions {
 		tool.ApplicationSectionDelete(args, server: null, requestContext: null, cancellationToken: default)
 			.GetAwaiter().GetResult();
 
+	public static Task<ApplicationSectionDeleteContextResponse> ApplicationSectionDelete(
+		this ApplicationSectionDeleteTool tool,
+		ApplicationSectionDeleteArgs args,
+		global::ModelContextProtocol.Server.McpServer server) =>
+		tool.ApplicationSectionDelete(args, server, requestContext: null, cancellationToken: default);
+
 	public static ApplicationSectionListContextResponse ApplicationSectionGetList(
 		this ApplicationSectionGetListTool tool, ApplicationSectionGetListArgs args) =>
 		tool.ApplicationSectionGetList(args, server: null, requestContext: null, cancellationToken: default)
 			.GetAwaiter().GetResult();
+
+	public static Task<ApplicationSectionListContextResponse> ApplicationSectionGetList(
+		this ApplicationSectionGetListTool tool,
+		ApplicationSectionGetListArgs args,
+		global::ModelContextProtocol.Server.McpServer server) =>
+		tool.ApplicationSectionGetList(args, server, requestContext: null, cancellationToken: default);
 }

@@ -14,6 +14,7 @@
 		<PackageReference Include="NUnit3TestAdapter" />
 		<PackageReference Include="NSubstitute" />
 		<PackageReference Include="FluentAssertions" />
+		<PackageReference Include="JsonSchema.Net" />
 	</ItemGroup>
 
 	<ItemGroup>
@@ -28,6 +29,15 @@
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</None>
 		<None Include="..\ClioRing.Desktop\actions.schema.json" Link="actions.schema.json">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+		<None Include="..\ClioRing.Desktop\app-settings.json" Link="app-settings.json">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+		<None Include="..\ClioRing.Desktop\app-settings.schema.json" Link="app-settings.schema.json">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+		<None Include="..\ClioRing.Desktop\ClioRing.Desktop.csproj" Link="ClioRing.Desktop.csproj">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</None>
 		<!-- Cross-repo contract anchor: clio's committed ClioStageEvent fixture copied byte-identically.

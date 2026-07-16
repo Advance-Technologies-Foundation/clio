@@ -1583,6 +1583,8 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide must still name the inline add affordance (Mechanism B, its editable flags fetched from get-component-info crt.DataGrid) for the simple-line-item case, even though page-based add is the primary path");
 		article.Text.Should().Contain("entityPageName",
 			because: "the guide must offer the explicit-page option for the page-based header Add button (Mechanism A)");
+		article.Text.Should().Contain("Default for a detail: page-based add/edit",
+			because: "recurrence guard (ENG-93313): pin the flipped DEFAULT (page-based-first) so a silent revert of the related-list \"Adding records\" guidance back to inline-first fails this test — the assertions above name both mechanisms but none pins which one is the default");
 	}
 
 	[Test]

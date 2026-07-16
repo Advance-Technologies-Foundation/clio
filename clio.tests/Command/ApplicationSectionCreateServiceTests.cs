@@ -27,6 +27,7 @@ public sealed class ApplicationSectionCreateServiceTests {
 	private EnvironmentSettings _environmentSettings = null!;
 	private ApplicationSectionCreateService _sut = null!;
 	private ILogger _logger = null!;
+	private ICaptionCultureResolver _captionCultureResolver = null!;
 
 	[SetUp]
 	public void SetUp() {
@@ -51,11 +52,12 @@ public sealed class ApplicationSectionCreateServiceTests {
 		serviceUrlBuilderFactory.Create(Arg.Any<EnvironmentSettings>()).Returns(_serviceUrlBuilder);
 		_sysSettingsManager = Substitute.For<ISysSettingsManager>();
 		_sysSettingsManager.GetSysSettingValueByCode("SchemaNamePrefix").Returns("Usr");
-		ICaptionCultureResolver captionCultureResolver =
-			Substitute.For<ICaptionCultureResolver>();
-		captionCultureResolver.Resolve(Arg.Any<EnvironmentOptions>(), Arg.Any<string>())
+		_captionCultureResolver = Substitute.For<ICaptionCultureResolver>();
+		_captionCultureResolver.Resolve(Arg.Any<EnvironmentOptions>(), Arg.Any<string>())
 			.Returns("en-US");
-		_sut = CreateSutWithResolver(captionCultureResolver);
+		_captionCultureResolver.Resolve(Arg.Any<EnvironmentSettings>(), Arg.Any<string>())
+			.Returns("en-US");
+		_sut = CreateSutWithResolver(_captionCultureResolver);
 	}
 
 	[TearDown]
@@ -523,7 +525,7 @@ public sealed class ApplicationSectionCreateServiceTests {
 			.Which.Message.Should().Contain("en-US",
 				because: "the error must name the effective culture so the caller can fix the language");
 		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!);
-		_applicationInfoService.DidNotReceiveWithAnyArgs().GetApplicationInfo(default!, default, default);
+		_applicationInfoService.DidNotReceiveWithAnyArgs().GetApplicationInfo(default(string)!, default, default);
 	}
 
 	[Test]
@@ -551,7 +553,7 @@ public sealed class ApplicationSectionCreateServiceTests {
 			.Which.Message.Should().Contain("en-US",
 				because: "the guard must validate against the resolved profile culture, not the readback override");
 		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!);
-		_applicationInfoService.DidNotReceiveWithAnyArgs().GetApplicationInfo(default!, default, default);
+		_applicationInfoService.DidNotReceiveWithAnyArgs().GetApplicationInfo(default(string)!, default, default);
 	}
 
 	private ApplicationSectionCreateService CreateSutWithResolver(ICaptionCultureResolver resolver) {
@@ -1978,6 +1980,135 @@ public sealed class ApplicationSectionCreateServiceTests {
 		// Assert
 		result.Section.Code.Should().Be("UsrTaskStatus",
 			because: "a transport failure in the existence probe must not block creation; the probe is best-effort and the insert must proceed");
+	}
+
+	[Test]
+	[Description("Settings-based overload (ENG-93347 Story 6): rejects a null EnvironmentSettings with ArgumentNullException before any client factory or remote call is attempted.")]
+	public void CreateSection_ShouldThrowArgumentNullException_WhenEnvironmentSettingsAreNull() {
+		// Arrange
+		EnvironmentSettings environmentSettings = null!;
+		ApplicationSectionCreateRequest request = new(ApplicationCode: "UsrOrdersApp", Caption: "Orders");
+
+		// Act
+		Action action = () => _sut.CreateSection(environmentSettings, request);
+
+		// Assert
+		action.Should().Throw<ArgumentNullException>(
+			because: "the settings-based overload must fail fast on a null tenant before any factory invocation");
+		_applicationClientFactory.DidNotReceiveWithAnyArgs().CreateEnvironmentClient(default!);
+	}
+
+	[Test]
+	[Description("Settings-based overload (ENG-93347 Story 6, AC-03..AC-06): creates the section against the supplied settings without ever consulting ISettingsRepository, and routes ALL FOUR nested calls — the readback-culture resolution, the profile-validation culture resolution, the validation application-info read, and the polling application-info read — through the settings-based overloads, never the name-based ones.")]
+	public void CreateSection_ShouldUseSettingsBasedNestedCalls_WhenEnvironmentSettingsSupplied() {
+		// Arrange
+		ApplicationInfoResult beforeInfo = new(
+			"pkg-uid", "UsrOrdersApp", [], [], "app-id", "Orders App", "UsrOrdersApp", "8.3.0");
+		ApplicationEntityInfoResult entity = new("entity-uid", "UsrOrders", "Orders", []);
+		ApplicationInfoResult afterInfo = new(
+			"pkg-uid", "UsrOrdersApp", [entity], [], "app-id", "Orders App", "UsrOrdersApp", "8.4.0");
+		_applicationInfoService.GetApplicationInfo(_environmentSettings, null, "UsrOrdersApp")
+			.Returns(beforeInfo, afterInfo);
+		StubRandomIcon();
+		_applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"SysSchema\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true,"rows":[]}""");
+		_applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+					body.Contains("\"columnValues\"", StringComparison.Ordinal) &&
+					!body.Contains("\"filters\"", StringComparison.Ordinal)),
+				Arg.Any<int>())
+			.Returns("""{"success":true}""");
+		_applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+					body.Contains("\"SectionSchemaUId\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true,"rows":[{"Id":"section-id","ApplicationId":"app-id","Caption":"Orders","Code":"UsrOrders","Description":null,"EntitySchemaName":"UsrOrders","PackageId":"pkg-uid","SectionSchemaUId":"section-schema-uid","LogoId":"icon-id","IconBackground":"#A6DE00","ClientTypeId":null}]}""");
+		_applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+					body.Contains("\"columnValues\"", StringComparison.Ordinal) &&
+					body.Contains("\"IconBackground\"", StringComparison.Ordinal) &&
+					body.Contains("\"filters\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true}""");
+
+		// Act
+		ApplicationSectionCreateResult result = _sut.CreateSection(
+			_environmentSettings,
+			new ApplicationSectionCreateRequest(ApplicationCode: "UsrOrdersApp", Caption: "Orders"));
+
+		// Assert
+		result.ApplicationVersion.Should().Be("8.4.0",
+			because: "the settings-based overload's polling readback must return the post-insert application context");
+		_settingsRepository.DidNotReceiveWithAnyArgs().FindEnvironment(default);
+		_settingsRepository.DidNotReceiveWithAnyArgs().GetEnvironment(default(EnvironmentOptions)!);
+		_captionCultureResolver.Received(2).Resolve(_environmentSettings, null);
+		_captionCultureResolver.DidNotReceiveWithAnyArgs().Resolve(default(EnvironmentOptions)!, default);
+		_applicationInfoService.Received(2).GetApplicationInfo(_environmentSettings, null, "UsrOrdersApp");
+		_applicationInfoService.DidNotReceiveWithAnyArgs().GetApplicationInfo(default(string)!, default, default);
+	}
+
+	[Test]
+	[Description("Settings-based overload (ENG-93347 Story 6, AC-06): when the section insert times out but the section is already visible server-side, the timeout-recovery polling loop reads the application back through the settings-based GetApplicationInfo overload — never through the name-based one. The recovery readback matches the section by the generated request id, captured from the insert payload, so the verification-select genuinely proves the section is visible rather than short-circuiting on a fixed literal.")]
+	public void CreateSection_ShouldPollThroughSettingsOverload_WhenInsertTimesOutWithSettingsSupplied() {
+		// Arrange
+		ApplicationInfoResult beforeInfo = new(
+			"pkg-uid", "UsrOrdersApp", [], [], "app-id", "Orders App", "UsrOrdersApp", "8.3.0");
+		ApplicationEntityInfoResult entity = new("entity-uid", "UsrOrders", "Orders", []);
+		ApplicationInfoResult afterInfo = new(
+			"pkg-uid", "UsrOrdersApp", [entity], [], "app-id", "Orders App", "UsrOrdersApp", "8.4.0");
+		_applicationInfoService.GetApplicationInfo(_environmentSettings, null, "UsrOrdersApp")
+			.Returns(beforeInfo, afterInfo);
+		StubRandomIcon();
+		_applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"SysSchema\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true,"rows":[]}""");
+		string? capturedSectionId = null;
+		_applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+					body.Contains("\"columnValues\"", StringComparison.Ordinal) &&
+					!body.Contains("\"filters\"", StringComparison.Ordinal)),
+				Arg.Any<int>())
+			.Returns(callInfo => {
+				capturedSectionId = ExtractInsertedSectionId(callInfo.ArgAt<string>(1));
+				throw new TaskCanceledException("A task was canceled.");
+			});
+		_applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+					body.Contains("\"SectionSchemaUId\"", StringComparison.Ordinal)),
+				Arg.Any<int>())
+			.Returns(_ => $$"""{"success":true,"rows":[{"Id":"{{capturedSectionId}}","ApplicationId":"app-id","Caption":"Orders","Code":"UsrOrders","Description":null,"EntitySchemaName":"UsrOrders","PackageId":"pkg-uid","SectionSchemaUId":"section-schema-uid","LogoId":"icon-id","IconBackground":"#A6DE00","ClientTypeId":null}]}""");
+		_applicationClient.ExecutePostRequest(
+				Arg.Any<string>(),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+					body.Contains("\"columnValues\"", StringComparison.Ordinal) &&
+					body.Contains("\"IconBackground\"", StringComparison.Ordinal) &&
+					body.Contains("\"filters\"", StringComparison.Ordinal)),
+				Arg.Any<int>())
+			.Returns("""{"success":true}""");
+
+		// Act
+		ApplicationSectionCreateResult result = _sut.CreateSection(
+			_environmentSettings,
+			new ApplicationSectionCreateRequest(ApplicationCode: "UsrOrdersApp", Caption: "Orders"));
+
+		// Assert
+		result.ApplicationVersion.Should().Be("8.4.0",
+			because: "timeout recovery on the settings-based path should return the created application once the settings-based readback resolves it");
+		_applicationInfoService.Received(2).GetApplicationInfo(_environmentSettings, null, "UsrOrdersApp");
+		_applicationInfoService.DidNotReceiveWithAnyArgs().GetApplicationInfo(default(string)!, default, default);
+		_settingsRepository.DidNotReceiveWithAnyArgs().FindEnvironment(default);
+	}
+
+	private static string ExtractInsertedSectionId(string insertBody) {
+		System.Text.RegularExpressions.Match match = System.Text.RegularExpressions.Regex.Match(
+			insertBody, "\"Id\":\\{\"expressionType\":2,\"parameter\":\\{\"dataValueType\":\\d+,\"value\":\"([^\"]+)\"\\}\\}");
+		return match.Success ? match.Groups[1].Value : string.Empty;
 	}
 
 	private void StubRandomIcon() {
