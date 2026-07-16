@@ -60,6 +60,7 @@ public sealed class DurableInvocationGateCompletenessTests {
 		"odata-create",
 		"reg-web-app",
 		"send-telemetry",
+		"set-user-theme",
 		"start-creatio",
 		"unlock-for-hotfix",
 		"update-toolkit"
