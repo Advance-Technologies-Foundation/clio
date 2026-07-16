@@ -58,6 +58,224 @@ public sealed class UninstallWarningIisApplicationPoolResolverE2ETests {
 	}
 
 	[Test]
+	[Description("Uses TeamCity's explicit pool when the public sandbox URL is routed independently of local IIS paths.")]
+	[AllureTag(ToolName)]
+	[AllureName("Uninstall warning harness resolves TeamCity routed IIS pool")]
+	public void Resolve_ShouldReturnExpectedPool_WhenPublicUrlDoesNotMatchLocalIisPath() {
+		// Arrange
+		Uri environmentUri = new("http://ts1-agent54:88/studioenu_15736567_0716");
+		const string sitesXml = """
+			<appcmd>
+			  <SITE SITE.NAME="studioenu_15736567_0716" bindings="http/*:40120:" state="Started" />
+			</appcmd>
+			""";
+		const string applicationsXml = """
+			<appcmd>
+			  <APP path="/" APP.NAME="studioenu_15736567_0716/" APPPOOL.NAME="studioenu_15736567_0716" SITE.NAME="studioenu_15736567_0716" />
+			</appcmd>
+			""";
+
+		// Act
+		string result = IisApplicationPoolResolver.Resolve(
+			environmentUri, sitesXml, applicationsXml, "studioenu_15736567_0716",
+			host => host == "ts1-agent54");
+
+		// Assert
+		result.Should().Be("studioenu_15736567_0716",
+			because: "TeamCity's explicit pool is cross-checked against the URL target and live IIS assignment");
+	}
+
+	[Test]
+	[Description("Uses an explicit pool when a local root-site URL matches the pool's sole IIS application.")]
+	[AllureTag(ToolName)]
+	[AllureName("Uninstall warning harness resolves explicit local root-site pool")]
+	public void Resolve_ShouldReturnExpectedPool_WhenLocalRootSiteMatchesDirectly() {
+		// Arrange
+		Uri environmentUri = new("http://localhost:40293/");
+		const string sitesXml = """
+			<appcmd>
+			  <SITE SITE.NAME="clio893" bindings="http/*:40293:" state="Started" />
+			</appcmd>
+			""";
+		const string applicationsXml = """
+			<appcmd>
+			  <APP path="/" APP.NAME="clio893/" APPPOOL.NAME="clio893" SITE.NAME="clio893" />
+			</appcmd>
+			""";
+
+		// Act
+		string result = IisApplicationPoolResolver.Resolve(
+			environmentUri, sitesXml, applicationsXml, "clio893", host => host == "localhost");
+
+		// Assert
+		result.Should().Be("clio893",
+			because: "developer-local validation uses a directly bound root IIS site rather than TeamCity routing");
+	}
+
+	[Test]
+	[Description("Rejects an explicit pool that does not identify the registered sandbox URL target.")]
+	[AllureTag(ToolName)]
+	[AllureName("Uninstall warning harness rejects unrelated explicit pool")]
+	public void Resolve_ShouldThrow_WhenExpectedPoolDoesNotMatchUriTarget() {
+		// Arrange
+		Uri environmentUri = new("http://ts1-agent54:88/studioenu_15736567_0716");
+		const string applicationsXml = """
+			<appcmd>
+			  <APP path="/" APP.NAME="Unrelated/" APPPOOL.NAME="unrelated-pool" SITE.NAME="Unrelated" />
+			</appcmd>
+			""";
+
+		// Act
+		Action act = () => IisApplicationPoolResolver.Resolve(
+			environmentUri, "<appcmd />", applicationsXml, "unrelated-pool",
+			host => host == "ts1-agent54");
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+				because: "an explicit build parameter must not authorize locking an unrelated IIS profile")
+			.WithMessage("*does not match the registered URI target*");
+	}
+
+	[Test]
+	[Description("Rejects an explicitly named application pool that is shared by multiple IIS applications.")]
+	[AllureTag(ToolName)]
+	[AllureName("Uninstall warning harness rejects shared explicit pool")]
+	public void Resolve_ShouldThrow_WhenExpectedPoolHasMultipleAssignments() {
+		// Arrange
+		Uri environmentUri = new("http://ts1-agent54:88/studioenu_15736567_0716");
+		const string applicationsXml = """
+			<appcmd>
+			  <APP path="/" APP.NAME="First/" APPPOOL.NAME="studioenu_15736567_0716" SITE.NAME="First" />
+			  <APP path="/nested" APP.NAME="Second/nested" APPPOOL.NAME="studioenu_15736567_0716" SITE.NAME="Second" />
+			</appcmd>
+			""";
+
+		// Act
+		Action act = () => IisApplicationPoolResolver.Resolve(
+			environmentUri, "<appcmd />", applicationsXml, "studioenu_15736567_0716",
+			host => host == "ts1-agent54");
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+				because: "the warning proof must never lock a profile shared by another IIS application")
+			.WithMessage("*assigned to 2 IIS applications*");
+	}
+
+	[Test]
+	[Description("Rejects a routed pool whose sole IIS assignment belongs to an unrelated live site.")]
+	[AllureTag(ToolName)]
+	[AllureName("Uninstall warning harness rejects unrelated routed pool assignment")]
+	public void Resolve_ShouldThrow_WhenRoutedPoolAssignmentDoesNotIdentifyTarget() {
+		// Arrange
+		Uri environmentUri = new("http://ts1-agent54:88/studioenu_15736567_0716");
+		const string sitesXml = """
+			<appcmd>
+			  <SITE SITE.NAME="Unrelated" bindings="http/*:40120:" state="Started" />
+			</appcmd>
+			""";
+		const string applicationsXml = """
+			<appcmd>
+			  <APP path="/" APP.NAME="Unrelated/" APPPOOL.NAME="studioenu_15736567_0716" SITE.NAME="Unrelated" />
+			</appcmd>
+			""";
+
+		// Act
+		Action act = () => IisApplicationPoolResolver.Resolve(
+			environmentUri, sitesXml, applicationsXml, "studioenu_15736567_0716",
+			host => host == "ts1-agent54");
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+				because: "a matching URL tail must not authorize an unrelated IIS site's application pool")
+			.WithMessage("*does not match the registered URI target*");
+	}
+
+	[Test]
+	[Description("Rejects a routed pool assignment whose referenced IIS site is absent.")]
+	[AllureTag(ToolName)]
+	[AllureName("Uninstall warning harness rejects routed pool without live site")]
+	public void Resolve_ShouldThrow_WhenRoutedPoolSiteIsMissing() {
+		// Arrange
+		Uri environmentUri = new("http://ts1-agent54:88/studioenu_15736567_0716");
+		const string applicationsXml = """
+			<appcmd>
+			  <APP path="/" APP.NAME="studioenu_15736567_0716/" APPPOOL.NAME="studioenu_15736567_0716" SITE.NAME="studioenu_15736567_0716" />
+			</appcmd>
+			""";
+
+		// Act
+		Action act = () => IisApplicationPoolResolver.Resolve(
+			environmentUri, "<appcmd />", applicationsXml, "studioenu_15736567_0716",
+			host => host == "ts1-agent54");
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+				because: "a stale AppCmd application record must not authorize destructive profile setup")
+			.WithMessage("*does not match the registered URI target*");
+	}
+
+	[Test]
+	[Description("Rejects a non-HTTP sandbox URI before resolving an explicit IIS application pool.")]
+	[AllureTag(ToolName)]
+	[AllureName("Uninstall warning harness rejects non-HTTP routed target")]
+	public void Resolve_ShouldThrow_WhenUriSchemeIsNotHttp() {
+		// Arrange
+		Uri environmentUri = new("file://ts1-agent54/studioenu_15736567_0716");
+
+		// Act
+		Action act = () => IisApplicationPoolResolver.Resolve(
+			environmentUri, "<appcmd />", "<appcmd />", "studioenu_15736567_0716",
+			host => host == "ts1-agent54");
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+				because: "IIS web targets must use an HTTP transport even when a pool parameter is present")
+			.WithMessage("*must use HTTP or HTTPS*");
+	}
+
+	[Test]
+	[Description("Reads a TeamCity configuration parameter through its Java-properties file indirection.")]
+	[AllureTag(ToolName)]
+	[AllureName("Uninstall warning harness reads TeamCity application pool parameter")]
+	public void TeamCityBuildParameterResolve_ShouldReturnApplicationPoolName_WhenConfigurationFileDefinesParameter() {
+		// Arrange
+		const string buildPropertiesPath = "build.properties";
+		const string configurationPropertiesPath = @"C:\TeamCity\temp\configuration.properties";
+		Dictionary<string, string[]> files = new(StringComparer.OrdinalIgnoreCase) {
+			[buildPropertiesPath] = [@"teamcity.configuration.properties.file=C\:\\TeamCity\\temp\\configuration.properties"],
+			[configurationPropertiesPath] = ["ApplicationPoolName=studioenu_15736567_0716"]
+		};
+
+		// Act
+		string? result = TeamCityBuildParameterResolver.Resolve(
+			"ApplicationPoolName", buildPropertiesPath, files.ContainsKey, path => files[path]);
+
+		// Assert
+		result.Should().Be("studioenu_15736567_0716",
+			because: "TeamCity stores configuration parameters in the referenced properties file rather than process environment variables");
+	}
+
+	[Test]
+	[Description("Returns no TeamCity parameter when the referenced configuration-properties file is unavailable.")]
+	[AllureTag(ToolName)]
+	[AllureName("Uninstall warning harness fails closed without TeamCity configuration properties")]
+	public void TeamCityBuildParameterResolve_ShouldReturnNull_WhenConfigurationFileIsMissing() {
+		// Arrange
+		const string buildPropertiesPath = "build.properties";
+		string[] buildProperties =
+			[@"teamcity.configuration.properties.file=C\:\\TeamCity\\temp\\missing.properties"];
+
+		// Act
+		string? result = TeamCityBuildParameterResolver.Resolve(
+			"ApplicationPoolName", buildPropertiesPath,
+			path => path == buildPropertiesPath, _ => buildProperties);
+
+		// Assert
+		result.Should().BeNull(
+			because: "an unavailable TeamCity properties file must never invent an IIS application-pool target");
+	}
+
+	[Test]
 	[Description("Rejects a sandbox URI whose IIS binding does not match.")]
 	[AllureTag(ToolName)]
 	[AllureName("Uninstall warning harness rejects unmatched IIS binding")]

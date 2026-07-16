@@ -8,7 +8,7 @@ using System.Xml.Linq;
 namespace Clio.Mcp.E2E.Support.Configuration;
 
 internal static class IisApplicationPoolResolver {
-	public static string Resolve(string environmentUri) {
+	public static string Resolve(string environmentUri, string? expectedApplicationPoolName = null) {
 		if (!OperatingSystem.IsWindows()) {
 			throw new PlatformNotSupportedException("IIS application-pool resolution requires Windows.");
 		}
@@ -23,11 +23,16 @@ internal static class IisApplicationPoolResolver {
 		}
 
 		return Resolve(uri, RunAppCmd(appCmd, "list", "site", "/xml"),
-			RunAppCmd(appCmd, "list", "app", "/xml"), HostIdentifiesCurrentMachine);
+			RunAppCmd(appCmd, "list", "app", "/xml"), expectedApplicationPoolName,
+			HostIdentifiesCurrentMachine);
 	}
 
 	internal static string Resolve(Uri environmentUri, string sitesXml, string applicationsXml,
-		Func<string, bool> hostIdentifiesCurrentMachine) {
+		Func<string, bool> hostIdentifiesCurrentMachine) => Resolve(
+			environmentUri, sitesXml, applicationsXml, null, hostIdentifiesCurrentMachine);
+
+	internal static string Resolve(Uri environmentUri, string sitesXml, string applicationsXml,
+		string? expectedApplicationPoolName, Func<string, bool> hostIdentifiesCurrentMachine) {
 		string safeTarget = FormatSafeTarget(environmentUri);
 		if (!string.IsNullOrWhiteSpace(environmentUri.UserInfo)) {
 			throw new InvalidOperationException(
@@ -38,9 +43,18 @@ internal static class IisApplicationPoolResolver {
 				$"Registered sandbox URI '{safeTarget}' does not identify the current machine; " +
 				"destructive E2E execution is refused.");
 		}
+		if (!string.Equals(environmentUri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
+			&& !string.Equals(environmentUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)) {
+			throw new InvalidOperationException(
+				$"Registered sandbox URI '{safeTarget}' must use HTTP or HTTPS for IIS resolution.");
+		}
 
 		XElement sitesRoot = XElement.Parse(sitesXml);
 		XElement applicationsRoot = XElement.Parse(applicationsXml);
+		if (!string.IsNullOrWhiteSpace(expectedApplicationPoolName)) {
+			return ResolveExpectedApplicationPool(
+				environmentUri, sitesRoot, applicationsRoot, expectedApplicationPoolName, safeTarget);
+		}
 		HashSet<string> matchingSites = sitesRoot.Elements("SITE")
 			.Where(site => SiteMatches(site, environmentUri))
 			.Select(site => site.Attribute("SITE.NAME")?.Value)
@@ -67,6 +81,61 @@ internal static class IisApplicationPoolResolver {
 				$"The IIS application matched by '{safeTarget}' has no application-pool name.");
 		}
 		return applicationPoolName;
+	}
+
+	private static string ResolveExpectedApplicationPool(Uri environmentUri, XElement sitesRoot,
+		XElement applicationsRoot, string expectedApplicationPoolName, string safeTarget) {
+		string targetName = Uri.UnescapeDataString(environmentUri.AbsolutePath)
+			.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+			.LastOrDefault() ?? string.Empty;
+		XElement[] assignments = applicationsRoot.Elements("APP")
+			.Where(application => string.Equals(application.Attribute("APPPOOL.NAME")?.Value,
+				expectedApplicationPoolName, StringComparison.OrdinalIgnoreCase))
+			.ToArray();
+		if (assignments.Length != 1) {
+			throw new InvalidOperationException(
+				$"The configured sandbox application pool '{expectedApplicationPoolName}' is assigned to " +
+				$"{assignments.Length} IIS applications; exactly one assignment is required before destructive E2E execution.");
+		}
+
+		bool routedTargetMatches = string.Equals(
+			targetName, expectedApplicationPoolName, StringComparison.OrdinalIgnoreCase);
+		bool directIisTargetMatches = SiteMatchesAssignment(
+			sitesRoot, assignments[0], environmentUri);
+		bool assignmentIdentityMatches = AssignmentIdentifiesExpectedTarget(
+			sitesRoot, assignments[0], expectedApplicationPoolName);
+		if (!(routedTargetMatches && assignmentIdentityMatches) && !directIisTargetMatches) {
+			throw new InvalidOperationException(
+				$"The configured sandbox application pool '{expectedApplicationPoolName}' does not match " +
+				$"the registered URI target '{safeTarget}'.");
+		}
+		return expectedApplicationPoolName;
+	}
+
+	private static bool AssignmentIdentifiesExpectedTarget(XElement sitesRoot, XElement application,
+		string expectedApplicationPoolName) {
+		string siteName = application.Attribute("SITE.NAME")?.Value ?? string.Empty;
+		bool siteExists = sitesRoot.Elements("SITE").Any(site =>
+			string.Equals(site.Attribute("SITE.NAME")?.Value, siteName, StringComparison.OrdinalIgnoreCase));
+		if (!siteExists) {
+			return false;
+		}
+
+		string applicationTarget = NormalizeApplicationPath(application.Attribute("path")?.Value ?? string.Empty)
+			.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+			.LastOrDefault() ?? string.Empty;
+		return string.Equals(siteName, expectedApplicationPoolName, StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(applicationTarget, expectedApplicationPoolName, StringComparison.OrdinalIgnoreCase);
+	}
+
+	private static bool SiteMatchesAssignment(XElement sitesRoot, XElement application, Uri environmentUri) {
+		string siteName = application.Attribute("SITE.NAME")?.Value ?? string.Empty;
+		string applicationPath = NormalizeApplicationPath(application.Attribute("path")?.Value ?? string.Empty);
+		string targetPath = NormalizeApplicationPath(Uri.UnescapeDataString(environmentUri.AbsolutePath));
+		return string.Equals(applicationPath, targetPath, StringComparison.OrdinalIgnoreCase)
+			&& sitesRoot.Elements("SITE").Any(site =>
+				string.Equals(site.Attribute("SITE.NAME")?.Value, siteName, StringComparison.OrdinalIgnoreCase)
+				&& SiteMatches(site, environmentUri));
 	}
 
 	internal static bool HostIdentifiesCurrentMachine(string host) {
