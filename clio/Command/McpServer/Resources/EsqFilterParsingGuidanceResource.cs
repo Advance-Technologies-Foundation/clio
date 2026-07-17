@@ -177,6 +177,30 @@ public sealed class EsqFilterParsingGuidanceResource {
 		       `ReadScalarParameter` validates structure for enabled and disabled leaves alike. The parsed
 		       node retains `IsEnabled`; only the cached enabled-child list controls later evaluation.
 
+		       Null comparisons have a different verified leaf contract and must not use the scalar-parameter
+		       reader:
+		       ```csharp
+		       private static FilterComparisonType ReadNullComparison(
+		           EntitySchemaQueryFilter filter,
+		           string expectedColumn) {
+		           bool isNullComparison = filter.ComparisonType == FilterComparisonType.IsNull ||
+		               filter.ComparisonType == FilterComparisonType.IsNotNull;
+		           if (!isNullComparison ||
+		               filter.LeftExpression?.ExpressionType !=
+		                   EntitySchemaQueryExpressionType.SchemaColumn ||
+		               filter.LeftExpression.Path != expectedColumn ||
+		               filter.RightExpressions.Count != 0) {
+		               throw new NotSupportedException("Unsupported null filter shape.");
+		           }
+		           return filter.ComparisonType;
+		       }
+		       ```
+
+		       Native and DataService text null predicates produced this same left-only runtime shape. For the
+		       verified MediumText columns, the provider matched Creatio's SQL oracle by evaluating `IsNull`
+		       with `string.IsNullOrEmpty(value)` and `IsNotNull` with its negation. Do not generalize that
+		       empty-string rule to other schema data-value types without a separate platform proof.
+
 		       Then require the CLR type appropriate to the schema column (`System.Int32` for the verified
 		       Integer example and `System.String` for MediumText) and dispatch explicitly on
 		       `ComparisonType`. Do not coerce an unexpected value or silently treat an unsupported
@@ -226,8 +250,8 @@ public sealed class EsqFilterParsingGuidanceResource {
 
 		       ## Coverage boundary
 		       Verified now: group envelope/nesting, disabled leaf/group behavior, group `IsNot`, and all
-		       scalar Compare operators using representative Integer and MediumText values. The frontend
-		       guide supplies the remaining validation backlog: Boolean/Guid values, IsNull, In, Between,
+		       scalar Compare operators using representative Integer and MediumText values, plus text
+		       `IsNull`/`IsNotNull`. The frontend guide supplies the remaining validation backlog: Boolean/Guid values, In, Between,
 		       lookups, dates/macros,
 		       Exists/subqueries/aggregates, and Segment. Add parsing rules here only after native C# and
 		       DataService produce an asserted runtime shape and the lab proves result behavior.

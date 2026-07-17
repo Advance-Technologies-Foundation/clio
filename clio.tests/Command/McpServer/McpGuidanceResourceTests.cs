@@ -1647,6 +1647,16 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide must state the verified structural boundary for disabled filters");
 		article.Text.Should().Contain("ATF.Repository 2.0.3.5 LINQ cannot author group `IsNot`",
 			because: "the guide should distinguish the library authoring limitation from DataService support");
+		article.Text.Should().Contain("CreateIsNullFilter(\"UsrDescription\")",
+			because: "the backend guide should use the dedicated native IsNull API");
+		article.Text.Should().Contain("CreateIsNotNullFilter(\"UsrName\")",
+			because: "the backend guide should use the dedicated native IsNotNull API");
+		article.Text.Should().Contain("zero right expressions",
+			because: "null comparisons must be documented as left-only runtime leaves");
+		article.Text.Should().Contain("Creatio compiled text `IsNull` as `column = ''`",
+			because: "the guide must preserve the verified MediumText SQL storage semantics");
+		article.Text.Should().Contain("not a general null rule for Integer, Guid, lookup, or date columns",
+			because: "the MediumText empty-string observation must not be generalized to unverified types");
 		article.Text.Should().Contain("not Creatio/PostgreSQL collation behavior",
 			because: "in-memory provider case policy must not be published as database-collation evidence");
 		article.Text.Should().Contain("Pending lab",
@@ -1690,6 +1700,14 @@ public sealed class McpGuidanceResourceTests {
 			because: "the sample guard must reject both empty root OR and empty non-root groups");
 		article.Text.Should().Contain("ReadScalarParameter",
 			because: "the parsing owner should show how to validate one typed runtime parameter before evaluation");
+		article.Text.Should().Contain("ReadNullComparison",
+			because: "left-only null leaves require a parser distinct from scalar parameters");
+		article.Text.Should().Contain("filter.RightExpressions.Count != 0",
+			because: "the null parser must reject an unexpected right expression");
+		article.Text.Should().Contain("string.IsNullOrEmpty(value)",
+			because: "the parser should reproduce the verified MediumText null semantics");
+		article.Text.Should().Contain("Do not generalize that empty-string rule",
+			because: "the parser must retain the type boundary around text null evaluation");
 		article.Text.Should().Contain("filter.LeftExpression.Path != expectedColumn",
 			because: "the parser must validate the full ESQ path instead of only its terminal schema column");
 		article.Text.Should().Contain("can collapse `Account.Name` to",
