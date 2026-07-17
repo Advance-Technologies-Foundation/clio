@@ -237,6 +237,7 @@ Structured domain responses:
 - `show-passing-infrastructure`
 - `get-entity-schema-properties`
 - `get-entity-schema-column-properties`
+- `set-entity-schema-properties`
 
 Generic command envelopes:
 
@@ -383,6 +384,7 @@ This is the second major design-oriented surface after page tools.
 - `update-entity-schema`
 - `modify-entity-schema-column`
 - `get-entity-schema-properties`
+- `set-entity-schema-properties`
 - `get-entity-schema-column-properties`
 - `sync-schemas`
 
@@ -392,6 +394,9 @@ What an external AI can practically do here:
 - create explicit lookup schemas
 - read structured schema metadata before mutating
 - mutate one column or a whole schema batch
+- create `Color` columns (dataValueType 18; read back as the named `Color` type)
+- override the caption/description of an inherited column on a replacing/child schema (name, type, flags stay read-only)
+- set a schema's primary-display column (own or inherited) via `set-entity-schema-properties`
 - execute composite schema changes in one call
 
 Why `sync-schemas` matters:

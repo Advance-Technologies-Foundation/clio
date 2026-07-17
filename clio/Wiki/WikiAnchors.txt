@@ -80,6 +80,7 @@ get-build-info:get-build-info,bi,buildinfo
 get-client-unit-schema:get-client-unit-schema,client-unit-schema-get
 get-entity-schema-column-properties:get-entity-schema-column-properties
 get-entity-schema-properties:get-entity-schema-properties
+set-entity-schema-properties:set-entity-schema-properties
 get-browser-session:get-browser-session,get-session
 clear-browser-session:clear-browser-session,clear-session
 find-entity-schema:find-entity-schema
