@@ -1657,6 +1657,16 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide must preserve the verified MediumText SQL storage semantics");
 		article.Text.Should().Contain("not a general null rule for Integer, Guid, lookup, or date columns",
 			because: "the MediumText empty-string observation must not be generalized to unverified types");
+		article.Text.Should().Contain("object[] sequenceNumbers = { 10, 30 }",
+			because: "the backend guide should expose the verified native membership recipe");
+		article.Text.Should().Contain("two or more values produce one right expression per value",
+			because: "membership cardinality controls the runtime collection and generated SQL");
+		article.Text.Should().Contain("physical SQL compilation emits invalid `column = ` text",
+			because: "the empty-membership construction boundary must fail safe");
+		article.Text.Should().Contain("ownerIds.Cast<object>().ToArray()",
+			because: "value-type arrays must not become one array-valued parameter");
+		article.Text.Should().Contain("serialized `filterType: 4`",
+			because: "the guide must distinguish the DataService discriminator from runtime ESQ");
 		article.Text.Should().Contain("not Creatio/PostgreSQL collation behavior",
 			because: "in-memory provider case policy must not be published as database-collation evidence");
 		article.Text.Should().Contain("Pending lab",
@@ -1708,6 +1718,18 @@ public sealed class McpGuidanceResourceTests {
 			because: "the parser should reproduce the verified MediumText null semantics");
 		article.Text.Should().Contain("empty-string rule to other schema data-value types",
 			because: "the parser must retain the type boundary around text null evaluation");
+		article.Text.Should().Contain("ReadIntegerMembership",
+			because: "the parsing guide should validate the complete membership collection");
+		article.Text.Should().Contain("MaxMembershipValues",
+			because: "remotely supplied membership parameters require an explicit cardinality limit");
+		article.Text.Should().Contain("ToHashSet()",
+			because: "validated membership values should be cached for repeated record evaluation");
+		article.Text.Should().Contain("values.Contains(record.SequenceNumber)",
+			because: "the verified evaluator should implement membership explicitly");
+		article.Text.Should().Contain("always false; it must never fall through",
+			because: "empty membership must never broaden a virtual query");
+		article.Text.Should().Contain("cannot recover whether a one-value Equal leaf was authored",
+			because: "the parser must document one-value Compare/In ambiguity");
 		article.Text.Should().Contain("filter.LeftExpression.Path != expectedColumn",
 			because: "the parser must validate the full ESQ path instead of only its terminal schema column");
 		article.Text.Should().Contain("can collapse `Account.Name` to",

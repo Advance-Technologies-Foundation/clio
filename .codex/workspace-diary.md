@@ -6653,3 +6653,10 @@ Decision: Teach the dedicated native null-filter APIs and a separate left-only p
 Discovery: Native C# and ATF/DataService shapes matched exactly. For the verified MediumText columns, PostgreSQL SQL compilation used `column = ''` and `NOT column = ''`; the lab provider therefore evaluates null and empty string alike without generalizing to other data types.
 Files: clio/Command/McpServer/Resources/EsqFiltersBackendGuidanceResource.cs, clio/Command/McpServer/Resources/EsqFilterParsingGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs, clio.mcp.e2e/GuidanceGetToolE2ETests.cs
 Impact: Agents can now construct and parse text null predicates from verified runtime and SQL evidence rather than treating null as an ordinary scalar parameter.
+
+## 2026-07-18 01:25 – Validate backend In cardinality
+Context: Project milestone 5 of the backend ESQ filter validation plan into clio guidance.
+Decision: Document native membership as Equal plus a right-expression collection and keep DataService filterType 4 as a transport-only discriminator.
+Discovery: Zero, one, and two values matched exactly between native and DataService runtime trees. SQL emitted invalid `column = ` for zero, scalar equality for one, and IN for two; Guid arrays require conversion to object[] to avoid one array-valued parameter.
+Files: clio/Command/McpServer/Resources/EsqFiltersBackendGuidanceResource.cs, clio/Command/McpServer/Resources/EsqFilterParsingGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs, clio.mcp.e2e/GuidanceGetToolE2ETests.cs
+Impact: Agents can now construct and parse membership without confusing serialized In metadata with the runtime comparison enum or broadening empty membership.

@@ -125,6 +125,39 @@ public sealed class EsqFiltersBackendGuidanceResource {
 		       This is Creatio's empty-string storage semantics, not a reason to rewrite the ESQ operator and
 		       not a general null rule for Integer, Guid, lookup, or date columns.
 
+		       ## Create In membership filters
+		       Native backend ESQ represents membership with `FilterComparisonType.Equal` plus a collection of
+		       parameter values:
+		       ```csharp
+		       object[] sequenceNumbers = { 10, 30 };
+		       esq.Filters.Add(esq.CreateFilterWithParameters(
+		           FilterComparisonType.Equal,
+		           "UsrSequenceNumber",
+		           sequenceNumbers));
+		       ```
+
+		       Cardinality controls SQL generation while the runtime comparison type remains `Equal`:
+		       - one value produces one right expression and SQL `column = value`;
+		       - two or more values produce one right expression per value and SQL `column IN (...)`.
+
+		       Guard empty input before constructing the filter. Handle it as an always-false result in the
+		       owning query/executor contract; do not add no filter, because that would broaden the query. Returning
+		       an empty `EntityCollection` is one executor-specific implementation, not part of filter construction.
+
+		       The lab proved that an empty array remains an executor-visible Equal leaf with zero right
+		       expressions, but physical SQL compilation emits invalid `column = ` text. Do not execute that
+		       shape against the database and never omit it in a way that broadens the query.
+
+		       Always pass an `object[]`. A value-type array such as `Guid[]` can bind as one array-valued
+		       `params object[]` argument instead of several parameters. Convert it explicitly when needed:
+		       ```csharp
+		       object[] ownerIdsAsParameters = ownerIds.Cast<object>().ToArray();
+		       ```
+
+		       DataService uses serialized `filterType: 4` to distinguish In from Compare while building ESQ.
+		       That transport discriminator is not present on the resulting `EntitySchemaQueryFilter`; backend
+		       runtime code must use the right-expression count and its own supported-query contract.
+
 		       ### Exact ATF shape parity for three-term AND
 		       ATF.Repository 2.0.3.5 translated source `A && B && C` to one flat root AND ordered
 		       `C, A, B`. If a test requires byte-for-byte/shape-for-shape parity, insert the native
@@ -255,8 +288,9 @@ public sealed class EsqFiltersBackendGuidanceResource {
 		       ## Coverage boundary
 		       Verified now: group envelope/nesting, disabled leaves/groups, collection `IsNot`, and all
 		       scalar Compare operators using representative Integer and MediumText values, plus text
-		       `IsNull`/`IsNotNull`. Pending lab validation before publishing construction recipes: Boolean/Guid Compare values,
-		       In, Between, lookup values, dates and macros, Exists/subqueries/aggregates, and Segment filters. Use the
+		       `IsNull`/`IsNotNull` and Integer In cardinality boundaries. Pending lab validation before publishing
+		       construction recipes: Boolean/Guid Compare values, Between, lookup values, dates and macros,
+		       Exists/subqueries/aggregates, and Segment filters. Use the
 		       frontend guide as a discovery checklist, but do not translate its JSON fields into guessed
 		       backend APIs.
 		       """

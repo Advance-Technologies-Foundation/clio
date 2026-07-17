@@ -143,6 +143,10 @@ public sealed class McpGuidanceResourceE2ETests : McpContractFixtureBase {
 			because: "the published backend guide should expose the dedicated native null-filter APIs");
 		backend.Text.Should().Contain("not a general null rule for Integer, Guid, lookup, or date columns",
 			because: "the published guide must preserve the verified MediumText-only boundary");
+		backend.Text.Should().Contain("object[] sequenceNumbers = { 10, 30 }",
+			because: "the published backend guide should expose native In construction");
+		backend.Text.Should().Contain("physical SQL compilation emits invalid `column = ` text",
+			because: "the published guide should warn against executing empty membership");
 		TextResourceContents parsing = parsingResult.Contents.Single().Should().BeOfType<TextResourceContents>(
 			because: "the runtime parsing resource should resolve to one plain-text article").Subject;
 		parsing.Text.Should().Contain("Parse a tree, not a flat list",
@@ -161,6 +165,12 @@ public sealed class McpGuidanceResourceE2ETests : McpContractFixtureBase {
 			because: "the published parser guide should expose the verified left-only null shape");
 		parsing.Text.Should().Contain("empty-string rule to other schema data-value types",
 			because: "the published parser must not apply text semantics to unverified data types");
+		parsing.Text.Should().Contain("ReadIntegerMembership",
+			because: "the published parser should expose the verified membership reader");
+		parsing.Text.Should().Contain("MaxMembershipValues",
+			because: "the published parser must bound remotely supplied membership parameters");
+		parsing.Text.Should().Contain("always false; it must never fall through",
+			because: "the published parser must fail safe for empty membership");
 		parsing.Text.Should().Contain("never reached PostgreSQL",
 			because: "the published resource must not misattribute virtual-provider case behavior to the database");
 	}

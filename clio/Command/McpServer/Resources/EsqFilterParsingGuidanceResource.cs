@@ -201,6 +201,45 @@ public sealed class EsqFilterParsingGuidanceResource {
 		       with `string.IsNullOrEmpty(value)` and `IsNotNull` with its negation. Do not generalize that
 		       empty-string rule to other schema data-value types without a separate platform proof.
 
+		       Membership leaves use the ordinary `Equal` comparison type at this runtime boundary. Parse the
+		       complete right-expression collection and validate every value before evaluating any record:
+		       ```csharp
+		       private const int MaxMembershipValues = 100;
+
+		       private static HashSet<int> ReadIntegerMembership(
+		           EntitySchemaQueryFilter filter,
+		           string expectedColumn) {
+		           if (filter.ComparisonType != FilterComparisonType.Equal ||
+		               filter.LeftExpression?.ExpressionType !=
+		                   EntitySchemaQueryExpressionType.SchemaColumn ||
+		               filter.LeftExpression.Path != expectedColumn) {
+		               throw new NotSupportedException("Unsupported membership filter shape.");
+		           }
+		           if (filter.RightExpressions.Count > MaxMembershipValues) {
+		               throw new NotSupportedException(
+		                   $"Membership exceeds the {MaxMembershipValues}-value limit.");
+		           }
+
+		           return filter.RightExpressions.Select(expression => {
+		               if (expression.ExpressionType !=
+		                       EntitySchemaQueryExpressionType.Parameter ||
+		                   expression.ParameterValue is not int value) {
+		                   throw new NotSupportedException("Membership requires Integer parameters.");
+		               }
+		               return value;
+		           }).ToHashSet();
+		       }
+		       ```
+
+		       Count right expressions against a separate conservative parameter budget (or the provider's shared
+		       parse budget), validate them once, and cache the set. Evaluate membership with
+		       `values.Contains(record.SequenceNumber)`. An empty returned set is
+		       always false; it must never fall through to an unfiltered result. One value is structurally the
+		       same runtime leaf as scalar equality, and multiple values are the same leaf with multiple right
+		       expressions. The serialized DataService `filterType: 4` discriminator is consumed before the
+		       executor boundary, so a parser cannot recover whether a one-value Equal leaf was authored as
+		       Compare or In. Support that ambiguity deliberately in the provider contract.
+
 		       Then require the CLR type appropriate to the schema column (`System.Int32` for the verified
 		       Integer example and `System.String` for MediumText) and dispatch explicitly on
 		       `ComparisonType`. Do not coerce an unexpected value or silently treat an unsupported
@@ -251,7 +290,8 @@ public sealed class EsqFilterParsingGuidanceResource {
 		       ## Coverage boundary
 		       Verified now: group envelope/nesting, disabled leaf/group behavior, group `IsNot`, and all
 		       scalar Compare operators using representative Integer and MediumText values, plus text
-		       `IsNull`/`IsNotNull`. The frontend guide supplies the remaining validation backlog: Boolean/Guid values, In, Between,
+		       `IsNull`/`IsNotNull` and Integer In cardinality boundaries. The frontend guide supplies the remaining
+		       validation backlog: Boolean/Guid values, Between,
 		       lookups, dates/macros,
 		       Exists/subqueries/aggregates, and Segment. Add parsing rules here only after native C# and
 		       DataService produce an asserted runtime shape and the lab proves result behavior.

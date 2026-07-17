@@ -662,6 +662,8 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "get-guidance should return the verified native disabled-leaf recipe");
 		backend.Article!.Text.Should().Contain("CreateIsNullFilter(\"UsrDescription\")",
 			because: "get-guidance should return the verified native null-filter recipe");
+		backend.Article!.Text.Should().Contain("object[] sequenceNumbers = { 10, 30 }",
+			because: "get-guidance should return the verified native membership recipe");
 		parsing.Success.Should().BeTrue(
 			because: "runtime C# filter interpretation should have one retrievable parsing owner");
 		parsing.Article!.Uri.Should().Be("docs://mcp/guides/esq-filter-parsing",
@@ -672,6 +674,8 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "get-guidance should return the verified group-negation evaluation rule");
 		parsing.Article!.Text.Should().Contain("ReadNullComparison",
 			because: "get-guidance should return the verified null-filter parsing contract");
+		parsing.Article!.Text.Should().Contain("ReadIntegerMembership",
+			because: "get-guidance should return the verified membership parsing contract");
 	}
 
 	[Test]
