@@ -1,8 +1,13 @@
 using System;
+using System.ComponentModel;
+using System.Threading;
+using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using Avalonia.Layout;
+using Avalonia.Media;
 using Avalonia.Platform;
 using Avalonia.Threading;
 using ClioRing.Diagnostics;
@@ -23,6 +28,9 @@ public partial class App : Application {
 	private ClioWorkflowWindow? _workflowWindow;
 	private InstallWindow? _installWindow;
 	private UninstallWindow? _uninstallWindow;
+	private NativeMenuItem? _updateClioItem;
+	private string _baseTrayTooltip = string.Empty;
+	private readonly CancellationTokenSource _updateMonitorCancellation = new();
 
 	/// <summary>Returns whether a terminal stage outcome represents successful completion.</summary>
 	public static bool IsSuccessfulRunOutcome(string? outcome) =>
@@ -79,6 +87,10 @@ public partial class App : Application {
 			desktop.MainWindow = _window;
 
 			CreateTray(desktop, vm);
+			vm.SetClioUpdateLifetimeToken(_updateMonitorCancellation.Token);
+			vm.PropertyChanged += (_, args) => OnRingPropertyChanged(vm, args);
+			_ = MonitorClioUpdatesAsync(vm, _updateMonitorCancellation.Token);
+			desktop.Exit += (_, _) => _updateMonitorCancellation.Cancel();
 			SingleInstance.StartShowListener(
 				() => Dispatcher.UIThread.Post(() => _window?.ShowRing()));
 		}
@@ -128,6 +140,9 @@ public partial class App : Application {
 			};
 
 			var menu = new NativeMenu();
+			_updateClioItem = new NativeMenuItem("Update clio") { IsVisible = false };
+			_updateClioItem.Click += (_, _) => vm.RequestClioUpdateCommand.Execute(null);
+			menu.Add(_updateClioItem);
 			menu.Add(showItem);
 			menu.Add(settingsItem);
 			menu.Add(centerItem);
@@ -156,6 +171,7 @@ public partial class App : Application {
 			if (vm.HasCrossBuildNotice) {
 				tooltip += $"\n⚠ different build running: {vm.CrossBuildNotice}";
 			}
+			_baseTrayTooltip = tooltip;
 			var tray = new TrayIcon {
 				Icon = LoadTrayIcon(),
 				ToolTipText = tooltip,
@@ -171,6 +187,91 @@ public partial class App : Application {
 		catch (Exception ex) {
 			StartupLog.Log($"tray creation failed: {ex.Message}");
 		}
+	}
+
+	private async Task MonitorClioUpdatesAsync(RingViewModel vm, CancellationToken cancellationToken) {
+		try {
+			while (!cancellationToken.IsCancellationRequested) {
+				await vm.CheckForClioUpdateAsync(cancellationToken);
+				await Task.Delay(TimeSpan.FromHours(8), cancellationToken);
+			}
+		}
+		catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) {
+			// Normal app shutdown.
+		}
+	}
+
+	private void OnRingPropertyChanged(RingViewModel vm, PropertyChangedEventArgs args) {
+		if (args.PropertyName is not (nameof(RingViewModel.IsClioUpdateAvailable)
+			or nameof(RingViewModel.AvailableClioVersion))) {
+			return;
+		}
+		Dispatcher.UIThread.Post(() => UpdateTrayClioNotice(vm));
+	}
+
+	private void UpdateTrayClioNotice(RingViewModel vm) {
+		if (_tray is null || _updateClioItem is null) {
+			return;
+		}
+		_updateClioItem.IsVisible = vm.IsClioUpdateAvailable;
+		_updateClioItem.Header = vm.IsClioUpdateAvailable
+			? $"● Update clio to {vm.AvailableClioVersion}..."
+			: "Update clio";
+		_tray.Icon = vm.IsClioUpdateAvailable ? LoadUpdateTrayIcon() : LoadTrayIcon();
+		_tray.ToolTipText = vm.IsClioUpdateAvailable
+			? $"clio update available: {vm.InstalledClioVersion} -> {vm.AvailableClioVersion}\n{_baseTrayTooltip}"
+			: _baseTrayTooltip;
+		if (vm.IsClioUpdateAvailable && _services?.GetRequiredService<IClioUpdateStateStore>()
+			.TryMarkNotified(vm.AvailableClioVersion) == true) {
+			ShowClioUpdateDesktopNotice(vm);
+		}
+	}
+
+	private void ShowClioUpdateDesktopNotice(RingViewModel vm) {
+		try {
+			var toast = new Window {
+				Width = 340,
+				Height = 92,
+				CanResize = false,
+				ShowInTaskbar = false,
+				Topmost = true,
+				WindowDecorations = WindowDecorations.None,
+				Background = Brushes.Transparent,
+				Content = new Border {
+					CornerRadius = new CornerRadius(10),
+					Background = new SolidColorBrush(Color.Parse("#111923")),
+					BorderBrush = new SolidColorBrush(Color.Parse("#4B91E2")),
+					BorderThickness = new Thickness(1),
+					Padding = new Thickness(14, 11),
+					Child = new StackPanel {
+						Spacing = 4,
+						Children = {
+							new TextBlock { Text = $"clio {vm.AvailableClioVersion} is available",
+								FontSize = 14, FontWeight = FontWeight.Bold, Foreground = Brushes.White },
+							new TextBlock { Text = "Open ClioRing to review and install the Release update.",
+								FontSize = 11, Foreground = new SolidColorBrush(Color.Parse("#A9C7E8")) }
+						}
+					}
+				}
+			};
+			PixelRect workingArea = _window?.Screens.Primary?.WorkingArea
+				?? new PixelRect(0, 0, 1920, 1080);
+			toast.Position = new PixelPoint(workingArea.Right - 356, workingArea.Bottom - 108);
+			toast.PointerPressed += (_, _) => {
+				toast.Close();
+				_window?.ShowRing();
+			};
+			toast.Show();
+			_ = CloseUpdateNoticeAsync(toast);
+		}
+		catch (Exception exception) {
+			StartupLog.Log($"clio update desktop notice unavailable: {exception.GetType().Name}");
+		}
+	}
+
+	private static async Task CloseUpdateNoticeAsync(Window toast) {
+		await Task.Delay(TimeSpan.FromSeconds(8));
+		if (toast.IsVisible) { toast.Close(); }
 	}
 
 	// Opens (or re-focuses) the experimental clio workflow window (command actions + deploy wizard).
@@ -307,6 +408,11 @@ public partial class App : Application {
 
 	private static WindowIcon LoadTrayIcon() {
 		using var stream = AssetLoader.Open(new Uri("avares://ClioRing/Assets/clio-ring.ico"));
+		return new WindowIcon(stream);
+	}
+
+	private static WindowIcon LoadUpdateTrayIcon() {
+		using var stream = AssetLoader.Open(new Uri("avares://ClioRing/Assets/clio-ring-update.ico"));
 		return new WindowIcon(stream);
 	}
 }

@@ -2,8 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
+using System.Net.Http;
 using System.Text;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Media;
@@ -47,6 +50,14 @@ public enum EnvFilter {
 	Cloud
 }
 
+/// <summary>Presentation-only identity of one clio process blocking a Release-tool update.</summary>
+/// <param name="ProcessId">Operating-system process identifier.</param>
+/// <param name="CommandLine">Safe command summary when available.</param>
+/// <param name="ExecutablePath">Resolved executable path.</param>
+/// <param name="ParentSummary">Parent application name and process identifier when available.</param>
+public sealed record ClioUpdateProcessViewModel(int ProcessId, string CommandLine, string ExecutablePath,
+	string ParentSummary);
+
 /// <summary>
 /// View-model for the radial ring. The OUTER orbit is the fixed action set (never moves). Environments
 /// do NOT crowd the ring: the hub is a searchable palette selector, and only up to 6 pinned+MRU quick
@@ -72,6 +83,9 @@ public partial class RingViewModel : ViewModelBase {
 	private readonly IEnvStateStore _stateStore;
 	private readonly IActionCatalogWatcher _catalogWatcher;
 	private readonly IEnvironmentSettingsWatcher _environmentSettingsWatcher;
+	private readonly IClioIpcClient? _ipcClient;
+	private readonly IClioToolUpdateService? _clioUpdateService;
+	private readonly ResolvedClioRuntime _clioRuntime;
 	private readonly StringBuilder _output = new();
 
 	private readonly List<ClioEnvironment> _allEnvironments = new();
@@ -82,12 +96,257 @@ public partial class RingViewModel : ViewModelBase {
 	private bool _environmentReloadPending;
 	private string? _pendingConfirmEnvironment;
 	private ClioEnvironment? _pendingConfirmEnvironmentSnapshot;
+	private ClioToolUpdateCheck? _currentClioUpdate;
+	private bool _hasClioUpdateCheckWarning;
+	private IReadOnlyList<ClioToolProcess> _confirmedClioUpdateProcesses = Array.Empty<ClioToolProcess>();
+	private CancellationToken _clioUpdateLifetimeToken;
 
 	/// <summary>All ring nodes (outer actions + up to 6 inner env quick-chips).</summary>
 	public ObservableCollection<RingItemViewModel> Items { get; } = new();
 
 	/// <summary>Rows currently shown in the environment palette (filtered + sectioned).</summary>
 	public ObservableCollection<EnvRowViewModel> FilteredEnvironments { get; } = new();
+
+	/// <summary>Processes shown in the immutable update-blocker confirmation snapshot.</summary>
+	public ObservableCollection<ClioUpdateProcessViewModel> ClioUpdateProcesses { get; } = new();
+
+	/// <summary>Whether a newer stable Release clio is available.</summary>
+	[ObservableProperty]
+	[NotifyPropertyChangedFor(nameof(ShowClioUpdateResult))]
+	[NotifyPropertyChangedFor(nameof(ShowClioUpdateSuccessResult))]
+	[NotifyPropertyChangedFor(nameof(ShowClioUpdateWarningResult))]
+	[NotifyCanExecuteChangedFor(nameof(RequestClioUpdateCommand))]
+	private bool _isClioUpdateAvailable;
+
+	/// <summary>Installed Release clio version displayed in the update notice.</summary>
+	[ObservableProperty]
+	private string _installedClioVersion = string.Empty;
+
+	/// <summary>Latest stable Release clio version displayed in the update notice.</summary>
+	[ObservableProperty]
+	private string _availableClioVersion = string.Empty;
+
+	/// <summary>Whether the update failed because running clio processes hold the installed tool.</summary>
+	[ObservableProperty]
+	[NotifyCanExecuteChangedFor(nameof(KillClioUpdateBlockersAndRetryCommand))]
+	private bool _hasClioUpdateBlockers;
+
+	/// <summary>The trusted Release clio path shown in the blocker confirmation.</summary>
+	[ObservableProperty]
+	private string _clioUpdateTargetPath = string.Empty;
+
+	/// <summary>Whether Ring is checking or changing the installed Release tool.</summary>
+	[ObservableProperty]
+	[NotifyCanExecuteChangedFor(nameof(RequestClioUpdateCommand))]
+	[NotifyCanExecuteChangedFor(nameof(KillClioUpdateBlockersAndRetryCommand))]
+	private bool _isClioUpdateBusy;
+
+	/// <summary>Whether the bounded background version check is in progress.</summary>
+	[ObservableProperty]
+	[NotifyCanExecuteChangedFor(nameof(RequestClioUpdateCommand))]
+	private bool _isClioUpdateChecking;
+
+	/// <summary>Secret-free result or recovery guidance from the last update operation.</summary>
+	[ObservableProperty]
+	[NotifyPropertyChangedFor(nameof(ShowClioUpdateResult))]
+	[NotifyPropertyChangedFor(nameof(ShowClioUpdateSuccessResult))]
+	[NotifyPropertyChangedFor(nameof(ShowClioUpdateWarningResult))]
+	private string _clioUpdateMessage = string.Empty;
+
+	/// <summary>Whether the terminal update result is a warning rather than successful completion.</summary>
+	[ObservableProperty]
+	[NotifyPropertyChangedFor(nameof(ShowClioUpdateSuccessResult))]
+	[NotifyPropertyChangedFor(nameof(ShowClioUpdateWarningResult))]
+	private bool _isClioUpdateResultWarning;
+
+	/// <summary>Whether a terminal update result should remain visible after the update banner closes.</summary>
+	public bool ShowClioUpdateResult => !IsClioUpdateAvailable && !string.IsNullOrWhiteSpace(ClioUpdateMessage);
+
+	/// <summary>Whether a successful terminal update result is visible.</summary>
+	public bool ShowClioUpdateSuccessResult => ShowClioUpdateResult && !IsClioUpdateResultWarning;
+
+	/// <summary>Whether an unavailable or stale-check warning is visible.</summary>
+	public bool ShowClioUpdateWarningResult => ShowClioUpdateResult && IsClioUpdateResultWarning;
+
+	/// <summary>Binds update processes to the desktop application's shutdown lifetime.</summary>
+	public void SetClioUpdateLifetimeToken(CancellationToken cancellationToken) =>
+		_clioUpdateLifetimeToken = cancellationToken;
+
+	/// <summary>Human-readable count used by the destructive retry action.</summary>
+	public string ClioUpdateProcessCount => ClioUpdateProcesses.Count == 1
+		? "1 clio process"
+		: $"{ClioUpdateProcesses.Count} clio processes";
+
+	/// <summary>Sets the update-available state for design rendering without network access.</summary>
+	/// <param name="installedVersion">Representative installed version.</param>
+	/// <param name="availableVersion">Representative available version.</param>
+	public void DesignShowClioUpdate(string installedVersion, string availableVersion) {
+		InstalledClioVersion = installedVersion;
+		AvailableClioVersion = availableVersion;
+		IsClioUpdateAvailable = true;
+		_currentClioUpdate = new ClioToolUpdateCheck(installedVersion, availableVersion,
+			ClioIpcSettings.Default.Command);
+	}
+
+	/// <summary>Sets the lock-holder state for design rendering without terminating a process.</summary>
+	/// <param name="targetPath">Representative trusted Release clio path.</param>
+	/// <param name="processes">Representative process identities.</param>
+	public void DesignShowClioUpdateBlockers(string targetPath,
+		IEnumerable<ClioUpdateProcessViewModel> processes) {
+		ClioUpdateTargetPath = targetPath;
+		ClioUpdateProcesses.Clear();
+		ClioUpdateProcessViewModel[] processList = processes.ToArray();
+		foreach (ClioUpdateProcessViewModel process in processList) {
+			ClioUpdateProcesses.Add(process);
+		}
+		_confirmedClioUpdateProcesses = processList.Select((process, index) =>
+			new ClioToolProcess(process.ProcessId, index + 1, process.ExecutablePath,
+				process.CommandLine, process.ParentSummary)).ToArray();
+		OnPropertyChanged(nameof(ClioUpdateProcessCount));
+		HasClioUpdateBlockers = true;
+	}
+
+	/// <summary>Checks for a newer listed stable clio Release without blocking app startup.</summary>
+	public async Task CheckForClioUpdateAsync(CancellationToken cancellationToken = default,
+		bool force = false) {
+		if (_clioUpdateService is null || IsClioUpdateBusy || IsClioUpdateChecking
+			|| HasClioUpdateBlockers) {
+			return;
+		}
+		IsClioUpdateChecking = true;
+		try {
+			ClioToolUpdateCheck? update = await _clioUpdateService.CheckAsync(cancellationToken, force);
+			_currentClioUpdate = update;
+			if (update is null) {
+				if (force) {
+					_hasClioUpdateCheckWarning = true;
+					IsClioUpdateResultWarning = true;
+					ClioUpdateMessage = "The clio update check is unavailable. Try again later.";
+				}
+				return;
+			}
+			InstalledClioVersion = update.InstalledVersion;
+			AvailableClioVersion = update.AvailableVersion;
+			ClioUpdateTargetPath = update.TargetPath;
+			IsClioUpdateAvailable = update.IsUpdateAvailable;
+			if (_hasClioUpdateCheckWarning || force || !update.IsUpdateAvailable) {
+				_hasClioUpdateCheckWarning = false;
+				IsClioUpdateResultWarning = false;
+				ClioUpdateMessage = string.Empty;
+			}
+		}
+		catch (Exception exception) when (exception is HttpRequestException or IOException
+			or JsonException or TaskCanceledException or UnauthorizedAccessException) {
+			StartupLog.Log($"clio update check unavailable: {exception.GetType().Name}");
+			if (force) {
+				_hasClioUpdateCheckWarning = true;
+				IsClioUpdateResultWarning = true;
+				ClioUpdateMessage = "The clio update check is unavailable. Try again later.";
+			}
+		}
+		finally {
+			IsClioUpdateChecking = false;
+		}
+	}
+
+	[RelayCommand(CanExecute = nameof(CanRequestClioUpdate))]
+	private async Task RequestClioUpdateAsync() {
+		ClioToolUpdateCheck? update = _currentClioUpdate;
+		if (_clioUpdateService is null || update is null) {
+			return;
+		}
+		IsClioUpdateBusy = true;
+		ClioUpdateMessage = "Updating Release clio...";
+		try {
+			await using IAsyncDisposable? ipcPause =
+				_clioRuntime.Mode == ClioRuntimeMode.Release && _ipcClient is not null
+					? await _ipcClient.PauseForUpdateAsync(_clioUpdateLifetimeToken)
+					: null;
+			ApplyClioUpdateResult(await _clioUpdateService.UpdateAsync(update, _clioUpdateLifetimeToken));
+		}
+		catch (InvalidOperationException) {
+			ClioUpdateMessage = "Ring has an active clio MCP call. Wait for it to finish and retry.";
+		}
+		catch (OperationCanceledException) when (_clioUpdateLifetimeToken.IsCancellationRequested) {
+			ClioUpdateMessage = "The clio update was canceled because Ring is closing.";
+		}
+		finally {
+			IsClioUpdateBusy = false;
+		}
+	}
+
+	private bool CanRequestClioUpdate() =>
+		IsClioUpdateAvailable && !IsClioUpdateBusy && !IsClioUpdateChecking && !IsBusy;
+
+	[RelayCommand]
+	private void CancelClioUpdateBlockers() {
+		HasClioUpdateBlockers = false;
+		_confirmedClioUpdateProcesses = Array.Empty<ClioToolProcess>();
+		ClioUpdateMessage = "Update canceled. Running clio processes were not changed.";
+	}
+
+	[RelayCommand(CanExecute = nameof(CanKillClioUpdateBlockersAndRetry))]
+	private async Task KillClioUpdateBlockersAndRetryAsync() {
+		ClioToolUpdateCheck? update = _currentClioUpdate;
+		IReadOnlyList<ClioToolProcess> confirmedProcesses = _confirmedClioUpdateProcesses;
+		if (_clioUpdateService is null || update is null
+			|| confirmedProcesses.Count == 0) {
+			return;
+		}
+		IsClioUpdateBusy = true;
+		try {
+			await using IAsyncDisposable? ipcPause =
+				_clioRuntime.Mode == ClioRuntimeMode.Release && _ipcClient is not null
+					? await _ipcClient.PauseForUpdateAsync(_clioUpdateLifetimeToken)
+					: null;
+			ClioToolUpdateResult result = await _clioUpdateService.TerminateAndRetryAsync(
+				update, confirmedProcesses, _clioUpdateLifetimeToken);
+			ApplyClioUpdateResult(result);
+		}
+		catch (OperationCanceledException) when (_clioUpdateLifetimeToken.IsCancellationRequested) {
+			ClioUpdateMessage = "The clio update was canceled because Ring is closing.";
+		}
+		finally {
+			IsClioUpdateBusy = false;
+		}
+	}
+
+	private bool CanKillClioUpdateBlockersAndRetry() =>
+		HasClioUpdateBlockers && !IsClioUpdateBusy && _confirmedClioUpdateProcesses.Count > 0;
+
+	private void ApplyClioUpdateResult(ClioToolUpdateResult result) {
+		_hasClioUpdateCheckWarning = false;
+		ClioUpdateMessage = result.Message;
+		if (result.Outcome == ClioToolUpdateOutcome.Success) {
+			IsClioUpdateResultWarning = false;
+			IsClioUpdateAvailable = false;
+			HasClioUpdateBlockers = false;
+			_confirmedClioUpdateProcesses = Array.Empty<ClioToolProcess>();
+			return;
+		}
+		if (result.Outcome == ClioToolUpdateOutcome.RefreshRequired) {
+			IsClioUpdateResultWarning = true;
+			IsClioUpdateAvailable = false;
+			HasClioUpdateBlockers = false;
+			_currentClioUpdate = null;
+			_confirmedClioUpdateProcesses = Array.Empty<ClioToolProcess>();
+			Dispatcher.UIThread.Post(() => _ = CheckForClioUpdateAsync(
+				_clioUpdateLifetimeToken, force: true));
+			return;
+		}
+		if (result.Outcome != ClioToolUpdateOutcome.Blocked) {
+			HasClioUpdateBlockers = false;
+			return;
+		}
+		_confirmedClioUpdateProcesses = result.Processes.ToArray();
+		ClioUpdateProcesses.Clear();
+		foreach (ClioToolProcess process in _confirmedClioUpdateProcesses) {
+			ClioUpdateProcesses.Add(new ClioUpdateProcessViewModel(process.ProcessId,
+				process.CommandSummary, process.ExecutablePath, process.ParentSummary));
+		}
+		OnPropertyChanged(nameof(ClioUpdateProcessCount));
+		HasClioUpdateBlockers = true;
+	}
 
 	/// <summary>True while clio's registered-environment catalog is being refreshed.</summary>
 	[ObservableProperty]
@@ -190,6 +449,7 @@ public partial class RingViewModel : ViewModelBase {
 	/// <summary>True while a clio child process is running.</summary>
 	[ObservableProperty]
 	[NotifyCanExecuteChangedFor(nameof(CancelCommand))]
+	[NotifyCanExecuteChangedFor(nameof(RequestClioUpdateCommand))]
 	private bool _isBusy;
 
 	/// <summary>Set once the initial action set is populated (drives the first-paint stamp).</summary>
@@ -344,13 +604,16 @@ public partial class RingViewModel : ViewModelBase {
 
 	/// <summary>Primary DI constructor. The IPC client and settings store are optional so lightweight
 	/// design-time / test constructions keep working; DI supplies both at runtime.</summary>
-	public RingViewModel(IClioAdapter clio, IActionCatalogLoader catalogLoader, IEnvStateStore stateStore, IActionCatalogWatcher catalogWatcher, IClioIpcClient? ipcClient = null, IClioSettingsStore? settingsStore = null, IEnvironmentSettingsWatcher? environmentSettingsWatcher = null, ResolvedClioRuntime? clioRuntime = null) {
+	public RingViewModel(IClioAdapter clio, IActionCatalogLoader catalogLoader, IEnvStateStore stateStore, IActionCatalogWatcher catalogWatcher, IClioIpcClient? ipcClient = null, IClioSettingsStore? settingsStore = null, IEnvironmentSettingsWatcher? environmentSettingsWatcher = null, ResolvedClioRuntime? clioRuntime = null, IClioToolUpdateService? clioUpdateService = null) {
 		_clio = clio;
 		_catalogLoader = catalogLoader;
 		_stateStore = stateStore;
 		_catalogWatcher = catalogWatcher;
+		_ipcClient = ipcClient;
+		_clioUpdateService = clioUpdateService;
+		_clioRuntime = clioRuntime ?? new ResolvedClioRuntime(ClioRuntimeMode.Release, ClioIpcSettings.Default);
 		ClioSettings = new ClioSettingsViewModel(settingsStore ?? new ClioSettingsStore(), ipcClient,
-			clioRuntime ?? new ResolvedClioRuntime(ClioRuntimeMode.Release, ClioIpcSettings.Default));
+			_clioRuntime);
 		_state = _stateStore.Load();
 		_channel = ResolveChannel();
 		SelectedEnvironmentName = string.IsNullOrEmpty(_state.Selected) ? "—" : _state.Selected!;
@@ -786,7 +1049,7 @@ public partial class RingViewModel : ViewModelBase {
 	/// <summary>Handles selection of a ring node (env chip = set target; action = run/confirm).</summary>
 	[RelayCommand]
 	private async Task SelectAsync(RingItemViewModel? item) {
-		if (item is null || IsBusy) {
+		if (item is null || IsBusy || IsClioUpdateBusy) {
 			return;
 		}
 
@@ -1005,7 +1268,7 @@ public partial class RingViewModel : ViewModelBase {
 
 	/// <summary>Runs a clio invocation, streaming output into the drawer. Falls back to --version.</summary>
 	public async Task RunClioAsync(ClioInvocation invocation, RingItemViewModel? activeItem = null) {
-		if (IsBusy) {
+		if (IsBusy || IsClioUpdateBusy) {
 			return;
 		}
 
