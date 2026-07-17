@@ -50,12 +50,14 @@ public sealed class WidgetLayoutGuidanceResource {
 		          their charts; charts never sit in the metric band. When a surface covers several subject areas,
 		          split it into LABELED sections (separated by a header and spacing, never by card color), each
 		          section being its own metric band + chart row.
-		       2. Right STYLE — PLAIN WHITE card is the default for EVERY widget. A colored card is a rare,
-		          deliberate signal for ONE critical KPI (e.g. an SLA-breach counter the business wants impossible
-		          to miss) — at most one or two per screen, on metric tiles only, never on charts, and never for
-		          variety or to "brand" a section. Keep the theme-default title color; let metric value/icon colors
-		          follow the default semantic (red is reserved for overdue / negative / gap counts). Don't hand-pick
-		          decorative colors.
+		       2. Right STYLE — the card theme is SURFACE-SPECIFIC, so do not hard-code one here: follow each
+		          widget's per-widget guide (`indicator-widget` / `chart-widget`), which sets the theme by surface
+		          (dashboards: plain-white / `without-fill`; home pages: `full-fill` with a page-matched color;
+		          desktops: glassmorphism). The shared rules regardless of surface: keep the theme-default title
+		          color; let metric value/icon colors follow the default semantic (red is reserved for overdue /
+		          negative / gap counts); don't hand-pick decorative colors; and a colored/emphasis card is a rare,
+		          deliberate signal for ONE critical KPI (metric tiles only, never on charts, never to "brand" a
+		          section), not the default.
 		       3. Right SIZE — size by widget TYPE, not by eye (exact column counts per type are in "Widget
 		          catalog" below). Metric tiles are 1 row tall and share equal width across the band; charts are
 		          ~9 rows tall (`rowSpan`; never below 6). Every row's widget widths must sum to a full 12 columns — less than 12 leaves a
@@ -172,9 +174,9 @@ public sealed class WidgetLayoutGuidanceResource {
 
 		       ## Widget catalog — type, when to use, default size
 
-		       Every widget keeps the PLAIN WHITE default (see Core rules); only the rare emphasized-KPI exception
-		       differs. Sizes below are in 12-grid columns; height is ~9 `rowSpan` for every chart (floor 6) and ~3 for a
-		       metric tile unless noted.
+		       Each widget's card theme follows its per-widget guide's surface policy (see Core rule 2); this
+		       catalog covers only type, use, and size. Sizes below are in 12-grid columns; height is ~9 `rowSpan`
+		       for every chart (floor 6) and ~3 for a metric tile unless noted.
 
 		       Metric (indicator) — a single aggregated value with a caption and a small leading icon; the
 		       workhorse of the top band.
@@ -224,12 +226,12 @@ public sealed class WidgetLayoutGuidanceResource {
 
 		       ## Styling rationale
 
-		       PLAIN WHITE is the native default because a customization should not visually stand out unless a
-		       business priority requires it — it keeps a custom analytics surface consistent with the base product.
-		       The colored-card exception and the title/value color rules live in Core rule 2; don't restate them
-		       with different limits. When a colored background IS used, verify text/contrast against the
-		       accessibility/contrast guidance. The exact indicator-widget `theme` / `layout.color` values are
-		       owned by the `indicator-widget` guidance.
+		       A customization should not visually stand out unless a business priority requires it — it keeps a
+		       custom analytics surface consistent with the base product. That is why the card theme tracks the
+		       surface's native default (Core rule 2) rather than a hand-picked look, and why an emphasis card is
+		       reserved for one critical KPI. The exact `theme` / `layout.color` values per surface are owned by the
+		       `indicator-widget` and `chart-widget` guides; when a colored background IS used, verify text/contrast
+		       against the accessibility/contrast guidance.
 
 		       ## Finish checklist
 
@@ -238,7 +240,8 @@ public sealed class WidgetLayoutGuidanceResource {
 		       - Doughnut/pie breakdowns are grouped (ideally 3 per row at 4 cols); no lone doughnut floating at an
 		         odd width.
 		       - No chart sits in the metric band, and no metric tile is dropped among the charts.
-		       - Every widget uses the plain white style (no stray colored cards for variety or branding).
+		       - Each widget's card theme matches its surface per the per-widget guide (no stray colored cards for
+		         variety or branding).
 		       - Each chart/list/pivot meets the `rowSpan` floor (>= 6; default 9, funnel 15); metric/gauge tiles stay short (~3).
 		       - Multi-topic surfaces are split into labeled sections, each = metric band + chart row.
 		       - Titles and value colors use theme defaults (red only for overdue/negative).
@@ -250,6 +253,6 @@ public sealed class WidgetLayoutGuidanceResource {
 	/// analytical widgets on any analytics surface.
 	/// </summary>
 	[McpServerResource(UriTemplate = ResourceUri, Name = "widget-layout-guidance")]
-	[Description("Returns canonical MCP guidance for laying out, sizing, grouping, and styling Freedom UI analytical widgets (metrics and charts) on any analytics surface (dashboard or home page): the 12-column grid, the metric-band-then-chart-grid skeleton, per-widget-type sizes, and the plain-white card style.")]
+	[Description("Returns canonical MCP guidance for laying out, sizing, and grouping Freedom UI analytical widgets (metrics and charts) on any analytics surface (dashboard or home page): the 12-column grid, the metric-band-then-chart-grid skeleton, and per-widget-type sizes. Card theme/color is surface-specific and owned by the per-widget guides.")]
 	public ResourceContents GetGuide() => Guide;
 }
