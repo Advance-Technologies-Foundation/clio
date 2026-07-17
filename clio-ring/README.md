@@ -54,12 +54,13 @@ The bootstrap installs versioned releases under `%LOCALAPPDATA%\Creatio\clio-rin
 
 Ring has a separate `ClioRuntimeMode` setting:
 
-- `release` starts `clio mcp-server` from `PATH`, using the clio installed through `dotnet tool install clio`.
+- `release` starts a verified dotnet-tool shim from the standard user directory or `DOTNET_CLI_HOME`; custom paths remain explicit Development targets.
 - `development` starts the saved local development target.
 
 The main Ring surface always shows the active mode. Development mode uses a prominent warning with a
 Release/Development switch. The switch updates `app-settings.json`, preserves the development target,
 and takes effect after Ring restarts.
+The same selected runtime drives deployment workflows, environment discovery, and ordinary radial actions.
 
 To expose the experimental MCP-over-stdio UI and point it at a development build, use:
 

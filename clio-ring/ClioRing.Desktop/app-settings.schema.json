@@ -44,7 +44,7 @@
     "ClioRuntimeMode": {
       "type": [ "string", "null" ],
       "title": "Active clio runtime",
-      "description": "Selects the clio child used on the next Ring launch. release starts the installed clio dotnet tool from PATH. development uses the saved DevClioPath or ClioIpc target without deleting it.",
+      "description": "Selects the clio child used on the next Ring launch. release starts a verified installed clio dotnet-tool shim from a dotnet-owned user directory. development uses the saved DevClioPath or ClioIpc target without deleting it.",
       "enum": [ "release", "development", null ],
       "default": "release"
     },

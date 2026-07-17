@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using ClioRing.Models;
 
 namespace ClioRing.Services;
 
@@ -10,7 +11,7 @@ namespace ClioRing.Services;
 /// Default <see cref="IClioSettingsStore"/> backed by <c>app-settings.json</c> beside the executable.
 /// Reads/writes through <see cref="JsonNode"/> (no reflection-based serialization) so it stays AOT-safe
 /// and preserves any settings the strongly-typed model does not know about. A read-modify-write updates
-/// only the <c>DevClioPath</c> field; every other key is left byte-for-byte in place.
+/// only the requested field while preserving every other JSON value.
 /// </summary>
 public sealed class ClioSettingsStore : IClioSettingsStore {
 	private const string DevClioPathKey = "DevClioPath";
@@ -19,6 +20,7 @@ public sealed class ClioSettingsStore : IClioSettingsStore {
 	private const string DevelopmentMode = "development";
 
 	private readonly string _settingsPath;
+	private readonly object _writeSync = new();
 
 	/// <summary>Creates a store over the default <c>app-settings.json</c> beside the executable.</summary>
 	public ClioSettingsStore() : this(AppSettingsReader.SettingsPath) { }
@@ -41,16 +43,14 @@ public sealed class ClioSettingsStore : IClioSettingsStore {
 
 	/// <inheritdoc />
 	public void SaveDevClioPath(string? path) {
-		JsonObject root = TryReadRoot() ?? new JsonObject();
-		if (string.IsNullOrWhiteSpace(path)) {
-			root.Remove(DevClioPathKey);
-		}
-		else {
-			root[DevClioPathKey] = path.Trim();
-		}
-
-		string json = root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
-		File.WriteAllText(_settingsPath, json);
+		UpdateRoot(root => {
+			if (string.IsNullOrWhiteSpace(path)) {
+				root.Remove(DevClioPathKey);
+			}
+			else {
+				root[DevClioPathKey] = path.Trim();
+			}
+		});
 	}
 
 	/// <inheritdoc />
@@ -68,10 +68,7 @@ public sealed class ClioSettingsStore : IClioSettingsStore {
 			throw new ArgumentOutOfRangeException(nameof(mode), mode,
 				"Clio runtime mode must be release or development.");
 		}
-		JsonObject root = TryReadRoot() ?? new JsonObject();
-		root[RuntimeModeKey] = normalized;
-		string json = root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
-		File.WriteAllText(_settingsPath, json);
+		UpdateRoot(root => root[RuntimeModeKey] = normalized);
 	}
 
 	/// <inheritdoc />
@@ -85,8 +82,7 @@ public sealed class ClioSettingsStore : IClioSettingsStore {
 		JsonObject? ipc = root?["ClioIpc"] as JsonObject;
 		string? command = ReadString(ipc?["Command"]);
 		JsonArray? args = ipc?["Args"] as JsonArray;
-		return !string.IsNullOrWhiteSpace(command) && args is { Count: > 0 }
-			&& args.All(value => !string.IsNullOrWhiteSpace(ReadString(value)));
+		return ClioRuntimeConfiguration.IsValidExplicitIpc(command, args?.Select(ReadString));
 	}
 
 	private static string? ReadString(JsonNode? node) =>
@@ -100,8 +96,52 @@ public sealed class ClioSettingsStore : IClioSettingsStore {
 			return JsonNode.Parse(File.ReadAllText(_settingsPath)) as JsonObject;
 		}
 		catch (Exception) {
-			// A missing/unreadable/invalid file behaves like "no override"; a subsequent save rewrites it.
+			// Reads fail closed. Mutation uses ReadRootForWrite and refuses to overwrite invalid content.
 			return null;
+		}
+	}
+
+	private JsonObject ReadRootForWrite() {
+		if (!File.Exists(_settingsPath)) {
+			return new JsonObject();
+		}
+		try {
+			return JsonNode.Parse(File.ReadAllText(_settingsPath)) as JsonObject
+				?? throw new InvalidDataException("Ring settings must contain a JSON object.");
+		}
+		catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException or InvalidDataException) {
+			throw new InvalidDataException("Ring settings could not be read and were not changed.", ex);
+		}
+	}
+
+	private void UpdateRoot(Action<JsonObject> update) {
+		lock (_writeSync) {
+			JsonObject root = ReadRootForWrite();
+			update(root);
+			WriteRootAtomically(root);
+		}
+	}
+
+	private void WriteRootAtomically(JsonObject root) {
+		string? directory = Path.GetDirectoryName(_settingsPath);
+		if (!string.IsNullOrEmpty(directory)) {
+			Directory.CreateDirectory(directory);
+		}
+		string tempPath = _settingsPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+		try {
+			string json = root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+			using (var stream = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None)) {
+				using var writer = new StreamWriter(stream);
+				writer.Write(json);
+				writer.Flush();
+				stream.Flush(flushToDisk: true);
+			}
+			File.Move(tempPath, _settingsPath, overwrite: true);
+		}
+		finally {
+			if (File.Exists(tempPath)) {
+				File.Delete(tempPath);
+			}
 		}
 	}
 }

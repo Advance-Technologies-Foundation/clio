@@ -13,6 +13,8 @@
 - Legacy explicit `ClioIpc` and valid `DevClioPath` settings select Development.
 - Explicit Release ignores but preserves the saved development target.
 - Explicit Development rejects a missing/invalid target with an actionable UI state.
+- Release resolution supports `DOTNET_CLI_HOME` without trusting arbitrary PATH executables.
+- Ordinary radial actions and IPC workflows use the same Release or Development launch target.
 - Store round-trips runtime mode without altering unrelated JSON fields.
 - View-model states distinguish running mode, pending mode, and restart requirement.
 - Release and Development banner controls have accessible names and keyboard focus.

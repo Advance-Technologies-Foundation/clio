@@ -1,5 +1,9 @@
 using System;
+using System.IO;
+using System.Linq;
+using System.Threading;
 using ClioRing.Ipc;
+using ClioRing.Models;
 using ClioRing.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -17,14 +21,23 @@ public sealed partial class ClioSettingsViewModel : ViewModelBase {
 	private const string DevelopmentMode = "development";
 	private readonly IClioSettingsStore _store;
 	private readonly IClioIpcClient? _client;
+	private readonly ResolvedClioRuntime _runtime;
+	private readonly SynchronizationContext? _uiContext;
 	private bool _suppressRuntimePersistence;
 
 	/// <summary>Creates the view-model bound to the persistence store and (optionally) the live IPC client.</summary>
 	/// <param name="store">Where the dev-clio override is read from / written to.</param>
 	/// <param name="client">The live clio IPC client whose handshake identity is displayed; null in design/tests.</param>
-	public ClioSettingsViewModel(IClioSettingsStore store, IClioIpcClient? client = null) {
+	/// <param name="runtime">The immutable runtime decision made during startup.</param>
+	public ClioSettingsViewModel(IClioSettingsStore store, IClioIpcClient? client = null,
+		ResolvedClioRuntime? runtime = null) {
 		_store = store ?? throw new ArgumentNullException(nameof(store));
 		_client = client;
+		_runtime = runtime ?? new ResolvedClioRuntime(ClioRuntimeMode.Release, ClioIpcSettings.Default);
+		_uiContext = SynchronizationContext.Current;
+		if (_client is not null) {
+			_client.ConnectionChanged += OnConnectionChanged;
+		}
 		Refresh();
 	}
 
@@ -64,15 +77,16 @@ public sealed partial class ClioSettingsViewModel : ViewModelBase {
 
 	/// <summary>Whether Development is selected for the next Ring launch.</summary>
 	[ObservableProperty]
+	[NotifyPropertyChangedFor(nameof(CanChangeRuntimeSelection))]
 	private bool _isDevelopmentSelected;
 
 	/// <summary>Connected clio name/version shown in the main runtime notice.</summary>
 	[ObservableProperty]
-	private string _runtimeSummary = "Installed dotnet tool from PATH";
+	private string _runtimeSummary = "Installed dotnet tool";
 
 	/// <summary>Resolved child command/path shown in the main runtime notice.</summary>
 	[ObservableProperty]
-	private string _runtimeTarget = "clio";
+	private string _runtimeTarget = ClioIpcSettings.Default.Command;
 
 	/// <summary>Whether the selected runtime differs from the child running in this session.</summary>
 	[ObservableProperty]
@@ -80,7 +94,13 @@ public sealed partial class ClioSettingsViewModel : ViewModelBase {
 
 	/// <summary>Whether the Development side of the runtime switch has a valid saved target.</summary>
 	[ObservableProperty]
+	[NotifyPropertyChangedFor(nameof(CanChangeRuntimeSelection))]
 	private bool _hasDevelopmentTarget;
+
+	/// <summary>Actionable startup warning when the persisted runtime choice could not be used safely.</summary>
+	[ObservableProperty]
+	[NotifyPropertyChangedFor(nameof(HasRuntimeConfigurationWarning))]
+	private string _runtimeConfigurationWarning = string.Empty;
 
 	/// <summary>Whether the running clio child is the released dotnet tool.</summary>
 	public bool IsReleaseRuntimeRunning => !IsDevelopmentRuntimeRunning;
@@ -93,6 +113,12 @@ public sealed partial class ClioSettingsViewModel : ViewModelBase {
 
 	/// <summary>Whether a non-error status/confirmation line is showing.</summary>
 	public bool HasStatusMessage => !string.IsNullOrEmpty(StatusMessage);
+
+	/// <summary>Whether the main runtime strip must show a startup configuration warning.</summary>
+	public bool HasRuntimeConfigurationWarning => !string.IsNullOrEmpty(RuntimeConfigurationWarning);
+
+	/// <summary>Whether the selector can switch to a valid target or clear an invalid Development request.</summary>
+	public bool CanChangeRuntimeSelection => HasDevelopmentTarget || IsDevelopmentSelected;
 
 	/// <summary>Re-reads the persisted override and refreshes the connected-clio identity from the live client.</summary>
 	public void Refresh() {
@@ -120,8 +146,20 @@ public sealed partial class ClioSettingsViewModel : ViewModelBase {
 			StatusMessage = "Configure a development clio target in Settings first.";
 			return;
 		}
-		_store.SaveRuntimeMode(value ? DevelopmentMode : ReleaseMode);
-		RuntimeSelectionRestartRequired = value != IsDevelopmentRuntimeRunning;
+		try {
+			_store.SaveRuntimeMode(value ? DevelopmentMode : ReleaseMode);
+			RuntimeSelectionRestartRequired = value != IsDevelopmentRuntimeRunning;
+			ValidationMessage = string.Empty;
+			if (!value) {
+				RuntimeConfigurationWarning = string.Empty;
+			}
+		}
+		catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException) {
+			_suppressRuntimePersistence = true;
+			IsDevelopmentSelected = !value;
+			_suppressRuntimePersistence = false;
+			ValidationMessage = "Ring settings could not be updated. The existing file was left unchanged.";
+		}
 	}
 
 	/// <summary>
@@ -139,7 +177,14 @@ public sealed partial class ClioSettingsViewModel : ViewModelBase {
 		}
 
 		ValidationMessage = string.Empty;
-		_store.SaveDevClioPath(input);
+		try {
+			_store.SaveDevClioPath(input);
+		}
+		catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException) {
+			ValidationMessage = "Ring settings could not be updated. The existing file was left unchanged.";
+			StatusMessage = string.Empty;
+			return;
+		}
 		StatusMessage = input is null
 			? "Development path cleared. Select Release before restarting Ring."
 			: "Development path saved. Select Development before restarting Ring.";
@@ -166,53 +211,78 @@ public sealed partial class ClioSettingsViewModel : ViewModelBase {
 
 		// The override applies at launch; if a valid override is configured but the running connection is
 		// pointed elsewhere, tell the user a relaunch is needed rather than showing a stale label.
-		string resolvedTarget = isDevOverride ? persistedOverride!.Trim() : liveTarget;
+		string resolvedTarget = _runtime.Mode == ClioRuntimeMode.Development && isDevOverride
+			? persistedOverride!.Trim()
+			: liveTarget;
 		RestartRequired = _client is { IsConnected: true }
 			&& !string.IsNullOrEmpty(liveTarget)
 			&& !string.Equals(liveTarget, resolvedTarget, StringComparison.OrdinalIgnoreCase);
 
 		string displayTarget = string.IsNullOrEmpty(liveTarget) ? resolvedTarget : liveTarget;
-		SetConnectedIdentity(handshake, displayTarget, isDevOverride || IsDevelopmentTarget(liveTarget));
+		SetConnectedIdentity(handshake, displayTarget, _runtime.Mode == ClioRuntimeMode.Development);
 	}
 
 	private void UpdateRuntimeState() {
-		string target = _client?.TargetPath ?? string.Empty;
-		IsDevelopmentRuntimeRunning = IsDevelopmentTarget(target);
-		RuntimeTarget = string.IsNullOrWhiteSpace(target) ? "clio" : target;
+		string target = _client?.TargetPath ?? ResolveTargetPath(_runtime.LaunchSettings);
+		IsDevelopmentRuntimeRunning = _runtime.Mode == ClioRuntimeMode.Development;
+		RuntimeTarget = string.IsNullOrWhiteSpace(target) ? _runtime.LaunchSettings.Command : target;
 		HasDevelopmentTarget = _store.HasDevelopmentTarget() || IsDevelopmentRuntimeRunning;
 		ClioServerHandshake? handshake = _client?.Handshake;
 		RuntimeSummary = handshake is null
 			? IsDevelopmentRuntimeRunning
 				? "Ring is using a development clio build"
-				: "Installed dotnet tool from PATH"
+				: "Installed dotnet tool"
 			: $"{handshake.ServerName} {handshake.ServerVersion}";
-
 		string? persistedMode = _store.ReadRuntimeMode();
+		RuntimeConfigurationWarning = _runtime.ConfigurationWarning is not null
+			&& !string.Equals(persistedMode, ReleaseMode, StringComparison.OrdinalIgnoreCase)
+			&& !_store.HasDevelopmentTarget()
+				? _runtime.ConfigurationWarning
+				: string.Empty;
 		_suppressRuntimePersistence = true;
-		IsDevelopmentSelected = HasDevelopmentTarget && (
-			string.Equals(persistedMode, DevelopmentMode, StringComparison.OrdinalIgnoreCase)
-			|| (persistedMode is null && IsDevelopmentRuntimeRunning));
+		IsDevelopmentSelected = persistedMode is not null
+			? string.Equals(persistedMode, DevelopmentMode, StringComparison.OrdinalIgnoreCase)
+			: _runtime.RequestedMode.HasValue
+				? _runtime.RequestedMode == ClioRuntimeMode.Development
+				: HasDevelopmentTarget && IsDevelopmentRuntimeRunning;
 		_suppressRuntimePersistence = false;
 		RuntimeSelectionRestartRequired = IsDevelopmentSelected != IsDevelopmentRuntimeRunning;
 	}
 
-	private static bool IsDevelopmentTarget(string? target) =>
-		!string.IsNullOrWhiteSpace(target)
-		&& !string.Equals(target, "clio", StringComparison.OrdinalIgnoreCase)
-		&& !string.Equals(target, "clio.exe", StringComparison.OrdinalIgnoreCase);
+	private static string ResolveTargetPath(ClioIpcSettings settings) =>
+		settings.Args.FirstOrDefault(argument => argument.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
+		?? settings.Command;
+
+	private void OnConnectionChanged(object? sender, EventArgs e) {
+		if (_uiContext is null || ReferenceEquals(SynchronizationContext.Current, _uiContext)) {
+			RefreshConnectionIdentity();
+			return;
+		}
+		_uiContext.Post(_ => RefreshConnectionIdentity(), null);
+	}
+
+	/// <summary>Refreshes displayed identity after the lazy clio handshake changes.</summary>
+	public void RefreshConnectionIdentity() {
+		UpdateIdentity(_store.ReadDevClioPath());
+		UpdateRuntimeState();
+	}
 
 	/// <summary>Populates the runtime notice without starting a clio process (screenshot/design seam).</summary>
 	/// <param name="developmentRunning">Whether the rendered session represents a development runtime.</param>
 	/// <param name="summary">The representative clio name/version.</param>
 	/// <param name="target">The representative command or path.</param>
-	public void DesignSetRuntime(bool developmentRunning, string summary, string target) {
+	/// <param name="configurationWarning">Optional startup warning to render.</param>
+	/// <param name="developmentSelected">Optional next-launch selector state when it differs from the running mode.</param>
+	public void DesignSetRuntime(bool developmentRunning, string summary, string target,
+		string? configurationWarning = null, bool? developmentSelected = null) {
 		IsDevelopmentRuntimeRunning = developmentRunning;
 		HasDevelopmentTarget = true;
 		_suppressRuntimePersistence = true;
-		IsDevelopmentSelected = developmentRunning;
+		IsDevelopmentSelected = developmentSelected ?? developmentRunning;
 		_suppressRuntimePersistence = false;
 		RuntimeSummary = summary;
 		RuntimeTarget = target;
+		RuntimeConfigurationWarning = configurationWarning ?? string.Empty;
 		RuntimeSelectionRestartRequired = false;
 	}
 

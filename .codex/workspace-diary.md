@@ -6371,3 +6371,10 @@ Decision: Separate persisted runtime selection from the saved development target
 Discovery: The prior "machine default" is a hard-coded repository Debug DLL, and the existing settings warning only recognizes DevClioPath, so an explicit ClioIpc Debug DLL is mislabeled as normal and invisible on the main surface.
 Files: clio-ring/ClioRing/Views/RingView.axaml, clio-ring/ClioRing/ViewModels/ClioSettingsViewModel.cs, clio-ring/ClioRing/Services/ClioSettingsStore.cs, spec/ring-clio-runtime-switch/
 Impact: The requester can approve the rendered Development and Release states before comprehensive review, full tests, or NativeAOT publish.
+
+## 2026-07-17 10:13 – Complete ClioRing runtime selection
+Context: The approved issue #903 design needed production-safe runtime propagation, persistence, and final validation.
+Decision: Resolve one immutable runtime for IPC workflows, environment discovery, and radial commands; trust Release only from dotnet-owned user roots; preserve next-launch selection in Ring's own settings with atomic writes and an actionable invalid-Development fallback.
+Discovery: Runtime identity cannot be inferred from a command name or saved development path, and ordinary Ring actions previously bypassed the IPC runtime target entirely.
+Files: clio-ring/ClioRing.Ipc/ClioIpcModels.cs, clio-ring/ClioRing/Models/ResolvedClioRuntime.cs, clio-ring/ClioRing/Services/ClioAdapter.cs, clio-ring/ClioRing/Services/ClioSettingsStore.cs, clio-ring/ClioRing/ViewModels/ClioSettingsViewModel.cs, clio-ring/ClioRing/Views/RingView.axaml, clio-ring/ClioRing.Tests/, spec/ring-clio-runtime-switch/
+Impact: Release and Development choices now govern the full Ring surface consistently; 129 focused tests, final three-lens review, and Windows x64 NativeAOT publish pass.

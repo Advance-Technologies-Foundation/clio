@@ -9,7 +9,8 @@ development runtime easy to select and impossible to overlook on the main Ring s
 
 ## Requirements
 
-- Release mode launches `clio mcp-server` from `PATH`.
+- Release mode launches a verified `clio mcp-server` dotnet-tool shim from the standard user tool directory
+  or `DOTNET_CLI_HOME`. Custom paths remain explicit Development targets.
 - A valid `DevClioPath` or explicit `ClioIpc` command remains a saved development target.
 - Existing settings with a development target and no mode retain that target during migration and are
   classified as Development rather than silently switching.
@@ -21,6 +22,8 @@ development runtime easy to select and impossible to overlook on the main Ring s
 - A mode change must never claim the running child changed before it actually did. The first delivery may
   require a Ring restart, but the UI must say so clearly and offer the next action.
 - The Settings overlay uses the same Release and Development terminology.
+- Deployment workflows, environment discovery, and ordinary radial actions all use the same resolved runtime.
+- If Development is selected without a valid target, Ring safely runs Release and shows an actionable warning.
 
 ## Acceptance criteria
 

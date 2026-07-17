@@ -107,7 +107,7 @@ public sealed class AppSettingsSchemaTests {
 			because: "the editor contract must stay aligned with every ClioIpcSettingsDto property");
 		channelDescription.Should().Contain("does not select the clio executable",
 			because: "Channel is only a Ring display/deployment label");
-		runtimeDescription.Should().Contain("installed clio dotnet tool from PATH",
+		runtimeDescription.Should().Contain("verified installed clio dotnet-tool shim",
 			because: "Release must unambiguously mean the installed clio tool");
 		runtimeDescription.Should().Contain("without deleting it",
 			because: "switching modes must preserve the saved development target");

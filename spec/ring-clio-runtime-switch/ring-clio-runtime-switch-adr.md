@@ -14,12 +14,15 @@ development clio.
 Persist an explicit `ClioRuntimeMode` value with `release` and `development` choices. Keep the existing
 `DevClioPath` and `ClioIpc` fields as the saved development target; changing modes does not erase them.
 
-Release resolves to `Command = "clio"`, `Args = ["mcp-server"]`, using the dotnet tool on `PATH`.
+Release resolves to the verified clio dotnet-tool shim with `Args = ["mcp-server"]`. Resolution supports the
+standard user tool directory and `DOTNET_CLI_HOME`. Custom tool paths require the user's explicit Development
+configuration and are never promoted to trusted Release merely because they appear on `PATH`.
 Development resolves through the existing valid `DevClioPath` then explicit `ClioIpc` precedence. For
 backwards compatibility, settings that have a development target but no `ClioRuntimeMode` migrate in
 memory to Development; clean settings migrate to Release.
 
-Expose the resolved source as a small immutable runtime-selection model consumed by startup and UI.
+Expose the resolved source as a small immutable runtime-selection model consumed by startup, the UI, IPC
+workflows, environment discovery, and ordinary radial commands.
 The first implementation applies changes on Ring restart because the registered IPC client owns one
 immutable child launch configuration for the app session. The main warning must distinguish "running"
 from "selected for next launch" and provide a restart action before it may claim Release is active.

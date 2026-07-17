@@ -11,6 +11,7 @@ using Avalonia.Platform;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using ClioRing;
+using ClioRing.Ipc;
 using ClioRing.Services;
 using ClioRing.ViewModels;
 using ClioRing.Views;
@@ -94,6 +95,16 @@ internal static class Program {
 				developmentRunning: false,
 				"clio 8.1.0.84",
 				"clio");
+		});
+
+		// 1d) INVALID DEVELOPMENT TARGET — safe Release fallback with an actionable main-surface warning.
+		count += Capture(outDir, "invalid-development-runtime", 1.0, window => {
+			Vm(window).ClioSettings.DesignSetRuntime(
+				developmentRunning: false,
+				"Installed dotnet tool",
+				ClioIpcSettings.Default.Command,
+				"Development was selected, but its saved clio target is invalid. Open Settings to configure it.",
+				developmentSelected: true);
 		});
 
 		// 2) FOCUSED — keyboard focus on an action node (strong accent ring).

@@ -156,6 +156,7 @@ internal sealed class StubIpcClient : IClioIpcClient {
 	public bool LastCatalogIsModern => true;
 #pragma warning disable CS0067 // event never used in the stub
 	public event EventHandler? Disconnected;
+	public event EventHandler? ConnectionChanged;
 #pragma warning restore CS0067
 
 	public Task<ClioServerHandshake> ConnectAsync(CancellationToken cancellationToken = default) =>
