@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
@@ -80,12 +81,7 @@ internal static class TransientNetworkFailureClassifier {
 			return false;
 		}
 		if (exception is AggregateException aggregate) {
-			foreach (Exception inner in aggregate.Flatten().InnerExceptions) {
-				if (IsTransientCore(inner)) {
-					return true;
-				}
-			}
-			return false;
+			return aggregate.Flatten().InnerExceptions.Any(IsTransientCore);
 		}
 		for (Exception? current = exception; current is not null; current = current.InnerException) {
 			if (IsTransientCore(current)) {
@@ -105,12 +101,8 @@ internal static class TransientNetworkFailureClassifier {
 		if (string.IsNullOrWhiteSpace(errorMessage)) {
 			return false;
 		}
-		foreach (string marker in TransientMessageMarkers) {
-			if (errorMessage.Contains(marker, StringComparison.OrdinalIgnoreCase)) {
-				return true;
-			}
-		}
-		return false;
+		return TransientMessageMarkers.Any(
+			marker => errorMessage.Contains(marker, StringComparison.OrdinalIgnoreCase));
 	}
 
 	// Classifies a single (already-unwrapped) exception node. TaskCanceledException maps to a timeout

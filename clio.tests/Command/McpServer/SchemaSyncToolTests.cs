@@ -1849,6 +1849,203 @@ public sealed class SchemaSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The cumulative retry budget is shared ACROSS operations: once an earlier op spends most of it, a later flapping op fails fast without sleeping, proving the cap is per-batch and not per-op (ENG-93374 AC4).")]
+	public async Task SchemaSync_RetryBudget_Should_Be_Shared_Across_Operations() {
+		// Arrange
+		var logger = new TestLogger();
+		// Shared 1.5s budget. op0 flaps once (consumes the single allowed 1s backoff) then succeeds,
+		// leaving 0.5s. op1 flaps and its first 1s backoff cannot be funded, so it must fail fast with
+		// no additional sleep — only possible if op0 and op1 draw from ONE batch budget.
+		var scriptedCreate = new ScriptedCreateEntitySchemaCommand(logger,
+			Transient("No such host is known."), // op0 attempt 1
+			Success(),                            // op0 attempt 2
+			Transient("No such host is known.")); // op1 attempt 1 (fails fast on exhausted budget)
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(scriptedCreate);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ILookupRegistrationService>());
+		commandResolver.Resolve<FindEntitySchemaCommand>(Arg.Any<FindEntitySchemaOptions>())
+			.Returns(new FakeFindEntitySchemaCommand([]));
+		int waitCount = 0;
+		IRetryDelay retryDelay = Substitute.For<IRetryDelay>();
+		retryDelay.When(delay => delay.Wait(Arg.Any<TimeSpan>())).Do(_ => waitCount++);
+		SchemaSyncTool tool = new(commandResolver, logger,
+			retryDelay: retryDelay, maxCumulativeRetryDelay: TimeSpan.FromSeconds(1.5));
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[
+				new SchemaSyncOperation("create-lookup", "UsrGenre", TitleLocalizations: Localizations("Genre")),
+				new SchemaSyncOperation("create-lookup", "UsrAuthor", TitleLocalizations: Localizations("Author"))
+			]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		waitCount.Should().Be(1,
+			because: "op0 spends the only budget-funded backoff; op1 gets none because the budget is shared across the batch");
+		response.Success.Should().BeFalse(
+			because: "op1 aborts the batch once the shared retry budget is exhausted");
+		response.Results.Should().HaveCount(2);
+		response.Results[0].Success.Should().BeTrue(
+			because: "op0 recovered after its single funded retry");
+		response.Results[1].Success.Should().BeFalse(
+			because: "op1 could not fund its backoff from the residual shared budget");
+		GetMessageValues(response.Results[1]).Should().Contain(
+			message => message.Contains("batch retry budget exhausted", StringComparison.Ordinal),
+			because: "op1's failure must record that the shared batch budget was exhausted");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Within a single create-lookup op the create and registration steps share ONE retry budget: a create retry that spends the budget starves a subsequent registration flap, so the op fails fast at registration (ENG-93374 AC4).")]
+	public async Task SchemaSync_RetryBudget_Should_Be_Shared_Between_Create_And_Registration() {
+		// Arrange
+		var logger = new TestLogger();
+		// Create flaps once (spends the only 1s backoff the 1.5s budget can fund), then succeeds.
+		var scriptedCreate = new ScriptedCreateEntitySchemaCommand(logger,
+			Transient("No such host is known."),
+			Success());
+		// Registration then flaps; its 1s backoff cannot be funded from the residual 0.5s, so the op fails fast.
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
+		registrationService
+			.When(service => service.EnsureLookupRegistration(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>()))
+			.Do(_ => throw new TimeoutException("registration attempt timed out"));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(scriptedCreate);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(registrationService);
+		commandResolver.Resolve<FindEntitySchemaCommand>(Arg.Any<FindEntitySchemaOptions>())
+			.Returns(new FakeFindEntitySchemaCommand([]));
+		int waitCount = 0;
+		IRetryDelay retryDelay = Substitute.For<IRetryDelay>();
+		retryDelay.When(delay => delay.Wait(Arg.Any<TimeSpan>())).Do(_ => waitCount++);
+		SchemaSyncTool tool = new(commandResolver, logger,
+			retryDelay: retryDelay, maxCumulativeRetryDelay: TimeSpan.FromSeconds(1.5));
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrGenre", TitleLocalizations: Localizations("Genre"))]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		scriptedCreate.Invocations.Should().Be(2,
+			because: "the create step retried once (funded by the budget) before succeeding");
+		waitCount.Should().Be(1,
+			because: "the create retry consumed the budget, leaving nothing for a registration retry");
+		response.Success.Should().BeFalse(
+			because: "registration flapped with no budget left to retry, so the op fails fast");
+		GetMessageValues(response.Results[0]).Should().Contain(
+			message => message.Contains("batch retry budget exhausted", StringComparison.Ordinal),
+			because: "the shared budget must be reported exhausted at the registration step");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("When inline seeding fails after a successful create, response.Results carries two rows sharing operation-index 0: the completed create then the failed seed-data, cleanly separating completed/failed (ENG-93374 AC2).")]
+	public async Task SchemaSync_InlineSeed_Failure_Should_Emit_Completed_Create_Then_Failed_Seed_Rows() {
+		// Arrange
+		var logger = new TestLogger();
+		var scriptedCreate = new ScriptedCreateEntitySchemaCommand(logger, Success());
+		var scriptedSeed = new ScriptedCreateDataBindingDbCommand(logger, Fail("Seeding failed: duplicate key."));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(scriptedCreate);
+		commandResolver.Resolve<CreateDataBindingDbCommand>(Arg.Any<CreateDataBindingDbOptions>())
+			.Returns(scriptedSeed);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ILookupRegistrationService>());
+		SchemaSyncTool tool = new(commandResolver, logger, retryDelay: Substitute.For<IRetryDelay>());
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrGenre",
+				TitleLocalizations: Localizations("Genre"),
+				SeedRows: [
+					new SchemaSyncSeedRow(new Dictionary<string, System.Text.Json.JsonElement> {
+						["Name"] = ToJsonElement("Fiction")
+					})
+				])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Results.Should().HaveCount(2,
+			because: "a create-succeeded / inline-seed-failed op emits a completed create row and a failed seed row");
+		response.Results[0].Type.Should().Be("create-lookup");
+		response.Results[0].Status.Should().Be("completed",
+			because: "the create applied server-side before the seeding failed");
+		response.Results[0].OperationIndex.Should().Be(0);
+		response.Results[0].Success.Should().BeTrue();
+		response.Results[1].Type.Should().Be("seed-data");
+		response.Results[1].Status.Should().Be("failed",
+			because: "the inline seeding failed");
+		response.Results[1].OperationIndex.Should().Be(0,
+			because: "the failed seed row shares the operation-index of the create it followed");
+		response.Results[1].Success.Should().BeFalse();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A two-op batch where op0's inline seed fails lists the untouched op1 in not-run-operation-indexes starting at abortedAtIndex+1, and the resume plan carries the seed-only resume plus the not-run op (ENG-93374 AC2).")]
+	public async Task SchemaSync_InlineSeed_Failure_TwoOps_Should_List_Remaining_Op_As_NotRun() {
+		// Arrange
+		var logger = new TestLogger();
+		var scriptedCreate = new ScriptedCreateEntitySchemaCommand(logger, Success());
+		var scriptedSeed = new ScriptedCreateDataBindingDbCommand(logger, Fail("Seeding failed: duplicate key."));
+		var scriptedUpdate = new ScriptedUpdateEntitySchemaCommand(logger, Success());
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(scriptedCreate);
+		commandResolver.Resolve<CreateDataBindingDbCommand>(Arg.Any<CreateDataBindingDbOptions>())
+			.Returns(scriptedSeed);
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(scriptedUpdate);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ILookupRegistrationService>());
+		SchemaSyncTool tool = new(commandResolver, logger, retryDelay: Substitute.For<IRetryDelay>());
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[
+				new SchemaSyncOperation("create-lookup", "UsrGenre",
+					TitleLocalizations: Localizations("Genre"),
+					SeedRows: [
+						new SchemaSyncSeedRow(new Dictionary<string, System.Text.Json.JsonElement> {
+							["Name"] = ToJsonElement("Fiction")
+						})
+					]),
+				new SchemaSyncOperation("update-entity", "UsrBooks",
+					UpdateOperations: [new UpdateEntitySchemaOperationArgs(Action: "add", ColumnName: "UsrPages", Type: "Integer")])
+			]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeFalse();
+		response.Results.Should().HaveCount(2,
+			because: "op0 emits the completed create and the failed seed; op1 never runs");
+		response.Results[0].Status.Should().Be("completed");
+		response.Results[1].Type.Should().Be("seed-data");
+		response.Results[1].Status.Should().Be("failed");
+		scriptedUpdate.Invocations.Should().Be(0,
+			because: "the batch aborts on op0's seed failure before op1 runs");
+		response.ResumePlan.Should().NotBeNull();
+		response.ResumePlan!.NotRunOperationIndexes.Should().Equal([1],
+			because: "op1 (index 1) never ran and must be listed starting at abortedAtIndex+1");
+		response.ResumePlan.Operations.Should().HaveCount(2,
+			because: "the resume plan carries the seed-only resume for op0 plus the not-run op1");
+		response.ResumePlan.Operations[0].Type.Should().Be("seed-data",
+			because: "op0's create already applied, so its resume is a seed-only op, never a recreate");
+		response.ResumePlan.Operations[1].Type.Should().Be("update-entity",
+			because: "the untouched op1 is echoed re-submittable after the failed op");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Serializes the additive response fields with their kebab-case JSON names and omits resume-plan/attempts when not applicable, preserving the wire contract (ENG-93374).")]
 	public async Task SchemaSyncResponse_Should_Serialize_Additive_Fields_With_Stable_Contract() {
 		// Arrange

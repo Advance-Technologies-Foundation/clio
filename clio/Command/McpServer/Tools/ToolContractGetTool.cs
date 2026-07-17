@@ -382,6 +382,8 @@ public sealed record ToolContractFieldError(
 
 internal static class ToolContractCatalog {
 	private const string ActionFieldName = "action";
+	// The 'Lookup' data-value-type token, reused across sync-schemas contract examples.
+	private const string LookupColumnTypeValue = "Lookup";
 	private const string AppCodeFieldName = "app-code";
 	private const string AppNameFieldName = "app-name";
 	private const string ApplicationCodeFieldName = "application-code";
@@ -3429,7 +3431,7 @@ internal static class ToolContractCatalog {
 								new Dictionary<string, object?> {
 									[ActionFieldName] = "add",
 									[ColumnNameFieldName] = "UsrStatus",
-									["type"] = "Lookup",
+									["type"] = LookupColumnTypeValue,
 									[TitleLocalizationsFieldName] = LocalizationMap("Status"),
 									[ReferenceSchemaNameFieldName] = ExampleTaskStatusSchemaName
 								}
@@ -3449,7 +3451,7 @@ internal static class ToolContractCatalog {
 								new Dictionary<string, object?> {
 									[ActionFieldName] = "modify",
 									["name"] = "UsrStatus",
-									["data-value-type"] = "Lookup",
+									["data-value-type"] = LookupColumnTypeValue,
 									["reference-schema"] = ExampleTaskStatusSchemaName
 								},
 								// remove a column echoing only the read-shape `name`
@@ -3480,7 +3482,7 @@ internal static class ToolContractCatalog {
 								new Dictionary<string, object?> {
 									[ActionFieldName] = "add",
 									[ColumnNameFieldName] = "UsrStatus",
-									["type"] = "Lookup",
+									["type"] = LookupColumnTypeValue,
 									[TitleLocalizationsFieldName] = LocalizationMap("Status"),
 									[ReferenceSchemaNameFieldName] = ExampleTaskStatusSchemaName
 								}
@@ -3803,7 +3805,7 @@ internal static class ToolContractCatalog {
 						new Dictionary<string, object?> {
 							[ActionFieldName] = "add",
 							[ColumnNameFieldName] = "UsrStatus",
-							["type"] = "Lookup",
+							["type"] = LookupColumnTypeValue,
 							[TitleLocalizationsFieldName] = LocalizationMap("Status"),
 							[ReferenceSchemaNameFieldName] = ExampleTaskStatusSchemaName
 						}

@@ -578,9 +578,12 @@ public sealed class SchemaSyncTool(
 		int? attempts = execution.Attempts > 1 ? execution.Attempts : null;
 		// Reuse a collision already probed by the caller (create path) rather than issuing a second
 		// identical FindEntitySchema round-trip under the lock.
-		SchemaSyncCollisionInfo? ResolveCollision() => collisionAlreadyProbed
-			? precomputedCollision
-			: collisionArgs is not null ? TryGetCollisionInfo(schemaName, collisionArgs) : null;
+		SchemaSyncCollisionInfo? ResolveCollision() {
+			if (collisionAlreadyProbed) {
+				return precomputedCollision;
+			}
+			return collisionArgs is not null ? TryGetCollisionInfo(schemaName, collisionArgs) : null;
+		}
 		if (execution.CaughtException is not null) {
 			return new SchemaSyncOperationResult {
 				Type = operationName,
