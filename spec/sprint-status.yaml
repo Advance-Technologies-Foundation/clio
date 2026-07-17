@@ -2047,3 +2047,70 @@ stories:
     test_plan: spec/ring-app-settings-schema/ring-app-settings-schema-test-plan.md
     depends_on: []
     blocks: []
+
+  # --- entity-schema-authoring-gaps stories (ENG-93040, epic ENG-85256) — added 2026-07-09 ---
+  # Ordered per ADR "Ordered implementation plan (maps to stories)": 1 -> 2 -> 3 -> 4.
+  # Story 1 (Color) is independent and can run in parallel with Story 2. Story 3 depends on
+  # Story 2 because Story 2 extracts the shared save/publish/verify pipeline Story 3 reuses.
+  # Story 4 (MCP guidance/prompt/routing + consolidated clio.mcp.e2e) depends on 1, 2, 3.
+  - id: story-entity-schema-authoring-gaps-1
+    title: "Color type — registry entry, friendly name, and not-text-like classification"
+    feature: "entity-schema-authoring-gaps"
+    size: S
+    status: review
+    file: spec/stories/story-entity-schema-authoring-gaps-1.md
+    prd: spec/prd/prd-entity-schema-authoring-gaps.md
+    adr: spec/adr/adr-entity-schema-authoring-gaps.md
+    fr: [FR-05, FR-06, FR-07]
+    ac: [AC-05, AC-06, AC-07, AC-ERR, AC-DOC]
+    depends_on: []
+    blocks:
+      - story-entity-schema-authoring-gaps-4
+
+  - id: story-entity-schema-authoring-gaps-2
+    title: "set-entity-schema-properties — set primary-display column (shared-pipeline extraction)"
+    feature: "entity-schema-authoring-gaps"
+    size: L
+    status: review
+    note: "Extracts the shared save/publish/verify pipeline from ModifyColumns — Story 3 depends on this refactor being in place."
+    file: spec/stories/story-entity-schema-authoring-gaps-2.md
+    prd: spec/prd/prd-entity-schema-authoring-gaps.md
+    adr: spec/adr/adr-entity-schema-authoring-gaps.md
+    fr: [FR-01, FR-02, FR-11]
+    ac: [AC-01, AC-02, AC-ERR]
+    depends_on: []
+    blocks:
+      - story-entity-schema-authoring-gaps-3
+      - story-entity-schema-authoring-gaps-4
+
+  - id: story-entity-schema-authoring-gaps-3
+    title: "Inherited-column caption override — relax the read-only guard (caption/description only)"
+    feature: "entity-schema-authoring-gaps"
+    size: M
+    status: review
+    note: "BLOCKED on story-entity-schema-authoring-gaps-2 — reuses the shared save/publish/verify pipeline and the inherited-verify plumbing extracted there."
+    file: spec/stories/story-entity-schema-authoring-gaps-3.md
+    prd: spec/prd/prd-entity-schema-authoring-gaps.md
+    adr: spec/adr/adr-entity-schema-authoring-gaps.md
+    fr: [FR-03, FR-04, FR-10]
+    ac: [AC-03, AC-04, AC-ERR]
+    depends_on: [story-entity-schema-authoring-gaps-2]
+    blocks:
+      - story-entity-schema-authoring-gaps-4
+
+  - id: story-entity-schema-authoring-gaps-4
+    title: "MCP guidance / prompt / routing + clio.mcp.e2e coverage for all three capabilities"
+    feature: "entity-schema-authoring-gaps"
+    size: M
+    status: review
+    note: "BLOCKED on stories 1, 2, 3 — describes and E2E-exercises all three capabilities. clio.mcp.e2e is NOT in CI; manual run against a live stand recorded in the PR."
+    file: spec/stories/story-entity-schema-authoring-gaps-4.md
+    prd: spec/prd/prd-entity-schema-authoring-gaps.md
+    adr: spec/adr/adr-entity-schema-authoring-gaps.md
+    fr: [FR-08, FR-09]
+    ac: [AC-MCP, AC-DOC]
+    depends_on:
+      - story-entity-schema-authoring-gaps-1
+      - story-entity-schema-authoring-gaps-2
+      - story-entity-schema-authoring-gaps-3
+    blocks: []
