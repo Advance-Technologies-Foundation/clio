@@ -165,6 +165,41 @@ public sealed class RequestInfoToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("Drives list-printables over the real mcp-server (requests-registry enabled) against an unresolvable target so the command-produced TRANSPORT failure (ListPrintablesCommand.TryGetPrintables catch) crosses the MCP boundary. The structured failure envelope must carry no scheme-qualified request URI — the tool redacts the raw exception message at the boundary. The exact input->[redacted-uri] transform is unit-pinned in ListPrintablesToolTests; this test proves the redaction is wired on the real command-produced-failure dispatch path, not only on the resolution-failure path.")]
+	[AllureTag(ListPrintablesTool.ToolName)]
+	[AllureName("list-printables redacts a transport-failure error over the wire")]
+	[AllureDescription("Calls list-printables with a direct uri pointing at a reserved .invalid host (guaranteed unresolvable on every machine) and verifies the structured failure envelope leaks no scheme-qualified URI.")]
+	public async Task ListPrintables_Should_Redact_Transport_Failure_Over_The_Wire() {
+		// Arrange — a reserved .invalid host never resolves (RFC 6761), so the probe fails deterministically
+		// at the transport layer on every machine, independent of what may be listening on localhost.
+		await using var context = Arrange();
+
+		// Act — non-resident probe dispatched through clio-run; the direct uri fallback drives the command
+		// past resolution into TryGetPrintables, whose transport exception message the tool must redact.
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ListPrintablesTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["uri"] = "http://list-printables-redaction-e2e.invalid",
+					["login"] = "Supervisor",
+					["password"] = "Supervisor"
+				}
+			},
+			context.CancellationTokenSource.Token);
+		ListPrintablesEnvelope envelope = EntitySchemaStructuredResultParser.Extract<ListPrintablesEnvelope>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a transport failure must degrade to a structured in-band failure, not a top-level MCP error envelope");
+		envelope.Success.Should().BeFalse(
+			because: "the unresolvable host cannot be reached, so the probe fails");
+		envelope.Error.Should().NotBeNullOrWhiteSpace(
+			because: "a failed probe must carry a human-readable error instead of an empty envelope");
+		envelope.Error!.Should().NotContain("http://",
+			because: "the MCP boundary must strip any scheme-qualified request URI from the transport-error message before it reaches the client transcript");
+	}
+
+	[Test]
 	[Description("List mode over the wire returns the cataloged requests with honest latest-fallback version markers on a bare call.")]
 	[AllureTag(ToolName)]
 	[AllureName("get-request-info lists the request catalog over the wire")]

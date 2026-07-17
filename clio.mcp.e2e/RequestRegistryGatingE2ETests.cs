@@ -149,4 +149,30 @@ public sealed class RequestRegistryGatingE2ETests : McpContractFixtureBase {
 		routing.Article.Text.Should().NotContain("when-to-use-requests",
 			because: "the feature-aware routing map must not advertise the gated request-wiring guide while requests-registry is off");
 	}
+
+	[Test]
+	[Description("The always-on page-schema-handlers guide is feature-aware: with requests-registry off get-guidance serves it (it stays available) but its Standard handler parameter catalog omits the gated get-request-info / when-to-use-requests pointers and keeps the ungated get-process-signature route (ENG-93187 review item 3).")]
+	[AllureTag(RequestInfoTool.ToolName)]
+	[AllureName("page-schema-handlers guide omits request-catalog pointers when requests-registry is disabled")]
+	[AllureDescription("Reads get-guidance name=page-schema-handlers against an empty-feature-set server and verifies the gated request-catalog pointers are absent while the ungated resolution path remains.")]
+	public async Task PageSchemaHandlersGuide_Should_Omit_RequestCatalogPointers_When_RequestsRegistry_Disabled() {
+		// Arrange
+		await using var context = Arrange();
+
+		// Act
+		GuidanceGetResponse handlers = await RequestInfoToolE2ETests.CallGuidanceAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> { ["name"] = "page-schema-handlers" });
+
+		// Assert
+		handlers.Success.Should().BeTrue(
+			because: "page-schema-handlers is an ungated, always-available guide");
+		handlers.Article!.Text.Should().NotContain("get-request-info",
+			because: "the feature-aware handler guide must not mandate the gated request catalog while requests-registry is off");
+		handlers.Article.Text.Should().NotContain("when-to-use-requests",
+			because: "the feature-aware handler guide must not point at the gated request-wiring guide while requests-registry is off");
+		handlers.Article.Text.Should().Contain("get-process-signature",
+			because: "the ungated get-process-signature probe remains the run-process resolution path while the catalog is hidden");
+	}
 }

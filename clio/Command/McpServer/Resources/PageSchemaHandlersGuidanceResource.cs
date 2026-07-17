@@ -8,15 +8,45 @@ namespace Clio.Command.McpServer.Resources;
 /// Provides canonical AI-facing guidance for editing Freedom UI page handlers through clio MCP.
 /// </summary>
 [McpServerResourceType]
-public sealed class PageSchemaHandlersGuidanceResource {
+public sealed class PageSchemaHandlersGuidanceResource(IFeatureToggleService featureToggleService) {
 	private const string DocsScheme = "docs";
 	private const string ResourcePath = "mcp/guides/page-schema-handlers";
 	private const string ResourceUri = DocsScheme + "://" + ResourcePath;
 
-	internal static readonly TextResourceContents Guide = new() {
-		Uri = ResourceUri,
-		MimeType = "text/plain",
-		Text = """
+	/// <summary>
+	/// The requests-registry-gated intro bullet of the "Standard handler parameter catalog": it mandates the
+	/// gated <c>get-request-info</c> catalog and the <c>when-to-use-requests</c> guide, so <see cref="BuildGuide"/>
+	/// swaps it for <see cref="CatalogIntroOff"/> while the feature is off. The parameter tables below the bullet
+	/// are self-contained, so the feature-off variant loses no request contract.
+	/// </summary>
+	private const string CatalogIntroOn =
+		"- AUTHORITATIVE contracts live in the request catalog: call `get-request-info <type>` first —\n"
+		+ "  when a request is cataloged there (e.g. crt.PrintablesRequest, crt.RunBusinessProcessRequest,\n"
+		+ "  crt.ClosePageRequest, crt.CancelRecordChangesRequest), its `parameters` (required flags, valid\n"
+		+ "  values, valueSource probe annotations) and `documentation` override the rows below. This table\n"
+		+ "  stays as the fallback index for requests not yet cataloged. See `when-to-use-requests` for the\n"
+		+ "  selection and probe discipline.";
+
+	/// <summary>The feature-off replacement for <see cref="CatalogIntroOn"/> (no gated tool/guide pointer).</summary>
+	private const string CatalogIntroOff =
+		"- The tables below are the payload contract for built-in requests: `parameters` (required flags,\n"
+		+ "  valid values) and `documentation` notes per request.";
+
+	/// <summary>
+	/// The requests-registry-gated <c>crt.RunBusinessProcessRequest</c> parameter-table row: it names the gated
+	/// <c>get-request-info</c> catalog as the single source of truth, so <see cref="BuildGuide"/> swaps it for
+	/// <see cref="RunProcessRowOff"/> while the feature is off (the ungated <c>get-process-signature</c> probe
+	/// remains the resolution path either way).
+	/// </summary>
+	private const string RunProcessRowOn =
+		"| `crt.RunBusinessProcessRequest` | config | `processName` + `processRunType` required — FULL parameter contract lives in the request catalog: get-request-info `crt.RunBusinessProcessRequest` (single source of truth) | Keys in `processParameters` / `parameterMappings` / `recordIdProcessParameterName` are process parameter CODES, NOT captions — a wrong code is silently dropped. Resolve with `get-process-signature` and get-request-info `crt.RunBusinessProcessRequest` before authoring this button |";
+
+	/// <summary>The feature-off replacement for <see cref="RunProcessRowOn"/> (ungated get-process-signature only).</summary>
+	private const string RunProcessRowOff =
+		"| `crt.RunBusinessProcessRequest` | config | `processName` + `processRunType` required | Keys in `processParameters` / `parameterMappings` / `recordIdProcessParameterName` are process parameter CODES, NOT captions — a wrong code is silently dropped. Resolve the process with `get-process-signature` before authoring this button |";
+
+	// Full (feature-on) article text; the feature-off variant is derived by BuildGuide.
+	private const string FullText = """
 		       clio MCP page-schema handlers guide
 
 		       Scope
@@ -537,13 +567,37 @@ public sealed class PageSchemaHandlersGuidanceResource {
 		       - Does page-state writeback use `await request.$context.set(...)` unless the task explicitly matches a compatibility pattern already present in the schema?
 		       - Is this edit still using the canonical page-body API (`request.value`, `await request.$context["Attr"]`, `await request.$context.set(...)`) rather than a compatibility form?
 		       - Was any new SDK import added through `SCHEMA_DEPS` / `SCHEMA_ARGS` using the existing page aliasing style?
-		       """
+		       """;
+
+	/// <summary>
+	/// Builds the handlers guide. The <c>get-request-info</c> catalog pointer and the <c>when-to-use-requests</c>
+	/// guide reference are included only while the requests-registry feature is enabled; otherwise the guide
+	/// routes through the ungated <c>get-process-signature</c> probe only, so an always-on guide never mandates a
+	/// hidden surface.
+	/// </summary>
+	/// <param name="includeRequestWiring">Whether to include the gated request-catalog pointers.</param>
+	internal static TextResourceContents BuildGuide(bool includeRequestWiring) => new() {
+		Uri = ResourceUri,
+		MimeType = "text/plain",
+		Text = includeRequestWiring
+			? GuidanceArticleText.NormalizeNewlines(FullText)
+			: GuidanceArticleText.ReplaceUnique(
+				GuidanceArticleText.ReplaceUnique(FullText, RunProcessRowOn, RunProcessRowOff),
+				CatalogIntroOn, CatalogIntroOff)
 	};
 
 	/// <summary>
-	/// Returns the canonical guidance article for editing handler sections in Freedom UI page bodies.
+	/// Canonical guidance article accessible by name through <c>get-guidance</c> — the feature-off baseline;
+	/// feature-aware content is produced by <see cref="BuildGuide"/> at serve time.
+	/// </summary>
+	internal static readonly TextResourceContents Guide = BuildGuide(includeRequestWiring: false);
+
+	/// <summary>
+	/// Returns the canonical guidance article for editing handler sections in Freedom UI page bodies, with the
+	/// requests-registry-gated request-catalog pointers included only while that feature is enabled.
 	/// </summary>
 	[McpServerResource(UriTemplate = ResourceUri, Name = "page-schema-handlers-guidance")]
 	[Description("Returns canonical MCP guidance for creating and editing Freedom UI page handlers inside raw page schema bodies.")]
-	public ResourceContents GetGuide() => Guide;
+	public ResourceContents GetGuide() =>
+		BuildGuide(includeRequestWiring: featureToggleService.IsEnabled(typeof(WhenToUseRequestsGuidanceResource)));
 }

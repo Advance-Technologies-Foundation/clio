@@ -1,4 +1,3 @@
-using System;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
@@ -58,17 +57,29 @@ public sealed class ListPrintablesTool(
 			Login = args.Login,
 			Password = args.Password
 		};
-		return ExecuteWithCleanLog(() => {
-			ListPrintablesCommand resolvedCommand;
-			try {
-				resolvedCommand = ResolveCommand<ListPrintablesCommand>(options);
-			}
-			catch (Exception ex) {
-				return new ListPrintablesResponse { Success = false, Error = SensitiveErrorTextRedactor.Redact(ex.Message) };
-			}
-			resolvedCommand.TryGetPrintables(options, out ListPrintablesResponse response);
-			return response;
-		});
+		// ExecuteResolved runs the resolve + probe under the PER-TENANT execution lock and marks the
+		// session-container in-use for the call (ENG-93208), instead of the environment-less
+		// ExecuteWithCleanLog overload which keys on the shared fallback — that would serialize independent
+		// tenants and leave this credential-bearing session evictable mid-call. Resolution-failure
+		// exceptions are caught and redacted by ExecuteResolved (onFailure).
+		return ExecuteResolved<ListPrintablesCommand, ListPrintablesResponse>(
+			options,
+			resolvedCommand => {
+				if (!resolvedCommand.TryGetPrintables(options, out ListPrintablesResponse response)) {
+					// The command-produced Error is the raw transport/deserialisation exception message
+					// (ListPrintablesCommand.TryGetPrintables catch), which can carry the target URI/host or
+					// credential values. Redact it at the MCP boundary before it crosses into the client
+					// transcript, mirroring the resolution-failure path above and ListThemesTool. The CLI
+					// Execute path keeps the raw message for the operator console (different trust boundary).
+					return new ListPrintablesResponse {
+						Success = false,
+						Error = SensitiveErrorTextRedactor.Redact(
+							string.IsNullOrWhiteSpace(response?.Error) ? "Failed to list printables." : response.Error)
+					};
+				}
+				return response;
+			},
+			error => new ListPrintablesResponse { Success = false, Error = error });
 	}
 }
 

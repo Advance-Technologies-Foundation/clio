@@ -340,19 +340,26 @@ Consumer rules that differ from the component catalog — do not "unify" them aw
   on, via `RoutingGuidanceResource.BuildGuide(bool)` — consumed by the `GuidanceCatalog` dynamic
   `ArticleBuilder` (the `get-guidance` path) and by the constructor-injected `IFeatureToggleService` (the
   direct MCP-resource path) — so the map never routes an agent to a hidden guide/tool but still surfaces the
-  rows once the feature is enabled. The same content-gating applies to the two always-on page guides that
+  rows once the feature is enabled. The same content-gating applies to the three always-on page guides that
   point at the request surface: `PageModificationGuidanceResource` serves its run-process GATE row (the one
-  MANDATING `when-to-use-requests` + `get-request-info`) and `MobilePageGuidanceResource` serves its
-  request-catalog pointer only while the feature is on, via their own `BuildGuide(bool)` + per-entry
+  MANDATING `when-to-use-requests` + `get-request-info`), `MobilePageGuidanceResource` serves its
+  request-catalog pointer, and `PageSchemaHandlersGuidanceResource` serves its "Standard handler parameter
+  catalog" get-request-info / when-to-use-requests pointers (ENG-93187 review item 3) only while the feature is
+  on, via their own `BuildGuide(bool)` + per-entry
   `GuidanceCatalog` `ArticleBuilder` + ctor-injected `IFeatureToggleService` — an always-on guide must never
-  hard-mandate a hidden surface (a "you MUST call X" whose X resolves as unknown is a mandated dead-end).
+  hard-mandate a hidden surface (a "you MUST call X" whose X resolves as unknown is a mandated dead-end). The
+  cross-cutting `AllUngatedGuidanceArticles_Should_Not_Name_GatedRequestSurface_When_RequestsRegistryDisabled`
+  test enumerates every ungated `GuidanceCatalog` entry and fails if any feature-off article names the gated
+  surface, so a future always-on guide that forgets the `BuildGuide(bool)` conversion is caught automatically.
   All anchored splicing goes through `GuidanceArticleText` (`ReplaceUnique` / `RemoveUniqueLine`), which
   throws on anchor drift so a stale anchor fails every unit run loudly instead of silently dropping the
-  gated fragment. `ToolContractGetTool` still carries a curated `BuildRequestInfo` contract
-  and the `page-schema-handlers` parameter table still names `get-request-info` as the authoritative contract;
-  these two DISCOVERY surfaces are deliberately NOT re-gated — that is the known get-tool-contract /
-  clio-run-suggestion discovery-vs-dispatch leak (a gated-off tool stays *knowable* via the ungated schema
-  catalog but is not *runnable*; tracked separately, do not "fix" it by gating the shared catalog). Enable
+  gated fragment. `ToolContractGetTool` still carries a curated `BuildRequestInfo` contract that names
+  `get-request-info` as the authoritative contract; that ONE DISCOVERY surface is deliberately NOT re-gated —
+  it is the known get-tool-contract / clio-run-suggestion discovery-vs-dispatch leak (a gated-off tool stays
+  *knowable* via the ungated schema catalog but is not *runnable*; tracked separately, do not "fix" it by
+  gating the shared catalog). Unlike a curated discovery listing, a prescriptive always-on guide that mandates
+  the gated tool IS a mandated dead-end, which is why the `page-schema-handlers` table is now feature-aware
+  (item 3) rather than treated as a discovery-leak exception. Enable
   the feature to test: `clio experimental --name requests-registry --enable`. The guide owns the
   request-selection decision rules and the catalog discipline; handler mechanics stay in
   `page-schema-handlers` (never duplicate). There is deliberately NO CLI twin verb;

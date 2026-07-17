@@ -66,7 +66,11 @@ internal static class GuidanceCatalog {
 			["page-schema-handlers"] = Create(
 				"page-schema-handlers",
 				"Canonical MCP guidance for creating and editing Freedom UI page handlers inside raw page schema bodies.",
-				PageSchemaHandlersGuidanceResource.Guide),
+				PageSchemaHandlersGuidanceResource.Guide,
+				// Feature-aware content: the get-request-info catalog pointer and the when-to-use-requests guide
+				// reference are served only while the requests-registry feature is on (never mandate a hidden surface).
+				articleBuilder: toggles => PageSchemaHandlersGuidanceResource.BuildGuide(
+					includeRequestWiring: toggles.IsEnabled(typeof(WhenToUseRequestsGuidanceResource)))),
 			["page-schema-creatio-devkit-common"] = Create(
 				"page-schema-creatio-devkit-common",
 				"Canonical MCP guidance for using @creatio-devkit/common in Freedom UI page handlers validators and related frontend-source patterns.",
