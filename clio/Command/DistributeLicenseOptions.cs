@@ -11,15 +11,15 @@ namespace Clio.Command
 	public class DistributeLicenseOptions : RemoteCommandOptions
 	{
 		[Option("package-id", Required = true,
-			HelpText = "License package Id (Guid). Find it via the Supervisor > License section in Creatio")]
+			HelpText = "License package Id (Guid) or exact package name as shown in the Supervisor > License section in Creatio")]
 		public string PackageId { get; set; }
 
 		[Option("add-user", Required = false, Separator = ',',
-			HelpText = "User Id (Guid) to add to the license package. Repeat or separate with ',' for multiple users")]
+			HelpText = "User Id (Guid) or exact user name (SysAdminUnit) to add to the license package. Repeat or separate with ',' for multiple users")]
 		public IEnumerable<string> AddUser { get; set; }
 
 		[Option("remove-user", Required = false, Separator = ',',
-			HelpText = "User Id (Guid) to remove from the license package. Repeat or separate with ',' for multiple users")]
+			HelpText = "User Id (Guid) or exact user name (SysAdminUnit) to remove from the license package. Repeat or separate with ',' for multiple users")]
 		public IEnumerable<string> RemoveUser { get; set; }
 	}
 }

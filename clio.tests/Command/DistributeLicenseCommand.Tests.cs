@@ -1,6 +1,8 @@
 namespace Clio.Tests.Command;
 
 using System;
+using System.Linq;
+using System.Text.Json;
 using Clio.Command;
 using Clio.Command.PackageCommand;
 using Clio.Common;
@@ -14,12 +16,19 @@ using NUnit.Framework;
 public class DistributeLicenseCommandTestCase
 {
 
+	private const string GetLicensesUrl = "http://localhost/ServiceModel/LicenseManagerProxyService.svc/GetLicenses";
+	private const string GetUsersListUrl = "http://localhost/ServiceModel/LicenseManagerProxyService.svc/GetUsersList";
+
+	private IApplicationClient _applicationClient;
 	private DistributeLicenseCommandTestable _command;
 
 	[SetUp]
 	public void SetUp() {
-		_command = new DistributeLicenseCommandTestable(Substitute.For<IApplicationClient>(),
-			Substitute.For<EnvironmentSettings>());
+		_applicationClient = Substitute.For<IApplicationClient>();
+		var settings = Substitute.For<EnvironmentSettings>();
+		settings.Uri = "http://localhost";
+		settings.IsNetCore = true;
+		_command = new DistributeLicenseCommandTestable(_applicationClient, settings);
 	}
 
 	[Test]
@@ -178,27 +187,29 @@ public class DistributeLicenseCommandTestCase
 	}
 
 	[Test]
-	[Description("A malformed --add-user value throws instead of silently reaching the server")]
-	public void GetRequestData_InvalidAddUserGuid_ThrowsArgumentException() {
+	[Description("A --add-user value that does not resolve to any GetUsersList entry throws")]
+	public void GetRequestData_UnresolvableAddUserName_ThrowsArgumentException() {
 		// Arrange
+		ArrangeUsersListRows();
 		var options = new DistributeLicenseOptions {
 			PackageId = "9c40e123-0a44-4cd2-94de-57341b8c3592",
-			AddUser = new[] { "not-a-guid" }
+			AddUser = new[] { "not-a-guid-or-a-real-user" }
 		};
 
 		// Act
 		Action act = () => _command.TestGetRequestData(options);
 
 		// Assert
-		act.Should().Throw<ArgumentException>("user ids must be valid Guids before being sent to SaveLicenseData");
+		act.Should().Throw<ArgumentException>("a name that resolves to zero GetUsersList entries cannot be sent to SaveLicenseData");
 	}
 
 	[Test]
-	[Description("A malformed --package-id value throws instead of silently reaching the server")]
-	public void GetRequestData_InvalidPackageId_ThrowsArgumentException() {
+	[Description("A --package-id value that does not resolve via GetLicenses throws")]
+	public void GetRequestData_UnresolvablePackageName_ThrowsArgumentException() {
 		// Arrange
+		_applicationClient.ExecutePostRequest(GetLicensesUrl, "{}").Returns(JsonSerializer.Serialize(Array.Empty<object>()));
 		var options = new DistributeLicenseOptions {
-			PackageId = "not-a-guid",
+			PackageId = "not-a-guid-or-a-real-package",
 			AddUser = new[] { "7f3b869f-34f3-4f20-ab4d-7480a5fdf647" }
 		};
 
@@ -206,7 +217,7 @@ public class DistributeLicenseCommandTestCase
 		Action act = () => _command.TestGetRequestData(options);
 
 		// Assert
-		act.Should().Throw<ArgumentException>("the package id must be a valid Guid before being sent to SaveLicenseData");
+		act.Should().Throw<ArgumentException>("a name that resolves to zero GetLicenses entries cannot be sent to SaveLicenseData");
 	}
 
 	[Test]
@@ -224,6 +235,165 @@ public class DistributeLicenseCommandTestCase
 
 		// Assert
 		act.Should().Throw<ArgumentException>("a user cannot be both added and removed in the same request");
+	}
+
+	[Test]
+	[Description("A --add-user name resolves via the real GetUsersList shape, where id/name live nested under sysAdminUnit.value/displayValue")]
+	public void GetRequestData_AddUserByName_ResolvesViaGetUsersList() {
+		// Arrange
+		ArrangeUsersListRows(
+			("8ab1343f-cb58-49c7-95a2-058b5f60acd3", "Mandrill"),
+			("7f3b869f-34f3-4f20-ab4d-7480a5fdf647", "Supervisor"),
+			("52958c15-14f4-4ef0-86ee-bb33a98fb828", "SysPortalConnection"));
+		var options = new DistributeLicenseOptions {
+			PackageId = "9c40e123-0a44-4cd2-94de-57341b8c3592",
+			AddUser = new[] { "Supervisor" }
+		};
+
+		// Act
+		string requestData = _command.TestGetRequestData(options);
+
+		// Assert
+		requestData.Should().Be(
+			"{\"deletedUsers\":[],\"addedUsers\":[\"7f3b869f-34f3-4f20-ab4d-7480a5fdf647\"],"
+			+ "\"packageId\":\"9c40e123-0a44-4cd2-94de-57341b8c3592\",\"source\":1}",
+			"the 'Supervisor' name must resolve to sysAdminUnit.value before the request is serialized");
+	}
+
+	[Test]
+	[Description("A --add-user name matching more than one GetUsersList entry is rejected as ambiguous")]
+	public void GetRequestData_AmbiguousAddUserName_ThrowsArgumentException() {
+		// Arrange
+		ArrangeUsersListRows(
+			("11111111-1111-1111-1111-111111111111", "John"),
+			("22222222-2222-2222-2222-222222222222", "John"));
+		var options = new DistributeLicenseOptions {
+			PackageId = "9c40e123-0a44-4cd2-94de-57341b8c3592",
+			AddUser = new[] { "John" }
+		};
+
+		// Act
+		Action act = () => _command.TestGetRequestData(options);
+
+		// Assert
+		act.Should().Throw<ArgumentException>("more than one GetUsersList entry matching the same name is ambiguous");
+	}
+
+	[Test]
+	[Description("An HTML response from GetUsersList (e.g. an unreachable service) is wrapped in an actionable ArgumentException instead of leaking a raw JsonException")]
+	public void GetRequestData_NonJsonGetUsersListResponse_ThrowsActionableArgumentException() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(GetUsersListUrl, "{}").Returns("<html><body>Unexpected error</body></html>");
+		var options = new DistributeLicenseOptions {
+			PackageId = "9c40e123-0a44-4cd2-94de-57341b8c3592",
+			AddUser = new[] { "Supervisor" }
+		};
+
+		// Act
+		Action act = () => _command.TestGetRequestData(options);
+
+		// Assert
+		act.Should().Throw<ArgumentException>("an HTML response means GetUsersList could not be parsed, which must not surface as a raw JsonException")
+			.WithMessage("*Pass the Guid directly via --add-user/--remove-user*");
+	}
+
+	[Test]
+	[Description("An HTML response from GetLicenses is wrapped in an actionable ArgumentException instead of leaking a raw JsonException")]
+	public void GetRequestData_NonJsonGetLicensesResponse_ThrowsActionableArgumentException() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(GetLicensesUrl, "{}").Returns("<html><body>Unexpected error</body></html>");
+		var options = new DistributeLicenseOptions {
+			PackageId = "studio creatio on-site subscription",
+			AddUser = new[] { "7f3b869f-34f3-4f20-ab4d-7480a5fdf647" }
+		};
+
+		// Act
+		Action act = () => _command.TestGetRequestData(options);
+
+		// Assert
+		act.Should().Throw<ArgumentException>("an HTML response means GetLicenses could not be parsed, which must not surface as a raw JsonException")
+			.WithMessage("*Pass the Guid directly via --package-id*");
+	}
+
+	[Test]
+	[Description("A --package-id name resolves via the real GetLicenses shape: entries live under 'licenses', and packageId (not the license record's own id) is the value SaveLicenseData expects")]
+	public void GetRequestData_PackageIdByName_ResolvesViaGetLicenses() {
+		// Arrange
+		var licenses = new object[] {
+			new {
+				id = "68671333-f9bd-4343-a218-dd636adcd193", // the license record's own id: must NOT be sent
+				packageId = "9c40e123-0a44-4cd2-94de-57341b8c3592",
+				packageName = "studio creatio on-site subscription"
+			},
+			new {
+				id = "11111111-1111-1111-1111-111111111111",
+				packageId = "22222222-2222-2222-2222-222222222222",
+				packageName = "Other package"
+			}
+		};
+		_applicationClient.ExecutePostRequest(GetLicensesUrl, "{}")
+			.Returns(JsonSerializer.Serialize(new { success = true, errorInfo = (object)null, licenses }));
+		var options = new DistributeLicenseOptions {
+			PackageId = "studio creatio on-site subscription",
+			AddUser = new[] { "7f3b869f-34f3-4f20-ab4d-7480a5fdf647" }
+		};
+
+		// Act
+		string requestData = _command.TestGetRequestData(options);
+
+		// Assert
+		requestData.Should().Be(
+			"{\"deletedUsers\":[],\"addedUsers\":[\"7f3b869f-34f3-4f20-ab4d-7480a5fdf647\"],"
+			+ "\"packageId\":\"9c40e123-0a44-4cd2-94de-57341b8c3592\",\"source\":1}",
+			"packageId, not the license record's own id, is what LicenseManagerProxyService.svc/SaveLicenseData expects");
+	}
+
+	[Test]
+	[Description("Multiple license rows for the same package (e.g. different terms/tiers) share one packageName and packageId and must not be reported as ambiguous")]
+	public void GetRequestData_PackageNameWithMultipleTermsForSamePackage_IsNotAmbiguous() {
+		// Arrange
+		var licenses = new object[] {
+			new {
+				id = "68671333-f9bd-4343-a218-dd636adcd193",
+				packageId = "9c40e123-0a44-4cd2-94de-57341b8c3592",
+				packageName = "studio creatio on-site subscription"
+			},
+			new {
+				id = "1c4ad873-1c79-44fd-a772-81dc7500bef2", // different license-record id, same package
+				packageId = "9c40e123-0a44-4cd2-94de-57341b8c3592",
+				packageName = "studio creatio on-site subscription"
+			}
+		};
+		_applicationClient.ExecutePostRequest(GetLicensesUrl, "{}")
+			.Returns(JsonSerializer.Serialize(new { success = true, errorInfo = (object)null, licenses }));
+		var options = new DistributeLicenseOptions {
+			PackageId = "studio creatio on-site subscription",
+			AddUser = new[] { "7f3b869f-34f3-4f20-ab4d-7480a5fdf647" }
+		};
+
+		// Act
+		string requestData = _command.TestGetRequestData(options);
+
+		// Assert
+		requestData.Should().Contain(
+			"\"packageId\":\"9c40e123-0a44-4cd2-94de-57341b8c3592\"",
+			"two rows resolving to the same packageId must be deduplicated instead of raising an ambiguity error");
+	}
+
+	private void ArrangeUsersListRows(params (string Id, string Name)[] users) {
+		var payload = users.Select(u => new {
+			email = "",
+			jobTitle = "",
+			source = 0,
+			sysAdminUnit = new {
+				displayValue = u.Name,
+				primaryColorValue = (string)null,
+				primaryImageValue = "00000000-0000-0000-0000-000000000000",
+				value = u.Id
+			}
+		});
+		_applicationClient.ExecutePostRequest(GetUsersListUrl, "{}")
+			.Returns(JsonSerializer.Serialize(new { errorInfo = (object)null, success = true, users = payload }));
 	}
 }
 
