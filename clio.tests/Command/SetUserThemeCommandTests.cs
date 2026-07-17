@@ -408,4 +408,42 @@ public sealed class SetUserThemeCommandTests : BaseCommandTests<SetUserThemeOpti
 		error.Should().Contain("Failed to read the current user's profile",
 			because: "an expected failure must carry the step context so the caller can act on it");
 	}
+
+	[Test, Category("Unit")]
+	[Description("An expected transport failure while listing the theme catalog is caught at its own site and reported with step context ('Failed to list available themes'), not propagated.")]
+	public void SetUserTheme_ShouldReturnContextualFailure_WhenCatalogListThrowsTransportError() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(Arg.Is<string>(u => u.Contains("GetAvailableThemes")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(_ => throw new TimeoutException("timed out"));
+		SetUserThemeOptions options = new() { Theme = "Ocean" };
+
+		// Act
+		bool succeeded = _command.TrySetUserTheme(options, out _, out string error);
+
+		// Assert
+		succeeded.Should().BeFalse(because: "a transport timeout while listing themes is an expected failure");
+		error.Should().Contain("Failed to list available themes",
+			because: "the catalog-list catch site must report its own step context (not just the profile-read site)");
+	}
+
+	[Test, Category("Unit")]
+	[Description("An expected transport failure while writing the profile (UpdateQuery) is caught at its own site and reported with step context ('Failed to apply the theme'), not propagated.")]
+	public void SetUserTheme_ShouldReturnContextualFailure_WhenUpdateThrowsTransportError() {
+		// Arrange
+		StubAvailableThemes(OceanThemeJson);
+		StubProfileSelect(ProfileId, string.Empty);
+		_applicationClient.ExecutePostRequest(Arg.Is<string>(u => u.Contains("UpdateQuery")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(_ => throw new TimeoutException("timed out"));
+		SetUserThemeOptions options = new() { Theme = "Ocean" };
+
+		// Act
+		bool succeeded = _command.TrySetUserTheme(options, out _, out string error);
+
+		// Assert
+		succeeded.Should().BeFalse(because: "a transport timeout while writing the profile is an expected failure");
+		error.Should().Contain("Failed to apply the theme",
+			because: "the update catch site must report its own step context");
+	}
 }

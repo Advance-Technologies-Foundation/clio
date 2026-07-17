@@ -116,4 +116,17 @@ public sealed class DurableInvocationGateCompletenessTests {
 		registry.IsDestructive("clio-run-destructive").Should().BeTrue(
 			because: "the destructive executor must stay host-gated");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("set-user-theme is classified destructive, so the durable gate never silently runs it — it overwrites an existing profile value and must be host-confirmed (ENG-93302 PR #895 review #3).")]
+	public void SetUserTheme_ShouldBeDestructive_SoTheGateNeverSilentlyRunsIt() {
+		// Arrange
+		McpToolInvokerRegistry registry = BuildRegistryOverFullCatalog();
+
+		// Act & Assert
+		registry.IsDestructive("set-user-theme").Should().BeTrue(
+			because: "applying a theme overwrites (or clears) the profile's existing Theme value, so it must be " +
+				"host-gated rather than silently executable — consistent with update-theme/delete-theme");
+	}
 }

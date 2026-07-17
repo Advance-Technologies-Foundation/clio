@@ -194,6 +194,37 @@ public class SetUserThemeToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Redacts sensitive tokens (connection URI / credentials / paths) in the command's failure message before it crosses into the MCP transcript, matching CreateThemeTool/ListThemesTool.")]
+	public void SetUserTheme_ShouldRedactSensitiveErrorText_WhenCommandFailureCarriesSecrets() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		FakeSetUserThemeCommand defaultCommand = new();
+		const string secretUri = "http://admin:s3cr3t@ts1-infr-web02:88/studioenu_1/0/DataService";
+		FakeSetUserThemeCommand resolvedCommand = new(success: false,
+			error: $"Failed to apply the theme: connection to {secretUri} refused");
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<SetUserThemeCommand>(Arg.Any<SetUserThemeOptions>()).Returns(resolvedCommand);
+		commandResolver.Resolve<ICreatioVersionChecker>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ICreatioVersionChecker>());
+		SetUserThemeTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		SetUserThemeResult result = tool.SetUserTheme(new SetUserThemeArgs(
+			EnvironmentName: "docker_fix2", Theme: "Ocean"));
+
+		// Assert
+		result.Success.Should().BeFalse(because: "the resolved command reported failure");
+		result.Error.Should().NotContain("s3cr3t",
+			because: "credentials in the failure message must be redacted before the error reaches the MCP transcript");
+		result.Error.Should().NotContain(secretUri,
+			because: "the connection URI must be redacted before the error reaches the MCP transcript");
+		result.Error.Should().Contain("[redacted",
+			because: "SensitiveErrorTextRedactor replaces sensitive tokens with a [redacted-*] placeholder");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Returns an actionable rename hint instead of silently ignoring a camelCase alias of a kebab-case argument.")]
 	public void SetUserTheme_ShouldReturnRenameHint_WhenCamelCaseAliasIsPassed() {
 		// Arrange

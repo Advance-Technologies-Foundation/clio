@@ -86,6 +86,9 @@ public sealed class ThemingSandboxE2ETests : McpContractFixtureBase {
 			}
 			_createdThemeId = null;
 		}
+		// Reset the environment marker too so a reused fixture instance never carries a stale value into
+		// a later test's teardown (the two action markers above already gate the actual cleanup calls).
+		_environmentNameForCleanup = null;
 	}
 
 	[Test]

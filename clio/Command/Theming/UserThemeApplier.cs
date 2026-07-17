@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Net.Sockets;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
@@ -10,25 +12,6 @@ using Clio.Common;
 using Clio.Package;
 
 namespace Clio.Command.Theming;
-
-/// <summary>
-/// Applies a Creatio theme to the current (authenticated) user's profile, or clears it. This is the
-/// behavior behind the <c>set-user-theme</c> command and MCP tool (NFR-2 / Story 1); the command is a
-/// thin adapter over this interface.
-/// </summary>
-public interface IUserThemeApplier
-{
-	/// <summary>
-	/// Applies the requested theme (or resets the selection) to the current user's profile, verifying the
-	/// write with a read-back so a silently-ignored change (feature <c>ChangeTheme</c> disabled) is reported
-	/// as a failure rather than a false success.
-	/// </summary>
-	/// <param name="options">Options carrying the theme selector or reset flag and the connection settings.</param>
-	/// <param name="applied">On success, the theme applied to the profile (empty caption/class on reset).</param>
-	/// <param name="errorMessage">On failure, the validation or server-provided message.</param>
-	/// <returns><c>true</c> when the profile theme was applied and verified; otherwise <c>false</c>.</returns>
-	bool TrySetUserTheme(SetUserThemeOptions options, out AppliedUserTheme applied, out string errorMessage);
-}
 
 /// <summary>
 /// Applies a Creatio theme to the current user's profile by updating the virtual <c>SysUserProfile</c>
@@ -301,14 +284,23 @@ public class UserThemeApplier : IUserThemeApplier
 		}
 	}
 
-	// The expected-failure set for the DataService/ThemeService round-trips: transport faults, timeouts,
-	// and the response-validation/parse failures the DataService helpers raise (SelectQueryHelper throws
-	// InvalidOperationException on an empty/failed envelope; JSON bodies throw JsonException). Programming
-	// errors (NullReferenceException, ArgumentException, …) are deliberately NOT in this set so they
-	// propagate to the established top-level handlers instead of being masked as transport/parse errors.
+	// The expected-failure set for the DataService/ThemeService round-trips: transport/socket/IO faults,
+	// timeouts, and the response-validation/parse failures the DataService helpers raise (SelectQueryHelper
+	// throws InvalidOperationException on an empty/failed envelope; JSON bodies throw JsonException). The
+	// socket/IO/timeout set mirrors the codebase's own transport-failure precedent (CreatioVersionProvider's
+	// soft-degrade guard). Programming errors (NullReferenceException, ArgumentException, …) are deliberately
+	// NOT in this set so they propagate to the established top-level handlers instead of being masked as
+	// transport/parse errors. A sync-over-async transport layer can surface the real fault wrapped in an
+	// AggregateException, so unwrap it and treat it as expected only when EVERY inner fault is itself
+	// expected (a wrapped programming error still propagates).
 	private static bool IsExpectedIoOrParseFailure(Exception exception) =>
-		exception is WebException or HttpRequestException or TaskCanceledException
-			or TimeoutException or InvalidOperationException or JsonException;
+		exception switch {
+			AggregateException aggregate => aggregate.InnerExceptions.Count > 0
+				&& aggregate.InnerExceptions.All(IsExpectedIoOrParseFailure),
+			WebException or HttpRequestException or SocketException or IOException
+				or TaskCanceledException or TimeoutException or InvalidOperationException or JsonException => true,
+			_ => false
+		};
 
 	private static string DescribeUpdateFailure(string serverMessage) {
 		if (string.IsNullOrWhiteSpace(serverMessage)) {
