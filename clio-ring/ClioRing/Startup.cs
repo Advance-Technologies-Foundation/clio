@@ -63,13 +63,13 @@ public static class Startup {
 		AppSettingsReader.TryRead()?.Experiments?.ClioIpc == true;
 
 	/// <summary>
-	/// Resolves the clio MCP child launch configuration from <c>app-settings.json</c>. Precedence: a valid
-	/// <c>DevClioPath</c> dev-build override wins; then an explicit <c>ClioIpc</c> section; otherwise the
-	/// machine <see cref="ClioIpcSettings.Default"/>.
+	/// Resolves the clio MCP child launch configuration from <c>app-settings.json</c>. Release mode uses the
+	/// installed clio dotnet tool. Development mode uses a valid <c>DevClioPath</c>, then an explicit
+	/// <c>ClioIpc</c> target. Legacy settings infer Development when either target is present.
 	/// </summary>
 	public static ClioIpcSettings ResolveClioIpcSettings() {
 		AppSettings? settings = AppSettingsReader.TryRead();
-		return ResolveClioIpcSettings(settings?.DevClioPath, settings?.ClioIpc);
+		return ResolveClioIpcSettings(settings?.ClioRuntimeMode, settings?.DevClioPath, settings?.ClioIpc);
 	}
 
 	/// <summary>
@@ -81,16 +81,36 @@ public static class Startup {
 	/// <param name="ipc">The optional explicit <c>ClioIpc</c> section.</param>
 	/// <returns>The resolved launch configuration.</returns>
 	public static ClioIpcSettings ResolveClioIpcSettings(string? devClioPath, ClioIpcSettingsDto? ipc) {
-		if (DevClioLaunch.Validate(devClioPath).IsValid && !string.IsNullOrWhiteSpace(devClioPath)) {
-			return DevClioLaunch.Build(devClioPath);
+		return ResolveClioIpcSettings(runtimeMode: null, devClioPath, ipc);
+	}
+
+	/// <summary>Pure runtime-mode resolution used by startup and tests.</summary>
+	/// <param name="runtimeMode">Explicit <c>release</c>/<c>development</c> choice, or null for migration inference.</param>
+	/// <param name="devClioPath">The optional development clio build path.</param>
+	/// <param name="ipc">The optional explicit development child-process configuration.</param>
+	/// <returns>The selected child-process launch settings.</returns>
+	public static ClioIpcSettings ResolveClioIpcSettings(string? runtimeMode, string? devClioPath,
+		ClioIpcSettingsDto? ipc) {
+		bool hasValidPath = DevClioLaunch.Validate(devClioPath).IsValid
+			&& !string.IsNullOrWhiteSpace(devClioPath);
+		bool hasExplicitIpc = ipc is not null && !string.IsNullOrWhiteSpace(ipc.Command)
+			&& ipc.Args is { Length: > 0 };
+		bool useDevelopment = string.Equals(runtimeMode, "development", System.StringComparison.OrdinalIgnoreCase)
+			|| (string.IsNullOrWhiteSpace(runtimeMode) && (hasValidPath || hasExplicitIpc));
+		if (!useDevelopment || string.Equals(runtimeMode, "release", System.StringComparison.OrdinalIgnoreCase)) {
+			return ClioIpcSettings.Default;
 		}
 
-		if (ipc is null || string.IsNullOrWhiteSpace(ipc.Command) || ipc.Args is not { Length: > 0 }) {
+		if (hasValidPath) {
+			return DevClioLaunch.Build(devClioPath!);
+		}
+
+		if (!hasExplicitIpc) {
 			return ClioIpcSettings.Default;
 		}
 		return new ClioIpcSettings {
-			Command = ipc.Command,
-			Args = new List<string>(ipc.Args),
+			Command = ipc!.Command!,
+			Args = new List<string>(ipc.Args!),
 			WorkingDirectory = string.IsNullOrWhiteSpace(ipc.WorkingDirectory) ? null : ipc.WorkingDirectory
 		};
 	}

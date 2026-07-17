@@ -3,9 +3,11 @@ using System.IO;
 using System.Linq;
 using ClioRing;
 using ClioRing.Ipc;
+using ClioRing.Models;
 using ClioRing.Services;
 using ClioRing.ViewModels;
 using FluentAssertions;
+using NSubstitute;
 using NUnit.Framework;
 
 namespace ClioRing.Tests;
@@ -92,6 +94,45 @@ public sealed class ClioSettingsViewModelTests {
 		persisted.Should().BeNull("because a blank override removes the persisted value");
 		sut.IsDevOverrideActive.Should().BeFalse("because no override is active after clearing");
 		resolved.Should().BeSameAs(ClioIpcSettings.Default, "because empty override resolves to the default clio");
+		resolved.Command.Should().Be("clio", "because Release uses the installed dotnet tool from PATH");
+		resolved.Args.Should().ContainSingle().Which.Should().Be("mcp-server",
+			"because Ring starts the installed tool as an MCP server");
+	}
+
+	[Test]
+	[Description("An explicit Release selection uses the installed clio command while preserving a valid development target for later use.")]
+	public void ResolveClioIpcSettings_ShouldUseInstalledTool_WhenReleaseSelected() {
+		// Arrange
+		var explicitIpc = new ClioIpcSettingsDto {
+			Command = "dotnet", Args = [_devClioDll, "mcp-server"]
+		};
+
+		// Act
+		ClioIpcSettings resolved = Startup.ResolveClioIpcSettings("release", _devClioDll, explicitIpc);
+
+		// Assert
+		resolved.Should().BeSameAs(ClioIpcSettings.Default,
+			"because Release ignores the saved development targets without deleting them");
+		resolved.Command.Should().Be("clio", "because the released dotnet tool is resolved from PATH");
+	}
+
+	[Test]
+	[Description("Legacy settings with an explicit clio IPC target remain on Development when no runtime mode has been persisted.")]
+	public void ResolveClioIpcSettings_ShouldPreserveDevelopmentTarget_WhenLegacyModeIsMissing() {
+		// Arrange
+		var explicitIpc = new ClioIpcSettingsDto {
+			Command = "dotnet", Args = [_devClioDll, "mcp-server"]
+		};
+
+		// Act
+		ClioIpcSettings resolved = Startup.ResolveClioIpcSettings(runtimeMode: null, devClioPath: null,
+			explicitIpc);
+
+		// Assert
+		resolved.Command.Should().Be("dotnet",
+			"because migration must not silently retarget an existing development setup");
+		resolved.Args.Should().Contain(_devClioDll,
+			"because the saved explicit development target remains selected");
 	}
 
 	[Test]
@@ -186,7 +227,8 @@ public sealed class ClioSettingsViewModelTests {
 		// Assert
 		sut.ConnectedClioIdentity.Should().Contain("clio 8.1.0.77",
 			"because the identity uses the handshake name + version, not a hardcoded label");
-		sut.ConnectedClioIdentity.Should().Contain("dev build", "because the dev override is the active source");
+		sut.ConnectedClioIdentity.Should().Contain("development build",
+			"because the development override is the active source");
 		sut.ConnectedClioIdentity.Should().Contain(_devClioDll, "because the resolved path is shown");
 	}
 
@@ -203,13 +245,13 @@ public sealed class ClioSettingsViewModelTests {
 		sut.SetConnectedIdentity(handshake, @"C:\Tools\clio\clio.dll", isDevOverride: false);
 
 		// Assert
-		sut.ConnectedClioIdentity.Should().Contain("normal build", "because no dev override is active");
+		sut.ConnectedClioIdentity.Should().Contain("release build", "because no development override is active");
 		sut.ConnectedClioIdentity.Should().Contain("8.1.0.77", "because the handshake version is surfaced");
 	}
 
 	[Test]
-	[Description("Before a handshake exists the identity says it is not connected yet, without protocol jargon.")]
-	public void SetConnectedIdentity_ShouldSayNotConnected_WhenHandshakeAbsent() {
+	[Description("Before a handshake exists the identity states the configured build instead of claiming Ring is disconnected.")]
+	public void SetConnectedIdentity_ShouldStateConfiguredBuild_WhenHandshakeAbsent() {
 		// Arrange
 		var sut = new ClioSettingsViewModel(_store);
 
@@ -217,8 +259,46 @@ public sealed class ClioSettingsViewModelTests {
 		sut.SetConnectedIdentity(handshake: null, @"C:\Tools\clio\clio.dll", isDevOverride: false);
 
 		// Assert
-		sut.ConnectedClioIdentity.Should().Contain("not connected",
-			"because there is no negotiated handshake to report yet");
+		sut.ConnectedClioIdentity.Should().Contain("release build",
+			"because the configured runtime is truthful before the lazy handshake occurs");
+		sut.ConnectedClioIdentity.Should().NotContain("not connected",
+			"because Ring already knows which configured runtime it is using");
+		sut.ConnectedClioIdentity.Should().NotContain("—",
+			"because runtime identity uses ordinary hyphens instead of em dashes");
 		sut.ConnectedClioIdentity.Should().NotContain("MCP", "because the identity must stay jargon-free");
+	}
+
+	[Test]
+	[Description("The main runtime warning recognizes an explicit Debug DLL target and selecting Release persists the mode without deleting that target.")]
+	public void RuntimeSwitch_ShouldPersistReleaseAndPreserveTarget_WhenDevelopmentRuntimeIsRunning() {
+		// Arrange
+		File.WriteAllText(_settingsPath, $$"""
+			{
+			  "WorkspaceFolder": "{{_tempDir.Replace("\\", "\\\\")}}",
+			  "ClioIpc": {
+			    "Command": "dotnet",
+			    "Args": ["{{_devClioDll.Replace("\\", "\\\\")}}", "mcp-server"]
+			  }
+			}
+			""");
+		IClioIpcClient client = Substitute.For<IClioIpcClient>();
+		client.TargetPath.Returns(_devClioDll);
+		client.Handshake.Returns((ClioServerHandshake?)null);
+		var sut = new ClioSettingsViewModel(_store, client);
+
+		// Act
+		sut.IsDevelopmentSelected = false;
+
+		// Assert
+		sut.IsDevelopmentRuntimeRunning.Should().BeTrue(
+			"because an explicit Debug DLL is a development runtime even without DevClioPath");
+		sut.RuntimeSummary.Should().Be("Ring is using a development clio build",
+			"because lazy handshake state must not be presented as disconnected");
+		_store.ReadRuntimeMode().Should().Be("release",
+			"because the main toggle persists the next-launch runtime mode");
+		_store.HasDevelopmentTarget().Should().BeTrue(
+			"because selecting Release preserves the explicit development target");
+		sut.RuntimeSelectionRestartRequired.Should().BeTrue(
+			"because the running development child remains active until Ring restarts");
 	}
 }

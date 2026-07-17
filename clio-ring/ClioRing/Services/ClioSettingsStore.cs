@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
@@ -13,6 +14,9 @@ namespace ClioRing.Services;
 /// </summary>
 public sealed class ClioSettingsStore : IClioSettingsStore {
 	private const string DevClioPathKey = "DevClioPath";
+	private const string RuntimeModeKey = "ClioRuntimeMode";
+	private const string ReleaseMode = "release";
+	private const string DevelopmentMode = "development";
 
 	private readonly string _settingsPath;
 
@@ -31,7 +35,7 @@ public sealed class ClioSettingsStore : IClioSettingsStore {
 	/// <inheritdoc />
 	public string? ReadDevClioPath() {
 		JsonObject? root = TryReadRoot();
-		string? value = root?[DevClioPathKey]?.GetValue<string>();
+		string? value = ReadString(root?[DevClioPathKey]);
 		return string.IsNullOrWhiteSpace(value) ? null : value;
 	}
 
@@ -48,6 +52,45 @@ public sealed class ClioSettingsStore : IClioSettingsStore {
 		string json = root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
 		File.WriteAllText(_settingsPath, json);
 	}
+
+	/// <inheritdoc />
+	public string? ReadRuntimeMode() {
+		JsonObject? root = TryReadRoot();
+		string? value = ReadString(root?[RuntimeModeKey]);
+		return string.IsNullOrWhiteSpace(value) ? null : value.Trim().ToLowerInvariant();
+	}
+
+	/// <inheritdoc />
+	public void SaveRuntimeMode(string mode) {
+		ArgumentException.ThrowIfNullOrWhiteSpace(mode);
+		string normalized = mode.Trim().ToLowerInvariant();
+		if (normalized is not ReleaseMode and not DevelopmentMode) {
+			throw new ArgumentOutOfRangeException(nameof(mode), mode,
+				"Clio runtime mode must be release or development.");
+		}
+		JsonObject root = TryReadRoot() ?? new JsonObject();
+		root[RuntimeModeKey] = normalized;
+		string json = root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+		File.WriteAllText(_settingsPath, json);
+	}
+
+	/// <inheritdoc />
+	public bool HasDevelopmentTarget() {
+		JsonObject? root = TryReadRoot();
+		string? devPath = ReadString(root?[DevClioPathKey]);
+		if (!string.IsNullOrWhiteSpace(devPath) && DevClioLaunch.Validate(devPath).IsValid) {
+			return true;
+		}
+
+		JsonObject? ipc = root?["ClioIpc"] as JsonObject;
+		string? command = ReadString(ipc?["Command"]);
+		JsonArray? args = ipc?["Args"] as JsonArray;
+		return !string.IsNullOrWhiteSpace(command) && args is { Count: > 0 }
+			&& args.All(value => !string.IsNullOrWhiteSpace(ReadString(value)));
+	}
+
+	private static string? ReadString(JsonNode? node) =>
+		node is JsonValue value && value.TryGetValue(out string? result) ? result : null;
 
 	private JsonObject? TryReadRoot() {
 		try {

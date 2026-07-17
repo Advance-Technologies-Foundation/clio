@@ -18,15 +18,12 @@ public sealed record ClioIpcSettings {
 	public string? WorkingDirectory { get; init; }
 
 	/// <summary>
-	/// A conventional default for this machine: the framework-dependent clio dll driven by <c>dotnet</c>.
-	/// Used only when <c>app-settings.json</c> supplies no <c>ClioIpc</c> section. The Debug build is
-	/// preferred here because on this machine it is newer (8.1.0.77) and matches the documented
-	/// <c>get-tool-contract</c> compact-index contract, whereas the Release dll (8.1.0.64) predates it.
-	/// Override freely in app-settings.
+	/// The released clio dotnet tool available on <c>PATH</c>. Development configurations are resolved by
+	/// ClioRing before constructing this IPC settings record.
 	/// </summary>
 	public static ClioIpcSettings Default { get; } = new() {
-		Command = "dotnet",
-		Args = new[] { @"C:\Projects\clio\clio\bin\Debug\net10.0\clio.dll", "mcp-server" }
+		Command = "clio",
+		Args = new[] { "mcp-server" }
 	};
 }
 

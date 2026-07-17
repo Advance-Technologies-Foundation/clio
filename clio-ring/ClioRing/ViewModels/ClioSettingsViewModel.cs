@@ -7,14 +7,17 @@ using CommunityToolkit.Mvvm.Input;
 namespace ClioRing.ViewModels;
 
 /// <summary>
-/// Settings sub-view-model for the ring's clio connection: it defaults to the normal clio build, accepts
+	/// Settings sub-view-model for the Ring's clio connection: it defaults to the release clio, accepts
 /// an explicit dev-clio path override (persisted to <c>app-settings.json</c>), and surfaces which clio is
 /// actually connected using the negotiated handshake identity (name + version + resolved path). The
 /// override applies on the next ring launch, consistent with the hotkey settings.
 /// </summary>
 public sealed partial class ClioSettingsViewModel : ViewModelBase {
+	private const string ReleaseMode = "release";
+	private const string DevelopmentMode = "development";
 	private readonly IClioSettingsStore _store;
 	private readonly IClioIpcClient? _client;
+	private bool _suppressRuntimePersistence;
 
 	/// <summary>Creates the view-model bound to the persistence store and (optionally) the live IPC client.</summary>
 	/// <param name="store">Where the dev-clio override is read from / written to.</param>
@@ -25,7 +28,7 @@ public sealed partial class ClioSettingsViewModel : ViewModelBase {
 		Refresh();
 	}
 
-	/// <summary>The dev-clio build path the user is editing (a <c>clio.dll</c> or <c>clio.exe</c>). Blank = normal clio.</summary>
+	/// <summary>The development clio path the user is editing (a <c>clio.dll</c> or <c>clio.exe</c>).</summary>
 	[ObservableProperty]
 	private string _devClioPathInput = string.Empty;
 
@@ -54,6 +57,34 @@ public sealed partial class ClioSettingsViewModel : ViewModelBase {
 	[ObservableProperty]
 	private bool _restartRequired;
 
+	/// <summary>Whether the clio child used by this Ring session is a development/custom runtime.</summary>
+	[ObservableProperty]
+	[NotifyPropertyChangedFor(nameof(IsReleaseRuntimeRunning))]
+	private bool _isDevelopmentRuntimeRunning;
+
+	/// <summary>Whether Development is selected for the next Ring launch.</summary>
+	[ObservableProperty]
+	private bool _isDevelopmentSelected;
+
+	/// <summary>Connected clio name/version shown in the main runtime notice.</summary>
+	[ObservableProperty]
+	private string _runtimeSummary = "Installed dotnet tool from PATH";
+
+	/// <summary>Resolved child command/path shown in the main runtime notice.</summary>
+	[ObservableProperty]
+	private string _runtimeTarget = "clio";
+
+	/// <summary>Whether the selected runtime differs from the child running in this session.</summary>
+	[ObservableProperty]
+	private bool _runtimeSelectionRestartRequired;
+
+	/// <summary>Whether the Development side of the runtime switch has a valid saved target.</summary>
+	[ObservableProperty]
+	private bool _hasDevelopmentTarget;
+
+	/// <summary>Whether the running clio child is the released dotnet tool.</summary>
+	public bool IsReleaseRuntimeRunning => !IsDevelopmentRuntimeRunning;
+
 	/// <summary>The path to the config file that owns these settings (shown in the panel).</summary>
 	public string SettingsPath => _store.SettingsPath;
 
@@ -70,16 +101,32 @@ public sealed partial class ClioSettingsViewModel : ViewModelBase {
 		StatusMessage = string.Empty;
 
 		// A persisted-but-invalid override (e.g. hand-edited into the file) is ignored at launch; say so
-		// rather than falling back to the normal clio silently.
+		// rather than falling back to Release silently.
 		DevClioValidation validation = DevClioLaunch.Validate(persisted);
 		ValidationMessage = validation.IsValid ? string.Empty : validation.Message;
 
 		UpdateIdentity(persisted);
+		UpdateRuntimeState();
+	}
+
+	partial void OnIsDevelopmentSelectedChanged(bool value) {
+		if (_suppressRuntimePersistence) {
+			return;
+		}
+		if (value && !HasDevelopmentTarget) {
+			_suppressRuntimePersistence = true;
+			IsDevelopmentSelected = false;
+			_suppressRuntimePersistence = false;
+			StatusMessage = "Configure a development clio target in Settings first.";
+			return;
+		}
+		_store.SaveRuntimeMode(value ? DevelopmentMode : ReleaseMode);
+		RuntimeSelectionRestartRequired = value != IsDevelopmentRuntimeRunning;
 	}
 
 	/// <summary>
 	/// Validates and persists the dev-clio override. A blank path clears the override (reverts to the
-	/// normal clio). An invalid path is NOT persisted and surfaces a friendly message.
+	/// saved development target). An invalid path is NOT persisted and surfaces a friendly message.
 	/// </summary>
 	[RelayCommand]
 	private void SaveDevClioOverride() {
@@ -94,12 +141,13 @@ public sealed partial class ClioSettingsViewModel : ViewModelBase {
 		ValidationMessage = string.Empty;
 		_store.SaveDevClioPath(input);
 		StatusMessage = input is null
-			? "Cleared. Restart the ring to connect to the normal clio."
-			: "Saved. Restart the ring to connect to the dev clio.";
+			? "Development path cleared. Select Release before restarting Ring."
+			: "Development path saved. Select Development before restarting Ring.";
 		UpdateIdentity(input);
+		UpdateRuntimeState();
 	}
 
-	/// <summary>Clears the dev-clio override, reverting the ring to the normal clio on the next launch.</summary>
+	/// <summary>Clears the development path without changing the selected runtime mode.</summary>
 	[RelayCommand]
 	private void ClearDevClioOverride() {
 		DevClioPathInput = string.Empty;
@@ -124,22 +172,63 @@ public sealed partial class ClioSettingsViewModel : ViewModelBase {
 			&& !string.Equals(liveTarget, resolvedTarget, StringComparison.OrdinalIgnoreCase);
 
 		string displayTarget = string.IsNullOrEmpty(liveTarget) ? resolvedTarget : liveTarget;
-		SetConnectedIdentity(handshake, displayTarget, isDevOverride);
+		SetConnectedIdentity(handshake, displayTarget, isDevOverride || IsDevelopmentTarget(liveTarget));
+	}
+
+	private void UpdateRuntimeState() {
+		string target = _client?.TargetPath ?? string.Empty;
+		IsDevelopmentRuntimeRunning = IsDevelopmentTarget(target);
+		RuntimeTarget = string.IsNullOrWhiteSpace(target) ? "clio" : target;
+		HasDevelopmentTarget = _store.HasDevelopmentTarget() || IsDevelopmentRuntimeRunning;
+		ClioServerHandshake? handshake = _client?.Handshake;
+		RuntimeSummary = handshake is null
+			? IsDevelopmentRuntimeRunning
+				? "Ring is using a development clio build"
+				: "Installed dotnet tool from PATH"
+			: $"{handshake.ServerName} {handshake.ServerVersion}";
+
+		string? persistedMode = _store.ReadRuntimeMode();
+		_suppressRuntimePersistence = true;
+		IsDevelopmentSelected = HasDevelopmentTarget && (
+			string.Equals(persistedMode, DevelopmentMode, StringComparison.OrdinalIgnoreCase)
+			|| (persistedMode is null && IsDevelopmentRuntimeRunning));
+		_suppressRuntimePersistence = false;
+		RuntimeSelectionRestartRequired = IsDevelopmentSelected != IsDevelopmentRuntimeRunning;
+	}
+
+	private static bool IsDevelopmentTarget(string? target) =>
+		!string.IsNullOrWhiteSpace(target)
+		&& !string.Equals(target, "clio", StringComparison.OrdinalIgnoreCase)
+		&& !string.Equals(target, "clio.exe", StringComparison.OrdinalIgnoreCase);
+
+	/// <summary>Populates the runtime notice without starting a clio process (screenshot/design seam).</summary>
+	/// <param name="developmentRunning">Whether the rendered session represents a development runtime.</param>
+	/// <param name="summary">The representative clio name/version.</param>
+	/// <param name="target">The representative command or path.</param>
+	public void DesignSetRuntime(bool developmentRunning, string summary, string target) {
+		IsDevelopmentRuntimeRunning = developmentRunning;
+		HasDevelopmentTarget = true;
+		_suppressRuntimePersistence = true;
+		IsDevelopmentSelected = developmentRunning;
+		_suppressRuntimePersistence = false;
+		RuntimeSummary = summary;
+		RuntimeTarget = target;
+		RuntimeSelectionRestartRequired = false;
 	}
 
 	/// <summary>
 	/// Builds the human-readable connected-clio identity line from the handshake identity (never a
-	/// hardcoded label): "<c>name version — dev build — path</c>", or a "not connected yet" form when the
+	/// hardcoded label): "<c>name version - dev build - path</c>", or a configured-target form when the
 	/// handshake is absent. Pure and directly testable.
 	/// </summary>
 	/// <param name="handshake">The negotiated handshake, or null when not connected.</param>
 	/// <param name="targetPath">The resolved clio path to display.</param>
 	/// <param name="isDevOverride">Whether the dev-clio override is the active source.</param>
 	public void SetConnectedIdentity(ClioServerHandshake? handshake, string? targetPath, bool isDevOverride) {
-		string source = isDevOverride ? "dev build" : "normal build";
+		string source = isDevOverride ? "development build" : "release build";
 		string path = string.IsNullOrWhiteSpace(targetPath) ? "unknown path" : targetPath!;
 		ConnectedClioIdentity = handshake is null
-			? $"{source} — {path} (not connected yet)"
-			: $"{handshake.ServerName} {handshake.ServerVersion} — {source} — {path}";
+			? $"clio - {source} - {path}"
+			: $"{handshake.ServerName} {handshake.ServerVersion} - {source} - {path}";
 	}
 }

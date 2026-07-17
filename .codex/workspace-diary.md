@@ -6365,3 +6365,9 @@ Decision: Keep pool resolution fail-closed and report the locked-profile test ig
 Discovery: A disposable 10.0.0.802 site with a synthetic same-site `/0` application reproduced the two-assignment skip; removing only that application let the exact warning E2E pass and uninstall cleanly.
 Files: clio.mcp.e2e/Support/Configuration/IisApplicationPoolResolver.cs, clio.mcp.e2e/UninstallCreatioWarningE2ETests.cs, clio.mcp.e2e/UninstallWarningIisApplicationPoolResolverE2ETests.cs, spec/uninstall-warning-e2e-uri-resolution/
 Impact: TeamCity no longer fails a warning-path test on a topology where the production behavior correctly cannot delete the pool profile, while exclusive disposable pools retain full warning-contract coverage.
+## 2026-07-17 09:29 – Prototype ClioRing runtime switch
+Context: Issue #903 requests release clio as the ordinary Ring runtime and an unavoidable main-surface warning when a development/custom clio is running.
+Decision: Separate persisted runtime selection from the saved development target, reserve banner space above the radial control for Development, and keep Release as a compact green identity strip; runtime changes are represented as next-launch choices until the owned IPC child can be safely retargeted.
+Discovery: The prior "machine default" is a hard-coded repository Debug DLL, and the existing settings warning only recognizes DevClioPath, so an explicit ClioIpc Debug DLL is mislabeled as normal and invisible on the main surface.
+Files: clio-ring/ClioRing/Views/RingView.axaml, clio-ring/ClioRing/ViewModels/ClioSettingsViewModel.cs, clio-ring/ClioRing/Services/ClioSettingsStore.cs, spec/ring-clio-runtime-switch/
+Impact: The requester can approve the rendered Development and Release states before comprehensive review, full tests, or NativeAOT publish.

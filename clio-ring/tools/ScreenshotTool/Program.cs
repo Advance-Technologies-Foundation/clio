@@ -80,6 +80,22 @@ internal static class Program {
 		// 1) DEFAULT — compact, ring only, calm.
 		count += CaptureState(outDir, "default", _ => { });
 
+		// 1b) DEVELOPMENT RUNTIME — prominent main-surface warning with release/development switch.
+		count += Capture(outDir, "development-runtime", 1.0, window => {
+			Vm(window).ClioSettings.DesignSetRuntime(
+				developmentRunning: true,
+				"clio 8.1.0.83",
+				@"C:\Projects\clio\clio\bin\Debug\net10.0\clio.dll");
+		});
+
+		// 1c) RELEASE RUNTIME — calm, compact identity with the same selector discoverable.
+		count += Capture(outDir, "release-runtime", 1.0, window => {
+			Vm(window).ClioSettings.DesignSetRuntime(
+				developmentRunning: false,
+				"clio 8.1.0.84",
+				"clio");
+		});
+
 		// 2) FOCUSED — keyboard focus on an action node (strong accent ring).
 		count += CaptureState(outDir, "focused", (window) => {
 			View(window).SetKeyboardFocusNode(2);

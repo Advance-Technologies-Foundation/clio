@@ -268,11 +268,75 @@
     </UserControl.Styles>
 
     <Grid>
-        <!-- Main layout: fixed ring region (row 0) + drawer reserved below (row 1). -->
-        <Grid RowDefinitions="Auto,Auto">
+        <!-- Main layout: runtime identity + fixed ring region + drawer reserved below. -->
+        <Grid RowDefinitions="Auto,Auto,Auto">
+
+            <!-- Development runtime is intentionally impossible to miss. It reserves layout space instead
+                 of covering ring actions. The selector persists the next-launch choice. -->
+            <Border Grid.Row="0"
+                    IsVisible="{Binding ClioSettings.IsDevelopmentRuntimeRunning}"
+                    Margin="14,14,14,0" Padding="12,10"
+                    Background="#34200A" BorderBrush="#F59E0B" BorderThickness="1.5"
+                    CornerRadius="10" BoxShadow="0 8 24 0 #70000000">
+                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                    <Border Grid.Column="0" Width="28" Height="28" CornerRadius="14"
+                            Background="#33F59E0B" BorderBrush="#AAF59E0B" BorderThickness="1"
+                            VerticalAlignment="Center">
+                        <TextBlock Text="!" FontSize="17" FontWeight="Bold" Foreground="#FFD58A"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                        <TextBlock Text="Development clio is active" FontSize="13" FontWeight="Bold"
+                                   Foreground="#FFE0A8" />
+                        <TextBlock Text="{Binding ClioSettings.RuntimeSummary}" FontSize="11"
+                                   Foreground="#F1C98D" />
+                        <TextBlock Text="{Binding ClioSettings.RuntimeTarget}" FontSize="10"
+                                   FontFamily="Cascadia Mono, Consolas, monospace" Foreground="#BFA373"
+                                   MaxWidth="270" TextTrimming="CharacterEllipsis"
+                                   ToolTip.Tip="{Binding ClioSettings.RuntimeTarget}" />
+                        <TextBlock IsVisible="{Binding ClioSettings.RuntimeSelectionRestartRequired}"
+                                   Text="Restart Ring to apply this selection" FontSize="10"
+                                   FontWeight="SemiBold" Foreground="#FFF0C7" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" Spacing="3" VerticalAlignment="Center">
+                        <TextBlock Text="Clio runtime" FontSize="9" Foreground="#C8A872"
+                                   HorizontalAlignment="Center" />
+                        <ToggleSwitch IsChecked="{Binding ClioSettings.IsDevelopmentSelected, Mode=TwoWay}"
+                                      IsEnabled="{Binding ClioSettings.HasDevelopmentTarget}"
+                                      OffContent="Release" OnContent="Development"
+                                      Foreground="#FFE0A8"
+                                      AutomationProperties.Name="Use development clio runtime" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- Release mode stays calm but keeps the active runtime and switch discoverable. -->
+            <Border Grid.Row="0"
+                    IsVisible="{Binding ClioSettings.IsReleaseRuntimeRunning}"
+                    Margin="14,10,14,0" Padding="10,6"
+                    Background="#101B16" BorderBrush="#345E49" BorderThickness="1"
+                    CornerRadius="9">
+                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                    <Border Grid.Column="0" Width="7" Height="7" CornerRadius="4"
+                            Background="#3FB950" VerticalAlignment="Center" />
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6"
+                                VerticalAlignment="Center">
+                        <TextBlock Text="Release clio" FontSize="11" FontWeight="SemiBold"
+                                   Foreground="#A9D7B6" />
+                        <TextBlock Text="{Binding ClioSettings.RuntimeSummary}" FontSize="10"
+                                   Foreground="#71977D" />
+                    </StackPanel>
+                    <ToggleSwitch Grid.Column="2"
+                                  IsChecked="{Binding ClioSettings.IsDevelopmentSelected, Mode=TwoWay}"
+                                  IsEnabled="{Binding ClioSettings.HasDevelopmentTarget}"
+                                  OffContent="Release" OnContent="Development"
+                                  Foreground="#A9D7B6"
+                                  AutomationProperties.Name="Use development clio runtime" />
+                </Grid>
+            </Border>
 
             <!-- Fixed-geometry ring region -->
-            <Border Grid.Row="0"
+            <Border Grid.Row="1"
                     Width="{Binding Diameter}"
                     Height="{Binding Diameter}"
                     HorizontalAlignment="Center">
@@ -322,7 +386,7 @@
             </Border>
 
             <!-- Output bottom-sheet: expands into reserved space, never reflows the ring -->
-            <Border Grid.Row="1"
+            <Border Grid.Row="2"
                     IsVisible="{Binding IsOutputOpen}"
                     Margin="14,0,14,14"
                     Background="#0D1117"
@@ -377,7 +441,7 @@
 
             <!-- Collapsed output bar: keeps the last output reachable (fixes the lost-output bug).
                  Click / Enter re-expands the SAME buffer; Cancel + state stay reachable while running. -->
-            <Border Grid.Row="1"
+            <Border Grid.Row="2"
                     IsVisible="{Binding IsOutputCollapsed}"
                     Margin="14,0,14,14"
                     Background="#0D1117"
@@ -544,10 +608,10 @@
                             <Border IsVisible="{Binding ClioSettings.IsDevOverrideActive}"
                                     Background="#2A1C0B" BorderBrush="#F5A524" BorderThickness="1"
                                     CornerRadius="6" Padding="8,4" HorizontalAlignment="Left">
-                                <TextBlock Text="Using your dev clio build" FontSize="11"
+                                <TextBlock Text="Development path is configured" FontSize="11"
                                            FontWeight="SemiBold" Foreground="#F5D9A8" />
                             </Border>
-                            <TextBlock Text="Point the ring at a dev clio build (clio.dll or clio.exe). Leave blank to use the normal clio."
+                            <TextBlock Text="Save a development clio build (clio.dll or clio.exe). Use the main runtime switch to choose Release or Development."
                                        FontSize="11" Foreground="#8B97A5" TextWrapping="Wrap" />
                             <TextBox x:Name="DevClioPathBox"
                                      Text="{Binding ClioSettings.DevClioPathInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
@@ -562,7 +626,7 @@
                                                  Text="{Binding ClioSettings.StatusMessage}"
                                                  FontSize="11" Foreground="#8FCF9A" TextWrapping="Wrap" />
                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
-                                <Button x:Name="DevClioClearButton" Classes="pill strong" Content="Use normal clio"
+                                <Button x:Name="DevClioClearButton" Classes="pill strong" Content="Clear development path"
                                         Command="{Binding ClioSettings.ClearDevClioOverrideCommand}" />
                                 <Button x:Name="DevClioSaveButton" Classes="pill primary" Content="Save"
                                         Command="{Binding ClioSettings.SaveDevClioOverrideCommand}" />
