@@ -34,6 +34,9 @@ public interface IClioIpcClient : IAsyncDisposable {
 	/// <summary>Raised when the child process exits unexpectedly (marks the client disconnected).</summary>
 	event EventHandler? Disconnected;
 
+	/// <summary>Raised whenever the negotiated handshake becomes available or is cleared.</summary>
+	event EventHandler? ConnectionChanged;
+
 	/// <summary>
 	/// Ensures the child is spawned and the <c>initialize</c> handshake has completed, returning the
 	/// negotiated <see cref="ClioServerHandshake"/>. Idempotent: a second call while already connected
