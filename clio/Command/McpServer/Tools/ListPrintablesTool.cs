@@ -17,15 +17,9 @@ namespace Clio.Command.McpServer.Tools;
 /// The probe is the companion of the request catalog's <c>valueSource</c> annotations.
 /// It is deliberately NOT resident in <c>tools/list</c> — the per-request documentation
 /// and the <c>when-to-use-requests</c> guide route agents to it, and it stays reachable
-/// through <c>clio-run</c>. Gated under the <c>requests-registry</c> feature because it is a
-/// feature-INTERNAL probe: MCP-only (no registered CLI verb, no <c>help</c>/<c>docs</c>), born with
-/// ENG-93187, with no purpose outside <c>crt.PrintablesRequest</c> wiring — so it gates with the
-/// feature it belongs to. This is NOT inconsistent with the ungated <c>get-process-signature</c>
-/// probe: that one is a pre-existing GA standalone CLI verb the feature merely REUSES, so it stays
-/// ungated (the differentiator is provenance, not that both are read-only DataService reads).
+/// through <c>clio-run</c>.
 /// </remarks>
 [McpServerToolType]
-[FeatureToggle("requests-registry")]
 public sealed class ListPrintablesTool(
 	ListPrintablesCommand command,
 	ILogger logger,

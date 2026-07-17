@@ -27,7 +27,6 @@ namespace Clio.Command.McpServer.Tools;
 /// at a local file via <c>CLIO_REQUEST_REGISTRY_LOCAL_FILE</c> (the Tier-0 override read before cache/CDN).
 /// </remarks>
 [McpServerToolType]
-[FeatureToggle("requests-registry")]
 public sealed class RequestInfoTool(
 	IRequestInfoCatalog catalog,
 	IComponentRegistryDocsClient docsClient,

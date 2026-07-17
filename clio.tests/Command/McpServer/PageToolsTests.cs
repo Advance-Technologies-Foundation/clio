@@ -398,9 +398,7 @@ public class PageToolsTests
 		description.Should().Contain("INSERTED-FIELD CONTRACT",
 			because: "update-page must keep the inserted-field contract summary, which is the authoritative write-time contract reused across tools");
 		description.Should().Contain("get-process-signature",
-			because: "update-page should route run-process button parameter-code resolution through the ungated get-process-signature probe, which is available on a default install");
-		description.Should().NotContain("get-request-info",
-			because: "the always-on update-page description must not name the requests-registry-gated get-request-info tool (a mandated dead-end while the feature is off); the feature-aware page-modification checklist surfaces the catalog only when the feature is on");
+			because: "update-page should route run-process button parameter-code resolution through the get-process-signature probe");
 	}
 
 	[Test]

@@ -8,28 +8,18 @@ namespace Clio.Command.McpServer.Resources;
 /// Provides canonical AI-facing guidance for mobile Freedom UI page creation and modification through clio MCP.
 /// </summary>
 [McpServerResourceType]
-public sealed class MobilePageGuidanceResource(IFeatureToggleService featureToggleService) {
+public sealed class MobilePageGuidanceResource {
 	private const string DocsScheme = "docs";
 	private const string ResourcePath = "mcp/guides/mobile-page-modification";
 	private const string ResourceUri = DocsScheme + "://" + ResourcePath;
 
 	/// <summary>
-	/// The requests-registry-gated pointer inside the <c>crt.RunBusinessProcessRequest</c> entry: it
-	/// routes the agent to the gated <c>get-request-info</c> catalog, so <see cref="BuildGuide"/> swaps
-	/// it for <see cref="RequestCatalogPointerOff"/> while the feature is off (the ungated
-	/// <c>get-process-signature</c> probe remains the resolution path either way).
+	/// Canonical guidance article accessible by name through <c>get-guidance</c>.
 	/// </summary>
-	private const string RequestCatalogPointerOn =
-		"FULL parameter contract is the request catalog (single source of truth): call\n"
-		+ "  get-request-info request-type=crt.RunBusinessProcessRequest and resolve the process with\n"
-		+ "  get-process-signature FIRST.";
-
-	/// <summary>The feature-off replacement for <see cref="RequestCatalogPointerOn"/>.</summary>
-	private const string RequestCatalogPointerOff =
-		"Resolve the process with get-process-signature FIRST.";
-
-	// Full (feature-on) article text; the feature-off variant is derived by BuildGuide.
-	private const string FullText = """
+	internal static readonly TextResourceContents Guide = new() {
+		Uri = ResourceUri,
+		MimeType = "text/plain",
+		Text = """
 		       clio MCP mobile page modification guide
 
 		       CALL THIS GUIDE BEFORE EDITING ANY MOBILE PAGE BODY
@@ -518,34 +508,13 @@ public sealed class MobilePageGuidanceResource(IFeatureToggleService featureTogg
 		       BlankMobilePageTemplate      — standalone bare Scaffold, no parent, no content
 
 		       `list-page-templates schema-type=mobile` returns 4 selectable templates (the abstract `BaseMobileTemplate` shown above is a parent only, not user-selectable). All of them already provide `crt.Scaffold` — do NOT insert another one.
-		       """;
-
-	/// <summary>
-	/// Builds the mobile page article. The <c>get-request-info</c> catalog pointer inside the
-	/// <c>crt.RunBusinessProcessRequest</c> entry is included only while the requests-registry feature is
-	/// enabled; otherwise the entry routes through the ungated <c>get-process-signature</c> probe only.
-	/// </summary>
-	/// <param name="includeRequestWiring">Whether to include the gated request-catalog pointer.</param>
-	internal static TextResourceContents BuildGuide(bool includeRequestWiring) => new() {
-		Uri = ResourceUri,
-		MimeType = "text/plain",
-		Text = includeRequestWiring
-			? GuidanceArticleText.NormalizeNewlines(FullText)
-			: GuidanceArticleText.ReplaceUnique(FullText, RequestCatalogPointerOn, RequestCatalogPointerOff)
+		       """
 	};
 
 	/// <summary>
-	/// Canonical guidance article accessible by name through <c>get-guidance</c> — the feature-off
-	/// baseline; feature-aware content is produced by <see cref="BuildGuide"/> at serve time.
-	/// </summary>
-	internal static readonly TextResourceContents Guide = BuildGuide(includeRequestWiring: false);
-
-	/// <summary>
-	/// Returns the canonical guidance article for mobile page creation and modification, with the
-	/// requests-registry-gated request-catalog pointer included only while that feature is enabled.
+	/// Returns the canonical guidance article for mobile page creation and modification.
 	/// </summary>
 	[McpServerResource(UriTemplate = ResourceUri, Name = "mobile-page-modification-guidance")]
 	[Description("Returns canonical MCP guidance for mobile Freedom UI page editing: plain JSON body format, validator and converter constraints, Scaffold merge patterns, component registry differences, and requests available on mobile.")]
-	public ResourceContents GetGuide() =>
-		BuildGuide(includeRequestWiring: featureToggleService.IsEnabled(typeof(WhenToUseRequestsGuidanceResource)));
+	public ResourceContents GetGuide() => Guide;
 }

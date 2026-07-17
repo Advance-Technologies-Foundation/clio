@@ -12,21 +12,18 @@ namespace Clio.Command.McpServer.Resources;
 /// each kept small so a single <c>get-guidance</c> response stays within the agent token limit.
 /// </summary>
 [McpServerResourceType]
-public sealed class PageModificationGuidanceResource(IFeatureToggleService featureToggleService) {
+public sealed class PageModificationGuidanceResource {
 	private const string DocsScheme = "docs";
 	private const string ResourcePath = "mcp/guides/page-modification";
 	private const string ResourceUri = DocsScheme + "://" + ResourcePath;
 
 	/// <summary>
-	/// Marker of the requests-registry-gated GATE row (the one mandating the `when-to-use-requests`
-	/// guide + the `get-request-info` catalog for run-process buttons). <see cref="BuildGuide"/> removes
-	/// that line for the feature-off baseline — an always-on guide must never hard-mandate a hidden
-	/// surface (a "you MUST call X" pointing at a guide that resolves as unknown is a mandated dead-end).
+	/// Canonical guidance article accessible by name through <c>get-guidance</c>.
 	/// </summary>
-	private const string RunProcessGateRowMarker = "| `when-to-use-requests` |";
-
-	// Full (feature-on) article text; the feature-off variant is derived by BuildGuide.
-	private const string FullText = """
+	internal static readonly TextResourceContents Guide = new() {
+		Uri = ResourceUri,
+		MimeType = "text/plain",
+		Text = """
 		       clio MCP page modification guide
 
 		       ENTRY guide for editing a Freedom UI page: run the pre-edit GATE checklist below, then read the ONE sub-guide matching your edit (each fits a single get-guidance response):
@@ -74,34 +71,13 @@ public sealed class PageModificationGuidanceResource(IFeatureToggleService featu
 		       STOP. Adding a related/child list (a "detail"), or making a list show only the records that belong to the current/open record ("filter by page data"), is NOT a single-component insert and NOT an inline `filter` on the list attribute. It is a master-detail composite — fetch its structure with `get-component-info composite="Expanded list"` plus a child `crt.EntityDataSource`, an `isCollection` attribute, and a declarative `modelConfig.dependencies` entry (`attributePath` = child foreign-key column, `relationPath` = master id path such as `PDS.Id`). Read `get-guidance` with name `related-list` before writing the body. Do NOT scope the list with a `crt.HandleViewModelInitRequest` handler, a seeded empty-Guid filter, or a `filterAttributes` entry — the platform applies the dependency filter for you and waits for the master to load.
 
 		       Canonical flow: `list-pages` -> `get-page` -> `get-component-info` for EVERY type you insert (verify it exists — see the COMPONENT-TYPE VERIFICATION step above) -> edit raw.body -> `update-page`/`sync-pages` (optionally `verify:true`). Do NOT resend the full raw.body. Full flow + response shapes: `page-modification-overview`.
-		       """;
+		       """
+	};
 
-/// <summary>
-/// Builds the page-modification article. The GATE row that mandates the requests-registry-gated
-/// <c>when-to-use-requests</c> guide + <c>get-request-info</c> catalog is included only while that
-/// feature is enabled, so the always-on guide never routes an agent to a hidden surface.
-/// </summary>
-/// <param name="includeRequestWiring">Whether to include the gated run-process GATE row.</param>
-internal static TextResourceContents BuildGuide(bool includeRequestWiring) => new() {
-	Uri = ResourceUri,
-	MimeType = "text/plain",
-	Text = includeRequestWiring
-		? GuidanceArticleText.NormalizeNewlines(FullText)
-		: GuidanceArticleText.RemoveUniqueLine(FullText, RunProcessGateRowMarker)
-};
-
-/// <summary>
-/// Canonical guidance article accessible by name through <c>get-guidance</c> — the feature-off
-/// baseline; feature-aware content is produced by <see cref="BuildGuide"/> at serve time.
-/// </summary>
-internal static readonly TextResourceContents Guide = BuildGuide(includeRequestWiring: false);
-
-/// <summary>
-/// Returns the canonical guidance article for Freedom UI page modification, with the
-/// requests-registry-gated GATE row included only while that feature is enabled.
-/// </summary>
-[McpServerResource(UriTemplate = ResourceUri, Name = "page-modification-guidance")]
-[Description("Returns the entry guidance for Freedom UI page modification: the mandatory pre-edit GATE checklist and canonical flow, routing the detailed mechanics to the page-modification-overview / -field-contract / -containers / -components sub-guides.")]
-public ResourceContents GetGuide() =>
-	BuildGuide(includeRequestWiring: featureToggleService.IsEnabled(typeof(WhenToUseRequestsGuidanceResource)));
+	/// <summary>
+	/// Returns the canonical guidance article for Freedom UI page modification.
+	/// </summary>
+	[McpServerResource(UriTemplate = ResourceUri, Name = "page-modification-guidance")]
+	[Description("Returns the entry guidance for Freedom UI page modification: the mandatory pre-edit GATE checklist and canonical flow, routing the detailed mechanics to the page-modification-overview / -field-contract / -containers / -components sub-guides.")]
+	public ResourceContents GetGuide() => Guide;
 }

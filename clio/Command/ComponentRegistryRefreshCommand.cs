@@ -34,7 +34,6 @@ public sealed class ComponentRegistryRefreshCommand {
 	private readonly IMobileComponentRegistryClient _mobileRegistryClient;
 	private readonly IRequestRegistryClient _requestRegistryClient;
 	private readonly IFileSystem _fileSystem;
-	private readonly IFeatureToggleService _featureToggleService;
 	private readonly ILogger _logger;
 
 	public ComponentRegistryRefreshCommand(
@@ -42,36 +41,26 @@ public sealed class ComponentRegistryRefreshCommand {
 		IMobileComponentRegistryClient mobileRegistryClient,
 		IRequestRegistryClient requestRegistryClient,
 		IFileSystem fileSystem,
-		IFeatureToggleService featureToggleService,
 		ILogger logger) {
 		_registryClient = registryClient ?? throw new ArgumentNullException(nameof(registryClient));
 		_mobileRegistryClient = mobileRegistryClient ?? throw new ArgumentNullException(nameof(mobileRegistryClient));
 		_requestRegistryClient = requestRegistryClient ?? throw new ArgumentNullException(nameof(requestRegistryClient));
 		_fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
-		_featureToggleService = featureToggleService ?? throw new ArgumentNullException(nameof(featureToggleService));
 		_logger = logger ?? throw new ArgumentNullException(nameof(logger));
 	}
 
 	public int Execute(ComponentRegistryRefreshOptions options) {
-		bool refreshRequests = _featureToggleService.IsFeatureEnabled("requests-registry");
-
-		IReadOnlyList<string> targets = ResolveTargets(options, refreshRequests);
+		IReadOnlyList<string> targets = ResolveTargets(options);
 		if (targets.Count == 0) {
 			_logger.WriteWarning("No versions to refresh. Pass --version <semver> or --all (after at least one previous run has populated the cache).");
 			return 0;
-		}
-
-		if (!refreshRequests) {
-			_logger.WriteInfo("component-registry flavor=requests status=skipped reason=requests-registry-disabled");
 		}
 
 		int failures = 0;
 		foreach (string version in targets) {
 			failures += RefreshFlavor("web", _registryClient, version);
 			failures += RefreshFlavor("mobile", _mobileRegistryClient, version);
-			if (refreshRequests) {
-				failures += RefreshFlavor("requests", _requestRegistryClient, version);
-			}
+			failures += RefreshFlavor("requests", _requestRegistryClient, version);
 		}
 
 		return failures == 0 ? 0 : 1;
@@ -97,7 +86,7 @@ public sealed class ComponentRegistryRefreshCommand {
 		return 0;
 	}
 
-	private IReadOnlyList<string> ResolveTargets(ComponentRegistryRefreshOptions options, bool includeRequestsCache) {
+	private IReadOnlyList<string> ResolveTargets(ComponentRegistryRefreshOptions options) {
 		if (!string.IsNullOrWhiteSpace(options.Version)) {
 			return [options.Version.Trim()];
 		}
@@ -108,17 +97,13 @@ public sealed class ComponentRegistryRefreshCommand {
 
 		string cacheDirectory = GetCacheDirectory();
 		string mobileCacheDirectory = Path.Combine(cacheDirectory, RegistryFlavor.Mobile.CacheSubdirectoryName);
+		string requestsCacheDirectory = Path.Combine(cacheDirectory, RegistryFlavor.Requests.CacheSubdirectoryName);
 
-		// Collect versions from every ACTIVE flavor's cache directory so --all covers them. The requests
-		// subdir is enumerated only when the requests flavor is actually refreshed (feature on), so an
-		// opted-out --all run never derives web/mobile targets from requests-only cache entries (item 7).
+		// Collect versions from every flavor's cache directory so --all covers them all.
 		List<string> versions = new();
 		CollectVersionsFrom(cacheDirectory, versions);
 		CollectVersionsFrom(mobileCacheDirectory, versions);
-		if (includeRequestsCache) {
-			string requestsCacheDirectory = Path.Combine(cacheDirectory, RegistryFlavor.Requests.CacheSubdirectoryName);
-			CollectVersionsFrom(requestsCacheDirectory, versions);
-		}
+		CollectVersionsFrom(requestsCacheDirectory, versions);
 
 		if (versions.Count == 0) {
 			_logger.WriteInfo($"Cache directory '{cacheDirectory}' does not exist yet; nothing to refresh in --all mode.");

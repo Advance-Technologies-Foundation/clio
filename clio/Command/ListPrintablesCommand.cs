@@ -16,7 +16,6 @@ namespace Clio.Command;
 /// <c>list-printables</c> probe tool. OOTB button-action requests initiative (ENG-93187).
 /// </summary>
 [Verb("list-printables", Hidden = true, HelpText = "List MS Word printables registered in a Creatio environment (MCP probe surface)")]
-[FeatureToggle("requests-registry")]
 public class ListPrintablesOptions : RemoteCommandOptions {
 	/// <summary>
 	/// Gets or sets the optional entity schema name filter (e.g. <c>Contact</c>).

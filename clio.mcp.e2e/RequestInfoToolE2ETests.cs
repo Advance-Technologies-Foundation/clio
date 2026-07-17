@@ -12,13 +12,13 @@ namespace Clio.Mcp.E2E;
 
 /// <summary>
 /// End-to-end tests for the get-request-info MCP tool and its companions (the
-/// when-to-use-requests guide and the list-printables probe) with the whole surface ENABLED.
-/// The fixture starts the real clio MCP server with an isolated <c>CLIO_HOME</c> whose feature
-/// set turns on <c>requests-registry</c> — the gate the request-catalog surface ships behind —
-/// so these scenarios exercise the enabled behavior. The OFF (gated-hidden) behavior is covered
-/// separately by <see cref="RequestRegistryGatingE2ETests"/>. It also points the requests-flavor
-/// registry at a local fixture file (<c>CLIO_REQUEST_REGISTRY_LOCAL_FILE</c>, the Tier-0 override
-/// read before cache/CDN) so every scenario is offline-deterministic.
+/// when-to-use-requests guide and the list-printables probe) — the request-catalog surface
+/// that ships unconditionally on every default install. The fixture starts the real clio MCP
+/// server with an isolated <c>CLIO_HOME</c> (hermetic settings: a single known environment,
+/// autoupdate off, and a fixture-owned directory that also hosts the registry fixture file)
+/// and points the requests-flavor registry at that local file
+/// (<c>CLIO_REQUEST_REGISTRY_LOCAL_FILE</c>, the Tier-0 override read before cache/CDN)
+/// so every scenario is offline-deterministic.
 /// </summary>
 [TestFixture]
 [Category("McpE2E.NoEnvironment")]
@@ -28,12 +28,12 @@ namespace Clio.Mcp.E2E;
 public sealed class RequestInfoToolE2ETests : McpContractFixtureBase {
 	private const string ToolName = RequestInfoTool.ToolName;
 
-	// The four always-on, feature-AWARE guidance resources whose direct resources/read path item 14 pins
-	// in both feature states (their content is spliced by the ctor-injected IFeatureToggleService).
-	internal const string RoutingUri = "docs://mcp/guides/routing";
-	internal const string PageModificationUri = "docs://mcp/guides/page-modification";
-	internal const string MobilePageUri = "docs://mcp/guides/mobile-page-modification";
-	internal const string PageSchemaHandlersUri = "docs://mcp/guides/page-schema-handlers";
+	// The four always-on guidance resources whose direct resources/read path is pinned below —
+	// each must carry its request-catalog pointers.
+	private const string RoutingUri = "docs://mcp/guides/routing";
+	private const string PageModificationUri = "docs://mcp/guides/page-modification";
+	private const string MobilePageUri = "docs://mcp/guides/mobile-page-modification";
+	private const string PageSchemaHandlersUri = "docs://mcp/guides/page-schema-handlers";
 
 	/// <summary>
 	/// Offline registry fixture: the pilot parameterless request (no docs, so the detail
@@ -79,7 +79,6 @@ public sealed class RequestInfoToolE2ETests : McpContractFixtureBase {
 			{
 			  "ActiveEnvironmentKey": "dev",
 			  "Autoupdate": false,
-			  "Features": { "requests-registry": true },
 			  "Environments": {
 			    "dev": {
 			      "Uri": "http://localhost",
@@ -100,11 +99,11 @@ public sealed class RequestInfoToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
-	[Description("get-request-info is registered as a resident tool and reachable on the MCP surface once the requests-registry feature is enabled.")]
+	[Description("get-request-info is registered as a resident core tool and reachable on the MCP surface of a default install.")]
 	[AllureTag(ToolName)]
-	[AllureName("get-request-info is reachable when requests-registry is enabled")]
-	[AllureDescription("Starts the real clio MCP server with an isolated CLIO_HOME that enables requests-registry and verifies the tool is reachable.")]
-	public async Task RequestInfoTool_Should_Be_Reachable_When_RequestsRegistry_Enabled() {
+	[AllureName("get-request-info is reachable on the default MCP surface")]
+	[AllureDescription("Starts the real clio MCP server and verifies get-request-info is reachable.")]
+	public async Task RequestInfoTool_Should_Be_Reachable() {
 		// Arrange
 		await using var context = Arrange();
 
@@ -114,15 +113,15 @@ public sealed class RequestInfoToolE2ETests : McpContractFixtureBase {
 
 		// Assert
 		toolNames.Should().Contain(ToolName,
-			because: "the request catalog is a core surface gated behind requests-registry and must register once the feature is enabled");
+			because: "the request catalog is a resident core tool and must always register on the MCP surface");
 	}
 
 	[Test]
-	[Description("The list-printables probe is reachable on the lazy surface (non-resident, like get-process-signature) once the requests-registry feature is enabled — the catalog's valueSource annotations point at it.")]
+	[Description("The list-printables probe is reachable on the lazy surface (non-resident, like get-process-signature) — the catalog's valueSource annotations point at it.")]
 	[AllureTag(ListPrintablesTool.ToolName)]
-	[AllureName("list-printables probe is reachable when requests-registry is enabled")]
-	[AllureDescription("Verifies the environment probe companion of the request catalog registers on the lazy MCP surface once requests-registry is enabled.")]
-	public async Task ListPrintablesProbe_Should_Be_Reachable_When_RequestsRegistry_Enabled() {
+	[AllureName("list-printables probe is reachable on the lazy surface")]
+	[AllureDescription("Verifies the environment probe companion of the request catalog registers on the lazy MCP surface of a default install.")]
+	public async Task ListPrintablesProbe_Should_Be_Reachable() {
 		// Arrange
 		await using var context = Arrange();
 
@@ -132,14 +131,14 @@ public sealed class RequestInfoToolE2ETests : McpContractFixtureBase {
 
 		// Assert
 		toolNames.Should().Contain(ListPrintablesTool.ToolName,
-			because: "the probe is gated behind requests-registry and must be reachable through the lazy surface once the feature is enabled");
+			because: "the probe is non-resident by design and must be reachable through the lazy clio-run surface");
 	}
 
 	[Test]
 	[Description("Invokes list-printables over the real MCP wire with an unregistered environment and verifies a structured failure envelope whose error identifies the environment — pinning the args-record wrapping and the environment-name binding end-to-end. The entity-name filter is passed to exercise its binding path (its filtering semantics need a live stand and are pinned by unit tests instead). Mirrors the stand-free get-process-signature invalid-environment contract test.")]
 	[AllureTag(ListPrintablesTool.ToolName)]
 	[AllureName("list-printables reports invalid environment failures over the wire")]
-	[AllureDescription("Calls list-printables with an unknown environment name against the requests-registry-enabled server and verifies the structured Success=false failure identifies the unregistered environment, proving the environment-name binding survived the wire.")]
+	[AllureDescription("Calls list-printables with an unknown environment name and verifies the structured Success=false failure identifies the unregistered environment, proving the environment-name binding survived the wire.")]
 	public async Task ListPrintables_Should_Report_Invalid_Environment_Failure() {
 		// Arrange — an environment name that is guaranteed not registered, so command resolution fails
 		// deterministically without any reachable stand (the get-process-signature NoEnvironment pattern).
@@ -172,7 +171,7 @@ public sealed class RequestInfoToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
-	[Description("Drives list-printables over the real mcp-server (requests-registry enabled) against an unresolvable target so the command-produced TRANSPORT failure (ListPrintablesCommand.TryGetPrintables catch) crosses the MCP boundary. The structured failure envelope must carry no scheme-qualified request URI — the tool redacts the raw exception message at the boundary. The exact input->[redacted-uri] transform is unit-pinned in ListPrintablesToolTests; this test proves the redaction is wired on the real command-produced-failure dispatch path, not only on the resolution-failure path.")]
+	[Description("Drives list-printables over the real mcp-server against an unresolvable target so the command-produced TRANSPORT failure (ListPrintablesCommand.TryGetPrintables catch) crosses the MCP boundary. The structured failure envelope must carry no scheme-qualified request URI — the tool redacts the raw exception message at the boundary. The exact input->[redacted-uri] transform is unit-pinned in ListPrintablesToolTests; this test proves the redaction is wired on the real command-produced-failure dispatch path, not only on the resolution-failure path.")]
 	[AllureTag(ListPrintablesTool.ToolName)]
 	[AllureName("list-printables redacts a transport-failure error over the wire")]
 	[AllureDescription("Calls list-printables with a direct uri pointing at a reserved .invalid host (guaranteed unresolvable on every machine) and verifies the structured failure envelope leaks no scheme-qualified URI.")]
@@ -329,11 +328,11 @@ public sealed class RequestInfoToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
-	[Description("The when-to-use-requests guide is advertised and resolves through get-guidance once requests-registry is enabled, and the feature-aware routing map carries the request-wiring row — the discovery chain is deterministic while the feature is on.")]
+	[Description("The when-to-use-requests guide is advertised and resolves through get-guidance, and the routing map carries the request-wiring row — the request-catalog discovery chain is always available on a default install.")]
 	[AllureTag(ToolName)]
-	[AllureName("when-to-use-requests guidance and routing row resolve when requests-registry is enabled")]
-	[AllureDescription("Calls get-guidance for when-to-use-requests and the routing map against a server with requests-registry enabled and verifies both carry the request-catalog discovery chain.")]
-	public async Task WhenToUseRequestsGuide_And_RoutingRow_Should_Resolve_When_RequestsRegistry_Enabled() {
+	[AllureName("when-to-use-requests guidance and routing row resolve on the default surface")]
+	[AllureDescription("Calls get-guidance for when-to-use-requests and the routing map and verifies both carry the request-catalog discovery chain.")]
+	public async Task WhenToUseRequestsGuide_And_RoutingRow_Should_Resolve() {
 		// Arrange
 		await using var context = Arrange();
 
@@ -349,7 +348,7 @@ public sealed class RequestInfoToolE2ETests : McpContractFixtureBase {
 
 		// Assert
 		guide.Success.Should().BeTrue(
-			because: "the guide is gated behind requests-registry and must resolve once the feature is enabled");
+			because: "when-to-use-requests is a registered guidance name and must always resolve");
 		guide.Article.Should().NotBeNull(
 			because: "successful guidance lookups return the resolved article over the wire");
 		guide.Article!.Uri.Should().Be("docs://mcp/guides/when-to-use-requests",
@@ -359,15 +358,15 @@ public sealed class RequestInfoToolE2ETests : McpContractFixtureBase {
 		routing.Success.Should().BeTrue(
 			because: "the routing map is a core guide");
 		routing.Article!.Text.Should().Contain("get-request-info",
-			because: "the feature-aware routing map must route button/menu request wiring to the catalog tool once requests-registry is enabled");
+			because: "the routing map must route button/menu request wiring to the catalog tool");
 	}
 
 	[Test]
-	[Description("The four feature-aware guidance resources, read over the DIRECT resources/read MCP path, carry their request-catalog pointers once requests-registry is enabled - pinning that the ctor-injected IFeatureToggleService gates content on resources/read, not only on get-guidance.")]
+	[Description("The four always-on guidance resources, read over the DIRECT resources/read MCP path, carry their request-catalog pointers - pinning that the pointers are served on resources/read, not only through get-guidance.")]
 	[AllureTag(ToolName)]
-	[AllureName("feature-aware guides include request-catalog pointers over resources/read when requests-registry is enabled")]
-	[AllureDescription("Reads routing, page-modification, mobile-page-modification and page-schema-handlers over resources/read against a requests-registry-enabled server and verifies each carries its request-catalog pointers.")]
-	public async Task FeatureAwareGuidanceResources_Should_Include_RequestCatalog_Pointers_Over_ResourcesRead_When_Enabled() {
+	[AllureName("guides include request-catalog pointers over resources/read")]
+	[AllureDescription("Reads routing, page-modification, mobile-page-modification and page-schema-handlers over resources/read and verifies each carries its request-catalog pointers.")]
+	public async Task GuidanceResources_Should_Include_RequestCatalog_Pointers_Over_ResourcesRead() {
 		// Arrange
 		await using var context = Arrange();
 		CancellationToken token = context.CancellationTokenSource.Token;
@@ -375,25 +374,25 @@ public sealed class RequestInfoToolE2ETests : McpContractFixtureBase {
 		// Act + Assert
 		TextResourceContents routing = await ReadGuideAsync(context.Session, RoutingUri, token);
 		routing.Text.Should().Contain("get-request-info",
-			because: "the feature-on routing map advertises the request catalog over resources/read");
+			because: "the routing map advertises the request catalog over resources/read");
 		routing.Text.Should().Contain("when-to-use-requests",
-			because: "the feature-on routing map advertises the request-wiring guide over resources/read");
+			because: "the routing map advertises the request-wiring guide over resources/read");
 
 		TextResourceContents page = await ReadGuideAsync(context.Session, PageModificationUri, token);
 		page.Text.Should().Contain("when-to-use-requests",
-			because: "the feature-on page-modification GATE row mandates the request-wiring guide over resources/read");
+			because: "the page-modification GATE row mandates the request-wiring guide over resources/read");
 		page.Text.Should().Contain("get-request-info",
-			because: "the feature-on run-process GATE row names the request catalog over resources/read");
+			because: "the run-process GATE row names the request catalog over resources/read");
 
 		TextResourceContents mobile = await ReadGuideAsync(context.Session, MobilePageUri, token);
 		mobile.Text.Should().Contain("get-request-info",
-			because: "the feature-on mobile run-process entry points at the request catalog over resources/read");
+			because: "the mobile run-process entry points at the request catalog over resources/read");
 
 		TextResourceContents handlers = await ReadGuideAsync(context.Session, PageSchemaHandlersUri, token);
 		handlers.Text.Should().Contain("get-request-info",
-			because: "the feature-on handler parameter catalog names the request catalog over resources/read");
+			because: "the handler parameter catalog names the request catalog over resources/read");
 		handlers.Text.Should().Contain("when-to-use-requests",
-			because: "the feature-on handler catalog intro points at the request-wiring guide over resources/read");
+			because: "the handler catalog intro points at the request-wiring guide over resources/read");
 	}
 
 	private static async Task<RequestInfoResponse> CallRequestInfoAsync(
@@ -412,7 +411,7 @@ public sealed class RequestInfoToolE2ETests : McpContractFixtureBase {
 		return EntitySchemaStructuredResultParser.Extract<RequestInfoResponse>(callResult);
 	}
 
-	internal static async Task<GuidanceGetResponse> CallGuidanceAsync(
+	private static async Task<GuidanceGetResponse> CallGuidanceAsync(
 		McpServerSession session,
 		CancellationToken cancellationToken,
 		IReadOnlyDictionary<string, object?> arguments) {
@@ -427,10 +426,9 @@ public sealed class RequestInfoToolE2ETests : McpContractFixtureBase {
 
 	/// <summary>
 	/// Reads one guidance resource over the raw resources/read MCP path (not the lazy tools/list -> clio-run
-	/// route) and returns its single plain-text article, asserting the URI round-trips. Shared with
-	/// <see cref="RequestRegistryGatingE2ETests"/> so the ON and OFF resources/read tests use one oracle.
+	/// route) and returns its single plain-text article, asserting the URI round-trips.
 	/// </summary>
-	internal static async Task<TextResourceContents> ReadGuideAsync(
+	private static async Task<TextResourceContents> ReadGuideAsync(
 		McpServerSession session,
 		string uri,
 		CancellationToken cancellationToken) {

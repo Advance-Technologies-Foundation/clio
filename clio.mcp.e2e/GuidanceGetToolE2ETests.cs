@@ -775,7 +775,7 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 	[Test]
 	[AllureTag(GuidanceGetTool.ToolName)]
 	[AllureName("get-guidance hides process-modeling while the process-designer feature is off and treats the removed run-process-button guide as unknown")]
-	[Description("Verifies that with the default (process-designer disabled) configuration the always-on get-guidance tool treats process-modeling as an unknown guide and omits it from availableGuides, while ungated guides stay advertised. Also pins the ENG-93187 removal of the standalone run-process-button guide (removed with no alias, so it resolves as unknown and is no longer advertised). The requests-registry successor surface (when-to-use-requests) has its own gating coverage in RequestRegistryGatingE2ETests.")]
+	[Description("Verifies that with the default (process-designer disabled) configuration the always-on get-guidance tool treats process-modeling as an unknown guide and omits it from availableGuides, while ungated guides stay advertised. Also pins the ENG-93187 removal of the standalone run-process-button guide (removed with no alias, so it resolves as unknown and is no longer advertised); its successor guide (when-to-use-requests) ships always-on and is covered by RequestInfoToolE2ETests.")]
 	public async Task GuidanceGet_Should_Hide_ProcessModeling_And_Treat_RemovedRunProcessButton_As_Unknown_When_Feature_Disabled() {
 		// Arrange
 		await using var context = Arrange(TimeSpan.FromMinutes(3));

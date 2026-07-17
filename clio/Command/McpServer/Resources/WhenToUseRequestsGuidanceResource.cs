@@ -11,7 +11,6 @@ namespace Clio.Command.McpServer.Resources;
 /// parameters from memory. OOTB button-action requests initiative (ENG-93187).
 /// </summary>
 [McpServerResourceType]
-[FeatureToggle("requests-registry")]
 public sealed class WhenToUseRequestsGuidanceResource {
 	private const string DocsScheme = "docs";
 	private const string ResourcePath = "mcp/guides/when-to-use-requests";

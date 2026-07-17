@@ -135,10 +135,8 @@ To force-refresh the local cache without waiting for the 5min TTL, use the
 - `--version 8.2.1` → refresh that GA file
 - `--all` → refresh every per-version file currently in the cache directory
 
-Exit code is 0 only when every requested refresh got a 2xx from the CDN. The requests flavor
-participates in this accounting only while the `requests-registry` feature is enabled; when it is
-off, `component-registry-refresh` skips the requests flavor so an unpublished `RequestRegistry.json`
-never fails the command for a user who did not opt in.
+Exit code is 0 only when every requested refresh got a 2xx from the CDN, across all three
+flavors (web, mobile, requests).
 
 ### Long-form documentation (`references.docs[]`)
 
@@ -331,44 +329,18 @@ Consumer rules that differ from the component catalog — do not "unify" them aw
   `Tools/ComponentRegistryDocsPath.cs` validator accepts exactly the `docs/` and
   `request-docs/` prefixes; the docs pipeline (`ComponentRegistryDocsClient` +
   `ComponentDocumentationLoader`) is reused verbatim.
-- **The surface is gated behind the `requests-registry` feature**
-  Every request-surface class carries `[FeatureToggle("requests-registry")]` so the
-  whole surface hides together while the feature is off: `RequestInfoTool` (still in
-  `McpCoreToolProfile.CoreToolTypes`, so it is resident in `tools/list` when the feature is ON and
-  absent when OFF — the "gated experimental core tool" pattern in `McpProfileGatingTests`), the
-  `ListPrintablesTool` probe, and the `WhenToUseRequestsGuidanceResource` guide (whose `GuidanceCatalog`
-  entry carries `featureGateType: typeof(WhenToUseRequestsGuidanceResource)`). The `RoutingGuidanceResource`
-  map is feature-AWARE, not simply row-less: its request-wiring rows are emitted only while the feature is
-  on, via `RoutingGuidanceResource.BuildGuide(bool)` — consumed by the `GuidanceCatalog` dynamic
-  `ArticleBuilder` (the `get-guidance` path) and by the constructor-injected `IFeatureToggleService` (the
-  direct MCP-resource path) — so the map never routes an agent to a hidden guide/tool but still surfaces the
-  rows once the feature is enabled. The same content-gating applies to the three always-on page guides that
-  point at the request surface: `PageModificationGuidanceResource` serves its run-process GATE row (the one
-  MANDATING `when-to-use-requests` + `get-request-info`), `MobilePageGuidanceResource` serves its
-  request-catalog pointer, and `PageSchemaHandlersGuidanceResource` serves its "Standard handler parameter
-  catalog" get-request-info / when-to-use-requests pointers only while the feature is
-  on, via their own `BuildGuide(bool)` + per-entry
-  `GuidanceCatalog` `ArticleBuilder` + ctor-injected `IFeatureToggleService` — an always-on guide must never
-  hard-mandate a hidden surface (a "you MUST call X" whose X resolves as unknown is a mandated dead-end). The
-  cross-cutting `AllUngatedGuidanceArticles_Should_Not_Name_GatedRequestSurface_When_RequestsRegistryDisabled`
-  test enumerates every ungated `GuidanceCatalog` entry and fails if any feature-off article names the gated
-  surface, so a future always-on guide that forgets the `BuildGuide(bool)` conversion is caught automatically.
-  All anchored splicing goes through `GuidanceArticleText` (`ReplaceUnique` / `RemoveUniqueLine`), which
-  throws on anchor drift so a stale anchor fails every unit run loudly instead of silently dropping the
-  gated fragment. `ToolContractGetTool` still carries a curated `BuildRequestInfo` contract that names
-  `get-request-info` as the authoritative contract; that ONE DISCOVERY surface is deliberately NOT re-gated —
-  it is the known get-tool-contract / clio-run-suggestion discovery-vs-dispatch leak (a gated-off tool stays
-  *knowable* via the ungated schema catalog but is not *runnable*; tracked separately, do not "fix" it by
-  gating the shared catalog). Unlike a curated discovery listing, a prescriptive always-on guide that mandates
-  the gated tool IS a mandated dead-end, which is why the `page-schema-handlers` table is now feature-aware
-  (item 3) rather than treated as a discovery-leak exception. Enable
-  the feature to test: `clio experimental --name requests-registry --enable`. The guide owns the
-  request-selection decision rules and the catalog discipline; handler mechanics stay in
-  `page-schema-handlers` (never duplicate). There is deliberately NO CLI twin verb;
-  `component-registry-refresh` covers the requests cache flavor alongside web and mobile, but only while the
-  `requests-registry` feature is enabled (it skips the requests flavor when the feature is off, so an
-  opted-out user is never failed by an unpublished requests payload). Offline iteration
-  goes through `CLIO_REQUEST_REGISTRY_LOCAL_FILE`.
+- **The surface ships enabled on every install.** `RequestInfoTool` (`get-request-info`) is a
+  resident core tool in `McpCoreToolProfile.CoreToolTypes`; the `ListPrintablesTool` probe is
+  non-resident and dispatched through `clio-run`; the `WhenToUseRequestsGuidanceResource` guide is a
+  plain `GuidanceCatalog` entry, and the routing map plus the three always-on page guides
+  (`PageModificationGuidanceResource` with its run-process GATE row, `MobilePageGuidanceResource`
+  with its request-catalog pointer, `PageSchemaHandlersGuidanceResource` with its "Standard handler
+  parameter catalog" pointers) reference the request surface as static article content.
+  `ToolContractGetTool` carries the curated `BuildRequestInfo` contract that names `get-request-info`
+  as the authoritative contract. The `when-to-use-requests` guide owns the request-selection decision
+  rules and the catalog discipline; handler mechanics stay in `page-schema-handlers` (never duplicate).
+  There is deliberately NO CLI twin verb; `component-registry-refresh` covers the requests cache
+  flavor alongside web and mobile. Offline iteration goes through `CLIO_REQUEST_REGISTRY_LOCAL_FILE`.
 - **Snapshot guard is symmetric**: `RequestRegistrySnapshotTests` pins
   `clio.tests/Command/McpServer/Fixtures/RequestRegistry.live-snapshot.json`
   (the live academy CDN payload — the producer now publishes it; refresh whenever a new
@@ -387,16 +359,12 @@ Consumer rules that differ from the component catalog — do not "unify" them aw
   the per-request docs and the `when-to-use-requests` guide route agents to them. The
   agent-facing hard rule (carried by the guide and every probe description): fill such
   values ONLY from the probe result; never invent them; on empty/ambiguous results ask
-  the user. NOTE the two probes differ on gating, and the differentiator is provenance, NOT what
-  they read (both are read-only built-in-DataService reads): `list-printables` is gated under
-  `requests-registry` because it is a feature-INTERNAL probe born with ENG-93187 — MCP-only (no
-  registered CLI verb, no `help`/`docs`), with no purpose outside crt.PrintablesRequest wiring — so it
-  gates with the feature it belongs to. `get-process-signature` stays UNGATED because it is a
-  pre-existing GA command the feature merely REUSES: a registered, documented standalone CLI verb
-  (`Program.cs` verb table + dispatch, aliases `gps`, its own `help`/`docs`), so gating it would hide a
-  shipped CLI command, and the feature-off guide variants deliberately route to it as the still-available
-  resolution path. Rule of thumb: gate feature-internal probes with their feature; leave a reused,
-  independently-shipped GA tool ungated.
+  the user. NOTE the two probes differ on provenance, NOT on what they read (both are read-only
+  built-in-DataService reads): `list-printables` was born with ENG-93187 as an MCP-only probe (no
+  registered CLI verb, no `help`/`docs`, no purpose outside crt.PrintablesRequest wiring), while
+  `get-process-signature` is a pre-existing GA command the request catalog merely REUSES: a
+  registered, documented standalone CLI verb (`Program.cs` verb table + dispatch, aliases `gps`,
+  its own `help`/`docs`).
 
 ### Snapshot guard against silent data loss
 

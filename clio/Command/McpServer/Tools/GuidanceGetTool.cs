@@ -8,7 +8,6 @@ using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command.McpServer.Resources;
-using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
@@ -77,18 +76,13 @@ public sealed class GuidanceGetTool {
 				});
 			}
 			if (GuidanceCatalog.TryGet(effectiveName, _featureToggleService, out GuidanceCatalogEntry entry)) {
-				// A dynamic entry (the routing map) builds its content from the current feature-toggle state so
-				// it never advertises a gated-off guide; a static entry serves its baked-in article verbatim.
-				TextResourceContents article = entry.ArticleBuilder is not null
-					? entry.ArticleBuilder(_featureToggleService)
-					: entry.Article;
 				return Task.FromResult(new GuidanceGetResponse {
 					Success = true,
 					Hint = aliasHint,
 					Article = new GuidanceArticle {
 						Name = entry.Name,
-						Uri = article.Uri,
-						Text = article.Text
+						Uri = entry.Article.Uri,
+						Text = entry.Article.Text
 					}
 				});
 			}

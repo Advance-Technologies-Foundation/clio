@@ -23,13 +23,9 @@ sidecar (ETag, Last-Modified, SHA-256). Failed downloads do not poison the
 cache — the previous entry stays as-is.
 
 Every targeted version is refreshed for the web (`ComponentRegistry.json`, cache
-root) and mobile (`MobileComponentRegistry.json`, `mobile/` subdirectory) flavors.
-The requests flavor (`RequestRegistry.json`, `requests/` subdirectory, the Freedom
-UI request catalog consumed by `get-request-info`) is refreshed only when the
-experimental `requests-registry` feature is enabled
-(`clio experimental --name requests-registry --enable`). While that feature is off
-the requests flavor is skipped, so an unpublished requests payload never fails the
-command for users who do not use the feature.
+root), mobile (`MobileComponentRegistry.json`, `mobile/` subdirectory), and requests
+(`RequestRegistry.json`, `requests/` subdirectory, the Freedom UI request catalog
+consumed by `get-request-info`) flavors.
 
 The CDN base URL defaults to
 `https://academy.creatio.com/api/mcp/` and can be overridden with the
@@ -107,7 +103,3 @@ clio component-registry-refresh --all
 |------|---------|
 | 0    | Every requested refresh returned a 2xx response from the CDN. |
 | 1    | At least one CDN call failed (5xx, network error, exception, or unavailable endpoint). |
-
-The requests flavor participates in this exit-code accounting only while the
-`requests-registry` feature is enabled; when it is off the flavor is skipped, so a
-missing requests payload cannot affect the exit code.
