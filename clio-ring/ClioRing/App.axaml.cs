@@ -90,7 +90,10 @@ public partial class App : Application {
 			vm.SetClioUpdateLifetimeToken(_updateMonitorCancellation.Token);
 			vm.PropertyChanged += (_, args) => OnRingPropertyChanged(vm, args);
 			_ = MonitorClioUpdatesAsync(vm, _updateMonitorCancellation.Token);
-			desktop.Exit += (_, _) => _updateMonitorCancellation.Cancel();
+			desktop.Exit += (_, _) => {
+				_updateMonitorCancellation.Cancel();
+				_updateMonitorCancellation.Dispose();
+			};
 			SingleInstance.StartShowListener(
 				() => Dispatcher.UIThread.Post(() => _window?.ShowRing()));
 		}
@@ -189,7 +192,7 @@ public partial class App : Application {
 		}
 	}
 
-	private async Task MonitorClioUpdatesAsync(RingViewModel vm, CancellationToken cancellationToken) {
+	private static async Task MonitorClioUpdatesAsync(RingViewModel vm, CancellationToken cancellationToken) {
 		try {
 			while (!cancellationToken.IsCancellationRequested) {
 				await vm.CheckForClioUpdateAsync(cancellationToken);
@@ -222,7 +225,7 @@ public partial class App : Application {
 			? $"clio update available: {vm.InstalledClioVersion} -> {vm.AvailableClioVersion}\n{_baseTrayTooltip}"
 			: _baseTrayTooltip;
 		if (vm.IsClioUpdateAvailable && _services?.GetRequiredService<IClioUpdateStateStore>()
-			.TryMarkNotified(vm.AvailableClioVersion) == true) {
+			.TryMarkNotified(vm.AvailableClioVersion) is true) {
 			ShowClioUpdateDesktopNotice(vm);
 		}
 	}
