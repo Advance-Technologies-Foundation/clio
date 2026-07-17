@@ -6383,3 +6383,10 @@ Decision: Read TeamCity's existing `ApplicationPoolName` through its configurati
 Discovery: TeamCity exposes the sandbox as `http://<agent>:88/<pool>` while the agent-local IIS application can be a root app behind different bindings; public URL inference alone cannot identify the pool safely.
 Files: clio.mcp.e2e/Support/Configuration/TeamCityBuildParameterResolver.cs, clio.mcp.e2e/Support/Configuration/IisApplicationPoolResolver.cs, clio.mcp.e2e/UninstallCreatioWarningE2ETests.cs, clio.mcp.e2e/UninstallWarningIisApplicationPoolResolverE2ETests.cs, spec/uninstall-warning-e2e-uri-resolution/
 Impact: The destructive warning E2E supports TeamCity routing without trusting an unrelated/shared/missing-site pool; 17 resolver tests pass on net8/net10 and the exact locked-profile test passed against a disposable 10.0.0.802 deployment with complete cleanup.
+
+## 2026-07-16 15:08 – Treat shared TeamCity pool as a non-applicable warning scenario
+Context: TeamCity build 15736978 resolved the configured sandbox pool but found two live IIS application assignments.
+Decision: Keep pool resolution fail-closed and report the locked-profile test ignored for a shared pool because production uninstall intentionally preserves shared pools and skips profile deletion.
+Discovery: A disposable 10.0.0.802 site with a synthetic same-site `/0` application reproduced the two-assignment skip; removing only that application let the exact warning E2E pass and uninstall cleanly.
+Files: clio.mcp.e2e/Support/Configuration/IisApplicationPoolResolver.cs, clio.mcp.e2e/UninstallCreatioWarningE2ETests.cs, clio.mcp.e2e/UninstallWarningIisApplicationPoolResolverE2ETests.cs, spec/uninstall-warning-e2e-uri-resolution/
+Impact: TeamCity no longer fails a warning-path test on a topology where the production behavior correctly cannot delete the pool profile, while exclusive disposable pools retain full warning-contract coverage.

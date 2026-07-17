@@ -379,13 +379,11 @@ public class BindingsModule {
 		services.AddTransient<IEntityBusinessRuleSchemaProvider, EntityBusinessRuleSchemaProvider>();
 		services.AddTransient<IEntityBusinessRuleAttributeProvider, EntityBusinessRuleAttributeProvider>();
 		services.AddTransient<IEntityBusinessRuleService, EntityBusinessRuleService>();
-		services.AddTransient<CreateEntityBusinessRuleCommand>();
 		services.AddTransient<IPageBusinessRuleSchemaProvider, PageBusinessRuleSchemaProvider>();
 		services.AddTransient<IPageBusinessRuleAttributeProvider, PageBusinessRuleAttributeProvider>();
 		services.AddTransient<IPageBusinessRuleElementProvider, PageBusinessRuleElementProvider>();
 		services.AddTransient<IPageBusinessRuleValidator, PageBusinessRuleValidator>();
 		services.AddTransient<IPageBusinessRuleService, PageBusinessRuleService>();
-		services.AddTransient<CreatePageBusinessRuleCommand>();
 		services.AddTransient<IFeatureToggleService, FeatureToggleService>();
 		services.AddTransient<IApplicationSectionDeleteService, ApplicationSectionDeleteService>();
 		services.AddTransient<DeleteAppSectionCommand>();
@@ -481,6 +479,12 @@ public class BindingsModule {
 		services.AddTransient<ApplicationSectionUpdateTool>();
 		services.AddTransient<CreateEntityBusinessRuleTool>();
 		services.AddTransient<CreatePageBusinessRuleTool>();
+		services.AddTransient<ReadEntityBusinessRuleTool>();
+		services.AddTransient<ReadPageBusinessRuleTool>();
+		services.AddTransient<UpdateEntityBusinessRuleTool>();
+		services.AddTransient<UpdatePageBusinessRuleTool>();
+		services.AddTransient<DeleteEntityBusinessRuleTool>();
+		services.AddTransient<DeletePageBusinessRuleTool>();
 		services.AddTransient<ApplicationSectionDeleteTool>();
 		services.AddTransient<ApplicationSectionGetListTool>();
 		services.AddTransient<ApplicationDeleteTool>();
@@ -802,6 +806,7 @@ public class BindingsModule {
 		services.AddTransient<ModifyEntitySchemaColumnCommand>();
 		services.AddTransient<GetEntitySchemaColumnPropertiesCommand>();
 		services.AddTransient<GetEntitySchemaPropertiesCommand>();
+		services.AddTransient<SetEntitySchemaPropertiesCommand>();
 		services.AddTransient<FindEntitySchemaCommand>();
 		services.AddTransient<FindAppCommand>();
 		services.AddTransient<CreateUserTaskCommand>();

@@ -258,6 +258,7 @@ public sealed class UpdateEntitySchemaTool(
 		OpenWorld = false)]
 	[Description("Applies a batch of add, modify, and remove column operations to a remote Creatio entity schema. " +
 		"The batch is published and the OData entities are rebuilt automatically, so changed columns become reachable over OData (/0/odata/<Entity>) without a compile. That rebuild is asynchronous (~1-2 min): a 404 (or \"The request is invalid\") from an odata-* tool right after a change is the expected async gap — wait briefly and retry, do not compile. " +
+		"An INHERITED column can have only its caption/description overridden (title-localizations / description-localizations); its name, type, and flags stay read-only. " +
 		"Entity business rules (conditional editability/required/values) are separate artifacts — call get-guidance with name business-rules to learn more. For the schema-design workflow call get-guidance with name app-modeling.")]
 	public async Task<CommandExecutionResult> UpdateEntitySchema(
 		[Description("Parameters: environment-name, package-name, schema-name, operations (all required)")] [Required] UpdateEntitySchemaArgs args) {
@@ -401,6 +402,45 @@ public sealed class GetEntitySchemaPropertiesTool(
 }
 
 /// <summary>
+/// MCP tool surface for setting schema-level properties on a remote entity schema.
+/// </summary>
+public sealed class SetEntitySchemaPropertiesTool(
+	SetEntitySchemaPropertiesCommand command,
+	ILogger logger,
+	IToolCommandResolver commandResolver)
+	: BaseTool<SetEntitySchemaPropertiesOptions>(command, logger, commandResolver) {
+
+	internal const string SetEntitySchemaPropertiesToolName = "set-entity-schema-properties";
+
+	/// <summary>
+	/// Sets schema-level properties (currently the primary-display column) on a remote entity schema.
+	/// </summary>
+	[McpServerTool(Name = SetEntitySchemaPropertiesToolName, ReadOnly = false, Destructive = true,
+		Idempotent = true, OpenWorld = false)]
+	[Description("Sets schema-level properties on a remote Creatio entity schema. "
+		+ "Currently supports primary-display-column: the column (own or inherited, resolved by name) shown as the "
+		+ "record's display value in lookups and links. The change is saved and published (OData rebuilt) like the "
+		+ "other entity-schema tools, then verified by reading it back — a target that does not persist the "
+		+ "primary-display column is reported as an error rather than a silent no-op. "
+		+ "Read the set value back with get-entity-schema-properties (primary-display-column-name).")]
+	public CommandExecutionResult SetEntitySchemaProperties(
+		[Description("Parameters: environment-name, package-name, schema-name (all required); primary-display-column (optional)")] [Required]
+		SetEntitySchemaPropertiesArgs args) {
+		try {
+			SetEntitySchemaPropertiesOptions options = new() {
+				Environment = args.EnvironmentName,
+				Package = args.PackageName,
+				SchemaName = args.SchemaName,
+				PrimaryDisplayColumn = args.PrimaryDisplayColumn
+			};
+			return InternalExecute<SetEntitySchemaPropertiesCommand>(options);
+		} catch (Exception exception) {
+			return new CommandExecutionResult(1, [new ErrorMessage(SensitiveErrorTextRedactor.Redact(exception.Message))], null);
+		}
+	}
+}
+
+/// <summary>
 /// MCP tool surface for finding entity schemas by name, pattern, or UId.
 /// </summary>
 public sealed class FindEntitySchemaTool(
@@ -496,7 +536,10 @@ public sealed class ModifyEntitySchemaColumnTool(ModifyEntitySchemaColumnCommand
 		+ "When setting a Const default on a lookup column, the referenced record's existence is validated "
 		+ "before save: a GUID that does not exist in the referenced schema is rejected with a non-zero exit "
 		+ "and the schema is not saved. The check is point-in-time (TOCTOU) and is skipped when the referenced "
-		+ "record cannot be read. Entity business rules are separate — call get-guidance with name business-rules.")]
+		+ "record cannot be read. "
+		+ "An INHERITED column can have only its caption/description overridden (title-localizations / "
+		+ "description-localizations) on a replacing/child schema; its name, type, and flags stay read-only. "
+		+ "Entity business rules are separate — call get-guidance with name business-rules.")]
 	public CommandExecutionResult ModifyEntitySchemaColumn(
 		[Description("Parameters: environment-name, package-name, schema-name, action, column-name (all required); type, title-localizations, description-localizations, reference-schema-name, and many flags (optional)")] [Required] ModifyEntitySchemaColumnArgs args) {
 		try {
@@ -691,7 +734,9 @@ public sealed record CreateEntitySchemaColumnArgs(
 						  Column type. Supported values:
 						  Guid, Text, ShortText, MediumText, LongText, MaxSizeText,
 						  Integer, Float, Boolean, Date, DateTime, Time, Lookup,
-						  Binary, Image, ImageLookup, File, SecureText, Email.
+						  Binary, Image, ImageLookup, File, SecureText, Email, Color.
+						  Color stores a hex color string (e.g. #RRGGBB) and is not a text column:
+						  text-only options (multiline / accent-insensitive / format-validated / masked) do not apply.
 						  Blob is also accepted as an alias for Binary.
 						  ImageLink is also accepted as an alias for ImageLookup.
 						  Encrypted and Password are accepted as aliases for SecureText.
@@ -834,7 +879,9 @@ public abstract record ColumnModificationArgsBase(
 						   Binary, Image, ImageLookup, File, Blob, SecureText,
 						   Text50, Text250, Text500, TextUnlimited, PhoneNumber, WebLink, Email, RichText,
 						   Decimal0, Decimal1, Decimal2, Decimal3, Decimal4, Decimal8,
-						   Currency0, Currency1, Currency2, Currency3.
+						   Currency0, Currency1, Currency2, Currency3, Color.
+						   Color stores a hex color string (e.g. #RRGGBB) and is not a text column:
+						   text-only options (multiline / accent-insensitive / format-validated / masked) do not apply.
 						   Encrypted and Password are accepted as aliases for SecureText.
 						   ImageLink is accepted as an alias for ImageLookup.
 						   EmailAddress is accepted as an alias for Email.
@@ -1069,6 +1116,19 @@ public sealed record GetEntitySchemaPropertiesArgs(
 	[property: Required]
 	string SchemaName
 );
+
+/// <summary>
+/// Arguments for the <c>set-entity-schema-properties</c> MCP tool.
+/// </summary>
+public sealed record SetEntitySchemaPropertiesArgs(
+	string EnvironmentName,
+	string PackageName,
+	string SchemaName,
+
+	[property: JsonPropertyName("primary-display-column")]
+	[property: Description("Column name (own or inherited) to set as the schema's primary-display column")]
+	string? PrimaryDisplayColumn = null
+) : EntitySchemaTargetArgsBase(EnvironmentName, PackageName, SchemaName);
 
 /// <summary>
 /// Arguments for the <c>get-entity-schema-column-properties</c> MCP tool.

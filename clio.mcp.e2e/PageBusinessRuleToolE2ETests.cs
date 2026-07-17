@@ -1,6 +1,7 @@
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command;
+using Clio.Command.BusinessRules;
 using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E.Support.Creatio;
 using Clio.Mcp.E2E.Support.Configuration;
@@ -202,6 +203,173 @@ public sealed class PageBusinessRuleToolE2ETests : McpContractFixtureBase {
 			because: "the whole batch fails on the missing environment, so the structured response should reference it");
 	}
 
+	[Category("McpE2E.NoEnvironment")]
+	[Test]
+	[Description("Binds a read-page-business-rules request through the real MCP server and reports an invalid environment failure from command execution.")]
+	[AllureTag(ReadPageBusinessRuleTool.ToolName)]
+	[AllureName("Page business-rule read MCP tool reports an invalid environment")]
+	[AllureDescription("Starts the real clio MCP server, calls read-page-business-rules with an intentionally missing environment, then verifies the request reaches command execution and returns the standard command execution envelope referencing the environment.")]
+	public async Task BusinessRulesRead_Should_Report_Invalid_Environment() {
+		// Arrange
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+		string invalidEnvironmentName = $"missing-page-read-rules-env-{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ReadPageBusinessRuleTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = invalidEnvironmentName,
+					["package-name"] = "UsrPkg",
+					["page-schema-name"] = "UsrCase_FormPage"
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a valid page read request should bind and return the standard command execution envelope, not an MCP binding error");
+		execution.ExitCode.Should().NotBe(0,
+			because: "the intentionally missing environment should fail during command execution");
+		execution.Output.Should().Contain(message =>
+				ContainsText(message.Value, invalidEnvironmentName),
+			because: "the failure should come from resolving the requested environment, not from binding the page read arguments");
+	}
+
+	[Category("McpE2E.NoEnvironment")]
+	[Test]
+	[Description("Binds a named update-page-business-rules payload with block uIds through the real MCP server and reports an invalid environment failure from command execution.")]
+	[AllureTag(UpdatePageBusinessRuleTool.ToolName)]
+	[AllureName("Page business-rule update MCP tool binds named rule payloads")]
+	[AllureDescription("Starts the real clio MCP server, calls update-page-business-rules with a rule carrying name, enabled, and block uIds against an intentionally missing environment, then verifies the extended update contract binds and the failure comes from environment resolution.")]
+	public async Task BusinessRulesUpdate_Should_Bind_Named_Rule_Payload_And_Report_Invalid_Environment() {
+		// Arrange
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+		string invalidEnvironmentName = $"missing-page-update-rules-env-{Guid.NewGuid():N}";
+		PageRuleBlockIds blockIds = new(
+			Guid.NewGuid().ToString("D"),
+			Guid.NewGuid().ToString("D"),
+			Guid.NewGuid().ToString("D"));
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			UpdatePageBusinessRuleTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = invalidEnvironmentName,
+					["package-name"] = "UsrPkg",
+					["page-schema-name"] = "UsrCase_FormPage",
+					["rules"] = new object[] {
+						CreatePageRuleUpdate(
+							"Updated hide rule",
+							"BusinessRule_1c48625",
+							"PDS_Priority",
+							"EscalateButton",
+							"is-filled-in",
+							blockIds,
+							enabled: true)
+					}
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a page rule payload with name, enabled, and block uIds should bind and return the standard command execution envelope");
+		execution.ExitCode.Should().NotBe(0,
+			because: "the intentionally missing environment should fail during command execution");
+		execution.Output.Should().Contain(message =>
+				ContainsText(message.Value, invalidEnvironmentName),
+			because: "the failure should come from resolving the requested environment, not from deserializing the named page update payload");
+	}
+
+	[Category("McpE2E.NoEnvironment")]
+	[Test]
+	[Description("Binds a delete-page-business-rules request through the real MCP server and reports an invalid environment failure from command execution.")]
+	[AllureTag(DeletePageBusinessRuleTool.ToolName)]
+	[AllureName("Page business-rule delete MCP tool reports an invalid environment")]
+	[AllureDescription("Starts the real clio MCP server, calls delete-page-business-rules with a rule-names array and an intentionally missing environment, then verifies the request reaches command execution and returns the standard command execution envelope referencing the environment.")]
+	public async Task BusinessRulesDelete_Should_Report_Invalid_Environment() {
+		// Arrange
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+		string invalidEnvironmentName = $"missing-page-delete-rules-env-{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			DeletePageBusinessRuleTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = invalidEnvironmentName,
+					["package-name"] = "UsrPkg",
+					["page-schema-name"] = "UsrCase_FormPage",
+					["rule-names"] = new object[] { "BusinessRule_1c48625" }
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a valid page delete request should bind and return the standard command execution envelope, not an MCP binding error");
+		execution.ExitCode.Should().NotBe(0,
+			because: "the intentionally missing environment should fail during command execution");
+		execution.Output.Should().Contain(message =>
+				ContainsText(message.Value, invalidEnvironmentName),
+			because: "the failure should come from resolving the requested environment, not from binding the rule-names array");
+	}
+
+	[Category("McpE2E.NoEnvironment")]
+	[Test]
+	[Description("Exposes the page business-rule read, update, and delete maintenance contracts through get-tool-contract on the lazy MCP surface.")]
+	[AllureTag(ReadPageBusinessRuleTool.ToolName)]
+	[AllureTag(UpdatePageBusinessRuleTool.ToolName)]
+	[AllureTag(DeletePageBusinessRuleTool.ToolName)]
+	[AllureName("Page business-rule maintenance MCP tools expose contracts through get-tool-contract")]
+	[AllureDescription("Starts the real clio MCP server, requests the read-page-business-rules, update-page-business-rules, and delete-page-business-rules contracts via get-tool-contract, and verifies the read output fields, the required name match key for update, and the rule-names delete key are advertised.")]
+	public async Task BusinessRulesMaintenance_Should_Advertise_Read_Update_Delete_Contracts() {
+		// Arrange
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult contractResult = await arrangeContext.Session.CallToolAsync(
+			ToolContractGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["tool-names"] = new[] {
+						ReadPageBusinessRuleTool.ToolName,
+						UpdatePageBusinessRuleTool.ToolName,
+						DeletePageBusinessRuleTool.ToolName
+					}
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		ToolContractGetResponse contracts =
+			EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(contractResult);
+
+		// Assert
+		contractResult.IsError.Should().NotBeTrue(
+			because: "the registered page maintenance tool contracts should resolve through get-tool-contract without an MCP error");
+		contracts.Success.Should().BeTrue(
+			because: "all three page business-rule maintenance tools are registered in the contract catalog");
+		ToolContractDefinition readContract = contracts.Tools!.Single(tool => tool.Name == ReadPageBusinessRuleTool.ToolName);
+		readContract.OutputContract.Fields.Should().Contain(field => field.Name == "count",
+			because: "the read contract should advertise the returned rule count output field");
+		readContract.OutputContract.Fields.Should().Contain(field =>
+				field.Name == "rules" &&
+				field.Description.Contains("name", StringComparison.Ordinal),
+			because: "the read contract should advertise the rules output items carrying the name match key for update/delete");
+		ToolContractDefinition updateContract = contracts.Tools!.Single(tool => tool.Name == UpdatePageBusinessRuleTool.ToolName);
+		updateContract.InputSchema.Properties.Should().Contain(field =>
+				field.Name == "rules" &&
+				field.Description.Contains("name (REQUIRED", StringComparison.Ordinal),
+			because: "the update contract should advertise name as the required match key inside each replacement rule");
+		ToolContractDefinition deleteContract = contracts.Tools!.Single(tool => tool.Name == DeletePageBusinessRuleTool.ToolName);
+		deleteContract.InputSchema.Required.Should().Contain("rule-names",
+			because: "the delete contract should require the rule-names batch of internal rule names");
+	}
+
 	[Category("McpE2E.Sandbox")]
 	[Test]
 	[Description("Creates a page business rule for Contacts_FormPage in the Custom package through the real MCP server and Creatio environment.")]
@@ -219,7 +387,7 @@ public sealed class PageBusinessRuleToolE2ETests : McpContractFixtureBase {
 		string packageName = ResolvePackageName(settings);
 		await ClioCliCommandRunner.EnsureCliogateInstalledAsync(settings, environmentName);
 		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
-		PageRuleTarget target = await ResolveContactPageRuleTargetAsync(
+		PageRuleTarget target = await ResolvePageRuleTargetAsync(
 			arrangeContext.Session,
 			arrangeContext.CancellationTokenSource.Token,
 			environmentName);
@@ -245,7 +413,7 @@ public sealed class PageBusinessRuleToolE2ETests : McpContractFixtureBase {
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
 			because: "a valid Contact page show/hide rule should return the structured batch-create response, not an MCP error");
-		batchResponse.Created.Should().Be(1,
+		batchResponse.Succeeded.Should().Be(1,
 			because: "the single Contact page rule should be created in the configured Creatio sandbox");
 		batchResponse.Failed.Should().Be(0,
 			because: "no rule in the batch should fail when the payload is valid");
@@ -261,6 +429,225 @@ public sealed class PageBusinessRuleToolE2ETests : McpContractFixtureBase {
 			[target.ElementName],
 			target.AttributeName,
 			arrangeContext.CancellationTokenSource.Token);
+	}
+
+	[Category("McpE2E.Sandbox")]
+	[Test]
+	[Description("Runs the full page business-rule CRUD lifecycle (create with explicit name, read with uIds, update the condition with preserved uIds, disable, delete by name) through the real MCP server and Creatio environment.")]
+	[AllureTag(ReadPageBusinessRuleTool.ToolName)]
+	[AllureTag(UpdatePageBusinessRuleTool.ToolName)]
+	[AllureTag(DeletePageBusinessRuleTool.ToolName)]
+	[AllureName("Page business-rule MCP tools complete the CRUD lifecycle")]
+	[AllureDescription("Requires a reachable sandbox environment and destructive opt-in. Creates a hide-element rule with an explicit name on a discovered form page, reads it back with block uIds, updates its comparison while passing the uIds back (asserting the change and uId survival), disables the rule, deletes it by name, and verifies the rule is gone on the final read.")]
+	public async Task BusinessRules_Should_Complete_Page_Rule_Crud_Lifecycle_In_Creatio() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("AllowDestructiveMcpTests is false - skipping destructive page business-rule CRUD lifecycle test.");
+		}
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		string packageName = ResolvePackageName(settings);
+		await ClioCliCommandRunner.EnsureCliogateInstalledAsync(settings, environmentName);
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(15));
+		PageRuleTarget target = await ResolvePageRuleTargetAsync(
+			arrangeContext.Session,
+			arrangeContext.CancellationTokenSource.Token,
+			environmentName);
+		string suffix = Guid.NewGuid().ToString("N");
+		string ruleName = $"UsrMcpE2EPageRule{suffix}";
+		string caption = $"MCP E2E page CRUD {suffix}";
+
+		// Act - create a rule with an explicit caller-supplied name and enabled true
+		CallToolResult createResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["package-name"] = packageName,
+					["page-schema-name"] = target.PageSchemaName,
+					["rules"] = new object[] {
+						CreateNamedPageRule(caption, ruleName, target.AttributeName, target.ElementName, "is-filled-in")
+					}
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		BusinessRuleBatchResponse createResponse = McpCommandExecutionParser.ExtractBusinessRuleBatchResponse(createResult);
+
+		// Assert - create
+		createResult.IsError.Should().NotBeTrue(
+			because: "a valid named page hide-element rule should return the structured batch-create response, not an MCP error");
+		createResponse.Succeeded.Should().Be(1,
+			because: "the single named page rule should be created in the configured Creatio sandbox");
+		createResponse.Failed.Should().Be(0,
+			because: "no rule in the batch should fail when the payload is valid");
+		createResponse.Results.Should().ContainSingle(result => result.Success && result.RuleName == ruleName,
+			because: "create should honor the explicit caller-supplied rule name instead of generating one");
+
+		// Act - read after create
+		BusinessRulesReadResponse readAfterCreate = await ReadPageRulesAsync(
+			arrangeContext.Session,
+			environmentName,
+			packageName,
+			target.PageSchemaName,
+			arrangeContext.CancellationTokenSource.Token);
+
+		// Assert - read returns the rule in contract shape with block uIds
+		BusinessRule createdModel = GetRuleByName(readAfterCreate, ruleName);
+		createdModel.Enabled.Should().BeTrue(
+			because: "the rule was created with enabled true");
+		BusinessRuleCondition createdCondition = createdModel.Condition.Conditions.Should().ContainSingle(
+				because: "the created page rule has exactly one condition")
+			.Which;
+		createdCondition.ComparisonType.Should().Be("is-filled-in",
+			because: "read should return the comparison the rule was created with");
+		createdCondition.UId.Should().NotBeNullOrWhiteSpace(
+			because: "read should return the stable condition uId for update round-trips");
+		createdCondition.LeftExpression.UId.Should().NotBeNullOrWhiteSpace(
+			because: "read should return the stable left expression uId for update round-trips");
+		BusinessRuleAction createdAction = createdModel.Actions.Should().ContainSingle(
+				because: "the created page rule has exactly one action")
+			.Which;
+		createdAction.UId.Should().NotBeNullOrWhiteSpace(
+			because: "read should return the stable action uId for update round-trips");
+		PageRuleBlockIds blockIds = new(
+			createdCondition.UId!,
+			createdCondition.LeftExpression.UId!,
+			createdAction.UId!);
+
+		// Act - update the condition comparison while passing the block uIds back
+		CallToolResult updateResult = await arrangeContext.Session.CallToolAsync(
+			UpdatePageBusinessRuleTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["package-name"] = packageName,
+					["page-schema-name"] = target.PageSchemaName,
+					["rules"] = new object[] {
+						CreatePageRuleUpdate(
+							caption,
+							ruleName,
+							target.AttributeName,
+							target.ElementName,
+							"is-not-filled-in",
+							blockIds,
+							enabled: null)
+					}
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		BusinessRuleBatchResponse updateResponse =
+			EntitySchemaStructuredResultParser.Extract<BusinessRuleBatchResponse>(updateResult);
+
+		// Assert - update
+		updateResult.IsError.Should().NotBeTrue(
+			because: "a valid page rule update should return the structured batch response, not an MCP error");
+		updateResponse.Succeeded.Should().Be(1,
+			because: "the update targets the existing page rule by name and should save");
+		updateResponse.Failed.Should().Be(0,
+			because: "no rule in the update batch should fail");
+
+		// Act - read after update
+		BusinessRulesReadResponse readAfterUpdate = await ReadPageRulesAsync(
+			arrangeContext.Session,
+			environmentName,
+			packageName,
+			target.PageSchemaName,
+			arrangeContext.CancellationTokenSource.Token);
+
+		// Assert - the comparison changed, the caller-supplied uIds survived, enabled stayed true
+		BusinessRule updatedModel = GetRuleByName(readAfterUpdate, ruleName);
+		updatedModel.Enabled.Should().BeTrue(
+			because: "enabled was omitted on update, so the existing enabled value should be preserved");
+		BusinessRuleCondition updatedCondition = updatedModel.Condition.Conditions.Should().ContainSingle(
+				because: "the updated page rule still has exactly one condition")
+			.Which;
+		updatedCondition.ComparisonType.Should().Be("is-not-filled-in",
+			because: "the update should replace the condition comparison with the new one");
+		updatedCondition.UId.Should().Be(blockIds.ConditionUId,
+			because: "the caller-supplied condition uId should survive the update");
+		updatedCondition.LeftExpression.UId.Should().Be(blockIds.LeftExpressionUId,
+			because: "the caller-supplied left expression uId should survive the update");
+		updatedModel.Actions.Should().ContainSingle(
+				because: "the updated page rule still has exactly one action")
+			.Which.UId.Should().Be(blockIds.ActionUId,
+				because: "the caller-supplied action uId should survive the update");
+
+		// Act - disable the rule via update with enabled false
+		CallToolResult disableResult = await arrangeContext.Session.CallToolAsync(
+			UpdatePageBusinessRuleTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["package-name"] = packageName,
+					["page-schema-name"] = target.PageSchemaName,
+					["rules"] = new object[] {
+						CreatePageRuleUpdate(
+							caption,
+							ruleName,
+							target.AttributeName,
+							target.ElementName,
+							"is-not-filled-in",
+							blockIds,
+							enabled: false)
+					}
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		BusinessRuleBatchResponse disableResponse =
+			EntitySchemaStructuredResultParser.Extract<BusinessRuleBatchResponse>(disableResult);
+
+		// Assert - disable
+		disableResponse.Succeeded.Should().Be(1,
+			because: "the disable update targets the existing page rule by name and should save");
+		disableResponse.Failed.Should().Be(0,
+			because: "no rule in the disable batch should fail");
+		BusinessRulesReadResponse readAfterDisable = await ReadPageRulesAsync(
+			arrangeContext.Session,
+			environmentName,
+			packageName,
+			target.PageSchemaName,
+			arrangeContext.CancellationTokenSource.Token);
+		GetRuleByName(readAfterDisable, ruleName).Enabled.Should().BeFalse(
+			because: "the update with enabled false should deactivate the page rule");
+
+		// Act - delete the rule by name
+		CallToolResult deleteResult = await arrangeContext.Session.CallToolAsync(
+			DeletePageBusinessRuleTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["package-name"] = packageName,
+					["page-schema-name"] = target.PageSchemaName,
+					["rule-names"] = new object[] { ruleName }
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		BusinessRuleBatchResponse deleteResponse =
+			EntitySchemaStructuredResultParser.Extract<BusinessRuleBatchResponse>(deleteResult);
+
+		// Assert - delete
+		deleteResult.IsError.Should().NotBeTrue(
+			because: "a valid page rule delete should return the structured batch response, not an MCP error");
+		deleteResponse.Succeeded.Should().Be(1,
+			because: "the single existing page rule should be deleted");
+		deleteResponse.Failed.Should().Be(0,
+			because: "no name in the delete batch should fail");
+		deleteResponse.Results.Should().ContainSingle(result => result.Success,
+			because: "the per-name result should report the successful deletion");
+
+		// Act - read after delete
+		BusinessRulesReadResponse readAfterDelete = await ReadPageRulesAsync(
+			arrangeContext.Session,
+			environmentName,
+			packageName,
+			target.PageSchemaName,
+			arrangeContext.CancellationTokenSource.Token);
+
+		// Assert - the deleted rule is gone
+		readAfterDelete.Rules.Should().NotContain(
+			rule => string.Equals(rule.Name, ruleName, StringComparison.OrdinalIgnoreCase),
+			because: "the deleted page rule should no longer be returned by read");
 	}
 
 	private static bool ContainsText(string? value, string expectedText) =>
@@ -300,16 +687,17 @@ public sealed class PageBusinessRuleToolE2ETests : McpContractFixtureBase {
 		}
 	}
 
-	private static async Task<PageRuleTarget> ResolveContactPageRuleTargetAsync(
+	private static async Task<PageRuleTarget> ResolvePageRuleTargetAsync(
 		McpServerSession session,
 		CancellationToken cancellationToken,
 		string environmentName) {
-		// The rule needs a real Freedom UI form page bound to an entity datasource. A base-Contact page
-		// (Contacts_FormPage) only ships with CRM editions, so a bare Studio sandbox has none. Discover any
-		// seeded custom form page instead (the AutoTest seed installs several) and build the rule on the
-		// first one that exposes a datasource-bound attribute, preferring a Contact-bound page so the test
-		// keeps its original Contact intent where the stand provides one.
-		foreach (string candidate in await ResolveCandidatePageSchemaNamesAsync(session, cancellationToken, environmentName)) {
+		// The rule needs a real Freedom UI form page bound to an entity datasource. A base-Contact
+		// page (Contacts_FormPage) only ships with CRM editions, so a bare Studio sandbox has none.
+		// Discover any seeded custom form page instead (the AutoTest seed installs several) and build
+		// the rule on the first one that exposes a datasource-bound attribute, preferring a
+		// Contact-bound page so the test keeps its original Contact intent where the stand provides one.
+		foreach (string candidate in await ResolveCandidatePageSchemaNamesAsync(
+			session, cancellationToken, environmentName)) {
 			PageRuleTarget? target = await TryResolvePageRuleTargetAsync(session, cancellationToken, environmentName, candidate);
 			if (target is not null) {
 				return target;
@@ -326,8 +714,12 @@ public sealed class PageBusinessRuleToolE2ETests : McpContractFixtureBase {
 		McpServerSession session,
 		CancellationToken cancellationToken,
 		string environmentName) {
-		// Legacy base-Contact names first (real CRM stands), then any seeded custom form page.
-		List<string> candidates = ["Contacts_FormPage", "Contact_FormPage"];
+		// Seeded AutoTestClioMcp_FormPage first — present on the clio MCP e2e stands including bare
+		// Studio (its schema lives in a file-installed package, which the page-rule add-on flow now
+		// handles by resolving the add-on in the requested writable package). Then base-Contact names
+		// for CRM stands, then any other seeded custom form page. The target attribute and element are
+		// resolved from the page bundle below, so no columns or controls are assumed on the page.
+		List<string> candidates = ["AutoTestClioMcp_FormPage", "Contacts_FormPage", "Contact_FormPage"];
 
 		CallToolResult listResult = await session.CallToolAsync(
 			PageListTool.ToolName,
@@ -570,6 +962,109 @@ public sealed class PageBusinessRuleToolE2ETests : McpContractFixtureBase {
 			["type"] = "AttributeValue",
 			["path"] = path
 		};
+
+	private static async Task<BusinessRulesReadResponse> ReadPageRulesAsync(
+		McpServerSession session,
+		string environmentName,
+		string packageName,
+		string pageSchemaName,
+		CancellationToken cancellationToken) {
+		CallToolResult readResult = await session.CallToolAsync(
+			ReadPageBusinessRuleTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["package-name"] = packageName,
+					["page-schema-name"] = pageSchemaName
+				}
+			},
+			cancellationToken);
+		readResult.IsError.Should().NotBeTrue(
+			because: "reading page business rules on a reachable environment should return the structured read response, not an MCP error");
+		BusinessRulesReadResponse response =
+			EntitySchemaStructuredResultParser.Extract<BusinessRulesReadResponse>(readResult);
+		response.Error.Should().BeNull(
+			because: "reading page business rules on a reachable environment should not fail at request level");
+		return response;
+	}
+
+	private static BusinessRule GetRuleByName(BusinessRulesReadResponse response, string ruleName) =>
+		response.Rules.Should().ContainSingle(
+				rule => string.Equals(rule.Name, ruleName, StringComparison.OrdinalIgnoreCase),
+				because: "the read response should contain exactly one rule with the expected internal name")
+			.Which;
+
+	private static IReadOnlyDictionary<string, object?> CreateNamedPageRule(
+		string caption,
+		string ruleName,
+		string attributeName,
+		string elementName,
+		string comparisonType) =>
+		new Dictionary<string, object?> {
+			["caption"] = caption,
+			["name"] = ruleName,
+			["enabled"] = true,
+			["condition"] = new Dictionary<string, object?> {
+				["logicalOperation"] = "AND",
+				["conditions"] = new object[] {
+					new Dictionary<string, object?> {
+						["leftExpression"] = CreateAttributeExpression(attributeName),
+						["comparisonType"] = comparisonType
+					}
+				}
+			},
+			["actions"] = new object[] {
+				new Dictionary<string, object?> {
+					["type"] = "hide-element",
+					["items"] = new object[] { elementName }
+				}
+			}
+		};
+
+	private static IReadOnlyDictionary<string, object?> CreatePageRuleUpdate(
+		string caption,
+		string ruleName,
+		string attributeName,
+		string elementName,
+		string comparisonType,
+		PageRuleBlockIds? blockIds,
+		bool? enabled) {
+		Dictionary<string, object?> leftExpression = new() {
+			["type"] = "AttributeValue",
+			["path"] = attributeName
+		};
+		Dictionary<string, object?> condition = new() {
+			["leftExpression"] = leftExpression,
+			["comparisonType"] = comparisonType
+		};
+		Dictionary<string, object?> action = new() {
+			["type"] = "hide-element",
+			["items"] = new object[] { elementName }
+		};
+		if (blockIds is not null) {
+			condition["uId"] = blockIds.ConditionUId;
+			leftExpression["uId"] = blockIds.LeftExpressionUId;
+			action["uId"] = blockIds.ActionUId;
+		}
+		Dictionary<string, object?> rule = new() {
+			["caption"] = caption,
+			["name"] = ruleName,
+			["condition"] = new Dictionary<string, object?> {
+				["logicalOperation"] = "AND",
+				["conditions"] = new object[] { condition }
+			},
+			["actions"] = new object[] { action }
+		};
+		if (enabled is not null) {
+			rule["enabled"] = enabled;
+		}
+		return rule;
+	}
+
+	private sealed record PageRuleBlockIds(
+		string ConditionUId,
+		string LeftExpressionUId,
+		string ActionUId);
 
 	private sealed record PageAttributeCandidate(string AttributeName, string ColumnName);
 
