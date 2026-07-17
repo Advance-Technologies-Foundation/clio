@@ -2192,3 +2192,16 @@ stories:
     adr: spec/ring-clio-runtime-switch/ring-clio-runtime-switch-adr.md
     depends_on: []
     blocks: []
+  - id: story-clio-guidance-development-1
+    title: "Publish the evidence-backed clio guidance development framework"
+    feature: "clio-guidance-development"
+    repo: "clio"
+    size: M
+    status: review
+    note: "Lab-validated ESQ filter and virtual-entity guidance with portable shared skill, MCP E2E, comprehensive review, and ClioRing compatibility validation."
+    file: spec/clio-guidance-development/clio-guidance-development-story.md
+    prd: spec/clio-guidance-development/clio-guidance-development-spec.md
+    adr: spec/clio-guidance-development/clio-guidance-development-adr.md
+    test_plan: spec/clio-guidance-development/clio-guidance-development-test-plan.md
+    depends_on: []
+    blocks: []
