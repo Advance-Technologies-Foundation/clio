@@ -1391,6 +1391,497 @@ public sealed class SchemaSyncToolTests {
 			because: "a programming defect must not be hidden as a benign dataforge: degradation");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Retries a transient network failure on the first attempt and continues the batch when the retry succeeds (ENG-93374 AC1).")]
+	public async Task SchemaSync_Should_Retry_Transient_Failure_And_Continue_Batch() {
+		// Arrange
+		var logger = new TestLogger();
+		// First attempt reports a transient DNS flap; the retry succeeds.
+		var scriptedCreate = new ScriptedCreateEntitySchemaCommand(logger,
+			Transient("One or more errors occurred. (No such host is known.)"),
+			Success());
+		var scriptedUpdate = new ScriptedUpdateEntitySchemaCommand(logger, Success());
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(scriptedCreate);
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(scriptedUpdate);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ILookupRegistrationService>());
+		IRetryDelay retryDelay = Substitute.For<IRetryDelay>();
+		SchemaSyncTool tool = new(commandResolver, logger, retryDelay: retryDelay);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[
+				new SchemaSyncOperation("create-lookup", "UsrGenre", TitleLocalizations: Localizations("Genre")),
+				new SchemaSyncOperation("update-entity", "UsrBooks",
+					UpdateOperations: [new UpdateEntitySchemaOperationArgs(Action: "add", ColumnName: "UsrPages", Type: "Integer")])
+			]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "a single transient network flap must no longer abort the batch once the retry succeeds");
+		scriptedCreate.Invocations.Should().Be(2,
+			because: "the create must be retried exactly once after the transient failure");
+		response.Results.Should().HaveCount(2,
+			because: "both the create-lookup and the update-entity should have executed");
+		response.Results[1].Type.Should().Be("update-entity",
+			because: "the batch must proceed to the operation that previously never ran");
+		response.ResumePlan.Should().BeNull(
+			because: "a fully-successful batch must not carry a resume plan");
+		response.Results[0].Attempts.Should().Be(2,
+			because: "the number of attempts should be surfaced when the operation was retried");
+		string[] createMessages = GetMessageValues(response.Results[0]);
+		createMessages.Should().NotContain(message => message.Contains("No such host is known", StringComparison.Ordinal),
+			because: "the discarded failed-attempt error text must not leak into the successful result (only the final attempt's messages are kept)");
+		createMessages.Should().Contain(message => message.Contains("transient network failure on attempt", StringComparison.Ordinal),
+			because: "an info-level retry note should record that a retry happened");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Retries a transient failure up to the attempt budget, then fails the operation and emits a resume plan (ENG-93374 AC2/AC4).")]
+	public async Task SchemaSync_Should_Fail_After_Exhausting_Retries_And_Emit_Resume_Plan() {
+		// Arrange
+		var logger = new TestLogger();
+		var scriptedCreate = new ScriptedCreateEntitySchemaCommand(logger,
+			Transient("No such host is known."),
+			Transient("No such host is known."),
+			Transient("No such host is known."));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(scriptedCreate);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ILookupRegistrationService>());
+		commandResolver.Resolve<FindEntitySchemaCommand>(Arg.Any<FindEntitySchemaOptions>())
+			.Returns(new FakeFindEntitySchemaCommand([]));
+		IRetryDelay retryDelay = Substitute.For<IRetryDelay>();
+		SchemaSyncTool tool = new(commandResolver, logger, retryDelay: retryDelay);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[
+				new SchemaSyncOperation("create-lookup", "UsrGenre", TitleLocalizations: Localizations("Genre")),
+				new SchemaSyncOperation("update-entity", "UsrBooks",
+					UpdateOperations: [new UpdateEntitySchemaOperationArgs(Action: "add", ColumnName: "UsrPages", Type: "Integer")])
+			]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "the operation still fails once the transient retries are exhausted");
+		scriptedCreate.Invocations.Should().Be(SchemaSyncTool.MaxAttempts,
+			because: "the create must be attempted exactly MaxAttempts times before failing");
+		retryDelay.Received(1).Wait(TimeSpan.FromSeconds(1));
+		retryDelay.Received(1).Wait(TimeSpan.FromSeconds(2));
+		response.Results.Should().HaveCount(1,
+			because: "the batch aborts at the failed operation and the update-entity never runs");
+		response.Results[0].Status.Should().Be("failed",
+			because: "the aborting operation must be marked failed");
+		response.ResumePlan.Should().NotBeNull(
+			because: "a mid-batch abort must surface a resume plan");
+		response.ResumePlan!.FailedOperation!.OperationIndex.Should().Be(0,
+			because: "the failed operation is the first one in the batch");
+		response.ResumePlan.NotRunOperationIndexes.Should().Equal([1],
+			because: "the second operation never ran");
+		response.ResumePlan.Operations.Should().HaveCount(2,
+			because: "the resume plan must carry the failed op plus every not-run op");
+		response.ResumePlan.Operations[0].Type.Should().Be("create-lookup",
+			because: "the failed create-lookup must be resubmittable as-is");
+		response.ResumePlan.Operations[1].Type.Should().Be("update-entity",
+			because: "the not-run update-entity must be resubmittable as-is");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Does not retry a non-transient (business/validation) failure — it fails on the first attempt (ENG-93374 AC6).")]
+	public async Task SchemaSync_Should_Not_Retry_Non_Transient_Failure() {
+		// Arrange
+		var logger = new TestLogger();
+		var scriptedCreate = new ScriptedCreateEntitySchemaCommand(logger,
+			Fail("Schema UsrGenre already exists in package UsrApp."));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(scriptedCreate);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ILookupRegistrationService>());
+		commandResolver.Resolve<FindEntitySchemaCommand>(Arg.Any<FindEntitySchemaOptions>())
+			.Returns(new FakeFindEntitySchemaCommand([]));
+		IRetryDelay retryDelay = Substitute.For<IRetryDelay>();
+		SchemaSyncTool tool = new(commandResolver, logger, retryDelay: retryDelay);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrGenre", TitleLocalizations: Localizations("Genre"))]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a durable business error must fail the operation");
+		scriptedCreate.Invocations.Should().Be(1,
+			because: "a non-transient failure must not be retried");
+		retryDelay.DidNotReceive().Wait(Arg.Any<TimeSpan>());
+		response.Results[0].Attempts.Should().BeNull(
+			because: "attempts is omitted when the operation was not retried");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Retries only the lookup registration after a successful create, never re-running the applied create (ENG-93374).")]
+	public async Task SchemaSync_Should_Retry_Only_Registration_After_Successful_Create() {
+		// Arrange
+		var logger = new TestLogger();
+		var scriptedCreate = new ScriptedCreateEntitySchemaCommand(logger, Success());
+		int registrationCalls = 0;
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
+		registrationService
+			.When(service => service.EnsureLookupRegistration(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>()))
+			.Do(_ => {
+				registrationCalls++;
+				if (registrationCalls < 3) {
+					throw new System.Net.Sockets.SocketException();
+				}
+			});
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(scriptedCreate);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(registrationService);
+		IRetryDelay retryDelay = Substitute.For<IRetryDelay>();
+		SchemaSyncTool tool = new(commandResolver, logger, retryDelay: retryDelay);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrGenre", TitleLocalizations: Localizations("Genre"))]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "a transient registration flap must be retried and eventually succeed");
+		scriptedCreate.Invocations.Should().Be(1,
+			because: "the create already applied server-side and must not be re-run on a registration retry");
+		registrationCalls.Should().Be(3,
+			because: "the registration must be retried until it succeeds within the attempt budget");
+		response.Results[0].Attempts.Should().Be(3,
+			because: "the combined result must surface the maximum attempt count across the create and registration steps");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("On resubmit, a create-lookup whose schema already exists in the target package skips re-creating it and completes the outstanding registration (idempotent resume, ENG-93374).")]
+	public async Task SchemaSync_CreateLookup_Should_Complete_Registration_When_Schema_Already_Exists_In_Target_Package() {
+		// Arrange
+		var logger = new TestLogger();
+		// The create step reports a collision (schema already applied by a prior interrupted attempt).
+		var scriptedCreate = new ScriptedCreateEntitySchemaCommand(logger,
+			Fail("Schema UsrGenre already exists."));
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(scriptedCreate);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(registrationService);
+		// The collision probe reports the schema exists in the SAME target package -> idempotent resume.
+		commandResolver.Resolve<FindEntitySchemaCommand>(Arg.Any<FindEntitySchemaOptions>())
+			.Returns(new FakeFindEntitySchemaCommand([
+				new EntitySchemaSearchResult("UsrGenre", "UsrPkg", "Customer", "BaseLookup")
+			]));
+		SchemaSyncTool tool = new(commandResolver, logger, retryDelay: Substitute.For<IRetryDelay>());
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrGenre", TitleLocalizations: Localizations("Genre"))]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "an already-created schema in the target package must resume to completed registration, not fail on the collision");
+		scriptedCreate.Invocations.Should().Be(1,
+			because: "the create must not be re-run once the schema is known to exist in the target package");
+		registrationService.Received(1).EnsureLookupRegistration("UsrPkg", "UsrGenre", "Genre");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("When a create succeeds but its inline seeding fails, the resume plan carries a standalone seed-data op — never a recreate (ENG-93374 AC4).")]
+	public async Task SchemaSync_Should_Emit_SeedData_Resume_Op_When_Seed_Fails_After_Create() {
+		// Arrange
+		var logger = new TestLogger();
+		var scriptedCreate = new ScriptedCreateEntitySchemaCommand(logger, Success());
+		var scriptedSeed = new ScriptedCreateDataBindingDbCommand(logger, Fail("Seeding failed: duplicate key."));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(scriptedCreate);
+		commandResolver.Resolve<CreateDataBindingDbCommand>(Arg.Any<CreateDataBindingDbOptions>())
+			.Returns(scriptedSeed);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ILookupRegistrationService>());
+		SchemaSyncTool tool = new(commandResolver, logger, retryDelay: Substitute.For<IRetryDelay>());
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrGenre",
+				TitleLocalizations: Localizations("Genre"),
+				SeedRows: [
+					new SchemaSyncSeedRow(new Dictionary<string, System.Text.Json.JsonElement> {
+						["Name"] = ToJsonElement("Fiction")
+					})
+				])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "the seeding step failed");
+		response.ResumePlan.Should().NotBeNull(
+			because: "a failed seed after a successful create must produce a resume plan");
+		response.ResumePlan!.Operations.Should().HaveCount(1,
+			because: "only the failed seeding needs to be resubmitted");
+		response.ResumePlan.Operations[0].Type.Should().Be("seed-data",
+			because: "resuming must seed the already-created schema, not recreate it");
+		response.ResumePlan.Operations[0].SchemaName.Should().Be("UsrGenre",
+			because: "the resume seed-data op must target the created schema");
+		response.ResumePlan.Operations[0].SeedRows.Should().NotBeNull(
+			because: "the seed rows must be echoed so the seeding is resubmittable as-is");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Accepts a standalone seed-data operation as a first-class batch operation type (ENG-93374).")]
+	public async Task SchemaSync_Should_Execute_Standalone_SeedData_Operation() {
+		// Arrange
+		var logger = new TestLogger();
+		var scriptedSeed = new ScriptedCreateDataBindingDbCommand(logger, Success());
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateDataBindingDbCommand>(Arg.Any<CreateDataBindingDbOptions>())
+			.Returns(scriptedSeed);
+		SchemaSyncTool tool = new(commandResolver, logger, retryDelay: Substitute.For<IRetryDelay>());
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("seed-data", "UsrGenre",
+				SeedRows: [
+					new SchemaSyncSeedRow(new Dictionary<string, System.Text.Json.JsonElement> {
+						["Name"] = ToJsonElement("Fiction")
+					})
+				])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "a standalone seed-data operation should be executed like any other operation");
+		response.Results.Should().HaveCount(1,
+			because: "a standalone seed-data op must not also trigger the post-create seeding step");
+		response.Results[0].Type.Should().Be("seed-data",
+			because: "the result must expose the canonical seed-data type");
+		scriptedSeed.Invocations.Should().Be(1,
+			because: "the seeding command must run exactly once for a standalone seed-data op");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects a standalone seed-data operation that carries no seed rows (ENG-93374).")]
+	public async Task SchemaSync_Should_Reject_SeedData_Operation_Without_Rows() {
+		// Arrange
+		var logger = new TestLogger();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		SchemaSyncTool tool = new(commandResolver, logger, retryDelay: Substitute.For<IRetryDelay>());
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("seed-data", "UsrGenre")]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a seed-data operation without rows is invalid");
+		response.Results[0].Error.Should().Contain("seed-rows",
+			because: "the validation error must name the missing seed-rows array");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A standalone seed-data operation is NOT retried on a transient failure — it fails fast into the resume-plan so a committed-but-lost insert is never silently double-applied (ENG-93374 AC2).")]
+	public async Task SchemaSync_SeedData_Should_Not_Retry_On_Transient_Failure() {
+		// Arrange
+		var logger = new TestLogger();
+		var scriptedSeed = new ScriptedCreateDataBindingDbCommand(logger, Transient("No such host is known."));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateDataBindingDbCommand>(Arg.Any<CreateDataBindingDbOptions>())
+			.Returns(scriptedSeed);
+		IRetryDelay retryDelay = Substitute.For<IRetryDelay>();
+		SchemaSyncTool tool = new(commandResolver, logger, retryDelay: retryDelay);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("seed-data", "UsrGenre",
+				SeedRows: [
+					new SchemaSyncSeedRow(new Dictionary<string, System.Text.Json.JsonElement> {
+						["Name"] = ToJsonElement("Fiction")
+					})
+				])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		scriptedSeed.Invocations.Should().Be(1,
+			because: "a non-idempotent seed-data write must never be auto-retried, even on a transient fault");
+		retryDelay.DidNotReceive().Wait(Arg.Any<TimeSpan>());
+		response.Success.Should().BeFalse(
+			because: "the transient seed failure fails fast rather than retrying");
+		response.ResumePlan.Should().NotBeNull(
+			because: "the failed seed-data op must be offered for a deliberate resubmit via the resume plan");
+		response.ResumePlan!.Operations[0].Type.Should().Be("seed-data",
+			because: "the resume plan must echo the seed-data op so the operator resubmits it consciously");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The inline seeding after a successful create is NOT retried on a transient failure (ENG-93374 AC2).")]
+	public async Task SchemaSync_InlineSeed_Should_Not_Retry_On_Transient_Failure() {
+		// Arrange
+		var logger = new TestLogger();
+		var scriptedCreate = new ScriptedCreateEntitySchemaCommand(logger, Success());
+		var scriptedSeed = new ScriptedCreateDataBindingDbCommand(logger, Transient("Connection refused"));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(scriptedCreate);
+		commandResolver.Resolve<CreateDataBindingDbCommand>(Arg.Any<CreateDataBindingDbOptions>())
+			.Returns(scriptedSeed);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ILookupRegistrationService>());
+		IRetryDelay retryDelay = Substitute.For<IRetryDelay>();
+		SchemaSyncTool tool = new(commandResolver, logger, retryDelay: retryDelay);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrGenre",
+				TitleLocalizations: Localizations("Genre"),
+				SeedRows: [
+					new SchemaSyncSeedRow(new Dictionary<string, System.Text.Json.JsonElement> {
+						["Name"] = ToJsonElement("Fiction")
+					})
+				])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		scriptedSeed.Invocations.Should().Be(1,
+			because: "the inline seeding step is also a non-idempotent write and must not be auto-retried");
+		retryDelay.DidNotReceive().Wait(Arg.Any<TimeSpan>());
+		response.Success.Should().BeFalse(
+			because: "the transient inline-seed failure fails fast");
+		response.ResumePlan!.Operations[0].Type.Should().Be("seed-data",
+			because: "the create already applied, so the resume plan must offer a seed-only op, not a recreate");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The batch-level cumulative retry budget caps total in-lock backoff: once spent, a later flapping operation fails fast without sleeping and surfaces a budget-exhausted note (ENG-93374 AC4).")]
+	public async Task SchemaSync_Should_Fail_Fast_When_Cumulative_Retry_Budget_Is_Exhausted() {
+		// Arrange
+		var logger = new TestLogger();
+		// A tiny 1.5s budget: the single op's first retry consumes 1s (allowed), the second wants 2s
+		// which exceeds the remaining 0.5s, so retry stops and the op fails fast with the exhausted note.
+		var scriptedCreate = new ScriptedCreateEntitySchemaCommand(logger,
+			Transient("No such host is known."),
+			Transient("No such host is known."),
+			Transient("No such host is known."));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(scriptedCreate);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ILookupRegistrationService>());
+		commandResolver.Resolve<FindEntitySchemaCommand>(Arg.Any<FindEntitySchemaOptions>())
+			.Returns(new FakeFindEntitySchemaCommand([]));
+		int waitCount = 0;
+		IRetryDelay retryDelay = Substitute.For<IRetryDelay>();
+		retryDelay.When(delay => delay.Wait(Arg.Any<TimeSpan>())).Do(_ => waitCount++);
+		SchemaSyncTool tool = new(commandResolver, logger,
+			retryDelay: retryDelay, maxCumulativeRetryDelay: TimeSpan.FromSeconds(1.5));
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrGenre", TitleLocalizations: Localizations("Genre"))]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		waitCount.Should().Be(1,
+			because: "only the first 1s backoff fits the 1.5s budget; the 2s second backoff is denied");
+		scriptedCreate.Invocations.Should().Be(2,
+			because: "the op runs twice (initial + one budget-allowed retry) then fails fast on budget exhaustion");
+		response.Success.Should().BeFalse(
+			because: "the operation fails once the batch retry budget is exhausted");
+		string[] messages = GetMessageValues(response.Results[0]);
+		messages.Should().Contain(message => message.Contains("batch retry budget exhausted", StringComparison.Ordinal),
+			because: "the result must record that retry stopped due to the batch-level budget cap");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Serializes the additive response fields with their kebab-case JSON names and omits resume-plan/attempts when not applicable, preserving the wire contract (ENG-93374).")]
+	public async Task SchemaSyncResponse_Should_Serialize_Additive_Fields_With_Stable_Contract() {
+		// Arrange
+		var completed = new SchemaSyncOperationResult {
+			Type = "create-lookup", SchemaName = "UsrGenre", Success = true, Status = "completed", OperationIndex = 0
+		};
+		var fullSuccess = new SchemaSyncResponse { Success = true, Results = [completed] };
+		var failed = new SchemaSyncOperationResult {
+			Type = "create-lookup", SchemaName = "UsrGenre", Success = false, Status = "failed", OperationIndex = 0, Attempts = 3, Error = "boom"
+		};
+		var midAbort = new SchemaSyncResponse {
+			Success = false,
+			Results = [failed],
+			ResumePlan = new SchemaSyncResumePlan {
+				Instruction = "resubmit",
+				FailedOperation = new SchemaSyncResumeFailure(0, "create-lookup", "UsrGenre", "boom"),
+				NotRunOperationIndexes = [1],
+				Operations = [new SchemaSyncOperation("update-entity", "UsrBooks")]
+			}
+		};
+
+		// Act
+		string fullSuccessJson = System.Text.Json.JsonSerializer.Serialize(fullSuccess);
+		string midAbortJson = System.Text.Json.JsonSerializer.Serialize(midAbort);
+
+		// Assert
+		fullSuccessJson.Should().Contain("\"status\":\"completed\"",
+			because: "each result must expose the kebab/lower-case status field");
+		fullSuccessJson.Should().Contain("\"operation-index\":0",
+			because: "the operation-index must serialize with its kebab-case name");
+		fullSuccessJson.Should().NotContain("resume-plan",
+			because: "a fully-successful response must omit the resume-plan block");
+		fullSuccessJson.Should().NotContain("attempts",
+			because: "attempts must be omitted when the operation was not retried");
+		fullSuccessJson.Should().NotContain("dataforge",
+			because: "the dataforge block must be omitted when null, preserving the existing contract");
+		midAbortJson.Should().Contain("\"resume-plan\"",
+			because: "a mid-batch abort must serialize the resume-plan block with its kebab-case name");
+		midAbortJson.Should().Contain("\"failed-operation\"",
+			because: "the resume plan must expose the failed-operation summary");
+		midAbortJson.Should().Contain("\"not-run-operation-indexes\":[1]",
+			because: "the resume plan must list the not-run operation indexes with the kebab-case name");
+		midAbortJson.Should().Contain("\"attempts\":3",
+			because: "attempts must serialize when the operation was retried");
+	}
+
+	private static AttemptOutcome Success() => new(0, null, null);
+
+	private static AttemptOutcome Fail(string message) => new(1, message, null);
+
+	private static AttemptOutcome Transient(string message) => new(1, message, null);
+
 	private static System.Text.Json.JsonElement ToJsonElement(string value) {
 		return System.Text.Json.JsonDocument.Parse($"\"{value}\"").RootElement.Clone();
 	}
@@ -1477,6 +1968,86 @@ public sealed class SchemaSyncToolTests {
 				_logger.WriteInfo(message);
 			}
 			return 0;
+		}
+	}
+
+	private sealed record AttemptOutcome(int ExitCode, string? Message, Exception? Throw);
+
+	private sealed class ScriptedCreateEntitySchemaCommand : CreateEntitySchemaCommand {
+		private readonly ILogger _logger;
+		private readonly Queue<AttemptOutcome> _outcomes;
+		public int Invocations { get; private set; }
+		public ScriptedCreateEntitySchemaCommand(ILogger logger, params AttemptOutcome[] outcomes)
+			: base(Substitute.For<IRemoteEntitySchemaCreator>(), logger) {
+			_logger = logger;
+			_outcomes = new Queue<AttemptOutcome>(outcomes);
+		}
+		public override int Execute(CreateEntitySchemaOptions options) {
+			Invocations++;
+			AttemptOutcome outcome = _outcomes.Count > 0 ? _outcomes.Dequeue() : new AttemptOutcome(0, null, null);
+			if (outcome.Throw is not null) {
+				throw outcome.Throw;
+			}
+			if (!string.IsNullOrEmpty(outcome.Message)) {
+				if (outcome.ExitCode == 0) {
+					_logger.WriteInfo(outcome.Message);
+				} else {
+					_logger.WriteError(outcome.Message);
+				}
+			}
+			return outcome.ExitCode;
+		}
+	}
+
+	private sealed class ScriptedUpdateEntitySchemaCommand : UpdateEntitySchemaCommand {
+		private readonly ILogger _logger;
+		private readonly Queue<AttemptOutcome> _outcomes;
+		public int Invocations { get; private set; }
+		public ScriptedUpdateEntitySchemaCommand(ILogger logger, params AttemptOutcome[] outcomes)
+			: base(Substitute.For<IRemoteEntitySchemaColumnManager>(), logger) {
+			_logger = logger;
+			_outcomes = new Queue<AttemptOutcome>(outcomes);
+		}
+		public override int Execute(UpdateEntitySchemaOptions options) {
+			Invocations++;
+			AttemptOutcome outcome = _outcomes.Count > 0 ? _outcomes.Dequeue() : new AttemptOutcome(0, null, null);
+			if (outcome.Throw is not null) {
+				throw outcome.Throw;
+			}
+			if (!string.IsNullOrEmpty(outcome.Message)) {
+				if (outcome.ExitCode == 0) {
+					_logger.WriteInfo(outcome.Message);
+				} else {
+					_logger.WriteError(outcome.Message);
+				}
+			}
+			return outcome.ExitCode;
+		}
+	}
+
+	private sealed class ScriptedCreateDataBindingDbCommand : CreateDataBindingDbCommand {
+		private readonly ILogger _logger;
+		private readonly Queue<AttemptOutcome> _outcomes;
+		public int Invocations { get; private set; }
+		public ScriptedCreateDataBindingDbCommand(ILogger logger, params AttemptOutcome[] outcomes)
+			: base(Substitute.For<IDataBindingDbService>(), logger) {
+			_logger = logger;
+			_outcomes = new Queue<AttemptOutcome>(outcomes);
+		}
+		public override int Execute(CreateDataBindingDbOptions options) {
+			Invocations++;
+			AttemptOutcome outcome = _outcomes.Count > 0 ? _outcomes.Dequeue() : new AttemptOutcome(0, null, null);
+			if (outcome.Throw is not null) {
+				throw outcome.Throw;
+			}
+			if (!string.IsNullOrEmpty(outcome.Message)) {
+				if (outcome.ExitCode == 0) {
+					_logger.WriteInfo(outcome.Message);
+				} else {
+					_logger.WriteError(outcome.Message);
+				}
+			}
+			return outcome.ExitCode;
 		}
 	}
 

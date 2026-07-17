@@ -3382,11 +3382,11 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildSchemaSync() {
 		return new ToolContractDefinition(
 			SchemaSyncTool.ToolName,
-			"Batches create-lookup, create-entity, update-entity, and inline seed operations in one call. Requests use operations[*].type; do not send operations[*].operation.",
+			"Batches create-lookup, create-entity, update-entity, and seed-data operations in one call. Requests use operations[*].type; do not send operations[*].operation. Transient network failures (DNS/reset/timeout/gateway) are retried per operation (up to 3 attempts with short backoff); on a mid-batch abort the response carries a resume-plan — resubmit only resume-plan.operations, never the whole batch.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PackageNameFieldName, OperationsFieldName],
 				EnvironmentPackageFields(
-					Field(OperationsFieldName, ArrayType, "Ordered schema operations. For create-entity, set `is-virtual` to true to create a virtual schema without a physical table; it defaults to false and cannot be combined with `seed-rows`. For update-entity, supply `update-operations` (add/modify/remove) or a `columns` add-batch. Column fields are unified with get-app-info: `column-name` (alias `name`), `type` (alias `data-value-type`), `reference-schema-name` (alias `reference-schema`), `required` (alias `is-required`) — so a column read from get-app-info can be sent back by adding the `action` verb. For an add, `title-localizations` is OPTIONAL: when omitted, `en-US` is auto-derived from a scalar `title`/`caption` or the column name (the `en-US` value must be English when supplied).")),
+					Field(OperationsFieldName, ArrayType, "Ordered schema operations. Supported `type` values: create-lookup, create-entity, update-entity, seed-data. For create-entity, set `is-virtual` to true to create a virtual schema without a physical table; it defaults to false and cannot be combined with `seed-rows`. For update-entity, supply `update-operations` (add/modify/remove) or a `columns` add-batch. A standalone `seed-data` operation inserts `seed-rows` into an existing schema (used by resume-plan when a create succeeded but its inline seeding failed). Column fields are unified with get-app-info: `column-name` (alias `name`), `type` (alias `data-value-type`), `reference-schema-name` (alias `reference-schema`), `required` (alias `is-required`) — so a column read from get-app-info can be sent back by adding the `action` verb. For an add, `title-localizations` is OPTIONAL: when omitted, `en-US` is auto-derived from a scalar `title`/`caption` or the column name (the `en-US` value must be English when supplied).")),
 				Validators: [
 					new ToolContractValidator(
 						"sync-schemas-operations-localizations",
@@ -3404,7 +3404,8 @@ internal static class ToolContractCatalog {
 					SuccessFalseSignal
 				],
 				Field(SuccessFieldName, BooleanType, "Whether every sync-schemas operation succeeded."),
-				Field("results", ArrayType, "Per-operation execution results keyed by canonical `type`.")
+				Field("results", ArrayType, "Per-operation execution results for the operations that ran. Each item carries `type`, `schema-name`, `success`, `status` (completed|failed), `operation-index` (zero-based index into the request operations), and — only when the operation was retried for a transient fault — `attempts`. Operations that never ran are NOT in this array; see `resume-plan`."),
+				Field("resume-plan", ObjectType, "Present only when the batch aborted before completing. Carries `instruction`, `failed-operation` (operation-index/type/schema-name/error), `not-run-operation-indexes`, and `operations` — the failed operation followed by every not-run operation, echoed in re-submittable input shape. Resubmit ONLY resume-plan.operations as a new sync-schemas call; never resend the already-completed operations.")
 			),
 			CommonErrorContract,
 			EnvironmentPackageAliases(),
@@ -3455,6 +3456,33 @@ internal static class ToolContractCatalog {
 								new Dictionary<string, object?> {
 									[ActionFieldName] = "remove",
 									["name"] = "UsrObsolete"
+								}
+							}
+						}
+					}
+				}),
+				Example("Resume after a transient mid-batch abort: resubmit only resume-plan.operations", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[PackageNameFieldName] = ExamplePackageName,
+					// These operations came verbatim from the previous response's resume-plan.operations
+					// (the failed create-lookup followed by the update-entity that never ran). The
+					// operations already marked completed are intentionally omitted.
+					[OperationsFieldName] = new object[] {
+						new Dictionary<string, object?> {
+							["type"] = "create-lookup",
+							[SchemaNameFieldName] = ExampleTaskStatusSchemaName,
+							[TitleLocalizationsFieldName] = LocalizationMap("Task Status")
+						},
+						new Dictionary<string, object?> {
+							["type"] = "update-entity",
+							[SchemaNameFieldName] = ExamplePackageName,
+							["update-operations"] = new object[] {
+								new Dictionary<string, object?> {
+									[ActionFieldName] = "add",
+									[ColumnNameFieldName] = "UsrStatus",
+									["type"] = "Lookup",
+									[TitleLocalizationsFieldName] = LocalizationMap("Status"),
+									[ReferenceSchemaNameFieldName] = ExampleTaskStatusSchemaName
 								}
 							}
 						}

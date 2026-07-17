@@ -21,13 +21,41 @@ namespace Clio.Command.McpServer.Tools;
 public sealed class SchemaSyncTool(
 	IToolCommandResolver commandResolver,
 	ILogger logger,
-	ISchemaEnrichmentService? enrichmentService = null) {
+	ISchemaEnrichmentService? enrichmentService = null,
+	IRetryDelay? retryDelay = null,
+	TimeSpan? maxCumulativeRetryDelay = null) {
 
 	internal const string ToolName = "sync-schemas";
 	private const string CreateLookupOperationName = "create-lookup";
 	private const string CreateEntityOperationName = "create-entity";
 	private const string UpdateEntityOperationName = "update-entity";
 	private const string SeedDataOperationName = "seed-data";
+
+	/// <summary>
+	/// Total number of attempts (including the first) for an operation whose failure is classified as a
+	/// transient network fault (ENG-93374).
+	/// </summary>
+	internal const int MaxAttempts = 3;
+
+	/// <summary>
+	/// Backoff applied before each retry of a transient failure. Index 0 is the wait after the first
+	/// attempt, index 1 after the second — worst-case ~3s of added latency per retried step. A
+	/// create-lookup has two retryable steps (create + registration), so its worst case is ~6s, and the
+	/// added latency accumulates across the operations in a batch. Kept small so even a fully-flapping
+	/// batch stays well under the MCP client per-call ceiling while it holds the per-tenant lock.
+	/// </summary>
+	private static readonly TimeSpan[] RetryBackoffs = [TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2)];
+
+	/// <summary>
+	/// Cap on the TOTAL retry backoff a single sync-schemas call may spend across all of its operations.
+	/// Per-op backoff is small, but a large batch under sustained flapping would otherwise accumulate
+	/// synchronous in-lock sleep toward the MCP client per-call ceiling; once this budget is spent the
+	/// remaining operations degrade to fail-fast (no further retry) and surface a resume-plan instead.
+	/// </summary>
+	private static readonly TimeSpan DefaultMaxCumulativeRetryDelay = TimeSpan.FromSeconds(30);
+
+	private readonly IRetryDelay _retryDelay = retryDelay ?? ThreadSleepRetryDelay.Shared;
+	private readonly TimeSpan _maxCumulativeRetryDelay = maxCumulativeRetryDelay ?? DefaultMaxCumulativeRetryDelay;
 
 	/// <summary>
 	/// Executes a batch of schema operations in a single MCP call.
@@ -38,7 +66,10 @@ public sealed class SchemaSyncTool(
 		"create lookups, create entities, seed data, update entities. " +
 		"For create-entity, set is-virtual to true only when the schema must not have a physical database table; it defaults to false. " +
 		"Reduces MCP round-trips and lock overhead compared to individual tool calls. " +
-		"Stops on first failure because subsequent operations may depend on earlier ones. " +
+		"Transient network failures (DNS resolution, connection reset/refused, timeouts, gateway errors) are retried per operation " +
+		"(up to 3 attempts with short backoff) before the operation is failed. " +
+		"On a mid-batch abort the response carries a 'resume-plan' with per-operation status (completed/failed/not-run) and a " +
+		"ready-to-resubmit 'operations' array — resubmit ONLY resume-plan.operations, never the whole batch. " +
 		"For update-entity, column field names match the get-app-info read shape (read-shape aliases " +
 		"name/data-value-type/reference-schema/is-required/caption are accepted), so a column read from " +
 		"get-app-info can be sent back without field translation — add an 'action' verb for modify/remove, " +
@@ -76,7 +107,10 @@ public sealed class SchemaSyncTool(
 					ContextSummary: new ApplicationDataForgeContextSummary([], [], [], []));
 			}
 		}
+		IReadOnlyList<SchemaSyncOperation> operations = args.Operations?.ToList() ?? [];
 		var results = new List<SchemaSyncOperationResult>();
+		int abortedAtIndex = -1;
+		SchemaSyncOperation? failedResumeOperation = null;
 		// FR-05: serialize on the per-tenant lock keyed by the environment the batch's schema commands
 		// resolve under, so different tenants run concurrently instead of behind one global lock.
 		string tenantKey = commandResolver.GetTenantKey(new EnvironmentOptions { Environment = args.EnvironmentName });
@@ -84,23 +118,37 @@ public sealed class SchemaSyncTool(
 			McpToolExecutionLock.MarkInUse(tenantKey);
 			bool previousPreserveMessages = logger.PreserveMessages;
 			logger.PreserveMessages = true;
+			// Batch-level cap on total retry backoff so a large flapping batch cannot accumulate
+			// synchronous in-lock sleep toward the MCP client per-call ceiling (see DefaultMaxCumulativeRetryDelay).
+			var retryBudget = new RetryBudget(_maxCumulativeRetryDelay);
 			try {
-				foreach ((SchemaSyncOperation op, int index) in args.Operations.Select((operation, operationIndex) => (operation, operationIndex))) {
+				for (int index = 0; index < operations.Count; index++) {
+					SchemaSyncOperation op = operations[index];
 					logger.ClearMessages();
 					if (TryValidateSeedRows(op, index, out SchemaSyncOperationResult? seedValidationFailure)) {
-						results.Add(seedValidationFailure);
+						results.Add(Classify(seedValidationFailure!, index));
+						abortedAtIndex = index;
+						// A validation failure applied nothing on the server, so the whole operation is
+						// resubmittable as-is.
+						failedResumeOperation = op;
 						break;
 					}
-					SchemaSyncOperationResult result = ExecuteOperation(op, args, index, tenantKey);
+					SchemaSyncOperationResult result = Classify(ExecuteOperation(op, args, index, tenantKey, retryBudget), index);
 					results.Add(result);
 					if (!result.Success) {
+						abortedAtIndex = index;
+						failedResumeOperation = op;
 						break;
 					}
-					if (op.SeedRows?.Any() == true) {
+					if (op.SeedRows?.Any() == true && !IsSeedDataOperation(op)) {
 						logger.ClearMessages();
-						SchemaSyncOperationResult seedResult = ExecuteSeedData(op, args, tenantKey);
+						SchemaSyncOperationResult seedResult = Classify(ExecuteSeedData(op, args, tenantKey, retryBudget), index);
 						results.Add(seedResult);
 						if (!seedResult.Success) {
+							abortedAtIndex = index;
+							// The create step already applied server-side, so resuming must NOT recreate the
+							// schema — resubmit only the seeding as a first-class seed-data operation.
+							failedResumeOperation = BuildSeedResumeOperation(op);
 							break;
 						}
 					}
@@ -114,6 +162,7 @@ public sealed class SchemaSyncTool(
 		return new SchemaSyncResponse {
 			Success = results.Count > 0 && results.All(r => r.Success),
 			Results = results,
+			ResumePlan = BuildResumePlan(operations, results, abortedAtIndex, failedResumeOperation),
 			DataForge = dataForge
 		};
 	}
@@ -144,11 +193,23 @@ public sealed class SchemaSyncTool(
 			.ToList();
 	}
 
-	private SchemaSyncOperationResult ExecuteOperation(SchemaSyncOperation op, SchemaSyncArgs args, int operationIndex, string tenantKey) {
+	// Stamps the machine-readable status and the input operation index onto a result so callers can
+	// separate completed from failed operations without positional guessing.
+	private static SchemaSyncOperationResult Classify(SchemaSyncOperationResult result, int operationIndex) {
+		result.OperationIndex = operationIndex;
+		result.Status = result.Success ? "completed" : "failed";
+		return result;
+	}
+
+	private static bool IsSeedDataOperation(SchemaSyncOperation op) =>
+		string.Equals(op.Type, SeedDataOperationName, StringComparison.Ordinal);
+
+	private SchemaSyncOperationResult ExecuteOperation(SchemaSyncOperation op, SchemaSyncArgs args, int operationIndex, string tenantKey, RetryBudget retryBudget) {
 		return op.Type switch {
-			CreateLookupOperationName => ExecuteCreateSchema(op, args, "BaseLookup", false, CreateLookupOperationName, tenantKey),
-			CreateEntityOperationName => ExecuteCreateSchema(op, args, op.ParentSchemaName, op.ExtendParent, CreateEntityOperationName, tenantKey),
-			UpdateEntityOperationName => ExecuteUpdateEntity(op, args, tenantKey),
+			CreateLookupOperationName => ExecuteCreateSchema(op, args, "BaseLookup", false, CreateLookupOperationName, tenantKey, retryBudget),
+			CreateEntityOperationName => ExecuteCreateSchema(op, args, op.ParentSchemaName, op.ExtendParent, CreateEntityOperationName, tenantKey, retryBudget),
+			UpdateEntityOperationName => ExecuteUpdateEntity(op, args, tenantKey, retryBudget),
+			SeedDataOperationName => ExecuteSeedData(op, args, tenantKey, retryBudget),
 			_ => new SchemaSyncOperationResult {
 				Type = GetReportedOperationType(op),
 				SchemaName = op.SchemaName,
@@ -163,6 +224,15 @@ public sealed class SchemaSyncTool(
 		int operationIndex,
 		out SchemaSyncOperationResult? validationFailure) {
 		validationFailure = null;
+		if (IsSeedDataOperation(op) && op.SeedRows?.Any() != true) {
+			validationFailure = new SchemaSyncOperationResult {
+				Type = SeedDataOperationName,
+				SchemaName = op.SchemaName,
+				Success = false,
+				Error = $"sync-schemas operations[{operationIndex}] is invalid: a seed-data operation requires a non-empty 'seed-rows' array."
+			};
+			return true;
+		}
 		if (op.SeedRows?.Any() != true) {
 			return false;
 		}
@@ -191,14 +261,15 @@ public sealed class SchemaSyncTool(
 
 	private SchemaSyncOperationResult ExecuteCreateSchema(
 		SchemaSyncOperation op, SchemaSyncArgs args,
-		string parentSchemaName, bool extendParent, string operationName, string tenantKey) {
+		string parentSchemaName, bool extendParent, string operationName, string tenantKey, RetryBudget retryBudget) {
 		try {
 			string context = $"{operationName} operation for schema '{op.SchemaName}'";
 			IReadOnlyDictionary<string, string> titleLocalizations = EntitySchemaLocalizationContract.RequireTitleLocalizations(
 				op.TitleLocalizations,
 				op.LegacyTitle,
 				context);
-			if (string.Equals(operationName, CreateLookupOperationName, StringComparison.Ordinal)) {
+			bool isLookup = string.Equals(operationName, CreateLookupOperationName, StringComparison.Ordinal);
+			if (isLookup) {
 				ModelingGuardrails.EnsureLookupColumnsDoNotShadowInheritedBaseLookupColumns(op.Columns);
 			}
 			CreateEntitySchemaOptions options = CreateEntitySchemaTool.CreateOptions(
@@ -209,37 +280,61 @@ public sealed class SchemaSyncTool(
 				parentSchemaName, extendParent,
 				isVirtual: string.Equals(operationName, CreateEntityOperationName, StringComparison.Ordinal)
 					&& op.IsVirtual);
-			CreateEntitySchemaCommand command = commandResolver.Resolve<CreateEntitySchemaCommand>(options);
-			int exitCode = command.Execute(options);
-			if (exitCode == 0 && string.Equals(operationName, CreateLookupOperationName, StringComparison.Ordinal)) {
-				ILookupRegistrationService registrationService =
-					commandResolver.Resolve<ILookupRegistrationService>(options);
-				registrationService.EnsureLookupRegistration(
-					args.PackageName,
-					op.SchemaName,
-					EntitySchemaLocalizationContract.GetDefaultTitle(titleLocalizations, context));
+			// Retry the create step on transient network faults, resolving a fresh command per attempt.
+			OperationExecution createExecution = RunAttempts(() =>
+				commandResolver.Resolve<CreateEntitySchemaCommand>(options).Execute(options), retryBudget);
+			OperationExecution execution = createExecution;
+			// Probe the collision at most once per create op and reuse it for both the idempotent-resume
+			// decision and the failure-result hint, so a failed create-lookup never issues two identical
+			// FindEntitySchema round-trips under the per-tenant lock.
+			SchemaSyncCollisionInfo? collision = null;
+			bool collisionProbed = false;
+			if (isLookup) {
+				bool schemaApplied = createExecution.ExitCode == 0 && createExecution.CaughtException is null;
+				if (!schemaApplied && createExecution.CaughtException is null) {
+					collision = TryGetCollisionInfo(op.SchemaName, args);
+					collisionProbed = true;
+					if (collision is not null
+						&& string.Equals(collision.ExistingPackageName, args.PackageName, StringComparison.OrdinalIgnoreCase)) {
+						// Idempotent resume: the schema already exists in the TARGET package, so a prior
+						// (possibly interrupted) attempt applied the create. Skip recreating and finish the
+						// outstanding registration instead of failing the whole op on the collision. This
+						// closes the resume hole where a create succeeded but its registration flapped: the
+						// echoed create-lookup can be resubmitted and still complete registration (ENG-93374).
+						var idempotentMessages = new List<LogMessage>(createExecution.Messages) {
+							new InfoMessage($"sync-schemas: '{op.SchemaName}' already exists in package '{args.PackageName}'; skipping re-create and completing lookup registration.")
+						};
+						execution = new OperationExecution(0, null, idempotentMessages, createExecution.Attempts);
+						schemaApplied = true;
+					}
+				}
+				// A transient fault in registration is retried on its OWN scope, so a registration flap
+				// never re-runs the (already applied) create.
+				if (schemaApplied) {
+					OperationExecution registration = RunAttempts(() => {
+						ILookupRegistrationService registrationService =
+							commandResolver.Resolve<ILookupRegistrationService>(options);
+						registrationService.EnsureLookupRegistration(
+							args.PackageName,
+							op.SchemaName,
+							EntitySchemaLocalizationContract.GetDefaultTitle(titleLocalizations, context));
+						return 0;
+					}, retryBudget);
+					execution = execution.Append(registration);
+				}
 			}
-			IReadOnlyList<LogMessage> messages = [.. McpPassthroughRedaction.SanitizeAndRedact([.. logger.FlushAndSnapshotMessages(clearMessages: true)], tenantKey)];
-			SchemaSyncCollisionInfo? collisionInfo = exitCode != 0
-				? TryGetCollisionInfo(op.SchemaName, args)
-				: null;
-			return new SchemaSyncOperationResult {
-				Type = operationName,
-				SchemaName = op.SchemaName,
-				Success = exitCode == 0,
-				Messages = messages,
-				Error = BuildOperationError(operationName, exitCode, messages),
-				CollisionInfo = collisionInfo
-			};
-		} catch (Exception ex) {
-			SchemaSyncCollisionInfo? collisionInfo = TryGetCollisionInfo(op.SchemaName, args);
+			return FinalizeResult(operationName, op.SchemaName, execution, tenantKey,
+				collisionArgs: args, precomputedCollision: collision, collisionAlreadyProbed: collisionProbed);
+		} catch (Exception ex) when (!McpExceptionPolicy.IsUnrecoverable(ex)) {
+			// Deterministic option-building failures (localization/guardrail validation) are not network
+			// faults and are never retried — surface them exactly as before.
 			return new SchemaSyncOperationResult {
 				Type = operationName,
 				SchemaName = op.SchemaName,
 				Success = false,
 				Error = SensitiveErrorTextRedactor.Redact(ex.Message),
 				Messages = [.. McpPassthroughRedaction.SanitizeAndRedact([.. logger.FlushAndSnapshotMessages(clearMessages: true)], tenantKey)],
-				CollisionInfo = collisionInfo
+				CollisionInfo = TryGetCollisionInfo(op.SchemaName, args)
 			};
 		}
 	}
@@ -257,7 +352,7 @@ public sealed class SchemaSyncTool(
 				return null;
 			}
 			string hint = string.Equals(existing.PackageName, args.PackageName, StringComparison.OrdinalIgnoreCase)
-				? "Schema already exists in the target package. Use update-entity to add columns or proceed to seed-data without recreating."
+				? "Schema already exists in the target package. A collision after a network retry usually means the create WAS applied server-side despite the lost response — skip this operation and resume with the remaining ops, or use update-entity to add columns / proceed to seed-data without recreating."
 				: $"Schema already exists in package '{existing.PackageName}'. Reuse it by referencing it without creation, or call delete-schema first to remove the stale version before recreating.";
 			return new SchemaSyncCollisionInfo(existing.PackageName, hint);
 		} catch {
@@ -265,12 +360,12 @@ public sealed class SchemaSyncTool(
 		}
 	}
 
-	private SchemaSyncOperationResult ExecuteUpdateEntity(SchemaSyncOperation op, SchemaSyncArgs args, string tenantKey) {
+	private SchemaSyncOperationResult ExecuteUpdateEntity(SchemaSyncOperation op, SchemaSyncArgs args, string tenantKey, RetryBudget retryBudget) {
 		try {
-				IReadOnlyList<UpdateEntitySchemaOperationArgs> updateOperations = ResolveUpdateOperations(op);
-				if (updateOperations.Count == 0) {
-					return new SchemaSyncOperationResult {
-						Type = UpdateEntityOperationName,
+			IReadOnlyList<UpdateEntitySchemaOperationArgs> updateOperations = ResolveUpdateOperations(op);
+			if (updateOperations.Count == 0) {
+				return new SchemaSyncOperationResult {
+					Type = UpdateEntityOperationName,
 					SchemaName = op.SchemaName,
 					Success = false, Error = BuildMissingUpdateOperationsError()
 				};
@@ -281,19 +376,12 @@ public sealed class SchemaSyncTool(
 				SchemaName = op.SchemaName,
 				Operations = UpdateEntitySchemaTool.SerializeOperations(updateOperations, op.SchemaName)
 			};
-			UpdateEntitySchemaCommand command = commandResolver.Resolve<UpdateEntitySchemaCommand>(options);
-			int exitCode = command.Execute(options);
-			IReadOnlyList<LogMessage> messages = [.. McpPassthroughRedaction.SanitizeAndRedact([.. logger.FlushAndSnapshotMessages(clearMessages: true)], tenantKey)];
-				return new SchemaSyncOperationResult {
-					Type = UpdateEntityOperationName,
-				SchemaName = op.SchemaName,
-				Success = exitCode == 0,
-				Messages = messages,
-					Error = BuildOperationError(UpdateEntityOperationName, exitCode, messages)
-				};
-			} catch (Exception ex) {
-				return new SchemaSyncOperationResult {
-					Type = UpdateEntityOperationName,
+			OperationExecution execution = RunAttempts(() =>
+				commandResolver.Resolve<UpdateEntitySchemaCommand>(options).Execute(options), retryBudget);
+			return FinalizeResult(UpdateEntityOperationName, op.SchemaName, execution, tenantKey, collisionArgs: null);
+		} catch (Exception ex) when (!McpExceptionPolicy.IsUnrecoverable(ex)) {
+			return new SchemaSyncOperationResult {
+				Type = UpdateEntityOperationName,
 				SchemaName = op.SchemaName,
 				Success = false,
 				Error = SensitiveErrorTextRedactor.Redact(ex.Message),
@@ -371,7 +459,7 @@ public sealed class SchemaSyncTool(
 			+ "add an 'action' for modify/remove.";
 	}
 
-	private SchemaSyncOperationResult ExecuteSeedData(SchemaSyncOperation op, SchemaSyncArgs args, string tenantKey) {
+	private SchemaSyncOperationResult ExecuteSeedData(SchemaSyncOperation op, SchemaSyncArgs args, string tenantKey, RetryBudget retryBudget) {
 		try {
 			string rowsJson = JsonSerializer.Serialize(op.SeedRows);
 			CreateDataBindingDbOptions options = new() {
@@ -380,17 +468,14 @@ public sealed class SchemaSyncTool(
 				SchemaName = op.SchemaName,
 				RowsJson = rowsJson
 			};
-			CreateDataBindingDbCommand command = commandResolver.Resolve<CreateDataBindingDbCommand>(options);
-			int exitCode = command.Execute(options);
-			IReadOnlyList<LogMessage> messages = [.. McpPassthroughRedaction.SanitizeAndRedact([.. logger.FlushAndSnapshotMessages(clearMessages: true)], tenantKey)];
-			return new SchemaSyncOperationResult {
-				Type = SeedDataOperationName,
-				SchemaName = op.SchemaName,
-				Success = exitCode == 0,
-				Messages = messages,
-				Error = BuildOperationError(SeedDataOperationName, exitCode, messages)
-			};
-		} catch (Exception ex) {
+			// Seeding is a non-idempotent write: do NOT auto-retry it. A committed-but-lost response
+			// would otherwise be re-inserted silently. A transient seed failure fails fast into the
+			// resume-plan (a standalone seed-data op) for a deliberate operator/agent resubmit.
+			OperationExecution execution = RunAttempts(() =>
+				commandResolver.Resolve<CreateDataBindingDbCommand>(options).Execute(options),
+				retryBudget, retryable: false);
+			return FinalizeResult(SeedDataOperationName, op.SchemaName, execution, tenantKey, collisionArgs: null);
+		} catch (Exception ex) when (!McpExceptionPolicy.IsUnrecoverable(ex)) {
 			return new SchemaSyncOperationResult {
 				Type = SeedDataOperationName,
 				SchemaName = op.SchemaName,
@@ -399,6 +484,134 @@ public sealed class SchemaSyncTool(
 				Messages = [.. McpPassthroughRedaction.SanitizeAndRedact([.. logger.FlushAndSnapshotMessages(clearMessages: true)], tenantKey)]
 			};
 		}
+	}
+
+	// Runs a single command attempt, retrying up to MaxAttempts when the failure is a transient network
+	// fault AND the operation is safe to re-run. Because the executor commands swallow their own exceptions
+	// into an exit code + a logged error message, classification checks BOTH the caught exception (when one
+	// still surfaces) and the last error message (pre-redaction). Only the final attempt's messages are
+	// kept — earlier attempts contribute an info-level retry note instead of duplicating their error output.
+	// retryable is false for non-idempotent writes (seed-data): re-running a committed-but-lost insert would
+	// silently double-apply rows, so those fail fast into the resume-plan for a deliberate resubmit instead.
+	private OperationExecution RunAttempts(Func<int> attempt, RetryBudget retryBudget, bool retryable = true) {
+		var retryNotes = new List<LogMessage>();
+		int attempts = 0;
+		while (true) {
+			attempts++;
+			logger.ClearMessages();
+			int exitCode = 1;
+			Exception? caught = null;
+			try {
+				exitCode = attempt();
+			} catch (Exception ex) when (!McpExceptionPolicy.IsUnrecoverable(ex)) {
+				caught = ex;
+			}
+			IReadOnlyList<LogMessage> rawMessages = logger.FlushAndSnapshotMessages(clearMessages: true);
+			bool failed = caught is not null || exitCode != 0;
+			bool transient = retryable && failed && (caught is not null
+				? TransientNetworkFailureClassifier.IsTransient(caught)
+				: TransientNetworkFailureClassifier.IsTransientErrorMessage(TryGetLastErrorMessage(rawMessages)));
+			if (transient && attempts < MaxAttempts) {
+				// Clamp defensively so raising MaxAttempts without extending RetryBackoffs reuses the last
+				// backoff rather than throwing IndexOutOfRangeException inside the per-tenant lock.
+				TimeSpan backoff = RetryBackoffs[Math.Min(attempts - 1, RetryBackoffs.Length - 1)];
+				// Stop retrying once the batch-level backoff budget is spent so cumulative in-lock sleep
+				// stays bounded regardless of batch size / flap intensity.
+				if (!retryBudget.TryConsume(backoff)) {
+					retryNotes.Add(new InfoMessage(
+						$"sync-schemas: transient network failure on attempt {attempts}/{MaxAttempts}; batch retry budget exhausted, failing fast."));
+					var exhausted = new List<LogMessage>(retryNotes);
+					exhausted.AddRange(rawMessages);
+					return new OperationExecution(exitCode, caught, exhausted, attempts);
+				}
+				retryNotes.Add(new InfoMessage(
+					$"sync-schemas: transient network failure on attempt {attempts}/{MaxAttempts}; retrying in {backoff.TotalSeconds:0.#}s."));
+				_retryDelay.Wait(backoff);
+				continue;
+			}
+			var combined = new List<LogMessage>(retryNotes);
+			combined.AddRange(rawMessages);
+			return new OperationExecution(exitCode, caught, combined, attempts);
+		}
+	}
+
+	// Builds the final operation result from a completed execution (success, transient-exhausted, or a
+	// non-transient failure). collisionArgs is non-null only for create operations, where a probe adds a
+	// hint when the schema already exists on the server.
+	private SchemaSyncOperationResult FinalizeResult(
+		string operationName, string schemaName, OperationExecution execution, string tenantKey, SchemaSyncArgs? collisionArgs,
+		SchemaSyncCollisionInfo? precomputedCollision = null, bool collisionAlreadyProbed = false) {
+		IReadOnlyList<LogMessage> messages = [.. McpPassthroughRedaction.SanitizeAndRedact([.. execution.Messages], tenantKey)];
+		int? attempts = execution.Attempts > 1 ? execution.Attempts : null;
+		// Reuse a collision already probed by the caller (create path) rather than issuing a second
+		// identical FindEntitySchema round-trip under the lock.
+		SchemaSyncCollisionInfo? ResolveCollision() => collisionAlreadyProbed
+			? precomputedCollision
+			: collisionArgs is not null ? TryGetCollisionInfo(schemaName, collisionArgs) : null;
+		if (execution.CaughtException is not null) {
+			return new SchemaSyncOperationResult {
+				Type = operationName,
+				SchemaName = schemaName,
+				Success = false,
+				Error = SensitiveErrorTextRedactor.Redact(execution.CaughtException.Message),
+				Messages = messages,
+				CollisionInfo = ResolveCollision(),
+				Attempts = attempts
+			};
+		}
+		bool success = execution.ExitCode == 0;
+		return new SchemaSyncOperationResult {
+			Type = operationName,
+			SchemaName = schemaName,
+			Success = success,
+			Messages = messages,
+			Error = BuildOperationError(operationName, execution.ExitCode, messages),
+			CollisionInfo = !success ? ResolveCollision() : null,
+			Attempts = attempts
+		};
+	}
+
+	private static string? TryGetLastErrorMessage(IReadOnlyList<LogMessage> messages) =>
+		messages
+			.LastOrDefault(message => message.LogDecoratorType == LogDecoratorType.Error)
+			?.Value
+			?.ToString()
+			?.Trim();
+
+	// Synthesizes the seed-only resume operation for the case where a create succeeded but its inline
+	// seeding failed — resubmitting the original create op would collide with the schema just created.
+	private static SchemaSyncOperation BuildSeedResumeOperation(SchemaSyncOperation op) =>
+		new(SeedDataOperationName, op.SchemaName, SeedRows: op.SeedRows);
+
+	// Assembles the resume plan for a mid-batch abort: the failed operation followed by every operation
+	// that never ran, all echoed in re-submittable input shape. Returns null on a fully-successful batch.
+	private static SchemaSyncResumePlan? BuildResumePlan(
+		IReadOnlyList<SchemaSyncOperation> operations,
+		IReadOnlyList<SchemaSyncOperationResult> results,
+		int abortedAtIndex,
+		SchemaSyncOperation? failedResumeOperation) {
+		if (abortedAtIndex < 0 || failedResumeOperation is null) {
+			return null;
+		}
+		SchemaSyncOperationResult? failedResult = results.LastOrDefault(r => !r.Success);
+		var notRunIndexes = new List<int>();
+		var resumeOperations = new List<SchemaSyncOperation> { failedResumeOperation };
+		for (int index = abortedAtIndex + 1; index < operations.Count; index++) {
+			notRunIndexes.Add(index);
+			resumeOperations.Add(operations[index]);
+		}
+		return new SchemaSyncResumePlan {
+			Instruction = "Batch aborted before completing. Resubmit ONLY the operations in resume-plan.operations "
+				+ "(the failed operation followed by the not-run operations) as a new sync-schemas call; "
+				+ "do NOT resubmit the operations already marked completed.",
+			FailedOperation = new SchemaSyncResumeFailure(
+				abortedAtIndex,
+				failedResult?.Type ?? failedResumeOperation.Type,
+				failedResumeOperation.SchemaName,
+				failedResult?.Error),
+			NotRunOperationIndexes = notRunIndexes,
+			Operations = resumeOperations
+		};
 	}
 
 	private static string GetReportedOperationType(SchemaSyncOperation op) {
@@ -422,7 +635,7 @@ public sealed class SchemaSyncTool(
 			return $"sync-schemas operations[{operationIndex}] is missing required field 'type'.";
 		}
 
-		string supportedTypes = string.Join(", ", CreateLookupOperationName, CreateEntityOperationName, UpdateEntityOperationName);
+		string supportedTypes = string.Join(", ", CreateLookupOperationName, CreateEntityOperationName, UpdateEntityOperationName, SeedDataOperationName);
 		return $"sync-schemas operations[{operationIndex}].type '{op.Type}' is invalid. Supported values: {supportedTypes}.";
 	}
 
@@ -432,17 +645,58 @@ public sealed class SchemaSyncTool(
 		}
 
 		string fallback = $"{operationName} failed with exit code {exitCode}";
-		string? detailedError = messages
-			.LastOrDefault(message => message.LogDecoratorType == LogDecoratorType.Error)
-			?.Value
-			?.ToString()
-			?.Trim();
+		string? detailedError = TryGetLastErrorMessage(messages);
 
 		if (string.IsNullOrWhiteSpace(detailedError)) {
 			return fallback;
 		}
 
 		return $"{fallback}: {detailedError}";
+	}
+
+	/// <summary>
+	/// Mutable per-call budget bounding the TOTAL retry backoff a single sync-schemas call may spend
+	/// across all of its operations. Not thread-safe by design — one instance is created per call and
+	/// used only while the call holds the per-tenant lock.
+	/// </summary>
+	private sealed class RetryBudget(TimeSpan total) {
+		private TimeSpan _remaining = total;
+
+		/// <summary>
+		/// Attempts to consume the given backoff from the remaining budget. Returns <see langword="true"/>
+		/// and decrements when it fits; returns <see langword="false"/> (leaving the budget unchanged) when
+		/// it would overspend, signalling the caller to stop retrying.
+		/// </summary>
+		public bool TryConsume(TimeSpan amount) {
+			if (amount > _remaining) {
+				return false;
+			}
+			_remaining -= amount;
+			return true;
+		}
+	}
+
+	/// <summary>
+	/// Outcome of a (possibly retried) single command execution: the resolved exit code, the caught
+	/// recoverable exception (if the command threw rather than returning a code), the messages to surface
+	/// (final attempt's output plus any retry notes), and the number of attempts made.
+	/// </summary>
+	private readonly record struct OperationExecution(
+		int ExitCode,
+		Exception? CaughtException,
+		IReadOnlyList<LogMessage> Messages,
+		int Attempts) {
+
+		/// <summary>
+		/// Combines a follow-up execution (e.g. lookup registration after a successful create) into this
+		/// one: the follow-up's outcome wins, messages concatenate, and the attempt count is the larger of
+		/// the two so the surfaced count reflects the worst retry burst.
+		/// </summary>
+		public OperationExecution Append(OperationExecution next) {
+			var messages = new List<LogMessage>(Messages);
+			messages.AddRange(next.Messages);
+			return new OperationExecution(next.ExitCode, next.CaughtException, messages, Math.Max(Attempts, next.Attempts));
+		}
 	}
 }
 
@@ -471,7 +725,7 @@ public sealed record SchemaSyncArgs(
 /// </summary>
 public sealed record SchemaSyncOperation(
 	[property: JsonPropertyName("type")]
-	[property: Description("Operation type: create-lookup, create-entity, or update-entity")]
+	[property: Description("Operation type: create-lookup, create-entity, update-entity, or seed-data")]
 	[property: Required]
 	string Type,
 
@@ -509,7 +763,7 @@ public sealed record SchemaSyncOperation(
 	IEnumerable<UpdateEntitySchemaOperationArgs>? UpdateOperations = null,
 
 	[property: JsonPropertyName("seed-rows")]
-	[property: Description("Rows to seed after creating the schema. Each object must have a 'values' key.")]
+	[property: Description("Rows to seed after creating the schema (create-lookup/create-entity), or the rows to insert for a standalone seed-data operation. Each object must have a 'values' key.")]
 	IEnumerable<SchemaSyncSeedRow>? SeedRows = null
 ) {
 	/// <summary>
@@ -548,10 +802,50 @@ public sealed class SchemaSyncResponse {
 	[JsonPropertyName("results")]
 	public IReadOnlyList<SchemaSyncOperationResult> Results { get; init; } = [];
 
+	/// <summary>
+	/// Recovery affordance emitted only when the batch aborted before completing. Enumerates the failed
+	/// and not-run operations and provides a ready-to-resubmit <c>operations</c> array (ENG-93374).
+	/// </summary>
+	[JsonPropertyName("resume-plan")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public SchemaSyncResumePlan? ResumePlan { get; init; }
+
 	[JsonPropertyName("dataforge")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public ApplicationDataForgeResult? DataForge { get; init; }
 }
+
+/// <summary>
+/// Resume plan describing which operations completed, which failed, and which never ran when a
+/// <c>sync-schemas</c> batch aborts mid-way, plus the operations to resubmit (ENG-93374).
+/// </summary>
+public sealed class SchemaSyncResumePlan {
+
+	[JsonPropertyName("instruction")]
+	public string Instruction { get; init; } = string.Empty;
+
+	[JsonPropertyName("failed-operation")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public SchemaSyncResumeFailure? FailedOperation { get; init; }
+
+	[JsonPropertyName("not-run-operation-indexes")]
+	public IReadOnlyList<int> NotRunOperationIndexes { get; init; } = [];
+
+	[JsonPropertyName("operations")]
+	public IReadOnlyList<SchemaSyncOperation> Operations { get; init; } = [];
+}
+
+/// <summary>
+/// Summary of the operation that aborted a <c>sync-schemas</c> batch.
+/// </summary>
+public sealed record SchemaSyncResumeFailure(
+	[property: JsonPropertyName("operation-index")] int OperationIndex,
+	[property: JsonPropertyName("type")] string Type,
+	[property: JsonPropertyName("schema-name")] string SchemaName,
+	[property: JsonPropertyName("error")]
+	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	string? Error
+);
 
 /// <summary>
 /// Result of a single operation within a <c>sync-schemas</c> batch.
@@ -566,6 +860,27 @@ public sealed class SchemaSyncOperationResult {
 
 	[JsonPropertyName("success")]
 	public bool Success { get; init; }
+
+	/// <summary>
+	/// Machine-readable status: <c>completed</c> or <c>failed</c>. Operations that never ran are not
+	/// present in <c>results</c> — they are enumerated in <see cref="SchemaSyncResponse.ResumePlan"/> (ENG-93374).
+	/// </summary>
+	[JsonPropertyName("status")]
+	public string Status { get; set; }
+
+	/// <summary>
+	/// Zero-based index of the originating operation in the request <c>operations</c> array (ENG-93374).
+	/// </summary>
+	[JsonPropertyName("operation-index")]
+	public int OperationIndex { get; set; }
+
+	/// <summary>
+	/// Number of attempts made when the operation was retried for a transient network fault. Omitted when
+	/// the operation succeeded on the first attempt (ENG-93374).
+	/// </summary>
+	[JsonPropertyName("attempts")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public int? Attempts { get; init; }
 
 	[JsonPropertyName("error")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

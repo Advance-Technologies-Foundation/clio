@@ -386,6 +386,121 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("Emits a machine-readable resume plan when a batch aborts mid-way (ENG-93374).")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-schemas emits a resume plan on a mid-batch abort")]
+	[AllureDescription("Starts the real MCP server without a reachable environment and submits a two-operation batch whose first operation fails local validation. Verifies the structured response separates completed/failed/not-run operations and carries a resume-plan whose operations echo the failed op plus the not-run op in re-submittable shape.")]
+	public async Task SchemaSyncTool_Should_Emit_ResumePlan_On_MidBatch_Abort() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: false);
+		string invalidEnvironmentName = $"missing-sync-schemas-env-{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = invalidEnvironmentName,
+					["package-name"] = "UsrPkg",
+					["operations"] = new object?[] {
+						// Op 0 fails local validation (virtual entity cannot carry seed rows) before any
+						// environment resolution, so the batch aborts at index 0 and op 1 never runs.
+						new Dictionary<string, object?> {
+							["type"] = "create-entity",
+							["schema-name"] = "UsrVirtualItem",
+							["title-localizations"] = BuildLocalizations("Virtual item"),
+							["is-virtual"] = true,
+							["seed-rows"] = new object?[] {
+								new Dictionary<string, object?> {
+									["values"] = new Dictionary<string, object?> { ["Name"] = "Unavailable" }
+								}
+							}
+						},
+						new Dictionary<string, object?> {
+							["type"] = "update-entity",
+							["schema-name"] = "UsrBooks",
+							["update-operations"] = new object?[] {
+								new Dictionary<string, object?> {
+									["action"] = "add",
+									["column-name"] = "UsrPages",
+									["type"] = "Integer"
+								}
+							}
+						}
+					}
+				}
+			},
+			context.CancellationTokenSource.Token);
+		JsonElement response = ExtractSchemaSyncResponse(callResult);
+		JsonElement[] results = response.GetProperty("results").EnumerateArray().ToArray();
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a mid-batch abort should use the normal structured MCP result envelope");
+		response.GetProperty("success").GetBoolean().Should().BeFalse(
+			because: "the batch did not complete every operation");
+		results.Should().HaveCount(1,
+			because: "only the failed operation ran; the second operation never executed");
+		results[0].GetProperty("status").GetString().Should().Be("failed",
+			because: "the aborting operation must be marked failed in the machine-readable status");
+		results[0].GetProperty("operation-index").GetInt32().Should().Be(0,
+			because: "the failed operation is the first one in the request");
+		JsonElement resumePlan = response.GetProperty("resume-plan");
+		resumePlan.GetProperty("failed-operation").GetProperty("operation-index").GetInt32().Should().Be(0,
+			because: "the resume plan must name the failed operation by its request index");
+		resumePlan.GetProperty("not-run-operation-indexes").EnumerateArray().Select(e => e.GetInt32())
+			.Should().Equal([1],
+			because: "the second operation never ran and must be listed as not-run");
+		JsonElement[] resumeOperations = resumePlan.GetProperty("operations").EnumerateArray().ToArray();
+		resumeOperations.Should().HaveCount(2,
+			because: "the resume plan must carry the failed op followed by every not-run op");
+		resumeOperations[0].GetProperty("type").GetString().Should().Be("create-entity",
+			because: "the failed create-entity must be resubmittable as-is");
+		resumeOperations[1].GetProperty("type").GetString().Should().Be("update-entity",
+			because: "the not-run update-entity must be resubmittable as-is");
+	}
+
+	[Test]
+	[Description("Rejects a standalone seed-data operation with no seed rows before environment resolution (ENG-93374).")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-schemas rejects an empty standalone seed-data operation")]
+	[AllureDescription("Starts the real MCP server without a reachable environment and verifies that a standalone seed-data operation without seed-rows returns a structured validation failure naming the missing field.")]
+	public async Task SchemaSyncTool_Should_Reject_Empty_SeedData_Operation_Before_Environment_Resolution() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: false);
+		string invalidEnvironmentName = $"missing-sync-schemas-env-{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = invalidEnvironmentName,
+					["package-name"] = "UsrPkg",
+					["operations"] = new object?[] {
+						new Dictionary<string, object?> {
+							["type"] = "seed-data",
+							["schema-name"] = "UsrGenre"
+						}
+					}
+				}
+			},
+			context.CancellationTokenSource.Token);
+		JsonElement response = ExtractSchemaSyncResponse(callResult);
+		JsonElement result = response.GetProperty("results").EnumerateArray().Single();
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "an invalid seed-data operation should use the normal structured MCP result envelope");
+		response.GetProperty("success").GetBoolean().Should().BeFalse(
+			because: "a seed-data operation without rows is invalid");
+		result.GetProperty("error").GetString().Should().Contain("seed-rows",
+			because: "the caller must be told the seed-rows array is required");
+		result.GetProperty("error").GetString().Should().NotContain(invalidEnvironmentName,
+			because: "local validation must happen before environment resolution");
+	}
+
+	[Test]
 	[Description("Applies structured default-value-config through sync-schemas update-entity and verifies the resulting DateTime column readback.")]
 	[AllureTag(ToolName)]
 	[AllureTag(ReadColumnToolName)]
