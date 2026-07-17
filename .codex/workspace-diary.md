@@ -6385,3 +6385,10 @@ Decision: Check NuGet through an isolated NuGet.org source, serialize Release cl
 Discovery: Ring, Claude, and Codex can retain independent `clio mcp-server` processes; updater safety therefore requires PID, path, and start-time identity plus bounded child shutdown and no parent-process termination.
 Files: clio-ring/ClioRing/Services/ClioToolUpdateService.cs, clio-ring/ClioRing/Services/ClioToolProcessInspector.cs, clio-ring/ClioRing.Ipc/ClioProcessGate.cs, clio-ring/ClioRing/ViewModels/RingViewModel.cs, clio-ring/ClioRing/Views/RingView.axaml, spec/ring-clio-tool-update/
 Impact: Ring now provides deduplicated main/tray update attention, explicit safe update and kill-retry flows, persistent check state, 149 focused tests, clean three-lens review, and a passing Windows x64 NativeAOT publish.
+
+## 2026-07-17 – ENG-93375 Sequence default honors mask prefix
+Context: modify-entity-schema-column/create-entity-schema silently dropped the static prefix of a Sequence default (LN-{0} → 00001 instead of LN-00001).
+Decision: Parse the default-value-config.value mask in EntitySchemaDesignerSupport.ResolveSequencePrefix — a single trailing {0} yields the static prefix; suffixes/repeated placeholders/value+sequence-prefix combos/value-source are rejected with actionable errors. Prefix still settable via sequence-prefix alone.
+Discovery: Sequence resolver is passthrough; the prefix flows through CreateDefaultValueDto + readback CreateDefaultValueConfig (SequencePrefix). Runtime round-trip on ts1-dev04 proved a created record gets UsrCode=LN-00001; suffix mask rejected before save.
+Files: clio/Command/EntitySchemaDesigner/EntitySchemaDesignerSupport.cs, EntitySchemaDefaultValueConfig.cs; McpServer/Tools/ToolContractGetTool.cs, Prompts/EntitySchemaPrompt.cs; docs/commands/{create,modify,update}-entity-schema.md; help/en/*.txt; clio.tests/Command/EntitySchemaDesignerSupportTests.cs; clio.mcp.e2e/EntitySchemaToolE2ETests.cs
+Impact: Autonumber masks with a static prefix now work end-to-end; unsupported masks fail loudly instead of silently. Left a scratch schema UsrEng93375Seq (1 record) on ts1-dev04.

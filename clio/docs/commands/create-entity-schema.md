@@ -133,6 +133,7 @@ cliogate must be installed on the target Creatio environment.
 - `--is-virtual` is independent of inheritance and replacement behavior; use it only for entities whose data comes from a custom provider rather than a Creatio table.
 - For `default-value-config.source = SystemValue`, `value-source` can be Guid, alias, or caption; clio persists canonical Guid.
 - For `default-value-config.source = Settings`, `value-source` can be code, name, or id; clio persists canonical setting code.
+- For `default-value-config.source = Sequence` (text columns only), the static prefix comes from `sequence-prefix` (e.g. `LN-`) or from a `value` mask whose single `{0}` placeholder is at the end (e.g. `LN-{0}` produces `LN-00001`); setting both is rejected. Masks with static text after `{0}` (a suffix) are not supported and fail with a validation error instead of being silently dropped.
 - **Caption language validation.** Every `title-localizations` / `description-localizations` value must be written in the language of its culture key. The mandatory `en-US` value must be English; a value written in a script that does not match a Latin-script culture key (for example Cyrillic text under `en-US`) is rejected with an actionable error. Put localized text under its own culture key (e.g. `uk-UA`). This guarantees generated captions match the connected user's profile language.
 
 ## See also
