@@ -220,7 +220,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["remove-data-binding-row"] = PassthroughClassification.NotEnvironmentSensitive,
 			["check-settings-health"] = PassthroughClassification.NotEnvironmentSensitive, // PRD prose: "get-settings-health"
 
-			// --- NotApplicable (116): class (a)/(b) — already passthrough-capable, out of this audit ---
+			// --- NotApplicable (117): class (a)/(b) — already passthrough-capable, out of this audit ---
 			["StopAllCreatio"] = PassthroughClassification.NotApplicable,
 			["add-item-model"] = PassthroughClassification.NotApplicable,
 			["add-package"] = PassthroughClassification.NotApplicable,
@@ -328,6 +328,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["restore-db-to-local-server"] = PassthroughClassification.NotApplicable,
 			["restore-workspace"] = PassthroughClassification.NotApplicable,
 			["set-fsm-mode"] = PassthroughClassification.NotApplicable,
+			["set-user-theme"] = PassthroughClassification.NotApplicable, // BaseTool ExecuteResolved<SetUserThemeCommand> per-call env resolution (ENG-93302) — already passthrough-capable, like create-theme/list-themes
 			["start-creatio"] = PassthroughClassification.NotApplicable,
 			["stop-all-creatio"] = PassthroughClassification.NotApplicable,
 			["stop-creatio"] = PassthroughClassification.NotApplicable,

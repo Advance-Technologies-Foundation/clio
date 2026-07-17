@@ -49,10 +49,14 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 			because: "the standalone creation contract must expose the virtual-schema argument");
 		createContract.Defaults.Should().Contain(value => value.Name == "is-virtual" && value.Value == "false",
 			because: "standalone entity creation must document persistent schemas as the default");
+		createContract.Description.Should().Contain("get-guidance with name virtual-entities",
+			because: "the live standalone contract should route virtual schema work to its canonical guide");
 		ToolContractDefinition syncContract = contracts.Single(tool => tool.Name == SchemaSyncTool.ToolName);
 		syncContract.Defaults.Should().Contain(value =>
 				value.Name == "operations[*].is-virtual" && value.Value == "false",
 			because: "batched create-entity operations must advertise the same persistent default");
+		syncContract.Description.Should().Contain("get-guidance with name virtual-entities",
+			because: "the live batched contract should route virtual schema work to its canonical guide");
 		contracts.Single(tool => tool.Name == GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName)
 			.OutputContract.Fields.Should().Contain(field => field.Name == "virtual",
 				because: "schema properties must advertise virtual status for readback verification");

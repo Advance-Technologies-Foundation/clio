@@ -596,8 +596,9 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 
 	[Test]
 	[AllureTag(GuidanceGetTool.ToolName)]
-	[AllureName("get-guidance returns the canonical ESQ filters guidance article")]
-	public async Task GuidanceGet_Should_Return_Esq_Filters_Guide() {
+	[AllureName("get-guidance returns the canonical ESQ filter family router")]
+	[Description("Verifies the stable esq-filters name now routes callers to responsibility-specific frontend, backend, and parsing articles.")]
+	public async Task GuidanceGet_ShouldReturnEsqFilterRouter_WhenStableFamilyNameIsRequested() {
 		// Arrange
 		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
@@ -616,6 +617,57 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "successful guidance lookups should return the resolved article payload");
 		response.Article!.Uri.Should().Be("docs://mcp/guides/esq-filters",
 			because: "the canonical resource URI should still be visible in the tool response");
+		response.Article.Text.Should().Contain("esq-filters-frontend",
+			because: "the family router should expose the frontend construction owner");
+		response.Article.Text.Should().Contain("esq-filters-backend",
+			because: "the family router should expose the backend construction owner");
+		response.Article.Text.Should().Contain("esq-filter-parsing",
+			because: "the family router should expose the runtime parsing owner");
+	}
+
+	[Test]
+	[AllureTag(GuidanceGetTool.ToolName)]
+	[AllureName("get-guidance returns every responsibility-specific ESQ filter article")]
+	[Description("Verifies frontend construction, backend construction, and runtime parsing ESQ filter articles are independently retrievable by stable name.")]
+	public async Task GuidanceGet_ShouldReturnEsqFilterChildGuides_WhenStableChildNamesAreRequested() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		GuidanceGetResponse frontend = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> { ["name"] = "esq-filters-frontend" });
+		GuidanceGetResponse backend = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> { ["name"] = "esq-filters-backend" });
+		GuidanceGetResponse parsing = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> { ["name"] = "esq-filter-parsing" });
+
+		// Assert
+		frontend.Success.Should().BeTrue(
+			because: "serialized filter construction should have one retrievable frontend owner");
+		frontend.Article!.Uri.Should().Be("docs://mcp/guides/esq-filters/frontend",
+			because: "the frontend catalog name should preserve the hierarchical frontend URI");
+		backend.Success.Should().BeTrue(
+			because: "native C# filter construction should have one retrievable backend owner");
+		backend.Article!.Uri.Should().Be("docs://mcp/guides/esq-filters/backend",
+			because: "the backend catalog name should preserve the hierarchical backend URI");
+		backend.Article!.Text.Should().Contain("FilterComparisonType.NotEndWith",
+			because: "get-guidance should return the concrete backend scalar Compare recipes");
+		backend.Article!.Text.Should().Contain("disabledLeaf.IsEnabled = false",
+			because: "get-guidance should return the verified native disabled-leaf recipe");
+		parsing.Success.Should().BeTrue(
+			because: "runtime C# filter interpretation should have one retrievable parsing owner");
+		parsing.Article!.Uri.Should().Be("docs://mcp/guides/esq-filter-parsing",
+			because: "the parsing catalog name should preserve the independent parsing URI");
+		parsing.Article!.Text.Should().Contain("ReadScalarParameter",
+			because: "get-guidance should return the verified runtime scalar parameter parsing recipe");
+		parsing.Article!.Text.Should().Contain("return group.IsNot ? !result : result",
+			because: "get-guidance should return the verified group-negation evaluation rule");
 	}
 
 	[Test]
@@ -780,6 +832,43 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "the guidance tool should return the token minting instructions");
 		response.Article.Text.Should().Contain("mint a new token",
 			because: "the guidance tool should return the no-refresh-token expiry recovery instruction");
+	}
+
+	[Test]
+	[AllureTag(GuidanceGetTool.ToolName)]
+	[AllureName("get-guidance returns the virtual entity lifecycle guide")]
+	[Description("Verifies get-guidance returns virtual-entities with schema-before-executor and Creatio 10.0 virtual-write prerequisites.")]
+	public async Task GuidanceGet_ShouldReturnVirtualEntitiesGuide_WhenStableNameIsRequested() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		GuidanceGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> { ["name"] = "virtual-entities" });
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "virtual-entities should be registered in the guidance catalog");
+		response.Article.Should().NotBeNull(
+			because: "a successful lookup should return the resolved virtual entity article");
+		response.Article!.Uri.Should().Be("docs://mcp/guides/virtual-entities",
+			because: "the stable guidance name should preserve the virtual-entities resource URI");
+		response.Article.Text.Should().Contain("virtual entity schema MUST already exist",
+			because: "tool-based retrieval should preserve the schema-before-executor gate");
+		response.Article.Text.Should().Contain("virtual writes require Creatio 10.0 or later",
+			because: "tool-based retrieval must preserve the hard virtual-write version boundary");
+		response.Article.Text.Should().Contain("Creatio 8.3.4 or earlier",
+			because: "tool-based retrieval should state the unsupported release boundary explicitly");
+		response.Article.Text.Should().Contain("EnableVirtualEntitySupport",
+			because: "tool-based retrieval should require the virtual CRUD feature on supported versions");
+		response.Article.Text.Should().Contain("record/tenant scope",
+			because: "tool-based retrieval should preserve the provider authorization boundary");
+		response.Article.Text.Should().Contain("maximum page size",
+			because: "tool-based retrieval should preserve bounded provider execution");
+		response.Article.Text.Should().Contain("clio set-feature EnableVirtualEntitySupport 1 -e <environment>",
+			because: "tool-based retrieval should preserve the executable feature-enablement fallback");
 	}
 
 	private static async Task<GuidanceGetResponse> CallAsync(
