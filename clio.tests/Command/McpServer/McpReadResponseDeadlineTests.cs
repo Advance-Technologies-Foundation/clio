@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command.McpServer;
+using Clio.Command.McpServer.Tools;
 using FluentAssertions;
 using ModelContextProtocol.Protocol;
 using NUnit.Framework;
@@ -131,6 +132,40 @@ public sealed class McpReadResponseDeadlineTests {
 		// Assert
 		result.Should().BeFalse(
 			because: "the idempotent hint must NOT admit a server write to the read deadline");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("get-app-info is excluded even though it is ReadOnly=true: it streams notifications/progress under the write-path heartbeat and its contract is 'await completion, do not retry on a perceived timeout', so the read deadline must not bound it.")]
+	public void IsRetrySafe_ShouldBeFalse_WhenToolIsProgressStreamingRead() {
+		// Arrange
+		// Act — get-app-info is ReadOnly=true, Destructive=false but streams progress.
+		bool result = McpReadDeadlineGate.IsRetrySafe(
+			ApplicationGetInfoTool.ApplicationGetInfoToolName, readOnly: true, destructive: false);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "a progress-streaming read owns the write-path heartbeat contract; a 'safe to retry' read deadline would cut off a legitimately long read");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The annotations overload also excludes the progress-streaming read, matching the exact get-app-info annotation shape.")]
+	public void IsRetrySafe_ShouldExcludeProgressStreamingRead_FromAnnotations() {
+		// Arrange — the exact shape of get-app-info.
+		ToolAnnotations annotations = new() {
+			ReadOnlyHint = true,
+			DestructiveHint = false,
+			IdempotentHint = true
+		};
+
+		// Act
+		bool result = McpReadDeadlineGate.IsRetrySafe(
+			ApplicationGetInfoTool.ApplicationGetInfoToolName, annotations);
+
+		// Assert
+		result.Should().BeFalse(
+			because: "the streaming-read exclusion must hold on the annotations overload too");
 	}
 
 	// ---- McpReadResponseDeadline.ResolveDeadline ---------------------------------------------------

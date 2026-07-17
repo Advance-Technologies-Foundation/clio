@@ -120,7 +120,7 @@ internal static class McpReadResponseDeadline {
 			.WhenAny(workTask, Task.Delay(effectiveDeadline, delayCts.Token))
 			.ConfigureAwait(false);
 		if (completed == workTask) {
-			delayCts.Cancel();        // stop the losing timer
+			await delayCts.CancelAsync().ConfigureAwait(false);  // stop the losing timer
 			workCts.Dispose();        // work is done; it will not touch the token again
 			return await workTask.ConfigureAwait(false);
 		}
@@ -128,7 +128,7 @@ internal static class McpReadResponseDeadline {
 		// The delay won. Nudge cooperative tools to stop, THEN hand ownership of workCts to the observer.
 		// Cancel BEFORE ObserveAndDispose: the observer's continuation disposes workCts once the work
 		// completes, so cancelling afterwards could race a dispose and throw ObjectDisposedException.
-		workCts.Cancel();
+		await workCts.CancelAsync().ConfigureAwait(false);
 		// Observe (and eventually dispose) the abandoned work on EVERY non-work-wins path, including
 		// cancellation, so a later fault can never surface as an UnobservedTaskException.
 		ObserveAndDispose(workTask, workCts, toolName);
@@ -188,8 +188,15 @@ internal static class McpReadResponseDeadline {
 					AggregateException exception = t.Exception;
 					if (exception is not null) {
 						try {
+							// Redact the fault text before logging: a backend read failure routinely carries
+							// target URIs, absolute paths, or connection-string hosts, and this stderr line is
+							// frequently captured into MCP server logs. Log a safe summary (exception type +
+							// redacted message) rather than the full base exception (mirrors the other MCP
+							// error paths in this area that scrub via SensitiveErrorTextRedactor).
+							Exception baseException = exception.GetBaseException();
 							Console.Error.WriteLine(
-								$"[{toolName}] read operation faulted after the response deadline: {exception.GetBaseException()}");
+								$"[{toolName}] read operation faulted after the response deadline: "
+								+ $"{baseException.GetType().Name}: {SensitiveErrorTextRedactor.Redact(baseException.Message)}");
 						}
 						catch {
 							// Best-effort diagnostics: a closed/redirected stream must never resurface as an
