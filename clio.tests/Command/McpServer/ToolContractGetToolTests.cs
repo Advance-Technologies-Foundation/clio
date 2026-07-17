@@ -1246,6 +1246,8 @@ public sealed class ToolContractGetToolTests {
 		createEntityContract.Defaults.Should().Contain(defaultValue =>
 				defaultValue.Name == "is-virtual" && defaultValue.Value == "false",
 			because: "persistent entity creation must remain the documented default");
+		createEntityContract.Description.Should().Contain("get-guidance with name virtual-entities",
+			because: "the standalone contract should route virtual schema work to its canonical guide");
 		ToolContractDefinition syncContract = result.Tools.Single(contract =>
 			contract.Name == SchemaSyncTool.ToolName);
 		syncContract.Defaults.Should().Contain(defaultValue =>
@@ -1255,6 +1257,8 @@ public sealed class ToolContractGetToolTests {
 				validator.Name == "sync-schemas-virtual-entity-seed-rows"
 				&& validator.Code == "invalid-workflow-shape",
 			because: "the contract must reject seed rows before creating a virtual schema that has no table");
+		syncContract.Description.Should().Contain("get-guidance with name virtual-entities",
+			because: "the batched contract should route virtual schema work to its canonical guide");
 		ToolContractDefinition propertiesContract = result.Tools.Single(contract =>
 			contract.Name == GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName);
 		propertiesContract.OutputContract.Fields.Should().Contain(field =>
