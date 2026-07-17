@@ -6085,6 +6085,81 @@ Discovery: `DisableResetPassword = false` skips the SQL that writes false; it do
 Files: clio/Command/CreatioInstallCommand/InstallerCommand.cs, clio/Command/McpServer/Tools/InstallerCommandTool.cs, clio/Command/McpServer/Tools/ToolContractGetTool.cs, clio/Command/McpServer/Prompts/DeployCreatioPrompt.cs, clio/Command/McpServer/Resources/DeployLifecycleGuidanceResource.cs, clio.tests/Command/CliOptionNamingBackwardCompatibilityTests.cs, clio.tests/Command/McpServer/InstallerCommandToolTests.cs, clio.mcp.e2e/DeployCreatioToolE2ETests.cs, clio/docs/commands/deploy-creatio.md, clio/help/en/deploy-creatio.txt
 Impact: Ring and Explorer no longer clear the restored build's password-change state by default; Command/MCP suites pass 4196/4211 with 15 skips on net8 and net10, MCP E2E passes 2/2 per framework, Ring passes 95/95, and Windows x64 NativeAOT publish succeeds.
 
+## 2026-07-13 18:07 – PR #866 agentic review
+Context: User requested a comprehensive review of Binary sys-setting upload at PR head 15af091c.
+Decision: Reviewed the full origin/master...origin/pr/866 diff with independent quality/testing, security, and performance/correctness lenses; no code or GitHub review was changed.
+Discovery: value-file-path is an arbitrary local-file read/exfiltration path because the file is encoded before the existing setting type is verified; targeting a Text setting returns the Base64 contents. The 10 MiB guard is bypassable/unbounded for inline Base64, the update prompt cannot supply value-file-path, and the Binary E2E does not verify persisted bytes. TeamCity MCP E2E build 15722042 is red; the unauthenticated page did not expose its test log.
+Files: clio/Command/SysSettingsCommand.cs, clio/Common/ISysSettingsManager.cs, clio/Command/McpServer/Prompts/SysSettingPrompt.cs, clio.mcp.e2e/SysSettingsToolE2ETests.cs
+Impact: PR should remain changes-requested until the local-file trust boundary and resource bounds are fixed and MCP E2E is green.
+
+## 2026-07-13 18:13 – PR #866 Jira and TeamCity evidence
+Context: User supplied ENG-93320 and authorized browser inspection of failed TeamCity MCP E2E build 15722042.
+Decision: Reconciled the review against the story acceptance criteria and inspected both failed test details plus the Binary test result in authenticated Jira/TeamCity sessions.
+Discovery: ENG-93320 intentionally requires a user-provided logo file path and a 10 MiB guard. The new UpdateSysSetting_Should_Upload_Binary_From_ValueFilePath E2E passed in 1.698 s. The build failed only because CreateRelatedPageAddon_Should_Advertise_Pages_Array_Runtime_Schema and GetRelatedPageAddon_ShouldAdvertiseInputs_WhenToolsListed still use flat ListToolsAsync and throw Single/no-match after master moved long-tail tools to lazy discovery; PR #866 does not change either file.
+Files: clio.mcp.e2e/CreateRelatedPageAddonToolE2ETests.cs, clio.mcp.e2e/GetRelatedPageAddonToolE2ETests.cs, clio.mcp.e2e/SysSettingsToolE2ETests.cs, clio/Command/SysSettingsCommand.cs
+Impact: TeamCity red is an unrelated master E2E migration gap, while the review blocker remains the missing Binary-type check before reading value-file-path; the resource-limit and prompt-contract findings still apply.
+
+## 2026-07-13 18:30 – PR #866 file policy and Binary readback review
+Context: User proposed enforcing Creatio file-extension policy for Binary sys-setting uploads and adding symmetric Binary readback to the sys-settings surface.
+Decision: Treat environment file-policy enforcement and operation-specific errors as an actionable correctness/security review finding; request an explicit product decision on Binary download because ENG-93320 only requires setting a logo, but the established sys-settings surface is otherwise bidirectional.
+Discovery: Creatio documents FileSecurityMode, FileExtensionsAllowList, FileExtensionsDenyList, and AllowFilesWithUnknownType as applying to integrations and web services. PR #866 sends Base64 through PostSysSettingsValues without checking them. Binary settings retain bytes but no source filename, and saving readback locally would make the MCP operation filesystem-mutating rather than read-only.
+Files: clio/Command/SysSettingsCommand.cs, clio/Command/McpServer/Tools/SysSettingsTool.cs, clio/Command/SysSettingsModels.cs, clio/Command/McpServer/Resources/SysSettingsGuidanceResource.cs
+Impact: The upload path should apply the target environment's active policy and return a specific extension error; Binary readback is best exposed through an explicit destination path or a dedicated non-destructive download tool with byte-for-byte E2E coverage.
+
+## 2026-07-14 13:03 – PR #866 follow-up remains blocked
+Context: Revalidated author follow-up commit 3b52b8f9 and PR head 1407ce44 against the requested-changes review.
+Decision: Keep changes requested. Accept Binary download as follow-up #873, but do not accept deferral of administrator file-policy enforcement or allocation-before-limit resource handling.
+Discovery: Target Binary validation now precedes file content reads on CLI and MCP paths, and focused SysSettings tests pass 68/68 on net8 and net10. However ReadAllBytes still consumes a file that grows after sizing before rejecting it, inline Base64 allocates value.Length before checking the decoded cap, the updated prompt does not embed the supplied value or file path, and E2E still asserts acceptance rather than persisted bytes. GitHub unit/integration checks pass; TeamCity build 15725495 is red and its published status URL returns 404.
+Files: clio/Command/SysSettingsCommand.cs, clio/Common/ISysSettingsManager.cs, clio/Command/McpServer/Prompts/SysSettingPrompt.cs, clio.mcp.e2e/SysSettingsToolE2ETests.cs
+Impact: Unblock requires bounded streaming/pre-allocation rejection, active Creatio file-policy enforcement with relevant errors, prompt payload preservation, authoritative Binary byte readback in E2E, and a green or explained TeamCity result.
+
+## 2026-07-14 13:21 – PR #866 TeamCity failure confirmed unrelated
+Context: VPN access was restored and the failed TeamCity MCP E2E test for build 15725495 was inspected in the authenticated UI.
+Decision: Treat the red TeamCity status as unrelated to PR #866's sys-settings diff; retain the code-review blockers independently.
+Discovery: 437 tests passed, 5 were ignored, and only DeployCreatio_Should_Stream_Typed_Stage_Events_Via_Progress_Meta_When_Archive_Is_Invalid failed because the final typed event was stage instead of run-completed. The assertion is at DeployUninstallProgressTests.cs lines 117-123, and neither that test nor the deploy progress surface differs between origin/master and the PR head.
+Files: clio.mcp.e2e/DeployUninstallProgressTests.cs
+Impact: CI red does not implicate Binary sys-setting upload, but the file-policy and bounded-allocation findings still prevent approval.
+
+## 2026-07-14 14:40 – PR #866 round-two author response validation
+Context: The PR author replied that all five requested changes were addressed in 9a9e3950/current head 981db9b1.
+Decision: Keep changes requested pending another correction; do not post or resolve threads without user authorization.
+Discovery: Bounded single-handle reading, prompt payload preservation, and legacy-cli byte readback are correct, and focused SysSettings tests pass 71/71 on net8 and net10. Active file policy is still bypassed by CLI inline Base64 and Binary create initial values; the Base64 precheck rejects an exact 10 MiB payload due to padding math; malformed/oversized values still return a generic MCP error; and the E2E uses a .bin filename that the documented default DenyList blocks.
+Files: clio/Command/SysSettingsCommand.cs, clio/Common/ISysSettingsManager.cs, clio.mcp.e2e/SysSettingsToolE2ETests.cs, clio.tests/Command/McpServer/SysSettingsToolTests.cs
+Impact: The follow-up review should acknowledge the resolved items but request centralized non-bypassable policy enforcement, correct cap-boundary math, precise MCP validation errors, and a policy-safe E2E extension.
+
+## 2026-07-14 15:30 – PR #866 round-three revalidation
+Context: The author reported both remaining policy blockers and both smaller corrections fixed in c92db0be, followed by Sonar refactor 7ed5bb2c and current head db102231.
+Decision: Keep changes requested; do not approve or post another response without explicit user authorization.
+Discovery: All-Users mode resolution now fails closed, MCP/explicit-Binary CLI/create guards and precise validation errors work, the E2E uses .png, and focused tests pass 81/81 on net8 and net10. However the legacy CLI guard still keys on caller-supplied Type (default Text), so valid inline Base64 for an existing Binary setting bypasses policy when Binary is omitted; extensionless files are also treated as unknown without the content detection required by documented Creatio semantics.
+Files: clio/Command/SysSettingsCommand.cs, clio/Common/ISysSettingsManager.cs, clio.tests/Command/McpServer/SysSettingsToolTests.cs, clio.mcp.e2e/SysSettingsToolE2ETests.cs
+Impact: Approval requires resolving the actual existing type before CLI policy branching and detecting content type for extensionless files or conservatively refusing them under active policy.
+## 2026-07-15 07:49 – uninstall-creatio leaves IIS AppPool profiles by design
+Context: Investigated why removed environments `calc`, `d1`, and `lcap-local` left directories under `C:\Users`.
+Decision: Diagnosis only; no code or system state changed.
+Discovery: `CreatioUninstaller` detects `C:\Users\<site-name>` before IIS deletion but intentionally emits `delete-apppool-profile` as skipped/not-supported and never deletes it. All three folders are registered unloaded `Win32_UserProfile` entries with IIS virtual-account SIDs (`S-1-5-82-*`), so correct cleanup must remove the Windows profile registration as well as files; plain recursive directory deletion would be incomplete. The Ring guided-deploy PRD explicitly scoped real profile deletion out.
+Files: clio/Common/CreatioUninstaller.cs, clio/docs/commands/uninstall-creatio.md, spec/ring-guided-deploy/prd/prd-ring-guided-deploy.md, clio.tests/Common/CreatioUninstallerTestFixture.cs
+Impact: The residual folders are confirmed expected current behavior, not an intermittent uninstall failure; a future fix should use profile-aware Windows cleanup after stopping/deleting IIS and before unregistering the environment.
+## 2026-07-15 21:59 – IIS HTTPS deployment refinement
+Context: Refined support for deploying local Creatio instances to IIS over HTTPS without implementing code.
+Decision: Reuse `--use-https` as the exclusive protocol selector, resolve an installed LocalMachine certificate by the derived FQDN with an optional thumbprint override, create exactly one IIS binding, and apply idempotent .NET Framework-only Web.config transformations before site creation.
+Discovery: IIS deployment currently logs an HTTPS URL but the scenario handler, environment registration, and browser launch hardcode HTTP; MCP and ClioRing cannot request HTTPS. The host has two matching valid certificates (2026-11-05 and 2030-12-22 expiry), and the working bank binding uses the latter. The live `deloitte-nf` site has both HTTP and HTTPS bindings; its root Web.config uses HTTPS ServiceModel sources while `Terrasoft.WebApp/Web.config` still has `wsService encrypted="false"`.
+Files: clio/Command/CreatioInstallCommand/InstallerCommand.cs, clio/Common/DeploymentStrategies/IISDeploymentStrategy.cs, clio/Common/ScenarioHandlers/CreateIISSite.cs, clio/Command/CreatioInstallCommand/CreatioInstallerService.cs, clio/Command/McpServer/Tools/InstallerCommandTool.cs, clio-ring/ClioRing.Ipc/DeployPlan.cs
+Impact: Implementation must cover certificate preflight/selection, exclusive IIS binding creation, NetFramework config mutation, correct registered/launched URI, and additive MCP/Ring contract updates; no source code was changed during refinement.
+
+## 2026-07-15 22:01 – IIS HTTPS refinement correction
+Context: User clarified why the live `deloitte-nf` site currently exposes both protocols.
+Decision: Treat the dual binding as temporary manual setup, not existing product behavior; retain the requirement that clio creates exactly one HTTP or HTTPS binding.
+Discovery: The HTTP binding remains only because the user has not removed it after manually adding HTTPS.
+Files: .codex/workspace-diary.md
+Impact: Acceptance criteria should validate the binding created by clio, without inferring a migration or cleanup requirement from the current `deloitte-nf` site.
+
+## 2026-07-15 22:14 – IIS HTTPS fallback and certificate pinning refinement
+Context: User required HTTPS deployment to remain non-failing without an installed certificate and proposed a persistent `pin-certificate` selection command.
+Decision: Treat HTTPS as opportunistic: use a usable matching certificate when available, otherwise warn and deploy consistently over HTTP. Store an optional normalized thumbprint in root clio settings; `pin-certificate --thumbprint` validates and persists it, while interactive invocation without a thumbprint lists usable LocalMachine certificates and prompts for selection. A stale/invalid pin never blocks deployment; it falls back to deterministic usable-certificate selection or HTTP.
+Discovery: The generated appsettings schema comes from `clio/tpl/jsonschema/schema.json.tpl`, but `SaveSchema` currently skips an existing `%LOCALAPPDATA%/Creatio/clio/schema.json`; template-only changes would leave current users stale. The implementation should refresh the generated schema atomically when template content changes. No new TeamCity E2E may require a Creatio ZIP or mutate a local IIS deployment.
+Files: clio/Environment/ConfigurationOptions.cs, clio/Environment/ISettingsRepository.cs, clio/Environment/SettingsBootstrapService.cs, clio/tpl/jsonschema/schema.json.tpl, clio/Command/CreatioInstallCommand/InstallerCommand.cs, clio/Common/DeploymentStrategies/IISDeploymentStrategy.cs, clio/Common/ScenarioHandlers/CreateIISSite.cs, clio/Command/McpServer/Tools/InstallerCommandTool.cs, clio/Wiki/WikiAnchors.txt
+Impact: The feature should be covered by unit/contract tests with certificate-store, IIS, filesystem, and settings abstractions; real ZIP/IIS proof is a manual local Windows validation, not a TeamCity E2E gate.
+
 ## 2026-07-13 18:10 – ENG-93320 PR #866 review round (Krylov CHANGES_REQUESTED)
 Context: Kyryl Krylov requested changes on PR #866: (1) validate target type before uploading a file; (2) honor Creatio file-security policy; (3) size cap bypassable via inline Base64 + read race; (4) MCP update prompt not aligned with the value-file-path contract; plus a round-trip test gap and a readback-design preference (file-based download tool).
 Decision: Fixed 1, 3, 4 in this PR; deferred 2 (file-security policy) and the download-sys-setting-file readback tool to a linked follow-up (ENG-93320 only requires SET). (1) EnsureExistingSettingIsBinary resolves the existing setting via GetAllUsersDefaultWithType and rejects a file upload to a non-Binary/missing setting, on both MCP and CLI paths, before the file is read. (3) Moved the cap to SysSettingsManager.MaxBinaryValueBytes and enforce the DECODED byte length in the manager Binary branch (covers inline Base64 too); EncodeFileToBase64 keeps a pre-read GetFileSize fast-fail and adds a post-read length recheck to close the grow-after-sizing race. (4) update-sys-setting prompt: value now optional, added value-file-path param, body says "exactly one of value/value-file-path" and notes the target must be Binary.
@@ -6380,6 +6455,20 @@ Discovery: TS1-MRKT-WEB01 is current on .NET SDK 10.0.301/runtime 10.0.9 but its
 Files: clio.tests/CommonProgramTest.cs, clio.tests/Command/McpServer/McpProgressHeartbeatTests.cs
 Impact: Core and MCP Server tests no longer dispose gates under detached work or read console buffers during background writes, improving deterministic execution across self-hosted runner speeds.
 
+## 2026-07-16 16:37 – Clarify MCP resident versus lazy tool routing
+Context: The resident versus clio-run classification needed to be explained from the current MCP implementation.
+Decision: Treat the compact `get-tool-contract` index `resident` flag as the caller-facing oracle and `McpCoreToolProfile` as the source-code oracle.
+Discovery: Residency is selected per tool type from `CoreToolTypes` plus `AlwaysOnLazyToolTypes`; non-resident destructive tools use `clio-run-destructive`, while non-destructive tools use `clio-run`.
+Files: clio/Command/McpServer/McpCoreToolProfile.cs, clio/Command/McpServer/McpFeatureToggleFilter.cs, clio/Command/McpServer/Tools/ToolContractGetTool.cs, docs/McpCapabilityMap.md
+Impact: Future MCP callers and maintainers can classify tools without guessing from names or implementation attributes.
+
+## 2026-07-16 16:45 – Correct lazy MCP executor routing detail
+Context: Deeper tracing of `ClioRunExecutor` corrected the earlier assumption that destructive metadata selects a separate executor.
+Decision: Document `clio-run` as the single preferred long-tail executor for both read-only and destructive targets.
+Discovery: `clio-run-destructive` is a deprecated compatibility alias with identical behavior; host confirmation is applied because both executor tools are themselves annotated destructive.
+Files: clio/Command/McpServer/Tools/ClioRunTool.cs, clio/Command/McpServer/Tools/McpToolInvokerRegistry.cs
+Impact: Guidance now matches the current executor implementation and avoids routing based on target destructive metadata.
+
 ## 2026-07-16 13:55 – Resolve uninstall warning E2E target without EnvironmentPath
 Context: TeamCity master build 15735619 failed the issue #881 locked-profile MCP E2E before uninstall because the registered `dev` environment had an empty `EnvironmentPath`.
 Decision: Resolve the registered environment URI through the fresh clio process, then fail-closed match its scheme, port, host binding, and application path to exactly one IIS application pool; keep file-reading sandbox helpers path-based.
@@ -6455,3 +6544,115 @@ Discovery: `IPageDesignerHierarchyClient.GetParentSchemas` (ClientUnitSchemaDesi
 Verification: live runtime self-verify BLOCKED — every registered env is stale/unhealthy for authenticated ESQ (shipped get-page fails too; ClioGate 404). Covered by clio.mcp.e2e (sandbox + NoEnvironment discoverability) instead — runs on TeamCity ClioMcpE2eTests. Unit: 5 new + FR-06 guard green; McpServer+Command modules 5025/0. Full suite has 19 PRE-EXISTING macOS failures (DbHub/TOML, AppPool Windows paths, IIS) — confirmed failing on origin/master, not this change.
 Files: clio/Command/GetPageHierarchyCommand.cs, clio/Command/McpServer/Tools/PageHierarchyGetTool.cs, Program.cs, BindingsModule.cs, ExistingAppMaintenanceGuidanceResource.cs, help/en/get-page-hierarchy.txt, docs/commands/get-page-hierarchy.md, Commands.md, Wiki/WikiAnchors.txt, clio.tests/.../PassthroughToolClassificationRegistry.cs, clio.tests unit x2, clio.mcp.e2e x1.
 Impact: one-call chain read removes N per-schema round-trips in migration/page discovery. Pattern for adding a long-tail read tool: command+tool+Program+BindingsModule+PassthroughRegistry row+docs quartet+guidance pointer.
+
+## 2026-07-17 13:13 – Add universal clio guidance-development skill
+Context: Claude and Codex needed the same repeatable framework for researching Creatio behavior and projecting it into reliable clio MCP guidance without maintaining divergent skill copies.
+Decision: Made `.ai/skills/clio-guidance-development/SKILL.md` the canonical instruction source and exposed it through minimal relative-path redirect skills under both `.claude/skills` and `.codex/skills`; the redirects contain no guidance rules.
+Discovery: Git symlinks materialize as one-line regular files on ordinary Windows checkouts with `core.symlinks=false`. Portable redirect skills validate on every platform while preserving one canonical guidance body. The framework assigns every concept one owner; the ESQ family uses a router plus separate frontend construction, backend construction, and runtime parsing owners.
+Files: .ai/skills/clio-guidance-development/SKILL.md, .ai/skills/clio-guidance-development/agents/openai.yaml, .claude/skills/clio-guidance-development/SKILL.md, .codex/skills/clio-guidance-development/SKILL.md, .codex/skills/clio-guidance-development/agents/openai.yaml, .codex/workspace-diary.md
+Impact: Both agents now invoke one evidence-driven lab-to-guidance workflow, while edits occur once under `.ai` and cannot drift across agent-specific skill directories.
+
+## 2026-07-17 13:36 – Add isolated-example lab pattern to universal guidance
+Context: The VirtualEntity lab became difficult to follow when several guidance experiments accumulated in one executor.
+Decision: Added the stable platform-adapter, stable-key, explicit-DI-handler pattern to the canonical shared skill, including package ownership of both configuration definition and default value.
+Discovery: Logical example keys preserve refactor freedom and deterministic selection; CLR type names, reflection discovery, and fallback behavior make guidance fixtures fragile and ambiguous.
+Files: .ai/skills/clio-guidance-development/SKILL.md, .codex/workspace-diary.md
+Impact: Future clio guidance labs can add independent executable examples without changing the platform entry point or coupling configuration to implementation types.
+
+## 2026-07-17 13:51 – Add reviewable ATF acceptance to guidance labs
+Context: One-off MCP ESQ calls were effective agent probes but were difficult for a human reviewer to inspect and rerun.
+Decision: Extended the canonical guidance-development skill to colocate mock data with each handler and prefer durable ATF.Repository integration fixtures for Creatio entity-query acceptance.
+Discovery: Model generation can be intentionally broad and must be staged and reduced; provider workarounds must remain isolated from the ATF model/LINQ contract they preserve.
+Files: .ai/skills/clio-guidance-development/SKILL.md, .codex/workspace-diary.md
+Impact: Future lab evidence can be reviewed as ordinary code while still preserving the exact agent-facing runtime path.
+
+## 2026-07-17 13:58 – Require direct model assertions in repository labs
+Context: DTO and scalar assertions could pass without proving that the repository's public model was materialized correctly.
+Decision: Extended the shared framework to prefer direct repository-model assertions and stable scenario labels across handlers, test categories, report features, and runner filters.
+Discovery: Projection support is expression-shape-specific; a supported constructor projection does not imply object-initializer support.
+Files: .ai/skills/clio-guidance-development/SKILL.md, .codex/workspace-diary.md
+Impact: Future integration guidance distinguishes transport parsing, query projection, and consumer-visible model materialization.
+
+## 2026-07-17 13:56 – Re-review PR 895 cleanup fix
+Context: PR #895 follow-up commits claimed to resolve the requested set-user-theme safety, retry, DI, and sandbox-state findings.
+Decision: Accepted the production fixes and retained one material review finding: sandbox teardown must verify a successful profile reset before deleting the throwaway theme or clearing cleanup markers.
+Discovery: MCP tool failures are structured results rather than exceptions, so ignoring the reset result can leave the shared profile referencing a theme that teardown then deletes; three scoped review lenses independently identified the same risk.
+Files: clio.mcp.e2e/ThemingSandboxE2ETests.cs, clio/Command/Theming/UserThemeApplier.cs, clio/Command/McpServer/Tools/SetUserThemeTool.cs
+Impact: The remaining review request is narrowly limited to making cleanup fail-safe and observable; the other original findings are resolved.
+
+## 2026-07-17 14:07 – Arm PR 895 for auto-merge
+Context: The user accepted the remaining sandbox-cleanup trade-off, approved PR #895, and requested auto-merge.
+Decision: Verified head 51eb02fc, zero unresolved review threads, and all required GitHub ruleset checks green, then enabled squash auto-merge without waiting for advisory TeamCity MCP E2E.
+Discovery: GitHub retained the PR open with an active SQUASH auto-merge request while the advisory TeamCity status remained pending.
+Files: .codex/workspace-diary.md
+Impact: PR #895 will merge automatically once GitHub considers every configured gate satisfied.
+
+## 2026-07-17 14:10 – Refresh PR 895 against master
+Context: GitHub showed the auto-merge-armed PR as out of date under the strict master ruleset.
+Decision: Used GitHub's guarded update-branch API with the expected reviewed head SHA, then revalidated ancestry, review threads, approval, and the auto-merge request.
+Discovery: The refreshed head a3604b88 contains current master 79cff04f, all review threads remain resolved, approval remains effective, and squash auto-merge stayed enabled while required checks restarted.
+Files: .codex/workspace-diary.md
+Impact: The base-freshness blocker is cleared; PR #895 now waits only for the restarted required GitHub checks.
+
+## 2026-07-17 14:48 – Make guidance fixtures own example selection
+Context: The VirtualEntity lab exposed that category-filtered runners hid a required global handler-selection prerequisite outside each integration fixture.
+Decision: Updated the universal guidance-development skill to require fixture-owned stable-key selection, non-parallel execution for shared environment state, default restoration in teardown, and runners limited to environment and credential orchestration.
+Discovery: Test categories and reporting labels cannot substitute for executable test setup; direct fixture execution is a necessary reviewability property.
+Files: .ai/skills/clio-guidance-development/SKILL.md, .codex/workspace-diary.md
+Impact: Future multi-example clio labs will remain independently runnable without duplicating semantic test-to-handler mappings in wrapper scripts.
+
+## 2026-07-17 17:53 – Split ESQ filter guidance by responsibility
+Context: The VirtualEntity guidance lab proved the empty group envelope, flat AND, nested OR, and both mixed AND/OR nesting shapes through native C# versus ATF.Repository/DataService runtime-tree comparison.
+Decision: Kept `esq-filters` as a short stable router, moved the existing serialized JSON rules to `esq-filters-frontend`, and added independent `esq-filters-backend` construction and `esq-filter-parsing` runtime-consumption articles.
+Discovery: ATF `A || B` reaches runtime as an AND root containing one OR group; preserving that envelope and all nested groups is necessary for structural equality even when result rows are semantically identical.
+Files: clio/Command/McpServer/Resources/EsqFiltersGuidanceResource.cs, clio/Command/McpServer/Resources/EsqFiltersBackendGuidanceResource.cs, clio/Command/McpServer/Resources/EsqFilterParsingGuidanceResource.cs, clio/Command/McpServer/Resources/GuidanceCatalog.cs, clio/Command/McpServer/Resources/RoutingGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/GuidanceGetToolE2ETests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs
+Impact: Agents now have one construction owner per API surface and one parsing owner; backend guidance grows only from lab-verified native-versus-DataService evidence.
+
+## 2026-07-17 18:24 – Publish the virtual entity lifecycle guide
+Context: The lab had a comprehensive virtual entity draft, but clio exposed only a short app-modeling note and the new filter sub-guides.
+Decision: Added `virtual-entities` as a routed MCP resource and made schema creation/readback a hard prerequisite before implementing or binding `IEntityQueryExecutor`.
+Discovery: The prerequisite connects schema identity, column types, the exact `<EntitySchemaName>QueryExecutor` binding, materialization, and package persistence into one verifiable lifecycle.
+Files: clio/Command/McpServer/Resources/VirtualEntitiesGuidanceResource.cs, clio/Command/McpServer/Resources/AppModelingGuidanceResource.cs, clio/Command/McpServer/Resources/GuidanceCatalog.cs, clio/Command/McpServer/Resources/RoutingGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/GuidanceGetToolE2ETests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs
+Impact: Agents can now retrieve one canonical virtual entity guide by name, while filter construction and runtime parsing remain owned by their dedicated resources.
+
+## 2026-07-17 19:11 – Gate virtual writes to Creatio 10.0+
+Context: Backend history and the lab proved that Entity-level virtual CRUD is a new 10.0 capability rather than established 8.3 behavior.
+Decision: Added a critical compatibility finding to `virtual-entities`: reject virtual Entity.Save/DataService write claims before 10.0, require EnableVirtualEntitySupport on supported versions, and retain generic listener mechanics in their existing guide.
+Discovery: Creatio 8.3.4 does not contain EnableVirtualEntitySupport; on 10.0 the feature metadata still defaults disabled. The lab verified the create lifecycle through backend Entity.Save and ATF.Repository/DataService, while backend source tests establish update ordering.
+Files: clio/Command/McpServer/Resources/VirtualEntitiesGuidanceResource.cs, clio/Command/McpServer/Resources/GuidanceCatalog.cs, clio/Command/McpServer/Resources/RoutingGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/GuidanceGetToolE2ETests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs
+Impact: Agents now perform a hard environment-version and feature-state gate before implementing virtual writes, preventing unsupported 8.3.4 guidance from being applied.
+
+## 2026-07-17 20:08 – Harden guidance PR for portable and safe use
+Context: Comprehensive pre-PR review found Windows symlink checkout failure plus missing authorization, provider-bounding, filter-complexity, and feature-cache safeguards.
+Decision: Replaced Git symlinks with validated portable redirect skills that keep the full body canonical under `.ai`; required provider pushdown/bounds and caller authorization, bounded filter parsing, targeted `set-feature` cache invalidation, and decision-point links from both virtual-schema MCP tools. Documented the exact CLI fallback because clio has no dedicated MCP tool for remote Creatio feature state.
+Discovery: With `core.symlinks=false`, Git materializes symlinks as path-only regular files. Virtual providers also bypass ordinary record rights unless the executor/listener enforces equivalent caller and tenant scope explicitly.
+Files: .ai/skills/clio-guidance-development/SKILL.md, .claude/skills/clio-guidance-development/SKILL.md, .codex/skills/clio-guidance-development/, clio/Command/McpServer/Resources/VirtualEntitiesGuidanceResource.cs, clio/Command/McpServer/Resources/EsqFilterParsingGuidanceResource.cs, clio/Command/McpServer/Tools/EntitySchemaTool.cs, clio/Command/McpServer/Tools/SchemaSyncTool.cs, clio.tests/Command/McpServer/, clio.mcp.e2e/
+Impact: The shared skill works in ordinary Windows/Linux/macOS checkouts, and published virtual/filter guidance now fails closed on authorization, unbounded provider work, excessive filter complexity, and unsafe cache clearing.
+
+## 2026-07-17 22:15 – Complete primitive ESQ Compare guidance
+Context: The backend validation plan had only partial scalar Compare coverage and lacked concrete C# recipes for the remaining operators.
+Decision: Used representative Integer and MediumText examples instead of an operator/type Cartesian product; kept native construction in `esq-filters-backend` and runtime interpretation in `esq-filter-parsing`.
+Discovery: ATF.Repository 2.0.3.5 emits source `A && B && C` as flat `AND(C, A, B)`. Negated string methods arrive as dedicated negative comparison types, not leaf/group negation. Case-variant results prove the handler's explicit `OrdinalIgnoreCase` policy, not PostgreSQL collation behavior.
+Files: clio/Command/McpServer/Resources/EsqFiltersBackendGuidanceResource.cs, clio/Command/McpServer/Resources/EsqFilterParsingGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs, clio.mcp.e2e/GuidanceGetToolE2ETests.cs, spec/esq-primitive-comparisons/
+Impact: Agents now have concrete, tested construction and fail-closed parsing guidance for the complete scalar Compare operator catalog without overclaiming untested type combinations.
+
+## 2026-07-17 22:32 – Close primitive comparison PR gates
+Context: The primitive Compare guidance needed final regression and adversarial review before publication.
+Decision: Protected all 12 operators with exact-token assertions, kept provider-owned case semantics distinct from database collation, and separated full-tree validation from short-circuit evaluation.
+Discovery: Substring assertions such as `Equal` can pass through `NotEqual`; exact backend and Markdown tokens are required. Full validation must precede short-circuit evaluation so invalid hidden branches still fail closed.
+Files: clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs, spec/esq-primitive-comparisons/esq-primitive-comparisons-test-plan.md
+Impact: Comprehensive correctness, quality, and performance reviews have no remaining findings; 2,429 MCP module tests and 2 focused MCP E2E tests pass on both net8.0 and net10.0.
+
+## 2026-07-17 22:48 – Validate complete ESQ column paths
+Context: Codex review on PR #915 identified that terminal `SchemaColumnName` matching can accept a forwarded path such as `Account.Name` as root `Name`.
+Decision: Changed the parsing recipe to compare the exact `LeftExpression.Path` to the provider's allowed path and explained that direct-only providers thereby reject lookup filters.
+Discovery: `EntitySchemaQueryExpression.Path` retains the complete expression path, while `SchemaColumnName` exposes only its terminal schema column.
+Files: clio/Command/McpServer/Resources/EsqFilterParsingGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs
+Impact: Agents following the guide cannot accidentally evaluate an unintended joined column as a same-named root column; focused tests and the full MCP module remain green on net8.0 and net10.0.
+
+## 2026-07-17 14:35 – Validate disabled ESQ nodes and collection IsNot
+Context: Extend the backend ESQ construction and parsing guidance using the VirtualEntityGuidance lab.
+Decision: Document disabled-node transport differences separately from semantic evaluation, and apply collection `IsNot` only after combining enabled children.
+Discovery: Native C# retains disabled leaves/groups while SQL compilation omits them; DataService removes disabled children before the executor boundary. Native C# and DataService preserve collection `IsNot`. ATF.Repository 2.0.3.5 cannot author group negation through LINQ, so the lab used a test-only decorator over its public `ISelectQuery` contract.
+Files: clio/Command/McpServer/Resources/EsqFiltersBackendGuidanceResource.cs, clio/Command/McpServer/Resources/EsqFilterParsingGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs, clio.mcp.e2e/GuidanceGetToolE2ETests.cs
+Impact: Agents now have lab-verified rules for creating and parsing disabled nodes and negated groups, including the native-versus-DataService shape boundary.

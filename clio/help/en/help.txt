@@ -42,6 +42,7 @@ Commands:
   delete-schema                        Delete a schema from a workspace package
   delete-theme                         Delete a custom Creatio theme from the target environment via the native ThemeService
   delete-toolkit                       Uninstall the Creatio AI App Development Toolkit from coding agents
+  distribute-license                   Add or remove users from a Creatio license package, grant-license
   deploy-application                   Copy an application package between Creatio environments, deploy-app
   deploy-creatio                       Install Creatio from a distribution package, dc, ic, install-creatio
   deploy-infrastructure                Deploy Kubernetes infrastructure for Creatio (namespace, storage, redis, postgres, pgadmin), di

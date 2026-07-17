@@ -35,6 +35,8 @@ public sealed class CreateEntitySchemaTool(
 				 Use this when the schema should be created directly on the target environment instead of generating
 				 local source files. The package must already exist on the target environment.
 				 Set `is-virtual` to true only when the schema must not have a physical database table; it defaults to false.
+				 Before setting `is-virtual` to true, call get-guidance with name virtual-entities and follow its
+				 schema-before-executor, bounded-provider, authorization, and version-gated write rules.
 
 				 The tool applies the DB structure and publishes the schema automatically, so the new entity is
 				 immediately usable as a Lookup reference in sys-settings and lookup pickers — no compile needed.

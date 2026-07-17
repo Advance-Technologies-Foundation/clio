@@ -648,6 +648,7 @@ public class BindingsModule {
 		services.AddTransient<LoadPackagesToFileSystemCommand>();
 		services.AddTransient<LoadPackagesToDbCommand>();
 		services.AddTransient<UploadLicensesCommand>();
+		services.AddTransient<DistributeLicenseCommand>();
 		services.AddTransient<HealthCheckCommand>();
 		services.AddTransient<ShowLocalEnvironmentsCommand>();
 		services.AddTransient<ClearLocalEnvironmentCommand>();

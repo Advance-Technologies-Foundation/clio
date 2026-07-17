@@ -1,0 +1,253 @@
+using System.ComponentModel;
+using ModelContextProtocol.Protocol;
+using ModelContextProtocol.Server;
+
+namespace Clio.Command.McpServer.Resources;
+
+/// <summary>
+/// Provides canonical guidance for constructing ESQ filters with the native Creatio backend C# API.
+/// </summary>
+[McpServerResourceType]
+public sealed class EsqFiltersBackendGuidanceResource {
+	private const string ResourceUri = "docs://mcp/guides/esq-filters/backend";
+
+	/// <summary>
+	/// Canonical native C# ESQ filter construction guidance accessible through <c>get-guidance</c>.
+	/// </summary>
+	internal static readonly TextResourceContents Guide = new() {
+		Uri = ResourceUri,
+		MimeType = "text/plain",
+		Text = """
+		       # clio MCP backend ESQ filter construction guide
+
+		       ## Scope and ownership
+		       Use this guide only to CREATE filters with Creatio's native backend C#
+		       `EntitySchemaQuery` API. For JavaScript, page JSON, or DataService request JSON, read
+		       `esq-filters-frontend`. To interpret `esq.Filters` inside a query executor or other
+		       runtime backend code, read `esq-filter-parsing`.
+
+		       The examples below are intentionally limited to behavior verified in the clio Virtual
+		       Entity guidance lab by comparing the complete runtime filter tree produced by native C#
+		       with the tree produced by an ATF.Repository/DataService query.
+
+		       ## Create the query and select columns
+		       ```csharp
+		       EntitySchemaQuery esq = new(userConnection.EntitySchemaManager, "UsrCodexVirtualRecord");
+		       esq.AddColumn("Id");
+		       esq.AddColumn("UsrName");
+		       esq.AddColumn("UsrSequenceNumber");
+		       ```
+
+		       `esq.Filters` is the root `EntitySchemaQueryFilterCollection`. A new query has an enabled,
+		       non-negated AND root with zero direct items. Do not add a synthetic child merely to
+		       represent an empty filter.
+
+		       ## Create verified compare leaves
+		       ```csharp
+		       IEntitySchemaQueryFilterItem nameEquals = esq.CreateFilterWithParameters(
+		           FilterComparisonType.Equal,
+		           "UsrName",
+		           "Some Value");
+
+		       IEntitySchemaQueryFilterItem sequenceGreater = esq.CreateFilterWithParameters(
+		           FilterComparisonType.Greater,
+		           "UsrSequenceNumber",
+		           10);
+
+		       IEntitySchemaQueryFilterItem sequenceLess = esq.CreateFilterWithParameters(
+		           FilterComparisonType.Less,
+		           "UsrSequenceNumber",
+		           0);
+		       ```
+
+		       Add multiple leaves directly to `esq.Filters` for a flat AND:
+		       ```csharp
+		       esq.Filters.Add(nameEquals);
+		       esq.Filters.Add(sequenceGreater);
+		       ```
+
+		       ## Complete lab-verified scalar Compare catalog
+		       Use the comparison type that states the intended operation; do not synthesize a
+		       different operator plus group negation.
+		       The calls below are independent recipes. Add only the predicates required by the query;
+		       adding every positive and negative example to one AND group would be contradictory.
+
+		       ```csharp
+		       esq.Filters.Add(esq.CreateFilterWithParameters(
+		           FilterComparisonType.NotEqual, "UsrSequenceNumber", 10));
+		       esq.Filters.Add(esq.CreateFilterWithParameters(
+		           FilterComparisonType.LessOrEqual, "UsrSequenceNumber", 20));
+		       esq.Filters.Add(esq.CreateFilterWithParameters(
+		           FilterComparisonType.GreaterOrEqual, "UsrSequenceNumber", 0));
+
+		       esq.Filters.Add(esq.CreateFilterWithParameters(
+		           FilterComparisonType.StartWith, "UsrName", "Alpha"));
+		       esq.Filters.Add(esq.CreateFilterWithParameters(
+		           FilterComparisonType.Contain, "UsrName", "middle"));
+		       esq.Filters.Add(esq.CreateFilterWithParameters(
+		           FilterComparisonType.EndWith, "UsrName", "Omega"));
+
+		       esq.Filters.Add(esq.CreateFilterWithParameters(
+		           FilterComparisonType.NotStartWith, "UsrName", "Alpha"));
+		       esq.Filters.Add(esq.CreateFilterWithParameters(
+		           FilterComparisonType.NotContain, "UsrName", "middle"));
+		       esq.Filters.Add(esq.CreateFilterWithParameters(
+		           FilterComparisonType.NotEndWith, "UsrName", "Omega"));
+		       ```
+
+		       The verified representative mapping is:
+		       - MediumText `Equal` and Integer `NotEqual`;
+		       - Integer `Less`, `LessOrEqual`, `Greater`, and `GreaterOrEqual`;
+		       - MediumText `StartWith`, `NotStartWith`, `Contain`, `NotContain`, `EndWith`, and
+		         `NotEndWith`.
+
+		       This completes the scalar operator catalog without claiming that every operator was tested
+		       against every column type.
+
+		       Negated C# string predicates sent through ATF/DataService arrived as the dedicated
+		       negative comparison types. They did not use group `IsNot`.
+
+		       ### Exact ATF shape parity for three-term AND
+		       ATF.Repository 2.0.3.5 translated source `A && B && C` to one flat root AND ordered
+		       `C, A, B`. If a test requires byte-for-byte/shape-for-shape parity, insert the native
+		       leaves in that observed order. Do not infer logical precedence from child order, and do
+		       not generalize this transport-specific order to other expression shapes or ATF versions.
+
+		       ## Create an explicit OR group
+		       Do not change the root collection to OR when the desired runtime shape is the normal root
+		       AND containing one nested OR group. Create the OR collection explicitly:
+		       ```csharp
+		       EntitySchemaQueryFilterCollection orGroup =
+		           new(esq, LogicalOperationStrict.Or);
+		       orGroup.Add(nameEquals);
+		       orGroup.Add(sequenceGreater);
+		       esq.Filters.Add(orGroup);
+		       ```
+
+		       This matches the runtime shape produced for `A || B` through ATF.Repository/DataService:
+		       root AND -> nested OR -> A, B.
+
+		       ## Mixed nesting
+		       `A AND (B OR C)`:
+		       ```csharp
+		       EntitySchemaQueryFilterCollection nestedOr =
+		           new(esq, LogicalOperationStrict.Or);
+		       nestedOr.Add(sequenceGreater);
+		       nestedOr.Add(sequenceLess);
+
+		       esq.Filters.Add(nameEquals);
+		       esq.Filters.Add(nestedOr);
+		       ```
+
+		       `(A AND B) OR C`:
+		       ```csharp
+		       EntitySchemaQueryFilterCollection nestedAnd =
+		           new(esq, LogicalOperationStrict.And);
+		       nestedAnd.Add(nameEquals);
+		       nestedAnd.Add(sequenceGreater);
+
+		       EntitySchemaQueryFilterCollection nestedOr =
+		           new(esq, LogicalOperationStrict.Or);
+		       nestedOr.Add(nestedAnd);
+		       nestedOr.Add(sequenceLess);
+
+		       esq.Filters.Add(nestedOr);
+		       ```
+
+		       Preserve the requirement's explicit grouping. Parentheses determine the collection tree;
+		       do not flatten mixed AND/OR logic even when the leaf expressions are unchanged.
+
+		       ## Disable a leaf or a complete group
+		       Set `IsEnabled` on the exact item that must not contribute a condition:
+		       ```csharp
+		       EntitySchemaQueryFilter disabledLeaf =
+		           (EntitySchemaQueryFilter)esq.CreateFilterWithParameters(
+		               FilterComparisonType.Equal,
+		               "UsrName",
+		               "Blocked");
+		       disabledLeaf.IsEnabled = false;
+		       esq.Filters.Add(disabledLeaf);
+
+		       EntitySchemaQueryFilterCollection disabledGroup =
+		           new(esq, LogicalOperationStrict.Or);
+		       disabledGroup.Add(nameEquals);
+		       disabledGroup.Add(sequenceLess);
+		       disabledGroup.IsEnabled = false;
+		       esq.Filters.Add(disabledGroup);
+		       ```
+
+		       Native C# retains disabled leaves and groups in `esq.Filters`, so a virtual query
+		       executor can observe their complete runtime shape. Creatio SQL compilation skips a
+		       disabled collection and every disabled child; the lab's generated SQL contained only
+		       the enabled sibling predicate.
+
+		       DataService is a different structural boundary: it removes disabled child filter
+		       configurations while building the runtime ESQ. Therefore native and DataService requests
+		       can return the same records while exposing different executor-visible trees. Do not require
+		       shape equality for disabled items, and do not assume a disabled DataService item will be
+		       available to backend parsing code.
+
+		       ## Negate a complete group with IsNot
+		       Set `IsNot` on the collection after adding the predicates that form the group:
+		       ```csharp
+		       EntitySchemaQueryFilterCollection negatedOr =
+		           new(esq, LogicalOperationStrict.Or);
+		       negatedOr.Add(nameEquals);
+		       negatedOr.Add(sequenceLess);
+		       negatedOr.IsNot = true;
+		       esq.Filters.Add(negatedOr);
+		       ```
+
+		       This means `NOT(nameEquals OR sequenceLess)`. `IsNot` negates the combined collection;
+		       it is not a leaf modifier and must not be replaced with a guessed comparison operator.
+		       Native C# and DataService produced the same enabled, negated OR runtime group in the lab,
+		       and generated SQL applied `NOT` to the composed group condition.
+
+		       ATF.Repository 2.0.3.5 LINQ cannot author group `IsNot`: unary NOT over a logical
+		       expression is rejected, and its LINQ query builder does not copy metadata `IsNot` to the
+		       outgoing group. The lab validated DataService transport with a test-only decorator over
+		       the public `ISelectQuery` filter contract. Treat that as a library authoring limitation,
+		       not as a DataService or runtime ESQ limitation.
+
+		       ## Execute
+		       ```csharp
+		       EntityCollection records = esq.GetEntityCollection(userConnection);
+		       ```
+
+		       A virtual entity query executor receives the same runtime filter tree through its ESQ.
+		       Creation and parsing are separate responsibilities; do not put parsing helpers in the
+		       writer merely to make a sample convenient.
+
+		       ## Lab-verified runtime invariants
+		       - Empty query: root AND, enabled, not negated, zero items.
+		       - Flat `A && B`: root AND with two leaves.
+		       - `A || B`: root AND with one nested OR group containing two leaves.
+		       - `A && (B || C)`: root AND containing leaf A and nested OR(B,C).
+		       - `(A && B) || C`: root AND containing nested OR(nested AND(A,B),C).
+		       - Group and leaf `Name` values were null; item insertion order matched in the verified
+		         two-term/grouped cases. The verified three-term ATF order is `C, A, B`.
+		       - A scalar created with `CreateFilterWithParameters` is exposed at runtime through the
+		         filter's right-expression collection.
+		       - Native C# retains disabled leaves/groups, but SQL compilation omits their conditions.
+		         DataService removes disabled children before the executor boundary.
+		       - Collection `IsNot` negates the complete combined group and is preserved by DataService.
+		       - The lab provider deliberately used `StringComparison.OrdinalIgnoreCase`; case-variant
+		         results prove that provider policy, not Creatio/PostgreSQL collation behavior.
+
+		       ## Coverage boundary
+		       Verified now: group envelope/nesting, disabled leaves/groups, collection `IsNot`, and all
+		       scalar Compare operators using representative Integer and MediumText values. Pending lab
+		       validation before publishing construction recipes: Boolean/Guid Compare values, IsNull,
+		       In, Between, lookup values, dates and macros, Exists/subqueries/aggregates, and Segment filters. Use the
+		       frontend guide as a discovery checklist, but do not translate its JSON fields into guessed
+		       backend APIs.
+		       """
+	};
+
+	/// <summary>
+	/// Returns canonical native C# ESQ filter construction guidance.
+	/// </summary>
+	[McpServerResource(UriTemplate = ResourceUri, Name = "esq-filters-backend-guidance")]
+	[Description("Returns lab-verified guidance for constructing grouped ESQ filters with Creatio's native backend C# API.")]
+	public ResourceContents GetGuide() => Guide;
+}
