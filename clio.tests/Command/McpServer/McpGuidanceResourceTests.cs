@@ -1684,8 +1684,10 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide must apply group negation after combining enabled children");
 		article.Text.Should().Contain("group.EnabledChildren",
 			because: "evaluation should reuse enabled children cached during parsing instead of allocating per record");
-		article.Text.Should().Contain("Reject an empty non-root group",
-			because: "unverified empty-group semantics must remain fail-closed");
+		article.Text.Should().Contain("including an empty root OR",
+			because: "only the verified empty root AND envelope may bypass empty-group rejection");
+		article.Text.Should().Contain("Only the empty root AND envelope is supported.",
+			because: "the sample guard must reject both empty root OR and empty non-root groups");
 		article.Text.Should().Contain("ReadScalarParameter",
 			because: "the parsing owner should show how to validate one typed runtime parameter before evaluation");
 		article.Text.Should().Contain("filter.LeftExpression.Path != expectedColumn",

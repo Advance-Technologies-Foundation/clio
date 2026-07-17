@@ -87,8 +87,8 @@ public sealed class EsqFilterParsingGuidanceResource {
 
 		       The lab verified a disabled leaf and a disabled nested OR group beside one enabled root-AND
 		       sibling: both cases evaluated exactly the enabled sibling. If removing disabled items leaves
-		       a non-root group with zero enabled children, fail closed until that empty-group shape has its
-		       own live proof; do not infer an AND/OR identity from these examples.
+		       any group other than the root AND envelope with zero enabled children, fail closed until that
+		       empty-group shape has its own live proof; do not infer an AND/OR identity from these examples.
 
 		       Apply group negation to the complete combined result:
 		       ```csharp
@@ -96,9 +96,10 @@ public sealed class EsqFilterParsingGuidanceResource {
 		           FilterGroupNode group,
 		           VirtualRecord record) {
 		           IReadOnlyList<FilterNode> enabled = group.EnabledChildren;
-		           if (enabled.Count == 0 && !group.IsRoot) {
+		           if (enabled.Count == 0 &&
+		               !(group.IsRoot && group.LogicalOperation == LogicalOperationStrict.And)) {
 		               throw new NotSupportedException(
-		                   "An empty non-root ESQ group is not supported.");
+		                   "Only the empty root AND envelope is supported.");
 		           }
 
 		           bool result = group.LogicalOperation switch {
@@ -196,8 +197,9 @@ public sealed class EsqFilterParsingGuidanceResource {
 		          diagnostics; expect DataService to omit disabled children before this boundary.
 		       3. Evaluate only the validated tree. Short-circuit AND at the first false child and OR at the
 		          first true child so expensive provider predicates are not evaluated unnecessarily.
-		       4. The normal empty root AND is true. Reject an empty non-root group until its semantics are
-		          independently validated. Apply group `IsNot` only after combining enabled children.
+		       4. The normal empty root AND is true. Reject every other empty group, including an empty root OR,
+		          until its semantics are independently validated. Apply group `IsNot` only after combining
+		          enabled children.
 		       5. Evaluate the leaf using the typed value. Reject unsupported expression or operator shapes
 		          with a diagnostic that includes the runtime item type, operator, and column path.
 		       6. Choose and document comparison semantics for the provider. The lab handler deliberately
