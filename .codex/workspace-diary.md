@@ -6647,3 +6647,9 @@ Decision: Document disabled-node transport differences separately from semantic 
 Discovery: Native C# retains disabled leaves/groups while SQL compilation omits them; DataService removes disabled children before the executor boundary. Native C# and DataService preserve collection `IsNot`. ATF.Repository 2.0.3.5 cannot author group negation through LINQ, so the lab used a test-only decorator over its public `ISelectQuery` contract.
 Files: clio/Command/McpServer/Resources/EsqFiltersBackendGuidanceResource.cs, clio/Command/McpServer/Resources/EsqFilterParsingGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs, clio.mcp.e2e/GuidanceGetToolE2ETests.cs
 Impact: Agents now have lab-verified rules for creating and parsing disabled nodes and negated groups, including the native-versus-DataService shape boundary.
+## 2026-07-18 00:30 – Validate text IsNull and IsNotNull
+Context: Project milestone 4 of the backend ESQ filter validation plan into clio guidance.
+Decision: Teach the dedicated native null-filter APIs and a separate left-only parser contract with zero right expressions.
+Discovery: Native C# and ATF/DataService shapes matched exactly. For the verified MediumText columns, PostgreSQL SQL compilation used `column = ''` and `NOT column = ''`; the lab provider therefore evaluates null and empty string alike without generalizing to other data types.
+Files: clio/Command/McpServer/Resources/EsqFiltersBackendGuidanceResource.cs, clio/Command/McpServer/Resources/EsqFilterParsingGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs, clio.mcp.e2e/GuidanceGetToolE2ETests.cs
+Impact: Agents can now construct and parse text null predicates from verified runtime and SQL evidence rather than treating null as an ordinary scalar parameter.

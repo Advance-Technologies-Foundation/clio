@@ -107,6 +107,24 @@ public sealed class EsqFiltersBackendGuidanceResource {
 		       Negated C# string predicates sent through ATF/DataService arrived as the dedicated
 		       negative comparison types. They did not use group `IsNot`.
 
+		       ## Create IsNull and IsNotNull leaves
+		       Null comparisons are left-only filters. Use the dedicated APIs; do not pass a null parameter
+		       to `CreateFilterWithParameters`:
+		       ```csharp
+		       esq.Filters.Add(esq.CreateIsNullFilter("UsrDescription"));
+		       esq.Filters.Add(esq.CreateIsNotNullFilter("UsrName"));
+		       ```
+
+		       Both native leaves matched ATF/DataService predicates `UsrDescription == null` and
+		       `UsrName != null` exactly at the runtime boundary. Each leaf had comparison type `IsNull` or
+		       `IsNotNull`, one schema-column left expression, and zero right expressions. Do not create or
+		       expect a parameter expression for either operator.
+
+		       The SQL oracle exposed type-specific MediumText behavior: on the verified PostgreSQL platform,
+		       Creatio compiled text `IsNull` as `column = ''` and text `IsNotNull` as `NOT column = ''`.
+		       This is Creatio's empty-string storage semantics, not a reason to rewrite the ESQ operator and
+		       not a general null rule for Integer, Guid, lookup, or date columns.
+
 		       ### Exact ATF shape parity for three-term AND
 		       ATF.Repository 2.0.3.5 translated source `A && B && C` to one flat root AND ordered
 		       `C, A, B`. If a test requires byte-for-byte/shape-for-shape parity, insert the native
@@ -236,8 +254,8 @@ public sealed class EsqFiltersBackendGuidanceResource {
 
 		       ## Coverage boundary
 		       Verified now: group envelope/nesting, disabled leaves/groups, collection `IsNot`, and all
-		       scalar Compare operators using representative Integer and MediumText values. Pending lab
-		       validation before publishing construction recipes: Boolean/Guid Compare values, IsNull,
+		       scalar Compare operators using representative Integer and MediumText values, plus text
+		       `IsNull`/`IsNotNull`. Pending lab validation before publishing construction recipes: Boolean/Guid Compare values,
 		       In, Between, lookup values, dates and macros, Exists/subqueries/aggregates, and Segment filters. Use the
 		       frontend guide as a discovery checklist, but do not translate its JSON fields into guessed
 		       backend APIs.
