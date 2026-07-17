@@ -298,6 +298,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="switch-nuget-to-dll-reference"></a>
 <a id="nuget2dll"></a>
 - [`switch-nuget-to-dll-reference`](docs/commands/switch-nuget-to-dll-reference.md) - Switches nuget references to dll references in csproj files, `nuget2dll`
+<a id="distribute-license"></a>
+<a id="grant-license"></a>
+- [`distribute-license`](docs/commands/distribute-license.md) - Add or remove users from a Creatio license package, `grant-license`
 <a id="upload-licenses"></a>
 <a id="lic"></a>
 - [`upload-licenses`](docs/commands/upload-licenses.md) - Upload license files to Creatio, `lic`
