@@ -589,8 +589,8 @@ public sealed class ToolContractGetToolTests {
 			because: "the contract should not have defaults after enabled was removed");
 		contract.Aliases.Should().BeEmpty(
 			because: "the contract should avoid duplicating rejected aliases already represented by the runtime tool schema");
-		contract.OutputContract.Fields.Should().Contain(field => field.Name == "created",
-			because: "the batch output contract advertises the created count the tool returns");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "succeeded",
+			because: "the batch output contract advertises the succeeded count the tool returns");
 		contract.OutputContract.Fields.Should().Contain(field => field.Name == "failed",
 			because: "the batch output contract advertises the failed count");
 		contract.OutputContract.Fields.Should().Contain(field => field.Name == "results",
