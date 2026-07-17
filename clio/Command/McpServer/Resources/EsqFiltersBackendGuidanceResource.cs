@@ -157,6 +157,58 @@ public sealed class EsqFiltersBackendGuidanceResource {
 		       Preserve the requirement's explicit grouping. Parentheses determine the collection tree;
 		       do not flatten mixed AND/OR logic even when the leaf expressions are unchanged.
 
+		       ## Disable a leaf or a complete group
+		       Set `IsEnabled` on the exact item that must not contribute a condition:
+		       ```csharp
+		       EntitySchemaQueryFilter disabledLeaf =
+		           (EntitySchemaQueryFilter)esq.CreateFilterWithParameters(
+		               FilterComparisonType.Equal,
+		               "UsrName",
+		               "Blocked");
+		       disabledLeaf.IsEnabled = false;
+		       esq.Filters.Add(disabledLeaf);
+
+		       EntitySchemaQueryFilterCollection disabledGroup =
+		           new(esq, LogicalOperationStrict.Or);
+		       disabledGroup.Add(nameEquals);
+		       disabledGroup.Add(sequenceLess);
+		       disabledGroup.IsEnabled = false;
+		       esq.Filters.Add(disabledGroup);
+		       ```
+
+		       Native C# retains disabled leaves and groups in `esq.Filters`, so a virtual query
+		       executor can observe their complete runtime shape. Creatio SQL compilation skips a
+		       disabled collection and every disabled child; the lab's generated SQL contained only
+		       the enabled sibling predicate.
+
+		       DataService is a different structural boundary: it removes disabled child filter
+		       configurations while building the runtime ESQ. Therefore native and DataService requests
+		       can return the same records while exposing different executor-visible trees. Do not require
+		       shape equality for disabled items, and do not assume a disabled DataService item will be
+		       available to backend parsing code.
+
+		       ## Negate a complete group with IsNot
+		       Set `IsNot` on the collection after adding the predicates that form the group:
+		       ```csharp
+		       EntitySchemaQueryFilterCollection negatedOr =
+		           new(esq, LogicalOperationStrict.Or);
+		       negatedOr.Add(nameEquals);
+		       negatedOr.Add(sequenceLess);
+		       negatedOr.IsNot = true;
+		       esq.Filters.Add(negatedOr);
+		       ```
+
+		       This means `NOT(nameEquals OR sequenceLess)`. `IsNot` negates the combined collection;
+		       it is not a leaf modifier and must not be replaced with a guessed comparison operator.
+		       Native C# and DataService produced the same enabled, negated OR runtime group in the lab,
+		       and generated SQL applied `NOT` to the composed group condition.
+
+		       ATF.Repository 2.0.3.5 LINQ cannot author group `IsNot`: unary NOT over a logical
+		       expression is rejected, and its LINQ query builder does not copy metadata `IsNot` to the
+		       outgoing group. The lab validated DataService transport with a test-only decorator over
+		       the public `ISelectQuery` filter contract. Treat that as a library authoring limitation,
+		       not as a DataService or runtime ESQ limitation.
+
 		       ## Execute
 		       ```csharp
 		       EntityCollection records = esq.GetEntityCollection(userConnection);
@@ -176,14 +228,17 @@ public sealed class EsqFiltersBackendGuidanceResource {
 		         two-term/grouped cases. The verified three-term ATF order is `C, A, B`.
 		       - A scalar created with `CreateFilterWithParameters` is exposed at runtime through the
 		         filter's right-expression collection.
+		       - Native C# retains disabled leaves/groups, but SQL compilation omits their conditions.
+		         DataService removes disabled children before the executor boundary.
+		       - Collection `IsNot` negates the complete combined group and is preserved by DataService.
 		       - The lab provider deliberately used `StringComparison.OrdinalIgnoreCase`; case-variant
 		         results prove that provider policy, not Creatio/PostgreSQL collation behavior.
 
 		       ## Coverage boundary
-		       Verified now: group envelope/nesting and all scalar Compare operators using representative
-		       Integer and MediumText values. Pending lab validation before publishing construction
-		       recipes: disabled filters, group `IsNot`, Boolean/Guid Compare values, IsNull, In, Between,
-		       lookup values, dates and macros, Exists/subqueries/aggregates, and Segment filters. Use the
+		       Verified now: group envelope/nesting, disabled leaves/groups, collection `IsNot`, and all
+		       scalar Compare operators using representative Integer and MediumText values. Pending lab
+		       validation before publishing construction recipes: Boolean/Guid Compare values, IsNull,
+		       In, Between, lookup values, dates and macros, Exists/subqueries/aggregates, and Segment filters. Use the
 		       frontend guide as a discovery checklist, but do not translate its JSON fields into guessed
 		       backend APIs.
 		       """

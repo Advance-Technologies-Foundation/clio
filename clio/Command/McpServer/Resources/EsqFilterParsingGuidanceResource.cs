@@ -75,10 +75,48 @@ public sealed class EsqFilterParsingGuidanceResource {
 		       ## Group envelope semantics
 		       Capture these properties before interpreting children:
 		       - `LogicalOperation`: combines direct children as AND or OR.
-		       - `IsEnabled`: disabled-filter semantics are not yet verified; reject a disabled group or leaf
-		         instead of guessing how its parent should combine the remaining children.
-		       - `IsNot`: negates the group's result; this is pending a dedicated lab proof.
+		       - `IsEnabled`: a disabled group or leaf does not contribute to its parent's condition.
+		       - `IsNot`: negates the result after the enabled direct children are combined.
 		       - Items: preserve nesting and order for diagnostics and native-vs-DataService shape tests.
+
+		       Native C# retains disabled nodes in the runtime tree, but DataService removes disabled
+		       child configurations before the query executor receives the ESQ. A parser must therefore
+		       accept both observable shapes. Count every node that is present against the depth/node
+		       budget and preserve it in structural diagnostics, but exclude a disabled node from semantic
+		       evaluation. Do not require native-versus-DataService shape equality for disabled items.
+
+		       The lab verified a disabled leaf and a disabled nested OR group beside one enabled root-AND
+		       sibling: both cases evaluated exactly the enabled sibling. If removing disabled items leaves
+		       a non-root group with zero enabled children, fail closed until that empty-group shape has its
+		       own live proof; do not infer an AND/OR identity from these examples.
+
+		       Apply group negation to the complete combined result:
+		       ```csharp
+		       private static bool EvaluateValidatedGroup(
+		           FilterGroupNode group,
+		           VirtualRecord record) {
+		           IReadOnlyList<FilterNode> enabled = group.EnabledChildren;
+		           if (enabled.Count == 0 && !group.IsRoot) {
+		               throw new NotSupportedException(
+		                   "An empty non-root ESQ group is not supported.");
+		           }
+
+		           bool result = group.LogicalOperation switch {
+		               LogicalOperationStrict.And => enabled.All(child => child.Evaluate(record)),
+		               LogicalOperationStrict.Or => enabled.Any(child => child.Evaluate(record)),
+		               _ => throw new NotSupportedException(
+		                   $"Unsupported logical operation '{group.LogicalOperation}'.")
+		           };
+		           return group.IsNot ? !result : result;
+		       }
+		       ```
+
+		       The node API above is illustrative. During the one-time parse/validation phase, validate
+		       every present node's complete shape, including disabled nodes, and cache each group's
+		       enabled children. Evaluation must reuse that cached list rather than filtering and allocating
+		       an array for every record; combine only enabled children and apply `IsNot` once. Creatio and
+		       DataService both exposed `NOT(B OR C)` as an enabled OR collection with `IsNot == true`;
+		       generated SQL negated the composed group.
 
 		       An empty enabled AND root is the normal no-filter envelope. It has zero items and must
 		       evaluate as true, so every source record remains eligible. Do not treat it as an error or
@@ -121,8 +159,7 @@ public sealed class EsqFilterParsingGuidanceResource {
 		       private static object ReadScalarParameter(
 		           EntitySchemaQueryFilter filter,
 		           string expectedColumn) {
-		           if (!filter.IsEnabled ||
-		               filter.LeftExpression?.ExpressionType !=
+		           if (filter.LeftExpression?.ExpressionType !=
 		                   EntitySchemaQueryExpressionType.SchemaColumn ||
 		               filter.LeftExpression.Path != expectedColumn ||
 		               filter.RightExpressions.Count != 1) {
@@ -136,6 +173,8 @@ public sealed class EsqFilterParsingGuidanceResource {
 		           return right.ParameterValue;
 		       }
 		       ```
+		       `ReadScalarParameter` validates structure for enabled and disabled leaves alike. The parsed
+		       node retains `IsEnabled`; only the cached enabled-child list controls later evaluation.
 
 		       Then require the CLR type appropriate to the schema column (`System.Int32` for the verified
 		       Integer example and `System.String` for MediumText) and dispatch explicitly on
@@ -147,16 +186,18 @@ public sealed class EsqFilterParsingGuidanceResource {
 
 		       `EntitySchemaQueryFilter` does not expose a leaf `IsNot`. Negated string predicates arrive
 		       as `NotStartWith`, `NotContain`, or `NotEndWith`; evaluate those operators directly. Group
-		       `IsNot` is a separate, still-unverified concern.
+		       `IsNot` exists only on `EntitySchemaQueryFilterCollection` and negates the combined group.
 
 		       ## Evaluation rules for the verified subset
 		       1. Parse and validate the complete remotely supplied tree once. Reject unsupported nodes even
 		          when an earlier sibling could determine the result; otherwise invalid hidden branches bypass
 		          fail-closed validation.
-		       2. Reject a disabled item; disabled-item and resulting empty-group semantics remain unverified.
+		       2. Exclude disabled items from evaluation. Preserve/count native disabled nodes for structural
+		          diagnostics; expect DataService to omit disabled children before this boundary.
 		       3. Evaluate only the validated tree. Short-circuit AND at the first false child and OR at the
 		          first true child so expensive provider predicates are not evaluated unnecessarily.
-		       4. Empty AND is true. Do not guess empty OR or negation behavior until validated.
+		       4. The normal empty root AND is true. Reject an empty non-root group until its semantics are
+		          independently validated. Apply group `IsNot` only after combining enabled children.
 		       5. Evaluate the leaf using the typed value. Reject unsupported expression or operator shapes
 		          with a diagnostic that includes the runtime item type, operator, and column path.
 		       6. Choose and document comparison semantics for the provider. The lab handler deliberately
@@ -182,9 +223,10 @@ public sealed class EsqFilterParsingGuidanceResource {
 		       and ATF version.
 
 		       ## Coverage boundary
-		       Verified now: group envelope/nesting and all scalar Compare operators using representative
-		       Integer and MediumText values. The frontend guide supplies the remaining validation backlog:
-		       disabled/group IsNot, Boolean/Guid values, IsNull, In, Between, lookups, dates/macros,
+		       Verified now: group envelope/nesting, disabled leaf/group behavior, group `IsNot`, and all
+		       scalar Compare operators using representative Integer and MediumText values. The frontend
+		       guide supplies the remaining validation backlog: Boolean/Guid values, IsNull, In, Between,
+		       lookups, dates/macros,
 		       Exists/subqueries/aggregates, and Segment. Add parsing rules here only after native C# and
 		       DataService produce an asserted runtime shape and the lab proves result behavior.
 		       """
