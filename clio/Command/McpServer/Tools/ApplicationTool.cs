@@ -174,11 +174,12 @@ public sealed class ApplicationCreateTool(
 				server,
 				requestContext?.Params?.ProgressToken,
 				ApplicationCreateToolName,
-				() => ExecuteWithCleanLog(options, () => {
+				reportStage => ExecuteWithCleanLog(options, () => {
 					// Resolve the tenant FIRST: mixed header + environment-name input is rejected here by
 					// the resolver's transport policy before ANY Creatio-reaching call in the graph (AC-06),
 					// including the class-(b) Data Forge enrichment probe below (which routes itself through
 					// the resolver and stays unchanged — ENG-93347 AC-05).
+					reportStage("enriching application model");
 					EnvironmentSettings settings = _commandResolver.Resolve<EnvironmentSettings>(options);
 					ApplicationDataForgeResult forge = enrichmentService.Enrich(
 						args,
@@ -195,7 +196,8 @@ public sealed class ApplicationCreateTool(
 							args.IconBackground,
 							args.ClientTypeId,
 							optionalTemplateData,
-							args.WithMobilePages));
+							args.WithMobilePages),
+							reportStage);
 					return (forge, created);
 				}),
 				cancellationToken).ConfigureAwait(false);
@@ -316,7 +318,7 @@ public sealed class ApplicationSectionCreateTool(
 				server,
 				requestContext?.Params?.ProgressToken,
 				ApplicationSectionCreateToolName,
-				() => ExecuteWithCleanLog(options, () => {
+				reportStage => ExecuteWithCleanLog(options, () => {
 					// Resolve the tenant FIRST: mixed header + environment-name input is rejected here by
 					// the resolver's transport policy before ANY Creatio-reaching call in the graph (AC-07).
 					EnvironmentSettings settings = _commandResolver.Resolve<EnvironmentSettings>(options);
@@ -332,7 +334,8 @@ public sealed class ApplicationSectionCreateTool(
 							args.CaptionCulture,
 							args.Code),
 						BackgroundInsertTimeoutMs,
-						BackgroundReadbackTimeoutMs);
+						BackgroundReadbackTimeoutMs,
+						reportStage);
 				}),
 				deadline: null,
 				cancellationToken: cancellationToken).ConfigureAwait(false);

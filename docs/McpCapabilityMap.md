@@ -367,13 +367,15 @@ What an external AI can practically do here:
 The AI sees this as a higher abstraction layer than package-level commands.
 
 **Long-running / progress contract.** `create-app`, `create-app-section`,
-`update-app-section`, `delete-app-section`, `list-app-sections`, and `get-app-info`
-call the Creatio backend synchronously and can take minutes on a cold or busy
-environment. They emit `notifications/progress` on a fixed cadence (default 15 s,
-overridable via the `CLIO_MCP_HEARTBEAT_INTERVAL_SECONDS` environment variable) so MCP
-clients reset their inactivity timeout. A progress notification means the server is
-still working — the AI must await completion and must not retry or fall back to raw SQL
-or manual UI on a perceived client timeout.
+`update-app-section`, `delete-app-section`, `list-app-sections`, `get-app-info`, and
+`sync-schemas` call the Creatio backend synchronously and can take minutes on a cold or busy
+environment. They emit `notifications/progress` so MCP clients reset their inactivity timeout:
+a fixed-cadence keep-alive beat (default 15 s, overridable via the
+`CLIO_MCP_HEARTBEAT_INTERVAL_SECONDS` environment variable), and — for `sync-schemas` — a
+per-operation stage marker (`"<i>/<n>: <op> <schema>"`) pushed before each operation in the
+batch so the client can show which operation is running. A progress notification means the
+server is still working — the AI must await completion and must not retry or fall back to raw
+SQL or manual UI on a perceived client timeout.
 
 ### 3. Entity, Lookup, And Schema Design
 
