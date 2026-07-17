@@ -189,7 +189,7 @@ public class GetPageHierarchyCommand : Command<GetPageHierarchyOptions> {
 		}
 		try {
 			IReadOnlyList<PageDesignerHierarchySchema> effectiveFirst = ResolveEffectiveFirstHierarchy(options.SchemaName);
-			if (effectiveFirst is null) {
+			if (effectiveFirst.Count == 0) {
 				response = new GetPageHierarchyResponse {
 					Success = false,
 					Error = $"Schema '{options.SchemaName}' hierarchy is empty or could not be resolved"
@@ -270,7 +270,7 @@ public class GetPageHierarchyCommand : Command<GetPageHierarchyOptions> {
 		string schemaUId = metadata?["UId"]?.ToString();
 		string packageUId = metadata?["PackageUId"]?.ToString();
 		if (string.IsNullOrWhiteSpace(schemaUId) || string.IsNullOrWhiteSpace(packageUId)) {
-			return null;
+			return Array.Empty<PageDesignerHierarchySchema>();
 		}
 		string designPackageUId = null;
 		try {
@@ -284,7 +284,7 @@ public class GetPageHierarchyCommand : Command<GetPageHierarchyOptions> {
 		IReadOnlyList<PageDesignerHierarchySchema> initialHierarchy =
 			_hierarchyClient.GetParentSchemas(schemaUId, designPackageUId);
 		if (initialHierarchy.Count == 0) {
-			return null;
+			return Array.Empty<PageDesignerHierarchySchema>();
 		}
 		// Normalize to the root-most variant of the requested name and re-fetch from it, exactly as
 		// get-page does: the name->UId metadata lookup can resolve to an arbitrary replacing variant
