@@ -17,10 +17,15 @@ namespace Clio.Tests.Command.McpServer;
 public sealed class ToolContractGetToolTests {
 	// Builds the get-tool-contract tool over the REAL invoker registry so contracts for uncurated tools
 	// derive from the same MCP tool input schema clio-run dispatches against (Codex review #1, story-6).
-	private static ToolContractGetTool BuildToolWithRegistry() {
+	private static ToolContractGetTool BuildToolWithRegistry(params Type[] disabledToolTypes) {
 		IServiceProvider provider = Substitute.For<IServiceProvider>();
 		IFeatureToggleService featureToggle = Substitute.For<IFeatureToggleService>();
 		featureToggle.IsEnabled(Arg.Any<Type>()).Returns(true);
+		// Drop specific [FeatureToggle] tool types from the registry to mimic their feature being OFF
+		// (the later specific-arg config wins over the Arg.Any baseline in NSubstitute).
+		foreach (Type disabled in disabledToolTypes) {
+			featureToggle.IsEnabled(disabled).Returns(false);
+		}
 		McpToolInvokerRegistry registry = new(
 			provider,
 			typeof(SchemaSyncTool).Assembly,
@@ -2303,5 +2308,164 @@ public sealed class ToolContractGetToolTests {
 				&& alias.Status == "rejected"
 				&& alias.Message.Contains("component-type"),
 			because: "an agent that passes the wrong-WORD selector must be redirected to 'component-type' rather than left to guess");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A feature-gated tool disabled in the invoker registry (requests-registry off) is invisible on every get-tool-contract discovery surface: named lookup returns tool-not-found, it is never suggested for a near-miss, and it is absent from the compact index. list-printables is the non-curated probe, so it fully disappears (the curated get-request-info leak is characterized separately).")]
+	public void ToolContractGet_Should_Hide_GatedOffTool_FromLookupSuggestionsAndIndex_When_FeatureDisabledInRegistry() {
+		// Arrange - mimic requests-registry OFF: both request-surface tool types are dropped from the registry.
+		ToolContractGetTool tool = BuildToolWithRegistry(typeof(ListPrintablesTool), typeof(RequestInfoTool));
+
+		// Act - named lookup of the gated-off, non-curated probe.
+		ToolContractGetResponse lookup = tool.GetToolContracts(new ToolContractGetArgs([ListPrintablesTool.ToolName]));
+
+		// Assert - named lookup misses.
+		lookup.Success.Should().BeFalse(
+			because: "list-printables is gated off in the live registry and is not curated, so named lookup must miss");
+		lookup.Error!.Code.Should().Be("tool-not-found",
+			because: "a gated-off, uncurated tool must resolve as tool-not-found, not a stale contract");
+		lookup.Error.Suggestions.Should().NotContain(ListPrintablesTool.ToolName,
+			because: "suggestions draw from the feature-filtered registry, not the toggle-blind schema catalog, so a hidden tool must not suggest itself");
+
+		// Act - compact index.
+		ToolContractGetResponse index = tool.GetToolContracts(new ToolContractGetArgs());
+
+		// Assert - absent from the index, while an unrelated enabled long-tail tool remains.
+		index.Index.Should().NotBeNullOrEmpty(because: "the no-args call must produce the compact index");
+		index.Index!.Select(entry => entry.Name).Should().NotContain(ListPrintablesTool.ToolName,
+			because: "with a live registry the index draws long-tail names from registry.ToolNames, so a gated-off tool stays out of it");
+		index.Index!.Select(entry => entry.Name).Should().Contain(DownloadConfigurationTool.DownloadConfigurationByEnvironmentToolName,
+			because: "an uncurated (registry-only) enabled tool must remain in the index, proving the registry-derived contribution survives disabling only the request surface - it is absent from CanonicalToolNames, so it can reach the index ONLY via registry.ToolNames");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Characterization of the documented discovery-vs-dispatch leak: get-request-info is a CURATED contract, so even with requests-registry disabled in the registry it stays resolvable by named lookup and present in the compact index and the detail=full dump - knowable via the ungated curated catalog though not runnable. Locks the leak in both directions so a future change that gates the shared catalog fails loudly.")]
+	public void ToolContractGet_Should_KeepCuratedGatedTool_Present_When_FeatureDisabled() {
+		// Arrange - requests-registry OFF in the registry; get-request-info is curated regardless.
+		ToolContractGetTool tool = BuildToolWithRegistry(typeof(RequestInfoTool), typeof(ListPrintablesTool));
+
+		// Act - named lookup of the curated gated tool.
+		ToolContractGetResponse lookup = tool.GetToolContracts(new ToolContractGetArgs([RequestInfoTool.ToolName]));
+
+		// Assert - the curated contract still resolves (the documented leak: knowable while gated off).
+		lookup.Success.Should().BeTrue(
+			because: "get-request-info has a curated contract deliberately NOT re-gated, so it stays knowable via get-tool-contract while the feature is off");
+		lookup.Tools!.Single().Name.Should().Be(RequestInfoTool.ToolName,
+			because: "the curated contract must resolve verbatim");
+
+		// Act - compact index.
+		ToolContractGetResponse index = tool.GetToolContracts(new ToolContractGetArgs());
+
+		// Assert - still in the index via CanonicalToolNames.
+		index.Index!.Select(entry => entry.Name).Should().Contain(RequestInfoTool.ToolName,
+			because: "get-request-info is in CanonicalToolNames, so it stays in the compact index regardless of the registry toggle (the documented leak)");
+
+		// Act - detail=full dump.
+		ToolContractGetResponse full = tool.GetToolContracts(new ToolContractGetArgs(Detail: "full"));
+
+		// Assert - present in the full curated dump too.
+		full.Tools!.Select(contract => contract.Name).Should().Contain(RequestInfoTool.ToolName,
+			because: "detail=full enumerates CanonicalToolNames, which includes the curated get-request-info entry even while gated off");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Load-bearing premise for the discovery-gating hardening: with every toggle enabled, the registry-derived compact index is a superset of the toggle-blind McpToolSchemaCatalog reflection set - the only catalog name absent from the index is get-tool-contract itself, which never indexes itself. Guards against a future registration-path divergence silently shrinking the Ring-consumed index below the reflection catalog.")]
+	public void ToolContractGet_IndexNames_Should_BeSuperset_Of_SchemaCatalog_When_AllTogglesEnabled() {
+		// Arrange - every tool type enabled.
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse index = tool.GetToolContracts(new ToolContractGetArgs());
+		string[] missing = McpToolSchemaCatalog.RegisteredToolNames
+			.Except(index.Index!.Select(entry => entry.Name), StringComparer.OrdinalIgnoreCase)
+			.ToArray();
+
+		// Assert
+		index.Index.Should().NotBeNullOrEmpty(because: "the no-args call must produce the compact index");
+		missing.Should().BeEquivalentTo(new[] { ToolContractGetTool.ToolName },
+			because: "the only reflection-catalog tool absent from the fully-enabled compact index is get-tool-contract (deliberately excluded from indexing itself); every other tool the toggle-blind schema catalog knows must also be in the registry-derived index, so dropping the schema-catalog union from the index cannot lose a tool");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Degraded path: with a null invoker registry, get-tool-contract falls back to the toggle-blind McpToolSchemaCatalog on all three discovery surfaces - an uncurated-but-registered tool still resolves by named lookup, is suggested for a near-miss, and appears in the compact index.")]
+	public void ToolContractGet_Should_ResolveUncuratedTool_ViaSchemaCatalog_ForLookupSuggestionsAndIndex_When_RegistryNull() {
+		// Arrange - no invoker registry, so the schema-catalog fallback governs discovery.
+		ToolContractGetTool tool = new();
+		string toolName = DownloadConfigurationTool.DownloadConfigurationByEnvironmentToolName;
+
+		// Act - named lookup.
+		ToolContractGetResponse lookup = tool.GetToolContracts(new ToolContractGetArgs([toolName]));
+
+		// Assert - resolves via the reflection-catalog fallback.
+		lookup.Success.Should().BeTrue(
+			because: "with no registry the reflection-catalog fallback resolves an uncurated registered tool");
+		lookup.Tools!.Single().Name.Should().Be(toolName,
+			because: "the fallback returns the requested tool verbatim");
+
+		// Act - near-miss suggestions.
+		ToolContractGetResponse miss = tool.GetToolContracts(new ToolContractGetArgs([toolName + "x"]));
+
+		// Assert - the real name is suggested from the schema-catalog pool.
+		miss.Success.Should().BeFalse(because: "a near-miss name matches no tool");
+		miss.Error!.Code.Should().Be("tool-not-found", because: "an unknown name must fail as tool-not-found");
+		miss.Error.Suggestions.Should().Contain(toolName,
+			because: "with a null registry BuildSuggestions draws its pool from McpToolSchemaCatalog.RegisteredToolNames, so the near-miss surfaces the real uncurated name");
+
+		// Act - compact index.
+		ToolContractGetResponse index = tool.GetToolContracts(new ToolContractGetArgs());
+
+		// Assert - present in the index via the schema-catalog union.
+		index.Index!.Select(entry => entry.Name).Should().Contain(toolName,
+			because: "with a null registry BuildIndexToolNames unions CanonicalToolNames with the schema catalog, so an uncurated registered tool still appears in the compact index");
+	}
+	
+	[Test]
+	[Category("Unit")]
+	[Description("Pins the curated get-request-info contract: input args, the environment-name/version mutual-exclusion validator, the rejected kebab-case aliases, the output envelope fields, and the memory-authored-params anti-pattern. The contract is curated/ungated, so it resolves regardless of the requests-registry toggle.")]
+	public void ToolContractGet_Should_Return_RequestInfo_Contract() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([RequestInfoTool.ToolName]));
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "get-request-info has a curated contract discoverable through get-tool-contract");
+		ToolContractDefinition contract = result.Tools!.Single();
+		contract.Name.Should().Be(RequestInfoTool.ToolName,
+			because: "the returned contract must be for the requested tool");
+		contract.InputSchema.Properties.Select(field => field.Name).Should().Contain(
+			["request-type", "search", "environment-name", "version", "uri", "login", "password"],
+			because: "the contract must advertise every authorable input argument");
+		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "mutually-exclusive"
+				&& validator.Context!.Contains("mutually exclusive", StringComparison.OrdinalIgnoreCase),
+			because: "environment-name and version are mutually exclusive, and the contract must advertise that rule");
+		contract.Aliases.Should().Contain(alias =>
+				alias.Alias == "requestType"
+				&& alias.CanonicalName == "request-type"
+				&& alias.Status == "rejected",
+			because: "the camelCase requestType selector must be advertised as rejected in favor of request-type");
+		contract.Aliases.Should().Contain(alias =>
+				alias.Alias == "environmentName"
+				&& alias.CanonicalName == "environment-name"
+				&& alias.Status == "rejected",
+			because: "the camelCase environmentName selector must be advertised as rejected in favor of environment-name");
+		contract.OutputContract.Fields.Select(field => field.Name).Should().Contain(
+			["success", "mode", "parameters", "baseParameters", "documentation", "requiresVersionConfirmation", "resolvedFrom"],
+			because: "the contract must document the request-catalog output envelope: the authorable parameters map, the separate platform-injected baseParameters, per-request documentation, the version resolver tier, and the latest-fallback hard stop");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "parameters"
+				&& field.Description.Contains("valueSource", StringComparison.Ordinal),
+			because: "the parameters field must explain the valueSource probe annotation so an agent fills environment-dependent values from the named probe, never from memory");
+		contract.AntiPatterns.Should().NotBeNullOrEmpty(
+			because: "the contract must carry anti-patterns steering agents away from inventing request names and values");
+		contract.AntiPatterns!.Should().Contain(pattern =>
+				pattern.Pattern.Contains("memory", StringComparison.OrdinalIgnoreCase),
+			because: "authoring request names or params from memory is the core anti-pattern the catalog exists to prevent");
 	}
 }

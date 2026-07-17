@@ -151,7 +151,7 @@ public sealed class RequestRegistryGatingE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
-	[Description("The always-on page-schema-handlers guide is feature-aware: with requests-registry off get-guidance serves it (it stays available) but its Standard handler parameter catalog omits the gated get-request-info / when-to-use-requests pointers and keeps the ungated get-process-signature route (ENG-93187 review item 3).")]
+	[Description("The always-on page-schema-handlers guide is feature-aware: with requests-registry off get-guidance serves it (it stays available) but its Standard handler parameter catalog omits the gated get-request-info / when-to-use-requests pointers and keeps the ungated get-process-signature route.")]
 	[AllureTag(RequestInfoTool.ToolName)]
 	[AllureName("page-schema-handlers guide omits request-catalog pointers when requests-registry is disabled")]
 	[AllureDescription("Reads get-guidance name=page-schema-handlers against an empty-feature-set server and verifies the gated request-catalog pointers are absent while the ungated resolution path remains.")]
@@ -174,5 +174,51 @@ public sealed class RequestRegistryGatingE2ETests : McpContractFixtureBase {
 			because: "the feature-aware handler guide must not point at the gated request-wiring guide while requests-registry is off");
 		handlers.Article.Text.Should().Contain("get-process-signature",
 			because: "the ungated get-process-signature probe remains the run-process resolution path while the catalog is hidden");
+	}
+
+	[Test]
+	[Description("The four feature-aware guidance resources still RESOLVE over the DIRECT resources/read MCP path with requests-registry off (they are ungated resources, unlike the gated get-guidance NAME), but their request-catalog pointers are omitted - an always-on guide never routes an agent to the hidden get-request-info / when-to-use-requests surface.")]
+	[AllureTag(RequestInfoTool.ToolName)]
+	[AllureName("feature-aware guides omit request-catalog pointers over resources/read when requests-registry is disabled")]
+	[AllureDescription("Reads routing, page-modification, mobile-page-modification and page-schema-handlers over resources/read against an empty-feature-set server and verifies each resolves with its request-catalog pointers omitted.")]
+	public async Task FeatureAwareGuidanceResources_Should_Omit_RequestCatalog_Pointers_Over_ResourcesRead_When_Disabled() {
+		// Arrange
+		await using var context = Arrange();
+		CancellationToken token = context.CancellationTokenSource.Token;
+
+		// Act + Assert
+		TextResourceContents routing = await RequestInfoToolE2ETests.ReadGuideAsync(
+			context.Session, RequestInfoToolE2ETests.RoutingUri, token);
+		routing.Text.Should().NotContain("get-request-info",
+			because: "the feature-off routing map must not advertise the gated request catalog over resources/read");
+		routing.Text.Should().NotContain("when-to-use-requests",
+			because: "the feature-off routing map must not advertise the gated request-wiring guide over resources/read");
+		routing.Text.Should().NotBeNullOrEmpty(
+			because: "the routing resource must still resolve with content over resources/read while the feature is off");
+
+		TextResourceContents page = await RequestInfoToolE2ETests.ReadGuideAsync(
+			context.Session, RequestInfoToolE2ETests.PageModificationUri, token);
+		page.Text.Should().NotContain("when-to-use-requests",
+			because: "the feature-off page-modification guide must not mandate the gated request-wiring guide over resources/read");
+		page.Text.Should().NotContain("get-request-info",
+			because: "removing the run-process GATE row also drops its get-request-info pointer over resources/read");
+		page.Text.Should().Contain("clio MCP page modification guide",
+			because: "the page-modification guide still resolves with its stable body when the run-process GATE row is removed (get-process-signature lived only on that removed row, so it is not asserted here)");
+
+		TextResourceContents mobile = await RequestInfoToolE2ETests.ReadGuideAsync(
+			context.Session, RequestInfoToolE2ETests.MobilePageUri, token);
+		mobile.Text.Should().NotContain("get-request-info",
+			because: "the feature-off mobile guide must not point at the gated request catalog over resources/read");
+		mobile.Text.Should().Contain("get-process-signature",
+			because: "the ungated process-signature probe remains the mobile run-process resolution path when the catalog is hidden");
+
+		TextResourceContents handlers = await RequestInfoToolE2ETests.ReadGuideAsync(
+			context.Session, RequestInfoToolE2ETests.PageSchemaHandlersUri, token);
+		handlers.Text.Should().NotContain("get-request-info",
+			because: "the feature-off handler catalog must not name the gated request catalog over resources/read");
+		handlers.Text.Should().NotContain("when-to-use-requests",
+			because: "the feature-off handler catalog must not point at the gated request-wiring guide over resources/read");
+		handlers.Text.Should().Contain("get-process-signature",
+			because: "the ungated process-signature probe remains the run-process resolution path over resources/read");
 	}
 }

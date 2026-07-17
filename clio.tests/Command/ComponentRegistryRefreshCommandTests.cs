@@ -30,13 +30,22 @@ public sealed class ComponentRegistryRefreshCommandTests {
 		return r;
 	}
 
+	// The default for the pre-existing tests: requests-registry ENABLED, so the requests flavor is
+	// refreshed alongside web and mobile (the behavior those tests assert). A bare substitute (feature
+	// OFF) is used by the gated-off tests below.
+	private static IFeatureToggleService RequestsFeatureEnabled() {
+		IFeatureToggleService f = Substitute.For<IFeatureToggleService>();
+		f.IsFeatureEnabled("requests-registry").Returns(true);
+		return f;
+	}
+
 	[Test]
 	[Description("With no flags the verb refreshes the latest.json alias for web, mobile, and requests and exits 0 when the CDN responds.")]
 	public void Execute_Refreshes_Latest_When_No_Flags() {
 		// Arrange
 		FakeComponentRegistryClient client = new();
 		client.SetRefreshResult("latest", success: true);
-		ComponentRegistryRefreshCommand command = new(client, MobileAlwaysSucceeds(), RequestsAlwaysSucceeds(), Substitute.For<IFileSystem>(), Substitute.For<ILogger>());
+		ComponentRegistryRefreshCommand command = new(client, MobileAlwaysSucceeds(), RequestsAlwaysSucceeds(), Substitute.For<IFileSystem>(), RequestsFeatureEnabled(), Substitute.For<ILogger>());
 
 		// Act
 		int exitCode = command.Execute(new ComponentRegistryRefreshOptions());
@@ -53,7 +62,7 @@ public sealed class ComponentRegistryRefreshCommandTests {
 		// Arrange
 		FakeComponentRegistryClient client = new();
 		client.SetRefreshResult("latest", success: false);
-		ComponentRegistryRefreshCommand command = new(client, MobileAlwaysSucceeds(), RequestsAlwaysSucceeds(), Substitute.For<IFileSystem>(), Substitute.For<ILogger>());
+		ComponentRegistryRefreshCommand command = new(client, MobileAlwaysSucceeds(), RequestsAlwaysSucceeds(), Substitute.For<IFileSystem>(), RequestsFeatureEnabled(), Substitute.For<ILogger>());
 
 		// Act
 		int exitCode = command.Execute(new ComponentRegistryRefreshOptions());
@@ -68,7 +77,7 @@ public sealed class ComponentRegistryRefreshCommandTests {
 		// Arrange
 		FakeComponentRegistryClient client = new();
 		client.SetRefreshResult("8.2.1", success: true);
-		ComponentRegistryRefreshCommand command = new(client, MobileAlwaysSucceeds(), RequestsAlwaysSucceeds(), Substitute.For<IFileSystem>(), Substitute.For<ILogger>());
+		ComponentRegistryRefreshCommand command = new(client, MobileAlwaysSucceeds(), RequestsAlwaysSucceeds(), Substitute.For<IFileSystem>(), RequestsFeatureEnabled(), Substitute.For<ILogger>());
 
 		// Act
 		int exitCode = command.Execute(new ComponentRegistryRefreshOptions { Version = "8.2.1" });
@@ -97,7 +106,7 @@ public sealed class ComponentRegistryRefreshCommandTests {
 		client.SetRefreshResult("8.2.0", success: true);
 		client.SetRefreshResult("8.3.0", success: true);
 		client.SetRefreshResult("latest", success: true);
-		ComponentRegistryRefreshCommand command = new(client, MobileAlwaysSucceeds(), RequestsAlwaysSucceeds(), fileSystem, Substitute.For<ILogger>());
+		ComponentRegistryRefreshCommand command = new(client, MobileAlwaysSucceeds(), RequestsAlwaysSucceeds(), fileSystem, RequestsFeatureEnabled(), Substitute.For<ILogger>());
 
 		// Act
 		int exitCode = command.Execute(new ComponentRegistryRefreshOptions { All = true });
@@ -115,7 +124,7 @@ public sealed class ComponentRegistryRefreshCommandTests {
 		IFileSystem fileSystem = Substitute.For<IFileSystem>();
 		fileSystem.ExistsDirectory(Arg.Any<string>()).Returns(false);
 		FakeComponentRegistryClient client = new();
-		ComponentRegistryRefreshCommand command = new(client, MobileAlwaysSucceeds(), RequestsAlwaysSucceeds(), fileSystem, Substitute.For<ILogger>());
+		ComponentRegistryRefreshCommand command = new(client, MobileAlwaysSucceeds(), RequestsAlwaysSucceeds(), fileSystem, RequestsFeatureEnabled(), Substitute.For<ILogger>());
 
 		// Act
 		int exitCode = command.Execute(new ComponentRegistryRefreshOptions { All = true });
@@ -131,7 +140,7 @@ public sealed class ComponentRegistryRefreshCommandTests {
 		// Arrange
 		FakeComponentRegistryClient client = new();
 		client.SetRefreshThrows("latest", new InvalidOperationException("boom"));
-		ComponentRegistryRefreshCommand command = new(client, MobileAlwaysSucceeds(), RequestsAlwaysSucceeds(), Substitute.For<IFileSystem>(), Substitute.For<ILogger>());
+		ComponentRegistryRefreshCommand command = new(client, MobileAlwaysSucceeds(), RequestsAlwaysSucceeds(), Substitute.For<IFileSystem>(), RequestsFeatureEnabled(), Substitute.For<ILogger>());
 
 		// Act
 		int exitCode = command.Execute(new ComponentRegistryRefreshOptions());
@@ -147,7 +156,7 @@ public sealed class ComponentRegistryRefreshCommandTests {
 		FakeComponentRegistryClient client = new();
 		client.SetRefreshResult("latest", success: true);
 		IRequestRegistryClient requests = RequestsAlwaysSucceeds();
-		ComponentRegistryRefreshCommand command = new(client, MobileAlwaysSucceeds(), requests, Substitute.For<IFileSystem>(), Substitute.For<ILogger>());
+		ComponentRegistryRefreshCommand command = new(client, MobileAlwaysSucceeds(), requests, Substitute.For<IFileSystem>(), RequestsFeatureEnabled(), Substitute.For<ILogger>());
 
 		// Act
 		int exitCode = command.Execute(new ComponentRegistryRefreshOptions());
@@ -165,7 +174,7 @@ public sealed class ComponentRegistryRefreshCommandTests {
 		client.SetRefreshResult("latest", success: true);
 		IRequestRegistryClient requests = Substitute.For<IRequestRegistryClient>();
 		requests.RefreshAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(false));
-		ComponentRegistryRefreshCommand command = new(client, MobileAlwaysSucceeds(), requests, Substitute.For<IFileSystem>(), Substitute.For<ILogger>());
+		ComponentRegistryRefreshCommand command = new(client, MobileAlwaysSucceeds(), requests, Substitute.For<IFileSystem>(), RequestsFeatureEnabled(), Substitute.For<ILogger>());
 
 		// Act
 		int exitCode = command.Execute(new ComponentRegistryRefreshOptions());
@@ -187,7 +196,7 @@ public sealed class ComponentRegistryRefreshCommandTests {
 
 		FakeComponentRegistryClient client = new();
 		client.SetRefreshResult("9.9.9", success: true);
-		ComponentRegistryRefreshCommand command = new(client, MobileAlwaysSucceeds(), RequestsAlwaysSucceeds(), fileSystem, Substitute.For<ILogger>());
+		ComponentRegistryRefreshCommand command = new(client, MobileAlwaysSucceeds(), RequestsAlwaysSucceeds(), fileSystem, RequestsFeatureEnabled(), Substitute.For<ILogger>());
 
 		// Act
 		int exitCode = command.Execute(new ComponentRegistryRefreshOptions { All = true });
@@ -197,6 +206,69 @@ public sealed class ComponentRegistryRefreshCommandTests {
 			because: "every discovered version refreshes successfully across all flavors in this arrangement");
 		client.RefreshedVersions.Should().ContainSingle().Which.Should().Be("9.9.9",
 			because: "a version cached only under the requests subdirectory must still be enumerated by --all and refreshed across flavors");
+	}
+
+	[Test]
+	[Description("With the requests-registry feature disabled (the default), the verb does NOT refresh the requests flavor — a user who never opted in must not depend on the requests CDN feed.")]
+	public async Task Execute_Skips_Requests_Flavor_When_RequestsRegistry_Disabled() {
+		// Arrange — a bare feature-toggle substitute reports requests-registry as OFF.
+		FakeComponentRegistryClient client = new();
+		client.SetRefreshResult("latest", success: true);
+		IRequestRegistryClient requests = RequestsAlwaysSucceeds();
+		ComponentRegistryRefreshCommand command = new(client, MobileAlwaysSucceeds(), requests,
+			Substitute.For<IFileSystem>(), Substitute.For<IFeatureToggleService>(), Substitute.For<ILogger>());
+
+		// Act
+		int exitCode = command.Execute(new ComponentRegistryRefreshOptions());
+
+		// Assert
+		exitCode.Should().Be(0, because: "web and mobile refreshed successfully and the requests flavor is skipped while the feature is off");
+		await requests.DidNotReceive().RefreshAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+	}
+
+	[Test]
+	[Description("With requests-registry disabled, --all does NOT enumerate the requests cache subdirectory: a version cached only under requests/ (e.g. from a prior enabled run) is neither turned into a refresh target nor refreshed, so an opted-out user's --all run is a no-op success rather than a web/mobile 404 penalty.")]
+	public void Execute_All_Skips_Requests_Subdirectory_When_RequestsRegistry_Disabled() {
+		// Arrange — only the requests subdir holds a cached version; web and mobile dirs are empty; feature OFF.
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		fileSystem.ExistsDirectory(Arg.Any<string>()).Returns(true);
+		fileSystem.GetFiles(Arg.Any<string>()).Returns(Array.Empty<string>());
+		fileSystem.GetFiles(Arg.Is<string>(path =>
+				path.EndsWith(RegistryFlavor.Requests.CacheSubdirectoryName, StringComparison.OrdinalIgnoreCase)))
+			.Returns(new[] { "/cache/requests/9.9.9.json" });
+
+		FakeComponentRegistryClient client = new();
+		IRequestRegistryClient requests = RequestsAlwaysSucceeds();
+		ComponentRegistryRefreshCommand command = new(client, MobileAlwaysSucceeds(), requests,
+			fileSystem, Substitute.For<IFeatureToggleService>(), Substitute.For<ILogger>());
+
+		// Act
+		int exitCode = command.Execute(new ComponentRegistryRefreshOptions { All = true });
+
+		// Assert
+		exitCode.Should().Be(0,
+			because: "the requests-only cached version is not enumerated while the feature is off, so nothing is refreshed and the run is a no-op success");
+		client.RefreshedVersions.Should().BeEmpty(
+			because: "a version present only under the requests cache subdir must not drive a web/mobile refresh for an opted-out user");
+	}
+
+	[Test]
+	[Description("A user who never enabled requests-registry is not penalised by an unpublished requests CDN file: even when the requests client would report cdn-unavailable, the flavor is skipped so the command still exits 0 when web and mobile succeed.")]
+	public async Task Execute_Returns_Zero_When_Requests_Cdn_Unavailable_But_Feature_Disabled() {
+		// Arrange — requests would 404 (RefreshAsync returns false), but the feature is off so it is never called.
+		FakeComponentRegistryClient client = new();
+		client.SetRefreshResult("latest", success: true);
+		IRequestRegistryClient requests = Substitute.For<IRequestRegistryClient>();
+		requests.RefreshAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(false));
+		ComponentRegistryRefreshCommand command = new(client, MobileAlwaysSucceeds(), requests,
+			Substitute.For<IFileSystem>(), Substitute.For<IFeatureToggleService>(), Substitute.For<ILogger>());
+
+		// Act
+		int exitCode = command.Execute(new ComponentRegistryRefreshOptions());
+
+		// Assert
+		exitCode.Should().Be(0, because: "the requests flavor is not a requested refresh while the feature is off, so its would-be CDN failure must not flip the exit code for an opted-out user");
+		await requests.DidNotReceive().RefreshAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
 	}
 
 	private sealed class FakeComponentRegistryClient : IComponentRegistryClient {

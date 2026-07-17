@@ -550,7 +550,7 @@ public sealed class McpGuidanceResourceTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The page-schema-handlers resource swaps the request-catalog pointers for the ungated get-process-signature route while requests-registry is disabled, so the always-on handler guide never routes to the hidden get-request-info tool or when-to-use-requests guide (ENG-93187 review item 3).")]
+	[Description("The page-schema-handlers resource swaps the request-catalog pointers for the ungated get-process-signature route while requests-registry is disabled, so the always-on handler guide never routes to the hidden get-request-info tool or when-to-use-requests guide.")]
 	public void PageSchemaHandlersGuidanceResource_Should_Omit_RequestCatalogPointers_When_RequestsRegistryDisabled() {
 		// Arrange — a bare substitute: IsEnabled(...) returns false, so the gated pointers must be absent.
 		IFeatureToggleService featureToggleService = Substitute.For<IFeatureToggleService>();

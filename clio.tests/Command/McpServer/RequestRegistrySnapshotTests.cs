@@ -14,7 +14,6 @@ namespace Clio.Tests.Command.McpServer;
 /// either mapped to a POCO field or land on an explicit
 /// <see cref="System.Text.Json.Serialization.JsonExtensionDataAttribute"/> bucket
 /// that this test inspects — mirroring the component-registry guard.
-/// OOTB button-action requests initiative (ENG-93187).
 /// </summary>
 [TestFixture]
 [Category("Unit")]
@@ -96,6 +95,38 @@ public sealed class RequestRegistrySnapshotTests {
 			because: "the payload publishes global typeDefinitions reachable from the wiring seed");
 		detail.References!.TypeDefinitions.Should().ContainKey("RequestBindingConfig",
 			because: "every request is wired through RequestBindingConfig, so the detail response inlines its schema");
+	}
+
+	[Test]
+	[Description("A detail response against the pinned payload must surface the templateId parameter's environment valueSource verbatim at the DATA layer (parameters['templateId'].valueSource.tool == 'list-printables'), pinning the probe-routing contract as structured data rather than only as a guide-text substring.")]
+	public void Pinned_Snapshot_Detail_Should_Surface_TemplateId_EnvironmentValueSource_Probe() {
+		// Arrange
+		string snapshotPath = Path.Combine(TestContext.CurrentContext.TestDirectory, SnapshotRelativePath);
+		using FileStream stream = File.OpenRead(snapshotPath);
+		RequestCatalogState state = RequestInfoCatalog.LoadFromStream(stream);
+		state.Lookup.TryGetValue("crt.PrintablesRequest", out RequestRegistryEntry? printables).Should().BeTrue(
+			because: "crt.PrintablesRequest is the environment-valued request shipped in the pinned payload");
+
+		// Act
+		RequestInfoResponse detail = RequestInfoTool.CreateDetailResponse(
+			printables!,
+			resolvedTargetVersion: state.ResolvedVersion,
+			resolvedFrom: "latest-fallback",
+			documentation: null,
+			globalReferences: state.GlobalReferences);
+
+		// Assert — the valueSource annotation survives as structured data on the parameter blob.
+		detail.Parameters.Should().NotBeNull(
+			because: "crt.PrintablesRequest declares authorable parameters");
+		detail.Parameters!.Should().ContainKey("templateId",
+			because: "templateId is the environment-valued parameter a probe fills");
+		JsonElement templateId = detail.Parameters["templateId"];
+		templateId.TryGetProperty("valueSource", out JsonElement valueSource).Should().BeTrue(
+			because: "an environment-valued parameter must carry a valueSource so the agent routes to a probe instead of inventing the value");
+		valueSource.GetProperty("kind").GetString().Should().Be("environment",
+			because: "the value lives in the target environment, not the static catalog");
+		valueSource.GetProperty("tool").GetString().Should().Be("list-printables",
+			because: "templateId must be resolved from the list-printables probe - pinned at the data layer, not as a guide-text substring");
 	}
 
 	private static IEnumerable<string> UnmappedKeys(IDictionary<string, JsonElement>? bucket) =>

@@ -178,9 +178,6 @@ internal static class PassthroughToolClassificationRegistry {
 	/// </summary>
 	internal static readonly IReadOnlyDictionary<string, PassthroughClassification> Classification =
 		new Dictionary<string, PassthroughClassification>(System.StringComparer.Ordinal) {
-			// --- Routed (13): audited class c1 (7) + c2 (1) + matrix (4), fixed in Stories 3-14,
-			// plus get-request-info (ENG-93187) which mirrors get-component-info's resolver-routed
-			// version probe ---
 			["list-apps"] = PassthroughClassification.Routed,
 			["get-app-info"] = PassthroughClassification.Routed,
 			["create-app"] = PassthroughClassification.Routed,
@@ -192,7 +189,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["update-page"] = PassthroughClassification.Routed,
 			["sync-pages"] = PassthroughClassification.Routed,
 			["get-component-info"] = PassthroughClassification.Routed,
-			["get-request-info"] = PassthroughClassification.Routed, // ENG-93187: same resolver-routed version-probe seam as get-component-info
+			["get-request-info"] = PassthroughClassification.Routed,
 			["build-theme"] = PassthroughClassification.Routed,
 
 			// --- Guarded (3): audited class c3, fail-fast under passthrough (Story 1) ---
@@ -566,8 +563,6 @@ internal static class PassthroughToolClassificationRegistry {
 		new("get-component-info", "outer", PassthroughScenario.RegisteredEnvStdio, typeof(McpHttpNoRegressionE2ETests),
 			nameof(McpHttpNoRegressionE2ETests.Stdio_ShouldExposeTouchedTool_WhenPassthroughUnused)),
 
-		// --- get-request-info (outer) — ENG-93187, mirrors the get-component-info rows. Unit rows only:
-		// the feature is gated OFF by default, so the stdio no-regression E2E does not see the tool. ---
 		new("get-request-info", "outer", PassthroughScenario.HeaderOnly, typeof(RequestInfoToolTests),
 			nameof(RequestInfoToolTests.GetRequestInfo_ShouldNeverCallCommandResolver_WhenHeaderOnly)),
 		new("get-request-info", "outer", PassthroughScenario.MixedInput, typeof(RequestInfoToolTests),

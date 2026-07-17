@@ -206,4 +206,30 @@ internal class ListPrintablesCommandTests : BaseCommandTests<ListPrintablesOptio
 		response.ResolutionFailed.Should().BeNull(
 			because: "a transport failure is transient, never the hard resolution-failed marker");
 	}
+
+	[Test]
+	[Description("Maps a DataService failure envelope (success:false) to a failed probe (Success=false + error), NOT a false empty-success — a server-side query rejection (e.g. permission denied) must be distinguishable from 'no printables registered'.")]
+	public void TryGetPrintables_ShouldReturnFailure_WhenDataServiceReportsFailure() {
+		// Arrange — the DataService responds, but with success:false (ExecuteSelectQuery throws on !Success).
+		ListPrintablesOptions options = new();
+		string failureJson = JsonSerializer.Serialize(new {
+			success = false,
+			errorInfo = new { message = "Access denied for SysModuleReport" }
+		});
+		_applicationClient.ExecutePostRequest("http://localhost/select", Arg.Any<string>()).Returns(failureJson);
+
+		// Act
+		bool ok = _command.TryGetPrintables(options, out ListPrintablesResponse response);
+
+		// Assert
+		ok.Should().BeFalse(because: "a DataService success:false envelope is a failed query, not a usable result");
+		response.Success.Should().BeFalse(
+			because: "the probe must report failure, not a false empty-success that reads to the agent as 'no printables registered'");
+		response.Error.Should().Contain("Access denied for SysModuleReport",
+			because: "the server-side failure detail must surface to the agent so the rejection is actionable");
+		response.Count.Should().Be(0, because: "a failed query returns no printables");
+		response.Printables.Should().BeEmpty(because: "a failed query yields no printable rows");
+		response.ResolutionFailed.Should().BeNull(
+			because: "a list probe has no resolution phase, so the hard-failure marker stays omitted even on a query rejection");
+	}
 }

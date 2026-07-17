@@ -59,8 +59,7 @@ public sealed class McpProfileGatingTests
 	/// experimental CORE tools do not ship in the default <c>tools/list</c>, so they must
 	/// not consume the byte budget until they graduate; removing the <c>[FeatureToggle]</c>
 	/// at graduation lands their cost on the ratchet at exactly the moment the deliberate
-	/// budget decision is due (get-request-info rides this path again after its ENG-93187
-	/// graduation was reversed and re-gated behind the requests-registry feature).
+	/// budget decision is due.
 	/// </summary>
 	private static bool DefaultSurfaceEnabled(Type type) =>
 		type.GetCustomAttribute<FeatureToggleAttribute>() is null;
@@ -209,7 +208,7 @@ public sealed class McpProfileGatingTests
 
 	[Test]
 	[Category("Unit")]
-	[Description("get-request-info is gated under requests-registry: it is absent from the DEFAULT (feature-off) tools/list and present once the gate is enabled — pinning the ENG-93187 re-gating so a regression that silently re-graduates it is caught.")]
+	[Description("get-request-info is gated under requests-registry: it is absent from the DEFAULT (feature-off) tools/list and present once the gate is enabled.")]
 	public void RegisterEnabledPrimitives_ShouldGateRequestInfoTool_ByRequestsRegistryFeature() {
 		// Arrange — the default fresh-install surface, and the same surface with the requests-registry gate on.
 		static bool WithRequestsRegistry(Type type) =>

@@ -28,6 +28,13 @@ namespace Clio.Mcp.E2E;
 public sealed class RequestInfoToolE2ETests : McpContractFixtureBase {
 	private const string ToolName = RequestInfoTool.ToolName;
 
+	// The four always-on, feature-AWARE guidance resources whose direct resources/read path item 14 pins
+	// in both feature states (their content is spliced by the ctor-injected IFeatureToggleService).
+	internal const string RoutingUri = "docs://mcp/guides/routing";
+	internal const string PageModificationUri = "docs://mcp/guides/page-modification";
+	internal const string MobilePageUri = "docs://mcp/guides/mobile-page-modification";
+	internal const string PageSchemaHandlersUri = "docs://mcp/guides/page-schema-handlers";
+
 	/// <summary>
 	/// Offline registry fixture: the pilot parameterless request (no docs, so the detail
 	/// path never touches the docs CDN) plus a parameterised request for search coverage,
@@ -355,6 +362,40 @@ public sealed class RequestInfoToolE2ETests : McpContractFixtureBase {
 			because: "the feature-aware routing map must route button/menu request wiring to the catalog tool once requests-registry is enabled");
 	}
 
+	[Test]
+	[Description("The four feature-aware guidance resources, read over the DIRECT resources/read MCP path, carry their request-catalog pointers once requests-registry is enabled - pinning that the ctor-injected IFeatureToggleService gates content on resources/read, not only on get-guidance.")]
+	[AllureTag(ToolName)]
+	[AllureName("feature-aware guides include request-catalog pointers over resources/read when requests-registry is enabled")]
+	[AllureDescription("Reads routing, page-modification, mobile-page-modification and page-schema-handlers over resources/read against a requests-registry-enabled server and verifies each carries its request-catalog pointers.")]
+	public async Task FeatureAwareGuidanceResources_Should_Include_RequestCatalog_Pointers_Over_ResourcesRead_When_Enabled() {
+		// Arrange
+		await using var context = Arrange();
+		CancellationToken token = context.CancellationTokenSource.Token;
+
+		// Act + Assert
+		TextResourceContents routing = await ReadGuideAsync(context.Session, RoutingUri, token);
+		routing.Text.Should().Contain("get-request-info",
+			because: "the feature-on routing map advertises the request catalog over resources/read");
+		routing.Text.Should().Contain("when-to-use-requests",
+			because: "the feature-on routing map advertises the request-wiring guide over resources/read");
+
+		TextResourceContents page = await ReadGuideAsync(context.Session, PageModificationUri, token);
+		page.Text.Should().Contain("when-to-use-requests",
+			because: "the feature-on page-modification GATE row mandates the request-wiring guide over resources/read");
+		page.Text.Should().Contain("get-request-info",
+			because: "the feature-on run-process GATE row names the request catalog over resources/read");
+
+		TextResourceContents mobile = await ReadGuideAsync(context.Session, MobilePageUri, token);
+		mobile.Text.Should().Contain("get-request-info",
+			because: "the feature-on mobile run-process entry points at the request catalog over resources/read");
+
+		TextResourceContents handlers = await ReadGuideAsync(context.Session, PageSchemaHandlersUri, token);
+		handlers.Text.Should().Contain("get-request-info",
+			because: "the feature-on handler parameter catalog names the request catalog over resources/read");
+		handlers.Text.Should().Contain("when-to-use-requests",
+			because: "the feature-on handler catalog intro points at the request-wiring guide over resources/read");
+	}
+
 	private static async Task<RequestInfoResponse> CallRequestInfoAsync(
 		McpServerSession session,
 		CancellationToken cancellationToken,
@@ -382,5 +423,22 @@ public sealed class RequestInfoToolE2ETests : McpContractFixtureBase {
 		callResult.IsError.Should().NotBeTrue(
 			because: "get-guidance should return a normal MCP tool result envelope for valid request shapes");
 		return EntitySchemaStructuredResultParser.Extract<GuidanceGetResponse>(callResult);
+	}
+
+	/// <summary>
+	/// Reads one guidance resource over the raw resources/read MCP path (not the lazy tools/list -> clio-run
+	/// route) and returns its single plain-text article, asserting the URI round-trips. Shared with
+	/// <see cref="RequestRegistryGatingE2ETests"/> so the ON and OFF resources/read tests use one oracle.
+	/// </summary>
+	internal static async Task<TextResourceContents> ReadGuideAsync(
+		McpServerSession session,
+		string uri,
+		CancellationToken cancellationToken) {
+		ReadResourceResult result = await session.ReadResourceAsync(uri, cancellationToken);
+		TextResourceContents article = result.Contents.Single().Should().BeOfType<TextResourceContents>(
+			because: "a guidance resource resolves to a single plain-text article over resources/read").Subject;
+		article.Uri.Should().Be(uri,
+			because: "resources/read must preserve the stable guide URI");
+		return article;
 	}
 }

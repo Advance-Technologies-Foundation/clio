@@ -135,7 +135,10 @@ To force-refresh the local cache without waiting for the 5min TTL, use the
 - `--version 8.2.1` → refresh that GA file
 - `--all` → refresh every per-version file currently in the cache directory
 
-Exit code is 0 only when every requested refresh got a 2xx from the CDN.
+Exit code is 0 only when every requested refresh got a 2xx from the CDN. The requests flavor
+participates in this accounting only while the `requests-registry` feature is enabled; when it is
+off, `component-registry-refresh` skips the requests flavor so an unpublished `RequestRegistry.json`
+never fails the command for a user who did not opt in.
 
 ### Long-form documentation (`references.docs[]`)
 
@@ -328,9 +331,8 @@ Consumer rules that differ from the component catalog — do not "unify" them aw
   `Tools/ComponentRegistryDocsPath.cs` validator accepts exactly the `docs/` and
   `request-docs/` prefixes; the docs pipeline (`ComponentRegistryDocsClient` +
   `ComponentDocumentationLoader`) is reused verbatim.
-- **The surface is gated behind the `requests-registry` feature** (ENG-93187; the earlier
-  graduation to an always-on surface was REVERSED so the prototype stays hidden until it is
-  review/QA-ready). Every request-surface class carries `[FeatureToggle("requests-registry")]` so the
+- **The surface is gated behind the `requests-registry` feature**
+  Every request-surface class carries `[FeatureToggle("requests-registry")]` so the
   whole surface hides together while the feature is off: `RequestInfoTool` (still in
   `McpCoreToolProfile.CoreToolTypes`, so it is resident in `tools/list` when the feature is ON and
   absent when OFF — the "gated experimental core tool" pattern in `McpProfileGatingTests`), the
@@ -344,7 +346,7 @@ Consumer rules that differ from the component catalog — do not "unify" them aw
   point at the request surface: `PageModificationGuidanceResource` serves its run-process GATE row (the one
   MANDATING `when-to-use-requests` + `get-request-info`), `MobilePageGuidanceResource` serves its
   request-catalog pointer, and `PageSchemaHandlersGuidanceResource` serves its "Standard handler parameter
-  catalog" get-request-info / when-to-use-requests pointers (ENG-93187 review item 3) only while the feature is
+  catalog" get-request-info / when-to-use-requests pointers only while the feature is
   on, via their own `BuildGuide(bool)` + per-entry
   `GuidanceCatalog` `ArticleBuilder` + ctor-injected `IFeatureToggleService` — an always-on guide must never
   hard-mandate a hidden surface (a "you MUST call X" whose X resolves as unknown is a mandated dead-end). The
@@ -363,7 +365,9 @@ Consumer rules that differ from the component catalog — do not "unify" them aw
   the feature to test: `clio experimental --name requests-registry --enable`. The guide owns the
   request-selection decision rules and the catalog discipline; handler mechanics stay in
   `page-schema-handlers` (never duplicate). There is deliberately NO CLI twin verb;
-  `component-registry-refresh` covers the requests cache flavor alongside web and mobile. Offline iteration
+  `component-registry-refresh` covers the requests cache flavor alongside web and mobile, but only while the
+  `requests-registry` feature is enabled (it skips the requests flavor when the feature is off, so an
+  opted-out user is never failed by an unpublished requests payload). Offline iteration
   goes through `CLIO_REQUEST_REGISTRY_LOCAL_FILE`.
 - **Snapshot guard is symmetric**: `RequestRegistrySnapshotTests` pins
   `clio.tests/Command/McpServer/Fixtures/RequestRegistry.live-snapshot.json`
