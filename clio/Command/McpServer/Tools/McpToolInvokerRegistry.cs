@@ -38,6 +38,17 @@ public interface IMcpToolInvokerRegistry {
 	/// <returns><c>true</c> when the tool is destructive or unknown; otherwise <c>false</c>.</returns>
 	bool IsDestructive(string toolName);
 
+	/// <summary>
+	/// Determines whether the named tool is retry-safe (read-only / idempotent non-destructive), derived
+	/// from its <c>[McpServerTool]</c> annotations via <see cref="McpReadDeadlineGate"/>. Used to decide
+	/// whether an unmatched long-tail dispatch is eligible for the read-response deadline (ENG-93373). An
+	/// unknown tool fails CLOSED (treated as NOT retry-safe) so it is never bounded on the assumption it is
+	/// safe to abandon.
+	/// </summary>
+	/// <param name="toolName">The MCP tool name.</param>
+	/// <returns><c>true</c> when the tool is retry-safe; otherwise <c>false</c> (including unknown).</returns>
+	bool IsRetrySafe(string toolName);
+
 	/// <summary>All registered MCP tool names, in discovery order.</summary>
 	IReadOnlyCollection<string> ToolNames { get; }
 }
@@ -52,6 +63,7 @@ public interface IMcpToolInvokerRegistry {
 public sealed class McpToolInvokerRegistry : IMcpToolInvokerRegistry {
 	private readonly Dictionary<string, McpServerTool> _tools;
 	private readonly Dictionary<string, bool> _destructive;
+	private readonly Dictionary<string, bool> _retrySafe;
 
 	/// <summary>
 	/// Builds the registry over the executing assembly using the supplied feature predicate and MCP
@@ -93,6 +105,7 @@ public sealed class McpToolInvokerRegistry : IMcpToolInvokerRegistry {
 
 		_tools = new Dictionary<string, McpServerTool>(StringComparer.OrdinalIgnoreCase);
 		_destructive = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+		_retrySafe = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
 
 		// Mirror the SDK's WithTools discovery (feature-enabled [McpServerToolType] classes, all their
 		// [McpServerTool]-attributed instance/static methods), but always over the FULL enabled catalog
@@ -127,6 +140,7 @@ public sealed class McpToolInvokerRegistry : IMcpToolInvokerRegistry {
 				}
 				_tools[toolName] = tool;
 				_destructive[toolName] = tool.ProtocolTool.Annotations?.DestructiveHint ?? true;
+				_retrySafe[toolName] = McpReadDeadlineGate.IsRetrySafe(toolName, tool.ProtocolTool.Annotations);
 			}
 		}
 	}
@@ -189,5 +203,15 @@ public sealed class McpToolInvokerRegistry : IMcpToolInvokerRegistry {
 		}
 		// Unknown tool → fail closed so the safe surface refuses it.
 		return !_destructive.TryGetValue(toolName.Trim(), out bool isDestructive) || isDestructive;
+	}
+
+	/// <inheritdoc />
+	public bool IsRetrySafe(string toolName) {
+		if (string.IsNullOrWhiteSpace(toolName)) {
+			// No tool to classify → fail closed (not retry-safe).
+			return false;
+		}
+		// Unknown tool → fail closed so it is never bounded on the assumption it is safe to abandon.
+		return _retrySafe.TryGetValue(toolName.Trim(), out bool isRetrySafe) && isRetrySafe;
 	}
 }

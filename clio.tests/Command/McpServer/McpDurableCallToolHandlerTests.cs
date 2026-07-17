@@ -104,6 +104,34 @@ public sealed class McpDurableCallToolHandlerTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Dispatches a retry-safe unmatched tool through the read-response deadline wrapper on the happy path: the fast result passes through unchanged with the advisory attached (ENG-93373).")]
+	public async Task HandleAsync_ShouldExecuteThroughDeadline_WhenToolIsRetrySafe() {
+		// Arrange
+		McpServerTool tool = BuildEchoTool();
+		_registry.TryGetTool("echo-tool", out Arg.Any<McpServerTool>())
+			.Returns(callInfo => { callInfo[1] = tool; return true; });
+		_registry.IsDestructive("echo-tool").Returns(false);
+		_registry.IsRetrySafe("echo-tool").Returns(true);
+		RequestContext<CallToolRequestParams> context = CallContext("echo-tool");
+		CallToolResult toolResult = new() { Content = [new TextContentBlock { Text = "payload" }] };
+		_executor.InvokeResolvedAsync(tool, "echo-tool", context, Arg.Any<CancellationToken>())
+			.Returns(toolResult);
+
+		// Act
+		CallToolResult result = await _sut.HandleAsync(context, CancellationToken.None);
+
+		// Assert
+		await _executor.Received(1).InvokeResolvedAsync(tool, "echo-tool", context, Arg.Any<CancellationToken>());
+		result.Content.OfType<TextContentBlock>().Select(block => block.Text)
+			.Should().Contain(text => text.Contains("payload"),
+				because: "a fast retry-safe read must return its real payload through the deadline wrapper unchanged");
+		result.Content.OfType<TextContentBlock>().Select(block => block.Text)
+			.Should().Contain(text => text.Contains("[clio] Executed 'echo-tool'"),
+				because: "the deadline wrapper must not strip the forgiving-invocation advisory");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Returns confirmation-required with a ready-to-retry clio-run-destructive shape and does NOT execute, when the resolved tool is destructive.")]
 	public async Task HandleAsync_ShouldReturnConfirmationRequired_WhenToolIsDestructive() {
 		// Arrange

@@ -101,9 +101,21 @@ public sealed class McpDurableCallToolHandler(
 			return ConfirmationRequiredResult(requestedName, canonicalName, request.Params?.Arguments, correlationId);
 		}
 
-		CallToolResult result = await executor
-			.InvokeResolvedAsync(tool, canonicalName, request, cancellationToken)
-			.ConfigureAwait(false);
+		// ENG-93373: bound a retry-safe (read-only, or the get-page local-write read) long-tail dispatch by
+		// the read-response deadline — the fallback path for a non-resident read invoked by RAW name rather
+		// than via clio-run. Uses the SAME gate (McpReadDeadlineGate, via the registry) so classification
+		// never drifts across paths. Destructive tools never reach here — they returned confirmation-required
+		// above — so a false here is simply a non-read non-destructive tool, intentionally left unbounded.
+		// The abandon-restores-context caveat documented on the clio-run path applies equally here (both go
+		// through DispatchAsync) and is benign under the single-session, fresh-per-request-context model.
+		CallToolResult result = toolRegistry.IsRetrySafe(canonicalName)
+			? await McpReadResponseDeadline.RunAsync(
+				canonicalName,
+				token => executor.InvokeResolvedAsync(tool, canonicalName, request, token),
+				cancellationToken).ConfigureAwait(false)
+			: await executor
+				.InvokeResolvedAsync(tool, canonicalName, request, cancellationToken)
+				.ConfigureAwait(false);
 		return AttachAdvisory(result, requestedName, canonicalName, viaAlias, correlationId);
 	}
 

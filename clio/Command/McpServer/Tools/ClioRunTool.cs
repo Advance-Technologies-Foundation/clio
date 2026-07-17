@@ -153,8 +153,23 @@ public sealed class ClioRunExecutor(
 			return Error(SensitiveErrorTextRedactor.Redact($"Error: {ex.Message}"));
 		}
 
-		CallToolResult dispatched = await DispatchAsync(tool, toolName, childParams, callContext, cancellationToken)
-			.ConfigureAwait(false);
+		// ENG-93373: bound a retry-safe (read-only, or the get-page local-write read) inner dispatch by the
+		// read-response deadline, so a read reached THROUGH clio-run — the PRIMARY long-tail read vector, since
+		// non-resident tools are invoked via clio-run per core-rules — is bounded exactly as a direct call is.
+		// Uses the SAME gate (McpReadDeadlineGate, via the registry) as the matched filter and the durable
+		// handler. clio-run / clio-run-destructive are themselves Destructive=true, so the outer call is never
+		// deadline-wrapped by the filter — no double-wrapping here.
+		// On a deadline the wrapped DispatchAsync is abandoned; it restores callContext.Params/MatchedPrimitive
+		// in its finally on the pool thread AFTER this method returns. This is benign under the single-session
+		// model: each request owns a fresh RequestContext, so the late restore writes to a context no live
+		// request reads (same accepted detach trade-off documented on McpReadResponseDeadline).
+		CallToolResult dispatched = toolRegistry.IsRetrySafe(toolName)
+			? await McpReadResponseDeadline.RunAsync(
+				toolName,
+				token => DispatchAsync(tool, toolName, childParams, callContext, token),
+				cancellationToken).ConfigureAwait(false)
+			: await DispatchAsync(tool, toolName, childParams, callContext, cancellationToken)
+				.ConfigureAwait(false);
 		return AttachDispatchAudit(dispatched, toolName);
 	}
 

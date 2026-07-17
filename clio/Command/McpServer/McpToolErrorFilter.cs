@@ -36,6 +36,18 @@ public static class McpToolErrorFilter
 				return hintResult;
 			}
 			try {
+				// ENG-93373: bound retry-safe (read-only / idempotent non-destructive) tools by a wall-clock
+				// response deadline so a stalled Creatio read can never hang indefinitely. On expiry the helper
+				// returns a structured error-class=creatio-timeout result telling the agent the call is safe to
+				// retry. Destructive tools are excluded — they own their own timeout contract — and fall through
+				// to the unbounded call below. Only MATCHED (advertised) tools are classified here; the unmatched
+				// long-tail is bounded by the durable handler (McpDurableCallToolHandler) using the same gate.
+				if (IsRetrySafeMatchedTool(context)) {
+					return await McpReadResponseDeadline.RunAsync(
+						context.Params?.Name ?? UnknownToolName,
+						token => next(context, token),
+						cancellationToken).ConfigureAwait(false);
+				}
 				return await next(context, cancellationToken);
 			}
 			catch (OperationCanceledException) {
@@ -53,6 +65,13 @@ public static class McpToolErrorFilter
 					$"MCP tool '{context.Params?.Name ?? UnknownToolName}' failed: {SensitiveErrorTextRedactor.Redact(GetInnermostMessage(ex))}");
 			}
 		};
+
+	// True when the matched (advertised) tool is retry-safe and therefore eligible for the read-response
+	// deadline (ENG-93373). MatchedPrimitive is null for an unmatched name — those are bounded by the
+	// durable handler instead, so this returns false and the call falls through unbounded here.
+	private static bool IsRetrySafeMatchedTool(RequestContext<CallToolRequestParams> context) =>
+		context.MatchedPrimitive is McpServerTool tool
+		&& McpReadDeadlineGate.IsRetrySafe(tool.ProtocolTool.Name, tool.ProtocolTool.Annotations);
 
 	// Unwraps to the inner-most exception message so the surfaced detail is the actual cause rather than a
 	// generic wrapper (e.g. TargetInvocationException) added by the dispatch machinery.
