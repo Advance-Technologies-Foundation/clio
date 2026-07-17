@@ -11,7 +11,7 @@ namespace Clio.Command.BusinessRules.Filters.Esq;
 /// Builds the platform ESQ envelope JSON string from a validated <see cref="StaticFilterGroup"/>.
 /// Ported in spirit from CrtCopilot LlmEsqFiltersConverter, scoped to this iteration's coverage.
 /// </summary>
-internal sealed class LocalEsqFilterBuilder {
+internal sealed class SimpleToFullFilterConverter {
 
 	private static readonly Regex GuidRegex = new(
 		@"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
@@ -27,7 +27,7 @@ internal sealed class LocalEsqFilterBuilder {
 	private readonly SchemaAwareFilterValidator _schemaValidator;
 	private readonly Func<DateTimeOffset> _now;
 
-	public LocalEsqFilterBuilder(
+	public SimpleToFullFilterConverter(
 		IFilterSchemaProvider schemaProvider,
 		ILookupValueResolver? lookupResolver,
 		Func<DateTimeOffset>? nowProvider = null) {

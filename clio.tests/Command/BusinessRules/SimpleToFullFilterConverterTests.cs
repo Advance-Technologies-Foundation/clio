@@ -12,7 +12,7 @@ namespace Clio.Tests.Command.BusinessRules;
 
 [TestFixture]
 [Property("Module", "Command")]
-public sealed class LocalEsqFilterBuilderTests {
+public sealed class SimpleToFullFilterConverterTests {
 
 	[Test]
 	[Category("Unit")]
@@ -21,7 +21,7 @@ public sealed class LocalEsqFilterBuilderTests {
 		StaticFilterGroup group = Deserialize(
 			"""{ "logicalOperation": "AND", "filters": [ { "columnPath": "Name", "comparisonType": "START_WITH", "value": "U" } ] }""");
 		IFilterSchemaProvider schema = SchemaWith(("Country", [("Name", "Text", null)]));
-		LocalEsqFilterBuilder builder = new(schema, lookupResolver: null);
+		SimpleToFullFilterConverter builder = new(schema, lookupResolver: null);
 
 		string json = builder.Build(group, "Country");
 		JsonElement root = JsonDocument.Parse(json).RootElement;
@@ -46,7 +46,7 @@ public sealed class LocalEsqFilterBuilderTests {
 		StaticFilterGroup group = Deserialize(
 			"""{ "logicalOperation": "AND", "filters": [ { "columnPath": "MobilePhone", "comparisonType": "IS_NOT_NULL" } ] }""");
 		IFilterSchemaProvider schema = SchemaWith(("Contact", [("MobilePhone", "PhoneText", null)]));
-		LocalEsqFilterBuilder builder = new(schema, lookupResolver: null);
+		SimpleToFullFilterConverter builder = new(schema, lookupResolver: null);
 
 		string json = builder.Build(group, "Contact");
 		JsonElement filter0 = JsonDocument.Parse(json).RootElement.GetProperty("items").GetProperty("Filter_0");
@@ -65,7 +65,7 @@ public sealed class LocalEsqFilterBuilderTests {
 		StaticFilterGroup group = Deserialize(
 			"""{ "logicalOperation": "AND", "filters": [ { "columnPath": "MobilePhone", "comparisonType": "IS_NULL" } ] }""");
 		IFilterSchemaProvider schema = SchemaWith(("Contact", [("MobilePhone", "PhoneText", null)]));
-		LocalEsqFilterBuilder builder = new(schema, lookupResolver: null);
+		SimpleToFullFilterConverter builder = new(schema, lookupResolver: null);
 
 		string json = builder.Build(group, "Contact");
 		JsonElement filter0 = JsonDocument.Parse(json).RootElement.GetProperty("items").GetProperty("Filter_0");
@@ -87,7 +87,7 @@ public sealed class LocalEsqFilterBuilderTests {
 		StaticFilterGroup group = Deserialize(
 			$$"""{ "logicalOperation": "AND", "filters": [ { "columnPath": "Type", "comparisonType": "EQUAL", "value": "{{guid}}" } ] }""");
 		IFilterSchemaProvider schema = SchemaWith(("Account", [("Type", "Lookup", "AccountType")]));
-		LocalEsqFilterBuilder builder = new(schema, resolver);
+		SimpleToFullFilterConverter builder = new(schema, resolver);
 
 		string json = builder.Build(group, "Account");
 		JsonElement filter0 = JsonDocument.Parse(json).RootElement.GetProperty("items").GetProperty("Filter_0");
@@ -110,7 +110,7 @@ public sealed class LocalEsqFilterBuilderTests {
 		IFilterSchemaProvider schema = SchemaWith(
 			("City", [("Country", "Lookup", "Country")]),
 			("Country", [("Name", "Text", null)]));
-		LocalEsqFilterBuilder builder = new(schema, lookupResolver: null);
+		SimpleToFullFilterConverter builder = new(schema, lookupResolver: null);
 
 		string json = builder.Build(group, "City");
 		JsonElement filter0 = JsonDocument.Parse(json).RootElement.GetProperty("items").GetProperty("Filter_0");
@@ -128,7 +128,7 @@ public sealed class LocalEsqFilterBuilderTests {
 		StaticFilterGroup group = Deserialize(
 			"""{ "logicalOperation": "AND", "filters": [ { "columnPath": "Type", "comparisonType": "EQUAL", "value": "Customer" } ] }""");
 		IFilterSchemaProvider schema = SchemaWith(("Account", [("Type", "Lookup", "AccountType")]));
-		LocalEsqFilterBuilder builder = new(schema, resolver);
+		SimpleToFullFilterConverter builder = new(schema, resolver);
 
 		string json = builder.Build(group, "Account");
 		JsonElement param = JsonDocument.Parse(json).RootElement
@@ -150,7 +150,7 @@ public sealed class LocalEsqFilterBuilderTests {
 		StaticFilterGroup group = Deserialize(
 			$$"""{ "logicalOperation": "AND", "filters": [ { "columnPath": "Industry", "comparisonType": "EQUAL", "value": ["{{g1}}", "{{g2}}"] } ] }""");
 		IFilterSchemaProvider schema = SchemaWith(("Account", [("Industry", "Lookup", "Industry")]));
-		LocalEsqFilterBuilder builder = new(schema, resolver);
+		SimpleToFullFilterConverter builder = new(schema, resolver);
 
 		string json = builder.Build(group, "Account");
 		JsonElement filter0 = JsonDocument.Parse(json).RootElement.GetProperty("items").GetProperty("Filter_0");
@@ -170,7 +170,7 @@ public sealed class LocalEsqFilterBuilderTests {
 			] }
 			""");
 		IFilterSchemaProvider schema = SchemaWith(("Country", [("Name", "Text", null)]));
-		LocalEsqFilterBuilder builder = new(schema, lookupResolver: null);
+		SimpleToFullFilterConverter builder = new(schema, lookupResolver: null);
 
 		string json = builder.Build(group, "Country");
 		JsonElement root = JsonDocument.Parse(json).RootElement;
@@ -194,7 +194,7 @@ public sealed class LocalEsqFilterBuilderTests {
 		IFilterSchemaProvider schema = SchemaWith(
 			("Contact", []),
 			("Activity", [("Owner", "Lookup", "Contact")]));
-		LocalEsqFilterBuilder builder = new(schema, lookupResolver: null);
+		SimpleToFullFilterConverter builder = new(schema, lookupResolver: null);
 
 		string json = builder.Build(group, "Contact");
 		JsonElement backward = JsonDocument.Parse(json).RootElement
@@ -226,7 +226,7 @@ public sealed class LocalEsqFilterBuilderTests {
 		IFilterSchemaProvider schema = SchemaWith(
 			("Account", []),
 			("Contact", [("Account", "Lookup", "Account")]));
-		LocalEsqFilterBuilder builder = new(schema, lookupResolver: null);
+		SimpleToFullFilterConverter builder = new(schema, lookupResolver: null);
 
 		string json = builder.Build(group, "Account");
 		JsonElement root = JsonDocument.Parse(json).RootElement;
@@ -270,7 +270,7 @@ public sealed class LocalEsqFilterBuilderTests {
 		IFilterSchemaProvider schema = SchemaWith(
 			("Contact", []),
 			("Activity", [("Contact", "Lookup", "Contact")]));
-		LocalEsqFilterBuilder builder = new(schema, lookupResolver: null);
+		SimpleToFullFilterConverter builder = new(schema, lookupResolver: null);
 
 		string json = builder.Build(group, "Contact");
 		JsonElement backward = JsonDocument.Parse(json).RootElement
@@ -311,7 +311,7 @@ public sealed class LocalEsqFilterBuilderTests {
 		IFilterSchemaProvider schema = SchemaWith(
 			("Contact", []),
 			("Order", [("Customer", "Lookup", "Contact"), ("Amount", "Float", null)]));
-		LocalEsqFilterBuilder builder = new(schema, lookupResolver: null);
+		SimpleToFullFilterConverter builder = new(schema, lookupResolver: null);
 
 		string json = builder.Build(group, "Contact");
 		JsonElement backward = JsonDocument.Parse(json).RootElement
@@ -402,7 +402,7 @@ public sealed class LocalEsqFilterBuilderTests {
 		StaticFilterGroup group = Deserialize(
 			"""{ "logicalOperation": "AND", "filters": [ { "columnPath": "Type", "comparisonType": "EQUAL", "value": "Customer" } ] }""");
 		IFilterSchemaProvider schema = SchemaWith(("Account", [("Type", "Lookup", "AccountType")]));
-		LocalEsqFilterBuilder builder = new(schema, lookupResolver: null);
+		SimpleToFullFilterConverter builder = new(schema, lookupResolver: null);
 
 		Action act = () => builder.Build(group, "Account");
 
@@ -416,7 +416,7 @@ public sealed class LocalEsqFilterBuilderTests {
 		StaticFilterGroup group = Deserialize(
 			"""{ "logicalOperation": "AND", "filters": [ { "columnPath": "CreatedOn", "comparisonType": "GREATER", "value": "2026-05-01T12:00:00Z" } ] }""");
 		IFilterSchemaProvider schema = SchemaWith(("Account", [("CreatedOn", "DateTime", null)]));
-		LocalEsqFilterBuilder builder = new(schema, lookupResolver: null);
+		SimpleToFullFilterConverter builder = new(schema, lookupResolver: null);
 
 		string json = builder.Build(group, "Account");
 		JsonElement filter0 = JsonDocument.Parse(json).RootElement.GetProperty("items").GetProperty("Filter_0");
@@ -438,7 +438,7 @@ public sealed class LocalEsqFilterBuilderTests {
 			] }
 			""");
 		IFilterSchemaProvider schema = SchemaWith(("Country", [("Name", "Text", null)]));
-		LocalEsqFilterBuilder builder = new(schema, lookupResolver: null);
+		SimpleToFullFilterConverter builder = new(schema, lookupResolver: null);
 
 		string json = builder.Build(group, "Country");
 		JsonDocument.Parse(json).RootElement.GetProperty("logicalOperation").GetInt32().Should().Be(1);
@@ -451,7 +451,7 @@ public sealed class LocalEsqFilterBuilderTests {
 		StaticFilterGroup group = Deserialize(
 			"""{ "logicalOperation": "AND", "filters": [ { "columnPath": "CreatedOn", "comparisonType": "GREATER", "valueMacros": "Today" } ] }""");
 		IFilterSchemaProvider schema = SchemaWith(("Account", [("CreatedOn", "DateTime", null)]));
-		LocalEsqFilterBuilder builder = new(schema, lookupResolver: null);
+		SimpleToFullFilterConverter builder = new(schema, lookupResolver: null);
 
 		string json = builder.Build(group, "Account");
 		JsonElement filter0 = JsonDocument.Parse(json).RootElement.GetProperty("items").GetProperty("Filter_0");
@@ -477,7 +477,7 @@ public sealed class LocalEsqFilterBuilderTests {
 		StaticFilterGroup group = Deserialize(
 			"""{ "logicalOperation": "AND", "filters": [ { "columnPath": "CreatedOn", "comparisonType": "EQUAL", "valueMacros": "Today" } ] }""");
 		IFilterSchemaProvider schema = SchemaWith(("Contact", [("CreatedOn", "DateTime", null)]));
-		LocalEsqFilterBuilder builder = new(schema, lookupResolver: null);
+		SimpleToFullFilterConverter builder = new(schema, lookupResolver: null);
 
 		string json = builder.Build(group, "Contact");
 		JsonElement root = JsonDocument.Parse(json).RootElement;
@@ -505,7 +505,7 @@ public sealed class LocalEsqFilterBuilderTests {
 		StaticFilterGroup group = Deserialize(
 			"""{ "logicalOperation": "AND", "filters": [ { "columnPath": "DueDate", "comparisonType": "LESS_OR_EQUAL", "valueMacros": "NextNDays", "valueMacrosArgument": 5 } ] }""");
 		IFilterSchemaProvider schema = SchemaWith(("Activity", [("DueDate", "Date", null)]));
-		LocalEsqFilterBuilder builder = new(schema, lookupResolver: null);
+		SimpleToFullFilterConverter builder = new(schema, lookupResolver: null);
 
 		string json = builder.Build(group, "Activity");
 		JsonElement right = JsonDocument.Parse(json).RootElement
@@ -525,7 +525,7 @@ public sealed class LocalEsqFilterBuilderTests {
 		StaticFilterGroup group = Deserialize(
 			"""{ "logicalOperation": "AND", "filters": [ { "columnPath": "Owner", "comparisonType": "EQUAL", "valueMacros": "CurrentUserContact" } ] }""");
 		IFilterSchemaProvider schema = SchemaWith(("Activity", [("Owner", "Lookup", "Contact")]));
-		LocalEsqFilterBuilder builder = new(schema, lookupResolver: null);
+		SimpleToFullFilterConverter builder = new(schema, lookupResolver: null);
 
 		string json = builder.Build(group, "Activity");
 		JsonElement filter0 = JsonDocument.Parse(json).RootElement.GetProperty("items").GetProperty("Filter_0");
@@ -591,7 +591,7 @@ public sealed class LocalEsqFilterBuilderTests {
 		StaticFilterGroup group = Deserialize(
 			"""{ "logicalOperation": "AND", "filters": [ { "columnPath": "Type", "comparisonType": "EQUAL", "value": "Customer" } ] }""");
 		IFilterSchemaProvider schema = SchemaWith(("Account", [("Type", "Lookup", "AccountType")]));
-		LocalEsqFilterBuilder builder = new(schema, resolver);
+		SimpleToFullFilterConverter builder = new(schema, resolver);
 
 		string json = builder.Build(group, "Account");
 		JsonElement filter0 = JsonDocument.Parse(json).RootElement
@@ -624,7 +624,7 @@ public sealed class LocalEsqFilterBuilderTests {
 		StaticFilterGroup group = Deserialize(
 			$$"""{ "logicalOperation": "AND", "filters": [ { "columnPath": "Type", "comparisonType": "EQUAL", "value": "{{id:D}}" } ] }""");
 		IFilterSchemaProvider schema = SchemaWith(("Account", [("Type", "Lookup", "AccountType")]));
-		LocalEsqFilterBuilder builder = new(schema, resolver);
+		SimpleToFullFilterConverter builder = new(schema, resolver);
 
 		string json = builder.Build(group, "Account");
 		JsonElement lookupValue = JsonDocument.Parse(json).RootElement
@@ -648,7 +648,7 @@ public sealed class LocalEsqFilterBuilderTests {
 		StaticFilterGroup group = Deserialize(
 			$$"""{ "logicalOperation": "AND", "filters": [ { "columnPath": "Type", "comparisonType": "EQUAL", "value": "{{id:D}}" } ] }""");
 		IFilterSchemaProvider schema = SchemaWith(("Account", [("Type", "Lookup", "AccountType")]));
-		LocalEsqFilterBuilder builder = new(schema, resolver);
+		SimpleToFullFilterConverter builder = new(schema, resolver);
 
 		Action act = () => builder.Build(group, "Account");
 
@@ -662,7 +662,7 @@ public sealed class LocalEsqFilterBuilderTests {
 		StaticFilterGroup group = Deserialize(
 			"""{ "logicalOperation": "AND", "filters": [ { "columnPath": "Amount", "comparisonType": "GREATER", "value": 100 } ] }""");
 		IFilterSchemaProvider schema = SchemaWith(("Account", [("Amount", "Money0", null)]));
-		LocalEsqFilterBuilder builder = new(schema, lookupResolver: null);
+		SimpleToFullFilterConverter builder = new(schema, lookupResolver: null);
 
 		string json = builder.Build(group, "Account");
 		JsonElement param = JsonDocument.Parse(json).RootElement
@@ -694,7 +694,7 @@ public sealed class LocalEsqFilterBuilderTests {
 			"""{ "logicalOperation": "AND", "filters": [ { "columnPath": "CreatedOn", "comparisonType": "EQUAL", "datePart": "HourMinute", "value": "11:06:00" } ] }""");
 		IFilterSchemaProvider schema = SchemaWith(("Contact", [("CreatedOn", "DateTime", null)]));
 		// Fixed clock at UTC+3 so the emitted local/UTC datetime carriers are deterministic.
-		LocalEsqFilterBuilder builder = new(schema, lookupResolver: null,
+		SimpleToFullFilterConverter builder = new(schema, lookupResolver: null,
 			nowProvider: () => new DateTimeOffset(2026, 6, 10, 0, 0, 0, TimeSpan.FromHours(3)));
 
 		string json = builder.Build(group, "Contact");
@@ -728,7 +728,7 @@ public sealed class LocalEsqFilterBuilderTests {
 		StaticFilterGroup group = Deserialize(
 			"""{ "logicalOperation": "AND", "filters": [ { "columnPath": "CreatedOn", "comparisonType": "EQUAL", "datePart": "Year", "value": 2021 } ] }""");
 		IFilterSchemaProvider schema = SchemaWith(("Contact", [("CreatedOn", "DateTime", null)]));
-		LocalEsqFilterBuilder builder = new(schema, lookupResolver: null);
+		SimpleToFullFilterConverter builder = new(schema, lookupResolver: null);
 
 		string json = builder.Build(group, "Contact");
 		JsonElement filter0 = JsonDocument.Parse(json).RootElement.GetProperty("items").GetProperty("Filter_0");
@@ -755,7 +755,7 @@ public sealed class LocalEsqFilterBuilderTests {
 			] }
 			""");
 		IFilterSchemaProvider schema = SchemaWith(("Contact", [("CreatedOn", "DateTime", null)]));
-		LocalEsqFilterBuilder builder = new(schema, lookupResolver: null);
+		SimpleToFullFilterConverter builder = new(schema, lookupResolver: null);
 
 		string json = builder.Build(group, "Contact");
 		JsonElement items = JsonDocument.Parse(json).RootElement.GetProperty("items");
