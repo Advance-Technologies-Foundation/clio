@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Allure.Net.Commons;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
@@ -31,27 +32,60 @@ public sealed class ThemingSandboxE2ETests : McpContractFixtureBase {
 
 	private string? _environmentNameForCleanup;
 	private string? _createdThemeId;
+	private bool _userThemeMutatedForCleanup;
 
 	/// <summary>
-	/// Deletes the theme a failed lifecycle run left behind so the shared sandbox stand is not polluted;
-	/// a completed lifecycle clears <see cref="_createdThemeId"/> and makes this a no-op.
+	/// Restores the shared sandbox stand a test left behind. Two independent cleanups run, each guarded so
+	/// one failing still runs the other: (1) if the current user's profile theme was mutated, reset it to the
+	/// environment default FIRST — before the theme delete below — so the profile never references a theme
+	/// the delete then removes; (2) delete the throwaway theme a run left behind. A completed run clears both
+	/// markers and makes this a no-op.
 	/// </summary>
+	/// <remarks>
+	/// The exact prior per-user preference is not captured/restored because there is no MCP read for the
+	/// virtual SysUserProfile theme; the sandbox authenticates as a shared service account whose baseline is
+	/// the environment default, so resetting restores that baseline and — critically — clears any dangling
+	/// reference to the about-to-be-deleted theme.
+	/// </remarks>
 	[TearDown]
-	public async Task DeleteLeakedThemeAsync() {
-		if (_createdThemeId is null || _environmentNameForCleanup is null) {
+	public async Task CleanupSandboxStateAsync() {
+		if (_environmentNameForCleanup is null) {
 			return;
 		}
 		using CancellationTokenSource cleanupCts = new(TimeSpan.FromMinutes(1));
-		await Session.CallToolAsync(
-			DeleteThemeTool.ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["environment-name"] = _environmentNameForCleanup,
-					["id"] = _createdThemeId
-				}
-			},
-			cleanupCts.Token);
-		_createdThemeId = null;
+		if (_userThemeMutatedForCleanup) {
+			try {
+				await Session.CallToolAsync(
+					SetUserThemeTool.ToolName,
+					new Dictionary<string, object?> {
+						["args"] = new Dictionary<string, object?> {
+							["environment-name"] = _environmentNameForCleanup,
+							["reset"] = true
+						}
+					},
+					cleanupCts.Token);
+			} catch (Exception) {
+				// Best-effort restore: teardown must not throw, and the theme delete below must still run
+				// even if the reset fails.
+			}
+			_userThemeMutatedForCleanup = false;
+		}
+		if (_createdThemeId is not null) {
+			try {
+				await Session.CallToolAsync(
+					DeleteThemeTool.ToolName,
+					new Dictionary<string, object?> {
+						["args"] = new Dictionary<string, object?> {
+							["environment-name"] = _environmentNameForCleanup,
+							["id"] = _createdThemeId
+						}
+					},
+					cleanupCts.Token);
+			} catch (Exception) {
+				// Best-effort cleanup of the shared stand; teardown must not throw.
+			}
+			_createdThemeId = null;
+		}
 	}
 
 	[Test]
@@ -144,7 +178,7 @@ public sealed class ThemingSandboxE2ETests : McpContractFixtureBase {
 	[Test]
 	[AllureTag(SetUserThemeTool.ToolName)]
 	[AllureName("set-user-theme applies a theme to the current user and resets it on the sandbox environment")]
-	[Description("Runs the live per-user apply flow against the configured sandbox environment: create a theme, set-user-theme applies it to the current user (the tool succeeds only after the command's read-back verification passes), an unknown theme id is rejected, and set-user-theme reset clears the selection. Ignored when the stand lacks theming access, or when set-user-theme's extra gates (CanChangeOwnTheme operation / the ChangeTheme feature) are not present.")]
+	[AllureDescription("Runs the live per-user apply flow against the configured sandbox environment through the real MCP server: create a theme, set-user-theme applies it to the current user (the tool succeeds only after the command's read-back verification passes), an unknown theme id is rejected, and set-user-theme reset clears the selection. Requires a correctly configured sandbox (the CanChangeOwnTheme operation and the ChangeTheme feature — both Creatio defaults — plus the CanCustomizeBranding license); it fails on an apply mismatch rather than skipping, so a real apply regression is caught. Ignored only when theming access itself is unavailable or the stand is unreachable. The throwaway theme and any profile mutation are undone by the guarded teardown.")]
 	public async Task SetUserTheme_Should_Apply_And_Reset_When_Theming_Access_Is_Granted() {
 		// Arrange
 		string environmentName = await ResolveReachableSandboxEnvironmentAsync();
@@ -154,58 +188,57 @@ public sealed class ThemingSandboxE2ETests : McpContractFixtureBase {
 		const string caption = "Clio MCP E2E user-apply";
 		_environmentNameForCleanup = environmentName;
 
-		// Arrange — create the theme to apply (unique id, so the selector is unambiguous)
-		CreateThemeResult created = EntitySchemaStructuredResultParser.Extract<CreateThemeResult>(
-			await CallToolAsync(context, CreateThemeTool.ToolName, new Dictionary<string, object?> {
-				["environment-name"] = environmentName,
-				["id"] = themeId,
-				["caption"] = caption,
-				["css-class-name"] = themeId,
-				["css-content"] = $".{themeId}{{color:#0a6cff}}"
-			}));
-		created.Success.Should().BeTrue(because: $"the theme to apply must be created first (error: {created.Error})");
-		_createdThemeId = themeId;
+		await AllureApi.Step("Arrange: create a unique theme to apply", async () => {
+			CreateThemeResult created = EntitySchemaStructuredResultParser.Extract<CreateThemeResult>(
+				await CallToolAsync(context, CreateThemeTool.ToolName, new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["id"] = themeId,
+					["caption"] = caption,
+					["css-class-name"] = themeId,
+					["css-content"] = $".{themeId}{{color:#0a6cff}}"
+				}));
+			created.Success.Should().BeTrue(because: $"the theme to apply must be created first (error: {created.Error})");
+			_createdThemeId = themeId;
+		});
 
-		// Act — apply the theme to the current user by its id
-		SetUserThemeResult applied = await SetUserThemeAsync(context, environmentName,
-			new Dictionary<string, object?> { ["theme"] = themeId });
+		await AllureApi.Step("Apply the theme to the current user by id and verify the read-back", async () => {
+			// Mark the profile mutated BEFORE the call so the guarded teardown resets it even if the apply
+			// (or a later phase) fails after the write committed.
+			_userThemeMutatedForCleanup = true;
+			SetUserThemeResult applied = await SetUserThemeAsync(context, environmentName,
+				new Dictionary<string, object?> { ["theme"] = themeId });
 
-		// The apply needs the CanChangeOwnTheme operation and the server-side ChangeTheme feature on top of
-		// the branding license; ignore (do not fail) on a stand that grants theme management but not those.
-		if (!applied.Success &&
-			(applied.Error?.Contains("ChangeTheme", StringComparison.OrdinalIgnoreCase) == true ||
-				applied.Error?.Contains("CanChangeOwnTheme", StringComparison.OrdinalIgnoreCase) == true)) {
-			Assert.Ignore($"The sandbox environment '{environmentName}' does not allow the current user to change " +
-				$"their own theme (error: {applied.Error}). set-user-theme needs the CanChangeOwnTheme operation " +
-				"and the ChangeTheme feature enabled.");
-		}
+			// Do NOT skip on a "ChangeTheme"/"CanChangeOwnTheme" error: the read-back-mismatch failure carries
+			// that same text, so skipping on it would mask a genuine apply regression (a wrong id written or a
+			// broken filter) — the very defect this test exists to catch. The theming sandbox is required to be
+			// correctly configured (CanChangeOwnTheme + the ChangeTheme feature are Creatio defaults), so a
+			// mismatch is a real failure.
+			applied.Success.Should().BeTrue(
+				because: $"applying a known theme to the current user must succeed once the read-back verifies it; "
+					+ $"the sandbox must have the CanChangeOwnTheme operation and the ChangeTheme feature enabled (error: {applied.Error})");
+			applied.Id.Should().Be(themeId,
+				because: "the tool must report the theme id it wrote to the profile");
+		});
 
-		// Assert — apply succeeded and the tool echoes the resolved theme (verified by the command's read-back)
-		applied.Success.Should().BeTrue(
-			because: $"applying a known theme to the current user must succeed once the read-back verifies it (error: {applied.Error})");
-		applied.Id.Should().Be(themeId,
-			because: "the tool must report the theme id it wrote to the profile");
+		await AllureApi.Step("Reject an unknown theme selector", async () => {
+			SetUserThemeResult unknown = await SetUserThemeAsync(context, environmentName,
+				new Dictionary<string, object?> { ["theme"] = $"missing-{Guid.NewGuid():N}" });
+			unknown.Success.Should().BeFalse(because: "an unknown theme selector must not be applied");
+			unknown.Error.Should().NotBeNullOrEmpty(because: "the caller must be told why the unknown theme was rejected");
+		});
 
-		// Act / Assert — an unknown theme id is rejected, not silently accepted
-		SetUserThemeResult unknown = await SetUserThemeAsync(context, environmentName,
-			new Dictionary<string, object?> { ["theme"] = $"missing-{Guid.NewGuid():N}" });
-		unknown.Success.Should().BeFalse(because: "an unknown theme selector must not be applied");
-		unknown.Error.Should().NotBeNullOrEmpty(because: "the caller must be told why the unknown theme was rejected");
+		await AllureApi.Step("Reset clears the current user's theme selection", async () => {
+			SetUserThemeResult reset = await SetUserThemeAsync(context, environmentName,
+				new Dictionary<string, object?> { ["reset"] = true });
+			reset.Success.Should().BeTrue(
+				because: $"resetting the current user's theme must succeed and verify as cleared (error: {reset.Error})");
+			// Reset verified the profile is back to the environment default, so teardown need not reset again.
+			_userThemeMutatedForCleanup = false;
+		});
 
-		// Act / Assert — reset clears the selection (read-back confirms the empty value)
-		SetUserThemeResult reset = await SetUserThemeAsync(context, environmentName,
-			new Dictionary<string, object?> { ["reset"] = true });
-		reset.Success.Should().BeTrue(
-			because: $"resetting the current user's theme must succeed and verify as cleared (error: {reset.Error})");
-
-		// Cleanup — remove the throwaway theme (teardown covers the failure path)
-		CommandExecutionEnvelope deleteResponse = McpCommandExecutionParser.Extract(
-			await CallToolAsync(context, DeleteThemeTool.ToolName, new Dictionary<string, object?> {
-				["environment-name"] = environmentName,
-				["id"] = themeId
-			}));
-		deleteResponse.ExitCode.Should().Be(0, because: "the throwaway theme must be removed from the shared stand");
-		_createdThemeId = null;
+		// The throwaway theme (and any residual profile selection, had a phase above failed mid-flow) is removed
+		// by the guarded teardown (CleanupSandboxStateAsync): it resets the user's theme before deleting the
+		// theme, so the profile never references a deleted theme.
 	}
 
 	[Test]

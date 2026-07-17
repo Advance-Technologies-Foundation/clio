@@ -70,9 +70,12 @@ public class SetUserThemeTool(
 		return ExecuteResolved<SetUserThemeCommand, SetUserThemeResult>(options,
 			resolvedCommand => {
 				if (!resolvedCommand.TrySetUserTheme(options, out AppliedUserTheme applied, out string errorMessage)) {
+					// errorMessage can carry a server-supplied DataService/ThemeService error body or a
+					// transport message (URI/credentials/path), so redact it the same as CreateThemeTool /
+					// ListThemesTool before it crosses into the MCP client transcript.
 					return SetUserThemeResult.Failure(string.IsNullOrWhiteSpace(errorMessage)
 						? "SetUserTheme returned success=false."
-						: errorMessage);
+						: SensitiveErrorTextRedactor.Redact(errorMessage));
 				}
 				return SetUserThemeResult.Successful(applied);
 			},

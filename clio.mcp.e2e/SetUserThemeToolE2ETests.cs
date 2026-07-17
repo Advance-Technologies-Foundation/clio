@@ -29,7 +29,7 @@ public sealed class SetUserThemeToolE2ETests : McpContractFixtureBase {
 	[Test]
 	[AllureTag(SetUserThemeTool.ToolName)]
 	[AllureName("set-user-theme tool is discoverable on the lazy surface")]
-	[Description("Starts the real clio MCP server and verifies set-user-theme is discoverable via the get-tool-contract compact index on the lazy tool surface.")]
+	[AllureDescription("Starts the real clio MCP server and verifies set-user-theme is discoverable via the get-tool-contract compact index on the lazy tool surface.")]
 	public async Task SetUserTheme_Should_Be_Discoverable_On_Lazy_Surface() {
 		// Arrange
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
@@ -46,7 +46,7 @@ public sealed class SetUserThemeToolE2ETests : McpContractFixtureBase {
 	[Test]
 	[AllureTag(SetUserThemeTool.ToolName)]
 	[AllureName("set-user-theme binds the args wrapper and returns a structured validation failure")]
-	[Description("Calls set-user-theme through the real clio MCP server with an empty args object and verifies the structured { success=false, error } result names environment-name — proving the args wrapper binds without a live Creatio environment.")]
+	[AllureDescription("Calls set-user-theme through the real clio MCP server with an empty args object and verifies the structured { success=false, error } result names environment-name — proving the args wrapper binds without a live Creatio environment.")]
 	public async Task SetUserTheme_Should_Return_Structured_Validation_Failure_When_Args_Are_Empty() {
 		// Arrange
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
@@ -72,7 +72,7 @@ public sealed class SetUserThemeToolE2ETests : McpContractFixtureBase {
 	[Test]
 	[AllureTag(SetUserThemeTool.ToolName)]
 	[AllureName("set-user-theme rejects a camelCase alias with a structured rename hint over the wire")]
-	[Description("Calls set-user-theme through the real clio MCP server with a camelCase environmentName field and verifies the structured rename hint — proving the args wrapper binds and unknown keys reach the ExtensionData bag through the real MCP serializer, without a live Creatio environment.")]
+	[AllureDescription("Calls set-user-theme through the real clio MCP server with a camelCase environmentName field and verifies the structured rename hint — proving the args wrapper binds and unknown keys reach the ExtensionData bag through the real MCP serializer, without a live Creatio environment.")]
 	public async Task SetUserTheme_Should_Return_RenameHint_When_CamelCase_Alias_Is_Passed_Over_The_Wire() {
 		// Arrange
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));

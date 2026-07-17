@@ -1,5 +1,6 @@
 namespace Clio.Tests.Command;
 
+using System;
 using System.Reflection;
 using Clio.Command.Theming;
 using Clio.Common;
@@ -349,5 +350,62 @@ public sealed class SetUserThemeCommandTests : BaseCommandTests<SetUserThemeOpti
 		attribute.Should().NotBeNull(because: "the theming surface is only available on Creatio 10.0.0+");
 		attribute.MinVersion.Should().Be(ThemeServiceRequirement.MinVersion,
 			because: "set-user-theme shares the theming service version floor");
+	}
+
+	[Test, Category("Unit")]
+	[Description("The profile id read and the verification read-back carry the configured MaxAttempts/RetryDelay into the SelectQuery calls, so a transient DataService verification blip is retried instead of reported as a false failure after the write committed.")]
+	public void SetUserTheme_ShouldCarryConfiguredRetryPolicyIntoProfileSelects_WhenApplying() {
+		// Arrange
+		StubAvailableThemes(OceanThemeJson);
+		StubProfileSelect(ProfileId, "ocean-id");
+		StubUpdateSuccess();
+		SetUserThemeOptions options = new() { Theme = "Ocean", MaxAttempts = 4, RetryDelay = 3 };
+
+		// Act
+		bool succeeded = _command.TrySetUserTheme(options, out _, out string error);
+
+		// Assert
+		succeeded.Should().BeTrue(because: $"the stubbed apply flow succeeds: {error}");
+		_applicationClient.Received().ExecutePostRequest(
+			Arg.Is<string>(u => u.Contains("SelectQuery")), Arg.Any<string>(), Arg.Any<int>(), 4, 3);
+		// The `Received` above asserts the SelectQuery reads passed maxAttempts=4/delaySec=3 (the configured
+		// policy), matching how list/update already retry — a one-attempt read could report a false failure.
+	}
+
+	[Test, Category("Unit")]
+	[Description("An unexpected (programming) exception raised during a DataService round-trip propagates to the established top-level handlers instead of being masked as a misleading transport/parse failure.")]
+	public void SetUserTheme_ShouldPropagateUnexpectedException_WhenProfileReadThrowsProgrammingError() {
+		// Arrange
+		StubAvailableThemes(OceanThemeJson);
+		_applicationClient.ExecutePostRequest(Arg.Is<string>(u => u.Contains("SelectQuery")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(_ => throw new InvalidCastException("programming error"));
+		SetUserThemeOptions options = new() { Theme = "Ocean" };
+
+		// Act
+		Action act = () => _command.TrySetUserTheme(options, out _, out _);
+
+		// Assert
+		act.Should().Throw<InvalidCastException>(
+			because: "a programming error is not in the expected I/O/parse set, so it must reach the top-level handlers rather than be converted into a 'Failed to read the profile' message");
+	}
+
+	[Test, Category("Unit")]
+	[Description("An expected transport failure during a DataService round-trip is caught and reported as a contextual, actionable failure naming the step that failed — not propagated.")]
+	public void SetUserTheme_ShouldReturnContextualFailure_WhenProfileReadThrowsTransportError() {
+		// Arrange
+		StubAvailableThemes(OceanThemeJson);
+		_applicationClient.ExecutePostRequest(Arg.Is<string>(u => u.Contains("SelectQuery")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(_ => throw new TimeoutException("timed out"));
+		SetUserThemeOptions options = new() { Theme = "Ocean" };
+
+		// Act
+		bool succeeded = _command.TrySetUserTheme(options, out _, out string error);
+
+		// Assert
+		succeeded.Should().BeFalse(because: "a transport timeout is an expected failure that the applier handles");
+		error.Should().Contain("Failed to read the current user's profile",
+			because: "an expected failure must carry the step context so the caller can act on it");
 	}
 }

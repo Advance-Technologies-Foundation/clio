@@ -23,7 +23,7 @@ public class ListThemesOptions : RemoteCommandOptions
 /// <c>ThemeService.svc/GetAvailableThemes</c> endpoint. Requires the <c>CanCustomizeBranding</c>
 /// license; callers without it receive an empty list rather than an error.
 /// </summary>
-public class ListThemesCommand : RemoteCommand<ListThemesOptions>
+public class ListThemesCommand : RemoteCommand<ListThemesOptions>, IThemeCatalog
 {
 	private readonly IServiceUrlBuilder _urlBuilder;
 

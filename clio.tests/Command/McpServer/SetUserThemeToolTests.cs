@@ -290,11 +290,7 @@ public class SetUserThemeToolTests {
 			: base(
 				Substitute.For<IApplicationClient>(),
 				new EnvironmentSettings(),
-				Substitute.For<IServiceUrlBuilder>(),
-				Substitute.For<ListThemesCommand>(
-					Substitute.For<IApplicationClient>(),
-					new EnvironmentSettings(),
-					Substitute.For<IServiceUrlBuilder>())) {
+				Substitute.For<IUserThemeApplier>()) {
 			_applied = applied ?? new AppliedUserTheme("Ocean", "ocean-theme", "ocean-id");
 			_success = success;
 			_error = error;
