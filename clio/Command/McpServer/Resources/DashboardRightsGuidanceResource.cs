@@ -68,13 +68,17 @@ public sealed class DashboardRightsGuidanceResource {
 		          already bound in base data, so this SUCCEEDS as-is — do NOT bind such a role (never ship base system
 		          data in a custom package).
 		       2. ONLY IF step 1 fails with `SaveSchema failed: Data is not bound for connected object "SysAdminUnit"`, the
-		          grantee is a CUSTOM role not yet bound. Confirm it is not base (no existing binding in any package), then bind
-		          it by NAME and retry the step-1 grant bind:
-		          `create-data-binding-db package-name=<dashboard's package> schema-name=SysAdminUnit binding-name=SysAdminUnit_<RoleName> rows='[{"values":{"Name":"<role name>"}}]'`.
-		          The role row already exists, so clio matches it by Name, SKIPS the table write, and registers only the binding
-		          (`Skipped existing row`). Matching by Name is REQUIRED: do NOT use `upsert-data-binding-row-db` for the role —
-		          it forces a table update and fails with `UpdateQuery failed: Current user does not have permissions for the
-		          "SysAdminUnit" object` (`SysAdminUnit` is a protected object; the Name-matched create path never writes it).
+		          grantee is a CUSTOM role not yet bound. Confirm it is not base (no existing binding in any package). Read the
+		          role's `ParentRole`, `SysAdminUnitTypeValue` and `Active` first (e.g. `execute-esq` on `SysAdminUnit` by Name),
+		          then bind it by NAME INCLUDING those columns, and retry the step-1 grant bind:
+		          `create-data-binding-db package-name=<dashboard's package> schema-name=SysAdminUnit binding-name=SysAdminUnit_<RoleName> rows='[{"values":{"Name":"<role name>","ParentRole":"<parent role id>","SysAdminUnitTypeValue":<int>,"Active":true}}]'`.
+		          `ParentRole` is REQUIRED and must be a role that EXISTS on the target (usually `All employees`): without it the
+		          install INSERTs a parent-less `SysAdminUnit`, and the platform trigger rejects it (`Cannot add root
+		          administering unit. Root administering unit already exists`). The role row already exists on the source, so clio
+		          matches it by Name, SKIPS the table write, and registers the binding with these columns (`Skipped existing
+		          row`) — do NOT use `upsert-data-binding-row-db` for the role (it forces a table write and fails: `Current user
+		          does not have permissions for the "SysAdminUnit" object`). NOTE: only the role row ships, NOT its membership
+		          (`SysAdminUnitInRole`), so the role arrives EMPTY on the target — assign members there.
 
 		       Caveat — USER grantees: a USER grantee is a `SysAdminUnit` tied to a `Contact`, so binding it cascades to that
 		       `Contact` (and more) — do NOT ship user grants as bindings. For a user grant, RE-APPLY on the target instead:
