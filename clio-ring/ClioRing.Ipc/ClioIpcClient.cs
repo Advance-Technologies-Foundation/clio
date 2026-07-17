@@ -62,12 +62,15 @@ public sealed class ClioIpcClient : IClioIpcClient {
 
 	// The most meaningful launch identity: the clio dll argument if present, else the raw command.
 	private static string ResolveTargetPath(ClioIpcSettings settings) {
-		string? dll = settings.Args.FirstOrDefault(a => a.EndsWith(".dll", StringComparison.OrdinalIgnoreCase));
+		string? dll = settings.Args.FirstOrDefault(a => a?.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) == true);
 		return dll ?? settings.Command;
 	}
 
 	/// <inheritdoc />
 	public event EventHandler? Disconnected;
+
+	/// <inheritdoc />
+	public event EventHandler? ConnectionChanged;
 
 	/// <inheritdoc />
 	public async Task<ClioServerHandshake> ConnectAsync(CancellationToken cancellationToken = default) {
@@ -323,6 +326,7 @@ public sealed class ClioIpcClient : IClioIpcClient {
 			Capabilities = caps,
 			Instructions = client.ServerInstructions
 		};
+		ConnectionChanged?.Invoke(this, EventArgs.Empty);
 
 		// Invalidate the contract/catalog caches when the (executable path + version) key changes — for
 		// example after a RestartAsync that picked up a newer clio build.
@@ -340,7 +344,11 @@ public sealed class ClioIpcClient : IClioIpcClient {
 	private async Task TeardownLockedAsync() {
 		McpClient? client = _client;
 		_client = null;
+		bool hadHandshake = _handshake is not null;
 		_handshake = null;
+		if (hadHandshake) {
+			ConnectionChanged?.Invoke(this, EventArgs.Empty);
+		}
 
 		if (client is null) {
 			return;
@@ -354,6 +362,7 @@ public sealed class ClioIpcClient : IClioIpcClient {
 
 	private void MarkDisconnected() {
 		_handshake = null;
+		ConnectionChanged?.Invoke(this, EventArgs.Empty);
 		Disconnected?.Invoke(this, EventArgs.Empty);
 	}
 

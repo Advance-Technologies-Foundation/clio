@@ -94,6 +94,7 @@ public sealed class AppSettingsSchemaTests {
 		string[] actualIpcProperties = definitions["clioIpc"]!["properties"]!.AsObject()
 			.Select(property => property.Key).ToArray();
 		string channelDescription = properties["Channel"]!["description"]!.GetValue<string>();
+		string runtimeDescription = properties["ClioRuntimeMode"]!["description"]!.GetValue<string>();
 		string devPathDescription = properties["DevClioPath"]!["description"]!.GetValue<string>();
 		string ipcDescription = definitions["clioIpc"]!["description"]!.GetValue<string>();
 
@@ -106,16 +107,21 @@ public sealed class AppSettingsSchemaTests {
 			because: "the editor contract must stay aligned with every ClioIpcSettingsDto property");
 		channelDescription.Should().Contain("does not select the clio executable",
 			because: "Channel is only a Ring display/deployment label");
+		runtimeDescription.Should().Contain("verified installed clio dotnet-tool shim",
+			because: "Release must unambiguously mean the installed clio tool");
+		runtimeDescription.Should().Contain("without deleting it",
+			because: "switching modes must preserve the saved development target");
 		devPathDescription.Should().Contain("takes precedence over ClioIpc",
-			because: "developers need the actual launch-selection precedence");
-		ipcDescription.Should().Contain("when DevClioPath is absent or invalid",
-			because: "the explicit child-process block is the second precedence level");
+			because: "Development mode keeps the existing target precedence");
+		ipcDescription.Should().Contain("development mode",
+			because: "the explicit child-process block is a saved Development target");
 	}
 
 	[TestCase("""{"WorkspaceFolder":"C:\\Workspaces","Unexpected":true}""")]
 	[TestCase("""{"WorkspaceFolder":"   "}""")]
 	[TestCase("""{"WorkspaceFolder":"C:\\Workspaces","ClioIpc":{"Command":"dotnet"}}""")]
 	[TestCase("""{"WorkspaceFolder":"C:\\Workspaces","Channel":"   "}""")]
+	[TestCase("""{"WorkspaceFolder":"C:\\Workspaces","ClioRuntimeMode":"custom"}""")]
 	[TestCase("""{"WorkspaceFolder":"C:\\Workspaces","ClioIpc":{"Command":"   ","Args":["mcp-server"]}}""")]
 	[TestCase("""{"WorkspaceFolder":"C:\\Workspaces","ClioIpc":{"Command":"dotnet","Args":["   "]}}""")]
 	[Description("The schema rejects unknown settings, incomplete or blank child launch configuration, and blank channel labels.")]

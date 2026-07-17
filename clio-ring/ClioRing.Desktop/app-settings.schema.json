@@ -41,6 +41,13 @@
       "pattern": "\\S",
       "examples": [ "release", "dev", "preview" ]
     },
+    "ClioRuntimeMode": {
+      "type": [ "string", "null" ],
+      "title": "Active clio runtime",
+      "description": "Selects the clio child used on the next Ring launch. release starts a verified installed clio dotnet-tool shim from a dotnet-owned user directory. development uses the saved DevClioPath or ClioIpc target without deleting it.",
+      "enum": [ "release", "development", null ],
+      "default": "release"
+    },
     "Experiments": {
       "$ref": "#/$defs/experiments"
     },
@@ -50,7 +57,7 @@
     "DevClioPath": {
       "type": [ "string", "null" ],
       "title": "Development clio override",
-      "description": "Optional absolute path to a trusted local development clio.dll or clio.exe. Ring executes it with your user privileges. A valid value takes precedence over ClioIpc and the machine default; the change applies on the next Ring launch.",
+      "description": "Optional absolute path to a trusted local development clio.dll or clio.exe. Ring executes it with your user privileges. In development mode, a valid value takes precedence over ClioIpc. Switching to release preserves this target.",
       "examples": [ "C:\\Projects\\clio\\clio\\bin\\Debug\\net10.0\\clio.dll" ]
     }
   },
@@ -72,7 +79,7 @@
     "clioIpc": {
       "type": [ "object", "null" ],
       "title": "Explicit clio MCP launch",
-      "description": "Explicit trusted MCP child-process command used when DevClioPath is absent or invalid. Ring executes it with your user privileges. When omitted or incomplete, Ring uses its machine default.",
+      "description": "Explicit trusted development child-process command used in development mode when DevClioPath is absent or invalid. Ring executes it with your user privileges. Switching to release preserves this target.",
       "additionalProperties": false,
       "required": [ "Command", "Args" ],
       "properties": {

@@ -344,12 +344,13 @@ public partial class RingViewModel : ViewModelBase {
 
 	/// <summary>Primary DI constructor. The IPC client and settings store are optional so lightweight
 	/// design-time / test constructions keep working; DI supplies both at runtime.</summary>
-	public RingViewModel(IClioAdapter clio, IActionCatalogLoader catalogLoader, IEnvStateStore stateStore, IActionCatalogWatcher catalogWatcher, IClioIpcClient? ipcClient = null, IClioSettingsStore? settingsStore = null, IEnvironmentSettingsWatcher? environmentSettingsWatcher = null) {
+	public RingViewModel(IClioAdapter clio, IActionCatalogLoader catalogLoader, IEnvStateStore stateStore, IActionCatalogWatcher catalogWatcher, IClioIpcClient? ipcClient = null, IClioSettingsStore? settingsStore = null, IEnvironmentSettingsWatcher? environmentSettingsWatcher = null, ResolvedClioRuntime? clioRuntime = null) {
 		_clio = clio;
 		_catalogLoader = catalogLoader;
 		_stateStore = stateStore;
 		_catalogWatcher = catalogWatcher;
-		ClioSettings = new ClioSettingsViewModel(settingsStore ?? new ClioSettingsStore(), ipcClient);
+		ClioSettings = new ClioSettingsViewModel(settingsStore ?? new ClioSettingsStore(), ipcClient,
+			clioRuntime ?? new ResolvedClioRuntime(ClioRuntimeMode.Release, ClioIpcSettings.Default));
 		_state = _stateStore.Load();
 		_channel = ResolveChannel();
 		SelectedEnvironmentName = string.IsNullOrEmpty(_state.Selected) ? "—" : _state.Selected!;
