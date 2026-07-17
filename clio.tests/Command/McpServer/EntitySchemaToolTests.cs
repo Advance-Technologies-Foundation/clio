@@ -83,6 +83,25 @@ public sealed class EntitySchemaToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Routes virtual entity creation callers to the canonical virtual-entities guidance at the decision point.")]
+	public void CreateEntitySchemaTool_ShouldRouteToVirtualEntitiesGuidance_WhenVirtualSchemaIsConsidered() {
+		// Arrange
+		System.Reflection.MethodInfo method = typeof(CreateEntitySchemaTool)
+			.GetMethod(nameof(CreateEntitySchemaTool.CreateEntitySchema))!;
+
+		// Act
+		string description = method
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
+			.Cast<System.ComponentModel.DescriptionAttribute>()
+			.Single().Description;
+
+		// Assert
+		description.Should().Contain("get-guidance with name virtual-entities",
+			because: "is-virtual callers must see the canonical lifecycle and safety guide before creation");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Documents inherited caption-override support in the modify and update entity-schema tool descriptions.")]
 	public void ModifyAndUpdateTools_Should_Document_InheritedCaptionOverride() {
 		// Arrange

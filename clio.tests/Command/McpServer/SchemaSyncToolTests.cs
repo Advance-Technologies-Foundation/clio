@@ -56,6 +56,25 @@ public sealed class SchemaSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Routes batched virtual entity creation callers to the canonical virtual-entities guidance at the decision point.")]
+	public void SchemaSyncTool_ShouldRouteToVirtualEntitiesGuidance_WhenVirtualSchemaIsConsidered() {
+		// Arrange
+		System.Reflection.MethodInfo method = typeof(SchemaSyncTool)
+			.GetMethod(nameof(SchemaSyncTool.SchemaSync))!;
+
+		// Act
+		string description = method
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
+			.Cast<System.ComponentModel.DescriptionAttribute>()
+			.Single().Description;
+
+		// Assert
+		description.Should().Contain("get-guidance with name virtual-entities",
+			because: "batched is-virtual operations must expose the canonical lifecycle and safety guide");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Routes create-lookup operation through CreateEntitySchemaCommand with BaseLookup parent")]
 	public async Task SchemaSync_CreateLookup_Should_Route_Through_CreateEntitySchemaCommand() {
 		// Arrange
