@@ -262,6 +262,57 @@ public sealed class ODataCreateToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The absolute request URI carried by a bare-Message routing body is redacted on the create path too, mirroring the read-side guard so a silent removal of the Redact call would fail a test.")]
+	public void Create_Should_Redact_Server_Uri_In_Routing_Error() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://secret-host:88/prod-app/0/odata/UsrCustomerStatus");
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"Message\":\"No HTTP resource was found that matches the request URI 'http://secret-host:88/prod-app/0/odata/UsrCustomerStatus'.\"}");
+		ODataCreateTool tool = new(resolver);
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "UsrCustomerStatus", Rows = Arr("[{\"Name\":\"Active\"}]")
+		});
+
+		// Assert
+		response.Results.Single().Success.Should().BeFalse(because: "a bare-Message routing body is still a per-row failure on the create path");
+		response.Results.Single().Error.Should().NotContain("secret-host", because: "the environment host embedded in the routing Message must be redacted on the create path exactly as on the read path");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An empty {Message} (or empty {Message, MessageDetail}) body is surfaced as a per-row failure with an explicit contentless-response message and no registration hint, verifying the empty-body fallback branch.")]
+	public void Create_Should_Surface_Empty_Message_Body_As_Failure_With_Explicit_Text() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"Message\":\"\",\"MessageDetail\":\"\"}");
+		ODataCreateTool tool = new(resolver);
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "Account", Rows = Arr("[{\"Name\":\"Office\"}]")
+		});
+
+		// Assert
+		response.Results.Single().Success.Should().BeFalse(because: "a body whose only members are empty Message/MessageDetail is an error, not a created record");
+		response.Results.Single().Error.Should().Be("Creatio returned an empty error response.", because: "an empty error body must degrade to an explicit contentless message rather than an empty or leading-space string");
+		response.Results.Single().Error.Should().NotContain(ODataResponseError.UnregisteredEntityHint, because: "an empty body carries no MessageDetail, so it is not identifiable as a routing error and must not get the registration hint");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("A numeric primary key in the response body is accepted as a created record rather than reported as a missing Id.")]
 	public void Create_Should_Accept_Numeric_Id() {
 		// Arrange
