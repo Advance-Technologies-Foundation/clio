@@ -405,6 +405,7 @@ public class BindingsModule {
 		services.AddTransient<CreateLookupCommand>();
 		services.AddTransient<PageListCommand>();
 		services.AddTransient<PageGetCommand>();
+		services.AddTransient<GetPageHierarchyCommand>();
 		services.AddTransient<PageUpdateCommand>();
 		// Shared page conflict-baseline + file-output services consumed by both the CLI verbs
 		// (get-page / update-page) and the MCP tools (get-page / update-page / sync-pages).
