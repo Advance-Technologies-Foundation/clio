@@ -1577,21 +1577,85 @@ public sealed class McpGuidanceResourceTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Returns a canonical MCP guidance article for ESQ-style filters so AI callers can avoid common path, lookup, and relative-date mistakes.")]
-	public void EsqFiltersGuidanceResource_Should_Return_Canonical_Esq_Filters_Guide() {
+	[Description("Returns the stable ESQ filter family router and keeps detailed frontend rules in its dedicated child article.")]
+	public void GetGuide_ShouldReturnEsqFilterFamilyRouter_WhenResourceIsRequested() {
 		// Arrange
 		EsqFiltersGuidanceResource resource = new();
 
 		// Act
-		ResourceContents result = resource.GetGuide();
-		TextResourceContents article = result.Should().BeOfType<TextResourceContents>(
-			because: "the ESQ filters guide should be returned as a plain-text MCP resource").Subject;
+		ResourceContents routerResult = resource.GetGuide();
+		ResourceContents frontendResult = resource.GetFrontendGuide();
 
 		// Assert
-		article.Uri.Should().Be("docs://mcp/guides/esq-filters",
+		TextResourceContents router = routerResult.Should().BeOfType<TextResourceContents>(
+			because: "the ESQ filter family router should be returned as plain text").Subject;
+		router.Uri.Should().Be("docs://mcp/guides/esq-filters",
 			because: "the resource should expose a stable MCP URI for ESQ filter guidance");
-		article.MimeType.Should().Be("text/plain",
-			because: "the ESQ filters guide should be discoverable as plain text");
+		router.Text.Should().Contain("esq-filters-frontend",
+			because: "the family router should point serialized filter authors to the frontend owner");
+		router.Text.Should().Contain("esq-filters-backend",
+			because: "the family router should point native C# filter authors to the backend owner");
+		router.Text.Should().Contain("esq-filter-parsing",
+			because: "the family router should point runtime C# consumers to the parsing owner");
+		router.Text.Should().NotContain("### Compare (filterType 1)",
+			because: "the router should not duplicate detailed frontend filter rules");
+
+		TextResourceContents frontend = frontendResult.Should().BeOfType<TextResourceContents>(
+			because: "the exhaustive frontend filter guide should remain available as plain text").Subject;
+		frontend.Uri.Should().Be("docs://mcp/guides/esq-filters/frontend",
+			because: "frontend JSON guidance should have a stable child URI");
+		frontend.Text.Should().Contain("### Compare (filterType 1)",
+			because: "the detailed serialized Compare contract should live only in the frontend guide");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns native backend ESQ construction guidance containing only lab-verified group and compare recipes.")]
+	public void GetGuide_ShouldReturnBackendConstructionRules_WhenBackendResourceIsRequested() {
+		// Arrange
+		EsqFiltersBackendGuidanceResource resource = new();
+
+		// Act
+		ResourceContents result = resource.GetGuide();
+
+		// Assert
+		TextResourceContents article = result.Should().BeOfType<TextResourceContents>(
+			because: "backend construction guidance should be exposed as plain text").Subject;
+		article.Uri.Should().Be("docs://mcp/guides/esq-filters/backend",
+			because: "native C# construction guidance should have a stable backend child URI");
+		article.Text.Should().Contain("EntitySchemaQueryFilterCollection",
+			because: "the guide should show the verified native group-construction API");
+		article.Text.Should().Contain("A && (B || C)",
+			because: "the guide should preserve the lab-verified mixed nesting recipe");
+		article.Text.Should().Contain("Pending lab validation",
+			because: "unverified filter families should be explicit instead of guessed");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns runtime C# ESQ filter parsing guidance with recursive group traversal and structural comparison rules.")]
+	public void GetGuide_ShouldReturnRuntimeParsingRules_WhenParsingResourceIsRequested() {
+		// Arrange
+		EsqFilterParsingGuidanceResource resource = new();
+
+		// Act
+		ResourceContents result = resource.GetGuide();
+
+		// Assert
+		TextResourceContents article = result.Should().BeOfType<TextResourceContents>(
+			because: "runtime parsing guidance should be exposed as plain text").Subject;
+		article.Uri.Should().Be("docs://mcp/guides/esq-filter-parsing",
+			because: "runtime parsing guidance should have a stable independent URI");
+		article.Text.Should().Contain("ParseGroup",
+			because: "the guide should demonstrate recursive traversal rather than flat filtering");
+		article.Text.Should().Contain("AND(OR(AND(A, B), C))",
+			because: "the guide should pin the verified nested runtime envelope");
+		article.Text.Should().Contain("complete tree",
+			because: "shape tests should compare the full structure rather than only returned rows");
+		article.Text.Should().Contain("maximum depth and total-node limits",
+			because: "runtime filter parsing must bound remotely supplied tree complexity");
+		article.Text.Should().Contain("Reject a disabled item",
+			because: "unverified disabled-filter semantics must fail closed instead of changing query meaning");
 	}
 
 	[Test]
@@ -1703,22 +1767,35 @@ public sealed class McpGuidanceResourceTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("GuidanceCatalog exposes esq-filters so AI callers can retrieve filter authoring guidance by name.")]
-	public void GuidanceCatalog_Should_Include_Esq_Filters_Entry() {
+	[Description("GuidanceCatalog exposes the ESQ filter router and each responsibility-specific child article by stable name.")]
+	public void TryGet_ShouldReturnAllEsqFilterGuides_WhenStableNamesAreRequested() {
 		// Act
-		bool found = GuidanceCatalog.TryGet("esq-filters", out GuidanceCatalogEntry entry);
+		bool routerFound = GuidanceCatalog.TryGet("esq-filters", out GuidanceCatalogEntry router);
+		bool frontendFound = GuidanceCatalog.TryGet("esq-filters-frontend", out GuidanceCatalogEntry frontend);
+		bool backendFound = GuidanceCatalog.TryGet("esq-filters-backend", out GuidanceCatalogEntry backend);
+		bool parsingFound = GuidanceCatalog.TryGet("esq-filter-parsing", out GuidanceCatalogEntry parsing);
 
 		// Assert
-		found.Should().BeTrue(
+		routerFound.Should().BeTrue(
 			because: "the catalog must expose esq-filters so get-guidance can return it by name");
-		entry.Name.Should().Be("esq-filters",
+		router.Name.Should().Be("esq-filters",
 			because: "the catalog entry name must match the lookup key exactly");
-		entry.Description.Should().Contain("filter authoring",
-			because: "the catalog description should identify the subject of the guidance article");
-		entry.Article.Should().NotBeNull(
+		router.Article.Should().NotBeNull(
 			because: "the catalog entry must carry the guidance text article");
-		entry.Article.Uri.Should().Be("docs://mcp/guides/esq-filters",
+		router.Article.Uri.Should().Be("docs://mcp/guides/esq-filters",
 			because: "the article URI in the catalog must match the resource URI");
+		frontendFound.Should().BeTrue(
+			because: "serialized JavaScript and DataService construction needs one catalog owner");
+		frontend.Article.Uri.Should().Be("docs://mcp/guides/esq-filters/frontend",
+			because: "the frontend catalog entry should resolve to its hierarchical resource URI");
+		backendFound.Should().BeTrue(
+			because: "native C# construction needs one catalog owner");
+		backend.Article.Uri.Should().Be("docs://mcp/guides/esq-filters/backend",
+			because: "the backend catalog entry should resolve to its hierarchical resource URI");
+		parsingFound.Should().BeTrue(
+			because: "runtime C# filter interpretation needs one catalog owner");
+		parsing.Article.Uri.Should().Be("docs://mcp/guides/esq-filter-parsing",
+			because: "the parsing catalog entry should resolve to its independent resource URI");
 	}
 
 	[Test]
@@ -1947,5 +2024,75 @@ public sealed class McpGuidanceResourceTests {
 			because: "the routing map must direct the agent to the run-process-button guide");
 		article.Text.Should().Contain("runs a business process",
 			because: "the routing row must be keyed to the task wording so the agent recognizes it");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns virtual entity lifecycle guidance that requires the schema object before reads and Creatio 10.0 plus its feature flag before writes.")]
+	public void GetGuide_ShouldRequireExistingVirtualObject_WhenExecutorGuidanceIsRequested() {
+		// Arrange
+		VirtualEntitiesGuidanceResource resource = new();
+
+		// Act
+		ResourceContents result = resource.GetGuide();
+
+		// Assert
+		TextResourceContents article = result.Should().BeOfType<TextResourceContents>(
+			because: "virtual entity guidance should be returned as one plain-text MCP resource").Subject;
+		article.Uri.Should().Be("docs://mcp/guides/virtual-entities",
+			because: "the guide should expose a stable virtual-entities URI");
+		article.Text.Should().Contain("virtual entity schema MUST already exist",
+			because: "agents must create the object before writing its executor");
+		article.Text.Should().Contain("create virtual entity object",
+			because: "the mandatory lifecycle should begin with schema creation before executor implementation");
+		article.Text.Should().Contain("<EntitySchemaName>QueryExecutor",
+			because: "the guide should derive the exact executor binding from the verified schema name");
+		article.Text.Should().Contain("provider data -> filters -> sorting -> paging -> selected-column materialization",
+			because: "the guide should pin the correct query-processing order");
+		article.Text.Should().Contain("esq-filter-parsing",
+			because: "runtime filter details should remain owned by the dedicated parsing guide");
+		article.Text.Should().Contain("virtual writes require Creatio 10.0 or later",
+			because: "Entity-level virtual CRUD does not exist in the 8.3 release line");
+		article.Text.Should().Contain("Creatio 8.3.4 or earlier",
+			because: "the unsupported release boundary must remain explicit rather than implied by a minimum version");
+		article.Text.Should().Contain("EnableVirtualEntitySupport",
+			because: "Creatio 10.0 still requires its disabled-by-default virtual CRUD feature to be enabled");
+		article.Text.Should().Contain("Do not substitute `clear-redis-db`",
+			because: "feature activation must use targeted cache invalidation rather than flushing all Redis data");
+		article.Text.Should().Contain("clio set-feature EnableVirtualEntitySupport 1 -e <environment>",
+			because: "the guide must provide the executable CLI fallback for remote Creatio feature state");
+		article.Text.Should().Contain("`clio-run` dispatches MCP tools rather than CLI verbs",
+			because: "agents must not route the set-feature CLI verb through a nonexistent MCP contract");
+		article.Text.Should().Contain("maximum page size",
+			because: "virtual providers must reject unbounded full-source enumeration");
+		article.Text.Should().Contain("record/tenant scope",
+			because: "low-level providers must enforce authorization equivalent to the virtual entity contract");
+		article.Text.Should().Contain("Use two callers with different permissions/tenant scopes",
+			because: "the acceptance plan must prove restricted records cannot be read or changed");
+		article.Text.Should().Contain("OnSaving -> OnInserting -> OnInserted -> OnSaved",
+			because: "the guide should preserve the lab-verified virtual create lifecycle");
+		article.Text.Should().Contain("DataContext.Save()",
+			because: "the write acceptance should include the ordinary ATF.Repository DataService entry path");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("GuidanceCatalog and the routing map expose virtual-entities as the canonical virtual object and executor lifecycle guide.")]
+	public void TryGet_ShouldReturnVirtualEntitiesGuide_WhenVirtualEntityWorkIsRouted() {
+		// Arrange
+		RoutingGuidanceResource routingResource = new();
+
+		// Act
+		bool found = GuidanceCatalog.TryGet("virtual-entities", out GuidanceCatalogEntry entry);
+		TextResourceContents routing = routingResource.GetGuide().Should().BeOfType<TextResourceContents>(
+			because: "routing guidance should remain a plain-text resource").Subject;
+
+		// Assert
+		found.Should().BeTrue(
+			because: "get-guidance must resolve the virtual-entities name advertised by routing");
+		entry.Article.Uri.Should().Be("docs://mcp/guides/virtual-entities",
+			because: "the catalog entry should preserve the stable resource URI");
+		routing.Text.Should().Contain("name=virtual-entities",
+			because: "virtual entity object and executor work should route to the dedicated lifecycle guide");
 	}
 }
