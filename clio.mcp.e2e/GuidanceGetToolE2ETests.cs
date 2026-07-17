@@ -597,8 +597,8 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 
 	[Test]
 	[AllureTag(GuidanceGetTool.ToolName)]
-	[AllureName("get-guidance returns the canonical widget-layout guidance article")]
-	[Description("Verifies get-guidance resolves the shared widget-layout guide over the real stdio MCP path — the layout/styling guide the dashboards router and home-page guide both route to after the extraction.")]
+	[AllureName("get-guidance returns the canonical dashboard-and-home-page-layout guidance article")]
+	[Description("Verifies get-guidance resolves the shared dashboard-and-home-page-layout guide over the real stdio MCP path — the layout/styling guide the dashboards router and home-page guide both route to after the extraction.")]
 	public async Task GuidanceGet_Should_Return_Widget_Layout_Guide() {
 		// Arrange
 		await using var context = Arrange(TimeSpan.FromMinutes(3));
@@ -608,18 +608,18 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			context.Session,
 			context.CancellationTokenSource.Token,
 			new Dictionary<string, object?> {
-				["name"] = "widget-layout"
+				["name"] = "dashboard-and-home-page-layout"
 			});
 
 		// Assert
 		response.Success.Should().BeTrue(
-			because: "widget-layout is a registered guidance name");
+			because: "dashboard-and-home-page-layout is a registered guidance name");
 		response.Article.Should().NotBeNull(
 			because: "successful guidance lookups should return the resolved article payload");
-		response.Article!.Uri.Should().Be("docs://mcp/guides/widget-layout",
-			because: "the canonical resource URI for the widget-layout guide should be stable");
-		response.Article.Text.Should().Contain("clio MCP widget layout guide",
-			because: "the guidance tool should return the canonical widget-layout guide text");
+		response.Article!.Uri.Should().Be("docs://mcp/guides/dashboard-and-home-page-layout",
+			because: "the canonical resource URI for the dashboard-and-home-page-layout guide should be stable");
+		response.Article.Text.Should().Contain("clio MCP dashboard and home page layout guide",
+			because: "the guidance tool should return the canonical dashboard-and-home-page-layout guide text");
 	}
 
 	[Test]

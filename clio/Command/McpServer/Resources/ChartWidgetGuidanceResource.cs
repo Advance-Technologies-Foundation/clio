@@ -132,7 +132,7 @@ public sealed class ChartWidgetGuidanceResource {
 
 		       ## Style (theme)
 
-		       The card theme is set by the SURFACE's guide, not here: `widget-layout` for dashboards and home
+		       The card theme is set by the SURFACE's guide, not here: `dashboard-and-home-page-layout` for dashboards and home
 		       pages (plain-white / `config.theme` "without-fill"), `desktop-page` for desktops (glassmorphism).
 		       This also covers a `tsfunnel`/funnel chart — it is a chart-widget series. If the user explicitly
 		       names a different style/theme in the prompt, use that instead.

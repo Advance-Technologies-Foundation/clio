@@ -588,21 +588,21 @@ public sealed class GuidanceGetToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Resolves the widget-layout guide through get-guidance to its canonical URI: the shared layout/styling guide the dashboards router and the home-page guide both route to.")]
+	[Description("Resolves the dashboard-and-home-page-layout guide through get-guidance to its canonical URI: the shared layout/styling guide the dashboards router and the home-page guide both route to.")]
 	public async Task GuidanceGet_Should_Return_Widget_Layout_Article() {
 		// Arrange
 		GuidanceGetTool tool = new(_featureToggleService);
 
 		// Act
-		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("widget-layout"));
+		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("dashboard-and-home-page-layout"));
 
 		// Assert
 		result.Success.Should().BeTrue(
-			because: "widget-layout is a registered guidance name the dashboards router and the home-page guide route to");
+			because: "dashboard-and-home-page-layout is a registered guidance name the dashboards router and the home-page guide route to");
 		result.Article.Should().NotBeNull(
 			because: "a successful guidance lookup must return the resolved article");
-		result.Article!.Uri.Should().Be("docs://mcp/guides/widget-layout",
-			because: "the tool must resolve the widget-layout name to its canonical guide URI");
+		result.Article!.Uri.Should().Be("docs://mcp/guides/dashboard-and-home-page-layout",
+			because: "the tool must resolve the dashboard-and-home-page-layout name to its canonical guide URI");
 	}
 
 	[Test]

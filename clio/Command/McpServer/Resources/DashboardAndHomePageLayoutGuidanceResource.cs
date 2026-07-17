@@ -12,9 +12,9 @@ namespace Clio.Command.McpServer.Resources;
 /// filter-by-page-data) live in the surface guide.
 /// </summary>
 [McpServerResourceType]
-public sealed class WidgetLayoutGuidanceResource {
+public sealed class DashboardAndHomePageLayoutGuidanceResource {
 	private const string DocsScheme = "docs";
-	private const string ResourcePath = "mcp/guides/widget-layout";
+	private const string ResourcePath = "mcp/guides/dashboard-and-home-page-layout";
 	private const string ResourceUri = DocsScheme + "://" + ResourcePath;
 
 	/// <summary>
@@ -24,7 +24,7 @@ public sealed class WidgetLayoutGuidanceResource {
 		Uri = ResourceUri,
 		MimeType = "text/plain",
 		Text = """
-		       clio MCP widget layout guide
+		       clio MCP dashboard and home page layout guide
 
 		       Use this guide whenever you add, arrange, size, group, or style Freedom UI ANALYTICAL widgets
 		       (metrics/indicators and charts) on a DASHBOARD or a HOME PAGE — so they look native and balanced,
@@ -250,7 +250,7 @@ public sealed class WidgetLayoutGuidanceResource {
 	/// Returns the canonical guidance article for placing, sizing, grouping, and styling Freedom UI
 	/// analytical widgets on any analytics surface.
 	/// </summary>
-	[McpServerResource(UriTemplate = ResourceUri, Name = "widget-layout-guidance")]
+	[McpServerResource(UriTemplate = ResourceUri, Name = "dashboard-and-home-page-layout-guidance")]
 	[Description("Returns canonical MCP guidance for laying out, sizing, grouping, and styling Freedom UI analytical widgets (metrics and charts) on any analytics surface (dashboard or home page): the 12-column grid, the metric-band-then-chart-grid skeleton, per-widget-type sizes, and the plain-white (without-fill) card theme used on dashboards and home pages alike.")]
 	public ResourceContents GetGuide() => Guide;
 }

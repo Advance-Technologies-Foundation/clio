@@ -7,7 +7,7 @@ namespace Clio.Command.McpServer.Resources;
 /// <summary>
 /// Provides canonical AI-facing guidance for the dashboard-specific auto-generated hidden page data
 /// source (DashboardDS) that a dashboard's widgets filter by via a dependencies entry. General widget
-/// layout, sizing, grouping, and styling live in the shared <c>widget-layout</c> guide.
+/// layout, sizing, grouping, and styling live in the shared <c>dashboard-and-home-page-layout</c> guide.
 /// </summary>
 [McpServerResourceType]
 public sealed class DashboardDesignGuidanceResource {
@@ -32,7 +32,7 @@ public sealed class DashboardDesignGuidanceResource {
 
 		       For the GENERAL layout, sizing, grouping, and styling of analytical widgets — the 12-column grid,
 		       the metric-band-then-chart-grid skeleton, per-widget-type sizes, the plain-white card style, worked
-		       patterns, and the finish checklist — read `widget-layout`. Those rules apply to a dashboard exactly
+		       patterns, and the finish checklist — read `dashboard-and-home-page-layout`. Those rules apply to a dashboard exactly
 		       as to any other analytics surface; this guide does not restate them. This guide adds only what is
 		       unique to a dashboard: the `DashboardDS` binding below.
 
@@ -69,7 +69,7 @@ public sealed class DashboardDesignGuidanceResource {
 
 		       - If the dashboard has a `DashboardsEntitySchemaName`, every data-bound widget has a `dependencies`
 		         entry to `DashboardDS.Id` (`attributePath` = `Id` when the widget entity matches it, else its FK column).
-		       - For the general layout/sizing/styling checklist, see `widget-layout`.
+		       - For the general layout/sizing/styling checklist, see `dashboard-and-home-page-layout`.
 		       """
 	};
 
@@ -78,6 +78,6 @@ public sealed class DashboardDesignGuidanceResource {
 	/// dashboard widgets.
 	/// </summary>
 	[McpServerResource(UriTemplate = ResourceUri, Name = "dashboard-design-guidance")]
-	[Description("Returns canonical MCP guidance for the dashboard-specific DashboardDS hidden page data source that a dashboard's widgets filter by; general widget layout/sizing/styling lives in the widget-layout guide.")]
+	[Description("Returns canonical MCP guidance for the dashboard-specific DashboardDS hidden page data source that a dashboard's widgets filter by; general widget layout/sizing/styling lives in the dashboard-and-home-page-layout guide.")]
 	public ResourceContents GetGuide() => Guide;
 }

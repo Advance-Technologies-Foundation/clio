@@ -32,7 +32,7 @@ public sealed class DashboardGuidanceResource {
 		         including how to retrieve each value -> get-guidance name=dashboard-creation
 		       - LAY OUT / size / group / style the analytical widgets — the 12-column grid, the
 		         metric-band-then-chart-grid skeleton, per-widget-type sizes, the plain-white card style ->
-		         get-guidance name=widget-layout
+		         get-guidance name=dashboard-and-home-page-layout
 		       - FILTER a dashboard's widgets by its page data (the hidden `DashboardDS` source) ->
 		         get-guidance name=dashboard-design
 		       - A single widget's runtime payload — get-guidance name=indicator-widget (metrics) or
@@ -44,6 +44,6 @@ public sealed class DashboardGuidanceResource {
 	/// Returns the dashboard router that points dashboard work at the matching guide.
 	/// </summary>
 	[McpServerResource(UriTemplate = ResourceUri, Name = "dashboards-guidance")]
-	[Description("Returns the clio MCP dashboards router: a names-only index that routes dashboard work to dashboard-creation (create the page), widget-layout (widget layout/sizing/styling), dashboard-design (the DashboardDS filter-by-page-data binding), and indicator-widget / chart-widget (per-widget payload).")]
+	[Description("Returns the clio MCP dashboards router: a names-only index that routes dashboard work to dashboard-creation (create the page), dashboard-and-home-page-layout (widget layout/sizing/styling), dashboard-design (the DashboardDS filter-by-page-data binding), and indicator-widget / chart-widget (per-widget payload).")]
 	public ResourceContents GetGuide() => Guide;
 }

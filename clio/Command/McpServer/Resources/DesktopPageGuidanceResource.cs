@@ -106,7 +106,7 @@ public sealed class DesktopPageGuidanceResource {
 		       WIDGET CARD THEME
 		       Desktop widgets use the glassmorphism card, NOT the plain-white card of dashboards/home pages: set
 		       `config.theme` "glassmorphism" and `layout.color` "transparent". (Dashboards and home pages use
-		       plain-white — see `widget-layout`.) If the user names a different theme, use that.
+		       plain-white — see `dashboard-and-home-page-layout`.) If the user names a different theme, use that.
 
 		       WIDTH & LAYOUT — size and pack widgets to fill the grid (hero + supporting hierarchy)
 		       Avoid BOTH bad extremes: (1) every widget in ONE row of equal narrow columns — squeezes a

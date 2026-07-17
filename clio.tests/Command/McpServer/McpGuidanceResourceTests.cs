@@ -1505,9 +1505,9 @@ public sealed class McpGuidanceResourceTests {
 		article.Text.Should().Contain("hideTools",
 			because: "the guide must warn against the hidden hideTitle/hideTools flags that strip the title and the full-screen button");
 		article.Text.Should().Contain("set by the SURFACE's guide",
-			because: "the chart guide must route the card theme to the surface guide (widget-layout / desktop-page), not restate a per-surface policy");
+			because: "the chart guide must route the card theme to the surface guide (dashboard-and-home-page-layout / desktop-page), not restate a per-surface policy");
 		article.Text.Should().Contain("without-fill",
-			because: "the chart card theme on dashboards and home pages is plain-white (without-fill), per widget-layout");
+			because: "the chart card theme on dashboards and home pages is plain-white (without-fill), per dashboard-and-home-page-layout");
 		article.Text.Should().Contain("ONLY when the user explicitly asks to sort",
 			because: "the guide must tell the agent not to impose a default sort — emit seriesOrder only on explicit request");
 		article.Text.Should().Contain("`config.color` is REQUIRED for a VISIBLE title",
