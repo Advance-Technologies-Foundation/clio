@@ -159,7 +159,7 @@ public sealed class McpGuidanceResourceE2ETests : McpContractFixtureBase {
 			because: "the published parser guide should negate the combined group result");
 		parsing.Text.Should().Contain("ReadNullComparison",
 			because: "the published parser guide should expose the verified left-only null shape");
-		parsing.Text.Should().Contain("Do not generalize that empty-string rule",
+		parsing.Text.Should().Contain("empty-string rule to other schema data-value types",
 			because: "the published parser must not apply text semantics to unverified data types");
 		parsing.Text.Should().Contain("never reached PostgreSQL",
 			because: "the published resource must not misattribute virtual-provider case behavior to the database");

@@ -1706,7 +1706,7 @@ public sealed class McpGuidanceResourceTests {
 			because: "the null parser must reject an unexpected right expression");
 		article.Text.Should().Contain("string.IsNullOrEmpty(value)",
 			because: "the parser should reproduce the verified MediumText null semantics");
-		article.Text.Should().Contain("Do not generalize that empty-string rule",
+		article.Text.Should().Contain("empty-string rule to other schema data-value types",
 			because: "the parser must retain the type boundary around text null evaluation");
 		article.Text.Should().Contain("filter.LeftExpression.Path != expectedColumn",
 			because: "the parser must validate the full ESQ path instead of only its terminal schema column");
