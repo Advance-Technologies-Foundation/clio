@@ -1989,6 +1989,60 @@ stories:
     depends_on: []
     blocks: []
 
+  # --- set-user-theme (ENG-93302): apply created theme to current user's profile ---
+  # Krylov gate CLEARED 2026-07-15: both CLI command + MCP tool confirmed; Creatio 10.0.0+ floor
+  # via RequiresCreatioVersion (spec §9.2). Story 1 unblocked.
+  # AI Toolkit routing entry is UC-owned, tracked outside this repo (spec §9.1).
+  - id: story-set-user-theme-1
+    title: "set-user-theme CLI command (SysUserProfile apply + reset + gate diagnostics)"
+    feature: "set-user-theme"
+    repo: "clio"
+    size: M
+    status: review
+    jira: ENG-93302
+    file: spec/stories/story-set-user-theme-1.md
+    prd: spec/prd/spec-set-user-theme.md
+    adr: spec/adr/adr-theming.md
+    fr: [FR-1, FR-2, FR-5, FR-6]
+    depends_on: []
+    blocks: [story-set-user-theme-2, story-set-user-theme-4]
+  - id: story-set-user-theme-2
+    title: "set-user-theme MCP tool + auto-apply step in theming guidance"
+    feature: "set-user-theme"
+    repo: "clio"
+    size: S
+    status: review
+    jira: ENG-93302
+    file: spec/stories/story-set-user-theme-2.md
+    prd: spec/prd/spec-set-user-theme.md
+    adr: spec/adr/adr-theming.md
+    status_note: "SetUserThemeTool + ThemingGuidanceResource auto-apply implemented; unit tests green"
+    fr: [FR-3, FR-4]
+    depends_on: [story-set-user-theme-1]
+    blocks: [story-set-user-theme-3, story-set-user-theme-4]
+  - id: story-set-user-theme-3
+    title: "MCP E2E coverage: create -> set-user-theme -> verify -> reset"
+    feature: "set-user-theme"
+    repo: "clio"
+    size: S
+    status: review
+    jira: ENG-93302
+    file: spec/stories/story-set-user-theme-3.md
+    prd: spec/prd/spec-set-user-theme.md
+    depends_on: [story-set-user-theme-2]
+    blocks: []
+  - id: story-set-user-theme-4
+    title: "Docs, ADR D-D6 amendment, capability map"
+    feature: "set-user-theme"
+    repo: "clio"
+    size: S
+    status: review
+    jira: ENG-93302
+    file: spec/stories/story-set-user-theme-4.md
+    status_note: "help/docs/Commands.md/WikiAnchors + McpCapabilityMap + ADR D-D6 amendment done"
+    prd: spec/prd/spec-set-user-theme.md
+    adr: spec/adr/adr-theming.md
+    depends_on: [story-set-user-theme-1, story-set-user-theme-2]
   - id: story-apppool-profile-cleanup-1
     title: "Best-effort IIS application-pool profile cleanup during uninstall"
     feature: "apppool-profile-cleanup"

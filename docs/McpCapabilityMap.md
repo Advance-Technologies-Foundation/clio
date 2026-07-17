@@ -682,10 +682,13 @@ These tools brand a Creatio app: build a custom theme from brand colours and fon
   Refresh the theme catalog cache; needed only when theme files change on the environment outside a clio install.
 - `check-theming-access`
   Report whether the caller has the `CanManageThemes` operation and `CanCustomizeBranding` license, to gate authoring on a real permission check.
+- `set-user-theme`
+  Apply a theme to the current (authenticated) user's profile — only that account, not everyone (that is the global `DefaultTheme`) — or clear it with `reset`. A confirmed write (`Destructive=true`: it overwrites the profile's current theme, so the MCP host prompts before it runs; on the lazy tool surface it is re-issued through `clio-run-destructive`) — still reversible with `reset`. Requires the `CanCustomizeBranding` license and `CanChangeOwnTheme` operation; the change is visible on the user's next page refresh.
 
 What an external AI can practically do here:
 
 - build a theme offline (`build-theme`) with `advise-theme-palette` driving the palette, then commit it to a workspace package and push, or apply it directly with `create-theme`
+- apply a freshly created theme to the current user with `set-user-theme` so they only need to refresh the page (the auto-apply step in the theming guidance)
 - restyle, remove, and confirm themes on an environment
 - precheck theming permissions before authoring, and set the default via the `DefaultTheme` system setting (see the theming guidance)
 
