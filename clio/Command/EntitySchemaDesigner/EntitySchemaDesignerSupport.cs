@@ -572,7 +572,11 @@ internal static class EntitySchemaDesignerSupport
 			},
 			EntitySchemaColumnDefSource.Sequence => new EntitySchemaDefaultValueConfig {
 				Source = source,
-				SequencePrefix = NormalizeTextValue(defValue.SequencePrefix, allowEmpty: true),
+				// Preserve the persisted prefix verbatim on readback. Trimming here would drop a
+				// mask's accepted edge whitespace ('INV {0}' persists 'INV ') so the structured
+				// readback would report 'INV', and a consumer reusing it would recreate INV00001
+				// instead of INV 00001 (ENG-93375).
+				SequencePrefix = PreserveSequencePrefix(defValue.SequencePrefix),
 				SequenceNumberOfChars = defValue.SequenceNumberOfChars > 0 ? defValue.SequenceNumberOfChars : null
 			},
 			// A None source means the column has no default. Project it the same as a missing
@@ -814,6 +818,12 @@ internal static class EntitySchemaDesignerSupport
 		}
 		string prefix = mask[..placeholderIndex];
 		return prefix.Length == 0 ? null : prefix;
+	}
+
+	// Keeps a persisted sequence prefix exactly as stored (including significant edge whitespace
+	// such as the trailing space of 'INV '), collapsing only null/empty to "no prefix".
+	private static string? PreserveSequencePrefix(string? value) {
+		return string.IsNullOrEmpty(value) ? null : value;
 	}
 
 	private static string? NormalizeTextValue(string? value, bool allowEmpty = false) {

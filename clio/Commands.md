@@ -298,6 +298,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="switch-nuget-to-dll-reference"></a>
 <a id="nuget2dll"></a>
 - [`switch-nuget-to-dll-reference`](docs/commands/switch-nuget-to-dll-reference.md) - Switches nuget references to dll references in csproj files, `nuget2dll`
+<a id="distribute-license"></a>
+<a id="grant-license"></a>
+- [`distribute-license`](docs/commands/distribute-license.md) - Add or remove users from a Creatio license package, `grant-license`
 <a id="upload-licenses"></a>
 <a id="lic"></a>
 - [`upload-licenses`](docs/commands/upload-licenses.md) - Upload license files to Creatio, `lic`
@@ -585,6 +588,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="list-themes"></a>
 <a id="get-themes"></a>
 - [`list-themes`](docs/commands/list-themes.md) - List the custom Creatio themes available on an environment (Creatio 10.0.0+), `get-themes`
+<a id="set-user-theme"></a>
+<a id="apply-user-theme"></a>
+- [`set-user-theme`](docs/commands/set-user-theme.md) - Apply a theme to the current user's profile on an environment (Creatio 10.0.0+), `apply-user-theme`
 <a id="update-theme"></a>
 - [`update-theme`](docs/commands/update-theme.md) - Overwrite an existing custom Creatio theme on an environment (Creatio 10.0.0+)
 

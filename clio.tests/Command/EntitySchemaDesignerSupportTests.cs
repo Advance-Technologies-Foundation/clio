@@ -366,6 +366,28 @@ internal sealed class EntitySchemaDesignerSupportTests {
 			because: "the sequence width must round-trip through the two-pass request path");
 	}
 
+	[Description("Reading back a Sequence default preserves the persisted prefix's trailing space verbatim so the structured config round-trips 'INV ' instead of dropping it to 'INV'.")]
+	[Test]
+	public void CreateDefaultValueConfig_Should_Preserve_Sequence_Prefix_Edge_Whitespace() {
+		// Arrange
+		EntitySchemaColumnDefValueDto defValue = new() {
+			ValueSourceType = EntitySchemaColumnDefSource.Sequence,
+			SequencePrefix = "INV ",
+			SequenceNumberOfChars = 5
+		};
+
+		// Act
+		EntitySchemaDefaultValueConfig? config = EntitySchemaDesignerSupport.CreateDefaultValueConfig(defValue);
+
+		// Assert
+		config.Should().NotBeNull(
+			because: "a Sequence default must project into a structured default-value config on readback");
+		config!.SequencePrefix.Should().Be("INV ",
+			because: "the persisted prefix's trailing space is significant and must survive readback so a reused config recreates INV 00001, not INV00001 (ENG-93375)");
+		config.SequenceNumberOfChars.Should().Be(5,
+			because: "the sequence width must round-trip through readback alongside the prefix");
+	}
+
 	[Description("Setting value-source on a Sequence default is rejected, since a sequence has no external selector to resolve.")]
 	[Test]
 	public void CreateDefaultValueDto_Should_Reject_Sequence_With_ValueSource() {

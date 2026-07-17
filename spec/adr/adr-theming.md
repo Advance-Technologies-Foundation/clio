@@ -309,6 +309,14 @@ enforced in `create-theme`/`update-theme`. No new length rejection.
 separate explicit question (it changes the look for everyone) unless the user asked up front. Owned by the
 skill.
 
+_Amended (ENG-93302, 2026-07-16):_ per-user apply is now first-class. After a successful no-code
+`create-theme`, the agent applies the new theme to the **current (authenticated) user's** profile by
+default via the `set-user-theme` command/MCP tool, then tells the user to refresh (opt-out when the request
+signals create-only / preparing themes for others). This touches only the caller's account, so it needs no
+confirmation. The global `DefaultTheme` change (look for everyone) stays a separate, confirmation-gated
+decision exactly as above — the per-user apply does not replace or relax it. The auto-apply/opt-out flow is
+owned by `ThemingGuidanceResource` (`docs://mcp/guides/theming`), not hard-coded into `create-theme`.
+
 **D-D7 — Non-text scope.** Advisor verdicts are non-text WCAG 3:1 ("usable as a brand/UI color on white");
 the stricter 4.5:1 text contrast stays a build-time concern in `TextTokenResolver`.
 

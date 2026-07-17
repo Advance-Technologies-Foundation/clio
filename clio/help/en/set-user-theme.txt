@@ -1,0 +1,65 @@
+COMMAND TYPE
+    Theming commands
+
+NAME
+    set-user-theme - apply a theme to the current user's profile
+
+DESCRIPTION
+    set-user-theme applies a Creatio theme to the profile of the user clio is
+    authenticated as, by updating the virtual SysUserProfile entity through the
+    DataService (the same mechanism the Freedom UI profile page uses). The
+    change becomes visible on the user's next page refresh.
+
+    The theme is matched, case-insensitively and in this order, against a
+    theme's id, css-class-name, or caption (as reported by list-themes). The
+    theme's id is the value written to the profile; the Freedom UI Shell maps
+    that id to the theme's css class on the next page load.
+
+    Requires Creatio 10.0.0 or later on the target environment, the
+    CanCustomizeBranding license, and the CanChangeOwnTheme system operation
+    (granted to all employees by default). The server-side ChangeTheme feature
+    must be enabled; when it is off the write is silently ignored, and clio
+    detects this by reading the value back and reports an error rather than a
+    false success.
+
+    Use --reset to clear the user's theme selection and fall back to the
+    environment default (the DefaultTheme system setting, or the built-in
+    default). --reset is mutually exclusive with the theme argument.
+
+SYNOPSIS
+    clio set-user-theme <theme> [options]
+    clio set-user-theme --reset [options]
+
+OPTIONS
+    <theme>                         Theme to apply: id, css-class-name, or caption (case-insensitive), as reported by list-themes.
+
+    --reset                         Clear the user's theme, restoring the environment default. Mutually exclusive with the theme argument.
+
+    --uri               -u          Application uri
+
+    --Password          -p          User password
+
+    --Login             -l          User login (administrator permission required)
+
+    --Environment       -e          Environment name
+
+    --Maintainer        -m          Maintainer name
+
+EXAMPLE
+    clio set-user-theme "Ocean" -e myapp
+        apply the theme named 'Ocean' to the current user on the environment registered as myapp
+
+    clio set-user-theme ocean-theme -e myapp
+        apply a theme by its css-class-name
+
+    clio set-user-theme --reset -e myapp
+        clear the user's theme and fall back to the environment default
+
+NOTES
+    - This applies the theme to the authenticated user only. To make a theme the
+      default for all users, set the DefaultTheme system setting instead with
+      'clio set-syssetting'.
+    - Create a custom theme first with 'clio create-theme'.
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio
