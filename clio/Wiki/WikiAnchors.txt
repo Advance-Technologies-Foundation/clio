@@ -75,6 +75,7 @@ list-themes:list-themes,get-themes
 create-theme:create-theme
 update-theme:update-theme
 delete-theme:delete-theme
+set-user-theme:set-user-theme,apply-user-theme
 get-build-info:get-build-info,bi,buildinfo
 get-client-unit-schema:get-client-unit-schema,client-unit-schema-get
 get-entity-schema-column-properties:get-entity-schema-column-properties
@@ -192,6 +193,7 @@ update-schema:update-schema,schema-update
 update-toolkit:update-toolkit
 update-sql-schema:update-sql-schema,sql-schema-update
 upload-license:upload-license,license,load-license,loadlicense
+distribute-license:distribute-license,grant-license
 upload-licenses:upload-licenses,lic
 upsert-data-binding-row-db:upsert-data-binding-row-db
 get-identity-assertion:get-identity-assertion,identity-assertion

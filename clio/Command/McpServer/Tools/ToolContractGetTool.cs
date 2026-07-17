@@ -3382,7 +3382,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildSchemaSync() {
 		return new ToolContractDefinition(
 			SchemaSyncTool.ToolName,
-			"Batches create-lookup, create-entity, update-entity, and seed-data operations in one call. Requests use operations[*].type; do not send operations[*].operation. Transient network failures (DNS/reset/timeout/gateway) are retried per operation (up to 3 attempts with short backoff); on a mid-batch abort the response carries a resume-plan — resubmit only resume-plan.operations, never the whole batch.",
+			"Batches create-lookup, create-entity, update-entity, and seed-data operations in one call. Requests use operations[*].type; do not send operations[*].operation. Before setting is-virtual to true, call get-guidance with name virtual-entities. Transient network failures (DNS/reset/timeout/gateway) are retried per operation (up to 3 attempts with short backoff); on a mid-batch abort the response carries a resume-plan — resubmit only resume-plan.operations, never the whole batch.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PackageNameFieldName, OperationsFieldName],
 				EnvironmentPackageFields(
@@ -3741,7 +3741,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildCreateEntity() {
 		return new ToolContractDefinition(
 			CreateEntitySchemaTool.CreateEntitySchemaToolName,
-			"Creates an entity schema directly in the target package.",
+			"Creates an entity schema directly in the target package. Before setting is-virtual to true, call get-guidance with name virtual-entities.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PackageNameFieldName, SchemaNameFieldName, TitleLocalizationsFieldName],
 				EnvironmentPackageSchemaFields(

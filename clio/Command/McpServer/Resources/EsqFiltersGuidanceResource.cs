@@ -5,25 +5,70 @@ using ModelContextProtocol.Server;
 namespace Clio.Command.McpServer.Resources;
 
 /// <summary>
-/// Provides canonical AI-facing guidance for authoring ESQ-style filters through clio MCP.
+/// Routes AI callers to the canonical frontend, backend, or runtime parsing ESQ filter guidance.
 /// </summary>
 [McpServerResourceType]
 public sealed class EsqFiltersGuidanceResource {
 	private const string DocsScheme = "docs";
 	private const string ResourcePath = "mcp/guides/esq-filters";
 	private const string ResourceUri = DocsScheme + "://" + ResourcePath;
+	private const string FrontendResourcePath = ResourcePath + "/frontend";
+	private const string FrontendResourceUri = DocsScheme + "://" + FrontendResourcePath;
 
 	/// <summary>
-	/// Canonical guidance article accessible by name through <c>get-guidance</c>.
+	/// Canonical ESQ filter family router accessible by name through <c>get-guidance</c>.
 	/// </summary>
 	internal static readonly TextResourceContents Guide = new() {
 		Uri = ResourceUri,
 		MimeType = "text/plain",
 		Text = """
-		       # clio MCP ESQ filters guide
+		       # clio MCP ESQ filters guidance family
+
+		       ## Purpose
+		       This article is the stable entry point for ESQ filter work. It routes to exactly one
+		       construction guide for the caller's API surface and to the parsing guide only when code
+		       receives a runtime C# filter tree. Detailed filter rules live in the child guides, not here.
+
+		       ## GATE: choose the owner before writing code
+		       - JavaScript, Freedom UI, page JSON, or a DataService SelectQuery payload:
+		         read `esq-filters-frontend`.
+		       - Native Creatio backend C# using `EntitySchemaQuery`:
+		         read `esq-filters-backend`.
+		       - Runtime C# code that receives and interprets `EntitySchemaQuery.Filters`:
+		         read `esq-filter-parsing`.
+		       - Comparing a filter created through DataService with a native backend filter:
+		         read the matching construction guide and `esq-filter-parsing`; compare the runtime
+		         tree, not the two authoring syntaxes.
+
+		       ## Shared boundary
+		       - `esq` owns the surrounding SelectQuery envelope, selected columns, expressions,
+		         aggregation, and the master enum tables.
+		       - `esq-filters-frontend` owns serialized JavaScript/DataService filter construction.
+		       - `esq-filters-backend` owns native C# `EntitySchemaQuery` filter construction.
+		       - `esq-filter-parsing` owns runtime C# traversal and interpretation.
+		       - Do not copy detailed filter rules between these articles. Cross-link to the owner.
+
+		       ## Current backend validation status
+		       The backend construction and parsing guides currently publish the lab-verified group
+		       envelope, empty root, flat AND, nested OR, and mixed nesting shapes. Compare leaves are
+		       verified for string equality and integer greater/less operations. Other filter families
+		       remain explicitly marked pending until the same native-vs-DataService runtime-shape test
+		       proves them.
+		       """
+	};
+
+	/// <summary>
+	/// Canonical frontend and DataService JSON filter guidance.
+	/// </summary>
+	internal static readonly TextResourceContents FrontendGuide = new() {
+		Uri = FrontendResourceUri,
+		MimeType = "text/plain",
+		Text = """
+		       # clio MCP frontend ESQ filter construction guide
 
 		       ## Scope
-		       - Use this guide whenever you author or edit an ESQ filter tree: indicator/chart/list widget filters, page quick-filters, lookup narrowing, or DataService SelectQuery filters.
+		       - Use this guide whenever you author or edit a serialized JavaScript/DataService ESQ filter tree: indicator/chart/list widget filters, page quick-filters, lookup narrowing, or DataService SelectQuery filters.
+		       - For native Creatio backend C# construction, use `esq-filters-backend`. For runtime C# parsing of `EntitySchemaQuery.Filters`, use `esq-filter-parsing`.
 		       - This guide covers the filter contract exhaustively: every filter type, every comparison operator, the value shape required for every column data type, the complete date/time macro catalog, forward and backward references, and nested logical groups.
 		       - Read `esq` first for the surrounding query envelope (root schema, columns, aggregation, expression building blocks, and the master enum tables). This guide focuses only on the `filters` tree and the leaf filters inside it.
 		       - Shape in one line: filters are JSON with NUMERIC enum values (`filterType`/`comparisonType`/`dataValueType` are integers, never strings) and values wrapped in a `parameter` envelope — the exact shape stored in Creatio page bodies and DataService SelectQuery bodies.
@@ -194,6 +239,13 @@ public sealed class EsqFiltersGuidanceResource {
 	/// Returns the canonical guidance article for ESQ-style filter authoring.
 	/// </summary>
 	[McpServerResource(UriTemplate = ResourceUri, Name = "esq-filters-guidance")]
-	[Description("Returns canonical MCP guidance for ESQ-style filter authoring: every filter type and comparison operator, value shapes per column type, the full date/time macro catalog, lookup-value handling, forward and backward references, and common generation pitfalls.")]
+	[Description("Routes ESQ filter work to the canonical frontend construction, backend construction, or runtime parsing guidance without duplicating their detailed rules.")]
 	public ResourceContents GetGuide() => Guide;
+
+	/// <summary>
+	/// Returns canonical frontend and DataService JSON filter construction guidance.
+	/// </summary>
+	[McpServerResource(UriTemplate = FrontendResourceUri, Name = "esq-filters-frontend-guidance")]
+	[Description("Returns canonical guidance for serialized JavaScript, Freedom UI, page JSON, and DataService ESQ filter construction.")]
+	public ResourceContents GetFrontendGuide() => FrontendGuide;
 }

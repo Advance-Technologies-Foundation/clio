@@ -21,6 +21,11 @@ public sealed class McpGuidanceResourceE2ETests : McpContractFixtureBase {
 	private static readonly string ConfigurationWebServiceTestsUri = BuildGuideUri("configuration-webservice-tests");
 	private static readonly string DataBindingsUri = BuildGuideUri("data-bindings");
 	private static readonly string ExistingAppMaintenanceUri = BuildGuideUri("existing-app-maintenance");
+	private static readonly string VirtualEntitiesUri = BuildGuideUri("virtual-entities");
+	private static readonly string EsqFiltersUri = BuildGuideUri("esq-filters");
+	private static readonly string EsqFiltersFrontendUri = BuildGuideUri("esq-filters/frontend");
+	private static readonly string EsqFiltersBackendUri = BuildGuideUri("esq-filters/backend");
+	private static readonly string EsqFilterParsingUri = BuildGuideUri("esq-filter-parsing");
 	private static readonly string PageSchemaConvertersUri = BuildGuideUri("page-schema-converters");
 	private static readonly string PageSchemaHandlersUri = BuildGuideUri("page-schema-handlers");
 	private static readonly string PageSchemaCreatioDevkitCommonUri = BuildGuideUri("page-schema-creatio-devkit-common");
@@ -62,6 +67,11 @@ public sealed class McpGuidanceResourceE2ETests : McpContractFixtureBase {
 				ConfigurationWebServiceTestsUri,
 				DataBindingsUri,
 				ExistingAppMaintenanceUri,
+				VirtualEntitiesUri,
+				EsqFiltersUri,
+				EsqFiltersFrontendUri,
+				EsqFiltersBackendUri,
+				EsqFilterParsingUri,
 				PageSchemaConvertersUri,
 				PageSchemaHandlersUri,
 				PageSchemaCreatioDevkitCommonUri,
@@ -85,7 +95,104 @@ public sealed class McpGuidanceResourceE2ETests : McpContractFixtureBase {
 
 		resources.Select(resource => resource.Uri).Should().Contain(
 			expectedStaticUris.Concat(expectedGeneratedUris),
-			because: "the MCP server should advertise creation existing-app configuration-webservice converter handler validator sdk-common agent-execution support-mode business-rules server-to-server-oauth and reference resources");
+			because: "the MCP server should advertise creation existing-app ESQ filter configuration-webservice converter handler validator sdk-common agent-execution support-mode business-rules server-to-server-oauth and reference resources");
+	}
+
+	[Test]
+	[AllureTag("mcp-guidance-resources")]
+	[AllureName("MCP server returns the ESQ filter family and its responsibility-specific resources")]
+	[Description("Verifies the router, frontend construction, backend construction, and runtime parsing ESQ filter resources can all be read directly.")]
+	public async Task McpServer_ShouldReturnEsqFilterResources_WhenUrisAreRead() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		ReadResourceResult routerResult = await context.Session.ReadResourceAsync(
+			EsqFiltersUri,
+			context.CancellationTokenSource.Token);
+		ReadResourceResult frontendResult = await context.Session.ReadResourceAsync(
+			EsqFiltersFrontendUri,
+			context.CancellationTokenSource.Token);
+		ReadResourceResult backendResult = await context.Session.ReadResourceAsync(
+			EsqFiltersBackendUri,
+			context.CancellationTokenSource.Token);
+		ReadResourceResult parsingResult = await context.Session.ReadResourceAsync(
+			EsqFilterParsingUri,
+			context.CancellationTokenSource.Token);
+
+		// Assert
+		TextResourceContents router = routerResult.Contents.Single().Should().BeOfType<TextResourceContents>(
+			because: "the family router should resolve to one plain-text article").Subject;
+		router.Text.Should().Contain("GATE: choose the owner",
+			because: "the root resource should route rather than duplicate detailed rules");
+		TextResourceContents frontend = frontendResult.Contents.Single().Should().BeOfType<TextResourceContents>(
+			because: "the frontend construction resource should resolve to one plain-text article").Subject;
+		frontend.Text.Should().Contain("Group envelope (filterType 6)",
+			because: "the existing serialized group contract should remain in the frontend owner");
+		TextResourceContents backend = backendResult.Contents.Single().Should().BeOfType<TextResourceContents>(
+			because: "the backend construction resource should resolve to one plain-text article").Subject;
+		backend.Text.Should().Contain("LogicalOperationStrict.Or",
+			because: "the backend owner should contain the lab-verified nested OR construction");
+		backend.Text.Should().Contain("FilterComparisonType.NotEndWith",
+			because: "the directly readable backend guide should expose the complete verified scalar Compare recipes");
+		backend.Text.Should().Contain("negatedOr.IsNot = true",
+			because: "the directly readable backend guide should expose verified group-IsNot construction");
+		backend.Text.Should().Contain("DataService removes disabled children",
+			because: "the published backend resource should state the disabled-filter transport boundary");
+		TextResourceContents parsing = parsingResult.Contents.Single().Should().BeOfType<TextResourceContents>(
+			because: "the runtime parsing resource should resolve to one plain-text article").Subject;
+		parsing.Text.Should().Contain("Parse a tree, not a flat list",
+			because: "the parsing owner should require recursive group traversal");
+		parsing.Text.Should().Contain("maximum depth and total-node limits",
+			because: "the directly readable parsing guide should bound remotely supplied filter complexity");
+		parsing.Text.Should().Contain("AND(C, A, B)",
+			because: "the directly readable parser guide should preserve the verified ATF structural ordering boundary");
+		parsing.Text.Should().Contain("LeftExpression.Path",
+			because: "the published parser guide must validate the complete ESQ column path");
+		parsing.Text.Should().Contain("Exclude disabled items from evaluation",
+			because: "the published parser guide should expose verified disabled-node evaluation");
+		parsing.Text.Should().Contain("return group.IsNot ? !result : result",
+			because: "the published parser guide should negate the combined group result");
+		parsing.Text.Should().Contain("never reached PostgreSQL",
+			because: "the published resource must not misattribute virtual-provider case behavior to the database");
+	}
+
+	[Test]
+	[AllureTag("mcp-guidance-resources")]
+	[AllureName("MCP server returns virtual entity lifecycle guidance")]
+	[Description("Verifies the directly readable virtual-entities resource requires schema creation for reads and Creatio 10.0 plus its feature flag for writes.")]
+	public async Task McpServer_ShouldReturnVirtualEntitiesGuidance_WhenResourceUriIsRead() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		ReadResourceResult result = await context.Session.ReadResourceAsync(
+			VirtualEntitiesUri,
+			context.CancellationTokenSource.Token);
+
+		// Assert
+		TextResourceContents article = result.Contents.Single().Should().BeOfType<TextResourceContents>(
+			because: "the virtual entity guide should resolve to one plain-text article").Subject;
+		article.Uri.Should().Be(VirtualEntitiesUri,
+			because: "the returned article should preserve the stable virtual-entities URI");
+		article.Text.Should().Contain("virtual entity schema MUST already exist",
+			because: "the published resource should enforce object creation before executor implementation");
+		article.Text.Should().Contain("<EntitySchemaName>QueryExecutor",
+			because: "the published resource should explain the exact named DI binding");
+		article.Text.Should().Contain("virtual writes require Creatio 10.0 or later",
+			because: "the published resource must not advertise Entity-level virtual CRUD for 8.3.4");
+		article.Text.Should().Contain("Creatio 8.3.4 or earlier",
+			because: "the directly readable article should state the last unsupported release line explicitly");
+		article.Text.Should().Contain("EnableVirtualEntitySupport",
+			because: "the published resource should require the disabled-by-default feature on supported versions");
+		article.Text.Should().Contain("record/tenant scope",
+			because: "the published provider guidance must require equivalent record authorization");
+		article.Text.Should().Contain("maximum page size",
+			because: "the published provider guidance must reject unbounded full-provider reads");
+		article.Text.Should().Contain("Do not substitute `clear-redis-db`",
+			because: "the published feature workflow must not recommend flushing unrelated Redis data");
+		article.Text.Should().Contain("clio set-feature EnableVirtualEntitySupport 1 -e <environment>",
+			because: "the published resource should expose the executable CLI fallback for feature state");
 	}
 
 	[Test]
