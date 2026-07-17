@@ -27,6 +27,7 @@ public sealed class DataBindingDbToolE2ETests : McpContractFixtureBase {
 	private const string CreateDbToolName = CreateDataBindingDbTool.CreateDataBindingDbToolName;
 	private const string UpsertRowDbToolName = UpsertDataBindingRowDbTool.UpsertDataBindingRowDbToolName;
 	private const string RemoveRowDbToolName = RemoveDataBindingRowDbTool.RemoveDataBindingRowDbToolName;
+	private const string ODataCreateToolName = ODataCreateTool.ToolName;
 
 	[Test]
 	[Description("Exposes all three DB-first data-binding MCP tools via the get-tool-contract compact index so callers can discover and invoke them on the lazy surface.")]
@@ -302,24 +303,26 @@ public sealed class DataBindingDbToolE2ETests : McpContractFixtureBase {
 	public async Task UpsertDataBindingRowDb_Should_Update_Live_Row_When_Unbound_In_Target_Binding() {
 		// Arrange
 		await using DataBindingDbArrangeContext arrangeContext = await ArrangeAsync(requireEnvironment: true);
-		string seedBindingName = $"UsrAdoptSeed{arrangeContext.PackageName}";
 		string targetBindingName = $"UsrAdoptTarget{arrangeContext.PackageName}";
 		string rowName = $"E2E Adopt {arrangeContext.PackageName}";
+		// Caller-supplied Id so the seeded row is known up front (odata-create echoes it back).
+		string createdRowId = System.Guid.NewGuid().ToString();
 
-		// Act - seed a Lookup row (inserts it into the table and binds it in the seed binding)
+		// Act - seed the Lookup row UNBOUND via odata-create: it inserts the row into the table WITHOUT
+		// binding it, so the row is genuinely live-but-unbound in the target binding. Seeding via
+		// create-data-binding-db would BIND the record, and the platform forbids binding the same record in a
+		// second binding of the same schema+package - which is not the scenario this test exercises.
 		CommandExecutionActResult seedResult = await ActCommandAsync(
 			arrangeContext,
-			CreateDbToolName,
+			ODataCreateToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = arrangeContext.EnvironmentName,
-				["package-name"] = arrangeContext.PackageName,
-				["schema-name"] = "Lookup",
-				["binding-name"] = seedBindingName,
-				["rows"] = $"[{{\"values\":{{\"Name\":\"{rowName}\"}}}}]"
+				["entity"] = "Lookup",
+				["rows"] = new[] {
+					new Dictionary<string, object?> { ["Id"] = createdRowId, ["Name"] = rowName }
+				}
 			});
 		AssertToolCallSucceeded(seedResult);
-		AssertCommandExitCode(seedResult, 0, "seeding the Lookup row should succeed");
-		string createdRowId = ExtractCreatedRowId(seedResult);
 
 		// Act - establish a SEPARATE empty binding so the seeded row exists in the table but is NOT bound here
 		CommandExecutionActResult targetBindingResult = await ActCommandAsync(
@@ -349,22 +352,6 @@ public sealed class DataBindingDbToolE2ETests : McpContractFixtureBase {
 		AssertToolCallSucceeded(upsertResult);
 		AssertCommandExitCode(upsertResult, 0,
 			"upsert must UPDATE a row that exists in the table but is unbound in the target binding, not attempt an insert that fails on required columns");
-	}
-
-	private static string ExtractCreatedRowId(CommandExecutionActResult seedResult) {
-		seedResult.Execution.Output.Should().NotBeNullOrEmpty(
-			because: "create-data-binding-db should emit a 'Created row: <id>' message for the seeded row");
-		foreach (CommandLogMessageEnvelope message in seedResult.Execution.Output!) {
-			System.Text.RegularExpressions.Match match = System.Text.RegularExpressions.Regex.Match(
-				message.Value?.ToString() ?? string.Empty,
-				@"Created row:\s*([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})");
-			if (match.Success) {
-				return match.Groups[1].Value;
-			}
-		}
-
-		Assert.Fail("Could not extract the created row Id from the seed create-data-binding-db output.");
-		return string.Empty;
 	}
 
 	private async Task<DataBindingDbArrangeContext> ArrangeAsync(bool requireEnvironment) {
