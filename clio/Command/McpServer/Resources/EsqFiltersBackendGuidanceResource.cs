@@ -66,6 +66,53 @@ public sealed class EsqFiltersBackendGuidanceResource {
 		       esq.Filters.Add(sequenceGreater);
 		       ```
 
+		       ## Complete lab-verified scalar Compare catalog
+		       Use the comparison type that states the intended operation; do not synthesize a
+		       different operator plus group negation.
+		       The calls below are independent recipes. Add only the predicates required by the query;
+		       adding every positive and negative example to one AND group would be contradictory.
+
+		       ```csharp
+		       esq.Filters.Add(esq.CreateFilterWithParameters(
+		           FilterComparisonType.NotEqual, "UsrSequenceNumber", 10));
+		       esq.Filters.Add(esq.CreateFilterWithParameters(
+		           FilterComparisonType.LessOrEqual, "UsrSequenceNumber", 20));
+		       esq.Filters.Add(esq.CreateFilterWithParameters(
+		           FilterComparisonType.GreaterOrEqual, "UsrSequenceNumber", 0));
+
+		       esq.Filters.Add(esq.CreateFilterWithParameters(
+		           FilterComparisonType.StartWith, "UsrName", "Alpha"));
+		       esq.Filters.Add(esq.CreateFilterWithParameters(
+		           FilterComparisonType.Contain, "UsrName", "middle"));
+		       esq.Filters.Add(esq.CreateFilterWithParameters(
+		           FilterComparisonType.EndWith, "UsrName", "Omega"));
+
+		       esq.Filters.Add(esq.CreateFilterWithParameters(
+		           FilterComparisonType.NotStartWith, "UsrName", "Alpha"));
+		       esq.Filters.Add(esq.CreateFilterWithParameters(
+		           FilterComparisonType.NotContain, "UsrName", "middle"));
+		       esq.Filters.Add(esq.CreateFilterWithParameters(
+		           FilterComparisonType.NotEndWith, "UsrName", "Omega"));
+		       ```
+
+		       The verified representative mapping is:
+		       - MediumText `Equal` and Integer `NotEqual`;
+		       - Integer `Less`, `LessOrEqual`, `Greater`, and `GreaterOrEqual`;
+		       - MediumText `StartWith`, `NotStartWith`, `Contain`, `NotContain`, `EndWith`, and
+		         `NotEndWith`.
+
+		       This completes the scalar operator catalog without claiming that every operator was tested
+		       against every column type.
+
+		       Negated C# string predicates sent through ATF/DataService arrived as the dedicated
+		       negative comparison types. They did not use group `IsNot`.
+
+		       ### Exact ATF shape parity for three-term AND
+		       ATF.Repository 2.0.3.5 translated source `A && B && C` to one flat root AND ordered
+		       `C, A, B`. If a test requires byte-for-byte/shape-for-shape parity, insert the native
+		       leaves in that observed order. Do not infer logical precedence from child order, and do
+		       not generalize this transport-specific order to other expression shapes or ATF versions.
+
 		       ## Create an explicit OR group
 		       Do not change the root collection to OR when the desired runtime shape is the normal root
 		       AND containing one nested OR group. Create the OR collection explicitly:
@@ -125,16 +172,20 @@ public sealed class EsqFiltersBackendGuidanceResource {
 		       - `A || B`: root AND with one nested OR group containing two leaves.
 		       - `A && (B || C)`: root AND containing leaf A and nested OR(B,C).
 		       - `(A && B) || C`: root AND containing nested OR(nested AND(A,B),C).
-		       - Group and leaf `Name` values were null; item insertion order matched in the verified cases.
+		       - Group and leaf `Name` values were null; item insertion order matched in the verified
+		         two-term/grouped cases. The verified three-term ATF order is `C, A, B`.
 		       - A scalar created with `CreateFilterWithParameters` is exposed at runtime through the
 		         filter's right-expression collection.
+		       - The lab provider deliberately used `StringComparison.OrdinalIgnoreCase`; case-variant
+		         results prove that provider policy, not Creatio/PostgreSQL collation behavior.
 
 		       ## Coverage boundary
-		       Verified now: group envelope/nesting, string Equal, integer Greater, and integer Less.
-		       Pending lab validation before publishing construction recipes: disabled filters, `IsNot`,
-		       remaining Compare operators and data types, IsNull, In, Between, lookup values, dates and
-		       macros, Exists/subqueries/aggregates, and Segment filters. Use the frontend guide as a
-		       discovery checklist, but do not translate its JSON fields into guessed backend APIs.
+		       Verified now: group envelope/nesting and all scalar Compare operators using representative
+		       Integer and MediumText values. Pending lab validation before publishing construction
+		       recipes: disabled filters, group `IsNot`, Boolean/Guid Compare values, IsNull, In, Between,
+		       lookup values, dates and macros, Exists/subqueries/aggregates, and Segment filters. Use the
+		       frontend guide as a discovery checklist, but do not translate its JSON fields into guessed
+		       backend APIs.
 		       """
 	};
 

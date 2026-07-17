@@ -1627,6 +1627,18 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should show the verified native group-construction API");
 		article.Text.Should().Contain("A && (B || C)",
 			because: "the guide should preserve the lab-verified mixed nesting recipe");
+		string[] expectedScalarOperators = [
+			"Equal", "NotEqual", "Less", "LessOrEqual", "Greater", "GreaterOrEqual",
+			"StartWith", "NotStartWith", "Contain", "NotContain", "EndWith", "NotEndWith"
+		];
+		foreach (string expectedOperator in expectedScalarOperators) {
+			article.Text.Should().Contain($"FilterComparisonType.{expectedOperator},",
+				because: $"the backend guide must retain the verified {expectedOperator} construction recipe");
+		}
+		article.Text.Should().Contain("C, A, B",
+			because: "the backend guide should preserve the verified three-term ATF shape ordering boundary");
+		article.Text.Should().Contain("not Creatio/PostgreSQL collation behavior",
+			because: "in-memory provider case policy must not be published as database-collation evidence");
 		article.Text.Should().Contain("Pending lab validation",
 			because: "unverified filter families should be explicit instead of guessed");
 	}
@@ -1656,6 +1668,26 @@ public sealed class McpGuidanceResourceTests {
 			because: "runtime filter parsing must bound remotely supplied tree complexity");
 		article.Text.Should().Contain("Reject a disabled item",
 			because: "unverified disabled-filter semantics must fail closed instead of changing query meaning");
+		article.Text.Should().Contain("ReadScalarParameter",
+			because: "the parsing owner should show how to validate one typed runtime parameter before evaluation");
+		article.Text.Should().Contain("filter.LeftExpression.Path != expectedColumn",
+			because: "the parser must validate the full ESQ path instead of only its terminal schema column");
+		article.Text.Should().Contain("can collapse `Account.Name` to",
+			because: "the guide should explain why terminal SchemaColumnName matching can accept an unintended lookup path");
+		string[] expectedScalarOperators = [
+			"Equal", "NotEqual", "Less", "LessOrEqual", "Greater", "GreaterOrEqual",
+			"StartWith", "NotStartWith", "Contain", "NotContain", "EndWith", "NotEndWith"
+		];
+		foreach (string expectedOperator in expectedScalarOperators) {
+			article.Text.Should().Contain($"`{expectedOperator}`",
+				because: $"the parsing guide must retain the verified {expectedOperator} runtime operator");
+		}
+		article.Text.Should().Contain("AND(C, A, B)",
+			because: "the parsing owner should distinguish structural ATF ordering from semantic precedence");
+		article.Text.Should().Contain("Short-circuit AND",
+			because: "validated provider predicates should avoid unnecessary per-record evaluation work");
+		article.Text.Should().Contain("case-variant results do not prove Creatio",
+			because: "the parser guide must keep provider comparison policy separate from database semantics");
 	}
 
 	[Test]
