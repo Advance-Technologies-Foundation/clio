@@ -62,6 +62,22 @@ Release/Development switch. The switch updates `app-settings.json`, preserves th
 and takes effect after Ring restarts.
 The same selected runtime drives deployment workflows, environment discovery, and ordinary radial actions.
 
+### Release clio updates
+
+Ring checks NuGet at startup and every eight hours for the latest listed stable `clio` package. A newer
+version adds a durable notice to the main surface and changes the tray icon, tooltip, and first menu action.
+The check timestamp and one-notification-per-version acknowledgement are persisted without process data, so
+restarting Ring does not repeatedly query or notify. Ring never installs an update automatically, and
+Development mode remains untouched.
+
+Choosing **Update** gracefully stops only Ring's own Release MCP child, then runs the trusted dotnet host
+with the exact version shown in the notice and an isolated NuGet configuration containing only NuGet.org.
+If Windows Restart Manager confirms that another application still has the Release shim open, Ring
+shows each trusted `clio.exe` process with its PID, executable path, secret-free command classification, and
+immediate parent application. **Cancel** leaves every process running. **Kill clio processes and retry** is
+a separate explicit action that revalidates each PID, start time, and executable path before terminating
+only those clio processes. Claude, Codex, and other parent applications are never terminated.
+
 To expose the experimental MCP-over-stdio UI and point it at a development build, use:
 
 ```json

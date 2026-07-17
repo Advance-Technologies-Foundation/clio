@@ -86,13 +86,19 @@ public interface IApplicationSectionCreateService {
 	/// When <see langword="null"/> (the synchronous CLI path) the readback keeps its
 	/// <see cref="Timeout.Infinite"/> default; non-positive values fall through to that default too.
 	/// </param>
+	/// <param name="reportStage">
+	/// Optional callback invoked with a short human-readable marker at each internal stage boundary
+	/// (load application info, create section, load created section). Additive and side-effect-free;
+	/// when <see langword="null"/> no markers are emitted, so CLI callers are unaffected.
+	/// </param>
 	/// <returns>Structured data for the created section, entity, and pages.</returns>
 	ApplicationSectionCreateResult CreateSection(string environmentName, ApplicationSectionCreateRequest request,
-		int? insertTimeoutMsOverride = null, int? readbackTimeoutMsOverride = null);
+		int? insertTimeoutMsOverride = null, int? readbackTimeoutMsOverride = null,
+		Action<string>? reportStage = null);
 
 	/// <summary>
 	/// Creates a section against an already-resolved environment. Behaves identically to
-	/// <see cref="CreateSection(string, ApplicationSectionCreateRequest, int?, int?)"/> except it never
+	/// <see cref="CreateSection(string, ApplicationSectionCreateRequest, int?, int?, Action{string})"/> except it never
 	/// consults <see cref="Clio.UserEnvironment.ISettingsRepository"/> — the caller supplies the settings
 	/// directly (e.g. an MCP passthrough tenant resolved from request headers) — and every nested call it
 	/// makes (BOTH caption-culture resolutions — the readback-culture and profile-validation sites — and
@@ -104,11 +110,17 @@ public interface IApplicationSectionCreateService {
 	/// <param name="request">Section creation request payload.</param>
 	/// <param name="insertTimeoutMsOverride">Optional override (ms) for the section-insert budget; see the name-based overload.</param>
 	/// <param name="readbackTimeoutMsOverride">Optional override (ms) for the post-insert readback; see the name-based overload.</param>
+	/// <param name="reportStage">
+	/// Optional callback invoked with a short human-readable marker at each internal stage boundary; see
+	/// the name-based overload for the emitted markers. Additive and side-effect-free; when
+	/// <see langword="null"/> no markers are emitted.
+	/// </param>
 	/// <returns>Structured data for the created section, entity, and pages.</returns>
 	/// <exception cref="ArgumentNullException"><paramref name="environmentSettings"/> is <c>null</c>.</exception>
 	ApplicationSectionCreateResult CreateSection(EnvironmentSettings environmentSettings,
 		ApplicationSectionCreateRequest request,
-		int? insertTimeoutMsOverride = null, int? readbackTimeoutMsOverride = null);
+		int? insertTimeoutMsOverride = null, int? readbackTimeoutMsOverride = null,
+		Action<string>? reportStage = null);
 }
 
 /// <summary>
@@ -201,7 +213,8 @@ public sealed class ApplicationSectionCreateService(
 
 	/// <inheritdoc />
 	public ApplicationSectionCreateResult CreateSection(string environmentName, ApplicationSectionCreateRequest request,
-		int? insertTimeoutMsOverride = null, int? readbackTimeoutMsOverride = null) {
+		int? insertTimeoutMsOverride = null, int? readbackTimeoutMsOverride = null,
+		Action<string>? reportStage = null) {
 		if (string.IsNullOrWhiteSpace(environmentName)) {
 			throw new ArgumentException("Environment name is required.", nameof(environmentName));
 		}
@@ -226,13 +239,15 @@ public sealed class ApplicationSectionCreateService(
 			overrideCulture => captionCultureResolver.Resolve(cultureOptions, overrideCulture),
 			(id, code) => applicationInfoService.GetApplicationInfo(environmentName, id, code),
 			insertTimeoutMsOverride,
-			readbackTimeoutMsOverride);
+			readbackTimeoutMsOverride,
+			reportStage);
 	}
 
 	/// <inheritdoc />
 	public ApplicationSectionCreateResult CreateSection(EnvironmentSettings environmentSettings,
 		ApplicationSectionCreateRequest request,
-		int? insertTimeoutMsOverride = null, int? readbackTimeoutMsOverride = null) {
+		int? insertTimeoutMsOverride = null, int? readbackTimeoutMsOverride = null,
+		Action<string>? reportStage = null) {
 		ArgumentNullException.ThrowIfNull(environmentSettings);
 		ArgumentNullException.ThrowIfNull(request);
 		ValidateRequest(request);
@@ -247,7 +262,8 @@ public sealed class ApplicationSectionCreateService(
 			overrideCulture => captionCultureResolver.Resolve(environmentSettings, overrideCulture),
 			(id, code) => applicationInfoService.GetApplicationInfo(environmentSettings, id, code),
 			insertTimeoutMsOverride,
-			readbackTimeoutMsOverride);
+			readbackTimeoutMsOverride,
+			reportStage);
 	}
 
 	private ApplicationSectionCreateResult CreateSectionCore(
@@ -256,7 +272,8 @@ public sealed class ApplicationSectionCreateService(
 		Func<string?, string> resolveCaptionCulture,
 		Func<string?, string?, ApplicationInfoResult> loadApplicationInfo,
 		int? insertTimeoutMsOverride,
-		int? readbackTimeoutMsOverride) {
+		int? readbackTimeoutMsOverride,
+		Action<string>? reportStage = null) {
 		IApplicationClient client = applicationClientFactory.CreateEnvironmentClient(environmentSettings);
 		// The stored section caption is localized server-side under the connected user's profile.
 		// This effective culture only drives which value the readback surfaces (override > profile > en-US).
@@ -276,6 +293,7 @@ public sealed class ApplicationSectionCreateService(
 		try {
 			string schemaNamePrefix = SysSettingCodes.ReadSchemaNamePrefix(sysSettingsManager);
 			logger.WriteInfo($"Loading application info for '{request.ApplicationCode}'...");
+			reportStage?.Invoke("loading application info");
 			beforeInfo = loadApplicationInfo(null, request.ApplicationCode);
 			resolvedRequest = ResolveRequest(
 				request,
@@ -303,6 +321,7 @@ public sealed class ApplicationSectionCreateService(
 		int insertTimeoutMs = ResolveInsertTimeoutMilliseconds(insertTimeoutMsOverride);
 		string responseBody;
 		try {
+			reportStage?.Invoke("creating section");
 			responseBody = client.ExecutePostRequest(
 				serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Insert, environmentSettings),
 				requestBody,
@@ -322,7 +341,8 @@ public sealed class ApplicationSectionCreateService(
 					effectiveCultureName,
 					loadApplicationInfo,
 					insertTimeoutMs,
-					exception);
+					exception,
+					reportStage);
 			}
 			logger.EndSpinner(false);
 			throw failureClass == ApplicationSectionCreateFailureClass.Transport
@@ -335,6 +355,7 @@ public sealed class ApplicationSectionCreateService(
 		// The CLI path leaves readbackTimeoutMsOverride null and keeps the patient Timeout.Infinite
 		// default; the MCP/background path passes a finite per-request budget so a wedged readback
 		// cannot hold a thread + HTTP connection for the life of the server process (ENG-91316).
+		reportStage?.Invoke("loading created section");
 		return LoadCreatedSection(
 			beforeInfo,
 			resolvedRequest,
@@ -671,7 +692,8 @@ public sealed class ApplicationSectionCreateService(
 		string effectiveCultureName,
 		Func<string?, string?, ApplicationInfoResult> loadApplicationInfo,
 		int insertTimeoutMs,
-		Exception cause) {
+		Exception cause,
+		Action<string>? reportStage = null) {
 		bool? sectionVisible = TryVerifySectionExists(client, environmentSettings, resolvedRequest);
 		if (sectionVisible == true) {
 			logger.EndSpinner(true);
@@ -680,6 +702,7 @@ public sealed class ApplicationSectionCreateService(
 				+ $"'{resolvedRequest.SectionCode}' is already visible — continuing with readback.");
 			// The server already proved slow, so the recovery readback runs bounded too —
 			// otherwise the budget guarantee would be lost right after the timeout.
+			reportStage?.Invoke("loading created section");
 			return LoadCreatedSection(
 				beforeInfo,
 				resolvedRequest,

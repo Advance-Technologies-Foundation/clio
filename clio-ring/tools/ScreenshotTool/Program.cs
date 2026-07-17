@@ -107,6 +107,39 @@ internal static class Program {
 				developmentSelected: true);
 		});
 
+		// 1e) CLIO UPDATE AVAILABLE - durable main-surface attention with an explicit update gesture.
+		count += Capture(outDir, "clio-update-available", 1.0, window => {
+			Vm(window).ClioSettings.DesignSetRuntime(
+				developmentRunning: false,
+				"clio 8.1.0.84",
+				ClioIpcSettings.Default.Command);
+			Vm(window).DesignShowClioUpdate("8.1.0.84", "8.1.0.85");
+		});
+
+		// 1f) CLIO UPDATE BLOCKED - real-world Claude-owned MCP process shape, design-only and non-destructive.
+		count += Capture(outDir, "clio-update-blocked", 1.0, window => {
+			RingViewModel vm = Vm(window);
+			vm.ClioSettings.DesignSetRuntime(
+				developmentRunning: false,
+				"clio 8.1.0.84",
+				ClioIpcSettings.Default.Command);
+			vm.DesignShowClioUpdate("8.1.0.84", "8.1.0.85");
+			vm.DesignShowClioUpdateBlockers(
+				@"C:\Users\k.krylov\.dotnet\tools\clio.exe",
+				new[] {
+					new ClioUpdateProcessViewModel(
+						20736,
+						"clio mcp-server",
+						@"C:\Users\k.krylov\.dotnet\tools\clio.exe",
+						"Started by Claude Code - claude.exe (PID 115220)"),
+					new ClioUpdateProcessViewModel(
+						64120,
+						"clio mcp-server",
+						@"C:\Users\k.krylov\.dotnet\tools\clio.exe",
+						"Started by Codex - codex.exe (PID 55104)")
+				});
+		});
+
 		// 2) FOCUSED — keyboard focus on an action node (strong accent ring).
 		count += CaptureState(outDir, "focused", (window) => {
 			View(window).SetKeyboardFocusNode(2);

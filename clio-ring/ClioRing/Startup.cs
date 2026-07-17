@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.Net.Http;
 using ClioRing.Diagnostics;
 using ClioRing.Ipc;
 using ClioRing.Models;
@@ -23,6 +25,14 @@ public static class Startup {
 		services.AddSingleton<IActionCatalogWatcher, ActionCatalogWatcher>();
 		services.AddSingleton<IEnvironmentSettingsWatcher, EnvironmentSettingsWatcher>();
 		services.AddSingleton<IClioSettingsStore, ClioSettingsStore>();
+		services.AddSingleton<IClioProcessGate, ClioProcessGate>();
+		services.AddSingleton<HttpClient>();
+		services.AddSingleton<IClioToolProcessRunner, ClioToolProcessRunner>();
+		services.AddSingleton<IClioToolProcessInspector, ClioToolProcessInspector>();
+		services.AddSingleton<IClioToolInstallation, ClioToolInstallation>();
+		services.AddSingleton<IClioUpdateStateStore, ClioUpdateStateStore>();
+		services.AddSingleton(TimeProvider.System);
+		services.AddSingleton<IClioToolUpdateService, ClioToolUpdateService>();
 		ResolvedClioRuntime clioRuntime = ResolveClioRuntime();
 		services.AddSingleton(clioRuntime);
 		services.AddSingleton<IClioAdapter, ClioAdapter>();
@@ -36,7 +46,10 @@ public static class Startup {
 		// EXPERIMENTAL clio MCP-over-stdio client. Always registered but lazy: the child is not spawned
 		// until first use, and only the experiment-gated catalog view triggers that use. Off by default,
 		// so a normal launch never contacts clio over IPC.
-		services.AddSingleton<IClioIpcClient>(_ => new ClioIpcClient(clioRuntime.LaunchSettings, StartupLog.Log));
+		services.AddSingleton<IClioIpcClient>(sp => new ClioIpcClient(clioRuntime.LaunchSettings,
+			StartupLog.Log, clioRuntime.Mode == ClioRuntimeMode.Release
+				? sp.GetRequiredService<IClioProcessGate>()
+				: new ClioProcessGate()));
 
 		services.AddTransient<RingViewModel>();
 		services.AddTransient<ClioIpcViewModel>();
