@@ -133,12 +133,18 @@ public sealed class McpGuidanceResourceE2ETests : McpContractFixtureBase {
 			because: "the backend construction resource should resolve to one plain-text article").Subject;
 		backend.Text.Should().Contain("LogicalOperationStrict.Or",
 			because: "the backend owner should contain the lab-verified nested OR construction");
+		backend.Text.Should().Contain("FilterComparisonType.NotEndWith",
+			because: "the directly readable backend guide should expose the complete verified scalar Compare recipes");
 		TextResourceContents parsing = parsingResult.Contents.Single().Should().BeOfType<TextResourceContents>(
 			because: "the runtime parsing resource should resolve to one plain-text article").Subject;
 		parsing.Text.Should().Contain("Parse a tree, not a flat list",
 			because: "the parsing owner should require recursive group traversal");
 		parsing.Text.Should().Contain("maximum depth and total-node limits",
 			because: "the directly readable parsing guide should bound remotely supplied filter complexity");
+		parsing.Text.Should().Contain("AND(C, A, B)",
+			because: "the directly readable parser guide should preserve the verified ATF structural ordering boundary");
+		parsing.Text.Should().Contain("never reached PostgreSQL",
+			because: "the published resource must not misattribute virtual-provider case behavior to the database");
 	}
 
 	[Test]

@@ -1,7 +1,7 @@
 # Story: publish the clio guidance development framework
 
 - **Feature**: clio-guidance-development
-- **Status**: review
+- **Status**: done
 - **Size**: M
 - **SPEC**: [clio-guidance-development-spec.md](clio-guidance-development-spec.md)
 - **ADR**: [clio-guidance-development-adr.md](clio-guidance-development-adr.md)
@@ -23,3 +23,5 @@ so that unfamiliar Creatio behavior can be learned once, verified, and published
 - [x] Provider reads/writes require equivalent caller and tenant authorization plus bounded pushdown.
 - [x] Virtual writes are gated to Creatio 10.0+, `EnableVirtualEntitySupport`, and an executable feature-enable fallback.
 - [x] Catalog, routing, tool descriptions, unit tests, MCP E2E tests, and ClioRing compatibility checks pass.
+
+Delivered by merged PR #913.

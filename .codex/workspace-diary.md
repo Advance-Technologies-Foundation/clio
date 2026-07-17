@@ -6619,3 +6619,17 @@ Decision: Replaced Git symlinks with validated portable redirect skills that kee
 Discovery: With `core.symlinks=false`, Git materializes symlinks as path-only regular files. Virtual providers also bypass ordinary record rights unless the executor/listener enforces equivalent caller and tenant scope explicitly.
 Files: .ai/skills/clio-guidance-development/SKILL.md, .claude/skills/clio-guidance-development/SKILL.md, .codex/skills/clio-guidance-development/, clio/Command/McpServer/Resources/VirtualEntitiesGuidanceResource.cs, clio/Command/McpServer/Resources/EsqFilterParsingGuidanceResource.cs, clio/Command/McpServer/Tools/EntitySchemaTool.cs, clio/Command/McpServer/Tools/SchemaSyncTool.cs, clio.tests/Command/McpServer/, clio.mcp.e2e/
 Impact: The shared skill works in ordinary Windows/Linux/macOS checkouts, and published virtual/filter guidance now fails closed on authorization, unbounded provider work, excessive filter complexity, and unsafe cache clearing.
+
+## 2026-07-17 22:15 – Complete primitive ESQ Compare guidance
+Context: The backend validation plan had only partial scalar Compare coverage and lacked concrete C# recipes for the remaining operators.
+Decision: Used representative Integer and MediumText examples instead of an operator/type Cartesian product; kept native construction in `esq-filters-backend` and runtime interpretation in `esq-filter-parsing`.
+Discovery: ATF.Repository 2.0.3.5 emits source `A && B && C` as flat `AND(C, A, B)`. Negated string methods arrive as dedicated negative comparison types, not leaf/group negation. Case-variant results prove the handler's explicit `OrdinalIgnoreCase` policy, not PostgreSQL collation behavior.
+Files: clio/Command/McpServer/Resources/EsqFiltersBackendGuidanceResource.cs, clio/Command/McpServer/Resources/EsqFilterParsingGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs, clio.mcp.e2e/GuidanceGetToolE2ETests.cs, spec/esq-primitive-comparisons/
+Impact: Agents now have concrete, tested construction and fail-closed parsing guidance for the complete scalar Compare operator catalog without overclaiming untested type combinations.
+
+## 2026-07-17 22:32 – Close primitive comparison PR gates
+Context: The primitive Compare guidance needed final regression and adversarial review before publication.
+Decision: Protected all 12 operators with exact-token assertions, kept provider-owned case semantics distinct from database collation, and separated full-tree validation from short-circuit evaluation.
+Discovery: Substring assertions such as `Equal` can pass through `NotEqual`; exact backend and Markdown tokens are required. Full validation must precede short-circuit evaluation so invalid hidden branches still fail closed.
+Files: clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs, spec/esq-primitive-comparisons/esq-primitive-comparisons-test-plan.md
+Impact: Comprehensive correctness, quality, and performance reviews have no remaining findings; 2,429 MCP module tests and 2 focused MCP E2E tests pass on both net8.0 and net10.0.

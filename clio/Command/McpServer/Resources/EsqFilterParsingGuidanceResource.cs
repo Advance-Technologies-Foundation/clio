@@ -103,22 +103,62 @@ public sealed class EsqFilterParsingGuidanceResource {
 		       - `LeftExpression` for the column expression and its column path.
 		       - the right-expression collection for parameter expressions and their typed values.
 
-		       Lab-verified leaves currently include:
-		       - string `Equal` on `UsrName` with `"Some Value"`;
-		       - integer `Greater` on `UsrSequenceNumber` with `10`;
-		       - integer `Less` on `UsrSequenceNumber` with `0`.
+		       Lab-verified representative scalar leaves include:
+		       - MediumText `Equal` and Integer `NotEqual`;
+		       - Integer `Less`, `LessOrEqual`, `Greater`, and `GreaterOrEqual`;
+		       - MediumText `StartWith`, `NotStartWith`, `Contain`, `NotContain`, `EndWith`, and
+		         `NotEndWith`.
+
+		       This completes the scalar operator catalog without claiming an operator/type Cartesian
+		       product.
 
 		       A scalar authored by `CreateFilterWithParameters` or through ATF.Repository/DataService is
 		       represented at runtime through the right-expression collection. Do not assume that a
 		       singular authoring property implies a singular runtime property.
 
+		       Validate the complete leaf contract before evaluating it:
+		       ```csharp
+		       private static object ReadScalarParameter(
+		           EntitySchemaQueryFilter filter,
+		           string expectedColumn) {
+		           if (!filter.IsEnabled ||
+		               filter.LeftExpression?.ExpressionType !=
+		                   EntitySchemaQueryExpressionType.SchemaColumn ||
+		               filter.LeftExpression.SchemaColumnName != expectedColumn ||
+		               filter.RightExpressions.Count != 1) {
+		               throw new NotSupportedException("Unsupported Compare filter shape.");
+		           }
+
+		           EntitySchemaQueryExpression right = filter.RightExpressions.Single();
+		           if (right.ExpressionType != EntitySchemaQueryExpressionType.Parameter) {
+		               throw new NotSupportedException("Compare requires one parameter expression.");
+		           }
+		           return right.ParameterValue;
+		       }
+		       ```
+
+		       Then require the CLR type appropriate to the schema column (`System.Int32` for the verified
+		       Integer example and `System.String` for MediumText) and dispatch explicitly on
+		       `ComparisonType`. Do not coerce an unexpected value or silently treat an unsupported
+		       comparison as false.
+
+		       `EntitySchemaQueryFilter` does not expose a leaf `IsNot`. Negated string predicates arrive
+		       as `NotStartWith`, `NotContain`, or `NotEndWith`; evaluate those operators directly. Group
+		       `IsNot` is a separate, still-unverified concern.
+
 		       ## Evaluation rules for the verified subset
-		       1. Reject a disabled item; disabled-item and resulting empty-group semantics remain unverified.
-		       2. Recursively evaluate every enabled child.
-		       3. AND requires every enabled child; OR requires at least one enabled child.
+		       1. Parse and validate the complete remotely supplied tree once. Reject unsupported nodes even
+		          when an earlier sibling could determine the result; otherwise invalid hidden branches bypass
+		          fail-closed validation.
+		       2. Reject a disabled item; disabled-item and resulting empty-group semantics remain unverified.
+		       3. Evaluate only the validated tree. Short-circuit AND at the first false child and OR at the
+		          first true child so expensive provider predicates are not evaluated unnecessarily.
 		       4. Empty AND is true. Do not guess empty OR or negation behavior until validated.
 		       5. Evaluate the leaf using the typed value. Reject unsupported expression or operator shapes
 		          with a diagnostic that includes the runtime item type, operator, and column path.
+		       6. Choose and document comparison semantics for the provider. The lab handler deliberately
+		          used `StringComparison.OrdinalIgnoreCase`; its case-variant results do not prove Creatio
+		          database collation behavior because the virtual rows never reached PostgreSQL.
 
 		       ## Structural comparison for tests
 		       To prove that two authoring paths produce the same filter, serialize a neutral shape model
@@ -133,12 +173,17 @@ public sealed class EsqFilterParsingGuidanceResource {
 		       Compare the complete tree. Checking only returned rows proves semantic behavior but can hide
 		       structural differences such as a flat root OR versus root AND containing a nested OR.
 
+		       Child order is part of a structural snapshot, not logical precedence. ATF.Repository 2.0.3.5
+		       emitted source `A && B && C` as flat `AND(C, A, B)`. A semantic parser should evaluate the
+		       AND independent of that order; a parity test should retain it and identify the authoring path
+		       and ATF version.
+
 		       ## Coverage boundary
-		       Verified now: group envelope/nesting and the three Compare leaves listed above. The
-		       frontend guide supplies the validation backlog: disabled/IsNot, all Compare operators and
-		       data types, IsNull, In, Between, lookups, dates/macros, Exists/subqueries/aggregates, and
-		       Segment. Add parsing rules here only after native C# and DataService produce an asserted
-		       runtime shape and the lab proves result behavior.
+		       Verified now: group envelope/nesting and all scalar Compare operators using representative
+		       Integer and MediumText values. The frontend guide supplies the remaining validation backlog:
+		       disabled/group IsNot, Boolean/Guid values, IsNull, In, Between, lookups, dates/macros,
+		       Exists/subqueries/aggregates, and Segment. Add parsing rules here only after native C# and
+		       DataService produce an asserted runtime shape and the lab proves result behavior.
 		       """
 	};
 
