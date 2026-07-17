@@ -24,7 +24,7 @@ namespace Clio.Command;
 public interface ISectionCreateSerializationGuard {
 	/// <summary>
 	/// Runs <paramref name="work"/> while holding a process-wide mutex keyed by
-	/// <paramref name="environmentName"/> + <paramref name="applicationCode"/> (case-insensitive).
+	/// <paramref name="environmentKey"/> + <paramref name="applicationCode"/> (case-insensitive).
 	/// The wait for the mutex is bounded by <paramref name="waitTimeout"/>; on timeout the work runs
 	/// <b>unserialized</b> (best-effort) so a deep queue never becomes a hard failure — any resulting
 	/// contention is recovered by the caller's retry/verify path. Additionally, when too many callers
@@ -34,12 +34,17 @@ public interface ISectionCreateSerializationGuard {
 	/// released when the work completes or throws.
 	/// </summary>
 	/// <typeparam name="T">Return type of the guarded work.</typeparam>
-	/// <param name="environmentName">Registered clio environment name (part of the mutex key).</param>
+	/// <param name="environmentKey">
+	/// The canonical, already-normalized environment identity that the caller must supply (for example the
+	/// value produced by <see cref="SectionCreateSerializationGuard.BuildEnvironmentKey"/>) — NOT a registered
+	/// clio environment name. It is used verbatim as the environment part of the mutex key, so passing the raw
+	/// registered name here would reintroduce the divergent-gate bug (ENG-93089, #3594140065).
+	/// </param>
 	/// <param name="applicationCode">Installed application code (part of the mutex key).</param>
 	/// <param name="waitTimeout">Maximum time to wait for the per-key mutex before degrading to best-effort.</param>
 	/// <param name="work">The destructive create-section span (insert → readback) to serialize.</param>
 	/// <returns>The value produced by <paramref name="work"/>.</returns>
-	T Run<T>(string environmentName, string applicationCode, TimeSpan waitTimeout, Func<T> work);
+	T Run<T>(string environmentKey, string applicationCode, TimeSpan waitTimeout, Func<T> work);
 }
 
 /// <summary>
@@ -71,9 +76,9 @@ public sealed class SectionCreateSerializationGuard(ILogger logger) : ISectionCr
 	internal const int MaxConcurrentWaiters = 8;
 
 	/// <inheritdoc />
-	public T Run<T>(string environmentName, string applicationCode, TimeSpan waitTimeout, Func<T> work) {
+	public T Run<T>(string environmentKey, string applicationCode, TimeSpan waitTimeout, Func<T> work) {
 		ArgumentNullException.ThrowIfNull(work);
-		string key = BuildKey(environmentName, applicationCode);
+		string key = BuildKey(environmentKey, applicationCode);
 		// Reserve a slot BEFORE waiting so the bound counts this caller too; ALWAYS release it in finally.
 		int inFlight = _inFlightPerKey.AddOrUpdate(key, 1, static (_, current) => current + 1);
 		try {
@@ -133,10 +138,12 @@ public sealed class SectionCreateSerializationGuard(ILogger logger) : ISectionCr
 		return uri.EndsWith('/') ? uri[..^1] : uri;
 	}
 
-	// The key joins the lower-cased environment name and application code so callers that differ only by
-	// case map to the same mutex (case-insensitive per ADR Q1). The separator is the ASCII Unit Separator
-	// control character U+001F, which does not occur in clio environment names or Creatio application
-	// codes, so distinct pairs can never collide onto one key.
-	private static string BuildKey(string environmentName, string applicationCode) =>
-		$"{(environmentName ?? string.Empty).ToLowerInvariant()}\u001F{(applicationCode ?? string.Empty).ToLowerInvariant()}";
+	// The key joins the canonical environment identity (already normalized by the caller) and application
+	// code so callers that differ only by case map to the same mutex (case-insensitive per ADR Q1).
+	// The environment part arrives pre-normalized (e.g. from BuildEnvironmentKey); lower-casing it again here
+	// is idempotent, and the application-code part is lower-cased here. The separator is the ASCII Unit
+	// Separator control character U+001F, which does not occur in clio environment keys or Creatio
+	// application codes, so distinct pairs can never collide onto one key.
+	private static string BuildKey(string environmentKey, string applicationCode) =>
+		$"{(environmentKey ?? string.Empty).ToLowerInvariant()}\u001F{(applicationCode ?? string.Empty).ToLowerInvariant()}";
 }

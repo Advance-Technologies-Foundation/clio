@@ -509,6 +509,47 @@ public sealed class ApplicationToolTests {
 	}
 
 	[Test]
+	[TestCase(false, "false")]
+	[TestCase(null, "unknown")]
+	[Category("Unit")]
+	[Description("Maps a contention-classified section-create failure onto the structured error envelope, surfacing error-class=contention, the verified section-created state (false or unknown), and the contention retry-guidance on the externally consumed wire envelope.")]
+	public void ApplicationSectionCreate_Should_Return_Contention_Error_Envelope_When_Service_Throws_Contention_Exception(
+		bool? sectionCreated, string expectedSectionCreated) {
+		// Arrange
+		const string contentionRetryGuidance =
+			"Do not retry immediately. Run list-app-sections to confirm whether the section was created.";
+		IApplicationSectionCreateService applicationSectionCreateService = Substitute.For<IApplicationSectionCreateService>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		EnvironmentSettings resolvedSettings = new() { Uri = "https://sandbox.example.com" };
+		commandResolver.Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>())
+			.Returns(resolvedSettings);
+		applicationSectionCreateService.CreateSection(Arg.Any<EnvironmentSettings>(), Arg.Any<ApplicationSectionCreateRequest>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<bool>())
+			.Returns(_ => throw new ApplicationSectionCreateException(
+				"Section insert was rejected without detail while creating section 'Orders' (code 'UsrOrders').",
+				ApplicationSectionCreateFailureClass.Contention,
+				sectionCreated,
+				contentionRetryGuidance));
+		ApplicationSectionCreateTool tool = new(
+			Substitute.For<ILogger>(), commandResolver, applicationSectionCreateService);
+
+		// Act
+		ApplicationSectionContextResponse result = tool.ApplicationSectionCreate(new ApplicationSectionCreateArgs(
+			ApplicationCode: "UsrOrdersApp",
+			Caption: "Orders",
+			EnvironmentName: "sandbox"), null, System.Threading.CancellationToken.None).GetAwaiter().GetResult();
+
+		// Assert
+		result.Success.Should().BeFalse(
+			because: "a classified contention failure is still a failure envelope");
+		result.ErrorClass.Should().Be("contention",
+			because: "the contention failure class must reach the agent as the externally consumed kebab-case error-class wire value");
+		result.SectionCreated.Should().Be(expectedSectionCreated,
+			because: "the verified side-effect state thrown by the service must be surfaced verbatim on the section-created field");
+		result.RetryGuidance.Should().Be(contentionRetryGuidance,
+			because: "the contention retry-guidance must reach the agent unaltered on the error envelope");
+	}
+
+	[Test]
 	[Category("Unit")]
 	[Description("Builds an in-progress envelope (creatio-timeout / section-created=in-progress / poll guidance) when section creation exceeds the MCP response deadline.")]
 	public void CreateSectionInProgressResponse_Should_Return_InProgress_Envelope_With_Poll_Guidance() {
