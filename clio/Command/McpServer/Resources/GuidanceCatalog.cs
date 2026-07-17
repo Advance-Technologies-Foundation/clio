@@ -129,7 +129,7 @@ internal static class GuidanceCatalog {
 				DashboardDesignGuidanceResource.Guide),
 			["widget-layout"] = Create(
 				"widget-layout",
-				"Canonical MCP guidance for laying out, sizing, and grouping Freedom UI analytical widgets (metrics and charts) on any analytics surface (dashboard or home page): the 12-column grid, the metric-band-then-chart-grid skeleton, section grouping, and per-widget-type default sizes. Card theme/color is surface-specific and owned by the per-widget guides.",
+				"Canonical MCP guidance for laying out, sizing, grouping, and styling Freedom UI analytical widgets (metrics and charts) on any analytics surface (dashboard or home page): the 12-column grid, the metric-band-then-chart-grid skeleton, section grouping, per-widget-type default sizes, and the plain-white (without-fill) card theme used on dashboards and home pages alike.",
 				WidgetLayoutGuidanceResource.Guide),
 			["related-list"] = Create(
 				"related-list",

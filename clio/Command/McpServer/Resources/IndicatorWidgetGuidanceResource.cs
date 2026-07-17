@@ -45,10 +45,11 @@ public sealed class IndicatorWidgetGuidanceResource {
 		         you know there are other widgets, place it near the existing ones (use the same `parentName` as
 		         another widget).
 
-		       ## Page specific rules
-		       Pick `theme` / `layout.color` by the page surface (desktop, list/form, home). Those per-surface
-		       defaults are owned by the `crt.IndicatorWidget` documentation — read it via `get-component-info`.
-		       For dashboards, see the `dashboards` guidance (band/grid layout and the plain-white card policy).
+		       ## Card theme
+		       The card theme is owned by `widget-layout`: plain-white (`theme` "without-fill") on dashboards and
+		       home pages alike. Read `widget-layout` for the card policy; for the rest of the runtime config (and
+		       any non-theme `layout.color` details) read the `crt.IndicatorWidget` documentation via
+		       `get-component-info`.
 
 		       """
 	};

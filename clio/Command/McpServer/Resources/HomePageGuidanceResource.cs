@@ -30,10 +30,10 @@ public sealed class HomePageGuidanceResource {
 		       at it, saved as a package data binding so it ships with the package.
 
 		       For the generic page rules (schema-name format, template catalog, verification, designer mapping)
-		       read `page-creation`; for laying out the page's widgets read `widget-layout` (a home page uses the
-		       SAME LAYOUT as a dashboard, but NOT its plain-white card style — style is surface-specific, see
-		       step 4); for the data-binding tool contract and verification discipline read `data-bindings`. This
-		       guide adds only the home-page specifics and the workplace binding.
+		       read `page-creation`; for laying out and styling the page's widgets read `widget-layout` (a home
+		       page uses the SAME layout and the SAME plain-white card style as a dashboard); for the data-binding
+		       tool contract and verification discipline read `data-bindings`. This guide adds only the home-page
+		       specifics and the workplace binding.
 
 		       ## Flow
 
@@ -46,13 +46,11 @@ public sealed class HomePageGuidanceResource {
 		          the value you bind in step 6. `create-page` assigns the home-page schema group automatically
 		          from the template, so there is no separate group step.
 		       3. `get-page` to verify the schema reads back.
-		       4. Add the approved widgets and lay them out per `widget-layout` — a home page uses the SAME
-		          12-column grid, metric-band-then-chart-grid layout, and per-type sizes as a dashboard. Author
-		          each widget's payload AND its STYLE per `indicator-widget` (metrics) / `chart-widget` (charts):
-		          those guides set the home-page surface theme (e.g. charts use `theme` "full-fill" with a
-		          page-matched color — NOT the dashboard plain-white card). Edit the page body per
-		          `page-modification`. A home page is standalone: it has no `DashboardDS` page-data filter, so
-		          ignore that dashboard-only binding.
+		       4. Add the approved widgets and lay them out and style them per `widget-layout` — a home page uses
+		          the SAME 12-column grid, metric-band-then-chart-grid layout, plain-white cards, and per-type
+		          sizes as a dashboard. Author each widget's payload per `indicator-widget` (metrics) /
+		          `chart-widget` (charts) and edit the page body per `page-modification`. A home page is
+		          standalone: it has no `DashboardDS` page-data filter, so ignore that dashboard-only binding.
 		       5. Choose and read the target workplace(s): read `SysWorkplace` (select `Id`, `Name`, `HomePageUId`)
 		          via `odata-read` or `execute-esq` — if one path errors, try the other. A workplace has one home
 		          page, so bind each workplace the page should apply to.
