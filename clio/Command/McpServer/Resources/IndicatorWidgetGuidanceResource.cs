@@ -46,10 +46,9 @@ public sealed class IndicatorWidgetGuidanceResource {
 		         another widget).
 
 		       ## Card theme
-		       The card theme is owned by `widget-layout`: plain-white (`theme` "without-fill") on dashboards and
-		       home pages alike. Read `widget-layout` for the card policy; for the rest of the runtime config (and
-		       any non-theme `layout.color` details) read the `crt.IndicatorWidget` documentation via
-		       `get-component-info`.
+		       The card theme is set by the SURFACE's guide, not here: `widget-layout` for dashboards and home
+		       pages (plain-white / `theme` "without-fill"), `desktop-page` for desktops (glassmorphism). For the
+		       rest of the runtime config read the `crt.IndicatorWidget` documentation via `get-component-info`.
 
 		       """
 	};

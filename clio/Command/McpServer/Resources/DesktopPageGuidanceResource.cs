@@ -103,6 +103,11 @@ public sealed class DesktopPageGuidanceResource {
 		         budget (e.g. two bands at ~5 rows each) rather than one band of 3-row widgets over empty
 		         space. 3 rows is the crowded-case minimum, not the default size.
 
+		       WIDGET CARD THEME
+		       Desktop widgets use the glassmorphism card, NOT the plain-white card of dashboards/home pages: set
+		       `config.theme` "glassmorphism" and `layout.color` "transparent". (Dashboards and home pages use
+		       plain-white — see `widget-layout`.) If the user names a different theme, use that.
+
 		       WIDTH & LAYOUT — size and pack widgets to fill the grid (hero + supporting hierarchy)
 		       Avoid BOTH bad extremes: (1) every widget in ONE row of equal narrow columns — squeezes a
 		       data-dense chart until its labels/bars are unreadable and clips donut legends; (2) every

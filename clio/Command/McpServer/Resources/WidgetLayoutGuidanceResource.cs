@@ -27,13 +27,14 @@ public sealed class WidgetLayoutGuidanceResource {
 		       clio MCP widget layout guide
 
 		       Use this guide whenever you add, arrange, size, group, or style Freedom UI ANALYTICAL widgets
-		       (metrics/indicators and charts) on any analytics surface — a DASHBOARD or a HOME PAGE — so they
-		       look native and balanced, matching how Creatio's own product dashboards look.
+		       (metrics/indicators and charts) on a DASHBOARD or a HOME PAGE — so they look native and balanced,
+		       matching how Creatio's own product dashboards look. This guide covers ONLY dashboards and home
+		       pages; desktops are a separate surface with their own guide — read `desktop-page` for those.
 
 		       This is a LAYOUT / DESIGN-QUALITY guide. It owns WHERE a widget goes, HOW BIG it is, and HOW it is
 		       styled. It does NOT own the runtime payload of any single widget — for the `crt.IndicatorWidget`
-		       generation contract (aggregate, static filter, intent -> config translation) and its exact style
-		       theme values read the dedicated `indicator-widget` guidance and call `get-component-info`. For the
+		       generation contract (aggregate, static filter, intent -> config translation) read the dedicated
+		       `indicator-widget` guidance and call `get-component-info`. For the
 		       `crt.ChartWidget` generation contract (chart type, series, aggregation, grouping, sorting, static
 		       filter) read the dedicated `chart-widget` guidance and call `get-component-info`. For surrounding
 		       page structure, fields, containers, and accessibility/contrast defer to the general Freedom UI page
@@ -51,8 +52,7 @@ public sealed class WidgetLayoutGuidanceResource {
 		          split it into LABELED sections (separated by a header and spacing, never by card color), each
 		          section being its own metric band + chart row.
 		       2. Right STYLE — PLAIN WHITE card (`theme` "without-fill") is the default for EVERY widget, the same
-		          on dashboards and home pages. (Desktops are the only exception: `theme` "glassmorphism" with
-		          `layout.color` "transparent".) A colored/emphasis card is a rare, deliberate signal for ONE
+		          on dashboards and home pages. A colored/emphasis card is a rare, deliberate signal for ONE
 		          critical KPI (e.g. an SLA-breach counter the business wants impossible to miss) — at most one or
 		          two per screen, on metric tiles only, never on charts, and never for variety or to "brand" a
 		          section. Keep the theme-default title color; let metric value/icon colors follow the default
@@ -239,7 +239,7 @@ public sealed class WidgetLayoutGuidanceResource {
 		         odd width.
 		       - No chart sits in the metric band, and no metric tile is dropped among the charts.
 		       - Every widget uses the plain-white (`without-fill`) card (no stray colored cards for variety or
-		         branding; desktops use glassmorphism).
+		         branding).
 		       - Each chart/list/pivot meets the `rowSpan` floor (>= 6; default 9, funnel 15); metric/gauge tiles stay short (~3).
 		       - Multi-topic surfaces are split into labeled sections, each = metric band + chart row.
 		       - Titles and value colors use theme defaults (red only for overdue/negative).

@@ -132,12 +132,13 @@ public sealed class ChartWidgetGuidanceResource {
 
 		       ## Style (theme)
 
-		       The card theme is owned by `widget-layout` — plain-white (`config.theme` "without-fill") by default
-		       (this also covers a `tsfunnel`/funnel chart — it is a chart-widget series). If the user explicitly
+		       The card theme is set by the SURFACE's guide, not here: `widget-layout` for dashboards and home
+		       pages (plain-white / `config.theme` "without-fill"), `desktop-page` for desktops (glassmorphism).
+		       This also covers a `tsfunnel`/funnel chart — it is a chart-widget series. If the user explicitly
 		       names a different style/theme in the prompt, use that instead.
 
-		       `config.color` is REQUIRED (see Title and header): on the plain-white card it colors the title.
-		       Default to "dark-blue" when the user gives none.
+		       `config.color` is REQUIRED (see Title and header): it colors the title. Default to "dark-blue" when
+		       the user gives none.
 
 		       ## Placement and preserving existing widgets
 
