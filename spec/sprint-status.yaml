@@ -2114,3 +2114,15 @@ stories:
       - story-entity-schema-authoring-gaps-2
       - story-entity-schema-authoring-gaps-3
     blocks: []
+  - id: story-ring-clio-runtime-switch-1
+    title: "Make release clio the default and surface the active runtime switch"
+    feature: "ring-clio-runtime-switch"
+    repo: "clio (clio-ring/)"
+    size: M
+    status: done
+    note: "Issue #903. UI approved; 129 focused tests, comprehensive review, and Windows x64 NativeAOT publish passed."
+    file: spec/ring-clio-runtime-switch/ring-clio-runtime-switch-story.md
+    prd: spec/ring-clio-runtime-switch/ring-clio-runtime-switch-spec.md
+    adr: spec/ring-clio-runtime-switch/ring-clio-runtime-switch-adr.md
+    depends_on: []
+    blocks: []
