@@ -2486,6 +2486,52 @@ public sealed class ApplicationSectionCreateServiceTests {
 				&& body.Contains($"\"value\":\"{entityName}\"", StringComparison.Ordinal)))
 			.Returns($$"""{"success":true,"rows":[{"Name":"{{entityName}}"}]}""");
 	}
+
+	[Test]
+	[Description("Detail-less InsertQuery rejections map to the retryable Contention class: empty/whitespace, the exact server sentinel with or without a trailing period, mixed case, and whitespace-padded all classify as detail-less so the reclassify/verify/retry recovery fires.")]
+	[TestCase(null)]
+	[TestCase("")]
+	[TestCase("   ")]
+	[TestCase("InsertQuery failed")]
+	[TestCase("InsertQuery failed.")]
+	[TestCase("insertquery failed")]
+	[TestCase("INSERTQUERY FAILED.")]
+	[TestCase("  InsertQuery failed.  ")]
+	public void IsDetailLessInsertRejection_ShouldReturnTrue_WhenMessageIsDetailLess(string? serverMessage) {
+		// Act
+		bool result = ApplicationSectionCreateService.IsDetailLessInsertRejection(serverMessage);
+
+		// Assert
+		result.Should().BeTrue(
+			because: $"'{serverMessage ?? "<null>"}' carries no distinguishing detail, so it must reclassify as retryable Contention — the load-bearing branch of ENG-93089");
+	}
+
+	[Test]
+	[Description("A detailed or near-miss InsertQuery rejection stays a terminal ServerError: any message that is not exactly the server sentinel (with optional trailing period) must NOT be treated as detail-less contention, so a server rewording is caught here rather than in production.")]
+	[TestCase("InsertQuery failed for schema UsrOrders")]
+	[TestCase("InsertQuery failed: duplicate key")]
+	[TestCase("Insert failed")]
+	[TestCase("InsertQueryfailed")]
+	[TestCase("Query failed")]
+	[TestCase("Cannot insert duplicate key row")]
+	[TestCase("Access denied")]
+	[TestCase("Section with this code already exists")]
+	public void IsDetailLessInsertRejection_ShouldReturnFalse_WhenMessageIsDetailed(string serverMessage) {
+		// Act
+		bool result = ApplicationSectionCreateService.IsDetailLessInsertRejection(serverMessage);
+
+		// Assert
+		result.Should().BeFalse(
+			because: $"'{serverMessage}' carries a distinguishing detail (or is a near-miss of the sentinel), so it must stay a terminal ServerError, not retryable Contention");
+	}
+
+	[Test]
+	[Description("The detail-less sentinel is the exact server-owned contract string, pinned so a change is a deliberate, reviewed edit.")]
+	public void DetailLessInsertRejectionMessage_ShouldBeTheServerSentinel() {
+		// Assert
+		ApplicationSectionCreateService.DetailLessInsertRejectionMessage.Should().Be("InsertQuery failed",
+			because: "this is the server-owned DataService InsertQuery detail-less message that gates the contention recovery");
+	}
 }
 
 [TestFixture]

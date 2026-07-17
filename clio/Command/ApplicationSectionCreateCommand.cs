@@ -814,11 +814,28 @@ public sealed class ApplicationSectionCreateService(
 	/// message or only the opaque <c>InsertQuery failed</c> text (with or without the trailing period). Any
 	/// other non-empty message is a real, terminal rejection.
 	/// </summary>
-	private static bool IsDetailLessInsertRejection(string? serverMessage) {
+	/// <summary>
+	/// The exact detail-less message Creatio's DataService <c>InsertQuery</c> emits when a section insert
+	/// is rejected without any error detail. This is a <b>server-owned contract string</b> and the single
+	/// load-bearing sentinel that gates the whole ENG-93089 contention reclassify/verify/retry recovery: the
+	/// DataService <c>SyncReply/InsertQuery</c> route returns <c>errorInfo.message == "InsertQuery failed."</c>
+	/// for a detail-less abort. If the server ever rewords or localizes it, update this constant AND the
+	/// classifier tests (<c>IsDetailLessInsertRejection_Should*</c>) that lock the contract in both directions.
+	/// </summary>
+	internal const string DetailLessInsertRejectionMessage = "InsertQuery failed";
+
+	/// <summary>
+	/// Returns <see langword="true"/> when an <c>InsertQuery</c> <c>success:false</c> body carries no
+	/// distinguishing detail — an empty message or exactly <see cref="DetailLessInsertRejectionMessage"/>
+	/// (with or without a trailing period, case-insensitive, whitespace-trimmed) — which the caller reclassifies
+	/// as a retryable <see cref="ApplicationSectionCreateFailureClass.Contention"/>. Any other non-empty message
+	/// is a detailed rejection kept as a terminal <see cref="ApplicationSectionCreateFailureClass.ServerError"/>.
+	/// </summary>
+	internal static bool IsDetailLessInsertRejection(string? serverMessage) {
 		string trimmed = serverMessage?.Trim() ?? string.Empty;
 		return trimmed.Length == 0
-			|| string.Equals(trimmed, "InsertQuery failed.", StringComparison.OrdinalIgnoreCase)
-			|| string.Equals(trimmed, "InsertQuery failed", StringComparison.OrdinalIgnoreCase);
+			|| string.Equals(trimmed, DetailLessInsertRejectionMessage, StringComparison.OrdinalIgnoreCase)
+			|| string.Equals(trimmed, DetailLessInsertRejectionMessage + ".", StringComparison.OrdinalIgnoreCase);
 	}
 
 	/// <summary>
