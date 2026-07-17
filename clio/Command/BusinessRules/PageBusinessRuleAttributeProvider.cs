@@ -10,18 +10,31 @@ internal interface IPageBusinessRuleAttributeProvider {
 }
 
 internal sealed class PageBusinessRuleAttributeProvider(
-	IEntityBusinessRuleAttributeProvider entityAttributeProvider)
+	IEntityBusinessRuleAttributeProvider entityAttributeProvider,
+	IFeatureToggleService featureToggleService)
 	: IPageBusinessRuleAttributeProvider {
 
 	public IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> GetAttributes(PageBundleInfo bundle, Guid packageUId) {
 		ArgumentNullException.ThrowIfNull(bundle);
 
+		// While the page-business-rule-condition-sources feature is OFF, the operand catalog is the
+		// pre-existing surfaced-datasource-bound-attribute map only: unbound/technical page-local
+		// attributes, page parameters, and DataSource-field scopes are all withheld so page-rule
+		// validation behaves exactly as before this feature (the validator cannot otherwise distinguish
+		// an unbound root attribute from a surfaced one).
+		bool conditionSourcesEnabled =
+			featureToggleService.IsFeatureEnabled(BusinessRuleConstants.PageConditionSourcesFeatureName);
+
 		JsonObject attributes = bundle.ViewModelConfig["attributes"] as JsonObject ?? [];
 		JsonObject dataSources = bundle.ModelConfig["dataSources"] as JsonObject ?? [];
-		Dictionary<string, string> dataSourceEntitySchemas = BuildDataSourceEntitySchemas(dataSources);
+		Dictionary<string, string> dataSourceEntitySchemas = conditionSourcesEnabled
+			? BuildDataSourceEntitySchemas(dataSources)
+			: new Dictionary<string, string>(StringComparer.Ordinal);
 		Dictionary<string, BusinessRuleAttributeDescriptor> rootAttributes =
-			BuildRootAttributes(attributes, dataSources, packageUId);
-		Dictionary<string, BusinessRuleAttributeDescriptor> parameters = BuildParameterDescriptors(bundle.Parameters);
+			BuildRootAttributes(attributes, dataSources, packageUId, conditionSourcesEnabled);
+		Dictionary<string, BusinessRuleAttributeDescriptor> parameters = conditionSourcesEnabled
+			? BuildParameterDescriptors(bundle.Parameters)
+			: new Dictionary<string, BusinessRuleAttributeDescriptor>(StringComparer.Ordinal);
 
 		return new PageScopedBusinessRuleAttributeMap(
 			rootAttributes,
@@ -34,7 +47,8 @@ internal sealed class PageBusinessRuleAttributeProvider(
 	private Dictionary<string, BusinessRuleAttributeDescriptor> BuildRootAttributes(
 		JsonObject attributes,
 		JsonObject dataSources,
-		Guid packageUId) {
+		Guid packageUId,
+		bool conditionSourcesEnabled) {
 		Dictionary<string, BusinessRuleAttributeDescriptor> result = new(StringComparer.Ordinal);
 		Dictionary<string, IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor>> entityAttributeMaps =
 			new(StringComparer.Ordinal);
@@ -63,7 +77,8 @@ internal sealed class PageBusinessRuleAttributeProvider(
 				continue;
 			}
 
-			if (TryResolveUnboundAttributeType(attribute, out string dataValueTypeName)) {
+			// Unbound/technical page-local attribute — a new, gated condition source.
+			if (conditionSourcesEnabled && TryResolveUnboundAttributeType(attribute, out string dataValueTypeName)) {
 				result[attributeName] = new BusinessRuleAttributeDescriptor(attributeName, dataValueTypeName, null);
 			}
 		}

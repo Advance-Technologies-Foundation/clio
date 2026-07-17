@@ -176,6 +176,41 @@ public sealed class BusinessRuleLookupReferenceValidatorTests {
 				because: "existence validation needs the target lookup schema name to build a deterministic SelectQuery");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Resolves a scoped lookup condition operand through its scopeId::path composite key when validating the lookup constant, instead of throwing on a missing bare-path root key.")]
+	public void Validate_Should_Resolve_Scoped_Lookup_Operand_By_Composite_Key() {
+		// Arrange
+		BusinessRule rule = new(
+			"Gate on a DataSource contact",
+			new BusinessRuleConditionGroup(
+				"AND",
+				[
+					new BusinessRuleCondition(
+						new BusinessRuleExpression("AttributeValue", "Contact", scopeId: "PDS"),
+						"equal",
+						new BusinessRuleExpression("Const", null, Json("11111111-1111-1111-1111-111111111111")))
+				]),
+			[
+				new HideElementBusinessRuleAction(["ReminderLabel"])
+			]);
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap =
+			new Dictionary<string, BusinessRuleAttributeDescriptor>(StringComparer.Ordinal) {
+				["PDS::Contact"] = new("Contact", "Lookup", "Contact")
+			};
+
+		// Act
+		_validator.Validate(rule, attributeMap);
+
+		// Assert — the scoped Contact descriptor drives a SelectQuery against the Contact schema, proving the
+		// composite key resolved; a bare-path lookup would have thrown KeyNotFoundException on the missing root.
+		_applicationClient.Received(1).ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"Contact\"")
+				&& body.Contains("11111111-1111-1111-1111-111111111111")),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
 	private static BusinessRule CreateLookupRule(string conditionValue, string setValue) =>
 		new(
 			"Set account for owner",

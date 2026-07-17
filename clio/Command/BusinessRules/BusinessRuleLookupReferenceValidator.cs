@@ -93,7 +93,10 @@ internal sealed class BusinessRuleLookupReferenceValidator(
 
 		string leftPath = condition.LeftExpression.Path;
 		return TryBuildLookupReference(
-			attributeMap[leftPath],
+			// Resolve through the scoped operand key so a scoped lookup (e.g. scopeId "PDS", path "Contact",
+			// or a lookup page parameter) uses the same descriptor the validator/converter did, instead of a
+			// same-named root attribute or a missing key.
+			attributeMap[BusinessRuleHelpers.BuildScopedOperandKey(condition.LeftExpression.ScopeId, leftPath)],
 			condition.RightExpression.Value.Value,
 			"rule.condition.conditions[*].rightExpression.value",
 			out reference);
@@ -113,7 +116,7 @@ internal sealed class BusinessRuleLookupReferenceValidator(
 
 		string targetPath = item.Expression.Path;
 		return TryBuildLookupReference(
-			attributeMap[targetPath],
+			attributeMap[BusinessRuleHelpers.BuildScopedOperandKey(item.Expression.ScopeId, targetPath)],
 			item.Value.Value.Value,
 			"rule.actions[*].items[*].value.value",
 			out reference);

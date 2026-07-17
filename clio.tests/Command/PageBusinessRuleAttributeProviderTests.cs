@@ -28,7 +28,7 @@ public sealed class PageBusinessRuleAttributeProviderTests {
 					["UsrText2"] = new("UsrText2", "Text", null),
 					["UsrLookupCountry"] = new("UsrLookupCountry", "Lookup", "Country")
 				}));
-		PageBusinessRuleAttributeProvider provider = new(entityAttributeProvider);
+		PageBusinessRuleAttributeProvider provider = CreateProvider(entityAttributeProvider);
 		PageBundleInfo bundle = CreateBundleWithAttributes(
 			new Dictionary<string, object?> {
 				["PDS_Text"] = CreateAttribute("PDS.UsrText"),
@@ -76,7 +76,7 @@ public sealed class PageBusinessRuleAttributeProviderTests {
 					["UsrHiddenColumn"] = new("UsrHiddenColumn", "Text", null),
 					["UsrLookupCountry"] = new("UsrLookupCountry", "Lookup", "Country")
 				}));
-		PageBusinessRuleAttributeProvider provider = new(entityAttributeProvider);
+		PageBusinessRuleAttributeProvider provider = CreateProvider(entityAttributeProvider);
 		// No viewModelConfig attribute is declared for UsrHiddenColumn - it lives only in the DataSource.
 		PageBundleInfo bundle = CreateBundleWithAttributes(new Dictionary<string, object?>());
 
@@ -102,7 +102,7 @@ public sealed class PageBusinessRuleAttributeProviderTests {
 	public void GetAttributes_Should_Resolve_Page_Parameter_By_Scope() {
 		// Arrange
 		IEntityBusinessRuleAttributeProvider entityAttributeProvider = Substitute.For<IEntityBusinessRuleAttributeProvider>();
-		PageBusinessRuleAttributeProvider provider = new(entityAttributeProvider);
+		PageBusinessRuleAttributeProvider provider = CreateProvider(entityAttributeProvider);
 		PageBundleInfo bundle = new() {
 			ViewModelConfig = new JsonObject { ["attributes"] = new JsonObject() },
 			ModelConfig = new JsonObject { ["dataSources"] = new JsonObject() },
@@ -136,7 +136,7 @@ public sealed class PageBusinessRuleAttributeProviderTests {
 	public void GetAttributes_Should_Include_Unbound_Boolean_Attribute() {
 		// Arrange
 		IEntityBusinessRuleAttributeProvider entityAttributeProvider = Substitute.For<IEntityBusinessRuleAttributeProvider>();
-		PageBusinessRuleAttributeProvider provider = new(entityAttributeProvider);
+		PageBusinessRuleAttributeProvider provider = CreateProvider(entityAttributeProvider);
 		PageBundleInfo bundle = CreateBundleWithAttributes(new Dictionary<string, object?> {
 			["UsrTechnicalFlag"] = new Dictionary<string, object?> { ["value"] = true }
 		});
@@ -159,7 +159,7 @@ public sealed class PageBusinessRuleAttributeProviderTests {
 	public void GetAttributes_Should_Not_Resolve_Unknown_Scope() {
 		// Arrange
 		IEntityBusinessRuleAttributeProvider entityAttributeProvider = Substitute.For<IEntityBusinessRuleAttributeProvider>();
-		PageBusinessRuleAttributeProvider provider = new(entityAttributeProvider);
+		PageBusinessRuleAttributeProvider provider = CreateProvider(entityAttributeProvider);
 		PageBundleInfo bundle = CreateBundleWithAttributes(new Dictionary<string, object?>());
 
 		// Act
@@ -170,6 +170,62 @@ public sealed class PageBusinessRuleAttributeProviderTests {
 		// Assert
 		result.ContainsKey("NotADataSource::Column").Should().BeFalse(
 			because: "an unknown scope resolves no operand");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("With the feature disabled, the operand catalog excludes unbound page-local attributes, page parameters, and DataSource-field scopes (pre-feature surfaced-attribute-only behaviour).")]
+	public void GetAttributes_Should_Exclude_Scoped_Sources_When_Feature_Disabled() {
+		// Arrange
+		IEntityBusinessRuleAttributeProvider entityAttributeProvider = Substitute.For<IEntityBusinessRuleAttributeProvider>();
+		entityAttributeProvider.GetAttributes("UsrTestBR", Arg.Any<Guid>())
+			.Returns(new EntityBusinessRuleAttributeContext(
+				new EntityDesignSchemaDto(),
+				new Dictionary<string, BusinessRuleAttributeDescriptor> {
+					["UsrText"] = new("UsrText", "Text", null),
+					["UsrHiddenColumn"] = new("UsrHiddenColumn", "Text", null)
+				}));
+		PageBusinessRuleAttributeProvider provider = CreateProvider(entityAttributeProvider, conditionSourcesEnabled: false);
+		PageBundleInfo bundle = new() {
+			ViewModelConfig = new JsonObject {
+				["attributes"] = JsonSerializer.SerializeToNode(new Dictionary<string, object?> {
+					["PDS_Text"] = CreateAttribute("PDS.UsrText"),
+					["UsrTechnicalFlag"] = new Dictionary<string, object?> { ["value"] = true }
+				})
+			},
+			ModelConfig = new JsonObject {
+				["dataSources"] = JsonSerializer.SerializeToNode(new Dictionary<string, object?> {
+					["PDS"] = new Dictionary<string, object?> {
+						["config"] = new Dictionary<string, object?> { ["entitySchemaName"] = "UsrTestBR" }
+					}
+				})
+			},
+			Parameters = [new PageParameterInfo { Name = "RequestType", DataValueType = 1 }]
+		};
+
+		// Act
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> result = provider.GetAttributes(
+			bundle,
+			Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"));
+
+		// Assert
+		result.ContainsKey("PDS_Text").Should().BeTrue(
+			because: "surfaced datasource-bound attributes remain available with the feature off");
+		result.ContainsKey("UsrTechnicalFlag").Should().BeFalse(
+			because: "unbound page-local attributes are a gated source and must be withheld while the feature is off");
+		result.ContainsKey("PageParameters::RequestType").Should().BeFalse(
+			because: "page parameters are a gated source and must be withheld while the feature is off");
+		result.ContainsKey("PDS::UsrHiddenColumn").Should().BeFalse(
+			because: "non-surfaced DataSource fields are a gated source and must be withheld while the feature is off");
+	}
+
+	private static PageBusinessRuleAttributeProvider CreateProvider(
+		IEntityBusinessRuleAttributeProvider entityAttributeProvider,
+		bool conditionSourcesEnabled = true) {
+		IFeatureToggleService featureToggleService = Substitute.For<IFeatureToggleService>();
+		featureToggleService.IsFeatureEnabled(BusinessRuleConstants.PageConditionSourcesFeatureName)
+			.Returns(conditionSourcesEnabled);
+		return new PageBusinessRuleAttributeProvider(entityAttributeProvider, featureToggleService);
 	}
 
 	private static PageBundleInfo CreateBundleWithAttributes(IReadOnlyDictionary<string, object?> attributes) =>

@@ -271,6 +271,25 @@ public sealed class PageBusinessRuleValidatorTests {
 				because: "a Lookup DataSource field and a Text page parameter are not type-compatible");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects a path that embeds the reserved '::' composite-key separator so a caller cannot smuggle a scoped key through path and bypass the scopeId contract.")]
+	public void Validate_Should_Reject_Composite_Key_In_Path() {
+		// Arrange
+		BusinessRule rule = CreateScopedRule(new BusinessRuleCondition(
+			new BusinessRuleExpression("AttributeValue", "PDS::Contact"),
+			"is-filled-in"));
+
+		// Act
+		Action act = () => CreateValidator(conditionSourcesEnabled: true)
+			.Validate(rule, CreateScopedMap(), CreateElementNames());
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("*must not contain the reserved '::' sequence*",
+				because: "the scope must travel in scopeId, never embedded in path");
+	}
+
 	private static BusinessRule CreateScopedRule(BusinessRuleCondition condition) =>
 		new(
 			"Toggle element",

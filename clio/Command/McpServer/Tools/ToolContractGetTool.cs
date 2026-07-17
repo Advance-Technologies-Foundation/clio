@@ -2537,19 +2537,19 @@ internal static class ToolContractCatalog {
 						"Condition on a DataSource field NOT surfaced on the page (scopeId = datasource name; requires the page-business-rule-condition-sources feature)",
 						"Hide reminder when a DataSource-only priority is set",
 						"Priority", "PDS", "is-filled-in",
-						"hide-element", new object[] { "ReminderLabel" }),
+						new object[] { "ReminderLabel" }),
 					PageScopedBusinessRuleExample(
 						"Condition on a page parameter equal to a value (scopeId = PageParameters; requires the feature)",
 						"Hide Assigned to for standard service requests",
 						"RequestType", BusinessRuleConstants.PageParametersScope, ExampleEqualConditionComparison,
-						"hide-element", new object[] { "AssignedToInput" },
-						constantValue: "Service request"),
+						new object[] { "AssignedToInput" },
+						new Dictionary<string, object?> { ["type"] = "Const", [BusinessRuleValueKey] = "Service request" }),
 					PageScopedBusinessRuleExample(
 						"Compare a page parameter to a system setting (SysSetting operand; requires the feature)",
 						"Hide over-limit warning by system setting",
 						"MaxAmount", BusinessRuleConstants.PageParametersScope, "greater-than",
-						"hide-element", new object[] { "OverLimitLabel" },
-						rightExpression: new Dictionary<string, object?> {
+						new object[] { "OverLimitLabel" },
+						new Dictionary<string, object?> {
 							["type"] = BusinessRuleConstants.SysSettingExpressionType,
 							["sysSettingName"] = "MaxOrderAmount"
 						}),
@@ -3278,16 +3278,16 @@ internal static class ToolContractCatalog {
 		});
 	}
 
+	// All scoped examples use hide-element; pass a pre-built rightExpression dict (Const/SysSetting/…) or
+	// null for a unary comparison. Kept to <=7 parameters per the maintainability contract.
 	private static ToolContractExample PageScopedBusinessRuleExample(
 		string summary,
 		string caption,
 		string leftPath,
 		string leftScopeId,
 		string comparisonType,
-		string actionType,
 		object[] actionItems,
-		Dictionary<string, object?>? rightExpression = null,
-		object? constantValue = null) {
+		Dictionary<string, object?>? rightExpression = null) {
 		Dictionary<string, object?> condition = new() {
 			["leftExpression"] = new Dictionary<string, object?> {
 				["type"] = "AttributeValue",
@@ -3298,11 +3298,6 @@ internal static class ToolContractCatalog {
 		};
 		if (rightExpression is not null) {
 			condition["rightExpression"] = rightExpression;
-		} else if (constantValue is not null) {
-			condition["rightExpression"] = new Dictionary<string, object?> {
-				["type"] = "Const",
-				[BusinessRuleValueKey] = constantValue
-			};
 		}
 
 		return Example(summary, new Dictionary<string, object?> {
@@ -3319,7 +3314,7 @@ internal static class ToolContractCatalog {
 				},
 				[ActionsFieldName] = new object[] {
 					new Dictionary<string, object?> {
-						["type"] = actionType,
+						["type"] = "hide-element",
 						["items"] = actionItems
 					}
 				}

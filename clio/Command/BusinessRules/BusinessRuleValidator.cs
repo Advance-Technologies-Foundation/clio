@@ -455,66 +455,16 @@ internal sealed class BusinessRuleValidator(IBusinessRuleLookupReferenceValidato
 			throw new ArgumentException($"{fieldName} is required.");
 		}
 
-		if (string.Equals(expression.Type, "AttributeValue", StringComparison.OrdinalIgnoreCase)) {
-			if (string.IsNullOrWhiteSpace(expression.Path)) {
-				throw new ArgumentException($"{fieldName}.path is required when {fieldName}.type is 'AttributeValue'.");
-			}
-
-			string scopeId = expression.ScopeId ?? string.Empty;
-			if (string.IsNullOrEmpty(scopeId)) {
-				// Root scope: a `.` path must carry a scopeId, so keep rejecting a bare datasource path.
-				ValidateDirectAttributePath(expression.Path, $"{fieldName}.path");
-			} else if (!allowScopedConditionSources) {
-				throw new ArgumentException(
-					$"{fieldName}.scopeId '{scopeId}' is not supported for this rule. Scoped condition operands (DataSource field, page parameter) require the '{PageConditionSourcesFeatureName}' feature and are only available on page business rules.");
-			}
-
-			BusinessRuleAttributeDescriptor descriptor =
-				ResolveScopedAttribute(attributeMap, scopeId, expression.Path, $"{fieldName}.path");
-			return new ConditionOperand(
-				fieldName,
-				OperandKind.Attribute,
-				DescribeAttributeOperand(scopeId, expression.Path),
-				new OperandType(descriptor.DataValueTypeName, descriptor.ReferenceSchemaName),
-				expression);
+		if (string.Equals(expression.Type, AttributeValueExpressionType, StringComparison.OrdinalIgnoreCase)) {
+			return ResolveAttributeOperand(expression, attributeMap, fieldName, allowScopedConditionSources);
 		}
 
 		if (string.Equals(expression.Type, SysValueExpressionType, StringComparison.OrdinalIgnoreCase)) {
-			if (string.IsNullOrWhiteSpace(expression.SysValueName)) {
-				throw new ArgumentException($"{fieldName}.sysValueName is required when {fieldName}.type is 'SysValue'.");
-			}
-
-			if (!SupportedSystemVariables.TryGetValue(expression.SysValueName, out SystemVariableDescriptor? sysValue)) {
-				throw new ArgumentException(
-					$"Unsupported {fieldName}.sysValueName '{expression.SysValueName}'. Supported values: {SupportedSystemVariablesDescription}.");
-			}
-
-			return new ConditionOperand(
-				fieldName,
-				OperandKind.SysValue,
-				$"system variable '{sysValue.SysValueName}'",
-				new OperandType(sysValue.DataValueTypeName, sysValue.ReferenceSchemaName),
-				expression);
+			return ResolveSysValueOperand(expression, fieldName);
 		}
 
 		if (string.Equals(expression.Type, SysSettingExpressionType, StringComparison.OrdinalIgnoreCase)) {
-			if (!allowScopedConditionSources) {
-				throw new ArgumentException(
-					$"{fieldName}.type 'SysSetting' is not supported for this rule. The SysSetting operand requires the '{PageConditionSourcesFeatureName}' feature and is only available on page business rules.");
-			}
-
-			if (string.IsNullOrWhiteSpace(expression.SysSettingName)) {
-				throw new ArgumentException($"{fieldName}.sysSettingName is required when {fieldName}.type is 'SysSetting'.");
-			}
-
-			// A system setting has no statically-resolvable data value type in clio, so it inherits the
-			// type of the operand it is compared against, exactly like a Const value (Type is null here).
-			return new ConditionOperand(
-				fieldName,
-				OperandKind.SysSetting,
-				$"system setting '{expression.SysSettingName}'",
-				null,
-				expression);
+			return ResolveSysSettingOperand(expression, fieldName, allowScopedConditionSources);
 		}
 
 		if (string.Equals(expression.Type, ConstExpressionType, StringComparison.OrdinalIgnoreCase)) {
@@ -526,6 +476,83 @@ internal sealed class BusinessRuleValidator(IBusinessRuleLookupReferenceValidato
 		}
 
 		throw new ArgumentException($"{fieldName}.type must be 'AttributeValue', 'Const', 'SysValue', or 'SysSetting'.");
+	}
+
+	private static ConditionOperand ResolveAttributeOperand(
+		BusinessRuleExpression expression,
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
+		string fieldName,
+		bool allowScopedConditionSources) {
+		if (string.IsNullOrWhiteSpace(expression.Path)) {
+			throw new ArgumentException($"{fieldName}.path is required when {fieldName}.type is 'AttributeValue'.");
+		}
+
+		// The scope selector travels in scopeId, never inside path: reject the internal composite-key
+		// separator so a caller cannot smuggle a scoped key (e.g. "PDS::Contact") through path and bypass
+		// the feature gate or persist an unresolvable path.
+		if (expression.Path.Contains(ScopedOperandKeySeparator, StringComparison.Ordinal)) {
+			throw new ArgumentException(
+				$"{fieldName}.path must not contain the reserved '{ScopedOperandKeySeparator}' sequence; put the scope in {fieldName}.scopeId instead.");
+		}
+
+		string scopeId = expression.ScopeId ?? string.Empty;
+		if (string.IsNullOrEmpty(scopeId)) {
+			// Root scope: a `.` path must carry a scopeId, so keep rejecting a bare datasource path.
+			ValidateDirectAttributePath(expression.Path, $"{fieldName}.path");
+		} else if (!allowScopedConditionSources) {
+			throw new ArgumentException(
+				$"{fieldName}.scopeId '{scopeId}' is not supported for this rule. Scoped condition operands (DataSource field, page parameter) require the '{PageConditionSourcesFeatureName}' feature and are only available on page business rules.");
+		}
+
+		BusinessRuleAttributeDescriptor descriptor =
+			ResolveScopedAttribute(attributeMap, scopeId, expression.Path, $"{fieldName}.path");
+		return new ConditionOperand(
+			fieldName,
+			OperandKind.Attribute,
+			DescribeAttributeOperand(scopeId, expression.Path),
+			new OperandType(descriptor.DataValueTypeName, descriptor.ReferenceSchemaName),
+			expression);
+	}
+
+	private static ConditionOperand ResolveSysValueOperand(BusinessRuleExpression expression, string fieldName) {
+		if (string.IsNullOrWhiteSpace(expression.SysValueName)) {
+			throw new ArgumentException($"{fieldName}.sysValueName is required when {fieldName}.type is 'SysValue'.");
+		}
+
+		if (!SupportedSystemVariables.TryGetValue(expression.SysValueName, out SystemVariableDescriptor? sysValue)) {
+			throw new ArgumentException(
+				$"Unsupported {fieldName}.sysValueName '{expression.SysValueName}'. Supported values: {SupportedSystemVariablesDescription}.");
+		}
+
+		return new ConditionOperand(
+			fieldName,
+			OperandKind.SysValue,
+			$"system variable '{sysValue.SysValueName}'",
+			new OperandType(sysValue.DataValueTypeName, sysValue.ReferenceSchemaName),
+			expression);
+	}
+
+	private static ConditionOperand ResolveSysSettingOperand(
+		BusinessRuleExpression expression,
+		string fieldName,
+		bool allowScopedConditionSources) {
+		if (!allowScopedConditionSources) {
+			throw new ArgumentException(
+				$"{fieldName}.type 'SysSetting' is not supported for this rule. The SysSetting operand requires the '{PageConditionSourcesFeatureName}' feature and is only available on page business rules.");
+		}
+
+		if (string.IsNullOrWhiteSpace(expression.SysSettingName)) {
+			throw new ArgumentException($"{fieldName}.sysSettingName is required when {fieldName}.type is 'SysSetting'.");
+		}
+
+		// A system setting has no statically-resolvable data value type in clio, so it inherits the
+		// type of the operand it is compared against, exactly like a Const value (Type is null here).
+		return new ConditionOperand(
+			fieldName,
+			OperandKind.SysSetting,
+			$"system setting '{expression.SysSettingName}'",
+			null,
+			expression);
 	}
 
 	private static string DescribeAttributeOperand(string scopeId, string path) =>
