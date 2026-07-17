@@ -218,6 +218,7 @@ public partial class RingViewModel : ViewModelBase {
 			ClioToolUpdateCheck? update = await _clioUpdateService.CheckAsync(cancellationToken, force);
 			_currentClioUpdate = update;
 			if (update is null) {
+				ClearClioUpdateAvailability();
 				if (force) {
 					_hasClioUpdateCheckWarning = true;
 					IsClioUpdateResultWarning = true;
@@ -238,6 +239,7 @@ public partial class RingViewModel : ViewModelBase {
 		catch (Exception exception) when (exception is HttpRequestException or IOException
 			or JsonException or TaskCanceledException or UnauthorizedAccessException) {
 			StartupLog.Log($"clio update check unavailable: {exception.GetType().Name}");
+			ClearClioUpdateAvailability();
 			if (force) {
 				_hasClioUpdateCheckWarning = true;
 				IsClioUpdateResultWarning = true;
@@ -247,6 +249,12 @@ public partial class RingViewModel : ViewModelBase {
 		finally {
 			IsClioUpdateChecking = false;
 		}
+	}
+
+	private void ClearClioUpdateAvailability() {
+		_currentClioUpdate = null;
+		IsClioUpdateAvailable = false;
+		AvailableClioVersion = string.Empty;
 	}
 
 	[RelayCommand(CanExecute = nameof(CanRequestClioUpdate))]
@@ -265,9 +273,11 @@ public partial class RingViewModel : ViewModelBase {
 			ApplyClioUpdateResult(await _clioUpdateService.UpdateAsync(update, _clioUpdateLifetimeToken));
 		}
 		catch (InvalidOperationException) {
+			IsClioUpdateResultWarning = true;
 			ClioUpdateMessage = "Ring has an active clio MCP call. Wait for it to finish and retry.";
 		}
 		catch (OperationCanceledException) when (_clioUpdateLifetimeToken.IsCancellationRequested) {
+			IsClioUpdateResultWarning = true;
 			ClioUpdateMessage = "The clio update was canceled because Ring is closing.";
 		}
 		finally {
@@ -282,6 +292,7 @@ public partial class RingViewModel : ViewModelBase {
 	private void CancelClioUpdateBlockers() {
 		HasClioUpdateBlockers = false;
 		_confirmedClioUpdateProcesses = Array.Empty<ClioToolProcess>();
+		IsClioUpdateResultWarning = true;
 		ClioUpdateMessage = "Update canceled. Running clio processes were not changed.";
 	}
 
@@ -304,6 +315,7 @@ public partial class RingViewModel : ViewModelBase {
 			ApplyClioUpdateResult(result);
 		}
 		catch (OperationCanceledException) when (_clioUpdateLifetimeToken.IsCancellationRequested) {
+			IsClioUpdateResultWarning = true;
 			ClioUpdateMessage = "The clio update was canceled because Ring is closing.";
 		}
 		finally {
@@ -316,16 +328,16 @@ public partial class RingViewModel : ViewModelBase {
 
 	private void ApplyClioUpdateResult(ClioToolUpdateResult result) {
 		_hasClioUpdateCheckWarning = false;
+		IsClioUpdateResultWarning = result.Outcome is ClioToolUpdateOutcome.Failed
+			or ClioToolUpdateOutcome.RefreshRequired;
 		ClioUpdateMessage = result.Message;
 		if (result.Outcome == ClioToolUpdateOutcome.Success) {
-			IsClioUpdateResultWarning = false;
 			IsClioUpdateAvailable = false;
 			HasClioUpdateBlockers = false;
 			_confirmedClioUpdateProcesses = Array.Empty<ClioToolProcess>();
 			return;
 		}
 		if (result.Outcome == ClioToolUpdateOutcome.RefreshRequired) {
-			IsClioUpdateResultWarning = true;
 			IsClioUpdateAvailable = false;
 			HasClioUpdateBlockers = false;
 			_currentClioUpdate = null;

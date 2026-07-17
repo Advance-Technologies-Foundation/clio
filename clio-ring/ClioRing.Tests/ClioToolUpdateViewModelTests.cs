@@ -200,6 +200,72 @@ public sealed class ClioToolUpdateViewModelTests {
 			because: "the periodic check recovered successfully");
 	}
 
+	[Test]
+	[Description("An unavailable later check removes a stale update snapshot that can no longer be executed.")]
+	public async Task CheckForClioUpdateAsync_ShouldClearAvailableUpdate_WhenLaterCheckIsUnavailable() {
+		// Arrange
+		await _sut.CheckForClioUpdateAsync();
+		_updateService.CheckAsync(Arg.Any<CancellationToken>(), false)
+			.Returns((ClioToolUpdateCheck?)null);
+
+		// Act
+		await _sut.CheckForClioUpdateAsync();
+
+		// Assert
+		_sut.IsClioUpdateAvailable.Should().BeFalse(
+			because: "the visible action must not outlive its verified update snapshot");
+		_sut.AvailableClioVersion.Should().BeEmpty(
+			because: "the tray and banner must not present a stale target version");
+		_sut.RequestClioUpdateCommand.CanExecute(null).Should().BeFalse(
+			because: "an unavailable check leaves no safe update action to execute");
+	}
+
+	[Test]
+	[Description("A later unavailable check cannot restyle an updater failure as a successful terminal result.")]
+	public async Task CheckForClioUpdateAsync_ShouldPreserveFailureSeverity_WhenLaterCheckIsUnavailable() {
+		// Arrange
+		_updateService.UpdateAsync(_update, Arg.Any<CancellationToken>()).Returns(
+			new ClioToolUpdateResult(ClioToolUpdateOutcome.Failed, "The clio update failed.",
+				Array.Empty<ClioToolProcess>()));
+		await _sut.CheckForClioUpdateAsync();
+		await _sut.RequestClioUpdateCommand.ExecuteAsync(null);
+		_updateService.CheckAsync(Arg.Any<CancellationToken>(), false)
+			.Returns((ClioToolUpdateCheck?)null);
+
+		// Act
+		await _sut.CheckForClioUpdateAsync();
+
+		// Assert
+		_sut.ShowClioUpdateWarningResult.Should().BeTrue(
+			because: "the updater failure remains a warning after availability is invalidated");
+		_sut.ShowClioUpdateSuccessResult.Should().BeFalse(
+			because: "a failed update must never receive the green success treatment");
+	}
+
+	[Test]
+	[Description("Canceling a blocker confirmation remains neutral after a later unavailable update check.")]
+	public async Task CheckForClioUpdateAsync_ShouldNotShowSuccess_AfterBlockerCancelAndUnavailableCheck() {
+		// Arrange
+		var process = new ClioToolProcess(20736, 1234, TargetPath, "clio mcp-server",
+			"Started by Codex - codex.exe (PID 55104)");
+		_updateService.UpdateAsync(_update, Arg.Any<CancellationToken>()).Returns(
+			new ClioToolUpdateResult(ClioToolUpdateOutcome.Blocked, "blocked", new[] { process }));
+		await _sut.CheckForClioUpdateAsync();
+		await _sut.RequestClioUpdateCommand.ExecuteAsync(null);
+		_sut.CancelClioUpdateBlockersCommand.Execute(null);
+		_updateService.CheckAsync(Arg.Any<CancellationToken>(), false)
+			.Returns((ClioToolUpdateCheck?)null);
+
+		// Act
+		await _sut.CheckForClioUpdateAsync();
+
+		// Assert
+		_sut.ShowClioUpdateWarningResult.Should().BeTrue(
+			because: "canceling an update is not a successful installation");
+		_sut.ShowClioUpdateSuccessResult.Should().BeFalse(
+			because: "the later unavailable check must not restyle cancellation as success");
+	}
+
 	private RingViewModel ResolveViewModel(ResolvedClioRuntime runtime) {
 		var services = new ServiceCollection();
 		services.AddSingleton(Substitute.For<IClioAdapter>());

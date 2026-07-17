@@ -144,7 +144,11 @@ public partial class App : Application {
 
 			var menu = new NativeMenu();
 			_updateClioItem = new NativeMenuItem("Update clio") { IsVisible = false };
-			_updateClioItem.Click += (_, _) => vm.RequestClioUpdateCommand.Execute(null);
+			_updateClioItem.Click += (_, _) => {
+				if (vm.RequestClioUpdateCommand.CanExecute(null)) {
+					vm.RequestClioUpdateCommand.Execute(null);
+				}
+			};
 			menu.Add(_updateClioItem);
 			menu.Add(showItem);
 			menu.Add(settingsItem);
