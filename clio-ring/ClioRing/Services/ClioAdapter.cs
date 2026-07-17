@@ -18,14 +18,20 @@ namespace ClioRing.Services;
 /// </summary>
 public sealed class ClioAdapter : IClioAdapter {
 	private readonly ResolvedClioRuntime _runtime;
+	private readonly IClioProcessGate _processGate;
 
 	/// <summary>Creates an adapter using the installed release clio.</summary>
-	public ClioAdapter() : this(new ResolvedClioRuntime(ClioRuntimeMode.Release, ClioIpcSettings.Default)) { }
+	public ClioAdapter() : this(new ResolvedClioRuntime(ClioRuntimeMode.Release, ClioIpcSettings.Default),
+		new ClioProcessGate()) { }
 
 	/// <summary>Creates an adapter using the same immutable runtime selected for IPC workflows.</summary>
 	/// <param name="runtime">Resolved runtime and child-process launch settings.</param>
-	public ClioAdapter(ResolvedClioRuntime runtime) {
+	public ClioAdapter(ResolvedClioRuntime runtime) : this(runtime, new ClioProcessGate()) { }
+
+	/// <summary>Creates an adapter coordinated with the application-wide clio process gate.</summary>
+	public ClioAdapter(ResolvedClioRuntime runtime, IClioProcessGate processGate) {
 		_runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
+		_processGate = processGate ?? throw new ArgumentNullException(nameof(processGate));
 	}
 
 	/// <inheritdoc />
@@ -56,6 +62,9 @@ public sealed class ClioAdapter : IClioAdapter {
 		Action<ClioOutputLine>? onOutput = null,
 		CancellationToken cancellationToken = default) {
 		ArgumentNullException.ThrowIfNull(invocation);
+		await using IAsyncDisposable? processLease = _runtime.Mode == ClioRuntimeMode.Release
+			? await _processGate.AcquireProcessLeaseAsync(cancellationToken).ConfigureAwait(false)
+			: null;
 
 		ProcessStartInfo startInfo = BuildStartInfo(invocation);
 
