@@ -13,8 +13,11 @@ namespace Clio.Command.McpServer.Tools;
 /// <summary>
 /// MCP tool that applies a Creatio theme to the current (authenticated) user's profile on a target
 /// environment via the DataService, or clears it (<c>reset</c>) to fall back to the environment default.
-/// It affects only the authenticated account, so it is a write that needs no extra confirmation gate
-/// (unlike the global <c>DefaultTheme</c> system setting).
+/// It overwrites (or clears) an existing profile value, so it is annotated <c>Destructive=true</c> and
+/// the MCP host confirms it before it runs (on the lazy tool surface, re-issued through
+/// <c>clio-run-destructive</c>) — the additive-only <c>Destructive=false</c> contract does not fit an
+/// in-place profile overwrite. It still affects only the authenticated account (not everyone, unlike the
+/// global <c>DefaultTheme</c> system setting), and is trivially reversible with <c>reset</c>.
 /// </summary>
 public class SetUserThemeTool(
 	SetUserThemeCommand command,
@@ -27,9 +30,11 @@ public class SetUserThemeTool(
 		new(McpToolArgumentSupport.EnvironmentNameAliases, StringComparer.Ordinal);
 
 	/// <summary>Applies (or resets) the current user's profile theme and returns a structured result.</summary>
-	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false),
+	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false),
 	 Description("Apply a Creatio theme to the current (authenticated) user's profile on a registered environment, " +
-		"or clear it with reset. Affects only the calling account (not other users) — unlike the global DefaultTheme. " +
+		"or clear it with reset. Overwrites the profile's current theme, so it is a confirmed write (the host " +
+		"prompts before it runs). Affects only the calling account (not other users) — unlike the global " +
+		"DefaultTheme — and is reversible with reset. " +
 		"Requires Creatio " + ThemeServiceRequirement.MinVersion + " or later on the target environment. " +
 		"Returns { success, caption, css-class-name, id, error? }; the user must refresh the page to see the change. " +
 		"For the theme workflow, read get-guidance theming first.")]

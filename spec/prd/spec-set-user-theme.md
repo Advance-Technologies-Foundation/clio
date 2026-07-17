@@ -92,9 +92,15 @@ Verified in `C:\Projects\Autodeploy\creatio10` (`Terrasoft.Configuration\Pkg\Crt
   `Theme`, returning the user to the `DefaultTheme`/built-in fallback. Mutually
   exclusive with a theme argument.
 - **FR-3** New MCP tool **`set-user-theme`** paired with the command
-  (environment-aware `BaseTool` pattern), same argument surface, marked as a
-  state-changing (write) tool but **not** requiring extra confirmation — it affects
-  only the authenticated account (unlike global `DefaultTheme`).
+  (environment-aware `BaseTool` pattern), same argument surface, marked
+  **`Destructive=true`** because it overwrites (or clears, on `reset`) the profile's
+  existing `Theme` value — an in-place modification, not an additive write — so the
+  MCP host confirms it before it runs (on the lazy tool surface, re-issued through
+  `clio-run-destructive`), consistent with `update-theme`/`delete-theme`. It still
+  affects only the authenticated account (unlike global `DefaultTheme`) and is
+  reversible with `reset`. (Revised per PR #895 review — the earlier "no extra
+  confirmation" stance conflicted with the MCP SDK's additive-only `Destructive=false`
+  contract and clio's own overwrite=destructive convention.)
 - **FR-4** **Automatic application in the agent flow:** `ThemingGuidanceResource`
   (`docs://mcp/guides/theming`) is updated so that after a successful no-code
   `create-theme` the agent calls `set-user-theme` with the new theme **by default**

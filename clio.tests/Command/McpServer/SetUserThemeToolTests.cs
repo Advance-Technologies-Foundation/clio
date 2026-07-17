@@ -19,7 +19,7 @@ public class SetUserThemeToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Declares the safety flags on the set-user-theme tool method: a write that is not destructive, is idempotent, and closed-world — it touches only the caller's own profile so it needs no confirmation gate.")]
+	[Description("Declares the safety flags on the set-user-theme tool method: a write that IS destructive (it overwrites/clears an existing profile value, so the MCP host gates it), is idempotent, and closed-world. The destructive flag is what removes it from the durable gate's silent-write baseline (see DurableInvocationGateCompletenessTests).")]
 	public void SetUserThemeTool_ShouldDeclareApplySafetyFlags_WhenInspectingMcpServerToolAttribute() {
 		// Arrange & Act
 		McpServerToolAttribute attribute = (McpServerToolAttribute)typeof(SetUserThemeTool)
@@ -30,7 +30,7 @@ public class SetUserThemeToolTests {
 		// Assert
 		attribute.Name.Should().Be(SetUserThemeTool.ToolName, because: "the tool must be published under its canonical kebab-case name");
 		attribute.ReadOnly.Should().BeFalse(because: "applying a theme writes to the user's profile");
-		attribute.Destructive.Should().BeFalse(because: "applying a theme only to the caller's own profile is not destructive and needs no confirmation gate");
+		attribute.Destructive.Should().BeTrue(because: "applying a theme overwrites (or clears, on reset) the profile's existing Theme value — an in-place modification, not an additive write — so the MCP host must confirm it, consistent with update-theme/delete-theme");
 		attribute.Idempotent.Should().BeTrue(because: "applying the same theme twice yields the same profile state");
 		attribute.OpenWorld.Should().BeFalse(because: "the tool only touches the addressed Creatio environment");
 	}

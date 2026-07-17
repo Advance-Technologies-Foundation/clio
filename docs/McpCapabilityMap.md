@@ -681,7 +681,7 @@ These tools brand a Creatio app: build a custom theme from brand colours and fon
 - `check-theming-access`
   Report whether the caller has the `CanManageThemes` operation and `CanCustomizeBranding` license, to gate authoring on a real permission check.
 - `set-user-theme`
-  Apply a theme to the current (authenticated) user's profile — only that account, not everyone (that is the global `DefaultTheme`) — or clear it with `reset`. A write that needs no confirmation. Requires the `CanCustomizeBranding` license and `CanChangeOwnTheme` operation; the change is visible on the user's next page refresh.
+  Apply a theme to the current (authenticated) user's profile — only that account, not everyone (that is the global `DefaultTheme`) — or clear it with `reset`. A confirmed write (`Destructive=true`: it overwrites the profile's current theme, so the MCP host prompts before it runs; on the lazy tool surface it is re-issued through `clio-run-destructive`) — still reversible with `reset`. Requires the `CanCustomizeBranding` license and `CanChangeOwnTheme` operation; the change is visible on the user's next page refresh.
 
 What an external AI can practically do here:
 
