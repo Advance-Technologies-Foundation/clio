@@ -55,20 +55,4 @@ public sealed record ListEntityClientSchemasArgs(
 	[property: Description("Entity schema name, e.g. 'Contract' or 'SupportUnit'")]
 	[property: Required]
 	string EntityName
-) {
-	[JsonPropertyName("environment-name")]
-	[Description(McpToolDescriptions.EnvironmentName)]
-	public string? EnvironmentName { get; init; }
-
-	[JsonPropertyName("uri")]
-	[Description(McpToolDescriptions.Uri)]
-	public string? Uri { get; init; }
-
-	[JsonPropertyName("login")]
-	[Description(McpToolDescriptions.Login)]
-	public string? Login { get; init; }
-
-	[JsonPropertyName("password")]
-	[Description(McpToolDescriptions.Password)]
-	public string? Password { get; init; }
-}
+) : ConnectionArgsBase;

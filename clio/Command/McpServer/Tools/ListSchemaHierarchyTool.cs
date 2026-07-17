@@ -56,24 +56,8 @@ public sealed record ListSchemaHierarchyArgs(
 	[property: Description("Client unit schema name shared across all schemas, e.g. 'ContractPageV2'")]
 	[property: Required]
 	string SchemaName
-) {
+) : ConnectionArgsBase {
 	[JsonPropertyName("manager-name")]
 	[Description("Optional SysSchema.ManagerName filter (default ClientUnitSchemaManager).")]
 	public string? ManagerName { get; init; }
-
-	[JsonPropertyName("environment-name")]
-	[Description(McpToolDescriptions.EnvironmentName)]
-	public string? EnvironmentName { get; init; }
-
-	[JsonPropertyName("uri")]
-	[Description(McpToolDescriptions.Uri)]
-	public string? Uri { get; init; }
-
-	[JsonPropertyName("login")]
-	[Description(McpToolDescriptions.Login)]
-	public string? Login { get; init; }
-
-	[JsonPropertyName("password")]
-	[Description(McpToolDescriptions.Password)]
-	public string? Password { get; init; }
 }
