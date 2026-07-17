@@ -541,6 +541,7 @@ public class BindingsModule {
 		services.AddTransient<CreateThemeTool>();
 		services.AddTransient<UpdateThemeTool>();
 		services.AddTransient<DeleteThemeTool>();
+		services.AddTransient<SetUserThemeTool>();
 		services.AddTransient<CheckThemingAccessTool>();
 		services.AddTransient<GetUserCultureTool>();
 		services.AddTransient<PackageHotfixTool>();
@@ -686,9 +687,12 @@ public class BindingsModule {
 		services.AddTransient<RedisCommand>();
 		services.AddTransient<ClearThemesCacheCommand>();
 		services.AddTransient<ListThemesCommand>();
+		services.AddTransient<IThemeCatalog, ListThemesCommand>();
 		services.AddTransient<CreateThemeCommand>();
 		services.AddTransient<UpdateThemeCommand>();
 		services.AddTransient<DeleteThemeCommand>();
+		services.AddTransient<IUserThemeApplier, UserThemeApplier>();
+		services.AddTransient<SetUserThemeCommand>();
 		services.AddTransient<CheckThemingAccessCommand>();
 		services.AddTransient<ICreatioRightsClient, CreatioRightsClient>();
 		services.AddTransient<ICreatioLicenseClient, CreatioLicenseClient>();

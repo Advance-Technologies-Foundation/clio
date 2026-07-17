@@ -486,6 +486,89 @@ public sealed class ApplicationSectionToolE2ETests {
 
 	[Category("McpE2E.Sandbox")]
 	[Test]
+	[Description("Creates a section through the progress-capable overload and verifies the client observes the per-phase stage markers 'loading application info', 'creating section', and 'loading created section' (ENG-93087).")]
+	[AllureFeature(SectionCreateToolName)]
+	[AllureTag(SectionCreateToolName)]
+	[AllureName("Application section create streams per-phase progress markers")]
+	[AllureDescription("Uses the real clio MCP server to call create-app-section with an IProgress sink and asserts the client observed the service-level stage markers 'loading application info', 'creating section', and 'loading created section', proving the per-phase progress path is wired end to end (ENG-93087).")]
+	public async Task ApplicationSectionCreate_Should_Stream_PerPhase_Progress_Markers() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string? environmentName = settings.Sandbox.EnvironmentName;
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("AllowDestructiveMcpTests is false — skipping destructive create-app-section progress-marker test.");
+		}
+
+		if (string.IsNullOrWhiteSpace(environmentName)) {
+			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName to point at the seeded sandbox before running this test.");
+		}
+
+		string caption = $"E2E Progress {Guid.NewGuid():N}"[..24];
+		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(5));
+		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
+		await SeededApplicationResolver.ResolveOrIgnoreAsync(
+			session, cancellationTokenSource.Token, environmentName!, ApplicationCode);
+		MessageCollectingProgress progress = new();
+		string? createdSectionCode = null;
+		try {
+			// Act — invoke create-app-section through the progress-capable overload so the client observes
+			// the service-level stage markers the tool streams as notifications/progress.
+			CallToolResult callResult = await session.CallToolAsync(
+				SectionCreateToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["environment-name"] = environmentName,
+						["application-code"] = ApplicationCode,
+						["caption"] = caption
+					}
+				},
+				progress,
+				cancellationTokenSource.Token);
+
+			// Diagnostic: surface the exact progress stream the client received so a failure shows the markers.
+			foreach (string progressMessage in progress.Messages) {
+				TestContext.Out.WriteLine($"[progress] {progressMessage}");
+			}
+
+			ApplicationSectionContextResponseEnvelope response = ApplicationResultParser.ExtractSectionCreate(callResult);
+			createdSectionCode = response.Section?.Code;
+
+			// Assert
+			callResult.IsError.Should().NotBeTrue(
+				because: $"a valid create-app-section request should return a structured payload. Actual: {DescribeCallResult(callResult)}");
+			progress.Messages.Should().Contain(
+				message => message.Contains("loading application info", StringComparison.Ordinal),
+				because: "create-app-section must stream the 'loading application info' stage marker so the client can show the app-resolution phase (ENG-93087)");
+			progress.Messages.Should().Contain(
+				message => message.Contains("creating section", StringComparison.Ordinal),
+				because: "create-app-section must stream the 'creating section' stage marker so the client can show the section-creation phase (ENG-93087)");
+			progress.Messages.Should().Contain(
+				message => message.Contains("loading created section", StringComparison.Ordinal),
+				because: "create-app-section must stream the 'loading created section' stage marker so the client can show the readback phase (ENG-93087)");
+		} finally {
+			if (!string.IsNullOrWhiteSpace(createdSectionCode)) {
+				try {
+					using CancellationTokenSource cleanupCts = new(TimeSpan.FromMinutes(1));
+					await session.CallToolAsync(
+						SectionDeleteToolName,
+						new Dictionary<string, object?> {
+							["args"] = new Dictionary<string, object?> {
+								["environment-name"] = environmentName,
+								["application-code"] = ApplicationCode,
+								["section-code"] = createdSectionCode
+							}
+						},
+						cleanupCts.Token);
+				} catch (Exception ex) {
+					await Console.Error.WriteLineAsync($"[cleanup] delete-app-section '{createdSectionCode}' failed: {ex.Message}");
+				}
+			}
+		}
+	}
+
+	[Category("McpE2E.Sandbox")]
+	[Test]
 	[Description("Creates a section reusing the platform Contact entity in a known installed application and verifies the structured read-back data. Contact is chosen because it ships in every Creatio product (unlike Case, which is absent from a bare Studio deploy and made this test stand-content gated). Covers ENG-88782: Creatio stores Code = EntitySchemaName for platform entity sections; the readback must match by entity schema name, not the caption-derived code sent in the INSERT.")]
 	public async Task ApplicationSectionCreate_WithPlatformEntity_Should_Return_Structured_Readback_Data() {
 		// Arrange
@@ -664,7 +747,7 @@ public sealed class ApplicationSectionToolE2ETests {
 		settings.ProcessEnvironmentVariables[McpProgressHeartbeat.IntervalOverrideEnvVar] = "0.05";
 		using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
 		await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		CollectingProgress progress = new();
+		MessageCollectingProgress progress = new();
 
 		// Act — list-app-sections is read-only and always performs a backend round-trip, so the
 		// heartbeat fires while it works even when the application does not exist.
@@ -772,18 +855,6 @@ public sealed class ApplicationSectionToolE2ETests {
 				}
 			}
 		}
-	}
-
-	/// <summary>
-	/// Thread-safe <see cref="IProgress{T}"/> sink that records progress notifications synchronously
-	/// as the SDK delivers them, so the count is deterministic by the time the tool call returns.
-	/// </summary>
-	private sealed class CollectingProgress : IProgress<ProgressNotificationValue> {
-		private int _count;
-
-		public int Count => Volatile.Read(ref _count);
-
-		public void Report(ProgressNotificationValue value) => Interlocked.Increment(ref _count);
 	}
 
 	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {

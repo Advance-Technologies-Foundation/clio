@@ -94,13 +94,19 @@ public interface IApplicationSectionCreateService {
 	/// used by the bare synchronous CLI verb, which runs one command per process and never contends
 	/// in-process) the retry is skipped and a verified-absent detail-less rejection fails fast.
 	/// </param>
+	/// <param name="reportStage">
+	/// Optional callback invoked with a short human-readable marker at each internal stage boundary
+	/// (load application info, create section, load created section). Additive and side-effect-free;
+	/// when <see langword="null"/> no markers are emitted, so CLI callers are unaffected.
+	/// </param>
 	/// <returns>Structured data for the created section, entity, and pages.</returns>
 	ApplicationSectionCreateResult CreateSection(string environmentName, ApplicationSectionCreateRequest request,
-		int? insertTimeoutMsOverride = null, int? readbackTimeoutMsOverride = null, bool enableContentionRetry = false);
+		int? insertTimeoutMsOverride = null, int? readbackTimeoutMsOverride = null,
+		bool enableContentionRetry = false, Action<string>? reportStage = null);
 
 	/// <summary>
 	/// Creates a section against an already-resolved environment. Behaves identically to
-	/// <see cref="CreateSection(string, ApplicationSectionCreateRequest, int?, int?, bool)"/> except it never
+	/// <see cref="CreateSection(string, ApplicationSectionCreateRequest, int?, int?, bool, Action{string})"/> except it never
 	/// consults <see cref="Clio.UserEnvironment.ISettingsRepository"/> — the caller supplies the settings
 	/// directly (e.g. an MCP passthrough tenant resolved from request headers) — and every nested call it
 	/// makes (BOTH caption-culture resolutions — the readback-culture and profile-validation sites — and
@@ -113,11 +119,17 @@ public interface IApplicationSectionCreateService {
 	/// <param name="insertTimeoutMsOverride">Optional override (ms) for the section-insert budget; see the name-based overload.</param>
 	/// <param name="readbackTimeoutMsOverride">Optional override (ms) for the post-insert readback; see the name-based overload.</param>
 	/// <param name="enableContentionRetry">Gates the one-shot cross-caller-contention retry; see the name-based overload (ENG-93089).</param>
+	/// <param name="reportStage">
+	/// Optional callback invoked with a short human-readable marker at each internal stage boundary; see
+	/// the name-based overload for the emitted markers. Additive and side-effect-free; when
+	/// <see langword="null"/> no markers are emitted.
+	/// </param>
 	/// <returns>Structured data for the created section, entity, and pages.</returns>
 	/// <exception cref="ArgumentNullException"><paramref name="environmentSettings"/> is <c>null</c>.</exception>
 	ApplicationSectionCreateResult CreateSection(EnvironmentSettings environmentSettings,
 		ApplicationSectionCreateRequest request,
-		int? insertTimeoutMsOverride = null, int? readbackTimeoutMsOverride = null, bool enableContentionRetry = false);
+		int? insertTimeoutMsOverride = null, int? readbackTimeoutMsOverride = null,
+		bool enableContentionRetry = false, Action<string>? reportStage = null);
 }
 
 /// <summary>
@@ -242,7 +254,8 @@ public sealed class ApplicationSectionCreateService(
 
 	/// <inheritdoc />
 	public ApplicationSectionCreateResult CreateSection(string environmentName, ApplicationSectionCreateRequest request,
-		int? insertTimeoutMsOverride = null, int? readbackTimeoutMsOverride = null, bool enableContentionRetry = false) {
+		int? insertTimeoutMsOverride = null, int? readbackTimeoutMsOverride = null,
+		bool enableContentionRetry = false, Action<string>? reportStage = null) {
 		if (string.IsNullOrWhiteSpace(environmentName)) {
 			throw new ArgumentException("Environment name is required.", nameof(environmentName));
 		}
@@ -273,13 +286,15 @@ public sealed class ApplicationSectionCreateService(
 			(id, code) => applicationInfoService.GetApplicationInfo(environmentName, id, code),
 			insertTimeoutMsOverride,
 			readbackTimeoutMsOverride,
-			enableContentionRetry);
+			enableContentionRetry,
+			reportStage);
 	}
 
 	/// <inheritdoc />
 	public ApplicationSectionCreateResult CreateSection(EnvironmentSettings environmentSettings,
 		ApplicationSectionCreateRequest request,
-		int? insertTimeoutMsOverride = null, int? readbackTimeoutMsOverride = null, bool enableContentionRetry = false) {
+		int? insertTimeoutMsOverride = null, int? readbackTimeoutMsOverride = null,
+		bool enableContentionRetry = false, Action<string>? reportStage = null) {
 		ArgumentNullException.ThrowIfNull(environmentSettings);
 		ArgumentNullException.ThrowIfNull(request);
 		ValidateRequest(request);
@@ -299,7 +314,8 @@ public sealed class ApplicationSectionCreateService(
 			(id, code) => applicationInfoService.GetApplicationInfo(environmentSettings, id, code),
 			insertTimeoutMsOverride,
 			readbackTimeoutMsOverride,
-			enableContentionRetry);
+			enableContentionRetry,
+			reportStage);
 	}
 
 	private ApplicationSectionCreateResult CreateSectionCore(
@@ -310,7 +326,8 @@ public sealed class ApplicationSectionCreateService(
 		Func<string?, string?, ApplicationInfoResult> loadApplicationInfo,
 		int? insertTimeoutMsOverride,
 		int? readbackTimeoutMsOverride,
-		bool enableContentionRetry) {
+		bool enableContentionRetry,
+		Action<string>? reportStage = null) {
 		IApplicationClient client = applicationClientFactory.CreateEnvironmentClient(environmentSettings);
 		// The stored section caption is localized server-side under the connected user's profile.
 		// This effective culture only drives which value the readback surfaces (override > profile > en-US).
@@ -330,6 +347,7 @@ public sealed class ApplicationSectionCreateService(
 		try {
 			string schemaNamePrefix = SysSettingCodes.ReadSchemaNamePrefix(sysSettingsManager);
 			logger.WriteInfo($"Loading application info for '{request.ApplicationCode}'...");
+			reportStage?.Invoke("loading application info");
 			beforeInfo = loadApplicationInfo(null, request.ApplicationCode);
 			resolvedRequest = ResolveRequest(
 				request,
@@ -376,6 +394,7 @@ public sealed class ApplicationSectionCreateService(
 		// contention arises); the bare synchronous CLI verb never contends, so it skips the second insert and
 		// fails fast instead.
 		TimeSpan serializationWait = TimeSpan.FromMilliseconds(Math.Min(insertTimeoutMs, MaxSerializationWaitMs));
+		reportStage?.Invoke("creating section");
 		CommitSectionWithContentionRecovery(
 			serializationGuardKey,
 			request.ApplicationCode,
@@ -387,6 +406,7 @@ public sealed class ApplicationSectionCreateService(
 			serializationWait,
 			contentionRetryEnabled: enableContentionRetry);
 
+		reportStage?.Invoke("loading created section");
 		return LoadCreatedSection(
 			beforeInfo,
 			resolvedRequest,

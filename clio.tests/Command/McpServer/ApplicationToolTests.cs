@@ -379,7 +379,7 @@ public sealed class ApplicationToolTests {
 		commandResolver.Resolve<EnvironmentSettings>(
 				Arg.Is<EnvironmentOptions>(options => options.Environment == "sandbox"))
 			.Returns(resolvedSettings);
-		applicationSectionCreateService.CreateSection(resolvedSettings, Arg.Any<ApplicationSectionCreateRequest>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<bool>())
+		applicationSectionCreateService.CreateSection(resolvedSettings, Arg.Any<ApplicationSectionCreateRequest>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<bool>(), Arg.Any<Action<string>>())
 			.Returns(new ApplicationSectionCreateResult(
 				"pkg-uid",
 				"UsrOrdersApp",
@@ -434,7 +434,8 @@ public sealed class ApplicationToolTests {
 				request.WithMobilePages),
 			ApplicationSectionCreateTool.BackgroundInsertTimeoutMs,
 			ApplicationSectionCreateTool.BackgroundReadbackTimeoutMs,
-			true);
+			true,
+			Arg.Any<Action<string>>());
 		result.Success.Should().BeTrue(
 			because: "a successful section-create call should be wrapped in a core-style success envelope");
 		result.Section.Should().NotBeNull(
@@ -480,7 +481,7 @@ public sealed class ApplicationToolTests {
 		EnvironmentSettings resolvedSettings = new() { Uri = "https://sandbox.example.com" };
 		commandResolver.Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>())
 			.Returns(resolvedSettings);
-		applicationSectionCreateService.CreateSection(Arg.Any<EnvironmentSettings>(), Arg.Any<ApplicationSectionCreateRequest>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<bool>())
+		applicationSectionCreateService.CreateSection(Arg.Any<EnvironmentSettings>(), Arg.Any<ApplicationSectionCreateRequest>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<bool>(), Arg.Any<Action<string>>())
 			.Returns(_ => throw new ApplicationSectionCreateException(
 				"Creatio did not respond within 90s while creating section 'Orders' (code 'UsrOrders').",
 				ApplicationSectionCreateFailureClass.CreatioTimeout,
@@ -523,7 +524,7 @@ public sealed class ApplicationToolTests {
 		EnvironmentSettings resolvedSettings = new() { Uri = "https://sandbox.example.com" };
 		commandResolver.Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>())
 			.Returns(resolvedSettings);
-		applicationSectionCreateService.CreateSection(Arg.Any<EnvironmentSettings>(), Arg.Any<ApplicationSectionCreateRequest>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<bool>())
+		applicationSectionCreateService.CreateSection(Arg.Any<EnvironmentSettings>(), Arg.Any<ApplicationSectionCreateRequest>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<bool>(), Arg.Any<Action<string>>())
 			.Returns(_ => throw new ApplicationSectionCreateException(
 				"Section insert was rejected without detail while creating section 'Orders' (code 'UsrOrders').",
 				ApplicationSectionCreateFailureClass.Contention,
@@ -589,7 +590,7 @@ public sealed class ApplicationToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		EnvironmentSettings resolvedSettings = new() { Uri = "https://sandbox.example.com" };
 		commandResolver.Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>()).Returns(resolvedSettings);
-		applicationSectionCreateService.CreateSection(resolvedSettings, Arg.Any<ApplicationSectionCreateRequest>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<bool>())
+		applicationSectionCreateService.CreateSection(resolvedSettings, Arg.Any<ApplicationSectionCreateRequest>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<bool>(), Arg.Any<Action<string>>())
 			.Returns(_ => throw new McpResponseDeadlineExceededException(
 				ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
 				TimeSpan.FromSeconds(150)));
@@ -626,7 +627,7 @@ public sealed class ApplicationToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		EnvironmentSettings resolvedSettings = new() { Uri = "https://sandbox.example.com" };
 		commandResolver.Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>()).Returns(resolvedSettings);
-		applicationSectionCreateService.CreateSection(resolvedSettings, Arg.Any<ApplicationSectionCreateRequest>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<bool>())
+		applicationSectionCreateService.CreateSection(resolvedSettings, Arg.Any<ApplicationSectionCreateRequest>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<bool>(), Arg.Any<Action<string>>())
 			.Returns(_ => throw new ApplicationSectionCreateException(
 				"Creatio did not respond and verification also failed.",
 				ApplicationSectionCreateFailureClass.CreatioTimeout,
@@ -657,7 +658,7 @@ public sealed class ApplicationToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		EnvironmentSettings resolvedSettings = new() { Uri = "https://sandbox.example.com" };
 		commandResolver.Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>()).Returns(resolvedSettings);
-		applicationSectionCreateService.CreateSection(resolvedSettings, Arg.Any<ApplicationSectionCreateRequest>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<bool>())
+		applicationSectionCreateService.CreateSection(resolvedSettings, Arg.Any<ApplicationSectionCreateRequest>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<bool>(), Arg.Any<Action<string>>())
 			.Returns(_ => throw new InvalidOperationException("Application id was not returned by get-app-info."));
 		ApplicationSectionCreateTool tool = new(
 			Substitute.For<ILogger>(), commandResolver, applicationSectionCreateService);
@@ -930,7 +931,8 @@ public sealed class ApplicationToolTests {
 			.Returns(resolvedSettings);
 		applicationCreateService.CreateApplication(
 				resolvedSettings,
-				Arg.Any<ApplicationCreateRequest>())
+				Arg.Any<ApplicationCreateRequest>(),
+				Arg.Any<Action<string>>())
 			.Returns(new ApplicationInfoResult(
 				"pkg-uid",
 				"UsrCodexApp",
@@ -1006,7 +1008,8 @@ public sealed class ApplicationToolTests {
 				request.OptionalTemplateData.EntitySchemaName == "UsrCodexEntity" &&
 				request.OptionalTemplateData.UseExistingEntitySchema == true &&
 				request.OptionalTemplateData.UseAiContentGeneration == false &&
-				request.OptionalTemplateData.AppSectionDescription == "Section description"));
+				request.OptionalTemplateData.AppSectionDescription == "Section description"),
+			Arg.Any<Action<string>>());
 		enrichmentService.Received(1).Enrich(
 			Arg.Is<ApplicationCreateArgs>(request =>
 				request.EnvironmentName == "sandbox" &&
@@ -1041,6 +1044,52 @@ public sealed class ApplicationToolTests {
 		result.DataForge.ContextSummary!.ColumnHints.Should().ContainSingle(
 			hint => hint.TableName == "Contact" && hint.ColumnCount == 3,
 			because: "create-app should expose compact column hints instead of the full Data Forge column payload");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Forwards a non-null stage reporter into the application create service so a regression that dropped the reportStage wiring (passing null instead of the reporter) fails; the no-op-vs-real distinction requires a live channel and is covered by the Fix 8 E2E marker assertion, not this unit test.")]
+	public async Task ApplicationCreate_Should_Forward_NonNull_Reporter_To_Create_Service() {
+		// Arrange
+		IApplicationCreateService applicationCreateService = Substitute.For<IApplicationCreateService>();
+		IApplicationCreateEnrichmentService enrichmentService = Substitute.For<IApplicationCreateEnrichmentService>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		EnvironmentSettings resolvedSettings = new() { Uri = "https://sandbox.example.com" };
+		commandResolver.Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>()).Returns(resolvedSettings);
+		Action<string>? capturedReporter = null;
+		applicationCreateService.CreateApplication(
+				Arg.Any<EnvironmentSettings>(),
+				Arg.Any<ApplicationCreateRequest>(),
+				Arg.Do<Action<string>>(reporter => capturedReporter = reporter))
+			.Returns(new ApplicationInfoResult(
+				PackageUId: "pkg-uid",
+				PackageName: "UsrCodexApp",
+				Entities: Array.Empty<ApplicationEntityInfoResult>(),
+				ApplicationId: "created-app-id"));
+		enrichmentService.Enrich(Arg.Any<ApplicationCreateArgs>(), Arg.Any<ApplicationOptionalTemplateData?>(), Arg.Any<CancellationToken>())
+			.Returns(new ApplicationDataForgeResult(
+				Used: false, Health: null, Status: null, Coverage: null,
+				Warnings: Array.Empty<string>(), ContextSummary: null));
+		ApplicationCreateTool tool = new(
+			Substitute.For<ILogger>(), commandResolver, applicationCreateService, enrichmentService);
+
+		// Act
+		await tool.ApplicationCreate(new ApplicationCreateArgs(
+			EnvironmentName: "sandbox",
+			Name: "Codex App",
+			Code: "UsrCodexApp",
+			Description: null,
+			TemplateCode: "AppFreedomUI",
+			IconId: null,
+			IconBackground: null,
+			ClientTypeId: null));
+
+		// Assert
+		capturedReporter.Should().NotBeNull(
+			because: "the tool must forward a real reportStage callback into CreateApplication; a dropped-wiring regression passing null here would break per-phase progress");
+		Action invokeReporter = () => capturedReporter!("enriching application model");
+		invokeReporter.Should().NotThrow(
+			because: "the forwarded reporter must be safely invocable so the tool-level 'enriching application model' marker can be pushed without surfacing from the tool");
 	}
 
 	[Test]
@@ -1178,7 +1227,7 @@ public sealed class ApplicationToolTests {
 		commandResolver.Resolve<EnvironmentSettings>(
 				Arg.Is<EnvironmentOptions>(options => options.Environment == "sandbox"))
 			.Returns(resolvedSettings);
-		applicationCreateService.CreateApplication(Arg.Any<EnvironmentSettings>(), Arg.Any<ApplicationCreateRequest>())
+		applicationCreateService.CreateApplication(Arg.Any<EnvironmentSettings>(), Arg.Any<ApplicationCreateRequest>(), Arg.Any<Action<string>>())
 			.Returns(new ApplicationInfoResult(
 				PackageUId: "pkg-uid",
 				PackageName: "UsrCodexApp",
@@ -1208,7 +1257,8 @@ public sealed class ApplicationToolTests {
 		// with-mobile-pages=false must be forwarded so the create flow suppresses the main entity mobile pages
 		applicationCreateService.Received(1).CreateApplication(
 			resolvedSettings,
-			Arg.Is<ApplicationCreateRequest>(request => !request.WithMobilePages));
+			Arg.Is<ApplicationCreateRequest>(request => !request.WithMobilePages),
+			Arg.Any<Action<string>>());
 	}
 
 	[Test]
@@ -1462,7 +1512,7 @@ public sealed class ApplicationToolTests {
 		commandResolver.Resolve<EnvironmentSettings>(
 				Arg.Is<EnvironmentOptions>(options => options.Environment == "sandbox"))
 			.Returns(resolvedSettings);
-		applicationCreateService.CreateApplication(resolvedSettings, Arg.Any<ApplicationCreateRequest>())
+		applicationCreateService.CreateApplication(resolvedSettings, Arg.Any<ApplicationCreateRequest>(), Arg.Any<Action<string>>())
 			.Returns(_ => throw new InvalidOperationException("Template dependency failed."));
 		enrichmentService.Enrich(Arg.Any<ApplicationCreateArgs>(), Arg.Any<ApplicationOptionalTemplateData?>(), default)
 			.Returns(new ApplicationDataForgeResult(
@@ -1996,7 +2046,7 @@ public sealed class ApplicationToolTests {
 			.Returns(resolvedSettings);
 		ApplicationCreateTool tool = new(
 			Substitute.For<ILogger>(), commandResolver, applicationCreateService, enrichmentService);
-		applicationCreateService.CreateApplication(Arg.Any<EnvironmentSettings>(), Arg.Any<ApplicationCreateRequest>())
+		applicationCreateService.CreateApplication(Arg.Any<EnvironmentSettings>(), Arg.Any<ApplicationCreateRequest>(), Arg.Any<Action<string>>())
 			.Returns(new ApplicationInfoResult(
 				PackageUId: Guid.NewGuid().ToString(),
 				PackageName: "UsrCodexApp",
@@ -2024,7 +2074,8 @@ public sealed class ApplicationToolTests {
 			because: "empty template-code should fall back to AppFreedomUI and succeed");
 		applicationCreateService.Received(1).CreateApplication(
 			resolvedSettings,
-			Arg.Is<ApplicationCreateRequest>(r => r.TemplateCode == "AppFreedomUI"));
+			Arg.Is<ApplicationCreateRequest>(r => r.TemplateCode == "AppFreedomUI"),
+			Arg.Any<Action<string>>());
 	}
 
 	[Test]
@@ -2034,7 +2085,7 @@ public sealed class ApplicationToolTests {
 		// Arrange
 		IApplicationCreateService applicationCreateService = Substitute.For<IApplicationCreateService>();
 		IApplicationCreateEnrichmentService enrichmentService = Substitute.For<IApplicationCreateEnrichmentService>();
-		applicationCreateService.CreateApplication(Arg.Any<EnvironmentSettings>(), Arg.Any<ApplicationCreateRequest>())
+		applicationCreateService.CreateApplication(Arg.Any<EnvironmentSettings>(), Arg.Any<ApplicationCreateRequest>(), Arg.Any<Action<string>>())
 			.Returns(new ApplicationInfoResult("pkg-uid", "PrimaryPkg", []));
 		enrichmentService.Enrich(Arg.Any<ApplicationCreateArgs>(), Arg.Any<ApplicationOptionalTemplateData?>(), Arg.Any<CancellationToken>())
 			.Returns(new ApplicationDataForgeResult(Used: false, Health: null, Status: null, Coverage: null,
@@ -2176,7 +2227,7 @@ public sealed class ApplicationToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		EnvironmentSettings resolvedSettings = new() { Uri = "https://sandbox.example.com" };
 		commandResolver.Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>()).Returns(resolvedSettings);
-		applicationSectionCreateService.CreateSection(resolvedSettings, Arg.Any<ApplicationSectionCreateRequest>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<bool>())
+		applicationSectionCreateService.CreateSection(resolvedSettings, Arg.Any<ApplicationSectionCreateRequest>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<bool>(), Arg.Any<Action<string>>())
 			.Returns(new ApplicationSectionCreateResult(
 				"pkg-uid",
 				"UsrOrdersApp",
@@ -2215,7 +2266,8 @@ public sealed class ApplicationToolTests {
 			Arg.Is<ApplicationSectionCreateRequest>(request => request.ApplicationCode == "UsrOrdersApp"),
 			ApplicationSectionCreateTool.BackgroundInsertTimeoutMs,
 			ApplicationSectionCreateTool.BackgroundReadbackTimeoutMs,
-			true);
+			true,
+			Arg.Any<Action<string>>());
 		result.Success.Should().BeTrue(
 			because: "the heartbeat wrapper must be transparent and must not alter a successful section-create response");
 		result.Section!.Code.Should().Be("UsrOrders",
