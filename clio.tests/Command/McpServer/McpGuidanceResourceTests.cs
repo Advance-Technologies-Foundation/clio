@@ -1637,9 +1637,19 @@ public sealed class McpGuidanceResourceTests {
 		}
 		article.Text.Should().Contain("C, A, B",
 			because: "the backend guide should preserve the verified three-term ATF shape ordering boundary");
+		article.Text.Should().Contain("disabledLeaf.IsEnabled = false",
+			because: "the backend guide should show the verified native disabled-leaf construction API");
+		article.Text.Should().Contain("disabledGroup.IsEnabled = false",
+			because: "the backend guide should show how to disable a complete native collection");
+		article.Text.Should().Contain("negatedOr.IsNot = true",
+			because: "the backend guide should show group negation on the collection rather than a leaf");
+		article.Text.Should().Contain("DataService removes disabled children",
+			because: "the guide must state the verified structural boundary for disabled filters");
+		article.Text.Should().Contain("ATF.Repository 2.0.3.5 LINQ cannot author group `IsNot`",
+			because: "the guide should distinguish the library authoring limitation from DataService support");
 		article.Text.Should().Contain("not Creatio/PostgreSQL collation behavior",
 			because: "in-memory provider case policy must not be published as database-collation evidence");
-		article.Text.Should().Contain("Pending lab validation",
+		article.Text.Should().Contain("Pending lab",
 			because: "unverified filter families should be explicit instead of guessed");
 	}
 
@@ -1666,8 +1676,18 @@ public sealed class McpGuidanceResourceTests {
 			because: "shape tests should compare the full structure rather than only returned rows");
 		article.Text.Should().Contain("maximum depth and total-node limits",
 			because: "runtime filter parsing must bound remotely supplied tree complexity");
-		article.Text.Should().Contain("Reject a disabled item",
-			because: "unverified disabled-filter semantics must fail closed instead of changing query meaning");
+		article.Text.Should().Contain("Exclude disabled items from evaluation",
+			because: "the parser should implement the verified disabled-node semantics");
+		article.Text.Should().Contain("DataService removes disabled",
+			because: "the parser must accept the verified native-versus-DataService shape boundary");
+		article.Text.Should().Contain("return group.IsNot ? !result : result",
+			because: "the guide must apply group negation after combining enabled children");
+		article.Text.Should().Contain("group.EnabledChildren",
+			because: "evaluation should reuse enabled children cached during parsing instead of allocating per record");
+		article.Text.Should().Contain("including an empty root OR",
+			because: "only the verified empty root AND envelope may bypass empty-group rejection");
+		article.Text.Should().Contain("Only the empty root AND envelope is supported.",
+			because: "the sample guard must reject both empty root OR and empty non-root groups");
 		article.Text.Should().Contain("ReadScalarParameter",
 			because: "the parsing owner should show how to validate one typed runtime parameter before evaluation");
 		article.Text.Should().Contain("filter.LeftExpression.Path != expectedColumn",

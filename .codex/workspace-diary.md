@@ -6640,3 +6640,10 @@ Decision: Changed the parsing recipe to compare the exact `LeftExpression.Path` 
 Discovery: `EntitySchemaQueryExpression.Path` retains the complete expression path, while `SchemaColumnName` exposes only its terminal schema column.
 Files: clio/Command/McpServer/Resources/EsqFilterParsingGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs
 Impact: Agents following the guide cannot accidentally evaluate an unintended joined column as a same-named root column; focused tests and the full MCP module remain green on net8.0 and net10.0.
+
+## 2026-07-17 14:35 – Validate disabled ESQ nodes and collection IsNot
+Context: Extend the backend ESQ construction and parsing guidance using the VirtualEntityGuidance lab.
+Decision: Document disabled-node transport differences separately from semantic evaluation, and apply collection `IsNot` only after combining enabled children.
+Discovery: Native C# retains disabled leaves/groups while SQL compilation omits them; DataService removes disabled children before the executor boundary. Native C# and DataService preserve collection `IsNot`. ATF.Repository 2.0.3.5 cannot author group negation through LINQ, so the lab used a test-only decorator over its public `ISelectQuery` contract.
+Files: clio/Command/McpServer/Resources/EsqFiltersBackendGuidanceResource.cs, clio/Command/McpServer/Resources/EsqFilterParsingGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs, clio.mcp.e2e/GuidanceGetToolE2ETests.cs
+Impact: Agents now have lab-verified rules for creating and parsing disabled nodes and negated groups, including the native-versus-DataService shape boundary.

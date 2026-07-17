@@ -135,6 +135,10 @@ public sealed class McpGuidanceResourceE2ETests : McpContractFixtureBase {
 			because: "the backend owner should contain the lab-verified nested OR construction");
 		backend.Text.Should().Contain("FilterComparisonType.NotEndWith",
 			because: "the directly readable backend guide should expose the complete verified scalar Compare recipes");
+		backend.Text.Should().Contain("negatedOr.IsNot = true",
+			because: "the directly readable backend guide should expose verified group-IsNot construction");
+		backend.Text.Should().Contain("DataService removes disabled children",
+			because: "the published backend resource should state the disabled-filter transport boundary");
 		TextResourceContents parsing = parsingResult.Contents.Single().Should().BeOfType<TextResourceContents>(
 			because: "the runtime parsing resource should resolve to one plain-text article").Subject;
 		parsing.Text.Should().Contain("Parse a tree, not a flat list",
@@ -145,6 +149,10 @@ public sealed class McpGuidanceResourceE2ETests : McpContractFixtureBase {
 			because: "the directly readable parser guide should preserve the verified ATF structural ordering boundary");
 		parsing.Text.Should().Contain("LeftExpression.Path",
 			because: "the published parser guide must validate the complete ESQ column path");
+		parsing.Text.Should().Contain("Exclude disabled items from evaluation",
+			because: "the published parser guide should expose verified disabled-node evaluation");
+		parsing.Text.Should().Contain("return group.IsNot ? !result : result",
+			because: "the published parser guide should negate the combined group result");
 		parsing.Text.Should().Contain("never reached PostgreSQL",
 			because: "the published resource must not misattribute virtual-provider case behavior to the database");
 	}
