@@ -138,6 +138,12 @@ internal sealed class BusinessRuleTriggerMetadataDto {
 	[JsonPropertyName("name")]
 	public string Name { get; set; } = string.Empty;
 
+	// Optional scope for a change-trigger (Terrasoft.Core.BusinessRules.Models.Trigger.ScopeId, short code BRT3).
+	// Shipped datasource-scoped rules express their dependency via a DataLoaded trigger named after the datasource
+	// rather than this field, so it is emitted only when explicitly set and defaults to empty for the root scope.
+	[JsonPropertyName("scopeId")]
+	public string ScopeId { get; set; } = string.Empty;
+
 	[JsonPropertyName("type")]
 	public int Type { get; set; }
 }
@@ -170,25 +176,39 @@ internal class BusinessRuleExpressionMetadataDto {
 	[JsonPropertyName("path")]
 	public string? Path { get; set; }
 
+	// scopeId is the platform scope discriminator for an attribute expression
+	// (Terrasoft.Core.BusinessRules.Models.Expressions.BusinessRuleAttributeExpression.ScopeId, short code BRX2).
+	// It is ordered right after `path` and before `value` so the base expression fields still precede the typed
+	// value payload the AddonSchemaDesignerService parses against the already-read dataValueTypeName.
 	[JsonPropertyOrder(6)]
+	[JsonPropertyName("scopeId")]
+	public string? ScopeId { get; set; }
+
+	[JsonPropertyOrder(7)]
 	[JsonPropertyName("value")]
 	public object? Value { get; set; }
 
-	[JsonPropertyOrder(7)]
+	[JsonPropertyOrder(8)]
 	[JsonPropertyName("sysValueName")]
 	public string? SysValueName { get; set; }
 
-	[JsonPropertyOrder(8)]
+	// sysSettingName carries a Terrasoft.Core.BusinessRules.Models.Expressions.BusinessRuleSysSettingExpression
+	// operand (short code BSS1). Mirrors sysValueName.
+	[JsonPropertyOrder(9)]
+	[JsonPropertyName("sysSettingName")]
+	public string? SysSettingName { get; set; }
+
+	[JsonPropertyOrder(10)]
 	[JsonPropertyName("parameterMappings")]
 	public List<BusinessRuleFormulaParameterMappingDto>? ParameterMappings { get; set; }
 
-	[JsonPropertyOrder(9)]
+	[JsonPropertyOrder(11)]
 	[JsonPropertyName("expressionSchema")]
 	public BusinessRuleExpressionSchemaDto? ExpressionSchema { get; set; }
 }
 
 internal sealed class BusinessRuleFilterLookupExpressionMetadataDto : BusinessRuleExpressionMetadataDto {
-	[JsonPropertyOrder(10)]
+	[JsonPropertyOrder(12)]
 	[JsonPropertyName("filterExpression")]
 	public string? FilterExpression { get; set; }
 }

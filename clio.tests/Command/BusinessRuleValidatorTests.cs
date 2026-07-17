@@ -1846,7 +1846,7 @@ public sealed class BusinessRuleValidatorTests {
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
-			.WithMessage("rule.condition.conditions[*].leftExpression.type must be 'AttributeValue', 'Const', or 'SysValue'.",
+			.WithMessage("rule.condition.conditions[*].leftExpression.type must be 'AttributeValue', 'Const', 'SysValue', or 'SysSetting'.",
 				because: "each condition operand must be one of the three supported expression kinds, on either side");
 	}
 
@@ -1889,7 +1889,7 @@ public sealed class BusinessRuleValidatorTests {
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
-			.WithMessage("rule.condition.conditions[*].rightExpression.type must be 'AttributeValue', 'Const', or 'SysValue'.",
+			.WithMessage("rule.condition.conditions[*].rightExpression.type must be 'AttributeValue', 'Const', 'SysValue', or 'SysSetting'.",
 				because: "the validator should only allow the supported right-hand operand kinds");
 	}
 

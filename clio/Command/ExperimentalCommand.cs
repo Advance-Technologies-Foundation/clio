@@ -154,10 +154,15 @@ public class ExperimentalCommand : Command<ExperimentalOptions> {
 	}
 
 	// Feature keys clio recognizes that are NOT derived from a [FeatureToggle] attribute on an
-	// options/MCP type (registration-filter profiles, etc.), listed so `clio experimental` shows them
-	// and `--enable/--disable` does not warn they are unknown. Compared case-insensitively.
-	// Currently empty: the mcp-lazy-tools profile toggle was removed — lazy is now the only tool surface.
-	internal static readonly string[] StandaloneFeatureKeys = [];
+	// options/MCP type (registration-filter profiles, runtime-checked capabilities, etc.), listed so
+	// `clio experimental` shows them and `--enable/--disable` does not warn they are unknown. Compared
+	// case-insensitively.
+	// - page-business-rule-condition-sources: gates the page-rule DataSource-field / page-parameter /
+	//   SysSetting / unbound-attribute condition operands, checked at runtime in PageBusinessRuleValidator
+	//   (the capability lives inside the already-shipped create/update-page-business-rules tools, so it
+	//   cannot be a class-level [FeatureToggle]). Off by default; see BusinessRuleConstants.
+	internal static readonly string[] StandaloneFeatureKeys =
+		[BusinessRules.BusinessRuleConstants.PageConditionSourcesFeatureName];
 
 	private static IEnumerable<string> GetKnownFeatureKeys() =>
 		GetGatedTypes()

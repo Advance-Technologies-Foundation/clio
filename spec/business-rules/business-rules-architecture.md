@@ -152,6 +152,52 @@ flowchart LR
 }
 ```
 
+### Scoped condition operands and triggers (page rules)
+
+Page-rule condition operands can address sources beyond a surfaced page attribute. These sources
+are gated behind the runtime feature flag `page-business-rule-condition-sources` (off by default);
+entity rules keep empty scope only.
+
+- `BusinessRuleExpressionMetadataDto` (the `leftExpression` / `rightExpression` DTO) gains two
+  optional fields:
+  - `scopeId` — ordered immediately after `path`. It is the platform discriminator resolved at
+    runtime by `Context.GetAttributeByPath(path, scopeId)`: empty = a root page attribute;
+    `"PageParameters"` = a page parameter (`path` = parameter name); `"<DataSource name>"`
+    (e.g. `"PDS"`) = a DataSource field (`path` = column name, forward paths allowed).
+  - `sysSettingName` — carried by the new operand `type` `SysSetting`, persisted with `typeName`
+    `Terrasoft.Core.BusinessRules.Models.Expressions.BusinessRuleSysSettingExpression`. Like a
+    `Const`, it inherits its data value type from the compared operand.
+- `BusinessRuleTriggerMetadataDto` gains `scopeId`.
+- A scoped operand (non-empty `scopeId`) emits an additional **DataLoaded** trigger (`type` 2)
+  whose `name` equals the scope name, alongside the root DataLoaded trigger — matching the shipped
+  `Cases_FormPageBusinessRule` metadata.
+
+```json
+{
+  "leftExpression": {
+    "typeName": "Terrasoft.Core.BusinessRules.Models.Expressions.BusinessRuleAttributeExpression",
+    "uId": "…",
+    "type": "AttributeValue",
+    "path": "Contact",
+    "scopeId": "PDS"
+  },
+  "comparisonType": 2,
+  "rightExpression": {
+    "typeName": "Terrasoft.Core.BusinessRules.Models.Expressions.BusinessRuleSysSettingExpression",
+    "uId": "…",
+    "type": "SysSetting",
+    "sysSettingName": "DefaultOwner"
+  }
+}
+```
+
+```json
+"triggers": [
+  { "typeName": "Terrasoft.Core.BusinessRules.Models.Trigger", "uId": "…", "name": "", "type": 2 },
+  { "typeName": "Terrasoft.Core.BusinessRules.Models.Trigger", "uId": "…", "name": "PDS", "type": 2 }
+]
+```
+
 ### Add-on schema DTO
 
 ```json

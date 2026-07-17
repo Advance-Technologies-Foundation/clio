@@ -18,6 +18,7 @@ internal static class BusinessRuleConstants {
 	internal const string BusinessRuleAttributeExpressionTypeName = "Terrasoft.Core.BusinessRules.Models.Expressions.BusinessRuleAttributeExpression";
 	internal const string BusinessRuleValueExpressionTypeName = "Terrasoft.Core.BusinessRules.Models.Expressions.BusinessRuleValueExpression";
 	internal const string BusinessRuleSysValueExpressionTypeName = "Terrasoft.Core.BusinessRules.Models.Expressions.BusinessRuleSysValueExpression";
+	internal const string BusinessRuleSysSettingExpressionTypeName = "Terrasoft.Core.BusinessRules.Models.Expressions.BusinessRuleSysSettingExpression";
 	internal const string BusinessRuleFormulaExpressionTypeName = "Terrasoft.Core.BusinessRules.Models.Expressions.BusinessRuleFormulaExpression";
 	internal const string BusinessRuleContextExpressionTypeName = "Terrasoft.Core.BusinessRules.Models.Expressions.BusinessRuleContextExpression";
 	internal const string BusinessRuleParameterMappingTypeName = "Terrasoft.Core.BusinessRules.Models.Expressions.ParameterMapping";
@@ -44,6 +45,20 @@ internal static class BusinessRuleConstants {
 	internal const string ConstExpressionType = "Const";
 	internal const string FormulaExpressionType = "Formula";
 	internal const string SysValueExpressionType = "SysValue";
+	internal const string SysSettingExpressionType = "SysSetting";
+
+	/// <summary>
+	/// Well-known scope name for the page input-parameter datasource (<c>crt.PageParametersDataSource</c>).
+	/// Used as an <c>AttributeValue</c> operand <c>scopeId</c> to reference a page parameter.
+	/// </summary>
+	internal const string PageParametersScope = "PageParameters";
+
+	/// <summary>
+	/// Feature-flag key gating the new page-rule condition sources (DataSource field, Page parameter,
+	/// SysSetting operand, and unbound page-local attribute). Off by default; while off, page rules keep
+	/// their prior behaviour (any non-empty <c>scopeId</c> and the <c>SysSetting</c> operand are rejected).
+	/// </summary>
+	internal const string PageConditionSourcesFeatureName = "page-business-rule-condition-sources";
 	internal const int ChangeAttributeValueTriggerType = 0;
 	internal const int DataLoadedTriggerType = 2;
 	internal const int LogicalAnd = 1;

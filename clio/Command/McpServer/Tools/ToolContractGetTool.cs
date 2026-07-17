@@ -2453,7 +2453,7 @@ internal static class ToolContractCatalog {
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(PackageNameFieldName, StringType, "Target package name where the page BusinessRule add-on will be saved."),
 					Field(PageSchemaNameFieldName, StringType, "Target Freedom UI page schema name."),
-					Field(RulesFieldName, ArrayType, "Array of one or more page business-rule definitions saved together in a single batch (one configuration rebuild for the whole array; prefer one call over many). A failed rule does not abort the others. Each item is a rule with caption, one top-level condition group, and one or more page actions. AttributeValue paths must be declared page attribute names from get-page bundle.viewModelConfig.attributes, not datasource paths like PDS.Priority. EITHER side of a condition may be a page attribute (type AttributeValue), a constant (type Const), or a system variable (type SysValue with sysValueName such as CurrentDate, CurrentDateTime, CurrentTime, CurrentUser, CurrentUserContact, CurrentUserAccount, CurrentUserRoles). For role-based or current-user visibility (e.g. 'show field only for administrators / for the supervisor') put CurrentUserRoles (left) comparisonType contain/not-contain a Const SysAdminUnit role id, or compare CurrentUser/CurrentUserContact/CurrentUserAccount to a Const id — use this instead of a HandleViewModelInitRequest handler. Action items must be page element names from recursive get-page bundle.viewConfig. Lookup constants are supported when supplied as stable GUID strings.")
+					Field(RulesFieldName, ArrayType, "Array of one or more page business-rule definitions saved together in a single batch (one configuration rebuild for the whole array; prefer one call over many). A failed rule does not abort the others. Each item is a rule with caption, one top-level condition group, and one or more page actions. AttributeValue paths must be declared page attribute names from get-page bundle.viewModelConfig.attributes, not datasource paths like PDS.Priority. EITHER side of a condition may be a page attribute (type AttributeValue), a constant (type Const), or a system variable (type SysValue with sysValueName such as CurrentDate, CurrentDateTime, CurrentTime, CurrentUser, CurrentUserContact, CurrentUserAccount, CurrentUserRoles). For role-based or current-user visibility (e.g. 'show field only for administrators / for the supervisor') put CurrentUserRoles (left) comparisonType contain/not-contain a Const SysAdminUnit role id, or compare CurrentUser/CurrentUserContact/CurrentUserAccount to a Const id — use this instead of a HandleViewModelInitRequest handler. Action items must be page element names from recursive get-page bundle.viewConfig. Lookup constants are supported when supplied as stable GUID strings. SCOPED SOURCES (require the 'page-business-rule-condition-sources' feature; off by default): an AttributeValue operand may carry a scopeId — omit/empty for a root page attribute (surfaced OR an unbound/technical page-local attribute), 'PageParameters' for a page parameter (path = parameter name), or a DataSource name from bundle.modelConfig.dataSources (e.g. 'PDS') for a DataSource column not surfaced on the page (path = column name, forward paths allowed). A new operand type SysSetting (field sysSettingName) compares against a system setting, inheriting the other operand's data value type. While the feature is off, any non-empty scopeId or SysSetting operand is rejected.")
 				],
 				Validators: [
 					.. BusinessRuleConditionValidators(),
@@ -2533,6 +2533,26 @@ internal static class ToolContractCatalog {
 					PageSchemaNameFieldName, "Cases_FormPage", "Show Assignee group for the supervisor",
 					"CurrentUserContact", ExampleEqualConditionComparison, ExampleLookupValueId,
 					"show-element", ["AssigneeGroupInput"]),
+					PageScopedBusinessRuleExample(
+						"Condition on a DataSource field NOT surfaced on the page (scopeId = datasource name; requires the page-business-rule-condition-sources feature)",
+						"Hide reminder when a DataSource-only priority is set",
+						"Priority", "PDS", "is-filled-in",
+						"hide-element", new object[] { "ReminderLabel" }),
+					PageScopedBusinessRuleExample(
+						"Condition on a page parameter equal to a value (scopeId = PageParameters; requires the feature)",
+						"Hide Assigned to for standard service requests",
+						"RequestType", BusinessRuleConstants.PageParametersScope, ExampleEqualConditionComparison,
+						"hide-element", new object[] { "AssignedToInput" },
+						constantValue: "Service request"),
+					PageScopedBusinessRuleExample(
+						"Compare a page parameter to a system setting (SysSetting operand; requires the feature)",
+						"Hide over-limit warning by system setting",
+						"MaxAmount", BusinessRuleConstants.PageParametersScope, "greater-than",
+						"hide-element", new object[] { "OverLimitLabel" },
+						rightExpression: new Dictionary<string, object?> {
+							["type"] = BusinessRuleConstants.SysSettingExpressionType,
+							["sysSettingName"] = "MaxOrderAmount"
+						}),
 				PageBusinessRuleAttributeComparisonExample()
 			],
 			Flow(
@@ -3240,6 +3260,55 @@ internal static class ToolContractCatalog {
 			[EnvironmentNameFieldName] = ExampleEnvironmentName,
 			[PackageNameFieldName] = ExamplePackageName,
 			[schemaFieldName] = schemaName,
+			[RulesFieldName] = new object[] { new Dictionary<string, object?> {
+				["caption"] = caption,
+				[ConditionFieldName] = new Dictionary<string, object?> {
+					[LogicalOperationFieldName] = "AND",
+					[ConditionsFieldName] = new object[] {
+						condition
+					}
+				},
+				[ActionsFieldName] = new object[] {
+					new Dictionary<string, object?> {
+						["type"] = actionType,
+						["items"] = actionItems
+					}
+				}
+			} }
+		});
+	}
+
+	private static ToolContractExample PageScopedBusinessRuleExample(
+		string summary,
+		string caption,
+		string leftPath,
+		string leftScopeId,
+		string comparisonType,
+		string actionType,
+		object[] actionItems,
+		Dictionary<string, object?>? rightExpression = null,
+		object? constantValue = null) {
+		Dictionary<string, object?> condition = new() {
+			["leftExpression"] = new Dictionary<string, object?> {
+				["type"] = "AttributeValue",
+				["path"] = leftPath,
+				["scopeId"] = leftScopeId
+			},
+			["comparisonType"] = comparisonType
+		};
+		if (rightExpression is not null) {
+			condition["rightExpression"] = rightExpression;
+		} else if (constantValue is not null) {
+			condition["rightExpression"] = new Dictionary<string, object?> {
+				["type"] = "Const",
+				[BusinessRuleValueKey] = constantValue
+			};
+		}
+
+		return Example(summary, new Dictionary<string, object?> {
+			[EnvironmentNameFieldName] = ExampleEnvironmentName,
+			[PackageNameFieldName] = ExamplePackageName,
+			[PageSchemaNameFieldName] = "Case_FormPage",
 			[RulesFieldName] = new object[] { new Dictionary<string, object?> {
 				["caption"] = caption,
 				[ConditionFieldName] = new Dictionary<string, object?> {

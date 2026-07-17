@@ -167,7 +167,10 @@ internal static class FullToSimpleBusinessRuleConverter {
 		string? uId = GetString(expressionObject, "uId");
 		if (string.Equals(typeName, BusinessRuleAttributeExpressionTypeName, StringComparison.Ordinal)
 			|| string.Equals(type, AttributeValueExpressionType, StringComparison.OrdinalIgnoreCase)) {
-			return new BusinessRuleExpression(AttributeValueExpressionType, path: GetString(expressionObject, "path")) {
+			return new BusinessRuleExpression(
+				AttributeValueExpressionType,
+				path: GetString(expressionObject, "path"),
+				scopeId: GetString(expressionObject, "scopeId")) {
 				UId = uId
 			};
 		}
@@ -176,6 +179,14 @@ internal static class FullToSimpleBusinessRuleConverter {
 			|| string.Equals(type, SysValueExpressionType, StringComparison.OrdinalIgnoreCase)) {
 			return new BusinessRuleExpression(SysValueExpressionType,
 				sysValueName: GetString(expressionObject, "sysValueName")) {
+				UId = uId
+			};
+		}
+
+		if (string.Equals(typeName, BusinessRuleSysSettingExpressionTypeName, StringComparison.Ordinal)
+			|| string.Equals(type, SysSettingExpressionType, StringComparison.OrdinalIgnoreCase)) {
+			return new BusinessRuleExpression(SysSettingExpressionType,
+				sysSettingName: GetString(expressionObject, "sysSettingName")) {
 				UId = uId
 			};
 		}

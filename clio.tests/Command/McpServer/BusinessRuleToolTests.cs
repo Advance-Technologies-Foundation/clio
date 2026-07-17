@@ -45,6 +45,42 @@ public sealed class BusinessRuleToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Deserializes the new scopeId and sysSettingName condition-operand fields on the shared page contract and maps them onto the internal business-rule model.")]
+	public void PageBusinessRuleContract_Should_Deserialize_ScopeId_And_SysSettingName() {
+		// Arrange
+		const string json = """
+			{
+			  "caption": "Compare a page parameter to a system setting",
+			  "condition": {
+			    "logicalOperation": "AND",
+			    "conditions": [
+			      {
+			        "leftExpression": { "type": "AttributeValue", "path": "RequestType", "scopeId": "PageParameters" },
+			        "comparisonType": "equal",
+			        "rightExpression": { "type": "SysSetting", "sysSettingName": "MaxOrderAmount" }
+			      }
+			    ]
+			  },
+			  "actions": [ { "type": "hide-element", "items": ["AssignedToInput"] } ]
+			}
+			""";
+
+		// Act
+		PageBusinessRuleMcpContract? contract = JsonSerializer.Deserialize<PageBusinessRuleMcpContract>(json);
+		BusinessRule rule = contract!.ToBusinessRule();
+
+		// Assert
+		BusinessRuleCondition condition = rule.Condition.Conditions.Single();
+		condition.LeftExpression.ScopeId.Should().Be("PageParameters",
+			because: "the page-parameter scope must deserialize onto the shared condition operand contract");
+		condition.RightExpression!.Type.Should().Be("SysSetting",
+			because: "the SysSetting operand type must deserialize onto the shared condition operand contract");
+		condition.RightExpression!.SysSettingName.Should().Be("MaxOrderAmount",
+			because: "the system setting code must deserialize onto the shared condition operand contract");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Maps the batch MCP payload into the business-rule service request and returns per-rule results.")]
 	public void BusinessRuleCreate_Should_Map_Arguments_And_Return_Per_Rule_Results() {
 		// Arrange

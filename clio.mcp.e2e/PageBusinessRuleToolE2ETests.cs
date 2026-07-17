@@ -1061,6 +1061,87 @@ public sealed class PageBusinessRuleToolE2ETests : McpContractFixtureBase {
 		return rule;
 	}
 
+	[Category("McpE2E.NoEnvironment")]
+	[Test]
+	[Description("Binds a page rule whose conditions use a DataSource field, a page parameter, and a SysSetting operand (the new scoped condition sources) through the real MCP server and reports an invalid environment failure, proving the scopeId and sysSettingName fields deserialize end to end without a live stand or the feature flag.")]
+	[AllureTag(ToolName)]
+	[AllureName("Page business-rule MCP tool binds scoped condition sources (DataSource field, page parameter, SysSetting)")]
+	[AllureDescription("Starts the real clio MCP server and calls create-page-business-rules with scopeId and sysSettingName condition operands against an intentionally missing environment; the payload must bind and reach command execution rather than failing MCP deserialization. Environment-resolution runs before rule validation, so this is portable and does not require the page-business-rule-condition-sources feature.")]
+	public async Task BusinessRuleCreate_Should_Bind_Scoped_Condition_Sources_Payload_And_Report_Invalid_Environment() {
+		// Arrange
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+		string invalidEnvironmentName = $"missing-page-scoped-sources-env-{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = invalidEnvironmentName,
+					["package-name"] = "UsrPkg",
+					["page-schema-name"] = "UsrCase_FormPage",
+					["rules"] = new object[] { CreateScopedConditionSourcesRule() }
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a payload with scopeId and sysSettingName operands should bind and return the standard command execution envelope");
+		execution.ExitCode.Should().NotBe(0,
+			because: "the intentionally missing environment should fail during command execution, after payload binding");
+		execution.Output.Should().Contain(message =>
+				ContainsText(message.Value, invalidEnvironmentName),
+			because: "the failure should come from resolving the requested environment, not from deserializing the scoped condition operands");
+	}
+
+	private static IReadOnlyDictionary<string, object?> CreateScopedConditionSourcesRule() =>
+		new Dictionary<string, object?> {
+			["caption"] = "Hide assignment for standard service requests by scoped sources",
+			["condition"] = new Dictionary<string, object?> {
+				["logicalOperation"] = "AND",
+				["conditions"] = new object[] {
+					new Dictionary<string, object?> {
+						// DataSource field: a column addressed by its datasource scope, not surfaced on the page.
+						["leftExpression"] = CreateScopedAttributeExpression("Contact", "PDS"),
+						["comparisonType"] = "is-filled-in"
+					},
+					new Dictionary<string, object?> {
+						// Page parameter compared to a boolean/text constant.
+						["leftExpression"] = CreateScopedAttributeExpression("RequestType", "PageParameters"),
+						["comparisonType"] = "equal",
+						["rightExpression"] = new Dictionary<string, object?> {
+							["type"] = "Const",
+							["value"] = "Service request"
+						}
+					},
+					new Dictionary<string, object?> {
+						// Page parameter compared to a system setting.
+						["leftExpression"] = CreateScopedAttributeExpression("MaxAmount", "PageParameters"),
+						["comparisonType"] = "greater-than",
+						["rightExpression"] = new Dictionary<string, object?> {
+							["type"] = "SysSetting",
+							["sysSettingName"] = "MaxOrderAmount"
+						}
+					}
+				}
+			},
+			["actions"] = new object[] {
+				new Dictionary<string, object?> {
+					["type"] = "hide-element",
+					["items"] = new object[] { "AssignedToInput" }
+				}
+			}
+		};
+
+	private static IReadOnlyDictionary<string, object?> CreateScopedAttributeExpression(string path, string scopeId) =>
+		new Dictionary<string, object?> {
+			["type"] = "AttributeValue",
+			["path"] = path,
+			["scopeId"] = scopeId
+		};
+
 	private sealed record PageRuleBlockIds(
 		string ConditionUId,
 		string LeftExpressionUId,

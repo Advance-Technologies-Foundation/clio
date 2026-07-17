@@ -561,6 +561,135 @@ public sealed class SimpleToFullBusinessRuleConverterTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Emits scopeId on a DataSource-field condition operand and pairs it with a scope-named DataLoaded trigger (not a root change trigger), matching the shipped Cases_FormPageBusinessRule pattern.")]
+	public void ToPageMetadata_Should_Emit_ScopeId_And_Scoped_DataLoaded_Trigger_For_DataSource_Field() {
+		// Arrange
+		const string priorityId = "22222222-2222-2222-2222-222222222222";
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap =
+			new Dictionary<string, BusinessRuleAttributeDescriptor>(StringComparer.Ordinal) {
+				["PDS::Priority"] = new("Priority", "Lookup", "CasePriority")
+			};
+		BusinessRule rule = new(
+			"Hide reminder for a priority set only in the DataSource",
+			new BusinessRuleConditionGroup(
+				"AND",
+				[
+					new BusinessRuleCondition(
+						new BusinessRuleExpression("AttributeValue", "Priority", scopeId: "PDS"),
+						"equal",
+						new BusinessRuleExpression("Const", null, Json(priorityId)))
+				]),
+			[
+				new HideElementBusinessRuleAction(["ReminderLabel"])
+			]);
+
+		// Act
+		BusinessRuleMetadataDto metadata = SimpleToFullBusinessRuleConverter.ToPageMetadata(attributeMap, rule);
+
+		// Assert
+		BusinessRuleConditionMetadataDto condition = metadata.Cases[0].Condition!
+			.Should().BeOfType<BusinessRuleGroupConditionMetadataDto>(
+				because: "scoped-field conditions still persist a grouped case condition").Subject.Conditions[0];
+		condition.LeftExpression.TypeName.Should().Be(BusinessRuleConstants.BusinessRuleAttributeExpressionTypeName,
+			because: "a datasource field is still a BusinessRuleAttributeExpression, discriminated only by scopeId");
+		condition.LeftExpression.Path.Should().Be("Priority",
+			because: "the in-scope column name is persisted on path");
+		condition.LeftExpression.ScopeId.Should().Be("PDS",
+			because: "the datasource name is persisted on scopeId as the platform discriminator");
+		metadata.Triggers.Should().Contain(trigger =>
+				trigger.Type == BusinessRuleConstants.DataLoadedTriggerType && trigger.Name == "PDS",
+			because: "a datasource-scoped operand re-evaluates on that datasource's DataLoaded, named after the scope");
+		metadata.Triggers.Should().Contain(trigger =>
+				trigger.Type == BusinessRuleConstants.DataLoadedTriggerType && trigger.Name == string.Empty,
+			because: "the root DataLoaded trigger is always emitted");
+		metadata.Triggers.Should().NotContain(trigger =>
+				trigger.Type == BusinessRuleConstants.ChangeAttributeValueTriggerType,
+			because: "a non-surfaced datasource column has no root view attribute to hang a change trigger on");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Emits scopeId 'PageParameters' when a page parameter is compared to a constant, and a PageParameters-scoped DataLoaded trigger.")]
+	public void ToPageMetadata_Should_Emit_PageParameters_Scope_For_Page_Parameter_Operand() {
+		// Arrange
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap =
+			new Dictionary<string, BusinessRuleAttributeDescriptor>(StringComparer.Ordinal) {
+				["PageParameters::RequestType"] = new("RequestType", "Text", null)
+			};
+		BusinessRule rule = new(
+			"Hide Assigned to for standard service requests",
+			new BusinessRuleConditionGroup(
+				"AND",
+				[
+					new BusinessRuleCondition(
+						new BusinessRuleExpression("AttributeValue", "RequestType", scopeId: BusinessRuleConstants.PageParametersScope),
+						"equal",
+						new BusinessRuleExpression("Const", null, Json("Service request")))
+				]),
+			[
+				new HideElementBusinessRuleAction(["AssignedToInput"])
+			]);
+
+		// Act
+		BusinessRuleMetadataDto metadata = SimpleToFullBusinessRuleConverter.ToPageMetadata(attributeMap, rule);
+
+		// Assert
+		BusinessRuleConditionMetadataDto condition = metadata.Cases[0].Condition!
+			.Should().BeOfType<BusinessRuleGroupConditionMetadataDto>().Subject.Conditions[0];
+		condition.LeftExpression.Path.Should().Be("RequestType",
+			because: "the page parameter name is persisted on path");
+		condition.LeftExpression.ScopeId.Should().Be("PageParameters",
+			because: "a page parameter is addressed through the well-known PageParameters scope");
+		condition.RightExpression!.Value!.ToString().Should().Be("Service request",
+			because: "the compared constant round-trips verbatim");
+		metadata.Triggers.Should().Contain(trigger =>
+				trigger.Type == BusinessRuleConstants.DataLoadedTriggerType && trigger.Name == "PageParameters",
+			because: "a page-parameter operand re-evaluates on the PageParameters DataLoaded");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Maps a SysSetting right operand into a BusinessRuleSysSettingExpression that inherits the compared operand's data value type.")]
+	public void ToPageMetadata_Should_Map_SysSetting_Right_Expression() {
+		// Arrange
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap =
+			new Dictionary<string, BusinessRuleAttributeDescriptor>(StringComparer.Ordinal) {
+				["PageParameters::MaxAmount"] = new("MaxAmount", "Integer", null)
+			};
+		BusinessRule rule = new(
+			"Compare a page parameter to a system setting",
+			new BusinessRuleConditionGroup(
+				"AND",
+				[
+					new BusinessRuleCondition(
+						new BusinessRuleExpression("AttributeValue", "MaxAmount", scopeId: BusinessRuleConstants.PageParametersScope),
+						"greater-than",
+						new BusinessRuleExpression("SysSetting", sysSettingName: "MaxOrderAmount"))
+				]),
+			[
+				new HideElementBusinessRuleAction(["OverLimitLabel"])
+			]);
+
+		// Act
+		BusinessRuleMetadataDto metadata = SimpleToFullBusinessRuleConverter.ToPageMetadata(attributeMap, rule);
+
+		// Assert
+		BusinessRuleExpressionMetadataDto rightExpression = metadata.Cases[0].Condition!
+			.Should().BeOfType<BusinessRuleGroupConditionMetadataDto>().Subject.Conditions[0].RightExpression!;
+		rightExpression.TypeName.Should().Be(BusinessRuleConstants.BusinessRuleSysSettingExpressionTypeName,
+			because: "a system setting persists as the core BusinessRuleSysSettingExpression type");
+		rightExpression.Type.Should().Be("SysSetting",
+			because: "the SysSetting discriminator is preserved");
+		rightExpression.SysSettingName.Should().Be("MaxOrderAmount",
+			because: "the system setting code is persisted verbatim");
+		rightExpression.DataValueTypeName.Should().Be("Integer",
+			because: "a SysSetting inherits the data value type of the operand it is compared against, like a Const");
+		rightExpression.Value.Should().BeNull(
+			because: "a system setting resolves at runtime and carries no static value payload");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Maps set-values constant assignments into BusinessRuleActionSetValues metadata with typed item expressions.")]
 	public void ToMetadata_Should_Map_SetValues_Constant_Action_Metadata() {
 		// Arrange

@@ -95,7 +95,7 @@ public sealed record BusinessRuleCondition
 
     [JsonPropertyName("rightExpression")]
     [Description(
-        "Right expression. Supports AttributeValue, Const, or SysValue for equal, not-equal, and relational comparisons. Omit or null for is-filled-in and is-not-filled-in.")]
+        "Right expression. Supports AttributeValue, Const, SysValue, or SysSetting for equal, not-equal, and relational comparisons. Omit or null for is-filled-in and is-not-filled-in.")]
     public BusinessRuleExpression? RightExpression { get; init; }
 
     [JsonPropertyName("uId")]
@@ -114,23 +114,36 @@ public sealed record BusinessRuleExpression
         string? path = null,
         JsonElement? value = null,
         string? expression = null,
-        string? sysValueName = null)
+        string? sysValueName = null,
+        string? scopeId = null,
+        string? sysSettingName = null)
     {
         Type = type;
         Path = path;
         Value = value;
         Expression = expression;
         SysValueName = sysValueName;
+        ScopeId = scopeId;
+        SysSettingName = sysSettingName;
     }
 
     [JsonPropertyName("type")]
-    [Description("Expression type. Supported values: AttributeValue, Const, Formula, SysValue.")]
+    [Description("Expression type. Supported values: AttributeValue, Const, Formula, SysValue, SysSetting.")]
     [Required]
     public string Type { get; init; } = null!;
 
     [JsonPropertyName("path")]
     [Description("Attribute path when type is AttributeValue.")]
     public string? Path { get; init; }
+
+    /// <summary>
+    /// Optional scope selector for an <c>AttributeValue</c> operand on a <b>page</b> rule. It is the
+    /// platform discriminator resolved at runtime by <c>Context.GetAttributeByPath(path, scopeId)</c>.
+    /// </summary>
+    [JsonPropertyName("scopeId")]
+    [Description(
+        "Attribute scope for page-rule AttributeValue operands. Omit or leave empty for a root page attribute (a surfaced datasource-bound attribute or an unbound/technical page-local attribute). Use 'PageParameters' for a page input parameter, or a DataSource name from modelConfig.dataSources (for example 'PDS') to reference a DataSource column that is not surfaced on the page. Entity rules must leave this empty. Requires the page-business-rule-condition-sources feature.")]
+    public string? ScopeId { get; init; }
 
     [JsonPropertyName("value")]
     [Description(
@@ -151,6 +164,14 @@ public sealed record BusinessRuleExpression
     [Description(
         "System variable name when type is SysValue. A SysValue may be on either side of a condition. Supported values: CurrentDate (Date), CurrentTime (Time), CurrentDateTime (DateTime), CurrentUser (Lookup referencing SysAdminUnit), CurrentUserContact (Lookup referencing Contact), CurrentUserAccount (Lookup referencing Account), CurrentUserRoles (ObjectList of SysAdminUnit roles; use comparisonType contain/not-contain against a role). Both operands must resolve to the same data value type, and lookup operands must reference the same schema.")]
     public string? SysValueName { get; init; }
+
+    /// <summary>
+    /// System-setting code/name when <see cref="Type"/> is <c>SysSetting</c>.
+    /// </summary>
+    [JsonPropertyName("sysSettingName")]
+    [Description(
+        "System setting code (SysSettings code, not a UId) when type is SysSetting. Compares against the setting's value; its data value type is inherited from the compared operand, like a Const. Page rules only, requires the page-business-rule-condition-sources feature.")]
+    public string? SysSettingName { get; init; }
 
     [JsonPropertyName("uId")]
     [Description("Stable expression identity (GUID). Pass the value returned by read back on update to preserve block identity; omit on create to generate a fresh id.")]

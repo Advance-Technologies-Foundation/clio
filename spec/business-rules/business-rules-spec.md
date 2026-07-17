@@ -134,8 +134,14 @@ merged page bundle. It additionally supports:
 - conditions
    - left/right expression types on either side, in any pairing: declared page attribute, constant, system variable
    - the same system variables as the entity scope, plus current-user visibility (the no-code alternative to a page handler): `CurrentUser`/`CurrentUserContact`/`CurrentUserAccount` `equal`/`not-equal` a constant id
-   - condition attributes only when declared in `bundle.viewModelConfig.attributes` and bound to an entity datasource column through `modelConfig.path`
-   - declared page attribute names in payloads (e.g. `PDS_UsrText_r07ym9c`), **not** datasource paths (e.g. `PDS.UsrText`); page attribute data value types are resolved from the datasource entity schema
+   - additional condition operand sources are gated behind the runtime feature flag `page-business-rule-condition-sources` (OFF by default; enable with `clio experimental --name page-business-rule-condition-sources --enable`)
+   - an `AttributeValue` operand carries an optional `scopeId` — the platform discriminator resolved at runtime by `Context.GetAttributeByPath(path, scopeId)`:
+      - omitted / empty → a **root page attribute**: a surfaced datasource-bound attribute (declared in `bundle.viewModelConfig.attributes` with a `modelConfig.path`) **or** an unbound/technical page-local attribute (an attribute with a declared type / default value and no `modelConfig.path`)
+      - `"PageParameters"` → a **page parameter** (`path` = parameter name)
+      - `"<DataSource name>"` (a name from `bundle.modelConfig.dataSources`, e.g. `PDS`) → a **DataSource field**, including a column **not** surfaced on the page (`path` = column name; forward paths such as `Contact.Account` are allowed)
+   - a new operand type `SysSetting` (field `sysSettingName`, the SysSettings code) compares against a system setting, inheriting the compared operand's data value type (like a `Const`) — this satisfies the "compare a page parameter to a system setting" AC
+   - while the feature flag is **off**, page rules keep prior behaviour: only root surfaced datasource-bound attributes are allowed, referenced by declared page attribute name (e.g. `PDS_UsrText_r07ym9c`), **not** datasource path (e.g. `PDS.UsrText`); page attribute data value types are resolved from the datasource entity schema
+   - caveat: a rule authored with these sources **executes** at runtime, but the legacy 7.x visual condition designer may not yet round-trip a page-parameter / scoped operand for manual editing (the DataSource-field scope is proven by shipped Creatio packages and is the safest); see [ENG-93262-sdd.md](./ENG-93262-sdd.md) §12 for the full spike findings
    - data value types: text, number, boolean, GUID, lookup GUID, date/time
    - the same comparison types and operand rules as the entity scope; right-side `AttributeValue` is supported when both attributes resolve to the same data value type; lookup constants are sent as GUID strings
 - actions
@@ -150,7 +156,8 @@ Page-level creation rejects the request when:
 - caption is missing or empty; the condition group is empty; the request uses nested condition groups or an unsupported logical operation or condition shape
 - a unary comparison includes `rightExpression`, or a binary comparison omits it
 - a relational comparison targets a non-numeric and non-temporal left attribute
-- a left/right `AttributeValue` uses a datasource path instead of a declared page attribute name; a referenced condition attribute is not declared in the page view model, not bound to a datasource column, or cannot be resolved to an entity schema column
+- a left/right `AttributeValue` supplies a `.`-containing `path` without a `scopeId` — it still gets the "must use the declared page attribute name, not the datasource path" error; a referenced condition attribute is not declared in the page view model, not bound to a datasource column, or cannot be resolved to an entity schema column
+- while the feature flag `page-business-rule-condition-sources` is off, any non-empty `scopeId` (page parameter or DataSource field) or `SysSetting` operand is rejected; entity rules always reject a non-empty `scopeId` and a `SysSetting` operand (single scope only)
 - left/right attribute expressions resolve to different data value types, or a constant value does not match the resolved left attribute data value type
 - a right-side system variable is unknown, mismatched in data value type, or references a different lookup schema than the resolved left attribute
 - the request uses an unsupported page action type, an action has no target elements, or a target element does not exist in the merged recursive `viewConfig`

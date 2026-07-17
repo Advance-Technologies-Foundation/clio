@@ -10,7 +10,7 @@ internal interface IPageBusinessRuleValidator {
 	/// Validates a page business-rule definition against page attributes and elements.
 	/// </summary>
 	/// <param name="rule">Business rule to validate.</param>
-	/// <param name="attributeMap">Page business-rule attributes keyed by payload path.</param>
+	/// <param name="attributeMap">Page business-rule attributes keyed by payload path (or <c>scopeId::path</c> for a scoped operand).</param>
 	/// <param name="elementNames">Available page element names.</param>
 	void Validate(
 		BusinessRule rule,
@@ -18,16 +18,29 @@ internal interface IPageBusinessRuleValidator {
 		IReadOnlySet<string> elementNames);
 }
 
-internal sealed class PageBusinessRuleValidator(IBusinessRuleValidator businessRuleValidator)
+internal sealed class PageBusinessRuleValidator(
+	IBusinessRuleValidator businessRuleValidator,
+	IFeatureToggleService featureToggleService)
 	: IPageBusinessRuleValidator {
 
 	public void Validate(
 		BusinessRule rule,
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
 		IReadOnlySet<string> elementNames) {
-		RejectDatasourcePaths(rule);
+		bool allowConditionSources = featureToggleService.IsFeatureEnabled(PageConditionSourcesFeatureName);
+		if (allowConditionSources) {
+			// The feature is on: scoped operands are legitimate. Reject an unknown scope early with the
+			// available scopes; a bare datasource path (`.`) without a scopeId is still rejected downstream
+			// by the shared validator's direct-path check.
+			ValidateConditionScopes(rule, attributeMap);
+		} else {
+			// The feature is off: preserve the prior page-rule behaviour. A `.` path must be a declared page
+			// attribute name; a non-empty scopeId or a SysSetting operand is rejected by the shared validator.
+			RejectDatasourcePaths(rule);
+		}
+
 		try {
-			businessRuleValidator.Validate(rule, attributeMap, ValidatePageAction(elementNames));
+			businessRuleValidator.Validate(rule, attributeMap, ValidatePageAction(elementNames), allowConditionSources);
 		} catch (ArgumentException exception) {
 			throw new ArgumentException(AppendCandidateHint(exception.Message, attributeMap, elementNames), exception);
 		}
@@ -61,20 +74,57 @@ internal sealed class PageBusinessRuleValidator(IBusinessRuleValidator businessR
 			}
 		};
 
+	/// <summary>
+	/// Validates every condition operand's <c>scopeId</c> against the scopes available on the page
+	/// (empty root scope, <c>PageParameters</c>, or a DataSource name from <c>modelConfig.dataSources</c>)
+	/// so an unknown scope fails early with the list of valid scopes rather than as an opaque
+	/// unknown-attribute error.
+	/// </summary>
+	private static void ValidateConditionScopes(
+		BusinessRule rule,
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap) {
+		if (attributeMap is not PageScopedBusinessRuleAttributeMap scopedMap) {
+			return;
+		}
+
+		foreach (BusinessRuleCondition condition in rule.Condition?.Conditions ?? []) {
+			ValidateConditionOperandScope(condition.LeftExpression, scopedMap);
+			ValidateConditionOperandScope(condition.RightExpression, scopedMap);
+		}
+	}
+
+	private static void ValidateConditionOperandScope(
+		BusinessRuleExpression? expression,
+		PageScopedBusinessRuleAttributeMap scopedMap) {
+		if (expression is null
+			|| !string.Equals(expression.Type, AttributeValueExpressionType, StringComparison.OrdinalIgnoreCase)
+			|| string.IsNullOrEmpty(expression.ScopeId)
+			|| scopedMap.IsKnownScope(expression.ScopeId)) {
+			return;
+		}
+
+		string availableScopes = FormatCandidates(
+			new[] { PageParametersScope }.Concat(scopedMap.DataSourceScopes));
+		throw new ArgumentException(
+			$"Unknown scopeId '{expression.ScopeId}' in rule.condition.conditions[*]. Use an empty scope for a root page attribute, 'PageParameters' for a page parameter, or a DataSource name. Available scopes: {availableScopes}.");
+	}
+
 	private static void RejectDatasourcePaths(BusinessRule rule) {
 		foreach (BusinessRuleCondition condition in rule.Condition?.Conditions ?? []) {
 			RejectDatasourcePath(condition.LeftExpression, "rule.condition.conditions[*].leftExpression.path");
-			if (condition.RightExpression is not null
-				&& string.Equals(condition.RightExpression.Type, "AttributeValue", StringComparison.OrdinalIgnoreCase)) {
-				RejectDatasourcePath(condition.RightExpression, "rule.condition.conditions[*].rightExpression.path");
-			}
+			RejectDatasourcePath(condition.RightExpression, "rule.condition.conditions[*].rightExpression.path");
 		}
 	}
 
 	private static void RejectDatasourcePath(BusinessRuleExpression? expression, string fieldName) {
-		if (expression?.Path?.Contains('.', StringComparison.Ordinal) == true) {
+		if (expression is null
+			|| !string.Equals(expression.Type, AttributeValueExpressionType, StringComparison.OrdinalIgnoreCase)) {
+			return;
+		}
+
+		if (expression.Path?.Contains('.', StringComparison.Ordinal) == true) {
 			throw new ArgumentException(
-				$"{fieldName} must use the declared page attribute name from bundle.viewModelConfig.attributes, not datasource path '{expression.Path}'.");
+				$"{fieldName} must use the declared page attribute name from bundle.viewModelConfig.attributes, not datasource path '{expression.Path}'. Enable the '{PageConditionSourcesFeatureName}' feature to reference DataSource fields and page parameters via scopeId.");
 		}
 	}
 
@@ -82,10 +132,14 @@ internal sealed class PageBusinessRuleValidator(IBusinessRuleValidator businessR
 		string message,
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
 		IReadOnlySet<string> elementNames) {
-		string result = message.Replace(
-			"Unknown attribute",
-			"Unknown or unsupported datasource-bound page attribute",
-			StringComparison.Ordinal);
+		// Keep the scoped "Unknown attribute '…' in scope '…'" phrasing intact; only the plain root-scope
+		// unknown-attribute error is rewritten to the datasource-bound-attribute wording.
+		string result = message.Contains(" in scope '", StringComparison.Ordinal)
+			? message
+			: message.Replace(
+				"Unknown attribute",
+				"Unknown or unsupported datasource-bound page attribute",
+				StringComparison.Ordinal);
 		if (result.Contains("rule.condition.conditions", StringComparison.Ordinal)) {
 			result += $" Available condition attributes: {FormatCandidates(attributeMap.Keys)}.";
 		}

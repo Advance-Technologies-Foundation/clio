@@ -173,7 +173,8 @@ internal static class SimpleToFullBusinessRuleConverter {
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
 		BusinessRuleExpression expression) {
 		if (string.Equals(expression.Type, AttributeValueExpressionType, StringComparison.OrdinalIgnoreCase)) {
-			BusinessRuleAttributeDescriptor descriptor = attributeMap[expression.Path!];
+			BusinessRuleAttributeDescriptor descriptor =
+				attributeMap[BuildScopedOperandKey(expression.ScopeId, expression.Path!)];
 			return new OperandTypeContext(descriptor.DataValueTypeName, descriptor.ReferenceSchemaName);
 		}
 
@@ -182,6 +183,7 @@ internal static class SimpleToFullBusinessRuleConverter {
 			return new OperandTypeContext(sysValue.DataValueTypeName, sysValue.ReferenceSchemaName);
 		}
 
+		// A SysSetting operand has no intrinsic type here; like a Const it inherits the compared operand's type.
 		return null;
 	}
 
@@ -192,13 +194,26 @@ internal static class SimpleToFullBusinessRuleConverter {
 		bool includeAttributeReferenceSchemaName) {
 		if (string.Equals(expression.Type, AttributeValueExpressionType, StringComparison.OrdinalIgnoreCase)) {
 			string path = expression.Path!;
-			BusinessRuleAttributeDescriptor descriptor = attributeMap[path];
+			BusinessRuleAttributeDescriptor descriptor = attributeMap[BuildScopedOperandKey(expression.ScopeId, path)];
 			return BuildAttributeExpression(
 				descriptor,
 				path,
 				descriptor.DataValueTypeName,
 				includeAttributeReferenceSchemaName,
-				expression.UId);
+				expression.UId,
+				expression.ScopeId);
+		}
+
+		if (string.Equals(expression.Type, SysSettingExpressionType, StringComparison.OrdinalIgnoreCase)) {
+			// SysSetting inherits the data value type of the compared operand, mirroring the Const branch.
+			return new BusinessRuleExpressionMetadataDto {
+				TypeName = BusinessRuleSysSettingExpressionTypeName,
+				UId = ResolveBlockUId(expression.UId),
+				Type = SysSettingExpressionType,
+				DataValueTypeName = constValueType.DataValueTypeName,
+				ReferenceSchemaName = constValueType.ReferenceSchemaName,
+				SysSettingName = expression.SysSettingName
+			};
 		}
 
 		if (string.Equals(expression.Type, SysValueExpressionType, StringComparison.OrdinalIgnoreCase)) {
@@ -238,7 +253,8 @@ internal static class SimpleToFullBusinessRuleConverter {
 		string path,
 		string? dataValueTypeName = null,
 		bool includeAttributeReferenceSchemaName = true,
-		string? requestedUId = null) {
+		string? requestedUId = null,
+		string? scopeId = null) {
 		return new BusinessRuleExpressionMetadataDto {
 			TypeName = BusinessRuleAttributeExpressionTypeName,
 			UId = ResolveBlockUId(requestedUId),
@@ -246,6 +262,9 @@ internal static class SimpleToFullBusinessRuleConverter {
 			DataValueTypeName = dataValueTypeName ?? descriptor.DataValueTypeName,
 			ReferenceSchemaName = includeAttributeReferenceSchemaName ? descriptor.ReferenceSchemaName : null,
 			Path = path,
+			// A null scopeId is omitted from the payload (WhenWritingNull), so a root-scope operand serializes
+			// exactly as before; a scoped operand carries the datasource/page-parameter scope name.
+			ScopeId = string.IsNullOrEmpty(scopeId) ? null : scopeId,
 		};
 	}
 
@@ -395,6 +414,22 @@ internal static class SimpleToFullBusinessRuleConverter {
 				Type = ChangeAttributeValueTriggerType
 			})
 			.ToList();
+
+		// A scoped condition operand (DataSource field, page parameter) re-evaluates the rule when its
+		// scope's data loads. The platform expresses this as a DataLoaded trigger whose Name is the scope
+		// name (proven by the shipped Cases_FormPageBusinessRule metadata), alongside the root DataLoaded
+		// trigger below. Root-scope attribute operands keep their ChangeAttributeValue triggers above.
+		foreach (string scope in rule.Condition.Conditions
+			         .SelectMany(EnumerateScopedTriggerScopes)
+			         .Distinct(StringComparer.OrdinalIgnoreCase)) {
+			triggers.Add(new BusinessRuleTriggerMetadataDto {
+				TypeName = BusinessRuleTriggerTypeName,
+				UId = Guid.NewGuid().ToString(),
+				Name = scope,
+				Type = DataLoadedTriggerType
+			});
+		}
+
 		triggers.Add(new BusinessRuleTriggerMetadataDto {
 			TypeName = BusinessRuleTriggerTypeName,
 			UId = Guid.NewGuid().ToString(),
@@ -647,9 +682,11 @@ internal static class SimpleToFullBusinessRuleConverter {
 		string.IsNullOrWhiteSpace(sourceFilterPath) ? sourcePath : $"{sourcePath}.{sourceFilterPath}";
 
 	private static IEnumerable<string> EnumerateTriggerNames(BusinessRuleCondition condition) {
-		// Only attribute operands drive change triggers; Const and SysValue operands have no
-		// attribute path, so a condition with no attribute operand (for example
-		// CurrentUserRoles CONTAIN <role>) contributes only the DataLoaded trigger.
+		// Only ROOT-scope attribute operands drive change triggers; Const, SysValue, SysSetting, and
+		// scoped operands have no root attribute path, so a condition with no root attribute operand (for
+		// example CurrentUserRoles CONTAIN <role>, or a DataSource-field operand) contributes only the
+		// DataLoaded trigger(s). Scoped operands instead emit a scope-named DataLoaded trigger (see
+		// EnumerateScopedTriggerScopes / BuildTriggers).
 		if (IsTriggerAttributeExpression(condition.LeftExpression)) {
 			yield return condition.LeftExpression.Path!;
 		}
@@ -661,7 +698,23 @@ internal static class SimpleToFullBusinessRuleConverter {
 
 	private static bool IsTriggerAttributeExpression(BusinessRuleExpression expression) =>
 		string.Equals(expression.Type, AttributeValueExpressionType, StringComparison.OrdinalIgnoreCase)
-		&& !string.IsNullOrWhiteSpace(expression.Path);
+		&& !string.IsNullOrWhiteSpace(expression.Path)
+		&& string.IsNullOrEmpty(expression.ScopeId);
+
+	private static IEnumerable<string> EnumerateScopedTriggerScopes(BusinessRuleCondition condition) {
+		if (IsScopedAttributeExpression(condition.LeftExpression)) {
+			yield return condition.LeftExpression.ScopeId!;
+		}
+
+		if (condition.RightExpression is not null && IsScopedAttributeExpression(condition.RightExpression)) {
+			yield return condition.RightExpression.ScopeId!;
+		}
+	}
+
+	private static bool IsScopedAttributeExpression(BusinessRuleExpression expression) =>
+		string.Equals(expression.Type, AttributeValueExpressionType, StringComparison.OrdinalIgnoreCase)
+		&& !string.IsNullOrWhiteSpace(expression.Path)
+		&& !string.IsNullOrEmpty(expression.ScopeId);
 
 	private static IEnumerable<string> EnumerateFormulaTriggerNames(
 		BusinessRuleAction action,

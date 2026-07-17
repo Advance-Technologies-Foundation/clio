@@ -1,6 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Text.Json;
+using Clio.Command;
 using Clio.Command.BusinessRules;
+using Clio.Command.EntitySchemaDesigner;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
@@ -23,7 +26,7 @@ public sealed class PageBusinessRuleValidatorTests {
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
-			.WithMessage("rule.condition.conditions[*].leftExpression.path must use the declared page attribute name from bundle.viewModelConfig.attributes, not datasource path 'PDS.Name'.",
+			.WithMessage("rule.condition.conditions[*].leftExpression.path must use the declared page attribute name from bundle.viewModelConfig.attributes, not datasource path 'PDS.Name'.*",
 				because: "page rules must target declared view-model attributes rather than datasource paths");
 	}
 
@@ -40,7 +43,7 @@ public sealed class PageBusinessRuleValidatorTests {
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
-			.WithMessage("rule.condition.conditions[*].rightExpression.path must use the declared page attribute name from bundle.viewModelConfig.attributes, not datasource path 'PDS.Status'.",
+			.WithMessage("rule.condition.conditions[*].rightExpression.path must use the declared page attribute name from bundle.viewModelConfig.attributes, not datasource path 'PDS.Status'.*",
 				because: "right-side page attribute comparisons must also use declared page attribute names");
 	}
 
@@ -136,6 +139,168 @@ public sealed class PageBusinessRuleValidatorTests {
 				because: "validation errors should help callers choose a supported datasource-bound page attribute");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Accepts a DataSource-field condition operand (scopeId = datasource name) when the feature is enabled.")]
+	public void Validate_Should_Accept_DataSource_Field_When_Feature_Enabled() {
+		// Arrange
+		BusinessRule rule = CreateScopedRule(new BusinessRuleCondition(
+			new BusinessRuleExpression("AttributeValue", "Contact", scopeId: "PDS"),
+			"is-filled-in"));
+
+		// Act
+		Action act = () => CreateValidator(conditionSourcesEnabled: true)
+			.Validate(rule, CreateScopedMap(), CreateElementNames());
+
+		// Assert
+		act.Should().NotThrow(
+			because: "a DataSource column addressed by scopeId is a valid page condition source when the feature is on");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Accepts a page-parameter operand compared to a constant when the feature is enabled.")]
+	public void Validate_Should_Accept_Page_Parameter_Compared_To_Const_When_Feature_Enabled() {
+		// Arrange
+		BusinessRule rule = CreateScopedRule(new BusinessRuleCondition(
+			new BusinessRuleExpression("AttributeValue", "RequestType", scopeId: BusinessRuleConstants.PageParametersScope),
+			"equal",
+			new BusinessRuleExpression("Const", value: Const("Service request"))));
+
+		// Act
+		Action act = () => CreateValidator(conditionSourcesEnabled: true)
+			.Validate(rule, CreateScopedMap(), CreateElementNames());
+
+		// Assert
+		act.Should().NotThrow(
+			because: "comparing a page parameter to a boolean/text constant is a stated acceptance criterion");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Accepts a page parameter compared to a system setting when the feature is enabled.")]
+	public void Validate_Should_Accept_Page_Parameter_Compared_To_SysSetting_When_Feature_Enabled() {
+		// Arrange
+		BusinessRule rule = CreateScopedRule(new BusinessRuleCondition(
+			new BusinessRuleExpression("AttributeValue", "MaxAmount", scopeId: BusinessRuleConstants.PageParametersScope),
+			"greater-than",
+			new BusinessRuleExpression("SysSetting", sysSettingName: "MaxOrderAmount")));
+
+		// Act
+		Action act = () => CreateValidator(conditionSourcesEnabled: true)
+			.Validate(rule, CreateScopedMap(), CreateElementNames());
+
+		// Assert
+		act.Should().NotThrow(
+			because: "comparing a page parameter to a system setting is a stated acceptance criterion");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects an unknown scopeId with the list of available scopes when the feature is enabled.")]
+	public void Validate_Should_Reject_Unknown_Scope_When_Feature_Enabled() {
+		// Arrange
+		BusinessRule rule = CreateScopedRule(new BusinessRuleCondition(
+			new BusinessRuleExpression("AttributeValue", "Foo", scopeId: "NotADataSource"),
+			"is-filled-in"));
+
+		// Act
+		Action act = () => CreateValidator(conditionSourcesEnabled: true)
+			.Validate(rule, CreateScopedMap(), CreateElementNames());
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("*Unknown scopeId 'NotADataSource'*Available scopes: PageParameters, PDS.*",
+				because: "an unknown scope should fail early and list the valid scopes");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects a scoped condition operand when the feature is disabled, pointing at the feature flag.")]
+	public void Validate_Should_Reject_Scope_When_Feature_Disabled() {
+		// Arrange
+		BusinessRule rule = CreateScopedRule(new BusinessRuleCondition(
+			new BusinessRuleExpression("AttributeValue", "Contact", scopeId: "PDS"),
+			"is-filled-in"));
+
+		// Act
+		Action act = () => CreateValidator().Validate(rule, CreateScopedMap(), CreateElementNames());
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("*scopeId 'PDS' is not supported for this rule*page-business-rule-condition-sources*",
+				because: "scoped operands must be rejected while the feature is off, guiding the caller to the flag");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects a SysSetting operand when the feature is disabled.")]
+	public void Validate_Should_Reject_SysSetting_When_Feature_Disabled() {
+		// Arrange
+		BusinessRule rule = CreateScopedRule(new BusinessRuleCondition(
+			new BusinessRuleExpression("AttributeValue", "PDS_Name"),
+			"equal",
+			new BusinessRuleExpression("SysSetting", sysSettingName: "MaxOrderAmount")));
+
+		// Act
+		Action act = () => CreateValidator().Validate(rule, CreateScopedMap(), CreateElementNames());
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("*'SysSetting' is not supported for this rule*page-business-rule-condition-sources*",
+				because: "the SysSetting operand is part of the gated page condition sources");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Rejects a cross-scope comparison whose operands resolve to different data value types when the feature is enabled.")]
+	public void Validate_Should_Reject_Cross_Scope_Type_Mismatch_When_Feature_Enabled() {
+		// Arrange
+		BusinessRule rule = CreateScopedRule(new BusinessRuleCondition(
+			new BusinessRuleExpression("AttributeValue", "Priority", scopeId: "PDS"),
+			"equal",
+			new BusinessRuleExpression("AttributeValue", "RequestType", scopeId: BusinessRuleConstants.PageParametersScope)));
+
+		// Act
+		Action act = () => CreateValidator(conditionSourcesEnabled: true)
+			.Validate(rule, CreateScopedMap(), CreateElementNames());
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("*Both operands must resolve to the same data value type*",
+				because: "a Lookup DataSource field and a Text page parameter are not type-compatible");
+	}
+
+	private static BusinessRule CreateScopedRule(BusinessRuleCondition condition) =>
+		new(
+			"Toggle element",
+			new BusinessRuleConditionGroup("AND", [condition]),
+			[new HideElementBusinessRuleAction(["NameInput"])]);
+
+	private static PageScopedBusinessRuleAttributeMap CreateScopedMap() {
+		IEntityBusinessRuleAttributeProvider entityAttributeProvider = Substitute.For<IEntityBusinessRuleAttributeProvider>();
+		entityAttributeProvider.GetAttributes("Case", Arg.Any<Guid>()).Returns(new EntityBusinessRuleAttributeContext(
+			new EntityDesignSchemaDto(),
+			new Dictionary<string, BusinessRuleAttributeDescriptor>(StringComparer.Ordinal) {
+				["Contact"] = new("Contact", "Lookup", "Contact"),
+				["Priority"] = new("Priority", "Lookup", "CasePriority"),
+				["Subject"] = new("Subject", "Text", null)
+			}));
+		return new PageScopedBusinessRuleAttributeMap(
+			new Dictionary<string, BusinessRuleAttributeDescriptor>(StringComparer.Ordinal) {
+				["PDS_Name"] = new("PDS_Name", "Text", null)
+			},
+			new Dictionary<string, BusinessRuleAttributeDescriptor>(StringComparer.Ordinal) {
+				["RequestType"] = new("RequestType", "Text", null),
+				["MaxAmount"] = new("MaxAmount", "Integer", null)
+			},
+			new Dictionary<string, string>(StringComparer.Ordinal) { ["PDS"] = "Case" },
+			entityAttributeProvider,
+			Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"));
+	}
+
+	private static JsonElement Const(string value) => JsonSerializer.SerializeToElement(value);
+
 	private static BusinessRule CreatePageRule(
 		string leftPath = "PDS_Name",
 		BusinessRuleExpression? rightExpression = null,
@@ -175,6 +340,13 @@ public sealed class PageBusinessRuleValidatorTests {
 			_ => throw new ArgumentOutOfRangeException(nameof(actionType), actionType, null)
 		};
 
-	private static PageBusinessRuleValidator CreateValidator() =>
-		new(new BusinessRuleValidator(Substitute.For<IBusinessRuleLookupReferenceValidator>()));
+	private static PageBusinessRuleValidator CreateValidator(bool conditionSourcesEnabled = false) {
+		IFeatureToggleService featureToggleService = Substitute.For<IFeatureToggleService>();
+		featureToggleService
+			.IsFeatureEnabled(BusinessRuleConstants.PageConditionSourcesFeatureName)
+			.Returns(conditionSourcesEnabled);
+		return new PageBusinessRuleValidator(
+			new BusinessRuleValidator(Substitute.For<IBusinessRuleLookupReferenceValidator>()),
+			featureToggleService);
+	}
 }

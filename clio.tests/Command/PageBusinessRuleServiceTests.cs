@@ -51,7 +51,7 @@ public sealed class PageBusinessRuleServiceTests {
 			attributeProvider,
 			elementProvider,
 			addonService,
-			new PageBusinessRuleValidator(new BusinessRuleValidator(lookupReferenceValidator)));
+			CreatePageValidator(lookupReferenceValidator));
 
 		// Act
 		BusinessRuleCreateResult result = service.Create(new BusinessRuleCreateRequest("UsrPkg", "UsrPage", rule));
@@ -114,7 +114,7 @@ public sealed class PageBusinessRuleServiceTests {
 			attributeProvider,
 			elementProvider,
 			addonService,
-			new PageBusinessRuleValidator(new BusinessRuleValidator(lookupReferenceValidator)));
+			CreatePageValidator(lookupReferenceValidator));
 
 		// Act
 		Action act = () => service.Create(new BusinessRuleCreateRequest("UsrPkg", "UsrPage", rule));
@@ -162,7 +162,7 @@ public sealed class PageBusinessRuleServiceTests {
 			attributeProvider,
 			elementProvider,
 			addonService,
-			new PageBusinessRuleValidator(new BusinessRuleValidator(lookupReferenceValidator)));
+			CreatePageValidator(lookupReferenceValidator));
 
 		// Act
 		Action act = () => service.Create(new BusinessRuleCreateRequest("UsrPkg", "UsrPage", rule));
@@ -514,7 +514,7 @@ public sealed class PageBusinessRuleServiceTests {
 			attributeProvider,
 			elementProvider,
 			addonService,
-			new PageBusinessRuleValidator(new BusinessRuleValidator(lookupReferenceValidator)));
+			CreatePageValidator(lookupReferenceValidator));
 	}
 
 	private static AddonSchemaDto BuildPageAddonSchema(params (string Name, string UId)[] rules) {
@@ -549,4 +549,14 @@ public sealed class PageBusinessRuleServiceTests {
 			[
 				new ShowElementBusinessRuleAction([actionElementName])
 			]);
+
+	private static PageBusinessRuleValidator CreatePageValidator(
+		IBusinessRuleLookupReferenceValidator lookupReferenceValidator) {
+		// The service tests exercise the default (feature-off) page-rule behaviour with root-scope operands.
+		IFeatureToggleService featureToggleService = Substitute.For<IFeatureToggleService>();
+		featureToggleService.IsFeatureEnabled(Arg.Any<string>()).Returns(false);
+		return new PageBusinessRuleValidator(
+			new BusinessRuleValidator(lookupReferenceValidator),
+			featureToggleService);
+	}
 }

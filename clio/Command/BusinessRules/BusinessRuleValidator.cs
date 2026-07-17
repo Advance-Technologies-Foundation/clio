@@ -35,12 +35,18 @@ internal interface IBusinessRuleValidator {
 	/// Validates a business-rule definition with a custom action validator.
 	/// </summary>
 	/// <param name="rule">Business rule to validate.</param>
-	/// <param name="attributeMap">Business-rule attributes keyed by payload path.</param>
+	/// <param name="attributeMap">Business-rule attributes keyed by payload path (or <c>scopeId::path</c> for a scoped operand).</param>
 	/// <param name="validateAction">Action validator for the rule scope.</param>
+	/// <param name="allowScopedConditionSources">
+	/// When <c>true</c>, condition operands may carry a non-empty <c>scopeId</c> (DataSource field or
+	/// page parameter) and use the <c>SysSetting</c> operand type. When <c>false</c> (the default, used
+	/// by entity rules and by page rules while the feature is disabled), those operands are rejected.
+	/// </param>
 	void Validate(
 		BusinessRule rule,
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
-		Action<BusinessRuleAction, IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor>> validateAction);
+		Action<BusinessRuleAction, IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor>> validateAction,
+		bool allowScopedConditionSources = false);
 
 	/// <summary>
 	/// Validates an entity business-rule definition with schema-aware checks for apply-static-filter.
@@ -70,7 +76,8 @@ internal sealed class BusinessRuleValidator(IBusinessRuleLookupReferenceValidato
 	public void Validate(
 		BusinessRule rule,
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
-		Action<BusinessRuleAction, IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor>> validateAction) {
+		Action<BusinessRuleAction, IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor>> validateAction,
+		bool allowScopedConditionSources = false) {
 		ArgumentNullException.ThrowIfNull(rule);
 		bool isApplyFilterRule = IsApplyFilterOnlyRule(rule);
 		bool isApplyStaticFilterRule = IsApplyStaticFilterOnlyRule(rule);
@@ -100,7 +107,7 @@ internal sealed class BusinessRuleValidator(IBusinessRuleLookupReferenceValidato
 			throw new ArgumentException("rule.condition.conditions must contain at least one condition.");
 		}
 
-		ValidateAllConditions(rule.Condition.Conditions, attributeMap);
+		ValidateAllConditions(rule.Condition.Conditions, attributeMap, allowScopedConditionSources);
 		ValidateAllActions(rule.Actions, attributeMap, validateAction);
 		lookupReferenceValidator.Validate(rule, attributeMap);
 	}
@@ -146,13 +153,14 @@ internal sealed class BusinessRuleValidator(IBusinessRuleLookupReferenceValidato
 
 	private static void ValidateAllConditions(
 		List<BusinessRuleCondition> conditions,
-		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap) {
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
+		bool allowScopedConditionSources) {
 		foreach (BusinessRuleCondition condition in conditions) {
 			if (condition is null) {
 				throw new ArgumentException("rule.condition.conditions[*] is required.");
 			}
 
-			ValidateCondition(condition, attributeMap);
+			ValidateCondition(condition, attributeMap, allowScopedConditionSources);
 		}
 	}
 
@@ -171,7 +179,8 @@ internal sealed class BusinessRuleValidator(IBusinessRuleLookupReferenceValidato
 
 	private static void ValidateCondition(
 		BusinessRuleCondition condition,
-		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap) {
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
+		bool allowScopedConditionSources) {
 		if (condition.LeftExpression is null) {
 			throw new ArgumentException("rule.condition.conditions[*].leftExpression is required.");
 		}
@@ -179,10 +188,10 @@ internal sealed class BusinessRuleValidator(IBusinessRuleLookupReferenceValidato
 		string comparisonType = GetSupportedComparisonType(condition.ComparisonType);
 		bool requiresRight = !IsUnaryComparisonType(comparisonType);
 
-		// Either side may be an AttributeValue, Const, or SysValue; type/reference-schema
+		// Either side may be an AttributeValue, Const, SysValue, or SysSetting; type/reference-schema
 		// compatibility is the only constraint, so resolve and structurally validate each operand.
 		ConditionOperand left = ResolveOperand(
-			condition.LeftExpression, attributeMap, "rule.condition.conditions[*].leftExpression");
+			condition.LeftExpression, attributeMap, "rule.condition.conditions[*].leftExpression", allowScopedConditionSources);
 
 		if (!requiresRight) {
 			if (condition.RightExpression is not null) {
@@ -199,7 +208,7 @@ internal sealed class BusinessRuleValidator(IBusinessRuleLookupReferenceValidato
 		}
 
 		ConditionOperand right = ResolveOperand(
-			condition.RightExpression, attributeMap, "rule.condition.conditions[*].rightExpression");
+			condition.RightExpression, attributeMap, "rule.condition.conditions[*].rightExpression", allowScopedConditionSources);
 
 		ValidateComparison(comparisonType, left, right);
 	}
@@ -440,7 +449,8 @@ internal sealed class BusinessRuleValidator(IBusinessRuleLookupReferenceValidato
 	private static ConditionOperand ResolveOperand(
 		BusinessRuleExpression expression,
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
-		string fieldName) {
+		string fieldName,
+		bool allowScopedConditionSources) {
 		if (expression is null) {
 			throw new ArgumentException($"{fieldName} is required.");
 		}
@@ -450,12 +460,21 @@ internal sealed class BusinessRuleValidator(IBusinessRuleLookupReferenceValidato
 				throw new ArgumentException($"{fieldName}.path is required when {fieldName}.type is 'AttributeValue'.");
 			}
 
-			ValidateDirectAttributePath(expression.Path, $"{fieldName}.path");
-			BusinessRuleAttributeDescriptor descriptor = ResolveAttribute(attributeMap, expression.Path, $"{fieldName}.path");
+			string scopeId = expression.ScopeId ?? string.Empty;
+			if (string.IsNullOrEmpty(scopeId)) {
+				// Root scope: a `.` path must carry a scopeId, so keep rejecting a bare datasource path.
+				ValidateDirectAttributePath(expression.Path, $"{fieldName}.path");
+			} else if (!allowScopedConditionSources) {
+				throw new ArgumentException(
+					$"{fieldName}.scopeId '{scopeId}' is not supported for this rule. Scoped condition operands (DataSource field, page parameter) require the '{PageConditionSourcesFeatureName}' feature and are only available on page business rules.");
+			}
+
+			BusinessRuleAttributeDescriptor descriptor =
+				ResolveScopedAttribute(attributeMap, scopeId, expression.Path, $"{fieldName}.path");
 			return new ConditionOperand(
 				fieldName,
 				OperandKind.Attribute,
-				$"attribute '{expression.Path}'",
+				DescribeAttributeOperand(scopeId, expression.Path),
 				new OperandType(descriptor.DataValueTypeName, descriptor.ReferenceSchemaName),
 				expression);
 		}
@@ -478,6 +497,26 @@ internal sealed class BusinessRuleValidator(IBusinessRuleLookupReferenceValidato
 				expression);
 		}
 
+		if (string.Equals(expression.Type, SysSettingExpressionType, StringComparison.OrdinalIgnoreCase)) {
+			if (!allowScopedConditionSources) {
+				throw new ArgumentException(
+					$"{fieldName}.type 'SysSetting' is not supported for this rule. The SysSetting operand requires the '{PageConditionSourcesFeatureName}' feature and is only available on page business rules.");
+			}
+
+			if (string.IsNullOrWhiteSpace(expression.SysSettingName)) {
+				throw new ArgumentException($"{fieldName}.sysSettingName is required when {fieldName}.type is 'SysSetting'.");
+			}
+
+			// A system setting has no statically-resolvable data value type in clio, so it inherits the
+			// type of the operand it is compared against, exactly like a Const value (Type is null here).
+			return new ConditionOperand(
+				fieldName,
+				OperandKind.SysSetting,
+				$"system setting '{expression.SysSettingName}'",
+				null,
+				expression);
+		}
+
 		if (string.Equals(expression.Type, ConstExpressionType, StringComparison.OrdinalIgnoreCase)) {
 			if (expression.Value is null) {
 				throw new ArgumentException($"{fieldName}.value is required when {fieldName}.type is 'Const'.");
@@ -486,8 +525,13 @@ internal sealed class BusinessRuleValidator(IBusinessRuleLookupReferenceValidato
 			return new ConditionOperand(fieldName, OperandKind.Const, "constant value", null, expression);
 		}
 
-		throw new ArgumentException($"{fieldName}.type must be 'AttributeValue', 'Const', or 'SysValue'.");
+		throw new ArgumentException($"{fieldName}.type must be 'AttributeValue', 'Const', 'SysValue', or 'SysSetting'.");
 	}
+
+	private static string DescribeAttributeOperand(string scopeId, string path) =>
+		string.IsNullOrEmpty(scopeId)
+			? $"attribute '{path}'"
+			: $"attribute '{path}' in scope '{scopeId}'";
 
 	private static void ValidateComparison(string comparisonType, ConditionOperand left, ConditionOperand right) {
 		OperandType? leftType = left.Type;
@@ -610,7 +654,8 @@ internal sealed class BusinessRuleValidator(IBusinessRuleLookupReferenceValidato
 	private enum OperandKind {
 		Attribute,
 		Const,
-		SysValue
+		SysValue,
+		SysSetting
 	}
 
 	private sealed record ConditionOperand(
@@ -638,9 +683,26 @@ internal sealed class BusinessRuleValidator(IBusinessRuleLookupReferenceValidato
 	private static BusinessRuleAttributeDescriptor ResolveAttribute(
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
 		string path,
+		string fieldName) =>
+		// Root-scope resolution: BuildScopedOperandKey("", path) == path and the empty-scope suffix keeps the
+		// exact "Unknown attribute '{path}' in {fieldName}." message the action call-sites rely on.
+		ResolveScopedAttribute(attributeMap, string.Empty, path, fieldName);
+
+	/// <summary>
+	/// Resolves an attribute operand honouring its <paramref name="scopeId"/>. Root-scope operands
+	/// (empty scope) resolve by plain path exactly like <see cref="ResolveAttribute"/>; scoped operands
+	/// resolve through the <c>scopeId::path</c> composite key. The "Unknown attribute" prefix is kept so
+	/// the page validator can still enrich the message with candidate hints.
+	/// </summary>
+	private static BusinessRuleAttributeDescriptor ResolveScopedAttribute(
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
+		string scopeId,
+		string path,
 		string fieldName) {
-		if (!attributeMap.TryGetValue(path, out BusinessRuleAttributeDescriptor? descriptor)) {
-			throw new ArgumentException($"Unknown attribute '{path}' in {fieldName}.");
+		string key = BuildScopedOperandKey(scopeId, path);
+		if (!attributeMap.TryGetValue(key, out BusinessRuleAttributeDescriptor? descriptor)) {
+			string scopeSuffix = string.IsNullOrEmpty(scopeId) ? string.Empty : $" in scope '{scopeId}'";
+			throw new ArgumentException($"Unknown attribute '{path}'{scopeSuffix} in {fieldName}.");
 		}
 
 		return descriptor;

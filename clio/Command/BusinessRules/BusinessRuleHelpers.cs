@@ -45,6 +45,24 @@ internal static class BusinessRuleHelpers {
 			MapDataValueTypeName(column.DataValueType),
 			column.ReferenceSchema?.Name);
 
+	/// <summary>
+	/// Separator between an operand <c>scopeId</c> and its <c>path</c> in the composite key used to look
+	/// up a scoped operand in a business-rule attribute map. Attribute names and datasource names never
+	/// contain a colon, so the separator cannot collide with a real path (which uses <c>.</c>).
+	/// </summary>
+	internal const string ScopedOperandKeySeparator = "::";
+
+	/// <summary>
+	/// Builds the attribute-map lookup key for an operand. A root-scope operand (empty
+	/// <paramref name="scopeId"/>) keys on its plain <paramref name="path"/> so existing root/entity
+	/// lookups are unchanged; a scoped operand keys on <c>scopeId::path</c>.
+	/// </summary>
+	/// <param name="scopeId">Operand scope selector, or <c>null</c>/empty for the root scope.</param>
+	/// <param name="path">Operand attribute path within the scope.</param>
+	/// <returns>The composite lookup key.</returns>
+	internal static string BuildScopedOperandKey(string? scopeId, string path) =>
+		string.IsNullOrEmpty(scopeId) ? path : $"{scopeId}{ScopedOperandKeySeparator}{path}";
+
 	internal static bool IsForwardReferencePath(string path) =>
 		path.Contains('.', StringComparison.Ordinal);
 

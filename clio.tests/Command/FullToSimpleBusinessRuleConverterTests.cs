@@ -792,6 +792,95 @@ public sealed class FullToSimpleBusinessRuleConverterTests {
 				because: "the underlying conversion failure must be preserved for diagnostics");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Reads scopeId back onto a datasource-scoped attribute operand (path + scopeId, as shipped in Cases_FormPageBusinessRule) and maps a SysSetting operand back to the friendly SysSetting expression, so read -> edit -> update preserves scope losslessly.")]
+	public void Read_Should_RoundTrip_Scoped_Attribute_And_SysSetting_Operands() {
+		// Arrange - condition modelled on the shipped Cases_FormPageBusinessRule shape:
+		// left = BusinessRuleAttributeExpression { path "Contact", scopeId "PDS" }; right = SysSetting.
+		JsonArray rules = ParseRules($$"""
+			[
+			  {
+			    "typeName": "{{BusinessRuleConstants.BusinessRuleTypeName}}",
+			    "uId": "5c0b1a2a-0000-0000-0000-000000000001",
+			    "name": "BusinessRule_scoped",
+			    "enabled": true,
+			    "caption": "Scoped condition",
+			    "cases": [
+			      {
+			        "typeName": "{{BusinessRuleConstants.BusinessRuleCaseTypeName}}",
+			        "uId": "5c0b1a2a-0000-0000-0000-000000000002",
+			        "condition": {
+			          "typeName": "{{BusinessRuleConstants.BusinessRuleGroupConditionTypeName}}",
+			          "uId": "5c0b1a2a-0000-0000-0000-000000000003",
+			          "logicalOperation": 1,
+			          "conditions": [
+			            {
+			              "typeName": "{{BusinessRuleConstants.BusinessRuleConditionTypeName}}",
+			              "uId": "5c0b1a2a-0000-0000-0000-000000000004",
+			              "comparisonType": 1,
+			              "leftExpression": {
+			                "typeName": "{{BusinessRuleConstants.BusinessRuleAttributeExpressionTypeName}}",
+			                "uId": "5c0b1a2a-0000-0000-0000-000000000005",
+			                "type": "AttributeValue",
+			                "path": "Contact",
+			                "scopeId": "PDS"
+			              }
+			            },
+			            {
+			              "typeName": "{{BusinessRuleConstants.BusinessRuleConditionTypeName}}",
+			              "uId": "5c0b1a2a-0000-0000-0000-000000000006",
+			              "comparisonType": 2,
+			              "leftExpression": {
+			                "typeName": "{{BusinessRuleConstants.BusinessRuleAttributeExpressionTypeName}}",
+			                "uId": "5c0b1a2a-0000-0000-0000-000000000007",
+			                "type": "AttributeValue",
+			                "path": "MaxAmount",
+			                "scopeId": "PageParameters"
+			              },
+			              "rightExpression": {
+			                "typeName": "{{BusinessRuleConstants.BusinessRuleSysSettingExpressionTypeName}}",
+			                "uId": "5c0b1a2a-0000-0000-0000-000000000008",
+			                "type": "SysSetting",
+			                "sysSettingName": "MaxOrderAmount"
+			              }
+			            }
+			          ]
+			        },
+			        "actions": [
+			          {
+			            "typeName": "{{BusinessRuleConstants.BusinessRuleHideElementTypeName}}",
+			            "uId": "5c0b1a2a-0000-0000-0000-000000000009",
+			            "items": "ReminderLabel"
+			          }
+			        ]
+			      }
+			    ],
+			    "triggers": []
+			  }
+			]
+			""");
+
+		// Act
+		IReadOnlyList<BusinessRule> models = FullToSimpleBusinessRuleConverter.Convert(rules, []);
+
+		// Assert
+		BusinessRule model = models.Should().ContainSingle(because: "the single persisted rule yields one friendly rule").Which;
+		BusinessRuleExpression scopedLeft = model.Condition.Conditions[0].LeftExpression;
+		scopedLeft.Type.Should().Be("AttributeValue", because: "a scoped datasource field is still an AttributeValue operand");
+		scopedLeft.Path.Should().Be("Contact", because: "the in-scope column path round-trips");
+		scopedLeft.ScopeId.Should().Be("PDS",
+			because: "the datasource scope must round-trip so read -> edit -> update preserves it losslessly");
+		BusinessRuleExpression parameterLeft = model.Condition.Conditions[1].LeftExpression;
+		parameterLeft.ScopeId.Should().Be("PageParameters",
+			because: "the page-parameter scope must round-trip on the friendly expression");
+		BusinessRuleExpression sysSettingRight = model.Condition.Conditions[1].RightExpression!;
+		sysSettingRight.Type.Should().Be("SysSetting",
+			because: "a persisted BusinessRuleSysSettingExpression maps back to the friendly SysSetting type");
+		sysSettingRight.SysSettingName.Should().Be("MaxOrderAmount",
+			because: "the system setting code round-trips onto the friendly expression");
+	}
+
 	private static JsonArray ParseRules(string json) => (JsonArray)JsonNode.Parse(json)!;
 
 	private static IReadOnlyDictionary<string, EntitySchemaColumnDto> CreateColumnMap(params EntitySchemaColumnDto[] columns) {
