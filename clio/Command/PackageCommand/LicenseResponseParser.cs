@@ -27,7 +27,8 @@ namespace Clio.Command.PackageCommand
 				return;
 			}
 
-			if (json.RootElement.TryGetProperty("errorInfo", out var errorInfo)) {
+			if (json.RootElement.TryGetProperty("errorInfo", out var errorInfo) &&
+				errorInfo.ValueKind == JsonValueKind.Object) {
 				var errorMessage = errorInfo.TryGetProperty("message", out var messageProperty)
 					? messageProperty.GetString()
 					: "Unknown error message";

@@ -138,6 +138,22 @@ public class DistributeLicenseCommandTestCase
 	}
 
 	[Test]
+	[Description("An error response with a JSON null errorInfo (a valid, common shape) throws the generic exception instead of an InvalidOperationException from TryGetProperty on a null element")]
+	public void ProceedResponse_ErrorResponseWithNullErrorInfo_ThrowsLicenseInstallationException() {
+		// Arrange
+		var response = "{\"success\": false, \"errorInfo\": null}";
+		var options = new DistributeLicenseOptions();
+
+		// Act
+		Action act = () => _command.TestProceedResponse(response, options);
+
+		// Assert
+		act.Should().Throw<LicenseInstallationException>(
+				"errorInfo:null must be treated the same as a missing errorInfo, not crash while reading its fields")
+			.WithMessage("License data not saved: Unknown error details");
+	}
+
+	[Test]
 	[Description("An authentication failure response throws a dedicated exception message")]
 	public void ProceedResponse_AuthenticationFailed_ThrowsLicenseInstallationException() {
 		// Arrange
@@ -207,7 +223,7 @@ public class DistributeLicenseCommandTestCase
 	[Description("A --package-id value that does not resolve via GetLicenses throws")]
 	public void GetRequestData_UnresolvablePackageName_ThrowsArgumentException() {
 		// Arrange
-		_applicationClient.ExecutePostRequest(GetLicensesUrl, "{}").Returns(JsonSerializer.Serialize(Array.Empty<object>()));
+		_applicationClient.ExecutePostRequest(GetLicensesUrl, "{}", Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>()).Returns(JsonSerializer.Serialize(Array.Empty<object>()));
 		var options = new DistributeLicenseOptions {
 			PackageId = "not-a-guid-or-a-real-package",
 			AddUser = new[] { "7f3b869f-34f3-4f20-ab4d-7480a5fdf647" }
@@ -261,6 +277,26 @@ public class DistributeLicenseCommandTestCase
 	}
 
 	[Test]
+	[Description("Name resolution passes the command's configured request timeout, max attempts and retry delay to the lookup call instead of the client's own defaults, so --timeout is honored and a stalled lookup endpoint cannot hang indefinitely")]
+	public void GetRequestData_NameResolution_UsesConfiguredTimeoutAndRetrySettings() {
+		// Arrange
+		ArrangeUsersListRows(("7f3b869f-34f3-4f20-ab4d-7480a5fdf647", "Supervisor"));
+		_command.RequestTimeout = 12345;
+		_command.MaxAttempts = 4;
+		_command.DelaySec = 7;
+		var options = new DistributeLicenseOptions {
+			PackageId = "9c40e123-0a44-4cd2-94de-57341b8c3592",
+			AddUser = new[] { "Supervisor" }
+		};
+
+		// Act
+		_command.TestGetRequestData(options);
+
+		// Assert
+		_applicationClient.Received(1).ExecutePostRequest(GetUsersListUrl, "{}", 12345, 4, 7);
+	}
+
+	[Test]
 	[Description("A --add-user name matching more than one GetUsersList entry is rejected as ambiguous")]
 	public void GetRequestData_AmbiguousAddUserName_ThrowsArgumentException() {
 		// Arrange
@@ -283,7 +319,7 @@ public class DistributeLicenseCommandTestCase
 	[Description("An HTML response from GetUsersList (e.g. an unreachable service) is wrapped in an actionable ArgumentException instead of leaking a raw JsonException")]
 	public void GetRequestData_NonJsonGetUsersListResponse_ThrowsActionableArgumentException() {
 		// Arrange
-		_applicationClient.ExecutePostRequest(GetUsersListUrl, "{}").Returns("<html><body>Unexpected error</body></html>");
+		_applicationClient.ExecutePostRequest(GetUsersListUrl, "{}", Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>()).Returns("<html><body>Unexpected error</body></html>");
 		var options = new DistributeLicenseOptions {
 			PackageId = "9c40e123-0a44-4cd2-94de-57341b8c3592",
 			AddUser = new[] { "Supervisor" }
@@ -301,7 +337,7 @@ public class DistributeLicenseCommandTestCase
 	[Description("An HTML response from GetLicenses is wrapped in an actionable ArgumentException instead of leaking a raw JsonException")]
 	public void GetRequestData_NonJsonGetLicensesResponse_ThrowsActionableArgumentException() {
 		// Arrange
-		_applicationClient.ExecutePostRequest(GetLicensesUrl, "{}").Returns("<html><body>Unexpected error</body></html>");
+		_applicationClient.ExecutePostRequest(GetLicensesUrl, "{}", Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>()).Returns("<html><body>Unexpected error</body></html>");
 		var options = new DistributeLicenseOptions {
 			PackageId = "studio creatio on-site subscription",
 			AddUser = new[] { "7f3b869f-34f3-4f20-ab4d-7480a5fdf647" }
@@ -331,7 +367,7 @@ public class DistributeLicenseCommandTestCase
 				packageName = "Other package"
 			}
 		};
-		_applicationClient.ExecutePostRequest(GetLicensesUrl, "{}")
+		_applicationClient.ExecutePostRequest(GetLicensesUrl, "{}", Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(JsonSerializer.Serialize(new { success = true, errorInfo = (object)null, licenses }));
 		var options = new DistributeLicenseOptions {
 			PackageId = "studio creatio on-site subscription",
@@ -364,7 +400,7 @@ public class DistributeLicenseCommandTestCase
 				packageName = "studio creatio on-site subscription"
 			}
 		};
-		_applicationClient.ExecutePostRequest(GetLicensesUrl, "{}")
+		_applicationClient.ExecutePostRequest(GetLicensesUrl, "{}", Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(JsonSerializer.Serialize(new { success = true, errorInfo = (object)null, licenses }));
 		var options = new DistributeLicenseOptions {
 			PackageId = "studio creatio on-site subscription",
@@ -392,7 +428,7 @@ public class DistributeLicenseCommandTestCase
 				value = u.Id
 			}
 		});
-		_applicationClient.ExecutePostRequest(GetUsersListUrl, "{}")
+		_applicationClient.ExecutePostRequest(GetUsersListUrl, "{}", Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(JsonSerializer.Serialize(new { errorInfo = (object)null, success = true, users = payload }));
 	}
 }

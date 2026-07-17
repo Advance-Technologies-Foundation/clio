@@ -77,7 +77,8 @@ namespace Clio.Command.PackageCommand
 			Func<string, string, IReadOnlyList<string>> findIdsByName, string entityDescription, string optionHint) {
 			IReadOnlyList<string> matchingIds;
 			try {
-				string response = ApplicationClient.ExecutePostRequest(RootPath + servicePath, "{}");
+				string response = ApplicationClient.ExecutePostRequest(
+					RootPath + servicePath, "{}", RequestTimeout, MaxAttempts, DelaySec);
 				matchingIds = findIdsByName(response, name);
 			}
 			catch (Exception ex) when (ex is JsonException or InvalidOperationException) {
