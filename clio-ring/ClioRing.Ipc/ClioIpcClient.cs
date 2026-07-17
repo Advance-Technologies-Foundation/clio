@@ -26,6 +26,7 @@ public sealed class ClioIpcClient : IClioIpcClient {
 
 	private readonly ClioIpcSettings _settings;
 	private readonly Action<string>? _log;
+	private readonly IClioProcessGate _processGate;
 	private readonly SemaphoreSlim _gate = new(1, 1);
 	private readonly object _activeCallsSync = new();
 	private readonly Dictionary<string, ClioToolCallResult> _contractCache = new(StringComparer.OrdinalIgnoreCase);
@@ -37,15 +38,18 @@ public sealed class ClioIpcClient : IClioIpcClient {
 	private int _activeCalls;
 	private bool _lifecycleChanging;
 	private volatile bool _disposed;
+	private IAsyncDisposable? _processLease;
 
 	/// <summary>
 	/// Creates a client bound to the given launch settings. The child is not spawned until first use.
 	/// </summary>
 	/// <param name="settings">How to launch the clio MCP child.</param>
 	/// <param name="log">Optional sink for lifecycle diagnostics (for example the app's startup log).</param>
-	public ClioIpcClient(ClioIpcSettings settings, Action<string>? log = null) {
+	public ClioIpcClient(ClioIpcSettings settings, Action<string>? log = null,
+		IClioProcessGate? processGate = null) {
 		_settings = settings ?? throw new ArgumentNullException(nameof(settings));
 		_log = log;
+		_processGate = processGate ?? new ClioProcessGate();
 	}
 
 	/// <inheritdoc />
@@ -75,8 +79,18 @@ public sealed class ClioIpcClient : IClioIpcClient {
 	/// <inheritdoc />
 	public async Task<ClioServerHandshake> ConnectAsync(CancellationToken cancellationToken = default) {
 		ObjectDisposedException.ThrowIf(_disposed, this);
+		lock (_activeCallsSync) {
+			if (_lifecycleChanging) {
+				throw new InvalidOperationException("clio MCP is suspended for a Release-tool update.");
+			}
+		}
 		await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
 		try {
+			lock (_activeCallsSync) {
+				if (_lifecycleChanging) {
+					throw new InvalidOperationException("clio MCP is suspended for a Release-tool update.");
+				}
+			}
 			if (_client is not null && _handshake is not null) {
 				return _handshake!;
 			}
@@ -95,7 +109,7 @@ public sealed class ClioIpcClient : IClioIpcClient {
 	public async Task<ClioServerHandshake> RestartAsync(CancellationToken cancellationToken = default) {
 		ObjectDisposedException.ThrowIf(_disposed, this);
 		lock (_activeCallsSync) {
-			if (_activeCalls != 0) {
+			if (_lifecycleChanging || _activeCalls != 0) {
 				throw new InvalidOperationException("clio MCP cannot restart while a tool call is active.");
 			}
 			_lifecycleChanging = true;
@@ -115,6 +129,50 @@ public sealed class ClioIpcClient : IClioIpcClient {
 			lock (_activeCallsSync) {
 				_lifecycleChanging = false;
 			}
+		}
+	}
+
+	/// <inheritdoc />
+	public async Task StopAsync(CancellationToken cancellationToken = default) {
+		await using IAsyncDisposable pause = await PauseForUpdateAsync(cancellationToken).ConfigureAwait(false);
+	}
+
+	/// <inheritdoc />
+	public async Task<IAsyncDisposable> PauseForUpdateAsync(CancellationToken cancellationToken = default) {
+		ObjectDisposedException.ThrowIf(_disposed, this);
+		lock (_activeCallsSync) {
+			if (_activeCalls != 0) {
+				throw new InvalidOperationException("clio MCP cannot stop while a tool call is active.");
+			}
+			_lifecycleChanging = true;
+		}
+		bool gateHeld = false;
+		bool completed = false;
+		try {
+			await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+			gateHeld = true;
+			await TeardownLockedAsync().ConfigureAwait(false);
+			completed = true;
+			return new LifecyclePause(this);
+		}
+		finally {
+			if (gateHeld) {
+				_gate.Release();
+			}
+			if (!completed) { ResumeAfterUpdate(); }
+		}
+	}
+
+	private void ResumeAfterUpdate() {
+		lock (_activeCallsSync) { _lifecycleChanging = false; }
+	}
+
+	private sealed class LifecyclePause(ClioIpcClient owner) : IAsyncDisposable {
+		private ClioIpcClient? _owner = owner;
+
+		public ValueTask DisposeAsync() {
+			Interlocked.Exchange(ref _owner, null)?.ResumeAfterUpdate();
+			return ValueTask.CompletedTask;
 		}
 	}
 
@@ -298,6 +356,10 @@ public sealed class ClioIpcClient : IClioIpcClient {
 	// ---- internals (all hold the gate unless noted) ----
 
 	private async Task SpawnAndHandshakeLockedAsync(CancellationToken cancellationToken) {
+		IAsyncDisposable processLease = await _processGate.AcquireProcessLeaseAsync(cancellationToken)
+			.ConfigureAwait(false);
+		_processLease = processLease;
+		try {
 		var transport = new StdioClientTransport(new StdioClientTransportOptions {
 			Command = _settings.Command,
 			Arguments = _settings.Args.ToArray(),
@@ -337,6 +399,12 @@ public sealed class ClioIpcClient : IClioIpcClient {
 			_contractCache.Clear();
 			LastCatalogIsModern = false;
 		}
+		}
+		catch {
+			_processLease = null;
+			await processLease.DisposeAsync().ConfigureAwait(false);
+			throw;
+		}
 	}
 
 	// The transport owns the exact child it created. Awaiting client disposal delegates graceful shutdown
@@ -351,11 +419,23 @@ public sealed class ClioIpcClient : IClioIpcClient {
 		}
 
 		if (client is null) {
+			if (_processLease is not null) {
+				await _processLease.DisposeAsync().ConfigureAwait(false);
+				_processLease = null;
+			}
 			return;
 		}
 
 		var sw = Stopwatch.StartNew();
-		await client.DisposeAsync().ConfigureAwait(false);
+		try {
+			await client.DisposeAsync().ConfigureAwait(false);
+		}
+		finally {
+			if (_processLease is not null) {
+				await _processLease.DisposeAsync().ConfigureAwait(false);
+				_processLease = null;
+			}
+		}
 		sw.Stop();
 		_log?.Invoke($"ipc shutdown: transport-owned elapsedMs={sw.ElapsedMilliseconds}");
 	}

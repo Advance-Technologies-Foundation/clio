@@ -6378,3 +6378,10 @@ Decision: Resolve one immutable runtime for IPC workflows, environment discovery
 Discovery: Runtime identity cannot be inferred from a command name or saved development path, and ordinary Ring actions previously bypassed the IPC runtime target entirely.
 Files: clio-ring/ClioRing.Ipc/ClioIpcModels.cs, clio-ring/ClioRing/Models/ResolvedClioRuntime.cs, clio-ring/ClioRing/Services/ClioAdapter.cs, clio-ring/ClioRing/Services/ClioSettingsStore.cs, clio-ring/ClioRing/ViewModels/ClioSettingsViewModel.cs, clio-ring/ClioRing/Views/RingView.axaml, clio-ring/ClioRing.Tests/, spec/ring-clio-runtime-switch/
 Impact: Release and Development choices now govern the full Ring surface consistently; 129 focused tests, final three-lens review, and Windows x64 NativeAOT publish pass.
+
+## 2026-07-17 17:30 – Add safe ClioRing clio tool updates
+Context: Issue #905 requires Ring to announce and install stable Release clio updates even when agent-hosted MCP processes lock the tool.
+Decision: Check NuGet through an isolated NuGet.org source, serialize Release clio use with an app-wide process gate, inspect locks through Restart Manager, and require a separate revalidated gesture before terminating only exact trusted clio processes.
+Discovery: Ring, Claude, and Codex can retain independent `clio mcp-server` processes; updater safety therefore requires PID, path, and start-time identity plus bounded child shutdown and no parent-process termination.
+Files: clio-ring/ClioRing/Services/ClioToolUpdateService.cs, clio-ring/ClioRing/Services/ClioToolProcessInspector.cs, clio-ring/ClioRing.Ipc/ClioProcessGate.cs, clio-ring/ClioRing/ViewModels/RingViewModel.cs, clio-ring/ClioRing/Views/RingView.axaml, spec/ring-clio-tool-update/
+Impact: Ring now provides deduplicated main/tray update attention, explicit safe update and kill-retry flows, persistent check state, 149 focused tests, clean three-lens review, and a passing Windows x64 NativeAOT publish.

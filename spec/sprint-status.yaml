@@ -21,6 +21,18 @@
 # 2026-07-06) is a separate Jira ticket stacked on the same branch; tracked as its own row.
 
 stories:
+  - id: story-ring-clio-tool-update-1
+    title: "Detect and safely install clio tool updates from ClioRing"
+    feature: "ring-clio-tool-update"
+    repo: "clio (clio-ring/)"
+    size: L
+    status: done
+    note: "Issue #905. UI approved; 149 focused tests, final three-lens review, and Windows x64 NativeAOT publish pass."
+    file: spec/ring-clio-tool-update/ring-clio-tool-update-story.md
+    prd: spec/ring-clio-tool-update/ring-clio-tool-update-spec.md
+    adr: spec/ring-clio-tool-update/ring-clio-tool-update-adr.md
+    depends_on: []
+    blocks: []
   - id: story-get-info-target-classification-1
     title: "Classify get-info target and response failures"
     feature: "get-info-target-classification"
