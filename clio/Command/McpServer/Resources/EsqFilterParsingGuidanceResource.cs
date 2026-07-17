@@ -124,7 +124,7 @@ public sealed class EsqFilterParsingGuidanceResource {
 		           if (!filter.IsEnabled ||
 		               filter.LeftExpression?.ExpressionType !=
 		                   EntitySchemaQueryExpressionType.SchemaColumn ||
-		               filter.LeftExpression.SchemaColumnName != expectedColumn ||
+		               filter.LeftExpression.Path != expectedColumn ||
 		               filter.RightExpressions.Count != 1) {
 		               throw new NotSupportedException("Unsupported Compare filter shape.");
 		           }
@@ -140,7 +140,10 @@ public sealed class EsqFilterParsingGuidanceResource {
 		       Then require the CLR type appropriate to the schema column (`System.Int32` for the verified
 		       Integer example and `System.String` for MediumText) and dispatch explicitly on
 		       `ComparisonType`. Do not coerce an unexpected value or silently treat an unsupported
-		       comparison as false.
+		       comparison as false. Compare `LeftExpression.Path` to the complete allowed path;
+		       `SchemaColumnName` is only the terminal schema column and can collapse `Account.Name` to
+		       `Name`. If the provider supports direct columns only, an exact path comparison rejects
+		       forwarded/lookup filters instead of accidentally evaluating them as a root column.
 
 		       `EntitySchemaQueryFilter` does not expose a leaf `IsNot`. Negated string predicates arrive
 		       as `NotStartWith`, `NotContain`, or `NotEndWith`; evaluate those operators directly. Group

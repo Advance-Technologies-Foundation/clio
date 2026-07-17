@@ -1670,6 +1670,10 @@ public sealed class McpGuidanceResourceTests {
 			because: "unverified disabled-filter semantics must fail closed instead of changing query meaning");
 		article.Text.Should().Contain("ReadScalarParameter",
 			because: "the parsing owner should show how to validate one typed runtime parameter before evaluation");
+		article.Text.Should().Contain("filter.LeftExpression.Path != expectedColumn",
+			because: "the parser must validate the full ESQ path instead of only its terminal schema column");
+		article.Text.Should().Contain("can collapse `Account.Name` to",
+			because: "the guide should explain why terminal SchemaColumnName matching can accept an unintended lookup path");
 		string[] expectedScalarOperators = [
 			"Equal", "NotEqual", "Less", "LessOrEqual", "Greater", "GreaterOrEqual",
 			"StartWith", "NotStartWith", "Contain", "NotContain", "EndWith", "NotEndWith"

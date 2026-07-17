@@ -143,6 +143,8 @@ public sealed class McpGuidanceResourceE2ETests : McpContractFixtureBase {
 			because: "the directly readable parsing guide should bound remotely supplied filter complexity");
 		parsing.Text.Should().Contain("AND(C, A, B)",
 			because: "the directly readable parser guide should preserve the verified ATF structural ordering boundary");
+		parsing.Text.Should().Contain("LeftExpression.Path",
+			because: "the published parser guide must validate the complete ESQ column path");
 		parsing.Text.Should().Contain("never reached PostgreSQL",
 			because: "the published resource must not misattribute virtual-provider case behavior to the database");
 	}

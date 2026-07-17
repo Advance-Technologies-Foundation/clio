@@ -6633,3 +6633,10 @@ Decision: Protected all 12 operators with exact-token assertions, kept provider-
 Discovery: Substring assertions such as `Equal` can pass through `NotEqual`; exact backend and Markdown tokens are required. Full validation must precede short-circuit evaluation so invalid hidden branches still fail closed.
 Files: clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs, spec/esq-primitive-comparisons/esq-primitive-comparisons-test-plan.md
 Impact: Comprehensive correctness, quality, and performance reviews have no remaining findings; 2,429 MCP module tests and 2 focused MCP E2E tests pass on both net8.0 and net10.0.
+
+## 2026-07-17 22:48 – Validate complete ESQ column paths
+Context: Codex review on PR #915 identified that terminal `SchemaColumnName` matching can accept a forwarded path such as `Account.Name` as root `Name`.
+Decision: Changed the parsing recipe to compare the exact `LeftExpression.Path` to the provider's allowed path and explained that direct-only providers thereby reject lookup filters.
+Discovery: `EntitySchemaQueryExpression.Path` retains the complete expression path, while `SchemaColumnName` exposes only its terminal schema column.
+Files: clio/Command/McpServer/Resources/EsqFilterParsingGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs
+Impact: Agents following the guide cannot accidentally evaluate an unintended joined column as a same-named root column; focused tests and the full MCP module remain green on net8.0 and net10.0.
