@@ -156,6 +156,7 @@ internal sealed class StubIpcClient : IClioIpcClient {
 	public bool LastCatalogIsModern => true;
 #pragma warning disable CS0067 // event never used in the stub
 	public event EventHandler? Disconnected;
+	public event EventHandler? ConnectionChanged;
 #pragma warning restore CS0067
 
 	public Task<ClioServerHandshake> ConnectAsync(CancellationToken cancellationToken = default) =>
@@ -178,7 +179,16 @@ internal sealed class StubIpcClient : IClioIpcClient {
 
 	public Task<ClioServerHandshake> RestartAsync(CancellationToken cancellationToken = default) => ConnectAsync(cancellationToken);
 
+	public Task StopAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+	public Task<IAsyncDisposable> PauseForUpdateAsync(CancellationToken cancellationToken = default) =>
+		Task.FromResult<IAsyncDisposable>(new NoopLease());
+
 	public Task PingAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
 
 	public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+
+	private sealed class NoopLease : IAsyncDisposable {
+		public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+	}
 }

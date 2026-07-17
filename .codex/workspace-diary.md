@@ -6420,3 +6420,23 @@ Decision: SetUserThemeTool Destructive=false→true (overwrites an existing prof
 Discovery: E2E is NOT affected — the harness routes long-tail tools through clio-run (executes directly, no host in the loop), the same path already-destructive delete-theme uses in the CRUD test. CLI is unaffected (Destructive is an MCP-only annotation). CAADT skill (PR #47) "needs no confirmation" wording now needs updating in that repo.
 Files: clio/Command/McpServer/{Tools/SetUserThemeTool.cs,Resources/ThemingGuidanceResource.cs}, clio.tests/Command/McpServer/{DurableInvocationGateCompletenessTests,SetUserThemeToolTests}.cs, docs/McpCapabilityMap.md, spec/prd/spec-set-user-theme.md
 Impact: full unit suite 6712/0 (net8.0). PR #47 (toolkit skill) follow-up pending.
+## 2026-07-17 09:29 – Prototype ClioRing runtime switch
+Context: Issue #903 requests release clio as the ordinary Ring runtime and an unavoidable main-surface warning when a development/custom clio is running.
+Decision: Separate persisted runtime selection from the saved development target, reserve banner space above the radial control for Development, and keep Release as a compact green identity strip; runtime changes are represented as next-launch choices until the owned IPC child can be safely retargeted.
+Discovery: The prior "machine default" is a hard-coded repository Debug DLL, and the existing settings warning only recognizes DevClioPath, so an explicit ClioIpc Debug DLL is mislabeled as normal and invisible on the main surface.
+Files: clio-ring/ClioRing/Views/RingView.axaml, clio-ring/ClioRing/ViewModels/ClioSettingsViewModel.cs, clio-ring/ClioRing/Services/ClioSettingsStore.cs, spec/ring-clio-runtime-switch/
+Impact: The requester can approve the rendered Development and Release states before comprehensive review, full tests, or NativeAOT publish.
+
+## 2026-07-17 10:13 – Complete ClioRing runtime selection
+Context: The approved issue #903 design needed production-safe runtime propagation, persistence, and final validation.
+Decision: Resolve one immutable runtime for IPC workflows, environment discovery, and radial commands; trust Release only from dotnet-owned user roots; preserve next-launch selection in Ring's own settings with atomic writes and an actionable invalid-Development fallback.
+Discovery: Runtime identity cannot be inferred from a command name or saved development path, and ordinary Ring actions previously bypassed the IPC runtime target entirely.
+Files: clio-ring/ClioRing.Ipc/ClioIpcModels.cs, clio-ring/ClioRing/Models/ResolvedClioRuntime.cs, clio-ring/ClioRing/Services/ClioAdapter.cs, clio-ring/ClioRing/Services/ClioSettingsStore.cs, clio-ring/ClioRing/ViewModels/ClioSettingsViewModel.cs, clio-ring/ClioRing/Views/RingView.axaml, clio-ring/ClioRing.Tests/, spec/ring-clio-runtime-switch/
+Impact: Release and Development choices now govern the full Ring surface consistently; 129 focused tests, final three-lens review, and Windows x64 NativeAOT publish pass.
+
+## 2026-07-17 17:30 – Add safe ClioRing clio tool updates
+Context: Issue #905 requires Ring to announce and install stable Release clio updates even when agent-hosted MCP processes lock the tool.
+Decision: Check NuGet through an isolated NuGet.org source, serialize Release clio use with an app-wide process gate, inspect locks through Restart Manager, and require a separate revalidated gesture before terminating only exact trusted clio processes.
+Discovery: Ring, Claude, and Codex can retain independent `clio mcp-server` processes; updater safety therefore requires PID, path, and start-time identity plus bounded child shutdown and no parent-process termination.
+Files: clio-ring/ClioRing/Services/ClioToolUpdateService.cs, clio-ring/ClioRing/Services/ClioToolProcessInspector.cs, clio-ring/ClioRing.Ipc/ClioProcessGate.cs, clio-ring/ClioRing/ViewModels/RingViewModel.cs, clio-ring/ClioRing/Views/RingView.axaml, spec/ring-clio-tool-update/
+Impact: Ring now provides deduplicated main/tray update attention, explicit safe update and kill-retry flows, persistent check state, 149 focused tests, clean three-lens review, and a passing Windows x64 NativeAOT publish.
