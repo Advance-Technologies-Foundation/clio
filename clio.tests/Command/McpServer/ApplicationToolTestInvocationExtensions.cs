@@ -76,6 +76,11 @@ internal static class ApplicationToolTestInvocationExtensions {
 		tool.ApplicationSectionGetList(args, server: null, requestContext: null, cancellationToken: default)
 			.GetAwaiter().GetResult();
 
+	// A null server means no progress token, so the batch runs inline with a no-op reporter.
+	public static Task<SchemaSyncResponse> SchemaSync(
+		this SchemaSyncTool tool, SchemaSyncArgs args) =>
+		tool.SchemaSync(args, server: null, requestContext: null, cancellationToken: default);
+
 	public static Task<ApplicationSectionListContextResponse> ApplicationSectionGetList(
 		this ApplicationSectionGetListTool tool,
 		ApplicationSectionGetListArgs args,

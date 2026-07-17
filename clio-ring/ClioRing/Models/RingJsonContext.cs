@@ -12,6 +12,7 @@ namespace ClioRing.Models;
 	PropertyNameCaseInsensitive = true,
 	UseStringEnumConverter = true)]
 [JsonSerializable(typeof(AppSettings))]
+[JsonSerializable(typeof(ClioRing.Services.ClioUpdateState))]
 [JsonSerializable(typeof(ExperimentSettings))]
 [JsonSerializable(typeof(ClioIpcSettingsDto))]
 [JsonSerializable(typeof(EnvState))]

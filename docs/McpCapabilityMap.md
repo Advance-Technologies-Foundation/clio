@@ -367,13 +367,15 @@ What an external AI can practically do here:
 The AI sees this as a higher abstraction layer than package-level commands.
 
 **Long-running / progress contract.** `create-app`, `create-app-section`,
-`update-app-section`, `delete-app-section`, `list-app-sections`, and `get-app-info`
-call the Creatio backend synchronously and can take minutes on a cold or busy
-environment. They emit `notifications/progress` on a fixed cadence (default 15 s,
-overridable via the `CLIO_MCP_HEARTBEAT_INTERVAL_SECONDS` environment variable) so MCP
-clients reset their inactivity timeout. A progress notification means the server is
-still working — the AI must await completion and must not retry or fall back to raw SQL
-or manual UI on a perceived client timeout.
+`update-app-section`, `delete-app-section`, `list-app-sections`, `get-app-info`, and
+`sync-schemas` call the Creatio backend synchronously and can take minutes on a cold or busy
+environment. They emit `notifications/progress` so MCP clients reset their inactivity timeout:
+a fixed-cadence keep-alive beat (default 15 s, overridable via the
+`CLIO_MCP_HEARTBEAT_INTERVAL_SECONDS` environment variable), and — for `sync-schemas` — a
+per-operation stage marker (`"<i>/<n>: <op> <schema>"`) pushed before each operation in the
+batch so the client can show which operation is running. A progress notification means the
+server is still working — the AI must await completion and must not retry or fall back to raw
+SQL or manual UI on a perceived client timeout.
 
 ### 3. Entity, Lookup, And Schema Design
 
@@ -680,10 +682,13 @@ These tools brand a Creatio app: build a custom theme from brand colours and fon
   Refresh the theme catalog cache; needed only when theme files change on the environment outside a clio install.
 - `check-theming-access`
   Report whether the caller has the `CanManageThemes` operation and `CanCustomizeBranding` license, to gate authoring on a real permission check.
+- `set-user-theme`
+  Apply a theme to the current (authenticated) user's profile — only that account, not everyone (that is the global `DefaultTheme`) — or clear it with `reset`. A confirmed write (`Destructive=true`: it overwrites the profile's current theme, so the MCP host prompts before it runs; on the lazy tool surface it is re-issued through `clio-run-destructive`) — still reversible with `reset`. Requires the `CanCustomizeBranding` license and `CanChangeOwnTheme` operation; the change is visible on the user's next page refresh.
 
 What an external AI can practically do here:
 
 - build a theme offline (`build-theme`) with `advise-theme-palette` driving the palette, then commit it to a workspace package and push, or apply it directly with `create-theme`
+- apply a freshly created theme to the current user with `set-user-theme` so they only need to refresh the page (the auto-apply step in the theming guidance)
 - restyle, remove, and confirm themes on an environment
 - precheck theming permissions before authoring, and set the default via the `DefaultTheme` system setting (see the theming guidance)
 
