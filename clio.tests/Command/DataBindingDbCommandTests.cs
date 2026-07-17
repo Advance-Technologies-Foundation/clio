@@ -32,6 +32,7 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 	private string _bindingLookupResponseJson = string.Empty;
 	private string _boundSchemaDataItemsJson = "[]";
 	private string _existingEntityNamesJson = """{"rows":[],"success":true}""";
+	private string? _entityIdProbeResponseJson;
 	private string _schemaResponseJson = string.Empty;
 
 	public override void Setup() {
@@ -47,6 +48,7 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 			}
 		});
 		_schemaResponseJson = SchemaResponseJson;
+		_entityIdProbeResponseJson = null;
 	}
 
 	public override void TearDown() {
@@ -453,6 +455,35 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 	}
 
 	[Test]
+	[Description("Propagates a failed row-existence probe through upsert-data-binding-row-db instead of silently inserting, so the caller sees the real read/permission error rather than a misleading insert failure.")]
+	public void UpsertDataBindingRowDb_Should_Propagate_Probe_Failure_Instead_Of_Inserting() {
+		// Arrange
+		Guid unboundRowId = Guid.Parse("eeeeeeee-1111-2222-3333-444444444444");
+		_entityIdProbeResponseJson = """{"success":false,"errorInfo":{"message":"Access denied"}}""";
+		UpsertDataBindingRowDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			BindingName = "SysSettings",
+			ValuesJson = $$"""{"Id":"{{unboundRowId}}","Name":"Probe fails"}"""
+		};
+
+		// Act
+		int result = _upsertCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(1,
+			because: "a failed existence probe must surface the real error, not be swallowed into a silent insert");
+		_logger.Received(1).WriteError(
+			Arg.Is<string>(message => message.Contains("Access denied")));
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			"http://localhost/0/DataService/json/SyncReply/InsertQuery",
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+	}
+
+	[Test]
 	[Description("Projects SaveSchema metadata from the remaining bound rows after remove-data-binding-row-db so unrelated unsupported runtime columns do not block removal.")]
 	public void RemoveDataBindingRowDb_Should_Project_SaveSchema_From_Remaining_Bound_Rows() {
 		// Arrange
@@ -604,6 +635,9 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 			// only when the probed Id is among the known existing rows.
 			if (requestBody.Contains("\"columnPath\":\"Name\"", StringComparison.Ordinal)) {
 				return _existingEntityNamesJson;
+			}
+			if (_entityIdProbeResponseJson is not null) {
+				return _entityIdProbeResponseJson;
 			}
 			string? existingId = ExtractExistingIds(_existingEntityNamesJson)
 				.FirstOrDefault(id => requestBody.Contains(id, StringComparison.OrdinalIgnoreCase));

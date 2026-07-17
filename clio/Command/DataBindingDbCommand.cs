@@ -1154,31 +1154,27 @@ internal sealed class DataBindingDbService(
 	/// <summary>
 	/// Returns whether a row with the given primary-key <paramref name="rowId"/> already exists in the target
 	/// entity table, so an upsert of a live-but-not-yet-bound row updates that row instead of attempting an
-	/// insert that would fail on required columns or a primary-key conflict. Best-effort: when the probe cannot
-	/// run it returns <c>false</c>, falling back to the prior insert behavior rather than failing the upsert.
+	/// insert that would fail on required columns or a primary-key conflict. A genuine "not found" is a
+	/// successful empty result; a failed probe (e.g. a permission or read error) is propagated so the caller
+	/// surfaces the real cause instead of silently attempting an insert that would fail with a misleading error.
 	/// </summary>
 	private bool RowExistsInTable(string schemaName, string rowId) {
 		if (!Guid.TryParse(rowId, out _)) {
 			return false;
 		}
-		try {
-			EntityNameSelectResponse response = SelectQueryHelper.ExecuteSelectQuery<EntityNameSelectResponse>(
-				applicationClient,
-				serviceUrlBuilder,
-				SelectQueryHelper.BuildSelectQuery(
-					schemaName,
-					[new SelectQueryHelper.SelectQueryColumnDefinition("Id", "Id")],
-					[
-						new SelectQueryHelper.SelectQueryFilterDefinition(
-							"Id",
-							rowId,
-							SelectQueryHelper.GuidDataValueType)
-					]));
-			return response.Rows.Any(row => !string.IsNullOrWhiteSpace(row.Id));
-		}
-		catch (Exception) {
-			return false;
-		}
+		EntityNameSelectResponse response = SelectQueryHelper.ExecuteSelectQuery<EntityNameSelectResponse>(
+			applicationClient,
+			serviceUrlBuilder,
+			SelectQueryHelper.BuildSelectQuery(
+				schemaName,
+				[new SelectQueryHelper.SelectQueryColumnDefinition("Id", "Id")],
+				[
+					new SelectQueryHelper.SelectQueryFilterDefinition(
+						"Id",
+						rowId,
+						SelectQueryHelper.GuidDataValueType)
+				]));
+		return response.Rows.Any(row => !string.IsNullOrWhiteSpace(row.Id));
 	}
 
 	private void DeletePackageSchemaData(Guid packageUId, string bindingName) {
