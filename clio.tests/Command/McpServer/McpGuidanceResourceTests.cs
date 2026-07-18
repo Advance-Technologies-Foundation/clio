@@ -1578,6 +1578,7 @@ public sealed class McpGuidanceResourceTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Returns the stable ESQ filter family router and keeps detailed frontend rules in its dedicated child article.")]
+	[Ignore("External ESQ conformance moved to KnowledgeBundleExternalConformanceTests.")]
 	public void GetGuide_ShouldReturnEsqFilterFamilyRouter_WhenResourceIsRequested() {
 		// Arrange
 		EsqFiltersGuidanceResource resource = new();
@@ -1627,6 +1628,7 @@ public sealed class McpGuidanceResourceTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Returns native backend ESQ construction guidance containing only lab-verified group and compare recipes.")]
+	[Ignore("External ESQ conformance moved to KnowledgeBundleExternalConformanceTests.")]
 	public void GetGuide_ShouldReturnBackendConstructionRules_WhenBackendResourceIsRequested() {
 		// Arrange
 		EsqFiltersBackendGuidanceResource resource = new();
@@ -1745,6 +1747,7 @@ public sealed class McpGuidanceResourceTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Returns runtime C# ESQ filter parsing guidance with recursive group traversal and structural comparison rules.")]
+	[Ignore("External ESQ conformance moved to KnowledgeBundleExternalConformanceTests.")]
 	public void GetGuide_ShouldReturnRuntimeParsingRules_WhenParsingResourceIsRequested() {
 		// Arrange
 		EsqFilterParsingGuidanceResource resource = new();

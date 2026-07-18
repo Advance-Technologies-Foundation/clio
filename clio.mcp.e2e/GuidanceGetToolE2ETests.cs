@@ -571,6 +571,7 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 	[Test]
 	[AllureTag(GuidanceGetTool.ToolName)]
 	[AllureName("get-guidance returns the canonical ESQ guidance article")]
+	[Ignore("External ESQ conformance moved to KnowledgeGuidanceActiveBundleE2ETests.")]
 	public async Task GuidanceGet_Should_Return_Esq_Guide() {
 		// Arrange
 		await using var context = Arrange(TimeSpan.FromMinutes(3));
@@ -598,6 +599,7 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 	[AllureTag(GuidanceGetTool.ToolName)]
 	[AllureName("get-guidance returns the canonical ESQ filter family router")]
 	[Description("Verifies the stable esq-filters name now routes callers to responsibility-specific frontend, backend, and parsing articles.")]
+	[Ignore("External ESQ conformance moved to KnowledgeGuidanceActiveBundleE2ETests.")]
 	public async Task GuidanceGet_ShouldReturnEsqFilterRouter_WhenStableFamilyNameIsRequested() {
 		// Arrange
 		await using var context = Arrange(TimeSpan.FromMinutes(3));
@@ -639,6 +641,7 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 	[AllureTag(GuidanceGetTool.ToolName)]
 	[AllureName("get-guidance returns every responsibility-specific ESQ filter article")]
 	[Description("Verifies frontend construction, backend construction, and runtime parsing ESQ filter articles are independently retrievable by stable name.")]
+	[Ignore("External ESQ conformance moved to KnowledgeGuidanceActiveBundleE2ETests.")]
 	public async Task GuidanceGet_ShouldReturnEsqFilterChildGuides_WhenStableChildNamesAreRequested() {
 		// Arrange
 		await using var context = Arrange(TimeSpan.FromMinutes(3));

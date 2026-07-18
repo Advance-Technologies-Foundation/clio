@@ -102,6 +102,7 @@ public sealed class McpGuidanceResourceE2ETests : McpContractFixtureBase {
 	[AllureTag("mcp-guidance-resources")]
 	[AllureName("MCP server returns the ESQ filter family and its responsibility-specific resources")]
 	[Description("Verifies the router, frontend construction, backend construction, and runtime parsing ESQ filter resources can all be read directly.")]
+	[Ignore("External ESQ resource conformance moved to KnowledgeGuidanceActiveBundleE2ETests.")]
 	public async Task McpServer_ShouldReturnEsqFilterResources_WhenUrisAreRead() {
 		// Arrange
 		await using var context = Arrange(TimeSpan.FromMinutes(3));

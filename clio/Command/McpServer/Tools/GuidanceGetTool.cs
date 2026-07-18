@@ -7,7 +7,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
-using Clio.Command.McpServer.Resources;
+using Clio.Command.McpServer.Knowledge;
 using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
@@ -16,21 +16,28 @@ namespace Clio.Command.McpServer.Tools;
 /// Returns canonical clio MCP guidance articles by stable guide name.
 /// </summary>
 [McpServerToolType]
-public sealed class GuidanceGetTool {
+internal sealed class GuidanceGetTool {
 	internal const string ToolName = "get-guidance";
 
-	private readonly IFeatureToggleService _featureToggleService;
+	private readonly IKnowledgeGuidanceSource _guidanceSource;
 
 	/// <summary>
 	/// Initializes a new instance of the <see cref="GuidanceGetTool"/> class.
 	/// </summary>
-	/// <param name="featureToggleService">
-	/// Evaluates feature-gated guidance entries so experimental guides stay hidden from the always-on
-	/// <c>get-guidance</c> tool while their feature flag is off.
-	/// </param>
-	public GuidanceGetTool(IFeatureToggleService featureToggleService) {
-		_featureToggleService = featureToggleService ?? throw new ArgumentNullException(nameof(featureToggleService));
+	/// <param name="guidanceSource">Resolves embedded and externally delivered guidance without fallback.</param>
+	public GuidanceGetTool(IKnowledgeGuidanceSource guidanceSource) {
+		_guidanceSource = guidanceSource ?? throw new ArgumentNullException(nameof(guidanceSource));
 	}
+
+	// Compatibility-only constructor for legacy embedded-guide tests; production resolves the source from DI.
+#pragma warning disable CLIO001
+	internal GuidanceGetTool(IFeatureToggleService featureToggleService)
+		: this(new KnowledgeGuidanceSource(
+			featureToggleService,
+			new NoOpKnowledgeBundleActivator(),
+			new UnavailableKnowledgeBundleRuntime())) {
+	}
+#pragma warning restore CLIO001
 
 	private static readonly Dictionary<string, string> LegacyAliases = new(StringComparer.Ordinal) {
 		["topic"] = "name",
@@ -72,30 +79,40 @@ public sealed class GuidanceGetTool {
 				return Task.FromResult(new GuidanceGetResponse {
 					Success = false,
 					Error = "Missing required parameter 'name'. Pass {\"name\": \"<guide>\"}. See availableGuides for valid values.",
-					AvailableGuides = GuidanceCatalog.GetNames(_featureToggleService).ToList()
+					AvailableGuides = _guidanceSource.GetNames().ToList()
 				});
 			}
-			if (GuidanceCatalog.TryGet(effectiveName, _featureToggleService, out GuidanceCatalogEntry entry)) {
+			KnowledgeArticleLookup lookup = _guidanceSource.FindByName(effectiveName);
+			if (lookup.Status == KnowledgeArticleLookupStatus.Active) {
 				return Task.FromResult(new GuidanceGetResponse {
 					Success = true,
 					Hint = aliasHint,
 					Article = new GuidanceArticle {
-						Name = entry.Name,
-						Uri = entry.Article.Uri,
-						Text = entry.Article.Text
+						Name = lookup.Article!.Name,
+						Uri = lookup.Article.Uri,
+						Text = lookup.Article.Text
 					}
+				});
+			}
+			if (lookup.Status == KnowledgeArticleLookupStatus.Unavailable) {
+				return Task.FromResult(new GuidanceGetResponse {
+					Success = false,
+					ErrorCode = KnowledgeGuidanceUnavailableException.ErrorCode,
+					Error = $"Guidance '{effectiveName}' is unavailable because no compatible verified knowledge bundle is active.",
+					AvailableGuides = _guidanceSource.GetNames().ToList()
 				});
 			}
 			return Task.FromResult(new GuidanceGetResponse {
 				Success = false,
+				ErrorCode = "guidance-not-found",
 				Error = $"Unknown guidance '{effectiveName}'. Use one of availableGuides.",
-				AvailableGuides = GuidanceCatalog.GetNames(_featureToggleService).ToList()
+				AvailableGuides = _guidanceSource.GetNames().ToList()
 			});
 		} catch (Exception ex) {
 			return Task.FromResult(new GuidanceGetResponse {
 				Success = false,
 				Error = SensitiveErrorTextRedactor.Redact($"get-guidance failed: {ex.Message}. Expected args: {{\"name\": \"<guide>\"}}."),
-				AvailableGuides = GuidanceCatalog.GetNames(_featureToggleService).ToList()
+				AvailableGuides = _guidanceSource.GetNames().ToList()
 			});
 		}
 	}
@@ -119,6 +136,10 @@ public sealed record GuidanceGetArgs(
 public sealed class GuidanceGetResponse {
 	[JsonPropertyName("success")]
 	public bool Success { get; init; }
+
+	[JsonPropertyName("errorCode")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? ErrorCode { get; init; }
 
 	[JsonPropertyName("error")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

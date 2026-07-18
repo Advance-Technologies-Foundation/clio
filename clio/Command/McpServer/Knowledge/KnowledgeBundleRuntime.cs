@@ -243,7 +243,7 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 			if (totalLength > MaxBundleResourceBytes
 					|| resource.Length != bytes.LongLength
 					|| !string.Equals(resource.Digest,
-						Convert.ToHexStringLower(SHA256.HashData(bytes)), StringComparison.Ordinal)) {
+						Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant(), StringComparison.Ordinal)) {
 				throw Reject(KnowledgeBundleRejectionCode.InvalidContent, manifest.Sequence,
 					$"Resource '{resource.Id}' failed length or digest validation.");
 			}

@@ -408,7 +408,7 @@ public sealed class KnowledgeBundleRuntimeTests {
 
 	private static byte[] BuildValidCandidate(ECDsa signingKey) {
 		byte[] resourceBytes = new UTF8Encoding(false, true).GetBytes(TestArticleText);
-		string digest = Convert.ToHexStringLower(SHA256.HashData(resourceBytes));
+		string digest = Convert.ToHexString(SHA256.HashData(resourceBytes)).ToLowerInvariant();
 		byte[] manifestBytes = JsonSerializer.SerializeToUtf8Bytes(new {
 			contractVersion = "0.1.0",
 			bundleSchemaVersion = "0.1.0",

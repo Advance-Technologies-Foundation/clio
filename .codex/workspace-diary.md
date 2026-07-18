@@ -6745,3 +6745,10 @@ Decision: Added a transport-neutral signed v0 bundle verifier with forward-only 
 Discovery: The compiled ESQ oracle from Clio commit baa34546 can be served byte-identically from the clio-knowledge conformance ZIP; rejected candidates leave the active sequence unchanged across signature, content, compatibility, capability, path, truncation, and replay failures.
 Files: clio/Command/McpServer/Knowledge/, clio.tests/Command/McpServer/KnowledgeBundleRuntimeTests.cs, spec/knowledge-bundle-runtime/
 Impact: NuGet or another transport can supply candidate streams without owning verification or last-known-good serving semantics.
+
+## 2026-07-18 15:05 – External knowledge serving proof
+Context: Prove that Clio can serve guidance owned by clio-knowledge without embedded fallback content.
+Decision: Keep the Clio delivery implementation on `krylov/knowledge-bundle-poc` until the Monday architecture review; do not merge it.
+Discovery: A verified ESQ bundle is served byte-identically through the real `get-guidance` and `docs://` surfaces on .NET 8 and .NET 10, while a cold process returns typed `guidance-unavailable`.
+Files: clio/Command/McpServer/Knowledge/, clio/Command/McpServer/Resources/KnowledgeGuidanceResourceAdapter.cs, clio.mcp.e2e/KnowledgeGuidanceBundleE2ETests.cs
+Impact: Clio can retain mechanics-only tests while content and content validation migrate to clio-knowledge.

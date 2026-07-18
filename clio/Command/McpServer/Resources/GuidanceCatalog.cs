@@ -99,26 +99,26 @@ internal static class GuidanceCatalog {
 				"page-modification-components",
 				"viewConfigDiff-composition sub-guide of the page-modification family: adding a button with a click handler, the handlers/viewConfigDiff section rules, the column-type-to-control mapping, the canonical add-button flow, and how to read a get-component-info detail response.",
 				PageModificationComponentsGuidanceResource.Guide),
-			["esq"] = Create(
+			["esq"] = CreateExternal(
 				"esq",
 				"Canonical MCP guidance for EntitySchemaQuery authoring: the DataService SelectQuery envelope, columns/select, expression building blocks, forward/backward reference column-path grammar, aggregations, and master enum tables.",
-				EsqGuidanceResource.Guide),
-			["esq-filters"] = Create(
+				EsqGuidanceResource.ResourceUri),
+			["esq-filters"] = CreateExternal(
 				"esq-filters",
 				"Stable ESQ filter guidance router: choose frontend/DataService construction, native backend C# construction, or runtime C# parsing without duplicating detailed rules.",
-				EsqFiltersGuidanceResource.Guide),
-			["esq-filters-frontend"] = Create(
+				EsqFiltersGuidanceResource.ResourceUri),
+			["esq-filters-frontend"] = CreateExternal(
 				"esq-filters-frontend",
 				"Canonical frontend ESQ filter construction guidance for JavaScript, Freedom UI, page JSON, and DataService SelectQuery payloads.",
-				EsqFiltersGuidanceResource.FrontendGuide),
-			["esq-filters-backend"] = Create(
+				EsqFiltersGuidanceResource.FrontendResourceUri),
+			["esq-filters-backend"] = CreateExternal(
 				"esq-filters-backend",
 				"Canonical and Lab-verified native Creatio backend C# guidance for constructing EntitySchemaQuery filter groups and compare leaves.",
-				EsqFiltersBackendGuidanceResource.Guide),
-			["esq-filter-parsing"] = Create(
+				EsqFiltersBackendGuidanceResource.ResourceUri),
+			["esq-filter-parsing"] = CreateExternal(
 				"esq-filter-parsing",
 				"Lab-verified runtime C# guidance for recursively parsing EntitySchemaQuery.Filters without access to Creatio backend source code.",
-				EsqFilterParsingGuidanceResource.Guide),
+				EsqFilterParsingGuidanceResource.ResourceUri),
 			["indicator-widget"] = Create(
 				"indicator-widget",
 				"Canonical MCP guidance for Freedom UI indicator widgets: Copilot-intent to runtime payload translation, aggregate selection, and static filter authoring.",
@@ -243,7 +243,8 @@ internal static class GuidanceCatalog {
 		};
 
 		foreach (ComposableAppSkillResourceEntry guide in ComposableAppSkillResourceCatalog.GetGuides()) {
-			entries[guide.Skill] = new GuidanceCatalogEntry(guide.Skill, guide.Description, guide.Article);
+			entries[guide.Skill] = new GuidanceCatalogEntry(
+				guide.Skill, guide.Description, guide.Article.Uri, guide.Article, false);
 		}
 
 		return entries;
@@ -265,6 +266,9 @@ internal static class GuidanceCatalog {
 			.Select(entry => entry.Name)
 			.OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
 			.ToArray();
+
+	internal static IReadOnlyList<GuidanceCatalogEntry> GetEntries(IFeatureToggleService toggles) =>
+		Entries.Values.Where(entry => IsVisible(entry, toggles)).ToArray();
 
 	/// <summary>
 	/// Tries to resolve one guidance article by its canonical name, regardless of feature-toggle state.
@@ -299,8 +303,11 @@ internal static class GuidanceCatalog {
 				$"Guidance '{name}' must return {nameof(TextResourceContents)}.");
 		}
 
-		return new GuidanceCatalogEntry(name, description, article, featureGateType);
+		return new GuidanceCatalogEntry(name, description, article.Uri, article, false, featureGateType);
 	}
+
+	private static GuidanceCatalogEntry CreateExternal(string name, string description, string uri) =>
+		new(name, description, uri, null, true);
 }
 
 /// <summary>
@@ -309,6 +316,8 @@ internal static class GuidanceCatalog {
 internal sealed record GuidanceCatalogEntry(
 	string Name,
 	string Description,
-	TextResourceContents Article,
+	string Uri,
+	TextResourceContents? Article,
+	bool IsExternal,
 	Type FeatureGateType = null
 );

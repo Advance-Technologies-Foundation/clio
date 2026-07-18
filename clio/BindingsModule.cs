@@ -17,6 +17,7 @@ using Clio.Command.CreatioInstallCommand;
 using Clio.Command.IdentityServiceDeployment;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Command.McpServer;
+using Clio.Command.McpServer.Knowledge;
 using Clio.Command.McpServer.Resources;
 using Clio.Command.PackageCommand;
 using Clio.Command.ProcessModel;
@@ -530,6 +531,15 @@ public class BindingsModule {
 		services.AddTransient<PageSyncTool>();
 		services.AddSingleton<IPageBodySamplingService, PageBodySamplingServiceImpl>();
 		services.AddTransient<GuidanceGetTool>();
+		services.AddSingleton<IKnowledgeBundleTrustStore, EnvironmentKnowledgeBundleTrustStore>();
+		services.AddSingleton(new KnowledgeBundleClientCapabilities(
+			typeof(BindingsModule).Assembly.GetName().Version ?? new Version(8, 1, 0),
+			new Version(1, 0, 0),
+			new HashSet<string>(StringComparer.Ordinal) { GuidanceGetTool.ToolName }));
+		services.AddSingleton<IKnowledgeBundleRuntime, KnowledgeBundleRuntime>();
+		services.AddSingleton<IKnowledgeBundleActivator, EnvironmentKnowledgeBundleActivator>();
+		services.AddSingleton<IKnowledgeGuidanceSource, KnowledgeGuidanceSource>();
+		services.AddSingleton<KnowledgeGuidanceResourceAdapter>();
 		services.AddTransient<ComponentInfoTool>();
 		services.AddTransient<BuildThemeTool>();
 		services.AddTransient<AdviseThemePaletteTool>();

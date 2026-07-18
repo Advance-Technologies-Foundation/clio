@@ -98,8 +98,8 @@ public sealed class GuidanceGetToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Returns the canonical ESQ filters guidance article when the caller requests esq-filters.")]
-	public async Task GuidanceGet_Should_Return_Esq_Filters_Article() {
+	[Description("Returns typed unavailable when an external ESQ article is requested without an active verified bundle.")]
+	public async Task GuidanceGet_Should_Return_Unavailable_For_External_Esq_Filters_Article() {
 		// Arrange
 		GuidanceGetTool tool = new(_featureToggleService);
 
@@ -107,12 +107,12 @@ public sealed class GuidanceGetToolTests {
 		GuidanceGetResponse result = await tool.GetGuidance(new GuidanceGetArgs("esq-filters"));
 
 		// Assert
-		result.Success.Should().BeTrue(
-			because: "esq-filters is a registered guidance name");
-		result.Article.Should().NotBeNull(
-			because: "successful guidance lookups should return the resolved article");
-		result.Article!.Uri.Should().Be("docs://mcp/guides/esq-filters",
-			because: "the guidance tool should preserve the canonical esq-filters guide URI in the response");
+		result.Success.Should().BeFalse(
+			because: "external guidance cannot succeed without a verified active bundle");
+		result.ErrorCode.Should().Be("guidance-unavailable",
+			because: "the cold state must be distinguishable from an unknown guide");
+		result.Article.Should().BeNull(
+			because: "the cold state must not return permissive empty content");
 	}
 
 	[Test]
