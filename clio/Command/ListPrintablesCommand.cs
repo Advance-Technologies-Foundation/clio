@@ -183,6 +183,11 @@ public class ListPrintablesCommand : Command<ListPrintablesOptions> {
 			|| string.Equals(row.SysModuleEntityName, wanted, StringComparison.OrdinalIgnoreCase);
 	}
 
+	// The only server-side filter is the fixed MS-Word Type.Id — the caller-supplied EntityName is matched
+	// in memory afterwards (see MatchesEntity), NOT pushed into the query. This mirrors the runtime
+	// PrintablesService, keeps the untrusted EntityName out of the DataService filter entirely (no injection
+	// surface), and means every call fetches all MS-Word printables of the environment. That set is small in
+	// practice.
 	private static object BuildPrintablesQuery() {
 		List<SelectQueryFilterDefinition> filters =
 		[

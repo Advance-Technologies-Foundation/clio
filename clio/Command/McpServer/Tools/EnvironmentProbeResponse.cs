@@ -55,6 +55,14 @@ public abstract class EnvironmentProbeResponse {
 	/// Gets the human-readable failure detail; carries candidate lists on ambiguous
 	/// resolutions so the agent can ask the user instead of guessing.
 	/// </summary>
+	/// <remarks>
+	/// REDACTION CONTRACT for probe TOOLS: a command may store a raw transport/deserialisation
+	/// exception message here (kept raw on the CLI path for the operator console), which can carry
+	/// the target URI/host or credentials. Every probe tool built on this envelope MUST pass this
+	/// text through <c>SensitiveErrorTextRedactor.Redact</c> before returning the response across the
+	/// MCP boundary — see <c>ListPrintablesTool</c> for the reference pattern. The base type cannot
+	/// enforce this because the same property is populated raw by the command and redacted by the tool.
+	/// </remarks>
 	[JsonPropertyName("error")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string? Error { get; init; }

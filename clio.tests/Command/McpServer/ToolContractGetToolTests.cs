@@ -266,6 +266,26 @@ public sealed class ToolContractGetToolTests {
 			because: "execute-esq is a read-only ESQ query tool annotated as non-destructive");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("get-request-info appears in the compact discovery index as a resident, non-destructive tool, matching its membership in McpCoreToolProfile.CoreToolTypes and its ReadOnly=true / Destructive=false MCP annotation.")]
+	public void ToolContractGet_Should_MarkRequestInfo_Resident_And_NonDestructive_InIndex() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs());
+
+		// Assert
+		result.Index.Should().NotBeNullOrEmpty(
+			because: "the no-args default must populate the compact index");
+		ToolContractIndexEntry requestInfo = result.Index!.Single(entry => entry.Name == RequestInfoTool.ToolName);
+		requestInfo.Resident.Should().BeTrue(
+			because: "get-request-info is a member of McpCoreToolProfile.CoreToolTypes, so it ships resident in tools/list");
+		requestInfo.Destructive.Should().BeFalse(
+			because: "get-request-info is annotated ReadOnly=true, Destructive=false on its MCP tool method");
+	}
+
 	// ENG-92761 (F2): the compact index must let an agent tell WHICH tools are called natively (present
 	// in tools/list) vs. reached only through clio-run, without depending on an invoker registry.
 	[Test]

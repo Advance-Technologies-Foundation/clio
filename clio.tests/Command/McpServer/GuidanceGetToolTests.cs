@@ -379,10 +379,7 @@ public sealed class GuidanceGetToolTests {
 		result.Article.Text.Should().Contain("NEVER use `alert(...)`, `window.alert(...)`, `confirm(...)`, or `prompt(...)`",
 			because: "the page modification guide must forbid raw browser dialog primitives in page-body handlers so the agent stops emitting alert() (ENG-91748)");
 		string entryCrlfWorstCase = result.Article.Text.Replace("\r\n", "\n").Replace("\n", "\r\n");
-		// 15 * 1024 is the literal "15 KB" of ENG-91556 AC#2. The guard sat at a stricter round 15000
-		// until the run-process GATE row (when-to-use-requests + get-request-info) became unconditional
-		// entry-guide content (~15.2k CRLF worst case) — a deliberate budget decision, like the
-		// tools/list byte ratchet in McpProfileGatingTests.
+		// 15 * 1024 is the literal "15 KB" of ENG-91556 AC#2.
 		new System.Text.UTF8Encoding(false).GetByteCount(entryCrlfWorstCase).Should().BeLessThanOrEqualTo(15 * 1024,
 			because: "the entry guide must stay <= 15 KB (CRLF worst case) so a single get-guidance response fits the agent token limit (ENG-91556 AC#2)");
 	}
@@ -525,8 +522,7 @@ public sealed class GuidanceGetToolTests {
 			// Normalize every line ending to CRLF so the budget reflects the largest the article can be
 			// served at (a CRLF checkout adds one byte per line over an LF checkout); this keeps the guard
 			// independent of git autocrlf and matches the real runtime size observed on Windows.
-			// 15 * 1024 is the literal "15 KB" of ENG-91556 AC#2; see the entry-guide budget comment in
-			// GuidanceGet_Should_Return_Page_Modification_Article for why the stricter 15000 was raised.
+			// 15 * 1024 is the literal "15 KB" of ENG-91556 AC#2.
 			string crlfWorstCase = result.Article!.Text.Replace("\r\n", "\n").Replace("\n", "\r\n");
 			utf8.GetByteCount(crlfWorstCase).Should().BeLessThanOrEqualTo(15 * 1024,
 				because: $"the {name} guide must stay <= 15 KB (CRLF worst case) so a single get-guidance response fits the agent token limit (ENG-91556 AC#2)");
