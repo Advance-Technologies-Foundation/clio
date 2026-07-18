@@ -19,14 +19,22 @@ namespace Clio.Tests.Command.McpServer;
 [Category("Unit")]
 [Property("Module", "McpServer")]
 public sealed class KnowledgeBundleRuntimeTests {
-	private const string FixtureDirectory = "Command/McpServer/Fixtures/KnowledgeBundle";
+	private const string TestArticleName = "guide-a";
+	private const string TestArticleUri = "docs://mcp/guides/guide-a";
+	private const string TestArticlePath = "resources/guide-a.md";
+	private const string TestArticleText = "Synthetic signed test payload.\n";
 
 	private ServiceProvider _container;
 	private IKnowledgeBundleRuntime _runtime;
+	private string _privateKeyPem;
+	private byte[] _validCandidateBytes;
 
 	[SetUp]
 	public void SetUp() {
-		string publicKey = File.ReadAllText(FixturePath("p1-test-public.pem"));
+		using ECDsa testKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+		_privateKeyPem = testKey.ExportPkcs8PrivateKeyPem();
+		string publicKey = testKey.ExportSubjectPublicKeyInfoPem();
+		_validCandidateBytes = BuildValidCandidate(testKey);
 		IKnowledgeBundleTrustStore trustStore = Substitute.For<IKnowledgeBundleTrustStore>();
 		trustStore.TryGetPublicKeyPem("p1-test", out Arg.Any<string>())
 			.Returns(callInfo => {
@@ -55,7 +63,7 @@ public sealed class KnowledgeBundleRuntimeTests {
 		// Arrange
 
 		// Act
-		KnowledgeArticleLookup result = _runtime.Find("esq-filters");
+		KnowledgeArticleLookup result = _runtime.Find(TestArticleName);
 
 		// Assert
 		result.Status.Should().Be(KnowledgeArticleLookupStatus.Unavailable,
@@ -65,25 +73,24 @@ public sealed class KnowledgeBundleRuntimeTests {
 	}
 
 	[Test]
-	[Description("Activates the signed ESQ bundle and serves the frozen compiled-Clio payload byte-for-byte.")]
-	public void Activate_Should_Serve_Frozen_Oracle_When_Candidate_Is_Valid() {
+	[Description("Activates a valid signed bundle and serves its exact payload bytes.")]
+	public void Activate_Should_Serve_Exact_Payload_When_Candidate_Is_Valid() {
 		// Arrange
 		using MemoryStream candidate = ValidCandidate();
-		string expected = File.ReadAllText(FixturePath("esq-filters.md"), new UTF8Encoding(false, true));
 
 		// Act
 		KnowledgeBundleActivationResult activation = _runtime.Activate(candidate);
-		KnowledgeArticleLookup lookup = _runtime.Find("esq-filters");
+		KnowledgeArticleLookup lookup = _runtime.Find(TestArticleName);
 
 		// Assert
 		activation.Status.Should().Be(KnowledgeBundleActivationStatus.Activated,
 			because: "the signed compatible conformance bundle should become active");
 		lookup.Status.Should().Be(KnowledgeArticleLookupStatus.Active,
 			because: "an article in the active bundle should be returned as verified content");
-		lookup.Article!.Uri.Should().Be("docs://mcp/guides/esq-filters",
+		lookup.Article!.Uri.Should().Be(TestArticleUri,
 			because: "stable resource identity must survive externalization");
-		Encoding.UTF8.GetBytes(lookup.Article.Text).Should().Equal(Encoding.UTF8.GetBytes(expected),
-			because: "external guidance must be byte-identical to the compiled runtime oracle");
+		Encoding.UTF8.GetBytes(lookup.Article.Text).Should().Equal(Encoding.UTF8.GetBytes(TestArticleText),
+			because: "the verified resource must be served without byte-changing transformations");
 	}
 
 	[Test]
@@ -92,13 +99,13 @@ public sealed class KnowledgeBundleRuntimeTests {
 		// Arrange
 		ActivateValid();
 		using MemoryStream candidate = MutateCandidate(entries => {
-			byte[] resource = entries["resources/esq-filters.md"];
+			byte[] resource = entries[TestArticlePath];
 			resource[0] ^= 0x01;
 		});
 
 		// Act
 		KnowledgeBundleActivationResult result = _runtime.Activate(candidate);
-		KnowledgeArticleLookup lookup = _runtime.Find("esq-filters");
+		KnowledgeArticleLookup lookup = _runtime.Find(TestArticleName);
 
 		// Assert
 		result.RejectionCode.Should().Be(KnowledgeBundleRejectionCode.InvalidContent,
@@ -284,7 +291,7 @@ public sealed class KnowledgeBundleRuntimeTests {
 	public void Activate_Should_Retain_Active_Bundle_When_Archive_Is_Truncated() {
 		// Arrange
 		ActivateValid();
-		byte[] validBytes = File.ReadAllBytes(FixturePath("valid.zip"));
+		byte[] validBytes = _validCandidateBytes;
 		using MemoryStream candidate = new(validBytes[..(validBytes.Length / 2)]);
 
 		// Act
@@ -319,7 +326,7 @@ public sealed class KnowledgeBundleRuntimeTests {
 	public void Activate_Should_Retain_Active_Bundle_When_Resource_Entry_Is_Missing() {
 		// Arrange
 		ActivateValid();
-		using MemoryStream candidate = MutateCandidate(entries => entries.Remove("resources/esq-filters.md"));
+		using MemoryStream candidate = MutateCandidate(entries => entries.Remove(TestArticlePath));
 
 		// Act
 		KnowledgeBundleActivationResult result = _runtime.Activate(candidate);
@@ -372,30 +379,75 @@ public sealed class KnowledgeBundleRuntimeTests {
 			because: "the test precondition requires a verified active bundle");
 	}
 
-	private static MemoryStream ValidCandidate() => new(File.ReadAllBytes(FixturePath("valid.zip")));
+	private MemoryStream ValidCandidate() => new(_validCandidateBytes.ToArray());
 
-	private static MemoryStream MutateAndResign(Action<JsonObject> mutateManifest) => MutateCandidate(entries => {
+	private MemoryStream MutateAndResign(Action<JsonObject> mutateManifest) => MutateCandidate(entries => {
 		JsonObject manifest = JsonNode.Parse(entries["manifest.json"])!.AsObject();
 		mutateManifest(manifest);
 		byte[] manifestBytes = JsonSerializer.SerializeToUtf8Bytes(manifest);
 		using ECDsa signingKey = ECDsa.Create();
-		signingKey.ImportFromPem(File.ReadAllText(FixturePath("p1-test-private.pem")));
+		signingKey.ImportFromPem(_privateKeyPem);
 		entries["manifest.json"] = manifestBytes;
 		entries["manifest.sig"] = signingKey.SignData(manifestBytes, HashAlgorithmName.SHA256);
 	});
 
-	private static MemoryStream MutateManifestBytesAndResign(Func<byte[], byte[]> mutateManifest) =>
+	private MemoryStream MutateManifestBytesAndResign(Func<byte[], byte[]> mutateManifest) =>
 		MutateCandidate(entries => {
 			byte[] manifestBytes = mutateManifest(entries["manifest.json"]);
 			using ECDsa signingKey = ECDsa.Create();
-			signingKey.ImportFromPem(File.ReadAllText(FixturePath("p1-test-private.pem")));
+			signingKey.ImportFromPem(_privateKeyPem);
 			entries["manifest.json"] = manifestBytes;
 			entries["manifest.sig"] = signingKey.SignData(manifestBytes, HashAlgorithmName.SHA256);
 		});
 
-	private static MemoryStream MutateCandidate(Action<Dictionary<string, byte[]>> mutate) {
-		Dictionary<string, byte[]> entries = ReadEntries(File.ReadAllBytes(FixturePath("valid.zip")));
+	private MemoryStream MutateCandidate(Action<Dictionary<string, byte[]>> mutate) {
+		Dictionary<string, byte[]> entries = ReadEntries(_validCandidateBytes);
 		mutate(entries);
+		return WriteArchive(entries);
+	}
+
+	private static byte[] BuildValidCandidate(ECDsa signingKey) {
+		byte[] resourceBytes = new UTF8Encoding(false, true).GetBytes(TestArticleText);
+		string digest = Convert.ToHexStringLower(SHA256.HashData(resourceBytes));
+		byte[] manifestBytes = JsonSerializer.SerializeToUtf8Bytes(new {
+			contractVersion = "0.1.0",
+			bundleSchemaVersion = "0.1.0",
+			sequence = 1,
+			bundleVersion = "1.0.0-test",
+			issuedAt = "2026-07-18T00:00:00Z",
+			source = new { repository = "synthetic-test", commit = "0123456" },
+			compatibility = new {
+				clio = new { min = "8.1.0", max = "8.1.999" },
+				mcpToolContract = new { min = "1.0.0", max = "1.0.0" }
+			},
+			requirements = new {
+				tools = new[] { "get-guidance" },
+				guidanceIds = new[] { TestArticleName },
+				resourceUris = new[] { TestArticleUri }
+			},
+			digestAlg = "SHA-256",
+			signature = new { algorithm = "ECDSA-P256-SHA256", keyId = "p1-test" },
+			resources = new[] {
+				new {
+					id = TestArticleName,
+					uri = TestArticleUri,
+					path = TestArticlePath,
+					mediaType = "text/plain",
+					length = resourceBytes.LongLength,
+					digest
+				}
+			}
+		});
+		Dictionary<string, byte[]> entries = new(StringComparer.Ordinal) {
+			["manifest.json"] = manifestBytes,
+			["manifest.sig"] = signingKey.SignData(manifestBytes, HashAlgorithmName.SHA256),
+			[TestArticlePath] = resourceBytes
+		};
+		using MemoryStream archive = WriteArchive(entries);
+		return archive.ToArray();
+	}
+
+	private static MemoryStream WriteArchive(IReadOnlyDictionary<string, byte[]> entries) {
 		MemoryStream output = new();
 		using (ZipArchive archive = new(output, ZipArchiveMode.Create, leaveOpen: true)) {
 			foreach ((string path, byte[] bytes) in entries) {
@@ -422,8 +474,4 @@ public sealed class KnowledgeBundleRuntimeTests {
 			StringComparer.Ordinal);
 	}
 
-	private static string FixturePath(string name) => Path.Combine(
-		TestContext.CurrentContext.TestDirectory,
-		FixtureDirectory.Replace('/', Path.DirectorySeparatorChar),
-		name);
 }
