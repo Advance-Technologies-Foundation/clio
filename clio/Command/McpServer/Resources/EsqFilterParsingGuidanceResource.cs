@@ -363,6 +363,75 @@ public sealed class EsqFilterParsingGuidanceResource {
 		       compare it with the cached bounds. Recomputing `now` or traversing the function tree per row is both
 		       unnecessarily expensive and inconsistent when a query crosses midnight or a year boundary.
 
+		       ## Parse Exists, NotExists, and aggregate subqueries
+		       Existence leaves do not follow the ordinary left-column/right-parameter contract. Validate the comparison,
+		       null left expression, one right SubQuery, child root schema, and generated correlation together:
+		       ```csharp
+		       private static EntitySchemaQuery ReadActivityExistenceSubquery(
+		           EntitySchemaQueryFilter filter,
+		           FilterComparisonType expectedComparison) {
+		           if (filter.ComparisonType != expectedComparison ||
+		               filter.LeftExpression != null ||
+		               filter.RightExpressions.Count != 1 ||
+		               filter.RightExpressions.Single().ExpressionType !=
+		                   EntitySchemaQueryExpressionType.SubQuery) {
+		               throw new NotSupportedException("Unsupported existence filter shape.");
+		           }
+
+		           EntitySchemaQuery child = filter.RightExpressions.Single().SubQuery;
+		           if (child?.RootSchema?.Name != "Activity") {
+		               throw new NotSupportedException("Expected an Activity subquery.");
+		           }
+		           // Recursively validate child.Filters, including the generated
+		           // Owner.Id == root UsrOwnerId schema-column correlation.
+		           return child;
+		       }
+		       ```
+
+		       Call it only for explicitly supported `Exists` or `NotExists` leaves. The verified mixed path generated
+		       `Owner.Id` on the Activity side and a schema-column right expression whose complete path was
+		       `UsrOwnerId` on the root side. A schema-column correlation is not a parameter: do not read
+		       `ParameterValue`, coerce it to Guid, or compare only the terminal `Id` column name.
+
+		       Aggregate filters invert the expression placement: the SubQuery is the outer leaf's left expression and
+		       the scalar threshold is on the right. Validate `Greater`, `LeftExpression.ExpressionType == SubQuery`,
+		       exactly one Integer threshold, the Activity root, and the complete child filter tree. Apply the
+		       selected-column/expression budget before enumerating child columns, then locate the aggregate
+		       column by function type:
+		       ```csharp
+		       ConsumeSelectedExpressionBudget(child.Columns.Count);
+		       EntitySchemaQueryColumn countColumn = child.Columns.SingleOrDefault(column =>
+		           column.ValueExpression?.Function is EntitySchemaAggregationQueryFunction);
+		       EntitySchemaAggregationQueryFunction countFunction =
+		           countColumn?.ValueExpression?.Function as EntitySchemaAggregationQueryFunction;
+		       if (countFunction?.AggregationType != AggregationTypeStrict.Count ||
+		           countFunction.AggregationEvalType != AggregationEvalType.None ||
+		           countFunction.Expression?.ExpressionType != EntitySchemaQueryExpressionType.SchemaColumn ||
+		           countFunction.Expression.Path != "Id") {
+		           throw new NotSupportedException("Expected Count(Id) without Distinct in the child subquery.");
+		       }
+		       ```
+
+		       Do not call `child.Columns.Single()` or assume the aggregation replaces the ordinary selected column. The
+		       verified Count subquery retained Id and the Count function. Reject an unknown aggregation, threshold,
+		       correlation, child schema, or Title predicate instead of treating every subquery as existence.
+
+		       Native and DataService child-filter envelopes differ. Native C# placed the verified Title leaf directly in
+		       `child.Filters`; DataService retained serialized `subFilters` as a one-item nested AND collection. An empty
+		       serialized Exists `subFilters` remained an empty nested AND next to the correlation. Accept only the
+		       direct and nested forms your provider has proved. Preserve/count the envelope for structural diagnostics;
+		       a semantic comparison may remove only this known transport wrapper after validating it is enabled,
+		       non-negated, AND, and contains the expected zero or one child.
+
+		       Extend depth, node, expression, and parameter budgets into every subquery, selected expression, and child
+		       filter collection. Parse and compile the validated tree once. Prefer a correlated Exists/aggregate pushed
+		       into the backing provider. If pushdown is unavailable, collect a bounded set of root correlation keys and use
+		       chunked batch queries plus provider-side aggregation. Enforce explicit root-key, child-row/fan-out, timeout,
+		       and cancellation limits; reject the request when those bounds cannot preserve semantics. Do not execute one
+		       child query per root record or materialize an unbounded child source merely to pre-index it. The diagnostic
+		       physical-SQL trick is an oracle only—always restore
+		       `RootSchema.IsVirtual` in `finally` and never execute that SQL for a virtual schema.
+
 		       Then require the CLR type appropriate to the schema column (`System.Int32` for the verified
 		       Integer example and `System.String` for MediumText) and dispatch explicitly on
 		       `ComparisonType`. Do not coerce an unexpected value or silently treat an unsupported
@@ -414,9 +483,9 @@ public sealed class EsqFilterParsingGuidanceResource {
 		       Verified now: group envelope/nesting, disabled leaf/group behavior, group `IsNot`, and all
 		       scalar Compare operators using representative Integer and MediumText values, plus text
 		       `IsNull`/`IsNotNull`, Integer In cardinality boundaries, typed/lookup parameters, and temporal literals,
-		       trim-to-date, relative-period boundaries, Year, and HourMinute functions. The frontend guide supplies
-		       the remaining validation backlog: Exists/subqueries/aggregates and Segment. Add parsing rules here only
-		       after native C# and
+		       trim-to-date, relative-period boundaries, Year, HourMinute functions, and Exists/NotExists/Count subqueries
+		       over a mixed forward/backward path. The frontend guide supplies the remaining validation backlog: Segment.
+		       Add parsing rules here only after native C# and
 		       DataService produce an asserted runtime shape and the lab proves result behavior.
 		       """
 	};

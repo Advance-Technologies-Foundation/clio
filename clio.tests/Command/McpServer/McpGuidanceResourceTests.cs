@@ -1603,6 +1603,8 @@ public sealed class McpGuidanceResourceTests {
 			because: "the router status should include promoted typed lookup coverage");
 		router.Text.Should().Contain("temporal literals/macros/date parts",
 			because: "the router status should include promoted temporal coverage");
+		router.Text.Should().Contain("Exists/NotExists/aggregate subqueries",
+			because: "the router status should include promoted backward-subquery coverage");
 		router.Text.Should().NotContain("### Compare (filterType 1)",
 			because: "the router should not duplicate detailed frontend filter rules");
 
@@ -1712,6 +1714,18 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide must preserve the verified DateTime Kind transport boundary");
 		article.Text.Should().Contain("not Creatio/PostgreSQL collation behavior",
 			because: "in-memory provider case policy must not be published as database-collation evidence");
+		article.Text.Should().Contain("esq.CreateExistsFilter(ownerActivities)",
+			because: "the backend guide should expose native Exists construction over the verified mixed path");
+		article.Text.Should().Contain("esq.CreateNotExistsFilter(ownerActivities)",
+			because: "the backend guide should expose native NotExists construction independently");
+		article.Text.Should().Contain("out EntitySchemaQuery activitySubQuery",
+			because: "aggregate child predicates must be authored through the returned subquery");
+		article.Text.Should().Contain("AggregationTypeStrict.Count",
+			because: "the backend guide should preserve the verified Count aggregate recipe");
+		article.Text.Should().Contain("Count > 1",
+			because: "the guide must avoid an existence-boundary optimization when demonstrating aggregates");
+		article.Text.Should().Contain("extra enabled AND collection",
+			because: "the guide should preserve the proven DataService child-filter envelope difference");
 		article.Text.Should().Contain("Pending lab",
 			because: "unverified filter families should be explicit instead of guessed");
 	}
@@ -1807,6 +1821,26 @@ public sealed class McpGuidanceResourceTests {
 			because: "the parser must validate the full ESQ path instead of only its terminal schema column");
 		article.Text.Should().Contain("can collapse `Account.Name` to",
 			because: "the guide should explain why terminal SchemaColumnName matching can accept an unintended lookup path");
+		article.Text.Should().Contain("ReadActivityExistenceSubquery",
+			because: "the parser should validate Exists and NotExists as right-side subqueries");
+		article.Text.Should().Contain("Owner.Id == root UsrOwnerId",
+			because: "the parser must validate the generated mixed-path correlation");
+		article.Text.Should().Contain("column.ValueExpression?.Function is EntitySchemaAggregationQueryFunction",
+			because: "aggregate parsing must select the function column instead of assuming one subquery column");
+		article.Text.Should().Contain("Do not call `child.Columns.Single()`",
+			because: "the guide must preserve the live failure caused by the retained Id plus Count columns");
+		article.Text.Should().Contain("Count(Id) without Distinct",
+			because: "aggregate parsing must validate the exact operand and evaluation mode proved by the lab");
+		article.Text.Should().Contain("ConsumeSelectedExpressionBudget(child.Columns.Count)",
+			because: "the selected-expression budget must be applied before aggregate-column enumeration");
+		article.Text.Should().Contain("materialize an unbounded child source",
+			because: "avoiding literal N+1 queries must not permit unbounded child preloading");
+		article.Text.Should().Contain("child-row/fan-out, timeout",
+			because: "fallback batching must remain bounded and cancellable");
+		article.Text.Should().Contain("Do not execute one",
+			because: "virtual providers must avoid one child query per root record");
+		article.Text.Should().Contain("`RootSchema.IsVirtual` in `finally`",
+			because: "the diagnostic SQL oracle must not leave the shared schema non-virtual");
 		string[] expectedScalarOperators = [
 			"Equal", "NotEqual", "Less", "LessOrEqual", "Greater", "GreaterOrEqual",
 			"StartWith", "NotStartWith", "Contain", "NotContain", "EndWith", "NotEndWith"

@@ -6688,3 +6688,17 @@ Decision: Use the stable column-path overload for HourMinute and strengthen both
 Discovery: The expression-based DateTime overload has a different signature on documented Creatio API versions, so a lab-compiling overload must not be generalized when a cross-version column-path overload expresses the same intent.
 Files: clio/Command/McpServer/Resources/EsqFiltersBackendGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs
 Impact: Agents copying the published HourMinute example receive a valid native C# call, guarded on both in-process and real MCP resource paths.
+
+## 2026-07-18 04:02 – Validate backward-path subquery filters
+Context: Project milestone 10 of the backend ESQ filter validation plan into clio guidance.
+Decision: Document Exists, NotExists, and Count subqueries together because they share the same generated mixed-path correlation but differ at the outer expression boundary.
+Discovery: Exists and NotExists use a null left expression plus one right Activity subquery. Count uses the subquery on the left and retains both Id and aggregate columns. DataService preserves its serialized child filters as one extra AND envelope; only that validated wrapper is safe to normalize for semantic parity.
+Files: clio/Command/McpServer/Resources/EsqFiltersGuidanceResource.cs, clio/Command/McpServer/Resources/EsqFiltersBackendGuidanceResource.cs, clio/Command/McpServer/Resources/EsqFilterParsingGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs, clio.mcp.e2e/GuidanceGetToolE2ETests.cs
+Impact: Agents can construct and recursively parse verified relationship subqueries without confusing schema-column correlations with parameters, assuming one child column, or introducing N+1 execution.
+
+## 2026-07-18 04:12 – Bound subquery parser execution
+Context: Pre-PR adversarial review of the promoted subquery guidance identified aggregate-shape and fallback-execution gaps.
+Decision: Require the exact lab-proven non-distinct Count(Id) operand after applying the selected-expression budget, and require bounded batched fallback execution when provider pushdown is unavailable.
+Discovery: Avoiding one query per root record is insufficient if an implementation instead materializes an unbounded child source; correlation-key, fan-out, timeout, and cancellation limits are part of the parser contract.
+Files: clio/Command/McpServer/Resources/EsqFilterParsingGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs, clio.mcp.e2e/GuidanceGetToolE2ETests.cs
+Impact: The published parser fails closed on semantically different Count functions and cannot recommend an unbounded preload as an N+1 workaround.

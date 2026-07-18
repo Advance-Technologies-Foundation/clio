@@ -280,6 +280,59 @@ public sealed class EsqFiltersBackendGuidanceResource {
 		       Construct the semantic API call and let Creatio calculate period boundaries. Do not expect the runtime
 		       tree to retain a macro enum or remain one leaf.
 
+		       ## Create Exists and NotExists over backward paths
+		       Use the relationship path overloads for child-record existence. A mixed path may traverse a forward
+		       lookup before a backward collection:
+		       ```csharp
+		       const string ownerActivities = "UsrOwner.[Activity:Owner].Id";
+		       esq.Filters.Add(esq.CreateExistsFilter(ownerActivities));
+		       // Or, independently:
+		       esq.Filters.Add(esq.CreateNotExistsFilter(ownerActivities));
+		       ```
+
+		       Read the path from the query root: `UsrOwner` moves forward from the virtual record to Contact;
+		       `[Activity:Owner]` moves backward to Activities whose `Owner` points at that Contact; `.Id` is the
+		       child column selected by the subquery. Do not flatten this into a fake root column path.
+
+		       Both calls create one runtime leaf with `LeftExpression == null` and one right expression of type
+		       SubQuery rooted at `Activity`. Creatio adds the correlation
+		       `Activity.Owner.Id == root.UsrOwnerId` inside that subquery. `NotExists` has the same recursive shape
+		       with comparison type `NotExists`; verified SQL changed from `EXISTS` to `NOT EXISTS`.
+
+		       ## Create an aggregate subquery with child filters
+		       Use the aggregate overload with its `out EntitySchemaQuery` when child conditions belong to the
+		       related records:
+		       ```csharp
+		       EntitySchemaQueryFilter activityCount = esq.CreateFilter(
+		           FilterComparisonType.Greater,
+		           ownerActivities,
+		           AggregationTypeStrict.Count,
+		           1,
+		           out EntitySchemaQuery activitySubQuery);
+
+		       activitySubQuery.Filters.Add(activitySubQuery.CreateFilterWithParameters(
+		           FilterComparisonType.Equal,
+		           "Title",
+		           "Lab activity"));
+		       esq.Filters.Add(activityCount);
+		       ```
+
+		       The child `Title` predicate must be added to `activitySubQuery.Filters`, not to the root ESQ and not
+		       copied onto the outer aggregate leaf. The runtime outer leaf is `Greater`; its left expression is an
+		       Activity SubQuery and its right expression is the Integer threshold. The subquery contains the generated
+		       owner correlation plus the Title predicate and selects both its ordinary Id column and a Count function
+		       over Id.
+
+		       Keep an actual aggregate boundary when validating aggregate behavior. Creatio may optimize `Count > 0`,
+		       `Count >= 1`, and `Count == 0` into Exists/NotExists. The lab used `Count > 1` so Count remained observable.
+
+		       DataService `subFilters` have one proven structural difference from direct native construction. The
+		       serialized group survives as an extra enabled AND collection inside the generated subquery: an empty
+		       Exists `subFilters` becomes an empty child group, and one aggregate child predicate becomes a one-item
+		       child group. Native construction has no empty group and adds the Title leaf directly. The generated SQL
+		       semantics matched. Preserve the complete source shape for diagnostics; normalize only this explicit
+		       transport envelope when a semantic parity test needs to compare the two authoring paths.
+
 		       ### Exact ATF shape parity for three-term AND
 		       ATF.Repository 2.0.3.5 translated source `A && B && C` to one flat root AND ordered
 		       `C, A, B`. If a test requires byte-for-byte/shape-for-shape parity, insert the native
@@ -411,8 +464,9 @@ public sealed class EsqFiltersBackendGuidanceResource {
 		       Verified now: group envelope/nesting, disabled leaves/groups, collection `IsNot`, and all
 		       scalar Compare operators using representative Integer and MediumText values, plus text
 		       `IsNull`/`IsNotNull`, Integer In cardinality boundaries, typed/lookup parameters, and Date/DateTime/Time
-		       literals, trim-to-date, relative-period macros, Year, and HourMinute. Pending lab validation before
-		       publishing construction recipes: Exists/subqueries/aggregates and Segment filters. Use the
+		       literals, trim-to-date, relative-period macros, Year, HourMinute, and Exists/NotExists/Count subqueries
+		       over a mixed forward/backward path. Pending lab validation before publishing construction recipes:
+		       Segment filters. Use the
 		       frontend guide as a discovery checklist, but do not translate its JSON fields into guessed
 		       backend APIs.
 		       """
