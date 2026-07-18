@@ -4,15 +4,19 @@ using ModelContextProtocol.Protocol;
 
 namespace Clio.Command.McpServer.Resources;
 
-internal sealed class KnowledgeGuidanceResourceAdapter {
+internal interface IKnowledgeGuidanceResourceAdapter {
+	ResourceContents Get(string uri);
+}
+
+internal sealed class KnowledgeGuidanceResourceAdapter : IKnowledgeGuidanceResourceAdapter {
 	private readonly IKnowledgeGuidanceSource _source;
 
 	public KnowledgeGuidanceResourceAdapter(IKnowledgeGuidanceSource source) {
 		_source = source ?? throw new ArgumentNullException(nameof(source));
 	}
 
-	internal static KnowledgeGuidanceResourceAdapter CreateUnavailable() =>
-		new(new UnavailableKnowledgeGuidanceSource());
+	internal static IKnowledgeGuidanceResourceAdapter CreateUnavailable() =>
+		new KnowledgeGuidanceResourceAdapter(new UnavailableKnowledgeGuidanceSource());
 
 	public ResourceContents Get(string uri) {
 		KnowledgeArticleLookup lookup = _source.FindByUri(uri);

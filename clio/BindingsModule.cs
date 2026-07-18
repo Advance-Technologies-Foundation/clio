@@ -532,6 +532,12 @@ public class BindingsModule {
 		services.AddSingleton<IPageBodySamplingService, PageBodySamplingServiceImpl>();
 		services.AddTransient<GuidanceGetTool>();
 		services.AddSingleton<IKnowledgeBundleTrustStore, EnvironmentKnowledgeBundleTrustStore>();
+		services.AddHttpClient(KnowledgeBundleNuGetClient.HttpClientName)
+			.ConfigureHttpClient(client => client.Timeout = TimeSpan.FromSeconds(15))
+			.ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+		services.AddSingleton<IKnowledgeBundlePackageClient, KnowledgeBundleNuGetClient>();
+		services.AddSingleton(new KnowledgeBundleNuGetOptions(TransportDeadlineMilliseconds: 15_000));
+		services.AddSingleton(new KnowledgeBundleRenewalOptions(CooldownMilliseconds: 250));
 		services.AddSingleton(new KnowledgeBundleClientCapabilities(
 			typeof(BindingsModule).Assembly.GetName().Version ?? new Version(8, 1, 0),
 			new Version(1, 0, 0),
@@ -540,7 +546,7 @@ public class BindingsModule {
 		services.AddSingleton<IKnowledgeBundleRuntime, KnowledgeBundleRuntime>();
 		services.AddSingleton<IKnowledgeBundleActivator, EnvironmentKnowledgeBundleActivator>();
 		services.AddSingleton<IKnowledgeGuidanceSource, KnowledgeGuidanceSource>();
-		services.AddSingleton<KnowledgeGuidanceResourceAdapter>();
+		services.AddSingleton<IKnowledgeGuidanceResourceAdapter, KnowledgeGuidanceResourceAdapter>();
 		services.AddTransient<ComponentInfoTool>();
 		services.AddTransient<BuildThemeTool>();
 		services.AddTransient<AdviseThemePaletteTool>();

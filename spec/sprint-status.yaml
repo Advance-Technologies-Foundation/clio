@@ -26,8 +26,8 @@ stories:
     feature: "knowledge-bundle-runtime"
     repo: "clio"
     size: M
-    status: in-progress
-    note: "Local P1 experiment; transport selection is intentionally out of scope."
+    status: review
+    note: "PR #927 adds bounded NuGet v3 delivery plus synthetic real-process renewal and last-known-good coverage; owner approval remains required before merge."
     file: spec/knowledge-bundle-runtime/knowledge-bundle-runtime-story.md
     prd: spec/knowledge-bundle-runtime/knowledge-bundle-runtime-spec.md
     adr: spec/knowledge-bundle-runtime/knowledge-bundle-runtime-plan.md

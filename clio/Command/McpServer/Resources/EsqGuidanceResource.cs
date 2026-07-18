@@ -10,12 +10,12 @@ namespace Clio.Command.McpServer.Resources;
 [McpServerResourceType]
 internal sealed class EsqGuidanceResource {
 	internal const string ResourceUri = "docs://mcp/guides/esq";
-	private readonly KnowledgeGuidanceResourceAdapter _adapter;
+	private readonly IKnowledgeGuidanceResourceAdapter _adapter;
 
 	/// <summary>
 	/// Initializes a new instance of the <see cref="EsqGuidanceResource"/> class.
 	/// </summary>
-	public EsqGuidanceResource(KnowledgeGuidanceResourceAdapter adapter) {
+	public EsqGuidanceResource(IKnowledgeGuidanceResourceAdapter adapter) {
 		_adapter = adapter;
 	}
 

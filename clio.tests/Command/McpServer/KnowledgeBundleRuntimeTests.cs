@@ -98,6 +98,24 @@ public sealed class KnowledgeBundleRuntimeTests {
 	}
 
 	[Test]
+	[Description("Rejects a correctly signed bundle when its declared version does not match the immutable NuGet package version.")]
+	public void Activate_ShouldRejectCandidate_WhenSignedBundleVersionDiffersFromPackageVersion() {
+		// Arrange
+		using MemoryStream candidate = ValidCandidate();
+
+		// Act
+		KnowledgeBundleActivationResult result = _runtime.Activate(candidate, "1.0.0");
+
+		// Assert
+		result.Status.Should().Be(KnowledgeBundleActivationStatus.Rejected,
+			because: "a signed inner bundle cannot claim a different identity from its immutable package envelope");
+		result.RejectionCode.Should().Be(KnowledgeBundleRejectionCode.InvalidContent,
+			because: "package-to-bundle identity mismatch is verified content failure");
+		result.ActiveSequence.Should().BeNull(
+			because: "a mismatched cold candidate must not become active");
+	}
+
+	[Test]
 	[Description("Rejects a resource whose bytes no longer match the signed manifest and retains active guidance.")]
 	public void Activate_ShouldRetainActiveBundle_WhenResourceIsTampered() {
 		// Arrange
@@ -191,6 +209,24 @@ public sealed class KnowledgeBundleRuntimeTests {
 			because: "signature validity cannot override the declared client compatibility range");
 		result.ActiveSequence.Should().Be(1,
 			because: "incompatible candidates must leave active guidance unchanged");
+	}
+
+	[Test]
+	[Description("Rejects an oversized signed compatibility version without evaluating its regular expression and retains active guidance.")]
+	public void Activate_ShouldRetainActiveBundle_WhenCompatibilityVersionExceedsBound() {
+		// Arrange
+		ActivateValid();
+		using MemoryStream candidate = MutateAndResign(manifest =>
+			manifest["compatibility"]!["clio"]!["min"] = new string('9', 500_000));
+
+		// Act
+		KnowledgeBundleActivationResult result = _runtime.Activate(candidate);
+
+		// Assert
+		result.RejectionCode.Should().Be(KnowledgeBundleRejectionCode.Incompatible,
+			because: "untrusted version text must be rejected before bounded regular-expression evaluation");
+		result.ActiveSequence.Should().Be(1,
+			because: "an oversized signed compatibility value must preserve the last-known-good bundle");
 	}
 
 	[Test]

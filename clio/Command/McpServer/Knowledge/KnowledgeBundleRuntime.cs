@@ -1,6 +1,7 @@
 using System;
 using System.Buffers.Binary;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
@@ -27,7 +28,8 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 
 	private static readonly Regex VersionPattern = new(
 		"^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
-		RegexOptions.CultureInvariant);
+		RegexOptions.CultureInvariant,
+		TimeSpan.FromSeconds(1));
 	private static readonly UTF8Encoding StrictUtf8 = new(false, true);
 
 	private readonly object _activationLock = new();
@@ -44,11 +46,11 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 
 	public ulong? ActiveSequence => Volatile.Read(ref _active)?.Sequence;
 
-	public KnowledgeBundleActivationResult Activate(Stream candidate) {
+	public KnowledgeBundleActivationResult Activate(Stream candidate, string? expectedBundleVersion = null) {
 		ArgumentNullException.ThrowIfNull(candidate);
 		lock (_activationLock) {
 			try {
-				PreparedKnowledgeBundle prepared = Prepare(candidate);
+				PreparedKnowledgeBundle prepared = Prepare(candidate, expectedBundleVersion);
 				ActiveKnowledgeBundle? active = Volatile.Read(ref _active);
 				if (active is not null && prepared.Sequence <= active.Sequence) {
 					return Rejected(
@@ -70,7 +72,8 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 					or IOException
 					or JsonException
 					or CryptographicException
-					or DecoderFallbackException) {
+					or DecoderFallbackException
+					or RegexMatchTimeoutException) {
 				return Rejected(KnowledgeBundleRejectionCode.Malformed, null, exception.Message);
 			}
 		}
@@ -87,7 +90,7 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 			: new KnowledgeArticleLookup(KnowledgeArticleLookupStatus.NotFound, null, active.Sequence);
 	}
 
-	private PreparedKnowledgeBundle Prepare(Stream candidate) {
+	private PreparedKnowledgeBundle Prepare(Stream candidate, string? expectedBundleVersion) {
 		using MemoryStream boundedCandidate = ReadBoundedCandidate(candidate);
 		ValidateCentralDirectory(boundedCandidate);
 		using ZipArchive archive = new(boundedCandidate, ZipArchiveMode.Read, leaveOpen: true);
@@ -103,6 +106,11 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 				"Bundle manifest is empty.");
 		ValidateManifestEnvelope(manifest);
 		VerifyManifestSignature(manifest, manifestBytes, entries);
+		if (expectedBundleVersion is not null
+				&& !string.Equals(manifest.BundleVersion, expectedBundleVersion, StringComparison.Ordinal)) {
+			throw Reject(KnowledgeBundleRejectionCode.InvalidContent, manifest.Sequence,
+				"Signed bundle version does not match its immutable package version.");
+		}
 		ValidateCompatibility(manifest);
 		ValidateRequirements(manifest);
 		IReadOnlyDictionary<string, KnowledgeArticle> articles = ReadAndValidateResources(manifest, entries);
@@ -120,6 +128,15 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 					$"Bundle archive exceeds the {MaxArchiveBytes}-byte compressed size limit.");
 			}
 			capacity = checked((int)remaining);
+			if (candidate is MemoryStream memory
+					&& memory.TryGetBuffer(out ArraySegment<byte> segment)) {
+				return new MemoryStream(
+					segment.Array!,
+					checked(segment.Offset + (int)candidate.Position),
+					capacity,
+					writable: false,
+					publiclyVisible: true);
+			}
 		}
 		MemoryStream output = new(capacity);
 		byte[] buffer = new byte[81920];
@@ -395,7 +412,10 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 
 	private static bool TryParseExactVersion(string value, out Version? version) {
 		version = null;
-		return value is not null && VersionPattern.IsMatch(value) && Version.TryParse(value, out version);
+		return value is not null
+			&& value.Length <= 32
+			&& VersionPattern.IsMatch(value)
+			&& Version.TryParse(value, out version);
 	}
 
 	private static void EnsureUnique(IEnumerable<string> values, string label, ulong sequence) {
@@ -457,6 +477,10 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 		ulong Sequence,
 		IReadOnlyDictionary<string, KnowledgeArticle> Articles);
 
+	[SuppressMessage(
+		"Design",
+		"S3871:Exception types should be public",
+		Justification = "This private exception is an internal non-escaping control-flow sentinel mapped to a typed activation result.")]
 	private sealed class KnowledgeBundleRejectedException(
 		KnowledgeBundleRejectionCode code,
 		ulong? candidateSequence,

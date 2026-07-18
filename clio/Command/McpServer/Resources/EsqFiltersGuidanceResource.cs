@@ -11,12 +11,12 @@ namespace Clio.Command.McpServer.Resources;
 internal sealed class EsqFiltersGuidanceResource {
 	internal const string ResourceUri = "docs://mcp/guides/esq-filters";
 	internal const string FrontendResourceUri = "docs://mcp/guides/esq-filters/frontend";
-	private readonly KnowledgeGuidanceResourceAdapter _adapter;
+	private readonly IKnowledgeGuidanceResourceAdapter _adapter;
 
 	/// <summary>
 	/// Initializes a new instance of the <see cref="EsqFiltersGuidanceResource"/> class.
 	/// </summary>
-	public EsqFiltersGuidanceResource(KnowledgeGuidanceResourceAdapter adapter) {
+	public EsqFiltersGuidanceResource(IKnowledgeGuidanceResourceAdapter adapter) {
 		_adapter = adapter;
 	}
 

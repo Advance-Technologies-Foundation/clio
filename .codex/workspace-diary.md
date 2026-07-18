@@ -6766,3 +6766,17 @@ Decision: Require exact external-catalog coverage, exact central-directory bound
 Discovery: A successful real-process fixture must synthesize every stable external guide route; known catalog omissions are unavailable, never not-found, and four-part assembly revisions do not participate in bundle compatibility.
 Files: clio/Command/McpServer/Knowledge/KnowledgeBundleRuntime.cs, clio/Command/McpServer/Knowledge/KnowledgeBundleContracts.cs, clio/Command/McpServer/Knowledge/KnowledgeGuidanceSource.cs, clio.mcp.e2e/KnowledgeGuidanceBundleE2ETests.cs, clio.tests/Command/McpServer/KnowledgeBundleRuntimeTests.cs
 Impact: Reviewer-identified trust substitution, archive-allocation, partial-catalog, schema, and version-range bypasses now have synthetic regressions without reintroducing guidance wording ownership.
+
+## 2026-07-18 19:01 – Prove synthetic NuGet knowledge renewal
+Context: Amend the external-knowledge prototype with a mechanics-only real-process NuGet E2E and no assertions over owned guidance content.
+Decision: Use a bounded same-origin NuGet v3 adapter, bind signed bundle version to immutable package version, serve active guidance during single-flight background renewal, and retain a bounded FIFO window of rejected versions without halting later recovery.
+Discovery: Transient transport failures must remain retryable; successful activation establishes a forward-only package floor; cold discovery needs the same single-flight cooldown; exact package-response completion is required before last-known-good retention can be asserted.
+Files: clio/Command/McpServer/Knowledge/KnowledgeBundleNuGetClient.cs, clio/Command/McpServer/Knowledge/KnowledgeBundleContracts.cs, clio.mcp.e2e/KnowledgeGuidanceNuGetE2ETests.cs, clio.mcp.e2e/Support/Knowledge/SyntheticKnowledgeNuGetFixture.cs, clio.tests/Command/McpServer/KnowledgeBundleNuGetClientTests.cs
+Impact: Clio now proves production NuGet discovery, extraction, verification, renewal, and invalid-newer retention with complete-catalog synthetic payloads while clio-knowledge remains untouched.
+
+## 2026-07-18 19:53 – Bound NuGet renewal and fallback generations
+Context: Final adversarial review of the mechanics-only NuGet proof found timeout, scan-cursor, catalog-generation, allocation, and completion-proof edge cases.
+Decision: Apply one deadline through response bodies, cap version catalogs before parsing, bind package and signed bundle versions, reset cursors on catalog fingerprints, and preserve a forward active-package floor with bounded recent rejection memory.
+Discovery: A descending ceiling avoids a carousel when more invalid versions exist than the rejection cache; E2E retention is proven only after the invalid package response and one subsequent completed version scan.
+Files: clio/Command/McpServer/Knowledge/KnowledgeBundleNuGetClient.cs, clio/Command/McpServer/Knowledge/KnowledgeBundleContracts.cs, clio/Command/McpServer/Knowledge/KnowledgeBundleRuntime.cs, clio.tests/Command/McpServer/KnowledgeBundleNuGetClientTests.cs, clio.mcp.e2e/KnowledgeGuidanceNuGetE2ETests.cs
+Impact: NuGet renewal stays bounded, nonblocking, recoverable, and last-known-good safe under hostile or malformed feeds without asserting external guidance content.

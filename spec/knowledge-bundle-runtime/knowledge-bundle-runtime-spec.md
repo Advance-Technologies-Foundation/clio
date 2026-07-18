@@ -16,16 +16,20 @@ candidate is rejected and must report a typed unavailable state before any bundl
 - Keep the active bundle unchanged after malformed, tampered, incompatible, wrong-key, truncated,
   equal-sequence, or lower-sequence candidates.
 - Return typed `active`, `not-found`, and `unavailable` article lookup outcomes.
-- Prove that the active ESQ payloads are byte-identical to the frozen Clio oracle.
+- Discover the highest stable package version from a configured NuGet v3 flat container, extract
+  `content/knowledge-bundle.zip`, and memoize rejected immutable versions in a bounded recent-version
+  window while allowing later higher versions to recover.
+- Exercise the real MCP process with generated synthetic package content only.
 
 ## Out of scope
 
-- NuGet versus npm transport selection, feed authentication, polling, and publication.
+- Authenticated feed credentials, background polling, and package publication.
 - Production key management or revocation.
 - Rollback, age expiry, stale state, or advisory safety floors.
 - Removing every existing embedded guidance article during this prototype.
 
 ## Acceptance
 
-Focused unit tests cover the valid and adversarial state transitions. The existing MCP
-`get-guidance` contract remains stable when the runtime is wired into the tool in a later story.
+Focused unit tests cover the valid and adversarial state transitions. A hermetic NuGet v3 feed E2E
+proves discovery, download, inner extraction, activation, renewal, and last-known-good retention
+through the unchanged MCP `get-guidance` contract without asserting canonical guidance content.

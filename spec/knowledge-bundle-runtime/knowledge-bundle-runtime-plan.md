@@ -28,9 +28,15 @@ Introduce a transport-neutral runtime boundary:
 - Sequence is monotonic and forward-only. Equal or lower sequences reject without mutating active
   state.
 - Cold lookup returns `unavailable`; active lookup returns `active` or `not-found`.
+- A separate NuGet v3 delivery adapter resolves `PackageBaseAddress`, selects the highest stable
+  three-part version, downloads the `.nupkg` within fixed bounds, and extracts only
+  `content/knowledge-bundle.zip` before invoking the transport-neutral verifier.
+- Guidance reads recheck the feed for renewal. Rejected immutable versions are memoized in a bounded
+  recent-version window; successful activation establishes a forward-only floor, while a later higher
+  immutable version can recover even after the rejected-version window has filled.
 
-The runtime does not download packages. A future NuGet or other transport supplies candidate
-streams through the same interface.
+The verifier itself does not download packages. NuGet remains an adapter that supplies candidate
+streams through the same interface, so transport does not gain activation authority.
 
 ## Consequences
 

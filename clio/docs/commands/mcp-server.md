@@ -63,6 +63,24 @@ Preferred guidance access:
 - get-guidance {"name":"page-schema-sdk-common"}
 - get-guidance {"name":"page-schema-validators"}
 
+External knowledge delivery is configured with environment variables:
+
+- `CLIO_KNOWLEDGE_NUGET_SOURCE` — absolute HTTPS URL of a NuGet v3 service index (HTTP is accepted only for loopback development feeds)
+- `CLIO_KNOWLEDGE_NUGET_PACKAGE_ID` — package ID to discover through the feed's flat container
+- `CLIO_KNOWLEDGE_TRUSTED_KEY_ID` — trusted signing-key ID expected by the bundle manifest
+- `CLIO_KNOWLEDGE_TRUSTED_PUBLIC_KEY_PATH` — absolute path to one ECDSA P-256 SubjectPublicKeyInfo PEM
+
+The service-index URL must respond directly; redirects are not followed. Its advertised
+`PackageBaseAddress/3.0.0` resource must use the same scheme, host, and port as the configured
+service-index URL.
+
+Clio selects the highest stable three-part package version, extracts
+`content/knowledge-bundle.zip`, and verifies its signature, compatibility, complete stable resource
+catalog, and resource digests before atomic activation. A rejected newer package leaves the
+last-known-good bundle active. If no NuGet source is configured, developers may use the absolute
+local `CLIO_KNOWLEDGE_BUNDLE_PATH` fallback. With no verified active bundle, externally delivered
+guidance returns typed `guidance-unavailable` instead of embedded fallback content.
+
 ## Synopsis
 
 ```bash
@@ -120,6 +138,7 @@ Read the canonical lookup seeding and binding verification guide before choosing
 - If you use an external MCP client wrapper, follow that wrapper's own parsing and transport guarantees
 - Boolean parameters must be JSON booleans (true/false), not strings
 - Entity tools work DB-first: schemas are created directly in PostgreSQL
+- NuGet knowledge packages are checked when externally delivered guidance is requested; rejected immutable versions are memoized in a bounded recent-version window, and successful renewal establishes a forward-only package-version floor
 
 ## Return Values
 
