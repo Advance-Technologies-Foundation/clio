@@ -77,6 +77,7 @@ public class RedisDatabaseSelectorTests
 		result.Success.Should().BeFalse(because: "an unreachable Redis after every attempt must surface a connection failure");
 		result.DatabaseNumber.Should().Be(-1, because: "no database can be selected when Redis never connects");
 		result.ErrorMessage.Should().Contain("still down", because: "the last connect error must be reported to the user");
+		result.ErrorMessage.Should().Contain($"after {RedisDatabaseSelector.MaxConnectAttempts} attempt", because: "a genuinely exhausted retry loop must report the full attempt budget actually consumed");
 		attempts.Should().Be(RedisDatabaseSelector.MaxConnectAttempts, because: "the retry loop must stop after the bounded attempt count");
 		backoffs.Should().HaveCount(RedisDatabaseSelector.MaxConnectAttempts - 1, because: "a backoff is applied between attempts but not after the final one");
 		backoffs.Should().Equal(
@@ -105,6 +106,7 @@ public class RedisDatabaseSelectorTests
 		result.Success.Should().BeFalse(because: "a definitive error must still surface as a failure");
 		attempts.Should().Be(1, because: "a non-transient error must not be retried");
 		backoffs.Should().BeEmpty(because: "no backoff is applied when the error is not retryable");
+		result.ErrorMessage.Should().Contain("after 1 attempt", because: "a non-retried definitive failure must report the single attempt actually made, not the full retry budget (Codex review)");
 	}
 
 	[Test]
@@ -128,6 +130,7 @@ public class RedisDatabaseSelectorTests
 		result.Success.Should().BeFalse(because: "a bad credential must still surface as a failure");
 		attempts.Should().Be(1, because: "an authentication failure is a definitive misconfiguration and must fail fast, not consume the whole retry budget");
 		backoffs.Should().BeEmpty(because: "no backoff is applied when the failure is not a transient connect blip");
+		result.ErrorMessage.Should().Contain("after 1 attempt", because: "a fail-fast auth failure must report a single attempt so the message does not look like exhausted connectivity retries (Codex review)");
 	}
 
 	[Test]

@@ -150,8 +150,10 @@ public class RedisDatabaseSelector : IRedisDatabaseSelector
 		// transient connect/timeout failures are retried — a definitive error (bad credentials, all
 		// databases in use) is surfaced without wasting further attempts.
 		Exception lastError = null;
+		int attemptsMade = 0;
 		for (int attempt = 1; attempt <= MaxConnectAttempts; attempt++)
 		{
+			attemptsMade = attempt;
 			try
 			{
 				return SelectEmptyDatabase(configurationOptions, hostname, port);
@@ -172,8 +174,8 @@ public class RedisDatabaseSelector : IRedisDatabaseSelector
 		}
 
 		string errorMessage = $"[Redis Connection Error] Could not connect to Redis at {hostname}:{port} " +
-							  $"after {MaxConnectAttempts} attempt(s). " +
-							  $"Error: {lastError?.Message}. " +
+							  $"after {attemptsMade} attempt(s). " +
+							  $"Error: {lastError.Message}. " +
 							  "Make sure Redis is running and accessible. " +
 							  "You can also manually specify a database number using the --redis-db option";
 
