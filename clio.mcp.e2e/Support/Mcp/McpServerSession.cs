@@ -259,6 +259,30 @@ internal sealed class McpServerSession : IAsyncDisposable {
 	}
 
 	/// <summary>
+	/// Invokes a long-tail DESTRUCTIVE tool through the advertised, host-gated
+	/// <c>clio-run-destructive</c> executor, returning the target tool's <see cref="CallToolResult"/>
+	/// verbatim. The auto-routing
+	/// <see cref="CallToolAsync(string, IReadOnlyDictionary{string, object?}, CancellationToken)"/>
+	/// dispatches an unadvertised tool through the SAFE <c>clio-run</c> executor, which refuses
+	/// destructive commands; a destructive long-tail tool (for example <c>dataforge-initialize</c> after
+	/// it left the resident profile in ENG-92761) must be driven through this executor instead.
+	/// </summary>
+	/// <param name="command">The destructive target tool name (the <c>command</c> for the executor).</param>
+	/// <param name="args">The target tool's argument object, forwarded verbatim under <c>args</c>.</param>
+	/// <param name="cancellationToken">Cancellation token for the call.</param>
+	public async Task<CallToolResult> CallDestructiveAsync(
+		string command,
+		IReadOnlyDictionary<string, object?> args,
+		CancellationToken cancellationToken) =>
+		await Client.CallToolAsync(
+			ClioRunDestructiveTool.ToolName,
+			new Dictionary<string, object?> {
+				["command"] = command,
+				["args"] = args
+			},
+			cancellationToken: cancellationToken);
+
+	/// <summary>
 	/// Invokes a tool by its BARE name with NO resident-vs-<c>clio-run</c> routing — the raw wire call
 	/// an agent following static guidance would make. This is the entry point for testing the durable
 	/// (forgiving) unmatched-name handler (ENG-93370), which must observe the unrouted name itself; the

@@ -234,13 +234,19 @@ internal static class DataForgeReadinessGate {
 		string toolName,
 		string environmentName,
 		CancellationToken cancellationToken) {
+		Dictionary<string, object?> args = new() {
+			["environment-name"] = environmentName
+		};
+		// dataforge-initialize is destructive and now long-tail (ENG-92761): drive it through the
+		// host-gated clio-run-destructive executor. The auto-routing CallToolAsync would send this
+		// unadvertised tool through the SAFE clio-run executor, which refuses destructive commands.
+		// dataforge-status stays read-only and rides the normal long-tail routing.
+		if (string.Equals(toolName, InitializeToolName, System.StringComparison.Ordinal)) {
+			return await session.CallDestructiveAsync(toolName, args, cancellationToken);
+		}
 		return await session.CallToolAsync(
 			toolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["environment-name"] = environmentName
-				}
-			},
+			new Dictionary<string, object?> { ["args"] = args },
 			cancellationToken);
 	}
 

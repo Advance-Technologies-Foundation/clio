@@ -319,13 +319,14 @@ public sealed class DataForgeToolE2ETests {
 
 		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3), requireReachableEnvironment: true);
 
-		// Act
-		CallToolResult callResult = await CallToolAsync(
-			arrangeContext,
+		// Act — dataforge-initialize is destructive and long-tail (ENG-92761): drive it through the
+		// host-gated clio-run-destructive executor, which returns the target tool's result verbatim.
+		CallToolResult callResult = await arrangeContext.Session.CallDestructiveAsync(
 			InitializeToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = arrangeContext.EnvironmentName
-			});
+			},
+			arrangeContext.CancellationTokenSource.Token);
 		DataForgeMaintenanceResponse response = DeserializeStructuredContent<DataForgeMaintenanceResponse>(callResult);
 
 		// Assert
@@ -352,13 +353,14 @@ public sealed class DataForgeToolE2ETests {
 
 		await using ArrangeContext arrangeContext = await ArrangeAsync(settings, TimeSpan.FromMinutes(3), requireReachableEnvironment: true);
 
-		// Act
-		CallToolResult callResult = await CallToolAsync(
-			arrangeContext,
+		// Act — dataforge-update is destructive and long-tail (ENG-92761): drive it through the
+		// host-gated clio-run-destructive executor, which returns the target tool's result verbatim.
+		CallToolResult callResult = await arrangeContext.Session.CallDestructiveAsync(
 			UpdateToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = arrangeContext.EnvironmentName
-			});
+			},
+			arrangeContext.CancellationTokenSource.Token);
 		DataForgeMaintenanceResponse response = DeserializeStructuredContent<DataForgeMaintenanceResponse>(callResult);
 
 		// Assert
@@ -451,13 +453,14 @@ public sealed class DataForgeToolE2ETests {
 		}
 	}
 
+	// Read-only Data Forge discovery tools are now long-tail (ENG-92761), so they are deliberately NOT
+	// in tools/list; Session.CallToolAsync auto-routes an unadvertised tool through the clio-run
+	// executor, which returns the target tool's result verbatim. (Destructive initialize/update use
+	// CallDestructiveAsync instead — the safe clio-run executor refuses destructive commands.)
 	private static async Task<CallToolResult> CallToolAsync(
 		ArrangeContext arrangeContext,
 		string toolName,
 		Dictionary<string, object?> args) {
-		IList<McpClientTool> tools = await arrangeContext.Session.ListToolsAsync(arrangeContext.CancellationTokenSource.Token);
-		tools.Select(tool => tool.Name).Should().Contain(toolName,
-			because: "the production Data Forge tool must be advertised before the end-to-end call can be executed");
 		return await arrangeContext.Session.CallToolAsync(
 			toolName,
 			new Dictionary<string, object?> {

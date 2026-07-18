@@ -23,27 +23,25 @@ namespace Clio.Tests.Command.McpServer;
 [Property("Module", "McpServer")]
 public sealed class McpProfileGatingTests
 {
-	// The surface keeps the core set + the 3 always-on lazy types. 18 core types +
-	// {ClioRunTool, ClioRunDestructiveTool} (ToolContractGetTool is already a core member) = 20
-	// distinct flat tool TYPES. Per-TYPE granularity (ADR resolved decision #5) keeps the WHOLE class,
-	// and several core classes declare more than one [McpServerTool] (DataForgeTool declares 8 — only
-	// 3 are "core" but all 8 ride along; SysSettings/Application/Entity classes a few each), so the
-	// registered TOOL count (what lands in tools/list) is ~27, higher than the 20 TYPE count. The
-	// budget asserts on the registered tool count and is set to 30 to leave a small headroom over the
-	// current 27 while still catching a regression that would re-grow the surface toward the ~124-tool
-	// full catalog.
-	private const int MaxLazyToolCount = 30;
+	// The surface keeps the core set + the 3 always-on lazy types. After ENG-92761 removed DataForgeTool
+	// from the resident profile, 17 core types + {ClioRunTool, ClioRunDestructiveTool}
+	// (ToolContractGetTool is already a core member) = 19 distinct flat tool TYPES. DataForgeTool was the
+	// only resident class declaring more than one [McpServerTool] (8 methods); with it gone every
+	// remaining resident type declares exactly one tool, so the registered TOOL count (what lands in
+	// tools/list) equals the TYPE count at 19 today. The budget asserts on the registered tool count and
+	// is set to 22 to leave a small headroom while still catching a regression that would re-grow the
+	// surface toward the ~124-tool full catalog (dropping DataForge freed the previous headroom).
+	private const int MaxLazyToolCount = 22;
 
 	// tools/list budget ceiling. ADR target is ~5-8k tokens (~32k bytes at ~4 bytes/tok) for the clio
 	// surface. We measure the serialized ProtocolTool set (name + description + input schema) as a
 	// proxy for the tools/list payload. Story 2 slimmed the core descriptions (and the ubiquitous
-	// environment-name/uri/login/password params), dropping the payload from ~37.4k to ~30.1k bytes;
-	// the remaining bulk is the input-schema bodies, which Story 2 does not touch. The ratchet was
-	// tightened to 34k bytes — below the post-slim measurement with headroom for master's growth
-	// (validate-page version param + composites data) — to lock in the win and catch any silent
-	// re-growth. Raised to 35328 (34.5k): conditional-requiredness descriptions for credential
-	// passthrough exhausted the previous headroom (ENG-93347 FR-05a).
-	private const int MaxLazyToolsSerializedBytes = 35_328;
+	// environment-name/uri/login/password params), dropping the payload from ~37.4k to ~30.1k bytes.
+	// ENG-92761 then dropped DataForgeTool's 8-method schema block out of the resident surface,
+	// bringing the measured payload down to 28566 bytes. The ratchet is set to 30000 — just above the
+	// measurement with a small headroom for master's growth — to lock in the ~1.5k win and catch any
+	// silent re-growth toward the ~124-tool full catalog.
+	private const int MaxLazyToolsSerializedBytes = 30_000;
 
 	private static Assembly ClioAssembly => typeof(McpFeatureToggleFilter).Assembly;
 
@@ -70,8 +68,10 @@ public sealed class McpProfileGatingTests
 			because: "the destructive executor stays flat so destructive long-tail commands are reachable");
 		selected.Should().Contain(typeof(ToolContractGetTool),
 			because: "the schema-describe tool stays flat so the long tail is discoverable");
-		selected.Should().Contain(typeof(DataForgeTool),
+		selected.Should().Contain(typeof(PageListTool),
 			because: "a core profile tool type stays flat");
+		selected.Should().NotContain(typeof(DataForgeTool),
+			because: "DataForgeTool was moved to the long tail (ENG-92761); it is reachable via clio-run / get-tool-contract, not flat in tools/list");
 	}
 
 	[Test]
