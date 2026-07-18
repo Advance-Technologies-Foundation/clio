@@ -6780,3 +6780,10 @@ Decision: Apply one deadline through response bodies, cap version catalogs befor
 Discovery: A descending ceiling avoids a carousel when more invalid versions exist than the rejection cache; E2E retention is proven only after the invalid package response and one subsequent completed version scan.
 Files: clio/Command/McpServer/Knowledge/KnowledgeBundleNuGetClient.cs, clio/Command/McpServer/Knowledge/KnowledgeBundleContracts.cs, clio/Command/McpServer/Knowledge/KnowledgeBundleRuntime.cs, clio.tests/Command/McpServer/KnowledgeBundleNuGetClientTests.cs, clio.mcp.e2e/KnowledgeGuidanceNuGetE2ETests.cs
 Impact: NuGet renewal stays bounded, nonblocking, recoverable, and last-known-good safe under hostile or malformed feeds without asserting external guidance content.
+
+## 2026-07-18 20:03 – Normalize source-build knowledge compatibility
+Context: PR review identified that unversioned source builds expose assembly version 0.0.0.0 and would reject product-version knowledge bundles.
+Decision: Map only all-zero development assembly versions to the existing 8.1.0 compatibility fallback while preserving published versions unchanged.
+Discovery: The csproj intentionally uses 0.0.0.0 when neither CI nor a git tag supplies a version, so non-null assembly metadata is not sufficient evidence of a product version.
+Files: clio/BindingsModule.cs, clio.tests/Command/BindingsModuleMcpHostGateTests.cs
+Impact: Local source-built MCP hosts can activate trusted external knowledge without weakening compatibility checks for released binaries.

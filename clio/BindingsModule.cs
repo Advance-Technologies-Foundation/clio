@@ -82,6 +82,7 @@ public class BindingsModule {
 
 	public static string k8sDns = "127.0.0.1";
 	private static readonly object BootstrapDiagnosticsSyncRoot = new();
+	private static readonly Version DevelopmentKnowledgeBundleClioVersion = new(8, 1, 0);
 	private static bool _bootstrapDiagnosticsLogged;
 	private readonly IFileSystem _fileSystem;
 
@@ -539,7 +540,7 @@ public class BindingsModule {
 		services.AddSingleton(new KnowledgeBundleNuGetOptions(TransportDeadlineMilliseconds: 15_000));
 		services.AddSingleton(new KnowledgeBundleRenewalOptions(CooldownMilliseconds: 250));
 		services.AddSingleton(new KnowledgeBundleClientCapabilities(
-			typeof(BindingsModule).Assembly.GetName().Version ?? new Version(8, 1, 0),
+			ResolveKnowledgeBundleClioVersion(typeof(BindingsModule).Assembly.GetName().Version),
 			new Version(1, 0, 0),
 			new HashSet<string>(StringComparer.Ordinal) { GuidanceGetTool.ToolName },
 			GuidanceCatalog.GetExternalResourceUris()));
@@ -1122,6 +1123,17 @@ public class BindingsModule {
 				services.AddTransient(implementedInterface, type);
 			}
 		}
+	}
+
+	internal static Version ResolveKnowledgeBundleClioVersion(Version assemblyVersion) {
+		if (assemblyVersion is null
+				|| (assemblyVersion.Major == 0
+					&& assemblyVersion.Minor == 0
+					&& assemblyVersion.Build <= 0
+					&& assemblyVersion.Revision <= 0)) {
+			return DevelopmentKnowledgeBundleClioVersion;
+		}
+		return assemblyVersion;
 	}
 
 	private static void RegisterFluentValidators(IServiceCollection services){
