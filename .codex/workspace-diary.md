@@ -6647,6 +6647,15 @@ Decision: Document disabled-node transport differences separately from semantic 
 Discovery: Native C# retains disabled leaves/groups while SQL compilation omits them; DataService removes disabled children before the executor boundary. Native C# and DataService preserve collection `IsNot`. ATF.Repository 2.0.3.5 cannot author group negation through LINQ, so the lab used a test-only decorator over its public `ISelectQuery` contract.
 Files: clio/Command/McpServer/Resources/EsqFiltersBackendGuidanceResource.cs, clio/Command/McpServer/Resources/EsqFilterParsingGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs, clio.mcp.e2e/GuidanceGetToolE2ETests.cs
 Impact: Agents now have lab-verified rules for creating and parsing disabled nodes and negated groups, including the native-versus-DataService shape boundary.
+
+## 2026-07-17 – Hide never-in-CI manual e2e suites from ClioMcpE2eTests stats
+Context: ClioMcpE2eTests plan showed "ignored: 51"; wanted them present in source but absent from plan statistics.
+Decision: Assert.Ignore counts as 'ignored' by design → cannot hide via attribute. Use NUnit [Category] + run-step --filter exclusion (same mechanism as existing McpE2E.ProcessDesigner). Introduced category "McpE2E.Manual" on the 46 never-in-CI tests.
+Discovery: dotnet test maps NUnit [Category] to VSTest TestCategory trait; multi-valued `TestCategory!=X` excludes a test if ANY of its categories == X. `dotnet test --list-tests --filter` is a reliable local proof of selection without running e2e. TeamCity Team_Atf has versioned-settings OFF, so build-step edits via REST persist. The `/parameters/{name}` value endpoint rejects the CLI's JSON content-type; GET-modify-PUT the whole /steps/{id} entity works.
+Split: class-level on Concurrency/MultiTenant/OAuth/DbHubLifecycleWarning/UninstallCreatioWarning (100% manual); method-level on McpHttpNoRegression (keep 16 passing Stdio_* tests). Left runtime-conditional skips (DataForge x3, EntitySchema+SchemaSync Pg-gated x2) untouched — those can run on a properly configured stand.
+Files: clio.mcp.e2e/{McpHttpConcurrencyIsolation,McpHttpMultiTenant,McpHttpOAuthAuthorization,McpHttpNoRegression,DbHubLifecycleWarning,UninstallCreatioWarning}E2ETests.cs; TeamCity Team_Atf_ClioMcpE2eTests step Run_MCP_e2e_tests args filter.
+Impact: plan will report 498 passed / 5 ignored (down from 51) once next build runs; DataForge+Pg remain the only visible skips.
+
 ## 2026-07-18 00:30 – Validate text IsNull and IsNotNull
 Context: Project milestone 4 of the backend ESQ filter validation plan into clio guidance.
 Decision: Teach the dedicated native null-filter APIs and a separate left-only parser contract with zero right expressions.
