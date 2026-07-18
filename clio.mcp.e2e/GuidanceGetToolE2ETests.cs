@@ -627,6 +627,8 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "get-guidance should report the current promoted backend validation status");
 		response.Article.Text.Should().Contain("lookup equality/membership",
 			because: "get-guidance should report promoted typed lookup coverage");
+		response.Article.Text.Should().Contain("temporal literals/macros/date parts",
+			because: "get-guidance should report promoted temporal coverage");
 	}
 
 	[Test]
@@ -672,6 +674,10 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "get-guidance should return the verified native Between recipe");
 		backend.Article!.Text.Should().Contain("LookupDataValueType`, not `GuidDataValueType`",
 			because: "get-guidance should return the verified lookup type distinction");
+		backend.Article!.Text.Should().Contain("EntitySchemaQueryMacrosType.CurrentYear",
+			because: "get-guidance should return verified native temporal macro construction");
+		backend.Article!.Text.Should().Contain("createdOnDate.TrimDateTimeParameterToDate = true",
+			because: "get-guidance should return verified date-only construction");
 		parsing.Success.Should().BeTrue(
 			because: "runtime C# filter interpretation should have one retrievable parsing owner");
 		parsing.Article!.Uri.Should().Be("docs://mcp/guides/esq-filter-parsing",
@@ -688,6 +694,12 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "get-guidance should return the verified null-filter parsing contract");
 		parsing.Article!.Text.Should().Contain("ReadIntegerMembership",
 			because: "get-guidance should return the verified membership parsing contract");
+		parsing.Article!.Text.Should().Contain("ReadTrimmedDate",
+			because: "get-guidance should return the verified trim-to-date parsing contract");
+		parsing.Article!.Text.Should().Contain("Function.GetArguments()",
+			because: "get-guidance should return recursive temporal function parsing rules");
+		parsing.Article!.Text.Should().Contain("Capture one provider-clock snapshot",
+			because: "get-guidance should return query-scoped temporal boundary caching guidance");
 	}
 
 	[Test]

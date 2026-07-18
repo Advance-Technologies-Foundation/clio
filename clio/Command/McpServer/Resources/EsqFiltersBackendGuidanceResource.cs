@@ -225,6 +225,61 @@ public sealed class EsqFiltersBackendGuidanceResource {
 		       raw Guid values tagged as Lookup for the verified equality and membership requests; designer-owned
 		       frontend JSON may still require the display-value object documented in `esq-filters-frontend`.
 
+		       ## Create Date, DateTime, and Time filters
+		       Creatio Date, DateTime, and Time column parameters are all CLR `System.DateTime` values. The schema
+		       column carries the semantic type, so use the exact logical column path and do not turn a temporal value
+		       into text:
+		       ```csharp
+		       esq.Filters.Add(esq.CreateFilterWithParameters(
+		           FilterComparisonType.Equal, "UsrEffectiveDate", new DateTime(2026, 7, 18)));
+		       esq.Filters.Add(esq.CreateFilterWithParameters(
+		           FilterComparisonType.Equal, "UsrGeneratedOn",
+		           new DateTime(2026, 7, 18, 13, 45, 30, DateTimeKind.Utc)));
+		       esq.Filters.Add(esq.CreateFilterWithParameters(
+		           FilterComparisonType.Equal, "UsrLocalTime", new DateTime(1, 1, 1, 13, 45, 0)));
+		       ```
+
+		       DataService preserved DateTime ticks in the verified request but reconstructed a native UTC value with
+		       `DateTimeKind.Unspecified`. Treat `Kind` as transport metadata unless the provider contract explicitly
+		       requires timezone conversion; do not reject the same ticks merely because one path retains `Utc`.
+
+		       A midnight parameter does not enable date-only comparison on a DateTime column. Set the leaf flag:
+		       ```csharp
+		       EntitySchemaQueryFilter createdOnDate =
+		           (EntitySchemaQueryFilter)esq.CreateFilterWithParameters(
+		               FilterComparisonType.Equal, "CreatedOn", new DateTime(2026, 7, 18));
+		       createdOnDate.TrimDateTimeParameterToDate = true;
+		       esq.Filters.Add(createdOnDate);
+		       ```
+
+		       ## Create relative-period macros and date-part filters
+		       Use `CreateFilter` with `EntitySchemaQueryMacrosType` rather than calculating relative boundaries in
+		       application code:
+		       ```csharp
+		       esq.Filters.Add(esq.CreateFilter(
+		           FilterComparisonType.Equal, "CreatedOn", EntitySchemaQueryMacrosType.CurrentYear));
+		       esq.Filters.Add(esq.CreateFilter(
+		           FilterComparisonType.Equal, "CreatedOn", EntitySchemaQueryMacrosType.PreviousNDays, 7));
+
+		       EntitySchemaQueryExpression createdOn = esq.CreateSchemaColumnExpression("CreatedOn");
+		       esq.Filters.Add(esq.CreateFilter(
+		           FilterComparisonType.Equal, createdOn, EntitySchemaQueryMacrosType.Year, 2026));
+		       esq.Filters.Add(esq.CreateFilter(
+		           FilterComparisonType.Equal, "UsrLocalTime", EntitySchemaQueryMacrosType.HourMinute,
+		           new DateTime(1, 1, 1, 13, 45, 0)));
+		       ```
+
+		       These calls expand before the executor boundary:
+		       - `CurrentYear` becomes a nested AND containing `>=` the start of this year and `<` the start of next year;
+		       - `PreviousNDays, 7` becomes a nested half-open range from seven days ago through exclusive today;
+		       - `Year, 2026` becomes one Equal leaf whose left expression is
+		         `EntitySchemaDatePartQueryFunction(Year)` and whose right value is `System.Int32`;
+		       - HourMinute equality becomes a nested AND from the requested minute (inclusive) to the next minute
+		         (exclusive), with HourMinute functions on both sides.
+
+		       Construct the semantic API call and let Creatio calculate period boundaries. Do not expect the runtime
+		       tree to retain a macro enum or remain one leaf.
+
 		       ### Exact ATF shape parity for three-term AND
 		       ATF.Repository 2.0.3.5 translated source `A && B && C` to one flat root AND ordered
 		       `C, A, B`. If a test requires byte-for-byte/shape-for-shape parity, insert the native
@@ -355,9 +410,9 @@ public sealed class EsqFiltersBackendGuidanceResource {
 		       ## Coverage boundary
 		       Verified now: group envelope/nesting, disabled leaves/groups, collection `IsNot`, and all
 		       scalar Compare operators using representative Integer and MediumText values, plus text
-		       `IsNull`/`IsNotNull` and Integer In cardinality boundaries. Pending lab validation before publishing
-		       construction recipes: dates and macros,
-		       Exists/subqueries/aggregates, and Segment filters. Use the
+		       `IsNull`/`IsNotNull`, Integer In cardinality boundaries, typed/lookup parameters, and Date/DateTime/Time
+		       literals, trim-to-date, relative-period macros, Year, and HourMinute. Pending lab validation before
+		       publishing construction recipes: Exists/subqueries/aggregates and Segment filters. Use the
 		       frontend guide as a discovery checklist, but do not translate its JSON fields into guessed
 		       backend APIs.
 		       """

@@ -6674,3 +6674,17 @@ Decision: Validate CLR parameter type together with ParameterValueForcedType and
 Discovery: Boolean and plain Guid retained BooleanDataValueType and GuidDataValueType. Native UsrOwner resolved to runtime UsrOwnerId, while its Guid parameters were LookupDataValueType; multi-value lookup requires object[] and compiled to IN. Low-level DataService accepted raw lookup Guid parameters, while designer-owned frontend JSON retains its display-value object contract.
 Files: clio/Command/McpServer/Resources/EsqFiltersGuidanceResource.cs, clio/Command/McpServer/Resources/EsqFiltersBackendGuidanceResource.cs, clio/Command/McpServer/Resources/EsqFilterParsingGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs, clio.mcp.e2e/GuidanceGetToolE2ETests.cs
 Impact: Agents can distinguish Boolean, plain Guid, and lookup Guid parameters without coercion or path-based guessing.
+
+## 2026-07-18 03:15 – Validate temporal ESQ filters
+Context: Project milestone 9 of the backend ESQ filter validation plan into clio guidance.
+Decision: Document temporal literals by schema path, trim-to-date as an explicit leaf flag, and macros/date parts by their expanded recursive runtime trees.
+Discovery: Date, DateTime, and Time arrive as CLR DateTime. DataService preserved ticks but changed UTC Kind to Unspecified and reordered flat AND siblings. CurrentYear and PreviousNDays expanded to half-open boundary groups; Year became a date-part leaf; HourMinute equality became a one-minute half-open range.
+Files: clio/Command/McpServer/Resources/EsqFiltersGuidanceResource.cs, clio/Command/McpServer/Resources/EsqFiltersBackendGuidanceResource.cs, clio/Command/McpServer/Resources/EsqFilterParsingGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs, clio.mcp.e2e/GuidanceGetToolE2ETests.cs
+Impact: Agents can author and recursively parse verified temporal filter shapes without inferring date-only semantics, timezone policy, or macro boundaries.
+
+## 2026-07-18 03:36 – Correct HourMinute backend recipe overload
+Context: The Codex connector found that the temporal guidance combined an expression argument with the four-argument DateTime overload shape.
+Decision: Use the stable column-path overload for HourMinute and strengthen both resource contract tests to assert that exact compiling recipe.
+Discovery: The expression-based DateTime overload has a different signature on documented Creatio API versions, so a lab-compiling overload must not be generalized when a cross-version column-path overload expresses the same intent.
+Files: clio/Command/McpServer/Resources/EsqFiltersBackendGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs
+Impact: Agents copying the published HourMinute example receive a valid native C# call, guarded on both in-process and real MCP resource paths.

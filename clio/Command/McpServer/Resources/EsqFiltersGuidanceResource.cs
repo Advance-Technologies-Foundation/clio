@@ -52,7 +52,7 @@ public sealed class EsqFiltersGuidanceResource {
 		       The backend construction and parsing guides currently publish the lab-verified group
 		       envelope, nesting, disabled nodes, group negation, primitive Integer/MediumText Compare,
 		       MediumText null checks, Integer membership cardinalities, inclusive Between ranges, typed
-		       Boolean/Guid comparisons, and lookup equality/membership.
+		       Boolean/Guid comparisons, lookup equality/membership, and temporal literals/macros/date parts.
 		       Other filter families remain explicitly marked pending until the same native-vs-DataService
 		       runtime-shape test proves and promotes them.
 		       """

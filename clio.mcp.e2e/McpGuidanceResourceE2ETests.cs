@@ -129,6 +129,8 @@ public sealed class McpGuidanceResourceE2ETests : McpContractFixtureBase {
 			because: "the published router must not describe promoted Between guidance as pending");
 		router.Text.Should().Contain("lookup equality/membership",
 			because: "the published router should advertise promoted lookup coverage");
+		router.Text.Should().Contain("temporal literals/macros/date parts",
+			because: "the published router should advertise promoted temporal coverage");
 		TextResourceContents frontend = frontendResult.Contents.Single().Should().BeOfType<TextResourceContents>(
 			because: "the frontend construction resource should resolve to one plain-text article").Subject;
 		frontend.Text.Should().Contain("Group envelope (filterType 6)",
@@ -161,6 +163,13 @@ public sealed class McpGuidanceResourceE2ETests : McpContractFixtureBase {
 			because: "the published backend guide must not reverse DataService Between bounds");
 		backend.Text.Should().Contain("LookupDataValueType`, not `GuidDataValueType`",
 			because: "the published backend guide must distinguish lookup and plain Guid parameters");
+		backend.Text.Should().Contain("createdOnDate.TrimDateTimeParameterToDate = true",
+			because: "the published backend guide should expose explicit date-only comparison");
+		backend.Text.Should().Contain("EntitySchemaQueryMacrosType.PreviousNDays, 7",
+			because: "the published backend guide should expose parameterized temporal macros");
+		backend.Text.Should().Contain(
+			"FilterComparisonType.Equal, \"UsrLocalTime\", EntitySchemaQueryMacrosType.HourMinute",
+			because: "the published backend guide should expose a compiling column-path overload for date-part construction");
 		TextResourceContents parsing = parsingResult.Contents.Single().Should().BeOfType<TextResourceContents>(
 			because: "the runtime parsing resource should resolve to one plain-text article").Subject;
 		parsing.Text.Should().Contain("Parse a tree, not a flat list",
@@ -191,6 +200,12 @@ public sealed class McpGuidanceResourceE2ETests : McpContractFixtureBase {
 			because: "the published parser should validate typed primitive parameters");
 		parsing.Text.Should().Contain("its CLR value is Guid",
 			because: "the published parser must not infer lookup semantics from CLR type alone");
+		parsing.Text.Should().Contain("ReadTrimmedDate",
+			because: "the published parser should expose explicit trim-to-date validation");
+		parsing.Text.Should().Contain("Function.GetArguments()",
+			because: "the published parser should recursively validate temporal function arguments");
+		parsing.Text.Should().Contain("Capture one provider-clock snapshot",
+			because: "the published parser should cache relative temporal boundaries once per query");
 		parsing.Text.Should().Contain("never reached PostgreSQL",
 			because: "the published resource must not misattribute virtual-provider case behavior to the database");
 	}
