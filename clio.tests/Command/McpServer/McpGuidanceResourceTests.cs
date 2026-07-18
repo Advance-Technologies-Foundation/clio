@@ -1599,6 +1599,8 @@ public sealed class McpGuidanceResourceTests {
 			because: "the family router should point runtime C# consumers to the parsing owner");
 		router.Text.Should().Contain("inclusive Between ranges",
 			because: "the entry router must advertise the backend families already promoted as verified");
+		router.Text.Should().Contain("lookup equality/membership",
+			because: "the router status should include promoted typed lookup coverage");
 		router.Text.Should().NotContain("### Compare (filterType 1)",
 			because: "the router should not duplicate detailed frontend filter rules");
 
@@ -1612,6 +1614,8 @@ public sealed class McpGuidanceResourceTests {
 			because: "the frontend guide must preserve the verified counterintuitive Between field ordering");
 		frontend.Text.Should().Contain("`rightGreaterExpression` = second/upper bound",
 			because: "the frontend guide must not reverse the serialized Between bounds");
+		frontend.Text.Should().Contain("Low-level DataService also accepted a raw GUID parameter",
+			because: "the frontend guide should distinguish verified DataService shorthand from designer JSON");
 	}
 
 	[Test]
@@ -1681,6 +1685,16 @@ public sealed class McpGuidanceResourceTests {
 			because: "the backend guide must preserve the verified DataService bound ordering");
 		article.Text.Should().Contain("does not normalize it into a Between leaf",
 			because: "the two-comparison alternative must remain structurally distinct");
+		article.Text.Should().Contain("BooleanDataValueType",
+			because: "the backend guide should retain the verified Boolean forced type");
+		article.Text.Should().Contain("GuidDataValueType",
+			because: "plain Guid parameters must stay distinct from lookup identifiers");
+		article.Text.Should().Contain("runtime `UsrOwnerId`",
+			because: "native logical lookup paths resolve to their runtime Id column path");
+		article.Text.Should().Contain("LookupDataValueType`, not `GuidDataValueType`",
+			because: "lookup Guid parameters require their schema-specific forced type");
+		article.Text.Should().Contain("ownerIds.Cast<object>().ToArray()",
+			because: "lookup membership must avoid one array-valued params argument");
 		article.Text.Should().Contain("not Creatio/PostgreSQL collation behavior",
 			because: "in-memory provider case policy must not be published as database-collation evidence");
 		article.Text.Should().Contain("Pending lab",
@@ -1752,6 +1766,14 @@ public sealed class McpGuidanceResourceTests {
 			because: "the verified Between evaluator includes its lower boundary");
 		article.Text.Should().Contain("dispatch the shapes independently",
 			because: "first-class Between and the two-leaf alternative are not structurally interchangeable");
+		article.Text.Should().Contain("ReadTypedParameter<bool, BooleanDataValueType>",
+			because: "the parser should validate the Boolean CLR and forced types together");
+		article.Text.Should().Contain("ReadTypedParameter<Guid, GuidDataValueType>",
+			because: "the parser should reject textual or lookup-typed values for a plain Guid column");
+		article.Text.Should().Contain("Require that complete path and `LookupDataValueType`",
+			because: "lookup parsing must validate path and forced type rather than only Guid CLR type");
+		article.Text.Should().Contain("its CLR value is Guid",
+			because: "the parser must not conflate plain Guid and lookup columns");
 		article.Text.Should().Contain("filter.LeftExpression.Path != expectedColumn",
 			because: "the parser must validate the full ESQ path instead of only its terminal schema column");
 		article.Text.Should().Contain("can collapse `Account.Name` to",
