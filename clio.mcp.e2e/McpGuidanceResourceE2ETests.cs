@@ -131,6 +131,8 @@ public sealed class McpGuidanceResourceE2ETests : McpContractFixtureBase {
 			because: "the published router should advertise promoted lookup coverage");
 		router.Text.Should().Contain("temporal literals/macros/date parts",
 			because: "the published router should advertise promoted temporal coverage");
+		router.Text.Should().Contain("Exists/NotExists/aggregate subqueries",
+			because: "the published router should advertise promoted subquery coverage");
 		TextResourceContents frontend = frontendResult.Contents.Single().Should().BeOfType<TextResourceContents>(
 			because: "the frontend construction resource should resolve to one plain-text article").Subject;
 		frontend.Text.Should().Contain("Group envelope (filterType 6)",
@@ -170,6 +172,10 @@ public sealed class McpGuidanceResourceE2ETests : McpContractFixtureBase {
 		backend.Text.Should().Contain(
 			"FilterComparisonType.Equal, \"UsrLocalTime\", EntitySchemaQueryMacrosType.HourMinute",
 			because: "the published backend guide should expose a compiling column-path overload for date-part construction");
+		backend.Text.Should().Contain("esq.CreateExistsFilter(ownerActivities)",
+			because: "the published backend guide should expose verified native Exists construction");
+		backend.Text.Should().Contain("out EntitySchemaQuery activitySubQuery",
+			because: "the published backend guide should place child aggregate predicates in the returned subquery");
 		TextResourceContents parsing = parsingResult.Contents.Single().Should().BeOfType<TextResourceContents>(
 			because: "the runtime parsing resource should resolve to one plain-text article").Subject;
 		parsing.Text.Should().Contain("Parse a tree, not a flat list",
@@ -206,6 +212,14 @@ public sealed class McpGuidanceResourceE2ETests : McpContractFixtureBase {
 			because: "the published parser should recursively validate temporal function arguments");
 		parsing.Text.Should().Contain("Capture one provider-clock snapshot",
 			because: "the published parser should cache relative temporal boundaries once per query");
+		parsing.Text.Should().Contain("ReadActivityExistenceSubquery",
+			because: "the published parser should validate right-side existence subqueries");
+		parsing.Text.Should().Contain("Do not call `child.Columns.Single()`",
+			because: "the published parser should locate aggregate function columns explicitly");
+		parsing.Text.Should().Contain("Count(Id) without Distinct",
+			because: "the published parser should validate the proven aggregation operand and evaluation mode");
+		parsing.Text.Should().Contain("materialize an unbounded child source",
+			because: "the published parser should reject unbounded child preloading as an N+1 workaround");
 		parsing.Text.Should().Contain("never reached PostgreSQL",
 			because: "the published resource must not misattribute virtual-provider case behavior to the database");
 	}

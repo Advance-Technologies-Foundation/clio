@@ -629,6 +629,8 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "get-guidance should report promoted typed lookup coverage");
 		response.Article.Text.Should().Contain("temporal literals/macros/date parts",
 			because: "get-guidance should report promoted temporal coverage");
+		response.Article.Text.Should().Contain("Exists/NotExists/aggregate subqueries",
+			because: "get-guidance should report promoted subquery coverage");
 	}
 
 	[Test]
@@ -678,6 +680,10 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "get-guidance should return verified native temporal macro construction");
 		backend.Article!.Text.Should().Contain("createdOnDate.TrimDateTimeParameterToDate = true",
 			because: "get-guidance should return verified date-only construction");
+		backend.Article!.Text.Should().Contain("esq.CreateExistsFilter(ownerActivities)",
+			because: "get-guidance should return verified native Exists construction");
+		backend.Article!.Text.Should().Contain("out EntitySchemaQuery activitySubQuery",
+			because: "get-guidance should return verified aggregate child-filter construction");
 		parsing.Success.Should().BeTrue(
 			because: "runtime C# filter interpretation should have one retrievable parsing owner");
 		parsing.Article!.Uri.Should().Be("docs://mcp/guides/esq-filter-parsing",
@@ -700,6 +706,14 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "get-guidance should return recursive temporal function parsing rules");
 		parsing.Article!.Text.Should().Contain("Capture one provider-clock snapshot",
 			because: "get-guidance should return query-scoped temporal boundary caching guidance");
+		parsing.Article!.Text.Should().Contain("ReadActivityExistenceSubquery",
+			because: "get-guidance should return verified existence-subquery parsing guidance");
+		parsing.Article!.Text.Should().Contain("Do not call `child.Columns.Single()`",
+			because: "get-guidance should return verified aggregate-column parsing guidance");
+		parsing.Article!.Text.Should().Contain("Count(Id) without Distinct",
+			because: "get-guidance should preserve exact aggregate operand validation");
+		parsing.Article!.Text.Should().Contain("materialize an unbounded child source",
+			because: "get-guidance should preserve bounded fallback execution guidance");
 	}
 
 	[Test]
