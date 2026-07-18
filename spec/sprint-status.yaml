@@ -21,6 +21,20 @@
 # 2026-07-06) is a separate Jira ticket stacked on the same branch; tracked as its own row.
 
 stories:
+  - id: story-knowledge-bundle-runtime-1
+    title: "Verify and retain an active external knowledge bundle"
+    feature: "knowledge-bundle-runtime"
+    repo: "clio"
+    size: M
+    status: in-progress
+    note: "Local P1 experiment; transport selection is intentionally out of scope."
+    file: spec/knowledge-bundle-runtime/knowledge-bundle-runtime-story.md
+    prd: spec/knowledge-bundle-runtime/knowledge-bundle-runtime-spec.md
+    adr: spec/knowledge-bundle-runtime/knowledge-bundle-runtime-plan.md
+    test_plan: spec/knowledge-bundle-runtime/knowledge-bundle-runtime-qa.md
+    depends_on: []
+    blocks: []
+
   - id: story-ring-clio-tool-update-1
     title: "Detect and safely install clio tool updates from ClioRing"
     feature: "ring-clio-tool-update"

@@ -1095,7 +1095,11 @@ public class BindingsModule {
 					// process-wide shared instance. Its impl ctor is private (locks must be shared across
 					// every container the host builds), so auto-registering the type would fail
 					// ValidateOnBuild.
-					|| implementedInterface == typeof(ITenantExecutionLockProvider)) {
+					|| implementedInterface == typeof(ITenantExecutionLockProvider)
+					// External knowledge activation needs an explicitly configured trust store and
+					// client-capability snapshot. A future transport host owns that configuration;
+					// ordinary Clio containers must not receive an unusable transient runtime.
+					|| implementedInterface == typeof(Command.McpServer.Knowledge.IKnowledgeBundleRuntime)) {
 					continue;
 				}
 				services.AddTransient(implementedInterface, type);

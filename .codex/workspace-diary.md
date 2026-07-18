@@ -6739,3 +6739,9 @@ Decision: Require ValidateCurrentMembershipFilters explicitly in unit and both M
 Discovery: Ordering assertions over string indices must independently prove that both ordered markers exist.
 Files: clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs, clio.mcp.e2e/GuidanceGetToolE2ETests.cs
 Impact: Removing the fail-closed validation step now fails every relevant published-resource contract instead of accidentally satisfying the order assertion.
+## 2026-07-18 13:18 – External knowledge bundle runtime prototype
+Context: Prove the safety-critical consumer half of moving MCP guidance out of Clio before choosing NuGet or npm transport.
+Decision: Added a transport-neutral signed v0 bundle verifier with forward-only atomic activation and typed active, not-found, and unavailable lookup states.
+Discovery: The compiled ESQ oracle from Clio commit baa34546 can be served byte-identically from the clio-knowledge conformance ZIP; rejected candidates leave the active sequence unchanged across signature, content, compatibility, capability, path, truncation, and replay failures.
+Files: clio/Command/McpServer/Knowledge/, clio.tests/Command/McpServer/KnowledgeBundleRuntimeTests.cs, spec/knowledge-bundle-runtime/
+Impact: NuGet or another transport can supply candidate streams without owning verification or last-known-good serving semantics.
