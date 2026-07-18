@@ -161,6 +161,82 @@ public sealed class KnowledgeBundleRuntimeTests {
 	}
 
 	[Test]
+	[Description("Rejects a signed bundle using an unknown contract version and retains active guidance.")]
+	public void Activate_Should_Retain_Active_Bundle_When_Contract_Is_Unsupported() {
+		// Arrange
+		ActivateValid();
+		using MemoryStream candidate = MutateAndResign(manifest => manifest["contractVersion"] = "9.0.0");
+
+		// Act
+		KnowledgeBundleActivationResult result = _runtime.Activate(candidate);
+
+		// Assert
+		result.RejectionCode.Should().Be(KnowledgeBundleRejectionCode.UnsupportedContract,
+			because: "a future contract must fail closed until this runtime explicitly implements it");
+		result.ActiveSequence.Should().Be(1,
+			because: "unsupported candidates must leave active guidance unchanged");
+	}
+
+	[Test]
+	[Description("Rejects malformed manifest JSON and retains active guidance.")]
+	public void Activate_Should_Retain_Active_Bundle_When_Manifest_Is_Malformed() {
+		// Arrange
+		ActivateValid();
+		using MemoryStream candidate = MutateCandidate(entries =>
+			entries["manifest.json"] = Encoding.UTF8.GetBytes("{not-json"));
+
+		// Act
+		KnowledgeBundleActivationResult result = _runtime.Activate(candidate);
+
+		// Assert
+		result.RejectionCode.Should().Be(KnowledgeBundleRejectionCode.Malformed,
+			because: "invalid JSON must be rejected rather than escaping the activation boundary");
+		result.ActiveSequence.Should().Be(1,
+			because: "malformed candidates must leave active guidance unchanged");
+	}
+
+	[Test]
+	[Description("Rejects a signed resource descriptor with an unsupported media type and retains active guidance.")]
+	public void Activate_Should_Retain_Active_Bundle_When_Resource_Descriptor_Is_Invalid() {
+		// Arrange
+		ActivateValid();
+		using MemoryStream candidate = MutateAndResign(manifest =>
+			manifest["resources"]![0]!["mediaType"] = "application/octet-stream");
+
+		// Act
+		KnowledgeBundleActivationResult result = _runtime.Activate(candidate);
+
+		// Assert
+		result.RejectionCode.Should().Be(KnowledgeBundleRejectionCode.InvalidContent,
+			because: "v0 serves only strictly decoded text resources");
+		result.ActiveSequence.Should().Be(1,
+			because: "invalid descriptors must leave active guidance unchanged");
+	}
+
+	[Test]
+	[Description("Rejects duplicate JSON property names even when the ambiguous manifest is correctly signed.")]
+	public void Activate_Should_Retain_Active_Bundle_When_Manifest_Has_Duplicate_Property() {
+		// Arrange
+		ActivateValid();
+		using MemoryStream candidate = MutateManifestBytesAndResign(manifestBytes => {
+			string manifest = Encoding.UTF8.GetString(manifestBytes);
+			return Encoding.UTF8.GetBytes(manifest.Replace(
+				"\"sequence\":1,",
+				"\"sequence\":1,\"sequence\":2,",
+				StringComparison.Ordinal));
+		});
+
+		// Act
+		KnowledgeBundleActivationResult result = _runtime.Activate(candidate);
+
+		// Assert
+		result.RejectionCode.Should().Be(KnowledgeBundleRejectionCode.Malformed,
+			because: "signed content must have one unambiguous human and parser interpretation");
+		result.ActiveSequence.Should().Be(1,
+			because: "ambiguous signed manifests must leave active guidance unchanged");
+	}
+
+	[Test]
 	[Description("Rejects a bundle that requires an unavailable MCP capability and retains active guidance.")]
 	public void Activate_Should_Retain_Active_Bundle_When_Required_Tool_Is_Missing() {
 		// Arrange
@@ -307,6 +383,15 @@ public sealed class KnowledgeBundleRuntimeTests {
 		entries["manifest.json"] = manifestBytes;
 		entries["manifest.sig"] = signingKey.SignData(manifestBytes, HashAlgorithmName.SHA256);
 	});
+
+	private static MemoryStream MutateManifestBytesAndResign(Func<byte[], byte[]> mutateManifest) =>
+		MutateCandidate(entries => {
+			byte[] manifestBytes = mutateManifest(entries["manifest.json"]);
+			using ECDsa signingKey = ECDsa.Create();
+			signingKey.ImportFromPem(File.ReadAllText(FixturePath("p1-test-private.pem")));
+			entries["manifest.json"] = manifestBytes;
+			entries["manifest.sig"] = signingKey.SignData(manifestBytes, HashAlgorithmName.SHA256);
+		});
 
 	private static MemoryStream MutateCandidate(Action<Dictionary<string, byte[]>> mutate) {
 		Dictionary<string, byte[]> entries = ReadEntries(File.ReadAllBytes(FixturePath("valid.zip")));

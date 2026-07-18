@@ -86,6 +86,7 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 		using ZipArchive archive = new(candidate, ZipArchiveMode.Read, leaveOpen: true);
 		Dictionary<string, ZipArchiveEntry> entries = ReadEntryIndex(archive);
 		byte[] manifestBytes = ReadRequiredEntry(entries, "manifest.json", MaxManifestBytes);
+		RejectDuplicateJsonProperties(manifestBytes);
 		KnowledgeBundleManifestDto manifest = JsonSerializer.Deserialize(
 			manifestBytes,
 			KnowledgeBundleJsonContext.Default.KnowledgeBundleManifestDto)
@@ -99,6 +100,33 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 		ValidateRequirements(manifest);
 		IReadOnlyDictionary<string, KnowledgeArticle> articles = ReadAndValidateResources(manifest, entries);
 		return new PreparedKnowledgeBundle(manifest.Sequence, articles);
+	}
+
+	private static void RejectDuplicateJsonProperties(ReadOnlySpan<byte> json) {
+		Utf8JsonReader reader = new(json, new JsonReaderOptions {
+			AllowTrailingCommas = false,
+			CommentHandling = JsonCommentHandling.Disallow
+		});
+		Stack<HashSet<string>> objectProperties = new();
+		while (reader.Read()) {
+			switch (reader.TokenType) {
+				case JsonTokenType.StartObject:
+					objectProperties.Push(new HashSet<string>(StringComparer.Ordinal));
+					break;
+				case JsonTokenType.EndObject:
+					objectProperties.Pop();
+					break;
+				case JsonTokenType.PropertyName:
+					string propertyName = reader.GetString()!;
+					if (!objectProperties.Peek().Add(propertyName)) {
+						throw new KnowledgeBundleRejectedException(
+							KnowledgeBundleRejectionCode.Malformed,
+							null,
+							$"Bundle manifest contains duplicate JSON property '{propertyName}'.");
+					}
+					break;
+			}
+		}
 	}
 
 	private static Dictionary<string, ZipArchiveEntry> ReadEntryIndex(ZipArchive archive) {

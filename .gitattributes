@@ -14,3 +14,9 @@ clio.tests/Theming/Fixtures/*.json         text eol=lf
 # byte-for-byte against System.Text.Json output and mirrored byte-identically into the Ring
 # repo; pin it to LF so the parity gate never depends on each machine's core.autocrlf.
 clio.tests/Command/McpServer/Fixtures/ClioStageEvent.contract.ndjson text eol=lf
+
+# External-knowledge fixtures include byte-identical text and cryptographic binary material.
+# Keep the oracle stable across core.autocrlf settings and never apply text conversion to keys/zips.
+clio.tests/Command/McpServer/Fixtures/KnowledgeBundle/*.md  text eol=lf
+clio.tests/Command/McpServer/Fixtures/KnowledgeBundle/*.pem -text
+clio.tests/Command/McpServer/Fixtures/KnowledgeBundle/*.zip -text
