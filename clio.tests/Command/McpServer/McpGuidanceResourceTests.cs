@@ -1863,6 +1863,8 @@ public sealed class McpGuidanceResourceTests {
 			because: "the selected Segment column must be validated as a schema-column expression");
 		article.Text.Should().Contain("RequireAuthorizedCurrentSegmentOncePerQuery",
 			because: "membership access must authorize the caller, root schema, and resolved saved segment");
+		article.Text.Should().Contain("ValidateCurrentMembershipFilters",
+			because: "complete in-memory shape validation must remain part of the published security contract");
 		article.Text.IndexOf("ValidateCurrentMembershipFilters", System.StringComparison.Ordinal).Should().BeLessThan(
 			article.Text.IndexOf("RequireAuthorizedCurrentSegmentOncePerQuery", System.StringComparison.Ordinal),
 			because: "cheap complete shape validation must precede metadata and permission work");

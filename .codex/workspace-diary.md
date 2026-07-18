@@ -6723,3 +6723,10 @@ Decision: Validate the complete in-memory Segment tree first, then authorize eac
 Discovery: Authorization results must never be shared across callers or retained globally; query-scoped reuse avoids repeated metadata work without turning stale authorization into ambient trust.
 Files: clio/Command/McpServer/Resources/EsqFilterParsingGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs, clio.mcp.e2e/GuidanceGetToolE2ETests.cs
 Impact: Invalid trees are rejected before external work, while valid repeated Segment leaves reuse only identity-safe request-scoped authorization.
+
+## 2026-07-18 05:03 – Pin Segment validation presence in contracts
+Context: Final comprehensive review found that the validation-order assertion could pass when the validation marker was absent because IndexOf returned -1.
+Decision: Require ValidateCurrentMembershipFilters explicitly in unit and both MCP E2E resource contracts before asserting its order relative to authorization.
+Discovery: Ordering assertions over string indices must independently prove that both ordered markers exist.
+Files: clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs, clio.mcp.e2e/GuidanceGetToolE2ETests.cs
+Impact: Removing the fail-closed validation step now fails every relevant published-resource contract instead of accidentally satisfying the order assertion.

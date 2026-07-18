@@ -228,6 +228,8 @@ public sealed class McpGuidanceResourceE2ETests : McpContractFixtureBase {
 			because: "the published parser should reject unbounded child preloading as an N+1 workaround");
 		parsing.Text.Should().Contain("ReadSegmentMembership",
 			because: "the published parser should validate the expanded Segment runtime tree");
+		parsing.Text.Should().Contain("ValidateCurrentMembershipFilters",
+			because: "the published parser should require complete shape validation before external work");
 		parsing.Text.Should().Contain("RequireAuthorizedCurrentSegmentOncePerQuery",
 			because: "the published parser should require request-scoped Segment authorization");
 		parsing.Text.Should().Contain("Never reuse a cross-caller",

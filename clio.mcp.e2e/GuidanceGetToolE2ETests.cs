@@ -722,6 +722,8 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "get-guidance should preserve bounded fallback execution guidance");
 		parsing.Article!.Text.Should().Contain("ReadSegmentMembership",
 			because: "get-guidance should return verified expanded Segment parsing guidance");
+		parsing.Article!.Text.Should().Contain("ValidateCurrentMembershipFilters",
+			because: "get-guidance should preserve complete shape validation before external work");
 		parsing.Article!.Text.Should().Contain("RequireAuthorizedCurrentSegmentOncePerQuery",
 			because: "get-guidance should preserve request-scoped Segment authorization");
 		parsing.Article!.Text.Should().Contain("Never reuse a cross-caller",
