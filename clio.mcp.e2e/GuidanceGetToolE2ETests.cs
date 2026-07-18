@@ -623,6 +623,16 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "the family router should expose the backend construction owner");
 		response.Article.Text.Should().Contain("esq-filter-parsing",
 			because: "the family router should expose the runtime parsing owner");
+		response.Article.Text.Should().Contain("inclusive Between ranges",
+			because: "get-guidance should report the current promoted backend validation status");
+		response.Article.Text.Should().Contain("lookup equality/membership",
+			because: "get-guidance should report promoted typed lookup coverage");
+		response.Article.Text.Should().Contain("temporal literals/macros/date parts",
+			because: "get-guidance should report promoted temporal coverage");
+		response.Article.Text.Should().Contain("Exists/NotExists/aggregate subqueries",
+			because: "get-guidance should report promoted subquery coverage");
+		response.Article.Text.Should().Contain("saved Segment membership",
+			because: "get-guidance should report promoted Segment coverage");
 	}
 
 	[Test]
@@ -660,14 +670,66 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "get-guidance should return the concrete backend scalar Compare recipes");
 		backend.Article!.Text.Should().Contain("disabledLeaf.IsEnabled = false",
 			because: "get-guidance should return the verified native disabled-leaf recipe");
+		backend.Article!.Text.Should().Contain("CreateIsNullFilter(\"UsrDescription\")",
+			because: "get-guidance should return the verified native null-filter recipe");
+		backend.Article!.Text.Should().Contain("object[] sequenceNumbers = { 10, 30 }",
+			because: "get-guidance should return the verified native membership recipe");
+		backend.Article!.Text.Should().Contain("FilterComparisonType.Between",
+			because: "get-guidance should return the verified native Between recipe");
+		backend.Article!.Text.Should().Contain("LookupDataValueType`, not `GuidDataValueType`",
+			because: "get-guidance should return the verified lookup type distinction");
+		backend.Article!.Text.Should().Contain("EntitySchemaQueryMacrosType.CurrentYear",
+			because: "get-guidance should return verified native temporal macro construction");
+		backend.Article!.Text.Should().Contain("createdOnDate.TrimDateTimeParameterToDate = true",
+			because: "get-guidance should return verified date-only construction");
+		backend.Article!.Text.Should().Contain("esq.CreateExistsFilter(ownerActivities)",
+			because: "get-guidance should return verified native Exists construction");
+		backend.Article!.Text.Should().Contain("out EntitySchemaQuery activitySubQuery",
+			because: "get-guidance should return verified aggregate child-filter construction");
+		backend.Article!.Text.Should().Contain("new SegmentFilterOptions",
+			because: "get-guidance should return verified native Segment construction");
+		backend.Article!.Text.Should().Contain("UseSegmentFiltering",
+			because: "get-guidance should retain the Segment feature gate");
 		parsing.Success.Should().BeTrue(
 			because: "runtime C# filter interpretation should have one retrievable parsing owner");
 		parsing.Article!.Uri.Should().Be("docs://mcp/guides/esq-filter-parsing",
 			because: "the parsing catalog name should preserve the independent parsing URI");
 		parsing.Article!.Text.Should().Contain("ReadScalarParameter",
 			because: "get-guidance should return the verified runtime scalar parameter parsing recipe");
+		parsing.Article!.Text.Should().Contain("ReadIntegerBetween",
+			because: "get-guidance should return the verified runtime Between parsing recipe");
+		parsing.Article!.Text.Should().Contain("ReadTypedParameter<bool, BooleanDataValueType>",
+			because: "get-guidance should return verified typed parameter parsing");
 		parsing.Article!.Text.Should().Contain("return group.IsNot ? !result : result",
 			because: "get-guidance should return the verified group-negation evaluation rule");
+		parsing.Article!.Text.Should().Contain("ReadNullComparison",
+			because: "get-guidance should return the verified null-filter parsing contract");
+		parsing.Article!.Text.Should().Contain("ReadIntegerMembership",
+			because: "get-guidance should return the verified membership parsing contract");
+		parsing.Article!.Text.Should().Contain("ReadTrimmedDate",
+			because: "get-guidance should return the verified trim-to-date parsing contract");
+		parsing.Article!.Text.Should().Contain("Function.GetArguments()",
+			because: "get-guidance should return recursive temporal function parsing rules");
+		parsing.Article!.Text.Should().Contain("Capture one provider-clock snapshot",
+			because: "get-guidance should return query-scoped temporal boundary caching guidance");
+		parsing.Article!.Text.Should().Contain("ReadActivityExistenceSubquery",
+			because: "get-guidance should return verified existence-subquery parsing guidance");
+		parsing.Article!.Text.Should().Contain("Do not call `child.Columns.Single()`",
+			because: "get-guidance should return verified aggregate-column parsing guidance");
+		parsing.Article!.Text.Should().Contain("Count(Id) without Distinct",
+			because: "get-guidance should preserve exact aggregate operand validation");
+		parsing.Article!.Text.Should().Contain("materialize an unbounded child source",
+			because: "get-guidance should preserve bounded fallback execution guidance");
+		parsing.Article!.Text.Should().Contain("ReadSegmentMembership",
+			because: "get-guidance should return verified expanded Segment parsing guidance");
+		parsing.Article!.Text.Should().Contain("ValidateCurrentMembershipFilters",
+			because: "get-guidance should preserve complete shape validation before external work");
+		parsing.Article!.Text.Should().Contain("RequireAuthorizedCurrentSegmentOncePerQuery",
+			because: "get-guidance should preserve request-scoped Segment authorization");
+		parsing.Article!.Text.Should().Contain("Never reuse a cross-caller",
+			because: "get-guidance should preserve safe query-scoped authorization caching");
+		parsing.Article!.Text.Should().Contain("SQL table identifiers cannot be parameters",
+			because: "get-guidance should preserve dynamic membership-table identifier safety");
 	}
 
 	[Test]
