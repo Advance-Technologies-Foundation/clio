@@ -1606,6 +1606,10 @@ public sealed class McpGuidanceResourceTests {
 			because: "frontend JSON guidance should have a stable child URI");
 		frontend.Text.Should().Contain("### Compare (filterType 1)",
 			because: "the detailed serialized Compare contract should live only in the frontend guide");
+		frontend.Text.Should().Contain("`rightLessExpression` = first/lower bound",
+			because: "the frontend guide must preserve the verified counterintuitive Between field ordering");
+		frontend.Text.Should().Contain("`rightGreaterExpression` = second/upper bound",
+			because: "the frontend guide must not reverse the serialized Between bounds");
 	}
 
 	[Test]
@@ -1667,6 +1671,14 @@ public sealed class McpGuidanceResourceTests {
 			because: "value-type arrays must not become one array-valued parameter");
 		article.Text.Should().Contain("serialized `filterType: 4`",
 			because: "the guide must distinguish the DataService discriminator from runtime ESQ");
+		article.Text.Should().Contain("FilterComparisonType.Between",
+			because: "the backend guide should expose first-class native Between construction");
+		article.Text.Should().Contain("`BETWEEN 10 AND 30`",
+			because: "the guide should retain the verified inclusive SQL behavior");
+		article.Text.Should().Contain("rightLessExpression` carries the first/lower value",
+			because: "the backend guide must preserve the verified DataService bound ordering");
+		article.Text.Should().Contain("does not normalize it into a Between leaf",
+			because: "the two-comparison alternative must remain structurally distinct");
 		article.Text.Should().Contain("not Creatio/PostgreSQL collation behavior",
 			because: "in-memory provider case policy must not be published as database-collation evidence");
 		article.Text.Should().Contain("Pending lab",
@@ -1730,6 +1742,14 @@ public sealed class McpGuidanceResourceTests {
 			because: "empty membership must never broaden a virtual query");
 		article.Text.Should().Contain("cannot recover whether a one-value Equal leaf was authored",
 			because: "the parser must document one-value Compare/In ambiguity");
+		article.Text.Should().Contain("ReadIntegerBetween",
+			because: "the parser should validate the first-class two-boundary runtime leaf");
+		article.Text.Should().Contain("filter.RightExpressions.Count != 2",
+			because: "a Between leaf must contain exactly two ordered parameters");
+		article.Text.Should().Contain("record.SequenceNumber >= range.Lower",
+			because: "the verified Between evaluator includes its lower boundary");
+		article.Text.Should().Contain("dispatch the shapes independently",
+			because: "first-class Between and the two-leaf alternative are not structurally interchangeable");
 		article.Text.Should().Contain("filter.LeftExpression.Path != expectedColumn",
 			because: "the parser must validate the full ESQ path instead of only its terminal schema column");
 		article.Text.Should().Contain("can collapse `Account.Name` to",
