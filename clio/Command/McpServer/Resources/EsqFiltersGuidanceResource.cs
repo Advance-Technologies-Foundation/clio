@@ -50,10 +50,10 @@ public sealed class EsqFiltersGuidanceResource {
 
 		       ## Current backend validation status
 		       The backend construction and parsing guides currently publish the lab-verified group
-		       envelope, empty root, flat AND, nested OR, and mixed nesting shapes. Compare leaves are
-		       verified for string equality and integer greater/less operations. Other filter families
-		       remain explicitly marked pending until the same native-vs-DataService runtime-shape test
-		       proves them.
+		       envelope, nesting, disabled nodes, group negation, primitive Integer/MediumText Compare,
+		       MediumText null checks, Integer membership cardinalities, and inclusive Between ranges.
+		       Other filter families remain explicitly marked pending until the same native-vs-DataService
+		       runtime-shape test proves and promotes them.
 		       """
 	};
 

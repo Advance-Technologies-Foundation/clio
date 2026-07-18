@@ -1597,6 +1597,8 @@ public sealed class McpGuidanceResourceTests {
 			because: "the family router should point native C# filter authors to the backend owner");
 		router.Text.Should().Contain("esq-filter-parsing",
 			because: "the family router should point runtime C# consumers to the parsing owner");
+		router.Text.Should().Contain("inclusive Between ranges",
+			because: "the entry router must advertise the backend families already promoted as verified");
 		router.Text.Should().NotContain("### Compare (filterType 1)",
 			because: "the router should not duplicate detailed frontend filter rules");
 

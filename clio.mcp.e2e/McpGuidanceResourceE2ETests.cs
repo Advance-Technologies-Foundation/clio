@@ -125,6 +125,8 @@ public sealed class McpGuidanceResourceE2ETests : McpContractFixtureBase {
 			because: "the family router should resolve to one plain-text article").Subject;
 		router.Text.Should().Contain("GATE: choose the owner",
 			because: "the root resource should route rather than duplicate detailed rules");
+		router.Text.Should().Contain("inclusive Between ranges",
+			because: "the published router must not describe promoted Between guidance as pending");
 		TextResourceContents frontend = frontendResult.Contents.Single().Should().BeOfType<TextResourceContents>(
 			because: "the frontend construction resource should resolve to one plain-text article").Subject;
 		frontend.Text.Should().Contain("Group envelope (filterType 6)",

@@ -623,6 +623,8 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "the family router should expose the backend construction owner");
 		response.Article.Text.Should().Contain("esq-filter-parsing",
 			because: "the family router should expose the runtime parsing owner");
+		response.Article.Text.Should().Contain("inclusive Between ranges",
+			because: "get-guidance should report the current promoted backend validation status");
 	}
 
 	[Test]
