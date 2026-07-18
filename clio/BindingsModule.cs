@@ -535,7 +535,8 @@ public class BindingsModule {
 		services.AddSingleton(new KnowledgeBundleClientCapabilities(
 			typeof(BindingsModule).Assembly.GetName().Version ?? new Version(8, 1, 0),
 			new Version(1, 0, 0),
-			new HashSet<string>(StringComparer.Ordinal) { GuidanceGetTool.ToolName }));
+			new HashSet<string>(StringComparer.Ordinal) { GuidanceGetTool.ToolName },
+			GuidanceCatalog.GetExternalResourceUris()));
 		services.AddSingleton<IKnowledgeBundleRuntime, KnowledgeBundleRuntime>();
 		services.AddSingleton<IKnowledgeBundleActivator, EnvironmentKnowledgeBundleActivator>();
 		services.AddSingleton<IKnowledgeGuidanceSource, KnowledgeGuidanceSource>();

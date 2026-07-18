@@ -270,6 +270,11 @@ internal static class GuidanceCatalog {
 	internal static IReadOnlyList<GuidanceCatalogEntry> GetEntries(IFeatureToggleService toggles) =>
 		Entries.Values.Where(entry => IsVisible(entry, toggles)).ToArray();
 
+	internal static IReadOnlyDictionary<string, string> GetExternalResourceUris() =>
+		Entries.Values
+			.Where(entry => entry.IsExternal)
+			.ToDictionary(entry => entry.Name, entry => entry.Uri, StringComparer.Ordinal);
+
 	/// <summary>
 	/// Tries to resolve one guidance article by its canonical name, regardless of feature-toggle state.
 	/// </summary>

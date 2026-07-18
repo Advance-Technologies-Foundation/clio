@@ -15,8 +15,8 @@ namespace Clio.Mcp.E2E;
 /// payload must survive real by-name binding + re-serialization and reach the dispatched target
 /// tool. Both the flat call shape <c>{"command":"X","args":{...}}</c> and the wrapped shape
 /// <c>{"args":{"command":"X","args":{...}}}</c> are covered.
-/// A read-only, environment-free target (<c>get-guidance</c>) is used so the assertion proves the
-/// args reached the target without needing a live Creatio environment.
+/// A read-only, environment-free target (<c>get-guidance</c>) is used with a deliberately synthetic
+/// missing identifier so the assertion proves argument forwarding without coupling to article content.
 /// </summary>
 [TestFixture]
 [Category("McpE2E.NoEnvironment")]
@@ -25,10 +25,8 @@ namespace Clio.Mcp.E2E;
 [NonParallelizable]
 public sealed class ClioRunToolE2ETests : McpContractFixtureBase {
 
-	// A stable, always-registered guidance name + a marker unique to its article body. If the args
-	// object failed to reach get-guidance, the target would report a missing-name failure instead.
-	private const string GuidanceName = "page-schema-handlers";
-	private const string GuidanceMarker = "clio MCP page-schema handlers guide";
+	private const string SyntheticMissingName = "synthetic-missing-guide";
+	private const string NotFoundCode = "guidance-not-found";
 
 	[Test]
 	[Category("E2E")]
@@ -45,16 +43,18 @@ public sealed class ClioRunToolE2ETests : McpContractFixtureBase {
 			new Dictionary<string, object?> {
 				["command"] = "get-guidance",
 				["args"] = new Dictionary<string, object?> {
-					["name"] = GuidanceName
+					["name"] = SyntheticMissingName
 				}
 			},
 			context.CancellationTokenSource.Token);
 
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
-			because: "a well-formed flat clio-run call must dispatch to get-guidance and succeed");
-		SerializeResult(callResult).Should().Contain(GuidanceMarker,
-			because: "the args object must reach get-guidance so it resolves the requested guidance article (ENG-92653)");
+			because: "a well-formed flat clio-run call must dispatch to the target tool");
+		SerializeResult(callResult).Should().Contain(NotFoundCode,
+			because: "the synthetic name must reach get-guidance and produce its typed not-found result");
+		SerializeResult(callResult).Should().Contain(SyntheticMissingName,
+			because: "the forwarded value must remain visible in the target diagnostic");
 	}
 
 	[Test]
@@ -75,7 +75,7 @@ public sealed class ClioRunToolE2ETests : McpContractFixtureBase {
 				["args"] = new Dictionary<string, object?> {
 					["command"] = "get-guidance",
 					["args"] = new Dictionary<string, object?> {
-						["name"] = GuidanceName
+						["name"] = SyntheticMissingName
 					}
 				}
 			},
@@ -84,8 +84,10 @@ public sealed class ClioRunToolE2ETests : McpContractFixtureBase {
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
 			because: "the wrapped clio-run shape must be recovered and dispatched to get-guidance over the wire");
-		SerializeResult(callResult).Should().Contain(GuidanceMarker,
-			because: "the wrapped args object must survive binding + recovery and reach get-guidance (ENG-92653)");
+		SerializeResult(callResult).Should().Contain(NotFoundCode,
+			because: "the wrapped synthetic name must survive binding and reach get-guidance");
+		SerializeResult(callResult).Should().Contain(SyntheticMissingName,
+			because: "the forwarded wrapped value must remain visible in the target diagnostic");
 	}
 
 	// Serializes the tool result (structured content preferred, content blocks as fallback) to a JSON

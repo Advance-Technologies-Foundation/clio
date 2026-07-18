@@ -35,7 +35,10 @@ internal sealed class KnowledgeGuidanceSource : IKnowledgeGuidanceSource {
 		}
 		if (entry.IsExternal) {
 			_activator.EnsureActivated();
-			return _runtime.Find(entry.Name);
+			KnowledgeArticleLookup lookup = _runtime.Find(entry.Name);
+			return lookup.Status == KnowledgeArticleLookupStatus.NotFound
+				? new KnowledgeArticleLookup(KnowledgeArticleLookupStatus.Unavailable, null, lookup.ActiveSequence)
+				: lookup;
 		}
 		KnowledgeArticle article = new(entry.Name, entry.Article!.Uri, entry.Article.Text);
 		return new KnowledgeArticleLookup(KnowledgeArticleLookupStatus.Active, article, _runtime.ActiveSequence);

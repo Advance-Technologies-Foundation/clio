@@ -1,4 +1,5 @@
 using System;
+using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
@@ -16,6 +17,10 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 	private const int MaxSignatureBytes = 1024;
 	private const int MaxResourceBytes = 4 * 1024 * 1024;
 	private const int MaxBundleResourceBytes = 32 * 1024 * 1024;
+	private const int MaxArchiveBytes = 40 * 1024 * 1024;
+	private const int MaxArchiveEntries = 1024;
+	private const int MaxCentralDirectoryBytes = 2 * 1024 * 1024;
+	private const uint EndOfCentralDirectorySignature = 0x06054b50;
 	private const string ContractVersion = "0.1.0";
 	private const string SignatureAlgorithm = "ECDSA-P256-SHA256";
 	private const string DigestAlgorithm = "SHA-256";
@@ -83,7 +88,9 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 	}
 
 	private PreparedKnowledgeBundle Prepare(Stream candidate) {
-		using ZipArchive archive = new(candidate, ZipArchiveMode.Read, leaveOpen: true);
+		using MemoryStream boundedCandidate = ReadBoundedCandidate(candidate);
+		ValidateCentralDirectory(boundedCandidate);
+		using ZipArchive archive = new(boundedCandidate, ZipArchiveMode.Read, leaveOpen: true);
 		Dictionary<string, ZipArchiveEntry> entries = ReadEntryIndex(archive);
 		byte[] manifestBytes = ReadRequiredEntry(entries, "manifest.json", MaxManifestBytes);
 		RejectDuplicateJsonProperties(manifestBytes);
@@ -100,6 +107,90 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 		ValidateRequirements(manifest);
 		IReadOnlyDictionary<string, KnowledgeArticle> articles = ReadAndValidateResources(manifest, entries);
 		return new PreparedKnowledgeBundle(manifest.Sequence, articles);
+	}
+
+	private static MemoryStream ReadBoundedCandidate(Stream candidate) {
+		int capacity = 0;
+		if (candidate.CanSeek) {
+			long remaining = candidate.Length - candidate.Position;
+			if (remaining < 0 || remaining > MaxArchiveBytes) {
+				throw new KnowledgeBundleRejectedException(
+					KnowledgeBundleRejectionCode.InvalidContent,
+					null,
+					$"Bundle archive exceeds the {MaxArchiveBytes}-byte compressed size limit.");
+			}
+			capacity = checked((int)remaining);
+		}
+		MemoryStream output = new(capacity);
+		byte[] buffer = new byte[81920];
+		int read;
+		while ((read = candidate.Read(buffer, 0, buffer.Length)) > 0) {
+			if (output.Length + read > MaxArchiveBytes) {
+				output.Dispose();
+				throw new KnowledgeBundleRejectedException(
+					KnowledgeBundleRejectionCode.InvalidContent,
+					null,
+					$"Bundle archive exceeds the {MaxArchiveBytes}-byte compressed size limit.");
+			}
+			output.Write(buffer, 0, read);
+		}
+		output.Position = 0;
+		return output;
+	}
+
+	private static void ValidateCentralDirectory(MemoryStream candidate) {
+		const int minimumRecordBytes = 22;
+		int tailLength = checked((int)Math.Min(candidate.Length, minimumRecordBytes + ushort.MaxValue));
+		if (tailLength < minimumRecordBytes) {
+			throw new KnowledgeBundleRejectedException(
+				KnowledgeBundleRejectionCode.InvalidContent, null, "Bundle archive is missing its central directory.");
+		}
+		byte[] tail = new byte[tailLength];
+		candidate.Position = candidate.Length - tailLength;
+		int offset = 0;
+		while (offset < tail.Length) {
+			int read = candidate.Read(tail, offset, tail.Length - offset);
+			if (read == 0) {
+				throw new KnowledgeBundleRejectedException(
+					KnowledgeBundleRejectionCode.InvalidContent, null, "Bundle archive central directory is truncated.");
+			}
+			offset += read;
+		}
+		for (int index = tail.Length - minimumRecordBytes; index >= 0; index--) {
+			ReadOnlySpan<byte> record = tail.AsSpan(index);
+			if (BinaryPrimitives.ReadUInt32LittleEndian(record) != EndOfCentralDirectorySignature) {
+				continue;
+			}
+			ushort commentLength = BinaryPrimitives.ReadUInt16LittleEndian(record[20..]);
+			if (index + minimumRecordBytes + commentLength != tail.Length) {
+				continue;
+			}
+			ushort diskNumber = BinaryPrimitives.ReadUInt16LittleEndian(record[4..]);
+			ushort centralDirectoryDisk = BinaryPrimitives.ReadUInt16LittleEndian(record[6..]);
+			ushort entriesOnDisk = BinaryPrimitives.ReadUInt16LittleEndian(record[8..]);
+			ushort totalEntries = BinaryPrimitives.ReadUInt16LittleEndian(record[10..]);
+			uint centralDirectorySize = BinaryPrimitives.ReadUInt32LittleEndian(record[12..]);
+			uint centralDirectoryOffset = BinaryPrimitives.ReadUInt32LittleEndian(record[16..]);
+			long recordOffset = candidate.Length - tailLength + index;
+			if (diskNumber != 0
+					|| centralDirectoryDisk != 0
+					|| entriesOnDisk != totalEntries
+					|| totalEntries == ushort.MaxValue
+					|| centralDirectorySize == uint.MaxValue
+					|| centralDirectoryOffset == uint.MaxValue
+					|| totalEntries > MaxArchiveEntries
+					|| centralDirectorySize > MaxCentralDirectoryBytes
+					|| (long)centralDirectoryOffset + centralDirectorySize != recordOffset) {
+				throw new KnowledgeBundleRejectedException(
+					KnowledgeBundleRejectionCode.InvalidContent,
+					null,
+					"Bundle archive central directory exceeds the supported v0 bounds.");
+			}
+			candidate.Position = 0;
+			return;
+		}
+		throw new KnowledgeBundleRejectedException(
+			KnowledgeBundleRejectionCode.InvalidContent, null, "Bundle archive is missing its central directory.");
 	}
 
 	private static void RejectDuplicateJsonProperties(ReadOnlySpan<byte> json) {
@@ -130,7 +221,7 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 	}
 
 	private static Dictionary<string, ZipArchiveEntry> ReadEntryIndex(ZipArchive archive) {
-		if (archive.Entries.Count > 1024) {
+		if (archive.Entries.Count > MaxArchiveEntries) {
 			throw new KnowledgeBundleRejectedException(
 				KnowledgeBundleRejectionCode.InvalidContent,
 				null,
@@ -159,6 +250,7 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 		}
 		if (manifest.Sequence == 0
 				|| string.IsNullOrWhiteSpace(manifest.BundleVersion)
+				|| manifest.IssuedAt == default
 				|| manifest.Source is null
 				|| string.IsNullOrWhiteSpace(manifest.Source.Repository)
 				|| string.IsNullOrWhiteSpace(manifest.Source.Commit)
@@ -186,14 +278,19 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 				$"Bundle signing key '{manifest.Signature.KeyId}' is not trusted.");
 		}
 		byte[] signature = ReadRequiredEntry(entries, "manifest.sig", MaxSignatureBytes);
-		using ECDsa verifier = ECDsa.Create();
-		verifier.ImportFromPem(publicKeyPem);
-		ECParameters parameters = verifier.ExportParameters(includePrivateParameters: false);
-		if (!string.Equals(parameters.Curve.Oid.Value, ECCurve.NamedCurves.nistP256.Oid.Value,
-				StringComparison.Ordinal)
-				|| !verifier.VerifyData(manifestBytes, signature, HashAlgorithmName.SHA256)) {
-			throw Reject(KnowledgeBundleRejectionCode.InvalidSignature, manifest.Sequence,
-				"Bundle manifest signature is invalid.");
+		try {
+			using ECDsa verifier = ECDsa.Create();
+			verifier.ImportFromPem(publicKeyPem);
+			ECParameters parameters = verifier.ExportParameters(includePrivateParameters: false);
+			if (!string.Equals(parameters.Curve.Oid.Value, ECCurve.NamedCurves.nistP256.Oid.Value,
+					StringComparison.Ordinal)
+					|| !verifier.VerifyData(manifestBytes, signature, HashAlgorithmName.SHA256)) {
+				throw Reject(KnowledgeBundleRejectionCode.InvalidSignature, manifest.Sequence,
+					"Bundle manifest signature is invalid.");
+			}
+		} catch (Exception exception) when (exception is ArgumentException or CryptographicException) {
+			throw Reject(KnowledgeBundleRejectionCode.UntrustedKey, manifest.Sequence,
+				"Bundle trust material is not a supported ECDSA P-256 public key.");
 		}
 	}
 
@@ -218,7 +315,7 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 		EnsureUnique(manifest.Requirements.ResourceUris, "required resource URI", manifest.Sequence);
 	}
 
-	private static IReadOnlyDictionary<string, KnowledgeArticle> ReadAndValidateResources(
+	private IReadOnlyDictionary<string, KnowledgeArticle> ReadAndValidateResources(
 		KnowledgeBundleManifestDto manifest,
 		IReadOnlyDictionary<string, ZipArchiveEntry> entries) {
 		EnsureUnique(manifest.Resources.Select(resource => resource.Id), "resource id", manifest.Sequence);
@@ -227,9 +324,10 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 		HashSet<string> ids = manifest.Resources.Select(resource => resource.Id).ToHashSet(StringComparer.Ordinal);
 		HashSet<string> uris = manifest.Resources.Select(resource => resource.Uri).ToHashSet(StringComparer.Ordinal);
 		if (!ids.SetEquals(manifest.Requirements.GuidanceIds)
-				|| !uris.SetEquals(manifest.Requirements.ResourceUris)) {
+				|| !uris.SetEquals(manifest.Requirements.ResourceUris)
+				|| !ids.SetEquals(_capabilities.GuidanceResources.Keys)) {
 			throw Reject(KnowledgeBundleRejectionCode.InvalidContent, manifest.Sequence,
-				"Declared requirements must exactly match bundle resources.");
+				"Declared requirements and bundle resources must exactly match the stable Clio guidance catalog.");
 		}
 
 		HashSet<string> expectedEntries = new(StringComparer.Ordinal) { "manifest.json", "manifest.sig" };
@@ -237,6 +335,11 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 		long totalLength = 0;
 		foreach (KnowledgeBundleResourceDto resource in manifest.Resources) {
 			ValidateResourceDescriptor(resource, manifest.Sequence);
+			if (!_capabilities.GuidanceResources.TryGetValue(resource.Id, out string? expectedUri)
+					|| !string.Equals(resource.Uri, expectedUri, StringComparison.Ordinal)) {
+				throw Reject(KnowledgeBundleRejectionCode.InvalidContent, manifest.Sequence,
+					$"Resource '{resource.Id}' does not match the stable Clio guidance catalog URI.");
+			}
 			expectedEntries.Add(resource.Path);
 			byte[] bytes = ReadRequiredEntry(entries, resource.Path, MaxResourceBytes);
 			totalLength = checked(totalLength + bytes.LongLength);
@@ -283,7 +386,11 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 				|| min > max) {
 			return false;
 		}
-		return current >= min && current <= max;
+		Version normalizedCurrent = new(
+			current.Major,
+			current.Minor,
+			Math.Max(current.Build, 0));
+		return normalizedCurrent >= min && normalizedCurrent <= max;
 	}
 
 	private static bool TryParseExactVersion(string value, out Version? version) {

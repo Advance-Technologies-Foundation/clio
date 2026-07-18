@@ -1,4 +1,5 @@
 using System;
+using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
@@ -7,6 +8,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Threading.Tasks;
 using Clio.Command.McpServer.Knowledge;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -26,6 +28,7 @@ public sealed class KnowledgeBundleRuntimeTests {
 
 	private ServiceProvider _container;
 	private IKnowledgeBundleRuntime _runtime;
+	private IKnowledgeBundleTrustStore _trustStore;
 	private string _privateKeyPem;
 	private byte[] _validCandidateBytes;
 
@@ -35,18 +38,19 @@ public sealed class KnowledgeBundleRuntimeTests {
 		_privateKeyPem = testKey.ExportPkcs8PrivateKeyPem();
 		string publicKey = testKey.ExportSubjectPublicKeyInfoPem();
 		_validCandidateBytes = BuildValidCandidate(testKey);
-		IKnowledgeBundleTrustStore trustStore = Substitute.For<IKnowledgeBundleTrustStore>();
-		trustStore.TryGetPublicKeyPem("p1-test", out Arg.Any<string>())
+		_trustStore = Substitute.For<IKnowledgeBundleTrustStore>();
+		_trustStore.TryGetPublicKeyPem("p1-test", out Arg.Any<string>())
 			.Returns(callInfo => {
 				callInfo[1] = publicKey;
 				return true;
 			});
 		ServiceCollection services = new();
-		services.AddSingleton(trustStore);
+		services.AddSingleton(_trustStore);
 		services.AddSingleton(new KnowledgeBundleClientCapabilities(
-			new Version(8, 1, 0),
+			new Version(8, 1, 0, 86),
 			new Version(1, 0, 0),
-			new HashSet<string>(StringComparer.Ordinal) { "get-guidance" }));
+			new HashSet<string>(StringComparer.Ordinal) { "get-guidance" },
+			new Dictionary<string, string>(StringComparer.Ordinal) { [TestArticleName] = TestArticleUri }));
 		services.AddSingleton<IKnowledgeBundleRuntime, KnowledgeBundleRuntime>();
 		_container = services.BuildServiceProvider();
 		_runtime = _container.GetRequiredService<IKnowledgeBundleRuntime>();
@@ -59,7 +63,7 @@ public sealed class KnowledgeBundleRuntimeTests {
 
 	[Test]
 	[Description("Reports typed unavailability before any verified knowledge bundle is active.")]
-	public void Find_Should_Report_Unavailable_When_Runtime_Is_Cold() {
+	public void Find_ShouldReportUnavailable_WhenRuntimeIsCold() {
 		// Arrange
 
 		// Act
@@ -74,7 +78,7 @@ public sealed class KnowledgeBundleRuntimeTests {
 
 	[Test]
 	[Description("Activates a valid signed bundle and serves its exact payload bytes.")]
-	public void Activate_Should_Serve_Exact_Payload_When_Candidate_Is_Valid() {
+	public void Activate_ShouldServeExactPayload_WhenCandidateIsValid() {
 		// Arrange
 		using MemoryStream candidate = ValidCandidate();
 
@@ -95,7 +99,7 @@ public sealed class KnowledgeBundleRuntimeTests {
 
 	[Test]
 	[Description("Rejects a resource whose bytes no longer match the signed manifest and retains active guidance.")]
-	public void Activate_Should_Retain_Active_Bundle_When_Resource_Is_Tampered() {
+	public void Activate_ShouldRetainActiveBundle_WhenResourceIsTampered() {
 		// Arrange
 		ActivateValid();
 		using MemoryStream candidate = MutateCandidate(entries => {
@@ -116,7 +120,7 @@ public sealed class KnowledgeBundleRuntimeTests {
 
 	[Test]
 	[Description("Rejects a damaged detached manifest signature and retains active guidance.")]
-	public void Activate_Should_Retain_Active_Bundle_When_Signature_Is_Invalid() {
+	public void Activate_ShouldRetainActiveBundle_WhenSignatureIsInvalid() {
 		// Arrange
 		ActivateValid();
 		using MemoryStream candidate = MutateCandidate(entries => entries["manifest.sig"][0] ^= 0x01);
@@ -133,7 +137,7 @@ public sealed class KnowledgeBundleRuntimeTests {
 
 	[Test]
 	[Description("Rejects a manifest signed under an unknown key id and retains active guidance.")]
-	public void Activate_Should_Retain_Active_Bundle_When_Key_Is_Untrusted() {
+	public void Activate_ShouldRetainActiveBundle_WhenKeyIsUntrusted() {
 		// Arrange
 		ActivateValid();
 		using MemoryStream candidate = MutateAndResign(manifest =>
@@ -150,8 +154,30 @@ public sealed class KnowledgeBundleRuntimeTests {
 	}
 
 	[Test]
+	[Description("Rejects malformed trusted-key material as untrusted and retains active guidance.")]
+	public void Activate_ShouldRetainActiveBundle_WhenTrustedKeyMaterialIsMalformed() {
+		// Arrange
+		ActivateValid();
+		_trustStore.TryGetPublicKeyPem("p1-test", out Arg.Any<string>())
+			.Returns(callInfo => {
+				callInfo[1] = "not-a-public-key";
+				return true;
+			});
+		using MemoryStream candidate = MutateAndResign(manifest => manifest["sequence"] = 2);
+
+		// Act
+		KnowledgeBundleActivationResult result = _runtime.Activate(candidate);
+
+		// Assert
+		result.RejectionCode.Should().Be(KnowledgeBundleRejectionCode.UntrustedKey,
+			because: "malformed trust configuration must remain a typed trust rejection rather than escape activation");
+		result.ActiveSequence.Should().Be(1,
+			because: "invalid trust material must preserve the last-known-good bundle");
+	}
+
+	[Test]
 	[Description("Rejects a correctly signed but incompatible bundle and retains active guidance.")]
-	public void Activate_Should_Retain_Active_Bundle_When_Candidate_Is_Incompatible() {
+	public void Activate_ShouldRetainActiveBundle_WhenCandidateIsIncompatible() {
 		// Arrange
 		ActivateValid();
 		using MemoryStream candidate = MutateAndResign(manifest =>
@@ -168,8 +194,27 @@ public sealed class KnowledgeBundleRuntimeTests {
 	}
 
 	[Test]
+	[Description("Compares a four-part Clio assembly version to the bundle's exact three-part product range.")]
+	public void Activate_ShouldNormalizeAssemblyRevision_WhenProductVersionRangeIsExact() {
+		// Arrange
+		using MemoryStream candidate = MutateAndResign(manifest => {
+			manifest["compatibility"]!["clio"]!["min"] = "8.1.0";
+			manifest["compatibility"]!["clio"]!["max"] = "8.1.0";
+		});
+
+		// Act
+		KnowledgeBundleActivationResult result = _runtime.Activate(candidate);
+
+		// Assert
+		result.Status.Should().Be(KnowledgeBundleActivationStatus.Activated,
+			because: "the assembly revision is not part of the three-part Clio product compatibility contract");
+		result.ActiveSequence.Should().Be(1,
+			because: "the exact product-version match must publish the verified candidate");
+	}
+
+	[Test]
 	[Description("Rejects a signed bundle using an unknown contract version and retains active guidance.")]
-	public void Activate_Should_Retain_Active_Bundle_When_Contract_Is_Unsupported() {
+	public void Activate_ShouldRetainActiveBundle_WhenContractIsUnsupported() {
 		// Arrange
 		ActivateValid();
 		using MemoryStream candidate = MutateAndResign(manifest => manifest["contractVersion"] = "9.0.0");
@@ -185,8 +230,42 @@ public sealed class KnowledgeBundleRuntimeTests {
 	}
 
 	[Test]
+	[Description("Rejects a signed bundle using an unknown schema version and retains active guidance.")]
+	public void Activate_ShouldRetainActiveBundle_WhenSchemaIsUnsupported() {
+		// Arrange
+		ActivateValid();
+		using MemoryStream candidate = MutateAndResign(manifest => manifest["bundleSchemaVersion"] = "9.0.0");
+
+		// Act
+		KnowledgeBundleActivationResult result = _runtime.Activate(candidate);
+
+		// Assert
+		result.RejectionCode.Should().Be(KnowledgeBundleRejectionCode.UnsupportedContract,
+			because: "a future schema must fail closed until this runtime explicitly implements it");
+		result.ActiveSequence.Should().Be(1,
+			because: "unsupported schema candidates must leave the last-known-good bundle active");
+	}
+
+	[Test]
+	[Description("Rejects a signed manifest missing its issue timestamp and retains active guidance.")]
+	public void Activate_ShouldRetainActiveBundle_WhenIssuedAtIsMissing() {
+		// Arrange
+		ActivateValid();
+		using MemoryStream candidate = MutateAndResign(manifest => manifest.Remove("issuedAt"));
+
+		// Act
+		KnowledgeBundleActivationResult result = _runtime.Activate(candidate);
+
+		// Assert
+		result.RejectionCode.Should().Be(KnowledgeBundleRejectionCode.Malformed,
+			because: "every producer-declared v0 manifest field must be enforced by the consumer schema boundary");
+		result.ActiveSequence.Should().Be(1,
+			because: "a signed but incomplete manifest must preserve the last-known-good bundle");
+	}
+
+	[Test]
 	[Description("Rejects malformed manifest JSON and retains active guidance.")]
-	public void Activate_Should_Retain_Active_Bundle_When_Manifest_Is_Malformed() {
+	public void Activate_ShouldRetainActiveBundle_WhenManifestIsMalformed() {
 		// Arrange
 		ActivateValid();
 		using MemoryStream candidate = MutateCandidate(entries =>
@@ -204,7 +283,7 @@ public sealed class KnowledgeBundleRuntimeTests {
 
 	[Test]
 	[Description("Rejects a signed resource descriptor with an unsupported media type and retains active guidance.")]
-	public void Activate_Should_Retain_Active_Bundle_When_Resource_Descriptor_Is_Invalid() {
+	public void Activate_ShouldRetainActiveBundle_WhenResourceDescriptorIsInvalid() {
 		// Arrange
 		ActivateValid();
 		using MemoryStream candidate = MutateAndResign(manifest =>
@@ -222,7 +301,7 @@ public sealed class KnowledgeBundleRuntimeTests {
 
 	[Test]
 	[Description("Rejects duplicate JSON property names even when the ambiguous manifest is correctly signed.")]
-	public void Activate_Should_Retain_Active_Bundle_When_Manifest_Has_Duplicate_Property() {
+	public void Activate_ShouldRetainActiveBundle_WhenManifestHasDuplicateProperty() {
 		// Arrange
 		ActivateValid();
 		using MemoryStream candidate = MutateManifestBytesAndResign(manifestBytes => {
@@ -245,7 +324,7 @@ public sealed class KnowledgeBundleRuntimeTests {
 
 	[Test]
 	[Description("Rejects a bundle that requires an unavailable MCP capability and retains active guidance.")]
-	public void Activate_Should_Retain_Active_Bundle_When_Required_Tool_Is_Missing() {
+	public void Activate_ShouldRetainActiveBundle_WhenRequiredToolIsMissing() {
 		// Arrange
 		ActivateValid();
 		using MemoryStream candidate = MutateAndResign(manifest =>
@@ -262,8 +341,58 @@ public sealed class KnowledgeBundleRuntimeTests {
 	}
 
 	[Test]
+	[Description("Rejects a self-consistent signed bundle that changes the stable catalog URI and retains active guidance.")]
+	public void Activate_ShouldRetainActiveBundle_WhenResourceUriDiffersFromCatalog() {
+		// Arrange
+		ActivateValid();
+		using MemoryStream candidate = MutateAndResign(manifest => {
+			const string mismatchedUri = "docs://synthetic/guides/wrong";
+			manifest["requirements"]!["resourceUris"]![0] = mismatchedUri;
+			manifest["resources"]![0]!["uri"] = mismatchedUri;
+		});
+
+		// Act
+		KnowledgeBundleActivationResult result = _runtime.Activate(candidate);
+
+		// Assert
+		result.RejectionCode.Should().Be(KnowledgeBundleRejectionCode.InvalidContent,
+			because: "a producer-signed URI cannot override Clio's stable resource identity");
+		result.ActiveSequence.Should().Be(1,
+			because: "catalog identity rejection must retain the last-known-good bundle");
+	}
+
+	[Test]
+	[Description("Rejects a correctly signed bundle that omits one stable external guidance catalog entry.")]
+	public void Activate_ShouldRejectCandidate_WhenStableCatalogResourceIsMissing() {
+		// Arrange
+		ServiceCollection services = new();
+		services.AddSingleton(_trustStore);
+		services.AddSingleton(new KnowledgeBundleClientCapabilities(
+			new Version(8, 1, 0),
+			new Version(1, 0, 0),
+			new HashSet<string>(StringComparer.Ordinal) { "get-guidance" },
+			new Dictionary<string, string>(StringComparer.Ordinal) {
+				[TestArticleName] = TestArticleUri,
+				["guide-b"] = "docs://mcp/guides/guide-b"
+			}));
+		services.AddSingleton<IKnowledgeBundleRuntime, KnowledgeBundleRuntime>();
+		using ServiceProvider partialCatalogContainer = services.BuildServiceProvider();
+		IKnowledgeBundleRuntime runtime = partialCatalogContainer.GetRequiredService<IKnowledgeBundleRuntime>();
+		using MemoryStream candidate = ValidCandidate();
+
+		// Act
+		KnowledgeBundleActivationResult result = runtime.Activate(candidate);
+
+		// Assert
+		result.RejectionCode.Should().Be(KnowledgeBundleRejectionCode.InvalidContent,
+			because: "an active bundle must cover the complete stable external catalog atomically");
+		runtime.ActiveSequence.Should().BeNull(
+			because: "partial catalog coverage must not publish a degraded active snapshot");
+	}
+
+	[Test]
 	[Description("Activates only increasing bundle sequences and rejects replay of equal or older candidates.")]
-	public void Activate_Should_Advance_Only_When_Sequence_Is_Greater() {
+	public void Activate_ShouldAdvanceOnly_WhenSequenceIsGreater() {
 		// Arrange
 		ActivateValid();
 		using MemoryStream sequenceTwo = MutateAndResign(manifest => manifest["sequence"] = 2);
@@ -287,8 +416,33 @@ public sealed class KnowledgeBundleRuntimeTests {
 	}
 
 	[Test]
+	[Description("Publishes concurrent verified candidates atomically and retains the greatest sequence.")]
+	public void Activate_ShouldPublishHighestSequenceAtomically_WhenCandidatesRace() {
+		// Arrange
+		ActivateValid();
+		List<MemoryStream> candidates = Enumerable.Range(2, 7)
+			.Select(sequence => MutateAndResign(manifest => manifest["sequence"] = sequence))
+			.ToList();
+
+		// Act
+		Parallel.ForEach(candidates, candidate => _runtime.Activate(candidate));
+		KnowledgeArticleLookup lookup = _runtime.Find(TestArticleName);
+
+		// Assert
+		_runtime.ActiveSequence.Should().Be(8,
+			because: "serialized forward-only publication must converge on the greatest verified sequence");
+		lookup.Status.Should().Be(KnowledgeArticleLookupStatus.Active,
+			because: "readers must observe a complete active bundle after concurrent publication");
+		lookup.Article!.Text.Should().Be(TestArticleText,
+			because: "atomic publication must never expose a partially prepared article set");
+		foreach (MemoryStream candidate in candidates) {
+			candidate.Dispose();
+		}
+	}
+
+	[Test]
 	[Description("Rejects a truncated candidate archive and retains active guidance.")]
-	public void Activate_Should_Retain_Active_Bundle_When_Archive_Is_Truncated() {
+	public void Activate_ShouldRetainActiveBundle_WhenArchiveIsTruncated() {
 		// Arrange
 		ActivateValid();
 		byte[] validBytes = _validCandidateBytes;
@@ -306,7 +460,7 @@ public sealed class KnowledgeBundleRuntimeTests {
 
 	[Test]
 	[Description("Rejects unexpected archive entries and retains active guidance.")]
-	public void Activate_Should_Retain_Active_Bundle_When_Archive_Has_Unexpected_Entry() {
+	public void Activate_ShouldRetainActiveBundle_WhenArchiveHasUnexpectedEntry() {
 		// Arrange
 		ActivateValid();
 		using MemoryStream candidate = MutateCandidate(entries => entries.Add("unexpected.txt", [1, 2, 3]));
@@ -322,8 +476,66 @@ public sealed class KnowledgeBundleRuntimeTests {
 	}
 
 	[Test]
+	[Description("Rejects a central directory with more entries than the v0 archive budget before activation.")]
+	public void Activate_ShouldRetainActiveBundle_WhenArchiveEntryBudgetIsExceeded() {
+		// Arrange
+		ActivateValid();
+		using MemoryStream candidate = MutateCandidate(entries => {
+			for (int index = 0; index < 1025; index++) {
+				entries.Add($"unexpected/{index}.txt", []);
+			}
+		});
+
+		// Act
+		KnowledgeBundleActivationResult result = _runtime.Activate(candidate);
+
+		// Assert
+		result.RejectionCode.Should().Be(KnowledgeBundleRejectionCode.InvalidContent,
+			because: "entry-flood archives must fail the bounded ZIP preflight");
+		result.ActiveSequence.Should().Be(1,
+			because: "archive-budget rejection must preserve the last-known-good bundle");
+	}
+
+	[Test]
+	[Description("Rejects a ZIP whose end record understates the central-directory size before metadata enumeration.")]
+	public void Activate_ShouldRetainActiveBundle_WhenCentralDirectorySizeIsUnderstated() {
+		// Arrange
+		ActivateValid();
+		byte[] bytes = _validCandidateBytes.ToArray();
+		int endRecordOffset = FindEndOfCentralDirectory(bytes);
+		BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(endRecordOffset + 12, sizeof(uint)), 1);
+		using MemoryStream candidate = new(bytes);
+
+		// Act
+		KnowledgeBundleActivationResult result = _runtime.Activate(candidate);
+
+		// Assert
+		result.RejectionCode.Should().Be(KnowledgeBundleRejectionCode.InvalidContent,
+			because: "untrusted ZIP metadata must not bypass the bounded central-directory preflight");
+		result.ActiveSequence.Should().Be(1,
+			because: "malformed archive metadata must preserve the last-known-good bundle");
+	}
+
+	[Test]
+	[Description("Rejects a non-seekable candidate that exceeds the compressed archive budget before ZIP parsing.")]
+	public void Activate_ShouldRetainActiveBundle_WhenCompressedArchiveBudgetIsExceeded() {
+		// Arrange
+		ActivateValid();
+		using Stream candidate = new FixedLengthNonSeekableStream(41L * 1024 * 1024);
+
+		// Act
+		KnowledgeBundleActivationResult result = _runtime.Activate(candidate);
+
+		// Assert
+		result.RejectionCode.Should().Be(KnowledgeBundleRejectionCode.InvalidContent,
+			because: "oversized transport streams must be bounded before the ZIP parser sees them");
+		result.ActiveSequence.Should().Be(1,
+			because: "compressed-size rejection must preserve the last-known-good bundle");
+	}
+
+	[Test]
 	[Description("Rejects a bundle with a declared resource entry missing and retains active guidance.")]
-	public void Activate_Should_Retain_Active_Bundle_When_Resource_Entry_Is_Missing() {
+	public void Activate_ShouldRetainActiveBundle_WhenResourceEntryIsMissing() {
 		// Arrange
 		ActivateValid();
 		using MemoryStream candidate = MutateCandidate(entries => entries.Remove(TestArticlePath));
@@ -340,7 +552,7 @@ public sealed class KnowledgeBundleRuntimeTests {
 
 	[Test]
 	[Description("Rejects a signed manifest containing a traversal resource path and retains active guidance.")]
-	public void Activate_Should_Retain_Active_Bundle_When_Resource_Path_Traverses() {
+	public void Activate_ShouldRetainActiveBundle_WhenResourcePathTraverses() {
 		// Arrange
 		ActivateValid();
 		using MemoryStream candidate = MutateAndResign(manifest =>
@@ -358,7 +570,7 @@ public sealed class KnowledgeBundleRuntimeTests {
 
 	[Test]
 	[Description("Distinguishes an unknown article in an active bundle from cold-start unavailability.")]
-	public void Find_Should_Report_NotFound_When_Bundle_Is_Active() {
+	public void Find_ShouldReportNotFound_WhenBundleIsActive() {
 		// Arrange
 		ActivateValid();
 
@@ -472,6 +684,47 @@ public sealed class KnowledgeBundleRuntimeTests {
 				return bytes.ToArray();
 			},
 			StringComparer.Ordinal);
+	}
+
+	private static int FindEndOfCentralDirectory(byte[] archiveBytes) {
+		for (int index = archiveBytes.Length - 22; index >= 0; index--) {
+			if (BinaryPrimitives.ReadUInt32LittleEndian(archiveBytes.AsSpan(index)) == 0x06054b50) {
+				return index;
+			}
+		}
+		throw new InvalidOperationException("Synthetic ZIP has no end-of-central-directory record.");
+	}
+
+	private sealed class FixedLengthNonSeekableStream(long length) : Stream {
+		private long _remaining = length;
+
+		public override bool CanRead => true;
+		public override bool CanSeek => false;
+		public override bool CanWrite => false;
+		public override long Length => throw new NotSupportedException();
+		public override long Position {
+			get => throw new NotSupportedException();
+			set => throw new NotSupportedException();
+		}
+
+		public override int Read(byte[] buffer, int offset, int count) {
+			int read = (int)Math.Min(count, _remaining);
+			if (read == 0) {
+				return 0;
+			}
+			Array.Clear(buffer, offset, read);
+			_remaining -= read;
+			return read;
+		}
+
+		public override void Flush() {
+		}
+
+		public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+		public override void SetLength(long value) => throw new NotSupportedException();
+
+		public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
 	}
 
 }

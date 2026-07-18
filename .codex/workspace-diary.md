@@ -6752,3 +6752,17 @@ Decision: Keep the Clio delivery implementation on `krylov/knowledge-bundle-poc`
 Discovery: A verified ESQ bundle is served byte-identically through the real `get-guidance` and `docs://` surfaces on .NET 8 and .NET 10, while a cold process returns typed `guidance-unavailable`.
 Files: clio/Command/McpServer/Knowledge/, clio/Command/McpServer/Resources/KnowledgeGuidanceResourceAdapter.cs, clio.mcp.e2e/KnowledgeGuidanceBundleE2ETests.cs
 Impact: Clio can retain mechanics-only tests while content and content validation migrate to clio-knowledge.
+
+## 2026-07-18 17:06 – Replace guidance snapshots with synthetic delivery tests
+Context: Complete clio-knowledge MIG6 by removing Clio assertions that owned article wording, headings, examples, sizes, or frozen oracle bytes.
+Decision: Retain only synthetic bundle mechanics, stable get-guidance/docs routing, typed lookup states, and executable destructive metadata when external guidance is cold.
+Discovery: Generated ECDSA-signed ZIP fixtures exercise the real MCP process on .NET 8 and .NET 10 without a clio-knowledge checkout; review also required absolute trust paths, public-key-only PEM, bounded ZIP preflight, and stable catalog URI matching.
+Files: clio/Command/McpServer/Knowledge/, clio/Command/McpServer/Resources/GuidanceCatalog.cs, clio.tests/Command/McpServer/KnowledgeBundleRuntimeTests.cs, clio.tests/Command/McpServer/KnowledgeBundleDiscoveryTests.cs, clio.tests/Command/McpServer/KnowledgeGuidanceSurfaceTests.cs, clio.tests/Command/McpServer/GuidanceGetToolTests.cs, clio.mcp.e2e/KnowledgeGuidanceBundleE2ETests.cs
+Impact: Clio validates delivery and fail-closed behavior while clio-knowledge remains the sole owner of content assertions and oracle bytes.
+
+## 2026-07-18 17:43 – Harden synthetic knowledge activation gates
+Context: Comprehensive quality, security, and performance review of the MIG6 mechanics-only migration found fail-closed gaps hidden by the original one-resource fixture.
+Decision: Require exact external-catalog coverage, exact central-directory bounds, absolute trust paths, public-only SPKI trust material, all required manifest fields, and three-part product-version comparison.
+Discovery: A successful real-process fixture must synthesize every stable external guide route; known catalog omissions are unavailable, never not-found, and four-part assembly revisions do not participate in bundle compatibility.
+Files: clio/Command/McpServer/Knowledge/KnowledgeBundleRuntime.cs, clio/Command/McpServer/Knowledge/KnowledgeBundleContracts.cs, clio/Command/McpServer/Knowledge/KnowledgeGuidanceSource.cs, clio.mcp.e2e/KnowledgeGuidanceBundleE2ETests.cs, clio.tests/Command/McpServer/KnowledgeBundleRuntimeTests.cs
+Impact: Reviewer-identified trust substitution, archive-allocation, partial-catalog, schema, and version-range bypasses now have synthetic regressions without reintroducing guidance wording ownership.
