@@ -1705,8 +1705,9 @@ public sealed class McpGuidanceResourceTests {
 			because: "the backend guide should expose parameterized relative-period construction");
 		article.Text.Should().Contain("EntitySchemaQueryMacrosType.Year, 2026",
 			because: "the backend guide should expose native fixed-year date-part construction");
-		article.Text.Should().Contain("EntitySchemaQueryMacrosType.HourMinute",
-			because: "the backend guide should expose native exact-minute construction");
+		article.Text.Should().Contain(
+			"FilterComparisonType.Equal, \"UsrLocalTime\", EntitySchemaQueryMacrosType.HourMinute",
+			because: "the backend guide should expose a compiling column-path overload for native exact-minute construction");
 		article.Text.Should().Contain("DataService preserved DateTime ticks",
 			because: "the guide must preserve the verified DateTime Kind transport boundary");
 		article.Text.Should().Contain("not Creatio/PostgreSQL collation behavior",

@@ -167,8 +167,9 @@ public sealed class McpGuidanceResourceE2ETests : McpContractFixtureBase {
 			because: "the published backend guide should expose explicit date-only comparison");
 		backend.Text.Should().Contain("EntitySchemaQueryMacrosType.PreviousNDays, 7",
 			because: "the published backend guide should expose parameterized temporal macros");
-		backend.Text.Should().Contain("EntitySchemaQueryMacrosType.HourMinute",
-			because: "the published backend guide should expose date-part construction");
+		backend.Text.Should().Contain(
+			"FilterComparisonType.Equal, \"UsrLocalTime\", EntitySchemaQueryMacrosType.HourMinute",
+			because: "the published backend guide should expose a compiling column-path overload for date-part construction");
 		TextResourceContents parsing = parsingResult.Contents.Single().Should().BeOfType<TextResourceContents>(
 			because: "the runtime parsing resource should resolve to one plain-text article").Subject;
 		parsing.Text.Should().Contain("Parse a tree, not a flat list",

@@ -265,7 +265,7 @@ public sealed class EsqFiltersBackendGuidanceResource {
 		       esq.Filters.Add(esq.CreateFilter(
 		           FilterComparisonType.Equal, createdOn, EntitySchemaQueryMacrosType.Year, 2026));
 		       esq.Filters.Add(esq.CreateFilter(
-		           FilterComparisonType.Equal, createdOn, EntitySchemaQueryMacrosType.HourMinute,
+		           FilterComparisonType.Equal, "UsrLocalTime", EntitySchemaQueryMacrosType.HourMinute,
 		           new DateTime(1, 1, 1, 13, 45, 0)));
 		       ```
 
