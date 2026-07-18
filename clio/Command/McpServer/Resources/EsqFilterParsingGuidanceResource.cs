@@ -240,6 +240,38 @@ public sealed class EsqFilterParsingGuidanceResource {
 		       executor boundary, so a parser cannot recover whether a one-value Equal leaf was authored as
 		       Compare or In. Support that ambiguity deliberately in the provider contract.
 
+		       A first-class Between leaf is distinct: require `ComparisonType.Between`, the exact allowed column
+		       path, and exactly two ordered parameter expressions. Parse them once as lower then upper:
+		       ```csharp
+		       private static (int Lower, int Upper) ReadIntegerBetween(
+		           EntitySchemaQueryFilter filter,
+		           string expectedColumn) {
+		           if (filter.ComparisonType != FilterComparisonType.Between ||
+		               filter.LeftExpression?.ExpressionType !=
+		                   EntitySchemaQueryExpressionType.SchemaColumn ||
+		               filter.LeftExpression.Path != expectedColumn ||
+		               filter.RightExpressions.Count != 2) {
+		               throw new NotSupportedException("Unsupported Integer Between shape.");
+		           }
+
+		           int[] boundaries = filter.RightExpressions.Select(expression => {
+		               if (expression.ExpressionType !=
+		                       EntitySchemaQueryExpressionType.Parameter ||
+		                   expression.ParameterValue is not int value) {
+		                   throw new NotSupportedException(
+		                       "Between boundaries must be Integer parameters.");
+		               }
+		               return value;
+		           }).ToArray();
+		           return (boundaries[0], boundaries[1]);
+		       }
+		       ```
+
+		       Evaluate it inclusively: `record.SequenceNumber >= range.Lower &&
+		       record.SequenceNumber <= range.Upper`. The alternative `GreaterOrEqual` plus `LessOrEqual` form
+		       remains two leaves in the surrounding AND group. A general tree evaluator can support both, but must
+		       dispatch the shapes independently; do not rewrite or silently accept an exclusive sibling pair.
+
 		       Then require the CLR type appropriate to the schema column (`System.Int32` for the verified
 		       Integer example and `System.String` for MediumText) and dispatch explicitly on
 		       `ComparisonType`. Do not coerce an unexpected value or silently treat an unsupported
@@ -291,7 +323,7 @@ public sealed class EsqFilterParsingGuidanceResource {
 		       Verified now: group envelope/nesting, disabled leaf/group behavior, group `IsNot`, and all
 		       scalar Compare operators using representative Integer and MediumText values, plus text
 		       `IsNull`/`IsNotNull` and Integer In cardinality boundaries. The frontend guide supplies the remaining
-		       validation backlog: Boolean/Guid values, Between,
+		       validation backlog: Boolean/Guid values,
 		       lookups, dates/macros,
 		       Exists/subqueries/aggregates, and Segment. Add parsing rules here only after native C# and
 		       DataService produce an asserted runtime shape and the lab proves result behavior.

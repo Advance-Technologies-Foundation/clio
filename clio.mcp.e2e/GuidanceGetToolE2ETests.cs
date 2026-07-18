@@ -623,6 +623,8 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "the family router should expose the backend construction owner");
 		response.Article.Text.Should().Contain("esq-filter-parsing",
 			because: "the family router should expose the runtime parsing owner");
+		response.Article.Text.Should().Contain("inclusive Between ranges",
+			because: "get-guidance should report the current promoted backend validation status");
 	}
 
 	[Test]
@@ -664,12 +666,16 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "get-guidance should return the verified native null-filter recipe");
 		backend.Article!.Text.Should().Contain("object[] sequenceNumbers = { 10, 30 }",
 			because: "get-guidance should return the verified native membership recipe");
+		backend.Article!.Text.Should().Contain("FilterComparisonType.Between",
+			because: "get-guidance should return the verified native Between recipe");
 		parsing.Success.Should().BeTrue(
 			because: "runtime C# filter interpretation should have one retrievable parsing owner");
 		parsing.Article!.Uri.Should().Be("docs://mcp/guides/esq-filter-parsing",
 			because: "the parsing catalog name should preserve the independent parsing URI");
 		parsing.Article!.Text.Should().Contain("ReadScalarParameter",
 			because: "get-guidance should return the verified runtime scalar parameter parsing recipe");
+		parsing.Article!.Text.Should().Contain("ReadIntegerBetween",
+			because: "get-guidance should return the verified runtime Between parsing recipe");
 		parsing.Article!.Text.Should().Contain("return group.IsNot ? !result : result",
 			because: "get-guidance should return the verified group-negation evaluation rule");
 		parsing.Article!.Text.Should().Contain("ReadNullComparison",

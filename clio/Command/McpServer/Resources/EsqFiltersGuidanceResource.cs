@@ -50,10 +50,10 @@ public sealed class EsqFiltersGuidanceResource {
 
 		       ## Current backend validation status
 		       The backend construction and parsing guides currently publish the lab-verified group
-		       envelope, empty root, flat AND, nested OR, and mixed nesting shapes. Compare leaves are
-		       verified for string equality and integer greater/less operations. Other filter families
-		       remain explicitly marked pending until the same native-vs-DataService runtime-shape test
-		       proves them.
+		       envelope, nesting, disabled nodes, group negation, primitive Integer/MediumText Compare,
+		       MediumText null checks, Integer membership cardinalities, and inclusive Between ranges.
+		       Other filter families remain explicitly marked pending until the same native-vs-DataService
+		       runtime-shape test proves and promotes them.
 		       """
 	};
 
@@ -116,8 +116,8 @@ public sealed class EsqFiltersGuidanceResource {
 		       - Null test with only `leftExpression` (no right side). Is null: `comparisonType: 1`, `isNull: true`. Is not null: `comparisonType: 2`, `isNull: false`.
 
 		       ### Between (filterType 3)
-		       - `comparisonType: 0`. Bounds are two separate expressions: `rightGreaterExpression` = lower bound, `rightLessExpression` = upper bound.
-		       - Example (age 5..25): `{ "filterType": 3, "comparisonType": 0, "isEnabled": true, "leftExpression": { "expressionType": 0, "columnPath": "Age" }, "rightGreaterExpression": { "expressionType": 2, "parameter": { "dataValueType": 4, "value": 5 } }, "rightLessExpression": { "expressionType": 2, "parameter": { "dataValueType": 4, "value": 25 } } }`.
+		       - `comparisonType: 0`. The platform's field names are counterintuitive: `rightLessExpression` = first/lower bound and `rightGreaterExpression` = second/upper bound. This ordering is required by DataService and was verified against native C# runtime shape; do not reinterpret the names as comparison directions.
+		       - Example (age 5..25): `{ "filterType": 3, "comparisonType": 0, "isEnabled": true, "leftExpression": { "expressionType": 0, "columnPath": "Age" }, "rightLessExpression": { "expressionType": 2, "parameter": { "dataValueType": 4, "value": 5 } }, "rightGreaterExpression": { "expressionType": 2, "parameter": { "dataValueType": 4, "value": 25 } } }`.
 		       - Alternative many surfaces prefer: model the range as two CompareFilters (Greater_or_equal lower bound + Less_or_equal upper bound) joined by an AND group. Use the first-class Between only when the surface expects it.
 
 		       ### In (filterType 4) — multi-value membership

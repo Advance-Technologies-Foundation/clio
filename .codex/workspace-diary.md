@@ -6660,3 +6660,10 @@ Decision: Document native membership as Equal plus a right-expression collection
 Discovery: Zero, one, and two values matched exactly between native and DataService runtime trees. SQL emitted invalid `column = ` for zero, scalar equality for one, and IN for two; Guid arrays require conversion to object[] to avoid one array-valued parameter.
 Files: clio/Command/McpServer/Resources/EsqFiltersBackendGuidanceResource.cs, clio/Command/McpServer/Resources/EsqFilterParsingGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs, clio.mcp.e2e/GuidanceGetToolE2ETests.cs
 Impact: Agents can now construct and parse membership without confusing serialized In metadata with the runtime comparison enum or broadening empty membership.
+
+## 2026-07-18 01:53 – Validate backend Between filters
+Context: Project milestone 6 of the backend ESQ filter validation plan into clio guidance.
+Decision: Document first-class Between separately from the equivalent pair of inclusive Compare leaves and correct the frontend serialized-bound ordering.
+Discovery: Native and DataService first-class shapes matched as one Between leaf with ordered lower/upper Integer parameters and inclusive SQL. DataService counterintuitively requires rightLessExpression for the first/lower value and rightGreaterExpression for the second/upper value; the two-Compare alternative remains two leaves.
+Files: clio/Command/McpServer/Resources/EsqFiltersGuidanceResource.cs, clio/Command/McpServer/Resources/EsqFiltersBackendGuidanceResource.cs, clio/Command/McpServer/Resources/EsqFilterParsingGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs, clio.mcp.e2e/GuidanceGetToolE2ETests.cs
+Impact: Agents can author and parse both inclusive range representations without reversing DataService bounds or assuming structural normalization.

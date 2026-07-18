@@ -158,6 +158,36 @@ public sealed class EsqFiltersBackendGuidanceResource {
 		       That transport discriminator is not present on the resulting `EntitySchemaQueryFilter`; backend
 		       runtime code must use the right-expression count and its own supported-query contract.
 
+		       ## Create Between filters
+		       Native backend ESQ has a first-class inclusive two-boundary form:
+		       ```csharp
+		       esq.Filters.Add(esq.CreateFilterWithParameters(
+		           FilterComparisonType.Between,
+		           "UsrSequenceNumber",
+		           10,
+		           30));
+		       ```
+
+		       The runtime result is one `Between` leaf whose `RightExpressions` contain the lower value first and
+		       the upper value second. Both are included; the verified SQL was `BETWEEN 10 AND 30`.
+
+		       An equivalent inclusive range can be authored as two ordinary leaves under AND:
+		       ```csharp
+		       esq.Filters.Add(esq.CreateFilterWithParameters(
+		           FilterComparisonType.GreaterOrEqual, "UsrSequenceNumber", 10));
+		       esq.Filters.Add(esq.CreateFilterWithParameters(
+		           FilterComparisonType.LessOrEqual, "UsrSequenceNumber", 30));
+		       ```
+
+		       That alternative remains two independent Compare leaves and compiled to `>= 10 AND <= 30`; Creatio
+		       does not normalize it into a Between leaf. Choose the representation required by the owning contract
+		       and test its complete shape rather than treating the two forms as structurally interchangeable.
+
+		       Serialized DataService Between uses `filterType: 3`, `comparisonType: 0`, and dedicated bound fields.
+		       Counterintuitively, `rightLessExpression` carries the first/lower value and
+		       `rightGreaterExpression` carries the second/upper value. DataService appends them to runtime
+		       `RightExpressions` in that order. Sending only a generic `rightExpressions` array is rejected.
+
 		       ### Exact ATF shape parity for three-term AND
 		       ATF.Repository 2.0.3.5 translated source `A && B && C` to one flat root AND ordered
 		       `C, A, B`. If a test requires byte-for-byte/shape-for-shape parity, insert the native
@@ -289,7 +319,7 @@ public sealed class EsqFiltersBackendGuidanceResource {
 		       Verified now: group envelope/nesting, disabled leaves/groups, collection `IsNot`, and all
 		       scalar Compare operators using representative Integer and MediumText values, plus text
 		       `IsNull`/`IsNotNull` and Integer In cardinality boundaries. Pending lab validation before publishing
-		       construction recipes: Boolean/Guid Compare values, Between, lookup values, dates and macros,
+		       construction recipes: Boolean/Guid Compare values, lookup values, dates and macros,
 		       Exists/subqueries/aggregates, and Segment filters. Use the
 		       frontend guide as a discovery checklist, but do not translate its JSON fields into guessed
 		       backend APIs.
