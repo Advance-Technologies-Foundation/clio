@@ -188,6 +188,43 @@ public sealed class EsqFiltersBackendGuidanceResource {
 		       `rightGreaterExpression` carries the second/upper value. DataService appends them to runtime
 		       `RightExpressions` in that order. Sending only a generic `rightExpressions` array is rejected.
 
+		       ## Create Boolean and plain Guid comparisons
+		       Ordinary typed values use the same scalar native API:
+		       ```csharp
+		       Guid externalRecordId = new("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+		       esq.Filters.Add(esq.CreateFilterWithParameters(
+		           FilterComparisonType.Equal, "UsrIsActive", true));
+		       esq.Filters.Add(esq.CreateFilterWithParameters(
+		           FilterComparisonType.Equal, "UsrExternalRecordId", externalRecordId));
+		       ```
+
+		       The verified runtime values remained `System.Boolean` and `System.Guid`. Their parameter expressions
+		       carried `BooleanDataValueType` and `GuidDataValueType` respectively. Do not serialize or parse a Guid
+		       as text and do not coerce a string-form Guid in a provider.
+
+		       ## Create lookup equality and membership
+		       Pass the logical lookup column name to native ESQ and a Guid record Id as the value:
+		       ```csharp
+		       esq.Filters.Add(esq.CreateFilterWithParameters(
+		           FilterComparisonType.Equal, "UsrOwner", ownerId));
+		       ```
+
+		       Native ESQ resolves that logical path to runtime `UsrOwnerId`. The parameter CLR value is still
+		       `System.Guid`, but its forced type is `LookupDataValueType`, not `GuidDataValueType`. This distinction
+		       is why lookup Ids must not be parsed as ordinary Guid columns.
+
+		       Multi-value lookup membership uses the same Equal-plus-collection runtime representation as In:
+		       ```csharp
+		       object[] ownerIdsAsParameters = ownerIds.Cast<object>().ToArray();
+		       esq.Filters.Add(esq.CreateFilterWithParameters(
+		           FilterComparisonType.Equal, "UsrOwner", ownerIdsAsParameters));
+		       ```
+
+		       The verified two-value form produced two Lookup-typed Guid expressions and SQL `IN`. Passing a
+		       `Guid[]` directly to `params object[]` instead creates one array-valued expression. DataService accepted
+		       raw Guid values tagged as Lookup for the verified equality and membership requests; designer-owned
+		       frontend JSON may still require the display-value object documented in `esq-filters-frontend`.
+
 		       ### Exact ATF shape parity for three-term AND
 		       ATF.Repository 2.0.3.5 translated source `A && B && C` to one flat root AND ordered
 		       `C, A, B`. If a test requires byte-for-byte/shape-for-shape parity, insert the native
@@ -319,7 +356,7 @@ public sealed class EsqFiltersBackendGuidanceResource {
 		       Verified now: group envelope/nesting, disabled leaves/groups, collection `IsNot`, and all
 		       scalar Compare operators using representative Integer and MediumText values, plus text
 		       `IsNull`/`IsNotNull` and Integer In cardinality boundaries. Pending lab validation before publishing
-		       construction recipes: Boolean/Guid Compare values, lookup values, dates and macros,
+		       construction recipes: dates and macros,
 		       Exists/subqueries/aggregates, and Segment filters. Use the
 		       frontend guide as a discovery checklist, but do not translate its JSON fields into guessed
 		       backend APIs.

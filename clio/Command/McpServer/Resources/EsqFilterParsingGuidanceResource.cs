@@ -272,6 +272,41 @@ public sealed class EsqFilterParsingGuidanceResource {
 		       remains two leaves in the surrounding AND group. A general tree evaluator can support both, but must
 		       dispatch the shapes independently; do not rewrite or silently accept an exclusive sibling pair.
 
+		       Validate both the CLR value and `ParameterValueForcedType` for typed parameters. The same CLR Guid
+		       represents two different schema families:
+		       ```csharp
+		       private static T ReadTypedParameter<T, TDataValueType>(
+		           EntitySchemaQueryFilter filter,
+		           string expectedPath)
+		           where TDataValueType : DataValueType {
+		           if (filter.ComparisonType != FilterComparisonType.Equal ||
+		               filter.LeftExpression?.ExpressionType !=
+		                   EntitySchemaQueryExpressionType.SchemaColumn ||
+		               filter.LeftExpression.Path != expectedPath ||
+		               filter.RightExpressions.Count != 1) {
+		               throw new NotSupportedException("Unsupported typed filter shape.");
+		           }
+
+		           EntitySchemaQueryExpression right = filter.RightExpressions.Single();
+		           if (right.ExpressionType != EntitySchemaQueryExpressionType.Parameter ||
+		               right.ParameterValue is not T value ||
+		               right.ParameterValueForcedType is not TDataValueType) {
+		               throw new NotSupportedException("Unexpected parameter value or data type.");
+		           }
+		           return value;
+		       }
+		       ```
+
+		       Use `ReadTypedParameter<bool, BooleanDataValueType>(filter, "UsrIsActive")` for Boolean and
+		       `ReadTypedParameter<Guid, GuidDataValueType>(filter, "UsrExternalRecordId")` for a plain Guid.
+		       Reject textual Guid values instead of coercing them.
+
+		       For the verified `UsrOwner` lookup, native construction resolves the runtime left path to
+		       `UsrOwnerId`. Require that complete path and `LookupDataValueType` while reading the Guid. One right
+		       expression is equality; multiple right expressions are membership and must use the same bounded,
+		       validate-once set strategy as other In filters. Never classify a parameter as a lookup merely because
+		       its CLR value is Guid or its terminal path ends in `Id`.
+
 		       Then require the CLR type appropriate to the schema column (`System.Int32` for the verified
 		       Integer example and `System.String` for MediumText) and dispatch explicitly on
 		       `ComparisonType`. Do not coerce an unexpected value or silently treat an unsupported
@@ -323,8 +358,7 @@ public sealed class EsqFilterParsingGuidanceResource {
 		       Verified now: group envelope/nesting, disabled leaf/group behavior, group `IsNot`, and all
 		       scalar Compare operators using representative Integer and MediumText values, plus text
 		       `IsNull`/`IsNotNull` and Integer In cardinality boundaries. The frontend guide supplies the remaining
-		       validation backlog: Boolean/Guid values,
-		       lookups, dates/macros,
+		       validation backlog: dates/macros,
 		       Exists/subqueries/aggregates, and Segment. Add parsing rules here only after native C# and
 		       DataService produce an asserted runtime shape and the lab proves result behavior.
 		       """

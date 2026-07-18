@@ -6667,3 +6667,10 @@ Decision: Document first-class Between separately from the equivalent pair of in
 Discovery: Native and DataService first-class shapes matched as one Between leaf with ordered lower/upper Integer parameters and inclusive SQL. DataService counterintuitively requires rightLessExpression for the first/lower value and rightGreaterExpression for the second/upper value; the two-Compare alternative remains two leaves.
 Files: clio/Command/McpServer/Resources/EsqFiltersGuidanceResource.cs, clio/Command/McpServer/Resources/EsqFiltersBackendGuidanceResource.cs, clio/Command/McpServer/Resources/EsqFilterParsingGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs, clio.mcp.e2e/GuidanceGetToolE2ETests.cs
 Impact: Agents can author and parse both inclusive range representations without reversing DataService bounds or assuming structural normalization.
+
+## 2026-07-18 02:27 – Validate typed primitive and lookup filters
+Context: Project milestones 7 and 8 of the backend ESQ filter validation plan into clio guidance.
+Decision: Validate CLR parameter type together with ParameterValueForcedType and treat lookup Guid values as a schema-specific family distinct from plain Guid columns.
+Discovery: Boolean and plain Guid retained BooleanDataValueType and GuidDataValueType. Native UsrOwner resolved to runtime UsrOwnerId, while its Guid parameters were LookupDataValueType; multi-value lookup requires object[] and compiled to IN. Low-level DataService accepted raw lookup Guid parameters, while designer-owned frontend JSON retains its display-value object contract.
+Files: clio/Command/McpServer/Resources/EsqFiltersGuidanceResource.cs, clio/Command/McpServer/Resources/EsqFiltersBackendGuidanceResource.cs, clio/Command/McpServer/Resources/EsqFilterParsingGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs, clio.mcp.e2e/GuidanceGetToolE2ETests.cs
+Impact: Agents can distinguish Boolean, plain Guid, and lookup Guid parameters without coercion or path-based guessing.

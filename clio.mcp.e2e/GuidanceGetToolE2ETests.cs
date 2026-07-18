@@ -625,6 +625,8 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "the family router should expose the runtime parsing owner");
 		response.Article.Text.Should().Contain("inclusive Between ranges",
 			because: "get-guidance should report the current promoted backend validation status");
+		response.Article.Text.Should().Contain("lookup equality/membership",
+			because: "get-guidance should report promoted typed lookup coverage");
 	}
 
 	[Test]
@@ -668,6 +670,8 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "get-guidance should return the verified native membership recipe");
 		backend.Article!.Text.Should().Contain("FilterComparisonType.Between",
 			because: "get-guidance should return the verified native Between recipe");
+		backend.Article!.Text.Should().Contain("LookupDataValueType`, not `GuidDataValueType`",
+			because: "get-guidance should return the verified lookup type distinction");
 		parsing.Success.Should().BeTrue(
 			because: "runtime C# filter interpretation should have one retrievable parsing owner");
 		parsing.Article!.Uri.Should().Be("docs://mcp/guides/esq-filter-parsing",
@@ -676,6 +680,8 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "get-guidance should return the verified runtime scalar parameter parsing recipe");
 		parsing.Article!.Text.Should().Contain("ReadIntegerBetween",
 			because: "get-guidance should return the verified runtime Between parsing recipe");
+		parsing.Article!.Text.Should().Contain("ReadTypedParameter<bool, BooleanDataValueType>",
+			because: "get-guidance should return verified typed parameter parsing");
 		parsing.Article!.Text.Should().Contain("return group.IsNot ? !result : result",
 			because: "get-guidance should return the verified group-negation evaluation rule");
 		parsing.Article!.Text.Should().Contain("ReadNullComparison",

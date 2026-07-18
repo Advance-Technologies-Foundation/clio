@@ -127,12 +127,16 @@ public sealed class McpGuidanceResourceE2ETests : McpContractFixtureBase {
 			because: "the root resource should route rather than duplicate detailed rules");
 		router.Text.Should().Contain("inclusive Between ranges",
 			because: "the published router must not describe promoted Between guidance as pending");
+		router.Text.Should().Contain("lookup equality/membership",
+			because: "the published router should advertise promoted lookup coverage");
 		TextResourceContents frontend = frontendResult.Contents.Single().Should().BeOfType<TextResourceContents>(
 			because: "the frontend construction resource should resolve to one plain-text article").Subject;
 		frontend.Text.Should().Contain("Group envelope (filterType 6)",
 			because: "the existing serialized group contract should remain in the frontend owner");
 		frontend.Text.Should().Contain("`rightLessExpression` = first/lower bound",
 			because: "the published frontend resource must expose the verified Between ordering");
+		frontend.Text.Should().Contain("Low-level DataService also accepted a raw GUID parameter",
+			because: "the published frontend guide should distinguish low-level and designer lookup values");
 		TextResourceContents backend = backendResult.Contents.Single().Should().BeOfType<TextResourceContents>(
 			because: "the backend construction resource should resolve to one plain-text article").Subject;
 		backend.Text.Should().Contain("LogicalOperationStrict.Or",
@@ -155,6 +159,8 @@ public sealed class McpGuidanceResourceE2ETests : McpContractFixtureBase {
 			because: "the published backend guide should expose native Between construction");
 		backend.Text.Should().Contain("rightLessExpression` carries the first/lower value",
 			because: "the published backend guide must not reverse DataService Between bounds");
+		backend.Text.Should().Contain("LookupDataValueType`, not `GuidDataValueType`",
+			because: "the published backend guide must distinguish lookup and plain Guid parameters");
 		TextResourceContents parsing = parsingResult.Contents.Single().Should().BeOfType<TextResourceContents>(
 			because: "the runtime parsing resource should resolve to one plain-text article").Subject;
 		parsing.Text.Should().Contain("Parse a tree, not a flat list",
@@ -181,6 +187,10 @@ public sealed class McpGuidanceResourceE2ETests : McpContractFixtureBase {
 			because: "the published parser must fail safe for empty membership");
 		parsing.Text.Should().Contain("ReadIntegerBetween",
 			because: "the published parser should expose the verified two-boundary reader");
+		parsing.Text.Should().Contain("ReadTypedParameter<bool, BooleanDataValueType>",
+			because: "the published parser should validate typed primitive parameters");
+		parsing.Text.Should().Contain("its CLR value is Guid",
+			because: "the published parser must not infer lookup semantics from CLR type alone");
 		parsing.Text.Should().Contain("never reached PostgreSQL",
 			because: "the published resource must not misattribute virtual-provider case behavior to the database");
 	}
