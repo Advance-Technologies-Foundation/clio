@@ -333,6 +333,37 @@ public sealed class EsqFiltersBackendGuidanceResource {
 		       semantics matched. Preserve the complete source shape for diagnostics; normalize only this explicit
 		       transport envelope when a semantic parity test needs to compare the two authoring paths.
 
+		       ## Create saved Segment membership
+		       Segment filtering is feature-gated. Require `UseSegmentFiltering` to be enabled and use a saved
+		       `SysDataSegment` that targets the query's root schema:
+		       ```csharp
+		       var options = new SegmentFilterOptions {
+		           SegmentId = savedSegmentId
+		       };
+		       esq.Filters.Add(esq.CreateSegmentFilter(
+		           options,
+		           userConnection,
+		           FilterComparisonType.Exists));
+		       ```
+
+		       `Exists` means currently IN the segment. Use the same call with `FilterComparisonType.NotExists` for
+		       currently NOT IN it. Do not create an ordinary compare against the segment Guid. Creatio resolves the
+		       `SysDataSegment`, validates that it targets the ESQ root, applies enabled status gates, and expands the
+		       saved segment into a correlated membership-table subquery.
+
+		       With default options, the verified runtime leaf had a null left expression and one right SubQuery. The
+		       child root was the saved segment's physical table, selected `RecordId`, correlated
+		       `RecordId == root.Id`, and added `RemovedOn IsNull`; NotExists retained the same child tree. Native C#
+		       and DataService `filterType: 7` produced exactly the same recursive shape and SQL semantics. The lab
+		       separately proved that a current member matched Exists while a removed member and a never-added record
+		       matched NotExists.
+
+		       The lab validated only default current-membership options. Do not publish shapes for
+		       `IncludeRemovedMembers` or date-bound options until those variants receive their own parity/result tests.
+		       The earliest locally inspected build tag containing the current API is
+		       `builds-linux/10.0.0.655`; the live proof used Creatio 10.1.298.0. Check the target version and feature
+		       instead of assuming Segment filtering exists on older environments.
+
 		       ### Exact ATF shape parity for three-term AND
 		       ATF.Repository 2.0.3.5 translated source `A && B && C` to one flat root AND ordered
 		       `C, A, B`. If a test requires byte-for-byte/shape-for-shape parity, insert the native
@@ -464,9 +495,8 @@ public sealed class EsqFiltersBackendGuidanceResource {
 		       Verified now: group envelope/nesting, disabled leaves/groups, collection `IsNot`, and all
 		       scalar Compare operators using representative Integer and MediumText values, plus text
 		       `IsNull`/`IsNotNull`, Integer In cardinality boundaries, typed/lookup parameters, and Date/DateTime/Time
-		       literals, trim-to-date, relative-period macros, Year, HourMinute, and Exists/NotExists/Count subqueries
-		       over a mixed forward/backward path. Pending lab validation before publishing construction recipes:
-		       Segment filters. Use the
+		       literals, trim-to-date, relative-period macros, Year, HourMinute, Exists/NotExists/Count subqueries over a
+		       mixed forward/backward path, and saved Segment Exists/NotExists membership with default options. Use the
 		       frontend guide as a discovery checklist, but do not translate its JSON fields into guessed
 		       backend APIs.
 		       """

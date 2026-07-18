@@ -631,6 +631,8 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "get-guidance should report promoted temporal coverage");
 		response.Article.Text.Should().Contain("Exists/NotExists/aggregate subqueries",
 			because: "get-guidance should report promoted subquery coverage");
+		response.Article.Text.Should().Contain("saved Segment membership",
+			because: "get-guidance should report promoted Segment coverage");
 	}
 
 	[Test]
@@ -684,6 +686,10 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "get-guidance should return verified native Exists construction");
 		backend.Article!.Text.Should().Contain("out EntitySchemaQuery activitySubQuery",
 			because: "get-guidance should return verified aggregate child-filter construction");
+		backend.Article!.Text.Should().Contain("new SegmentFilterOptions",
+			because: "get-guidance should return verified native Segment construction");
+		backend.Article!.Text.Should().Contain("UseSegmentFiltering",
+			because: "get-guidance should retain the Segment feature gate");
 		parsing.Success.Should().BeTrue(
 			because: "runtime C# filter interpretation should have one retrievable parsing owner");
 		parsing.Article!.Uri.Should().Be("docs://mcp/guides/esq-filter-parsing",
@@ -714,6 +720,16 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "get-guidance should preserve exact aggregate operand validation");
 		parsing.Article!.Text.Should().Contain("materialize an unbounded child source",
 			because: "get-guidance should preserve bounded fallback execution guidance");
+		parsing.Article!.Text.Should().Contain("ReadSegmentMembership",
+			because: "get-guidance should return verified expanded Segment parsing guidance");
+		parsing.Article!.Text.Should().Contain("ValidateCurrentMembershipFilters",
+			because: "get-guidance should preserve complete shape validation before external work");
+		parsing.Article!.Text.Should().Contain("RequireAuthorizedCurrentSegmentOncePerQuery",
+			because: "get-guidance should preserve request-scoped Segment authorization");
+		parsing.Article!.Text.Should().Contain("Never reuse a cross-caller",
+			because: "get-guidance should preserve safe query-scoped authorization caching");
+		parsing.Article!.Text.Should().Contain("SQL table identifiers cannot be parameters",
+			because: "get-guidance should preserve dynamic membership-table identifier safety");
 	}
 
 	[Test]

@@ -432,6 +432,69 @@ public sealed class EsqFilterParsingGuidanceResource {
 		       physical-SQL trick is an oracle only—always restore
 		       `RootSchema.IsVirtual` in `finally` and never execute that SQL for a virtual schema.
 
+		       ## Parse expanded Segment membership
+		       `filterType: 7` and `segmentFilterOptions.segmentId` are DataService authoring fields; they do not survive
+		       into `esq.Filters`. Native and DataService Segment requests reached the executor as the same ordinary
+		       Exists/NotExists subquery tree. Validate that expanded tree fail closed:
+		       ```csharp
+		       private static FilterComparisonType ReadSegmentMembership(
+		           EntitySchemaQueryFilter filter,
+		           ISegmentMembershipAuthorization segmentAuthorization,
+		           UserConnection userConnection,
+		           Guid rootSchemaUId) {
+		           if ((filter.ComparisonType != FilterComparisonType.Exists &&
+		                filter.ComparisonType != FilterComparisonType.NotExists) ||
+		               filter.LeftExpression != null ||
+		               filter.RightExpressions.Count != 1 ||
+		               filter.RightExpressions.Single().ExpressionType !=
+		                   EntitySchemaQueryExpressionType.SubQuery) {
+		               throw new NotSupportedException("Unsupported Segment filter shape.");
+		           }
+
+		           EntitySchemaQuery child = filter.RightExpressions.Single().SubQuery;
+		           string tableName = child?.RootSchema?.Name;
+		           EntitySchemaQueryColumn selectedColumn = child?.Columns.Count == 1
+		               ? child.Columns.Single()
+		               : null;
+		           if (string.IsNullOrEmpty(tableName) ||
+		               selectedColumn?.ValueExpression?.ExpressionType !=
+		                   EntitySchemaQueryExpressionType.SchemaColumn ||
+		               selectedColumn.ValueExpression.Path != "RecordId") {
+		               throw new NotSupportedException("Unknown Segment membership table or selected column.");
+		           }
+		           // Require exactly two enabled leaves:
+		           // RecordId Equal root Id (SchemaColumn), and RemovedOn IsNull with no right values.
+		           ValidateCurrentMembershipFilters(child.Filters);
+		           segmentAuthorization.RequireAuthorizedCurrentSegmentOncePerQuery(
+		               userConnection, rootSchemaUId, tableName);
+		           return filter.ComparisonType;
+		       }
+		       ```
+
+		       Validate the complete correlation, not only terminal column names: the left path is `RecordId`; the one
+		       right expression is a SchemaColumn whose complete path is root `Id`. The active-membership leaf is
+		       `RemovedOn` with comparison `IsNull` and zero right expressions. The verified child group contained
+		       exactly those two enabled leaves and selected exactly one `RecordId` column. Reject extra groups,
+		       predicates, selected columns, comparison types, disabled nodes, or an unknown child table.
+
+		       The original Segment Guid cannot be recovered from the runtime tree. Before every membership access,
+		       validate the complete in-memory tree before performing metadata or permission work. Then unconditionally
+		       resolve the observed table name against permission-checked `SysDataSegment` metadata for the request's
+		       caller and root-schema UId. Authorize each distinct table once per query/request. Scope that positive cache
+		       to the caller, root-schema UId, table name, and current request lifetime. Never reuse a cross-caller, global,
+		       or stale authorization result. Require exactly one authorized, enabled segment whose table name
+		       matches with ordinal semantics; derive the usable identifier from that record. A configured allowlist may
+		       narrow this result but is not authorization by itself. Never accept every `SysDataInSegment*`-looking name.
+		       SQL table identifiers cannot be parameters: do not concatenate the observed name. Use the Creatio query
+		       builder/provider's quoted identifier obtained from the authorized metadata record, and parameterize every
+		       value. Reuse the subquery execution limits above; do not query the membership table once per virtual record.
+
+		       This shape requires the `UseSegmentFiltering` feature. The live proof used Creatio 10.1.298.0; locally
+		       inspected history's earliest containing build tag is `builds-linux/10.0.0.655`. Treat an absent API,
+		       disabled feature, target-schema mismatch, or rejected segment status as unsupported platform/setup—not as
+		       an empty result. Only default current-membership options are verified; reject expanded variants with
+		       additional removal/date predicates until their exact shapes and semantics are tested.
+
 		       Then require the CLR type appropriate to the schema column (`System.Int32` for the verified
 		       Integer example and `System.String` for MediumText) and dispatch explicitly on
 		       `ComparisonType`. Do not coerce an unexpected value or silently treat an unsupported
@@ -483,10 +546,10 @@ public sealed class EsqFilterParsingGuidanceResource {
 		       Verified now: group envelope/nesting, disabled leaf/group behavior, group `IsNot`, and all
 		       scalar Compare operators using representative Integer and MediumText values, plus text
 		       `IsNull`/`IsNotNull`, Integer In cardinality boundaries, typed/lookup parameters, and temporal literals,
-		       trim-to-date, relative-period boundaries, Year, HourMinute functions, and Exists/NotExists/Count subqueries
-		       over a mixed forward/backward path. The frontend guide supplies the remaining validation backlog: Segment.
-		       Add parsing rules here only after native C# and
-		       DataService produce an asserted runtime shape and the lab proves result behavior.
+		       trim-to-date, relative-period boundaries, Year, HourMinute functions, Exists/NotExists/Count subqueries over
+		       a mixed forward/backward path, and saved Segment Exists/NotExists membership with default options. Add new
+		       parsing rules only after native C# and DataService produce an asserted runtime shape and the lab proves
+		       result behavior.
 		       """
 	};
 
