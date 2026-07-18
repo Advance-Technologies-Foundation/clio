@@ -6702,3 +6702,24 @@ Decision: Require the exact lab-proven non-distinct Count(Id) operand after appl
 Discovery: Avoiding one query per root record is insufficient if an implementation instead materializes an unbounded child source; correlation-key, fan-out, timeout, and cancellation limits are part of the parser contract.
 Files: clio/Command/McpServer/Resources/EsqFilterParsingGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs, clio.mcp.e2e/GuidanceGetToolE2ETests.cs
 Impact: The published parser fails closed on semantically different Count functions and cannot recommend an unbounded preload as an N+1 workaround.
+
+## 2026-07-18 04:35 – Validate saved Segment filters
+Context: Complete milestone 11 of the backend ESQ filter validation plan and promote the final pending frontend family.
+Decision: Publish the native SegmentFilterOptions recipe and parse only the exact expanded current-membership tree, with membership tables restricted by trusted metadata or an allowlist.
+Discovery: Native and DataService IN/NOT IN requests produced identical Exists/NotExists subqueries with RecordId correlation and RemovedOn IsNull. The Segment Id and filterType 7 authoring metadata do not survive into esq.Filters. ATF.Repository 2.0.3.5 can serialize numeric filter type 7 but does not name it in its enum.
+Files: clio/Command/McpServer/Resources/EsqFiltersGuidanceResource.cs, clio/Command/McpServer/Resources/EsqFiltersBackendGuidanceResource.cs, clio/Command/McpServer/Resources/EsqFilterParsingGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs, clio.mcp.e2e/GuidanceGetToolE2ETests.cs
+Impact: Agents can construct saved Segment membership and safely recognize its executor-visible expansion without trusting dynamic table names or claiming unverified option variants.
+
+## 2026-07-18 04:48 – Require Segment authorization before table access
+Context: Pre-PR adversarial review found that a membership-table allowlist alone could bypass caller/root Segment authorization and that malformed child roots could escape the secret-safe rejection path.
+Decision: Require request-scoped, permission-checked SysDataSegment resolution for the caller and root schema on every access, then use only the exact authorized table identifier through the provider query builder.
+Discovery: Dynamic SQL identifiers cannot be parameterized; authorization must derive the exact identifier from trusted metadata, while every value remains parameterized. Parser guards now null-check the child root and validate the selected RecordId schema-column expression before authorization.
+Files: clio/Command/McpServer/Resources/EsqFilterParsingGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs, clio.mcp.e2e/GuidanceGetToolE2ETests.cs
+Impact: An expanded Segment-shaped subquery cannot access an allowlisted table without proving caller authorization and target-schema ownership, and malformed subqueries fail through controlled validation.
+
+## 2026-07-18 04:55 – Validate before Segment authorization lookup
+Context: Re-review found that malformed repeated Segment leaves could trigger metadata authorization work before cheap shape rejection and repeat it within one query.
+Decision: Validate the complete in-memory Segment tree first, then authorize each distinct table once using a cache scoped to caller, root-schema UId, table name, and request lifetime.
+Discovery: Authorization results must never be shared across callers or retained globally; query-scoped reuse avoids repeated metadata work without turning stale authorization into ambient trust.
+Files: clio/Command/McpServer/Resources/EsqFilterParsingGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs, clio.mcp.e2e/GuidanceGetToolE2ETests.cs
+Impact: Invalid trees are rejected before external work, while valid repeated Segment leaves reuse only identity-safe request-scoped authorization.

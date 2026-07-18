@@ -133,6 +133,8 @@ public sealed class McpGuidanceResourceE2ETests : McpContractFixtureBase {
 			because: "the published router should advertise promoted temporal coverage");
 		router.Text.Should().Contain("Exists/NotExists/aggregate subqueries",
 			because: "the published router should advertise promoted subquery coverage");
+		router.Text.Should().Contain("saved Segment membership",
+			because: "the published router should advertise promoted Segment coverage");
 		TextResourceContents frontend = frontendResult.Contents.Single().Should().BeOfType<TextResourceContents>(
 			because: "the frontend construction resource should resolve to one plain-text article").Subject;
 		frontend.Text.Should().Contain("Group envelope (filterType 6)",
@@ -176,6 +178,10 @@ public sealed class McpGuidanceResourceE2ETests : McpContractFixtureBase {
 			because: "the published backend guide should expose verified native Exists construction");
 		backend.Text.Should().Contain("out EntitySchemaQuery activitySubQuery",
 			because: "the published backend guide should place child aggregate predicates in the returned subquery");
+		backend.Text.Should().Contain("new SegmentFilterOptions",
+			because: "the published backend guide should expose native saved-Segment construction");
+		backend.Text.Should().Contain("RemovedOn IsNull",
+			because: "the published backend guide should preserve default active-membership semantics");
 		TextResourceContents parsing = parsingResult.Contents.Single().Should().BeOfType<TextResourceContents>(
 			because: "the runtime parsing resource should resolve to one plain-text article").Subject;
 		parsing.Text.Should().Contain("Parse a tree, not a flat list",
@@ -220,6 +226,14 @@ public sealed class McpGuidanceResourceE2ETests : McpContractFixtureBase {
 			because: "the published parser should validate the proven aggregation operand and evaluation mode");
 		parsing.Text.Should().Contain("materialize an unbounded child source",
 			because: "the published parser should reject unbounded child preloading as an N+1 workaround");
+		parsing.Text.Should().Contain("ReadSegmentMembership",
+			because: "the published parser should validate the expanded Segment runtime tree");
+		parsing.Text.Should().Contain("RequireAuthorizedCurrentSegmentOncePerQuery",
+			because: "the published parser should require request-scoped Segment authorization");
+		parsing.Text.Should().Contain("Never reuse a cross-caller",
+			because: "the published parser should scope authorization caching to one request identity");
+		parsing.Text.Should().Contain("SQL table identifiers cannot be parameters",
+			because: "the published parser should fail safe on dynamic membership-table identifiers");
 		parsing.Text.Should().Contain("never reached PostgreSQL",
 			because: "the published resource must not misattribute virtual-provider case behavior to the database");
 	}

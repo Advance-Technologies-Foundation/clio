@@ -1605,6 +1605,8 @@ public sealed class McpGuidanceResourceTests {
 			because: "the router status should include promoted temporal coverage");
 		router.Text.Should().Contain("Exists/NotExists/aggregate subqueries",
 			because: "the router status should include promoted backward-subquery coverage");
+		router.Text.Should().Contain("saved Segment membership",
+			because: "the router status should include promoted Segment coverage");
 		router.Text.Should().NotContain("### Compare (filterType 1)",
 			because: "the router should not duplicate detailed frontend filter rules");
 
@@ -1726,8 +1728,18 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide must avoid an existence-boundary optimization when demonstrating aggregates");
 		article.Text.Should().Contain("extra enabled AND collection",
 			because: "the guide should preserve the proven DataService child-filter envelope difference");
-		article.Text.Should().Contain("Pending lab",
-			because: "unverified filter families should be explicit instead of guessed");
+		article.Text.Should().Contain("new SegmentFilterOptions",
+			because: "the backend guide should expose the verified native saved-Segment API");
+		article.Text.Should().Contain("FilterComparisonType.NotExists",
+			because: "the Segment recipe should cover independently verified non-membership");
+		article.Text.Should().Contain("RecordId == root.Id",
+			because: "the guide should preserve the generated membership correlation");
+		article.Text.Should().Contain("RemovedOn IsNull",
+			because: "default Segment membership must exclude soft-removed members");
+		article.Text.Should().Contain("UseSegmentFiltering",
+			because: "the Segment recipe must expose its feature gate");
+		article.Text.Should().Contain("validated only default current-membership options",
+			because: "unverified Segment option variants must remain outside the promoted contract");
 	}
 
 	[Test]
@@ -1841,6 +1853,29 @@ public sealed class McpGuidanceResourceTests {
 			because: "virtual providers must avoid one child query per root record");
 		article.Text.Should().Contain("`RootSchema.IsVirtual` in `finally`",
 			because: "the diagnostic SQL oracle must not leave the shared schema non-virtual");
+		article.Text.Should().Contain("ReadSegmentMembership",
+			because: "the parser should expose the verified expanded Segment tree contract");
+		article.Text.Should().Contain("original Segment Guid cannot be recovered",
+			because: "the parser must not promise authoring metadata that is absent at runtime");
+		article.Text.Should().Contain("child?.RootSchema?.Name",
+			because: "malformed subqueries must fail closed before the parser dereferences their root schema");
+		article.Text.Should().Contain("selectedColumn?.ValueExpression?.ExpressionType",
+			because: "the selected Segment column must be validated as a schema-column expression");
+		article.Text.Should().Contain("RequireAuthorizedCurrentSegmentOncePerQuery",
+			because: "membership access must authorize the caller, root schema, and resolved saved segment");
+		article.Text.IndexOf("ValidateCurrentMembershipFilters", System.StringComparison.Ordinal).Should().BeLessThan(
+			article.Text.IndexOf("RequireAuthorizedCurrentSegmentOncePerQuery", System.StringComparison.Ordinal),
+			because: "cheap complete shape validation must precede metadata and permission work");
+		article.Text.Should().Contain("Never reuse a cross-caller",
+			because: "Segment authorization caching must be scoped to the current query and identity");
+		article.Text.Should().Contain("is not authorization by itself",
+			because: "a table-name allowlist must not bypass request-scoped Segment authorization");
+		article.Text.Should().Contain("SQL table identifiers cannot be parameters",
+			because: "the dynamic membership-table name is remotely reachable parser input");
+		article.Text.Should().Contain("RecordId Equal root Id",
+			because: "the parser should validate the complete Segment correlation");
+		article.Text.Should().Contain("additional removal/date predicates",
+			because: "unverified Segment option expansions must fail closed");
 		string[] expectedScalarOperators = [
 			"Equal", "NotEqual", "Less", "LessOrEqual", "Greater", "GreaterOrEqual",
 			"StartWith", "NotStartWith", "Contain", "NotContain", "EndWith", "NotEndWith"
