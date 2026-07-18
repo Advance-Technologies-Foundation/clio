@@ -307,6 +307,62 @@ public sealed class EsqFilterParsingGuidanceResource {
 		       validate-once set strategy as other In filters. Never classify a parameter as a lookup merely because
 		       its CLR value is Guid or its terminal path ends in `Id`.
 
+		       ## Parse temporal values, trimming, macros, and date parts
+		       Date, DateTime, and Time parameters all arrive as CLR `System.DateTime`. Also require a temporal
+		       `ParameterValueForcedType` (`DateTimeDataValueType` or its Date/Time subtype), then validate the complete
+		       left path against the schema contract; neither the CLR value nor the temporal forced-type family alone
+		       can distinguish those three Creatio types. The lab also observed DataService preserving ticks while
+		       changing a native UTC value to
+		       `DateTimeKind.Unspecified`, so compare or normalize `Kind` according to an explicit provider timezone
+		       policy rather than using it as the column-type discriminator.
+
+		       Date-only intent on a DateTime column is an explicit leaf property:
+		       ```csharp
+		       private static DateTime ReadTrimmedDate(
+		           EntitySchemaQueryFilter filter,
+		           string expectedPath) {
+		           if (filter.ComparisonType != FilterComparisonType.Equal ||
+		               !filter.TrimDateTimeParameterToDate ||
+		               filter.LeftExpression?.ExpressionType !=
+		                   EntitySchemaQueryExpressionType.SchemaColumn ||
+		               filter.LeftExpression.Path != expectedPath ||
+		               filter.RightExpressions.Count != 1 ||
+		               filter.RightExpressions.Single().ExpressionType !=
+		                   EntitySchemaQueryExpressionType.Parameter ||
+		               filter.RightExpressions.Single().ParameterValue is not DateTime value ||
+		               filter.RightExpressions.Single().ParameterValueForcedType is not
+		                   DateTimeDataValueType) {
+		               throw new NotSupportedException("Unsupported trim-to-date filter shape.");
+		           }
+		           return value.Date;
+		       }
+		       ```
+
+		       Do not infer trimming from `00:00:00`; an untrimmed midnight DateTime equality remains an exact instant.
+
+		       Relative macros are already expanded when a virtual query executor sees `esq.Filters`. Parse the
+		       resulting tree recursively:
+		       - CurrentYear is a nested AND with two boundary leaves using
+		         `EntitySchemaStartOfCurrentYearQueryFunction`;
+		       - PreviousNDays is a nested AND with `EntitySchemaCurrentDateQueryFunction` boundaries;
+		       - Year is a leaf with `EntitySchemaDatePartQueryFunction.Interval == Year`, a schema-column function
+		         argument, and one `System.Int32` parameter;
+		       - HourMinute equality is a nested `>=` / `<` one-minute range. Both sides are
+		         `EntitySchemaDatePartQueryFunction(Interval == HourMinute)`; the right-side function wraps a DateTime
+		         parameter.
+
+		       Function expressions are recursive. Inspect `expression.Function.GetArguments()` under the same depth,
+		       node, and parameter budgets as groups and leaves. Validate the concrete supported function type,
+		       `EntitySchemaDatePartQueryFunction.Interval`, argument count, argument expression type, column path, and
+		       parameter type before evaluating. Never treat an unknown function as a scalar parameter or silently
+		       drop one boundary of a half-open range.
+
+		       Compile the validated temporal tree once per query. Capture one provider-clock snapshot, resolve all
+		       record-independent CurrentYear/PreviousNDays boundaries from that same instant, and cache those bounds in
+		       the parsed predicate. Per-record evaluation should read only the record's temporal value/date part and
+		       compare it with the cached bounds. Recomputing `now` or traversing the function tree per row is both
+		       unnecessarily expensive and inconsistent when a query crosses midnight or a year boundary.
+
 		       Then require the CLR type appropriate to the schema column (`System.Int32` for the verified
 		       Integer example and `System.String` for MediumText) and dispatch explicitly on
 		       `ComparisonType`. Do not coerce an unexpected value or silently treat an unsupported
@@ -357,9 +413,10 @@ public sealed class EsqFilterParsingGuidanceResource {
 		       ## Coverage boundary
 		       Verified now: group envelope/nesting, disabled leaf/group behavior, group `IsNot`, and all
 		       scalar Compare operators using representative Integer and MediumText values, plus text
-		       `IsNull`/`IsNotNull` and Integer In cardinality boundaries. The frontend guide supplies the remaining
-		       validation backlog: dates/macros,
-		       Exists/subqueries/aggregates, and Segment. Add parsing rules here only after native C# and
+		       `IsNull`/`IsNotNull`, Integer In cardinality boundaries, typed/lookup parameters, and temporal literals,
+		       trim-to-date, relative-period boundaries, Year, and HourMinute functions. The frontend guide supplies
+		       the remaining validation backlog: Exists/subqueries/aggregates and Segment. Add parsing rules here only
+		       after native C# and
 		       DataService produce an asserted runtime shape and the lab proves result behavior.
 		       """
 	};

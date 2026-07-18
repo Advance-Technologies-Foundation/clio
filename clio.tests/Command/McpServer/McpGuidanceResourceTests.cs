@@ -1601,6 +1601,8 @@ public sealed class McpGuidanceResourceTests {
 			because: "the entry router must advertise the backend families already promoted as verified");
 		router.Text.Should().Contain("lookup equality/membership",
 			because: "the router status should include promoted typed lookup coverage");
+		router.Text.Should().Contain("temporal literals/macros/date parts",
+			because: "the router status should include promoted temporal coverage");
 		router.Text.Should().NotContain("### Compare (filterType 1)",
 			because: "the router should not duplicate detailed frontend filter rules");
 
@@ -1695,6 +1697,18 @@ public sealed class McpGuidanceResourceTests {
 			because: "lookup Guid parameters require their schema-specific forced type");
 		article.Text.Should().Contain("ownerIds.Cast<object>().ToArray()",
 			because: "lookup membership must avoid one array-valued params argument");
+		article.Text.Should().Contain("createdOnDate.TrimDateTimeParameterToDate = true",
+			because: "date-only DateTime intent must use the explicit native leaf flag");
+		article.Text.Should().Contain("EntitySchemaQueryMacrosType.CurrentYear",
+			because: "the backend guide should expose native relative-period construction");
+		article.Text.Should().Contain("EntitySchemaQueryMacrosType.PreviousNDays, 7",
+			because: "the backend guide should expose parameterized relative-period construction");
+		article.Text.Should().Contain("EntitySchemaQueryMacrosType.Year, 2026",
+			because: "the backend guide should expose native fixed-year date-part construction");
+		article.Text.Should().Contain("EntitySchemaQueryMacrosType.HourMinute",
+			because: "the backend guide should expose native exact-minute construction");
+		article.Text.Should().Contain("DataService preserved DateTime ticks",
+			because: "the guide must preserve the verified DateTime Kind transport boundary");
 		article.Text.Should().Contain("not Creatio/PostgreSQL collation behavior",
 			because: "in-memory provider case policy must not be published as database-collation evidence");
 		article.Text.Should().Contain("Pending lab",
@@ -1774,6 +1788,20 @@ public sealed class McpGuidanceResourceTests {
 			because: "lookup parsing must validate path and forced type rather than only Guid CLR type");
 		article.Text.Should().Contain("its CLR value is Guid",
 			because: "the parser must not conflate plain Guid and lookup columns");
+		article.Text.Should().Contain("ReadTrimmedDate",
+			because: "the parser should validate trim-to-date as an explicit leaf contract");
+		article.Text.Should().Contain("EntitySchemaStartOfCurrentYearQueryFunction",
+			because: "the parser should recognize expanded CurrentYear boundaries");
+		article.Text.Should().Contain("EntitySchemaCurrentDateQueryFunction",
+			because: "the parser should recognize expanded PreviousNDays boundaries");
+		article.Text.Should().Contain("Function.GetArguments()",
+			because: "nested temporal function expressions require recursive argument traversal");
+		article.Text.Should().Contain("DateTimeKind.Unspecified",
+			because: "the parser must account for the verified DataService Kind normalization");
+		article.Text.Should().Contain("ParameterValueForcedType is not",
+			because: "temporal readers must validate the forced data-value-type family as well as CLR DateTime");
+		article.Text.Should().Contain("Capture one provider-clock snapshot",
+			because: "relative temporal boundaries must remain consistent and allocation-free across records");
 		article.Text.Should().Contain("filter.LeftExpression.Path != expectedColumn",
 			because: "the parser must validate the full ESQ path instead of only its terminal schema column");
 		article.Text.Should().Contain("can collapse `Account.Name` to",
