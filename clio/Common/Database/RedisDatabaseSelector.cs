@@ -49,8 +49,13 @@ public interface IRedisDatabaseSelector
 	/// </summary>
 	/// <param name="hostname">Redis hostname.</param>
 	/// <param name="port">Redis port.</param>
+	/// <param name="retryTransientConnectBlips">
+	/// When <c>true</c>, a single transient connect blip is absorbed by a bounded retry (the
+	/// <c>deploy-creatio</c> port-forward tolerance). When <c>false</c> (default) the connect is
+	/// attempted once, so discovery/assertion callers are not multiplied by the retry budget.
+	/// </param>
 	/// <returns>Selection result with chosen db number or failure reason.</returns>
-	RedisDatabaseSelectionResult FindEmptyDatabase(string hostname, int port);
+	RedisDatabaseSelectionResult FindEmptyDatabase(string hostname, int port, bool retryTransientConnectBlips = false);
 
 	/// <summary>
 	/// Finds an empty Redis database for specific host and port using optional credentials.
@@ -59,8 +64,13 @@ public interface IRedisDatabaseSelector
 	/// <param name="port">Redis port.</param>
 	/// <param name="username">Redis ACL username.</param>
 	/// <param name="password">Redis password.</param>
+	/// <param name="retryTransientConnectBlips">
+	/// When <c>true</c>, a single transient connect blip is absorbed by a bounded retry (the
+	/// <c>deploy-creatio</c> port-forward tolerance). When <c>false</c> (default) the connect is
+	/// attempted once, so discovery/assertion callers are not multiplied by the retry budget.
+	/// </param>
 	/// <returns>Selection result with chosen db number or failure reason.</returns>
-	RedisDatabaseSelectionResult FindEmptyDatabase(string hostname, int port, string username, string password);
+	RedisDatabaseSelectionResult FindEmptyDatabase(string hostname, int port, string username, string password, bool retryTransientConnectBlips = false);
 }
 
 /// <summary>
@@ -134,24 +144,46 @@ public class RedisDatabaseSelector : IRedisDatabaseSelector
 	}
 
 	/// <inheritdoc />
-	public RedisDatabaseSelectionResult FindEmptyDatabase(string hostname, int port)
+	public RedisDatabaseSelectionResult FindEmptyDatabase(string hostname, int port, bool retryTransientConnectBlips = false)
 	{
-		return FindEmptyDatabase(hostname, port, null, null);
+		return FindEmptyDatabase(hostname, port, null, null, retryTransientConnectBlips);
 	}
 
 	/// <inheritdoc />
-	public RedisDatabaseSelectionResult FindEmptyDatabase(string hostname, int port, string username, string password)
+	public RedisDatabaseSelectionResult FindEmptyDatabase(string hostname, int port, string username, string password, bool retryTransientConnectBlips = false)
 	{
-		ConfigurationOptions configurationOptions = BuildConfigurationOptions(hostname, port, username, password);
+		// FAILURE BOUNDARY: endpoint construction (EndPoints.Add) can throw for an empty host or an
+		// out-of-range port supplied by Redis configuration. Keep it inside the exception-to-result
+		// boundary so callers still receive a structured Success = false with an actionable message
+		// instead of an unhandled abort.
+		ConfigurationOptions configurationOptions;
+		try
+		{
+			configurationOptions = BuildConfigurationOptions(hostname, port, username, password);
+		}
+		catch (Exception ex) when (ex is ArgumentException or FormatException)
+		{
+			return new RedisDatabaseSelectionResult
+			{
+				Success = false,
+				DatabaseNumber = -1,
+				ErrorMessage = $"[Redis Configuration Error] Invalid Redis endpoint {hostname}:{port}. " +
+							   $"Error: {ex.Message}. " +
+							   "You can also manually specify a database number using the --redis-db option"
+			};
+		}
 
 		// BOUNDED RETRY contract: a single transient connect blip (e.g. a Rancher Desktop port-forward
 		// hiccup) must not abort the deployment when the reachable Redis responds fine immediately
 		// before and after. Each attempt keeps the ENG-90640 fail-fast per-attempt timeout, and only
 		// transient connect/timeout failures are retried — a definitive error (bad credentials, all
-		// databases in use) is surfaced without wasting further attempts.
+		// databases in use) is surfaced without wasting further attempts. The retry is opt-in
+		// (deploy-creatio) so discovery/assertion callers stay single-attempt and are not multiplied
+		// by the retry budget across every configured Redis endpoint.
+		int maxAttempts = retryTransientConnectBlips ? MaxConnectAttempts : 1;
 		Exception lastError = null;
 		int attemptsMade = 0;
-		for (int attempt = 1; attempt <= MaxConnectAttempts; attempt++)
+		for (int attempt = 1; attempt <= maxAttempts; attempt++)
 		{
 			attemptsMade = attempt;
 			try
@@ -161,7 +193,7 @@ public class RedisDatabaseSelector : IRedisDatabaseSelector
 			catch (Exception ex) when (IsTransientConnectFailure(ex))
 			{
 				lastError = ex;
-				if (attempt < MaxConnectAttempts)
+				if (attempt < maxAttempts)
 				{
 					_delay(GetBackoffDelay(attempt));
 				}
@@ -233,10 +265,12 @@ public class RedisDatabaseSelector : IRedisDatabaseSelector
 	/// Classifies whether an exception represents a transient connect/timeout failure worth retrying.
 	/// A genuinely unreachable Redis still fails fast because each retry keeps the bounded
 	/// <see cref="ConnectTimeout"/> and the attempt count is capped by <see cref="MaxConnectAttempts"/>.
-	/// Authentication and protocol failures are treated as definitive misconfigurations rather than
-	/// transient blips — StackExchange.Redis surfaces a wrong password/ACL user as a
-	/// <see cref="RedisConnectionException"/> with <see cref="ConnectionFailureType.AuthenticationFailure"/>,
-	/// and retrying it would only waste the whole connect budget and misreport the cause as connectivity.
+	/// Uses an explicit allowlist of the <see cref="ConnectionFailureType"/> values that represent a
+	/// genuine transient network blip (a Rancher Desktop port-forward hiccup surfaces as
+	/// <see cref="ConnectionFailureType.UnableToConnect"/> with <see cref="ConfigurationOptions.AbortOnConnectFail"/>
+	/// enabled). Every other failure — authentication, protocol, internal, response-integrity,
+	/// connection-disposed, none, and any future enum value — is treated as a definitive fault so the
+	/// retry budget is not wasted and the reported cause is not misattributed to connectivity.
 	/// </summary>
 	/// <param name="ex">Exception thrown while connecting to or probing Redis.</param>
 	/// <returns><c>true</c> when the failure is a transient connect/timeout condition.</returns>
@@ -246,8 +280,10 @@ public class RedisDatabaseSelector : IRedisDatabaseSelector
 		{
 			RedisTimeoutException => true,
 			RedisConnectionException connectionException =>
-				connectionException.FailureType is not (ConnectionFailureType.AuthenticationFailure
-					or ConnectionFailureType.ProtocolFailure),
+				connectionException.FailureType is ConnectionFailureType.UnableToConnect
+					or ConnectionFailureType.SocketFailure
+					or ConnectionFailureType.SocketClosed
+					or ConnectionFailureType.UnableToResolvePhysicalConnection,
 			var _ => false
 		};
 	}

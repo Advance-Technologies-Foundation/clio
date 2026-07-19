@@ -47,7 +47,7 @@ public class RedisDatabaseSelectorTests
 		RedisDatabaseSelector selector = new(connectionFactory, backoffs.Add);
 
 		// Act
-		RedisDatabaseSelectionResult result = selector.FindEmptyDatabase("localhost", 6379, null, null);
+		RedisDatabaseSelectionResult result = selector.FindEmptyDatabase("localhost", 6379, null, null, retryTransientConnectBlips: true);
 
 		// Assert
 		result.Success.Should().BeTrue(because: "a single transient connect blip must be absorbed by the bounded retry instead of aborting");
@@ -71,7 +71,7 @@ public class RedisDatabaseSelectorTests
 		RedisDatabaseSelector selector = new(connectionFactory, backoffs.Add);
 
 		// Act
-		RedisDatabaseSelectionResult result = selector.FindEmptyDatabase("localhost", 6379, null, null);
+		RedisDatabaseSelectionResult result = selector.FindEmptyDatabase("localhost", 6379, null, null, retryTransientConnectBlips: true);
 
 		// Assert
 		result.Success.Should().BeFalse(because: "an unreachable Redis after every attempt must surface a connection failure");
@@ -100,11 +100,11 @@ public class RedisDatabaseSelectorTests
 		RedisDatabaseSelector selector = new(connectionFactory, backoffs.Add);
 
 		// Act
-		RedisDatabaseSelectionResult result = selector.FindEmptyDatabase("localhost", 6379, null, null);
+		RedisDatabaseSelectionResult result = selector.FindEmptyDatabase("localhost", 6379, null, null, retryTransientConnectBlips: true);
 
 		// Assert
 		result.Success.Should().BeFalse(because: "a definitive error must still surface as a failure");
-		attempts.Should().Be(1, because: "a non-transient error must not be retried");
+		attempts.Should().Be(1, because: "a non-transient error must not be retried even when transient-retry is enabled");
 		backoffs.Should().BeEmpty(because: "no backoff is applied when the error is not retryable");
 		result.ErrorMessage.Should().Contain("after 1 attempt", because: "a non-retried definitive failure must report the single attempt actually made, not the full retry budget (Codex review)");
 	}
@@ -124,7 +124,7 @@ public class RedisDatabaseSelectorTests
 		RedisDatabaseSelector selector = new(connectionFactory, backoffs.Add);
 
 		// Act
-		RedisDatabaseSelectionResult result = selector.FindEmptyDatabase("localhost", 6379, "user", "wrong-pass");
+		RedisDatabaseSelectionResult result = selector.FindEmptyDatabase("localhost", 6379, "user", "wrong-pass", retryTransientConnectBlips: true);
 
 		// Assert
 		result.Success.Should().BeFalse(because: "a bad credential must still surface as a failure");
@@ -153,13 +153,111 @@ public class RedisDatabaseSelectorTests
 		RedisDatabaseSelector selector = new(connectionFactory, backoffs.Add);
 
 		// Act
-		RedisDatabaseSelectionResult result = selector.FindEmptyDatabase("localhost", 6379, null, null);
+		RedisDatabaseSelectionResult result = selector.FindEmptyDatabase("localhost", 6379, null, null, retryTransientConnectBlips: true);
 
 		// Assert
 		result.Success.Should().BeFalse(because: "a reachable server with no empty database is a definitive configuration failure");
 		result.ErrorMessage.Should().Contain("are in use", because: "the user must be told every database is occupied");
 		attempts.Should().Be(1, because: "a reachable-but-full server is not a transient failure and must not be retried");
 		backoffs.Should().BeEmpty(because: "no retry occurs when the connect succeeds");
+	}
+
+	[Test]
+	[Description("Should attempt the connect only once when transient retry is not requested (discovery/assertion callers)")]
+	public void FindEmptyDatabase_ShouldNotRetry_WhenTransientRetryNotRequested()
+	{
+		// Arrange
+		List<TimeSpan> backoffs = new();
+		int attempts = 0;
+		Func<ConfigurationOptions, IConnectionMultiplexer> connectionFactory = _ =>
+		{
+			attempts++;
+			throw new RedisConnectionException(ConnectionFailureType.UnableToConnect, "transient blip");
+		};
+		RedisDatabaseSelector selector = new(connectionFactory, backoffs.Add);
+
+		// Act
+		RedisDatabaseSelectionResult result = selector.FindEmptyDatabase("localhost", 6379, null, null);
+
+		// Assert
+		result.Success.Should().BeFalse(because: "a discovery/assertion caller that does not opt into retry must surface the failure on the first attempt");
+		attempts.Should().Be(1, because: "discovery/assertion callers must stay single-attempt so the retry budget is not multiplied across every configured Redis endpoint");
+		backoffs.Should().BeEmpty(because: "no backoff is applied when the caller did not request transient retry");
+		result.ErrorMessage.Should().Contain("after 1 attempt", because: "a single-attempt caller must report exactly one attempt");
+	}
+
+	[Test]
+	[Description("Should retry an allowlisted transient connection failure type when transient retry is requested")]
+	public void FindEmptyDatabase_ShouldRetry_WhenFailureTypeIsAllowlistedTransient()
+	{
+		// Arrange
+		List<TimeSpan> backoffs = new();
+		int attempts = 0;
+		IConnectionMultiplexer multiplexer = BuildMultiplexerWithEmptyDatabase(databaseCount: 3, firstEmptyDatabase: 1);
+		Func<ConfigurationOptions, IConnectionMultiplexer> connectionFactory = _ =>
+		{
+			attempts++;
+			if (attempts == 1)
+			{
+				throw new RedisConnectionException(ConnectionFailureType.SocketFailure, "socket dropped");
+			}
+
+			return multiplexer;
+		};
+		RedisDatabaseSelector selector = new(connectionFactory, backoffs.Add);
+
+		// Act
+		RedisDatabaseSelectionResult result = selector.FindEmptyDatabase("localhost", 6379, null, null, retryTransientConnectBlips: true);
+
+		// Assert
+		result.Success.Should().BeTrue(because: "SocketFailure is a genuine transient network blip and must be retried");
+		attempts.Should().Be(2, because: "the selector must reconnect once after an allowlisted transient failure");
+	}
+
+	[Test]
+	[Description("Should not retry a non-allowlisted RedisConnectionException failure type even when transient retry is requested")]
+	public void FindEmptyDatabase_ShouldNotRetry_WhenFailureTypeIsNotAllowlisted()
+	{
+		// Arrange
+		List<TimeSpan> backoffs = new();
+		int attempts = 0;
+		Func<ConfigurationOptions, IConnectionMultiplexer> connectionFactory = _ =>
+		{
+			attempts++;
+			throw new RedisConnectionException(ConnectionFailureType.InternalFailure, "internal fault");
+		};
+		RedisDatabaseSelector selector = new(connectionFactory, backoffs.Add);
+
+		// Act
+		RedisDatabaseSelectionResult result = selector.FindEmptyDatabase("localhost", 6379, null, null, retryTransientConnectBlips: true);
+
+		// Assert
+		result.Success.Should().BeFalse(because: "InternalFailure is a definitive fault, not a transient network blip");
+		attempts.Should().Be(1, because: "a non-allowlisted failure type must not consume the retry budget");
+		backoffs.Should().BeEmpty(because: "no backoff is applied when the failure type is not an allowlisted transient blip");
+	}
+
+	[Test]
+	[Description("Should return a structured configuration failure instead of aborting when the endpoint is invalid")]
+	public void FindEmptyDatabase_ShouldReturnStructuredFailure_WhenEndpointIsInvalid()
+	{
+		// Arrange
+		int attempts = 0;
+		Func<ConfigurationOptions, IConnectionMultiplexer> connectionFactory = _ =>
+		{
+			attempts++;
+			return BuildMultiplexerWithEmptyDatabase(databaseCount: 3, firstEmptyDatabase: 1);
+		};
+		RedisDatabaseSelector selector = new(connectionFactory, _ => { });
+
+		// Act
+		RedisDatabaseSelectionResult result = selector.FindEmptyDatabase("localhost", 70000, null, null);
+
+		// Assert
+		result.Success.Should().BeFalse(because: "an out-of-range port must surface as a structured failure, not an unhandled abort of deploy-creatio");
+		result.DatabaseNumber.Should().Be(-1, because: "no database can be selected for an invalid endpoint");
+		result.ErrorMessage.Should().Contain("Invalid Redis endpoint", because: "the user must be told the endpoint itself is invalid");
+		attempts.Should().Be(0, because: "endpoint construction fails before any connection attempt is made");
 	}
 
 	[Test]
