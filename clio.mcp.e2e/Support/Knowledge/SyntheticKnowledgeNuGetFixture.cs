@@ -14,6 +14,8 @@ internal sealed class SyntheticKnowledgeNuGetFixture : IDisposable {
 	internal const string PackageId = "Clio.Synthetic.Knowledge";
 	internal const string LibraryId = "com.example.synthetic";
 	internal const string SelectedGuideName = "synthetic-transport-guide";
+	internal const string ReferenceExampleId = "example.synthetic.reference";
+	internal const string ReferenceExampleRepository = "https://github.com/example/synthetic-reference";
 
 	private readonly string _root;
 	private readonly ECDsa _signingKey;
@@ -64,20 +66,60 @@ internal sealed class SyntheticKnowledgeNuGetFixture : IDisposable {
 		ulong sequence,
 		string revision,
 		bool corruptSignature) {
+		string sourceCommit = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(revision)))
+			.ToLowerInvariant()[..40];
 		string[] itemIds = [SelectedGuideName, "native-library-lifecycle", "smoke-testing"];
-		SyntheticResource[] resources = itemIds
+		List<SyntheticResource> resources = itemIds
 			.Select((itemId, index) => {
 				byte[] bytes = new UTF8Encoding(false, true).GetBytes(
 					$"synthetic::{revision}::{itemId}::sequence={sequence}\n");
 				return new SyntheticResource(
 					itemId,
 					itemId,
+					"guidance",
 					$"{KnowledgeResolver.NamespacedUriPrefix}{LibraryId}/{itemId}",
 					$"resources/synthetic-{index}.txt",
+					"text/plain",
 					bytes,
 					Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant());
 			})
-			.ToArray();
+			.ToList();
+		byte[] exampleBytes = new UTF8Encoding(false, true).GetBytes($$"""
+			schemaVersion: 0
+			id: {{ReferenceExampleId}}
+			title: Synthetic reference example
+			status: published
+			primaryUseCase:
+			  id: synthetic-integration
+			  summary: Demonstrate a hermetic reference-example catalog entry.
+			source:
+			  repository: {{ReferenceExampleRepository}}
+			  revision: {{sourceCommit}}
+			  defaultBranch: main
+			entryPoints:
+			  overview: README.md
+			  package: packages/SyntheticReference
+			supportingCapabilities:
+			  - native-library-lifecycle
+			  - synthetic-testing
+			compatibility:
+			  status: example-declared
+			  details: Synthetic E2E fixture only.
+			trust:
+			  publisher: Synthetic publisher
+			  level: published
+			notes:
+			  - This is generated mechanics-only test data.
+			""");
+		resources.Add(new SyntheticResource(
+			"reference-example-synthetic",
+			ReferenceExampleId,
+			KnowledgeReferenceExampleService.ReferenceExampleRole,
+			$"{KnowledgeResolver.NamespacedUriPrefix}{LibraryId}/reference-example-synthetic",
+			"resources/reference-example-synthetic.yaml",
+			"text/yaml",
+			exampleBytes,
+			Convert.ToHexString(SHA256.HashData(exampleBytes)).ToLowerInvariant()));
 		byte[] manifest = JsonSerializer.SerializeToUtf8Bytes(new {
 			contractVersion = "1.0.0",
 			bundleSchemaVersion = "1.0.0",
@@ -86,15 +128,14 @@ internal sealed class SyntheticKnowledgeNuGetFixture : IDisposable {
 			sequence,
 			source = new {
 				repository = "synthetic-nuget-fixture",
-				commit = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(revision)))
-					.ToLowerInvariant()[..40]
+				commit = sourceCommit
 			},
 			compatibility = new {
 				clio = new { min = "0.0.0", max = "99.99.99" },
-				mcpToolContract = new { min = "1.0.0", max = "1.0.0" }
+				mcpToolContract = new { min = "1.0.0", max = "1.1.0" }
 			},
 			requirements = new {
-				tools = new[] { GuidanceGetTool.ToolName },
+				tools = new[] { GuidanceGetTool.ToolName, KnowledgeManagementTools.ListKnowledgeExamplesToolName },
 				itemIds = resources.Select(resource => resource.Name).ToArray(),
 				resourceUris = resources.Select(resource => resource.Uri).ToArray()
 			},
@@ -103,13 +144,13 @@ internal sealed class SyntheticKnowledgeNuGetFixture : IDisposable {
 			resources = resources.Select(resource => new {
 				itemId = resource.Name,
 				topicId = resource.TopicId,
-				role = "guidance",
+				role = resource.Role,
 				uri = resource.Uri,
 				legacyUris = resource.Name == SelectedGuideName
 					? new[] { $"docs://mcp/guides/{SelectedGuideName}" }
 					: Array.Empty<string>(),
 				path = resource.Path,
-				mediaType = "text/plain",
+				mediaType = resource.MediaType,
 				length = resource.Bytes.LongLength,
 				digest = resource.Digest
 			})
@@ -126,7 +167,7 @@ internal sealed class SyntheticKnowledgeNuGetFixture : IDisposable {
 		byte[] package = CreateNuGetPackage(packageVersion, bundle);
 		Feed.Publish(packageVersion, package);
 		SyntheticResource selected = resources.Single(resource => resource.Name == SelectedGuideName);
-		return new SyntheticPackageEvidence(packageVersion, sequence, selected.Digest);
+		return new SyntheticPackageEvidence(packageVersion, sequence, selected.Digest, sourceCommit);
 	}
 
 	private static byte[] CreateNuGetPackage(string packageVersion, byte[] bundle) {
@@ -162,13 +203,19 @@ internal sealed class SyntheticKnowledgeNuGetFixture : IDisposable {
 	private sealed record SyntheticResource(
 		string Name,
 		string TopicId,
+		string Role,
 		string Uri,
 		string Path,
+		string MediaType,
 		byte[] Bytes,
 		string Digest);
 }
 
-internal sealed record SyntheticPackageEvidence(string PackageVersion, ulong Sequence, string SelectedGuideDigest);
+internal sealed record SyntheticPackageEvidence(
+	string PackageVersion,
+	ulong Sequence,
+	string SelectedGuideDigest,
+	string ReferenceExampleRevision);
 
 internal sealed class FakeNuGetV3Feed : IDisposable {
 	private readonly string _normalizedPackageId;

@@ -90,20 +90,24 @@ public sealed class KnowledgeResolverTests {
 	}
 
 	[Test]
-	[Description("Isolated libraries are reachable by exact route but excluded from logical topic resolution.")]
+	[Description("Isolated libraries are reachable only by exact namespaced routes, not logical or legacy routes.")]
 	public void Find_ShouldExcludeIsolatedLibrary_FromLogicalTopics() {
 		// Arrange
+		const string legacyUri = "docs://mcp/guides/esq";
 		KnowledgeLibrarySnapshot isolated = Library("lab", "com.example.lab", 500,
-			KnowledgeSourceParticipation.Isolated, Article("esq", "lab-esq"));
+			KnowledgeSourceParticipation.Isolated, Article("esq", "lab-esq", legacyUri));
 
 		// Act
 		KnowledgeArticleLookup logical = _resolver.Find("esq", [isolated], new Dictionary<string, string>());
+		KnowledgeArticleLookup legacy = _resolver.Find(legacyUri, [isolated], new Dictionary<string, string>());
 		KnowledgeArticleLookup exact = _resolver.Find("docs://knowledge/com.example.lab/lab-esq", [isolated],
 			new Dictionary<string, string>());
 
 		// Assert
 		logical.Status.Should().Be(KnowledgeArticleLookupStatus.NotFound,
 			because: "isolated libraries must not participate in logical-topic competition");
+		legacy.Status.Should().Be(KnowledgeArticleLookupStatus.NotFound,
+			because: "isolated libraries must not escape their namespace through a global compatibility URI");
 		exact.Status.Should().Be(KnowledgeArticleLookupStatus.Active,
 			because: "isolation still permits explicit namespaced access");
 	}

@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Abstractions.TestingHelpers;
-using System.IO.Compression;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -20,31 +19,19 @@ namespace Clio.Tests.Command.McpServer;
 [Property("Module", "McpServer")]
 public sealed class KnowledgeGitTransportTests {
 	[Test]
-	[Description("Git transport discovers the remote default branch without mutating settings and retrieves a ready artifact without checkout or build execution.")]
-	public void Retrieve_ShouldReturnDefaultBranchWithoutMutatingSettings_WhenReferenceIsOmitted() {
+	[Description("Git transport clones the remote default branch without mutating source settings and returns its resolved commit.")]
+	public void Synchronize_ShouldReturnDefaultBranchWithoutMutatingSettings_WhenReferenceIsOmitted() {
 		// Arrange
 		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
 		IProcessExecutor processExecutor = Substitute.For<IProcessExecutor>();
 		const string commit = "0123456789abcdef0123456789abcdef01234567";
-		byte[] expectedBundle = [0x50, 0x4B, 0x03, 0x04];
 		processExecutor.ExecuteAndCaptureAsync(Arg.Any<ProcessExecutionOptions>()).Returns(call => {
 			ProcessExecutionOptions options = call.Arg<ProcessExecutionOptions>();
-			if (options.Arguments.StartsWith("ls-remote", StringComparison.Ordinal)) {
-				return Task.FromResult(Success("ref: refs/heads/main\tHEAD\n"));
+			if (options.Arguments.Contains(" branch --show-current", StringComparison.Ordinal)) {
+				return Task.FromResult(Success("main\n"));
 			}
 			if (options.Arguments.Contains(" rev-parse ", StringComparison.Ordinal)) {
 				return Task.FromResult(Success(commit + "\n"));
-			}
-			if (options.Arguments.Contains(" ls-tree ", StringComparison.Ordinal)) {
-				return Task.FromResult(Success($"100644 blob {commit}\tknowledge-bundle.zip\n"));
-			}
-			if (options.Arguments.Contains(" archive ", StringComparison.Ordinal)) {
-				string archivePath = ReadQuotedValue(options.Arguments, "--output=");
-				using Stream output = fileSystem.File.Create(archivePath);
-				using ZipArchive archive = new(output, ZipArchiveMode.Create);
-				ZipArchiveEntry entry = archive.CreateEntry("knowledge-bundle.zip");
-				using Stream entryOutput = entry.Open();
-				entryOutput.Write(expectedBundle);
 			}
 			return Task.FromResult(Success());
 		});
@@ -62,7 +49,8 @@ public sealed class KnowledgeGitTransportTests {
 			stagingRoot);
 
 		// Act
-		KnowledgeTransportResult result = transport.Retrieve(request);
+		string repositoryPath = fileSystem.Path.Combine(stagingRoot, "repository");
+		KnowledgeTransportResult result = transport.Synchronize(request, repositoryPath);
 
 		// Assert
 		result.Status.Should().Be(KnowledgeTransportStatus.Downloaded,
@@ -73,19 +61,18 @@ public sealed class KnowledgeGitTransportTests {
 			because: "the installed candidate must retain its immutable Git provenance");
 		source.Branch.Should().BeNull(
 			because: "read-only retrieval must return discovery metadata without mutating source configuration");
-		fileSystem.File.ReadAllBytes(result.CandidatePath!).Should().Equal(expectedBundle,
-			because: "transport extraction must preserve the declared bundle artifact bytes");
+		result.CandidatePath.Should().Be(repositoryPath,
+			because: "direct Git knowledge is consumed from the cloned checkout rather than a committed ZIP artifact");
 		ProcessExecutionOptions[] invocations = processExecutor.ReceivedCalls()
 			.Select(call => call.GetArguments().FirstOrDefault())
 			.OfType<ProcessExecutionOptions>()
 			.ToArray();
 		invocations.Should().OnlyContain(invocation => invocation.Program == "git",
 			because: "the transport must never invoke repository-provided tools or build scripts");
-		invocations.Should().NotContain(invocation => invocation.Arguments.Contains("checkout", StringComparison.Ordinal),
-			because: "archive-based retrieval avoids checkout hooks, filters, and live working-tree content");
-		invocations.Where(invocation => invocation.Arguments.Contains(" -c ", StringComparison.Ordinal))
+		invocations.Where(invocation => invocation.Arguments.Contains("clone", StringComparison.Ordinal)
+				|| invocation.Arguments.Contains(" -C ", StringComparison.Ordinal))
 			.Should().OnlyContain(invocation => invocation.Arguments.Contains("core.hooksPath", StringComparison.Ordinal),
-				because: "every repository-scoped Git operation must explicitly disable hooks");
+				because: "clone and repository-scoped Git operations must explicitly disable hooks");
 		invocations.Should().OnlyContain(invocation => invocation.EnvironmentVariables!["GIT_TERMINAL_PROMPT"] == "0",
 			because: "transport retrieval must not prompt for or expose repository credentials");
 		invocations.Should().OnlyContain(invocation => invocation.ClearInheritedEnvironment,
@@ -101,17 +88,17 @@ public sealed class KnowledgeGitTransportTests {
 			&& invocation.EnvironmentVariables["GIT_CONFIG_COUNT"] == "0"
 			&& invocation.EnvironmentVariables.ContainsKey("GIT_CONFIG_GLOBAL"),
 			because: "the child must use only the transport's explicit disabled Git configuration");
-		invocations.Should().OnlyContain(invocation => invocation.MaximumCapturedOutputCharacters == 64 * 1024,
+		invocations.Should().OnlyContain(invocation => invocation.MaximumCapturedOutputCharacters == 2 * 1024 * 1024,
 			because: "untrusted Git output must remain bounded while each process runs");
-		invocations.Should().OnlyContain(invocation =>
-			invocation.MaximumMonitoredDirectoryBytes == 64L * 1024 * 1024
+		invocations.Where(invocation => invocation.MonitoredDirectory is not null).Should().OnlyContain(invocation =>
+			invocation.MaximumMonitoredDirectoryBytes == 256L * 1024 * 1024
 			&& invocation.MonitoredDirectory!.StartsWith(stagingRoot, StringComparison.Ordinal),
-			because: "each Git process must enforce the staging boundary while it is running");
+			because: "mutating Git processes must enforce the checkout boundary while they run");
 	}
 
 	[Test]
-	[Description("Git repair retrieves the exact installed commit without resolving or following the current branch head.")]
-	public void Retrieve_ShouldFetchExactCommit_WhenRepairRevisionIsSpecified() {
+	[Description("Git synchronization fetches the exact configured commit without following a moving branch.")]
+	public void Synchronize_ShouldFetchExactCommit_WhenCommitIsConfigured() {
 		// Arrange
 		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
 		IProcessExecutor processExecutor = Substitute.For<IProcessExecutor>();
@@ -121,26 +108,18 @@ public sealed class KnowledgeGitTransportTests {
 			if (options.Arguments.Contains(" rev-parse ", StringComparison.Ordinal)) {
 				return Task.FromResult(Success(commit + "\n"));
 			}
-			if (options.Arguments.Contains(" ls-tree ", StringComparison.Ordinal)) {
-				return Task.FromResult(Success($"100644 blob {commit}\tknowledge-bundle.zip\n"));
-			}
-			if (options.Arguments.Contains(" archive ", StringComparison.Ordinal)) {
-				string archivePath = ReadQuotedValue(options.Arguments, "--output=");
-				using Stream output = fileSystem.File.Create(archivePath);
-				using ZipArchive archive = new(output, ZipArchiveMode.Create);
-				using Stream entry = archive.CreateEntry("knowledge-bundle.zip").Open();
-				entry.Write([0x50, 0x4B, 0x03, 0x04]);
-			}
 			return Task.FromResult(Success());
 		});
 		KnowledgeGitTransport transport = new(processExecutor, fileSystem);
+		KnowledgeSourceConfiguration source = GitSource();
+		source.Commit = commit;
+		string repositoryPath = TestFileSystem.GetRootedPath("clio", "repair-staging", "repository");
 		KnowledgeTransportRequest request = new(
-			"partner", GitSource(), new HashSet<string>(StringComparer.OrdinalIgnoreCase),
-			null, null, null, null, TestFileSystem.GetRootedPath("clio", "repair-staging"),
-			ExactRevision: commit);
+			"partner", source, new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+			null, null, null, null, TestFileSystem.GetRootedPath("clio", "repair-staging"));
 
 		// Act
-		KnowledgeTransportResult result = transport.Retrieve(request);
+		KnowledgeTransportResult result = transport.Synchronize(request, repositoryPath);
 
 		// Assert
 		result.ResolvedCommit.Should().Be(commit,
@@ -151,10 +130,112 @@ public sealed class KnowledgeGitTransportTests {
 			.Select(call => call.GetArguments().FirstOrDefault())
 			.OfType<ProcessExecutionOptions>()
 			.ToArray();
-		calls.Should().NotContain(call => call.Arguments.StartsWith("ls-remote", StringComparison.Ordinal),
-			because: "the recorded commit is sufficient and branch discovery could repair from a different generation");
-		calls.Should().Contain(call => call.Arguments.Contains($"fetch --no-tags --depth=1 --filter=blob:none \"https://example.invalid/knowledge.git\" \"{commit}\"", StringComparison.Ordinal),
-			because: "the transport must fetch the exact recorded commit rather than the current branch head");
+		calls.Should().NotContain(call => call.Arguments.Contains("pull --ff-only", StringComparison.Ordinal),
+			because: "an immutable commit source must not follow a moving branch");
+		calls.Should().Contain(call => call.Arguments.Contains($"fetch --no-tags --depth=1 origin \"{commit}\"", StringComparison.Ordinal),
+			because: "the transport must fetch the configured commit rather than the current branch head");
+	}
+
+	[Test]
+	[Description("Installed Git checkout validation rejects a clean checkout that differs from its configured immutable commit.")]
+	public void ValidateInstalledCheckout_ShouldRejectHead_WhenConfiguredCommitDiffers() {
+		// Arrange
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		IProcessExecutor processExecutor = Substitute.For<IProcessExecutor>();
+		KnowledgeSourceConfiguration source = GitSource();
+		source.Commit = "1111111111111111111111111111111111111111";
+		string repositoryPath = TestFileSystem.GetRootedPath("clio", "pinned", "repository");
+		AddInstalledRepository(fileSystem, repositoryPath);
+		processExecutor.ExecuteAndCaptureAsync(Arg.Any<ProcessExecutionOptions>()).Returns(call => {
+			ProcessExecutionOptions options = call.Arg<ProcessExecutionOptions>();
+			if (options.Arguments.Contains("remote get-url origin", StringComparison.Ordinal)) {
+				return Task.FromResult(Success(source.Location + "\n"));
+			}
+			if (options.Arguments.Contains("rev-parse HEAD", StringComparison.Ordinal)) {
+				return Task.FromResult(Success("2222222222222222222222222222222222222222\n"));
+			}
+			return Task.FromResult(Success());
+		});
+		KnowledgeGitTransport transport = new(processExecutor, fileSystem);
+
+		// Act
+		Action act = () => transport.ValidateInstalledCheckout(source, repositoryPath);
+
+		// Assert
+		act.Should().Throw<InvalidDataException>()
+			.WithMessage("*configured commit*",
+				because: "an immutable source pin must govern offline activation as well as network synchronization");
+	}
+
+	[Test]
+	[Description("Installed Git checkout validation rejects locally modified tracked knowledge files.")]
+	public void ValidateInstalledCheckout_ShouldRejectModifiedTrackedFiles() {
+		// Arrange
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		IProcessExecutor processExecutor = Substitute.For<IProcessExecutor>();
+		KnowledgeSourceConfiguration source = GitSource();
+		string repositoryPath = TestFileSystem.GetRootedPath("clio", "installed", "repository");
+		AddInstalledRepository(fileSystem, repositoryPath);
+		processExecutor.ExecuteAndCaptureAsync(Arg.Any<ProcessExecutionOptions>()).Returns(call => {
+			ProcessExecutionOptions options = call.Arg<ProcessExecutionOptions>();
+			if (options.Arguments.Contains("remote get-url origin", StringComparison.Ordinal)) {
+				return Task.FromResult(Success(source.Location + "\n"));
+			}
+			if (options.Arguments.Contains("status --porcelain", StringComparison.Ordinal)) {
+				return Task.FromResult(Success(" M bundle-source.json\n"));
+			}
+			return Task.FromResult(Success());
+		});
+		KnowledgeGitTransport transport = new(processExecutor, fileSystem);
+
+		// Act
+		Action act = () => transport.ValidateInstalledCheckout(source, repositoryPath);
+
+		// Assert
+		act.Should().Throw<InvalidDataException>(
+			because: "mutable working-tree content must never be attributed to the checkout's HEAD revision");
+	}
+
+	[Test]
+	[Description("Git synchronization rejects filesystem links before invoking Git in an existing checkout.")]
+	public void ValidateCheckoutForSynchronization_ShouldRejectReparsePoint_BeforeInvokingGit() {
+		// Arrange
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		IProcessExecutor processExecutor = Substitute.For<IProcessExecutor>();
+		string repositoryPath = TestFileSystem.GetRootedPath("clio", "linked", "repository");
+		AddInstalledRepository(fileSystem, repositoryPath);
+		string guidancePath = fileSystem.Path.Combine(repositoryPath, "guidance");
+		fileSystem.AddDirectory(guidancePath);
+		fileSystem.File.SetAttributes(guidancePath, FileAttributes.Directory | FileAttributes.ReparsePoint);
+		KnowledgeGitTransport transport = new(processExecutor, fileSystem);
+
+		// Act
+		Action act = () => transport.ValidateCheckoutForSynchronization(GitSource(), repositoryPath);
+
+		// Assert
+		act.Should().Throw<InvalidDataException>().WithMessage("*links or junctions*",
+			because: "Git must never mutate through a tracked directory redirected outside the managed checkout");
+		processExecutor.DidNotReceive().ExecuteAndCaptureAsync(Arg.Any<ProcessExecutionOptions>());
+	}
+
+	[Test]
+	[Description("Git synchronization rejects executable repository-local configuration before invoking Git.")]
+	public void ValidateCheckoutForSynchronization_ShouldRejectExecutableLocalConfiguration_BeforeInvokingGit() {
+		// Arrange
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		IProcessExecutor processExecutor = Substitute.For<IProcessExecutor>();
+		string repositoryPath = TestFileSystem.GetRootedPath("clio", "configured", "repository");
+		AddInstalledRepository(fileSystem, repositoryPath,
+			"[core]\n\trepositoryformatversion = 0\n\tfsmonitor = malicious-command\n");
+		KnowledgeGitTransport transport = new(processExecutor, fileSystem);
+
+		// Act
+		Action act = () => transport.ValidateCheckoutForSynchronization(GitSource(), repositoryPath);
+
+		// Assert
+		act.Should().Throw<InvalidDataException>().WithMessage("*unsupported settings*",
+			because: "repository-local Git settings must not execute helpers before checkout validation");
+		processExecutor.DidNotReceive().ExecuteAndCaptureAsync(Arg.Any<ProcessExecutionOptions>());
 	}
 
 	[Test]
@@ -180,7 +261,9 @@ public sealed class KnowledgeGitTransportTests {
 			TransportDeadlineMilliseconds: 100);
 
 		// Act
-		KnowledgeTransportResult result = transport.Retrieve(request);
+		KnowledgeTransportResult result = transport.Synchronize(
+			request,
+			fileSystem.Path.Combine(request.StagingDirectory, "repository"));
 
 		// Assert
 		result.Status.Should().Be(KnowledgeTransportStatus.Failed,
@@ -199,49 +282,22 @@ public sealed class KnowledgeGitTransportTests {
 			because: "a subprocess may receive only the operation's remaining budget");
 	}
 
-	[Test]
-	[Description("Git tree validation rejects submodules before reading the declared bundle artifact.")]
-	public void ValidateTree_ShouldRejectRepository_WhenSubmoduleExists() {
-		// Arrange
-		const string tree =
-			"160000 commit 0123456789abcdef0123456789abcdef01234567\tvendor/knowledge\n" +
-			"100644 blob 0123456789abcdef0123456789abcdef01234567\tknowledge-bundle.zip\n";
-
-		// Act
-		Action action = () => KnowledgeGitTransport.ValidateTree(tree, "knowledge-bundle.zip");
-
-		// Assert
-		action.Should().Throw<InvalidDataException>()
-			.WithMessage("*submodules*",
-				because: "submodule URLs and checkout behavior are outside the trusted source contract");
-	}
-
-	[Test]
-	[Description("Git tree validation rejects symbolic links even when the link is unrelated to the artifact.")]
-	public void ValidateTree_ShouldRejectRepository_WhenSymbolicLinkExists() {
-		// Arrange
-		const string tree =
-			"120000 blob 0123456789abcdef0123456789abcdef01234567\tdocs-link\n" +
-			"100644 blob 0123456789abcdef0123456789abcdef01234567\tknowledge-bundle.zip\n";
-
-		// Act
-		Action action = () => KnowledgeGitTransport.ValidateTree(tree, "knowledge-bundle.zip");
-
-		// Assert
-		action.Should().Throw<InvalidDataException>()
-			.WithMessage("*symbolic links*",
-				because: "a repository symlink could escape the bounded staging and trust boundary");
-	}
-
 	private static KnowledgeSourceConfiguration GitSource() => new() {
 		LibraryId = "com.example.partner",
 		Type = KnowledgeSourceType.Git,
 		Location = "https://example.invalid/knowledge.git",
-		TrustedKeyId = "test-signing-key",
-		TrustedPublicKeyPath = TestFileSystem.GetRootedPath("keys", "test-public.pem"),
 		Enabled = true,
 		Participation = KnowledgeSourceParticipation.Supplement
 	};
+
+	private static void AddInstalledRepository(
+		MockFileSystem fileSystem,
+		string repositoryPath,
+		string config = "[core]\n\trepositoryformatversion = 0\n") {
+		string gitPath = fileSystem.Path.Combine(repositoryPath, ".git");
+		fileSystem.AddDirectory(gitPath);
+		fileSystem.AddFile(fileSystem.Path.Combine(gitPath, "config"), config);
+	}
 
 	private static ProcessExecutionResult Success(string output = "") => new() {
 		Started = true,
@@ -249,9 +305,4 @@ public sealed class KnowledgeGitTransportTests {
 		StandardOutput = output
 	};
 
-	private static string ReadQuotedValue(string arguments, string prefix) {
-		int start = arguments.IndexOf(prefix + "\"", StringComparison.Ordinal) + prefix.Length + 1;
-		int end = arguments.IndexOf('"', start);
-		return arguments[start..end];
-	}
 }

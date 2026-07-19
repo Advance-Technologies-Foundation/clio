@@ -155,6 +155,14 @@ namespace Clio.UserEnvironment
 		void UpsertKnowledgeSource(string alias, KnowledgeSourceConfiguration source);
 
 		/// <summary>
+		/// Adds one knowledge source only when neither its alias nor stable library identity is configured.
+		/// </summary>
+		/// <param name="alias">The operator-friendly source alias.</param>
+		/// <param name="source">The trusted source configuration.</param>
+		/// <returns><c>true</c> when the source was added; otherwise, <c>false</c>.</returns>
+		bool TryAddKnowledgeSource(string alias, KnowledgeSourceConfiguration source);
+
+		/// <summary>
 		/// Removes one configured knowledge source while leaving its installed cache untouched.
 		/// </summary>
 		/// <param name="alias">The operator-friendly source alias.</param>

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Abstractions;
 using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
 using Clio.Command.McpServer.Knowledge;
@@ -72,6 +73,9 @@ public sealed class KnowledgeMultiSourceActivatorTests {
 		services.AddSingleton(new KnowledgeBundleActivationOptions(FailureRetryMilliseconds: 0));
 		services.AddSingleton(store);
 		services.AddSingleton(configurationProvider);
+		services.AddSingleton(Substitute.For<IKnowledgeGitRepositoryReader>());
+		services.AddSingleton(GitTransport());
+		services.AddSingleton<IFileSystem>(new MockFileSystem());
 		services.AddSingleton(Substitute.For<IKnowledgeTrustFingerprintService>());
 		services.AddSingleton<IKnowledgeBundleActivator, KnowledgeMultiSourceActivator>();
 		using ServiceProvider container = services.BuildServiceProvider();
@@ -96,8 +100,8 @@ public sealed class KnowledgeMultiSourceActivatorTests {
 			because: "a disabled source must stop serving while its cached generation is retained");
 		CountCalls(runtime, nameof(IKnowledgeBundleRuntime.DeactivateLibrary), "beta").Should().Be(1,
 			because: "a removed source must leave the runtime snapshot on refresh");
-		observedPins.Should().HaveCount(2,
-			because: "topic pins must be refreshed on every reconciliation, even when generations are unchanged");
+		observedPins.Should().ContainSingle(
+			because: "topic pins should update only when their effective routing configuration changes");
 		observedPins[^1]["creatio.esq.filters"].Should().Be("com.example.gamma",
 			because: "the most recent settings file must control logical-topic routing");
 		activator.LastDiagnostic.Should().BeNull(
@@ -118,6 +122,9 @@ public sealed class KnowledgeMultiSourceActivatorTests {
 		services.AddSingleton(new KnowledgeBundleActivationOptions(FailureRetryMilliseconds: 0));
 		services.AddSingleton(store);
 		services.AddSingleton(configurationProvider);
+		services.AddSingleton(Substitute.For<IKnowledgeGitRepositoryReader>());
+		services.AddSingleton(GitTransport());
+		services.AddSingleton<IFileSystem>(new MockFileSystem());
 		services.AddSingleton(Substitute.For<IKnowledgeTrustFingerprintService>());
 		services.AddSingleton<IKnowledgeBundleActivator, KnowledgeMultiSourceActivator>();
 		using ServiceProvider container = services.BuildServiceProvider();
@@ -170,6 +177,9 @@ public sealed class KnowledgeMultiSourceActivatorTests {
 		services.AddSingleton(new KnowledgeBundleActivationOptions(FailureRetryMilliseconds: 0));
 		services.AddSingleton(store);
 		services.AddSingleton(configurationProvider);
+		services.AddSingleton(Substitute.For<IKnowledgeGitRepositoryReader>());
+		services.AddSingleton(GitTransport());
+		services.AddSingleton<IFileSystem>(new MockFileSystem());
 		services.AddSingleton(Substitute.For<IKnowledgeTrustFingerprintService>());
 		services.AddSingleton<IKnowledgeBundleActivator, KnowledgeMultiSourceActivator>();
 		using ServiceProvider container = services.BuildServiceProvider();
@@ -232,6 +242,9 @@ public sealed class KnowledgeMultiSourceActivatorTests {
 		services.AddSingleton(new KnowledgeBundleActivationOptions(FailureRetryMilliseconds: 60_000));
 		services.AddSingleton(store);
 		services.AddSingleton(configurationProvider);
+		services.AddSingleton(Substitute.For<IKnowledgeGitRepositoryReader>());
+		services.AddSingleton(GitTransport());
+		services.AddSingleton<IFileSystem>(new MockFileSystem());
 		services.AddSingleton(Substitute.For<IKnowledgeTrustFingerprintService>());
 		services.AddSingleton<IKnowledgeBundleActivator, KnowledgeMultiSourceActivator>();
 		using ServiceProvider container = services.BuildServiceProvider();
@@ -296,6 +309,9 @@ public sealed class KnowledgeMultiSourceActivatorTests {
 		services.AddSingleton(new KnowledgeBundleActivationOptions(FailureRetryMilliseconds: 60_000));
 		services.AddSingleton(store);
 		services.AddSingleton(configurationProvider);
+		services.AddSingleton(Substitute.For<IKnowledgeGitRepositoryReader>());
+		services.AddSingleton(GitTransport());
+		services.AddSingleton<IFileSystem>(new MockFileSystem());
 		services.AddSingleton(fingerprints);
 		services.AddSingleton<IKnowledgeBundleActivator, KnowledgeMultiSourceActivator>();
 		using ServiceProvider container = services.BuildServiceProvider();
@@ -310,6 +326,240 @@ public sealed class KnowledgeMultiSourceActivatorTests {
 			because: "effective key replacement must invalidate the observed activation even when the path is unchanged");
 		CountCalls(runtime, nameof(IKnowledgeBundleRuntime.DeactivateLibrary), "alpha").Should().Be(1,
 			because: "a generation rejected under replacement trust must be withdrawn immediately");
+	}
+
+	[Test]
+	[Description("An unchanged Git revision uses the cheap revision identity and does not reread repository content.")]
+	public void EnsureActivated_ShouldSkipGitRepositoryRead_WhenRevisionAndConfigurationAreUnchanged() {
+		// Arrange
+		const string revision = "1111111111111111111111111111111111111111";
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		string repositoryPath = TestFileSystem.GetRootedPath("knowledge", "sources", "partner", "repository");
+		fileSystem.AddDirectory(repositoryPath);
+		IKnowledgeBundleRuntime runtime = Substitute.For<IKnowledgeBundleRuntime>();
+		IKnowledgeSourceInstallationStore store = Substitute.For<IKnowledgeSourceInstallationStore>();
+		store.GetGitRepositoryPath("partner", false).Returns(repositoryPath);
+		store.TryExecuteWithSourceMutationLock("partner", Arg.Any<Action>()).Returns(call => {
+			call.ArgAt<Action>(1)();
+			return true;
+		});
+		IKnowledgeRepositoryTransport transport = Substitute.For<IKnowledgeRepositoryTransport>();
+		transport.Type.Returns(KnowledgeSourceType.Git);
+		transport.GetCurrentRevision(repositoryPath).Returns(revision);
+		IKnowledgeGitRepositoryReader reader = Substitute.For<IKnowledgeGitRepositoryReader>();
+		KnowledgeGitRepositorySnapshot snapshot = GitSnapshot(sequence: 1, digest: "DIGEST-A");
+		reader.TryRead(repositoryPath, "com.example.partner", out Arg.Any<KnowledgeGitRepositorySnapshot?>(),
+			out Arg.Any<string?>()).Returns(call => {
+			call[2] = snapshot;
+			call[3] = null;
+			return true;
+		});
+		runtime.ActivateGitRepository(
+			"partner", 100, KnowledgeSourceParticipation.Authoritative, snapshot).Returns(Activated(1));
+		IKnowledgeRuntimeConfigurationProvider configurationProvider =
+			Substitute.For<IKnowledgeRuntimeConfigurationProvider>();
+		configurationProvider.GetCurrent().Returns(Configuration(("partner", GitSource("com.example.partner", 100))));
+		ServiceCollection services = new();
+		services.AddSingleton(runtime);
+		services.AddSingleton(new KnowledgeBundleActivationOptions(FailureRetryMilliseconds: 60_000));
+		services.AddSingleton(store);
+		services.AddSingleton(configurationProvider);
+		services.AddSingleton(reader);
+		services.AddSingleton(transport);
+		services.AddSingleton<IFileSystem>(fileSystem);
+		services.AddSingleton(Substitute.For<IKnowledgeTrustFingerprintService>());
+		services.AddSingleton<IKnowledgeBundleActivator, KnowledgeMultiSourceActivator>();
+		using ServiceProvider container = services.BuildServiceProvider();
+		IKnowledgeBundleActivator activator = container.GetRequiredService<IKnowledgeBundleActivator>();
+
+		// Act
+		activator.EnsureActivated();
+		activator.EnsureActivated();
+
+		// Assert
+		CountCalls(reader, nameof(IKnowledgeGitRepositoryReader.TryRead)).Should().Be(1,
+			because: "an unchanged commit and source configuration must not rehash every Git resource on each MCP request");
+		CountCalls(runtime, nameof(IKnowledgeBundleRuntime.ActivateGitRepository), "partner").Should().Be(1,
+			because: "an unchanged Git source must keep its existing immutable runtime snapshot");
+	}
+
+	[Test]
+	[Description("Git activation yields immediately while another process is synchronizing the source.")]
+	public void EnsureActivated_ShouldDeferGitActivation_WhenSourceMutationLockIsBusy() {
+		// Arrange
+		const string revision = "1111111111111111111111111111111111111111";
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		string repositoryPath = TestFileSystem.GetRootedPath("knowledge", "sources", "partner", "repository");
+		fileSystem.AddDirectory(repositoryPath);
+		IKnowledgeBundleRuntime runtime = Substitute.For<IKnowledgeBundleRuntime>();
+		IKnowledgeSourceInstallationStore store = Substitute.For<IKnowledgeSourceInstallationStore>();
+		store.GetGitRepositoryPath("partner", false).Returns(repositoryPath);
+		store.TryExecuteWithSourceMutationLock("partner", Arg.Any<Action>()).Returns(false);
+		IKnowledgeRepositoryTransport transport = Substitute.For<IKnowledgeRepositoryTransport>();
+		transport.Type.Returns(KnowledgeSourceType.Git);
+		transport.GetCurrentRevision(repositoryPath).Returns(revision);
+		IKnowledgeRuntimeConfigurationProvider configurationProvider =
+			Substitute.For<IKnowledgeRuntimeConfigurationProvider>();
+		configurationProvider.GetCurrent().Returns(Configuration(("partner", GitSource("com.example.partner", 100))));
+		ServiceCollection services = new();
+		services.AddSingleton(runtime);
+		services.AddSingleton(new KnowledgeBundleActivationOptions(FailureRetryMilliseconds: 60_000));
+		services.AddSingleton(store);
+		services.AddSingleton(configurationProvider);
+		services.AddSingleton(Substitute.For<IKnowledgeGitRepositoryReader>());
+		services.AddSingleton(transport);
+		services.AddSingleton<IFileSystem>(fileSystem);
+		services.AddSingleton(Substitute.For<IKnowledgeTrustFingerprintService>());
+		services.AddSingleton<IKnowledgeBundleActivator, KnowledgeMultiSourceActivator>();
+		using ServiceProvider container = services.BuildServiceProvider();
+		IKnowledgeBundleActivator activator = container.GetRequiredService<IKnowledgeBundleActivator>();
+
+		// Act
+		activator.EnsureActivated();
+
+		// Assert
+		CountCalls(runtime, nameof(IKnowledgeBundleRuntime.ActivateGitRepository), "partner").Should().Be(0,
+			because: "an MCP request must not read a checkout while another process is mutating it");
+		CountCalls(runtime, nameof(IKnowledgeBundleRuntime.DeactivateLibrary), "partner").Should().Be(0,
+			because: "temporary synchronization must not withdraw any previously served snapshot");
+		activator.LastDiagnostic.Should().Contain("synchronizing",
+			because: "the caller should receive a retryable explanation instead of waiting on the command lock");
+	}
+
+	[TestCase(true, 100, TestName = "EnsureActivated_ShouldWithdrawGitContent_WhenLocationChangesAndValidationFails")]
+	[TestCase(false, 10, TestName = "EnsureActivated_ShouldWithdrawGitContent_WhenPriorityChangesAndValidationFails")]
+	[Description("A Git source configuration change withdraws old content when the replacement checkout is invalid.")]
+	public void EnsureActivated_ShouldWithdrawGitContent_WhenServingConfigurationChangesAndValidationFails(
+		bool changeLocation,
+		int replacementPriority) {
+		// Arrange
+		const string revision = "1111111111111111111111111111111111111111";
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		string repositoryPath = TestFileSystem.GetRootedPath("knowledge", "sources", "partner", "repository");
+		fileSystem.AddDirectory(repositoryPath);
+		IKnowledgeBundleRuntime runtime = Substitute.For<IKnowledgeBundleRuntime>();
+		IKnowledgeSourceInstallationStore store = Substitute.For<IKnowledgeSourceInstallationStore>();
+		store.GetGitRepositoryPath("partner", false).Returns(repositoryPath);
+		store.TryExecuteWithSourceMutationLock("partner", Arg.Any<Action>()).Returns(call => {
+			call.ArgAt<Action>(1)();
+			return true;
+		});
+		IKnowledgeRepositoryTransport transport = Substitute.For<IKnowledgeRepositoryTransport>();
+		transport.Type.Returns(KnowledgeSourceType.Git);
+		transport.GetCurrentRevision(repositoryPath).Returns(revision);
+		IKnowledgeGitRepositoryReader reader = Substitute.For<IKnowledgeGitRepositoryReader>();
+		KnowledgeGitRepositorySnapshot snapshot = GitSnapshot(sequence: 1, digest: "DIGEST-A");
+		reader.TryRead(repositoryPath, "com.example.partner", out Arg.Any<KnowledgeGitRepositorySnapshot?>(),
+			out Arg.Any<string?>()).Returns(
+			call => {
+				call[2] = snapshot;
+				call[3] = null;
+				return true;
+			},
+			call => {
+				call[2] = null;
+				call[3] = "replacement source is invalid";
+				return false;
+			});
+		runtime.ActivateGitRepository(
+			"partner", 100, KnowledgeSourceParticipation.Authoritative, snapshot).Returns(Activated(1));
+		KnowledgeSourceConfiguration original = GitSource("com.example.partner", 100);
+		KnowledgeSourceConfiguration replacement = GitSource("com.example.partner", replacementPriority);
+		if (changeLocation) {
+			replacement.Location = "https://replacement.invalid/knowledge.git";
+		}
+		IKnowledgeRuntimeConfigurationProvider configurationProvider =
+			Substitute.For<IKnowledgeRuntimeConfigurationProvider>();
+		configurationProvider.GetCurrent().Returns(
+			Configuration(("partner", original)),
+			Configuration(("partner", replacement)));
+		ServiceCollection services = new();
+		services.AddSingleton(runtime);
+		services.AddSingleton(new KnowledgeBundleActivationOptions(FailureRetryMilliseconds: 60_000));
+		services.AddSingleton(store);
+		services.AddSingleton(configurationProvider);
+		services.AddSingleton(reader);
+		services.AddSingleton(transport);
+		services.AddSingleton<IFileSystem>(fileSystem);
+		services.AddSingleton(Substitute.For<IKnowledgeTrustFingerprintService>());
+		services.AddSingleton<IKnowledgeBundleActivator, KnowledgeMultiSourceActivator>();
+		using ServiceProvider container = services.BuildServiceProvider();
+		IKnowledgeBundleActivator activator = container.GetRequiredService<IKnowledgeBundleActivator>();
+
+		// Act
+		activator.EnsureActivated();
+		activator.EnsureActivated();
+
+		// Assert
+		CountCalls(runtime, nameof(IKnowledgeBundleRuntime.DeactivateLibrary), "partner").Should().Be(1,
+			because: "last-known-good content must not survive a trust or precedence configuration change");
+		activator.LastDiagnostic.Should().Contain("replacement source is invalid",
+			because: "operators need the reason replacement source content was withdrawn");
+	}
+
+	[Test]
+	[Description("An invalid changed Git revision preserves the last-known-good runtime snapshot and records the rejection.")]
+	public void EnsureActivated_ShouldPreserveLastKnownGoodGitContent_WhenChangedRevisionIsInvalid() {
+		// Arrange
+		const string firstRevision = "1111111111111111111111111111111111111111";
+		const string secondRevision = "2222222222222222222222222222222222222222";
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		string repositoryPath = TestFileSystem.GetRootedPath("knowledge", "sources", "partner", "repository");
+		fileSystem.AddDirectory(repositoryPath);
+		IKnowledgeBundleRuntime runtime = Substitute.For<IKnowledgeBundleRuntime>();
+		IKnowledgeSourceInstallationStore store = Substitute.For<IKnowledgeSourceInstallationStore>();
+		store.GetGitRepositoryPath("partner", false).Returns(repositoryPath);
+		store.TryExecuteWithSourceMutationLock("partner", Arg.Any<Action>()).Returns(call => {
+			call.ArgAt<Action>(1)();
+			return true;
+		});
+		IKnowledgeRepositoryTransport transport = Substitute.For<IKnowledgeRepositoryTransport>();
+		transport.Type.Returns(KnowledgeSourceType.Git);
+		transport.GetCurrentRevision(repositoryPath).Returns(
+			firstRevision, firstRevision, secondRevision, secondRevision);
+		IKnowledgeGitRepositoryReader reader = Substitute.For<IKnowledgeGitRepositoryReader>();
+		KnowledgeGitRepositorySnapshot snapshot = GitSnapshot(sequence: 1, digest: "DIGEST-A");
+		reader.TryRead(repositoryPath, "com.example.partner", out Arg.Any<KnowledgeGitRepositorySnapshot?>(),
+			out Arg.Any<string?>()).Returns(
+			call => {
+				call[2] = snapshot;
+				call[3] = null;
+				return true;
+			},
+			call => {
+				call[2] = null;
+				call[3] = "synthetic invalid changed checkout";
+				return false;
+			});
+		runtime.ActivateGitRepository(
+			"partner", 100, KnowledgeSourceParticipation.Authoritative, snapshot).Returns(Activated(1));
+		IKnowledgeRuntimeConfigurationProvider configurationProvider =
+			Substitute.For<IKnowledgeRuntimeConfigurationProvider>();
+		configurationProvider.GetCurrent().Returns(Configuration(("partner", GitSource("com.example.partner", 100))));
+		ServiceCollection services = new();
+		services.AddSingleton(runtime);
+		services.AddSingleton(new KnowledgeBundleActivationOptions(FailureRetryMilliseconds: 60_000));
+		services.AddSingleton(store);
+		services.AddSingleton(configurationProvider);
+		services.AddSingleton(reader);
+		services.AddSingleton(transport);
+		services.AddSingleton<IFileSystem>(fileSystem);
+		services.AddSingleton(Substitute.For<IKnowledgeTrustFingerprintService>());
+		services.AddSingleton<IKnowledgeBundleActivator, KnowledgeMultiSourceActivator>();
+		using ServiceProvider container = services.BuildServiceProvider();
+		IKnowledgeBundleActivator activator = container.GetRequiredService<IKnowledgeBundleActivator>();
+
+		// Act
+		activator.EnsureActivated();
+		activator.EnsureActivated();
+
+		// Assert
+		CountCalls(runtime, nameof(IKnowledgeBundleRuntime.ActivateGitRepository), "partner").Should().Be(1,
+			because: "the rejected changed checkout must not replace the previously activated immutable snapshot");
+		CountCalls(runtime, nameof(IKnowledgeBundleRuntime.DeactivateLibrary), "partner").Should().Be(0,
+			because: "an invalid newer Git checkout must not withdraw last-known-good content");
+		activator.LastDiagnostic.Should().Contain("synthetic invalid changed checkout",
+			because: "operators still need the validation reason while last-known-good content remains active");
 	}
 
 	[Test]
@@ -364,6 +614,36 @@ public sealed class KnowledgeMultiSourceActivatorTests {
 		Priority = priority,
 		Participation = KnowledgeSourceParticipation.Authoritative
 	};
+
+	private static KnowledgeSourceConfiguration GitSource(string libraryId, int priority) => new() {
+		LibraryId = libraryId,
+		Type = KnowledgeSourceType.Git,
+		Location = "https://github.com/example/knowledge.git",
+		Branch = "main",
+		Enabled = true,
+		Priority = priority,
+		Participation = KnowledgeSourceParticipation.Authoritative
+	};
+
+	private static IKnowledgeRepositoryTransport GitTransport() {
+		IKnowledgeRepositoryTransport transport = Substitute.For<IKnowledgeRepositoryTransport>();
+		transport.Type.Returns(KnowledgeSourceType.Git);
+		return transport;
+	}
+
+	private static KnowledgeGitRepositorySnapshot GitSnapshot(ulong sequence, string digest) => new(
+		"com.example.partner",
+		"1.0.0",
+		sequence,
+		digest,
+		[new KnowledgeArticle(
+			"guide",
+			"docs://knowledge/com.example.partner/guide",
+			"synthetic content",
+			"com.example.partner",
+			"guide",
+			"example.guide",
+			"guidance")]);
 
 	private static KnowledgeSourceCurrentState State(string alias, string libraryId, ulong sequence) {
 		KnowledgeSourceGenerationPointer pointer = new(

@@ -630,8 +630,41 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 		}
 
 		long size = 0;
-		foreach (string file in Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories)) {
-			size = checked(size + new FileInfo(file).Length);
+		Stack<string> pending = new();
+		pending.Push(directory);
+		while (pending.Count > 0) {
+			string current = pending.Pop();
+			string[] files;
+			string[] directories;
+			try {
+				files = Directory.GetFiles(current);
+				directories = Directory.GetDirectories(current);
+			} catch (DirectoryNotFoundException) {
+				continue;
+			}
+			foreach (string file in files) {
+				try {
+					FileInfo info = new(file);
+					if ((info.Attributes & FileAttributes.ReparsePoint) == 0) {
+						size = checked(size + info.Length);
+					}
+				} catch (FileNotFoundException) {
+					// Files can disappear while the monitored process atomically replaces them.
+				} catch (DirectoryNotFoundException) {
+					// A parent directory can disappear between enumeration and metadata access.
+				}
+			}
+			foreach (string child in directories) {
+				try {
+					if ((File.GetAttributes(child) & FileAttributes.ReparsePoint) == 0) {
+						pending.Push(child);
+					}
+				} catch (DirectoryNotFoundException) {
+					// Git routinely renames and removes temporary directories during mutation.
+				} catch (FileNotFoundException) {
+					// The directory entry disappeared before its attributes were read.
+				}
+			}
 		}
 		return size;
 	}

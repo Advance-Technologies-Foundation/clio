@@ -78,6 +78,71 @@ public sealed class GuidanceGetToolTests {
 	}
 
 	[Test]
+	[Description("Returns the selected external article together with its complete source provenance.")]
+	public async Task GetGuidance_ShouldReturnCompleteProvenance_WhenExternalArticleIsActive() {
+		// Arrange
+		KnowledgeArticleProvenance provenance = new(
+			"partner",
+			"com.example.partner",
+			"guide.item",
+			"topic.shared",
+			42,
+			"sha256:verified",
+			"C:\\knowledge\\partner\\guide.md");
+		_source.FindByName("partner-guide").Returns(new KnowledgeArticleLookup(
+			KnowledgeArticleLookupStatus.Active,
+			new KnowledgeArticle("partner-guide", "docs://partner/guides/guide", "Partner guidance.\n"),
+			42,
+			provenance));
+
+		// Act
+		GuidanceGetResponse response = await _tool.GetGuidance(new GuidanceGetArgs("partner-guide"));
+
+		// Assert
+		response.Success.Should().BeTrue(because: "verified external guidance should be returned");
+		response.Article!.LibraryId.Should().Be("com.example.partner",
+			because: "agents need the stable publisher identity for attribution");
+		response.Article.ItemId.Should().Be("guide.item",
+			because: "agents need the stable item identity inside the publisher library");
+		response.Article.TopicId.Should().Be("topic.shared",
+			because: "agents need the logical topic used by deterministic resolution");
+		response.Article.Sequence.Should().Be(42,
+			because: "agents need the selected library generation");
+		response.Article.BundleDigest.Should().Be("sha256:verified",
+			because: "the response must identify the verified content generation");
+		response.Article.SourceAlias.Should().Be("partner",
+			because: "the response must identify which configured source won resolution");
+		response.Article.LocalPath.Should().Be("C:\\knowledge\\partner\\guide.md",
+			because: "agents need the readable on-disk content path when one is available");
+	}
+
+	[Test]
+	[Description("Returns typed ambiguity and the resolver diagnostic when no deterministic guidance winner exists.")]
+	public async Task GetGuidance_ShouldReturnTypedAmbiguity_WhenResolutionHasNoWinner() {
+		// Arrange
+		const string diagnostic = "Guidance 'shared-guide' is ambiguous across partner-a and partner-b.";
+		_source.FindByName("shared-guide").Returns(new KnowledgeArticleLookup(
+			KnowledgeArticleLookupStatus.Ambiguous,
+			null,
+			null,
+			null,
+			diagnostic));
+
+		// Act
+		GuidanceGetResponse response = await _tool.GetGuidance(new GuidanceGetArgs("shared-guide"));
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "ambiguous guidance must fail closed rather than selecting an arbitrary source");
+		response.ErrorCode.Should().Be(KnowledgeGuidanceAmbiguousException.ErrorCode,
+			because: "callers need a stable typed ambiguity result");
+		response.Error.Should().Be(diagnostic,
+			because: "the resolver diagnostic tells agents which source conflict needs operator action");
+		response.Article.Should().BeNull(
+			because: "no article may be returned when deterministic resolution failed");
+	}
+
+	[Test]
 	[Description("Returns typed unavailability instead of permissive empty content when no verified bundle is active.")]
 	public async Task GetGuidance_ShouldReturnTypedUnavailable_WhenSourceIsUnavailable() {
 		// Arrange

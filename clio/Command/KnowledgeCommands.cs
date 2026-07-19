@@ -130,15 +130,15 @@ public sealed class AddKnowledgeSourceOptions {
 	/// <summary>
 	/// Gets or sets the signature key identifier authorized for this source.
 	/// </summary>
-	[Option("trusted-key-id", Required = true, HelpText = "Signature key ID authorized for bundles from this source")]
-	public string TrustedKeyId { get; set; } = string.Empty;
+	[Option("trusted-key-id", Required = false, HelpText = "NuGet bundle signing-key ID; not used for Git sources")]
+	public string? TrustedKeyId { get; set; }
 
 	/// <summary>
 	/// Gets or sets the existing bounded local regular-file path to the source's P-256 public key.
 	/// </summary>
-	[Option("trusted-public-key-path", Required = true,
-		HelpText = "Existing bounded local P-256 PUBLIC KEY PEM path (no private key or reparse/network path)")]
-	public string TrustedPublicKeyPath { get; set; } = string.Empty;
+	[Option("trusted-public-key-path", Required = false,
+		HelpText = "NuGet P-256 PUBLIC KEY PEM path; not used for Git sources")]
+	public string? TrustedPublicKeyPath { get; set; }
 
 	/// <summary>
 	/// Gets or sets the NuGet package ID.
@@ -163,13 +163,6 @@ public sealed class AddKnowledgeSourceOptions {
 	/// </summary>
 	[Option("commit", Required = false, HelpText = "Immutable Git commit; takes precedence over tag and branch")]
 	public string? Commit { get; set; }
-
-	/// <summary>
-	/// Gets or sets the repository-relative ready bundle artifact path.
-	/// </summary>
-	[Option("artifact-path", Required = false,
-		HelpText = "Repository-relative ready bundle path for Git; default: knowledge-bundle.zip")]
-	public string? ArtifactPath { get; set; }
 
 	/// <summary>
 	/// Gets or sets the source priority used for deterministic topic resolution.
@@ -268,6 +261,42 @@ public sealed class ListKnowledgeSourcesOptions {
 	/// Gets or sets whether the result is emitted as JSON.
 	/// </summary>
 	[Option("json", Required = false, Default = false, HelpText = "Output the result as indented JSON")]
+	public bool Json { get; set; }
+}
+
+/// <summary>
+/// Options for discovering reference examples registered by active knowledge sources.
+/// </summary>
+[Verb("list-knowledge-examples", HelpText = "List registered reference examples without cloning their repositories")]
+public sealed class ListKnowledgeExamplesOptions {
+	/// <summary>
+	/// Gets or sets an optional configured source alias filter.
+	/// </summary>
+	[Option("source", Required = false, HelpText = "Configured source alias to inspect; omit to inspect all active sources")]
+	public string? Source { get; set; }
+
+	/// <summary>
+	/// Gets or sets optional free-text matching across example identity and use-case metadata.
+	/// </summary>
+	[Option("search", Required = false, HelpText = "Case-insensitive text to match in IDs, titles, use cases, sources, or capabilities")]
+	public string? Search { get; set; }
+
+	/// <summary>
+	/// Gets or sets an optional exact supporting-capability filter.
+	/// </summary>
+	[Option("capability", Required = false, HelpText = "Supporting capability tag to match")]
+	public string? Capability { get; set; }
+
+	/// <summary>
+	/// Gets or sets an optional exact publication-status filter.
+	/// </summary>
+	[Option("status", Required = false, HelpText = "Catalog publication status to match")]
+	public string? Status { get; set; }
+
+	/// <summary>
+	/// Gets or sets whether the result is emitted as JSON.
+	/// </summary>
+	[Option("json", Required = false, Default = false, HelpText = "Output full example metadata as indented JSON")]
 	public bool Json { get; set; }
 }
 
@@ -436,14 +465,8 @@ internal sealed class AddKnowledgeSourceCommand(IKnowledgeSourceManagementServic
 		}
 		if (string.IsNullOrWhiteSpace(options.LibraryId)
 				|| string.IsNullOrWhiteSpace(options.Type)
-				|| string.IsNullOrWhiteSpace(options.Location)
-				|| string.IsNullOrWhiteSpace(options.TrustedKeyId)
-				|| string.IsNullOrWhiteSpace(options.TrustedPublicKeyPath)) {
-			logger.WriteError("--library-id, --type, --location, --trusted-key-id, and --trusted-public-key-path cannot be empty.");
-			return false;
-		}
-		if (!System.IO.Path.IsPathFullyQualified(options.TrustedPublicKeyPath.Trim())) {
-			logger.WriteError("--trusted-public-key-path must be an absolute local file path containing public key material.");
+				|| string.IsNullOrWhiteSpace(options.Location)) {
+			logger.WriteError("--library-id, --type, and --location cannot be empty.");
 			return false;
 		}
 		string transportType = options.Type.Trim().ToLowerInvariant();
@@ -460,16 +483,31 @@ internal sealed class AddKnowledgeSourceCommand(IKnowledgeSourceManagementServic
 			logger.WriteError("--package-id is required when --type is nuget.");
 			return false;
 		}
+		if (transportType == "nuget"
+				&& (string.IsNullOrWhiteSpace(options.TrustedKeyId)
+					|| string.IsNullOrWhiteSpace(options.TrustedPublicKeyPath))) {
+			logger.WriteError("--trusted-key-id and --trusted-public-key-path are required when --type is nuget.");
+			return false;
+		}
+		if (transportType == "nuget" && !System.IO.Path.IsPathFullyQualified(options.TrustedPublicKeyPath!.Trim())) {
+			logger.WriteError("--trusted-public-key-path must be an absolute local file path containing public key material.");
+			return false;
+		}
 		bool hasGitOptions = !string.IsNullOrWhiteSpace(options.Branch)
 			|| !string.IsNullOrWhiteSpace(options.Tag)
-			|| !string.IsNullOrWhiteSpace(options.Commit)
-			|| !string.IsNullOrWhiteSpace(options.ArtifactPath);
+			|| !string.IsNullOrWhiteSpace(options.Commit);
 		if (transportType == "nuget" && hasGitOptions) {
-			logger.WriteError("--branch, --tag, --commit, and --artifact-path are valid only for Git sources.");
+			logger.WriteError("--branch, --tag, and --commit are valid only for Git sources.");
 			return false;
 		}
 		if (transportType == "git" && !string.IsNullOrWhiteSpace(options.PackageId)) {
 			logger.WriteError("--package-id is valid only for NuGet sources.");
+			return false;
+		}
+		if (transportType == "git"
+				&& (!string.IsNullOrWhiteSpace(options.TrustedKeyId)
+					|| !string.IsNullOrWhiteSpace(options.TrustedPublicKeyPath))) {
+			logger.WriteError("--trusted-key-id and --trusted-public-key-path are not used for Git sources.");
 			return false;
 		}
 		request = new KnowledgeSourceAddRequest(
@@ -477,13 +515,12 @@ internal sealed class AddKnowledgeSourceCommand(IKnowledgeSourceManagementServic
 			options.LibraryId.Trim(),
 			transportType,
 			options.Location.Trim(),
-			options.TrustedKeyId.Trim(),
-			System.IO.Path.GetFullPath(options.TrustedPublicKeyPath.Trim()),
+			TrimToNull(options.TrustedKeyId),
+			transportType == "nuget" ? System.IO.Path.GetFullPath(options.TrustedPublicKeyPath!.Trim()) : null,
 			TrimToNull(options.PackageId),
 			TrimToNull(options.Branch),
 			TrimToNull(options.Tag),
 			TrimToNull(options.Commit),
-			TrimToNull(options.ArtifactPath),
 			Enabled: !options.Disabled,
 			options.Priority,
 			participation);
@@ -567,6 +604,55 @@ internal sealed class ListKnowledgeSourcesCommand(IKnowledgeSourceManagementServ
 			}
 		}
 		return result.Success ? 0 : 1;
+	}
+}
+
+/// <summary>
+/// Discovers reference examples from active locally cached knowledge catalogs.
+/// </summary>
+internal sealed class ListKnowledgeExamplesCommand(IKnowledgeReferenceExampleService service, ILogger logger)
+	: Command<ListKnowledgeExamplesOptions> {
+	/// <inheritdoc />
+	public override int Execute(ListKnowledgeExamplesOptions options) {
+		KnowledgeReferenceExampleListResult result = service.List(new KnowledgeReferenceExampleQuery(
+			options.Source,
+			options.Search,
+			options.Capability,
+			options.Status));
+		if (options.Json) {
+			logger.WriteLine(KnowledgeCommandJson.Serialize(result));
+		}
+		else {
+			PrintExamples(logger, result.Examples);
+			foreach (string diagnostic in result.Diagnostics) {
+				logger.WriteError(diagnostic);
+			}
+			if (result.Examples.Count == 0 && result.Diagnostics.Count == 0) {
+				logger.WriteInfo("No matching reference examples are registered in active installed knowledge catalogs.");
+			}
+		}
+		return result.Success ? 0 : 1;
+	}
+
+	private static void PrintExamples(ILogger logger, IReadOnlyList<KnowledgeReferenceExample> examples) {
+		for (int index = 0; index < examples.Count; index++) {
+			KnowledgeReferenceExample example = examples[index];
+			if (index > 0) {
+				logger.WriteLine(string.Empty);
+			}
+			logger.WriteInfo($"{index + 1}. {example.Title}");
+			logger.WriteLine($"  Description: {example.PrimaryUseCase.Summary}");
+			logger.WriteLine($"  ID: {example.Id}");
+			logger.WriteLine($"  Catalog: {example.SourceAlias} / {example.LibraryId}");
+			logger.WriteLine($"  Status: {example.Status}");
+			logger.WriteLine($"  Use case: {example.PrimaryUseCase.Id}");
+			logger.WriteLine($"  Repository: {example.Source.Repository}");
+			logger.WriteLine($"  Revision: {example.Source.Revision}");
+			logger.WriteLine($"  Capabilities ({example.SupportingCapabilities.Count}):");
+			foreach (string capability in example.SupportingCapabilities) {
+				logger.WriteLine($"    - {capability}");
+			}
+		}
 	}
 }
 

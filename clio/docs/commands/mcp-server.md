@@ -66,10 +66,10 @@ Preferred guidance access:
 External knowledge delivery is configured visibly under `knowledge` in Clio's `appsettings.json`.
 The section contains `root-path`, a `sources` map, and optional `topic-pins`. Each trusted source
 declares a stable `library-id`, `type` (`git` or `nuget`), credential-free `location`, `enabled`
-kill switch, numeric `priority`, `participation` (`isolated`, `supplement`, or `authoritative`),
-`trusted-key-id`, and an absolute local `trusted-public-key-path`.
-NuGet sources also declare `package-id`; Git sources may follow a branch/tag/commit and declare a
-ready `artifact-path`. When no Git reference is supplied, Clio discovers and persists the remote
+kill switch, numeric `priority`, and `participation` (`isolated`, `supplement`, or `authoritative`).
+NuGet sources also declare `package-id`, `trusted-key-id`, and an absolute local
+`trusted-public-key-path`. Git sources use none of those fields; they may follow a branch/tag/commit
+and Clio reads content directly from the repository checkout. When no Git reference is supplied, Clio discovers and persists the remote
 default branch only after a successful install/update, then records the exact complete resolved
 commit for every installed generation. Information and update-availability checks never mutate
 source configuration.
@@ -78,8 +78,10 @@ Signing trust is scoped per source so independent publishers can use different k
 path references public ECDSA P-256 SubjectPublicKeyInfo PEM material; it is not a secret and must
 never reference or contain a private signing key.
 
-Configured sources require signed version 1 bundles. The proof of concept supports credential-free
-public HTTPS Git and NuGet sources only; authenticated private sources are not supported. Signed
+NuGet sources require signed version 1 bundles. Git sources instead trust the configured public
+repository URL, resolve an exact commit, and validate the catalog contract directly from the
+checkout; they do not use NuGet bundle-signing keys. The proof of concept supports credential-free
+public HTTPS Git and NuGet sources only; authenticated private sources are not supported. Declared
 `legacyUris` remain exact aliases for the item that declares them. No implicit version 0
 compatibility source is registered; prototype caches must be reinstalled from configured version 1
 sources.
@@ -88,17 +90,21 @@ The service-index URL must respond directly; redirects are not followed. Its adv
 `PackageBaseAddress/3.0.0` resource must use the same scheme, host, and port as the configured
 service-index URL.
 
-Every transport obtains a candidate only. Clio's common verifier checks its signature,
-compatibility, library identity, monotonic signed sequence, complete item catalog, paths, sizes, and
-digests before atomically installing it under `knowledge.root-path`. The former top-level
+Each transport supplies content and immutable provenance. NuGet candidates are verified by package
+version, bundle signature, compatibility, identity, monotonic sequence, catalog completeness,
+paths, sizes, and digests. Git checkouts are bound to the configured repository and exact resolved
+commit, then validated for compatibility, identity, catalog completeness, paths, and sizes before
+activation under `knowledge.root-path`. The former top-level
 `knowledge-root-path` is migrated once. When no root exists, Clio persists
 `<clio-home>/knowledge`. Installed archives and extracted content remain available to users and
 coding agents on disk.
 
-Externally delivered guidance reads only the persisted cache during lookup, and MCP never contacts
-a transport. Use the knowledge lifecycle and source-management commands to manage trusted sources.
-They are also non-resident MCP tools discoverable with `get-tool-contract` and invoked through
-`clio-run`. An already-running MCP process compares source activation/configuration on every lookup,
+Normal guidance lookup, resource reads, and reference-example discovery use only local installed
+content and never contact a transport. Explicit lifecycle operations (`install-knowledge` and
+`update-knowledge`) and `info-knowledge` with `--check-updates` / `checkUpdates: true` may contact the
+configured Git or NuGet transport. These management commands are also non-resident MCP tools
+discoverable with `get-tool-contract` and invoked through `clio-run`. An already-running MCP process
+compares source activation/configuration on every lookup,
 so an update, enable, or disable becomes visible without restarting MCP. A rejected update leaves
 the last-known-good generation active for that source.
 `info-knowledge` is local-only unless CLI `--check-updates` or MCP `checkUpdates: true` is supplied.

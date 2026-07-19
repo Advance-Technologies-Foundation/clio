@@ -71,6 +71,10 @@ internal sealed class KnowledgeRootPathProvider : IKnowledgeRootPathProvider {
 		}
 		string normalized = _fileSystem.Path.GetFullPath(path);
 		string filesystemRoot = _fileSystem.Path.GetPathRoot(normalized) ?? string.Empty;
+		if (OperatingSystem.IsWindows() && IsWindowsNetworkOrDevicePath(normalized, filesystemRoot)) {
+			throw new InvalidOperationException(
+				"The configured knowledge.root-path must be on a local non-device filesystem.");
+		}
 		if (string.Equals(
 				normalized.TrimEnd(_fileSystem.Path.DirectorySeparatorChar, _fileSystem.Path.AltDirectorySeparatorChar),
 				filesystemRoot.TrimEnd(_fileSystem.Path.DirectorySeparatorChar, _fileSystem.Path.AltDirectorySeparatorChar),
@@ -78,5 +82,18 @@ internal sealed class KnowledgeRootPathProvider : IKnowledgeRootPathProvider {
 			throw new InvalidOperationException("The configured knowledge.root-path cannot be a filesystem root.");
 		}
 		return normalized;
+	}
+
+	private static bool IsWindowsNetworkOrDevicePath(string path, string filesystemRoot) {
+		if (path.StartsWith(@"\\", StringComparison.Ordinal)) {
+			return true;
+		}
+		try {
+			return new DriveInfo(filesystemRoot).DriveType == DriveType.Network;
+		} catch (Exception exception) when (exception is ArgumentException
+				or IOException
+				or UnauthorizedAccessException) {
+			return true;
+		}
 	}
 }

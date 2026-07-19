@@ -33,8 +33,25 @@ internal sealed record KnowledgeTransportResult(
 	string? ResolvedCommit = null,
 	string? Diagnostic = null);
 
-internal interface IKnowledgeTransport {
+internal interface IKnowledgeSourceTransport {
 	KnowledgeSourceType Type { get; }
+}
+
+internal interface IKnowledgeArtifactTransport : IKnowledgeSourceTransport {
 
 	KnowledgeTransportResult Retrieve(KnowledgeTransportRequest request);
+}
+
+internal interface IKnowledgeRepositoryTransport : IKnowledgeSourceTransport {
+	KnowledgeTransportResult Synchronize(KnowledgeTransportRequest request, string repositoryPath);
+
+	KnowledgeTransportResult CheckForUpdates(KnowledgeTransportRequest request, string repositoryPath);
+
+	void ValidateInstalledCheckout(KnowledgeSourceConfiguration source, string repositoryPath);
+
+	void ValidateCheckoutForSynchronization(KnowledgeSourceConfiguration source, string repositoryPath);
+
+	string? GetCurrentRevision(string repositoryPath);
+
+	void Restore(string repositoryPath, string revision);
 }

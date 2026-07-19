@@ -65,6 +65,7 @@ internal sealed class KnowledgeResolver : IKnowledgeResolver {
 		string identifier,
 		IReadOnlyCollection<KnowledgeLibrarySnapshot> libraries) {
 		(KnowledgeLibrarySnapshot Library, KnowledgeArticle Article)[] matches = libraries
+			.Where(library => library.Participation != KnowledgeSourceParticipation.Isolated)
 			.SelectMany(library => library.Articles
 				.Where(article => article.LegacyUris?.Contains(identifier, StringComparer.Ordinal) == true)
 				.Select(article => (library, article)))

@@ -112,7 +112,75 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 			expectedBundleVersion,
 			expectedLibraryId,
 			localRootPath,
-			requireMultiSourceContract: expectedLibraryId is not null);
+		requireMultiSourceContract: expectedLibraryId is not null);
+
+	public KnowledgeBundleActivationResult ActivateGitRepository(
+		string sourceAlias,
+		int priority,
+		KnowledgeSourceParticipation participation,
+		KnowledgeGitRepositorySnapshot snapshot) {
+		ArgumentException.ThrowIfNullOrWhiteSpace(sourceAlias);
+		ArgumentNullException.ThrowIfNull(snapshot);
+		lock (_activationLock) {
+			ActiveKnowledgeSet active = Volatile.Read(ref _active);
+			KnowledgeLibrarySnapshot? current = active.Libraries.SingleOrDefault(library =>
+				string.Equals(library.SourceAlias, sourceAlias, StringComparison.OrdinalIgnoreCase));
+			if (current is not null && snapshot.Sequence == current.Sequence) {
+				if (!string.Equals(snapshot.ContentDigest, current.BundleDigest, StringComparison.Ordinal)) {
+					return Rejected(
+						KnowledgeBundleRejectionCode.InvalidContent,
+						snapshot.Sequence,
+						$"Git candidate sequence {snapshot.Sequence} has different content than the active sequence for source '{sourceAlias}'.");
+				}
+				KnowledgeLibrarySnapshot refreshed = current with {
+					LibraryId = snapshot.LibraryId,
+					Priority = priority,
+					Participation = participation,
+					Articles = snapshot.Articles
+				};
+				KnowledgeLibrarySnapshot[] refreshedLibraries = active.Libraries
+					.Select(library => string.Equals(
+						library.SourceAlias,
+						sourceAlias,
+						StringComparison.OrdinalIgnoreCase)
+						? refreshed
+						: library)
+					.ToArray();
+				Interlocked.Exchange(ref _active, active with { Libraries = refreshedLibraries });
+				return new KnowledgeBundleActivationResult(
+					KnowledgeBundleActivationStatus.Activated,
+					KnowledgeBundleRejectionCode.None,
+					snapshot.Sequence,
+					snapshot.Sequence,
+					null);
+			}
+			if (current is not null && snapshot.Sequence < current.Sequence) {
+				return Rejected(
+					KnowledgeBundleRejectionCode.SequenceNotForward,
+					snapshot.Sequence,
+					$"Git candidate sequence {snapshot.Sequence} must not be lower than active sequence {current.Sequence} for source '{sourceAlias}'.");
+			}
+			KnowledgeLibrarySnapshot activated = new(
+				sourceAlias,
+				snapshot.LibraryId,
+				priority,
+				participation,
+				snapshot.Sequence,
+				snapshot.ContentDigest,
+				snapshot.Articles);
+			KnowledgeLibrarySnapshot[] nextLibraries = active.Libraries
+				.Where(library => !string.Equals(library.SourceAlias, sourceAlias, StringComparison.OrdinalIgnoreCase))
+				.Append(activated)
+				.ToArray();
+			Interlocked.Exchange(ref _active, active with { Libraries = nextLibraries });
+			return new KnowledgeBundleActivationResult(
+				KnowledgeBundleActivationStatus.Activated,
+				KnowledgeBundleRejectionCode.None,
+				snapshot.Sequence,
+				snapshot.Sequence,
+				null);
+		}
+	}
 
 	private KnowledgeBundleActivationResult ActivateLibraryCore(
 		string sourceAlias,
@@ -250,12 +318,37 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 		return _resolver.GetNames(active.Libraries);
 	}
 
+	public IReadOnlyList<KnowledgeRoleArticle> GetArticlesByRole(string role) {
+		ArgumentException.ThrowIfNullOrWhiteSpace(role);
+		ActiveKnowledgeSet active = Volatile.Read(ref _active);
+		return active.Libraries
+			.SelectMany(library => library.Articles
+				.Where(article => string.Equals(article.Role, role, StringComparison.Ordinal))
+				.Select(article => new KnowledgeRoleArticle(
+					article,
+					new KnowledgeArticleProvenance(
+						library.SourceAlias,
+						library.LibraryId,
+						article.ItemId,
+						article.TopicId,
+						library.Sequence,
+						library.BundleDigest,
+						article.LocalPath),
+					library.Priority,
+					library.Participation)))
+			.OrderByDescending(item => item.Priority)
+			.ThenBy(item => item.Provenance.LibraryId, StringComparer.Ordinal)
+			.ThenBy(item => item.Article.ItemId, StringComparer.Ordinal)
+			.ToArray();
+	}
+
 	private PreparedKnowledgeBundle Prepare(
 		Stream candidate,
 		string? expectedBundleVersion,
 		string? expectedLibraryId = null) {
 		using MemoryStream boundedCandidate = ReadBoundedCandidate(candidate);
-		string bundleDigest = Convert.ToHexString(SHA256.HashData(boundedCandidate.ToArray())).ToLowerInvariant();
+		boundedCandidate.Position = 0;
+		string bundleDigest = Convert.ToHexString(SHA256.HashData(boundedCandidate)).ToLowerInvariant();
 		boundedCandidate.Position = 0;
 		ValidateCentralDirectory(boundedCandidate);
 		using ZipArchive archive = new(boundedCandidate, ZipArchiveMode.Read, leaveOpen: true);

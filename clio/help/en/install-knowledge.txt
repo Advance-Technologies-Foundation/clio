@@ -12,12 +12,14 @@ DESCRIPTION
     enabled source. --source selects exactly one configured alias. One source failure
     cannot replace its last-known-good generation or withdraw another library.
 
-    NuGet sources consume bounded packages. Git sources resolve their configured
-    commit, tag, or branch and consume a ready signed bundle without executing code.
-    Configured sources require signed v1 bundles and public HTTPS locations. If no
-    Git reference is configured, successful installation persists the discovered
-    default branch and exact resolved commit. Private-source authentication is not
-    supported in this proof of concept.
+    NuGet sources consume bounded packages and verify signed v1 bundles. Git sources
+    clone or fast-forward the configured public repository, resolve its commit, tag,
+    or branch, and validate the catalog contract without executing repository code.
+    NuGet provenance is its verified package, signature, and digest. Git provenance
+    is the configured trusted repository URL and exact resolved commit; Git sources
+    do not use bundle-signing keys. If no Git reference is configured, successful
+    installation persists the discovered default branch and exact resolved commit.
+    Private-source authentication is not supported in this proof of concept.
 
 OPTIONS
     --source <alias>    Install only this source; omit for all enabled sources

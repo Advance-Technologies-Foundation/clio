@@ -288,51 +288,155 @@
 		},
 		"knowledgeconfiguration": {
 			"type": "object",
+			"additionalProperties": false,
+			"description": "Local cache location, trusted publishers, and optional topic ownership overrides for Clio knowledge. Manage sources with the *-knowledge-source commands instead of editing this object by hand when possible.",
 			"properties": {
 				"root-path": {
 					"type": "string",
-					"description": "Absolute directory where Clio persists installed knowledge bundles and readable extracted content"
+					"minLength": 1,
+					"description": "Optional absolute local directory owned by Clio for verified bundles, extracted guidance, catalogs, and reference-example metadata. When omitted, Clio chooses a visible platform-specific directory and persists it here. This replaces the legacy top-level knowledge-root-path key.",
+					"examples": ["C:\\Users\\user\\AppData\\Local\\creatio\\clio\\knowledge"]
 				},
 				"sources": {
 					"type": "object",
-					"additionalProperties": { "$ref": "#/definitions/knowledgesource" },
-					"description": "Trusted knowledge sources keyed by operator-friendly alias"
+					"description": "Trusted knowledge publishers keyed by a case-insensitive operator alias. Aliases use lowercase letters, digits, dots, and hyphens; each configured library-id must be unique.",
+					"patternProperties": {
+						"^[a-z0-9](?:[a-z0-9.-]{0,62}[a-z0-9])?$": {
+							"$ref": "#/definitions/knowledgesource"
+						}
+					},
+					"additionalProperties": false,
+					"default": {}
 				},
 				"topic-pins": {
 					"type": "object",
-					"additionalProperties": { "type": "string" },
-					"description": "Logical topic IDs pinned to stable library IDs"
+					"description": "Optional exact topic-to-library overrides. A pin selects one enabled eligible library before numeric priority is considered; an unavailable or ineligible pin is reported instead of silently falling back.",
+					"patternProperties": {
+						"^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$": {
+							"type": "string",
+							"pattern": "^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?)+$",
+							"description": "Stable reverse-DNS library ID that owns this logical topic."
+						}
+					},
+					"additionalProperties": false,
+					"default": {}
 				}
+			},
+			"default": {
+				"sources": {},
+				"topic-pins": {}
 			}
 		},
 		"knowledgesource": {
 			"type": "object",
+			"additionalProperties": false,
+			"description": "One explicitly trusted knowledge library. Git sources are cloned directly; NuGet sources deliver signed bundles. Priority, participation, and enabled control local resolution policy.",
 			"properties": {
-				"library-id": { "type": "string" },
-				"type": { "type": "string", "enum": ["nuget", "git"] },
-				"location": { "type": "string" },
+				"library-id": {
+					"type": "string",
+					"maxLength": 255,
+					"pattern": "^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?)+$",
+					"description": "Stable lowercase reverse-DNS identity declared and signed by the publisher, for example com.creatio.clio. It must be unique across configured sources.",
+					"examples": ["com.creatio.clio"]
+				},
+				"type": {
+					"type": "string",
+					"enum": ["nuget", "git"],
+					"description": "Knowledge transport. nuget reads a signed bundle from a NuGet v3 package; git clones and updates the repository directly."
+				},
+				"location": {
+					"type": "string",
+					"format": "uri",
+					"description": "Credential-free public HTTPS NuGet v3 service-index or Git repository URL. Loopback HTTP is accepted for local testing; user info, query strings, and fragments are rejected.",
+					"examples": ["https://github.com/Advance-Technologies-Foundation/clio-knowledge.git"]
+				},
 				"trusted-key-id": {
 					"type": "string",
-					"description": "Signature key ID authorized for bundles from this source"
+					"minLength": 1,
+					"maxLength": 255,
+					"description": "NuGet-only manifest signing-key ID authorized for this source. It is not used for Git sources."
 				},
 				"trusted-public-key-path": {
 					"type": "string",
-					"description": "Absolute local path to public verification-key material; never a private key"
+					"minLength": 1,
+					"description": "NuGet-only absolute local path to exactly one bounded P-256 PUBLIC KEY PEM. It is not used for Git sources.",
+					"examples": ["C:\\Keys\\creatio-public.pem"]
 				},
-				"package-id": { "type": "string" },
-				"branch": { "type": "string" },
-				"tag": { "type": "string" },
-				"commit": { "type": "string" },
-				"artifact-path": { "type": "string", "default": "knowledge-bundle.zip" },
-				"enabled": { "type": "boolean", "default": true },
-				"priority": { "type": "integer", "default": 0 },
+				"package-id": {
+					"type": "string",
+					"minLength": 1,
+					"maxLength": 100,
+					"pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$",
+					"description": "NuGet package ID containing the signed knowledge bundle. Required when type is nuget and forbidden for git."
+				},
+				"branch": {
+					"type": "string",
+					"minLength": 1,
+					"maxLength": 200,
+					"description": "Git branch to follow on install and update. If commit is also set, commit wins; otherwise tag wins over branch. When no Git reference is configured, a successful install discovers and persists the remote default branch."
+				},
+				"tag": {
+					"type": "string",
+					"minLength": 1,
+					"maxLength": 200,
+					"description": "Git tag resolved to an immutable commit. A configured commit wins over tag, and tag wins over branch."
+				},
+				"commit": {
+					"type": "string",
+					"pattern": "^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$",
+					"description": "Complete immutable Git SHA-1 or SHA-256 object ID. It takes precedence over tag and branch; abbreviated hashes are rejected."
+				},
+				"enabled": {
+					"type": "boolean",
+					"default": true,
+					"description": "Serving and lifecycle kill switch. false keeps configuration and installed files but excludes the source from serving and bulk install/update/delete operations."
+				},
+				"priority": {
+					"type": "integer",
+					"default": 0,
+					"description": "Operator-controlled topic resolution priority. Higher eligible values win after topic pins and participation rules; equal winners are reported as ambiguous."
+				},
 				"participation": {
 					"type": "string",
 					"enum": ["isolated", "supplement", "authoritative"],
-					"default": "supplement"
+					"default": "supplement",
+					"description": "Logical-topic role: isolated is namespaced-only; supplement fills topics not supplied by an eligible authoritative source; authoritative competes for logical topics using pins and priority."
 				}
 			},
-			"required": ["library-id", "type", "location", "trusted-key-id", "trusted-public-key-path", "enabled", "priority", "participation"]
+			"required": ["library-id", "type", "location", "enabled", "priority", "participation"],
+			"allOf": [
+				{
+					"if": {
+						"properties": { "type": { "const": "nuget" } },
+						"required": ["type"]
+					},
+					"then": {
+						"required": ["package-id", "trusted-key-id", "trusted-public-key-path"],
+						"not": {
+							"anyOf": [
+								{ "required": ["branch"] },
+								{ "required": ["tag"] },
+								{ "required": ["commit"] }
+							]
+						}
+					}
+				},
+				{
+					"if": {
+						"properties": { "type": { "const": "git" } },
+						"required": ["type"]
+					},
+					"then": {
+						"not": {
+							"anyOf": [
+								{ "required": ["package-id"] },
+								{ "required": ["trusted-key-id"] },
+								{ "required": ["trusted-public-key-path"] }
+							]
+						}
+					}
+				}
+			]
 		},
 		"localredisserverconfiguration": {
 			"type": "object",

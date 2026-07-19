@@ -4,6 +4,7 @@ using System.IO;
 using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
 using System.Security.Cryptography;
+using System.Threading;
 using Clio.Command;
 using Clio.Command.McpServer.Knowledge;
 using Clio.Tests.Infrastructure;
@@ -22,8 +23,9 @@ public sealed class KnowledgeSourceManagementServiceTests {
 	private ISettingsRepository _settings = null!;
 	private IKnowledgeSourceInstallationStore _store = null!;
 	private IKnowledgeBundleRuntime _runtime = null!;
-	private IKnowledgeTransport _transport = null!;
-	private IKnowledgeTransport _gitTransport = null!;
+	private IKnowledgeArtifactTransport _transport = null!;
+	private IKnowledgeRepositoryTransport _gitTransport = null!;
+	private IKnowledgeGitRepositoryReader _gitReader = null!;
 	private MockFileSystem _fileSystem = null!;
 	private ServiceProvider _container = null!;
 	private IKnowledgeSourceManagementService _service = null!;
@@ -35,10 +37,32 @@ public sealed class KnowledgeSourceManagementServiceTests {
 		_settings = Substitute.For<ISettingsRepository>();
 		_store = Substitute.For<IKnowledgeSourceInstallationStore>();
 		_runtime = Substitute.For<IKnowledgeBundleRuntime>();
-		_transport = Substitute.For<IKnowledgeTransport>();
+		_transport = Substitute.For<IKnowledgeArtifactTransport>();
 		_transport.Type.Returns(KnowledgeSourceType.NuGet);
-		_gitTransport = Substitute.For<IKnowledgeTransport>();
+		_gitTransport = Substitute.For<IKnowledgeRepositoryTransport>();
 		_gitTransport.Type.Returns(KnowledgeSourceType.Git);
+		_gitReader = Substitute.For<IKnowledgeGitRepositoryReader>();
+		_settings.TryAddKnowledgeSource(
+			Arg.Any<string>(),
+			Arg.Any<KnowledgeSourceConfiguration>()).Returns(true);
+		_store.ExecuteWithSourceMutationLock(
+			Arg.Any<string>(),
+			Arg.Any<Func<KnowledgeSourceOperationResult>>()).Returns(call =>
+				call.ArgAt<Func<KnowledgeSourceOperationResult>>(1)());
+		_store.TryExecuteWithSourceMutationLock(Arg.Any<string>(), Arg.Any<Action>()).Returns(call => {
+			call.ArgAt<Action>(1)();
+			return true;
+		});
+		_runtime.ActivateGitRepository(
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<KnowledgeSourceParticipation>(),
+			Arg.Any<KnowledgeGitRepositorySnapshot>()).Returns(new KnowledgeBundleActivationResult(
+				KnowledgeBundleActivationStatus.Activated,
+				KnowledgeBundleRejectionCode.None,
+				1,
+				1,
+				null));
 		_fileSystem = TestFileSystem.MockFileSystem();
 		_keyDirectory = Path.Combine(Path.GetTempPath(), $"clio-source-trust-{Guid.NewGuid():N}");
 		Directory.CreateDirectory(_keyDirectory);
@@ -50,8 +74,9 @@ public sealed class KnowledgeSourceManagementServiceTests {
 		services.AddSingleton(_settings);
 		services.AddSingleton(_store);
 		services.AddSingleton(_runtime);
-		services.AddSingleton<IKnowledgeTransport>(_transport);
-		services.AddSingleton<IKnowledgeTransport>(_gitTransport);
+		services.AddSingleton<IKnowledgeArtifactTransport>(_transport);
+		services.AddSingleton(_gitTransport);
+		services.AddSingleton(_gitReader);
 		services.AddSingleton<System.IO.Abstractions.IFileSystem>(_fileSystem);
 		services.AddSingleton<IKnowledgeSourceManagementService, KnowledgeSourceManagementService>();
 		_container = services.BuildServiceProvider();
@@ -104,7 +129,7 @@ public sealed class KnowledgeSourceManagementServiceTests {
 		result.Sources[0].SourceAlias.Should().Be("alpha",
 			because: "only the enabled source should participate in the bulk operation");
 		_transport.ReceivedCalls().Count(call =>
-			call.GetMethodInfo().Name == nameof(IKnowledgeTransport.Retrieve)
+			call.GetMethodInfo().Name == nameof(IKnowledgeArtifactTransport.Retrieve)
 			&& call.GetArguments()[0] is KnowledgeTransportRequest request
 			&& request.SourceAlias == "alpha").Should().Be(1,
 			because: "transport retrieval must be scoped to the selected source alias");
@@ -200,7 +225,6 @@ public sealed class KnowledgeSourceManagementServiceTests {
 			null,
 			null,
 			null,
-			null,
 			true,
 			50,
 			"supplement");
@@ -211,7 +235,7 @@ public sealed class KnowledgeSourceManagementServiceTests {
 		// Assert
 		result.Success.Should().BeTrue(
 			because: "the source supplies an explicit signing identity and fully qualified public-key path");
-		_settings.Received(1).UpsertKnowledgeSource(
+		_settings.Received(1).TryAddKnowledgeSource(
 			"partner",
 			Arg.Is<KnowledgeSourceConfiguration>(source =>
 				source.TrustedKeyId == "partner-signing-2026"
@@ -227,7 +251,7 @@ public sealed class KnowledgeSourceManagementServiceTests {
 		KnowledgeSourceAddRequest request = new(
 			"partner", "com.example.partner", "nuget",
 			"https://packages.example.test/v3/index.json", "partner-signing-2026", missingPath,
-			"Example.Partner.Knowledge", null, null, null, null, true, 50, "supplement");
+			"Example.Partner.Knowledge", null, null, null, true, 50, "supplement");
 
 		// Act
 		KnowledgeSourceCommandResult result = _service.Add(request);
@@ -237,7 +261,7 @@ public sealed class KnowledgeSourceManagementServiceTests {
 			because: "a configured signing trust root must be readable and valid at publication time");
 		result.Message.Should().Contain("existing bounded local regular file",
 			because: "the operator needs an actionable safe-path requirement without leaking key material");
-		_settings.DidNotReceiveWithAnyArgs().UpsertKnowledgeSource(default!, default!);
+		_settings.DidNotReceiveWithAnyArgs().TryAddKnowledgeSource(default!, default!);
 	}
 
 	[Test]
@@ -529,7 +553,7 @@ public sealed class KnowledgeSourceManagementServiceTests {
 	}
 
 	[Test]
-	[Description("Source removal wins the settings compare-and-swap before deactivation and cache deletion.")]
+	[Description("Source removal wins the settings compare-and-swap and deactivates trust before deleting its cache.")]
 	public void Remove_ShouldDeleteCacheOnlyAfterConfigurationCasSucceeds() {
 		// Arrange
 		KnowledgeSourceConfiguration source = Source("com.example.alpha", enabled: true);
@@ -551,7 +575,31 @@ public sealed class KnowledgeSourceManagementServiceTests {
 		// Assert
 		result.Success.Should().BeTrue(because: "the unchanged source can be removed atomically");
 		order.Should().Equal(new[] { "configuration-cas", "deactivate", "cache-delete" },
-			because: "configuration authority must be won before runtime and disk state are changed");
+			because: "removing a trusted source must stop it serving before best-effort cache cleanup");
+	}
+
+	[Test]
+	[Description("Source removal stays deactivated when best-effort cache deletion fails.")]
+	public void Remove_ShouldKeepSourceDeactivated_WhenCacheDeleteFails() {
+		// Arrange
+		KnowledgeSourceConfiguration source = Source("com.example.alpha", enabled: true);
+		_settings.GetKnowledgeConfiguration().Returns(
+			Configuration(("alpha", source)),
+			Configuration());
+		_settings.TryRemoveKnowledgeSource("alpha", source).Returns(true);
+		_store.Delete("alpha", confirmed: true).Returns(new KnowledgeInstallationResult(
+			KnowledgeInstallationStatus.Failed,
+			"cache is locked"));
+
+		// Act
+		KnowledgeSourceCommandResult result = _service.Remove("alpha", confirmed: true);
+
+		// Assert
+		result.Success.Should().BeFalse(because: "the trusted source was removed but cache cleanup is incomplete");
+		result.Message.Should().Contain("orphaned cache",
+			because: "operators need an actionable cleanup diagnostic without restoring trust");
+		_settings.DidNotReceiveWithAnyArgs().TryAddKnowledgeSource(default!, default!);
+		_runtime.Received(1).DeactivateLibrary("alpha");
 	}
 
 	[Test]
@@ -576,44 +624,40 @@ public sealed class KnowledgeSourceManagementServiceTests {
 	}
 
 	[Test]
-	[Description("A discovered Git default branch is persisted with targeted compare-and-swap only after successful publication.")]
-	public void Install_ShouldPersistDiscoveredGitBranch_AfterSuccessfulPublish() {
+	[Description("A discovered Git default branch is persisted with targeted compare-and-swap only after successful repository validation.")]
+	public void Install_ShouldPersistDiscoveredGitBranch_AfterSuccessfulValidation() {
 		// Arrange
 		KnowledgeSourceConfiguration source = Source("com.example.git", enabled: true);
-		List<string> order = [];
 		source.Type = KnowledgeSourceType.Git;
 		source.PackageId = null;
+		source.TrustedKeyId = null;
+		source.TrustedPublicKeyPath = null;
 		source.Location = "https://example.invalid/knowledge.git";
 		_settings.GetKnowledgeConfiguration().Returns(Configuration(("git-source", source)));
-		ConfigureCurrent(_ => null);
-		_gitTransport.Retrieve(Arg.Any<KnowledgeTransportRequest>()).Returns(new KnowledgeTransportResult(
+		string repositoryPath = TestFileSystem.GetRootedPath("knowledge", "git-source", "repository");
+		_fileSystem.AddDirectory(Path.Combine(repositoryPath, ".git"));
+		_store.GetGitRepositoryPath("git-source", true).Returns(repositoryPath);
+		_gitTransport.Synchronize(Arg.Any<KnowledgeTransportRequest>(), repositoryPath).Returns(new KnowledgeTransportResult(
 			KnowledgeTransportStatus.Downloaded,
 			"0123456789abcdef0123456789abcdef01234567",
-			[1, 2, 3],
+			null,
+			repositoryPath,
 			null,
 			ResolvedBranch: "main"));
-		_runtime.Validate(Arg.Any<Stream>(), Arg.Any<string?>(), "com.example.git").Returns(new KnowledgeBundleValidationResult(
-			KnowledgeBundleActivationStatus.Activated, KnowledgeBundleRejectionCode.None, 1, null,
-			"com.example.git", "1.0.0", "digest", "0123456789abcdef0123456789abcdef01234567"));
-		_store.Publish(
-			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<ulong>(), Arg.Any<string>(),
-			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<byte[]>(), Arg.Any<bool>(),
-			Arg.Any<KnowledgeSourceGenerationPointer?>(), Arg.Any<bool>()).Returns(_ => {
-				order.Add("publish");
-				return new KnowledgeInstallationResult(KnowledgeInstallationStatus.Installed, "installed");
+		KnowledgeGitRepositorySnapshot snapshot = GitSnapshot("com.example.git");
+		_gitReader.TryRead(repositoryPath, "com.example.git", out Arg.Any<KnowledgeGitRepositorySnapshot?>(),
+			out Arg.Any<string?>()).Returns(call => {
+				call[2] = snapshot;
+				call[3] = null;
+				return true;
 			});
-		_settings.TrySetKnowledgeSourceBranch("git-source", source, "main").Returns(_ => {
-			order.Add("branch-cas");
-			return true;
-		});
+		_settings.TrySetKnowledgeSourceBranch("git-source", source, "main").Returns(true);
 
 		// Act
 		KnowledgeSourceBatchResult result = _service.Install("git-source");
 
 		// Assert
-		result.Success.Should().BeTrue(because: "publication and targeted branch persistence both succeeded");
-		order.Should().Equal(new[] { "publish", "branch-cas" },
-			because: "discovered branch persistence must be conditional on successful immutable publication");
+		result.Success.Should().BeTrue(because: "repository validation and targeted branch persistence both succeeded");
 		_settings.ReceivedCalls().Count(call =>
 			call.GetMethodInfo().Name == nameof(ISettingsRepository.TrySetKnowledgeSourceBranch)
 			&& call.GetArguments()[0] as string == "git-source"
@@ -623,36 +667,278 @@ public sealed class KnowledgeSourceManagementServiceTests {
 	}
 
 	[Test]
-	[Description("A discovered Git default branch is not persisted when immutable candidate publication fails.")]
-	public void Install_ShouldNotPersistDiscoveredGitBranch_WhenPublishFails() {
+	[Description("Installing an existing Git source still synchronizes it so origin and ref provenance are revalidated.")]
+	public void Install_ShouldSynchronize_WhenGitRepositoryAlreadyExists() {
 		// Arrange
-		KnowledgeSourceConfiguration source = Source("com.example.git", enabled: true);
-		source.Type = KnowledgeSourceType.Git;
-		source.PackageId = null;
-		source.Location = "https://example.invalid/knowledge.git";
+		KnowledgeSourceConfiguration source = GitSource("com.example.git");
+		source.Branch = "main";
 		_settings.GetKnowledgeConfiguration().Returns(Configuration(("git-source", source)));
-		ConfigureCurrent(_ => null);
-		const string commit = "0123456789abcdef0123456789abcdef01234567";
-		_gitTransport.Retrieve(Arg.Any<KnowledgeTransportRequest>()).Returns(new KnowledgeTransportResult(
-			KnowledgeTransportStatus.Downloaded, commit, [1, 2, 3], null, ResolvedBranch: "main"));
-		_runtime.Validate(Arg.Any<Stream>(), Arg.Any<string?>(), "com.example.git").Returns(
-			new KnowledgeBundleValidationResult(
-				KnowledgeBundleActivationStatus.Activated, KnowledgeBundleRejectionCode.None, 1, null,
-				"com.example.git", "1.0.0", "digest", commit));
-		_store.Publish(
-			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<ulong>(), Arg.Any<string>(),
-			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<byte[]>(), Arg.Any<bool>(),
-			Arg.Any<KnowledgeSourceGenerationPointer?>(), Arg.Any<bool>()).Returns(new KnowledgeInstallationResult(
-				KnowledgeInstallationStatus.Failed, "publish failed"));
+		string repositoryPath = TestFileSystem.GetRootedPath("knowledge", "git-source", "repository");
+		_fileSystem.AddDirectory(Path.Combine(repositoryPath, ".git"));
+		_store.GetGitRepositoryPath("git-source", true).Returns(repositoryPath);
+		const string revision = "1111111111111111111111111111111111111111";
+		_gitTransport.GetCurrentRevision(repositoryPath).Returns(revision);
+		_gitTransport.Synchronize(Arg.Any<KnowledgeTransportRequest>(), repositoryPath).Returns(
+			new KnowledgeTransportResult(
+				KnowledgeTransportStatus.NoCandidate,
+				revision,
+				null,
+				repositoryPath,
+				ResolvedBranch: "main",
+				ResolvedCommit: revision));
+		_gitReader.TryRead(repositoryPath, source.LibraryId, out Arg.Any<KnowledgeGitRepositorySnapshot?>(),
+			out Arg.Any<string?>()).Returns(call => {
+				call[2] = GitSnapshot(source.LibraryId);
+				call[3] = null;
+				return true;
+			});
 
 		// Act
 		KnowledgeSourceBatchResult result = _service.Install("git-source");
 
 		// Assert
-		result.Success.Should().BeFalse(because: "failed immutable publication cannot complete installation");
+		result.Success.Should().BeTrue(because: "the configured origin and existing checkout were valid");
+		result.Sources.Single().Status.Should().Be("already-installed",
+			because: "the synchronized checkout resolved to the already active commit");
+		_gitTransport.Received(1).Synchronize(
+			Arg.Is<KnowledgeTransportRequest>(request => request.ActiveRevision == revision),
+			repositoryPath);
+	}
+
+	[Test]
+	[Description("A discovered Git default branch is not persisted when repository validation fails.")]
+	public void Install_ShouldNotPersistDiscoveredGitBranch_WhenValidationFails() {
+		// Arrange
+		KnowledgeSourceConfiguration source = Source("com.example.git", enabled: true);
+		source.Type = KnowledgeSourceType.Git;
+		source.PackageId = null;
+		source.TrustedKeyId = null;
+		source.TrustedPublicKeyPath = null;
+		source.Location = "https://example.invalid/knowledge.git";
+		_settings.GetKnowledgeConfiguration().Returns(Configuration(("git-source", source)));
+		string repositoryPath = TestFileSystem.GetRootedPath("knowledge", "git-source", "repository");
+		_store.GetGitRepositoryPath("git-source", true).Returns(repositoryPath);
+		const string commit = "0123456789abcdef0123456789abcdef01234567";
+		_gitTransport.Synchronize(Arg.Any<KnowledgeTransportRequest>(), repositoryPath).Returns(_ => {
+			_fileSystem.AddDirectory(Path.Combine(repositoryPath, ".git"));
+			return new KnowledgeTransportResult(
+				KnowledgeTransportStatus.Downloaded, commit, null, repositoryPath, ResolvedBranch: "main");
+		});
+		_gitReader.TryRead(repositoryPath, "com.example.git", out Arg.Any<KnowledgeGitRepositorySnapshot?>(),
+			out Arg.Any<string?>()).Returns(call => {
+				call[2] = null;
+				call[3] = "invalid repository";
+				return false;
+			});
+
+		// Act
+		KnowledgeSourceBatchResult result = _service.Install("git-source");
+
+		// Assert
+		result.Success.Should().BeFalse(because: "an invalid direct Git repository cannot complete installation");
 		_settings.ReceivedCalls().Count(call =>
 			call.GetMethodInfo().Name == nameof(ISettingsRepository.TrySetKnowledgeSourceBranch)).Should().Be(0,
 			because: "branch metadata cannot be persisted for a candidate that never became active");
+		_runtime.Received(1).DeactivateLibrary("git-source");
+		_fileSystem.Directory.Exists(repositoryPath).Should().BeFalse(
+			because: "a rejected first clone must be discarded so a later install can clone a repaired source");
+	}
+
+	[Test]
+	[Description("A Git checkout is rolled back when synchronization mutates it and then rejects the result.")]
+	public void Update_ShouldRollbackGitCheckout_WhenSynchronizationRejectsCandidate() {
+		// Arrange
+		KnowledgeSourceConfiguration source = GitSource("com.example.git");
+		_settings.GetKnowledgeConfiguration().Returns(Configuration(("git-source", source)));
+		string repositoryPath = TestFileSystem.GetRootedPath("knowledge", "git-source", "repository");
+		_fileSystem.AddDirectory(Path.Combine(repositoryPath, ".git"));
+		_store.GetGitRepositoryPath("git-source", true).Returns(repositoryPath);
+		const string previousRevision = "1111111111111111111111111111111111111111";
+		_gitTransport.GetCurrentRevision(repositoryPath).Returns(previousRevision);
+		_gitReader.TryRead(repositoryPath, source.LibraryId, out Arg.Any<KnowledgeGitRepositorySnapshot?>(),
+			out Arg.Any<string?>()).Returns(call => {
+				call[2] = GitSnapshot(source.LibraryId);
+				call[3] = null;
+				return true;
+			});
+		_gitTransport.Synchronize(Arg.Any<KnowledgeTransportRequest>(), repositoryPath).Returns(
+			new KnowledgeTransportResult(
+				KnowledgeTransportStatus.Rejected,
+				null,
+				null,
+				null,
+				Diagnostic: "checkout contains a symbolic link"));
+
+		// Act
+		KnowledgeSourceBatchResult result = _service.Update("git-source");
+
+		// Assert
+		result.Success.Should().BeFalse(because: "a rejected synchronized checkout must not replace trusted content");
+		result.Sources.Single().Status.Should().Be("rejected",
+			because: "a transport policy rejection should remain distinguishable from an outage");
+		_gitTransport.Received(1).Restore(repositoryPath, previousRevision);
+		_runtime.Received(1).ActivateGitRepository(
+			"git-source", source.Priority, source.Participation,
+			Arg.Is<KnowledgeGitRepositorySnapshot>(snapshot => snapshot.Sequence == 1));
+	}
+
+	[Test]
+	[Description("A synchronized Git checkout is rolled back when it regresses the previously validated sequence.")]
+	public void Update_ShouldRollbackGitCheckout_WhenSequenceRegresses() {
+		// Arrange
+		KnowledgeSourceConfiguration source = GitSource("com.example.git");
+		_settings.GetKnowledgeConfiguration().Returns(Configuration(("git-source", source)));
+		string repositoryPath = TestFileSystem.GetRootedPath("knowledge", "git-source", "repository");
+		_fileSystem.AddDirectory(Path.Combine(repositoryPath, ".git"));
+		_store.GetGitRepositoryPath("git-source", true).Returns(repositoryPath);
+		const string previousRevision = "1111111111111111111111111111111111111111";
+		const string nextRevision = "2222222222222222222222222222222222222222";
+		_gitTransport.GetCurrentRevision(repositoryPath).Returns(previousRevision);
+		_gitTransport.Synchronize(Arg.Any<KnowledgeTransportRequest>(), repositoryPath).Returns(
+			new KnowledgeTransportResult(
+				KnowledgeTransportStatus.Downloaded,
+				nextRevision,
+				null,
+				repositoryPath,
+				ResolvedCommit: nextRevision));
+		int reads = 0;
+		_gitReader.TryRead(repositoryPath, source.LibraryId, out Arg.Any<KnowledgeGitRepositorySnapshot?>(),
+			out Arg.Any<string?>()).Returns(call => {
+			reads++;
+			call[2] = reads == 2
+				? GitSnapshot(source.LibraryId) with { Sequence = 4, ContentDigest = "older" }
+				: GitSnapshot(source.LibraryId) with { Sequence = 5, ContentDigest = "current" };
+			call[3] = null;
+			return true;
+		});
+
+		// Act
+		KnowledgeSourceBatchResult result = _service.Update("git-source");
+
+		// Assert
+		result.Success.Should().BeFalse(because: "a Git source cannot move behind its previously validated sequence");
+		result.Sources.Single().Status.Should().Be("rejected",
+			because: "the anti-rollback failure should be distinguishable from a transport outage");
+		_gitTransport.Received(1).Restore(repositoryPath, previousRevision);
+		_runtime.Received(1).ActivateGitRepository(
+			"git-source", source.Priority, source.Participation,
+			Arg.Is<KnowledgeGitRepositorySnapshot>(snapshot => snapshot.Sequence == 5));
+	}
+
+	[Test]
+	[Description("A Git checkout and runtime are rolled back when default-branch persistence loses its settings race.")]
+	public void Install_ShouldRollbackGitCheckout_WhenBranchPersistenceCasFails() {
+		// Arrange
+		KnowledgeSourceConfiguration source = GitSource("com.example.git");
+		_settings.GetKnowledgeConfiguration().Returns(Configuration(("git-source", source)));
+		string repositoryPath = TestFileSystem.GetRootedPath("knowledge", "git-source", "repository");
+		_fileSystem.AddDirectory(Path.Combine(repositoryPath, ".git"));
+		_store.GetGitRepositoryPath("git-source", true).Returns(repositoryPath);
+		const string previousRevision = "1111111111111111111111111111111111111111";
+		const string nextRevision = "2222222222222222222222222222222222222222";
+		_gitTransport.GetCurrentRevision(repositoryPath).Returns(previousRevision);
+		_gitTransport.Synchronize(Arg.Any<KnowledgeTransportRequest>(), repositoryPath).Returns(
+			new KnowledgeTransportResult(
+				KnowledgeTransportStatus.Downloaded,
+				nextRevision,
+				null,
+				repositoryPath,
+				ResolvedBranch: "main",
+				ResolvedCommit: nextRevision));
+		int reads = 0;
+		_gitReader.TryRead(repositoryPath, source.LibraryId, out Arg.Any<KnowledgeGitRepositorySnapshot?>(),
+			out Arg.Any<string?>()).Returns(call => {
+			reads++;
+			call[2] = reads == 2
+				? GitSnapshot(source.LibraryId) with { Sequence = 2, ContentDigest = "next" }
+				: GitSnapshot(source.LibraryId);
+			call[3] = null;
+			return true;
+		});
+		_settings.TrySetKnowledgeSourceBranch("git-source", source, "main").Returns(false);
+
+		// Act
+		KnowledgeSourceBatchResult result = _service.Install("git-source");
+
+		// Assert
+		result.Success.Should().BeFalse(because: "the source configuration changed before branch persistence");
+		_gitTransport.Received(1).Restore(repositoryPath, previousRevision);
+		_runtime.Received(1).ActivateGitRepository(
+			"git-source", source.Priority, source.Participation,
+			Arg.Is<KnowledgeGitRepositorySnapshot>(snapshot => snapshot.Sequence == 2));
+		_runtime.Received(2).ActivateGitRepository(
+			"git-source", source.Priority, source.Participation,
+			Arg.Any<KnowledgeGitRepositorySnapshot>());
+	}
+
+	[Test]
+	[Description("Git update information reports an available remote commit without mutating the checkout.")]
+	public void GetInfo_ShouldReportAvailable_WhenGitRemoteRevisionDiffers() {
+		// Arrange
+		KnowledgeSourceConfiguration source = GitSource("com.example.git");
+		_settings.GetKnowledgeConfiguration().Returns(Configuration(("git-source", source)));
+		string repositoryPath = TestFileSystem.GetRootedPath("knowledge", "git-source", "repository");
+		_fileSystem.AddDirectory(Path.Combine(repositoryPath, ".git"));
+		_store.GetGitRepositoryPath("git-source", false).Returns(repositoryPath);
+		const string currentRevision = "1111111111111111111111111111111111111111";
+		const string remoteRevision = "2222222222222222222222222222222222222222";
+		_gitTransport.GetCurrentRevision(repositoryPath).Returns(currentRevision);
+		_gitReader.TryRead(repositoryPath, source.LibraryId, out Arg.Any<KnowledgeGitRepositorySnapshot?>(),
+			out Arg.Any<string?>()).Returns(call => {
+				call[2] = GitSnapshot(source.LibraryId);
+				call[3] = null;
+				return true;
+			});
+		_gitTransport.CheckForUpdates(Arg.Any<KnowledgeTransportRequest>(), repositoryPath).Returns(
+			new KnowledgeTransportResult(
+				KnowledgeTransportStatus.Downloaded,
+				remoteRevision,
+				null,
+				null,
+				ResolvedCommit: remoteRevision));
+
+		// Act
+		KnowledgeSourceInfoResult result = _service.GetInfo("git-source", checkUpdates: true);
+
+		// Assert
+		result.Success.Should().BeTrue(because: "the installed Git source and remote probe are valid");
+		result.Sources.Single().UpdateAvailability.Should().Be("available",
+			because: "a differing trusted remote commit represents an available update");
+		_gitTransport.DidNotReceiveWithAnyArgs().Synchronize(default!, default!);
+	}
+
+	[Test]
+	[Description("All-source information inspection uses bounded concurrency instead of serial transport work.")]
+	public void GetInfo_ShouldInspectIndependentSourcesConcurrently_WhenAliasIsOmitted() {
+		// Arrange
+		(string Alias, KnowledgeSourceConfiguration Source)[] sources = Enumerable.Range(0, 12)
+			.Select(index => ($"source-{index}", Source($"com.example.source{index}", enabled: true)))
+			.ToArray();
+		_settings.GetKnowledgeConfiguration().Returns(Configuration(sources));
+		int active = 0;
+		int maximum = 0;
+		_store.ReadCurrent(Arg.Any<string>(), out Arg.Any<string?>()).Returns(call => {
+			int current = Interlocked.Increment(ref active);
+			int observed;
+			do {
+				observed = Volatile.Read(ref maximum);
+			} while (current > observed && Interlocked.CompareExchange(ref maximum, current, observed) != observed);
+			Thread.Sleep(40);
+			Interlocked.Decrement(ref active);
+			call[1] = null;
+			return null;
+		});
+
+		// Act
+		KnowledgeSourceInfoResult result = _service.GetInfo(sourceAlias: null, checkUpdates: false);
+
+		// Assert
+		result.Sources.Should().HaveCount(sources.Length,
+			because: "bounded concurrency must retain one deterministic result per configured source");
+		maximum.Should().BeGreaterThan(1,
+			because: "independent sources should not multiply transport latency through serial execution");
+		maximum.Should().BeLessThanOrEqualTo(8,
+			because: "source fan-out must remain bounded to protect process and network resources");
 	}
 
 	private void ConfigureCurrent(Func<string, KnowledgeSourceCurrentState?> selector) {
@@ -681,6 +967,22 @@ public sealed class KnowledgeSourceManagementServiceTests {
 		Enabled = enabled,
 		Participation = KnowledgeSourceParticipation.Supplement
 	};
+
+	private static KnowledgeSourceConfiguration GitSource(string libraryId) => new() {
+		LibraryId = libraryId,
+		Type = KnowledgeSourceType.Git,
+		Location = "https://example.invalid/knowledge.git",
+		Enabled = true,
+		Priority = 100,
+		Participation = KnowledgeSourceParticipation.Supplement
+	};
+
+	private static KnowledgeGitRepositorySnapshot GitSnapshot(string libraryId) => new(
+		libraryId,
+		"1.0.0",
+		1,
+		"digest",
+		[]);
 
 	private static KnowledgeSourceCurrentState State(
 		string alias,

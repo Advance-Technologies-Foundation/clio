@@ -13,7 +13,7 @@ using System.Text.RegularExpressions;
 
 namespace Clio.Command.McpServer.Knowledge;
 
-internal sealed class KnowledgeBundleNuGetClient : IKnowledgeTransport {
+internal sealed class KnowledgeBundleNuGetClient : IKnowledgeArtifactTransport {
 	internal const string HttpClientName = "knowledge-bundle-nuget";
 	internal const string SourceVariable = "CLIO_KNOWLEDGE_NUGET_SOURCE";
 	internal const string PackageIdVariable = "CLIO_KNOWLEDGE_NUGET_PACKAGE_ID";

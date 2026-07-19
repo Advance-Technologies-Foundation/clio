@@ -26,6 +26,12 @@ internal interface IKnowledgeBundleRuntime {
 		string? expectedLibraryId = null,
 		string? localRootPath = null);
 
+	KnowledgeBundleActivationResult ActivateGitRepository(
+		string sourceAlias,
+		int priority,
+		KnowledgeSourceParticipation participation,
+		KnowledgeGitRepositorySnapshot snapshot);
+
 	void Deactivate();
 
 	void DeactivateLibrary(string sourceAlias);
@@ -35,6 +41,8 @@ internal interface IKnowledgeBundleRuntime {
 	KnowledgeArticleLookup Find(string name);
 
 	IReadOnlyList<string> GetNames();
+
+	IReadOnlyList<KnowledgeRoleArticle> GetArticlesByRole(string role);
 
 	ulong? ActiveSequence { get; }
 }
@@ -242,7 +250,7 @@ internal sealed class ConfiguredKnowledgeBundleTrustStore : IKnowledgeBundleTrus
 			return source is not null
 				&& string.Equals(source.TrustedKeyId, keyId, StringComparison.Ordinal)
 				&& EnvironmentKnowledgeBundleTrustStore.TryReadPublicKeyFile(
-					source.TrustedPublicKeyPath,
+					source.TrustedPublicKeyPath!,
 					out publicKeyPem);
 		} catch (Exception exception) when (exception is IOException
 				or UnauthorizedAccessException
@@ -315,6 +323,12 @@ internal sealed class UnavailableKnowledgeBundleRuntime : IKnowledgeBundleRuntim
 		string? expectedLibraryId = null,
 		string? localRootPath = null) => throw new NotSupportedException();
 
+	public KnowledgeBundleActivationResult ActivateGitRepository(
+		string sourceAlias,
+		int priority,
+		KnowledgeSourceParticipation participation,
+		KnowledgeGitRepositorySnapshot snapshot) => throw new NotSupportedException();
+
 	public void Deactivate() {
 	}
 
@@ -328,6 +342,9 @@ internal sealed class UnavailableKnowledgeBundleRuntime : IKnowledgeBundleRuntim
 		new(KnowledgeArticleLookupStatus.Unavailable, null, null);
 
 	public IReadOnlyList<string> GetNames() => Array.Empty<string>();
+
+	public IReadOnlyList<KnowledgeRoleArticle> GetArticlesByRole(string role) =>
+		Array.Empty<KnowledgeRoleArticle>();
 }
 
 internal sealed record KnowledgeBundleClientCapabilities(
@@ -395,3 +412,9 @@ internal sealed record KnowledgeArticleLookup(
 	ulong? ActiveSequence,
 	KnowledgeArticleProvenance? Provenance = null,
 	string? Diagnostic = null);
+
+internal sealed record KnowledgeRoleArticle(
+	KnowledgeArticle Article,
+	KnowledgeArticleProvenance Provenance,
+	int Priority,
+	KnowledgeSourceParticipation Participation);

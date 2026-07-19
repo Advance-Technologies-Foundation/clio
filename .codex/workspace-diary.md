@@ -6849,3 +6849,10 @@ Decision: V1 no longer emits or requires `issuedAt`; the Clio consumer still acc
 Discovery: Git-backed knowledge already has an authoritative commit timestamp, so a second publisher-authored timestamp can drift without improving resolution or trust.
 Files: clio/Command/McpServer/Knowledge/KnowledgeBundleManifest.cs, clio/Command/McpServer/Knowledge/KnowledgeBundleRuntime.cs, clio.tests/Command/McpServer/KnowledgeBundleRuntimeTests.cs, clio.mcp.e2e/Support/Knowledge/SyntheticKnowledgeNuGetFixture.cs
 Impact: Direct Git and newly generated NuGet knowledge use one provenance clock while older v1 artifacts remain readable.
+
+## 2026-07-19 20:31 – Finalize multi-source knowledge merge candidate
+Context: PR #927 needed final cross-repository review, simplification, contract alignment, and release-grade validation while remaining draft.
+Decision: Unified artifact and repository transport discovery, bounded parallel source operations by the remaining batch budget, moved remote Git update checks outside mutation locks, bound content roles to canonical repository directories, and surfaced transient activation diagnostics instead of false empty catalogs.
+Discovery: A non-blocking activator can legitimately miss a source during concurrent synchronization; catalog discovery must propagate that state so agents retry rather than infer that no examples exist.
+Files: clio/Command/McpServer/Knowledge/, clio/Command/McpServer/Tools/KnowledgeManagementTools.cs, clio.tests/Command/McpServer/, clio.mcp.e2e/, clio/tpl/jsonschema/schema.json.tpl, C:/Projects/clio-knowledge/.worktrees/pr927-compat/schemas/v1/knowledge-repository.schema.json
+Impact: The draft PR now has matching producer/consumer contracts, mechanics-only Clio E2E coverage, live Git example discovery, and no unresolved Blocker/High review findings.

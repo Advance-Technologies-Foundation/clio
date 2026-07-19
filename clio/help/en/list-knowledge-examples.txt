@@ -1,0 +1,44 @@
+COMMAND TYPE
+    Integrations & tools
+
+NAME
+    list-knowledge-examples - Discover registered reference examples without cloning them
+
+SYNOPSIS
+    clio list-knowledge-examples [--source <alias>] [--search <text>]
+        [--capability <tag>] [--status <status>] [--json]
+
+DESCRIPTION
+    Lists all matching reference examples registered in active local knowledge
+    catalogs. NuGet catalogs carry verified package/signature/digest provenance;
+    Git catalogs carry configured repository and exact resolved-commit provenance
+    after catalog validation. An example repository does not need to be cloned or
+    otherwise installed locally to appear in the result.
+
+    The command is local-only: it does not contact a knowledge transport or an
+    example repository, and it never clones example code. Update the relevant
+    knowledge source first when its local catalog is stale or missing.
+
+OPTIONS
+    --source <alias>       Inspect one configured source alias instead of all active sources
+    --search <text>        Case-insensitive match across IDs, titles, use cases, sources,
+                           and supporting capabilities
+    --capability <tag>     Match one supporting-capability tag, case-insensitively
+    --status <status>      Match one catalog publication status, case-insensitively
+    --json                 Emit full example metadata as indented JSON
+
+    Filter values cannot exceed 200 characters.
+
+EXAMPLES
+    clio list-knowledge-examples
+    clio list-knowledge-examples --search kafka
+    clio list-knowledge-examples --capability native-library-lifecycle
+    clio list-knowledge-examples --source creatio --status published
+    clio list-knowledge-examples --search pubsub --json
+
+EXIT CODES
+    0   Matching examples were listed, or no examples matched
+    1   A filter or cached catalog entry was invalid
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

@@ -162,6 +162,34 @@ public sealed class EnvironmentSettingsTests {
 	}
 
 	[Test]
+	[Description("TryAddKnowledgeSource atomically preserves the existing alias and stable library identity.")]
+	public void TryAddKnowledgeSource_ShouldRejectAliasOrLibraryConflicts() {
+		// Arrange
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		SettingsRepository repository = new(fileSystem);
+		KnowledgeSourceConfiguration first = GitSource(priority: 10);
+		KnowledgeSourceConfiguration conflictingAlias = new() {
+			LibraryId = "com.example.other",
+			Type = KnowledgeSourceType.Git,
+			Location = "https://example.invalid/other.git"
+		};
+
+		// Act
+		bool added = repository.TryAddKnowledgeSource("partner", first);
+		bool aliasConflict = repository.TryAddKnowledgeSource("partner", conflictingAlias);
+		bool libraryConflict = repository.TryAddKnowledgeSource("other", first);
+		KnowledgeConfiguration persisted = repository.GetKnowledgeConfiguration();
+
+		// Assert
+		added.Should().BeTrue(because: "an unused alias and library identity should be added");
+		aliasConflict.Should().BeFalse(because: "a concurrent alias recreation must not be overwritten");
+		libraryConflict.Should().BeFalse(because: "one stable library identity cannot be registered twice");
+		persisted.Sources.Should().ContainSingle(because: "conflicting additions must leave the first source intact");
+		persisted.Sources["partner"].Priority.Should().Be(10,
+			because: "the first successful atomic addition remains authoritative");
+	}
+
+	[Test]
 	[Description("UpsertKnowledgeSource persists validated source fields under the nested knowledge configuration.")]
 	public void UpsertKnowledgeSource_ShouldPersistNestedSource_WhenConfigurationIsValid() {
 		// Arrange
@@ -171,8 +199,6 @@ public sealed class EnvironmentSettingsTests {
 			LibraryId = "com.example.partner",
 			Type = KnowledgeSourceType.Git,
 			Location = "https://example.invalid/knowledge.git",
-			TrustedKeyId = "partner-signing-2026",
-			TrustedPublicKeyPath = TestFileSystem.GetRootedPath("keys", "partner-public.pem"),
 			Branch = "main",
 			Enabled = true,
 			Priority = 50,
@@ -187,16 +213,14 @@ public sealed class EnvironmentSettingsTests {
 		// Assert
 		snapshot.Sources["PARTNER"].LibraryId.Should().Be("com.example.partner",
 			because: "source aliases are operator-facing and must resolve case-insensitively");
-		snapshot.Sources["partner"].ArtifactPath.Should().Be("knowledge-bundle.zip",
-			because: "Git sources use the safe declared-artifact default when none is supplied");
+		snapshot.Sources["partner"].Branch.Should().Be("main",
+			because: "Git sources persist the branch used by their direct checkout");
 		persisted.Should().Contain("\"type\": \"git\"",
 			because: "transport types must persist as stable lowercase contract values");
 		persisted.Should().Contain("\"library-id\": \"com.example.partner\"",
 			because: "the stable library identity is the persisted resolution identity");
-		persisted.Should().Contain("\"trusted-key-id\": \"partner-signing-2026\"",
-			because: "each publisher's declared signing key identity must persist with that source");
-		persisted.Should().Contain("\"trusted-public-key-path\"",
-			because: "the visible source configuration must identify its local public verification key");
+		persisted.Should().NotContain("knowledge-bundle.zip",
+			because: "a Git source is a direct checkout rather than a packaged bundle artifact");
 	}
 
 	[Test]
@@ -345,8 +369,6 @@ public sealed class EnvironmentSettingsTests {
 		LibraryId = "com.example.partner",
 		Type = KnowledgeSourceType.Git,
 		Location = "https://example.invalid/knowledge.git",
-		TrustedKeyId = "partner-signing-2026",
-		TrustedPublicKeyPath = TestFileSystem.GetRootedPath("keys", "partner-public.pem"),
 		Enabled = true,
 		Priority = priority,
 		Participation = KnowledgeSourceParticipation.Supplement

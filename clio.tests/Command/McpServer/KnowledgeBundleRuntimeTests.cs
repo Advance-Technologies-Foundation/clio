@@ -231,6 +231,52 @@ public sealed class KnowledgeBundleRuntimeTests {
 	}
 
 	[Test]
+	[Description("Rejects a Git snapshot whose sequence is lower than the active snapshot for the same source.")]
+	public void ActivateGitRepository_ShouldRejectSnapshot_WhenSequenceMovesBackward() {
+		// Arrange
+		KnowledgeGitRepositorySnapshot active = GitSnapshot(sequence: 2, digest: "DIGEST-A", text: "active");
+		KnowledgeGitRepositorySnapshot older = GitSnapshot(sequence: 1, digest: "DIGEST-B", text: "older");
+		_runtime.ActivateGitRepository(
+			"partner", 100, KnowledgeSourceParticipation.Authoritative, active);
+
+		// Act
+		KnowledgeBundleActivationResult result = _runtime.ActivateGitRepository(
+			"partner", 100, KnowledgeSourceParticipation.Authoritative, older);
+		KnowledgeArticleLookup lookup = _runtime.Find("docs://knowledge/com.example.partner/guide");
+
+		// Assert
+		result.Status.Should().Be(KnowledgeBundleActivationStatus.Rejected,
+			because: "Git-backed sources must preserve the same forward-only sequence invariant as packaged sources");
+		result.RejectionCode.Should().Be(KnowledgeBundleRejectionCode.SequenceNotForward,
+			because: "an older sequence is a replay rather than a valid update");
+		lookup.Article!.Text.Should().Be("active",
+			because: "rejecting a replay must retain the previously active immutable content");
+	}
+
+	[Test]
+	[Description("Rejects divergent Git content that reuses the active sequence and retains the active snapshot.")]
+	public void ActivateGitRepository_ShouldRejectSnapshot_WhenEqualSequenceHasDifferentDigest() {
+		// Arrange
+		KnowledgeGitRepositorySnapshot active = GitSnapshot(sequence: 2, digest: "DIGEST-A", text: "active");
+		KnowledgeGitRepositorySnapshot divergent = GitSnapshot(sequence: 2, digest: "DIGEST-B", text: "divergent");
+		_runtime.ActivateGitRepository(
+			"partner", 100, KnowledgeSourceParticipation.Authoritative, active);
+
+		// Act
+		KnowledgeBundleActivationResult result = _runtime.ActivateGitRepository(
+			"partner", 100, KnowledgeSourceParticipation.Authoritative, divergent);
+		KnowledgeArticleLookup lookup = _runtime.Find("docs://knowledge/com.example.partner/guide");
+
+		// Assert
+		result.Status.Should().Be(KnowledgeBundleActivationStatus.Rejected,
+			because: "one sequence cannot identify two different Git knowledge generations");
+		result.RejectionCode.Should().Be(KnowledgeBundleRejectionCode.InvalidContent,
+			because: "equal-sequence digest divergence is an invalid publisher contract rather than an ordinary replay");
+		lookup.Article!.Text.Should().Be("active",
+			because: "a divergent candidate must never replace last-known-good content");
+	}
+
+	[Test]
 	[Description("Rejects a correctly signed bundle when its declared version does not match the immutable NuGet package version.")]
 	public void Activate_ShouldRejectCandidate_WhenSignedBundleVersionDiffersFromPackageVersion() {
 		// Arrange
@@ -762,6 +808,20 @@ public sealed class KnowledgeBundleRuntimeTests {
 	}
 
 	private MemoryStream ValidCandidate() => new(_validCandidateBytes.ToArray());
+
+	private static KnowledgeGitRepositorySnapshot GitSnapshot(ulong sequence, string digest, string text) => new(
+		"com.example.partner",
+		"1.0.0",
+		sequence,
+		digest,
+		[new KnowledgeArticle(
+			"guide",
+			"docs://knowledge/com.example.partner/guide",
+			text,
+			"com.example.partner",
+			"guide",
+			"example.guide",
+			"guidance")]);
 
 	private MemoryStream MutateAndResign(Action<JsonObject> mutateManifest) => MutateCandidate(entries => {
 		JsonObject manifest = JsonNode.Parse(entries["manifest.json"])!.AsObject();

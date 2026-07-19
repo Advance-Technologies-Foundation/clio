@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Threading;
 
 namespace Clio.Command;
 
@@ -10,13 +11,12 @@ internal sealed record KnowledgeSourceAddRequest(
 	string LibraryId,
 	string TransportType,
 	string Location,
-	string TrustedKeyId,
-	string TrustedPublicKeyPath,
+	string? TrustedKeyId,
+	string? TrustedPublicKeyPath,
 	string? PackageId,
 	string? Branch,
 	string? Tag,
 	string? Commit,
-	string? ArtifactPath,
 	bool Enabled,
 	int Priority,
 	string Participation);
@@ -58,8 +58,8 @@ internal sealed record KnowledgeSourceInfo(
 	string LibraryId,
 	string TransportType,
 	string Location,
-	string TrustedKeyId,
-	string TrustedPublicKeyPath,
+	string? TrustedKeyId,
+	string? TrustedPublicKeyPath,
 	bool Enabled,
 	int Priority,
 	string Participation,
@@ -108,22 +108,28 @@ internal interface IKnowledgeSourceManagementService {
 	/// <summary>
 	/// Installs knowledge for one configured source or all enabled sources.
 	/// </summary>
-	KnowledgeSourceBatchResult Install(string? sourceAlias);
+	KnowledgeSourceBatchResult Install(string? sourceAlias, CancellationToken cancellationToken = default);
 
 	/// <summary>
 	/// Updates knowledge for one configured source or all enabled sources.
 	/// </summary>
-	KnowledgeSourceBatchResult Update(string? sourceAlias);
+	KnowledgeSourceBatchResult Update(string? sourceAlias, CancellationToken cancellationToken = default);
 
 	/// <summary>
 	/// Reports knowledge configuration and installation state.
 	/// </summary>
-	KnowledgeSourceInfoResult GetInfo(string? sourceAlias, bool checkUpdates);
+	KnowledgeSourceInfoResult GetInfo(
+		string? sourceAlias,
+		bool checkUpdates,
+		CancellationToken cancellationToken = default);
 
 	/// <summary>
 	/// Deletes installed knowledge for one configured source or all enabled sources after confirmation.
 	/// </summary>
-	KnowledgeSourceBatchResult Delete(string? sourceAlias, bool confirmed);
+	KnowledgeSourceBatchResult Delete(
+		string? sourceAlias,
+		bool confirmed,
+		CancellationToken cancellationToken = default);
 
 	/// <summary>
 	/// Validates and atomically adds one configured knowledge source.

@@ -44,6 +44,39 @@ public sealed class KnowledgeSourceInstallationStoreTests {
 	}
 
 	[Test]
+	[Description("A non-blocking source read lease reports contention instead of waiting behind a mutation.")]
+	public void TryExecuteWithSourceMutationLock_ShouldReturnFalse_WhenSourceIsAlreadyLocked() {
+		// Arrange
+		bool acquired = true;
+
+		// Act
+		_store.ExecuteWithSourceMutationLock("partner", () => {
+			acquired = _store.TryExecuteWithSourceMutationLock("partner", () => { });
+			return true;
+		});
+
+		// Assert
+		acquired.Should().BeFalse(
+			because: "guidance reads must keep serving last-known-good content instead of waiting behind an update");
+	}
+
+	[Test]
+	[Description("Git mutation locking revalidates an existing source root before returning its repository path.")]
+	public void ExecuteWithSourceMutationLock_ShouldRejectExistingSourceRoot_WhenOwnershipMarkerChanges() {
+		// Arrange
+		string repositoryPath = _store.GetGitRepositoryPath("partner", createSourceRoot: true);
+		string sourceRoot = Path.GetDirectoryName(repositoryPath)!;
+		File.WriteAllText(Path.Combine(sourceRoot, ".clio-knowledge-source"), "different-alias\n");
+
+		// Act
+		Action act = () => _store.ExecuteWithSourceMutationLock("partner", () => true);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+			because: "an existing source root must retain its ownership marker before any Git mutation can run");
+	}
+
+	[Test]
 	[Description("Each source publishes and reads an independent active generation without affecting another source.")]
 	public void Publish_ShouldKeepIndependentCandidates_WhenSourcesDiffer() {
 		// Arrange

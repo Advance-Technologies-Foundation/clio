@@ -11,10 +11,11 @@ not sufficient for a knowledge ecosystem in which Creatio, partners, and custome
 libraries independently. Git is also a first-class authoring and delivery path: a branch can deliver
 validated knowledge immediately, while a tag or commit can provide immutable reproduction.
 
-Clio must keep transport concerns separate from trust, installation, and content resolution. A
-transport obtains one candidate generation; it does not decide which guidance wins. A library owns
-stable knowledge identities and a monotonic signed sequence. The operator owns trust, enablement,
-priority, and optional topic pins.
+Clio keeps retrieval concerns separate from content resolution. NuGet obtains one signed candidate
+generation and publishes it through the verified generation store. Git synchronizes one explicitly
+trusted repository into a Clio-owned checkout and reads its declarative source manifest without
+building or executing repository code. Neither path decides which guidance wins. The operator owns
+source trust, enablement, priority, and optional topic pins.
 
 ## Configuration contract
 
@@ -28,8 +29,6 @@ Move the root path beneath a visible `knowledge` section in `appsettings.json`:
       "library-id": "com.creatio.clio",
       "type": "git",
       "location": "https://github.com/Advance-Technologies-Foundation/clio-knowledge.git",
-      "trusted-key-id": "creatio-2026",
-      "trusted-public-key-path": "C:\\Keys\\creatio-public.pem",
       "branch": "master",
       "enabled": true,
       "priority": 100,
@@ -58,19 +57,24 @@ Move the root path beneath a visible `knowledge` section in `appsettings.json`:
 - `enabled` is a serving and update kill switch; disabling retains the installed cache.
 - `priority` is an operator-controlled integer. Higher values win only where a source is eligible.
 - `participation` is `isolated`, `supplement`, or `authoritative`.
-- `trusted-key-id` authorizes the manifest signing-key identity for exactly that source.
-- `trusted-public-key-path` is a required absolute local path to public verification-key material.
-  Public keys are not secrets; private signing keys are never stored in source configuration.
+- NuGet sources require `package-id`, `trusted-key-id`, and an absolute
+  `trusted-public-key-path`. The key ID authorizes the signed bundle manifest for exactly that
+  library. Public keys are not secrets; private signing keys are never stored in source
+  configuration.
+- Git sources use none of the NuGet package or signing-key fields. Adding a Git source explicitly
+  trusts its credential-free repository location and selected branch, tag, or commit as the content
+  authority.
 - Topic pins select one enabled eligible library by stable library ID and override numeric priority.
 - Clio migrates the former top-level `knowledge-root-path` into `knowledge.root-path` once and does
   not maintain two writable sources of truth.
 - Secrets are not stored in this section. Public verification-key paths are safe configuration.
-  The proof of concept accepts credential-free public HTTPS Git repositories and NuGet feeds only;
-  private-source and credential-manager authentication are explicitly out of scope.
+  The proof of concept accepts credential-free HTTPS Git repositories and NuGet feeds, plus
+  loopback HTTP for local testing; private-source and credential-manager authentication are
+  explicitly out of scope.
 
 ## Identity contract
 
-Each signed bundle declares:
+Each signed NuGet bundle declares:
 
 - `libraryId`: reverse-DNS stable publisher/library identity;
 - `libraryVersion`: publisher-facing generation label;
@@ -78,14 +82,23 @@ Each signed bundle declares:
 - `source`: non-secret provenance including repository and exact commit when applicable;
 - resources with stable `itemId`, `topicId`, relative path, media type, digest, and role.
 
-For Git provenance, `source.commit` is the complete 40-character SHA-1 or 64-character SHA-256
-hexadecimal object ID. Abbreviated commit IDs are rejected.
+Each Git repository carries a bounded `bundle-source.json` manifest with contract version `1.0.0`,
+the configured `libraryId`, a publisher-facing `libraryVersion`, a positive `sequence`, and bounded
+resource declarations. Each resource supplies an `itemId`, `topicId`, role, exact namespaced URI,
+repository-relative `sourcePath`, and optional legacy URIs. Clio computes the content digest from
+the manifest and declared resource bytes and records the complete resolved Git commit separately as
+transport provenance. Configured commits must be complete 40-character SHA-1 or 64-character
+SHA-256 hexadecimal object IDs; abbreviated commit IDs are rejected.
 
-The immutable generation identity is `(libraryId, sequence, bundleDigest)`. A transport version,
-Git branch, tag, or commit is provenance and retrieval state; it is not the knowledge identity.
-Reusing a sequence with different bytes is rejected. Installing a lower or equal sequence cannot
-replace the active generation unless the bytes are identical and the operation is an explicit
-repair.
+For signed NuGet content, the immutable generation identity is
+`(libraryId, sequence, bundleDigest)`. A package version is transport state, not knowledge identity.
+Reusing a sequence with different bytes is rejected, and a lower or equal sequence cannot replace
+the active generation unless the bytes are identical and the operation is an explicit repair.
+
+For direct Git content, the configured repository plus resolved commit identifies the retrieved
+revision, while `(libraryId, sequence, contentDigest)` identifies the activated in-memory snapshot.
+Branch and tag names remain mutable retrieval selectors. Git does not reuse the signed NuGet replay
+ledger or generation store.
 
 Every item has an exact namespaced route:
 
@@ -94,9 +107,10 @@ docs://knowledge/<library-id>/<item-id>
 ```
 
 The logical `topicId` supports cross-library discovery and selection. Exact namespaced lookup never
-falls through to another library. A resource may additionally declare signed `legacyUris`; the
-resolver serves those aliases as exact references to that same item. Alias collisions are rejected
-or reported as ambiguity rather than being resolved by configuration order.
+falls through to another library. A resource may additionally declare `legacyUris`; they are signed
+manifest fields for NuGet and repository-manifest fields for Git. The resolver serves those aliases
+as exact references to that same item. Alias collisions are rejected or reported as ambiguity
+rather than being resolved by configuration order.
 
 ## Resolution contract
 
@@ -123,18 +137,17 @@ and agents.
 
 ## Transport contract
 
-`IKnowledgeTransport` retrieves candidate generations for one configured source. It reports the
-resolved transport revision and candidate bytes/path; common validation, trust, rollback,
-installation, and activation remain outside the adapter.
+The two proof-of-concept retrieval paths intentionally have different publication mechanics:
 
-The initial adapters are:
+- `nuget` discovers stable package versions, extracts a bounded signed bundle, verifies its
+  configured public-key trust, and publishes immutable current/previous generations;
+- `git` clones or updates a configured branch, tag, or commit in a bounded Clio-owned checkout,
+  validates `bundle-source.json` plus its declared files, and activates an immutable in-memory
+  snapshot of those bytes. It does not create or consume a bundle ZIP.
 
-- `nuget`: discovers stable package versions and extracts the signed bundle from a bounded package;
-- `git`: fetches a configured branch, tag, or commit into a bounded staging area and reads the
-  repository's declared ready bundle artifact without executing repository code.
-
-Future `npm`, filesystem/share, or SVN adapters implement the same contract without changing
-resolution or the on-disk activation model.
+Both paths feed the same resolver and provenance surface after validation. A future transport must
+define its trust, storage, and rollback behavior explicitly instead of assuming that the NuGet
+generation model or direct Git checkout model applies automatically.
 
 Git follows container-image-style reference semantics:
 
@@ -142,34 +155,39 @@ Git follows container-image-style reference semantics:
 - an explicit tag resolves to a commit and records both;
 - an explicit branch follows that branch and records the resolved commit on every install/update;
 - when no reference is supplied, install/update discovers the remote default branch and persists
-  it only after the candidate is successfully verified and installed; read-only information and
+  it only after the checkout is successfully validated and activated; read-only information and
   update-availability checks never mutate source configuration;
-- serving always uses the installed resolved commit, never live files from the remote checkout.
+- each activation snapshots the declared manifest and resource bytes from the managed checkout;
+  serving never executes repository code.
 
-Git retrieval disables hooks, rejects submodules and symbolic-link escapes, uses no repository
-credentials in persisted metadata or output, and never executes build scripts. The proof of
-concept supports credential-free public HTTPS repositories only. A compatible repository therefore
-publishes a ready bundle at its declared artifact path.
+Git retrieval disables hooks, rejects submodules, isolates inherited Git process configuration, and
+bounds captured output and checkout size. It uses no repository credentials in persisted metadata
+or output and never executes build scripts. The proof of concept supports credential-free HTTPS
+repositories, plus loopback HTTP for local testing. A compatible repository publishes
+`bundle-source.json` and every declared resource directly in the checkout.
 
 ## On-disk model
 
-The root contains one independently activated store per library:
+The root contains one independently managed directory per configured source. NuGet uses immutable
+generation directories and activation markers; Git uses a managed repository checkout:
 
 ```text
 <knowledge.root-path>/
   .clio-knowledge-root
   sources/
-    <filesystem-safe-library-key>/
-      current.json
-      knowledge.lock
-      generations/<sequence>-<digest-prefix>/...
-      staging/...
-  examples/...
+    .locks/...
+    <filesystem-safe-source-key>/
+      .clio-knowledge-source
+      repository/...                         # Git
+      current.json                           # NuGet
+      generations/<sequence>-<digest-prefix>/...  # NuGet
+      staging/...                            # NuGet publication only
 ```
 
-One source can fail or update without withdrawing other libraries. Runtime lookup re-reads cheap
-per-library activation markers and atomically replaces one immutable snapshot at a time. Disabling
-a source removes it from the resolution snapshot on the next lookup without deleting its files.
+One source can fail or update without withdrawing other libraries. Runtime lookup re-reads NuGet
+activation markers or the Git source manifest and atomically replaces one immutable snapshot at a
+time. Disabling a source removes it from the resolution snapshot on the next lookup without
+deleting its files.
 
 ## Command surface
 
@@ -179,7 +197,7 @@ safe and unambiguous:
 - `install-knowledge`, `update-knowledge`, `info-knowledge`, `delete-knowledge`;
 - `add-knowledge-source`, `remove-knowledge-source`;
 - `enable-knowledge-source`, `disable-knowledge-source`;
-- `list-knowledge-sources`.
+- `list-knowledge-sources`, `list-knowledge-examples`.
 
 Source management commands validate and persist configuration atomically. Destructive removal and
 deletion require explicit confirmation. These ordinary CLI commands are available to agents through
@@ -190,11 +208,13 @@ Its explicit `--check-updates` option performs bounded read-only transport check
 
 ## Compatibility and failure behavior
 
-- Configured multi-source lifecycle commands accept signed version 1 bundles only. The unreleased
-  version 0 single-source prototype is not registered as an implicit compatibility source; an
-  existing prototype cache must be replaced through source configuration and reinstall.
-- A transport failure, invalid signature, incompatible bundle, rollback attempt, ambiguous topic,
-  or broken pin never replaces a last-known-good generation.
+- NuGet lifecycle commands accept signed version 1 bundles only. Git lifecycle commands accept the
+  direct repository source-manifest contract version `1.0.0`. The unreleased version 0 single-source
+  prototype is not registered as an implicit compatibility source; an existing prototype cache
+  must be replaced through source configuration and reinstall.
+- A NuGet transport failure, invalid signature, incompatible bundle, or rollback attempt never
+  replaces its last-known-good generation. An invalid Git checkout is reported and is not activated.
+  Ambiguous topics and broken pins remain visible errors on either path.
 - A disabled library is never served, even by exact route, until re-enabled.
 - `info-knowledge` exposes source configuration, installed generation, resolved transport revision,
   validation state, and update availability without emitting secrets.
@@ -205,8 +225,8 @@ Its explicit `--check-updates` option performs bounded read-only transport check
 
 ## Consequences
 
-Knowledge publishers can ship independently through supported transports, while Clio retains one
-verification, storage, and resolution implementation. Operators can prefer or disable trusted
-publishers deterministically. Agents can use MCP routes or inspect the same installed content on
-disk. Git enables fast branch-following updates without weakening the signed generation or recorded
-commit boundary.
+Knowledge publishers can ship independently through supported transports while sharing one
+resolution contract. Operators can prefer or disable trusted publishers deterministically. Agents
+can use MCP routes or inspect the same managed content on disk. Signed NuGet generations provide
+forward-only verification and rollback retention; direct Git checkouts provide fast branch-following
+updates with inspectable resolved-commit and content-digest provenance.

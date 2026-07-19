@@ -6,9 +6,9 @@ NAME
 
 SYNOPSIS
     clio add-knowledge-source --alias <alias> --library-id <id> --type <git|nuget>
-        --location <url> --trusted-key-id <id> --trusted-public-key-path <absolute-path>
+        --location <url> [--trusted-key-id <id>] [--trusted-public-key-path <absolute-path>]
         [--package-id <id>] [--branch <name>] [--tag <name>]
-        [--commit <sha>] [--artifact-path <path>] [--priority <number>]
+        [--commit <sha>] [--priority <number>]
         [--participation <mode>]
         [--disabled] [--json]
 
@@ -20,34 +20,35 @@ DESCRIPTION
     NuGet requires --package-id. For Git, a complete 40- or 64-hex commit takes
     precedence over tag and branch. With no Git reference, a successful install or
     update discovers and persists the default branch; info checks do not mutate it.
-    Each source authorizes one signing key ID and an existing local regular file
+    Git sources are cloned directly and updated with a fast-forward-only pull.
+    Each NuGet source authorizes one signing key ID and an existing local regular file
     containing exactly one P-256 PUBLIC KEY PEM (maximum 16 KiB). UNC, device,
     network-drive, symlink, junction, and other reparse-point paths are refused,
     including reparse points in the path ancestry. Public-key material is not
     secret; private-key PEM is rejected. Sources are enabled by default. This POC
     supports credential-free public HTTPS Git and NuGet locations only. Configured
-    sources must publish signed v1 bundles; no implicit v0 source is registered.
+    NuGet sources must publish signed v1 bundles. Git sources expose their source
+    manifest and content files directly in the checkout.
 
 OPTIONS
     --alias <alias>             Required unique lowercase source alias
     --library-id <id>           Required unique lowercase reverse-DNS library identity
     --type <git|nuget>          Required transport type
     --location <url>            Required public HTTPS source location
-    --trusted-key-id <id>       Required bundle signing-key ID for this source
+    --trusted-key-id <id>       Required for NuGet; bundle signing-key ID
     --trusted-public-key-path <absolute-path>
-                                Existing bounded local P-256 PUBLIC KEY PEM; no reparse/network path
+                                Required for NuGet; bounded local P-256 PUBLIC KEY PEM
     --package-id <id>           Required for NuGet
     --branch <name>             Git branch to follow
     --tag <name>                Git tag to resolve
     --commit <sha>              Complete 40/64-hex immutable Git commit
-    --artifact-path <path>      Ready Git bundle path; default: knowledge-bundle.zip
     --priority <number>         Resolution priority; default: 0
     --participation <mode>      isolated, supplement, or authoritative; default: supplement
     --disabled                  Add the source disabled
     --json                      Emit indented JSON
 
 EXAMPLES
-    clio add-knowledge-source --alias creatio --library-id com.creatio.clio --type git --location https://github.com/Advance-Technologies-Foundation/clio-knowledge.git --trusted-key-id creatio-2026 --trusted-public-key-path /etc/clio/keys/creatio-public.pem --branch master --priority 100 --participation authoritative
+    clio add-knowledge-source --alias creatio --library-id com.creatio.clio --type git --location https://github.com/Advance-Technologies-Foundation/clio-knowledge.git --branch master --priority 100 --participation authoritative
     clio add-knowledge-source --alias partner --library-id com.example.partner --type nuget --location https://packages.example.test/v3/index.json --trusted-key-id partner-2026 --trusted-public-key-path /etc/clio/keys/partner-public.pem --package-id Example.Partner.Knowledge --disabled --json
 
 EXIT CODES

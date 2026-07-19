@@ -169,9 +169,9 @@ internal static class PassthroughToolClassificationRegistry {
 	/// One row per <c>[McpServerToolType]</c> tool name discovered in the current <c>clio</c> assembly
 	/// (verified against <see cref="Clio.Command.McpServer.McpFeatureToggleFilter.GetAttributedTypes"/>
 	/// expanded to <c>[McpServerTool(Name = ...)]</c> verb names — see
-	/// <see cref="PassthroughToolClassificationGuardTests"/>). 161 tools at authoring time (2026-07-19):
+	/// <see cref="PassthroughToolClassificationGuardTests"/>). 162 tools at authoring time (2026-07-19):
 	/// 12 <see cref="PassthroughClassification.Routed"/>, 3 <see cref="PassthroughClassification.Guarded"/>,
-	/// 29 <see cref="PassthroughClassification.NotEnvironmentSensitive"/> (PRD's literal out-of-scope audit
+	/// 30 <see cref="PassthroughClassification.NotEnvironmentSensitive"/> (PRD's literal out-of-scope audit
 	/// plus global knowledge-source management, matched to CURRENT tool names), and 117
 	/// <see cref="PassthroughClassification.NotApplicable"/> (class (a)/(b), no change required).
 	/// </summary>
@@ -196,7 +196,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["link-from-repository-by-env-package-path"] = PassthroughClassification.Guarded,
 			["link-from-repository-unlocked"] = PassthroughClassification.Guarded,
 
-			// --- NotEnvironmentSensitive (29): PRD "Out of scope" audit plus global knowledge-source
+			// --- NotEnvironmentSensitive (30): PRD "Out of scope" audit plus global knowledge-source
 			// management, matched to CURRENT tool names.
 			// Several PRD prose names are stale vs. the actual [McpServerTool(Name=...)]; the ACTUAL name
 			// is used as the dictionary key and the PRD's (older) name is noted inline for traceability:
@@ -229,6 +229,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["enable-knowledge-source"] = PassthroughClassification.NotEnvironmentSensitive,
 			["disable-knowledge-source"] = PassthroughClassification.NotEnvironmentSensitive,
 			["list-knowledge-sources"] = PassthroughClassification.NotEnvironmentSensitive,
+			["list-knowledge-examples"] = PassthroughClassification.NotEnvironmentSensitive,
 
 			// --- NotApplicable (117): class (a)/(b) — already passthrough-capable, out of this audit ---
 			["StopAllCreatio"] = PassthroughClassification.NotApplicable,

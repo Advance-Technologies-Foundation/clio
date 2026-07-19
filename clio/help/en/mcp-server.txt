@@ -46,12 +46,12 @@ DESCRIPTION
     - appsettings.json knowledge.root-path  Readable local cache root
     - appsettings.json knowledge.sources  Trusted Git/NuGet sources keyed by alias
     - appsettings.json knowledge.topic-pins  Optional topic-to-library overrides
-    - knowledge.sources.<alias>.trusted-key-id  Authorized signing-key ID for that publisher
-    - knowledge.sources.<alias>.trusted-public-key-path  Absolute local public-key PEM path
+    - knowledge.sources.<alias>.trusted-key-id  NuGet-only signing-key ID
+    - knowledge.sources.<alias>.trusted-public-key-path  NuGet-only public-key PEM path
 
     Public verification keys are not secrets. Never configure a private signing key.
-    Configured sources require signed v1 bundles. This POC supports credential-free
-    public HTTPS Git and NuGet sources only; authenticated private sources are not
+    NuGet sources require signed v1 bundles. Git sources are cloned directly. This POC
+    supports credential-free public HTTPS Git and NuGet sources only; authenticated private sources are not
     supported. Signed legacyUris remain exact aliases for their declaring items. No
     implicit v0 source is registered; prototype caches require source configuration
     and reinstall.
@@ -59,14 +59,18 @@ DESCRIPTION
     The service-index URL must respond directly; redirects are not followed. Its advertised
     PackageBaseAddress/3.0.0 must use the same scheme, host, and port as the configured service index.
 
-    NuGet and Git are transport adapters. Clio applies the same signature, compatibility, identity,
-    sequence, path, size, and digest validation before installing each source under
-    knowledge.root-path. The former top-level knowledge-root-path is migrated once. When absent,
-    Clio persists <clio-home>/knowledge. Installed and extracted content remains visible on disk.
+    NuGet sources are bound to their package version, verified signature, and digest. Git sources
+    are bound to the configured trusted repository URL and exact resolved commit, then validated
+    directly from the checkout; Git does not use NuGet bundle-signing keys. Both transports validate
+    compatibility, identity, catalogs, paths, and sizes before activation under knowledge.root-path.
+    The former top-level knowledge-root-path is migrated once. When absent, Clio persists
+    <clio-home>/knowledge. Installed content remains visible on disk.
 
-    Externally delivered guidance uses only the persistent cache; MCP never contacts transports.
-    Manage sources with the knowledge lifecycle and add/remove/enable/disable/list source commands.
-    These commands are non-resident MCP tools callable through clio-run. The running MCP process hot
+    Normal guidance lookup, resource reads, and example discovery use only local installed content
+    and never contact transports. Explicit install/update operations and info-knowledge with
+    checkUpdates=true may contact configured transports. Manage sources with the knowledge lifecycle
+    and add/remove/enable/disable/list source commands. These commands are non-resident MCP tools
+    callable through clio-run. The running MCP process hot
     reloads source updates and enablement without restart. Rejected updates retain last-known-good;
     a cold invalid cache returns guidance-unavailable for external guides. info-knowledge reads only
     local state unless CLI --check-updates or MCP checkUpdates=true is supplied.
@@ -120,7 +124,7 @@ NOTES
     - If you use an external MCP client wrapper, follow that wrapper's own parsing and transport guarantees
     - Boolean parameters must be JSON booleans (true/false), not strings
     - Entity tools work DB-first: schemas are created directly in PostgreSQL
-    - Guidance lookups use the persistent disk cache and hot reload only when its activation marker changes; network update checks happen through install-knowledge/update-knowledge, not every MCP session
+    - Guidance/resource/example lookups use local installed content; only explicit install/update or info-knowledge checkUpdates=true operations contact transports
     - Product telemetry is consent-gated: nothing is uploaded unless consent is granted. A production collector endpoint ships as the default, so uploads begin automatically once consent is granted; override it with CLIO_TELEMETRY_ENDPOINT or the settings "telemetry.endpoint" (https, or http only for loopback), or disable uploading entirely (regardless of consent) with CLIO_TELEMETRY_ENABLED=false or "telemetry.enabled": false. Events are stored under <clio-home>/telemetry (override CLIO_TELEMETRY_HOME) and exclude prompts, secrets, customer data, and generated content
 
 RETURN VALUES

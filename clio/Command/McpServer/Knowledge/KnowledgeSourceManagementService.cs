@@ -4,6 +4,8 @@ using System.Diagnostics;
 using System.IO;
 using System.IO.Abstractions;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using Clio.Command.McpServer.Tools;
 using Clio.UserEnvironment;
 
@@ -12,50 +14,67 @@ namespace Clio.Command.McpServer.Knowledge;
 internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagementService {
 	private const int MaxCandidateAttempts = 64;
 	private const int OperationDeadlineMilliseconds = 30_000;
+	private const int BatchDeadlineMilliseconds = 120_000;
+	private const int MaximumConcurrentSourceOperations = 8;
 	private readonly ISettingsRepository _settingsRepository;
 	private readonly IKnowledgeSourceInstallationStore _store;
 	private readonly IKnowledgeBundleRuntime _runtime;
-	private readonly IReadOnlyDictionary<KnowledgeSourceType, IKnowledgeTransport> _transports;
+	private readonly IKnowledgeGitRepositoryReader _gitReader;
+	private readonly IReadOnlyDictionary<KnowledgeSourceType, IKnowledgeArtifactTransport> _artifactTransports;
+	private readonly IReadOnlyDictionary<KnowledgeSourceType, IKnowledgeRepositoryTransport> _repositoryTransports;
 	private readonly IFileSystem _fileSystem;
 
 	public KnowledgeSourceManagementService(
 		ISettingsRepository settingsRepository,
 		IKnowledgeSourceInstallationStore store,
 		IKnowledgeBundleRuntime runtime,
-		IEnumerable<IKnowledgeTransport> transports,
+		IKnowledgeGitRepositoryReader gitReader,
+		IEnumerable<IKnowledgeArtifactTransport> artifactTransports,
+		IEnumerable<IKnowledgeRepositoryTransport> repositoryTransports,
 		IFileSystem fileSystem) {
 		_settingsRepository = settingsRepository ?? throw new ArgumentNullException(nameof(settingsRepository));
 		_store = store ?? throw new ArgumentNullException(nameof(store));
 		_runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
+		_gitReader = gitReader ?? throw new ArgumentNullException(nameof(gitReader));
+		_artifactTransports = IndexTransports(artifactTransports);
+		_repositoryTransports = IndexTransports(repositoryTransports);
+		_fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
+	}
+
+	private static IReadOnlyDictionary<KnowledgeSourceType, TTransport> IndexTransports<TTransport>(
+		IEnumerable<TTransport> transports) where TTransport : class, IKnowledgeSourceTransport {
 		ArgumentNullException.ThrowIfNull(transports);
-		_transports = transports
+		return transports
 			.GroupBy(transport => transport.Type)
 			.ToDictionary(
 				group => group.Key,
 				group => {
-					IKnowledgeTransport[] implementations = group
-						.GroupBy(transport => transport.GetType())
-						.Select(candidates => candidates.First())
-						.ToArray();
+					TTransport[] implementations = group.ToArray();
 					return implementations.Length == 1
 						? implementations[0]
 						: throw new InvalidOperationException(
 							$"Multiple knowledge transports are registered for '{group.Key}'.");
 				});
-		_fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
 	}
 
-	public KnowledgeSourceBatchResult Install(string? sourceAlias) => ExecuteLifecycle(
+	public KnowledgeSourceBatchResult Install(string? sourceAlias, CancellationToken cancellationToken = default) => ExecuteLifecycle(
 		sourceAlias,
 		includeDisabledWhenExplicit: false,
-		(alias, source) => InstallOrUpdate(alias, source, isUpdate: false));
+		(alias, source, deadlineMilliseconds) => InstallOrUpdate(
+			alias, source, isUpdate: false, deadlineMilliseconds),
+		cancellationToken);
 
-	public KnowledgeSourceBatchResult Update(string? sourceAlias) => ExecuteLifecycle(
+	public KnowledgeSourceBatchResult Update(string? sourceAlias, CancellationToken cancellationToken = default) => ExecuteLifecycle(
 		sourceAlias,
 		includeDisabledWhenExplicit: false,
-		(alias, source) => InstallOrUpdate(alias, source, isUpdate: true));
+		(alias, source, deadlineMilliseconds) => InstallOrUpdate(
+			alias, source, isUpdate: true, deadlineMilliseconds),
+		cancellationToken);
 
-	public KnowledgeSourceInfoResult GetInfo(string? sourceAlias, bool checkUpdates) {
+	public KnowledgeSourceInfoResult GetInfo(
+		string? sourceAlias,
+		bool checkUpdates,
+		CancellationToken cancellationToken = default) {
 		KnowledgeConfiguration configuration = _settingsRepository.GetKnowledgeConfiguration();
 		if (!TrySelect(configuration, sourceAlias, includeDisabledWhenExplicit: true,
 				out IReadOnlyList<KeyValuePair<string, KnowledgeSourceConfiguration>> selected,
@@ -67,10 +86,12 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 				Array.Empty<KnowledgeSourceInfo>(),
 				diagnostic);
 		}
-		List<KnowledgeSourceInfo> sources = [];
-		foreach ((string alias, KnowledgeSourceConfiguration source) in selected) {
-			sources.Add(BuildInfo(alias, source, checkUpdates));
-		}
+		KnowledgeSourceInfo[] sources = ExecuteBounded(
+			selected,
+			(pair, deadlineMilliseconds) => BuildInfo(
+				pair.Key, pair.Value, checkUpdates, deadlineMilliseconds),
+			pair => UnavailableInfo(pair.Key, pair.Value, "Knowledge information request timed out before this source was inspected."),
+			cancellationToken);
 		return new KnowledgeSourceInfoResult(
 			true,
 			_settingsRepository.AppSettingsFilePath,
@@ -79,10 +100,14 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 			null);
 	}
 
-	public KnowledgeSourceBatchResult Delete(string? sourceAlias, bool confirmed) => ExecuteLifecycle(
+	public KnowledgeSourceBatchResult Delete(
+		string? sourceAlias,
+		bool confirmed,
+		CancellationToken cancellationToken = default) => ExecuteLifecycle(
 		sourceAlias,
 		includeDisabledWhenExplicit: true,
-		(alias, _) => ToOperation(alias, _store.Delete(alias, confirmed)));
+		(alias, _, _) => ToOperation(alias, _store.Delete(alias, confirmed)),
+		cancellationToken);
 
 	public KnowledgeSourceCommandResult Add(KnowledgeSourceAddRequest request) {
 		ArgumentNullException.ThrowIfNull(request);
@@ -97,29 +122,23 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 				Branch = request.Branch,
 				Tag = request.Tag,
 				Commit = request.Commit,
-				ArtifactPath = request.ArtifactPath,
 				Enabled = request.Enabled,
 				Priority = request.Priority,
 				Participation = ParseParticipation(request.Participation)
 			};
 			KnowledgeSourceConfiguration validated = KnowledgeSourceConfigurationValidator.ValidateAndClone(source);
-			if (!EnvironmentKnowledgeBundleTrustStore.TryReadPublicKeyFile(
-					validated.TrustedPublicKeyPath,
-					out _)) {
+			if (validated.Type == KnowledgeSourceType.NuGet
+					&& !EnvironmentKnowledgeBundleTrustStore.TryReadPublicKeyFile(
+						validated.TrustedPublicKeyPath!,
+						out _)) {
 				return Failed(request.Alias,
 					"Knowledge trusted-public-key-path must identify an existing bounded local regular file "
 					+ "containing one P-256 PUBLIC KEY PEM; network, device, reparse, and private-key files are refused.");
 			}
-			KnowledgeConfiguration existing = _settingsRepository.GetKnowledgeConfiguration();
-			if (existing.Sources.ContainsKey(request.Alias)) {
-				return Failed(request.Alias, $"Knowledge source alias '{request.Alias}' is already configured.");
-			}
-			if (existing.Sources.Values.Any(candidate =>
-					string.Equals(candidate.LibraryId, validated.LibraryId, StringComparison.OrdinalIgnoreCase))) {
+			if (!_settingsRepository.TryAddKnowledgeSource(request.Alias, validated)) {
 				return Failed(request.Alias,
-					$"Knowledge library '{validated.LibraryId}' is already configured under another alias.");
+					$"Knowledge source alias '{request.Alias}' or library '{validated.LibraryId}' is already configured.");
 			}
-			_settingsRepository.UpsertKnowledgeSource(request.Alias, validated);
 			return new KnowledgeSourceCommandResult(
 				true,
 				$"Knowledge source '{request.Alias}' was added. Run install-knowledge --source {request.Alias} to install it.",
@@ -142,7 +161,17 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 			return Failed(sourceAlias, $"Knowledge source '{sourceAlias}' changed while it was being removed; retry.");
 		}
 		_runtime.DeactivateLibrary(sourceAlias);
-		KnowledgeInstallationResult deletion = _store.Delete(sourceAlias, confirmed: true);
+		KnowledgeInstallationResult deletion;
+		try {
+			deletion = _store.Delete(sourceAlias, confirmed: true);
+		} catch (Exception exception) when (exception is IOException
+				or UnauthorizedAccessException
+				or InvalidOperationException
+				or TimeoutException) {
+			return Failed(sourceAlias,
+				$"Knowledge source '{sourceAlias}' was removed and deactivated, but its orphaned cache could not be deleted: "
+				+ Safe(exception.Message));
+		}
 		if (deletion.Status is not (KnowledgeInstallationStatus.Deleted or KnowledgeInstallationStatus.NotInstalled)) {
 			return Failed(sourceAlias,
 				$"Knowledge source '{sourceAlias}' was removed and deactivated, but its orphaned cache could not be deleted: "
@@ -160,7 +189,7 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 			KnowledgeConfiguration configuration = _settingsRepository.GetKnowledgeConfiguration();
 			IReadOnlyList<KnowledgeSourceInfo> sources = configuration.Sources
 				.OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase)
-				.Select(pair => BuildInfo(pair.Key, pair.Value, checkUpdates: false))
+				.Select(pair => ConfiguredInfo(pair.Key, pair.Value))
 				.ToArray();
 			return new KnowledgeSourceListResult(true, sources);
 		} catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or IOException) {
@@ -171,7 +200,11 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 	private KnowledgeSourceOperationResult InstallOrUpdate(
 		string alias,
 		KnowledgeSourceConfiguration source,
-		bool isUpdate) {
+		bool isUpdate,
+		int deadlineMilliseconds) {
+		if (_repositoryTransports.TryGetValue(source.Type, out IKnowledgeRepositoryTransport? repositoryTransport)) {
+			return InstallOrUpdateRepository(alias, source, isUpdate, deadlineMilliseconds, repositoryTransport);
+		}
 		KnowledgeSourceCurrentState? current = _store.ReadCurrent(alias, out string? diagnostic);
 		if (diagnostic is not null) {
 			return FailedOperation(alias, diagnostic);
@@ -187,7 +220,7 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 		if (!isUpdate && current is not null) {
 			repair = true;
 		}
-		if (!_transports.TryGetValue(source.Type, out IKnowledgeTransport? transport)) {
+		if (!_artifactTransports.TryGetValue(source.Type, out IKnowledgeArtifactTransport? transport)) {
 			return FailedOperation(alias, $"Knowledge transport '{source.Type}' is not registered.");
 		}
 
@@ -201,9 +234,9 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 			string? lastDiagnostic = diagnostic;
 			Stopwatch operation = Stopwatch.StartNew();
 			for (int attempt = 0; attempt < MaxCandidateAttempts; attempt++) {
-				int remainingMilliseconds = OperationDeadlineMilliseconds - (int)Math.Min(
+				int remainingMilliseconds = deadlineMilliseconds - (int)Math.Min(
 					operation.ElapsedMilliseconds,
-					OperationDeadlineMilliseconds);
+					deadlineMilliseconds);
 				if (remainingMilliseconds <= 0) {
 					lastDiagnostic = "The operation-wide knowledge retrieval deadline elapsed.";
 					break;
@@ -238,9 +271,7 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 						?? $"Knowledge transport repeated rejected revision '{revision}'.";
 					break;
 				}
-				highestObserved = source.Type == KnowledgeSourceType.NuGet
-					? KnowledgeBundleNuGetClient.GreaterVersion(highestObserved, revision)
-					: highestObserved ?? revision;
+				highestObserved = KnowledgeBundleNuGetClient.GreaterVersion(highestObserved, revision);
 				fallbackCeiling = revision;
 				lastRejectedRevision = revision;
 				if (retrieved.Status != KnowledgeTransportStatus.Downloaded) {
@@ -254,7 +285,7 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 				using MemoryStream validationStream = new(bytes, writable: false);
 				KnowledgeBundleValidationResult validation = _runtime.Validate(
 					validationStream,
-					expectedBundleVersion: source.Type == KnowledgeSourceType.NuGet ? revision : null,
+					expectedBundleVersion: revision,
 					expectedLibraryId: source.LibraryId);
 				if (validation.Status != KnowledgeBundleActivationStatus.Activated
 						|| validation.CandidateSequence is null
@@ -279,14 +310,6 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 					isUpdate: current is not null,
 					expectedActive: current?.Active,
 					allowRepair: repair);
-				if (published.IsSuccess
-						&& source.Type == KnowledgeSourceType.Git
-						&& source.Branch is null
-						&& !string.IsNullOrWhiteSpace(retrieved.ResolvedBranch)
-						&& !_settingsRepository.TrySetKnowledgeSourceBranch(alias, source, retrieved.ResolvedBranch)) {
-					return FailedOperation(alias,
-						$"Knowledge source '{alias}' changed while its discovered branch was being persisted; retry.");
-				}
 				return ToOperation(alias, published);
 			}
 			if (lastRejectedRevision is not null) {
@@ -308,6 +331,166 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 			return FailedOperation(alias, Safe(exception.Message));
 		} finally {
 			DeleteTransportStaging(staging);
+		}
+	}
+
+	private KnowledgeSourceOperationResult InstallOrUpdateRepository(
+		string alias,
+		KnowledgeSourceConfiguration source,
+		bool isUpdate,
+		int deadlineMilliseconds,
+		IKnowledgeRepositoryTransport transport) {
+		try {
+			return _store.ExecuteWithSourceMutationLock(
+				alias,
+				() => InstallOrUpdateRepositoryLocked(
+					alias, source, isUpdate, deadlineMilliseconds, transport));
+		} catch (Exception exception) when (exception is IOException
+				or UnauthorizedAccessException
+				or InvalidOperationException
+				or ArgumentException
+				or TimeoutException) {
+			return FailedOperation(alias, Safe(exception.Message));
+		}
+	}
+
+	private KnowledgeSourceOperationResult InstallOrUpdateRepositoryLocked(
+		string alias,
+		KnowledgeSourceConfiguration source,
+		bool isUpdate,
+		int deadlineMilliseconds,
+		IKnowledgeRepositoryTransport transport) {
+		string repositoryPath = _store.GetGitRepositoryPath(alias, createSourceRoot: true);
+		bool installed = _fileSystem.Directory.Exists(_fileSystem.Path.Combine(repositoryPath, ".git"));
+		if (isUpdate && !installed) {
+			return FailedOperation(alias, $"Knowledge source '{alias}' is not installed; use install-knowledge.");
+		}
+		string? previousRevision = installed ? transport.GetCurrentRevision(repositoryPath) : null;
+		KnowledgeGitRepositorySnapshot? previousSnapshot = null;
+		if (installed) {
+			transport.ValidateCheckoutForSynchronization(source, repositoryPath);
+			_gitReader.TryRead(
+				repositoryPath,
+				source.LibraryId,
+				out previousSnapshot,
+				out _);
+		}
+		KnowledgeTransportResult result = transport.Synchronize(new KnowledgeTransportRequest(
+			alias,
+			source,
+			new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+			previousRevision,
+			null,
+			null,
+			null,
+			repositoryPath,
+			deadlineMilliseconds), repositoryPath);
+		if (result.Status is KnowledgeTransportStatus.Failed or KnowledgeTransportStatus.Rejected) {
+			string rollback = RollbackRepository(alias, source, repositoryPath, previousRevision, transport);
+			return FailedOperation(alias,
+				$"{result.Diagnostic ?? "Git knowledge synchronization failed."} {rollback}".Trim(),
+				status: result.Status == KnowledgeTransportStatus.Rejected ? "rejected" : "failed");
+		}
+		if (!_gitReader.TryRead(repositoryPath, source.LibraryId, out KnowledgeGitRepositorySnapshot? snapshot,
+				out string? diagnostic)) {
+			string rollback = RollbackRepository(alias, source, repositoryPath, previousRevision, transport);
+			return FailedOperation(alias,
+				$"{diagnostic ?? "Git knowledge repository is invalid."} {rollback}".Trim());
+		}
+		if (previousSnapshot is not null
+				&& (snapshot!.Sequence < previousSnapshot.Sequence
+					|| (snapshot.Sequence == previousSnapshot.Sequence
+						&& !string.Equals(snapshot.ContentDigest, previousSnapshot.ContentDigest,
+							StringComparison.Ordinal)))) {
+			string rollback = RollbackRepository(alias, source, repositoryPath, previousRevision, transport);
+			return FailedOperation(alias,
+				$"Git knowledge source '{alias}' rejected sequence {snapshot.Sequence}; "
+				+ $"the previously validated sequence is {previousSnapshot.Sequence}. {rollback}",
+				status: "rejected");
+		}
+		KnowledgeBundleActivationResult activation = _runtime.ActivateGitRepository(
+			alias,
+			source.Priority,
+			source.Participation,
+			snapshot!);
+		if (activation.Status != KnowledgeBundleActivationStatus.Activated) {
+			string rollback = RollbackRepository(alias, source, repositoryPath, previousRevision, transport);
+			return FailedOperation(alias,
+				$"{activation.Diagnostic ?? "Git knowledge repository activation was rejected."} {rollback}".Trim(),
+				status: "rejected");
+		}
+		if (source.Branch is null && source.Tag is null && source.Commit is null
+				&& !string.IsNullOrWhiteSpace(result.ResolvedBranch)
+				&& !_settingsRepository.TrySetKnowledgeSourceBranch(alias, source, result.ResolvedBranch)) {
+			string rollback = RollbackRepository(alias, source, repositoryPath, previousRevision, transport);
+			return FailedOperation(alias,
+				$"Knowledge source '{alias}' changed while its discovered branch was being persisted; retry. {rollback}".Trim());
+		}
+		string status = (result.Status, isUpdate) switch {
+			(KnowledgeTransportStatus.NoCandidate, true) => "up-to-date",
+			(KnowledgeTransportStatus.NoCandidate, false) => "already-installed",
+			(_, true) => "updated",
+			_ => "installed"
+		};
+		return new KnowledgeSourceOperationResult(alias, true, status,
+			$"Git knowledge source '{alias}' is {status} at {result.ResolvedCommit} in {repositoryPath}.");
+	}
+
+	private string RollbackRepository(
+		string alias,
+		KnowledgeSourceConfiguration source,
+		string repositoryPath,
+		string? previousRevision,
+		IKnowledgeRepositoryTransport transport) {
+		if (previousRevision is null) {
+			_runtime.DeactivateLibrary(alias);
+			try {
+				string expectedPath = _fileSystem.Path.GetFullPath(
+					_store.GetGitRepositoryPath(alias, createSourceRoot: true));
+				string actualPath = _fileSystem.Path.GetFullPath(repositoryPath);
+				if (!string.Equals(expectedPath, actualPath, PathComparison)) {
+					return "The rejected checkout was left inactive because its managed path could not be verified.";
+				}
+				if (_fileSystem.Directory.Exists(actualPath)) {
+					FileAttributes attributes = _fileSystem.File.GetAttributes(actualPath);
+					if ((attributes & FileAttributes.ReparsePoint) != 0) {
+						return "The rejected checkout was left inactive because its root is a reparse point.";
+					}
+					_fileSystem.Directory.Delete(actualPath, recursive: true);
+				}
+				return "The rejected first checkout was discarded so installation can be retried.";
+			} catch (Exception exception) when (exception is IOException
+					or UnauthorizedAccessException
+					or InvalidOperationException
+					or ArgumentException
+					or NotSupportedException) {
+				return $"The rejected checkout was left inactive because cleanup failed: {Safe(exception.Message)}";
+			}
+		}
+		try {
+			transport.Restore(repositoryPath, previousRevision);
+			if (!_gitReader.TryRead(repositoryPath, source.LibraryId, out KnowledgeGitRepositorySnapshot? restored,
+					out string? diagnostic)) {
+				_runtime.DeactivateLibrary(alias);
+				return $"The previous checkout was restored but could not be reactivated: {diagnostic}";
+			}
+			KnowledgeBundleActivationResult activation = _runtime.ActivateGitRepository(
+				alias,
+				source.Priority,
+				source.Participation,
+				restored!);
+			if (activation.Status != KnowledgeBundleActivationStatus.Activated) {
+				_runtime.DeactivateLibrary(alias);
+				return $"The previous checkout was restored but could not be reactivated: {activation.Diagnostic}";
+			}
+			return $"The previous revision {previousRevision} was restored.";
+		} catch (Exception exception) when (exception is IOException
+				or UnauthorizedAccessException
+				or InvalidOperationException
+				or ArgumentException
+				or TimeoutException) {
+			_runtime.DeactivateLibrary(alias);
+			return $"Rollback to revision {previousRevision} failed: {Safe(exception.Message)}";
 		}
 	}
 
@@ -334,7 +517,11 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 	private KnowledgeSourceInfo BuildInfo(
 		string alias,
 		KnowledgeSourceConfiguration source,
-		bool checkUpdates) {
+		bool checkUpdates,
+		int deadlineMilliseconds) {
+		if (_repositoryTransports.TryGetValue(source.Type, out IKnowledgeRepositoryTransport? repositoryTransport)) {
+			return BuildRepositoryInfo(alias, source, checkUpdates, deadlineMilliseconds, repositoryTransport);
+		}
 		KnowledgeSourceCurrentState? current = _store.ReadCurrent(alias, out string? diagnostic);
 		KnowledgeSourceInstallMetadata? metadata = current is null
 			? null
@@ -357,20 +544,19 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 		}
 		string update = current is null ? "not-installed" : "unknown";
 		string? resolvedRevision = current?.Active.ResolvedRevision;
-		if (checkUpdates && source.Enabled && _transports.TryGetValue(source.Type, out IKnowledgeTransport? transport)) {
+		if (checkUpdates && source.Enabled
+				&& _artifactTransports.TryGetValue(source.Type, out IKnowledgeArtifactTransport? transport)) {
 			string staging = CreateTransportStaging(alias);
 			try {
 				KnowledgeTransportResult remoteCandidate = transport.Retrieve(new KnowledgeTransportRequest(
 					alias, source, new HashSet<string>(), current?.Active.ResolvedRevision, null, null, null, staging,
-					TransportDeadlineMilliseconds: OperationDeadlineMilliseconds));
+					TransportDeadlineMilliseconds: deadlineMilliseconds));
 				if (remoteCandidate.Status == KnowledgeTransportStatus.Downloaded) {
 					byte[] candidateBytes = ReadCandidate(remoteCandidate);
 					using MemoryStream stream = new(candidateBytes, writable: false);
 					KnowledgeBundleValidationResult validation = _runtime.Validate(
 						stream,
-						expectedBundleVersion: source.Type == KnowledgeSourceType.NuGet
-							? remoteCandidate.ResolvedRevision
-							: null,
+						expectedBundleVersion: remoteCandidate.ResolvedRevision,
 						expectedLibraryId: source.LibraryId);
 					bool trustedCandidate = validation.Status == KnowledgeBundleActivationStatus.Activated
 						&& string.Equals(
@@ -420,10 +606,90 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 			diagnostic);
 	}
 
+	private KnowledgeSourceInfo BuildRepositoryInfo(
+		string alias,
+		KnowledgeSourceConfiguration source,
+		bool checkUpdates,
+		int deadlineMilliseconds,
+		IKnowledgeRepositoryTransport transport) {
+		string repositoryPath = _store.GetGitRepositoryPath(alias, createSourceRoot: false);
+		bool installed = _fileSystem.Directory.Exists(_fileSystem.Path.Combine(repositoryPath, ".git"));
+		KnowledgeGitRepositorySnapshot? snapshot = null;
+		string? diagnostic = null;
+		bool valid = false;
+		string? revision = null;
+		string update = installed ? "unknown" : "not-installed";
+		if (installed) {
+			try {
+				bool acquired = _store.TryExecuteWithSourceMutationLock(alias, () => {
+					transport.ValidateInstalledCheckout(source, repositoryPath);
+					valid = _gitReader.TryRead(repositoryPath, source.LibraryId, out snapshot, out diagnostic);
+					revision = transport.GetCurrentRevision(repositoryPath);
+				});
+				if (!acquired) {
+					update = "synchronizing";
+					diagnostic = $"Git knowledge source '{alias}' is synchronizing; retry the information request.";
+				}
+				else if (checkUpdates && source.Enabled) {
+					KnowledgeTransportResult remote = transport.CheckForUpdates(new KnowledgeTransportRequest(
+						alias,
+						source,
+						new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+						revision,
+						null,
+						null,
+						null,
+						repositoryPath,
+						deadlineMilliseconds), repositoryPath);
+					update = remote.Status switch {
+						KnowledgeTransportStatus.Downloaded => "available",
+						KnowledgeTransportStatus.NoCandidate => "up-to-date",
+						_ => "unknown"
+					};
+					if (remote.Status is KnowledgeTransportStatus.Failed or KnowledgeTransportStatus.Rejected) {
+						diagnostic ??= Safe(remote.Diagnostic
+							?? "The remote Git knowledge source could not be checked.");
+					}
+				}
+			} catch (Exception exception) when (exception is IOException
+					or UnauthorizedAccessException
+					or InvalidOperationException
+					or InvalidDataException
+					or ArgumentException
+					or TimeoutException) {
+				diagnostic = Safe(exception.Message);
+			}
+		}
+		return new KnowledgeSourceInfo(
+			alias,
+			source.LibraryId,
+			"git",
+			source.Location,
+			null,
+			null,
+			source.Enabled,
+			source.Priority,
+			source.Participation.ToString().ToLowerInvariant(),
+			null,
+			source.Branch,
+			source.Tag,
+			source.Commit,
+			installed,
+			valid,
+			valid ? snapshot!.LibraryVersion : null,
+			valid ? snapshot!.Sequence : null,
+			valid ? snapshot!.ContentDigest : null,
+			revision,
+			installed ? repositoryPath : null,
+			update,
+			diagnostic);
+	}
+
 	private KnowledgeSourceBatchResult ExecuteLifecycle(
 		string? sourceAlias,
 		bool includeDisabledWhenExplicit,
-		Func<string, KnowledgeSourceConfiguration, KnowledgeSourceOperationResult> operation) {
+		Func<string, KnowledgeSourceConfiguration, int, KnowledgeSourceOperationResult> operation,
+		CancellationToken cancellationToken) {
 		try {
 			KnowledgeConfiguration configuration = _settingsRepository.GetKnowledgeConfiguration();
 			if (!TrySelect(configuration, sourceAlias, includeDisabledWhenExplicit,
@@ -431,9 +697,12 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 					out string? diagnostic)) {
 				return new KnowledgeSourceBatchResult(false, diagnostic!, Array.Empty<KnowledgeSourceOperationResult>());
 			}
-			KnowledgeSourceOperationResult[] results = selected
-				.Select(pair => operation(pair.Key, pair.Value))
-				.ToArray();
+			KnowledgeSourceOperationResult[] results = ExecuteBounded(
+				selected,
+				(pair, deadlineMilliseconds) => operation(pair.Key, pair.Value, deadlineMilliseconds),
+				pair => FailedOperation(pair.Key,
+					"Knowledge operation timed out before this source was processed."),
+				cancellationToken);
 			bool success = results.All(result => result.Success);
 			return new KnowledgeSourceBatchResult(
 				success,
@@ -444,6 +713,75 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 			return new KnowledgeSourceBatchResult(false, Safe(exception.Message), Array.Empty<KnowledgeSourceOperationResult>());
 		}
 	}
+
+	private static TResult[] ExecuteBounded<TResult>(
+		IReadOnlyList<KeyValuePair<string, KnowledgeSourceConfiguration>> selected,
+		Func<KeyValuePair<string, KnowledgeSourceConfiguration>, int, TResult> operation,
+		Func<KeyValuePair<string, KnowledgeSourceConfiguration>, TResult> timeoutResult,
+		CancellationToken cancellationToken) where TResult : class {
+		cancellationToken.ThrowIfCancellationRequested();
+		if (selected.Count <= 1) {
+			return selected.Count == 0 ? [] : [operation(selected[0], OperationDeadlineMilliseconds)];
+		}
+		TResult?[] results = new TResult?[selected.Count];
+		Stopwatch batch = Stopwatch.StartNew();
+		using CancellationTokenSource deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+		deadline.CancelAfter(BatchDeadlineMilliseconds);
+		try {
+			Parallel.For(0, selected.Count, new ParallelOptions {
+				CancellationToken = deadline.Token,
+				MaxDegreeOfParallelism = MaximumConcurrentSourceOperations
+			}, index => {
+				int remainingBatchMilliseconds = BatchDeadlineMilliseconds - (int)Math.Min(
+					batch.ElapsedMilliseconds,
+					BatchDeadlineMilliseconds);
+				if (remainingBatchMilliseconds <= 0) {
+					return;
+				}
+				int operationDeadlineMilliseconds = Math.Min(
+					OperationDeadlineMilliseconds,
+					remainingBatchMilliseconds);
+				results[index] = operation(selected[index], operationDeadlineMilliseconds);
+			});
+		} catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested) {
+			// A bounded batch returns explicit per-source timeout results for work that was not started.
+		}
+		cancellationToken.ThrowIfCancellationRequested();
+		return results.Select((result, index) => result ?? timeoutResult(selected[index])).ToArray();
+	}
+
+	private static KnowledgeSourceInfo UnavailableInfo(
+		string alias,
+		KnowledgeSourceConfiguration source,
+		string diagnostic) => new(
+		alias,
+		source.LibraryId,
+		source.Type.ToString().ToLowerInvariant(),
+		source.Location,
+		source.TrustedKeyId,
+		source.TrustedPublicKeyPath,
+		source.Enabled,
+		source.Priority,
+		source.Participation.ToString().ToLowerInvariant(),
+		source.PackageId,
+		source.Branch,
+		source.Tag,
+		source.Commit,
+		false,
+		false,
+		null,
+		null,
+		null,
+		null,
+		null,
+		"unknown",
+		diagnostic);
+
+	private static KnowledgeSourceInfo ConfiguredInfo(
+		string alias,
+		KnowledgeSourceConfiguration source) => UnavailableInfo(alias, source, diagnostic: null) with {
+		UpdateAvailability = null
+	};
 
 	private static bool TrySelect(
 		KnowledgeConfiguration configuration,
@@ -556,4 +894,8 @@ internal sealed class KnowledgeSourceManagementService : IKnowledgeSourceManagem
 		new(false, Safe(message), alias);
 
 	private static string Safe(string message) => SensitiveErrorTextRedactor.Redact(message);
+
+	private static StringComparison PathComparison => OperatingSystem.IsWindows()
+		? StringComparison.OrdinalIgnoreCase
+		: StringComparison.Ordinal;
 }

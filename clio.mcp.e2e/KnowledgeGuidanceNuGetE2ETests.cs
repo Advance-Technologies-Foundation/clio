@@ -51,7 +51,7 @@ public sealed class KnowledgeGuidanceNuGetE2ETests : McpContractFixtureBase {
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
-		CallToolResult addResult = await CallKnowledgeCommand(context, "add-knowledge-source", new Dictionary<string, object?> {
+		CallToolResult addResult = await CallKnowledgeCommand(context, KnowledgeManagementTools.AddKnowledgeSourceToolName, new Dictionary<string, object?> {
 			["alias"] = "synthetic",
 			["libraryId"] = SyntheticKnowledgeNuGetFixture.LibraryId,
 			["type"] = "nuget",
@@ -65,7 +65,7 @@ public sealed class KnowledgeGuidanceNuGetE2ETests : McpContractFixtureBase {
 			["confirmed"] = true
 		});
 		CallToolResult installResult = await CallKnowledgeCommand(
-			context, "install-knowledge", new Dictionary<string, object?> { ["source"] = "synthetic" });
+			context, KnowledgeManagementTools.InstallKnowledgeToolName, new Dictionary<string, object?> { ["source"] = "synthetic" });
 		(CallToolResult initialCall, GuidanceGetResponse initialResponse) = await CallSelectedGuide(context);
 		ReadResourceResult? initialResourceResult = null;
 		Exception? initialResourceError = null;
@@ -78,17 +78,17 @@ public sealed class KnowledgeGuidanceNuGetE2ETests : McpContractFixtureBase {
 		}
 		SyntheticPackageEvidence updated = _fixture.PublishValid("1.1.0", sequence: 20, revision: "updated");
 		CallToolResult updateResult = await CallKnowledgeCommand(
-			context, "update-knowledge", new Dictionary<string, object?> { ["source"] = "synthetic" });
+			context, KnowledgeManagementTools.UpdateKnowledgeToolName, new Dictionary<string, object?> { ["source"] = "synthetic" });
 		(CallToolResult updatedCall, GuidanceGetResponse updatedResponse) = await CallSelectedGuide(context);
 		_fixture.PublishInvalidSignature("1.2.0", sequence: 30, revision: "invalid");
 		CallToolResult rejectedUpdate = await CallKnowledgeCommand(
-			context, "update-knowledge", new Dictionary<string, object?> { ["source"] = "synthetic" });
+			context, KnowledgeManagementTools.UpdateKnowledgeToolName, new Dictionary<string, object?> { ["source"] = "synthetic" });
 		(CallToolResult retainedCall, GuidanceGetResponse retainedResponse) = await CallSelectedGuide(context);
 		CallToolResult disableResult = await CallKnowledgeCommand(
-			context, "disable-knowledge-source", new Dictionary<string, object?> { ["alias"] = "synthetic" });
+			context, KnowledgeManagementTools.DisableKnowledgeSourceToolName, new Dictionary<string, object?> { ["alias"] = "synthetic" });
 		(CallToolResult disabledCall, GuidanceGetResponse disabledResponse) = await CallSelectedGuide(context);
 		CallToolResult enableResult = await CallKnowledgeCommand(
-			context, "enable-knowledge-source", new Dictionary<string, object?> { ["alias"] = "synthetic" });
+			context, KnowledgeManagementTools.EnableKnowledgeSourceToolName, new Dictionary<string, object?> { ["alias"] = "synthetic" });
 		(CallToolResult reenabledCall, GuidanceGetResponse reenabledResponse) = await CallSelectedGuide(context);
 		int requestsBeforeFreshProcess = _fixture.Feed.Requests.Count;
 		await using McpServerSession freshSession = await McpServerSession.StartAsync(
@@ -98,21 +98,21 @@ public sealed class KnowledgeGuidanceNuGetE2ETests : McpContractFixtureBase {
 			freshSession,
 			context.CancellationTokenSource.Token);
 		int requestsAfterFreshProcess = _fixture.Feed.Requests.Count;
-		CallToolResult infoResult = await CallKnowledgeCommand(context, "info-knowledge", new Dictionary<string, object?> {
+		CallToolResult infoResult = await CallKnowledgeCommand(context, KnowledgeManagementTools.InfoKnowledgeToolName, new Dictionary<string, object?> {
 			["source"] = "synthetic",
 			["checkUpdates"] = false
 		});
-		CallToolResult listResult = await CallKnowledgeCommand(context, "list-knowledge-sources", null);
+		CallToolResult listResult = await CallKnowledgeCommand(context, KnowledgeManagementTools.ListKnowledgeSourcesToolName, null);
 		CallToolResult deleteResult = await CallKnowledgeCommand(
 			context,
-			"delete-knowledge",
+			KnowledgeManagementTools.DeleteKnowledgeToolName,
 			new Dictionary<string, object?> { ["source"] = "synthetic", ["confirmed"] = true });
 		(CallToolResult deletedCall, GuidanceGetResponse deletedResponse) = await CallSelectedGuide(context);
 		CallToolResult removeResult = await CallKnowledgeCommand(
 			context,
-			"remove-knowledge-source",
+			KnowledgeManagementTools.RemoveKnowledgeSourceToolName,
 			new Dictionary<string, object?> { ["alias"] = "synthetic", ["confirmed"] = true });
-		CallToolResult removedListResult = await CallKnowledgeCommand(context, "list-knowledge-sources", null);
+		CallToolResult removedListResult = await CallKnowledgeCommand(context, KnowledgeManagementTools.ListKnowledgeSourcesToolName, null);
 
 		// Assert
 		AssertCommandSucceeded(addResult, "the explicitly trusted source should be persisted through clio-run");
@@ -279,6 +279,7 @@ public sealed class KnowledgeGuidanceNuGetRedirectE2ETests : McpContractFixtureB
 	[Test]
 	[AllureTag(GuidanceGetTool.ToolName)]
 	[AllureName("NuGet service-index redirects are refused")]
+	[AllureDescription("Runs the real installer against a redirecting synthetic NuGet service index and verifies that no redirected content is activated or served through get-guidance.")]
 	[Description("Refuses a redirected NuGet service index and leaves a cold persistent cache typed unavailable.")]
 	public async Task Install_ShouldReturnUnavailable_AndNotFollowServiceIndexRedirect() {
 		// Arrange
@@ -287,7 +288,7 @@ public sealed class KnowledgeGuidanceNuGetRedirectE2ETests : McpContractFixtureB
 		// Act
 		ClioCliCommandResult installResult = await ClioCliCommandRunner.RunAsync(
 			_settings,
-			["install-knowledge"],
+			[KnowledgeManagementTools.InstallKnowledgeToolName],
 			cancellationToken: context.CancellationTokenSource.Token);
 		CallToolResult callResult = await context.Session.CallToolAsync(
 			GuidanceGetTool.ToolName,

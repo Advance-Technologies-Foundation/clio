@@ -539,23 +539,30 @@ public class BindingsModule {
 			.ConfigureHttpClient(client => client.Timeout = TimeSpan.FromSeconds(15))
 			.ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 		services.AddSingleton<KnowledgeBundleNuGetClient>();
-		services.AddSingleton<IKnowledgeTransport>(provider =>
+		services.AddSingleton<IKnowledgeArtifactTransport>(provider =>
 			provider.GetRequiredService<KnowledgeBundleNuGetClient>());
-		services.AddSingleton<IKnowledgeTransport, KnowledgeGitTransport>();
+		services.AddSingleton<KnowledgeGitTransport>();
+		services.AddSingleton<IKnowledgeRepositoryTransport>(provider => provider.GetRequiredService<KnowledgeGitTransport>());
 		services.AddSingleton(new KnowledgeBundleNuGetOptions(TransportDeadlineMilliseconds: 15_000));
 		services.AddSingleton(new KnowledgeBundleActivationOptions(FailureRetryMilliseconds: 1_000));
 		services.AddSingleton(new KnowledgeInstallationStoreOptions(LockTimeoutMilliseconds: 30_000));
 		services.AddSingleton(new KnowledgeBundleClientCapabilities(
 			ResolveKnowledgeBundleClioVersion(typeof(BindingsModule).Assembly.GetName().Version),
-			new Version(1, 0, 0),
-			new HashSet<string>(StringComparer.Ordinal) { GuidanceGetTool.ToolName },
+			new Version(1, 1, 0),
+			new HashSet<string>(StringComparer.Ordinal) {
+				GuidanceGetTool.ToolName,
+				KnowledgeManagementTools.ListKnowledgeExamplesToolName
+			},
 			GuidanceCatalog.GetExternalResourceUris()));
 		services.AddSingleton<IKnowledgeResolver, KnowledgeResolver>();
 		services.AddSingleton<IKnowledgeBundleRuntime, KnowledgeBundleRuntime>();
 		services.AddSingleton<IKnowledgeRootPathProvider, KnowledgeRootPathProvider>();
 		services.AddSingleton<IKnowledgeSourceInstallationStore, KnowledgeSourceInstallationStore>();
 		services.AddSingleton<IKnowledgeRuntimeConfigurationProvider, KnowledgeRuntimeConfigurationProvider>();
+		services.AddSingleton<IKnowledgeGitRepositoryReader, KnowledgeGitRepositoryReader>();
 		services.AddSingleton<IKnowledgeSourceManagementService, KnowledgeSourceManagementService>();
+		services.AddSingleton<IKnowledgeReferenceExampleParser, KnowledgeReferenceExampleParser>();
+		services.AddSingleton<IKnowledgeReferenceExampleService, KnowledgeReferenceExampleService>();
 		services.AddSingleton<IKnowledgeBundleActivator, KnowledgeMultiSourceActivator>();
 		services.AddSingleton<IKnowledgeGuidanceSource, KnowledgeGuidanceSource>();
 		services.AddSingleton<IKnowledgeGuidanceResourceAdapter, KnowledgeGuidanceResourceAdapter>();
@@ -568,6 +575,7 @@ public class BindingsModule {
 		services.AddTransient<EnableKnowledgeSourceCommand>();
 		services.AddTransient<DisableKnowledgeSourceCommand>();
 		services.AddTransient<ListKnowledgeSourcesCommand>();
+		services.AddTransient<ListKnowledgeExamplesCommand>();
 		services.AddTransient<ComponentInfoTool>();
 		services.AddTransient<BuildThemeTool>();
 		services.AddTransient<AdviseThemePaletteTool>();
@@ -1134,10 +1142,12 @@ public class BindingsModule {
 					// every container the host builds), so auto-registering the type would fail
 					// ValidateOnBuild.
 					|| implementedInterface == typeof(ITenantExecutionLockProvider)
-					// External knowledge activation needs an explicitly configured trust store and
-					// client-capability snapshot. A future transport host owns that configuration;
-					// ordinary Clio containers must not receive an unusable transient runtime.
-					|| implementedInterface == typeof(Command.McpServer.Knowledge.IKnowledgeBundleRuntime)) {
+					// Knowledge services use explicit singleton registrations because they retain immutable
+					// runtime snapshots, source locks, and transport clients across MCP requests.
+					|| implementedInterface.Namespace == typeof(Command.McpServer.Knowledge.IKnowledgeBundleRuntime).Namespace
+					|| implementedInterface == typeof(IKnowledgeSourceManagementService)
+					|| implementedInterface == typeof(IKnowledgeReferenceExampleService)
+					|| implementedInterface == typeof(IKnowledgeGuidanceResourceAdapter)) {
 					continue;
 				}
 				services.AddTransient(implementedInterface, type);

@@ -1237,6 +1237,30 @@ namespace Clio
 		}
 
 		/// <inheritdoc />
+		public bool TryAddKnowledgeSource(string alias, KnowledgeSourceConfiguration source) {
+			KnowledgeSourceConfigurationValidator.ValidateAlias(alias);
+			KnowledgeSourceConfiguration validated = KnowledgeSourceConfigurationValidator.ValidateAndClone(source);
+			bool added = false;
+			UpdateSettings(settings => {
+				settings.Knowledge ??= new KnowledgeConfiguration();
+				settings.Knowledge.Sources ??= new Dictionary<string, KnowledgeSourceConfiguration>(
+					StringComparer.OrdinalIgnoreCase);
+				if (settings.Knowledge.Sources.ContainsKey(alias)
+						|| settings.Knowledge.Sources.Values.Any(candidate => string.Equals(
+							candidate.LibraryId,
+							validated.LibraryId,
+							StringComparison.OrdinalIgnoreCase))) {
+					return;
+				}
+				settings.Knowledge.Sources[alias] = validated;
+				settings.Knowledge = KnowledgeSourceConfigurationValidator.ValidateAndClone(settings.Knowledge);
+				settings.LegacyKnowledgeRootPath = null;
+				added = true;
+			});
+			return added;
+		}
+
+		/// <inheritdoc />
 		public bool RemoveKnowledgeSource(string alias) {
 			KnowledgeSourceConfigurationValidator.ValidateAlias(alias);
 			bool removed = false;
@@ -1320,7 +1344,6 @@ namespace Clio
 			&& string.Equals(left.Branch, right.Branch, StringComparison.Ordinal)
 			&& string.Equals(left.Tag, right.Tag, StringComparison.Ordinal)
 			&& string.Equals(left.Commit, right.Commit, StringComparison.Ordinal)
-			&& string.Equals(left.ArtifactPath, right.ArtifactPath, StringComparison.Ordinal)
 			&& left.Enabled == right.Enabled
 			&& left.Priority == right.Priority
 			&& left.Participation == right.Participation;

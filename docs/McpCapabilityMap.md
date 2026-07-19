@@ -119,6 +119,7 @@ Typical examples:
 - `create-workspace`
 - `list-environments`
 - `find-empty-iis-port`
+- `list-knowledge-examples`
 
 ### 4. HTTP credential-passthrough edge (multi-tenant) + standard OAuth authorization
 
@@ -695,6 +696,34 @@ What an external AI can practically do here:
 Companion surfaces (see the `theming` guidance):
 
 - `get-guidance name=theming` — the palette conversation, the build step, and the workspace/dev vs no-code/server delivery flows.
+
+### 13. Knowledge And Reference-Example Discovery
+
+Clio keeps trusted knowledge catalogs on disk and exposes their registered reference examples
+without cloning the example repositories. The example code itself may be entirely absent from the
+local machine: discovery reads only active, locally cached, signed knowledge catalogs.
+
+- `list-knowledge-examples` (`ReadOnly=true`, `Destructive=false`, `Idempotent=true`,
+  `OpenWorld=false`, pure local) — returns every matching example with publisher/source provenance,
+  use case, supporting capabilities, compatibility and trust metadata, repository entry points,
+  and an immutable full commit revision. Optional `source`, `search`, `capability`, and `status`
+  filters narrow the result and are combined with `AND`.
+
+What an external AI can practically do here:
+
+- discover all vetted examples known to the active catalogs before downloading any code
+- search by primary topic or find different implementations that share a supporting capability
+- inspect the repository URL, entry points, compatibility notes, and exact revision
+- decide whether a relevant repository should be cloned or otherwise pulled using an external Git
+  or workspace mechanism
+
+Important behavior:
+
+- listing never contacts Git, NuGet, or a referenced example repository and never clones code
+- example repositories do not need to be installed locally to be discoverable
+- the catalog itself must already be cached; use the knowledge lifecycle commands to install or
+  update trusted source catalogs
+- invalid cached catalog entries are reported as diagnostics rather than silently trusted
 
 ## Prompt Layer: What The AI Gets Beyond Raw Tools
 

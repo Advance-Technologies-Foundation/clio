@@ -245,7 +245,7 @@ public sealed class AddKnowledgeSourceCommandTests : BaseCommandTests<AddKnowled
 	}
 
 	[Test]
-	[Description("Normalizes and delegates a disabled Git source with deterministic resolution settings.")]
+	[Description("Normalizes and delegates a disabled direct Git source with deterministic resolution settings.")]
 	public void Execute_ShouldAddNormalizedGitSource_WhenOptionsAreValid() {
 		// Arrange
 		_service.Add(Arg.Any<KnowledgeSourceAddRequest>()).Returns(new KnowledgeSourceCommandResult(
@@ -255,10 +255,7 @@ public sealed class AddKnowledgeSourceCommandTests : BaseCommandTests<AddKnowled
 			LibraryId = " com.example.partner ",
 			Type = "GIT",
 			Location = " https://example.test/knowledge.git ",
-			TrustedKeyId = " partner-signing-2026 ",
-			TrustedPublicKeyPath = $" {Path.GetFullPath("partner-public.pem")} ",
 			Branch = " main ",
-			ArtifactPath = " artifacts/knowledge.zip ",
 			Priority = 50,
 			Participation = "Authoritative",
 			Disabled = true
@@ -274,10 +271,9 @@ public sealed class AddKnowledgeSourceCommandTests : BaseCommandTests<AddKnowled
 			&& request.LibraryId == "com.example.partner"
 			&& request.TransportType == "git"
 			&& request.Location == "https://example.test/knowledge.git"
-			&& request.TrustedKeyId == "partner-signing-2026"
-			&& request.TrustedPublicKeyPath == Path.GetFullPath("partner-public.pem")
+			&& request.TrustedKeyId == null
+			&& request.TrustedPublicKeyPath == null
 			&& request.Branch == "main"
-			&& request.ArtifactPath == "artifacts/knowledge.zip"
 			&& request.Priority == 50
 			&& request.Participation == "authoritative"
 			&& !request.Enabled));

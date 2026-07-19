@@ -20,14 +20,17 @@ Retrieves, verifies, and atomically installs the current generation for every en
 `--source` to select exactly one configured alias instead. A source failure cannot replace that
 source's last-known-good generation and does not withdraw other installed libraries.
 
-NuGet sources download a bounded stable package. Git sources resolve their configured commit, tag,
-or branch and consume a ready signed bundle without executing repository code. Installed content is
-kept under `knowledge.root-path` in Clio's visible `appsettings.json`.
+NuGet sources download a bounded stable package and verify its signed version 1 bundle. Git sources
+clone or fast-forward their configured public repository, resolve the configured commit, tag, or
+branch, and validate the catalog contract directly from that checkout without executing repository
+code. Installed content is kept under `knowledge.root-path` in Clio's visible `appsettings.json`.
 
-Configured sources accept signed version 1 bundles only. Public HTTPS Git repositories and NuGet
-feeds are the supported transports in this proof of concept; authenticated private sources are not
-supported. If a Git source has no configured reference, only a successful install persists the
-discovered remote default branch and its exact resolved commit.
+For NuGet, provenance is the verified package version, bundle signature, and digest. For Git,
+provenance is the configured trusted repository URL and the exact resolved commit after catalog
+validation; Git sources do not use NuGet bundle-signing keys. Public HTTPS Git repositories and
+NuGet feeds are the supported transports in this proof of concept; authenticated private sources
+are not supported. If a Git source has no configured reference, only a successful install persists
+the discovered remote default branch and its exact resolved commit.
 
 The command is idempotent for valid active generations. It does not implicitly enable disabled
 sources; use `enable-knowledge-source` first.

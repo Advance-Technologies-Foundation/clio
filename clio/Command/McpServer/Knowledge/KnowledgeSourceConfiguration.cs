@@ -21,7 +21,7 @@ public enum KnowledgeSourceType {
 	NuGet,
 
 	/// <summary>
-	/// Retrieves a ready bundle artifact from a Git repository.
+	/// Synchronizes and reads declarative knowledge directly from a managed Git repository checkout.
 	/// </summary>
 	[EnumMember(Value = "git")]
 	Git
@@ -74,17 +74,21 @@ public sealed class KnowledgeSourceConfiguration {
 	public string Location { get; set; } = string.Empty;
 
 	/// <summary>
-	/// Gets or sets the signature key identifier authorized for bundles from this source.
+	/// Gets or sets the signature key identifier authorized for bundles from a NuGet source.
 	/// </summary>
+	/// <remarks>This value is required for NuGet sources and is not used for Git sources.</remarks>
 	[JsonProperty("trusted-key-id")]
-	public string TrustedKeyId { get; set; } = string.Empty;
+	public string? TrustedKeyId { get; set; }
 
 	/// <summary>
-	/// Gets or sets the absolute local path to the trusted public-key material for this source.
+	/// Gets or sets the absolute local path to trusted public-key material for a NuGet source.
 	/// </summary>
-	/// <remarks>The referenced file contains public verification material and must never contain a private key.</remarks>
+	/// <remarks>
+	/// This value is required for NuGet sources and is not used for Git sources. The referenced file
+	/// contains public verification material and must never contain a private key.
+	/// </remarks>
 	[JsonProperty("trusted-public-key-path")]
-	public string TrustedPublicKeyPath { get; set; } = string.Empty;
+	public string? TrustedPublicKeyPath { get; set; }
 
 	/// <summary>
 	/// Gets or sets the NuGet package ID when <see cref="Type"/> is <see cref="KnowledgeSourceType.NuGet"/>.
@@ -111,12 +115,6 @@ public sealed class KnowledgeSourceConfiguration {
 	public string? Commit { get; set; }
 
 	/// <summary>
-	/// Gets or sets the repository-relative path of the ready knowledge bundle artifact.
-	/// </summary>
-	[JsonProperty("artifact-path")]
-	public string? ArtifactPath { get; set; }
-
-	/// <summary>
 	/// Gets or sets whether the source participates in lifecycle and resolution operations.
 	/// </summary>
 	[JsonProperty("enabled")]
@@ -136,7 +134,6 @@ public sealed class KnowledgeSourceConfiguration {
 }
 
 internal static partial class KnowledgeSourceConfigurationValidator {
-	internal const string DefaultGitArtifactPath = "knowledge-bundle.zip";
 
 	private static readonly Regex AliasPattern = AliasRegex();
 	private static readonly Regex LibraryIdPattern = LibraryIdRegex();
@@ -187,13 +184,16 @@ internal static partial class KnowledgeSourceConfigurationValidator {
 			LibraryId = source.LibraryId.Trim(),
 			Type = source.Type,
 			Location = location.AbsoluteUri,
-			TrustedKeyId = NormalizeTrustedKeyId(source.TrustedKeyId),
-			TrustedPublicKeyPath = NormalizeTrustedPublicKeyPath(source.TrustedPublicKeyPath),
 			Enabled = source.Enabled,
 			Priority = source.Priority,
 			Participation = source.Participation
 		};
 		if (source.Type == KnowledgeSourceType.NuGet) {
+			if (source.Branch is not null || source.Tag is not null || source.Commit is not null) {
+				throw new ArgumentException("Git references are not valid for a NuGet knowledge source.", nameof(source));
+			}
+			result.TrustedKeyId = NormalizeTrustedKeyId(source.TrustedKeyId);
+			result.TrustedPublicKeyPath = NormalizeTrustedPublicKeyPath(source.TrustedPublicKeyPath);
 			if (string.IsNullOrWhiteSpace(source.PackageId) || !PackageIdPattern.IsMatch(source.PackageId)) {
 				throw new ArgumentException("A valid package-id is required for a NuGet knowledge source.",
 					nameof(source));
@@ -205,10 +205,15 @@ internal static partial class KnowledgeSourceConfigurationValidator {
 			throw new ArgumentOutOfRangeException(nameof(source), source.Type,
 				"Knowledge source type is not supported.");
 		}
+		if (source.PackageId is not null
+				|| source.TrustedKeyId is not null
+				|| source.TrustedPublicKeyPath is not null) {
+			throw new ArgumentException("NuGet package and signing settings are not valid for a Git knowledge source.",
+				nameof(source));
+		}
 		result.Branch = NormalizeGitReference(source.Branch, "branch");
 		result.Tag = NormalizeGitReference(source.Tag, "tag");
 		result.Commit = NormalizeCommit(source.Commit);
-		result.ArtifactPath = NormalizeArtifactPath(source.ArtifactPath);
 		return result;
 	}
 
@@ -251,7 +256,7 @@ internal static partial class KnowledgeSourceConfigurationValidator {
 
 	private static string NormalizeTrustedKeyId(string? value) {
 		if (string.IsNullOrWhiteSpace(value)) {
-			throw new ArgumentException("A trusted-key-id is required for every knowledge source.", nameof(value));
+			throw new ArgumentException("A trusted-key-id is required for every NuGet knowledge source.", nameof(value));
 		}
 		string keyId = value.Trim();
 		if (keyId.Length > 255 || keyId.Any(char.IsControl)) {
@@ -301,19 +306,6 @@ internal static partial class KnowledgeSourceConfigurationValidator {
 				nameof(value));
 		}
 		return commit;
-	}
-
-	private static string NormalizeArtifactPath(string? value) {
-		string path = string.IsNullOrWhiteSpace(value) ? DefaultGitArtifactPath : value.Trim().Replace('\\', '/');
-		if (path.Length > 512
-				|| path.StartsWith("/", StringComparison.Ordinal)
-				|| path.EndsWith("/", StringComparison.Ordinal)
-				|| path.Contains('"')
-				|| path.Split('/').Any(segment => segment.Length == 0 || segment is "." or "..")) {
-			throw new ArgumentException("Knowledge Git artifact path must be a safe repository-relative file path.",
-				nameof(value));
-		}
-		return path;
 	}
 
 	[GeneratedRegex("^[a-z0-9](?:[a-z0-9.-]{0,62}[a-z0-9])?$", RegexOptions.CultureInvariant)]

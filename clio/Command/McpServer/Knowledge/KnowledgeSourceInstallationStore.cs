@@ -56,6 +56,12 @@ internal sealed record KnowledgeLibraryHighWaterMark(
 internal interface IKnowledgeSourceInstallationStore {
 	string GetRootPath();
 
+	string GetGitRepositoryPath(string sourceAlias, bool createSourceRoot);
+
+	T ExecuteWithSourceMutationLock<T>(string sourceAlias, Func<T> action);
+
+	bool TryExecuteWithSourceMutationLock(string sourceAlias, Action action);
+
 	KnowledgeSourceCurrentState? ReadCurrent(string sourceAlias, out string? diagnostic);
 
 	bool TryReadCandidate(
@@ -119,6 +125,28 @@ internal sealed class KnowledgeSourceInstallationStore : IKnowledgeSourceInstall
 	}
 
 	public string GetRootPath() => _rootPathProvider.GetOrCreateRoot();
+
+	public string GetGitRepositoryPath(string sourceAlias, bool createSourceRoot) {
+		KnowledgeSourceConfigurationValidator.ValidateAlias(sourceAlias);
+		string sourceRoot = ResolveSourceRoot(sourceAlias, createSourceRoot);
+		string repositoryPath = ResolveChild(sourceRoot, "repository");
+		if (_fileSystem.Directory.Exists(repositoryPath)) {
+			EnsureNoReparsePoint(sourceRoot, repositoryPath);
+		}
+		return repositoryPath;
+	}
+
+	public T ExecuteWithSourceMutationLock<T>(string sourceAlias, Func<T> action) {
+		ArgumentNullException.ThrowIfNull(action);
+		string sourceRoot = ResolveSourceRoot(sourceAlias, create: true);
+		return WithMutationLock(sourceRoot, action);
+	}
+
+	public bool TryExecuteWithSourceMutationLock(string sourceAlias, Action action) {
+		ArgumentNullException.ThrowIfNull(action);
+		string sourceRoot = ResolveSourceRoot(sourceAlias, create: true);
+		return TryWithMutationLock(sourceRoot, action);
+	}
 
 	public KnowledgeSourceCurrentState? ReadCurrent(string sourceAlias, out string? diagnostic) {
 		try {
@@ -662,6 +690,8 @@ internal sealed class KnowledgeSourceInstallationStore : IKnowledgeSourceInstall
 		if (create && !_fileSystem.Directory.Exists(sourceRoot)) {
 			_fileSystem.Directory.CreateDirectory(sourceRoot);
 			_fileSystem.File.WriteAllText(ResolveChild(sourceRoot, SourceOwnerFileName), sourceAlias + "\n");
+		} else if (create) {
+			ValidateSourceRoot(sourceAlias, sourceRoot);
 		}
 		return sourceRoot;
 	}
@@ -750,6 +780,31 @@ internal sealed class KnowledgeSourceInstallationStore : IKnowledgeSourceInstall
 			}
 			using (stream) {
 				return action();
+			}
+		} finally {
+			Monitor.Exit(processLock);
+		}
+	}
+
+	private bool TryWithMutationLock(string sourceRoot, Action action) {
+		string sourcesRoot = _fileSystem.Path.GetDirectoryName(sourceRoot)
+			?? throw new InvalidOperationException("Knowledge source root has no parent directory.");
+		string locksRoot = EnsureDirectory(sourcesRoot, LocksDirectoryName);
+		string lockPath = ResolveChild(locksRoot, $"{_fileSystem.Path.GetFileName(sourceRoot)}.lock");
+		object processLock = ProcessLocks.GetOrAdd(lockPath, _ => new object());
+		if (!Monitor.TryEnter(processLock)) {
+			return false;
+		}
+		try {
+			FileSystemStream? stream;
+			try {
+				stream = _fileSystem.File.Open(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+			} catch (IOException) {
+				return false;
+			}
+			using (stream) {
+				action();
+				return true;
 			}
 		} finally {
 			Monitor.Exit(processLock);

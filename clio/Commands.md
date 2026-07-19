@@ -605,7 +605,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="delete-knowledge"></a>
 - [`delete-knowledge`](docs/commands/delete-knowledge.md) - Delete installed knowledge while retaining source configuration
 <a id="add-knowledge-source"></a>
-- [`add-knowledge-source`](docs/commands/add-knowledge-source.md) - Add a public HTTPS Git or NuGet source with a validated local public signing key
+- [`add-knowledge-source`](docs/commands/add-knowledge-source.md) - Add a direct Git checkout or signed NuGet knowledge source
 <a id="remove-knowledge-source"></a>
 - [`remove-knowledge-source`](docs/commands/remove-knowledge-source.md) - Remove one configured source and best-effort clean its managed cache
 <a id="enable-knowledge-source"></a>
@@ -614,6 +614,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`disable-knowledge-source`](docs/commands/disable-knowledge-source.md) - Disable one configured source without deleting its cache
 <a id="list-knowledge-sources"></a>
 - [`list-knowledge-sources`](docs/commands/list-knowledge-sources.md) - List all configured knowledge sources
+<a id="list-knowledge-examples"></a>
+- [`list-knowledge-examples`](docs/commands/list-knowledge-examples.md) - Discover registered reference examples without cloning their repositories
 <a id="install-dbhub"></a>
 - [`install-dbhub`](docs/commands/install-dbhub.md) - Install, adopt, or repair a local loopback dbHub HTTP MCP server
 <a id="sync-dbhub"></a>
