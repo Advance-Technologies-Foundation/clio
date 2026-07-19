@@ -852,7 +852,6 @@ public sealed class KnowledgeBundleRuntimeTests {
 			libraryId = "com.example.partner",
 			libraryVersion = "2026.07.19.1",
 			sequence = 2,
-			issuedAt = "2026-07-19T00:00:00Z",
 			source = new { repository = "synthetic-partner", commit = "0123456789012345678901234567890123456789" },
 			compatibility = new {
 				clio = new { min = "8.1.0", max = "8.1.999" },

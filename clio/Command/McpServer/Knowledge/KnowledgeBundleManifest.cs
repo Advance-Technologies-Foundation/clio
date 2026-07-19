@@ -11,7 +11,7 @@ internal sealed record KnowledgeBundleManifestDto(
 	string? LibraryVersion,
 	ulong Sequence,
 	string? BundleVersion,
-	DateTimeOffset IssuedAt,
+	DateTimeOffset? IssuedAt,
 	KnowledgeBundleSourceDto Source,
 	KnowledgeBundleCompatibilityDto Compatibility,
 	KnowledgeBundleRequirementsDto Requirements,

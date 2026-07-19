@@ -457,7 +457,7 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 				|| (legacy && string.IsNullOrWhiteSpace(manifest.BundleVersion))
 				|| (multiSource && (string.IsNullOrWhiteSpace(manifest.LibraryId)
 					|| string.IsNullOrWhiteSpace(manifest.LibraryVersion)))
-				|| manifest.IssuedAt == default
+				|| (legacy && (!manifest.IssuedAt.HasValue || manifest.IssuedAt.Value == default))
 				|| manifest.Source is null
 				|| string.IsNullOrWhiteSpace(manifest.Source.Repository)
 				|| string.IsNullOrWhiteSpace(manifest.Source.Commit)

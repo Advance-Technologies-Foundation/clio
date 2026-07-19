@@ -6842,3 +6842,10 @@ Decision: Bind NuGet package and signed library versions, fail closed on transpo
 Discovery: A replay ledger written before an activation marker needs autonomous exact-orphan reconciliation; otherwise the correct cold-start high-water guard can make an interrupted update unrecoverable. A transport outage is not evidence that a source is up to date.
 Files: clio/Command/McpServer/Knowledge/, clio/Command/McpServer/Tools/KnowledgeManagementTools.cs, clio/Common/ProcessExecutor.cs, clio.tests/Command/McpServer/, clio.tests/Common/ProcessExecutorTests.cs, clio.mcp.e2e/KnowledgeManagementToolE2ETests.cs
 Impact: The draft POC now supports bounded, crash-recoverable, multi-source Git/NuGet delivery and live MCP reload while keeping content assertions in clio-knowledge.
+
+## 2026-07-19 17:00 – Remove redundant v1 knowledge timestamps
+Context: The Git source manifest duplicated provenance, signing, and publication time already supplied by Git or NuGet mechanics.
+Decision: V1 no longer emits or requires `issuedAt`; the Clio consumer still accepts the field for existing v1 bundles and continues requiring it only for frozen v0 compatibility.
+Discovery: Git-backed knowledge already has an authoritative commit timestamp, so a second publisher-authored timestamp can drift without improving resolution or trust.
+Files: clio/Command/McpServer/Knowledge/KnowledgeBundleManifest.cs, clio/Command/McpServer/Knowledge/KnowledgeBundleRuntime.cs, clio.tests/Command/McpServer/KnowledgeBundleRuntimeTests.cs, clio.mcp.e2e/Support/Knowledge/SyntheticKnowledgeNuGetFixture.cs
+Impact: Direct Git and newly generated NuGet knowledge use one provenance clock while older v1 artifacts remain readable.

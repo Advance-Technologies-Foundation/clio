@@ -84,7 +84,6 @@ internal sealed class SyntheticKnowledgeNuGetFixture : IDisposable {
 			libraryId = LibraryId,
 			libraryVersion = packageVersion,
 			sequence,
-			issuedAt = "2026-07-18T00:00:00Z",
 			source = new {
 				repository = "synthetic-nuget-fixture",
 				commit = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(revision)))
