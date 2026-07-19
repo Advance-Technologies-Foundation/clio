@@ -15,6 +15,10 @@
 			"type": "string",
 			"description": "Default absolute base directory for create-workspace --empty when --directory is omitted"
 		},
+		"knowledge-root-path": {
+			"type": "string",
+			"description": "Absolute directory where Clio persists installed knowledge bundles and extracted reference content"
+		},
 		"container-image-cli": {
 			"type": "string",
 			"description": "Default container image CLI used by build-docker-image",

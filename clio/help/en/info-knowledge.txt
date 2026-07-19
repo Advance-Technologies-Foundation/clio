@@ -1,0 +1,28 @@
+COMMAND TYPE
+    Integrations & tools
+
+NAME
+    info-knowledge - Show local Clio knowledge installation and update status
+
+SYNOPSIS
+    clio info-knowledge [--offline] [--json]
+
+DESCRIPTION
+    Shows the visible settings file, configured knowledge root, installed
+    versions, extracted active-content directory, validation state, source,
+    package identity, installation time, and update availability.
+
+OPTIONS
+    --offline    Inspect disk state without contacting NuGet
+    --json       Emit indented JSON
+
+EXAMPLES
+    clio info-knowledge
+    clio info-knowledge --offline --json
+
+EXIT CODES
+    0   Information reported
+    1   Configured root could not be resolved
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

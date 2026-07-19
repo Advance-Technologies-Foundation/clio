@@ -27,7 +27,6 @@ public sealed class KnowledgeBundleNuGetClientTests {
 	private ServiceProvider _container;
 	private HttpClient _httpClient;
 	private SyntheticNuGetHandler _handler;
-	private IKnowledgeBundleRuntime _runtime;
 	private string? _originalSource;
 	private string? _originalPackageId;
 
@@ -46,10 +45,6 @@ public sealed class KnowledgeBundleNuGetClientTests {
 		services.AddSingleton(factory);
 		services.AddSingleton(new KnowledgeBundleNuGetOptions(TransportDeadlineMilliseconds: 100));
 		services.AddSingleton<IKnowledgeBundlePackageClient, KnowledgeBundleNuGetClient>();
-		_runtime = Substitute.For<IKnowledgeBundleRuntime>();
-		services.AddSingleton(_runtime);
-		services.AddSingleton(new KnowledgeBundleRenewalOptions(CooldownMilliseconds: 0));
-		services.AddSingleton<IKnowledgeBundleActivator, EnvironmentKnowledgeBundleActivator>();
 		_container = services.BuildServiceProvider();
 	}
 
@@ -85,6 +80,59 @@ public sealed class KnowledgeBundleNuGetClientTests {
 			because: "an already attempted immutable package version must not be downloaded repeatedly");
 		_handler.PackageRequests.Should().Be(1,
 			because: "the flat-container payload should be fetched only for a strictly newer version");
+	}
+
+	[Test]
+	[Description("Reports the greatest stable catalog version without downloading a package payload.")]
+	public void GetCatalog_ShouldReturnLatestStableVersion_WithoutDownloadingPackage() {
+		// Arrange
+		_handler.Versions = ["1.0.0", "2.0.0-beta", "1.2.0"];
+		IKnowledgeBundlePackageClient client = _container.GetRequiredService<IKnowledgeBundlePackageClient>();
+
+		// Act
+		KnowledgeBundlePackageCatalogResult result = client.GetCatalog();
+
+		// Assert
+		result.IsAvailable.Should().BeTrue(
+			because: "the service index and bounded version catalog are readable");
+		result.LatestVersion.Should().Be("1.2.0",
+			because: "update status considers only stable three-part package versions");
+		_handler.PackageRequests.Should().Be(0,
+			because: "an update availability check must not download package content");
+	}
+
+	[Test]
+	[Description("Reports catalog availability as unknown when the service index cannot be reached within the deadline.")]
+	public void GetCatalog_ShouldReturnUnavailable_WhenTransportFails() {
+		// Arrange
+		_handler.TimeoutServiceIndex = true;
+		IKnowledgeBundlePackageClient client = _container.GetRequiredService<IKnowledgeBundlePackageClient>();
+
+		// Act
+		KnowledgeBundlePackageCatalogResult result = client.GetCatalog();
+
+		// Assert
+		result.IsAvailable.Should().BeFalse(
+			because: "a transport failure cannot prove that the installed package is current");
+		result.LatestVersion.Should().BeNull(
+			because: "no remote version was observed through the failed catalog request");
+	}
+
+	[Test]
+	[Description("Rejects feed URLs containing query credentials before they can be persisted or displayed.")]
+	public void GetConfiguration_ShouldRejectSource_WhenUrlContainsQuery() {
+		// Arrange
+		Environment.SetEnvironmentVariable(
+			KnowledgeBundleNuGetClient.SourceVariable,
+			$"{Source}?token=secret");
+		IKnowledgeBundlePackageClient client = _container.GetRequiredService<IKnowledgeBundlePackageClient>();
+
+		// Act
+		KnowledgeBundlePackageConfiguration? configuration = client.GetConfiguration();
+
+		// Assert
+		configuration.Should().BeNull(
+			because: "source URLs emitted by info and install metadata must never contain credentials");
 	}
 
 	[Test]
@@ -256,97 +304,6 @@ public sealed class KnowledgeBundleNuGetClientTests {
 			because: "renewal is forward-only after a package version activates successfully");
 		_handler.PackageRequests.Should().Be(0,
 			because: "historical packages must be filtered before payload download");
-	}
-
-	[Test]
-	[Description("Scans below more than 64 invalid packages through the real client and activates the lower valid package without a carousel.")]
-	public void EnsureActivated_ShouldReachLowerValidPackage_WhenMoreThanCacheBoundHigherPackagesAreInvalid() {
-		// Arrange
-		string[] invalidVersions = Enumerable.Range(36, 65)
-			.Reverse()
-			.Select(version => $"{version}.0.0")
-			.ToArray();
-		_handler.Versions = invalidVersions.Append("35.0.0").ToArray();
-		foreach (string invalidVersion in invalidVersions) {
-			_handler.Packages[invalidVersion] = [0x00, 0x01];
-		}
-		_handler.Packages["35.0.0"] = CreatePackage([3, 5, 0]);
-		ulong? activeSequence = null;
-		byte[] observedBundle = [];
-		_runtime.ActiveSequence.Returns(_ => activeSequence);
-		_runtime.Activate(Arg.Any<Stream>(), "35.0.0").Returns(callInfo => {
-			using MemoryStream copy = new();
-			callInfo.Arg<Stream>().CopyTo(copy);
-			observedBundle = copy.ToArray();
-			activeSequence = 35;
-			return new KnowledgeBundleActivationResult(
-				KnowledgeBundleActivationStatus.Activated,
-				KnowledgeBundleRejectionCode.None,
-				35,
-				35,
-				null);
-		});
-		IKnowledgeBundleActivator activator = _container.GetRequiredService<IKnowledgeBundleActivator>();
-
-		// Act
-		for (int attempt = 0; attempt < 66; attempt++) {
-			activator.EnsureActivated();
-		}
-		int scansAfterActivation = _handler.VersionIndexRequests;
-		activator.EnsureActivated();
-		bool postActivationScanCompleted = SpinWait.SpinUntil(
-			() => _handler.VersionIndexRequests > scansAfterActivation,
-			TimeSpan.FromSeconds(1));
-
-		// Assert
-		_handler.RequestedPackageVersions.Should().Equal(
-			invalidVersions.Append("35.0.0"),
-			because: "the descending cursor must visit every higher invalid version once before the valid fallback");
-		observedBundle.Should().Equal(new byte[] { 3, 5, 0 },
-			because: "the real NuGet client must deliver the lower valid inner-bundle bytes intact");
-		activeSequence.Should().Be(35,
-			because: "bounded recent rejection memory must not starve a valid lower immutable package");
-		postActivationScanCompleted.Should().BeTrue(
-			because: "the post-activation generation check should complete within the bounded test window");
-		_handler.RequestedPackageVersions.Should().HaveCount(66,
-			because: "an unchanged catalog must not replay an evicted invalid package after fallback activation");
-	}
-
-	[Test]
-	[Description("Retries a newly inserted in-between version after transient failure while a descending scan cursor is active.")]
-	public void EnsureActivated_ShouldRetryInsertedVersion_WhenFirstChangedCatalogDownloadIsTransient() {
-		// Arrange
-		_handler.Versions = ["999.0.0", "800.0.0"];
-		_handler.Packages["999.0.0"] = [0x00, 0x01];
-		_handler.Packages["800.0.0"] = [0x00, 0x01];
-		_handler.Packages["900.0.0"] = CreatePackage([9, 0, 0]);
-		ulong? activeSequence = null;
-		_runtime.ActiveSequence.Returns(_ => activeSequence);
-		_runtime.Activate(Arg.Any<Stream>(), "900.0.0").Returns(_ => {
-			activeSequence = 900;
-			return new KnowledgeBundleActivationResult(
-				KnowledgeBundleActivationStatus.Activated,
-				KnowledgeBundleRejectionCode.None,
-				900,
-				900,
-				null);
-		});
-		IKnowledgeBundleActivator activator = _container.GetRequiredService<IKnowledgeBundleActivator>();
-
-		// Act
-		activator.EnsureActivated();
-		activator.EnsureActivated();
-		_handler.Versions = ["999.0.0", "900.0.0", "800.0.0"];
-		_handler.TransientPackageFailuresRemaining = 1;
-		activator.EnsureActivated();
-		activator.EnsureActivated();
-
-		// Assert
-		_handler.RequestedPackageVersions.Should().Equal(
-			new[] { "999.0.0", "800.0.0", "900.0.0", "900.0.0" },
-			because: "catalog generation reset must retry the inserted version after transient transport failure");
-		activeSequence.Should().Be(900,
-			because: "the changed-catalog package must remain eligible until a deterministic activation outcome");
 	}
 
 	private static byte[] CreatePackage(byte[] innerBundle) {

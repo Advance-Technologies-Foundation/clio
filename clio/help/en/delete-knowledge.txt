@@ -1,0 +1,29 @@
+COMMAND TYPE
+    Integrations & tools
+
+NAME
+    delete-knowledge - Delete Clio-managed local knowledge artifacts
+
+SYNOPSIS
+    clio delete-knowledge [--force]
+
+DESCRIPTION
+    Deletes managed versions, staging data, downloaded examples, and the active
+    marker. Preserves the configured root, the appsettings.json pointer, and
+    unrelated files. Interactive confirmation is required unless --force is set.
+    Cleanup requires a valid Clio ownership marker and withdraws the active
+    marker before recursively deleting managed children.
+
+OPTIONS
+    --force    Confirm deletion without an interactive prompt
+
+EXAMPLES
+    clio delete-knowledge
+    clio delete-knowledge --force
+
+EXIT CODES
+    0   Deleted, or not installed
+    1   Confirmation refused, locking failure, or filesystem failure
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

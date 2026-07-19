@@ -46,6 +46,27 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 
 	public ulong? ActiveSequence => Volatile.Read(ref _active)?.Sequence;
 
+	public KnowledgeBundleValidationResult Validate(Stream candidate, string? expectedBundleVersion = null) {
+		ArgumentNullException.ThrowIfNull(candidate);
+		try {
+			PreparedKnowledgeBundle prepared = Prepare(candidate, expectedBundleVersion);
+			return new KnowledgeBundleValidationResult(
+				KnowledgeBundleActivationStatus.Activated,
+				KnowledgeBundleRejectionCode.None,
+				prepared.Sequence,
+				null);
+		} catch (KnowledgeBundleRejectedException exception) {
+			return ValidationRejected(exception.Code, exception.CandidateSequence, exception.Message);
+		} catch (Exception exception) when (exception is InvalidDataException
+				or IOException
+				or JsonException
+				or CryptographicException
+				or DecoderFallbackException
+				or RegexMatchTimeoutException) {
+			return ValidationRejected(KnowledgeBundleRejectionCode.Malformed, null, exception.Message);
+		}
+	}
+
 	public KnowledgeBundleActivationResult Activate(Stream candidate, string? expectedBundleVersion = null) {
 		ArgumentNullException.ThrowIfNull(candidate);
 		lock (_activationLock) {
@@ -78,6 +99,8 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 			}
 		}
 	}
+
+	public void Deactivate() => Interlocked.Exchange(ref _active, null);
 
 	public KnowledgeArticleLookup Find(string name) {
 		ArgumentException.ThrowIfNullOrWhiteSpace(name);
@@ -462,6 +485,15 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 		code,
 		candidateSequence,
 		ActiveSequence,
+		diagnostic);
+
+	private static KnowledgeBundleValidationResult ValidationRejected(
+		KnowledgeBundleRejectionCode code,
+		ulong? candidateSequence,
+		string diagnostic) => new(
+		KnowledgeBundleActivationStatus.Rejected,
+		code,
+		candidateSequence,
 		diagnostic);
 
 	private static KnowledgeBundleRejectedException Reject(

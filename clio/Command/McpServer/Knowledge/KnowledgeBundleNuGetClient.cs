@@ -50,14 +50,54 @@ internal sealed class KnowledgeBundleNuGetClient : IKnowledgeBundlePackageClient
 
 	public bool IsConfigured => !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(SourceVariable));
 
+	public KnowledgeBundlePackageConfiguration? GetConfiguration() =>
+		TryReadConfiguration(out Uri source, out string packageId)
+			? new KnowledgeBundlePackageConfiguration(source.AbsoluteUri, packageId)
+			: null;
+
+	public KnowledgeBundlePackageCatalogResult GetCatalog() {
+		using CancellationTokenSource deadline = new(_options.TransportDeadlineMilliseconds);
+		try {
+			if (!TryReadConfiguration(out Uri source, out string packageId)) {
+				return new KnowledgeBundlePackageCatalogResult(false, null,
+					"Knowledge NuGet source or package ID is not configured.");
+			}
+			HttpClient client = _httpClientFactory.CreateClient(HttpClientName);
+			Uri packageBaseAddress = DiscoverPackageBaseAddress(client, source, deadline.Token);
+			IReadOnlyList<StablePackageVersion> versions = ReadVersions(
+				client,
+				packageBaseAddress,
+				packageId,
+				deadline.Token);
+			StablePackageVersion? latest = versions.Cast<StablePackageVersion?>().Max();
+			return new KnowledgeBundlePackageCatalogResult(true, latest?.ToString());
+		} catch (Exception exception) when (exception is HttpRequestException
+				or OperationCanceledException
+				or IOException
+				or InvalidDataException
+				or JsonException
+				or RegexMatchTimeoutException
+				or ArgumentException
+				or NotSupportedException) {
+			return new KnowledgeBundlePackageCatalogResult(false, null, exception.Message);
+		}
+	}
+
 	public KnowledgeBundlePackageDownloadResult DownloadNext(
 		IReadOnlySet<string> rejectedPackageVersions,
 		string? activePackageVersion,
 		string? highestObservedPackageVersion,
 		string? fallbackCeilingPackageVersion,
-		string? catalogFingerprint) {
+		string? catalogFingerprint,
+		int? transportDeadlineMilliseconds = null) {
 		ArgumentNullException.ThrowIfNull(rejectedPackageVersions);
-		using CancellationTokenSource deadline = new(_options.TransportDeadlineMilliseconds);
+		int deadlineMilliseconds = transportDeadlineMilliseconds ?? _options.TransportDeadlineMilliseconds;
+		if (deadlineMilliseconds <= 0) {
+			return NoCandidate();
+		}
+		using CancellationTokenSource deadline = new(Math.Min(
+			deadlineMilliseconds,
+			_options.TransportDeadlineMilliseconds));
 		HttpClient client;
 		Uri packageBaseAddress;
 		string packageId;
@@ -157,6 +197,9 @@ internal sealed class KnowledgeBundleNuGetClient : IKnowledgeBundlePackageClient
 		&& StablePackageVersion.TryParse(floor, out StablePackageVersion floorVersion)
 		&& candidateVersion.CompareTo(floorVersion) > 0;
 
+	internal static bool IsStableVersion(string? value) =>
+		StablePackageVersion.TryParse(value, out _);
+
 	internal static string? GreaterVersion(string? left, string? right) {
 		if (!StablePackageVersion.TryParse(left, out StablePackageVersion leftVersion)) {
 			return StablePackageVersion.TryParse(right, out _) ? right : null;
@@ -180,6 +223,8 @@ internal sealed class KnowledgeBundleNuGetClient : IKnowledgeBundlePackageClient
 		if (!Uri.TryCreate(sourceValue, UriKind.Absolute, out source!)
 				|| !IsAllowedFeedUri(source)
 				|| !string.IsNullOrEmpty(source.UserInfo)
+				|| !string.IsNullOrEmpty(source.Query)
+				|| !string.IsNullOrEmpty(source.Fragment)
 				|| packageId.Length > 100
 				|| !PackageIdPattern.IsMatch(packageId)) {
 			return false;

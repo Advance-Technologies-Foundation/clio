@@ -6787,3 +6787,10 @@ Decision: Map only all-zero development assembly versions to the existing 8.1.0 
 Discovery: The csproj intentionally uses 0.0.0.0 when neither CI nor a git tag supplies a version, so non-null assembly metadata is not sufficient evidence of a product version.
 Files: clio/BindingsModule.cs, clio.tests/Command/BindingsModuleMcpHostGateTests.cs
 Impact: Local source-built MCP hosts can activate trusted external knowledge without weakening compatibility checks for released binaries.
+
+## 2026-07-19 09:41 – Persist and hot-reload installed knowledge
+Context: Replace per-session NuGet discovery with an explicit, inspectable knowledge lifecycle while keeping Clio tests content-agnostic.
+Decision: Added install, update, info, and confirmed delete commands backed by an owned versioned disk store; MCP reads only the active disk marker and revalidates changed generations on demand.
+Discovery: Safe recovery requires atomic ownership and activation markers, compare-and-swap updates, exact-version repair, bounded candidate fallback, reparse-point rejection, and reconciliation of interrupted delete quarantines.
+Files: clio/Command/KnowledgeCommands.cs, clio/Command/McpServer/Knowledge/, clio.mcp.e2e/KnowledgeGuidanceNuGetE2ETests.cs, clio.tests/Command/McpServer/, spec/knowledge-bundle-runtime/
+Impact: MCP sessions can observe verified knowledge updates without restart or repeated downloads, while Clio owns only delivery mechanics and clio-knowledge owns content assertions.

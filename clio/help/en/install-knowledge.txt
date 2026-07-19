@@ -1,0 +1,38 @@
+COMMAND TYPE
+    Integrations & tools
+
+NAME
+    install-knowledge - Install the latest verified Clio knowledge package on disk
+
+SYNOPSIS
+    clio install-knowledge
+
+DESCRIPTION
+    Downloads the highest stable compatible package from the configured NuGet v3 source,
+    verifies its signed inner bundle, and atomically installs it under the
+    appsettings.json "knowledge-root-path".
+
+    When the setting is absent, Clio creates <clio-home>/knowledge and persists
+    that absolute path. Installed guidance and reference-example content is
+    visible to users and coding agents on disk.
+
+    Clio claims only an empty root with an ownership marker and rejects symbolic
+    links or junctions in managed paths. A damaged active materialization is
+    repaired only from a freshly downloaded verified package.
+
+CONFIGURATION
+    CLIO_KNOWLEDGE_NUGET_SOURCE
+    CLIO_KNOWLEDGE_NUGET_PACKAGE_ID
+    CLIO_KNOWLEDGE_TRUSTED_KEY_ID
+    CLIO_KNOWLEDGE_TRUSTED_PUBLIC_KEY_PATH
+
+EXAMPLES
+    clio install-knowledge
+    clio info-knowledge --offline
+
+EXIT CODES
+    0   Installed, or already installed
+    1   Configuration, download, verification, locking, or filesystem failure
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

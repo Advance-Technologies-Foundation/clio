@@ -596,6 +596,14 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 
 ## Integrations & Tools
 
+<a id="install-knowledge"></a>
+- [`install-knowledge`](docs/commands/install-knowledge.md) - Install the latest verified Clio knowledge package on disk
+<a id="update-knowledge"></a>
+- [`update-knowledge`](docs/commands/update-knowledge.md) - Update installed Clio knowledge to the latest verified version
+<a id="info-knowledge"></a>
+- [`info-knowledge`](docs/commands/info-knowledge.md) - Show local Clio knowledge installation and update status
+<a id="delete-knowledge"></a>
+- [`delete-knowledge`](docs/commands/delete-knowledge.md) - Delete Clio-managed local knowledge artifacts
 <a id="install-dbhub"></a>
 - [`install-dbhub`](docs/commands/install-dbhub.md) - Install, adopt, or repair a local loopback dbHub HTTP MCP server
 <a id="sync-dbhub"></a>

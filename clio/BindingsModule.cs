@@ -538,16 +538,24 @@ public class BindingsModule {
 			.ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 		services.AddSingleton<IKnowledgeBundlePackageClient, KnowledgeBundleNuGetClient>();
 		services.AddSingleton(new KnowledgeBundleNuGetOptions(TransportDeadlineMilliseconds: 15_000));
-		services.AddSingleton(new KnowledgeBundleRenewalOptions(CooldownMilliseconds: 250));
+		services.AddSingleton(new KnowledgeBundleActivationOptions(FailureRetryMilliseconds: 1_000));
+		services.AddSingleton(new KnowledgeInstallationStoreOptions(LockTimeoutMilliseconds: 30_000));
 		services.AddSingleton(new KnowledgeBundleClientCapabilities(
 			ResolveKnowledgeBundleClioVersion(typeof(BindingsModule).Assembly.GetName().Version),
 			new Version(1, 0, 0),
 			new HashSet<string>(StringComparer.Ordinal) { GuidanceGetTool.ToolName },
 			GuidanceCatalog.GetExternalResourceUris()));
 		services.AddSingleton<IKnowledgeBundleRuntime, KnowledgeBundleRuntime>();
+		services.AddSingleton<IKnowledgeRootPathProvider, KnowledgeRootPathProvider>();
+		services.AddSingleton<IKnowledgeInstallationStore, KnowledgeInstallationStore>();
+		services.AddSingleton<IKnowledgeInstallationService, KnowledgeInstallationService>();
 		services.AddSingleton<IKnowledgeBundleActivator, EnvironmentKnowledgeBundleActivator>();
 		services.AddSingleton<IKnowledgeGuidanceSource, KnowledgeGuidanceSource>();
 		services.AddSingleton<IKnowledgeGuidanceResourceAdapter, KnowledgeGuidanceResourceAdapter>();
+		services.AddTransient<InstallKnowledgeCommand>();
+		services.AddTransient<UpdateKnowledgeCommand>();
+		services.AddTransient<InfoKnowledgeCommand>();
+		services.AddTransient<DeleteKnowledgeCommand>();
 		services.AddTransient<ComponentInfoTool>();
 		services.AddTransient<BuildThemeTool>();
 		services.AddTransient<AdviseThemePaletteTool>();

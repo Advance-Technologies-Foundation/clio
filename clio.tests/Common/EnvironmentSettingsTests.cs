@@ -107,4 +107,26 @@ public sealed class EnvironmentSettingsTests {
 		persisted.Should().NotContain("secret-cookie",
 			because: "the real SaveSettings/appsettings.json write path must never persist the cookie value");
 	}
+
+	[Test]
+	[Description("GetOrCreateKnowledgeRootPath writes one visible absolute knowledge-root-path into appsettings.json.")]
+	public void GetOrCreateKnowledgeRootPath_ShouldPersistVisibleAbsoluteSetting_WhenMissing() {
+		// Arrange
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		SettingsRepository repository = new(fileSystem);
+		string expected = fileSystem.Path.GetFullPath(fileSystem.Path.Combine(
+			fileSystem.Path.GetDirectoryName(SettingsRepository.AppSettingsFile)!, "knowledge"));
+
+		// Act
+		string resolved = repository.GetOrCreateKnowledgeRootPath(expected);
+		string persisted = fileSystem.File.ReadAllText(SettingsRepository.AppSettingsFile);
+
+		// Assert
+		resolved.Should().Be(expected,
+			because: "the first knowledge operation must use the persisted absolute default path");
+		persisted.Should().Contain("\"knowledge-root-path\"",
+			because: "the knowledge location must be explicit and visible in appsettings.json");
+		persisted.Should().Contain(JsonConvert.ToString(expected),
+			because: "the visible setting must contain the exact normalized root used by the runtime");
+	}
 }

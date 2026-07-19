@@ -120,6 +120,10 @@ lock-package:lock-package,lp
 manage-windows-features:manage-windows-features,mng-win-features,mwf
 mcp-http:mcp-http
 mcp-server:mcp-server,mcp
+install-knowledge:install-knowledge
+update-knowledge:update-knowledge
+info-knowledge:info-knowledge
+delete-knowledge:delete-knowledge
 merge-workspaces:merge-workspaces,mergew
 mock-data:mock-data,data-mock
 modify-entity-schema-column:modify-entity-schema-column

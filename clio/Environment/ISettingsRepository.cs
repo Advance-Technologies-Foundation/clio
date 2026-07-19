@@ -116,6 +116,25 @@ namespace Clio.UserEnvironment
 		string GetWorkspacesRoot();
 
 		/// <summary>
+		/// Gets the explicitly configured root directory for installed Clio knowledge.
+		/// </summary>
+		/// <returns>The configured absolute path, or <c>null</c> when it has not been initialized.</returns>
+		string GetKnowledgeRootPath();
+
+		/// <summary>
+		/// Persists the root directory used for installed Clio knowledge.
+		/// </summary>
+		/// <param name="path">The absolute knowledge root path.</param>
+		void SetKnowledgeRootPath(string path);
+
+		/// <summary>
+		/// Returns the configured knowledge root or atomically persists the supplied default when absent.
+		/// </summary>
+		/// <param name="defaultPath">The absolute default path to persist when no value exists.</param>
+		/// <returns>The configured or newly persisted absolute path.</returns>
+		string GetOrCreateKnowledgeRootPath(string defaultPath);
+
+		/// <summary>
 		/// Gets the configured container image CLI used by build-docker-image.
 		/// </summary>
 		/// <returns>The configured container image CLI name.</returns>

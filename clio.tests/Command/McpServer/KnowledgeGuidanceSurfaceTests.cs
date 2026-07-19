@@ -7,6 +7,7 @@ using Clio.Command.McpServer.Resources;
 using Clio.Command.McpServer.Tools;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 using NSubstitute;
 using NUnit.Framework;
@@ -92,8 +93,12 @@ public sealed class KnowledgeGuidanceSurfaceTests {
 		response.ErrorCode.Should().Be(KnowledgeGuidanceUnavailableException.ErrorCode,
 			because: "tool clients must distinguish cold guidance from an unknown identifier");
 		response.Article.Should().BeNull(because: "unavailable guidance must never become empty fallback content");
-		readResource.Should().Throw<KnowledgeGuidanceUnavailableException>(
-			because: "direct docs reads must fail closed through the same typed state");
+		McpProtocolException exception = readResource.Should().Throw<McpProtocolException>(
+			because: "direct docs reads must expose a safe MCP wire error rather than a masked server exception").Which;
+		exception.ErrorCode.Should().Be(McpErrorCode.InternalError,
+			because: "a known but unavailable resource is an operational failure, not an unknown URI");
+		exception.Message.Should().Contain(KnowledgeGuidanceUnavailableException.ErrorCode,
+			because: "resource clients need the same typed unavailable code as get-guidance clients");
 	}
 
 	[Test]

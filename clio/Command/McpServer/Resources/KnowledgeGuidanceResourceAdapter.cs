@@ -1,5 +1,6 @@
 using System;
 using Clio.Command.McpServer.Knowledge;
+using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 
 namespace Clio.Command.McpServer.Resources;
@@ -26,8 +27,13 @@ internal sealed class KnowledgeGuidanceResourceAdapter : IKnowledgeGuidanceResou
 				MimeType = "text/plain",
 				Text = lookup.Article.Text
 			},
-			KnowledgeArticleLookupStatus.Unavailable => throw new KnowledgeGuidanceUnavailableException(uri),
+			KnowledgeArticleLookupStatus.Unavailable => throw UnavailableResource(uri),
 			_ => throw new InvalidOperationException($"Unknown guidance resource '{uri}'.")
 		};
+	}
+
+	private static McpProtocolException UnavailableResource(string uri) {
+		KnowledgeGuidanceUnavailableException unavailable = new(uri);
+		return new McpProtocolException(unavailable.Message, McpErrorCode.InternalError);
 	}
 }

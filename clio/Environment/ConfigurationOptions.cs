@@ -400,6 +400,12 @@ namespace Clio
 			set;
 		}
 
+		/// <summary>
+		/// Gets or sets the explicit root directory for installed Clio knowledge.
+		/// </summary>
+		[JsonProperty("knowledge-root-path")]
+		public string KnowledgeRootPath { get; set; }
+
 		private string _containerImageCli;
 
 		/// <summary>
@@ -1117,6 +1123,38 @@ namespace Clio
 
 		public string GetWorkspacesRoot() {
 			return _settings.WorkspacesRoot;
+		}
+
+		public string GetKnowledgeRootPath() {
+			return _settings.KnowledgeRootPath;
+		}
+
+		public void SetKnowledgeRootPath(string path) {
+			string normalized = NormalizeKnowledgeRootPath(path, nameof(path));
+			UpdateSettings(settings => settings.KnowledgeRootPath = normalized);
+		}
+
+		public string GetOrCreateKnowledgeRootPath(string defaultPath) {
+			string normalizedDefault = NormalizeKnowledgeRootPath(defaultPath, nameof(defaultPath));
+			string resolved = null;
+			UpdateSettings(settings => {
+				string candidate = string.IsNullOrWhiteSpace(settings.KnowledgeRootPath)
+					? normalizedDefault
+					: settings.KnowledgeRootPath;
+				resolved = NormalizeKnowledgeRootPath(candidate, "knowledge-root-path");
+				settings.KnowledgeRootPath = resolved;
+			});
+			return resolved;
+		}
+
+		private static string NormalizeKnowledgeRootPath(string path, string parameterName) {
+			if (string.IsNullOrWhiteSpace(path)) {
+				throw new ArgumentException("Knowledge root path cannot be empty.", parameterName);
+			}
+			if (!Path.IsPathFullyQualified(path)) {
+				throw new ArgumentException("Knowledge root path must be absolute.", parameterName);
+			}
+			return Path.GetFullPath(path);
 		}
 
 		/// <summary>

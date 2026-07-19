@@ -9,12 +9,22 @@ using System.Threading.Tasks;
 namespace Clio.Command.McpServer.Knowledge;
 
 internal interface IKnowledgeBundleRuntime {
+	KnowledgeBundleValidationResult Validate(Stream candidate, string? expectedBundleVersion = null);
+
 	KnowledgeBundleActivationResult Activate(Stream candidate, string? expectedBundleVersion = null);
+
+	void Deactivate();
 
 	KnowledgeArticleLookup Find(string name);
 
 	ulong? ActiveSequence { get; }
 }
+
+internal sealed record KnowledgeBundleValidationResult(
+	KnowledgeBundleActivationStatus Status,
+	KnowledgeBundleRejectionCode RejectionCode,
+	ulong? CandidateSequence,
+	string? Diagnostic);
 
 internal interface IKnowledgeBundleTrustStore {
 	bool TryGetPublicKeyPem(string keyId, out string publicKeyPem);
@@ -83,18 +93,32 @@ internal sealed class EnvironmentKnowledgeBundleTrustStore : IKnowledgeBundleTru
 
 internal interface IKnowledgeBundleActivator {
 	void EnsureActivated();
+
+	string? LastDiagnostic { get; }
 }
 
 internal interface IKnowledgeBundlePackageClient {
 	bool IsConfigured { get; }
+
+	KnowledgeBundlePackageConfiguration? GetConfiguration();
+
+	KnowledgeBundlePackageCatalogResult GetCatalog();
 
 	KnowledgeBundlePackageDownloadResult DownloadNext(
 		IReadOnlySet<string> rejectedPackageVersions,
 		string? activePackageVersion,
 		string? highestObservedPackageVersion,
 		string? fallbackCeilingPackageVersion,
-		string? catalogFingerprint);
+		string? catalogFingerprint,
+		int? transportDeadlineMilliseconds = null);
 }
+
+internal sealed record KnowledgeBundlePackageConfiguration(string Source, string PackageId);
+
+internal sealed record KnowledgeBundlePackageCatalogResult(
+	bool IsAvailable,
+	string? LatestVersion,
+	string? Diagnostic = null);
 
 internal enum KnowledgeBundlePackageDownloadStatus {
 	NoCandidate,
@@ -108,185 +132,113 @@ internal sealed record KnowledgeBundlePackageDownloadResult(
 	byte[]? BundleBytes,
 	string? CatalogFingerprint = null);
 
-internal sealed record KnowledgeBundleRenewalOptions(int CooldownMilliseconds);
-
 internal sealed record KnowledgeBundleNuGetOptions(int TransportDeadlineMilliseconds);
 
+internal sealed record KnowledgeBundleActivationOptions(int FailureRetryMilliseconds);
+
 internal sealed class EnvironmentKnowledgeBundleActivator : IKnowledgeBundleActivator {
-	internal const string BundlePathVariable = "CLIO_KNOWLEDGE_BUNDLE_PATH";
 	private readonly IKnowledgeBundleRuntime _runtime;
-	private readonly IKnowledgeBundlePackageClient _packageClient;
-	private readonly KnowledgeBundleRenewalOptions _renewalOptions;
+	private readonly IKnowledgeInstallationStore _store;
+	private readonly KnowledgeBundleActivationOptions _options;
 	private readonly object _activationLock = new();
-	private readonly HashSet<string> _rejectedPackageVersions = new(StringComparer.Ordinal);
-	private readonly Queue<string> _rejectedPackageVersionOrder = new();
-	private int _pathAttempted;
-	private int _renewalInProgress;
-	private long _nextRenewalCheck;
-	private string? _activePackageVersion;
-	private string? _highestObservedPackageVersion;
-	private string? _fallbackCeilingPackageVersion;
-	private string? _catalogFingerprint;
-	private const int MaxRejectedPackageVersions = 64;
+	private bool _hasObservedMarker;
+	private string? _observedMarkerIdentity;
+	private string? _failedMarkerIdentity;
+	private long _retryFailedMarkerAfter;
+	public string? LastDiagnostic { get; private set; }
 
 	public EnvironmentKnowledgeBundleActivator(
 		IKnowledgeBundleRuntime runtime,
-		IKnowledgeBundlePackageClient packageClient,
-		KnowledgeBundleRenewalOptions renewalOptions) {
+		IKnowledgeInstallationStore store,
+		KnowledgeBundleActivationOptions options) {
 		_runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
-		_packageClient = packageClient ?? throw new ArgumentNullException(nameof(packageClient));
-		_renewalOptions = renewalOptions ?? throw new ArgumentNullException(nameof(renewalOptions));
-		ArgumentOutOfRangeException.ThrowIfNegative(renewalOptions.CooldownMilliseconds);
+		_store = store ?? throw new ArgumentNullException(nameof(store));
+		_options = options ?? throw new ArgumentNullException(nameof(options));
+		ArgumentOutOfRangeException.ThrowIfNegative(options.FailureRetryMilliseconds);
 	}
 
 	public void EnsureActivated() {
-		if (!_packageClient.IsConfigured) {
-			TryActivateConfiguredPath();
-			return;
-		}
-		if (_runtime.ActiveSequence is null) {
-			TryActivateCold();
-			return;
-		}
-		ScheduleRenewal();
-	}
-
-	private void TryActivateNextPackage() {
-		KnowledgeBundlePackageDownloadResult download = _packageClient.DownloadNext(
-			_rejectedPackageVersions,
-			_activePackageVersion,
-			_highestObservedPackageVersion,
-			_fallbackCeilingPackageVersion,
-			_catalogFingerprint);
-		if (download.CatalogFingerprint is not null
-				&& !string.Equals(
-					_catalogFingerprint,
-					download.CatalogFingerprint,
-					StringComparison.Ordinal)) {
-			_catalogFingerprint = download.CatalogFingerprint;
-			_highestObservedPackageVersion = _activePackageVersion;
-			_fallbackCeilingPackageVersion = null;
-		}
-		if (download.Status == KnowledgeBundlePackageDownloadStatus.Rejected
-				&& download.PackageVersion is not null) {
-			RecordRejectedVersionAndAdvanceScan(download.PackageVersion);
-			return;
-		}
-		if (download.Status != KnowledgeBundlePackageDownloadStatus.Downloaded
-				|| download.PackageVersion is null
-				|| download.BundleBytes is null) {
-			return;
-		}
-		using MemoryStream bundle = new(
-			download.BundleBytes,
-			index: 0,
-			count: download.BundleBytes.Length,
-			writable: false,
-			publiclyVisible: true);
-		KnowledgeBundleActivationResult activation = _runtime.Activate(bundle, download.PackageVersion);
-		if (activation.Status == KnowledgeBundleActivationStatus.Activated) {
-			_activePackageVersion = download.PackageVersion;
-			_highestObservedPackageVersion = KnowledgeBundleNuGetClient.GreaterVersion(
-				_highestObservedPackageVersion,
-				download.PackageVersion);
-			_fallbackCeilingPackageVersion = null;
-			_rejectedPackageVersions.RemoveWhere(version =>
-				!KnowledgeBundleNuGetClient.IsVersionGreaterThan(version, download.PackageVersion));
-			PruneRejectedVersionOrder();
-		} else {
-			RecordRejectedVersionAndAdvanceScan(download.PackageVersion);
-		}
-	}
-
-	private void RecordRejectedVersionAndAdvanceScan(string packageVersion) {
-		_highestObservedPackageVersion = KnowledgeBundleNuGetClient.GreaterVersion(
-			_highestObservedPackageVersion,
-			packageVersion);
-		_fallbackCeilingPackageVersion = packageVersion;
-		RecordRejectedVersion(packageVersion);
-	}
-
-	private void RecordRejectedVersion(string packageVersion) {
-		if (!_rejectedPackageVersions.Add(packageVersion)) {
-			return;
-		}
-		_rejectedPackageVersionOrder.Enqueue(packageVersion);
-		while (_rejectedPackageVersions.Count > MaxRejectedPackageVersions) {
-			_rejectedPackageVersions.Remove(_rejectedPackageVersionOrder.Dequeue());
-		}
-	}
-
-	private void PruneRejectedVersionOrder() {
-		int count = _rejectedPackageVersionOrder.Count;
-		for (int index = 0; index < count; index++) {
-			string version = _rejectedPackageVersionOrder.Dequeue();
-			if (_rejectedPackageVersions.Contains(version)) {
-				_rejectedPackageVersionOrder.Enqueue(version);
+		lock (_activationLock) {
+			KnowledgeCurrentState? current = _store.ReadCurrent(out string? markerDiagnostic);
+			if (markerDiagnostic is not null) {
+				LastDiagnostic = markerDiagnostic;
+				_runtime.Deactivate();
+				_hasObservedMarker = false;
+				_observedMarkerIdentity = null;
+				return;
 			}
-		}
-	}
-
-	private void TryActivateCold() {
-		long now = Environment.TickCount64;
-		if (now < Volatile.Read(ref _nextRenewalCheck)
-				|| Interlocked.CompareExchange(ref _renewalInProgress, 1, 0) != 0) {
-			return;
-		}
-		try {
-			lock (_activationLock) {
-				if (_runtime.ActiveSequence is null) {
-					TryActivateNextPackage();
+			if (current is null) {
+				if (!_hasObservedMarker || _observedMarkerIdentity is not null) {
+					_runtime.Deactivate();
+				}
+				_hasObservedMarker = true;
+				_observedMarkerIdentity = null;
+				LastDiagnostic = null;
+				return;
+			}
+			string markerIdentity = Identity(current.Active);
+			if (_hasObservedMarker
+					&& string.Equals(markerIdentity, _observedMarkerIdentity, StringComparison.Ordinal)) {
+				return;
+			}
+			if (string.Equals(markerIdentity, _failedMarkerIdentity, StringComparison.Ordinal)
+					&& Environment.TickCount64 < _retryFailedMarkerAfter) {
+				return;
+			}
+			if (TryActivate(current.Active)) {
+				_observedMarkerIdentity = markerIdentity;
+				_hasObservedMarker = true;
+				LastDiagnostic = null;
+				_failedMarkerIdentity = null;
+				return;
+			}
+			string? activeDiagnostic = LastDiagnostic;
+			if (_runtime.ActiveSequence is null && current.Previous is not null) {
+				if (TryActivate(current.Previous)) {
+					LastDiagnostic = activeDiagnostic;
+					RecordFailedMarker(markerIdentity);
+					return;
 				}
 			}
-		} finally {
-			Volatile.Write(ref _nextRenewalCheck,
-				Environment.TickCount64 + _renewalOptions.CooldownMilliseconds);
-			Volatile.Write(ref _renewalInProgress, 0);
+			RecordFailedMarker(markerIdentity);
 		}
 	}
 
-	private void ScheduleRenewal() {
-		long now = Environment.TickCount64;
-		if (now < Volatile.Read(ref _nextRenewalCheck)
-				|| Interlocked.CompareExchange(ref _renewalInProgress, 1, 0) != 0) {
-			return;
-		}
-		Volatile.Write(ref _nextRenewalCheck, now + _renewalOptions.CooldownMilliseconds);
-		_ = Task.Run(() => {
-			try {
-				lock (_activationLock) {
-					TryActivateNextPackage();
-				}
-			} finally {
-				Volatile.Write(ref _renewalInProgress, 0);
-			}
-		});
+	private void RecordFailedMarker(string markerIdentity) {
+		_failedMarkerIdentity = markerIdentity;
+		_retryFailedMarkerAfter = Environment.TickCount64 + _options.FailureRetryMilliseconds;
 	}
 
-	private void TryActivateConfiguredPath() {
-		if (Interlocked.Exchange(ref _pathAttempted, 1) != 0) {
-			return;
+	private bool TryActivate(KnowledgeVersionPointer pointer) {
+		if (!_store.TryReadCandidate(pointer, out InstalledKnowledgeCandidate? candidate, out string? diagnostic)) {
+			LastDiagnostic = diagnostic ?? "Installed knowledge candidate could not be read.";
+			return false;
 		}
-		string? bundlePath = Environment.GetEnvironmentVariable(BundlePathVariable);
-		if (string.IsNullOrWhiteSpace(bundlePath) || !Path.IsPathFullyQualified(bundlePath)) {
-			return;
+		using MemoryStream stream = new(candidate!.BundleBytes, writable: false);
+		KnowledgeBundleValidationResult validation = _runtime.Validate(stream, pointer.PackageVersion);
+		if (validation.Status != KnowledgeBundleActivationStatus.Activated
+				|| validation.CandidateSequence != pointer.Sequence) {
+			LastDiagnostic = validation.Diagnostic
+				?? "Installed knowledge candidate does not match the activation marker sequence.";
+			return false;
 		}
-		try {
-			using FileStream candidate = File.OpenRead(bundlePath);
-			_runtime.Activate(candidate);
-		} catch (IOException) {
-			// Strict lazy mode stays explicitly unavailable when the configured source cannot be read.
-		} catch (UnauthorizedAccessException) {
-			// Strict lazy mode stays explicitly unavailable when the configured source cannot be read.
-		} catch (ArgumentException) {
-			// Strict lazy mode stays explicitly unavailable when the configured source path is invalid.
-		} catch (NotSupportedException) {
-			// Strict lazy mode stays explicitly unavailable when the configured source path is unsupported.
-		}
+		stream.Position = 0;
+		KnowledgeBundleActivationResult activation = _runtime.Activate(stream, pointer.PackageVersion);
+		bool activated = activation.Status == KnowledgeBundleActivationStatus.Activated
+			&& activation.CandidateSequence == pointer.Sequence;
+		LastDiagnostic = activated
+			? null
+			: activation.Diagnostic ?? "Installed knowledge candidate was rejected.";
+		return activated;
 	}
+
+	private static string Identity(KnowledgeVersionPointer pointer) =>
+		$"{pointer.PackageVersion}:{pointer.Sequence}:{pointer.BundleDigest}";
 }
 
 internal sealed class NoOpKnowledgeBundleActivator : IKnowledgeBundleActivator {
+	public string? LastDiagnostic => null;
+
 	public void EnsureActivated() {
 	}
 }
@@ -294,8 +246,15 @@ internal sealed class NoOpKnowledgeBundleActivator : IKnowledgeBundleActivator {
 internal sealed class UnavailableKnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 	public ulong? ActiveSequence => null;
 
+	public KnowledgeBundleValidationResult Validate(Stream candidate, string? expectedBundleVersion = null) =>
+		new(KnowledgeBundleActivationStatus.Rejected, KnowledgeBundleRejectionCode.Malformed, null,
+			"No knowledge bundle runtime is configured.");
+
 	public KnowledgeBundleActivationResult Activate(Stream candidate, string? expectedBundleVersion = null) =>
 		throw new NotSupportedException();
+
+	public void Deactivate() {
+	}
 
 	public KnowledgeArticleLookup Find(string name) =>
 		new(KnowledgeArticleLookupStatus.Unavailable, null, null);

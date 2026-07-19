@@ -22,12 +22,12 @@
 
 stories:
   - id: story-knowledge-bundle-runtime-1
-    title: "Verify and retain an active external knowledge bundle"
+    title: "Install and hot-reload external knowledge"
     feature: "knowledge-bundle-runtime"
     repo: "clio"
-    size: M
+    size: L
     status: review
-    note: "PR #927 adds bounded NuGet v3 delivery plus synthetic real-process renewal and last-known-good coverage; owner approval remains required before merge."
+    note: "PR #927 now provides an appsettings-backed persistent store, CLI lifecycle commands, disk-only MCP activation, same-process hot reload, and mechanics-only synthetic tests; owner approval remains required before merge."
     file: spec/knowledge-bundle-runtime/knowledge-bundle-runtime-story.md
     prd: spec/knowledge-bundle-runtime/knowledge-bundle-runtime-spec.md
     adr: spec/knowledge-bundle-runtime/knowledge-bundle-runtime-plan.md

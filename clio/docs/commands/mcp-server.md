@@ -76,16 +76,25 @@ service-index URL.
 
 Clio selects the highest stable three-part package version, extracts
 `content/knowledge-bundle.zip`, and verifies its signature, compatibility, complete stable resource
-catalog, and resource digests before atomic activation. A rejected newer package leaves the
-last-known-good bundle active. If no NuGet source is configured, developers may use the absolute
-local `CLIO_KNOWLEDGE_BUNDLE_PATH` fallback. With no verified active bundle, externally delivered
-guidance returns typed `guidance-unavailable` instead of embedded fallback content.
+catalog, and resource digests before atomically installing it under the `knowledge-root-path` stored
+in Clio's visible `appsettings.json`. When the setting is absent, Clio creates and persists
+`<clio-home>/knowledge`. The installed archive and extracted content remain available to users and
+coding agents on disk.
+
+Externally delivered ESQ guidance reads only the persisted cache during lookup, and MCP never
+contacts NuGet. Use `install-knowledge`, `update-knowledge`, `info-knowledge`, and
+`delete-knowledge` to manage the cache explicitly. An already-running MCP process compares the
+small activation marker on every external knowledge lookup, so a successful `update-knowledge`
+becomes visible without restarting MCP. A rejected update leaves the last-known-good bundle active.
+Deleting or invalidating the disk cache stops in-memory external serving on the next lookup. With
+no verified active bundle, external guide lookups return typed `guidance-unavailable`; guidance that
+remains embedded in the current Clio build is unaffected.
 
 ## Synopsis
 
 ```bash
 clio mcp-server
-clio mcp-server
+clio mcp
 ```
 
 ## Examples
@@ -138,7 +147,7 @@ Read the canonical lookup seeding and binding verification guide before choosing
 - If you use an external MCP client wrapper, follow that wrapper's own parsing and transport guarantees
 - Boolean parameters must be JSON booleans (true/false), not strings
 - Entity tools work DB-first: schemas are created directly in PostgreSQL
-- NuGet knowledge packages are checked when externally delivered guidance is requested; rejected immutable versions are memoized in a bounded recent-version window, and successful renewal establishes a forward-only package-version floor
+- Guidance lookups use the persistent disk cache and hot reload only when its activation marker changes; network update checks happen through install-knowledge/update-knowledge, not every MCP session
 
 ## Return Values
 
