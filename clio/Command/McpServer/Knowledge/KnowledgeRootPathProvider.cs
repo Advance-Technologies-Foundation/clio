@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.IO.Abstractions;
 using Clio.UserEnvironment;
 
@@ -39,16 +40,34 @@ internal sealed class KnowledgeRootPathProvider : IKnowledgeRootPathProvider {
 			}
 
 			string normalized = NormalizeSafeRoot(resolved);
+			RejectExistingReparsePointAncestors(normalized);
 			_fileSystem.Directory.CreateDirectory(normalized);
+			RejectExistingReparsePointAncestors(normalized);
 			_root = normalized;
 			return normalized;
+		}
+	}
+
+	private void RejectExistingReparsePointAncestors(string path) {
+		string? current = path;
+		while (!string.IsNullOrEmpty(current)) {
+			if ((_fileSystem.Directory.Exists(current) || _fileSystem.File.Exists(current))
+					&& (_fileSystem.File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0) {
+				throw new InvalidOperationException(
+					"The configured knowledge.root-path cannot contain symbolic links or junctions.");
+			}
+			string? parent = _fileSystem.Path.GetDirectoryName(current);
+			if (string.IsNullOrEmpty(parent) || string.Equals(parent, current, StringComparison.Ordinal)) {
+				break;
+			}
+			current = parent;
 		}
 	}
 
 	private string NormalizeSafeRoot(string path) {
 		if (string.IsNullOrWhiteSpace(path) || !_fileSystem.Path.IsPathFullyQualified(path)) {
 			throw new InvalidOperationException(
-				"The configured knowledge-root-path must be an absolute directory path.");
+				"The configured knowledge.root-path must be an absolute directory path.");
 		}
 		string normalized = _fileSystem.Path.GetFullPath(path);
 		string filesystemRoot = _fileSystem.Path.GetPathRoot(normalized) ?? string.Empty;
@@ -56,7 +75,7 @@ internal sealed class KnowledgeRootPathProvider : IKnowledgeRootPathProvider {
 				normalized.TrimEnd(_fileSystem.Path.DirectorySeparatorChar, _fileSystem.Path.AltDirectorySeparatorChar),
 				filesystemRoot.TrimEnd(_fileSystem.Path.DirectorySeparatorChar, _fileSystem.Path.AltDirectorySeparatorChar),
 				OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)) {
-			throw new InvalidOperationException("The configured knowledge-root-path cannot be a filesystem root.");
+			throw new InvalidOperationException("The configured knowledge.root-path cannot be a filesystem root.");
 		}
 		return normalized;
 	}

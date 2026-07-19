@@ -15,9 +15,9 @@
 			"type": "string",
 			"description": "Default absolute base directory for create-workspace --empty when --directory is omitted"
 		},
-		"knowledge-root-path": {
-			"type": "string",
-			"description": "Absolute directory where Clio persists installed knowledge bundles and extracted reference content"
+		"knowledge": {
+			"$ref": "#/definitions/knowledgeconfiguration",
+			"description": "Trusted knowledge sources, local cache, and deterministic topic-resolution settings"
 		},
 		"container-image-cli": {
 			"type": "string",
@@ -285,6 +285,54 @@
 				}
 			},
 			"description": "Product telemetry upload configuration"
+		},
+		"knowledgeconfiguration": {
+			"type": "object",
+			"properties": {
+				"root-path": {
+					"type": "string",
+					"description": "Absolute directory where Clio persists installed knowledge bundles and readable extracted content"
+				},
+				"sources": {
+					"type": "object",
+					"additionalProperties": { "$ref": "#/definitions/knowledgesource" },
+					"description": "Trusted knowledge sources keyed by operator-friendly alias"
+				},
+				"topic-pins": {
+					"type": "object",
+					"additionalProperties": { "type": "string" },
+					"description": "Logical topic IDs pinned to stable library IDs"
+				}
+			}
+		},
+		"knowledgesource": {
+			"type": "object",
+			"properties": {
+				"library-id": { "type": "string" },
+				"type": { "type": "string", "enum": ["nuget", "git"] },
+				"location": { "type": "string" },
+				"trusted-key-id": {
+					"type": "string",
+					"description": "Signature key ID authorized for bundles from this source"
+				},
+				"trusted-public-key-path": {
+					"type": "string",
+					"description": "Absolute local path to public verification-key material; never a private key"
+				},
+				"package-id": { "type": "string" },
+				"branch": { "type": "string" },
+				"tag": { "type": "string" },
+				"commit": { "type": "string" },
+				"artifact-path": { "type": "string", "default": "knowledge-bundle.zip" },
+				"enabled": { "type": "boolean", "default": true },
+				"priority": { "type": "integer", "default": 0 },
+				"participation": {
+					"type": "string",
+					"enum": ["isolated", "supplement", "authoritative"],
+					"default": "supplement"
+				}
+			},
+			"required": ["library-id", "type", "location", "trusted-key-id", "trusted-public-key-path", "enabled", "priority", "participation"]
 		},
 		"localredisserverconfiguration": {
 			"type": "object",

@@ -124,6 +124,11 @@ install-knowledge:install-knowledge
 update-knowledge:update-knowledge
 info-knowledge:info-knowledge
 delete-knowledge:delete-knowledge
+add-knowledge-source:add-knowledge-source
+remove-knowledge-source:remove-knowledge-source
+enable-knowledge-source:enable-knowledge-source
+disable-knowledge-source:disable-knowledge-source
+list-knowledge-sources:list-knowledge-sources
 merge-workspaces:merge-workspaces,mergew
 mock-data:mock-data,data-mock
 modify-entity-schema-column:modify-entity-schema-column

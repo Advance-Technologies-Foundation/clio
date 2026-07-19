@@ -44,6 +44,11 @@ public sealed class KnowledgeBundleRuntimeTests {
 				callInfo[1] = publicKey;
 				return true;
 			});
+		_trustStore.TryGetPublicKeyPem(Arg.Any<string>(), "p1-test", out Arg.Any<string>())
+			.Returns(callInfo => {
+				callInfo[2] = publicKey;
+				return true;
+			});
 		ServiceCollection services = new();
 		services.AddSingleton(_trustStore);
 		services.AddSingleton(new KnowledgeBundleClientCapabilities(
@@ -51,6 +56,7 @@ public sealed class KnowledgeBundleRuntimeTests {
 			new Version(1, 0, 0),
 			new HashSet<string>(StringComparer.Ordinal) { "get-guidance" },
 			new Dictionary<string, string>(StringComparer.Ordinal) { [TestArticleName] = TestArticleUri }));
+		services.AddSingleton<IKnowledgeResolver, KnowledgeResolver>();
 		services.AddSingleton<IKnowledgeBundleRuntime, KnowledgeBundleRuntime>();
 		_container = services.BuildServiceProvider();
 		_runtime = _container.GetRequiredService<IKnowledgeBundleRuntime>();
@@ -95,6 +101,133 @@ public sealed class KnowledgeBundleRuntimeTests {
 			because: "stable resource identity must survive externalization");
 		Encoding.UTF8.GetBytes(lookup.Article.Text).Should().Equal(Encoding.UTF8.GetBytes(TestArticleText),
 			because: "the verified resource must be served without byte-changing transformations");
+	}
+
+	[Test]
+	[Description("Rejects a legacy v0 bundle for a configured source before consulting legacy environment trust.")]
+	public void Validate_ShouldRejectLegacyContractWithoutTrustLookup_WhenLibraryIsConfigured() {
+		// Arrange
+		using MemoryStream candidate = ValidCandidate();
+		_trustStore.ClearReceivedCalls();
+
+		// Act
+		KnowledgeBundleValidationResult result = _runtime.Validate(
+			candidate,
+			expectedLibraryId: "com.example.partner");
+
+		// Assert
+		result.Status.Should().Be(KnowledgeBundleActivationStatus.Rejected,
+			because: "configured multi-source lifecycle must accept only publisher-bound v1 manifests");
+		result.RejectionCode.Should().Be(KnowledgeBundleRejectionCode.UnsupportedContract,
+			because: "a valid legacy contract is still unsupported on the configured-source path");
+		_trustStore.ReceivedCalls().Should().BeEmpty(
+			because: "legacy key-only environment trust must not authorize a configured source candidate");
+	}
+
+	[Test]
+	[Description("Activates a v1 publisher bundle and exposes canonical namespaced identity with provenance.")]
+	public void ActivateLibrary_ShouldServeCanonicalItem_WhenV1BundleIsValid() {
+		// Arrange
+		using ECDsa signingKey = ECDsa.Create();
+		signingKey.ImportFromPem(_privateKeyPem);
+		using MemoryStream candidate = new(BuildV1Candidate(signingKey), writable: false);
+
+		// Act
+		KnowledgeBundleActivationResult activation = _runtime.ActivateLibrary(
+			"partner",
+			42,
+			KnowledgeSourceParticipation.Authoritative,
+			candidate,
+			"2026.07.19.1",
+			"com.example.partner",
+			Path.GetFullPath(Path.Combine(Path.GetTempPath(), "knowledge", "partner")));
+		KnowledgeArticleLookup lookup = _runtime.Find(
+			"docs://knowledge/com.example.partner/guide-a");
+
+		// Assert
+		activation.Status.Should().Be(KnowledgeBundleActivationStatus.Activated,
+			because: "a signed compatible v1 library generation should activate independently");
+		lookup.Status.Should().Be(KnowledgeArticleLookupStatus.Active,
+			because: "the canonical namespaced route must resolve the exact publisher item");
+		lookup.Provenance!.LibraryId.Should().Be("com.example.partner",
+			because: "resolved guidance must disclose its stable publisher identity");
+		lookup.Provenance.Sequence.Should().Be(2,
+			because: "provenance must bind the article to its signed library generation");
+	}
+
+	[TestCase(40)]
+	[TestCase(64)]
+	[Description("V1 validation accepts only complete hexadecimal Git object identities at the supported SHA widths.")]
+	public void Validate_ShouldAcceptCompleteCommit_WhenV1CommitUsesSupportedShaWidth(int commitLength) {
+		// Arrange
+		using MemoryStream candidate = MutateV1AndResign((manifest, _) =>
+			manifest["source"]!["commit"] = new string('a', commitLength));
+
+		// Act
+		KnowledgeBundleValidationResult result = _runtime.Validate(
+			candidate,
+			expectedLibraryId: "com.example.partner");
+
+		// Assert
+		result.Status.Should().Be(KnowledgeBundleActivationStatus.Activated,
+			because: $"a complete {commitLength}-character hexadecimal object ID is immutable provenance");
+	}
+
+	[Test]
+	[Description("V1 validation rejects two resources that claim the same logical topic and role even when their item identities differ.")]
+	public void Validate_ShouldRejectDuplicateTopicRole_WhenV1ItemsDiffer() {
+		// Arrange
+		using MemoryStream candidate = MutateV1AndResign((manifest, entries) => {
+			JsonObject duplicate = manifest["resources"]!.AsArray()[0]!.DeepClone().AsObject();
+			duplicate["itemId"] = "guide-b";
+			duplicate["uri"] = "docs://knowledge/com.example.partner/guide-b";
+			duplicate["legacyUris"] = new JsonArray("docs://mcp/guides/guide-b");
+			duplicate["path"] = "resources/guide-b.md";
+			manifest["resources"]!.AsArray().Add(duplicate);
+			manifest["requirements"]!["itemIds"]!.AsArray().Add("guide-b");
+			manifest["requirements"]!["resourceUris"]!.AsArray().Add(
+				"docs://knowledge/com.example.partner/guide-b");
+			entries["resources/guide-b.md"] = entries[TestArticlePath];
+		});
+
+		// Act
+		KnowledgeBundleValidationResult result = _runtime.Validate(
+			candidate,
+			expectedLibraryId: "com.example.partner");
+
+		// Assert
+		result.Status.Should().Be(KnowledgeBundleActivationStatus.Rejected,
+			because: "topic resolution requires one deterministic item for each topic and role in a library");
+		result.RejectionCode.Should().Be(KnowledgeBundleRejectionCode.InvalidContent,
+			because: "duplicate logical declarations are a signed manifest contract violation");
+		result.Diagnostic.Should().Contain("topic and role",
+			because: "publishers need an actionable explanation of the conflicting identity pair");
+	}
+
+	[Test]
+	[Description("Refreshes source policy for the identical installed v1 generation without treating it as a replay.")]
+	public void ActivateLibrary_ShouldRefreshPolicy_WhenInstalledGenerationIdentityIsUnchanged() {
+		// Arrange
+		using ECDsa signingKey = ECDsa.Create();
+		signingKey.ImportFromPem(_privateKeyPem);
+		byte[] bundle = BuildV1Candidate(signingKey);
+		string localRoot = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "knowledge", "partner"));
+		using MemoryStream first = new(bundle, writable: false);
+		_runtime.ActivateLibrary(
+			"partner", 42, KnowledgeSourceParticipation.Authoritative, first,
+			"2026.07.19.1", "com.example.partner", localRoot);
+		using MemoryStream refresh = new(bundle, writable: false);
+
+		// Act
+		KnowledgeBundleActivationResult result = _runtime.ActivateLibrary(
+			"partner", 77, KnowledgeSourceParticipation.Supplement, refresh,
+			"2026.07.19.1", "com.example.partner", localRoot);
+
+		// Assert
+		result.Status.Should().Be(KnowledgeBundleActivationStatus.Activated,
+			because: "priority and participation changes must hot refresh without requiring a new signed generation");
+		result.ActiveSequence.Should().Be(2,
+			because: "an idempotent policy refresh must retain the verified generation identity");
 	}
 
 	[Test]
@@ -411,6 +544,7 @@ public sealed class KnowledgeBundleRuntimeTests {
 				[TestArticleName] = TestArticleUri,
 				["guide-b"] = "docs://mcp/guides/guide-b"
 			}));
+		services.AddSingleton<IKnowledgeResolver, KnowledgeResolver>();
 		services.AddSingleton<IKnowledgeBundleRuntime, KnowledgeBundleRuntime>();
 		using ServiceProvider partialCatalogContainer = services.BuildServiceProvider();
 		IKnowledgeBundleRuntime runtime = partialCatalogContainer.GetRequiredService<IKnowledgeBundleRuntime>();
@@ -639,6 +773,19 @@ public sealed class KnowledgeBundleRuntimeTests {
 		entries["manifest.sig"] = signingKey.SignData(manifestBytes, HashAlgorithmName.SHA256);
 	});
 
+	private MemoryStream MutateV1AndResign(
+		Action<JsonObject, Dictionary<string, byte[]>> mutateManifest) {
+		using ECDsa signingKey = ECDsa.Create();
+		signingKey.ImportFromPem(_privateKeyPem);
+		Dictionary<string, byte[]> entries = ReadEntries(BuildV1Candidate(signingKey));
+		JsonObject manifest = JsonNode.Parse(entries["manifest.json"])!.AsObject();
+		mutateManifest(manifest, entries);
+		byte[] manifestBytes = JsonSerializer.SerializeToUtf8Bytes(manifest);
+		entries["manifest.json"] = manifestBytes;
+		entries["manifest.sig"] = signingKey.SignData(manifestBytes, HashAlgorithmName.SHA256);
+		return WriteArchive(entries);
+	}
+
 	private MemoryStream MutateManifestBytesAndResign(Func<byte[], byte[]> mutateManifest) =>
 		MutateCandidate(entries => {
 			byte[] manifestBytes = mutateManifest(entries["manifest.json"]);
@@ -679,6 +826,52 @@ public sealed class KnowledgeBundleRuntimeTests {
 				new {
 					id = TestArticleName,
 					uri = TestArticleUri,
+					path = TestArticlePath,
+					mediaType = "text/plain",
+					length = resourceBytes.LongLength,
+					digest
+				}
+			}
+		});
+		Dictionary<string, byte[]> entries = new(StringComparer.Ordinal) {
+			["manifest.json"] = manifestBytes,
+			["manifest.sig"] = signingKey.SignData(manifestBytes, HashAlgorithmName.SHA256),
+			[TestArticlePath] = resourceBytes
+		};
+		using MemoryStream archive = WriteArchive(entries);
+		return archive.ToArray();
+	}
+
+	private static byte[] BuildV1Candidate(ECDsa signingKey) {
+		byte[] resourceBytes = new UTF8Encoding(false, true).GetBytes(TestArticleText);
+		string digest = Convert.ToHexString(SHA256.HashData(resourceBytes)).ToLowerInvariant();
+		string uri = "docs://knowledge/com.example.partner/guide-a";
+		byte[] manifestBytes = JsonSerializer.SerializeToUtf8Bytes(new {
+			contractVersion = "1.0.0",
+			bundleSchemaVersion = "1.0.0",
+			libraryId = "com.example.partner",
+			libraryVersion = "2026.07.19.1",
+			sequence = 2,
+			issuedAt = "2026-07-19T00:00:00Z",
+			source = new { repository = "synthetic-partner", commit = "0123456789012345678901234567890123456789" },
+			compatibility = new {
+				clio = new { min = "8.1.0", max = "8.1.999" },
+				mcpToolContract = new { min = "1.0.0", max = "1.0.0" }
+			},
+			requirements = new {
+				tools = new[] { "get-guidance" },
+				itemIds = new[] { TestArticleName },
+				resourceUris = new[] { uri }
+			},
+			digestAlg = "SHA-256",
+			signature = new { algorithm = "ECDSA-P256-SHA256", keyId = "p1-test" },
+			resources = new[] {
+				new {
+					itemId = TestArticleName,
+					topicId = "topic-a",
+					role = "guidance",
+					uri,
+					legacyUris = new[] { TestArticleUri },
 					path = TestArticlePath,
 					mediaType = "text/plain",
 					length = resourceBytes.LongLength,

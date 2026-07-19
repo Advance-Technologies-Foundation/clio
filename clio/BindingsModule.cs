@@ -532,11 +532,16 @@ public class BindingsModule {
 		services.AddTransient<PageSyncTool>();
 		services.AddSingleton<IPageBodySamplingService, PageBodySamplingServiceImpl>();
 		services.AddTransient<GuidanceGetTool>();
-		services.AddSingleton<IKnowledgeBundleTrustStore, EnvironmentKnowledgeBundleTrustStore>();
+		services.AddTransient<KnowledgeManagementTools>();
+		services.AddSingleton<IKnowledgeBundleTrustStore, ConfiguredKnowledgeBundleTrustStore>();
+		services.AddSingleton<IKnowledgeTrustFingerprintService, KnowledgeTrustFingerprintService>();
 		services.AddHttpClient(KnowledgeBundleNuGetClient.HttpClientName)
 			.ConfigureHttpClient(client => client.Timeout = TimeSpan.FromSeconds(15))
 			.ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
-		services.AddSingleton<IKnowledgeBundlePackageClient, KnowledgeBundleNuGetClient>();
+		services.AddSingleton<KnowledgeBundleNuGetClient>();
+		services.AddSingleton<IKnowledgeTransport>(provider =>
+			provider.GetRequiredService<KnowledgeBundleNuGetClient>());
+		services.AddSingleton<IKnowledgeTransport, KnowledgeGitTransport>();
 		services.AddSingleton(new KnowledgeBundleNuGetOptions(TransportDeadlineMilliseconds: 15_000));
 		services.AddSingleton(new KnowledgeBundleActivationOptions(FailureRetryMilliseconds: 1_000));
 		services.AddSingleton(new KnowledgeInstallationStoreOptions(LockTimeoutMilliseconds: 30_000));
@@ -545,17 +550,24 @@ public class BindingsModule {
 			new Version(1, 0, 0),
 			new HashSet<string>(StringComparer.Ordinal) { GuidanceGetTool.ToolName },
 			GuidanceCatalog.GetExternalResourceUris()));
+		services.AddSingleton<IKnowledgeResolver, KnowledgeResolver>();
 		services.AddSingleton<IKnowledgeBundleRuntime, KnowledgeBundleRuntime>();
 		services.AddSingleton<IKnowledgeRootPathProvider, KnowledgeRootPathProvider>();
-		services.AddSingleton<IKnowledgeInstallationStore, KnowledgeInstallationStore>();
-		services.AddSingleton<IKnowledgeInstallationService, KnowledgeInstallationService>();
-		services.AddSingleton<IKnowledgeBundleActivator, EnvironmentKnowledgeBundleActivator>();
+		services.AddSingleton<IKnowledgeSourceInstallationStore, KnowledgeSourceInstallationStore>();
+		services.AddSingleton<IKnowledgeRuntimeConfigurationProvider, KnowledgeRuntimeConfigurationProvider>();
+		services.AddSingleton<IKnowledgeSourceManagementService, KnowledgeSourceManagementService>();
+		services.AddSingleton<IKnowledgeBundleActivator, KnowledgeMultiSourceActivator>();
 		services.AddSingleton<IKnowledgeGuidanceSource, KnowledgeGuidanceSource>();
 		services.AddSingleton<IKnowledgeGuidanceResourceAdapter, KnowledgeGuidanceResourceAdapter>();
 		services.AddTransient<InstallKnowledgeCommand>();
 		services.AddTransient<UpdateKnowledgeCommand>();
 		services.AddTransient<InfoKnowledgeCommand>();
 		services.AddTransient<DeleteKnowledgeCommand>();
+		services.AddTransient<AddKnowledgeSourceCommand>();
+		services.AddTransient<RemoveKnowledgeSourceCommand>();
+		services.AddTransient<EnableKnowledgeSourceCommand>();
+		services.AddTransient<DisableKnowledgeSourceCommand>();
+		services.AddTransient<ListKnowledgeSourcesCommand>();
 		services.AddTransient<ComponentInfoTool>();
 		services.AddTransient<BuildThemeTool>();
 		services.AddTransient<AdviseThemePaletteTool>();

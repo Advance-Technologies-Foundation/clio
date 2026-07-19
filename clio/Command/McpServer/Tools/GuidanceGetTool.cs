@@ -90,8 +90,23 @@ internal sealed class GuidanceGetTool {
 					Article = new GuidanceArticle {
 						Name = lookup.Article!.Name,
 						Uri = lookup.Article.Uri,
-						Text = lookup.Article.Text
+						Text = lookup.Article.Text,
+						LibraryId = lookup.Provenance?.LibraryId,
+						ItemId = lookup.Provenance?.ItemId,
+						TopicId = lookup.Provenance?.TopicId,
+						Sequence = lookup.Provenance?.Sequence,
+						BundleDigest = lookup.Provenance?.BundleDigest,
+						SourceAlias = lookup.Provenance?.SourceAlias,
+						LocalPath = lookup.Provenance?.LocalPath
 					}
+				});
+			}
+			if (lookup.Status == KnowledgeArticleLookupStatus.Ambiguous) {
+				return Task.FromResult(new GuidanceGetResponse {
+					Success = false,
+					ErrorCode = KnowledgeGuidanceAmbiguousException.ErrorCode,
+					Error = lookup.Diagnostic,
+					AvailableGuides = _guidanceSource.GetNames().ToList()
 				});
 			}
 			if (lookup.Status == KnowledgeArticleLookupStatus.Unavailable) {
@@ -170,4 +185,39 @@ public sealed class GuidanceArticle {
 
 	[JsonPropertyName("text")]
 	public string Text { get; init; }
+
+	/// <summary>Gets the stable publisher library identifier for externally delivered guidance.</summary>
+	[JsonPropertyName("libraryId")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? LibraryId { get; init; }
+
+	/// <summary>Gets the stable item identifier inside the publisher library.</summary>
+	[JsonPropertyName("itemId")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? ItemId { get; init; }
+
+	/// <summary>Gets the logical topic used for deterministic cross-library resolution.</summary>
+	[JsonPropertyName("topicId")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? TopicId { get; init; }
+
+	/// <summary>Gets the signed generation sequence for the selected library.</summary>
+	[JsonPropertyName("sequence")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public ulong? Sequence { get; init; }
+
+	/// <summary>Gets the verified digest of the selected bundle generation.</summary>
+	[JsonPropertyName("bundleDigest")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? BundleDigest { get; init; }
+
+	/// <summary>Gets the operator-defined trusted-source alias.</summary>
+	[JsonPropertyName("sourceAlias")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? SourceAlias { get; init; }
+
+	/// <summary>Gets the readable installed content path when the article came from disk.</summary>
+	[JsonPropertyName("localPath")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? LocalPath { get; init; }
 }

@@ -6,41 +6,46 @@
 
 ## Name
 
-info-knowledge - Show local Clio knowledge installation and update status
+info-knowledge - Show configured knowledge sources, installed generations, and update status
 
 ## Synopsis
 
 ```bash
-clio info-knowledge [--offline] [--json]
+clio info-knowledge [--source <alias>] [--check-updates] [--json]
 ```
 
 ## Description
 
-Shows the visible `appsettings.json` path, configured knowledge root, active and previous package
-versions, extracted active-content directory, source, package ID, installation time, validation
-state, and update availability.
+Shows `knowledge.root-path`, the visible settings file, source configuration, installed generation,
+resolved transport revision, validation state, update availability, and safe diagnostics. Omit
+`--source` to inspect every configured source, including disabled sources.
 
-By default the command performs a bounded NuGet catalog check. Use `--offline` to inspect only the
-disk cache. `--json` emits machine-readable output.
+The command is local-only by default: it reads persisted configuration and installed caches without
+contacting Git or NuGet. Pass `--check-updates` to perform bounded checks against eligible source
+transports. An update check reports availability but does not install or activate content, and Git
+default-branch discovery during an information request never changes source configuration. Output
+never includes transport credentials, tokens, authorization headers, or other secrets.
 
 ## Options
 
 ```bash
---offline    Do not contact the configured NuGet source
---json       Emit indented JSON
+--source <alias>   Show only this configured source; omit for every configured source
+--check-updates    Contact eligible source transports to check for available updates
+--json             Emit indented JSON
 ```
 
 ## Examples
 
 ```bash
 clio info-knowledge
-clio info-knowledge --offline --json
+clio info-knowledge --source partner --check-updates
+clio info-knowledge --json
 ```
 
 ## Exit Codes
 
-    0   The configured root was resolved and information was reported
-    1   The knowledge root could not be resolved
+    0   The requested source state was reported
+    1   The source selector or knowledge root could not be resolved
 
 ## Reporting Bugs
 

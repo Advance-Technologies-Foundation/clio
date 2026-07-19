@@ -4,6 +4,11 @@
 - **Date:** 2026-07-19
 - **Feature:** `knowledge-bundle-runtime`
 
+> The single-source configuration and store details below describe the first implementation slice.
+> They are superseded by
+> [the accepted multi-source contract](knowledge-bundle-runtime-multi-source-contract.md), which
+> moves the root beneath `knowledge`, introduces per-library stores, and adds Git transport.
+
 ## Goal
 
 Move external knowledge from an ephemeral MCP-process download into an explicit, inspectable Clio

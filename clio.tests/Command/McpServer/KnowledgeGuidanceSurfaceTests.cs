@@ -53,9 +53,10 @@ public sealed class KnowledgeGuidanceSurfaceTests {
 		// Arrange
 		const string name = "esq-filters";
 		const string uri = "docs://mcp/guides/esq-filters";
+		const string canonicalUri = "docs://knowledge/com.creatio.clio/esq-filters";
 		const string text = "Synthetic delivery fixture.\n";
-		_runtime.Find(name).Returns(new KnowledgeArticleLookup(
-			KnowledgeArticleLookupStatus.Active, new KnowledgeArticle(name, uri, text), 3));
+		_runtime.Find(canonicalUri).Returns(new KnowledgeArticleLookup(
+			KnowledgeArticleLookupStatus.Active, new KnowledgeArticle(name, canonicalUri, text), 3));
 
 		// Act
 		GuidanceGetResponse toolResponse = await _tool.GetGuidance(new GuidanceGetArgs(name.ToUpperInvariant()));
@@ -65,12 +66,12 @@ public sealed class KnowledgeGuidanceSurfaceTests {
 		// Assert
 		toolResponse.Success.Should().BeTrue(
 			because: "the active external article must be routable by a case-insensitive stable name");
-		toolResponse.Article!.Uri.Should().Be(uri,
-			because: "get-guidance must preserve the stable external resource URI");
+		toolResponse.Article!.Uri.Should().Be(canonicalUri,
+			because: "legacy guide names must resolve to the canonical publisher-namespaced resource URI");
 		toolResponse.Article.Text.Should().Be(text,
 			because: "get-guidance must preserve the synthetic verified payload");
-		resource.Uri.Should().Be(uri,
-			because: "direct resource routing must preserve the same stable URI");
+		resource.Uri.Should().Be(canonicalUri,
+			because: "legacy resource aliases must return the canonical publisher-namespaced identity");
 		resource.Text.Should().Be(text,
 			because: "direct resource routing must serve the same synthetic payload");
 		_activator.ReceivedCalls().Should().HaveCount(2,
@@ -81,7 +82,7 @@ public sealed class KnowledgeGuidanceSurfaceTests {
 	[Description("Returns typed unavailability on get-guidance and docs routing when the verified bundle is cold.")]
 	public async Task GuidanceSurfaces_ShouldFailClosed_WhenBundleIsUnavailable() {
 		// Arrange
-		_runtime.Find("esq-filters").Returns(new KnowledgeArticleLookup(
+		_runtime.Find("docs://knowledge/com.creatio.clio/esq-filters").Returns(new KnowledgeArticleLookup(
 			KnowledgeArticleLookupStatus.Unavailable, null, null));
 
 		// Act
@@ -105,7 +106,7 @@ public sealed class KnowledgeGuidanceSurfaceTests {
 	[Description("Treats a catalog-known external guide missing from an active runtime snapshot as unavailable, not unknown.")]
 	public async Task GetGuidance_ShouldFailClosed_WhenActiveRuntimeIsMissingKnownExternalGuide() {
 		// Arrange
-		_runtime.Find("esq-filters").Returns(new KnowledgeArticleLookup(
+		_runtime.Find("docs://knowledge/com.creatio.clio/esq-filters").Returns(new KnowledgeArticleLookup(
 			KnowledgeArticleLookupStatus.NotFound, null, 4));
 
 		// Act
@@ -123,6 +124,8 @@ public sealed class KnowledgeGuidanceSurfaceTests {
 	public async Task GetGuidance_ShouldRespectFeatureVisibility_WhenGuideIsFeatureGated() {
 		// Arrange
 		IKnowledgeGuidanceSource source = _container.GetRequiredService<IKnowledgeGuidanceSource>();
+		_runtime.Find("process-modeling").Returns(new KnowledgeArticleLookup(
+			KnowledgeArticleLookupStatus.NotFound, null, null));
 
 		// Act
 		GuidanceGetResponse disabled = await _tool.GetGuidance(new GuidanceGetArgs("process-modeling"));
@@ -143,6 +146,8 @@ public sealed class KnowledgeGuidanceSurfaceTests {
 	public async Task GetGuidance_ShouldReturnNotFound_WhenNameIsNotInCatalog() {
 		// Arrange
 		_runtime.ActiveSequence.Returns((ulong?)5);
+		_runtime.Find("synthetic-missing-guide").Returns(new KnowledgeArticleLookup(
+			KnowledgeArticleLookupStatus.NotFound, null, 5));
 
 		// Act
 		GuidanceGetResponse response = await _tool.GetGuidance(new GuidanceGetArgs("synthetic-missing-guide"));
@@ -151,7 +156,7 @@ public sealed class KnowledgeGuidanceSurfaceTests {
 		response.Success.Should().BeFalse(because: "an unregistered identifier cannot return guidance");
 		response.ErrorCode.Should().Be("guidance-not-found",
 			because: "catalog absence must stay distinct from a cold external bundle");
-		_activator.ReceivedCalls().Should().BeEmpty(
-			because: "unknown catalog names must not trigger bundle discovery or download");
+		_activator.ReceivedCalls().Should().HaveCount(2,
+			because: "the lookup and its available-guide response both refresh partner knowledge without contacting a transport");
 	}
 }

@@ -1,0 +1,31 @@
+COMMAND TYPE
+    Integrations & tools
+
+NAME
+    remove-knowledge-source - Remove one configured source and its managed cache
+
+SYNOPSIS
+    clio remove-knowledge-source --alias <alias> [--force] [--json]
+
+DESCRIPTION
+    Removes and deactivates the selected source configuration before best-effort
+    deletion of only that source's Clio-managed cache. If cache cleanup fails, the
+    source remains removed and the orphaned cache is reported. Other sources and
+    unrelated files remain. Interactive confirmation is required unless --force is
+    set. Use disable-knowledge-source to retain configuration and installed content.
+
+OPTIONS
+    --alias <alias>    Required configured source alias
+    --force            Confirm source and managed-cache removal without a prompt
+    --json             Emit indented JSON
+
+EXAMPLES
+    clio remove-knowledge-source --alias partner
+    clio remove-knowledge-source --alias partner --force --json
+
+EXIT CODES
+    0   Source configuration was removed and managed cache cleanup completed
+    1   Confirmation, selection, persistence, or best-effort cache cleanup failed
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

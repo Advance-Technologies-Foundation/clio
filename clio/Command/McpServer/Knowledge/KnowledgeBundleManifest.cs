@@ -7,8 +7,10 @@ namespace Clio.Command.McpServer.Knowledge;
 internal sealed record KnowledgeBundleManifestDto(
 	string ContractVersion,
 	string BundleSchemaVersion,
+	string? LibraryId,
+	string? LibraryVersion,
 	ulong Sequence,
-	string BundleVersion,
+	string? BundleVersion,
 	DateTimeOffset IssuedAt,
 	KnowledgeBundleSourceDto Source,
 	KnowledgeBundleCompatibilityDto Compatibility,
@@ -27,14 +29,19 @@ internal sealed record KnowledgeBundleVersionRangeDto(string Min, string Max);
 
 internal sealed record KnowledgeBundleRequirementsDto(
 	IReadOnlyList<string> Tools,
-	IReadOnlyList<string> GuidanceIds,
+	IReadOnlyList<string>? GuidanceIds,
+	IReadOnlyList<string>? ItemIds,
 	IReadOnlyList<string> ResourceUris);
 
 internal sealed record KnowledgeBundleSignatureDto(string Algorithm, string KeyId);
 
 internal sealed record KnowledgeBundleResourceDto(
-	string Id,
+	string? Id,
+	string? ItemId,
+	string? TopicId,
+	string? Role,
 	string Uri,
+	IReadOnlyList<string>? LegacyUris,
 	string Path,
 	string MediaType,
 	long Length,

@@ -22,7 +22,10 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 	private const int MaxArchiveEntries = 1024;
 	private const int MaxCentralDirectoryBytes = 2 * 1024 * 1024;
 	private const uint EndOfCentralDirectorySignature = 0x06054b50;
-	private const string ContractVersion = "0.1.0";
+	private const string LegacyContractVersion = "0.1.0";
+	private const string MultiSourceContractVersion = "1.0.0";
+	private const string LegacyLibraryId = "com.creatio.clio";
+	private const string LegacySourceAlias = "creatio";
 	private const string SignatureAlgorithm = "ECDSA-P256-SHA256";
 	private const string DigestAlgorithm = "SHA-256";
 
@@ -35,26 +38,41 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 	private readonly object _activationLock = new();
 	private readonly IKnowledgeBundleTrustStore _trustStore;
 	private readonly KnowledgeBundleClientCapabilities _capabilities;
-	private ActiveKnowledgeBundle? _active;
+	private readonly IKnowledgeResolver _resolver;
+	private ActiveKnowledgeSet _active = ActiveKnowledgeSet.Empty;
 
 	public KnowledgeBundleRuntime(
 		IKnowledgeBundleTrustStore trustStore,
-		KnowledgeBundleClientCapabilities capabilities) {
+		KnowledgeBundleClientCapabilities capabilities,
+		IKnowledgeResolver resolver) {
 		_trustStore = trustStore ?? throw new ArgumentNullException(nameof(trustStore));
 		_capabilities = capabilities ?? throw new ArgumentNullException(nameof(capabilities));
+		_resolver = resolver ?? throw new ArgumentNullException(nameof(resolver));
 	}
 
-	public ulong? ActiveSequence => Volatile.Read(ref _active)?.Sequence;
+	public ulong? ActiveSequence {
+		get {
+			ActiveKnowledgeSet active = Volatile.Read(ref _active);
+			return active.Libraries.Count == 0 ? null : active.Libraries.Max(library => library.Sequence);
+		}
+	}
 
-	public KnowledgeBundleValidationResult Validate(Stream candidate, string? expectedBundleVersion = null) {
+	public KnowledgeBundleValidationResult Validate(
+		Stream candidate,
+		string? expectedBundleVersion = null,
+		string? expectedLibraryId = null) {
 		ArgumentNullException.ThrowIfNull(candidate);
 		try {
-			PreparedKnowledgeBundle prepared = Prepare(candidate, expectedBundleVersion);
+			PreparedKnowledgeBundle prepared = Prepare(candidate, expectedBundleVersion, expectedLibraryId);
 			return new KnowledgeBundleValidationResult(
 				KnowledgeBundleActivationStatus.Activated,
 				KnowledgeBundleRejectionCode.None,
 				prepared.Sequence,
-				null);
+				null,
+				prepared.LibraryId,
+				prepared.LibraryVersion,
+				prepared.BundleDigest,
+				prepared.SourceCommit);
 		} catch (KnowledgeBundleRejectedException exception) {
 			return ValidationRejected(exception.Code, exception.CandidateSequence, exception.Message);
 		} catch (Exception exception) when (exception is InvalidDataException
@@ -68,19 +86,114 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 	}
 
 	public KnowledgeBundleActivationResult Activate(Stream candidate, string? expectedBundleVersion = null) {
+		return ActivateLibraryCore(
+			LegacySourceAlias,
+			priority: 100,
+			KnowledgeSourceParticipation.Authoritative,
+			candidate,
+			expectedBundleVersion,
+			LegacyLibraryId,
+			localRootPath: null,
+			requireMultiSourceContract: false);
+	}
+
+	public KnowledgeBundleActivationResult ActivateLibrary(
+		string sourceAlias,
+		int priority,
+		KnowledgeSourceParticipation participation,
+		Stream candidate,
+		string? expectedBundleVersion = null,
+		string? expectedLibraryId = null,
+		string? localRootPath = null) => ActivateLibraryCore(
+			sourceAlias,
+			priority,
+			participation,
+			candidate,
+			expectedBundleVersion,
+			expectedLibraryId,
+			localRootPath,
+			requireMultiSourceContract: expectedLibraryId is not null);
+
+	private KnowledgeBundleActivationResult ActivateLibraryCore(
+		string sourceAlias,
+		int priority,
+		KnowledgeSourceParticipation participation,
+		Stream candidate,
+		string? expectedBundleVersion,
+		string? expectedLibraryId,
+		string? localRootPath,
+		bool requireMultiSourceContract) {
+		ArgumentException.ThrowIfNullOrWhiteSpace(sourceAlias);
 		ArgumentNullException.ThrowIfNull(candidate);
 		lock (_activationLock) {
 			try {
-				PreparedKnowledgeBundle prepared = Prepare(candidate, expectedBundleVersion);
-				ActiveKnowledgeBundle? active = Volatile.Read(ref _active);
-				if (active is not null && prepared.Sequence <= active.Sequence) {
+				PreparedKnowledgeBundle prepared = Prepare(
+					candidate,
+					expectedBundleVersion,
+					requireMultiSourceContract ? expectedLibraryId : null);
+				if (expectedLibraryId is not null
+						&& !string.Equals(prepared.LibraryId, expectedLibraryId, StringComparison.Ordinal)) {
+					return Rejected(
+						KnowledgeBundleRejectionCode.InvalidContent,
+						prepared.Sequence,
+						$"Candidate library '{prepared.LibraryId}' does not match configured library '{expectedLibraryId}'.");
+				}
+				ActiveKnowledgeSet active = Volatile.Read(ref _active);
+				KnowledgeLibrarySnapshot? current = active.Libraries.SingleOrDefault(library =>
+					string.Equals(library.SourceAlias, sourceAlias, StringComparison.OrdinalIgnoreCase));
+				if (current is not null
+						&& expectedLibraryId is not null
+						&& localRootPath is not null
+						&& prepared.Sequence == current.Sequence
+						&& string.Equals(prepared.BundleDigest, current.BundleDigest, StringComparison.Ordinal)) {
+					KnowledgeLibrarySnapshot refreshed = current with {
+						Priority = priority,
+						Participation = participation,
+						Articles = prepared.Articles.Select(article => localRootPath is null
+							? article
+							: article with { LocalPath = Path.GetFullPath(Path.Combine(
+								localRootPath,
+								article.LocalPath ?? string.Empty)) })
+							.ToArray()
+					};
+					KnowledgeLibrarySnapshot[] refreshedLibraries = active.Libraries
+						.Select(library => string.Equals(
+							library.SourceAlias,
+							sourceAlias,
+							StringComparison.OrdinalIgnoreCase)
+							? refreshed
+							: library)
+						.ToArray();
+					Interlocked.Exchange(ref _active, active with { Libraries = refreshedLibraries });
+					return new KnowledgeBundleActivationResult(
+						KnowledgeBundleActivationStatus.Activated,
+						KnowledgeBundleRejectionCode.None,
+						prepared.Sequence,
+						prepared.Sequence,
+						null);
+				}
+				if (current is not null && prepared.Sequence <= current.Sequence) {
 					return Rejected(
 						KnowledgeBundleRejectionCode.SequenceNotForward,
 						prepared.Sequence,
-						$"Candidate sequence {prepared.Sequence} must be greater than active sequence {active.Sequence}.");
+						$"Candidate sequence {prepared.Sequence} must be greater than active sequence {current.Sequence} for source '{sourceAlias}'.");
 				}
-				ActiveKnowledgeBundle activated = new(prepared.Sequence, prepared.Articles);
-				Interlocked.Exchange(ref _active, activated);
+				KnowledgeLibrarySnapshot activated = new(
+					sourceAlias,
+					prepared.LibraryId,
+					priority,
+					participation,
+					prepared.Sequence,
+					prepared.BundleDigest,
+					prepared.Articles.Select(article => localRootPath is null
+						? article
+						: article with { LocalPath = Path.GetFullPath(Path.Combine(localRootPath, article.LocalPath ?? string.Empty)) })
+						.ToArray());
+				KnowledgeLibrarySnapshot[] nextLibraries = active.Libraries
+					.Where(library => !string.Equals(library.SourceAlias, sourceAlias, StringComparison.OrdinalIgnoreCase))
+					.Append(activated)
+					.ToArray();
+				Interlocked.Exchange(ref _active, active with { Libraries = nextLibraries });
 				return new KnowledgeBundleActivationResult(
 					KnowledgeBundleActivationStatus.Activated,
 					KnowledgeBundleRejectionCode.None,
@@ -100,21 +213,50 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 		}
 	}
 
-	public void Deactivate() => Interlocked.Exchange(ref _active, null);
+	public void Deactivate() => Interlocked.Exchange(ref _active, ActiveKnowledgeSet.Empty);
+
+	public void DeactivateLibrary(string sourceAlias) {
+		ArgumentException.ThrowIfNullOrWhiteSpace(sourceAlias);
+		lock (_activationLock) {
+			ActiveKnowledgeSet active = Volatile.Read(ref _active);
+			KnowledgeLibrarySnapshot[] libraries = active.Libraries
+				.Where(library => !string.Equals(library.SourceAlias, sourceAlias, StringComparison.OrdinalIgnoreCase))
+				.ToArray();
+			Interlocked.Exchange(ref _active, active with { Libraries = libraries });
+		}
+	}
+
+	public void SetTopicPins(IReadOnlyDictionary<string, string> topicPins) {
+		ArgumentNullException.ThrowIfNull(topicPins);
+		lock (_activationLock) {
+			ActiveKnowledgeSet active = Volatile.Read(ref _active);
+			Interlocked.Exchange(ref _active, active with {
+				TopicPins = new Dictionary<string, string>(topicPins, StringComparer.Ordinal)
+			});
+		}
+	}
 
 	public KnowledgeArticleLookup Find(string name) {
 		ArgumentException.ThrowIfNullOrWhiteSpace(name);
-		ActiveKnowledgeBundle? active = Volatile.Read(ref _active);
-		if (active is null) {
+		ActiveKnowledgeSet active = Volatile.Read(ref _active);
+		if (active.Libraries.Count == 0) {
 			return new KnowledgeArticleLookup(KnowledgeArticleLookupStatus.Unavailable, null, null);
 		}
-		return active.Articles.TryGetValue(name, out KnowledgeArticle? article)
-			? new KnowledgeArticleLookup(KnowledgeArticleLookupStatus.Active, article, active.Sequence)
-			: new KnowledgeArticleLookup(KnowledgeArticleLookupStatus.NotFound, null, active.Sequence);
+		return _resolver.Find(name, active.Libraries, active.TopicPins);
 	}
 
-	private PreparedKnowledgeBundle Prepare(Stream candidate, string? expectedBundleVersion) {
+	public IReadOnlyList<string> GetNames() {
+		ActiveKnowledgeSet active = Volatile.Read(ref _active);
+		return _resolver.GetNames(active.Libraries);
+	}
+
+	private PreparedKnowledgeBundle Prepare(
+		Stream candidate,
+		string? expectedBundleVersion,
+		string? expectedLibraryId = null) {
 		using MemoryStream boundedCandidate = ReadBoundedCandidate(candidate);
+		string bundleDigest = Convert.ToHexString(SHA256.HashData(boundedCandidate.ToArray())).ToLowerInvariant();
+		boundedCandidate.Position = 0;
 		ValidateCentralDirectory(boundedCandidate);
 		using ZipArchive archive = new(boundedCandidate, ZipArchiveMode.Read, leaveOpen: true);
 		Dictionary<string, ZipArchiveEntry> entries = ReadEntryIndex(archive);
@@ -128,16 +270,36 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 				null,
 				"Bundle manifest is empty.");
 		ValidateManifestEnvelope(manifest);
+		if (expectedLibraryId is not null && !IsMultiSource(manifest)) {
+			throw Reject(
+				KnowledgeBundleRejectionCode.UnsupportedContract,
+				manifest.Sequence,
+				"Configured knowledge sources require the multi-source bundle contract.");
+		}
+		if (expectedLibraryId is not null
+				&& !string.Equals(manifest.LibraryId, expectedLibraryId, StringComparison.Ordinal)) {
+			throw Reject(
+				KnowledgeBundleRejectionCode.InvalidContent,
+				manifest.Sequence,
+				$"Candidate library '{manifest.LibraryId}' does not match configured library '{expectedLibraryId}'.");
+		}
 		VerifyManifestSignature(manifest, manifestBytes, entries);
+		string libraryVersion = IsMultiSource(manifest) ? manifest.LibraryVersion! : manifest.BundleVersion!;
 		if (expectedBundleVersion is not null
-				&& !string.Equals(manifest.BundleVersion, expectedBundleVersion, StringComparison.Ordinal)) {
+				&& !string.Equals(libraryVersion, expectedBundleVersion, StringComparison.Ordinal)) {
 			throw Reject(KnowledgeBundleRejectionCode.InvalidContent, manifest.Sequence,
 				"Signed bundle version does not match its immutable package version.");
 		}
 		ValidateCompatibility(manifest);
 		ValidateRequirements(manifest);
 		IReadOnlyDictionary<string, KnowledgeArticle> articles = ReadAndValidateResources(manifest, entries);
-		return new PreparedKnowledgeBundle(manifest.Sequence, articles);
+		return new PreparedKnowledgeBundle(
+			IsMultiSource(manifest) ? manifest.LibraryId! : LegacyLibraryId,
+			libraryVersion,
+			manifest.Sequence,
+			bundleDigest,
+			manifest.Source.Commit,
+			articles.Values.ToArray());
 	}
 
 	private static MemoryStream ReadBoundedCandidate(Stream candidate) {
@@ -283,13 +445,18 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 	}
 
 	private static void ValidateManifestEnvelope(KnowledgeBundleManifestDto manifest) {
-		if (!string.Equals(manifest.ContractVersion, ContractVersion, StringComparison.Ordinal)
-				|| !string.Equals(manifest.BundleSchemaVersion, ContractVersion, StringComparison.Ordinal)) {
+		bool legacy = string.Equals(manifest.ContractVersion, LegacyContractVersion, StringComparison.Ordinal)
+			&& string.Equals(manifest.BundleSchemaVersion, LegacyContractVersion, StringComparison.Ordinal);
+		bool multiSource = string.Equals(manifest.ContractVersion, MultiSourceContractVersion, StringComparison.Ordinal)
+			&& string.Equals(manifest.BundleSchemaVersion, MultiSourceContractVersion, StringComparison.Ordinal);
+		if (!legacy && !multiSource) {
 			throw Reject(KnowledgeBundleRejectionCode.UnsupportedContract, manifest.Sequence,
-				$"Only bundle contract and schema {ContractVersion} are supported.");
+				$"Only bundle contracts {LegacyContractVersion} and {MultiSourceContractVersion} are supported.");
 		}
 		if (manifest.Sequence == 0
-				|| string.IsNullOrWhiteSpace(manifest.BundleVersion)
+				|| (legacy && string.IsNullOrWhiteSpace(manifest.BundleVersion))
+				|| (multiSource && (string.IsNullOrWhiteSpace(manifest.LibraryId)
+					|| string.IsNullOrWhiteSpace(manifest.LibraryVersion)))
 				|| manifest.IssuedAt == default
 				|| manifest.Source is null
 				|| string.IsNullOrWhiteSpace(manifest.Source.Repository)
@@ -304,15 +471,28 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 				|| manifest.Resources.Count == 0
 				|| manifest.Resources.Any(resource => resource is null)) {
 			throw Reject(KnowledgeBundleRejectionCode.Malformed, manifest.Sequence,
-				"Bundle manifest is missing required v0 values.");
+				"Bundle manifest is missing required values.");
+		}
+		if (multiSource
+				&& (manifest.Source.Commit.Length is not (40 or 64)
+					|| manifest.Source.Commit.Any(character => !Uri.IsHexDigit(character)))) {
+			throw Reject(KnowledgeBundleRejectionCode.Malformed, manifest.Sequence,
+				"Bundle source commit must be a complete 40- or 64-character hexadecimal object ID.");
 		}
 	}
+
+	private static bool IsMultiSource(KnowledgeBundleManifestDto manifest) =>
+		string.Equals(manifest.ContractVersion, MultiSourceContractVersion, StringComparison.Ordinal);
 
 	private void VerifyManifestSignature(
 		KnowledgeBundleManifestDto manifest,
 		byte[] manifestBytes,
 		IReadOnlyDictionary<string, ZipArchiveEntry> entries) {
-		if (!_trustStore.TryGetPublicKeyPem(manifest.Signature.KeyId, out string? publicKeyPem)
+		string? publicKeyPem;
+		bool trusted = IsMultiSource(manifest)
+			? _trustStore.TryGetPublicKeyPem(manifest.LibraryId!, manifest.Signature.KeyId, out publicKeyPem)
+			: _trustStore.TryGetPublicKeyPem(manifest.Signature.KeyId, out publicKeyPem);
+		if (!trusted
 				|| string.IsNullOrWhiteSpace(publicKeyPem)) {
 			throw Reject(KnowledgeBundleRejectionCode.UntrustedKey, manifest.Sequence,
 				$"Bundle signing key '{manifest.Signature.KeyId}' is not trusted.");
@@ -344,41 +524,70 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 
 	private void ValidateRequirements(KnowledgeBundleManifestDto manifest) {
 		if (manifest.Requirements.Tools is null
-				|| manifest.Requirements.GuidanceIds is null
 				|| manifest.Requirements.ResourceUris is null
+				|| (IsMultiSource(manifest)
+					? manifest.Requirements.ItemIds is null
+					: manifest.Requirements.GuidanceIds is null)
 				|| manifest.Requirements.Tools.Any(tool => !_capabilities.Tools.Contains(tool))) {
 			throw Reject(KnowledgeBundleRejectionCode.MissingCapability, manifest.Sequence,
 				"Bundle requires an MCP tool capability that is not available.");
 		}
 		EnsureUnique(manifest.Requirements.Tools, "required tool", manifest.Sequence);
-		EnsureUnique(manifest.Requirements.GuidanceIds, "required guidance id", manifest.Sequence);
+		EnsureUnique(
+			IsMultiSource(manifest) ? manifest.Requirements.ItemIds! : manifest.Requirements.GuidanceIds!,
+			"required item id",
+			manifest.Sequence);
 		EnsureUnique(manifest.Requirements.ResourceUris, "required resource URI", manifest.Sequence);
 	}
 
 	private IReadOnlyDictionary<string, KnowledgeArticle> ReadAndValidateResources(
 		KnowledgeBundleManifestDto manifest,
 		IReadOnlyDictionary<string, ZipArchiveEntry> entries) {
-		EnsureUnique(manifest.Resources.Select(resource => resource.Id), "resource id", manifest.Sequence);
+		EnsureUnique(manifest.Resources.Select(resource => ResourceId(resource, manifest)), "resource id", manifest.Sequence);
 		EnsureUnique(manifest.Resources.Select(resource => resource.Uri), "resource URI", manifest.Sequence);
 		EnsureUnique(manifest.Resources.Select(resource => resource.Path), "resource path", manifest.Sequence);
-		HashSet<string> ids = manifest.Resources.Select(resource => resource.Id).ToHashSet(StringComparer.Ordinal);
+		if (IsMultiSource(manifest)) {
+			EnsureUnique(
+				manifest.Resources.Select(resource => $"{resource.TopicId}\0{resource.Role}"),
+				"topic and role",
+				manifest.Sequence);
+			string[] legacyUris = manifest.Resources
+				.SelectMany(resource => resource.LegacyUris ?? Array.Empty<string>())
+				.ToArray();
+			EnsureUnique(legacyUris, "legacy resource URI", manifest.Sequence);
+			HashSet<string> canonicalUris = manifest.Resources
+				.Select(resource => resource.Uri)
+				.ToHashSet(StringComparer.Ordinal);
+			if (legacyUris.Any(canonicalUris.Contains)) {
+				throw Reject(KnowledgeBundleRejectionCode.InvalidContent, manifest.Sequence,
+					"Legacy resource URIs must not collide with canonical resource URIs.");
+			}
+		}
+		HashSet<string> ids = manifest.Resources
+			.Select(resource => ResourceId(resource, manifest))
+			.ToHashSet(StringComparer.Ordinal);
 		HashSet<string> uris = manifest.Resources.Select(resource => resource.Uri).ToHashSet(StringComparer.Ordinal);
-		if (!ids.SetEquals(manifest.Requirements.GuidanceIds)
+		IReadOnlyList<string> requiredIds = IsMultiSource(manifest)
+			? manifest.Requirements.ItemIds!
+			: manifest.Requirements.GuidanceIds!;
+		if (!ids.SetEquals(requiredIds)
 				|| !uris.SetEquals(manifest.Requirements.ResourceUris)
-				|| !ids.SetEquals(_capabilities.GuidanceResources.Keys)) {
+				|| (!IsMultiSource(manifest) && !ids.SetEquals(_capabilities.GuidanceResources.Keys))) {
 			throw Reject(KnowledgeBundleRejectionCode.InvalidContent, manifest.Sequence,
-				"Declared requirements and bundle resources must exactly match the stable Clio guidance catalog.");
+				"Declared requirements and bundle resources must describe the same complete item set.");
 		}
 
 		HashSet<string> expectedEntries = new(StringComparer.Ordinal) { "manifest.json", "manifest.sig" };
 		Dictionary<string, KnowledgeArticle> articles = new(StringComparer.Ordinal);
 		long totalLength = 0;
 		foreach (KnowledgeBundleResourceDto resource in manifest.Resources) {
-			ValidateResourceDescriptor(resource, manifest.Sequence);
-			if (!_capabilities.GuidanceResources.TryGetValue(resource.Id, out string? expectedUri)
-					|| !string.Equals(resource.Uri, expectedUri, StringComparison.Ordinal)) {
+			ValidateResourceDescriptor(manifest, resource);
+			string itemId = ResourceId(resource, manifest);
+			if (!IsMultiSource(manifest)
+					&& (!_capabilities.GuidanceResources.TryGetValue(itemId, out string? expectedUri)
+						|| !string.Equals(resource.Uri, expectedUri, StringComparison.Ordinal))) {
 				throw Reject(KnowledgeBundleRejectionCode.InvalidContent, manifest.Sequence,
-					$"Resource '{resource.Id}' does not match the stable Clio guidance catalog URI.");
+					$"Resource '{itemId}' does not match the stable Clio guidance catalog URI.");
 			}
 			expectedEntries.Add(resource.Path);
 			byte[] bytes = ReadRequiredEntry(entries, resource.Path, MaxResourceBytes);
@@ -388,10 +597,21 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 					|| !string.Equals(resource.Digest,
 						Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant(), StringComparison.Ordinal)) {
 				throw Reject(KnowledgeBundleRejectionCode.InvalidContent, manifest.Sequence,
-					$"Resource '{resource.Id}' failed length or digest validation.");
+					$"Resource '{itemId}' failed length or digest validation.");
 			}
 			string text = StrictUtf8.GetString(bytes);
-			articles.Add(resource.Id, new KnowledgeArticle(resource.Id, resource.Uri, text));
+			string topicId = IsMultiSource(manifest) ? resource.TopicId! : itemId;
+			string role = IsMultiSource(manifest) ? resource.Role! : KnowledgeArticle.DefaultRole;
+			articles.Add(itemId, new KnowledgeArticle(
+				itemId,
+				resource.Uri,
+				text,
+				IsMultiSource(manifest) ? manifest.LibraryId! : LegacyLibraryId,
+				itemId,
+				topicId,
+				role,
+				resource.Path,
+				resource.LegacyUris?.ToArray() ?? Array.Empty<string>()));
 		}
 		if (!expectedEntries.SetEquals(entries.Keys)) {
 			throw Reject(KnowledgeBundleRejectionCode.InvalidContent, manifest.Sequence,
@@ -400,8 +620,18 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 		return articles;
 	}
 
-	private static void ValidateResourceDescriptor(KnowledgeBundleResourceDto resource, ulong sequence) {
-		if (string.IsNullOrWhiteSpace(resource.Id)
+	private static void ValidateResourceDescriptor(
+		KnowledgeBundleManifestDto manifest,
+		KnowledgeBundleResourceDto resource) {
+		string itemId = ResourceId(resource, manifest);
+		bool multiSource = IsMultiSource(manifest);
+		string canonicalUri = multiSource
+			? $"{KnowledgeResolver.NamespacedUriPrefix}{Uri.EscapeDataString(manifest.LibraryId!)}/{Uri.EscapeDataString(itemId)}"
+			: resource.Uri;
+		if (string.IsNullOrWhiteSpace(itemId)
+				|| (multiSource && (string.IsNullOrWhiteSpace(resource.TopicId)
+					|| string.IsNullOrWhiteSpace(resource.Role)
+					|| !string.Equals(resource.Uri, canonicalUri, StringComparison.Ordinal)))
 				|| string.IsNullOrWhiteSpace(resource.Uri)
 				|| !resource.Uri.StartsWith("docs://", StringComparison.Ordinal)
 				|| string.IsNullOrWhiteSpace(resource.Path)
@@ -414,10 +644,22 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 				|| string.IsNullOrWhiteSpace(resource.Digest)
 				|| resource.Digest.Length != 64
 				|| resource.Digest.Any(character => !Uri.IsHexDigit(character))) {
-			throw Reject(KnowledgeBundleRejectionCode.InvalidContent, sequence,
-				$"Resource '{resource.Id}' has an invalid v0 descriptor.");
+			throw Reject(KnowledgeBundleRejectionCode.InvalidContent, manifest.Sequence,
+				$"Resource '{itemId}' has an invalid descriptor.");
+		}
+		if (resource.LegacyUris is not null) {
+			EnsureUnique(resource.LegacyUris, "legacy resource URI", manifest.Sequence);
+			if (resource.LegacyUris.Any(uri => !uri.StartsWith("docs://", StringComparison.Ordinal))) {
+				throw Reject(KnowledgeBundleRejectionCode.InvalidContent, manifest.Sequence,
+					$"Resource '{itemId}' has an invalid legacy URI.");
+			}
 		}
 	}
+
+	private static string ResourceId(
+		KnowledgeBundleResourceDto resource,
+		KnowledgeBundleManifestDto manifest) =>
+		IsMultiSource(manifest) ? resource.ItemId! : resource.Id!;
 
 	private static bool IsCompatible(KnowledgeBundleVersionRangeDto range, Version current) {
 		if (range is null
@@ -502,12 +744,20 @@ internal sealed class KnowledgeBundleRuntime : IKnowledgeBundleRuntime {
 		string message) => new(code, candidateSequence, message);
 
 	private sealed record PreparedKnowledgeBundle(
+		string LibraryId,
+		string LibraryVersion,
 		ulong Sequence,
-		IReadOnlyDictionary<string, KnowledgeArticle> Articles);
+		string BundleDigest,
+		string SourceCommit,
+		IReadOnlyList<KnowledgeArticle> Articles);
 
-	private sealed record ActiveKnowledgeBundle(
-		ulong Sequence,
-		IReadOnlyDictionary<string, KnowledgeArticle> Articles);
+	private sealed record ActiveKnowledgeSet(
+		IReadOnlyList<KnowledgeLibrarySnapshot> Libraries,
+		IReadOnlyDictionary<string, string> TopicPins) {
+		internal static readonly ActiveKnowledgeSet Empty = new(
+			Array.Empty<KnowledgeLibrarySnapshot>(),
+			new Dictionary<string, string>(StringComparer.Ordinal));
+	}
 
 	[SuppressMessage(
 		"Design",

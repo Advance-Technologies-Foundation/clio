@@ -169,10 +169,10 @@ internal static class PassthroughToolClassificationRegistry {
 	/// One row per <c>[McpServerToolType]</c> tool name discovered in the current <c>clio</c> assembly
 	/// (verified against <see cref="Clio.Command.McpServer.McpFeatureToggleFilter.GetAttributedTypes"/>
 	/// expanded to <c>[McpServerTool(Name = ...)]</c> verb names — see
-	/// <see cref="PassthroughToolClassificationGuardTests"/>). 150 tools at authoring time (2026-07-11):
+	/// <see cref="PassthroughToolClassificationGuardTests"/>). 161 tools at authoring time (2026-07-19):
 	/// 12 <see cref="PassthroughClassification.Routed"/>, 3 <see cref="PassthroughClassification.Guarded"/>,
-	/// 20 <see cref="PassthroughClassification.NotEnvironmentSensitive"/> (PRD's literal out-of-scope audit,
-	/// matched to CURRENT tool names — several PRD names are stale, see the inline notes below), and 115
+	/// 29 <see cref="PassthroughClassification.NotEnvironmentSensitive"/> (PRD's literal out-of-scope audit
+	/// plus global knowledge-source management, matched to CURRENT tool names), and 117
 	/// <see cref="PassthroughClassification.NotApplicable"/> (class (a)/(b), no change required).
 	/// </summary>
 	internal static readonly IReadOnlyDictionary<string, PassthroughClassification> Classification =
@@ -196,7 +196,8 @@ internal static class PassthroughToolClassificationRegistry {
 			["link-from-repository-by-env-package-path"] = PassthroughClassification.Guarded,
 			["link-from-repository-unlocked"] = PassthroughClassification.Guarded,
 
-			// --- NotEnvironmentSensitive (20): PRD "Out of scope" audit, matched to CURRENT tool names.
+			// --- NotEnvironmentSensitive (29): PRD "Out of scope" audit plus global knowledge-source
+			// management, matched to CURRENT tool names.
 			// Several PRD prose names are stale vs. the actual [McpServerTool(Name=...)]; the ACTUAL name
 			// is used as the dictionary key and the PRD's (older) name is noted inline for traceability:
 			["get-telemetry-consent"] = PassthroughClassification.NotEnvironmentSensitive,
@@ -219,6 +220,15 @@ internal static class PassthroughToolClassificationRegistry {
 			["add-data-binding-row"] = PassthroughClassification.NotEnvironmentSensitive,
 			["remove-data-binding-row"] = PassthroughClassification.NotEnvironmentSensitive,
 			["check-settings-health"] = PassthroughClassification.NotEnvironmentSensitive, // PRD prose: "get-settings-health"
+			["install-knowledge"] = PassthroughClassification.NotEnvironmentSensitive,
+			["update-knowledge"] = PassthroughClassification.NotEnvironmentSensitive,
+			["info-knowledge"] = PassthroughClassification.NotEnvironmentSensitive,
+			["delete-knowledge"] = PassthroughClassification.NotEnvironmentSensitive,
+			["add-knowledge-source"] = PassthroughClassification.NotEnvironmentSensitive,
+			["remove-knowledge-source"] = PassthroughClassification.NotEnvironmentSensitive,
+			["enable-knowledge-source"] = PassthroughClassification.NotEnvironmentSensitive,
+			["disable-knowledge-source"] = PassthroughClassification.NotEnvironmentSensitive,
+			["list-knowledge-sources"] = PassthroughClassification.NotEnvironmentSensitive,
 
 			// --- NotApplicable (117): class (a)/(b) — already passthrough-capable, out of this audit ---
 			["StopAllCreatio"] = PassthroughClassification.NotApplicable,

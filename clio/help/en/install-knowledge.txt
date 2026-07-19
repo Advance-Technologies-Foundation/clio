@@ -2,37 +2,35 @@ COMMAND TYPE
     Integrations & tools
 
 NAME
-    install-knowledge - Install the latest verified Clio knowledge package on disk
+    install-knowledge - Install verified knowledge from one source or all enabled sources
 
 SYNOPSIS
-    clio install-knowledge
+    clio install-knowledge [--source <alias>] [--json]
 
 DESCRIPTION
-    Downloads the highest stable compatible package from the configured NuGet v3 source,
-    verifies its signed inner bundle, and atomically installs it under the
-    appsettings.json "knowledge-root-path".
+    Retrieves, verifies, and atomically installs the current generation for every
+    enabled source. --source selects exactly one configured alias. One source failure
+    cannot replace its last-known-good generation or withdraw another library.
 
-    When the setting is absent, Clio creates <clio-home>/knowledge and persists
-    that absolute path. Installed guidance and reference-example content is
-    visible to users and coding agents on disk.
+    NuGet sources consume bounded packages. Git sources resolve their configured
+    commit, tag, or branch and consume a ready signed bundle without executing code.
+    Configured sources require signed v1 bundles and public HTTPS locations. If no
+    Git reference is configured, successful installation persists the discovered
+    default branch and exact resolved commit. Private-source authentication is not
+    supported in this proof of concept.
 
-    Clio claims only an empty root with an ownership marker and rejects symbolic
-    links or junctions in managed paths. A damaged active materialization is
-    repaired only from a freshly downloaded verified package.
-
-CONFIGURATION
-    CLIO_KNOWLEDGE_NUGET_SOURCE
-    CLIO_KNOWLEDGE_NUGET_PACKAGE_ID
-    CLIO_KNOWLEDGE_TRUSTED_KEY_ID
-    CLIO_KNOWLEDGE_TRUSTED_PUBLIC_KEY_PATH
+OPTIONS
+    --source <alias>    Install only this source; omit for all enabled sources
+    --json              Emit the per-source result as indented JSON
 
 EXAMPLES
     clio install-knowledge
-    clio info-knowledge --offline
+    clio install-knowledge --source creatio
+    clio install-knowledge --source partner --json
 
 EXIT CODES
-    0   Installed, or already installed
-    1   Configuration, download, verification, locking, or filesystem failure
+    0   Every selected source is installed or already current
+    1   Selection, retrieval, verification, locking, or filesystem failure
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio

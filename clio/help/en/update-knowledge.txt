@@ -2,24 +2,33 @@ COMMAND TYPE
     Integrations & tools
 
 NAME
-    update-knowledge - Update installed Clio knowledge to the latest verified version
+    update-knowledge - Update verified knowledge from one source or all enabled sources
 
 SYNOPSIS
-    clio update-knowledge
+    clio update-knowledge [--source <alias>] [--json]
 
 DESCRIPTION
-    Downloads and verifies a strictly newer stable package in staging, then
-    atomically changes the activation marker. The previous version remains as
-    a last-known-good fallback. An already-running MCP process observes the new
-    marker on its next knowledge lookup; no MCP restart is required.
+    Checks every enabled source for a newer verified generation. --source selects
+    exactly one configured alias. Each library activates independently, so a failed
+    update retains that source's last-known-good generation and does not affect others.
+
+    Git branches record each complete resolved commit. Tags resolve to a commit, and
+    an explicit commit remains immutable. With no configured reference, only a
+    successful update persists the discovered default branch. MCP observes successful
+    activations without restarting.
+
+OPTIONS
+    --source <alias>    Update only this source; omit for all enabled sources
+    --json              Emit the per-source result as indented JSON
 
 EXAMPLES
     clio update-knowledge
-    clio info-knowledge
+    clio update-knowledge --source creatio
+    clio update-knowledge --json
 
 EXIT CODES
-    0   Updated, or already up to date
-    1   Not installed, unavailable, rejected, or publishing failed
+    0   Every selected source was updated or already current
+    1   Selection, retrieval, verification, locking, or publishing failure
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio

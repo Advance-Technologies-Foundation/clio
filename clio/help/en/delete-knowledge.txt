@@ -2,28 +2,30 @@ COMMAND TYPE
     Integrations & tools
 
 NAME
-    delete-knowledge - Delete Clio-managed local knowledge artifacts
+    delete-knowledge - Delete installed knowledge while retaining source configuration
 
 SYNOPSIS
-    clio delete-knowledge [--force]
+    clio delete-knowledge [--source <alias>] [--force] [--json]
 
 DESCRIPTION
-    Deletes managed versions, staging data, downloaded examples, and the active
-    marker. Preserves the configured root, the appsettings.json pointer, and
-    unrelated files. Interactive confirmation is required unless --force is set.
-    Cleanup requires a valid Clio ownership marker and withdraws the active
-    marker before recursively deleting managed children.
+    Deletes managed caches for every enabled source, or exactly one cache selected by
+    --source. Source configuration, knowledge.root-path, and unrelated files remain.
+    Interactive confirmation is required unless --force is set. Use
+    remove-knowledge-source to remove both configuration and managed cache.
 
 OPTIONS
-    --force    Confirm deletion without an interactive prompt
+    --source <alias>    Delete only this source cache; omit for all enabled source caches
+    --force             Confirm deletion without an interactive prompt
+    --json              Emit the per-source result as indented JSON
 
 EXAMPLES
-    clio delete-knowledge
+    clio delete-knowledge --source partner
     clio delete-knowledge --force
+    clio delete-knowledge --source partner --force --json
 
 EXIT CODES
-    0   Deleted, or not installed
-    1   Confirmation refused, locking failure, or filesystem failure
+    0   Every selected cache was deleted or was not installed
+    1   Confirmation, selection, locking, or filesystem cleanup failure
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio

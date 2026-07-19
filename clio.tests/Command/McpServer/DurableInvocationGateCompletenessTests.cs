@@ -62,6 +62,8 @@ public sealed class DurableInvocationGateCompletenessTests {
 		"send-telemetry",
 		"start-creatio",
 		"unlock-for-hotfix",
+		"enable-knowledge-source",
+		"disable-knowledge-source",
 		"update-toolkit"
 	};
 

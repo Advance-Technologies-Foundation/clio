@@ -597,13 +597,23 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 ## Integrations & Tools
 
 <a id="install-knowledge"></a>
-- [`install-knowledge`](docs/commands/install-knowledge.md) - Install the latest verified Clio knowledge package on disk
+- [`install-knowledge`](docs/commands/install-knowledge.md) - Install verified knowledge from one source or all enabled sources
 <a id="update-knowledge"></a>
-- [`update-knowledge`](docs/commands/update-knowledge.md) - Update installed Clio knowledge to the latest verified version
+- [`update-knowledge`](docs/commands/update-knowledge.md) - Update verified knowledge from one source or all enabled sources
 <a id="info-knowledge"></a>
-- [`info-knowledge`](docs/commands/info-knowledge.md) - Show local Clio knowledge installation and update status
+- [`info-knowledge`](docs/commands/info-knowledge.md) - Show local knowledge state, with optional bounded update checks
 <a id="delete-knowledge"></a>
-- [`delete-knowledge`](docs/commands/delete-knowledge.md) - Delete Clio-managed local knowledge artifacts
+- [`delete-knowledge`](docs/commands/delete-knowledge.md) - Delete installed knowledge while retaining source configuration
+<a id="add-knowledge-source"></a>
+- [`add-knowledge-source`](docs/commands/add-knowledge-source.md) - Add a public HTTPS Git or NuGet source with a validated local public signing key
+<a id="remove-knowledge-source"></a>
+- [`remove-knowledge-source`](docs/commands/remove-knowledge-source.md) - Remove one configured source and best-effort clean its managed cache
+<a id="enable-knowledge-source"></a>
+- [`enable-knowledge-source`](docs/commands/enable-knowledge-source.md) - Enable one configured knowledge source
+<a id="disable-knowledge-source"></a>
+- [`disable-knowledge-source`](docs/commands/disable-knowledge-source.md) - Disable one configured source without deleting its cache
+<a id="list-knowledge-sources"></a>
+- [`list-knowledge-sources`](docs/commands/list-knowledge-sources.md) - List all configured knowledge sources
 <a id="install-dbhub"></a>
 - [`install-dbhub`](docs/commands/install-dbhub.md) - Install, adopt, or repair a local loopback dbHub HTTP MCP server
 <a id="sync-dbhub"></a>

@@ -6,51 +6,51 @@
 
 ## Name
 
-install-knowledge - Install the latest verified Clio knowledge package on disk
+install-knowledge - Install verified knowledge from one source or all enabled sources
 
 ## Synopsis
 
 ```bash
-clio install-knowledge
+clio install-knowledge [--source <alias>] [--json]
 ```
 
 ## Description
 
-Downloads the highest stable compatible package from the configured NuGet v3 source, verifies the signed
-inner knowledge bundle, and atomically publishes it under `knowledge-root-path` from Clio's
-`appsettings.json`.
+Retrieves, verifies, and atomically installs the current generation for every enabled source. Pass
+`--source` to select exactly one configured alias instead. A source failure cannot replace that
+source's last-known-good generation and does not withdraw other installed libraries.
 
-When the setting is absent, Clio creates `<clio-home>/knowledge` and writes that absolute path to
-`appsettings.json`. The installed archive, extracted guidance, manifests, and future reference
-examples are therefore visible to users and coding agents on disk.
+NuGet sources download a bounded stable package. Git sources resolve their configured commit, tag,
+or branch and consume a ready signed bundle without executing repository code. Installed content is
+kept under `knowledge.root-path` in Clio's visible `appsettings.json`.
 
-Clio claims only an empty directory by writing `.clio-knowledge-root`. A non-empty directory
-without that ownership marker is rejected, so a misconfigured path cannot authorize cleanup of
-unrelated `versions`, `staging`, or `examples` directories. Symbolic links and junctions in managed
-paths are also rejected.
+Configured sources accept signed version 1 bundles only. Public HTTPS Git repositories and NuGet
+feeds are the supported transports in this proof of concept; authenticated private sources are not
+supported. If a Git source has no configured reference, only a successful install persists the
+discovered remote default branch and its exact resolved commit.
 
-The command is idempotent for a valid installation. If the active disk materialization is damaged,
-the command repairs it from a freshly downloaded verified package. Use `update-knowledge` to check
-for a newer compatible version.
+The command is idempotent for valid active generations. It does not implicitly enable disabled
+sources; use `enable-knowledge-source` first.
 
-## Configuration
+## Options
 
-- `CLIO_KNOWLEDGE_NUGET_SOURCE` - absolute NuGet v3 service-index URL
-- `CLIO_KNOWLEDGE_NUGET_PACKAGE_ID` - package ID
-- `CLIO_KNOWLEDGE_TRUSTED_KEY_ID` - expected signing-key ID
-- `CLIO_KNOWLEDGE_TRUSTED_PUBLIC_KEY_PATH` - absolute ECDSA P-256 public-key PEM path
+```bash
+--source <alias>   Install only this configured source; omit for all enabled sources
+--json             Emit the per-source result as indented JSON
+```
 
 ## Examples
 
 ```bash
 clio install-knowledge
-clio info-knowledge --offline
+clio install-knowledge --source creatio
+clio install-knowledge --source partner --json
 ```
 
 ## Exit Codes
 
-    0   Knowledge is installed, or was already installed
-    1   Configuration, download, verification, locking, or filesystem failure
+    0   Every selected source is installed or already current
+    1   Selection, retrieval, verification, locking, or filesystem failure
 
 ## Reporting Bugs
 

@@ -6794,3 +6794,51 @@ Decision: Added install, update, info, and confirmed delete commands backed by a
 Discovery: Safe recovery requires atomic ownership and activation markers, compare-and-swap updates, exact-version repair, bounded candidate fallback, reparse-point rejection, and reconciliation of interrupted delete quarantines.
 Files: clio/Command/KnowledgeCommands.cs, clio/Command/McpServer/Knowledge/, clio.mcp.e2e/KnowledgeGuidanceNuGetE2ETests.cs, clio.tests/Command/McpServer/, spec/knowledge-bundle-runtime/
 Impact: MCP sessions can observe verified knowledge updates without restart or repeated downloads, while Clio owns only delivery mechanics and clio-knowledge owns content assertions.
+
+## 2026-07-19 10:46 – Add multi-source knowledge CLI surface
+Context: Expose the accepted multi-source knowledge contract through ordinary Clio commands without coupling commands to transport or runtime implementations.
+Decision: Added one command-layer management interface, alias-aware lifecycle commands, confirmed destructive operations, JSON and human reporting, and five source-management verbs with synchronized documentation.
+Discovery: Registering CLI verbs in Program does not currently make them executable through clio-run; the MCP durable handler classifies unresolved CLI verbs as terminal-only, so the root integration needs a generic CLI bridge or nonresident adapter.
+Files: clio/Command/KnowledgeCommands.cs, clio/Command/KnowledgeSourceManagementContracts.cs, clio/Program.cs, clio.tests/Command/KnowledgeCommandTests.cs, clio/docs/commands/*knowledge*.md, clio/help/en/*knowledge*.txt, clio/Commands.md, clio/Wiki/WikiAnchors.txt
+Impact: Operators can select one source or safely target all enabled sources, while core implementation and DI can evolve behind a narrow command-facing contract.
+
+## 2026-07-19 12:34 – Align multi-source knowledge documentation
+Context: Reconcile the command and architecture documentation with the hardened proof-of-concept behavior after adversarial review.
+Decision: Make information queries local-first, require explicit update checks and signed v1 sources, limit supported transports to public HTTPS, and document post-success Git branch persistence and safe source removal order.
+Discovery: The unreleased v0 cache cannot be described as an implicit multi-source compatibility library; signed legacyUris provide the supported exact-alias migration mechanism instead.
+Files: clio/docs/commands/*knowledge*.md, clio/help/en/*knowledge*.txt, clio/docs/commands/mcp-server.md, clio/help/en/mcp-server.txt, clio/Commands.md, spec/knowledge-bundle-runtime/knowledge-bundle-runtime-multi-source-contract.md
+Impact: Operators and agents now receive one consistent contract for network access, bundle compatibility, Git provenance, alias resolution, and cleanup behavior.
+## 2026-07-19 12:40 – Multi-source trust boundary hardening
+Context: Security review found configured sources could admit legacy v0 bundles and trusted-key paths were not a sufficiently stable local trust boundary.
+Decision: Require v1 library-bound validation before publication, validate one bounded local P-256 public-key PEM with no network/device/reparse path, and include effective key fingerprint plus configured library ID in activation identity. MCP source add/remove are destructive; add also requires explicit confirmation. info-knowledge stays local unless checkUpdates=true.
+Discovery: Hot trust revocation must hash SubjectPublicKeyInfo bytes rather than the path so same-path key replacement or deletion forces runtime revalidation. Synthetic v1 E2E commits must be valid full hexadecimal object IDs.
+Files: clio/Command/McpServer/Knowledge/KnowledgeBundleContracts.cs, clio/Command/McpServer/Knowledge/KnowledgeBundleRuntime.cs, clio/Command/McpServer/Knowledge/KnowledgeMultiSourceActivator.cs, clio/Command/McpServer/Knowledge/KnowledgeSourceManagementService.cs, clio/Command/McpServer/Tools/KnowledgeManagementTools.cs
+Impact: Configured-source publication and activation can no longer fall back to legacy environment trust, and trust changes are observed without restarting MCP.
+
+## 2026-07-19 13:20 – Isolate Git transport process environment
+Context: Final security review found that inherited Git variables could redirect helpers or inject command-valued configuration during knowledge retrieval.
+Decision: Added opt-in process environment clearing with an inherited-variable allowlist and absolute executable resolution; Git now inherits only OS, locale, proxy, and CA variables plus its explicit disabled configuration.
+Discovery: Clearing `GIT_*` variables is insufficient if the executable remains a bare name resolved from the child working directory; resolution must occur before launch and ignore relative PATH entries.
+Files: clio/Common/ProcessExecutor.cs, clio/Command/McpServer/Knowledge/KnowledgeGitTransport.cs, clio.tests/Common/ProcessExecutorTests.cs, clio.tests/Command/McpServer/KnowledgeGitTransportTests.cs
+Impact: Knowledge retrieval cannot inherit `GIT_EXEC_PATH`, injected configuration, askpass, or helper settings, and launches a pinned absolute Git executable.
+
+## 2026-07-19 13:25 – Distinguish NuGet outages from current catalogs
+Context: Final correctness review found NuGet feed and package failures were reported as successful up-to-date checks when a generation was already installed.
+Decision: Added an explicit failed retrieval status with a bounded diagnostic; update fails and info reports unknown, while a successfully checked catalog with no newer revision remains no-candidate.
+Discovery: Transport failure must not blacklist an immutable version, but it also cannot be treated as evidence that no update exists.
+Files: clio/Command/McpServer/Knowledge/KnowledgeBundleContracts.cs, clio/Command/McpServer/Knowledge/KnowledgeTransportContracts.cs, clio/Command/McpServer/Knowledge/KnowledgeBundleNuGetClient.cs, clio/Command/McpServer/Knowledge/KnowledgeSourceManagementService.cs, clio.tests/Command/McpServer/KnowledgeBundleNuGetClientTests.cs, clio.tests/Command/McpServer/KnowledgeSourceManagementServiceTests.cs
+Impact: Operators no longer receive false up-to-date results during NuGet outages, timeouts, or invalid remote responses.
+
+## 2026-07-19 14:05 – Bound Git retrieval across subprocesses
+Context: Final performance review found each sequential Git command received a fresh transport timeout, allowing one retrieval to exceed its advertised operation deadline.
+Decision: Start one stopwatch per retrieval, pass only the remaining budget to every Git subprocess, and classify shared-deadline exhaustion as a failed retrieval. Explicit info update checks now pass the same bounded deadline.
+Discovery: Per-process timeouts do not establish an operation-wide bound when branch discovery, initialization, fetch, inspection, and archive commands run sequentially.
+Files: clio/Command/McpServer/Knowledge/KnowledgeGitTransport.cs, clio/Command/McpServer/Knowledge/KnowledgeSourceManagementService.cs, clio.tests/Command/McpServer/KnowledgeGitTransportTests.cs, clio.tests/Command/McpServer/KnowledgeSourceManagementServiceTests.cs
+Impact: Git-backed install, update, repair, and update-info checks cannot multiply the configured timeout by the number of Git subprocesses.
+
+## 2026-07-19 14:10 – Complete multi-source knowledge POC hardening
+Context: Final parallel review of the coordinated Clio and clio-knowledge POC found package-version, interrupted-publication, transport-failure, process-environment, and MCP mutation-classification gaps.
+Decision: Bind NuGet package and signed library versions, fail closed on transport outages, reconcile only exact high-water orphan generations under both locks, use one Git operation deadline, isolate Git process state, and require destructive confirmation for install/update tools.
+Discovery: A replay ledger written before an activation marker needs autonomous exact-orphan reconciliation; otherwise the correct cold-start high-water guard can make an interrupted update unrecoverable. A transport outage is not evidence that a source is up to date.
+Files: clio/Command/McpServer/Knowledge/, clio/Command/McpServer/Tools/KnowledgeManagementTools.cs, clio/Common/ProcessExecutor.cs, clio.tests/Command/McpServer/, clio.tests/Common/ProcessExecutorTests.cs, clio.mcp.e2e/KnowledgeManagementToolE2ETests.cs
+Impact: The draft POC now supports bounded, crash-recoverable, multi-source Git/NuGet delivery and live MCP reload while keeping content assertions in clio-knowledge.

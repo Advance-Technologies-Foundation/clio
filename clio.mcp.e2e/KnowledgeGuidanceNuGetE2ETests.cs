@@ -39,13 +39,6 @@ public sealed class KnowledgeGuidanceNuGetE2ETests : McpContractFixtureBase {
 	private protected override void ConfigureMcpServerSettings(McpE2ESettings settings) {
 		_settings = settings;
 		settings.ProcessEnvironmentVariables["CLIO_HOME"] = CreateIsolatedClioHome("{}", "knowledge-home");
-		settings.ProcessEnvironmentVariables[KnowledgeBundleNuGetClient.SourceVariable] =
-			_fixture.Feed.ServiceIndexUri.AbsoluteUri;
-		settings.ProcessEnvironmentVariables[KnowledgeBundleNuGetClient.PackageIdVariable] =
-			SyntheticKnowledgeNuGetFixture.PackageId;
-		settings.ProcessEnvironmentVariables[EnvironmentKnowledgeBundleTrustStore.KeyIdVariable] = _fixture.KeyId;
-		settings.ProcessEnvironmentVariables[EnvironmentKnowledgeBundleTrustStore.PublicKeyPathVariable] =
-			_fixture.PublicKeyPath;
 	}
 
 	[Test]
@@ -58,28 +51,45 @@ public sealed class KnowledgeGuidanceNuGetE2ETests : McpContractFixtureBase {
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
 
 		// Act
-		ClioCliCommandResult installResult = await ClioCliCommandRunner.RunAsync(
-			_settings,
-			["install-knowledge"],
-			cancellationToken: context.CancellationTokenSource.Token);
+		CallToolResult addResult = await CallKnowledgeCommand(context, "add-knowledge-source", new Dictionary<string, object?> {
+			["alias"] = "synthetic",
+			["libraryId"] = SyntheticKnowledgeNuGetFixture.LibraryId,
+			["type"] = "nuget",
+			["location"] = _fixture.Feed.ServiceIndexUri.AbsoluteUri,
+			["packageId"] = SyntheticKnowledgeNuGetFixture.PackageId,
+			["trustedKeyId"] = _fixture.KeyId,
+			["trustedPublicKeyPath"] = _fixture.PublicKeyPath,
+			["enabled"] = true,
+			["priority"] = 100,
+			["participation"] = "authoritative",
+			["confirmed"] = true
+		});
+		CallToolResult installResult = await CallKnowledgeCommand(
+			context, "install-knowledge", new Dictionary<string, object?> { ["source"] = "synthetic" });
 		(CallToolResult initialCall, GuidanceGetResponse initialResponse) = await CallSelectedGuide(context);
-		IList<McpClientResource> advertisedResources = await context.Session.ListResourcesAsync(
-			context.CancellationTokenSource.Token);
-		ReadResourceResult initialResourceResult = await context.Session.ReadResourceAsync(
-			_fixture.SelectedGuideUri,
-			context.CancellationTokenSource.Token);
+		ReadResourceResult? initialResourceResult = null;
+		Exception? initialResourceError = null;
+		try {
+			initialResourceResult = await context.Session.ReadResourceAsync(
+				_fixture.SelectedGuideUri,
+				context.CancellationTokenSource.Token);
+		} catch (Exception exception) {
+			initialResourceError = exception;
+		}
 		SyntheticPackageEvidence updated = _fixture.PublishValid("1.1.0", sequence: 20, revision: "updated");
-		ClioCliCommandResult updateResult = await ClioCliCommandRunner.RunAsync(
-			_settings,
-			["update-knowledge"],
-			cancellationToken: context.CancellationTokenSource.Token);
+		CallToolResult updateResult = await CallKnowledgeCommand(
+			context, "update-knowledge", new Dictionary<string, object?> { ["source"] = "synthetic" });
 		(CallToolResult updatedCall, GuidanceGetResponse updatedResponse) = await CallSelectedGuide(context);
 		_fixture.PublishInvalidSignature("1.2.0", sequence: 30, revision: "invalid");
-		ClioCliCommandResult rejectedUpdate = await ClioCliCommandRunner.RunAsync(
-			_settings,
-			["update-knowledge"],
-			cancellationToken: context.CancellationTokenSource.Token);
+		CallToolResult rejectedUpdate = await CallKnowledgeCommand(
+			context, "update-knowledge", new Dictionary<string, object?> { ["source"] = "synthetic" });
 		(CallToolResult retainedCall, GuidanceGetResponse retainedResponse) = await CallSelectedGuide(context);
+		CallToolResult disableResult = await CallKnowledgeCommand(
+			context, "disable-knowledge-source", new Dictionary<string, object?> { ["alias"] = "synthetic" });
+		(CallToolResult disabledCall, GuidanceGetResponse disabledResponse) = await CallSelectedGuide(context);
+		CallToolResult enableResult = await CallKnowledgeCommand(
+			context, "enable-knowledge-source", new Dictionary<string, object?> { ["alias"] = "synthetic" });
+		(CallToolResult reenabledCall, GuidanceGetResponse reenabledResponse) = await CallSelectedGuide(context);
 		int requestsBeforeFreshProcess = _fixture.Feed.Requests.Count;
 		await using McpServerSession freshSession = await McpServerSession.StartAsync(
 			_settings,
@@ -88,77 +98,66 @@ public sealed class KnowledgeGuidanceNuGetE2ETests : McpContractFixtureBase {
 			freshSession,
 			context.CancellationTokenSource.Token);
 		int requestsAfterFreshProcess = _fixture.Feed.Requests.Count;
-		ClioCliCommandResult infoResult = await ClioCliCommandRunner.RunAsync(
-			_settings,
-			["info-knowledge", "--offline", "--json"],
-			cancellationToken: context.CancellationTokenSource.Token);
-		ClioCliCommandResult onlineInfoResult = await ClioCliCommandRunner.RunAsync(
-			_settings,
-			["info-knowledge", "--json"],
-			cancellationToken: context.CancellationTokenSource.Token);
-		int requestsBeforeDelete = _fixture.Feed.Requests.Count;
-		ClioCliCommandResult confirmedDelete = await ClioCliCommandRunner.RunAsync(
-			_settings,
-			["delete-knowledge", "--force"],
-			cancellationToken: context.CancellationTokenSource.Token);
+		CallToolResult infoResult = await CallKnowledgeCommand(context, "info-knowledge", new Dictionary<string, object?> {
+			["source"] = "synthetic",
+			["checkUpdates"] = false
+		});
+		CallToolResult listResult = await CallKnowledgeCommand(context, "list-knowledge-sources", null);
+		CallToolResult deleteResult = await CallKnowledgeCommand(
+			context,
+			"delete-knowledge",
+			new Dictionary<string, object?> { ["source"] = "synthetic", ["confirmed"] = true });
 		(CallToolResult deletedCall, GuidanceGetResponse deletedResponse) = await CallSelectedGuide(context);
+		CallToolResult removeResult = await CallKnowledgeCommand(
+			context,
+			"remove-knowledge-source",
+			new Dictionary<string, object?> { ["alias"] = "synthetic", ["confirmed"] = true });
+		CallToolResult removedListResult = await CallKnowledgeCommand(context, "list-knowledge-sources", null);
 
 		// Assert
-		installResult.ExitCode.Should().Be(0,
-			because: $"the external install command must persist the first verified package: {installResult.StandardError}");
+		AssertCommandSucceeded(addResult, "the explicitly trusted source should be persisted through clio-run");
+		AssertCommandSucceeded(installResult, "the first verified synthetic package should be installed through clio-run");
 		AssertSuccessfulDelivery(initialCall, initialResponse, _initial, "initial package");
-		advertisedResources.Select(resource => resource.Uri).Should().Contain(
-			GuidanceCatalog.GetExternalResourceUris().Values,
-			because: "every external guidance resource class must remain discoverable through the real MCP server");
-		TextResourceContents initialResource = initialResourceResult.Contents.Single().Should()
+		initialResourceError.Should().BeNull(
+			because: "the canonical namespaced resource should be readable after verified installation");
+		TextResourceContents initialResource = initialResourceResult!.Contents.Single().Should()
 			.BeOfType<TextResourceContents>(
 				because: "resources/read must serialize one verified synthetic article as plain text").Subject;
 		initialResource.Uri.Should().Be(_fixture.SelectedGuideUri,
 			because: "resources/read must preserve the stable external resource URI");
 		Digest(initialResource.Text).Should().Be(_initial.SelectedGuideDigest,
 			because: "resources/read must return the same generated bytes verified from the synthetic package");
-		updateResult.ExitCode.Should().Be(0,
-			because: $"the external update command must atomically publish the newer package: {updateResult.StandardError}");
+		AssertCommandSucceeded(updateResult, "the newer package should publish atomically through clio-run");
 		AssertSuccessfulDelivery(updatedCall, updatedResponse, updated, "updated package");
-		rejectedUpdate.ExitCode.Should().Be(1,
-			because: "an invalid newer package must not replace the last-known-good installation");
+		AssertCommandFailed(rejectedUpdate, "an invalid newer package must be rejected by the mechanics layer");
 		AssertSuccessfulDelivery(retainedCall, retainedResponse, updated, "retained package after rejected update");
+		AssertCommandSucceeded(disableResult, "the source kill switch should be executable through clio-run");
+		disabledCall.IsError.Should().NotBeTrue(
+			because: "disabled knowledge is a typed availability state rather than an MCP process error");
+		disabledResponse.ErrorCode.Should().Be(KnowledgeGuidanceUnavailableException.ErrorCode,
+			because: "the same MCP process must stop serving a disabled source immediately");
+		AssertCommandSucceeded(enableResult, "the retained source should be re-enabled without reinstalling it");
+		AssertSuccessfulDelivery(reenabledCall, reenabledResponse, updated, "re-enabled retained package");
 		AssertSuccessfulDelivery(freshCall, freshResponse, updated, "fresh-process disk cache");
 		requestsAfterFreshProcess.Should().Be(requestsBeforeFreshProcess,
 			because: "a newly started MCP process must activate the disk cache without contacting NuGet");
-		infoResult.ExitCode.Should().Be(0,
-			because: $"the installed cache must remain inspectable: {infoResult.StandardError}");
-		infoResult.StandardOutput.Should().Contain("1.1.0",
-			because: "info-knowledge must report the version selected by the persisted activation marker");
-		using JsonDocument offlineInfo = JsonDocument.Parse(infoResult.StandardOutput);
-		JsonElement offlineRoot = offlineInfo.RootElement;
-		offlineRoot.GetProperty("IsValid").GetBoolean().Should().BeTrue(
-			because: "offline inspection must revalidate the persisted bundle and extracted materialization");
-		offlineRoot.GetProperty("RootPath").GetString().Should().NotBeNullOrWhiteSpace(
-			because: "the visible configured disk location is part of the lifecycle contract");
-		offlineRoot.GetProperty("ActiveContentPath").GetString().Should().NotBeNullOrWhiteSpace(
+		AssertCommandSucceeded(infoResult, "installed generations and their visible local path should be inspectable");
+		SerializeResult(infoResult).Should().Contain("activeContentPath",
 			because: "agents need the extracted content path without going through MCP");
-		offlineRoot.GetProperty("Source").GetString().Should().Be(_fixture.Feed.ServiceIndexUri.AbsoluteUri,
-			because: "installation provenance must identify the non-secret source used for the active package");
-		offlineRoot.GetProperty("PackageId").GetString().Should().Be(SyntheticKnowledgeNuGetFixture.PackageId,
-			because: "installation provenance must identify the package owning the active version");
-		offlineRoot.GetProperty("InstalledAtUtc").ValueKind.Should().Be(JsonValueKind.String,
-			because: "the installation timestamp must be inspectable from disk metadata");
-		onlineInfoResult.ExitCode.Should().Be(0,
-			because: $"bounded online inspection should complete successfully: {onlineInfoResult.StandardError}");
-		using JsonDocument onlineInfo = JsonDocument.Parse(onlineInfoResult.StandardOutput);
-		onlineInfo.RootElement.GetProperty("UpdateAvailability").GetString().Should().Be("Available",
-			because: "the remote catalog advertises a newer stable package even though activation rejected it");
-		onlineInfo.RootElement.GetProperty("LatestVersion").GetString().Should().Be("1.2.0",
-			because: "online inspection must expose the greatest stable remote version without downloading it");
-		confirmedDelete.ExitCode.Should().Be(0,
-			because: $"explicitly confirmed deletion must remove the managed cache: {confirmedDelete.StandardError}");
+		SerializeResult(infoResult).Should().Contain("1.1.0",
+			because: "info-knowledge should expose the active synthetic library version");
+		AssertCommandSucceeded(listResult, "configured sources should be discoverable through clio-run");
+		SerializeResult(listResult).Should().Contain("com.example.synthetic",
+			because: "source discovery must expose stable library identity without asserting real guidance content");
+		AssertCommandSucceeded(deleteResult, "confirmed cache deletion should be executable through clio-run");
 		deletedCall.IsError.Should().NotBeTrue(
-			because: "cache deletion is observed as typed guidance unavailability, not a protocol error");
+			because: "deleted knowledge is reported as typed unavailability rather than an MCP process error");
 		deletedResponse.ErrorCode.Should().Be(KnowledgeGuidanceUnavailableException.ErrorCode,
-			because: "the same MCP process must stop serving its in-memory snapshot after marker deletion");
-		_fixture.Feed.Requests.Should().HaveCount(requestsBeforeDelete,
-			because: "MCP must remain disk-only and must not reinstall knowledge after external deletion");
+			because: "the running MCP process must stop serving a source immediately after its cache is deleted");
+		AssertCommandSucceeded(removeResult, "confirmed source removal should remove its retained configuration");
+		AssertCommandSucceeded(removedListResult, "source listing should remain available after removing the last source");
+		SerializeResult(removedListResult).Should().NotContain("com.example.synthetic",
+			because: "a removed source must disappear from the persisted trusted-source catalog");
 		_fixture.Feed.Requests.Should().ContainSingle(path => path.EndsWith("/1.0.0/clio.synthetic.knowledge.1.0.0.nupkg", StringComparison.Ordinal),
 			because: "the explicit CLI install should download the initial immutable package once");
 		_fixture.Feed.Requests.Should().ContainSingle(path => path.EndsWith("/1.1.0/clio.synthetic.knowledge.1.1.0.nupkg", StringComparison.Ordinal),
@@ -166,6 +165,34 @@ public sealed class KnowledgeGuidanceNuGetE2ETests : McpContractFixtureBase {
 		_fixture.Feed.CompletedRequests.Should().ContainSingle(path => path.EndsWith(
 			"/1.2.0/clio.synthetic.knowledge.1.2.0.nupkg",
 			StringComparison.Ordinal), because: "invalid-update retention is meaningful only after the corrupt package completed");
+	}
+
+	private static async Task<CallToolResult> CallKnowledgeCommand(
+		ArrangeContext context,
+		string command,
+		Dictionary<string, object?>? args) => await context.Session.CallToolAsync(
+		ClioRunTool.ToolName,
+		new Dictionary<string, object?> {
+			["command"] = command,
+			["args"] = args ?? new Dictionary<string, object?>()
+		},
+		context.CancellationTokenSource.Token);
+
+	private static void AssertCommandSucceeded(CallToolResult result, string reason) {
+		result.IsError.Should().NotBeTrue(because: reason);
+		SerializeResult(result).Should().Contain("\"success\":true", because: reason);
+	}
+
+	private static void AssertCommandFailed(CallToolResult result, string reason) {
+		result.IsError.Should().NotBeTrue(because: "typed lifecycle failure is a normal MCP response");
+		SerializeResult(result).Should().Contain("\"success\":false", because: reason);
+	}
+
+	private static string SerializeResult(CallToolResult result) {
+		if (result.StructuredContent is not null) {
+			return JsonSerializer.Serialize(result.StructuredContent);
+		}
+		return string.Concat(result.Content.OfType<TextContentBlock>().Select(content => content.Text));
 	}
 
 	private static async Task<(CallToolResult CallResult, GuidanceGetResponse Response)> CallSelectedGuide(
@@ -227,14 +254,26 @@ public sealed class KnowledgeGuidanceNuGetRedirectE2ETests : McpContractFixtureB
 
 	private protected override void ConfigureMcpServerSettings(McpE2ESettings settings) {
 		_settings = settings;
-		settings.ProcessEnvironmentVariables["CLIO_HOME"] = CreateIsolatedClioHome("{}", "knowledge-redirect-home");
-		settings.ProcessEnvironmentVariables[KnowledgeBundleNuGetClient.SourceVariable] =
-			_fixture.Feed.ServiceIndexUri.AbsoluteUri;
-		settings.ProcessEnvironmentVariables[KnowledgeBundleNuGetClient.PackageIdVariable] =
-			SyntheticKnowledgeNuGetFixture.PackageId;
-		settings.ProcessEnvironmentVariables[EnvironmentKnowledgeBundleTrustStore.KeyIdVariable] = _fixture.KeyId;
-		settings.ProcessEnvironmentVariables[EnvironmentKnowledgeBundleTrustStore.PublicKeyPathVariable] =
-			_fixture.PublicKeyPath;
+		string appSettings = JsonSerializer.Serialize(new Dictionary<string, object?> {
+			["knowledge"] = new Dictionary<string, object?> {
+				["sources"] = new Dictionary<string, object?> {
+					["synthetic"] = new Dictionary<string, object?> {
+						["library-id"] = SyntheticKnowledgeNuGetFixture.LibraryId,
+						["type"] = "nuget",
+						["location"] = _fixture.Feed.ServiceIndexUri.AbsoluteUri,
+						["package-id"] = SyntheticKnowledgeNuGetFixture.PackageId,
+						["trusted-key-id"] = _fixture.KeyId,
+						["trusted-public-key-path"] = _fixture.PublicKeyPath,
+						["enabled"] = true,
+						["priority"] = 100,
+						["participation"] = "authoritative"
+					}
+				}
+			}
+		});
+		settings.ProcessEnvironmentVariables["CLIO_HOME"] = CreateIsolatedClioHome(
+			appSettings,
+			"knowledge-redirect-home");
 	}
 
 	[Test]

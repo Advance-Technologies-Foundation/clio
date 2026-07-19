@@ -4,6 +4,11 @@
 - **Date:** 2026-07-19
 - **Feature:** `knowledge-bundle-runtime`
 
+> Superseded in part by
+> [the multi-source knowledge contract](knowledge-bundle-runtime-multi-source-contract.md). The
+> durable local-cache decision remains; NuGet is now one implementation of `IKnowledgeTransport`,
+> Git is another, and activation/resolution are library-scoped.
+
 ## Context
 
 The original prototype downloaded a NuGet package during MCP guidance access and retained the

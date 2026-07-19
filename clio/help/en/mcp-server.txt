@@ -43,25 +43,33 @@ DESCRIPTION
     - get-guidance {"name":"page-schema-validators"}
 
     External knowledge delivery configuration:
-    - CLIO_KNOWLEDGE_NUGET_SOURCE  Absolute HTTPS NuGet v3 service-index URL (HTTP only for loopback development feeds)
-    - CLIO_KNOWLEDGE_NUGET_PACKAGE_ID  Package ID exposed by the feed flat container
-    - CLIO_KNOWLEDGE_TRUSTED_KEY_ID  Trusted signing-key ID expected by the bundle manifest
-    - CLIO_KNOWLEDGE_TRUSTED_PUBLIC_KEY_PATH  Absolute path to one ECDSA P-256 SubjectPublicKeyInfo PEM
+    - appsettings.json knowledge.root-path  Readable local cache root
+    - appsettings.json knowledge.sources  Trusted Git/NuGet sources keyed by alias
+    - appsettings.json knowledge.topic-pins  Optional topic-to-library overrides
+    - knowledge.sources.<alias>.trusted-key-id  Authorized signing-key ID for that publisher
+    - knowledge.sources.<alias>.trusted-public-key-path  Absolute local public-key PEM path
+
+    Public verification keys are not secrets. Never configure a private signing key.
+    Configured sources require signed v1 bundles. This POC supports credential-free
+    public HTTPS Git and NuGet sources only; authenticated private sources are not
+    supported. Signed legacyUris remain exact aliases for their declaring items. No
+    implicit v0 source is registered; prototype caches require source configuration
+    and reinstall.
 
     The service-index URL must respond directly; redirects are not followed. Its advertised
     PackageBaseAddress/3.0.0 must use the same scheme, host, and port as the configured service index.
 
-    Clio selects the highest stable three-part package version, extracts
-    content/knowledge-bundle.zip, and verifies the complete signed bundle before atomically
-    installing it under the appsettings.json "knowledge-root-path". When absent, Clio creates and
-    persists <clio-home>/knowledge. Installed and extracted content remains visible on disk.
+    NuGet and Git are transport adapters. Clio applies the same signature, compatibility, identity,
+    sequence, path, size, and digest validation before installing each source under
+    knowledge.root-path. The former top-level knowledge-root-path is migrated once. When absent,
+    Clio persists <clio-home>/knowledge. Installed and extracted content remains visible on disk.
 
-    Externally delivered ESQ guidance uses only the persistent cache, and MCP never contacts NuGet.
-    Manage it explicitly with install-knowledge, update-knowledge, info-knowledge, and
-    delete-knowledge. The running MCP process checks the activation marker on every external lookup,
-    hot reloads a successful update without restart, and stops external in-memory serving after cache
-    deletion or invalidation. Rejected updates retain last-known-good; a cold invalid cache returns
-    guidance-unavailable for external guides while guidance still embedded in Clio remains available.
+    Externally delivered guidance uses only the persistent cache; MCP never contacts transports.
+    Manage sources with the knowledge lifecycle and add/remove/enable/disable/list source commands.
+    These commands are non-resident MCP tools callable through clio-run. The running MCP process hot
+    reloads source updates and enablement without restart. Rejected updates retain last-known-good;
+    a cold invalid cache returns guidance-unavailable for external guides. info-knowledge reads only
+    local state unless CLI --check-updates or MCP checkUpdates=true is supplied.
 
 SYNOPSIS
     clio mcp-server

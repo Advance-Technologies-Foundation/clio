@@ -13,7 +13,7 @@ using System.Text.RegularExpressions;
 
 namespace Clio.Command.McpServer.Knowledge;
 
-internal sealed class KnowledgeBundleNuGetClient : IKnowledgeBundlePackageClient {
+internal sealed class KnowledgeBundleNuGetClient : IKnowledgeTransport {
 	internal const string HttpClientName = "knowledge-bundle-nuget";
 	internal const string SourceVariable = "CLIO_KNOWLEDGE_NUGET_SOURCE";
 	internal const string PackageIdVariable = "CLIO_KNOWLEDGE_NUGET_PACKAGE_ID";
@@ -49,6 +49,8 @@ internal sealed class KnowledgeBundleNuGetClient : IKnowledgeBundlePackageClient
 	}
 
 	public bool IsConfigured => !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(SourceVariable));
+
+	public KnowledgeSourceType Type => KnowledgeSourceType.NuGet;
 
 	public KnowledgeBundlePackageConfiguration? GetConfiguration() =>
 		TryReadConfiguration(out Uri source, out string packageId)
@@ -89,8 +91,64 @@ internal sealed class KnowledgeBundleNuGetClient : IKnowledgeBundlePackageClient
 		string? highestObservedPackageVersion,
 		string? fallbackCeilingPackageVersion,
 		string? catalogFingerprint,
-		int? transportDeadlineMilliseconds = null) {
+		int? transportDeadlineMilliseconds = null,
+		string? exactPackageVersion = null) {
 		ArgumentNullException.ThrowIfNull(rejectedPackageVersions);
+		if (!TryReadConfiguration(out Uri source, out string packageId)) {
+			return NoCandidate();
+		}
+		return DownloadNext(
+			source,
+			packageId,
+			rejectedPackageVersions,
+			activePackageVersion,
+			highestObservedPackageVersion,
+			fallbackCeilingPackageVersion,
+			catalogFingerprint,
+			transportDeadlineMilliseconds,
+			exactPackageVersion);
+	}
+
+	public KnowledgeTransportResult Retrieve(KnowledgeTransportRequest request) {
+		ArgumentNullException.ThrowIfNull(request);
+		KnowledgeSourceConfiguration source = KnowledgeSourceConfigurationValidator.ValidateAndClone(request.Source);
+		if (source.Type != Type) {
+			throw new ArgumentException("NuGet transport received a non-NuGet source.", nameof(request));
+		}
+		KnowledgeBundlePackageDownloadResult result = DownloadNext(
+			new Uri(source.Location, UriKind.Absolute),
+			source.PackageId!,
+			request.RejectedRevisions,
+			request.ActiveRevision,
+			request.HighestObservedRevision,
+			request.FallbackCeilingRevision,
+			request.CatalogFingerprint,
+			request.TransportDeadlineMilliseconds,
+			request.ExactRevision);
+		return new KnowledgeTransportResult(
+			result.Status switch {
+				KnowledgeBundlePackageDownloadStatus.Downloaded => KnowledgeTransportStatus.Downloaded,
+				KnowledgeBundlePackageDownloadStatus.Rejected => KnowledgeTransportStatus.Rejected,
+				KnowledgeBundlePackageDownloadStatus.Failed => KnowledgeTransportStatus.Failed,
+				_ => KnowledgeTransportStatus.NoCandidate
+			},
+			result.PackageVersion,
+			result.BundleBytes,
+			null,
+			result.CatalogFingerprint,
+			Diagnostic: result.Diagnostic);
+	}
+
+	private KnowledgeBundlePackageDownloadResult DownloadNext(
+		Uri source,
+		string packageId,
+		IReadOnlySet<string> rejectedPackageVersions,
+		string? activePackageVersion,
+		string? highestObservedPackageVersion,
+		string? fallbackCeilingPackageVersion,
+		string? catalogFingerprint,
+		int? transportDeadlineMilliseconds,
+		string? exactPackageVersion = null) {
 		int deadlineMilliseconds = transportDeadlineMilliseconds ?? _options.TransportDeadlineMilliseconds;
 		if (deadlineMilliseconds <= 0) {
 			return NoCandidate();
@@ -100,12 +158,8 @@ internal sealed class KnowledgeBundleNuGetClient : IKnowledgeBundlePackageClient
 			_options.TransportDeadlineMilliseconds));
 		HttpClient client;
 		Uri packageBaseAddress;
-		string packageId;
 		IReadOnlyList<StablePackageVersion> versions;
 		try {
-			if (!TryReadConfiguration(out Uri source, out packageId)) {
-				return NoCandidate();
-			}
 			client = _httpClientFactory.CreateClient(HttpClientName);
 			packageBaseAddress = DiscoverPackageBaseAddress(client, source, deadline.Token);
 			versions = ReadVersions(client, packageBaseAddress, packageId, deadline.Token);
@@ -117,7 +171,7 @@ internal sealed class KnowledgeBundleNuGetClient : IKnowledgeBundlePackageClient
 				or RegexMatchTimeoutException
 				or ArgumentException
 				or NotSupportedException) {
-			return NoCandidate();
+			return Failed(exception.Message);
 		}
 		StablePackageVersion? floor = StablePackageVersion.TryParse(
 			activePackageVersion,
@@ -130,6 +184,14 @@ internal sealed class KnowledgeBundleNuGetClient : IKnowledgeBundlePackageClient
 		IEnumerable<StablePackageVersion> eligible = versions
 			.Where(version => !rejectedPackageVersions.Contains(version.ToString()))
 			.Where(version => floor is null || version.CompareTo(floor.Value) > 0);
+		if (exactPackageVersion is not null) {
+			if (!StablePackageVersion.TryParse(exactPackageVersion, out StablePackageVersion exact)
+					|| !versions.Contains(exact)
+					|| rejectedPackageVersions.Contains(exact.ToString())) {
+				return NoCandidate(currentCatalogFingerprint);
+			}
+			eligible = versions.Where(version => version.CompareTo(exact) == 0);
+		}
 		StablePackageVersion? highestObserved = StablePackageVersion.TryParse(
 			catalogChanged ? null : highestObservedPackageVersion,
 			out StablePackageVersion parsedHighestObserved)
@@ -141,10 +203,12 @@ internal sealed class KnowledgeBundleNuGetClient : IKnowledgeBundlePackageClient
 			? parsedFallbackCeiling
 			: null;
 		StablePackageVersion? latest = eligible
-			.Where(version => highestObserved is null || version.CompareTo(highestObserved.Value) > 0)
+			.Where(version => exactPackageVersion is not null
+				|| highestObserved is null
+				|| version.CompareTo(highestObserved.Value) > 0)
 			.Cast<StablePackageVersion?>()
 			.Max();
-		if (latest is null && fallbackCeiling is not null) {
+		if (latest is null && exactPackageVersion is null && fallbackCeiling is not null) {
 			latest = eligible
 				.Where(version => version.CompareTo(fallbackCeiling.Value) < 0)
 				.Cast<StablePackageVersion?>()
@@ -165,7 +229,7 @@ internal sealed class KnowledgeBundleNuGetClient : IKnowledgeBundlePackageClient
 		} catch (Exception exception) when (exception is HttpRequestException
 				or OperationCanceledException
 				or IOException) {
-			return NoCandidate(currentCatalogFingerprint);
+			return Failed(exception.Message, currentCatalogFingerprint);
 		} catch (InvalidDataException) {
 			return Rejected(selectedVersion, currentCatalogFingerprint);
 		}
@@ -186,6 +250,11 @@ internal sealed class KnowledgeBundleNuGetClient : IKnowledgeBundlePackageClient
 
 	private static KnowledgeBundlePackageDownloadResult NoCandidate(string? catalogFingerprint = null) =>
 		new(KnowledgeBundlePackageDownloadStatus.NoCandidate, null, null, catalogFingerprint);
+
+	private static KnowledgeBundlePackageDownloadResult Failed(
+		string diagnostic,
+		string? catalogFingerprint = null) =>
+		new(KnowledgeBundlePackageDownloadStatus.Failed, null, null, catalogFingerprint, diagnostic);
 
 	private static KnowledgeBundlePackageDownloadResult Rejected(
 		string packageVersion,

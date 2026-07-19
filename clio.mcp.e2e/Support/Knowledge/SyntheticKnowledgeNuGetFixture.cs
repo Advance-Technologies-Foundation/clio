@@ -6,14 +6,14 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Clio.Command.McpServer.Knowledge;
-using Clio.Command.McpServer.Resources;
 using Clio.Command.McpServer.Tools;
 
 namespace Clio.Mcp.E2E.Support.Knowledge;
 
 internal sealed class SyntheticKnowledgeNuGetFixture : IDisposable {
 	internal const string PackageId = "Clio.Synthetic.Knowledge";
-	internal const string SelectedGuideName = "esq-filters";
+	internal const string LibraryId = "com.example.synthetic";
+	internal const string SelectedGuideName = "synthetic-transport-guide";
 
 	private readonly string _root;
 	private readonly ECDsa _signingKey;
@@ -24,7 +24,7 @@ internal sealed class SyntheticKnowledgeNuGetFixture : IDisposable {
 		Feed = feed;
 		PublicKeyPath = Path.Combine(root, "synthetic-public.pem");
 		File.WriteAllText(PublicKeyPath, signingKey.ExportSubjectPublicKeyInfoPem());
-		SelectedGuideUri = GuidanceCatalog.GetExternalResourceUris()[SelectedGuideName];
+		SelectedGuideUri = $"{KnowledgeResolver.NamespacedUriPrefix}{LibraryId}/{SelectedGuideName}";
 	}
 
 	internal FakeNuGetV3Feed Feed { get; }
@@ -64,41 +64,51 @@ internal sealed class SyntheticKnowledgeNuGetFixture : IDisposable {
 		ulong sequence,
 		string revision,
 		bool corruptSignature) {
-		IReadOnlyDictionary<string, string> catalog = GuidanceCatalog.GetExternalResourceUris();
-		SyntheticResource[] resources = catalog
-			.OrderBy(entry => entry.Key, StringComparer.Ordinal)
-			.Select((entry, index) => {
+		string[] itemIds = [SelectedGuideName, "native-library-lifecycle", "smoke-testing"];
+		SyntheticResource[] resources = itemIds
+			.Select((itemId, index) => {
 				byte[] bytes = new UTF8Encoding(false, true).GetBytes(
-					$"synthetic::{revision}::{entry.Key}::sequence={sequence}\n");
+					$"synthetic::{revision}::{itemId}::sequence={sequence}\n");
 				return new SyntheticResource(
-					entry.Key,
-					entry.Value,
+					itemId,
+					itemId,
+					$"{KnowledgeResolver.NamespacedUriPrefix}{LibraryId}/{itemId}",
 					$"resources/synthetic-{index}.txt",
 					bytes,
 					Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant());
 			})
 			.ToArray();
 		byte[] manifest = JsonSerializer.SerializeToUtf8Bytes(new {
-			contractVersion = "0.1.0",
-			bundleSchemaVersion = "0.1.0",
+			contractVersion = "1.0.0",
+			bundleSchemaVersion = "1.0.0",
+			libraryId = LibraryId,
+			libraryVersion = packageVersion,
 			sequence,
-			bundleVersion = packageVersion,
 			issuedAt = "2026-07-18T00:00:00Z",
-			source = new { repository = "synthetic-nuget-fixture", commit = revision },
+			source = new {
+				repository = "synthetic-nuget-fixture",
+				commit = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(revision)))
+					.ToLowerInvariant()[..40]
+			},
 			compatibility = new {
 				clio = new { min = "0.0.0", max = "99.99.99" },
 				mcpToolContract = new { min = "1.0.0", max = "1.0.0" }
 			},
 			requirements = new {
 				tools = new[] { GuidanceGetTool.ToolName },
-				guidanceIds = resources.Select(resource => resource.Name).ToArray(),
+				itemIds = resources.Select(resource => resource.Name).ToArray(),
 				resourceUris = resources.Select(resource => resource.Uri).ToArray()
 			},
 			digestAlg = "SHA-256",
 			signature = new { algorithm = "ECDSA-P256-SHA256", keyId = KeyId },
 			resources = resources.Select(resource => new {
-				id = resource.Name,
+				itemId = resource.Name,
+				topicId = resource.TopicId,
+				role = "guidance",
 				uri = resource.Uri,
+				legacyUris = resource.Name == SelectedGuideName
+					? new[] { $"docs://mcp/guides/{SelectedGuideName}" }
+					: Array.Empty<string>(),
 				path = resource.Path,
 				mediaType = "text/plain",
 				length = resource.Bytes.LongLength,
@@ -150,7 +160,13 @@ internal sealed class SyntheticKnowledgeNuGetFixture : IDisposable {
 		return output.ToArray();
 	}
 
-	private sealed record SyntheticResource(string Name, string Uri, string Path, byte[] Bytes, string Digest);
+	private sealed record SyntheticResource(
+		string Name,
+		string TopicId,
+		string Uri,
+		string Path,
+		byte[] Bytes,
+		string Digest);
 }
 
 internal sealed record SyntheticPackageEvidence(string PackageVersion, ulong Sequence, string SelectedGuideDigest);

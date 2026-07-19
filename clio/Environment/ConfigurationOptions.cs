@@ -16,6 +16,7 @@ using Clio.Common;
 using Clio.Common.db;
 using Clio.Common.DbHub;
 using Clio.Common.IIS;
+using Clio.Command.McpServer.Knowledge;
 using ConsoleTables;
 using YamlDotNet.Serialization;
 using FileSystem = System.IO.Abstractions.FileSystem;
@@ -356,6 +357,7 @@ namespace Clio
 		public Settings() {
 			Environments = new Dictionary<string, EnvironmentSettings>();
 			Features = new Dictionary<string, bool>();
+			Knowledge = new KnowledgeConfiguration();
 		}
 
 		//TODO: This wont work for Mac and Linux
@@ -401,10 +403,16 @@ namespace Clio
 		}
 
 		/// <summary>
-		/// Gets or sets the explicit root directory for installed Clio knowledge.
+		/// Gets or sets the multi-source knowledge configuration.
 		/// </summary>
-		[JsonProperty("knowledge-root-path")]
-		public string KnowledgeRootPath { get; set; }
+		[JsonProperty("knowledge")]
+		public KnowledgeConfiguration Knowledge { get; set; }
+
+		/// <summary>
+		/// Gets or sets the legacy knowledge root used only for one-time migration.
+		/// </summary>
+		[JsonProperty("knowledge-root-path", NullValueHandling = NullValueHandling.Ignore)]
+		public string LegacyKnowledgeRootPath { get; set; }
 
 		private string _containerImageCli;
 
@@ -758,7 +766,27 @@ namespace Clio
 			_settings ??= new Settings();
 			_settings.Environments ??= new Dictionary<string, EnvironmentSettings>();
 			_settings.Features ??= new Dictionary<string, bool>();
+			_settings.Knowledge ??= new KnowledgeConfiguration();
+			_settings.Knowledge.Sources ??= new Dictionary<string, KnowledgeSourceConfiguration>(
+				StringComparer.OrdinalIgnoreCase);
+			_settings.Knowledge.TopicPins ??= new Dictionary<string, string>(StringComparer.Ordinal);
 			EnsureFeaturesComparer();
+			EnsureKnowledgeComparers();
+		}
+
+		private void EnsureKnowledgeComparers() {
+			if (!ReferenceEquals(_settings.Knowledge.Sources.Comparer, StringComparer.OrdinalIgnoreCase)) {
+				Dictionary<string, KnowledgeSourceConfiguration> sources = new(StringComparer.OrdinalIgnoreCase);
+				foreach ((string alias, KnowledgeSourceConfiguration source) in _settings.Knowledge.Sources) {
+					sources[alias] = source;
+				}
+				_settings.Knowledge.Sources = sources;
+			}
+			if (!ReferenceEquals(_settings.Knowledge.TopicPins.Comparer, StringComparer.Ordinal)) {
+				_settings.Knowledge.TopicPins = new Dictionary<string, string>(
+					_settings.Knowledge.TopicPins,
+					StringComparer.Ordinal);
+			}
 		}
 
 		// Feature keys are compared case-insensitively (see ISettingsRepository.IsFeatureEnabled).
@@ -1126,26 +1154,176 @@ namespace Clio
 		}
 
 		public string GetKnowledgeRootPath() {
-			return _settings.KnowledgeRootPath;
+			EnsureSettingsCollections();
+			if (!string.IsNullOrWhiteSpace(_settings.Knowledge.RootPath)) {
+				return _settings.Knowledge.RootPath;
+			}
+			if (string.IsNullOrWhiteSpace(_settings.LegacyKnowledgeRootPath)) {
+				return null;
+			}
+			string migrated = NormalizeKnowledgeRootPath(_settings.LegacyKnowledgeRootPath, "knowledge-root-path");
+			UpdateSettings(settings => {
+				settings.Knowledge ??= new KnowledgeConfiguration();
+				if (string.IsNullOrWhiteSpace(settings.Knowledge.RootPath)) {
+					settings.Knowledge.RootPath = migrated;
+				}
+				settings.LegacyKnowledgeRootPath = null;
+			});
+			return _settings.Knowledge.RootPath;
 		}
 
 		public void SetKnowledgeRootPath(string path) {
 			string normalized = NormalizeKnowledgeRootPath(path, nameof(path));
-			UpdateSettings(settings => settings.KnowledgeRootPath = normalized);
+			UpdateSettings(settings => {
+				settings.Knowledge ??= new KnowledgeConfiguration();
+				settings.Knowledge.RootPath = normalized;
+				settings.LegacyKnowledgeRootPath = null;
+			});
 		}
 
 		public string GetOrCreateKnowledgeRootPath(string defaultPath) {
 			string normalizedDefault = NormalizeKnowledgeRootPath(defaultPath, nameof(defaultPath));
 			string resolved = null;
 			UpdateSettings(settings => {
-				string candidate = string.IsNullOrWhiteSpace(settings.KnowledgeRootPath)
-					? normalizedDefault
-					: settings.KnowledgeRootPath;
-				resolved = NormalizeKnowledgeRootPath(candidate, "knowledge-root-path");
-				settings.KnowledgeRootPath = resolved;
+				settings.Knowledge ??= new KnowledgeConfiguration();
+				string candidate = !string.IsNullOrWhiteSpace(settings.Knowledge.RootPath)
+					? settings.Knowledge.RootPath
+					: !string.IsNullOrWhiteSpace(settings.LegacyKnowledgeRootPath)
+						? settings.LegacyKnowledgeRootPath
+						: normalizedDefault;
+				resolved = NormalizeKnowledgeRootPath(candidate, "knowledge.root-path");
+				settings.Knowledge.RootPath = resolved;
+				settings.LegacyKnowledgeRootPath = null;
 			});
 			return resolved;
 		}
+
+		/// <inheritdoc />
+		public KnowledgeConfiguration GetKnowledgeConfiguration() {
+			GetKnowledgeRootPath();
+			EnsureSettingsCollections();
+			return KnowledgeSourceConfigurationValidator.ValidateAndClone(_settings.Knowledge);
+		}
+
+		/// <inheritdoc />
+		public void SetKnowledgeConfiguration(KnowledgeConfiguration configuration) {
+			KnowledgeConfiguration validated = KnowledgeSourceConfigurationValidator.ValidateAndClone(configuration);
+			UpdateSettings(settings => {
+				settings.Knowledge = KnowledgeSourceConfigurationValidator.ValidateAndClone(validated);
+				settings.LegacyKnowledgeRootPath = null;
+			});
+		}
+
+		/// <inheritdoc />
+		public void UpsertKnowledgeSource(string alias, KnowledgeSourceConfiguration source) {
+			KnowledgeSourceConfigurationValidator.ValidateAlias(alias);
+			KnowledgeSourceConfiguration validated = KnowledgeSourceConfigurationValidator.ValidateAndClone(source);
+			UpdateSettings(settings => {
+				settings.Knowledge ??= new KnowledgeConfiguration();
+				settings.Knowledge.Sources ??= new Dictionary<string, KnowledgeSourceConfiguration>(
+					StringComparer.OrdinalIgnoreCase);
+				Dictionary<string, KnowledgeSourceConfiguration> sources = new(
+					settings.Knowledge.Sources,
+					StringComparer.OrdinalIgnoreCase);
+				sources[alias] = validated;
+				KnowledgeConfiguration candidate = new() {
+					RootPath = settings.Knowledge.RootPath,
+					Sources = sources,
+					TopicPins = settings.Knowledge.TopicPins ?? new Dictionary<string, string>(StringComparer.Ordinal)
+				};
+				settings.Knowledge = KnowledgeSourceConfigurationValidator.ValidateAndClone(candidate);
+				settings.LegacyKnowledgeRootPath = null;
+			});
+		}
+
+		/// <inheritdoc />
+		public bool RemoveKnowledgeSource(string alias) {
+			KnowledgeSourceConfigurationValidator.ValidateAlias(alias);
+			bool removed = false;
+			UpdateSettings(settings => {
+				settings.Knowledge ??= new KnowledgeConfiguration();
+				settings.Knowledge.Sources ??= new Dictionary<string, KnowledgeSourceConfiguration>(
+					StringComparer.OrdinalIgnoreCase);
+				removed = settings.Knowledge.Sources.Remove(alias);
+				settings.LegacyKnowledgeRootPath = null;
+			});
+			return removed;
+		}
+
+		/// <inheritdoc />
+		public bool TryRemoveKnowledgeSource(string alias, KnowledgeSourceConfiguration expected) {
+			KnowledgeSourceConfigurationValidator.ValidateAlias(alias);
+			KnowledgeSourceConfiguration snapshot = KnowledgeSourceConfigurationValidator.ValidateAndClone(expected);
+			bool removed = false;
+			UpdateSettings(settings => {
+				settings.Knowledge ??= new KnowledgeConfiguration();
+				settings.Knowledge.Sources ??= new Dictionary<string, KnowledgeSourceConfiguration>(
+					StringComparer.OrdinalIgnoreCase);
+				if (settings.Knowledge.Sources.TryGetValue(alias, out KnowledgeSourceConfiguration current)
+						&& KnowledgeSourcesEqual(current, snapshot)) {
+					removed = settings.Knowledge.Sources.Remove(alias);
+				}
+				settings.LegacyKnowledgeRootPath = null;
+			});
+			return removed;
+		}
+
+		/// <inheritdoc />
+		public bool TrySetKnowledgeSourceBranch(
+			string alias,
+			KnowledgeSourceConfiguration expected,
+			string branch) {
+			KnowledgeSourceConfigurationValidator.ValidateAlias(alias);
+			KnowledgeSourceConfiguration snapshot = KnowledgeSourceConfigurationValidator.ValidateAndClone(expected);
+			if (string.IsNullOrWhiteSpace(branch)) {
+				throw new ArgumentException("Knowledge Git branch cannot be empty.", nameof(branch));
+			}
+			bool updated = false;
+			UpdateSettings(settings => {
+				settings.Knowledge ??= new KnowledgeConfiguration();
+				settings.Knowledge.Sources ??= new Dictionary<string, KnowledgeSourceConfiguration>(
+					StringComparer.OrdinalIgnoreCase);
+				if (settings.Knowledge.Sources.TryGetValue(alias, out KnowledgeSourceConfiguration current)
+						&& KnowledgeSourcesEqual(current, snapshot)) {
+					current.Branch = branch.Trim();
+					updated = true;
+				}
+				settings.LegacyKnowledgeRootPath = null;
+			});
+			return updated;
+		}
+
+		/// <inheritdoc />
+		public void SetKnowledgeSourceEnabled(string alias, bool enabled) {
+			KnowledgeSourceConfigurationValidator.ValidateAlias(alias);
+			UpdateSettings(settings => {
+				settings.Knowledge ??= new KnowledgeConfiguration();
+				settings.Knowledge.Sources ??= new Dictionary<string, KnowledgeSourceConfiguration>(
+					StringComparer.OrdinalIgnoreCase);
+				if (!settings.Knowledge.Sources.TryGetValue(alias, out KnowledgeSourceConfiguration source)) {
+					throw new KeyNotFoundException($"Knowledge source '{alias}' is not configured.");
+				}
+				source.Enabled = enabled;
+				settings.LegacyKnowledgeRootPath = null;
+			});
+		}
+
+		private static bool KnowledgeSourcesEqual(
+			KnowledgeSourceConfiguration left,
+			KnowledgeSourceConfiguration right) =>
+			string.Equals(left.LibraryId, right.LibraryId, StringComparison.Ordinal)
+			&& left.Type == right.Type
+			&& string.Equals(left.Location, right.Location, StringComparison.Ordinal)
+			&& string.Equals(left.TrustedKeyId, right.TrustedKeyId, StringComparison.Ordinal)
+			&& string.Equals(left.TrustedPublicKeyPath, right.TrustedPublicKeyPath, StringComparison.Ordinal)
+			&& string.Equals(left.PackageId, right.PackageId, StringComparison.Ordinal)
+			&& string.Equals(left.Branch, right.Branch, StringComparison.Ordinal)
+			&& string.Equals(left.Tag, right.Tag, StringComparison.Ordinal)
+			&& string.Equals(left.Commit, right.Commit, StringComparison.Ordinal)
+			&& string.Equals(left.ArtifactPath, right.ArtifactPath, StringComparison.Ordinal)
+			&& left.Enabled == right.Enabled
+			&& left.Priority == right.Priority
+			&& left.Participation == right.Participation;
 
 		private static string NormalizeKnowledgeRootPath(string path, string parameterName) {
 			if (string.IsNullOrWhiteSpace(path)) {

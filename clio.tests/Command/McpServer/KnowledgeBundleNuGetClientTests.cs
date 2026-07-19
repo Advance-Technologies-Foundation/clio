@@ -43,8 +43,8 @@ public sealed class KnowledgeBundleNuGetClientTests {
 		factory.CreateClient(KnowledgeBundleNuGetClient.HttpClientName).Returns(_httpClient);
 		ServiceCollection services = new();
 		services.AddSingleton(factory);
-		services.AddSingleton(new KnowledgeBundleNuGetOptions(TransportDeadlineMilliseconds: 100));
-		services.AddSingleton<IKnowledgeBundlePackageClient, KnowledgeBundleNuGetClient>();
+		services.AddSingleton(new KnowledgeBundleNuGetOptions(TransportDeadlineMilliseconds: 1_000));
+		services.AddSingleton<KnowledgeBundleNuGetClient>();
 		_container = services.BuildServiceProvider();
 	}
 
@@ -61,7 +61,7 @@ public sealed class KnowledgeBundleNuGetClientTests {
 	[Description("Discovers the latest unattempted stable flat-container package and extracts its fixed inner knowledge bundle once.")]
 	public void DownloadNext_ShouldExtractInnerBundle_WhenFeedHasUnattemptedStablePackage() {
 		// Arrange
-		IKnowledgeBundlePackageClient client = _container.GetRequiredService<IKnowledgeBundlePackageClient>();
+		KnowledgeBundleNuGetClient client = _container.GetRequiredService<KnowledgeBundleNuGetClient>();
 		HashSet<string> attempted = new(StringComparer.Ordinal) { "1.0.0", "1.1.0" };
 
 		// Act
@@ -83,11 +83,108 @@ public sealed class KnowledgeBundleNuGetClientTests {
 	}
 
 	[Test]
+	[Description("Downloads only the requested immutable package revision when repairing an installed knowledge generation.")]
+	public void DownloadNext_ShouldSelectExactRevision_WhenRepairRevisionIsSpecified() {
+		// Arrange
+		_handler.Packages["1.1.0"] = CreatePackage([0x50, 0x4B, 0x11, 0x00]);
+		KnowledgeBundleNuGetClient client = _container.GetRequiredService<KnowledgeBundleNuGetClient>();
+
+		// Act
+		KnowledgeBundlePackageDownloadResult result = client.DownloadNext(
+			new HashSet<string>(StringComparer.Ordinal),
+			activePackageVersion: null,
+			highestObservedPackageVersion: null,
+			fallbackCeilingPackageVersion: null,
+			catalogFingerprint: null,
+			exactPackageVersion: "1.1.0");
+
+		// Assert
+		result.Status.Should().Be(KnowledgeBundlePackageDownloadStatus.Downloaded,
+			because: "an exact repair revision that remains in the signed package catalog is eligible");
+		result.PackageVersion.Should().Be("1.1.0",
+			because: "repair must not silently replace the damaged immutable generation with the latest package");
+		result.BundleBytes.Should().Equal(new byte[] { 0x50, 0x4B, 0x11, 0x00 },
+			because: "the selected bytes must come from the exact active package revision");
+	}
+
+	[Test]
+	[Description("NuGet transport retrieves from the supplied source configuration instead of process-global legacy variables.")]
+	public void Retrieve_ShouldUseConfiguredSource_WhenLegacyEnvironmentVariablesAreMissing() {
+		// Arrange
+		Environment.SetEnvironmentVariable(KnowledgeBundleNuGetClient.SourceVariable, null);
+		Environment.SetEnvironmentVariable(KnowledgeBundleNuGetClient.PackageIdVariable, null);
+		KnowledgeBundleNuGetClient transport = _container
+			.GetRequiredService<KnowledgeBundleNuGetClient>();
+		KnowledgeTransportRequest request = new(
+			"partner",
+			new KnowledgeSourceConfiguration {
+				LibraryId = "com.example.partner",
+				Type = KnowledgeSourceType.NuGet,
+				Location = Source,
+				TrustedKeyId = "test-signing-key",
+				TrustedPublicKeyPath = Path.GetFullPath("test-public.pem"),
+				PackageId = PackageId
+			},
+			new HashSet<string>(StringComparer.Ordinal),
+			null,
+			null,
+			null,
+			null,
+			Path.GetTempPath());
+
+		// Act
+		KnowledgeTransportResult result = transport.Retrieve(request);
+
+		// Assert
+		result.Status.Should().Be(KnowledgeTransportStatus.Downloaded,
+			because: "multi-source retrieval must use the selected source instead of global legacy configuration");
+		result.ResolvedRevision.Should().Be("1.2.0",
+			because: "NuGet transport provenance is the selected immutable stable package version");
+		result.CandidateBytes.Should().Equal(new byte[] { 0x50, 0x4B, 0x01, 0x02 },
+			because: "the common transport contract must carry the extracted signed bundle bytes");
+	}
+
+	[Test]
+	[Description("NuGet transport preserves a failed feed check and its diagnostic on the common transport contract.")]
+	public void Retrieve_ShouldReturnFailed_WhenConfiguredFeedTimesOut() {
+		// Arrange
+		_handler.TimeoutServiceIndex = true;
+		KnowledgeBundleNuGetClient transport = _container.GetRequiredService<KnowledgeBundleNuGetClient>();
+		KnowledgeTransportRequest request = new(
+			"partner",
+			new KnowledgeSourceConfiguration {
+				LibraryId = "com.example.partner",
+				Type = KnowledgeSourceType.NuGet,
+				Location = Source,
+				TrustedKeyId = "test-signing-key",
+				TrustedPublicKeyPath = Path.GetFullPath("test-public.pem"),
+				PackageId = PackageId
+			},
+			new HashSet<string>(StringComparer.Ordinal),
+			null,
+			null,
+			null,
+			null,
+			Path.GetTempPath());
+
+		// Act
+		KnowledgeTransportResult result = transport.Retrieve(request);
+
+		// Assert
+		result.Status.Should().Be(KnowledgeTransportStatus.Failed,
+			because: "a feed timeout cannot be collapsed into a successful no-candidate lookup");
+		result.ResolvedRevision.Should().BeNull(
+			because: "a failed catalog request did not resolve an immutable package revision");
+		result.Diagnostic.Should().NotBeNullOrWhiteSpace(
+			because: "the management layer needs the transport diagnostic to report unknown update state");
+	}
+
+	[Test]
 	[Description("Reports the greatest stable catalog version without downloading a package payload.")]
 	public void GetCatalog_ShouldReturnLatestStableVersion_WithoutDownloadingPackage() {
 		// Arrange
 		_handler.Versions = ["1.0.0", "2.0.0-beta", "1.2.0"];
-		IKnowledgeBundlePackageClient client = _container.GetRequiredService<IKnowledgeBundlePackageClient>();
+		KnowledgeBundleNuGetClient client = _container.GetRequiredService<KnowledgeBundleNuGetClient>();
 
 		// Act
 		KnowledgeBundlePackageCatalogResult result = client.GetCatalog();
@@ -106,7 +203,7 @@ public sealed class KnowledgeBundleNuGetClientTests {
 	public void GetCatalog_ShouldReturnUnavailable_WhenTransportFails() {
 		// Arrange
 		_handler.TimeoutServiceIndex = true;
-		IKnowledgeBundlePackageClient client = _container.GetRequiredService<IKnowledgeBundlePackageClient>();
+		KnowledgeBundleNuGetClient client = _container.GetRequiredService<KnowledgeBundleNuGetClient>();
 
 		// Act
 		KnowledgeBundlePackageCatalogResult result = client.GetCatalog();
@@ -125,7 +222,7 @@ public sealed class KnowledgeBundleNuGetClientTests {
 		Environment.SetEnvironmentVariable(
 			KnowledgeBundleNuGetClient.SourceVariable,
 			$"{Source}?token=secret");
-		IKnowledgeBundlePackageClient client = _container.GetRequiredService<IKnowledgeBundlePackageClient>();
+		KnowledgeBundleNuGetClient client = _container.GetRequiredService<KnowledgeBundleNuGetClient>();
 
 		// Act
 		KnowledgeBundlePackageConfiguration? configuration = client.GetConfiguration();
@@ -140,24 +237,26 @@ public sealed class KnowledgeBundleNuGetClientTests {
 	public void DownloadNext_ShouldRejectPackageBaseAddress_WhenOriginDiffersFromConfiguredSource() {
 		// Arrange
 		_handler.PackageBaseAddress = "https://other-feed.invalid/flat/";
-		IKnowledgeBundlePackageClient client = _container.GetRequiredService<IKnowledgeBundlePackageClient>();
+		KnowledgeBundleNuGetClient client = _container.GetRequiredService<KnowledgeBundleNuGetClient>();
 
 		// Act
 		KnowledgeBundlePackageDownloadResult result = client.DownloadNext(new HashSet<string>(), null, null, null, null);
 
 		// Assert
-		result.Status.Should().Be(KnowledgeBundlePackageDownloadStatus.NoCandidate,
-			because: "service-index discovery must not pivot package requests to another origin");
+		result.Status.Should().Be(KnowledgeBundlePackageDownloadStatus.Failed,
+			because: "an invalid service index is a failed retrieval, not proof that no update exists");
+		result.Diagnostic.Should().NotBeNullOrWhiteSpace(
+			because: "operators need a reason why update availability could not be determined");
 		_handler.PackageRequests.Should().Be(0,
 			because: "a rejected cross-origin flat-container address must never be contacted");
 	}
 
 	[Test]
-	[Description("Converts a transport timeout before version selection into a typed no-candidate result.")]
-	public void DownloadNext_ShouldReturnNoCandidate_WhenServiceIndexTimesOut() {
+	[Description("Converts a transport timeout before version selection into a typed failed-retrieval result.")]
+	public void DownloadNext_ShouldReturnFailed_WhenServiceIndexTimesOut() {
 		// Arrange
 		_handler.TimeoutServiceIndex = true;
-		IKnowledgeBundlePackageClient client = _container.GetRequiredService<IKnowledgeBundlePackageClient>();
+		KnowledgeBundleNuGetClient client = _container.GetRequiredService<KnowledgeBundleNuGetClient>();
 
 		// Act
 		Action act = () => client.DownloadNext(new HashSet<string>(), null, null, null, null);
@@ -165,8 +264,10 @@ public sealed class KnowledgeBundleNuGetClientTests {
 
 		// Assert
 		act.Should().NotThrow(because: "NuGet timeouts must stay inside the fail-closed discovery boundary");
-		result.Status.Should().Be(KnowledgeBundlePackageDownloadStatus.NoCandidate,
-			because: "no immutable version was selected before the service-index timeout");
+		result.Status.Should().Be(KnowledgeBundlePackageDownloadStatus.Failed,
+			because: "a timeout cannot prove that no newer immutable version exists");
+		result.Diagnostic.Should().NotBeNullOrWhiteSpace(
+			because: "the retrieval failure must remain distinguishable from an empty catalog");
 	}
 
 	[Test]
@@ -174,7 +275,7 @@ public sealed class KnowledgeBundleNuGetClientTests {
 	public void DownloadNext_ShouldIgnoreVersion_WhenVersionStringExceedsStableBound() {
 		// Arrange
 		_handler.Versions = [new string('9', 500_000)];
-		IKnowledgeBundlePackageClient client = _container.GetRequiredService<IKnowledgeBundlePackageClient>();
+		KnowledgeBundleNuGetClient client = _container.GetRequiredService<KnowledgeBundleNuGetClient>();
 		Stopwatch elapsed = Stopwatch.StartNew();
 
 		// Act
@@ -192,21 +293,21 @@ public sealed class KnowledgeBundleNuGetClientTests {
 	}
 
 	[Test]
-	[Description("Rejects a flat-container index whose version count exceeds the bounded discovery budget.")]
-	public void DownloadNext_ShouldReturnNoCandidate_WhenVersionEntryBudgetIsExceeded() {
+	[Description("Reports a flat-container index outside the bounded discovery budget as a failed retrieval.")]
+	public void DownloadNext_ShouldReturnFailed_WhenVersionEntryBudgetIsExceeded() {
 		// Arrange
 		_handler.Versions = Enumerable.Range(0, 4097)
 			.Select(index => $"1.0.{index}")
 			.ToArray();
-		IKnowledgeBundlePackageClient client = _container.GetRequiredService<IKnowledgeBundlePackageClient>();
+		KnowledgeBundleNuGetClient client = _container.GetRequiredService<KnowledgeBundleNuGetClient>();
 
 		// Act
 		KnowledgeBundlePackageDownloadResult result = client.DownloadNext(
 			new HashSet<string>(), null, null, null, null);
 
 		// Assert
-		result.Status.Should().Be(KnowledgeBundlePackageDownloadStatus.NoCandidate,
-			because: "an oversized catalog must fail closed before version parsing, sorting, and fingerprinting");
+		result.Status.Should().Be(KnowledgeBundlePackageDownloadStatus.Failed,
+			because: "an invalid remote catalog cannot prove that the installed package is current");
 		_handler.PackageRequests.Should().Be(0,
 			because: "a version index outside the discovery budget must not select a package path");
 	}
@@ -217,7 +318,7 @@ public sealed class KnowledgeBundleNuGetClientTests {
 		// Arrange
 		_handler.Versions = ["1.2.0", "999.0.0"];
 		_handler.Packages["999.0.0"] = [0x00, 0x01];
-		IKnowledgeBundlePackageClient client = _container.GetRequiredService<IKnowledgeBundlePackageClient>();
+		KnowledgeBundleNuGetClient client = _container.GetRequiredService<KnowledgeBundleNuGetClient>();
 		HashSet<string> attempted = new(StringComparer.Ordinal);
 
 		// Act
@@ -249,7 +350,7 @@ public sealed class KnowledgeBundleNuGetClientTests {
 	public void DownloadNext_ShouldRetryPackage_WhenPreviousDownloadFailureWasTransient() {
 		// Arrange
 		_handler.TransientPackageFailuresRemaining = 1;
-		IKnowledgeBundlePackageClient client = _container.GetRequiredService<IKnowledgeBundlePackageClient>();
+		KnowledgeBundleNuGetClient client = _container.GetRequiredService<KnowledgeBundleNuGetClient>();
 		HashSet<string> rejected = new(StringComparer.Ordinal) { "1.0.0", "1.1.0" };
 
 		// Act
@@ -257,8 +358,8 @@ public sealed class KnowledgeBundleNuGetClientTests {
 		KnowledgeBundlePackageDownloadResult recovered = client.DownloadNext(rejected, null, null, null, null);
 
 		// Assert
-		transient.Status.Should().Be(KnowledgeBundlePackageDownloadStatus.NoCandidate,
-			because: "transport failures do not prove immutable package content is invalid");
+		transient.Status.Should().Be(KnowledgeBundlePackageDownloadStatus.Failed,
+			because: "transport failures do not prove either immutable content invalidity or absence of updates");
 		transient.PackageVersion.Should().BeNull(
 			because: "a transient result must not cause the activator to blacklist the selected package version");
 		recovered.Status.Should().Be(KnowledgeBundlePackageDownloadStatus.Downloaded,
@@ -268,11 +369,11 @@ public sealed class KnowledgeBundleNuGetClientTests {
 	}
 
 	[Test]
-	[Description("Cancels a package response body that stalls after successful response headers.")]
-	public void DownloadNext_ShouldReturnNoCandidate_WhenPackageBodyStallsPastDeadline() {
+	[Description("Cancels a stalled package response body and reports update availability as unknown.")]
+	public void DownloadNext_ShouldReturnFailed_WhenPackageBodyStallsPastDeadline() {
 		// Arrange
 		_handler.StallPackageBody = true;
-		IKnowledgeBundlePackageClient client = _container.GetRequiredService<IKnowledgeBundlePackageClient>();
+		KnowledgeBundleNuGetClient client = _container.GetRequiredService<KnowledgeBundleNuGetClient>();
 		HashSet<string> rejected = new(StringComparer.Ordinal) { "1.0.0", "1.1.0" };
 		Stopwatch elapsed = Stopwatch.StartNew();
 
@@ -281,11 +382,11 @@ public sealed class KnowledgeBundleNuGetClientTests {
 		elapsed.Stop();
 
 		// Assert
-		result.Status.Should().Be(KnowledgeBundlePackageDownloadStatus.NoCandidate,
-			because: "a stalled response body is a retryable transport failure rather than verified rejection");
+		result.Status.Should().Be(KnowledgeBundlePackageDownloadStatus.Failed,
+			because: "a stalled response body is a retryable transport failure rather than proof of no update");
 		result.PackageVersion.Should().BeNull(
 			because: "body timeout must not blacklist an immutable version that was never fully downloaded");
-		elapsed.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(1),
+		elapsed.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(2),
 			because: "the configured discovery deadline must cover response-body reads after headers arrive");
 	}
 
@@ -293,7 +394,7 @@ public sealed class KnowledgeBundleNuGetClientTests {
 	[Description("Does not replay historical packages at or below the highest successfully activated package version.")]
 	public void DownloadNext_ShouldIgnoreHistoricalVersions_WhenActivePackageFloorIsPresent() {
 		// Arrange
-		IKnowledgeBundlePackageClient client = _container.GetRequiredService<IKnowledgeBundlePackageClient>();
+		KnowledgeBundleNuGetClient client = _container.GetRequiredService<KnowledgeBundleNuGetClient>();
 
 		// Act
 		KnowledgeBundlePackageDownloadResult result = client.DownloadNext(

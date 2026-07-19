@@ -6,44 +6,47 @@
 
 ## Name
 
-delete-knowledge - Delete Clio-managed local knowledge artifacts
+delete-knowledge - Delete installed knowledge while retaining source configuration
 
 ## Synopsis
 
 ```bash
-clio delete-knowledge [--force]
+clio delete-knowledge [--source <alias>] [--force] [--json]
 ```
 
 ## Description
 
-Deletes the managed activation marker, installed versions, staging data, and downloaded reference
-examples. It preserves the configured root directory, the `knowledge-root-path` setting, and any
-unrelated files in that directory.
+Deletes the managed installed cache for every enabled source. Pass `--source` to delete exactly one
+configured source cache, including a disabled source. Source configuration, `knowledge.root-path`,
+and unrelated files remain intact.
 
-Deletion proceeds only when the root contains Clio's ownership marker. The activation marker is
-withdrawn before recursive cleanup, so a running MCP server stops serving deleted knowledge even
-if cleanup is interrupted and completed by a later retry.
+The command requires interactive confirmation. Non-interactive hosts must pass `--force` after
+obtaining user authorization. Per-library activation is withdrawn before recursive cleanup, so a
+running MCP server stops serving deleted knowledge even when another source remains active.
 
-The command requires interactive confirmation. Non-interactive hosts must pass `--force` and should
-obtain user authorization first.
+Use `remove-knowledge-source` when both the source configuration and its managed cache must be
+removed.
 
 ## Options
 
 ```bash
---force    Confirm deletion without an interactive prompt
+--source <alias>   Delete only this source cache; omit for all enabled source caches
+--force            Confirm deletion without an interactive prompt
+--json             Emit the per-source result as indented JSON
 ```
 
 ## Examples
 
 ```bash
-clio delete-knowledge
+clio delete-knowledge --source partner
 clio delete-knowledge --force
+clio delete-knowledge --source partner --force --json
 ```
 
 ## Exit Codes
 
-    0   Managed knowledge was deleted, or was not installed
-    1   Confirmation was refused, or locking/filesystem cleanup failed
+    0   Every selected cache was deleted or was not installed
+    1   Confirmation, selection, locking, or filesystem cleanup failure
 
 ## Reporting Bugs
 

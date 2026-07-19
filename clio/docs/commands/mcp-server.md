@@ -63,29 +63,45 @@ Preferred guidance access:
 - get-guidance {"name":"page-schema-sdk-common"}
 - get-guidance {"name":"page-schema-validators"}
 
-External knowledge delivery is configured with environment variables:
+External knowledge delivery is configured visibly under `knowledge` in Clio's `appsettings.json`.
+The section contains `root-path`, a `sources` map, and optional `topic-pins`. Each trusted source
+declares a stable `library-id`, `type` (`git` or `nuget`), credential-free `location`, `enabled`
+kill switch, numeric `priority`, `participation` (`isolated`, `supplement`, or `authoritative`),
+`trusted-key-id`, and an absolute local `trusted-public-key-path`.
+NuGet sources also declare `package-id`; Git sources may follow a branch/tag/commit and declare a
+ready `artifact-path`. When no Git reference is supplied, Clio discovers and persists the remote
+default branch only after a successful install/update, then records the exact complete resolved
+commit for every installed generation. Information and update-availability checks never mutate
+source configuration.
 
-- `CLIO_KNOWLEDGE_NUGET_SOURCE` — absolute HTTPS URL of a NuGet v3 service index (HTTP is accepted only for loopback development feeds)
-- `CLIO_KNOWLEDGE_NUGET_PACKAGE_ID` — package ID to discover through the feed's flat container
-- `CLIO_KNOWLEDGE_TRUSTED_KEY_ID` — trusted signing-key ID expected by the bundle manifest
-- `CLIO_KNOWLEDGE_TRUSTED_PUBLIC_KEY_PATH` — absolute path to one ECDSA P-256 SubjectPublicKeyInfo PEM
+Signing trust is scoped per source so independent publishers can use different keys. The configured
+path references public ECDSA P-256 SubjectPublicKeyInfo PEM material; it is not a secret and must
+never reference or contain a private signing key.
+
+Configured sources require signed version 1 bundles. The proof of concept supports credential-free
+public HTTPS Git and NuGet sources only; authenticated private sources are not supported. Signed
+`legacyUris` remain exact aliases for the item that declares them. No implicit version 0
+compatibility source is registered; prototype caches must be reinstalled from configured version 1
+sources.
 
 The service-index URL must respond directly; redirects are not followed. Its advertised
 `PackageBaseAddress/3.0.0` resource must use the same scheme, host, and port as the configured
 service-index URL.
 
-Clio selects the highest stable three-part package version, extracts
-`content/knowledge-bundle.zip`, and verifies its signature, compatibility, complete stable resource
-catalog, and resource digests before atomically installing it under the `knowledge-root-path` stored
-in Clio's visible `appsettings.json`. When the setting is absent, Clio creates and persists
-`<clio-home>/knowledge`. The installed archive and extracted content remain available to users and
+Every transport obtains a candidate only. Clio's common verifier checks its signature,
+compatibility, library identity, monotonic signed sequence, complete item catalog, paths, sizes, and
+digests before atomically installing it under `knowledge.root-path`. The former top-level
+`knowledge-root-path` is migrated once. When no root exists, Clio persists
+`<clio-home>/knowledge`. Installed archives and extracted content remain available to users and
 coding agents on disk.
 
-Externally delivered ESQ guidance reads only the persisted cache during lookup, and MCP never
-contacts NuGet. Use `install-knowledge`, `update-knowledge`, `info-knowledge`, and
-`delete-knowledge` to manage the cache explicitly. An already-running MCP process compares the
-small activation marker on every external knowledge lookup, so a successful `update-knowledge`
-becomes visible without restarting MCP. A rejected update leaves the last-known-good bundle active.
+Externally delivered guidance reads only the persisted cache during lookup, and MCP never contacts
+a transport. Use the knowledge lifecycle and source-management commands to manage trusted sources.
+They are also non-resident MCP tools discoverable with `get-tool-contract` and invoked through
+`clio-run`. An already-running MCP process compares source activation/configuration on every lookup,
+so an update, enable, or disable becomes visible without restarting MCP. A rejected update leaves
+the last-known-good generation active for that source.
+`info-knowledge` is local-only unless CLI `--check-updates` or MCP `checkUpdates: true` is supplied.
 Deleting or invalidating the disk cache stops in-memory external serving on the next lookup. With
 no verified active bundle, external guide lookups return typed `guidance-unavailable`; guidance that
 remains embedded in the current Clio build is unaffected.
