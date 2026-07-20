@@ -24,10 +24,10 @@ public sealed class RoutingGuidanceResource {
 		Uri = ResourceUri,
 		MimeType = "text/plain",
 		Text = """
-		clio MCP routing map
+		       clio MCP routing map
 
-		Map the task to the guide(s) you MUST read with get-guidance before planning or mutating.
-		Pick the domain, then the row (get-guidance name=...; an unknown name returns availableGuides).
+		       Map the task to the guide(s) you MUST read with get-guidance before planning or mutating.
+		       Pick the domain, then the row (get-guidance name=...; an unknown name returns availableGuides).
 
 		       - Pages (Freedom UI): create/edit -> get-component-info (read resolvedFrom) + name=page-modification
 		         - page-modification is the entry; after its GATE read the ONE matching sub-guide: name=page-modification-overview (save lifecycle), name=page-modification-field-contract (insert a data-bound field), name=page-modification-containers (parentName / bundle.json), name=page-modification-components (button/handler/viewConfigDiff rules)
@@ -50,7 +50,7 @@ public sealed class RoutingGuidanceResource {
 		         - executing an approved plan -> name=agent-execution
 		         - identity assertion / Identity Service V3 -> name=identity-assertion
 		       - Theming & branding: brand colours / fonts / custom themes (create, restyle, delete, list, set the default) -> name=theming
-		"""
+		       """
 	};
 
 	/// <summary>
