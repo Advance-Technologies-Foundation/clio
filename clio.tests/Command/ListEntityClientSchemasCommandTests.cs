@@ -92,6 +92,29 @@ public sealed class ListEntityClientSchemasCommandTests {
 	}
 
 	[Test]
+	[Description("TryResolve succeeds with an explanatory Note when a confirmed entity has no Classic section or edit-page rows.")]
+	public void TryResolve_Should_Populate_Note_When_No_Page_Roles_Found() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>()).Returns(
+			$$$"""{ "success": true, "rows": [{ "UId": "{{{EntityUId}}}", "ExtendParent": false }] }""",
+			"""{ "success": true, "rows": [] }""",
+			"""{ "success": true, "rows": [] }""");
+		var options = new ListEntityClientSchemasOptions { EntityName = "Contact" };
+
+		// Act
+		bool result = _command.TryResolve(options, out ListEntityClientSchemasResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "a resolvable entity with no Classic UI roles is still a successful lookup, not a failure");
+		response.Success.Should().BeTrue(because: "the command distinguishes an empty page-role graph from an error");
+		response.Sections.Should().BeEmpty(because: "no SysModule rows matched the entity");
+		response.EditPages.Should().BeEmpty(because: "no SysModuleEdit rows matched the entity");
+		response.Note.Should().Contain("No SysModule sections or SysModuleEdit pages matched this entity",
+			because: "an empty result must warn the caller it is not the same as 'nothing to migrate'");
+		_applicationClient.Received(3).ExecutePostRequest(SelectQueryUrl, Arg.Any<string>());
+	}
+
+	[Test]
 	[Description("TryResolve fails closed when entity rows do not include a confirmed base row.")]
 	public void TryResolve_Should_Fail_When_Entity_Base_Row_Is_Not_Confirmed() {
 		// Arrange

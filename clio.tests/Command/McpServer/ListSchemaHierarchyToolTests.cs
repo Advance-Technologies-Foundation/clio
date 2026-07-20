@@ -136,11 +136,14 @@ public class ListSchemaHierarchyToolTests {
 	// F1: strictly distinct HierarchyLevels (the real case, e.g. Contract 299<320<...<607) → order
 	// is fully dependency-determined, no ambiguity warning.
 	public void DetectOrderingAmbiguity_Should_Return_Empty_When_Levels_Are_Distinct() {
+		// Arrange
 		var schemas = new System.Collections.Generic.List<SchemaHierarchyEntry> {
 			new() { Package = "CoreContracts", IsBase = true, ExtendParent = false, HierarchyLevel = 299 },
 			new() { Package = "SalesContracts", IsBase = false, ExtendParent = true, HierarchyLevel = 320 },
 			new() { Package = "WorkContractsProcess", IsBase = false, ExtendParent = true, HierarchyLevel = 607 }
 		};
+
+		// Act & Assert
 		ListSchemaHierarchyCommand.DetectOrderingAmbiguity(schemas).Should().BeEmpty(
 			because: "distinct concrete levels provide a dependency-determined order");
 	}
@@ -151,12 +154,17 @@ public class ListSchemaHierarchyToolTests {
 	// F1: two independent replacing schemas at the same HierarchyLevel → dependency depth does not
 	// order them; warn (and name both packages) so the caller knows the tiebreak is arbitrary.
 	public void DetectOrderingAmbiguity_Should_Warn_When_Two_Replacing_Schemas_Share_A_Level() {
+		// Arrange
 		var schemas = new System.Collections.Generic.List<SchemaHierarchyEntry> {
 			new() { Package = "CoreContracts", IsBase = true, ExtendParent = false, HierarchyLevel = 299 },
 			new() { Package = "PkgA", IsBase = false, ExtendParent = true, HierarchyLevel = 400 },
 			new() { Package = "PkgB", IsBase = false, ExtendParent = true, HierarchyLevel = 400 }
 		};
+
+		// Act
 		var warnings = ListSchemaHierarchyCommand.DetectOrderingAmbiguity(schemas);
+
+		// Assert
 		warnings.Should().HaveCount(1, because: "equal levels require a tiebreak outside dependency depth");
 		warnings[0].Should().Contain("PkgA", because: "the warning names the first ambiguous package")
 			.And.Contain("PkgB", because: "the warning names the second ambiguous package")
@@ -167,11 +175,14 @@ public class ListSchemaHierarchyToolTests {
 	[Category("Unit")]
 	[Description("DetectOrderingAmbiguity warns even for a single replacing schema whose hierarchy level is unknown.")]
 	public void DetectOrderingAmbiguity_Should_Warn_When_Single_Replacing_Schema_Lacks_A_Level() {
+		// Arrange
 		var schemas = new System.Collections.Generic.List<SchemaHierarchyEntry> {
 			new() { Package = "Base", IsBase = true, ExtendParent = false, HierarchyLevel = 400 },
 			new() { Package = "Repl", IsBase = false, ExtendParent = true, HierarchyLevel = 400 },
 			new() { Package = "OneNull", IsBase = false, ExtendParent = true, HierarchyLevel = null }
 		};
+
+		// Act & Assert
 		ListSchemaHierarchyCommand.DetectOrderingAmbiguity(schemas).Should().ContainSingle()
 			.Which.Should().Contain("OneNull", because: "an unknown level means this layer's position is not fully determined");
 	}
@@ -183,12 +194,17 @@ public class ListSchemaHierarchyToolTests {
 	// get an arbitrary tiebreak — undetermined order, so it must warn (naming both) rather than emit
 	// empty Warnings (which the contract defines as "order fully determined").
 	public void DetectOrderingAmbiguity_Should_Warn_When_Multiple_Schemas_Lack_A_Level() {
+		// Arrange
 		var schemas = new System.Collections.Generic.List<SchemaHierarchyEntry> {
 			new() { Package = "Base", IsBase = true, ExtendParent = false, HierarchyLevel = 299 },
 			new() { Package = "NoLevelA", IsBase = false, ExtendParent = true, HierarchyLevel = null },
 			new() { Package = "NoLevelB", IsBase = false, ExtendParent = true, HierarchyLevel = null }
 		};
+
+		// Act
 		var warnings = ListSchemaHierarchyCommand.DetectOrderingAmbiguity(schemas);
+
+		// Assert
 		warnings.Should().HaveCount(1, because: "all unknown-level replacing schemas share an undetermined order bucket");
 		warnings[0].Should().Contain("NoLevelA", because: "the warning names the first unknown-level package")
 			.And.Contain("NoLevelB", because: "the warning names the second unknown-level package");
@@ -203,6 +219,7 @@ public class ListSchemaHierarchyToolTests {
 	// with levels (level-order Zeta<Alpha; name-order Alpha<Zeta) → dropping ThenBy(HierarchyLevel) reorders
 	// them. Null level sorts last via int.MaxValue. Also pins MapHierarchyEntry's HierarchyLevel extraction.
 	public void TryListHierarchy_Should_Order_Base_First_Then_By_HierarchyLevel_And_Map_Levels() {
+		// Arrange
 		const string rows = @"{""rows"":[
 			{""Name"":""P"",""UId"":""u-alpha"",""ExtendParent"":true,""ParentName"":""B"",""PackageName"":""Alpha"",""Maintainer"":""Creatio"",""InstallType"":1,""HierarchyLevel"":607},
 			{""Name"":""P"",""UId"":""u-mid"",""ExtendParent"":true,""ParentName"":""B"",""PackageName"":""Mid"",""Maintainer"":""Custom"",""InstallType"":0,""HierarchyLevel"":null},
@@ -215,8 +232,10 @@ public class ListSchemaHierarchyToolTests {
 		url.Build(ServiceUrlBuilder.KnownRoute.Select).Returns("http://x/svc");
 		ListSchemaHierarchyCommand command = new(client, url, ConsoleLogger.Instance);
 
+		// Act
 		bool ok = command.TryListHierarchy(new ListSchemaHierarchyOptions { SchemaName = "P" }, out ListSchemaHierarchyResponse response);
 
+		// Assert
 		ok.Should().BeTrue(because: "valid DataService rows should produce a hierarchy response");
 		// base first (despite level 500), then ascending level (Zeta 320 < Alpha 607), unknown level last.
 		response.Schemas.Select(l => l.Package)
@@ -236,12 +255,17 @@ public class ListSchemaHierarchyToolTests {
 	// Pins the null-bucket partition: a base schema with an unknown (null) level must NOT be named in the
 	// unknown-bucket warning (base is always first). A regression to schemas.Where(...) would name it.
 	public void DetectOrderingAmbiguity_Should_Exclude_Base_From_The_Null_Bucket() {
+		// Arrange
 		var schemas = new System.Collections.Generic.List<SchemaHierarchyEntry> {
 			new() { Package = "NoLevelBase", IsBase = true, ExtendParent = false, HierarchyLevel = null },
 			new() { Package = "NoLevelA", IsBase = false, ExtendParent = true, HierarchyLevel = null },
 			new() { Package = "NoLevelB", IsBase = false, ExtendParent = true, HierarchyLevel = null }
 		};
+
+		// Act
 		var w = ListSchemaHierarchyCommand.DetectOrderingAmbiguity(schemas);
+
+		// Assert
 		w.Should().HaveCount(1, because: "only non-base unknown levels affect replacing-schema ordering");
 		w[0].Should().Contain("NoLevelA", because: "the warning names the first replacing schema")
 			.And.Contain("NoLevelB", because: "the warning names the second replacing schema")
@@ -254,6 +278,7 @@ public class ListSchemaHierarchyToolTests {
 	// Pins the name tiebreak (line 128): two non-base schemas at the SAME HierarchyLevel order by package
 	// name. Input order is reversed (Zeta before Alpha) so removing the ThenBy(Package) breaks this test.
 	public void TryListHierarchy_Should_Break_Level_Ties_By_Package_Name() {
+		// Arrange
 		const string rows = @"{""rows"":[
 			{""Name"":""P"",""UId"":""u-b"",""ExtendParent"":false,""ParentName"":""B"",""PackageName"":""Base"",""Maintainer"":""Creatio"",""InstallType"":1,""HierarchyLevel"":100},
 			{""Name"":""P"",""UId"":""u-z"",""ExtendParent"":true,""ParentName"":""B"",""PackageName"":""Zeta"",""Maintainer"":""Creatio"",""InstallType"":1,""HierarchyLevel"":300},
@@ -265,8 +290,10 @@ public class ListSchemaHierarchyToolTests {
 		url.Build(ServiceUrlBuilder.KnownRoute.Select).Returns("http://x/svc");
 		ListSchemaHierarchyCommand command = new(client, url, ConsoleLogger.Instance);
 
+		// Act
 		command.TryListHierarchy(new ListSchemaHierarchyOptions { SchemaName = "P" }, out ListSchemaHierarchyResponse response);
 
+		// Assert
 		// Zeta and Alpha share level 300; input has Zeta first, but the name tiebreak puts Alpha first.
 		response.Schemas.Select(l => l.Package).Should().Equal(["Base", "Alpha", "Zeta"],
 			because: "same-level replacing schemas are sorted deterministically by package name");

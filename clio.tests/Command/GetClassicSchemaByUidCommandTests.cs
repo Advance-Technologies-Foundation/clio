@@ -71,6 +71,25 @@ public sealed class GetClassicSchemaByUidCommandTests {
 	}
 
 	[Test]
+	[Description("TryGetSchema returns the schema body inline in the response when no output-file is provided.")]
+	public void TryGetSchema_Should_Return_Body_In_Response_When_OutputFile_Not_Provided() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(GetSchemaUrl, Arg.Any<string>()).Returns(GetSchemaSuccessJson);
+		var options = new GetClassicSchemaByUidOptions { SchemaUId = SchemaUId };
+
+		// Act
+		bool result = _command.TryGetSchema(options, out GetClassicSchemaByUidResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "an existing schema should be loaded when no output-file redirect is requested");
+		response.Success.Should().BeTrue(because: "the command completed successfully");
+		response.Body.Should().Be("define('ContactPageV2', []);",
+			because: "without output-file the schema body is returned inline to the caller");
+		response.BodyLength.Should().Be("define('ContactPageV2', []);".Length,
+			because: "the response reports the body length alongside the inline body");
+	}
+
+	[Test]
 	[Description("TryGetSchema rejects relative output-file values before loading the schema.")]
 	public void TryGetSchema_Should_Fail_When_OutputFile_Is_Relative() {
 		// Arrange

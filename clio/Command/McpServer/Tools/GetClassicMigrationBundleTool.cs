@@ -30,16 +30,19 @@ public sealed class GetClassicMigrationBundleTool(
 		[Description("Parameters: schema-name (required, the classic page); entity (optional); output-file (optional); environment-name preferred.")]
 		[Required]
 		GetClassicMigrationBundleArgs args) {
-		GetClassicMigrationBundleOptions options = new() {
-			SchemaName = args.SchemaName,
-			Entity = args.Entity,
-			OutputFile = args.OutputFile,
-			Environment = args.EnvironmentName,
-			Uri = args.Uri,
-			Login = args.Login,
-			Password = args.Password
-		};
 		return ExecuteWithCleanLog(() => {
+			if (args is null) {
+				return new GetClassicMigrationBundleResponse { Success = false, Error = "args is required" };
+			}
+			GetClassicMigrationBundleOptions options = new() {
+				SchemaName = args.SchemaName,
+				Entity = args.Entity,
+				OutputFile = args.OutputFile,
+				Environment = args.EnvironmentName,
+				Uri = args.Uri,
+				Login = args.Login,
+				Password = args.Password
+			};
 			GetClassicMigrationBundleCommand resolvedCommand;
 			try {
 				resolvedCommand = ResolveCommand<GetClassicMigrationBundleCommand>(options);

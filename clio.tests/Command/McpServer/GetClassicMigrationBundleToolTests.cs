@@ -10,15 +10,18 @@ using NUnit.Framework;
 namespace Clio.Tests.Command.McpServer;
 
 [TestFixture]
+[NonParallelizable]
 [Property("Module", "McpServer")]
 public class GetClassicMigrationBundleToolTests {
+
+	[TearDown]
+	public void TearDown() => ConsoleLogger.Instance.ClearMessages();
 
 	[Test]
 	[Category("Unit")]
 	[Description("GetBundle maps args to options and executes the command resolved for the requested environment.")]
 	public void GetBundle_Should_Resolve_Command_For_Requested_Environment() {
 		// Arrange
-		ConsoleLogger.Instance.ClearMessages();
 		FakeGetClassicMigrationBundleCommand defaultCommand = new();
 		FakeGetClassicMigrationBundleCommand resolvedCommand = new();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
@@ -39,7 +42,6 @@ public class GetClassicMigrationBundleToolTests {
 		resolvedCommand.CapturedOptions.OutputFile.Should().Be("/tmp/bundle.json", because: "output-file maps through");
 		resolvedCommand.CapturedOptions.Environment.Should().Be("dev", because: "environment-name maps to the options environment");
 		defaultCommand.CapturedOptions.Should().BeNull(because: "the startup command must not run; only the env-resolved one does");
-		ConsoleLogger.Instance.ClearMessages();
 	}
 
 	[Test]
@@ -47,7 +49,6 @@ public class GetClassicMigrationBundleToolTests {
 	[Description("GetBundle returns a failed response (not an exception) when command resolution fails.")]
 	public void GetBundle_Should_Return_Error_When_Command_Resolution_Fails() {
 		// Arrange
-		ConsoleLogger.Instance.ClearMessages();
 		FakeGetClassicMigrationBundleCommand defaultCommand = new();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<GetClassicMigrationBundleCommand>(Arg.Any<GetClassicMigrationBundleOptions>())
@@ -61,7 +62,6 @@ public class GetClassicMigrationBundleToolTests {
 		// Assert
 		response.Success.Should().BeFalse(because: "a resolution failure must surface as a failed response");
 		response.Error.Should().Contain("boom", because: "the underlying error message must be preserved");
-		ConsoleLogger.Instance.ClearMessages();
 	}
 
 	[Test]
@@ -69,7 +69,6 @@ public class GetClassicMigrationBundleToolTests {
 	[Description("GetBundle redacts a sensitive URI/host in the command's inner error before returning it to the MCP caller.")]
 	public void GetBundle_Should_Redact_Sensitive_Inner_Error() {
 		// Arrange
-		ConsoleLogger.Instance.ClearMessages();
 		FakeGetClassicMigrationBundleCommand defaultCommand = new();
 		FakeGetClassicMigrationBundleCommand resolvedCommand = new() {
 			ResponseToReturn = new GetClassicMigrationBundleResponse {
@@ -91,7 +90,6 @@ public class GetClassicMigrationBundleToolTests {
 			because: "a URI/host in the inner error must be redacted before reaching the MCP transcript");
 		response.Error.Should().Contain("[redacted-uri]",
 			because: "the sensitive URI is replaced with the stable redaction placeholder");
-		ConsoleLogger.Instance.ClearMessages();
 	}
 
 	private sealed class FakeGetClassicMigrationBundleCommand : GetClassicMigrationBundleCommand {

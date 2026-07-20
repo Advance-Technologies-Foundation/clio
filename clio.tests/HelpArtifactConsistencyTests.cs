@@ -63,6 +63,31 @@ internal class HelpArtifactConsistencyTests {
 	}
 
 	[Test]
+	[Description("Every Classic->Freedom schema migration verb is classified in the Development group with an explicit description so the catalog does not fall back to source-index classification.")]
+	public void ClassicToFreedomSchemaCommands_ShouldBeClassifiedWithDescription_WhenCatalogBuilt() {
+		// Arrange
+		string[] verbs = [
+			"get-classic-schema-by-uid",
+			"get-classic-migration-bundle",
+			"list-schema-hierarchy",
+			"list-entity-client-schemas"
+		];
+		CommandHelpCatalog catalog = new();
+
+		// Act & Assert
+		foreach (string verb in verbs) {
+			catalog.TryGetCommand(verb, out HelpCommandMetadata command).Should().BeTrue(
+				because: $"'{verb}' must be present in the canonical help catalog");
+			command.GroupId.Should().Be(HelpGroupId.Development,
+				because: $"'{verb}' is a schema-development tool and must be grouped under Development, not source-index fallback-classified as Local Instance Management");
+			command.ShortDescription.Should().NotBe(verb,
+				because: $"'{verb}' must have an explicit description override rather than echoing its own verb name");
+			command.ShortDescription.Should().NotBeNullOrWhiteSpace(
+				because: $"'{verb}' must carry a human-readable description in the catalog");
+		}
+	}
+
+	[Test]
 	[Description("The CLI help directory should contain only canonical command files plus the root help file.")]
 	public void HelpDirectory_ShouldContainOnlyCanonicalFiles() {
 		CommandHelpCatalog catalog = new();

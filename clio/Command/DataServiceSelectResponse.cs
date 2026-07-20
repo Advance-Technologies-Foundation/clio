@@ -21,7 +21,7 @@ internal static class DataServiceSelectResponse {
 		JObject parsed = JObject.Parse(json);
 		if (parsed["success"]?.Value<bool?>() == false
 			|| parsed["errorInfo"] != null
-			|| parsed["responseStatus"]?["ErrorCode"] != null) {
+			|| !string.IsNullOrEmpty(parsed["responseStatus"]?["ErrorCode"]?.Value<string>())) {
 			string message = parsed["errorInfo"]?["message"]?.Value<string>()
 				?? parsed["responseStatus"]?["Message"]?.Value<string>()
 				?? "Creatio DataService returned a failure response with no rows";

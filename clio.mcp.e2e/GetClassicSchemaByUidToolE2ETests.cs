@@ -10,7 +10,7 @@ using ModelContextProtocol.Protocol;
 namespace Clio.Mcp.E2E;
 
 /// <summary>
-/// End-to-end tests for the get-classic-schema-by-uid MCP tool (read a Classic schema schema by UId).
+/// End-to-end tests for the get-classic-schema-by-uid MCP tool (read a Classic schema by UId).
 /// </summary>
 [TestFixture]
 [Category("McpE2E.NoEnvironment")]
