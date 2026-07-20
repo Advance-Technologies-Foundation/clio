@@ -60,7 +60,7 @@ name instead of trying to edit a non-existent local `insert`.
   `placeholder: false`) are not literals and pass. Call `clio get-guidance --name page-schema-resources`
   for the full rule.
 - **Inserted widget/metric titles must resolve.** A `title`/`caption`/`tooltip`/`placeholder` on a
-  freshly inserted (`operation:"insert"`) widget/container bound as `$Resources.Strings.<Key>` or
+  freshly inserted (`operation:"insert"`) widget/container bound as 
   `#ResourceString(<Key>)#` is **rejected** when `<Key>` will not resolve — i.e. it is not passed in
   `--resources`, is not a DS-bound attribute, and is not a `Usr`-prefixed key clio auto-derives. This
   guards the metric/chart-widget-title case (a title such as

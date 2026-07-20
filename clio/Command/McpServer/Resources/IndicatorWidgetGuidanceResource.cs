@@ -38,15 +38,12 @@ public sealed class IndicatorWidgetGuidanceResource {
 
 		       ## General
 
-		       ### Title localization (do NOT skip — ENG-93098)
-		       The widget `config.title` is emitted as `#ResourceString(IndicatorWidget_<slug>_title)#`. That key
-		       does NOT start with `Usr` and is not data-source bound, so clio registers it ONLY when you pass it in
-		       the `resources` parameter. Omit it and the platform compiles the macro to
-		       `$Resources.Strings.IndicatorWidget_<slug>_title` and renders that raw string instead of the title.
+		       ### Title localization
+		       The widget `config.title` is emitted as `#ResourceString(IndicatorWidget_<slug>_title)#`. Clio registers it ONLY when you pass it in
+		       the `resources` parameter.
 		       ALWAYS pair the title with `resources: '{"IndicatorWidget_<slug>_title": "<the title text>"}'`.
 		       Saving (`update-page` / `sync-pages`) now HARD REJECTS an inserted widget title whose key would not
-		       be registered this way; `validate-page` flags it as a warning (it has no schema context to confirm a
-		       prior registration) — see `page-schema-resources`.
+		       be registered this way; `validate-page` flags it as a warning  — see `page-schema-resources`.
 
 		       ### Placement Rules
 		       - Never set `parentName` as code of a dashboard component.

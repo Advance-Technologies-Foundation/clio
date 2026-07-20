@@ -159,13 +159,9 @@ public static class SchemaValidationService
 
 	/// <summary>
 	/// User-visible text properties on Freedom UI view-config nodes whose values must be authored as
-	/// localizable-string bindings (<c>$Resources.Strings.&lt;Key&gt;</c> or the
-	/// <c>#ResourceString(&lt;Key&gt;)#</c> macro), never as inline string literals. Enforced by
+	/// localizable-string bindings, never as inline string literals. Enforced by
 	/// <see cref="ValidateLocalizableTextLiterals"/> (web) and
-	/// <see cref="ValidateMobileLocalizableTextLiterals"/> (mobile). The set is deliberately limited to
-	/// properties that are unambiguously rendered to the user; overloaded keys such as <c>description</c>
-	/// (which also names non-display metadata on entity columns, components, and APIs) are intentionally
-	/// excluded from the hard reject and covered by the <c>page-schema-resources</c> guidance only.
+	/// <see cref="ValidateMobileLocalizableTextLiterals"/> (mobile).
 	/// </summary>
 	internal static readonly HashSet<string> LocalizableTextProperties = new(StringComparer.OrdinalIgnoreCase) {
 		LabelPropertyName,
@@ -195,12 +191,7 @@ public static class SchemaValidationService
 
 	/// <summary>
 	/// Canonical clause describing the widget-caption rule, authored here and embedded verbatim in the
-	/// per-occurrence diagnostic (<see cref="BuildUnresolvedCaptionError"/>). The agent-facing surfaces
-	/// (the update-page / sync-pages / validate-page tool <c>resources</c> descriptions and the
-	/// <c>page-schema-resources</c> / <c>indicator-widget</c> guidance) restate the same rule in their own
-	/// prose and are maintained alongside this const rather than derived from it — keep them in sync when the
-	/// rule changes. Kept <c>const</c> so it stays usable inside <c>[Description]</c> attributes (compile-time
-	/// constants only).
+	/// per-occurrence diagnostic (<see cref="BuildUnresolvedCaptionError"/>)
 	/// </summary>
 	internal const string InsertedWidgetCaptionClause =
 		"a user-visible caption on a freshly inserted widget/container (title, caption, tooltip, placeholder) " +
@@ -212,11 +203,7 @@ public static class SchemaValidationService
 
 	/// <summary>
 	/// Canonical clause describing the localizable-text rule enforced by
-	/// <see cref="ValidateLocalizableTextLiterals"/>. Authored ONCE here and reused by the per-occurrence
-	/// diagnostic (<see cref="BuildTextLiteralError"/>) and surfaced verbatim to MCP agents through the
-	/// update-page / sync-pages / validate-page tool descriptions and the <c>page-schema-resources</c>
-	/// guidance, so the rule the validator rejects on is stated in identical words everywhere. Kept
-	/// <c>const</c> so it stays usable inside <c>[Description]</c> attributes (compile-time constants only).
+	/// <see cref="ValidateLocalizableTextLiterals"/>.
 	/// </summary>
 	internal const string LocalizableTextLiteralClause =
 		"user-visible text on a view node (label, caption, title, tooltip, placeholder) must be a " +
@@ -1507,38 +1494,15 @@ public static class SchemaValidationService
 	}
 
 	/// <summary>
-	/// Validates that every user-visible caption on a freshly inserted widget/container in a web page
-	/// body's <c>viewConfigDiff</c> — <c>title</c>, <c>caption</c>, <c>tooltip</c>, <c>placeholder</c> —
-	/// that is authored as a localizable-string binding (<c>$Resources.Strings.&lt;Key&gt;</c> or a
-	/// <c>#ResourceString(&lt;Key&gt;)#</c> macro) references a key that will actually resolve at runtime.
-	/// A key resolves when it is passed in <paramref name="explicitResources"/>, is a DS-bound attribute the
-	/// platform auto-provides, or is a <c>Usr</c>-prefixed key clio auto-derives (see
-	/// <see cref="ResourceStringHelper.WillResolve"/>).
+	/// Validates that captions on inserted widgets reference resolvable localizable resource keys.
 	/// </summary>
 	/// <remarks>
-	/// This closes the metric/chart-widget-title gap (ENG-93098): the widget title is emitted as
-	/// <c>config.title: "#ResourceString(IndicatorWidget_&lt;slug&gt;_title)#"</c>, whose key never starts
-	/// with <c>Usr</c> and is not DS-bound, so <see cref="ResourceStringHelper.CleanAndMerge"/> silently
-	/// leaves it unregistered when the caller omits it from <c>resources</c>; the platform then compiles the
-	/// macro to a <c>$Resources.Strings.&lt;Key&gt;</c> binding that renders raw. Unlike
-	/// <see cref="ValidateLocalizableTextLiterals"/> (which only rejects inline literals), this validator
-	/// rejects an unresolvable BINDING, scoped to <c>operation: "insert"</c> entries only (a <c>merge</c> may
-	/// legitimately reference a key already registered on the schema).
-	/// <para>
-	/// This body-only overload is a PRE-FLIGHT HEURISTIC — it sees only the body + <paramref name="explicitResources"/>,
-	/// NOT the target schema's pre-existing <c>localizableStrings</c>. It therefore over-reports a re-inserted
-	/// caption whose key a prior save already registered, so callers surface it as a WARNING
-	/// (validate-page, sync-pages pre-flight), never as a hard reject. The authoritative hard gate is
-	/// <see cref="ValidateInsertedWidgetCaptionsRegistered"/>, run on the save path against the final merged
-	/// registration set where that false positive cannot occur.
-	/// </para>
+	/// Pre-flight check based only on the body and <paramref name="explicitResources"/>.
+	/// Use <see cref="ValidateInsertedWidgetCaptionsRegistered"/> for the authoritative save-time validation.
 	/// </remarks>
 	/// <param name="jsBody">Raw JavaScript body of a Freedom UI page schema (marker-delimited).</param>
 	/// <param name="explicitResources">Explicit resources passed to the save, or <c>null</c>.</param>
-	/// <returns>
-	/// A <see cref="SchemaValidationResult"/> that is invalid when an inserted widget caption binds an
-	/// unregistered, unresolvable localizable key.
-	/// </returns>
+	/// <returns>A <see cref="SchemaValidationResult"/> invalid when an inserted widget caption uses an unresolvable localizable key.</returns>
 	public static SchemaValidationResult ValidateInsertedWidgetCaptionResources(
 		string jsBody,
 		IReadOnlyDictionary<string, string>? explicitResources = null) {
@@ -1551,20 +1515,12 @@ public static class SchemaValidationService
 	}
 
 	/// <summary>
-	/// Authoritative, drift-free variant of <see cref="ValidateInsertedWidgetCaptionResources"/> used by the
-	/// SAVE path once the final localizable-string set is known (after
-	/// <see cref="ResourceStringHelper.CleanAndMerge"/>). A caption key resolves iff it is present in
-	/// <paramref name="registeredNames"/> (the saved schema's <c>localizableStrings</c> — which already
-	/// folds in existing entries, explicit <c>resources</c>, and auto-derived <c>Usr</c> keys) or is a
-	/// DS-bound attribute the platform auto-provides. Because it reads the real post-merge registration
-	/// outcome, it CANNOT false-positive on a re-inserted caption whose key was registered by a prior save —
-	/// the gap that makes the body-only <see cref="ValidateInsertedWidgetCaptionResources"/> a pre-flight
-	/// heuristic (warning) rather than the hard gate.
+	/// Validates that captions on inserted widgets use resource keys present in the final saved registration set.
 	/// </summary>
 	/// <param name="jsBody">Raw JavaScript body being saved (the merged body in append mode).</param>
 	/// <param name="registeredNames">Names present in the final <c>localizableStrings</c> to be saved.</param>
 	/// <param name="dsBoundKeys">View-model attribute names bound to a data source.</param>
-	/// <returns>A <see cref="SchemaValidationResult"/> invalid when a saved inserted widget caption would render raw.</returns>
+	/// <returns>A <see cref="SchemaValidationResult"/> invalid when a saved inserted widget caption uses an unresolved resource key.</returns>
 	public static SchemaValidationResult ValidateInsertedWidgetCaptionsRegistered(
 		string jsBody,
 		IReadOnlySet<string> registeredNames,

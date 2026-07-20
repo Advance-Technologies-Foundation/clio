@@ -514,27 +514,17 @@ namespace Clio.Command {
 		}
 
 		/// <summary>
-		/// Authoritative widget-caption resolvability gate (ENG-93098). After <see cref="UpdateSchemaBody"/>
+		/// Authoritative widget-caption resolvability gate. After <see cref="UpdateSchemaBody"/>
 		/// has produced the final <c>localizableStrings</c>, this rejects the save when a freshly inserted
-		/// widget/container caption (title/caption/tooltip/placeholder) binds a localizable key that is neither
-		/// present in that final set nor auto-provided by a DS-bound attribute — such a binding would compile to
-		/// <c>$Resources.Strings.&lt;Key&gt;</c> and render raw. Because it checks the real post-merge
-		/// registration outcome (existing entries + explicit resources + auto-derived Usr keys, all folded in by
-		/// <see cref="ResourceStringHelper.CleanAndMerge"/>), it never false-positives on a re-inserted caption
-		/// whose key a prior save already registered. Web bodies only — a mobile body has no marker-delimited
-		/// <c>viewConfigDiff</c> section for the scan to read.
+		/// widget/container caption binds a localizable key that is neither
+		/// present in that final set nor auto-provided by a DS-bound attribute
 		/// </summary>
 		/// <returns>A failure response when a saved inserted widget caption would render raw; otherwise <c>null</c>.</returns>
 		/// <summary>
-		/// Dry-run analog of <see cref="ValidateInsertedWidgetCaptionsResolve"/>. A dry run validates without
-		/// loading or saving the schema, so the authoritative post-merge gate cannot run; instead surface the
-		/// body-only heuristic (<see cref="SchemaValidationService.ValidateInsertedWidgetCaptionResources"/>)
-		/// as a WARNING so <c>update-page --dry-run</c> no longer reports green for exactly the ENG-93098 body
-		/// a real save rejects. Kept a warning (not an error) because — like validate-page — a dry run has no
-		/// schema context and a hard reject here would false-positive on a re-inserted caption whose key a
-		/// prior save already registered. Web bodies only (a mobile body carries no marker-delimited section).
+		/// Validates widget caption resource resolutions during dry-run (web pages only) and returns
+		/// advisory warnings to surface potential issues that a real save might reject.
 		/// </summary>
-		/// <returns>The advisory warning messages, or <c>null</c> when there is nothing to warn about.</returns>
+		/// <returns>Warning messages for unresolved captions, or <c>null</c> if none.</returns>
 		private static List<string> BuildDryRunWidgetCaptionWarnings(
 				string body, PageSchemaType schemaType, Dictionary<string, string> explicitResources) {
 			if (schemaType == PageSchemaType.Mobile) {

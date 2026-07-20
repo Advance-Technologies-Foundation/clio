@@ -43,8 +43,7 @@ DESCRIPTION
       format (e.g., usr.RequiredValidator).
     - User-visible text (label, caption, title, tooltip, placeholder) in
       viewConfigDiff must be a localizable-string binding, not an inline
-      literal. Bind via $Resources.Strings.<Key> (or #ResourceString(<Key>)#
-      for grid column captions / validator messages) and register the key's
+      literal. Bind via #ResourceString(<Key>)# and register the key's
       default-language value with --resources. Inline literals are rejected.
     - Inserted widget/metric titles must resolve. A title/caption/tooltip/
       placeholder on a freshly inserted (operation:"insert") widget bound as
