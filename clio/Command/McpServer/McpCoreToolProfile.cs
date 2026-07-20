@@ -58,6 +58,9 @@ public static class McpCoreToolProfile {
 		// Freedom UI component lookup (ENG-89871 hot path)
 		typeof(ComponentInfoTool),                 // get-component-info
 
+		// Freedom UI request lookup (ENG-93187)
+		typeof(RequestInfoTool),                   // get-request-info
+
 		// entity-schema lookup / inspection
 		typeof(FindEntitySchemaTool),              // find-entity-schema
 		typeof(GetEntitySchemaPropertiesTool),     // get-entity-schema-properties
