@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -275,6 +276,50 @@ public sealed class McpReadResponseDeadlineTests {
 
 	[Test]
 	[Category("Unit")]
+	[NonParallelizable] // redirects the process-global Console.Error, so it must not run alongside other tests
+	[Description("When the abandoned work FAULTS after the deadline already returned, the fire-and-forget observer writes a stderr diagnostic whose sensitive tokens are redacted — the security control this branch exists for (ENG-93373). Uses a token-independent gate so the work faults (not cancels) after the deadline.")]
+	public async Task RunAsync_ShouldRedactFaultOnStdErr_WhenAbandonedWorkFaultsAfterDeadline() {
+		// Arrange — the work blocks on a gate the test opens only AFTER the deadline has returned, then
+		// throws a fault carrying a sensitive URI. The gate is token-independent (Wait, not the workCts
+		// token) so the abandoned work ends Faulted — a token-observing delay would end Canceled, leave
+		// t.Exception null, and never exercise the redaction branch this test guards.
+		using ManualResetEventSlim releaseWork = new ManualResetEventSlim(false);
+		TextWriter originalError = Console.Error;
+		using StringWriterWithSignal captured = new StringWriterWithSignal();
+		Console.SetError(captured);
+		try {
+			Func<CancellationToken, ValueTask<CallToolResult>> work = _ => {
+				releaseWork.Wait(StopGuard);
+				throw new InvalidOperationException("read failed for http://secret-host/rest/data");
+			};
+
+			// Act — the deadline fires first, so a structured timeout is returned while the work is parked.
+			CallToolResult result = await McpReadResponseDeadline.RunAsync(
+				"list-pages", work, CancellationToken.None, TinyDeadline);
+
+			// Assert — the caller still got the bounded timeout envelope.
+			result.IsError.Should().BeTrue(
+				because: "a timed-out read is reported as an error result even though the work later faults");
+
+			// Now let the abandoned work fault and confirm the observer logged a REDACTED diagnostic.
+			releaseWork.Set();
+			captured.Written.Wait(StopGuard).Should().BeTrue(
+				because: "a post-deadline background fault must be written to stderr, not swallowed silently");
+			string stderr = captured.ToString();
+			stderr.Should().Contain("list-pages",
+				because: "the diagnostic must name the tool so the failure can be correlated");
+			stderr.Should().Contain("[redacted-uri]",
+				because: "the sensitive URI in the fault text must be redacted before it reaches the stderr log");
+			stderr.Should().NotContain("secret-host",
+				because: "the raw backend host must never leak into the MCP server's stderr diagnostic");
+		}
+		finally {
+			Console.SetError(originalError);
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("The structured timeout result reports the elapsed deadline in whole seconds.")]
 	public void CreateTimeoutResult_ShouldReportDeadlineSeconds() {
 		// Arrange
@@ -284,5 +329,24 @@ public sealed class McpReadResponseDeadlineTests {
 		// Assert
 		result.StructuredContent!.Value.GetProperty("deadline-seconds").GetInt32().Should().Be(120,
 			because: "the agent should see the exact budget that elapsed");
+	}
+
+	// StringWriter that signals once a line has been written, so a test can wait for the fire-and-forget
+	// background continuation deterministically instead of polling (mirrors McpProgressHeartbeatTests).
+	private sealed class StringWriterWithSignal : StringWriter {
+		public ManualResetEventSlim Written { get; } = new ManualResetEventSlim(false);
+
+		public override void WriteLine(string value) {
+			base.WriteLine(value);
+			Written.Set();
+		}
+
+		protected override void Dispose(bool disposing) {
+			if (disposing) {
+				Written.Dispose();
+			}
+
+			base.Dispose(disposing);
+		}
 	}
 }

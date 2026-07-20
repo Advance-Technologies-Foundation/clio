@@ -61,9 +61,20 @@ public sealed class McpDurableCallToolHandler(
 	private static readonly Lazy<HashSet<string>> CliVerbNames = new(BuildCliVerbNames);
 
 	/// <inheritdoc />
-	public async ValueTask<CallToolResult> HandleAsync(
+	public ValueTask<CallToolResult> HandleAsync(
 		RequestContext<CallToolRequestParams> request,
-		CancellationToken cancellationToken) {
+		CancellationToken cancellationToken) =>
+		HandleAsync(request, cancellationToken, readDeadline: null);
+
+	// Same handler as the interface method, with an optional read-response deadline override. The
+	// override exists ONLY as a test seam: production always calls the 2-arg interface method (see
+	// BindingsModule's WithCallToolHandler wiring), which passes null so the retry-safe branch uses
+	// McpReadResponseDeadline.DefaultReadDeadline. Tests pass a tiny deadline to exercise the timeout
+	// branch of the durable/raw-name dispatch vector directly, without a 120 s wall-clock wait (ENG-93373).
+	internal async ValueTask<CallToolResult> HandleAsync(
+		RequestContext<CallToolRequestParams> request,
+		CancellationToken cancellationToken,
+		TimeSpan? readDeadline) {
 		// This throw is intentional and does NOT contradict the return-not-thrown invariant below: a null
 		// request is a genuine SDK-contract violation (the SDK never invokes the handler with one), not a
 		// tool OUTCOME. Only expected outcomes are returned as structured results; a broken precondition
@@ -112,7 +123,8 @@ public sealed class McpDurableCallToolHandler(
 			? await McpReadResponseDeadline.RunAsync(
 				canonicalName,
 				token => executor.InvokeResolvedAsync(tool, canonicalName, request, token),
-				cancellationToken).ConfigureAwait(false)
+				cancellationToken,
+				readDeadline).ConfigureAwait(false)
 			: await executor
 				.InvokeResolvedAsync(tool, canonicalName, request, cancellationToken)
 				.ConfigureAwait(false);
