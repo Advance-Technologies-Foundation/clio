@@ -37,9 +37,9 @@ public class ModifyEntitySchemaColumnOptions : RemoteCommandOptions
 												 Column type. Supported values:
 												 Guid, Integer, Float, Boolean, Date, DateTime, Time, Lookup,
 												 Text, ShortText, MediumText, LongText, MaxSizeText,
-												 Text50, Text250, Text500, TextUnlimited, PhoneNumber, WebLink, Email, RichText, 
-												 Decimal0, Decimal1, Decimal2, Decimal3, Decimal4, Decimal8, 
-												 Currency0, Currency1, Currency2, Currency3
+												 Text50, Text250, Text500, TextUnlimited, PhoneNumber, WebLink, Email, RichText,
+												 Decimal0, Decimal1, Decimal2, Decimal3, Decimal4, Decimal8,
+												 Currency0, Currency1, Currency2, Currency3, Color
 												 """)]
 	public string Type { get; set; }
 

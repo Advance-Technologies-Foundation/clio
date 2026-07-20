@@ -1,0 +1,55 @@
+COMMAND TYPE
+    Development commands
+
+NAME
+    set-entity-schema-properties - Set schema-level properties on a remote Creatio entity schema
+
+SYNOPSIS
+    clio set-entity-schema-properties [OPTIONS]
+
+DESCRIPTION
+    Sets schema-level properties on an existing remote Creatio entity schema through the
+    Entity Schema Designer service, then publishes the change (and rebuilds the OData
+    entities) exactly like the other entity-schema commands.
+
+    Currently supported property:
+    --primary-display-column   The column shown as the record's display value in lookups
+                               and links. The target may be an OWN or an INHERITED column;
+                               it is resolved by name to its column UId before saving
+                               (the modern designer contract matches the primary-display
+                               column by its column object, not a raw GUID field).
+
+    After saving, the command reads the schema back and verifies the primary-display column
+    was persisted. If the target environment did not persist it, the command fails with a
+    clear error instead of reporting a silent success.
+
+OPTIONS
+    --package                  Target package name (required; writes are package-scoped)
+    --schema-name              Entity schema name (required)
+    --primary-display-column   Column name (own or inherited) to set as the primary-display
+                               column (optional; at least one settable property is required)
+
+    Environment options are also available:
+    -e, --Environment          Environment name from the registered configuration
+    -u, --uri                  Application URI
+    -l, --Login                User login
+    -p, --Password             User password
+
+EXAMPLES
+    # Set an own text column as the primary-display column
+    clio set-entity-schema-properties -e dev --package Custom --schema-name UsrVehicle --primary-display-column UsrName
+
+    # Set an inherited column as the primary-display column
+    clio set-entity-schema-properties -e dev --package Custom --schema-name UsrTickets --primary-display-column Subject
+
+NOTES
+    - read the set value back with get-entity-schema-properties (primary-display-column-name)
+    - the change is published and the OData entities are rebuilt automatically; no compile needed
+    - at least one settable property must be supplied, otherwise the command reports an error
+    - naming a column that does not exist on the schema fails with a clear error
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio
+
+SEE ALSO
+    get-entity-schema-properties, modify-entity-schema-column, create-entity-schema

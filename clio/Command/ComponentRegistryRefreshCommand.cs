@@ -27,21 +27,24 @@ public sealed class ComponentRegistryRefreshOptions {
 /// CLI entry point for the <c>component-registry-refresh</c> verb. Force-pulls the component
 /// registry payload from the CDN regardless of the 24h cache TTL. Useful when a user wants
 /// to pick up a newly published platform GA without waiting for the natural refresh window.
-/// Refreshes both the web and mobile flavors for every targeted version.
+/// Refreshes the web, mobile, and requests flavors for every targeted version.
 /// </summary>
 public sealed class ComponentRegistryRefreshCommand {
 	private readonly IComponentRegistryClient _registryClient;
 	private readonly IMobileComponentRegistryClient _mobileRegistryClient;
+	private readonly IRequestRegistryClient _requestRegistryClient;
 	private readonly IFileSystem _fileSystem;
 	private readonly ILogger _logger;
 
 	public ComponentRegistryRefreshCommand(
 		IComponentRegistryClient registryClient,
 		IMobileComponentRegistryClient mobileRegistryClient,
+		IRequestRegistryClient requestRegistryClient,
 		IFileSystem fileSystem,
 		ILogger logger) {
 		_registryClient = registryClient ?? throw new ArgumentNullException(nameof(registryClient));
 		_mobileRegistryClient = mobileRegistryClient ?? throw new ArgumentNullException(nameof(mobileRegistryClient));
+		_requestRegistryClient = requestRegistryClient ?? throw new ArgumentNullException(nameof(requestRegistryClient));
 		_fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
 		_logger = logger ?? throw new ArgumentNullException(nameof(logger));
 	}
@@ -57,6 +60,7 @@ public sealed class ComponentRegistryRefreshCommand {
 		foreach (string version in targets) {
 			failures += RefreshFlavor("web", _registryClient, version);
 			failures += RefreshFlavor("mobile", _mobileRegistryClient, version);
+			failures += RefreshFlavor("requests", _requestRegistryClient, version);
 		}
 
 		return failures == 0 ? 0 : 1;
@@ -93,11 +97,13 @@ public sealed class ComponentRegistryRefreshCommand {
 
 		string cacheDirectory = GetCacheDirectory();
 		string mobileCacheDirectory = Path.Combine(cacheDirectory, RegistryFlavor.Mobile.CacheSubdirectoryName);
+		string requestsCacheDirectory = Path.Combine(cacheDirectory, RegistryFlavor.Requests.CacheSubdirectoryName);
 
-		// Collect versions from both web and mobile cache directories so --all covers both flavors.
+		// Collect versions from every flavor's cache directory so --all covers them all.
 		List<string> versions = new();
 		CollectVersionsFrom(cacheDirectory, versions);
 		CollectVersionsFrom(mobileCacheDirectory, versions);
+		CollectVersionsFrom(requestsCacheDirectory, versions);
 
 		if (versions.Count == 0) {
 			_logger.WriteInfo($"Cache directory '{cacheDirectory}' does not exist yet; nothing to refresh in --all mode.");

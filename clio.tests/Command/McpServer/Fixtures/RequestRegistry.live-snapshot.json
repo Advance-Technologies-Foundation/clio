@@ -1,0 +1,501 @@
+{
+	"requests": [
+		{
+			"requestType": "crt.CancelRecordChangesRequest",
+			"parameters": {},
+			"description": "Discards unsaved changes to the current record and reloads its last saved values. Bound to Cancel buttons on record pages; on a mini page, or for a new record that was never saved, it closes the page instead.",
+			"references": {
+				"docs": [
+					"request-docs/cancel-record-changes.request.md"
+				]
+			}
+		},
+		{
+			"requestType": "crt.ClosePageRequest",
+			"parameters": {},
+			"description": "Closes the currently open page. Bound to buttons, menu items, and page commands to dismiss a record page or mini page, prompting to discard any unsaved changes before the page is closed.",
+			"references": {
+				"docs": [
+					"request-docs/close-page.request.md"
+				]
+			}
+		},
+		{
+			"requestType": "crt.PrintablesRequest",
+			"parameters": {
+				"convertInPDF": {
+					"type": "boolean",
+					"description": "Whether to convert the generated report to PDF."
+				},
+				"dataSourceName": {
+					"type": "string",
+					"required": true,
+					"description": "Data source whose records are printed: the page's primary data source when printing the current record, or the selected list/view element data source when printing a records list. The handler always requires `templateId`, `printableCaption` and `dataSourceName` together; in the designer's menu mode only `dataSourceName` (optionally with `filters`) is authored, while `templateId` and `printableCaption` are filled at runtime by the generated menu items."
+				},
+				"filters": {
+					"type": "FilterGroup | JsonObject",
+					"description": "Collection-filter binding that limits the print to the records selected in the list. When set, records are printed by filter. When not set, the handler prints the active record resolved from dataSourceName; if that record is unsaved (Add state) or cannot be resolved, nothing is printed and an info message is shown. Canonical list-page shape (designer parity, prints the checked rows and falls back to the active row when nothing is checked): \"$<GridItems> | crt.ToCollectionFilters : '<GridItems>' : $<Grid>_SelectionState | crt.SkipIfSelectionEmpty : $<Grid>_SelectionState\" - substitute the page's real grid collection and selection-state attribute names from its bundle."
+				},
+				"printableCaption": {
+					"type": "string",
+					"valueSource": {
+						"kind": "environment",
+						"tool": "list-printables"
+					},
+					"description": "Caption of the printable (SysModuleReport.Caption); also used as the downloaded file name. Validation-required on direct calls. In menu mode it is stamped automatically onto each generated menu item from SysModuleReport.Caption; the Interface Designer never writes it."
+				},
+				"templateId": {
+					"type": "string",
+					"valueSource": {
+						"kind": "environment",
+						"tool": "list-printables"
+					},
+					"description": "Id of the SysModuleReport printable to generate; on direct/programmatic calls it is validation-required together with printableCaption and dataSourceName. Omitting it (with dataSourceName set) switches the button into the declarative menu mode: the platform expands it into a menu of every printable available for the data source's entity, stamping templateId and printableCaption onto each menu item at runtime. The Interface Designer only ever authors the menu-mode shape (dataSourceName, optionally filters) and never writes templateId itself."
+				}
+			},
+			"description": "Generates and downloads a report (printable) for the current record or a filtered set of records, optionally converting it to PDF. Bound to print buttons and their generated report menu items.",
+			"references": {
+				"docs": [
+					"request-docs/printables.request.md"
+				]
+			}
+		},
+		{
+			"requestType": "crt.RunBusinessProcessRequest",
+			"parameters": {
+				"activeRow": {
+					"type": "string",
+					"description": "Mobile-only: current row context on a mobile list."
+				},
+				"activeRowAttributeName": {
+					"type": "string",
+					"description": "Mobile-only: name of the view-model attribute holding the current row on a mobile list."
+				},
+				"dataSourceName": {
+					"type": "string",
+					"description": "Data source of the list whose selected records the process runs for (`ForTheSelectedRecords` run type)."
+				},
+				"filters": {
+					"type": "JsonObject",
+					"description": "Collection-filter binding selecting the records to run the process for; paired with `dataSourceName` (`ForTheSelectedRecords` run type)."
+				},
+				"notificationText": {
+					"type": "string",
+					"description": "Text of the start notification; a default is used when not set. Applies when `showNotification` is true."
+				},
+				"parameterMappings": {
+					"type": "Record",
+					"keyType": "string",
+					"valueType": "string",
+					"description": "Single-entry map { \"<ParameterCODE>\": \"<sourceColumn>\" }: the first key is the code of the process input parameter that receives each matched record (`ForTheSelectedRecords` run type); extra entries and the column values are ignored by the client handler."
+				},
+				"processName": {
+					"type": "string",
+					"required": true,
+					"valueSource": {
+						"kind": "environment",
+						"tool": "get-process-signature"
+					},
+					"description": "Code (schema name) of the business process to run, not its display caption."
+				},
+				"processParameters": {
+					"type": "Record",
+					"keyType": "string",
+					"valueType": "unknown",
+					"description": "Input parameters passed to the process, keyed by process parameter code (not caption); values may be static constants or `$Attribute` view-model bindings. A key that does not match a real parameter code is silently dropped by the core."
+				},
+				"processRunType": {
+					"type": "string",
+					"required": true,
+					"values": [
+						"RegardlessOfThePage",
+						"ForTheSelectedPage",
+						"ForTheSelectedRecords"
+					],
+					"description": "How the process is run: `RegardlessOfThePage` (no record context), `ForTheSelectedPage` (the current record), or `ForTheSelectedRecords` (records selected in a list). Determines which of the other parameters apply."
+				},
+				"recordIdProcessParameterName": {
+					"type": "string",
+					"description": "Code of the process parameter that receives the current record's Id; typically used with the `ForTheSelectedPage` run type."
+				},
+				"resultParameterNames": {
+					"type": "array",
+					"items": {
+						"type": "string"
+					},
+					"description": "Codes of the process output parameters to read back after the run (applies to non-`ForTheSelectedRecords` run types)."
+				},
+				"saveAtProcessStart": {
+					"type": "boolean",
+					"description": "Whether to save the current record before the process starts."
+				},
+				"selectionStateAttributeName": {
+					"type": "string",
+					"description": "View-model attribute holding the list's selection state; reset after the process starts (`ForTheSelectedRecords` run type)."
+				},
+				"showNotification": {
+					"type": "boolean",
+					"description": "Whether to show a notification when the process starts."
+				},
+				"sorting": {
+					"type": "array",
+					"items": {
+						"type": "SortColumnOptions"
+					},
+					"description": "Sort order for the matching records (`ForTheSelectedRecords` run type); each entry is `{ columnName, direction }`."
+				}
+			},
+			"description": "Runs a business process - with no record context, for the current record, or for the records selected in a list - optionally saving the record first and notifying when it starts. Bound to buttons and menu items.",
+			"references": {
+				"docs": [
+					"request-docs/run-business-process.request.md"
+				]
+			}
+		}
+	],
+	"references": {
+		"baseParameters": {
+			"$context": {
+				"type": "ViewModelContext",
+				"description": "The view-model context in which the request was triggered. Injected by the platform at dispatch time, never set via the binding's `params`."
+			},
+			"$initialEvent": {
+				"type": "unknown",
+				"description": "The original UI event that triggered the request.",
+				"deprecated": true,
+				"deprecationReason": "use event binding expression instead."
+			},
+			"scopes": {
+				"type": "array",
+				"items": {
+					"type": "string"
+				},
+				"description": "The scope chain of the request. Populated by the platform from the emitting view element, never set via the binding's `params`."
+			},
+			"type": {
+				"type": "string",
+				"description": "Request type discriminator, e.g. \"crt.ClosePageRequest\". Set implicitly by the `request` field of the request binding, never set via the binding's `params`."
+			}
+		},
+		"typeDefinitions": {
+			"BooleanComparisonFilter": {
+				"fields": {
+					"columnPath": {
+						"type": "string",
+						"required": true
+					},
+					"comparisonType": {
+						"type": "string",
+						"values": [
+							"EQUAL"
+						],
+						"required": true
+					},
+					"value": {
+						"type": "boolean",
+						"required": true
+					}
+				}
+			},
+			"DateComparisonFilter": {
+				"fields": {
+					"columnPath": {
+						"type": "string",
+						"required": true
+					},
+					"comparisonType": {
+						"type": "string",
+						"values": [
+							"EQUAL",
+							"NOT_EQUAL",
+							"LESS",
+							"LESS_OR_EQUAL",
+							"GREATER",
+							"GREATER_OR_EQUAL"
+						],
+						"required": true
+					},
+					"value": {
+						"type": "string",
+						"required": true
+					}
+				}
+			},
+			"FilterGroup": {
+				"fields": {
+					"backwardReferenceFilters": {
+						"type": "array",
+						"items": {
+							"type": "object",
+							"shape": {
+								"aggregationType": {
+									"type": "string",
+									"values": [
+										"COUNT",
+										"SUM",
+										"MIN",
+										"MAX",
+										"AVG",
+										"EXISTS",
+										"NOT_EXISTS"
+									],
+									"required": true
+								},
+								"aggregationValue": {
+									"type": "string",
+									"required": true,
+									"description": "it's string, because string | number is not supported in OpenApi"
+								},
+								"columnPath": {
+									"type": "string",
+									"required": true
+								},
+								"comparisonType": {
+									"type": "string",
+									"values": [
+										"EQUAL",
+										"NOT_EQUAL",
+										"LESS",
+										"LESS_OR_EQUAL",
+										"GREATER",
+										"GREATER_OR_EQUAL"
+									],
+									"required": true
+								},
+								"subFilters": {
+									"type": "FilterGroup",
+									"required": true
+								}
+							}
+						},
+						"required": true
+					},
+					"filters": {
+						"type": "(BooleanComparisonFilter | MathComparisonFilter | StringComparisonFilter | DateComparisonFilter | RelativeDateComparisonFilter | LookupComparisonFilter | IsNullComparisonFilter | IsNotNullComparisonFilter | FilterGroup)[]",
+						"required": true
+					},
+					"logicalOperation": {
+						"type": "string",
+						"values": [
+							"AND",
+							"OR"
+						],
+						"required": true
+					}
+				}
+			},
+			"IsNotNullComparisonFilter": {
+				"fields": {
+					"columnPath": {
+						"type": "string",
+						"required": true
+					},
+					"comparisonType": {
+						"type": "string",
+						"values": [
+							"IS_NOT_NULL"
+						],
+						"required": true
+					},
+					"value": {
+						"type": "unknown",
+						"required": true
+					}
+				}
+			},
+			"IsNullComparisonFilter": {
+				"fields": {
+					"columnPath": {
+						"type": "string",
+						"required": true
+					},
+					"comparisonType": {
+						"type": "string",
+						"values": [
+							"IS_NULL"
+						],
+						"required": true
+					},
+					"value": {
+						"type": "unknown",
+						"required": true
+					}
+				}
+			},
+			"JsonObject": {
+				"type": "object",
+				"description": "Arbitrary JSON object."
+			},
+			"LocalizableStringArray": {
+				"type": "array",
+				"items": {
+					"type": "LocalizableStringModel"
+				}
+			},
+			"LocalizableStringModel": {
+				"fields": {
+					"cultureName": {
+						"type": "string",
+						"required": true
+					},
+					"value": {
+						"type": "string",
+						"required": true
+					}
+				}
+			},
+			"LookupComparisonFilter": {
+				"fields": {
+					"columnPath": {
+						"type": "string",
+						"required": true
+					},
+					"comparisonType": {
+						"type": "string",
+						"values": [
+							"EQUAL",
+							"NOT_EQUAL",
+							"EXISTS",
+							"NOT_EXISTS"
+						],
+						"required": true
+					},
+					"value": {
+						"type": "array",
+						"items": {
+							"type": "string"
+						},
+						"required": true
+					}
+				}
+			},
+			"MathComparisonFilter": {
+				"fields": {
+					"columnPath": {
+						"type": "string",
+						"required": true
+					},
+					"comparisonType": {
+						"type": "string",
+						"values": [
+							"EQUAL",
+							"NOT_EQUAL",
+							"LESS",
+							"LESS_OR_EQUAL",
+							"GREATER",
+							"GREATER_OR_EQUAL"
+						],
+						"required": true
+					},
+					"value": {
+						"type": "number",
+						"required": true
+					}
+				}
+			},
+			"RelativeDateComparisonFilter": {
+				"fields": {
+					"columnPath": {
+						"type": "string",
+						"required": true
+					},
+					"comparisonType": {
+						"type": "string",
+						"values": [
+							"EQUAL",
+							"NOT_EQUAL",
+							"LESS",
+							"LESS_OR_EQUAL",
+							"GREATER",
+							"GREATER_OR_EQUAL"
+						],
+						"required": true
+					},
+					"value": {
+						"type": "string",
+						"required": true
+					}
+				}
+			},
+			"RequestBindingConfig": {
+				"fields": {
+					"params": {
+						"type": "Record",
+						"keyType": "string",
+						"valueType": "string | boolean | number | null | undefined | RequestParamsBindingConfig | RequestParamBindingConfigValue[] | LocalizableStringArray",
+						"required": true
+					},
+					"request": {
+						"type": "string",
+						"required": true
+					},
+					"skipOnError": {
+						"type": "boolean"
+					},
+					"useRelativeContext": {
+						"type": "boolean"
+					}
+				}
+			},
+			"RequestParamBindingConfigValue": {
+				"type": "string | boolean | number | null | undefined | RequestParamsBindingConfig | RequestParamBindingConfigValue[] | LocalizableStringArray"
+			},
+			"RequestParamsBindingConfig": {
+				"type": "Record",
+				"keyType": "string",
+				"valueType": "RequestParamBindingConfigValue"
+			},
+			"SortColumnOptions": {
+				"fields": {
+					"columnName": {
+						"type": "string",
+						"required": true,
+						"description": "Column name."
+					},
+					"direction": {
+						"type": "string",
+						"required": true,
+						"values": [
+							"asc",
+							"desc",
+							"none"
+						],
+						"description": "Sort direction."
+					},
+					"visible": {
+						"type": "boolean",
+						"description": "Indicates whether the column is included in the result set."
+					}
+				}
+			},
+			"StringComparisonFilter": {
+				"fields": {
+					"columnPath": {
+						"type": "string",
+						"required": true
+					},
+					"comparisonType": {
+						"type": "string",
+						"values": [
+							"EQUAL",
+							"NOT_EQUAL",
+							"START_WITH",
+							"NOT_START_WITH",
+							"CONTAIN",
+							"NOT_CONTAIN",
+							"END_WITH",
+							"NOT_END_WITH",
+							"EXISTS",
+							"NOT_EXISTS"
+						],
+						"required": true
+					},
+					"value": {
+						"type": "string",
+						"required": true
+					}
+				}
+			}
+		}
+	}
+}
