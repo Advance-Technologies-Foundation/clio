@@ -70,7 +70,39 @@ AAA with `because`; `[Description(...)]` per method; `[Category("Unit")]`.
 
 ## Dev Agent Record
 
-- Implementation started:
-- Implementation completed:
-- Tests passing:
-- Notes:
+- Implementation started: 2026-07-20
+- Implementation completed: 2026-07-20
+- Tests passing: Yes — `dotnet test clio.tests/clio.tests.csproj -f net10.0 --filter "Category=Unit&Module=Command"` (includes the two new tests) and `--filter "Category=Unit&Module=McpServer"` (seed tool tier unaffected). See counts below.
+
+### OQ-01 resolution — seed-data contract decision (Name-keyed dedup, KEEP unchanged)
+
+Committed scope KEEPS `DataBindingDbCommand` / `DataBindingDbService.CreateBinding`→`ProcessRows` unchanged.
+The seed path dedups **by `Name`** (`SkippedRows`), NOT by `Id`, and does NOT route through
+`IDataBindingDbService.UpsertRow`. Arbitrary upsert-by-key is a deferred future story.
+
+**Verbatim contract text for Story 4 (U4) to stamp into contract/docs/guidance — TC-U-30 / AC-DOC:**
+
+> a row is replay-safe only when the target schema has a `Name` column AND the row carries a `Name`;
+> rows without a `Name` (or schemas without a `Name` column) are non-convergent — a stable-`Id`,
+> no-`Name` row PK-conflicts on replay.
+
+Recommendation for a future additive story (NOT this one, NOT Story 4): route value-updating rows
+through `IDataBindingDbService.UpsertRow` (keyed on `Id`) or add an optional kebab `uniqueness-key` arg.
+
+### Notes
+
+- **Test tier deviation (sanctioned by the story's escape hatch).** The two regression tests were added
+  to `clio.tests/Command/DataBindingDbCommandTests.cs` (`[Property("Module","Command")]`, `[Category("Unit")]`
+  inherited from `BaseClioModuleTests`), NOT `SchemaSyncToolTests.cs`. Reason: the `Name`-keyed dedup lives in
+  `DataBindingDbService.CreateBinding`→`ProcessRows`; the SchemaSyncTool tier substitutes `IDataBindingDbService`
+  wholesale (`FakeCreateDataBindingDbCommand`) AND `SchemaSyncTool.ExecuteSeedData` discards the
+  `DataBindingResult` (only exit code + log messages surface). So `SkippedRows`/`CreatedRows` are observable
+  ONLY by calling `IDataBindingDbService.CreateBinding` directly. A tool-tier test could only re-assert success,
+  which the task explicitly forbids.
+- Tests added (both resolve `IDataBindingDbService` from the DI container and assert on the returned `DataBindingResult`):
+  - `CreateBinding_Should_Report_SkippedRows_And_No_Duplicate_Insert_When_Replayed_With_NameBearing_Rows` (TC-U-22/26):
+    `SkippedRows` populated with the existing Id, `CreatedRows` empty, no `InsertQuery` for the already-present Name.
+  - `CreateBinding_Should_Insert_With_Explicit_Id_And_Not_Skip_When_Row_Has_Stable_Id_But_No_Name` (TC-U-23):
+    a stable-`Id`, no-`Name` row lands in `CreatedRows` with its explicit Id, `SkippedRows` empty, `InsertQuery`
+    received with that Id — the behavioral proof of non-convergence (verbatim contract-text assertion is Story 4 / TC-U-30).
+- No production seed-path code changed. `outcome`/contract untouched.
