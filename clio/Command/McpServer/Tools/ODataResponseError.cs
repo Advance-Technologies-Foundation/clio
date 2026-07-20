@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Text.Json;
 
 namespace Clio.Command.McpServer.Tools;
@@ -40,61 +41,72 @@ internal static class ODataResponseError {
 	/// <returns><see langword="true"/> when <paramref name="root"/> is a recognized error body.</returns>
 	public static bool TryDetect(JsonElement root, out string message) {
 		message = string.Empty;
-		if (root.ValueKind != JsonValueKind.Object) {
+		return root.ValueKind == JsonValueKind.Object
+			&& (TryDetectODataV4Error(root, out message)
+				|| TryDetectAspNetException(root, out message)
+				|| TryDetectRoutingError(root, out message));
+	}
+
+	// OData v4 error envelope: { "error": { "message": ... } }.
+	private static bool TryDetectODataV4Error(JsonElement root, out string message) {
+		message = string.Empty;
+		if (!(root.TryGetProperty("error", out JsonElement error) && error.ValueKind == JsonValueKind.Object)) {
 			return false;
 		}
+		message = error.TryGetProperty("message", out JsonElement m) && m.ValueKind == JsonValueKind.String
+			? m.GetString()!
+			: error.GetRawText();
+		return true;
+	}
 
-		// OData v4 error envelope.
-		if (root.TryGetProperty("error", out JsonElement error) && error.ValueKind == JsonValueKind.Object) {
-			message = error.TryGetProperty("message", out JsonElement m) && m.ValueKind == JsonValueKind.String
-				? m.GetString()!
-				: error.GetRawText();
-			return true;
-		}
-
-		// ASP.NET Web API HttpError envelope (ExceptionType / ExceptionMessage never appear on real entities).
+	// ASP.NET Web API HttpError envelope (ExceptionType / ExceptionMessage never appear on real entities).
+	private static bool TryDetectAspNetException(JsonElement root, out string message) {
+		message = string.Empty;
 		bool isAspNetError = root.TryGetProperty("ExceptionType", out _)
 			|| root.TryGetProperty("ExceptionMessage", out _)
 			|| root.TryGetProperty("StackTrace", out _);
-		if (isAspNetError) {
-			message = First(root, "ExceptionMessage", "Message") ?? "Creatio returned a server error.";
-			return true;
+		if (!isAspNetError) {
+			return false;
 		}
+		message = First(root, "ExceptionMessage", "Message") ?? "Creatio returned a server error.";
+		return true;
+	}
 
-		// ASP.NET Web API routing error: { "Message": ..., "MessageDetail": ... } with no exception
-		// members. This is a 404 "No HTTP resource / no controller found" for an unregistered entity
-		// set. Detection is deliberately locked to that shape and must never pre-empt a real payload:
-		// a genuine OData response always carries another member — an @odata.context annotation
-		// (present under the default OData metadata level this tool relies on), a value collection
-		// wrapper, or the created record's Id — so a body whose only members are Message (+
-		// MessageDetail) is an error, not data. NOTE: this safety rests on default OData metadata; a
-		// single-entity read served with odata.metadata=none that selected only a Message-named column
-		// would lose its distinguishing member and be misclassified. No current call site does that
-		// (odata-read hits the collection endpoint; odata-create echoes an Id), so the precondition is
-		// safe today — revisit this branch before adding a by-key/metadata=none read path.
-		if (root.TryGetProperty("Message", out JsonElement bareMessage)
+	// ASP.NET Web API routing error: { "Message": ..., "MessageDetail": ... } with no exception
+	// members. This is a 404 "No HTTP resource / no controller found" for an unregistered entity
+	// set. Detection is deliberately locked to that shape and must never pre-empt a real payload:
+	// a genuine OData response always carries another member — an @odata.context annotation
+	// (present under the default OData metadata level this tool relies on), a value collection
+	// wrapper, or the created record's Id — so a body whose only members are Message (+
+	// MessageDetail) is an error, not data. NOTE: this safety rests on default OData metadata; a
+	// single-entity read served with odata.metadata=none that selected only a Message-named column
+	// would lose its distinguishing member and be misclassified. No current call site does that
+	// (odata-read hits the collection endpoint; odata-create echoes an Id), so the precondition is
+	// safe today — revisit this branch before adding a by-key/metadata=none read path.
+	private static bool TryDetectRoutingError(JsonElement root, out string message) {
+		message = string.Empty;
+		if (!(root.TryGetProperty("Message", out JsonElement bareMessage)
 			&& bareMessage.ValueKind == JsonValueKind.String
-			&& !HasNonRoutingErrorMembers(root)) {
-			// Surface the most specific text: MessageDetail ("No type was found that matches the
-			// controller named 'X'") when present, else the bare Message.
-			string? detail = First(root, "MessageDetail");
-			string primary = !string.IsNullOrEmpty(detail) ? detail! : bareMessage.GetString() ?? string.Empty;
-			if (string.IsNullOrEmpty(primary)) {
-				message = "Creatio returned an empty error response.";
-				return true;
-			}
-			// The unregistered-entity hint (wait-and-retry, not compile/restart) is tied to a CONTENT
-			// signal, not the bare {Message[,MessageDetail]} shape: other ASP.NET Web API HttpError
-			// bodies can share that shape, and telling the agent to wait for an async rebuild on an
-			// unrelated, non-transient failure would delay correct diagnosis. Append it only for the
-			// genuine routing miss; otherwise surface the message alone (still success=false).
-			message = IsRoutingMiss(detail) || IsRoutingMiss(bareMessage.GetString())
-				? $"{primary} {UnregisteredEntityHint}"
-				: primary;
+			&& !HasNonRoutingErrorMembers(root))) {
+			return false;
+		}
+		// Surface the most specific text: MessageDetail ("No type was found that matches the
+		// controller named 'X'") when present, else the bare Message.
+		string? detail = First(root, "MessageDetail");
+		string primary = !string.IsNullOrEmpty(detail) ? detail! : bareMessage.GetString() ?? string.Empty;
+		if (string.IsNullOrEmpty(primary)) {
+			message = "Creatio returned an empty error response.";
 			return true;
 		}
-
-		return false;
+		// The unregistered-entity hint (wait-and-retry, not compile/restart) is tied to a CONTENT
+		// signal, not the bare {Message[,MessageDetail]} shape: other ASP.NET Web API HttpError
+		// bodies can share that shape, and telling the agent to wait for an async rebuild on an
+		// unrelated, non-transient failure would delay correct diagnosis. Append it only for the
+		// genuine routing miss; otherwise surface the message alone (still success=false).
+		message = IsRoutingMiss(detail) || IsRoutingMiss(bareMessage.GetString())
+			? $"{primary} {UnregisteredEntityHint}"
+			: primary;
+		return true;
 	}
 
 	/// <summary>
@@ -112,14 +124,9 @@ internal static class ODataResponseError {
 	/// (<c>Message</c> / <c>MessageDetail</c>), which indicates a real OData payload (metadata,
 	/// <c>value</c>, or entity columns) rather than a bare error body.
 	/// </summary>
-	private static bool HasNonRoutingErrorMembers(JsonElement root) {
-		foreach (JsonProperty property in root.EnumerateObject()) {
-			if (!property.NameEquals("Message") && !property.NameEquals("MessageDetail")) {
-				return true;
-			}
-		}
-		return false;
-	}
+	private static bool HasNonRoutingErrorMembers(JsonElement root) =>
+		root.EnumerateObject().Any(property =>
+			!property.NameEquals("Message") && !property.NameEquals("MessageDetail"));
 
 	private static string? First(JsonElement root, params string[] names) {
 		foreach (string name in names) {
