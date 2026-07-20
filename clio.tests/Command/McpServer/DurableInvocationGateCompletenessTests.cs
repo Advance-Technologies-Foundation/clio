@@ -51,7 +51,6 @@ public sealed class DurableInvocationGateCompletenessTests {
 		"generate-source-code",
 		"get-browser-session",
 		"get-classic-migration-bundle",
-		"get-classic-schema-by-uid",
 		"get-client-unit-schema",
 		"get-identity-assertion",
 		"get-page",

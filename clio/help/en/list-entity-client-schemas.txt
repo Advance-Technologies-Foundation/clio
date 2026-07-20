@@ -21,7 +21,8 @@ DESCRIPTION
 
     This is one level only: the migration workflow recurses into detail entities
     separately. The command is pure ESQ over the page-role metadata; it does not
-    read or parse any schema body (use get-classic-schema-by-uid for bodies).
+    read or parse any schema body (use get-classic-migration-bundle to assemble
+    the layer bodies into a migration manifest).
 
 OPTIONS
     --entity-name                      Entity schema name, e.g. 'Contract' or
@@ -48,5 +49,4 @@ REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio
 
 SEE ALSO
-    list-schema-hierarchy - List every package schema of a client unit schema by name
-    get-classic-schema-by-uid - Read a specific schema body by its UId
+    get-classic-migration-bundle - Assemble the Classic->Freedom migration manifest (layer bodies + resolution inputs)

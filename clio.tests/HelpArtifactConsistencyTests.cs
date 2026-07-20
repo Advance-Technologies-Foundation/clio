@@ -67,9 +67,7 @@ internal class HelpArtifactConsistencyTests {
 	public void ClassicToFreedomSchemaCommands_ShouldBeClassifiedWithDescription_WhenCatalogBuilt() {
 		// Arrange
 		string[] verbs = [
-			"get-classic-schema-by-uid",
 			"get-classic-migration-bundle",
-			"list-schema-hierarchy",
 			"list-entity-client-schemas"
 		];
 		CommandHelpCatalog catalog = new();

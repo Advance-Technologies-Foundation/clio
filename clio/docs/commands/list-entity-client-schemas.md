@@ -21,7 +21,7 @@ fails instead of guessing which entity schema UId to use.
 
 This is one level only: the migration workflow recurses into detail entities separately. The
 command is pure ESQ over the page-role metadata; it does not read or parse any schema body (use
-`get-classic-schema-by-uid` for bodies).
+`get-classic-migration-bundle` to assemble the layer bodies into a migration manifest).
 
 ## Synopsis
 

@@ -357,9 +357,6 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="generate-process-model"></a>
 <a id="gpm"></a>
 - [`generate-process-model`](docs/commands/generate-process-model.md) - Generate process model for ATF.Repository, `gpm`
-<a id="get-classic-schema-by-uid"></a>
-<a id="classic-schema-get"></a>
-- [`get-classic-schema-by-uid`](docs/commands/get-classic-schema-by-uid.md) - Read the body and metadata of a specific Classic client unit schema by its SysSchema.UId, `classic-schema-get`
 <a id="get-classic-migration-bundle"></a>
 <a id="classic-migration-bundle"></a>
 - [`get-classic-migration-bundle`](docs/commands/get-classic-migration-bundle.md) - Assemble a Classic->Freedom migration bundle and write the manifest JSON to disk, `classic-migration-bundle`
@@ -434,9 +431,6 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="list-pages"></a>
 <a id="page-list"></a>
 - [`list-pages`](docs/commands/list-pages.md) - List Freedom UI pages, `page-list`
-<a id="list-schema-hierarchy"></a>
-<a id="schema-hierarchy-list"></a>
-- [`list-schema-hierarchy`](docs/commands/list-schema-hierarchy.md) - List every package schema of a client unit schema by name (base + all replacing schemas), `schema-hierarchy-list`
 <a id="update-client-unit-schema"></a>
 <a id="client-unit-schema-update"></a>
 - [`update-client-unit-schema`](docs/commands/update-client-unit-schema.md) - Update the raw body of a client unit schema, `client-unit-schema-update`
