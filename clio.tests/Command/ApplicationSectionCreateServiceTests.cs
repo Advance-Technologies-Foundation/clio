@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
@@ -625,8 +626,11 @@ public sealed class ApplicationSectionCreateServiceTests {
 		_ = sut.CreateSection("sandbox", CreateReuseEntityRequest());
 
 		// Assert
-		logger.Received(1).EndSpinner(true);
-		logger.DidNotReceive().EndSpinner(false);
+		logger.ReceivedCalls()
+			.Where(call => call.GetMethodInfo().Name == nameof(ILogger.EndSpinner))
+			.Select(call => (bool)call.GetArguments()[0])
+			.Should().ContainSingle(because: "the happy path ends the create-section spinner exactly once")
+			.Which.Should().BeTrue(because: "the single spinner end must report success=true and never a failure end");
 	}
 
 	[Test]
@@ -641,8 +645,11 @@ public sealed class ApplicationSectionCreateServiceTests {
 		_ = sut.CreateSection("sandbox", CreateReuseEntityRequest(), enableContentionRetry: true);
 
 		// Assert
-		logger.Received(1).EndSpinner(true);
-		logger.DidNotReceive().EndSpinner(false);
+		logger.ReceivedCalls()
+			.Where(call => call.GetMethodInfo().Name == nameof(ILogger.EndSpinner))
+			.Select(call => (bool)call.GetArguments()[0])
+			.Should().ContainSingle(because: "the contention retry that finally succeeds ends the spinner exactly once across all retry branches")
+			.Which.Should().BeTrue(because: "the single spinner end must report success=true and never double-end with a failure");
 	}
 
 	[Test]
@@ -675,8 +682,11 @@ public sealed class ApplicationSectionCreateServiceTests {
 		_ = sut.CreateSection("sandbox", CreateReuseEntityRequest());
 
 		// Assert
-		logger.Received(1).EndSpinner(true);
-		logger.DidNotReceive().EndSpinner(false);
+		logger.ReceivedCalls()
+			.Where(call => call.GetMethodInfo().Name == nameof(ILogger.EndSpinner))
+			.Select(call => (bool)call.GetArguments()[0])
+			.Should().ContainSingle(because: "the insert-timeout recovery path where the section is already visible ends the spinner exactly once")
+			.Which.Should().BeTrue(because: "the single spinner end must report success=true and never leave the spinner double-ended");
 	}
 
 	[Test]
