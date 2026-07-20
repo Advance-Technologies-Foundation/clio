@@ -407,6 +407,17 @@ Why `sync-schemas` matters:
 - it batches create/update/seed actions
 - it is a better fit for agents that want one atomic plan execution instead of many tiny tool calls
 
+**Per-operation `status` values.** Each entry in `results` carries a machine-readable `status`:
+`completed` or `failed`. `create-lookup` can additionally report the additive `resumed-existing`
+status: on a resubmit where the lookup already exists in the target package but the requested
+columns could NOT be verified (the column read threw or failed), the operation still completes the
+outstanding registration with `success: true` but returns `status: "resumed-existing"` plus a
+warning that the requested columns are NOT confirmed present — verify with
+`get-entity-schema-properties` or resubmit. When the read succeeds and a requested column is
+genuinely missing, the operation fails honestly (`success: false`) with the "use update-entity to
+add columns" hint rather than masquerading as `completed`. Consumers should treat any
+non-`completed` status as not-fully-verified.
+
 ### 4. User Task Engineering
 
 This is a focused but meaningful workspace-backed capability.

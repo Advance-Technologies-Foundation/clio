@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
+using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
 using Clio.Common.DataForge;
 using ModelContextProtocol.Protocol;
@@ -230,7 +231,9 @@ public sealed class SchemaSyncTool(
 	// separate completed from failed operations without positional guessing.
 	private static SchemaSyncOperationResult Classify(SchemaSyncOperationResult result, int operationIndex) {
 		result.OperationIndex = operationIndex;
-		result.Status = result.Success ? "completed" : "failed";
+		// Preserve a status already set by FinalizeResult (e.g. the forced "resumed-existing"); only default
+		// it when nothing set one (validation/unknown-op/catch-path results that never reach FinalizeResult).
+		result.Status ??= result.Success ? "completed" : "failed";
 		return result;
 	}
 
@@ -322,6 +325,7 @@ public sealed class SchemaSyncTool(
 			// FindEntitySchema round-trips under the per-tenant lock.
 			SchemaSyncCollisionInfo? collision = null;
 			bool collisionProbed = false;
+			bool resumedExisting = false;
 			if (isLookup) {
 				bool schemaApplied = createExecution.ExitCode == 0 && createExecution.CaughtException is null;
 				if (!schemaApplied && createExecution.CaughtException is null) {
@@ -329,16 +333,53 @@ public sealed class SchemaSyncTool(
 					collisionProbed = true;
 					if (collision is not null
 						&& string.Equals(collision.ExistingPackageName, args.PackageName, StringComparison.OrdinalIgnoreCase)) {
-						// Idempotent resume: the schema already exists in the TARGET package, so a prior
-						// (possibly interrupted) attempt applied the create. Skip recreating and finish the
-						// outstanding registration instead of failing the whole op on the collision. This
-						// closes the resume hole where a create succeeded but its registration flapped: the
-						// echoed create-lookup can be resubmitted and still complete registration (ENG-93374).
-						var idempotentMessages = new List<LogMessage>(createExecution.Messages) {
-							new InfoMessage($"sync-schemas: '{op.SchemaName}' already exists in package '{args.PackageName}'; skipping re-create and completing lookup registration.")
-						};
-						execution = new OperationExecution(0, null, idempotentMessages, createExecution.Attempts);
-						schemaApplied = true;
+						// Idempotent resume: the schema already exists in the TARGET package. A prior
+						// (possibly interrupted) attempt may have applied the create, so instead of failing
+						// blindly on the collision, verify the requested columns against the schema's actual
+						// columns and only resume when they landed (ENG-93374). The single collision probe
+						// above is reused; a same-package collision with non-empty columns issues exactly one
+						// extra read-only round-trip to answer "did my columns land?".
+						bool hasColumns = op.Columns?.Any() == true;
+						// Empty columns → resume exactly as before (FR-01 fast-path, no read round-trip).
+						ColumnVerification outcome = ColumnVerification.Verified;
+						IReadOnlyList<string> missing = [];
+						Exception? probeFault = null;
+						if (hasColumns) {
+							(outcome, missing, probeFault) = VerifyRequestedColumns(op, args);
+						}
+						switch (outcome) {
+							case ColumnVerification.Verified:
+								// FR-04/FR-01: legitimate resume. Build a fresh info note ONLY — the failed
+								// create's Error-level messages are dropped so a completed result never carries
+								// them (FR-06).
+								execution = new OperationExecution(0, null,
+									[new InfoMessage($"sync-schemas: '{op.SchemaName}' already exists in package '{args.PackageName}'; skipping re-create and completing lookup registration.")],
+									createExecution.Attempts);
+								schemaApplied = true;
+								break;
+							case ColumnVerification.Unverified:
+								// FR-05: the column read could not run, so we cannot confirm the columns landed.
+								// Degrade to the distinct resumed-existing status with a warning (never blind
+								// success), carrying a fresh warning line ONLY (FR-06).
+								execution = new OperationExecution(0, null,
+									[new WarningMessage($"sync-schemas: '{op.SchemaName}' already exists in package '{args.PackageName}' but the requested columns could NOT be verified ({DescribeProbeFault(probeFault)}); completing registration, but the requested columns are NOT confirmed present — verify with get-entity-schema-properties or resubmit.")],
+									createExecution.Attempts);
+								schemaApplied = true;
+								resumedExisting = true;
+								break;
+							case ColumnVerification.Missing:
+								// FR-03: a confirmed durable collision — the schema pre-existed WITHOUT the
+								// requested columns. Do NOT force success: leave schemaApplied=false so the
+								// normal failure path returns success:false plus the "use update-entity to add
+								// columns" collision hint; registration is NOT invoked. Name the missing
+								// columns for actionability while preserving the genuine failure diagnostics.
+								execution = new OperationExecution(
+									createExecution.ExitCode, createExecution.CaughtException,
+									[.. createExecution.Messages,
+										new WarningMessage($"sync-schemas: '{op.SchemaName}' already exists in package '{args.PackageName}' but is missing the requested column(s): {string.Join(", ", missing)}. Use update-entity to add them.")],
+									createExecution.Attempts);
+								break;
+						}
 					}
 				}
 				// A transient fault in registration is retried on its OWN scope, so a registration flap
@@ -357,7 +398,8 @@ public sealed class SchemaSyncTool(
 				}
 			}
 			return FinalizeResult(operationName, op.SchemaName, execution, tenantKey,
-				collisionArgs: args, precomputedCollision: collision, collisionAlreadyProbed: collisionProbed);
+				collisionArgs: args, precomputedCollision: collision, collisionAlreadyProbed: collisionProbed,
+				forcedStatus: resumedExisting ? "resumed-existing" : null);
 		} catch (Exception ex) when (!McpExceptionPolicy.IsUnrecoverable(ex)) {
 			// Deterministic option-building failures (localization/guardrail validation) are not network
 			// faults and are never retried — surface them exactly as before.
@@ -392,6 +434,64 @@ public sealed class SchemaSyncTool(
 			return null;
 		}
 	}
+
+	/// <summary>
+	/// Outcome of verifying a create-lookup op's requested columns against the existing target-package
+	/// schema on a same-package collision.
+	/// </summary>
+	private enum ColumnVerification {
+		/// <summary>Every requested column is already present (or none were requested) — legitimate resume.</summary>
+		Verified,
+		/// <summary>The read succeeded and at least one requested column is absent — a durable collision.</summary>
+		Missing,
+		/// <summary>The column read could not run (threw or exited non-zero), so presence is unconfirmed.</summary>
+		Unverified
+	}
+
+	// Verifies the create-lookup op's requested columns against the existing schema's actual columns via a
+	// SINGLE read-only round-trip (reusing the resolver, like the collision probe — NOT wrapped in RunAttempts).
+	// Routes on read-success vs read-failure: a "missing" answer can only come from a successful read, so a
+	// probe fault degrades to Unverified (never Missing), which the caller turns into resumed-existing rather
+	// than a false durable-collision failure. The caller invokes this only for a same-package collision with
+	// non-empty columns; the empty-columns fast-path never reads.
+	private (ColumnVerification Outcome, IReadOnlyList<string> Missing, Exception? ProbeFault)
+		VerifyRequestedColumns(SchemaSyncOperation op, SchemaSyncArgs args) {
+		IReadOnlyList<string> requested = (op.Columns ?? [])
+			.Select(column => column.ResolveName())
+			.Where(name => !string.IsNullOrWhiteSpace(name))
+			.Select(name => name!)
+			.ToList();
+		if (requested.Count == 0) {
+			return (ColumnVerification.Verified, [], null);
+		}
+		try {
+			GetEntitySchemaPropertiesOptions readOptions = new() {
+				Environment = args.EnvironmentName,
+				SchemaName = op.SchemaName
+			};
+			// Read the merged/effective schema (no --package filter): lookup columns are own-to-target-package,
+			// so name-presence in the merged view is equivalent to the target-package layer, and merged is simpler.
+			EntitySchemaPropertiesInfo properties = commandResolver
+				.Resolve<GetEntitySchemaPropertiesCommand>(readOptions)
+				.GetSchemaProperties(readOptions);
+			var existing = new HashSet<string>(
+				(properties.Columns ?? []).Select(column => column.Name), StringComparer.OrdinalIgnoreCase);
+			IReadOnlyList<string> missing = requested.Where(name => !existing.Contains(name)).ToList();
+			return missing.Count == 0
+				? (ColumnVerification.Verified, [], null)
+				: (ColumnVerification.Missing, missing, null);
+		} catch (Exception ex) when (!McpExceptionPolicy.IsUnrecoverable(ex)) {
+			return (ColumnVerification.Unverified, [], ex);
+		}
+	}
+
+	// Text-only enrichment of the resumed-existing warning: names the likely cause of an unverifiable read.
+	// The transient classifier is used ONLY to phrase the warning — it never routes (routing is strictly
+	// read-success vs read-failure), so it cannot swallow a real missing-column signal.
+	private static string DescribeProbeFault(Exception? probeFault) =>
+		TransientNetworkFailureClassifier.IsTransient(probeFault)
+			? "transient network fault"
+			: "the existing schema could not be read";
 
 	private SchemaSyncOperationResult ExecuteUpdateEntity(SchemaSyncOperation op, SchemaSyncArgs args, string tenantKey, RetryBudget retryBudget) {
 		try {
@@ -573,7 +673,8 @@ public sealed class SchemaSyncTool(
 	// hint when the schema already exists on the server.
 	private SchemaSyncOperationResult FinalizeResult(
 		string operationName, string schemaName, OperationExecution execution, string tenantKey, SchemaSyncArgs? collisionArgs,
-		SchemaSyncCollisionInfo? precomputedCollision = null, bool collisionAlreadyProbed = false) {
+		SchemaSyncCollisionInfo? precomputedCollision = null, bool collisionAlreadyProbed = false,
+		string? forcedStatus = null) {
 		IReadOnlyList<LogMessage> messages = [.. McpPassthroughRedaction.SanitizeAndRedact([.. execution.Messages], tenantKey)];
 		int? attempts = execution.Attempts > 1 ? execution.Attempts : null;
 		// Reuse a collision already probed by the caller (create path) rather than issuing a second
@@ -585,10 +686,13 @@ public sealed class SchemaSyncTool(
 			return collisionArgs is not null ? TryGetCollisionInfo(schemaName, collisionArgs) : null;
 		}
 		if (execution.CaughtException is not null) {
+			// A registration (or other) throw after a resumed-existing degrade must surface as failed —
+			// the forced status only sticks on a genuinely successful, post-registration execution.
 			return new SchemaSyncOperationResult {
 				Type = operationName,
 				SchemaName = schemaName,
 				Success = false,
+				Status = "failed",
 				Error = SensitiveErrorTextRedactor.Redact(execution.CaughtException.Message),
 				Messages = messages,
 				CollisionInfo = ResolveCollision(),
@@ -600,6 +704,9 @@ public sealed class SchemaSyncTool(
 			Type = operationName,
 			SchemaName = schemaName,
 			Success = success,
+			// Derive from the FINAL execution: a forced status (resumed-existing) sticks only when the whole
+			// op — including the outstanding lookup registration — reached exit 0; otherwise it is failed.
+			Status = success ? (forcedStatus ?? "completed") : "failed",
 			Messages = messages,
 			Error = BuildOperationError(operationName, execution.ExitCode, messages),
 			CollisionInfo = !success ? ResolveCollision() : null,

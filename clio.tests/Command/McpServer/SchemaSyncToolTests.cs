@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http;
 using System.Threading.Tasks;
 using Clio.Command;
 using Clio.Command.EntitySchemaDesigner;
@@ -1630,6 +1631,300 @@ public sealed class SchemaSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Empty op.Columns on a same-package collision resumes via the FR-01 fast-path without issuing a column-read round-trip.")]
+	public async Task ExecuteCreateSchema_ShouldResumeWithoutReading_WhenColumnsEmptyAndSamePackageCollision() {
+		// Arrange
+		var logger = new TestLogger();
+		var scriptedCreate = new ScriptedCreateEntitySchemaCommand(logger, Fail("Schema UsrGenre already exists."));
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
+		IRemoteEntitySchemaColumnManager stubManager = Substitute.For<IRemoteEntitySchemaColumnManager>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>()).Returns(scriptedCreate);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>()).Returns(registrationService);
+		commandResolver.Resolve<FindEntitySchemaCommand>(Arg.Any<FindEntitySchemaOptions>())
+			.Returns(new FakeFindEntitySchemaCommand([new EntitySchemaSearchResult("UsrGenre", "UsrPkg", "Customer", "BaseLookup")]));
+		commandResolver.Resolve<GetEntitySchemaPropertiesCommand>(Arg.Any<GetEntitySchemaPropertiesOptions>())
+			.Returns(new GetEntitySchemaPropertiesCommand(stubManager, Substitute.For<ILogger>()));
+		SchemaSyncTool tool = new(commandResolver, logger, retryDelay: Substitute.For<IRetryDelay>());
+		SchemaSyncArgs args = new("dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrGenre", TitleLocalizations: Localizations("Genre"))]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeTrue(because: "an empty-columns same-package collision must still resume (FR-01)");
+		response.Results[0].Status.Should().Be("completed", because: "the empty-columns fast-path completes, not resumed-existing");
+		scriptedCreate.Invocations.Should().Be(1, because: "resume must not re-run create");
+		stubManager.DidNotReceive().GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>());
+		registrationService.Received(1).EnsureLookupRegistration("UsrPkg", "UsrGenre", "Genre");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A same-package collision where every requested column already exists resumes to completed with registration.")]
+	public async Task ExecuteCreateSchema_ShouldResume_WhenAllRequestedColumnsPresent() {
+		// Arrange
+		var logger = new TestLogger();
+		var scriptedCreate = new ScriptedCreateEntitySchemaCommand(logger, Fail("Schema UsrColors already exists."));
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>()).Returns(scriptedCreate);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>()).Returns(registrationService);
+		commandResolver.Resolve<FindEntitySchemaCommand>(Arg.Any<FindEntitySchemaOptions>())
+			.Returns(new FakeFindEntitySchemaCommand([new EntitySchemaSearchResult("UsrColors", "UsrPkg", "Customer", "BaseLookup")]));
+		// Precompute the read command in a local: calling ReadReturning inline as the .Returns argument would
+		// interleave its own NSubstitute setup with the outer call and corrupt the last-call state.
+		GetEntitySchemaPropertiesCommand readCommand = ReadReturning(SchemaWith("UsrHexCode"));
+		commandResolver.Resolve<GetEntitySchemaPropertiesCommand>(Arg.Any<GetEntitySchemaPropertiesOptions>())
+			.Returns(readCommand);
+		SchemaSyncTool tool = new(commandResolver, logger, retryDelay: Substitute.For<IRetryDelay>());
+		SchemaSyncArgs args = new("dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrColors", TitleLocalizations: Localizations("Colors"),
+				Columns: [new CreateEntitySchemaColumnArgs("UsrHexCode", "Text", Localizations("Hex code"))])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeTrue(because: "all requested columns are present → legitimate resume (FR-04)");
+		response.Results[0].Status.Should().Be("completed", because: "a verified resume is completed, not resumed-existing");
+		scriptedCreate.Invocations.Should().Be(1, because: "verified resume must not re-run create");
+		registrationService.Received(1).EnsureLookupRegistration("UsrPkg", "UsrColors", "Colors");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Verification is a case-insensitive subset check: an existing schema with the requested column plus extras still resumes.")]
+	public async Task ExecuteCreateSchema_ShouldResume_WhenRequestedColumnPresentAmongExtrasCaseInsensitive() {
+		// Arrange
+		var logger = new TestLogger();
+		var scriptedCreate = new ScriptedCreateEntitySchemaCommand(logger, Fail("Schema UsrColors already exists."));
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>()).Returns(scriptedCreate);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>()).Returns(registrationService);
+		commandResolver.Resolve<FindEntitySchemaCommand>(Arg.Any<FindEntitySchemaOptions>())
+			.Returns(new FakeFindEntitySchemaCommand([new EntitySchemaSearchResult("UsrColors", "UsrPkg", "Customer", "BaseLookup")]));
+		// existing columns differ in case and include unrelated extras
+		GetEntitySchemaPropertiesCommand readCommand = ReadReturning(SchemaWith("usrhexcode", "UsrLegacy", "UsrNote"));
+		commandResolver.Resolve<GetEntitySchemaPropertiesCommand>(Arg.Any<GetEntitySchemaPropertiesOptions>())
+			.Returns(readCommand);
+		SchemaSyncTool tool = new(commandResolver, logger, retryDelay: Substitute.For<IRetryDelay>());
+		SchemaSyncArgs args = new("dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrColors", TitleLocalizations: Localizations("Colors"),
+				Columns: [new CreateEntitySchemaColumnArgs("UsrHexCode", "Text", Localizations("Hex code"))])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeTrue(because: "presence-by-name is case-insensitive and allows extra existing columns (FR-08)");
+		response.Results[0].Status.Should().Be("completed", because: "a verified resume via subset check is completed");
+		registrationService.Received(1).EnsureLookupRegistration("UsrPkg", "UsrColors", "Colors");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A create-lookup that fails with no same-name schema found returns the honest failure unchanged — the resume sub-branch is never entered because collision is null.")]
+	public async Task ExecuteCreateSchema_ShouldReturnHonestFailure_WhenNoCollisionSchemaFound() {
+		// Arrange
+		var logger = new TestLogger();
+		var scriptedCreate = new ScriptedCreateEntitySchemaCommand(logger, Fail("create-lookup failed with exit code 1: network timeout"));
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
+		IRemoteEntitySchemaColumnManager stubManager = Substitute.For<IRemoteEntitySchemaColumnManager>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>()).Returns(scriptedCreate);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>()).Returns(registrationService);
+		commandResolver.Resolve<FindEntitySchemaCommand>(Arg.Any<FindEntitySchemaOptions>())
+			.Returns(new FakeFindEntitySchemaCommand([])); // schema not found → collision is null
+		commandResolver.Resolve<GetEntitySchemaPropertiesCommand>(Arg.Any<GetEntitySchemaPropertiesOptions>())
+			.Returns(new GetEntitySchemaPropertiesCommand(stubManager, Substitute.For<ILogger>()));
+		SchemaSyncTool tool = new(commandResolver, logger, retryDelay: Substitute.For<IRetryDelay>());
+		SchemaSyncArgs args = new("dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrColors", TitleLocalizations: Localizations("Colors"),
+				Columns: [new CreateEntitySchemaColumnArgs("UsrHexCode", "Text", Localizations("Hex code"))])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeFalse(because: "no collision means the create failure stands as-is (AC-ERR)");
+		response.Results[0].Status.Should().Be("failed", because: "a non-collision failure is classified failed");
+		response.Results[0].CollisionInfo.Should().BeNull(because: "no same-name schema was found");
+		stubManager.DidNotReceive().GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>());
+		registrationService.DidNotReceive().EnsureLookupRegistration(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A same-package collision where a requested column is missing (UsrColors/UsrHexCode) must NOT force success — returns success:false with the use-update-entity hint and does not register.")]
+	public async Task ExecuteCreateSchema_ShouldReturnFailureWithUpdateEntityHint_WhenRequestedColumnMissing() {
+		// Arrange
+		var logger = new TestLogger();
+		var scriptedCreate = new ScriptedCreateEntitySchemaCommand(logger, Fail("Schema UsrColors already exists."));
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>()).Returns(scriptedCreate);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>()).Returns(registrationService);
+		commandResolver.Resolve<FindEntitySchemaCommand>(Arg.Any<FindEntitySchemaOptions>())
+			.Returns(new FakeFindEntitySchemaCommand([new EntitySchemaSearchResult("UsrColors", "UsrPkg", "Customer", "BaseLookup")]));
+		// existing schema does NOT contain the requested UsrHexCode column → durable collision
+		GetEntitySchemaPropertiesCommand readCommand = ReadReturning(SchemaWith("Name", "Code"));
+		commandResolver.Resolve<GetEntitySchemaPropertiesCommand>(Arg.Any<GetEntitySchemaPropertiesOptions>())
+			.Returns(readCommand);
+		SchemaSyncTool tool = new(commandResolver, logger, retryDelay: Substitute.For<IRetryDelay>());
+		SchemaSyncArgs args = new("dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrColors", TitleLocalizations: Localizations("Colors"),
+				Columns: [new CreateEntitySchemaColumnArgs("UsrHexCode", "Text", Localizations("Hex code"))])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeFalse(because: "a confirmed durable collision must fail honestly, not force success (FR-03)");
+		response.Results[0].Status.Should().Be("failed", because: "a durable collision is classified failed");
+		response.Results[0].CollisionInfo!.Hint.Should().Contain("update-entity",
+			because: "the caller must be told to add the columns via update-entity");
+		registrationService.DidNotReceive().EnsureLookupRegistration(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>());
+		string.Join(" ", GetMessageValues(response.Results[0])).Should().Contain("UsrHexCode",
+			because: "the missing column is named for actionability");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("When the column-verification read throws (transient), the op degrades to status resumed-existing with success:true and a NOT-verified warning — never a plain completed.")]
+	public async Task ExecuteCreateSchema_ShouldDegradeToResumedExisting_WhenColumnReadThrows() {
+		// Arrange
+		var logger = new TestLogger();
+		var scriptedCreate = new ScriptedCreateEntitySchemaCommand(logger, Fail("Schema UsrColors already exists."));
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>()).Returns(scriptedCreate);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>()).Returns(registrationService);
+		commandResolver.Resolve<FindEntitySchemaCommand>(Arg.Any<FindEntitySchemaOptions>())
+			.Returns(new FakeFindEntitySchemaCommand([new EntitySchemaSearchResult("UsrColors", "UsrPkg", "Customer", "BaseLookup")]));
+		(GetEntitySchemaPropertiesCommand readCommand, _) = ReadThrowing(new HttpRequestException("No such host is known."));
+		commandResolver.Resolve<GetEntitySchemaPropertiesCommand>(Arg.Any<GetEntitySchemaPropertiesOptions>()).Returns(readCommand);
+		SchemaSyncTool tool = new(commandResolver, logger, retryDelay: Substitute.For<IRetryDelay>());
+		SchemaSyncArgs args = new("dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrColors", TitleLocalizations: Localizations("Colors"),
+				Columns: [new CreateEntitySchemaColumnArgs("UsrHexCode", "Text", Localizations("Hex code"))])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeTrue(because: "an unverifiable read must not fail the resume (FR-05, OQ-01)");
+		response.Results[0].Status.Should().Be("resumed-existing",
+			because: "the distinct status flags that columns were NOT verified");
+		string warnings = string.Join(" ", GetMessageValues(response.Results[0]));
+		warnings.Should().Contain("NOT", because: "the warning must state the requested columns were not verified");
+		registrationService.Received(1).EnsureLookupRegistration("UsrPkg", "UsrColors", "Colors");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A resumed success result carries only the fresh Info/Warning line — no Error-level messages carried over from the failed create attempt.")]
+	public async Task FinalizeResult_ShouldDropCreateErrorMessages_WhenResumed() {
+		// Arrange
+		var logger = new TestLogger();
+		// The create fails with an ERROR-level message that must NOT surface in the resumed success result.
+		var scriptedCreate = new ScriptedCreateEntitySchemaCommand(logger, Fail("Schema UsrColors already exists."));
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>()).Returns(scriptedCreate);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>()).Returns(registrationService);
+		commandResolver.Resolve<FindEntitySchemaCommand>(Arg.Any<FindEntitySchemaOptions>())
+			.Returns(new FakeFindEntitySchemaCommand([new EntitySchemaSearchResult("UsrColors", "UsrPkg", "Customer", "BaseLookup")]));
+		GetEntitySchemaPropertiesCommand readCommand = ReadReturning(SchemaWith("UsrHexCode")); // verified resume
+		commandResolver.Resolve<GetEntitySchemaPropertiesCommand>(Arg.Any<GetEntitySchemaPropertiesOptions>())
+			.Returns(readCommand);
+		SchemaSyncTool tool = new(commandResolver, logger, retryDelay: Substitute.For<IRetryDelay>());
+		SchemaSyncArgs args = new("dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrColors", TitleLocalizations: Localizations("Colors"),
+				Columns: [new CreateEntitySchemaColumnArgs("UsrHexCode", "Text", Localizations("Hex code"))])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeTrue(because: "a verified resume succeeds");
+		response.Results[0].Messages.Should().NotContain(
+			m => m.LogDecoratorType == LogDecoratorType.Error,
+			because: "a completed/resumed success result must not carry failed-create Error lines (FR-06/AC-06)");
+		string joined = string.Join(" ", GetMessageValues(response.Results[0]));
+		joined.Should().NotContain("Schema UsrColors already exists.",
+			because: "the raw create error text must be dropped from the success result (the fresh info note is kept)");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("When the read is unverifiable (would degrade to resumed-existing) but the subsequent registration fails, the op is failed and resumed-existing does not stick.")]
+	public async Task ExecuteCreateSchema_ShouldFail_WhenRegistrationFailsAfterResumedExistingDegrade() {
+		// Arrange
+		var logger = new TestLogger();
+		var scriptedCreate = new ScriptedCreateEntitySchemaCommand(logger, Fail("Schema UsrColors already exists."));
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
+		registrationService
+			.When(s => s.EnsureLookupRegistration("UsrPkg", "UsrColors", "Colors"))
+			.Do(_ => throw new InvalidOperationException("Lookup registration failed."));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>()).Returns(scriptedCreate);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>()).Returns(registrationService);
+		commandResolver.Resolve<FindEntitySchemaCommand>(Arg.Any<FindEntitySchemaOptions>())
+			.Returns(new FakeFindEntitySchemaCommand([new EntitySchemaSearchResult("UsrColors", "UsrPkg", "Customer", "BaseLookup")]));
+		(GetEntitySchemaPropertiesCommand readCommand, _) = ReadThrowing(new HttpRequestException("No such host is known."));
+		commandResolver.Resolve<GetEntitySchemaPropertiesCommand>(Arg.Any<GetEntitySchemaPropertiesOptions>()).Returns(readCommand);
+		SchemaSyncTool tool = new(commandResolver, logger, retryDelay: Substitute.For<IRetryDelay>());
+		SchemaSyncArgs args = new("dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrColors", TitleLocalizations: Localizations("Colors"),
+				Columns: [new CreateEntitySchemaColumnArgs("UsrHexCode", "Text", Localizations("Hex code"))])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeFalse(because: "status derives from the final post-registration execution (AC-04-terminal)");
+		response.Results[0].Status.Should().Be("failed", because: "resumed-existing must NOT stick when registration then fails");
+		response.Results[0].Error.Should().Contain("Lookup registration failed",
+			because: "the registration failure is the surfaced error");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A collision resolving to a DIFFERENT package must not enter the resume branch: create runs once, Success==false, registration is not invoked, and no column-read is issued.")]
+	public async Task ExecuteCreateSchema_ShouldNotSkipCreateOrRegister_WhenCollisionInDifferentPackage() {
+		// Arrange
+		var logger = new TestLogger();
+		var scriptedCreate = new ScriptedCreateEntitySchemaCommand(logger, Fail("Schema UsrColors already exists."));
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
+		IRemoteEntitySchemaColumnManager stubManager = Substitute.For<IRemoteEntitySchemaColumnManager>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>()).Returns(scriptedCreate);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>()).Returns(registrationService);
+		// collision.ExistingPackageName ("OtherPackage") != args.PackageName ("UsrPkg")
+		commandResolver.Resolve<FindEntitySchemaCommand>(Arg.Any<FindEntitySchemaOptions>())
+			.Returns(new FakeFindEntitySchemaCommand([new EntitySchemaSearchResult("UsrColors", "OtherPackage", "Customer", "BaseLookup")]));
+		commandResolver.Resolve<GetEntitySchemaPropertiesCommand>(Arg.Any<GetEntitySchemaPropertiesOptions>())
+			.Returns(new GetEntitySchemaPropertiesCommand(stubManager, Substitute.For<ILogger>()));
+		SchemaSyncTool tool = new(commandResolver, logger, retryDelay: Substitute.For<IRetryDelay>());
+		SchemaSyncArgs args = new("dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrColors", TitleLocalizations: Localizations("Colors"),
+				Columns: [new CreateEntitySchemaColumnArgs("UsrHexCode", "Text", Localizations("Hex code"))])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Results[0].Success.Should().BeFalse(because: "a foreign-package collision is a genuine failure (FR-07)");
+		scriptedCreate.Invocations.Should().Be(1, because: "create is invoked exactly once and never skipped");
+		registrationService.DidNotReceive().EnsureLookupRegistration(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>());
+		stubManager.DidNotReceive().GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>()); // AC-05-no-verify
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("When a create succeeds but its inline seeding fails, the resume plan carries a standalone seed-data op — never a recreate (ENG-93374 AC4).")]
 	public async Task SchemaSync_Should_Emit_SeedData_Resume_Op_When_Seed_Fails_After_Create() {
 		// Arrange
@@ -2212,6 +2507,38 @@ public sealed class SchemaSyncToolTests {
 		return result.Messages?
 			.Select(message => message.Value?.ToString() ?? string.Empty)
 			.ToArray() ?? [];
+	}
+
+	// Builds an EntitySchemaPropertiesInfo whose Columns carry only the supplied names, so a verification
+	// test specifies just the column names that matter (the positional record has many unrelated fields).
+	private static EntitySchemaPropertiesInfo SchemaWith(params string[] columnNames) =>
+		new(
+			Name: "UsrColors", Title: "Colors", Description: null, PackageName: "UsrPkg",
+			ParentSchemaName: "BaseLookup", ExtendParent: false, PrimaryColumnName: "Id",
+			PrimaryDisplayColumnName: "Name", OwnColumnCount: columnNames.Length, InheritedColumnCount: 0,
+			IndexesCount: null, TrackChangesInDb: false, DbView: false, SspAvailable: null, Virtual: false,
+			UseRecordDeactivation: null, ShowInAdvancedMode: false, AdministratedByOperations: false,
+			AdministratedByColumns: false, AdministratedByRecords: false, UseDenyRecordRights: null,
+			UseLiveEditing: null,
+			Columns: columnNames.Select(name => new EntitySchemaPropertyColumnInfo(
+				Name: name, UId: Guid.NewGuid(), Source: "own", Title: name, Description: null,
+				Type: "Text", Required: false, Indexed: false, ReferenceSchemaName: null)).ToList());
+
+	// A real GetEntitySchemaPropertiesCommand whose column read returns the supplied schema snapshot,
+	// wired through a substituted IRemoteEntitySchemaColumnManager (no production virtual needed).
+	private static GetEntitySchemaPropertiesCommand ReadReturning(EntitySchemaPropertiesInfo info) {
+		IRemoteEntitySchemaColumnManager stubManager = Substitute.For<IRemoteEntitySchemaColumnManager>();
+		stubManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>()).Returns(info);
+		return new GetEntitySchemaPropertiesCommand(stubManager, Substitute.For<ILogger>());
+	}
+
+	// A real GetEntitySchemaPropertiesCommand whose column read throws, used for the read-failure (Unverified)
+	// degrade path. Returns the command plus the manager so the test can assert the read was attempted.
+	private static (GetEntitySchemaPropertiesCommand Command, IRemoteEntitySchemaColumnManager Manager)
+		ReadThrowing(Exception fault) {
+		IRemoteEntitySchemaColumnManager stubManager = Substitute.For<IRemoteEntitySchemaColumnManager>();
+		stubManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>()).Throws(fault);
+		return (new GetEntitySchemaPropertiesCommand(stubManager, Substitute.For<ILogger>()), stubManager);
 	}
 
 	private static Dictionary<string, string> Localizations(string enUs, string? ukUa = null) {

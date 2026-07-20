@@ -3406,7 +3406,7 @@ internal static class ToolContractCatalog {
 					SuccessFalseSignal
 				],
 				Field(SuccessFieldName, BooleanType, "Whether every sync-schemas operation succeeded."),
-				Field("results", ArrayType, "Per-operation execution results for the operations that ran. Each item carries `type`, `schema-name`, `success`, `status` (completed|failed), `operation-index` (zero-based index into the request operations), and — only when the operation was retried for a transient fault — `attempts`. Operations that never ran are NOT in this array; see `resume-plan`."),
+				Field("results", ArrayType, "Per-operation execution results for the operations that ran. Each item carries `type`, `schema-name`, `success`, `status` (completed|failed|resumed-existing), `operation-index` (zero-based index into the request operations), and — only when the operation was retried for a transient fault — `attempts`. `resumed-existing` (create-lookup only) is a success where the schema already existed in the target package but the requested columns could NOT be verified (column read failed); registration is completed and a warning states the columns are NOT confirmed present — verify with get-entity-schema-properties or resubmit. Operations that never ran are NOT in this array; see `resume-plan`."),
 				Field("resume-plan", ObjectType, "Present only when the batch aborted before completing. Carries `instruction`, `failed-operation` (operation-index/type/schema-name/error), `not-run-operation-indexes`, and `operations` — the failed operation followed by every not-run operation, echoed in re-submittable input shape. Resubmit ONLY resume-plan.operations as a new sync-schemas call; never resend the already-completed operations.")
 			),
 			CommonErrorContract,
