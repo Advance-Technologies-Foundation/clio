@@ -265,6 +265,70 @@ public sealed class SchemaConvergenceServiceTests {
 			because: "the missing column must be added to the target-package schema");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Classifies a same-package column whose requested type token (phoneNumber) matches the server's divergent raw-ordinal friendly read-back ('42') as AlreadySatisfied, not Reconcile (ordinal-normalized comparison guards replay idempotency).")]
+	public void Classify_ShouldReturnAlreadySatisfied_WhenColumnTypeTokenMatchesFriendlyReadbackName() {
+		// Arrange
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		FakeFind(resolver, [new EntitySchemaSearchResult(SchemaName, TargetPackage, "Customer", "BaseLookup")]);
+		// phoneNumber (ordinal 42) is read back with the raw-ordinal friendly name "42".
+		FakeProperties(resolver, Properties(Column("UsrPhone", "42")));
+		SchemaConvergenceService service = new(resolver);
+		SchemaConvergenceTarget target = LookupTarget(RequestedColumn("UsrPhone", "phoneNumber"));
+
+		// Act
+		SchemaConvergencePlan plan = service.Classify(target);
+
+		// Assert
+		plan.Outcome.Should().Be(SchemaConvergenceOutcome.AlreadySatisfied,
+			because: "phoneNumber and its '42' read-back denote the same DataValueType, so nothing must be reconciled");
+		plan.ColumnsToModify.Should().BeEmpty(
+			because: "a byte-different but type-equivalent read-back must not be surfaced as a spurious modify");
+		plan.ColumnsToAdd.Should().BeEmpty(
+			because: "the column already exists");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Reads the current columns of a schema exactly once and returns them keyed by name for the update-entity per-column reconcile.")]
+	public void ReadColumns_ShouldReturnColumnsKeyedByName_WhenSchemaHasColumns() {
+		// Arrange
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		GetEntitySchemaPropertiesCommand properties = FakeProperties(resolver,
+			Properties(Column("UsrExisting", "Text"), Column("UsrScore", "Integer")));
+		SchemaConvergenceService service = new(resolver);
+
+		// Act
+		IReadOnlyDictionary<string, EntitySchemaPropertyColumnInfo> columns = service.ReadColumns("dev", SchemaName);
+
+		// Assert
+		columns.Should().HaveCount(2,
+			because: "every column from the schema read must be surfaced");
+		columns.Should().ContainKey("usrscore",
+			because: "the column map must be case-insensitive so the reconcile matches regardless of casing");
+		columns["UsrScore"].Type.Should().Be("Integer",
+			because: "the column type must be preserved so the reconcile can detect a differing type");
+		properties.Received(1).GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns an empty map when the schema read reports no columns so the reconcile issues every requested add.")]
+	public void ReadColumns_ShouldReturnEmptyMap_WhenSchemaHasNoColumns() {
+		// Arrange
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		FakeProperties(resolver, Properties());
+		SchemaConvergenceService service = new(resolver);
+
+		// Act
+		IReadOnlyDictionary<string, EntitySchemaPropertyColumnInfo> columns = service.ReadColumns("dev", SchemaName);
+
+		// Assert
+		columns.Should().BeEmpty(
+			because: "a schema with no columns must yield an empty reconcile baseline");
+	}
+
 	private static SchemaConvergenceTarget LookupTarget(params CreateEntitySchemaColumnArgs[] requestedColumns) {
 		return new SchemaConvergenceTarget(
 			"dev", TargetPackage, SchemaName, "BaseLookup", IsLookup: true, ExtendParent: false, requestedColumns);

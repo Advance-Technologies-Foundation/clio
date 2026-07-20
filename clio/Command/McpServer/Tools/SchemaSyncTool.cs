@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
+using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
 using Clio.Common.DataForge;
 using ModelContextProtocol.Protocol;
@@ -31,6 +32,8 @@ public sealed class SchemaSyncTool(
 	private const string CreateEntityOperationName = "create-entity";
 	private const string UpdateEntityOperationName = "update-entity";
 	private const string SeedDataOperationName = "seed-data";
+	private const string ModifyAction = "modify";
+	private const string RemoveAction = "remove";
 	private const string CreatedOutcome = "created";
 	private const string ReconciledOutcome = "reconciled";
 	private const string AlreadySatisfiedOutcome = "already-satisfied";
@@ -323,18 +326,22 @@ public sealed class SchemaSyncTool(
 				CreateEntitySchemaCommand createCommand = commandResolver.Resolve<CreateEntitySchemaCommand>(createOptions);
 				return createCommand.Execute(createOptions);
 			case SchemaConvergenceOutcome.Reconcile:
-				if (plan.ColumnsToAdd.Count == 0) {
-					// The reconcile delta had only column-shape modifications (Story 2 owns the modify write
-					// path); Story 1 applies no mutation and reports success.
+				// Apply the full reconcile delta in a single UpdateEntitySchemaCommand batch: the missing
+				// columns as additive add operations plus the per-column modify operations the classifier
+				// surfaced for a present-but-different column (the modify write path Story 1 surfaced but
+				// deferred). CreateEntitySchemaCommand is never invoked here — it is create-only.
+				List<UpdateEntitySchemaOperationArgs> reconcileOperations = [
+					.. plan.ColumnsToAdd.Select(CoerceColumnToAddOperation),
+					.. plan.ColumnsToModify
+				];
+				if (reconcileOperations.Count == 0) {
 					return 0;
 				}
-				List<UpdateEntitySchemaOperationArgs> addOperations =
-					plan.ColumnsToAdd.Select(CoerceColumnToAddOperation).ToList();
 				UpdateEntitySchemaOptions updateOptions = new() {
 					Environment = args.EnvironmentName,
 					Package = args.PackageName,
 					SchemaName = op.SchemaName,
-					Operations = UpdateEntitySchemaTool.SerializeOperations(addOperations, op.SchemaName)
+					Operations = UpdateEntitySchemaTool.SerializeOperations(reconcileOperations, op.SchemaName)
 				};
 				UpdateEntitySchemaCommand updateCommand = commandResolver.Resolve<UpdateEntitySchemaCommand>(updateOptions);
 				return updateCommand.Execute(updateOptions);
@@ -355,33 +362,57 @@ public sealed class SchemaSyncTool(
 
 	private SchemaSyncOperationResult ExecuteUpdateEntity(SchemaSyncOperation op, SchemaSyncArgs args, string tenantKey) {
 		try {
-				IReadOnlyList<UpdateEntitySchemaOperationArgs> updateOperations = ResolveUpdateOperations(op);
-				if (updateOperations.Count == 0) {
-					return new SchemaSyncOperationResult {
-						Type = UpdateEntityOperationName,
+			IReadOnlyList<UpdateEntitySchemaOperationArgs> requestedOperations = ResolveUpdateOperations(op);
+			if (requestedOperations.Count == 0) {
+				return new SchemaSyncOperationResult {
+					Type = UpdateEntityOperationName,
 					SchemaName = op.SchemaName,
-					Success = false, Error = BuildMissingUpdateOperationsError()
+					Success = false,
+					Error = BuildMissingUpdateOperationsError()
 				};
 			}
+
+			// FR-04/FR-05/FR-06: read the current columns ONCE (one server-side read/op, no new MCP round-trip)
+			// and reconcile the requested operations against them — add-if-absent, modify-if-different,
+			// remove→ensure-absent, and drop an already-satisfied add. Columns not named in the request are
+			// never touched (no delete-unlisted full reconcile — AC-07/OQ-02). Emit only the resulting delta.
+			IReadOnlyDictionary<string, EntitySchemaPropertyColumnInfo> existingColumns =
+				convergenceService.ReadColumns(args.EnvironmentName, op.SchemaName);
+			IReadOnlyList<UpdateEntitySchemaOperationArgs> delta = ReconcileUpdateOperations(requestedOperations, existingColumns);
+
+			if (delta.Count == 0) {
+				// Every requested operation is already satisfied (columns present and identical, or a remove of
+				// an already-absent column). On replay this is a success, not a failure, and issues no
+				// duplicate mutation (residual hole b).
+				return new SchemaSyncOperationResult {
+					Type = UpdateEntityOperationName,
+					SchemaName = op.SchemaName,
+					Success = true,
+					Outcome = AlreadySatisfiedOutcome,
+					Messages = [.. McpPassthroughRedaction.SanitizeAndRedact([.. logger.FlushAndSnapshotMessages(clearMessages: true)], tenantKey)]
+				};
+			}
+
 			UpdateEntitySchemaOptions options = new() {
 				Environment = args.EnvironmentName,
 				Package = args.PackageName,
 				SchemaName = op.SchemaName,
-				Operations = UpdateEntitySchemaTool.SerializeOperations(updateOperations, op.SchemaName)
+				Operations = UpdateEntitySchemaTool.SerializeOperations(delta, op.SchemaName)
 			};
 			UpdateEntitySchemaCommand command = commandResolver.Resolve<UpdateEntitySchemaCommand>(options);
 			int exitCode = command.Execute(options);
 			IReadOnlyList<LogMessage> messages = [.. McpPassthroughRedaction.SanitizeAndRedact([.. logger.FlushAndSnapshotMessages(clearMessages: true)], tenantKey)];
-				return new SchemaSyncOperationResult {
-					Type = UpdateEntityOperationName,
+			return new SchemaSyncOperationResult {
+				Type = UpdateEntityOperationName,
 				SchemaName = op.SchemaName,
 				Success = exitCode == 0,
+				Outcome = exitCode == 0 ? ReconciledOutcome : null,
 				Messages = messages,
-					Error = BuildOperationError(UpdateEntityOperationName, exitCode, messages)
-				};
-			} catch (Exception ex) {
-				return new SchemaSyncOperationResult {
-					Type = UpdateEntityOperationName,
+				Error = BuildOperationError(UpdateEntityOperationName, exitCode, messages)
+			};
+		} catch (Exception ex) {
+			return new SchemaSyncOperationResult {
+				Type = UpdateEntityOperationName,
 				SchemaName = op.SchemaName,
 				Success = false,
 				Error = SensitiveErrorTextRedactor.Redact(ex.Message),
@@ -389,6 +420,70 @@ public sealed class SchemaSyncTool(
 			};
 		}
 	}
+
+	/// <summary>
+	/// Computes the per-column delta for an <c>update-entity</c> operation against the current server column
+	/// state (<paramref name="existingColumns"/>). A <c>remove</c> is issued only when the target column is
+	/// present (an already-absent remove is a satisfied "ensure absent" no-op); an <c>add</c>/<c>modify</c> of
+	/// an absent column is kept so the column is materialized or forwarded; an <c>add</c> of a present column
+	/// is dropped when its type already matches (idempotent replay) and converged to a <c>modify</c> when the
+	/// type differs. The add/columns shape reconciles by TYPE only: a present column with a matching type is
+	/// treated as satisfied, so any non-type attribute change (required, reference-schema, flags, caption)
+	/// must be sent as an explicit <c>modify</c> op, which is forwarded unconditionally (the column read does
+	/// not expose every attribute — e.g. indexed/cloneable/caption localizations — so a modify cannot be
+	/// proven a no-op; a re-run to the same value is a backend no-op, never a failure). Type equivalence is
+	/// resolved by <see cref="EntitySchemaDesignerSupport.AreColumnTypesEquivalent"/> (ordinal-normalized), so
+	/// a divergent read-back vocabulary does not force a spurious mutation on replay. Columns not named in
+	/// <paramref name="requestedOperations"/> are never touched — there is no delete-unlisted reconcile (AC-07).
+	/// </summary>
+	private static IReadOnlyList<UpdateEntitySchemaOperationArgs> ReconcileUpdateOperations(
+		IReadOnlyList<UpdateEntitySchemaOperationArgs> requestedOperations,
+		IReadOnlyDictionary<string, EntitySchemaPropertyColumnInfo> existingColumns) {
+		List<UpdateEntitySchemaOperationArgs> delta = [];
+		foreach (UpdateEntitySchemaOperationArgs operation in requestedOperations) {
+			string? columnName = operation.ResolveColumnName();
+			if (string.IsNullOrWhiteSpace(columnName)) {
+				// Forward unchanged so the downstream serializer surfaces the missing-column-name error as before.
+				delta.Add(operation);
+				continue;
+			}
+			bool present = existingColumns.TryGetValue(columnName, out EntitySchemaPropertyColumnInfo? existingColumn);
+			if (IsRemoveAction(operation.Action)) {
+				if (present) {
+					delta.Add(operation);
+				}
+				// Absent → "ensure absent" is already satisfied; issue nothing.
+				continue;
+			}
+			if (!present) {
+				// Absent column: materialize it (add) or forward the requested modify unchanged.
+				delta.Add(operation);
+				continue;
+			}
+			if (!EntitySchemaDesignerSupport.AreColumnTypesEquivalent(operation.ResolveType(), existingColumn!.Type)) {
+				// Present but different type: converge via a modify so a re-add does not fail as a duplicate.
+				// An incompatible modify is surfaced by the backend command as a modify-conflict error
+				// (success:false), NOT a whole-schema collision.
+				delta.Add(operation with { Action = ModifyAction });
+				continue;
+			}
+			if (IsModifyAction(operation.Action)) {
+				// Present, matching type: the add/columns shape reconciles by TYPE only, so a caller changing a
+				// non-type attribute (required/reference/flags/caption) must use an explicit modify — forward it
+				// unconditionally (a re-run to the same value is a backend no-op, never a failure).
+				delta.Add(operation);
+			}
+			// Present add/columns entry with a matching type → the type-only add-shape contract is satisfied,
+			// so drop it (idempotent replay). Non-type changes require an explicit modify op.
+		}
+		return delta;
+	}
+
+	private static bool IsRemoveAction(string? action) =>
+		string.Equals(action, RemoveAction, StringComparison.OrdinalIgnoreCase);
+
+	private static bool IsModifyAction(string? action) =>
+		string.Equals(action, ModifyAction, StringComparison.OrdinalIgnoreCase);
 
 	/// <summary>
 	/// Resolves the column mutation operations for an <c>update-entity</c> operation. Prefers the explicit

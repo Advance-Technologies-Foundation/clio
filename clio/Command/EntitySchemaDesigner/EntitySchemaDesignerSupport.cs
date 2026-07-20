@@ -360,6 +360,42 @@ internal static class EntitySchemaDesignerSupport
 		return SupportedDataValueTypes.TryGetValue(normalizedTypeName, out dataValueType);
 	}
 
+	/// <summary>
+	/// Determines whether a requested column-type token (request/input vocabulary, e.g. <c>phoneNumber</c>,
+	/// <c>text50</c>) denotes the same underlying <see cref="DataValueType"/> as a type read back from the
+	/// server (read vocabulary, e.g. <c>"42"</c>, <c>ShortText</c>). Both sides are normalized to the
+	/// canonical ordinal before comparison: the read-back friendly-name vocabulary
+	/// (<see cref="GetFriendlyTypeName"/>) diverges from the request vocabulary for several types — raw
+	/// ordinals such as <c>"42"</c>/<c>"44"</c> (phoneNumber/webLink), the text-size names
+	/// <c>ShortText</c>/<c>MediumText</c>/<c>LongText</c>/<c>MaxSizeText</c>, and <c>Float</c> — so a plain
+	/// string compare would wrongly treat an identical column as changed and re-issue a mutation on replay
+	/// (violating idempotency). Falls back to a case-insensitive string compare when either token cannot be
+	/// resolved to an ordinal, so unknown/forward-compatible types never regress into a failure. A blank on
+	/// either side is treated as equivalent (no type is asserted, so no type-driven mutation is forced).
+	/// </summary>
+	/// <param name="requestedType">The requested type token (request vocabulary or alias).</param>
+	/// <param name="existingType">The type read back from the server (friendly-name vocabulary).</param>
+	/// <returns><see langword="true"/> when both denote the same data-value type.</returns>
+	internal static bool AreColumnTypesEquivalent(string? requestedType, string? existingType) {
+		if (string.IsNullOrWhiteSpace(requestedType) || string.IsNullOrWhiteSpace(existingType)) {
+			return true;
+		}
+		if (TryResolveDataValueTypeOrdinal(requestedType, out int requestedOrdinal)
+			&& TryResolveDataValueTypeOrdinal(existingType, out int existingOrdinal)) {
+			return requestedOrdinal == existingOrdinal;
+		}
+		return string.Equals(requestedType.Trim(), existingType.Trim(), StringComparison.OrdinalIgnoreCase);
+	}
+
+	private static bool TryResolveDataValueTypeOrdinal(string typeName, out int dataValueType) {
+		if (TryResolveDataValueType(typeName, out dataValueType)) {
+			return true;
+		}
+		// A read-back friendly name for an unmapped type is the raw DataValueType ordinal as a string
+		// (GetFriendlyTypeName's default branch, e.g. "42" for phoneNumber, "44" for webLink).
+		return int.TryParse(typeName.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out dataValueType);
+	}
+
 	private static string NormalizeDataValueTypeName(string typeName) {
 		return new string(typeName
 			.Trim()

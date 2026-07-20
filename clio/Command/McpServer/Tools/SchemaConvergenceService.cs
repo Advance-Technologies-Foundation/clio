@@ -71,6 +71,17 @@ public interface ISchemaConvergenceService {
 	/// <param name="target">The schema the caller intends to converge to.</param>
 	/// <returns>A plan describing whether to create, reconcile, no-op, or fail on a durable collision.</returns>
 	SchemaConvergencePlan Classify(SchemaConvergenceTarget target);
+
+	/// <summary>
+	/// Reads the current column set of a schema keyed by column name (case-insensitive) for the per-column
+	/// reconcile of an <c>update-entity</c> operation. This is the single server-side column read (1 read/op)
+	/// the update path uses; it never reads existence/package and never issues a mutation. Returns an empty
+	/// map when the schema has no columns.
+	/// </summary>
+	/// <param name="environmentName">The environment the read resolves under.</param>
+	/// <param name="schemaName">The schema whose columns are read.</param>
+	/// <returns>The existing columns keyed by name (case-insensitive).</returns>
+	IReadOnlyDictionary<string, EntitySchemaPropertyColumnInfo> ReadColumns(string environmentName, string schemaName);
 }
 
 /// <summary>
@@ -161,7 +172,8 @@ public sealed class SchemaConvergenceService(IToolCommandResolver commandResolve
 			return ([], []);
 		}
 
-		IReadOnlyDictionary<string, EntitySchemaPropertyColumnInfo> existingColumns = ReadExistingColumns(target);
+		IReadOnlyDictionary<string, EntitySchemaPropertyColumnInfo> existingColumns =
+			ReadColumns(target.EnvironmentName, target.SchemaName);
 		List<CreateEntitySchemaColumnArgs> columnsToAdd = [];
 		List<UpdateEntitySchemaOperationArgs> columnsToModify = [];
 		foreach (CreateEntitySchemaColumnArgs column in requestedColumns) {
@@ -173,21 +185,24 @@ public sealed class SchemaConvergenceService(IToolCommandResolver commandResolve
 				columnsToAdd.Add(column);
 				continue;
 			}
-			// Present with a differing type is a per-column modify-conflict (Story 2 owns the write path);
-			// here it is only surfaced on the plan and never applied.
-			if (IsColumnTypeDifferent(column, existingColumn)) {
+			// Present with a differing type is surfaced to the modify delta. Compare by resolved DataValueType
+			// ordinal (not friendly-name string) so a column whose read-back vocabulary diverges from the
+			// request vocabulary (e.g. phoneNumber read back as "42", text50 as ShortText) is not misclassified
+			// as changed and needlessly reconciled on replay.
+			if (!EntitySchemaDesignerSupport.AreColumnTypesEquivalent(column.ResolveType(), existingColumn.Type)) {
 				columnsToModify.Add(ToModifyOperation(column));
 			}
 		}
 		return (columnsToAdd, columnsToModify);
 	}
 
-	private IReadOnlyDictionary<string, EntitySchemaPropertyColumnInfo> ReadExistingColumns(SchemaConvergenceTarget target) {
+	/// <inheritdoc/>
+	public IReadOnlyDictionary<string, EntitySchemaPropertyColumnInfo> ReadColumns(string environmentName, string schemaName) {
 		// Merged/effective view (no package supplied): columns from every package layer, so a column
 		// present in a lower layer is not misclassified as absent and re-added.
 		GetEntitySchemaPropertiesOptions options = new() {
-			Environment = target.EnvironmentName,
-			SchemaName = target.SchemaName
+			Environment = environmentName,
+			SchemaName = schemaName
 		};
 		GetEntitySchemaPropertiesCommand command = commandResolver.Resolve<GetEntitySchemaPropertiesCommand>(options);
 		EntitySchemaPropertiesInfo properties = command.GetSchemaProperties(options);
@@ -196,14 +211,6 @@ public sealed class SchemaConvergenceService(IToolCommandResolver commandResolve
 			columns[column.Name] = column;
 		}
 		return columns;
-	}
-
-	private static bool IsColumnTypeDifferent(CreateEntitySchemaColumnArgs requested, EntitySchemaPropertyColumnInfo existing) {
-		string? requestedType = requested.ResolveType();
-		if (string.IsNullOrWhiteSpace(requestedType) || string.IsNullOrWhiteSpace(existing.Type)) {
-			return false;
-		}
-		return !string.Equals(requestedType.Trim(), existing.Type.Trim(), StringComparison.OrdinalIgnoreCase);
 	}
 
 	private static UpdateEntitySchemaOperationArgs ToModifyOperation(CreateEntitySchemaColumnArgs column) {

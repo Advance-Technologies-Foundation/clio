@@ -84,3 +84,14 @@ AAA with `because`; `[Description(...)]` per method; `[Category("Unit")]`.
 - Implementation completed:
 - Tests passing:
 - Notes:
+  - **Add-shape type-only contract (intended):** the `update-entity` add / `columns` shape reconciles by
+    column TYPE only. A present column with a matching type is treated as satisfied and dropped; to change any
+    NON-type attribute (`required`, `reference-schema-name`, flags, caption/title-localizations) the caller must
+    send an explicit `modify` op, which is always forwarded. This is deliberate — the column read does not expose
+    every attribute, so a modify cannot be proven a no-op; a re-run to the same value is a backend no-op, never a
+    failure.
+  - **Type comparison is ordinal-normalized:** `create-lookup` reconcile and `update-entity` reconcile both compare
+    column types through `EntitySchemaDesignerSupport.AreColumnTypesEquivalent` (resolves both the requested token
+    and the server read-back to the canonical `DataValueType` ordinal, with a case-insensitive string fallback for
+    unresolved tokens). This keeps replay idempotent for types whose read-back friendly name diverges from the
+    request vocabulary (e.g. `phoneNumber`→`"42"`, `text50`→`ShortText`, `Float`).

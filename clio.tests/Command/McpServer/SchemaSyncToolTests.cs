@@ -557,7 +557,10 @@ public sealed class SchemaSyncToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
 			.Returns(fakeUpdateCommand);
-		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
+		// Both target columns already exist (UsrStatus with a different type, UsrObsolete present) so the
+		// modify converges and the remove is issued — the reconcile keeps both operations in the delta.
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance,
+			Convergence(existingColumns: ExistingColumns(("UsrStatus", "Text"), ("UsrObsolete", "Text"))));
 		SchemaSyncArgs args = new(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("update-entity", "UsrTodoList",
@@ -1590,6 +1593,45 @@ public sealed class SchemaSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Applies the classifier's ColumnsToModify delta through the update-entity add-column path on the create/reconcile branch (the modify write path Story 1 surfaced but deferred).")]
+	public async Task ExecuteCreateSchema_ShouldApplyModifyDelta_WhenClassifierSurfacesColumnsToModify() {
+		// Arrange
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreateCommand);
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(registrationService);
+		ISchemaConvergenceService convergence = Convergence(
+			SchemaConvergenceOutcome.Reconcile,
+			columnsToModify: [new UpdateEntitySchemaOperationArgs("modify", "UsrScore", Type: "Integer")]);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, convergence);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus", TitleLocalizations: Localizations("Todo Status"))]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Results[0].Success.Should().BeTrue(
+			because: "applying only a column-shape modification to an existing schema must succeed");
+		response.Results[0].Outcome.Should().Be("reconciled",
+			because: "a modify-only reconcile still reports the reconciled outcome");
+		fakeCreateCommand.CapturedOptions.Should().BeNull(
+			because: "a modify-only reconcile must never recreate the schema");
+		fakeUpdateCommand.CapturedOptions!.Operations.Should().ContainSingle(
+			operation => operation.Contains("\"column-name\":\"UsrScore\"", StringComparison.Ordinal)
+				&& operation.Contains("\"action\":\"modify\"", StringComparison.Ordinal),
+			because: "the classifier's ColumnsToModify delta must now be applied through the update-entity write path");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Ensures the Lookups registration on the already-exists path (moved out of the freshly-created branch) when the classifier reports the schema is already satisfied.")]
 	public async Task ExecuteCreateSchema_ShouldEnsureLookupRegistrationOnAlreadyExistsPath_WhenRegistrationMissing() {
 		// Arrange
@@ -1714,16 +1756,353 @@ public sealed class SchemaSyncToolTests {
 			because: "the outcome field is JsonIgnoreCondition.WhenWritingNull, so a null outcome must not appear on the wire");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Adds a requested column that is absent on the server and reports the reconciled outcome (FR-04, AC-FR04).")]
+	public async Task ExecuteUpdateEntity_ShouldAddColumn_WhenRequestedColumnAbsent() {
+		// Arrange
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				Columns: [new CreateEntitySchemaColumnArgs("UsrExtra", "Text", Localizations("Extra"))])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Results[0].Success.Should().BeTrue(
+			because: "adding an absent column must succeed");
+		response.Results[0].Outcome.Should().Be("reconciled",
+			because: "an update-entity that applies a delta reports the reconciled outcome");
+		fakeUpdateCommand.CapturedOptions!.Operations.Should().ContainSingle(
+			operation => operation.Contains("\"column-name\":\"UsrExtra\"", StringComparison.Ordinal)
+				&& operation.Contains("\"action\":\"add\"", StringComparison.Ordinal),
+			because: "the absent column must be issued as a single add operation");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Converges a requested column that is present but of a different type into a modify for exactly that column (FR-04, AC-FR04).")]
+	public async Task ExecuteUpdateEntity_ShouldModifyColumn_WhenRequestedColumnPresentButDifferent() {
+		// Arrange
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance,
+			Convergence(existingColumns: ExistingColumns(("UsrScore", "Text"))));
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				Columns: [new CreateEntitySchemaColumnArgs("UsrScore", "Integer", Localizations("Score"))])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Results[0].Success.Should().BeTrue(
+			because: "modifying a differing column must succeed");
+		response.Results[0].Outcome.Should().Be("reconciled",
+			because: "an update-entity that applies a delta reports the reconciled outcome");
+		fakeUpdateCommand.CapturedOptions!.Operations.Should().ContainSingle(
+			operation => operation.Contains("\"column-name\":\"UsrScore\"", StringComparison.Ordinal)
+				&& operation.Contains("\"action\":\"modify\"", StringComparison.Ordinal),
+			because: "a present-but-different column must be converged via a modify for exactly that column");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns already-satisfied and never calls the update command when every requested column is present and identical (FR-05, AC-05, residual hole b).")]
+	public async Task ExecuteUpdateEntity_ShouldReturnAlreadySatisfiedAndNotCallUpdate_WhenColumnsIdentical() {
+		// Arrange
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance,
+			Convergence(existingColumns: ExistingColumns(("UsrExtra", "Text"))));
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				Columns: [new CreateEntitySchemaColumnArgs("UsrExtra", "Text", Localizations("Extra"))])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Results[0].Success.Should().BeTrue(
+			because: "an already-applied change on replay must be reported as a success, not a failure");
+		response.Results[0].Outcome.Should().Be("already-satisfied",
+			because: "an empty reconcile delta must report already-satisfied");
+		fakeUpdateCommand.CapturedOptions.Should().BeNull(
+			because: "no duplicate mutation may be issued when the requested columns already match");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Treats a remove of an already-absent column as a satisfied ensure-absent no-op with no mutation issued (FR-04, AC-06).")]
+	public async Task ExecuteUpdateEntity_ShouldTreatRemoveAsSuccess_WhenColumnAlreadyAbsent() {
+		// Arrange
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				UpdateOperations: [new UpdateEntitySchemaOperationArgs("remove", "UsrGone")])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Results[0].Success.Should().BeTrue(
+			because: "remove means ensure-absent, and the column is already absent");
+		response.Results[0].Outcome.Should().Be("already-satisfied",
+			because: "an ensure-absent remove of an absent column leaves an empty delta");
+		fakeUpdateCommand.CapturedOptions.Should().BeNull(
+			because: "no remove mutation may be issued for an already-absent column");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Issues a remove for a requested column that is present on the server (FR-04).")]
+	public async Task ExecuteUpdateEntity_ShouldIssueRemove_WhenRequestedRemoveColumnPresent() {
+		// Arrange
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance,
+			Convergence(existingColumns: ExistingColumns(("UsrObsolete", "Text"))));
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				UpdateOperations: [new UpdateEntitySchemaOperationArgs("remove", "UsrObsolete")])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Results[0].Success.Should().BeTrue(
+			because: "removing a present column must succeed");
+		response.Results[0].Outcome.Should().Be("reconciled",
+			because: "issuing a remove delta reports the reconciled outcome");
+		fakeUpdateCommand.CapturedOptions!.Operations.Should().ContainSingle(
+			operation => operation.Contains("\"column-name\":\"UsrObsolete\"", StringComparison.Ordinal)
+				&& operation.Contains("\"action\":\"remove\"", StringComparison.Ordinal),
+			because: "the present column must be issued as a single remove operation");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Leaves columns not named in the request out of the delta — no delete-unlisted reconcile (FR-04, AC-07).")]
+	public async Task ExecuteUpdateEntity_ShouldLeaveUnlistedColumnsOutOfDelta_WhenReconciling() {
+		// Arrange
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		// The schema already has UsrExisting, which the request never names; only UsrNew is requested.
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance,
+			Convergence(existingColumns: ExistingColumns(("UsrExisting", "Text"))));
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				Columns: [new CreateEntitySchemaColumnArgs("UsrNew", "Text", Localizations("New"))])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Results[0].Success.Should().BeTrue(
+			because: "adding the single named column must succeed");
+		fakeUpdateCommand.CapturedOptions!.Operations.Should().Contain(
+			operation => operation.Contains("\"column-name\":\"UsrNew\"", StringComparison.Ordinal),
+			because: "only the requested column belongs to the delta");
+		fakeUpdateCommand.CapturedOptions.Operations.Should().NotContain(
+			operation => operation.Contains("UsrExisting", StringComparison.Ordinal),
+			because: "a column not named in the request must never enter the delta — no delete-unlisted reconcile");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Emits exactly the computed delta (one add, one modify) and drops the identical column when column states are mixed (FR-04, AC-FR04).")]
+	public async Task ExecuteUpdateEntity_ShouldEmitExactlyComputedDelta_WhenColumnStatesMixed() {
+		// Arrange
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance,
+			Convergence(existingColumns: ExistingColumns(("UsrDiff", "Text"), ("UsrSame", "Text"))));
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				Columns: [
+					new CreateEntitySchemaColumnArgs("UsrAbsent", "Text", Localizations("Absent")),
+					new CreateEntitySchemaColumnArgs("UsrDiff", "Integer", Localizations("Diff")),
+					new CreateEntitySchemaColumnArgs("UsrSame", "Text", Localizations("Same"))
+				])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Results[0].Outcome.Should().Be("reconciled",
+			because: "a non-empty mixed delta reports the reconciled outcome");
+		fakeUpdateCommand.CapturedOptions!.Operations.Should().HaveCount(2,
+			because: "only the absent column (add) and the differing column (modify) belong to the delta");
+		fakeUpdateCommand.CapturedOptions.Operations.Should().Contain(
+			operation => operation.Contains("\"column-name\":\"UsrAbsent\"", StringComparison.Ordinal)
+				&& operation.Contains("\"action\":\"add\"", StringComparison.Ordinal),
+			because: "the absent column must be added");
+		fakeUpdateCommand.CapturedOptions.Operations.Should().Contain(
+			operation => operation.Contains("\"column-name\":\"UsrDiff\"", StringComparison.Ordinal)
+				&& operation.Contains("\"action\":\"modify\"", StringComparison.Ordinal),
+			because: "the differing column must be modified");
+		fakeUpdateCommand.CapturedOptions.Operations.Should().NotContain(
+			operation => operation.Contains("UsrSame", StringComparison.Ordinal),
+			because: "the identical column produces no mutation");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Surfaces a per-column type incompatibility as a modify-conflict (success:false, Error, outcome not collision) and preserves stop-on-first-failure (FR-04, AC-ERR).")]
+	public async Task ExecuteUpdateEntity_ShouldFailWithModifyConflictNotCollision_WhenColumnTypeIncompatible() {
+		// Arrange
+		TestLogger logger = new();
+		var failingUpdateCommand = new FakeUpdateEntitySchemaCommand(logger, exitCode: 1, messages: ["Cannot change column type from Text to Integer."]);
+		var secondUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		int resolveCount = 0;
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(_ => resolveCount++ == 0 ? failingUpdateCommand : secondUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, logger,
+			Convergence(existingColumns: ExistingColumns(("UsrScore", "Text"))));
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[
+				new SchemaSyncOperation("update-entity", "UsrTodoList",
+					Columns: [new CreateEntitySchemaColumnArgs("UsrScore", "Integer", Localizations("Score"))]),
+				new SchemaSyncOperation("update-entity", "UsrOther",
+					Columns: [new CreateEntitySchemaColumnArgs("UsrLate", "Text", Localizations("Late"))])
+			]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Results[0].Success.Should().BeFalse(
+			because: "an incompatible per-column modify that the backend rejects is a failure");
+		response.Results[0].Error.Should().Contain("Cannot change column type",
+			because: "the user-friendly modify-conflict message must be surfaced");
+		response.Results[0].Outcome.Should().NotBe("collision",
+			because: "a per-column modify-conflict is not a whole-schema collision");
+		response.Results.Should().HaveCount(1,
+			because: "stop-on-first-failure must prevent the second update-entity operation from running");
+		secondUpdateCommand.CapturedOptions.Should().BeNull(
+			because: "the second operation must not execute after the first fails");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns already-satisfied and issues no mutation when the requested type token (text50) matches the server's divergent friendly read-back name (ShortText) on replay (SM-02/AC-05, ordinal-normalized comparison).")]
+	public async Task ExecuteUpdateEntity_ShouldReturnAlreadySatisfied_WhenRequestedTypeTokenMatchesFriendlyReadbackName() {
+		// Arrange
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		// The column was created as 'text50' and is read back with the divergent friendly name 'ShortText'.
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance,
+			Convergence(existingColumns: ExistingColumns(("UsrNote", "ShortText"))));
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				Columns: [new CreateEntitySchemaColumnArgs("UsrNote", "text50", Localizations("Note"))])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Results[0].Success.Should().BeTrue(
+			because: "a byte-different but type-equivalent read-back must not turn an already-applied add into a failure");
+		response.Results[0].Outcome.Should().Be("already-satisfied",
+			because: "text50 and its ShortText read-back denote the same DataValueType, so the delta is empty");
+		fakeUpdateCommand.CapturedOptions.Should().BeNull(
+			because: "a divergent friendly read-back name must not force a spurious re-issue on replay (SM-02: zero new mutations)");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Forwards an explicit modify of a present, matching-type column unconditionally so caption/flag changes are preserved (add-shape reconciles by type only).")]
+	public async Task ExecuteUpdateEntity_ShouldForwardExplicitModify_WhenColumnPresentWithMatchingType() {
+		// Arrange
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance,
+			Convergence(existingColumns: ExistingColumns(("UsrScore", "Integer"))));
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				UpdateOperations: [
+					new UpdateEntitySchemaOperationArgs("modify", "UsrScore", Type: "Integer") { IsRequired = true }
+				])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Results[0].Success.Should().BeTrue(
+			because: "an explicit modify of a present column must succeed");
+		response.Results[0].Outcome.Should().Be("reconciled",
+			because: "an explicit modify is forwarded as a delta even when only non-type attributes change");
+		fakeUpdateCommand.CapturedOptions!.Operations.Should().ContainSingle(
+			operation => operation.Contains("\"column-name\":\"UsrScore\"", StringComparison.Ordinal)
+				&& operation.Contains("\"action\":\"modify\"", StringComparison.Ordinal),
+			because: "an explicit modify is the channel for non-type attribute changes and must be forwarded unconditionally");
+	}
+
 	private static ISchemaConvergenceService Convergence(
 		SchemaConvergenceOutcome outcome = SchemaConvergenceOutcome.Create,
 		IReadOnlyList<CreateEntitySchemaColumnArgs>? columnsToAdd = null,
 		IReadOnlyList<UpdateEntitySchemaOperationArgs>? columnsToModify = null,
 		string? collisionPackageName = null,
-		string? error = null) {
+		string? error = null,
+		IReadOnlyDictionary<string, EntitySchemaPropertyColumnInfo>? existingColumns = null) {
 		ISchemaConvergenceService convergence = Substitute.For<ISchemaConvergenceService>();
 		convergence.Classify(Arg.Any<SchemaConvergenceTarget>())
 			.Returns(new SchemaConvergencePlan(outcome, columnsToAdd ?? [], columnsToModify ?? [], collisionPackageName, error));
+		convergence.ReadColumns(Arg.Any<string>(), Arg.Any<string>())
+			.Returns(existingColumns ?? new Dictionary<string, EntitySchemaPropertyColumnInfo>(StringComparer.OrdinalIgnoreCase));
 		return convergence;
+	}
+
+	private static IReadOnlyDictionary<string, EntitySchemaPropertyColumnInfo> ExistingColumns(
+		params (string Name, string Type)[] columns) {
+		Dictionary<string, EntitySchemaPropertyColumnInfo> map = new(StringComparer.OrdinalIgnoreCase);
+		foreach ((string name, string type) in columns) {
+			map[name] = new EntitySchemaPropertyColumnInfo(
+				Name: name,
+				UId: Guid.NewGuid(),
+				Source: "own",
+				Title: name,
+				Description: null,
+				Type: type,
+				Required: false,
+				Indexed: false,
+				ReferenceSchemaName: null);
+		}
+		return map;
 	}
 
 	private static System.Text.Json.JsonElement ToJsonElement(string value) {
@@ -1771,20 +2150,26 @@ public sealed class SchemaSyncToolTests {
 	}
 
 	private sealed class FakeUpdateEntitySchemaCommand : UpdateEntitySchemaCommand {
+		private readonly int _exitCode;
 		private readonly ILogger _logger;
 		private readonly IReadOnlyList<string> _messages;
 		public UpdateEntitySchemaOptions CapturedOptions { get; private set; }
-		public FakeUpdateEntitySchemaCommand(ILogger logger = null, IReadOnlyList<string> messages = null)
+		public FakeUpdateEntitySchemaCommand(ILogger logger = null, int exitCode = 0, IReadOnlyList<string> messages = null)
 			: base(Substitute.For<IRemoteEntitySchemaColumnManager>(), logger ?? Substitute.For<ILogger>()) {
 			_logger = logger ?? Substitute.For<ILogger>();
+			_exitCode = exitCode;
 			_messages = messages ?? [];
 		}
 		public override int Execute(UpdateEntitySchemaOptions options) {
 			CapturedOptions = options;
 			foreach (string message in _messages) {
-				_logger.WriteInfo(message);
+				if (_exitCode == 0) {
+					_logger.WriteInfo(message);
+				} else {
+					_logger.WriteError(message);
+				}
 			}
-			return 0;
+			return _exitCode;
 		}
 	}
 
