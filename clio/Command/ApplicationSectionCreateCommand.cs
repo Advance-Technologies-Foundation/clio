@@ -821,6 +821,14 @@ public sealed class ApplicationSectionCreateService(
 
 		// A DETAILED rejection (e.g. "already exists"/"already bound"/a real constraint) is terminal: retrying
 		// the same arguments will fail again. Keep the unchanged actionable message and server-error guidance.
+		// Emit a single low-noise INFO recording the actual server message so sentinel drift is observable in
+		// production: if Creatio ever rewords the detail-less "InsertQuery failed" sentinel, that reworded
+		// message stops matching IsDetailLessInsertRejection and surfaces HERE (as a detailed ServerError)
+		// instead of being reclassified as contention — this line is where an operator would see it. INFO,
+		// not WARNING, because this is already a failure path and genuine detailed rejections are expected.
+		logger.WriteInfo(
+			"Section insert rejected with a server-detailed message (not classified as contention): "
+			+ $"'{response.ErrorInfo?.Message}'");
 		logger.EndSpinner(false);
 		throw new ApplicationSectionCreateException(
 			BuildSectionInsertFailureMessage(resolvedRequest, response.ErrorInfo?.Message),

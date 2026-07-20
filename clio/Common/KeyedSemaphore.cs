@@ -10,6 +10,17 @@ namespace Clio.Common;
 /// fully in parallel.
 /// </summary>
 /// <remarks>
+/// <para>
+/// <b>CLIO001 exemption (AGENTS.md lightweight-primitive rule).</b> This type is a lightweight,
+/// stateless-policy concurrency <i>primitive</i> — the same category as <see cref="SemaphoreSlim"/> and
+/// <see cref="ConcurrentDictionary{TKey,TValue}"/> — not a behaviour-bearing service, handler, or
+/// validator. Each consumer deliberately owns its OWN independent key space (for example the
+/// section-create serialization guard's per-application locks vs. the component-registry background-refresh
+/// gates), so every consumer instantiates its own <c>new KeyedSemaphore()</c> for its own registry. A
+/// shared DI singleton would be <i>incorrect</i> here: it would conflate two unrelated lock registries
+/// onto one instance. Constructing it per consumer with <c>new()</c> is therefore intentional and is the
+/// AGENTS.md lightweight-primitive exemption to CLIO001 (favour DI for behaviour classes), not a defect.
+/// </para>
 /// Entries are <b>never evicted</b>. The key cardinality is bounded by design (tens of distinct keys per
 /// process at most, each semaphore is a few dozen bytes), and ref-counted removal would introduce a
 /// TOCTOU race between <see cref="SemaphoreSlim.Release()"/> and the next <see cref="GetOrAdd"/> — a

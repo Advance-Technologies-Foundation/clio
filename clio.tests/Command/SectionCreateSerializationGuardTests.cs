@@ -344,4 +344,58 @@ public sealed class SectionCreateSerializationGuardTests {
 		logger.Received().WriteWarning(Arg.Is<string>(message =>
 			message.Contains("without serialization", StringComparison.OrdinalIgnoreCase)));
 	}
+
+	[Test]
+	[Description("Bounds concurrently-parked waiters PROCESS-WIDE across DISTINCT keys: fanning out MaxTotalConcurrentWaiters + extra concurrent Run calls, each on its OWN distinct application key (per-key in-flight is always 1, far under the per-key bound), makes exactly the excess callers past the global bound run best-effort (unserialized) and log a warning naming the process-wide bound — a burst spread over many hot keys can no longer park MaxConcurrentWaiters workers per key. The per-application bound must NOT fire because no single key is deep (ENG-93089).")]
+	public void Run_ShouldRunExcessWaitersBestEffort_WhenGlobalWaiterCountExceedsTotalBound() {
+		// Arrange
+		ILogger logger = Substitute.For<ILogger>();
+		SectionCreateSerializationGuard guard = new(logger);
+		int totalBound = SectionCreateSerializationGuard.MaxTotalConcurrentWaiters;
+		const int extra = 4;
+		int callerCount = totalBound + extra;
+		// Dedicated OS threads (not thread-pool tasks) so all callerCount callers can block in their work
+		// simultaneously without thread-pool ramp-up throttling the fan-out and perturbing the global count.
+		Thread[] callers = new Thread[callerCount];
+		using ManualResetEventSlim releaseCallers = new(false);
+		using SemaphoreSlim enteredWork = new(0);
+
+		// Act — each caller uses a DISTINCT application key, so per-key in-flight is always 1; only the
+		// process-wide counter can trip. Each caller blocks in its work so all stay in-flight together, which
+		// makes the Interlocked global count climb monotonically to callerCount before any caller releases.
+		for (int i = 0; i < callerCount; i++) {
+			string applicationCode = $"UsrApp{i}";
+			callers[i] = new Thread(() => guard.Run("prod", applicationCode, GenerousWait, () => {
+				enteredWork.Release();
+				releaseCallers.Wait(GenerousWait);
+				return 0;
+			})) { IsBackground = true };
+		}
+
+		foreach (Thread caller in callers) {
+			caller.Start();
+		}
+
+		// Assert — every caller reaches its work: within-bound callers acquire their own uncontended gate and
+		// best-effort callers skip the gate, so all callerCount work-entries are observed regardless of degrade.
+		for (int i = 0; i < callerCount; i++) {
+			enteredWork.Wait(SignalWait).Should().BeTrue(
+				because: "each distinct-key caller reaches its work (no per-key contention), whether it is within the global bound or degraded best-effort");
+		}
+
+		releaseCallers.Set();
+		foreach (Thread caller in callers) {
+			caller.Join(GenerousWait).Should().BeTrue(
+				because: "every caller must complete once released — the semaphore is never over-released across keys");
+		}
+
+		// Exactly `extra` callers received the post-increment global count values above the bound, so exactly
+		// `extra` degraded to best-effort with a process-wide-bound warning.
+		logger.Received(extra).WriteWarning(Arg.Is<string>(message =>
+			message.Contains("process-wide", StringComparison.OrdinalIgnoreCase)
+			&& message.Contains("without serialization", StringComparison.OrdinalIgnoreCase)));
+		// The per-application bound must never fire here: every key had exactly one in-flight caller.
+		logger.DidNotReceive().WriteWarning(Arg.Is<string>(message =>
+			message.Contains("per-application bound", StringComparison.OrdinalIgnoreCase)));
+	}
 }

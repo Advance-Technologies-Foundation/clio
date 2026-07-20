@@ -27,11 +27,17 @@ public interface ISectionCreateSerializationGuard {
 	/// <paramref name="environmentKey"/> + <paramref name="applicationCode"/> (case-insensitive).
 	/// The wait for the mutex is bounded by <paramref name="waitTimeout"/>; on timeout the work runs
 	/// <b>unserialized</b> (best-effort) so a deep queue never becomes a hard failure — any resulting
-	/// contention is recovered by the caller's retry/verify path. Additionally, when too many callers
-	/// are already queued on the same key, an excess caller degrades to best-effort <b>immediately</b>
-	/// (fail-fast, without blocking on the mutex) so a deep same-key fan-out cannot park a thread-pool
-	/// worker per waiter and starve unrelated work in a long-lived server process. The mutex is always
-	/// released when the work completes or throws.
+	/// contention is recovered by the caller's retry/verify path. Additionally, two waiter bounds degrade
+	/// an excess caller to best-effort <b>immediately</b> (fail-fast, without blocking on the mutex) so a
+	/// deep fan-out cannot park a thread-pool worker per waiter and starve unrelated work in a long-lived
+	/// server process: a <b>per-key</b> bound (<see cref="SectionCreateSerializationGuard.MaxConcurrentWaiters"/>),
+	/// which caps a deep same-application queue, and a <b>process-wide</b> bound
+	/// (<see cref="SectionCreateSerializationGuard.MaxTotalConcurrentWaiters"/>), which caps the total across
+	/// ALL keys so a burst spread over many distinct hot keys — each individually under the per-key bound —
+	/// still cannot park <c>per-key-bound × key-count</c> synchronous workers at once. A full asynchronous
+	/// <c>WaitAsync</c> acquire (which would not hold a worker while queued) is the deferred alternative that
+	/// would remove synchronous parking entirely. The mutex is always released when the work completes or
+	/// throws.
 	/// </summary>
 	/// <typeparam name="T">Return type of the guarded work.</typeparam>
 	/// <param name="environmentKey">
@@ -75,22 +81,48 @@ public sealed class SectionCreateSerializationGuard(ILogger logger) : ISectionCr
 	// would not hold a worker while queued) is the deferred alternative and is intentionally out of scope.
 	internal const int MaxConcurrentWaiters = 8;
 
+	// Process-wide companion to MaxConcurrentWaiters. The per-key bound alone caps only a deep SAME-key
+	// queue; a burst spread across N distinct hot keys — each individually under MaxConcurrentWaiters — could
+	// still park up to MaxConcurrentWaiters * N synchronous Wait workers at once and starve the pool. This
+	// global bound caps the TOTAL number of callers concurrently inside the guarded region (holders plus
+	// parked waiters) across ALL keys: once it is exceeded, an excess caller degrades to best-effort exactly
+	// like the per-key path, no matter how shallow its own key's queue is. 32 comfortably admits the shallow
+	// multi-application bursts that are the real workload while still bounding a pathological fan-out. As with
+	// the per-key bound, a full async WaitAsync acquire is the deferred, non-parking alternative.
+	internal const int MaxTotalConcurrentWaiters = 32;
+
+	// Global count of callers currently inside the guarded region across EVERY key (the sum of every key's
+	// in-flight count). Process-shared because the guard is a DI singleton. Interlocked-updated: incremented
+	// before waiting and ALWAYS decremented in finally, mirroring _inFlightPerKey.
+	private int _totalInFlight;
+
 	/// <inheritdoc />
 	public T Run<T>(string environmentKey, string applicationCode, TimeSpan waitTimeout, Func<T> work) {
 		ArgumentNullException.ThrowIfNull(work);
 		string key = BuildKey(environmentKey, applicationCode);
-		// Reserve a slot BEFORE waiting so the bound counts this caller too; ALWAYS release it in finally.
+		// Reserve a slot BEFORE waiting so the bounds count this caller too; ALWAYS release BOTH in finally.
+		// The per-key count bounds a deep same-application queue; the global count bounds the total across all
+		// keys so a fan-out over many distinct hot keys cannot park MaxConcurrentWaiters workers per key.
 		int inFlight = _inFlightPerKey.AddOrUpdate(key, 1, static (_, current) => current + 1);
+		int totalInFlight = Interlocked.Increment(ref _totalInFlight);
 		try {
-			if (inFlight > MaxConcurrentWaiters) {
-				// Deep same-key queue: do NOT park another thread-pool worker on Wait. Degrade to best-effort
-				// (unserialized) exactly like the wait-timeout path; residual contention is recovered by the
-				// caller's verify/retry path. This fail-fast bounds parked workers so a deep queue cannot
-				// exhaust the pool; an async acquire is the deferred, non-parking alternative.
+			bool perKeyExceeded = inFlight > MaxConcurrentWaiters;
+			bool totalExceeded = totalInFlight > MaxTotalConcurrentWaiters;
+			if (perKeyExceeded || totalExceeded) {
+				// Deep queue on EITHER bound: do NOT park another thread-pool worker on Wait. Degrade to
+				// best-effort (unserialized) exactly like the wait-timeout path; residual contention is
+				// recovered by the caller's verify/retry path. This fail-fast bounds parked workers so a deep
+				// queue — same-key OR fanned across many keys — cannot exhaust the pool; an async acquire is
+				// the deferred, non-parking alternative.
+				string boundDescription = perKeyExceeded
+					? $"the per-application bound for '{applicationCode}' ({inFlight} concurrent callers, "
+						+ $"bound {MaxConcurrentWaiters})"
+					: $"the process-wide bound ({totalInFlight} concurrent section-create callers across all "
+						+ $"applications, bound {MaxTotalConcurrentWaiters})";
 				logger.WriteWarning(
-					$"Section-create queue for '{applicationCode}' is deep ({inFlight} concurrent callers, "
-					+ $"bound {MaxConcurrentWaiters}); proceeding without serialization (best-effort) to avoid "
-					+ "parking a thread-pool worker. Any resulting contention is recovered automatically.");
+					$"Section-create queue exceeded {boundDescription}; proceeding without serialization "
+					+ "(best-effort) to avoid parking a thread-pool worker. Any resulting contention is "
+					+ "recovered automatically.");
 				return work();
 			}
 
@@ -112,6 +144,7 @@ public sealed class SectionCreateSerializationGuard(ILogger logger) : ISectionCr
 			}
 		} finally {
 			_inFlightPerKey.AddOrUpdate(key, 0, static (_, current) => current - 1);
+			Interlocked.Decrement(ref _totalInFlight);
 		}
 	}
 

@@ -589,6 +589,113 @@ public sealed class ApplicationSectionCreateServiceTests {
 			contentionDelay: _ => { });
 	}
 
+	// Builds a SUT whose ILogger (and the guard's ILogger) is a caller-supplied substitute, so a test can
+	// assert spinner lifecycle (BeginSpinner/EndSpinner) and info-line emission. Mirrors CreateSutWithResolver
+	// except it swaps the NullLogger for the injected substitute.
+	private ApplicationSectionCreateService CreateSutWithLogger(ILogger logger) {
+		IServiceUrlBuilderFactory serviceUrlBuilderFactory = Substitute.For<IServiceUrlBuilderFactory>();
+		serviceUrlBuilderFactory.Create(Arg.Any<EnvironmentSettings>()).Returns(_serviceUrlBuilder);
+		return new ApplicationSectionCreateService(
+			_settingsRepository,
+			_applicationClientFactory,
+			_serviceUrlBuilder,
+			serviceUrlBuilderFactory,
+			_applicationInfoService,
+			_ => _sysSettingsManager,
+			logger,
+			_captionCultureResolver,
+			new SectionCreateSerializationGuard(logger),
+			// No-op delay seam: run the contention backoff and settle/poll loops instantly under test.
+			contentionDelay: _ => { });
+	}
+
+	[Test]
+	[Description("Spinner lifecycle (PR #3606768964): the happy path ends the create-section spinner EXACTLY ONCE with success=true — the single BeginSpinner is matched by one EndSpinner(true) and never an EndSpinner(false).")]
+	public void CreateSection_ShouldEndSpinnerExactlyOnceSuccess_WhenInsertSucceeds() {
+		// Arrange
+		ILogger logger = Substitute.For<ILogger>();
+		ApplicationSectionCreateService sut = CreateSutWithLogger(logger);
+		SetUpSuccessfulCreateWithReadbackCapture();
+
+		// Act
+		_ = sut.CreateSection("sandbox", CreateReuseEntityRequest());
+
+		// Assert
+		logger.Received(1).EndSpinner(true);
+		logger.DidNotReceive().EndSpinner(false);
+	}
+
+	[Test]
+	[Description("Spinner lifecycle (PR #3606768964): after a detail-less contention rejection whose section is verified absent and the auto-retry then succeeds, the spinner ends EXACTLY ONCE with success=true — the many EndSpinner call sites across the contention/retry branches never double-end.")]
+	public void CreateSection_ShouldEndSpinnerExactlyOnceSuccess_WhenContentionRetrySucceeds() {
+		// Arrange
+		ILogger logger = Substitute.For<ILogger>();
+		ApplicationSectionCreateService sut = CreateSutWithLogger(logger);
+		SetUpDetailLessThenSuccessfulInsertWithReadback();
+
+		// Act — enableContentionRetry:true drives insert #1 (contention) → verified absent → retry succeeds.
+		_ = sut.CreateSection("sandbox", CreateReuseEntityRequest(), enableContentionRetry: true);
+
+		// Assert
+		logger.Received(1).EndSpinner(true);
+		logger.DidNotReceive().EndSpinner(false);
+	}
+
+	[Test]
+	[Description("Spinner lifecycle (PR #3606768964): when contention persists — insert #1 and the single retry both abort detail-lessly and the section is verified absent throughout — the spinner ends EXACTLY ONCE with success=false, never an EndSpinner(true).")]
+	public void CreateSection_ShouldEndSpinnerExactlyOnceFailure_WhenContentionPersists() {
+		// Arrange
+		ILogger logger = Substitute.For<ILogger>();
+		ApplicationSectionCreateService sut = CreateSutWithLogger(logger);
+		SetUpDetailLessInsertWithReadback(sectionVisibleOnVerify: false);
+
+		// Act — both inserts stay detail-less and the section is verified absent, so the contention failure surfaces.
+		Action act = () => sut.CreateSection("sandbox", CreateReuseEntityRequest(), enableContentionRetry: true);
+
+		// Assert
+		act.Should().Throw<ApplicationSectionCreateException>(
+			because: "a persistent detail-less rejection surfaces as a classified contention failure");
+		logger.Received(1).EndSpinner(false);
+		logger.DidNotReceive().EndSpinner(true);
+	}
+
+	[Test]
+	[Description("Spinner lifecycle (PR #3606768964): on the insert-timeout recovery path where the section is already visible despite the timeout, the spinner ends EXACTLY ONCE with success=true — the timeout-recovery branch does not leave the spinner double-ended.")]
+	public void CreateSection_ShouldEndSpinnerExactlyOnceSuccess_WhenInsertTimesOutButSectionVisible() {
+		// Arrange
+		ILogger logger = Substitute.For<ILogger>();
+		ApplicationSectionCreateService sut = CreateSutWithLogger(logger);
+		SetUpTimedOutInsertWithReadbackMocks();
+
+		// Act
+		_ = sut.CreateSection("sandbox", CreateReuseEntityRequest());
+
+		// Assert
+		logger.Received(1).EndSpinner(true);
+		logger.DidNotReceive().EndSpinner(false);
+	}
+
+	[Test]
+	[Description("Sentinel-drift observability (PR #3606768984): a DETAILED insert rejection (not the detail-less contention sentinel) emits a single low-noise INFO recording the actual server message, so production surfaces the message if Creatio ever rewords the detail-less sentinel; classification stays a terminal ServerError.")]
+	public void CreateSection_ShouldEmitInfoWithServerMessage_WhenRejectionIsDetailed() {
+		// Arrange
+		ILogger logger = Substitute.For<ILogger>();
+		ApplicationSectionCreateService sut = CreateSutWithLogger(logger);
+		SetUpInsertFailureMocks("""{"success":false,"errorInfo":{"message":"Section with this code already exists"}}""");
+
+		// Act
+		Action act = () => sut.CreateSection("sandbox", CreateNewEntityRequest());
+
+		// Assert
+		act.Should().Throw<ApplicationSectionCreateException>(
+			because: "a detailed rejection stays a terminal server-error failure")
+			.Which.FailureClass.Should().Be(ApplicationSectionCreateFailureClass.ServerError,
+				because: "the observability info line must not change the classification of a detailed rejection");
+		logger.Received(1).WriteInfo(Arg.Is<string>(message =>
+			message.Contains("not classified as contention", StringComparison.Ordinal)
+			&& message.Contains("Section with this code already exists", StringComparison.Ordinal)));
+	}
+
 	private ApplicationSectionCreateService CreateSutWithGuard(ISectionCreateSerializationGuard guard) {
 		IServiceUrlBuilderFactory serviceUrlBuilderFactory = Substitute.For<IServiceUrlBuilderFactory>();
 		serviceUrlBuilderFactory.Create(Arg.Any<EnvironmentSettings>()).Returns(_serviceUrlBuilder);
