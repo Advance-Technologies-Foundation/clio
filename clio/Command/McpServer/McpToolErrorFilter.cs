@@ -36,7 +36,7 @@ public static class McpToolErrorFilter
 				return hintResult;
 			}
 			try {
-				// ENG-93373: bound retry-safe (read-only / idempotent non-destructive) tools by a wall-clock
+				// ENG-93373: bound retry-safe (read-only, or the get-page local-write read; never idempotent server writes) tools by a wall-clock
 				// response deadline so a stalled Creatio read can never hang indefinitely. On expiry the helper
 				// returns a structured error-class=creatio-timeout result telling the agent the call is safe to
 				// retry. Destructive tools are excluded — they own their own timeout contract — and fall through

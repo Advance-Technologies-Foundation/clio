@@ -70,12 +70,25 @@ public sealed class ClioRunExecutor(
 	IMcpToolCompatibilityCatalog compatibilityCatalog) : IClioRunExecutor {
 
 	/// <inheritdoc />
-	public async ValueTask<CallToolResult> RunAsync(
+	public ValueTask<CallToolResult> RunAsync(
 		string? command,
 		JsonElement? args,
 		bool destructiveSurface,
 		RequestContext<CallToolRequestParams> callContext,
-		CancellationToken cancellationToken) {
+		CancellationToken cancellationToken) =>
+		RunAsync(command, args, destructiveSurface, callContext, cancellationToken, readDeadline: null);
+
+	// ENG-93373 test seam. The retry-safe inner dispatch is bounded by McpReadResponseDeadline; a null
+	// readDeadline uses McpReadResponseDeadline.DefaultReadDeadline (production always calls the 5-arg
+	// overload above, i.e. readDeadline: null). Tests pass a tiny deadline to exercise the clio-run timeout
+	// branch — the PRIMARY long-tail read vector — without a real slow backend.
+	internal async ValueTask<CallToolResult> RunAsync(
+		string? command,
+		JsonElement? args,
+		bool destructiveSurface,
+		RequestContext<CallToolRequestParams> callContext,
+		CancellationToken cancellationToken,
+		TimeSpan? readDeadline) {
 		ArgumentNullException.ThrowIfNull(callContext);
 
 		// Wrapped-form tolerance: clio-run / clio-run-destructive declare TWO top-level params
@@ -167,7 +180,8 @@ public sealed class ClioRunExecutor(
 			? await McpReadResponseDeadline.RunAsync(
 				toolName,
 				token => DispatchAsync(tool, toolName, childParams, callContext, token),
-				cancellationToken).ConfigureAwait(false)
+				cancellationToken,
+				readDeadline).ConfigureAwait(false)
 			: await DispatchAsync(tool, toolName, childParams, callContext, cancellationToken)
 				.ConfigureAwait(false);
 		return AttachDispatchAudit(dispatched, toolName);

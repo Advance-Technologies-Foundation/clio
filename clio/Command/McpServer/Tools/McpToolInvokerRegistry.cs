@@ -39,7 +39,8 @@ public interface IMcpToolInvokerRegistry {
 	bool IsDestructive(string toolName);
 
 	/// <summary>
-	/// Determines whether the named tool is retry-safe (read-only / idempotent non-destructive), derived
+	/// Determines whether the named tool is retry-safe (read-only, or the get-page local-write read; never
+	/// idempotent server writes, and excluding the get-app-info progress-streaming read), derived
 	/// from its <c>[McpServerTool]</c> annotations via <see cref="McpReadDeadlineGate"/>. Used to decide
 	/// whether an unmatched long-tail dispatch is eligible for the read-response deadline (ENG-93373). An
 	/// unknown tool fails CLOSED (treated as NOT retry-safe) so it is never bounded on the assumption it is

@@ -1,6 +1,6 @@
 # ADR: Response deadline for read-only (retry-safe) MCP tools
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-07-17
 - **Feature:** `read-only-mcp-response-deadline`
 - **Jira:** [ENG-93373](https://creatio.atlassian.net/browse/ENG-93373) (sub-task of ENG-93367 "Analyze long app creating"; prior analysis of the same pain ENG-90634).
@@ -22,8 +22,10 @@ section creation, but the MCP call gave zero feedback and no deadline.
 client's hard request ceiling, and the backend work keeps running so a later poll observes it.
 
 The gap is the **read** path. Read-only / retry-safe tools (`list-pages`, `list-app-sections`,
-`get-page`, `list-apps`, `get-app-info`, and the rest) run their Creatio round-trip **synchronously
-with no wall-clock bound**, so a stalled stand hangs the tool indefinitely.
+`get-page`, `list-apps`, and the rest) run their Creatio round-trip **synchronously
+with no wall-clock bound**, so a stalled stand hangs the tool indefinitely. (`get-app-info` reads
+synchronously too, but it streams progress under the write-path heartbeat and is bounded there, not by
+this read deadline — see the Decision.)
 
 ### Constraints
 
@@ -55,13 +57,18 @@ their own timeout semantics.
 A tool is **retry-safe** — and therefore gets the read deadline — when:
 
 ```
-!DestructiveHint && (ReadOnlyHint || toolName == "get-page")
+!DestructiveHint && !IsProgressStreamingRead(toolName) && (ReadOnlyHint || toolName == "get-page")
 ```
 
-- Covers all five named tools. Four (`list-apps`, `list-pages`, `get-app-info`,
-  `list-app-sections`) are `ReadOnly=true`. **`get-page` is `ReadOnly=false`** (it writes local
-  `.clio-pages` files) so it is admitted by an explicit one-tool allowlist: it reads from Creatio and a
-  retry re-reads Creatio and overwrites the local files, so it is retry-safe despite `ReadOnly=false`.
+- Covers four named tools. Three (`list-apps`, `list-pages`, `list-app-sections`) are `ReadOnly=true`.
+  **`get-page` is `ReadOnly=false`** (it writes local `.clio-pages` files) so it is admitted by an
+  explicit one-tool allowlist: it reads from Creatio and a retry re-reads Creatio and overwrites the
+  local files, so it is retry-safe despite `ReadOnly=false`.
+- **`get-app-info` is EXCLUDED** by name via `IsProgressStreamingRead`. It is `ReadOnly=true` but streams
+  `notifications/progress` under the write-path heartbeat (`McpProgressHeartbeat`); its contract is "await
+  completion, do not retry on a perceived timeout", so the "safe to retry" read deadline must never bound
+  it (it would cut off a legitimately long read of a large app). The exemption matches `core-rules` and
+  the gate's own XML doc.
 - Excludes every destructive write (`create-app-section`, `create-app`, `update-*`, `delete-*`,
   `deploy-*`, `restart-*`, `compile-creatio`, …). Those are `Destructive=true` and keep their own
   contract (e.g. `create-app-section`'s `in-progress` / "do NOT retry" envelope). Applying a
@@ -97,7 +104,8 @@ authority, used by all dispatch paths below so the classification can never drif
 2. **Filter wiring (matched tools).** In `McpToolErrorFilter.HandleCallToolErrors`, read the matched
    tool's annotations from `context.MatchedPrimitive` (`ProtocolTool.Annotations`). If retry-safe,
    run `next` under the deadline; otherwise call `next` unchanged (today's behavior). This covers
-   every advertised (resident) retry-safe tool — all five named tools included.
+   every advertised (resident) retry-safe tool — the four named tools above (`get-app-info` excluded
+   as a progress-streaming read).
 3. **clio-run wiring (the primary long-tail vector).** Non-resident tools are invoked via `clio-run`
    per core-rules, so `ClioRunExecutor.RunAsync` bounds its inner dispatch when
    `IMcpToolInvokerRegistry.IsRetrySafe(name)` holds. `clio-run` / `clio-run-destructive` are themselves
@@ -130,8 +138,12 @@ write one by `read-response-timed-out: true` and by the absence of `section-crea
 2. **Blanket deadline for *all* tools (no gate).** Rejected: would return "safe to retry" for
    destructive/non-idempotent writes, risking duplicate sections/packages — the exact failure mode
    `create-app-section`'s `in-progress` contract exists to prevent.
-3. **Strict `ReadOnlyHint` gate.** Rejected: excludes the named `get-page` (ReadOnly=false because
-   it writes local files). `ReadOnly || Idempotent` is the correct "retry-safe" predicate.
+3. **Strict `ReadOnlyHint` gate.** Rejected: a bare `ReadOnlyHint` check excludes the named `get-page`
+   (ReadOnly=false because it writes local files) and, conversely, admits `get-app-info` (ReadOnly=true
+   but a progress-streaming read that must not be bounded). The shipped predicate therefore adds the
+   `get-page` allowlist and the `!IsProgressStreamingRead` carve-out on top of `!Destructive && ReadOnly`.
+   Widening instead to `ReadOnly || Idempotent` was also rejected (see the Decision above): `Idempotent`
+   admits concurrent-duplicate SERVER writes, which is exactly what the review-gate fix removed.
 4. **Reuse the write env var `CLIO_MCP_RESPONSE_DEADLINE_SECONDS`.** Rejected per the ticket's
    explicit ask for an independently tunable read deadline; a separate knob lets reads use a
    tighter budget than the 150 s write ceiling.
@@ -150,9 +162,14 @@ write one by `read-response-timed-out: true` and by the absence of `section-crea
   appears, and only for retry-safe tools that exceed the deadline.
 - **Negative / risks:** an abandoned read may keep running server-side until it completes (result
   discarded) — bounded by the single-session, sequential-client execution model already documented
-  for the write path. Mis-annotated tools (a destructive tool marked non-destructive) would be
-  mis-gated — mitigated by the annotation-audit test and the existing duplicate-name/annotation
-  guards.
+  for the write path. Because the abandoned read still holds the per-tenant monitor
+  (`BaseTool.ExecuteUnderTenantLock`), a *permanently*-hung stand with an auto-retrying agent can pile up
+  N threads (1 holding the lock + N-1 retries blocked on it), one per deadline, until the stand responds;
+  this is still agent-paced and single-session-bounded and unwinds when the stand replies, so it is an
+  accepted trade-off, not a leak. A per-tenant in-flight guard (fast-fail a new bounded read while an
+  abandoned one still holds the lock) is the fix should a future multiplexed transport make the pile-up
+  matter. Mis-annotated tools (a destructive tool marked non-destructive) would be mis-gated — mitigated
+  by the annotation-audit test and the existing duplicate-name/annotation guards.
 - **Tuning:** 120 s default (below common client ceilings); env-var override for other ceilings.
 
 ---

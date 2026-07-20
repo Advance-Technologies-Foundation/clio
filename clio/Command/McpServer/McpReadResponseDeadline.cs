@@ -34,11 +34,18 @@ namespace Clio.Command.McpServer;
 /// do not observe the cancellation token, so an abandoned read keeps its thread-pool thread — and any
 /// per-tenant execution lock the tool holds (<c>BaseTool.ExecuteUnderTenantLock</c>) — until the backend
 /// finally responds. Under clio's single-session, sequential-client model the agent waits for each
-/// bounded response before issuing the next call, so abandoned reads accumulate at most one-per-timeout
+/// bounded response before issuing the next call, so abandoned reads are added at most one-per-timeout
 /// (agent-paced), never as a concurrent burst; the same-tenant lock also serialises them, which
-/// incidentally prevents a concurrent double-execution. This mirrors the write path's documented detach
-/// trade-off. Were clio ever to move to a multiplexed/multi-client transport, a bounded work-queue would
-/// be required here (as noted for the write path).
+/// incidentally prevents a concurrent double-execution. Against a slow-but-eventually-responsive backend
+/// each abandoned read drains as the stand catches up, so the steady-state count stays near one. The
+/// pathological case is a <em>permanently</em>-hung stand plus an auto-retrying agent: the first read
+/// holds the tenant monitor forever, each retry blocks another pool thread on that same monitor, times
+/// out and retries — so N threads accumulate (1 holding + N-1 blocked), one per deadline, until the
+/// stand responds. This still self-limits (it is agent-paced and bounded by the single-session model,
+/// and unwinds the moment the stand replies), so it is an accepted trade-off, not a leak; a per-tenant
+/// in-flight guard that fast-fails a new bounded read while an abandoned one still holds the lock is the
+/// fix if a future multiplexed/multi-client transport makes the pile-up matter. This mirrors the write
+/// path's documented detach trade-off.
 /// </para>
 /// </remarks>
 internal static class McpReadResponseDeadline {

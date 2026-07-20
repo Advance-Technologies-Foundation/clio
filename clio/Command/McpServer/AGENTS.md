@@ -48,14 +48,17 @@ Example use cases:
 
 ## Read-response deadline (retry-safe tools)
 
-Retry-safe tools (read-only, or idempotent & non-destructive) are bounded by a wall-clock response
+Retry-safe tools (read-only, or the `get-page` local-write read; never idempotent server writes) are bounded by a wall-clock response
 deadline so a stalled Creatio round-trip can never hang the call indefinitely (ENG-93373). This is
 NOT wired per tool — it lives at the call-tool pipeline layer, so it is shape-agnostic and covers
 every retry-safe tool regardless of its return type:
 
 - `McpReadDeadlineGate.IsRetrySafe(toolName, readOnly, destructive)` is the single authority:
-  `!destructive && (readOnly || isGetPage)`. `get-page` is admitted by NAME (ReadOnly=false because it
-  writes local `.clio-pages` files, but it reads from Creatio and a retry re-reads + overwrites). The
+  `!destructive && !isProgressStreamingRead && (readOnly || isGetPage)`. `get-page` is admitted by NAME
+  (ReadOnly=false because it writes local `.clio-pages` files, but it reads from Creatio and a retry
+  re-reads + overwrites). `get-app-info` is EXCLUDED by name (`isProgressStreamingRead`): it is
+  ReadOnly=true but streams `notifications/progress` under the write-path heartbeat and its contract is
+  "await completion, do not retry" — so the read deadline must never bound it. The
   `Idempotent` hint is deliberately NOT in the predicate: an idempotent SERVER write (`install-gate`,
   `generate-source-code`, `add-package-dependency`, …) is safe only for sequential re-runs, not for a
   retry issued while an abandoned first call is still mutating the server — so the deadline covers reads
