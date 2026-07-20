@@ -18,7 +18,7 @@ public sealed class ThemingGuidanceResource {
 	private const string ResourceUri = DocsScheme + "://" + ResourcePath;
 
 	[McpServerResource(UriTemplate = ResourceUri, Name = "theming-guidance")]
-	[Description("Returns canonical MCP guidance for managing custom Creatio themes with clio — create, restyle, delete, list, apply a theme to the current user (or reset it), and get/set the default — shipping them to a Creatio environment, and the branding companion mechanics (logo sys settings and the shell background image).")]
+	[Description("Returns canonical MCP guidance for managing custom Creatio themes with clio — create, restyle, delete, list, apply a theme to the current user (or reset it), and get/set the default — and shipping them to a Creatio environment.")]
 	public ResourceContents GetGuide() => Guide;
 
 	internal static readonly TextResourceContents Guide = new() {
@@ -34,6 +34,7 @@ public sealed class ThemingGuidanceResource {
 		       - List existing themes — see "List themes".
 		       - Apply a theme to the current user (or reset it) — see "Apply to the current user".
 		       - Get or set the default theme — see "Get / set the default theme".
+		       Branding beyond the theme — the product logos and the shell background image — is a separate guide: `get-guidance name=branding`.
 
 		       Constraints
 		       - Theming is supported only on Creatio 10.0.0 or later. On an older environment the theme tools refuse with an explicit version-requirement error — relay it to the user and stop; do not retry or work around it.
@@ -102,22 +103,6 @@ public sealed class ThemingGuidanceResource {
 		       1. Confirm the target theme is available on the environment (see "List themes").
 		       2. Set `DefaultTheme` to the target theme's `id` with `update-sys-setting` (see `docs://mcp/guides/sys-settings`).
 		       If you delete the theme that is currently the default, and the user hasn't already specified what to do, inform them and ask whether to set `DefaultTheme` to another theme's `id` or clear it (empty → the stock theme).
-
-		       Branding — logos and background
-		       Tool mechanics for the two branding assets beyond the theme itself. Both are environment-wide (All-Users) settings, not per-user: applying them changes the look for every user after a page refresh. The conversation flow (when to ask, which template, which palette stop goes where) is owned by the consuming skill; this section covers only how the writes are made.
-
-		       Logos. Four Binary system settings, one per product slot; write each from a local file with `update-sys-setting` + `value-file-path` (never inline the bytes — see `docs://mcp/guides/sys-settings` for the Binary rules, size cap, and file-security policy):
-		       - `LogoImage` — login page (white background).
-		       - `MenuLogoImage` — main menu / shell header (white background).
-		       - `ConfigurationPageLogoImage` — configuration section (white background).
-		       - `CrtAppToolbarLogo` — Freedom UI top panel (dark surface; use the white/light logo variant when one exists, otherwise the main logo).
-		       After applying custom logos, set `HideSplashScreenLogoImage` (Boolean) to true so the stock splash logo does not flash during load; leave it untouched when no logos were applied. `CrtAppToolbarLogoUnderlayColor` (text) paints a backing color under the top-panel logo — change it only when the user explicitly asks.
-
-		       Background. The shell background is the `CrtBackgroundConfig` system setting (text) holding JSON `{"imageId":"<SysImage id>","mode":"Image"}`; it may be absent from the `list-sys-settings` catalog, so read and write it by code. The image is a `SysImage` record, but its binary column cannot be written through the OData JSON tools (the stream stays empty) — upload through the platform image API on an authenticated browser session (`get-browser-session` provides one):
-		       - POST `<app-url>/0/ImageAPIService/upload?fileapi<timestamp>&totalFileLength=<bytes>&fileId=<new-guid>&mimeType=<url-encoded mime>` (no `/rest/` segment — the image API is served straight off the workspace base URL, unlike the WCF `/rest/…` routes) with headers `Content-Range: bytes 0-<bytes minus 1>/<bytes>` (the range end is zero-indexed and inclusive, so a 123-byte file is `bytes 0-122/123`), `Content-Type: <mime>`, `Content-Disposition: attachment; filename=<name>`, and `BPMCSRF: <BPMCSRF cookie value>`; the body is the raw file bytes. The service creates the `SysImage` record with `Id` = the `fileId` you generated.
-		       - Verify the upload by fetching `<app-url>/0/img/entity/hash/SysImage/Data/<fileId>` (the `hash` segment is literal) — it must return the file with its mime type.
-		       - Register the image in the Appearance-page gallery with `odata-create` on `SysImageInTag`: `{"EntityId":"<fileId>","TagId":"273C2402-7CAE-456B-A9C4-067D2024F1A7"}` (the shell-background tag).
-		       - Point `CrtBackgroundConfig` at the image with `update-sys-setting`. The Appearance setup page then lists the image in its gallery as the selected item and renders it in the preview; open pages show it after a refresh.
 		       """
 	};
 }

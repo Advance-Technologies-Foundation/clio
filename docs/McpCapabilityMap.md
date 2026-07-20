@@ -684,6 +684,8 @@ These tools brand a Creatio app: build a custom theme from brand colours and fon
   Report whether the caller has the `CanManageThemes` operation and `CanCustomizeBranding` license, to gate authoring on a real permission check.
 - `set-user-theme`
   Apply a theme to the current (authenticated) user's profile — only that account, not everyone (that is the global `DefaultTheme`) — or clear it with `reset`. A confirmed write (`Destructive=true`: it overwrites the profile's current theme, so the MCP host prompts before it runs; on the lazy tool surface it is re-issued through `clio-run-destructive`) — still reversible with `reset`. Requires the `CanCustomizeBranding` license and `CanChangeOwnTheme` operation; the change is visible on the user's next page refresh.
+- `upload-image`
+  Upload a local image file to the environment's `SysImage` table and return the created record's `image-id`. Additive only (`Destructive=false`) — every call creates a new record. The supported write path for the shell background image.
 
 What an external AI can practically do here:
 
@@ -691,11 +693,12 @@ What an external AI can practically do here:
 - apply a freshly created theme to the current user with `set-user-theme` so they only need to refresh the page (the auto-apply step in the theming guidance)
 - restyle, remove, and confirm themes on an environment
 - precheck theming permissions before authoring, and set the default via the `DefaultTheme` system setting (see the theming guidance)
-- brand beyond the theme: write the four logo slots (`LogoImage`, `MenuLogoImage`, `ConfigurationPageLogoImage`, `CrtAppToolbarLogo`) as Binary sys settings via `update-sys-setting` + `value-file-path`, and apply a shell background (image upload via the platform `ImageAPIService` on an authenticated browser session, gallery registration via `SysImageInTag`, activation via `CrtBackgroundConfig`) — the exact mechanics live in the `theming` guidance's "Branding — logos and background" section (ENG-92981)
+- brand beyond the theme: write the four logo slots as Binary sys settings, and apply a shell background (upload with `upload-image`, then register and activate it) — the exact mechanics live in the `branding` guidance
 
-Companion surfaces (see the `theming` guidance):
+Companion surfaces:
 
-- `get-guidance name=theming` — the palette conversation, the build step, the workspace/dev vs no-code/server delivery flows, and the branding companion mechanics (logos and the shell background).
+- `get-guidance name=theming` — the palette conversation, the build step, and the workspace/dev vs no-code/server delivery flows.
+- `get-guidance name=branding` — branding beyond the theme: the logo sys settings and the shell background image (upload, gallery registration, activation).
 
 ## Prompt Layer: What The AI Gets Beyond Raw Tools
 
