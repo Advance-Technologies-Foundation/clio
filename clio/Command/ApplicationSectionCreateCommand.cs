@@ -519,7 +519,9 @@ public sealed class ApplicationSectionCreateService(
 				TryVerifySectionExistsWithSettle(client, environmentSettings, resolvedRequest);
 			if (sectionVisibleAfterServerError == true) {
 				// TryCommitAttempt already ended the spinner false on its throw; this EndSpinner(true) is a
-				// no-op guarded by the logger (do not double-end) and only documents the recovered intent.
+				// safe no-op on the real ConsoleLogger (EndSpinner short-circuits once its CTS is null, so it
+				// never double-renders a success line after the failure line) and only documents the recovered
+				// intent. Locked by CreateSection_ShouldRecoverAndNotDoubleRenderSpinner_WhenRetryServerErrorButSectionVisible.
 				logger.EndSpinner(true);
 				logger.WriteInfo(
 					$"Section '{resolvedRequest.SectionCode}' is visible despite a terminal rejection on the retry — "
@@ -837,11 +839,6 @@ public sealed class ApplicationSectionCreateService(
 			ServerErrorRetryGuidance);
 	}
 
-	/// <summary>
-	/// A rejected insert is <b>detail-less</b> (the contention signature) when the server returned no error
-	/// message or only the opaque <c>InsertQuery failed</c> text (with or without the trailing period). Any
-	/// other non-empty message is a real, terminal rejection.
-	/// </summary>
 	/// <summary>
 	/// The exact detail-less message Creatio's DataService <c>InsertQuery</c> emits when a section insert
 	/// is rejected without any error detail. This is a <b>server-owned contract string</b> and the single

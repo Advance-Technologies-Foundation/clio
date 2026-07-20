@@ -11,15 +11,16 @@ namespace Clio.Common;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>CLIO001 exemption (AGENTS.md lightweight-primitive rule).</b> This type is a lightweight,
-/// stateless-policy concurrency <i>primitive</i> — the same category as <see cref="SemaphoreSlim"/> and
-/// <see cref="ConcurrentDictionary{TKey,TValue}"/> — not a behaviour-bearing service, handler, or
-/// validator. Each consumer deliberately owns its OWN independent key space (for example the
-/// section-create serialization guard's per-application locks vs. the component-registry background-refresh
-/// gates), so every consumer instantiates its own <c>new KeyedSemaphore()</c> for its own registry. A
-/// shared DI singleton would be <i>incorrect</i> here: it would conflate two unrelated lock registries
-/// onto one instance. Constructing it per consumer with <c>new()</c> is therefore intentional and is the
-/// AGENTS.md lightweight-primitive exemption to CLIO001 (favour DI for behaviour classes), not a defect.
+/// <b>Why per-consumer <c>new()</c> (and not DI).</b> This type is a thin keyed wrapper over a
+/// <see cref="ConcurrentDictionary{TKey,TValue}"/> of <see cref="SemaphoreSlim"/> gates with NO injected
+/// dependencies — it carries no collaborators and no shared state to compose. Each consumer owns an
+/// INDEPENDENT key space: <c>SectionCreateSerializationGuard</c> keys its registry by environment+application,
+/// while <c>ComponentRegistryClient</c> keys its registry by flavor+version. Those two key spaces are
+/// unrelated, so a single shared DI singleton would be <i>incorrect</i> — it would conflate two distinct lock
+/// registries onto one instance and let unrelated keys collide. Giving each consumer its own
+/// <c>new KeyedSemaphore()</c> keeps the registries isolated, which is the correct behaviour. The CLIO001
+/// analyzer does not flag this construction (verified: 0 CLIO diagnostics), because a self-contained
+/// dependency-free concurrency primitive is not the behaviour-bearing service class the rule targets.
 /// </para>
 /// Entries are <b>never evicted</b>. The key cardinality is bounded by design (tens of distinct keys per
 /// process at most, each semaphore is a few dozen bytes), and ref-counted removal would introduce a

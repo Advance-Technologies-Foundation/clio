@@ -3,11 +3,15 @@ using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
+using System.Net.WebSockets;
+using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
+using Clio.Common.Responses;
 using Clio.UserEnvironment;
+using Creatio.Client.Dto;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
@@ -2669,6 +2673,242 @@ public sealed class ApplicationSectionCreateServiceTests {
 		// Assert
 		ApplicationSectionCreateService.DetailLessInsertRejectionMessage.Should().Be("InsertQuery failed",
 			because: "this is the server-owned DataService InsertQuery detail-less message that gates the contention recovery");
+	}
+
+	[Test]
+	[Description("FIX D (#3613524473): the retry-ServerError-but-visible recovery branch RECOVERS — insert #1 " +
+		"aborts detail-less → verified absent → the retry insert throws a DETAILED ServerError → the id " +
+		"re-verify finds the section VISIBLE → the call returns the successful readback instead of a terminal " +
+		"failure. The spinner ends success exactly once: TryCommitAttempt ends it false on the ServerError throw " +
+		"and the recovery branch's EndSpinner(true) is a safe no-op on the real ConsoleLogger (EndSpinner " +
+		"short-circuits once its CTS is null), so no success line is double-rendered after the failure line.")]
+	public void CreateSection_ShouldRecoverAndNotDoubleRenderSpinner_WhenRetryServerErrorButSectionVisible() {
+		// Arrange
+		ILogger logger = Substitute.For<ILogger>();
+		ApplicationSectionCreateService sut = CreateSutWithLogger(logger);
+		SetUpDetailLessThenServerErrorInsertWithVisibleSection();
+
+		// Act — enableContentionRetry:true drives insert #1 (detail-less) → verified absent → retry throws a
+		// detailed ServerError → id re-verify finds the section visible → recovery via the outside readback.
+		ApplicationSectionCreateResult result = sut.CreateSection(
+			"sandbox", CreateReuseEntityRequest(), enableContentionRetry: true);
+
+		// Assert
+		result.Section.Code.Should().Be("UsrOrders",
+			because: "the section committed by insert #1 must be recovered and returned via readback rather than surfaced as the retry's terminal ServerError");
+		logger.Received(1).EndSpinner(false);
+		logger.Received(1).EndSpinner(true);
+	}
+
+	[Test]
+	// Spawns real OS threads that hold each other's inserts briefly to prove the per-key guard serializes the
+	// destructive commit end-to-end; run it serially so its thread pressure never perturbs timing-sensitive
+	// neighbouring fixtures.
+	[NonParallelizable]
+	[Description("FIX C (#3613524250): drives the REAL ApplicationSectionCreateService.CreateSection under " +
+		"GENUINE concurrent execution (dedicated threads, real SectionCreateSerializationGuard) for the SAME " +
+		"environment + application-code. A thread-safe recording IApplicationClient tracks how many section-" +
+		"insert POSTs are in flight simultaneously: the guard must serialize them so the max concurrent insert " +
+		"is exactly 1, each caller inserts exactly once (no spurious contention retry), and all N calls return " +
+		"the created section successfully.")]
+	public void CreateSection_ShouldSerializeInsertsEndToEnd_WhenConcurrentCallsTargetSameEnvironmentAndApplication() {
+		// Arrange
+		const int callerCount = 4;
+		RecordingConcurrencyApplicationClient recordingClient = new(insertOverlapWindowMs: 40);
+		ApplicationEntityInfoResult entity = new("entity-uid", "UsrOrders", "Orders", []);
+		ApplicationInfoResult applicationInfo = new(
+			"pkg-uid", "UsrOrdersApp", [entity], [], "app-id", "Orders App", "UsrOrdersApp", "8.3.0");
+		ConcurrencyCollaborators collaborators = new(recordingClient, applicationInfo);
+		ApplicationSectionCreateService sut = new(
+			_settingsRepository,
+			collaborators,
+			collaborators,
+			collaborators,
+			collaborators,
+			_ => _sysSettingsManager,
+			new NullLogger(),
+			collaborators,
+			// The REAL guard drives the full guard → commit path under genuine concurrency.
+			new SectionCreateSerializationGuard(new NullLogger()),
+			// No-op delay seam so the contention backoff/settle loops add no wall-clock time.
+			contentionDelay: _ => { });
+
+		ApplicationSectionCreateResult?[] results = new ApplicationSectionCreateResult?[callerCount];
+		Exception?[] failures = new Exception?[callerCount];
+		Thread[] threads = new Thread[callerCount];
+		using Barrier startBarrier = new(callerCount);
+
+		// Act — release all callers together so they contend for the SAME env+app guard key simultaneously.
+		for (int i = 0; i < callerCount; i++) {
+			int index = i;
+			threads[i] = new Thread(() => {
+				try {
+					startBarrier.SignalAndWait();
+					results[index] = sut.CreateSection(
+						_environmentSettings,
+						CreateReuseEntityRequest(),
+						enableContentionRetry: true);
+				} catch (Exception exception) {
+					failures[index] = exception;
+				}
+			}) { IsBackground = true };
+		}
+
+		foreach (Thread thread in threads) {
+			thread.Start();
+		}
+
+		foreach (Thread thread in threads) {
+			thread.Join(TimeSpan.FromSeconds(30)).Should().BeTrue(
+				because: "every concurrent create-app-section caller must complete well within the timeout");
+		}
+
+		// Assert
+		failures.Should().OnlyContain(failure => failure == null,
+			because: "no caller may fail — the guard serializes the same-key inserts so none hits a spurious contention rejection");
+		results.Should().OnlyContain(result => result != null && result.Section.Code == "UsrOrders",
+			because: "every concurrent caller must return the successfully created section via readback");
+		recordingClient.MaxConcurrentInserts.Should().Be(1,
+			because: "the SectionCreateSerializationGuard must serialize the destructive insert per env+app so at most one insert POST is ever in flight for the same key");
+		recordingClient.InsertCount.Should().Be(callerCount,
+			because: "each serialized caller issues exactly one insert with no spurious contention retry when the stubbed client acknowledges success");
+	}
+
+	// FIX C (#3613524250): a thread-safe recording IApplicationClient that tracks the number of section-insert
+	// POSTs in flight simultaneously, so the service-level concurrency test can prove the guard serializes the
+	// destructive commit end-to-end. NSubstitute is not designed for concurrent invocation of one substitute, so
+	// the whole SUT dependency graph on the concurrent path is hand-written and thread-safe. Only ExecutePostRequest
+	// is exercised on the create-section path; every other member is unused here and throws.
+	private sealed class RecordingConcurrencyApplicationClient(int insertOverlapWindowMs) : IApplicationClient {
+		private readonly object _maxLock = new();
+		private int _inFlightInserts;
+		private int _maxConcurrentInserts;
+		private int _insertCount;
+
+		public int MaxConcurrentInserts => Volatile.Read(ref _maxConcurrentInserts);
+
+		public int InsertCount => Volatile.Read(ref _insertCount);
+
+		public event EventHandler<WebSocketState> ConnectionStateChanged { add { } remove { } }
+
+		public event EventHandler<WsMessage> MessageReceived { add { } remove { } }
+
+		public string ExecutePostRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
+			int maxAttempts = 1, int delaySec = 1) {
+			if (requestData.Contains("\"rootSchemaName\":\"SysAppIcons\"", StringComparison.Ordinal)) {
+				return """{"success":true,"rows":[{"Id":"11111111-1111-1111-1111-111111111111"}]}""";
+			}
+
+			if (requestData.Contains("\"rootSchemaName\":\"SysSchema\"", StringComparison.Ordinal)) {
+				return """{"success":true,"rows":[{"Name":"UsrOrders"}]}""";
+			}
+
+			bool isApplicationSection =
+				requestData.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal);
+			if (isApplicationSection && requestData.Contains("\"SectionSchemaUId\"", StringComparison.Ordinal)) {
+				// Success-path readback select.
+				return """{"success":true,"rows":[{"Id":"section-id","ApplicationId":"app-id","Caption":"Orders","Code":"UsrOrders","Description":"Order workspace","EntitySchemaName":"UsrOrders","PackageId":"pkg-uid","SectionSchemaUId":"section-schema-uid","LogoId":"icon-id","IconBackground":null,"ClientTypeId":null}]}""";
+			}
+
+			if (isApplicationSection && requestData.Contains("\"columnValues\"", StringComparison.Ordinal)
+				&& requestData.Contains("\"filters\"", StringComparison.Ordinal)) {
+				// Icon-background UpdateQuery.
+				return """{"success":true}""";
+			}
+
+			if (isApplicationSection && requestData.Contains("\"columnValues\"", StringComparison.Ordinal)) {
+				return RecordInsert();
+			}
+
+			return """{"success":true}""";
+		}
+
+		private string RecordInsert() {
+			int inFlight = Interlocked.Increment(ref _inFlightInserts);
+			lock (_maxLock) {
+				if (inFlight > _maxConcurrentInserts) {
+					_maxConcurrentInserts = inFlight;
+				}
+			}
+
+			Interlocked.Increment(ref _insertCount);
+			// Hold the insert briefly so that, WERE the guard not serializing, a concurrent same-key caller would
+			// be observed in flight here and push _maxConcurrentInserts above 1. With the real guard exactly one
+			// insert is ever in flight per key, so the max stays 1.
+			if (insertOverlapWindowMs > 0) {
+				Thread.Sleep(insertOverlapWindowMs);
+			}
+
+			Interlocked.Decrement(ref _inFlightInserts);
+			return """{"success":true}""";
+		}
+
+		public string CallConfigurationService(string serviceName, string serviceMethod, string requestData,
+			int requestTimeout = 10000) => throw new NotSupportedException();
+
+		public void DownloadFile(string url, string filePath, string requestData) => throw new NotSupportedException();
+
+		public string ExecuteDeleteRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
+			int maxAttempts = 1, int delaySec = 1) => throw new NotSupportedException();
+
+		public string ExecuteGetRequest(string url, int requestTimeout = Timeout.Infinite, int maxAttempts = 1,
+			int delaySec = 1) => throw new NotSupportedException();
+
+		public T ExecutePostRequest<T>(string url, string requestData, int requestTimeout = Timeout.Infinite,
+			int maxAttempts = 1, int delaySec = 1) where T : BaseResponse, new() => throw new NotSupportedException();
+
+		public string ExecutePatchRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
+			int maxAttempts = 1, int delaySec = 1) => throw new NotSupportedException();
+
+		public void Listen(CancellationToken cancellationToken) => throw new NotSupportedException();
+
+		public void Login() => throw new NotSupportedException();
+
+		public string UploadAlmFile(string url, string filePath) => throw new NotSupportedException();
+
+		public string UploadAlmFileByChunk(string url, string filePath) => throw new NotSupportedException();
+
+		public string UploadFile(string url, string filePath) => throw new NotSupportedException();
+	}
+
+	// FIX C (#3613524250): thread-safe hand-written collaborators for the concurrency test. Each per-call
+	// dependency returns a constant, so the ONLY behaviour under genuine concurrency is the real service path plus
+	// the real SectionCreateSerializationGuard. The settings-based CreateSection overload is used so
+	// ISettingsRepository is never consulted.
+	private sealed class ConcurrencyCollaborators(IApplicationClient client, ApplicationInfoResult applicationInfo)
+		: IApplicationClientFactory, IServiceUrlBuilderFactory, IServiceUrlBuilder, ICaptionCultureResolver,
+			IApplicationInfoService {
+		public IApplicationClient CreateClient(EnvironmentSettings environment) => client;
+
+		public IApplicationClient CreateEnvironmentClient(EnvironmentSettings environment) => client;
+
+		public IServiceUrlBuilder Create(EnvironmentSettings environmentSettings) => this;
+
+		public string Build(string serviceEndpoint) => "https://example.invalid/route";
+
+		public string Build(ServiceUrlBuilder.KnownRoute knownRoute) => "https://example.invalid/route";
+
+		public string Build(string serviceEndpoint, EnvironmentSettings environmentSettings) =>
+			"https://example.invalid/route";
+
+		public string Build(ServiceUrlBuilder.KnownRoute knownRoute, EnvironmentSettings environmentSettings) =>
+			"https://example.invalid/route";
+
+		public string Resolve(EnvironmentOptions options, string overrideCulture) => "en-US";
+
+		public string Resolve(EnvironmentSettings settings, string overrideCulture) => "en-US";
+
+		public ApplicationInfoResult GetApplicationInfo(string environmentName, string? id, string? code) =>
+			applicationInfo;
+
+		public ApplicationInfoResult GetApplicationInfo(EnvironmentSettings environmentSettings, string? id,
+			string? code) => applicationInfo;
+
+		public InstalledAppSummary FindApplicationId(string environmentName, string code) =>
+			throw new NotSupportedException();
+
+		public InstalledAppSummary FindApplicationId(EnvironmentSettings environmentSettings, string code) =>
+			throw new NotSupportedException();
 	}
 }
 
