@@ -189,6 +189,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["update-page"] = PassthroughClassification.Routed,
 			["sync-pages"] = PassthroughClassification.Routed,
 			["get-component-info"] = PassthroughClassification.Routed,
+			["get-request-info"] = PassthroughClassification.Routed,
 			["build-theme"] = PassthroughClassification.Routed,
 
 			// --- Guarded (3): audited class c3, fail-fast under passthrough (Story 1) ---
@@ -310,6 +311,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["list-packages"] = PassthroughClassification.NotApplicable,
 			["list-page-templates"] = PassthroughClassification.NotApplicable,
 			["list-pages"] = PassthroughClassification.NotApplicable,
+			["list-printables"] = PassthroughClassification.NotApplicable,
 			["list-sys-settings"] = PassthroughClassification.NotApplicable,
 			["list-themes"] = PassthroughClassification.NotApplicable,
 			["list-user-tasks"] = PassthroughClassification.NotApplicable,
@@ -397,6 +399,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["update-page"] = [Entry("version-probe")], // "write" intentionally absent — see type remarks
 			["sync-pages"] = [Entry("version-probe")],
 			["get-component-info"] = [Entry("outer")],
+			["get-request-info"] = [Entry("outer")],
 			["build-theme"] = [Entry("version")],
 
 			["link-from-repository-by-environment"] = [GuardedEntry("by-environment")],
@@ -570,6 +573,13 @@ internal static class PassthroughToolClassificationRegistry {
 			nameof(ComponentInfoToolTests.ComponentInfoTool_Should_Resolve_Version_From_Passed_Environment)),
 		new("get-component-info", "outer", PassthroughScenario.RegisteredEnvStdio, typeof(McpHttpNoRegressionE2ETests),
 			nameof(McpHttpNoRegressionE2ETests.Stdio_ShouldExposeTouchedTool_WhenPassthroughUnused)),
+
+		new("get-request-info", "outer", PassthroughScenario.HeaderOnly, typeof(RequestInfoToolTests),
+			nameof(RequestInfoToolTests.GetRequestInfo_ShouldNeverCallCommandResolver_WhenHeaderOnly)),
+		new("get-request-info", "outer", PassthroughScenario.MixedInput, typeof(RequestInfoToolTests),
+			nameof(RequestInfoToolTests.GetRequestInfo_ShouldRejectMixedInput_BeforeNamedTenantProbe)),
+		new("get-request-info", "outer", PassthroughScenario.RegisteredEnvStdio, typeof(RequestInfoToolTests),
+			nameof(RequestInfoToolTests.GetRequestInfo_ShouldRouteEnvironmentProbeThroughCommandResolver_WhenEnvironmentNameProvided)),
 
 		// --- build-theme (version) ---
 		new("build-theme", "version", PassthroughScenario.HeaderOnly, typeof(BuildThemeToolTests),
