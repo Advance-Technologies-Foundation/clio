@@ -1048,7 +1048,8 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 					redisServer.Host,
 					redisServer.Port,
 					redisServer.Username,
-					redisServer.Password);
+					redisServer.Password,
+					retryTransientConnectBlips: true);
 				if (!emptyDb.Success)
 				{
 					return ExitWithErrorMessage(emptyDb.ErrorMessage);
@@ -1086,7 +1087,7 @@ public class CreatioInstallerService : Command<PfInstallerOptions>, ICreatioInst
 			else {
 				// Auto-detect empty database
 				RedisDatabaseSelectionResult selection = _redisDatabaseSelector.FindEmptyDatabase(BindingsModule.k8sDns,
-					csParam.RedisPort);
+					csParam.RedisPort, retryTransientConnectBlips: true);
 
 				if (!selection.Success) {
 					// Error finding an empty database

@@ -446,12 +446,24 @@ public class BindingsModule {
 				RegistryFlavor.Mobile.CacheSubdirectoryName),
 			sp.GetRequiredService<System.IO.Abstractions.IFileSystem>(),
 			sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<MobileComponentRegistryClient>>()));
+		// Requests flavor (Freedom UI request catalog, get-request-info): same transport
+		// chain, its own CDN file / cache subdirectory / local-override env var. The
+		// envelope differs from components, so parsing goes through RequestInfoCatalog.
+		services.AddSingleton<IRequestRegistryClient>(sp => new RequestRegistryClient(
+			sp.GetRequiredService<IHttpClientFactory>(),
+			ComponentRegistryCacheStore.WithSubdirectory(
+				sp.GetRequiredService<System.IO.Abstractions.IFileSystem>(),
+				sp.GetRequiredService<TimeProvider>(),
+				RegistryFlavor.Requests.CacheSubdirectoryName),
+			sp.GetRequiredService<System.IO.Abstractions.IFileSystem>(),
+			sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<RequestRegistryClient>>()));
 		services.AddSingleton<IComponentRegistryDocsClient, ComponentRegistryDocsClient>();
 		services.AddSingleton<IComponentInfoCatalog, ComponentInfoCatalog>();
 		services.AddSingleton<IMobileComponentInfoCatalog, MobileComponentInfoCatalog>();
 		services.AddSingleton<IThemeCssBuilder, ThemeCssBuilder>();
 		services.AddSingleton<IThemeTemplateProvider, ThemeTemplateProvider>();
 		services.AddSingleton<IThemePaletteAdvisor, ThemePaletteAdvisor>();
+		services.AddSingleton<IRequestInfoCatalog, RequestInfoCatalog>();
 		// Only the per-environment IPlatformVersionResolverFactory is registered: both the
 		// get-component-info MCP tool and the CLI verb resolve the platform version from
 		// per-call arguments (environment-name / uri / version), never from an ambient
@@ -519,6 +531,7 @@ public class BindingsModule {
 		services.AddTransient<SchemaUpdateTool>();
 		services.AddTransient<GetSchemaTool>();
 		services.AddTransient<GetProcessSignatureTool>();
+		services.AddTransient<ListPrintablesTool>();
 		services.AddTransient<ClientUnitSchemaCreateTool>();
 		services.AddTransient<ClientUnitSchemaUpdateTool>();
 		services.AddTransient<GetClientUnitSchemaTool>();
@@ -531,6 +544,7 @@ public class BindingsModule {
 		services.AddSingleton<IPageBodySamplingService, PageBodySamplingServiceImpl>();
 		services.AddTransient<GuidanceGetTool>();
 		services.AddTransient<ComponentInfoTool>();
+		services.AddTransient<RequestInfoTool>();
 		services.AddTransient<BuildThemeTool>();
 		services.AddTransient<AdviseThemePaletteTool>();
 		services.AddTransient<ClearThemesCacheTool>();
@@ -825,6 +839,7 @@ public class BindingsModule {
 		services.AddTransient<GenerateProcessModelCommand>();
 		services.AddTransient<DescribeProcessCommand>();
 		services.AddTransient<GetProcessSignatureCommand>();
+		services.AddTransient<ListPrintablesCommand>();
 		services.AddTransient<AddItemCommand>();
 		services.AddTransient<IZipFile, ZipFileWrapper>();
 		services.AddTransient<IProcessModelGenerator, ProcessModelGenerator>();

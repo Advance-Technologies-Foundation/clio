@@ -6496,6 +6496,20 @@ Discovery: A disposable 10.0.0.802 site with a synthetic same-site `/0` applicat
 Files: clio.mcp.e2e/Support/Configuration/IisApplicationPoolResolver.cs, clio.mcp.e2e/UninstallCreatioWarningE2ETests.cs, clio.mcp.e2e/UninstallWarningIisApplicationPoolResolverE2ETests.cs, spec/uninstall-warning-e2e-uri-resolution/
 Impact: TeamCity no longer fails a warning-path test on a topology where the production behavior correctly cannot delete the pool profile, while exclusive disposable pools retain full warning-contract coverage.
 
+## 2026-07-17 – ClioRing compatibility gate for ENG-93187: PASSED
+Context: Item 1 of the consolidated review (spec/requests-registry/requests-registry-code-review.md) required the mandatory ClioRing gate for the ToolContractGetTool discovery changes on feature/ENG-93187-requests-registry (tip 1ff55a95).
+Decision: Gate passed and attested in the review file. The get-tool-contract {} index change on the default surface (157 -> 147: +get-request-info, -11 leaked names from disabled process-designer and deploy-identity surfaces) is accepted as deliberate Ring-tolerated leak-closure, not an additive-only change; no protocol version bump needed because Ring asserts nothing about index membership (ClioIpcClient.ParseCatalog) and dispatch paths bypass the index.
+Discovery: (1) Ring tests 111/111 green; NativeAOT publish succeeds but requires vswhere.exe on PATH (C:\Program Files (x86)\Microsoft Visual Studio\Installer) - a raw shell lacks it and the link step fails with a mangled MSB3073, so prepend that dir when publishing outside a VS developer prompt. (2) Parity method that works: build both commits Release/net8.0 (base via git worktree), drive dotnet clio.dll mcp-server over newline-delimited JSON-RPC stdio with a PowerShell driver, isolate settings with a fresh CLIO_HOME per side; PowerShell-written response files escape quotes as " so plain grep misses strings. (3) A follow-up finding was recorded as review item 20 (index safety-flag mislabeling for a curated-but-unregistered tool); superseded by the later decision to make the request surface unconditional (see the 13:40 entry).
+Files: spec/requests-registry/requests-registry-code-review.md, clio-ring/ (validation only), scratchpad parity evidence (head2.resp2.json et al.)
+Impact: PR body attestation text is ready in the review file item 1; the vswhere PATH note saves the next AOT publish attempt on this machine.
+
+## 2026-07-17 – Remove the requests-registry feature toggle entirely
+Context: Requirements clarification on feature/ENG-93187-requests-registry: the request-registry surface was never meant to be feature-toggled and must ship enabled for everyone; everything the branch gated behind [FeatureToggle("requests-registry")] becomes unconditional, matching the former feature-ON behavior exactly.
+Decision: Delete the toggle wiring rather than flip a default: removed the attribute from RequestInfoTool / ListPrintablesTool / ListPrintablesOptions / WhenToUseRequestsGuidanceResource; made Routing/PageModification/MobilePage/PageSchemaHandlers guidance resources static again with the feature-ON article text baked in (no ctor-injected IFeatureToggleService, no BuildGuide(bool)); removed GuidanceCatalog.ArticleBuilder and the when-to-use-requests featureGateType; deleted the GuidanceArticleText splicing helper and its tests; ComponentRegistryRefreshCommand always refreshes the requests flavor and --all always enumerates the requests cache subdir. Feature-off tests (unit + RequestRegistryGatingE2ETests) deleted; feature-on tests converted to unconditional pins. Recorded as Resolved decision 2 in spec/requests-registry/requests-registry-code-review.md (supersedes items 6, 7, 20 and the gating aspects of 3/3a/11/13/14/15).
+Discovery: The FeatureGateType mechanism on GuidanceCatalogEntry predates this branch and still serves process-designer gating — only the ArticleBuilder content-splicing layer was requests-registry-specific and could be removed wholesale. Builds against clio/bin/Debug/net8.0 fail with file locks while the session's clio-dev MCP server runs from that directory; Release builds work.
+Files: clio/Command/McpServer/Resources/{RoutingGuidanceResource,PageModificationGuidanceResource,MobilePageGuidanceResource,PageSchemaHandlersGuidanceResource,GuidanceCatalog,WhenToUseRequestsGuidanceResource}.cs, clio/Command/McpServer/Tools/{GuidanceGetTool,RequestInfoTool,ListPrintablesTool}.cs, clio/Command/{ComponentRegistryRefreshCommand,ListPrintablesCommand}.cs, clio/Command/McpServer/AGENTS.md, clio/docs/commands/component-registry-refresh.md, clio.tests/Command/McpServer/*, clio.mcp.e2e/*
+Impact: Future work on the request catalog needs no toggle plumbing; the guidance surface is single-variant again, so content edits touch one literal instead of On/Off fragment pairs.
+
 ## 2026-07-17 – ENG-93302 PR #895 review fixes (Krylov CHANGES_REQUESTED)
 Context: Kirill Krylov requested changes on PR #895 (set-user-theme). Addressed 6 of 7 findings + the Allure convention; #3 (Destructive flag) deferred pending a decision (user asked to characterise the gate model first).
 Decision: (#7) Extracted apply behavior into IUserThemeApplier/UserThemeApplier; SetUserThemeCommand is now a thin adapter; introduced IThemeCatalog (implemented by ListThemesCommand) so the applier no longer depends on the concrete command (CLIO001). (#5) SelectQueryHelper.ExecuteSelectQuery gained maxAttempts/retryDelay (default 1/1 keeps other callers unchanged); the applier's two profile SELECTs now carry options.MaxAttempts/RetryDelay like list/update. (#6) Replaced broad catch(Exception) with `catch (Exception) when (IsExpectedIoOrParseFailure(e))` (WebException/HttpRequestException/TaskCanceledException/TimeoutException/InvalidOperationException/JsonException) so programming errors propagate; the local UpdateQuery parse narrowed to catch(JsonException). (#1) SetUserThemeTool redacts the command error via SensitiveErrorTextRedactor.Redact (matches CreateThemeTool/ListThemesTool). (#2) ThemingSandboxE2ETests teardown now resets the user theme BEFORE deleting the throwaway theme, each guarded so one failing still runs the other (no dangling profile ref). (#4) removed the ChangeTheme-text Assert.Ignore that masked apply mismatches — the sandbox is required to be correctly configured, fail on mismatch. Allure: AllureDescription on the new E2E tests + AllureApi.Step phases on the sandbox lifecycle.
@@ -6660,3 +6674,102 @@ Decision: Document disabled-node transport differences separately from semantic 
 Discovery: Native C# retains disabled leaves/groups while SQL compilation omits them; DataService removes disabled children before the executor boundary. Native C# and DataService preserve collection `IsNot`. ATF.Repository 2.0.3.5 cannot author group negation through LINQ, so the lab used a test-only decorator over its public `ISelectQuery` contract.
 Files: clio/Command/McpServer/Resources/EsqFiltersBackendGuidanceResource.cs, clio/Command/McpServer/Resources/EsqFilterParsingGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs, clio.mcp.e2e/GuidanceGetToolE2ETests.cs
 Impact: Agents now have lab-verified rules for creating and parsing disabled nodes and negated groups, including the native-versus-DataService shape boundary.
+
+## 2026-07-17 – Hide never-in-CI manual e2e suites from ClioMcpE2eTests stats
+Context: ClioMcpE2eTests plan showed "ignored: 51"; wanted them present in source but absent from plan statistics.
+Decision: Assert.Ignore counts as 'ignored' by design → cannot hide via attribute. Use NUnit [Category] + run-step --filter exclusion (same mechanism as existing McpE2E.ProcessDesigner). Introduced category "McpE2E.Manual" on the 46 never-in-CI tests.
+Discovery: dotnet test maps NUnit [Category] to VSTest TestCategory trait; multi-valued `TestCategory!=X` excludes a test if ANY of its categories == X. `dotnet test --list-tests --filter` is a reliable local proof of selection without running e2e. TeamCity Team_Atf has versioned-settings OFF, so build-step edits via REST persist. The `/parameters/{name}` value endpoint rejects the CLI's JSON content-type; GET-modify-PUT the whole /steps/{id} entity works.
+Split: class-level on Concurrency/MultiTenant/OAuth/DbHubLifecycleWarning/UninstallCreatioWarning (100% manual); method-level on McpHttpNoRegression (keep 16 passing Stdio_* tests). Left runtime-conditional skips (DataForge x3, EntitySchema+SchemaSync Pg-gated x2) untouched — those can run on a properly configured stand.
+Files: clio.mcp.e2e/{McpHttpConcurrencyIsolation,McpHttpMultiTenant,McpHttpOAuthAuthorization,McpHttpNoRegression,DbHubLifecycleWarning,UninstallCreatioWarning}E2ETests.cs; TeamCity Team_Atf_ClioMcpE2eTests step Run_MCP_e2e_tests args filter.
+Impact: plan will report 498 passed / 5 ignored (down from 51) once next build runs; DataForge+Pg remain the only visible skips.
+
+## 2026-07-18 00:30 – Validate text IsNull and IsNotNull
+Context: Project milestone 4 of the backend ESQ filter validation plan into clio guidance.
+Decision: Teach the dedicated native null-filter APIs and a separate left-only parser contract with zero right expressions.
+Discovery: Native C# and ATF/DataService shapes matched exactly. For the verified MediumText columns, PostgreSQL SQL compilation used `column = ''` and `NOT column = ''`; the lab provider therefore evaluates null and empty string alike without generalizing to other data types.
+Files: clio/Command/McpServer/Resources/EsqFiltersBackendGuidanceResource.cs, clio/Command/McpServer/Resources/EsqFilterParsingGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs, clio.mcp.e2e/GuidanceGetToolE2ETests.cs
+Impact: Agents can now construct and parse text null predicates from verified runtime and SQL evidence rather than treating null as an ordinary scalar parameter.
+
+## 2026-07-18 01:25 – Validate backend In cardinality
+Context: Project milestone 5 of the backend ESQ filter validation plan into clio guidance.
+Decision: Document native membership as Equal plus a right-expression collection and keep DataService filterType 4 as a transport-only discriminator.
+Discovery: Zero, one, and two values matched exactly between native and DataService runtime trees. SQL emitted invalid `column = ` for zero, scalar equality for one, and IN for two; Guid arrays require conversion to object[] to avoid one array-valued parameter.
+Files: clio/Command/McpServer/Resources/EsqFiltersBackendGuidanceResource.cs, clio/Command/McpServer/Resources/EsqFilterParsingGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs, clio.mcp.e2e/GuidanceGetToolE2ETests.cs
+Impact: Agents can now construct and parse membership without confusing serialized In metadata with the runtime comparison enum or broadening empty membership.
+
+## 2026-07-18 01:53 – Validate backend Between filters
+Context: Project milestone 6 of the backend ESQ filter validation plan into clio guidance.
+Decision: Document first-class Between separately from the equivalent pair of inclusive Compare leaves and correct the frontend serialized-bound ordering.
+Discovery: Native and DataService first-class shapes matched as one Between leaf with ordered lower/upper Integer parameters and inclusive SQL. DataService counterintuitively requires rightLessExpression for the first/lower value and rightGreaterExpression for the second/upper value; the two-Compare alternative remains two leaves.
+Files: clio/Command/McpServer/Resources/EsqFiltersGuidanceResource.cs, clio/Command/McpServer/Resources/EsqFiltersBackendGuidanceResource.cs, clio/Command/McpServer/Resources/EsqFilterParsingGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs, clio.mcp.e2e/GuidanceGetToolE2ETests.cs
+Impact: Agents can author and parse both inclusive range representations without reversing DataService bounds or assuming structural normalization.
+
+## 2026-07-18 02:27 – Validate typed primitive and lookup filters
+Context: Project milestones 7 and 8 of the backend ESQ filter validation plan into clio guidance.
+Decision: Validate CLR parameter type together with ParameterValueForcedType and treat lookup Guid values as a schema-specific family distinct from plain Guid columns.
+Discovery: Boolean and plain Guid retained BooleanDataValueType and GuidDataValueType. Native UsrOwner resolved to runtime UsrOwnerId, while its Guid parameters were LookupDataValueType; multi-value lookup requires object[] and compiled to IN. Low-level DataService accepted raw lookup Guid parameters, while designer-owned frontend JSON retains its display-value object contract.
+Files: clio/Command/McpServer/Resources/EsqFiltersGuidanceResource.cs, clio/Command/McpServer/Resources/EsqFiltersBackendGuidanceResource.cs, clio/Command/McpServer/Resources/EsqFilterParsingGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs, clio.mcp.e2e/GuidanceGetToolE2ETests.cs
+Impact: Agents can distinguish Boolean, plain Guid, and lookup Guid parameters without coercion or path-based guessing.
+
+## 2026-07-18 03:15 – Validate temporal ESQ filters
+Context: Project milestone 9 of the backend ESQ filter validation plan into clio guidance.
+Decision: Document temporal literals by schema path, trim-to-date as an explicit leaf flag, and macros/date parts by their expanded recursive runtime trees.
+Discovery: Date, DateTime, and Time arrive as CLR DateTime. DataService preserved ticks but changed UTC Kind to Unspecified and reordered flat AND siblings. CurrentYear and PreviousNDays expanded to half-open boundary groups; Year became a date-part leaf; HourMinute equality became a one-minute half-open range.
+Files: clio/Command/McpServer/Resources/EsqFiltersGuidanceResource.cs, clio/Command/McpServer/Resources/EsqFiltersBackendGuidanceResource.cs, clio/Command/McpServer/Resources/EsqFilterParsingGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs, clio.mcp.e2e/GuidanceGetToolE2ETests.cs
+Impact: Agents can author and recursively parse verified temporal filter shapes without inferring date-only semantics, timezone policy, or macro boundaries.
+
+## 2026-07-18 03:36 – Correct HourMinute backend recipe overload
+Context: The Codex connector found that the temporal guidance combined an expression argument with the four-argument DateTime overload shape.
+Decision: Use the stable column-path overload for HourMinute and strengthen both resource contract tests to assert that exact compiling recipe.
+Discovery: The expression-based DateTime overload has a different signature on documented Creatio API versions, so a lab-compiling overload must not be generalized when a cross-version column-path overload expresses the same intent.
+Files: clio/Command/McpServer/Resources/EsqFiltersBackendGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs
+Impact: Agents copying the published HourMinute example receive a valid native C# call, guarded on both in-process and real MCP resource paths.
+
+## 2026-07-18 04:02 – Validate backward-path subquery filters
+Context: Project milestone 10 of the backend ESQ filter validation plan into clio guidance.
+Decision: Document Exists, NotExists, and Count subqueries together because they share the same generated mixed-path correlation but differ at the outer expression boundary.
+Discovery: Exists and NotExists use a null left expression plus one right Activity subquery. Count uses the subquery on the left and retains both Id and aggregate columns. DataService preserves its serialized child filters as one extra AND envelope; only that validated wrapper is safe to normalize for semantic parity.
+Files: clio/Command/McpServer/Resources/EsqFiltersGuidanceResource.cs, clio/Command/McpServer/Resources/EsqFiltersBackendGuidanceResource.cs, clio/Command/McpServer/Resources/EsqFilterParsingGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs, clio.mcp.e2e/GuidanceGetToolE2ETests.cs
+Impact: Agents can construct and recursively parse verified relationship subqueries without confusing schema-column correlations with parameters, assuming one child column, or introducing N+1 execution.
+
+## 2026-07-18 04:12 – Bound subquery parser execution
+Context: Pre-PR adversarial review of the promoted subquery guidance identified aggregate-shape and fallback-execution gaps.
+Decision: Require the exact lab-proven non-distinct Count(Id) operand after applying the selected-expression budget, and require bounded batched fallback execution when provider pushdown is unavailable.
+Discovery: Avoiding one query per root record is insufficient if an implementation instead materializes an unbounded child source; correlation-key, fan-out, timeout, and cancellation limits are part of the parser contract.
+Files: clio/Command/McpServer/Resources/EsqFilterParsingGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs, clio.mcp.e2e/GuidanceGetToolE2ETests.cs
+Impact: The published parser fails closed on semantically different Count functions and cannot recommend an unbounded preload as an N+1 workaround.
+
+## 2026-07-18 04:35 – Validate saved Segment filters
+Context: Complete milestone 11 of the backend ESQ filter validation plan and promote the final pending frontend family.
+Decision: Publish the native SegmentFilterOptions recipe and parse only the exact expanded current-membership tree, with membership tables restricted by trusted metadata or an allowlist.
+Discovery: Native and DataService IN/NOT IN requests produced identical Exists/NotExists subqueries with RecordId correlation and RemovedOn IsNull. The Segment Id and filterType 7 authoring metadata do not survive into esq.Filters. ATF.Repository 2.0.3.5 can serialize numeric filter type 7 but does not name it in its enum.
+Files: clio/Command/McpServer/Resources/EsqFiltersGuidanceResource.cs, clio/Command/McpServer/Resources/EsqFiltersBackendGuidanceResource.cs, clio/Command/McpServer/Resources/EsqFilterParsingGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs, clio.mcp.e2e/GuidanceGetToolE2ETests.cs
+Impact: Agents can construct saved Segment membership and safely recognize its executor-visible expansion without trusting dynamic table names or claiming unverified option variants.
+
+## 2026-07-18 04:48 – Require Segment authorization before table access
+Context: Pre-PR adversarial review found that a membership-table allowlist alone could bypass caller/root Segment authorization and that malformed child roots could escape the secret-safe rejection path.
+Decision: Require request-scoped, permission-checked SysDataSegment resolution for the caller and root schema on every access, then use only the exact authorized table identifier through the provider query builder.
+Discovery: Dynamic SQL identifiers cannot be parameterized; authorization must derive the exact identifier from trusted metadata, while every value remains parameterized. Parser guards now null-check the child root and validate the selected RecordId schema-column expression before authorization.
+Files: clio/Command/McpServer/Resources/EsqFilterParsingGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs, clio.mcp.e2e/GuidanceGetToolE2ETests.cs
+Impact: An expanded Segment-shaped subquery cannot access an allowlisted table without proving caller authorization and target-schema ownership, and malformed subqueries fail through controlled validation.
+
+## 2026-07-18 04:55 – Validate before Segment authorization lookup
+Context: Re-review found that malformed repeated Segment leaves could trigger metadata authorization work before cheap shape rejection and repeat it within one query.
+Decision: Validate the complete in-memory Segment tree first, then authorize each distinct table once using a cache scoped to caller, root-schema UId, table name, and request lifetime.
+Discovery: Authorization results must never be shared across callers or retained globally; query-scoped reuse avoids repeated metadata work without turning stale authorization into ambient trust.
+Files: clio/Command/McpServer/Resources/EsqFilterParsingGuidanceResource.cs, clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs, clio.mcp.e2e/GuidanceGetToolE2ETests.cs
+Impact: Invalid trees are rejected before external work, while valid repeated Segment leaves reuse only identity-safe request-scoped authorization.
+
+## 2026-07-18 05:03 – Pin Segment validation presence in contracts
+Context: Final comprehensive review found that the validation-order assertion could pass when the validation marker was absent because IndexOf returned -1.
+Decision: Require ValidateCurrentMembershipFilters explicitly in unit and both MCP E2E resource contracts before asserting its order relative to authorization.
+Discovery: Ordering assertions over string indices must independently prove that both ordered markers exist.
+Files: clio.tests/Command/McpServer/McpGuidanceResourceTests.cs, clio.mcp.e2e/McpGuidanceResourceE2ETests.cs, clio.mcp.e2e/GuidanceGetToolE2ETests.cs
+Impact: Removing the fail-closed validation step now fails every relevant published-resource contract instead of accidentally satisfying the order assertion.
+
+## 2026-07-18 12:00 – Redis auto-detect bounded retry (#883)
+Context: deploy-creatio (--redis-db -1) hard-failed on a single transient Redis connect blip (Rancher Desktop port-forward hiccup) since ENG-90640 made FindEmptyLocalDatabase fail-fast (AbortOnConnectFail=true, ConnectRetry=1, 12s).
+Decision: Added a bounded retry (MaxConnectAttempts=3) with exponential backoff (500ms→1000ms) around the connect in RedisDatabaseSelector.FindEmptyDatabase, keeping the per-attempt 12s fail-fast timeout. Extracted SelectEmptyDatabase (uses `using` to dispose the multiplexer). Retry only on transient failures; a definitive error is surfaced immediately.
+Discovery: StackExchange.Redis surfaces bad credentials as RedisConnectionException with FailureType=AuthenticationFailure (not a distinct type). Naive `ex is RedisConnectionException` over-matches and would retry auth misconfig 3x (~37.5s). IsTransientConnectFailure must exclude AuthenticationFailure and ProtocolFailure. Connect+probe seam made testable via internal ctor taking Func<ConfigurationOptions,IConnectionMultiplexer> + Action<TimeSpan> (public parameterless ctor wires ConnectionMultiplexer.Connect + Thread.Sleep); DI binds the public ctor. Worst-case unreachable Redis stays bounded ~37.5s (seconds, not minutes).
+Files: clio/Common/Database/RedisDatabaseSelector.cs, clio.tests/Common/Database/RedisDatabaseSelectorTests.cs, clio/docs/commands/deploy-creatio.md
+Impact: A momentary blip no longer aborts deploy-creatio and leaves a half-configured ConnectionStrings.config; genuinely unreachable/auth-misconfigured Redis still fails fast. Shared selector so LocalRedisAssertion/K8RedisAssertion (assert flows) also benefit.
