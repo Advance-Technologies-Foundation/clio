@@ -39,6 +39,7 @@ public sealed class SchemaSyncTool(
 	[Description("Executes a batch of schema operations in a single call: " +
 		"create lookups, create entities, seed data, update entities. " +
 		"For create-entity, set is-virtual to true only when the schema must not have a physical database table; it defaults to false. " +
+		"Before setting is-virtual to true, call get-guidance with name virtual-entities and follow its schema-before-executor, bounded-provider, authorization, and version-gated write rules. " +
 		"Reduces MCP round-trips and lock overhead compared to individual tool calls. " +
 		"Stops on first failure because subsequent operations may depend on earlier ones. " +
 		"For update-entity, column field names match the get-app-info read shape (read-shape aliases " +

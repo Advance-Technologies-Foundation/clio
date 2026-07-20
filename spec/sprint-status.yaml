@@ -2271,3 +2271,30 @@ stories:
     adr: spec/ring-clio-runtime-switch/ring-clio-runtime-switch-adr.md
     depends_on: []
     blocks: []
+  - id: story-clio-guidance-development-1
+    title: "Publish the evidence-backed clio guidance development framework"
+    feature: "clio-guidance-development"
+    repo: "clio"
+    size: M
+    status: done
+    note: "Merged in PR #913 with lab-validated ESQ filter and virtual-entity guidance, portable shared skill, MCP E2E, comprehensive review, and ClioRing compatibility validation."
+    file: spec/clio-guidance-development/clio-guidance-development-story.md
+    prd: spec/clio-guidance-development/clio-guidance-development-spec.md
+    adr: spec/clio-guidance-development/clio-guidance-development-adr.md
+    test_plan: spec/clio-guidance-development/clio-guidance-development-test-plan.md
+    depends_on: []
+    blocks: []
+  - id: story-esq-primitive-comparisons-1
+    title: "Complete backend ESQ primitive Compare guidance"
+    feature: "esq-primitive-comparisons"
+    repo: "clio"
+    size: S
+    status: review
+    note: "Lab-verified Integer and MediumText Compare construction/parsing with exact native-versus-ATF shape evidence."
+    file: spec/esq-primitive-comparisons/esq-primitive-comparisons-story.md
+    prd: spec/esq-primitive-comparisons/esq-primitive-comparisons-spec.md
+    adr: spec/esq-primitive-comparisons/esq-primitive-comparisons-adr.md
+    test_plan: spec/esq-primitive-comparisons/esq-primitive-comparisons-test-plan.md
+    depends_on:
+      - story-clio-guidance-development-1
+    blocks: []

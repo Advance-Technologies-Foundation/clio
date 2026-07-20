@@ -193,6 +193,7 @@ update-schema:update-schema,schema-update
 update-toolkit:update-toolkit
 update-sql-schema:update-sql-schema,sql-schema-update
 upload-license:upload-license,license,load-license,loadlicense
+distribute-license:distribute-license,grant-license
 upload-licenses:upload-licenses,lic
 upsert-data-binding-row-db:upsert-data-binding-row-db
 get-identity-assertion:get-identity-assertion,identity-assertion

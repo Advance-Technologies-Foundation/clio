@@ -231,7 +231,7 @@ public sealed class McpGuidanceResourceTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Returns handler guidance that keeps handler logic separate from validators and converters in clio MCP page editing.")]
+	[Description("Returns the canonical handler guidance that keeps handler logic separate from validators and converters in clio MCP page editing, including the request-catalog pointers.")]
 	public void PageSchemaHandlersGuidanceResource_Should_Return_Canonical_Handler_Guide() {
 		// Arrange
 		PageSchemaHandlersGuidanceResource resource = new();
@@ -496,8 +496,8 @@ public sealed class McpGuidanceResourceTests {
 			because: "handler guidance should expose the source-backed delete-record request fields");
 		article.Text.Should().Contain("| `crt.CancelRecordChangesRequest` | config | `none` | cancel edits |",
 			because: "handler guidance should expose the cancel-edits request contract");
-		article.Text.Should().Contain("| `crt.RunBusinessProcessRequest` | config | `processName` + `processRunType` required — FULL parameter contract lives in the `run-process-button` guide (single source of truth) | Keys in `processParameters` / `parameterMappings` / `recordIdProcessParameterName` are process parameter CODES, NOT captions — a wrong code is silently dropped. Resolve with `get-process-signature` and get-guidance `run-process-button` before authoring this button |",
-			because: "the handler catalog should point to the single-source-of-truth run-process-button guide and carry the CODE-not-caption rule instead of restating the full param list");
+		article.Text.Should().Contain("| `crt.RunBusinessProcessRequest` | config | `processName` + `processRunType` required — FULL parameter contract lives in the request catalog: get-request-info `crt.RunBusinessProcessRequest` (single source of truth) | Keys in `processParameters` / `parameterMappings` / `recordIdProcessParameterName` are process parameter CODES, NOT captions — a wrong code is silently dropped. Resolve with `get-process-signature` and get-request-info `crt.RunBusinessProcessRequest` before authoring this button |",
+			because: "the handler catalog should point to the single-source-of-truth request catalog (get-request-info crt.RunBusinessProcessRequest) and carry the CODE-not-caption rule instead of restating the full param list");
 		article.Text.Should().Contain("| `crt.CreateEmailRequest` | config | `recordId?`, `bindingColumns?` | compose an email from current context |",
 			because: "handler guidance should expose the create-email request contract");
 		article.Text.Should().Contain("| `crt.CopyClipboardRequest` | config | `value` required | copy a prepared literal value |",
@@ -554,6 +554,43 @@ public sealed class McpGuidanceResourceTests {
 			because: "the checklist should reinforce the canonical writeback pattern explicitly");
 		article.Text.Should().Contain("Is this edit still using the canonical page-body API (`request.value`, `await request.$context[\"Attr\"]`, `await request.$context.set(...)`) rather than a compatibility form?",
 			because: "the checklist should force AI to confirm that it stayed on the canonical page-body API instead of drifting to compatibility patterns");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The page-schema-handlers resource includes the request-catalog pointers: get-request-info as the authoritative contract and the when-to-use-requests selection guide.")]
+	public void PageSchemaHandlersGuidanceResource_Should_Include_RequestCatalogPointers() {
+		// Arrange
+		PageSchemaHandlersGuidanceResource resource = new();
+
+		// Act
+		TextResourceContents article = resource.GetGuide().Should().BeOfType<TextResourceContents>().Subject;
+
+		// Assert
+		article.Text.Should().Contain("call `get-request-info <type>` first",
+			because: "the parameter catalog must mandate the get-request-info call as the authoritative contract");
+		article.Text.Should().Contain("See `when-to-use-requests` for the",
+			because: "the guide must point at the when-to-use-requests selection guide");
+		article.Text.Should().Contain("get-request-info `crt.RunBusinessProcessRequest` (single source of truth)",
+			because: "the run-process row must name the request catalog as the single source of truth");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The page-schema-handlers GuidanceCatalog entry carries the request-catalog pointers (get-request-info / when-to-use-requests) on its article, covering the get-guidance serving path (not only the resource GetGuide path).")]
+	public void PageSchemaHandlersCatalogEntry_Article_Should_Carry_RequestCatalogPointers() {
+		// Arrange
+		GuidanceCatalog.TryGet("page-schema-handlers", out GuidanceCatalogEntry entry).Should().BeTrue(
+			because: "page-schema-handlers is an always-available catalog guide");
+
+		// Act
+		TextResourceContents article = entry.Article;
+
+		// Assert
+		article.Text.Should().Contain("call `get-request-info <type>` first",
+			because: "the get-guidance serving path must return the request-catalog pointer");
+		article.Text.Should().Contain("See `when-to-use-requests` for the",
+			because: "the get-guidance serving path must return the when-to-use-requests pointer");
 	}
 
 	[Test]
@@ -1589,21 +1626,321 @@ public sealed class McpGuidanceResourceTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Returns a canonical MCP guidance article for ESQ-style filters so AI callers can avoid common path, lookup, and relative-date mistakes.")]
-	public void EsqFiltersGuidanceResource_Should_Return_Canonical_Esq_Filters_Guide() {
+	[Description("Returns the stable ESQ filter family router and keeps detailed frontend rules in its dedicated child article.")]
+	public void GetGuide_ShouldReturnEsqFilterFamilyRouter_WhenResourceIsRequested() {
 		// Arrange
 		EsqFiltersGuidanceResource resource = new();
 
 		// Act
-		ResourceContents result = resource.GetGuide();
-		TextResourceContents article = result.Should().BeOfType<TextResourceContents>(
-			because: "the ESQ filters guide should be returned as a plain-text MCP resource").Subject;
+		ResourceContents routerResult = resource.GetGuide();
+		ResourceContents frontendResult = resource.GetFrontendGuide();
 
 		// Assert
-		article.Uri.Should().Be("docs://mcp/guides/esq-filters",
+		TextResourceContents router = routerResult.Should().BeOfType<TextResourceContents>(
+			because: "the ESQ filter family router should be returned as plain text").Subject;
+		router.Uri.Should().Be("docs://mcp/guides/esq-filters",
 			because: "the resource should expose a stable MCP URI for ESQ filter guidance");
-		article.MimeType.Should().Be("text/plain",
-			because: "the ESQ filters guide should be discoverable as plain text");
+		router.Text.Should().Contain("esq-filters-frontend",
+			because: "the family router should point serialized filter authors to the frontend owner");
+		router.Text.Should().Contain("esq-filters-backend",
+			because: "the family router should point native C# filter authors to the backend owner");
+		router.Text.Should().Contain("esq-filter-parsing",
+			because: "the family router should point runtime C# consumers to the parsing owner");
+		router.Text.Should().Contain("inclusive Between ranges",
+			because: "the entry router must advertise the backend families already promoted as verified");
+		router.Text.Should().Contain("lookup equality/membership",
+			because: "the router status should include promoted typed lookup coverage");
+		router.Text.Should().Contain("temporal literals/macros/date parts",
+			because: "the router status should include promoted temporal coverage");
+		router.Text.Should().Contain("Exists/NotExists/aggregate subqueries",
+			because: "the router status should include promoted backward-subquery coverage");
+		router.Text.Should().Contain("saved Segment membership",
+			because: "the router status should include promoted Segment coverage");
+		router.Text.Should().NotContain("### Compare (filterType 1)",
+			because: "the router should not duplicate detailed frontend filter rules");
+
+		TextResourceContents frontend = frontendResult.Should().BeOfType<TextResourceContents>(
+			because: "the exhaustive frontend filter guide should remain available as plain text").Subject;
+		frontend.Uri.Should().Be("docs://mcp/guides/esq-filters/frontend",
+			because: "frontend JSON guidance should have a stable child URI");
+		frontend.Text.Should().Contain("### Compare (filterType 1)",
+			because: "the detailed serialized Compare contract should live only in the frontend guide");
+		frontend.Text.Should().Contain("`rightLessExpression` = first/lower bound",
+			because: "the frontend guide must preserve the verified counterintuitive Between field ordering");
+		frontend.Text.Should().Contain("`rightGreaterExpression` = second/upper bound",
+			because: "the frontend guide must not reverse the serialized Between bounds");
+		frontend.Text.Should().Contain("Low-level DataService also accepted a raw GUID parameter",
+			because: "the frontend guide should distinguish verified DataService shorthand from designer JSON");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns native backend ESQ construction guidance containing only lab-verified group and compare recipes.")]
+	public void GetGuide_ShouldReturnBackendConstructionRules_WhenBackendResourceIsRequested() {
+		// Arrange
+		EsqFiltersBackendGuidanceResource resource = new();
+
+		// Act
+		ResourceContents result = resource.GetGuide();
+
+		// Assert
+		TextResourceContents article = result.Should().BeOfType<TextResourceContents>(
+			because: "backend construction guidance should be exposed as plain text").Subject;
+		article.Uri.Should().Be("docs://mcp/guides/esq-filters/backend",
+			because: "native C# construction guidance should have a stable backend child URI");
+		article.Text.Should().Contain("EntitySchemaQueryFilterCollection",
+			because: "the guide should show the verified native group-construction API");
+		article.Text.Should().Contain("A && (B || C)",
+			because: "the guide should preserve the lab-verified mixed nesting recipe");
+		string[] expectedScalarOperators = [
+			"Equal", "NotEqual", "Less", "LessOrEqual", "Greater", "GreaterOrEqual",
+			"StartWith", "NotStartWith", "Contain", "NotContain", "EndWith", "NotEndWith"
+		];
+		foreach (string expectedOperator in expectedScalarOperators) {
+			article.Text.Should().Contain($"FilterComparisonType.{expectedOperator},",
+				because: $"the backend guide must retain the verified {expectedOperator} construction recipe");
+		}
+		article.Text.Should().Contain("C, A, B",
+			because: "the backend guide should preserve the verified three-term ATF shape ordering boundary");
+		article.Text.Should().Contain("disabledLeaf.IsEnabled = false",
+			because: "the backend guide should show the verified native disabled-leaf construction API");
+		article.Text.Should().Contain("disabledGroup.IsEnabled = false",
+			because: "the backend guide should show how to disable a complete native collection");
+		article.Text.Should().Contain("negatedOr.IsNot = true",
+			because: "the backend guide should show group negation on the collection rather than a leaf");
+		article.Text.Should().Contain("DataService removes disabled children",
+			because: "the guide must state the verified structural boundary for disabled filters");
+		article.Text.Should().Contain("ATF.Repository 2.0.3.5 LINQ cannot author group `IsNot`",
+			because: "the guide should distinguish the library authoring limitation from DataService support");
+		article.Text.Should().Contain("CreateIsNullFilter(\"UsrDescription\")",
+			because: "the backend guide should use the dedicated native IsNull API");
+		article.Text.Should().Contain("CreateIsNotNullFilter(\"UsrName\")",
+			because: "the backend guide should use the dedicated native IsNotNull API");
+		article.Text.Should().Contain("zero right expressions",
+			because: "null comparisons must be documented as left-only runtime leaves");
+		article.Text.Should().Contain("Creatio compiled text `IsNull` as `column = ''`",
+			because: "the guide must preserve the verified MediumText SQL storage semantics");
+		article.Text.Should().Contain("not a general null rule for Integer, Guid, lookup, or date columns",
+			because: "the MediumText empty-string observation must not be generalized to unverified types");
+		article.Text.Should().Contain("object[] sequenceNumbers = { 10, 30 }",
+			because: "the backend guide should expose the verified native membership recipe");
+		article.Text.Should().Contain("two or more values produce one right expression per value",
+			because: "membership cardinality controls the runtime collection and generated SQL");
+		article.Text.Should().Contain("physical SQL compilation emits invalid `column = ` text",
+			because: "the empty-membership construction boundary must fail safe");
+		article.Text.Should().Contain("ownerIds.Cast<object>().ToArray()",
+			because: "value-type arrays must not become one array-valued parameter");
+		article.Text.Should().Contain("serialized `filterType: 4`",
+			because: "the guide must distinguish the DataService discriminator from runtime ESQ");
+		article.Text.Should().Contain("FilterComparisonType.Between",
+			because: "the backend guide should expose first-class native Between construction");
+		article.Text.Should().Contain("`BETWEEN 10 AND 30`",
+			because: "the guide should retain the verified inclusive SQL behavior");
+		article.Text.Should().Contain("rightLessExpression` carries the first/lower value",
+			because: "the backend guide must preserve the verified DataService bound ordering");
+		article.Text.Should().Contain("does not normalize it into a Between leaf",
+			because: "the two-comparison alternative must remain structurally distinct");
+		article.Text.Should().Contain("BooleanDataValueType",
+			because: "the backend guide should retain the verified Boolean forced type");
+		article.Text.Should().Contain("GuidDataValueType",
+			because: "plain Guid parameters must stay distinct from lookup identifiers");
+		article.Text.Should().Contain("runtime `UsrOwnerId`",
+			because: "native logical lookup paths resolve to their runtime Id column path");
+		article.Text.Should().Contain("LookupDataValueType`, not `GuidDataValueType`",
+			because: "lookup Guid parameters require their schema-specific forced type");
+		article.Text.Should().Contain("ownerIds.Cast<object>().ToArray()",
+			because: "lookup membership must avoid one array-valued params argument");
+		article.Text.Should().Contain("createdOnDate.TrimDateTimeParameterToDate = true",
+			because: "date-only DateTime intent must use the explicit native leaf flag");
+		article.Text.Should().Contain("EntitySchemaQueryMacrosType.CurrentYear",
+			because: "the backend guide should expose native relative-period construction");
+		article.Text.Should().Contain("EntitySchemaQueryMacrosType.PreviousNDays, 7",
+			because: "the backend guide should expose parameterized relative-period construction");
+		article.Text.Should().Contain("EntitySchemaQueryMacrosType.Year, 2026",
+			because: "the backend guide should expose native fixed-year date-part construction");
+		article.Text.Should().Contain(
+			"FilterComparisonType.Equal, \"UsrLocalTime\", EntitySchemaQueryMacrosType.HourMinute",
+			because: "the backend guide should expose a compiling column-path overload for native exact-minute construction");
+		article.Text.Should().Contain("DataService preserved DateTime ticks",
+			because: "the guide must preserve the verified DateTime Kind transport boundary");
+		article.Text.Should().Contain("not Creatio/PostgreSQL collation behavior",
+			because: "in-memory provider case policy must not be published as database-collation evidence");
+		article.Text.Should().Contain("esq.CreateExistsFilter(ownerActivities)",
+			because: "the backend guide should expose native Exists construction over the verified mixed path");
+		article.Text.Should().Contain("esq.CreateNotExistsFilter(ownerActivities)",
+			because: "the backend guide should expose native NotExists construction independently");
+		article.Text.Should().Contain("out EntitySchemaQuery activitySubQuery",
+			because: "aggregate child predicates must be authored through the returned subquery");
+		article.Text.Should().Contain("AggregationTypeStrict.Count",
+			because: "the backend guide should preserve the verified Count aggregate recipe");
+		article.Text.Should().Contain("Count > 1",
+			because: "the guide must avoid an existence-boundary optimization when demonstrating aggregates");
+		article.Text.Should().Contain("extra enabled AND collection",
+			because: "the guide should preserve the proven DataService child-filter envelope difference");
+		article.Text.Should().Contain("new SegmentFilterOptions",
+			because: "the backend guide should expose the verified native saved-Segment API");
+		article.Text.Should().Contain("FilterComparisonType.NotExists",
+			because: "the Segment recipe should cover independently verified non-membership");
+		article.Text.Should().Contain("RecordId == root.Id",
+			because: "the guide should preserve the generated membership correlation");
+		article.Text.Should().Contain("RemovedOn IsNull",
+			because: "default Segment membership must exclude soft-removed members");
+		article.Text.Should().Contain("UseSegmentFiltering",
+			because: "the Segment recipe must expose its feature gate");
+		article.Text.Should().Contain("validated only default current-membership options",
+			because: "unverified Segment option variants must remain outside the promoted contract");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns runtime C# ESQ filter parsing guidance with recursive group traversal and structural comparison rules.")]
+	public void GetGuide_ShouldReturnRuntimeParsingRules_WhenParsingResourceIsRequested() {
+		// Arrange
+		EsqFilterParsingGuidanceResource resource = new();
+
+		// Act
+		ResourceContents result = resource.GetGuide();
+
+		// Assert
+		TextResourceContents article = result.Should().BeOfType<TextResourceContents>(
+			because: "runtime parsing guidance should be exposed as plain text").Subject;
+		article.Uri.Should().Be("docs://mcp/guides/esq-filter-parsing",
+			because: "runtime parsing guidance should have a stable independent URI");
+		article.Text.Should().Contain("ParseGroup",
+			because: "the guide should demonstrate recursive traversal rather than flat filtering");
+		article.Text.Should().Contain("AND(OR(AND(A, B), C))",
+			because: "the guide should pin the verified nested runtime envelope");
+		article.Text.Should().Contain("complete tree",
+			because: "shape tests should compare the full structure rather than only returned rows");
+		article.Text.Should().Contain("maximum depth and total-node limits",
+			because: "runtime filter parsing must bound remotely supplied tree complexity");
+		article.Text.Should().Contain("Exclude disabled items from evaluation",
+			because: "the parser should implement the verified disabled-node semantics");
+		article.Text.Should().Contain("DataService removes disabled",
+			because: "the parser must accept the verified native-versus-DataService shape boundary");
+		article.Text.Should().Contain("return group.IsNot ? !result : result",
+			because: "the guide must apply group negation after combining enabled children");
+		article.Text.Should().Contain("group.EnabledChildren",
+			because: "evaluation should reuse enabled children cached during parsing instead of allocating per record");
+		article.Text.Should().Contain("including an empty root OR",
+			because: "only the verified empty root AND envelope may bypass empty-group rejection");
+		article.Text.Should().Contain("Only the empty root AND envelope is supported.",
+			because: "the sample guard must reject both empty root OR and empty non-root groups");
+		article.Text.Should().Contain("ReadScalarParameter",
+			because: "the parsing owner should show how to validate one typed runtime parameter before evaluation");
+		article.Text.Should().Contain("ReadNullComparison",
+			because: "left-only null leaves require a parser distinct from scalar parameters");
+		article.Text.Should().Contain("filter.RightExpressions.Count != 0",
+			because: "the null parser must reject an unexpected right expression");
+		article.Text.Should().Contain("string.IsNullOrEmpty(value)",
+			because: "the parser should reproduce the verified MediumText null semantics");
+		article.Text.Should().Contain("empty-string rule to other schema data-value types",
+			because: "the parser must retain the type boundary around text null evaluation");
+		article.Text.Should().Contain("ReadIntegerMembership",
+			because: "the parsing guide should validate the complete membership collection");
+		article.Text.Should().Contain("MaxMembershipValues",
+			because: "remotely supplied membership parameters require an explicit cardinality limit");
+		article.Text.Should().Contain("ToHashSet()",
+			because: "validated membership values should be cached for repeated record evaluation");
+		article.Text.Should().Contain("values.Contains(record.SequenceNumber)",
+			because: "the verified evaluator should implement membership explicitly");
+		article.Text.Should().Contain("always false; it must never fall through",
+			because: "empty membership must never broaden a virtual query");
+		article.Text.Should().Contain("cannot recover whether a one-value Equal leaf was authored",
+			because: "the parser must document one-value Compare/In ambiguity");
+		article.Text.Should().Contain("ReadIntegerBetween",
+			because: "the parser should validate the first-class two-boundary runtime leaf");
+		article.Text.Should().Contain("filter.RightExpressions.Count != 2",
+			because: "a Between leaf must contain exactly two ordered parameters");
+		article.Text.Should().Contain("record.SequenceNumber >= range.Lower",
+			because: "the verified Between evaluator includes its lower boundary");
+		article.Text.Should().Contain("dispatch the shapes independently",
+			because: "first-class Between and the two-leaf alternative are not structurally interchangeable");
+		article.Text.Should().Contain("ReadTypedParameter<bool, BooleanDataValueType>",
+			because: "the parser should validate the Boolean CLR and forced types together");
+		article.Text.Should().Contain("ReadTypedParameter<Guid, GuidDataValueType>",
+			because: "the parser should reject textual or lookup-typed values for a plain Guid column");
+		article.Text.Should().Contain("Require that complete path and `LookupDataValueType`",
+			because: "lookup parsing must validate path and forced type rather than only Guid CLR type");
+		article.Text.Should().Contain("its CLR value is Guid",
+			because: "the parser must not conflate plain Guid and lookup columns");
+		article.Text.Should().Contain("ReadTrimmedDate",
+			because: "the parser should validate trim-to-date as an explicit leaf contract");
+		article.Text.Should().Contain("EntitySchemaStartOfCurrentYearQueryFunction",
+			because: "the parser should recognize expanded CurrentYear boundaries");
+		article.Text.Should().Contain("EntitySchemaCurrentDateQueryFunction",
+			because: "the parser should recognize expanded PreviousNDays boundaries");
+		article.Text.Should().Contain("Function.GetArguments()",
+			because: "nested temporal function expressions require recursive argument traversal");
+		article.Text.Should().Contain("DateTimeKind.Unspecified",
+			because: "the parser must account for the verified DataService Kind normalization");
+		article.Text.Should().Contain("ParameterValueForcedType is not",
+			because: "temporal readers must validate the forced data-value-type family as well as CLR DateTime");
+		article.Text.Should().Contain("Capture one provider-clock snapshot",
+			because: "relative temporal boundaries must remain consistent and allocation-free across records");
+		article.Text.Should().Contain("filter.LeftExpression.Path != expectedColumn",
+			because: "the parser must validate the full ESQ path instead of only its terminal schema column");
+		article.Text.Should().Contain("can collapse `Account.Name` to",
+			because: "the guide should explain why terminal SchemaColumnName matching can accept an unintended lookup path");
+		article.Text.Should().Contain("ReadActivityExistenceSubquery",
+			because: "the parser should validate Exists and NotExists as right-side subqueries");
+		article.Text.Should().Contain("Owner.Id == root UsrOwnerId",
+			because: "the parser must validate the generated mixed-path correlation");
+		article.Text.Should().Contain("column.ValueExpression?.Function is EntitySchemaAggregationQueryFunction",
+			because: "aggregate parsing must select the function column instead of assuming one subquery column");
+		article.Text.Should().Contain("Do not call `child.Columns.Single()`",
+			because: "the guide must preserve the live failure caused by the retained Id plus Count columns");
+		article.Text.Should().Contain("Count(Id) without Distinct",
+			because: "aggregate parsing must validate the exact operand and evaluation mode proved by the lab");
+		article.Text.Should().Contain("ConsumeSelectedExpressionBudget(child.Columns.Count)",
+			because: "the selected-expression budget must be applied before aggregate-column enumeration");
+		article.Text.Should().Contain("materialize an unbounded child source",
+			because: "avoiding literal N+1 queries must not permit unbounded child preloading");
+		article.Text.Should().Contain("child-row/fan-out, timeout",
+			because: "fallback batching must remain bounded and cancellable");
+		article.Text.Should().Contain("Do not execute one",
+			because: "virtual providers must avoid one child query per root record");
+		article.Text.Should().Contain("`RootSchema.IsVirtual` in `finally`",
+			because: "the diagnostic SQL oracle must not leave the shared schema non-virtual");
+		article.Text.Should().Contain("ReadSegmentMembership",
+			because: "the parser should expose the verified expanded Segment tree contract");
+		article.Text.Should().Contain("original Segment Guid cannot be recovered",
+			because: "the parser must not promise authoring metadata that is absent at runtime");
+		article.Text.Should().Contain("child?.RootSchema?.Name",
+			because: "malformed subqueries must fail closed before the parser dereferences their root schema");
+		article.Text.Should().Contain("selectedColumn?.ValueExpression?.ExpressionType",
+			because: "the selected Segment column must be validated as a schema-column expression");
+		article.Text.Should().Contain("RequireAuthorizedCurrentSegmentOncePerQuery",
+			because: "membership access must authorize the caller, root schema, and resolved saved segment");
+		article.Text.Should().Contain("ValidateCurrentMembershipFilters",
+			because: "complete in-memory shape validation must remain part of the published security contract");
+		article.Text.IndexOf("ValidateCurrentMembershipFilters", System.StringComparison.Ordinal).Should().BeLessThan(
+			article.Text.IndexOf("RequireAuthorizedCurrentSegmentOncePerQuery", System.StringComparison.Ordinal),
+			because: "cheap complete shape validation must precede metadata and permission work");
+		article.Text.Should().Contain("Never reuse a cross-caller",
+			because: "Segment authorization caching must be scoped to the current query and identity");
+		article.Text.Should().Contain("is not authorization by itself",
+			because: "a table-name allowlist must not bypass request-scoped Segment authorization");
+		article.Text.Should().Contain("SQL table identifiers cannot be parameters",
+			because: "the dynamic membership-table name is remotely reachable parser input");
+		article.Text.Should().Contain("RecordId Equal root Id",
+			because: "the parser should validate the complete Segment correlation");
+		article.Text.Should().Contain("additional removal/date predicates",
+			because: "unverified Segment option expansions must fail closed");
+		string[] expectedScalarOperators = [
+			"Equal", "NotEqual", "Less", "LessOrEqual", "Greater", "GreaterOrEqual",
+			"StartWith", "NotStartWith", "Contain", "NotContain", "EndWith", "NotEndWith"
+		];
+		foreach (string expectedOperator in expectedScalarOperators) {
+			article.Text.Should().Contain($"`{expectedOperator}`",
+				because: $"the parsing guide must retain the verified {expectedOperator} runtime operator");
+		}
+		article.Text.Should().Contain("AND(C, A, B)",
+			because: "the parsing owner should distinguish structural ATF ordering from semantic precedence");
+		article.Text.Should().Contain("Short-circuit AND",
+			because: "validated provider predicates should avoid unnecessary per-record evaluation work");
+		article.Text.Should().Contain("case-variant results do not prove Creatio",
+			because: "the parser guide must keep provider comparison policy separate from database semantics");
 	}
 
 	[Test]
@@ -1715,22 +2052,35 @@ public sealed class McpGuidanceResourceTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("GuidanceCatalog exposes esq-filters so AI callers can retrieve filter authoring guidance by name.")]
-	public void GuidanceCatalog_Should_Include_Esq_Filters_Entry() {
+	[Description("GuidanceCatalog exposes the ESQ filter router and each responsibility-specific child article by stable name.")]
+	public void TryGet_ShouldReturnAllEsqFilterGuides_WhenStableNamesAreRequested() {
 		// Act
-		bool found = GuidanceCatalog.TryGet("esq-filters", out GuidanceCatalogEntry entry);
+		bool routerFound = GuidanceCatalog.TryGet("esq-filters", out GuidanceCatalogEntry router);
+		bool frontendFound = GuidanceCatalog.TryGet("esq-filters-frontend", out GuidanceCatalogEntry frontend);
+		bool backendFound = GuidanceCatalog.TryGet("esq-filters-backend", out GuidanceCatalogEntry backend);
+		bool parsingFound = GuidanceCatalog.TryGet("esq-filter-parsing", out GuidanceCatalogEntry parsing);
 
 		// Assert
-		found.Should().BeTrue(
+		routerFound.Should().BeTrue(
 			because: "the catalog must expose esq-filters so get-guidance can return it by name");
-		entry.Name.Should().Be("esq-filters",
+		router.Name.Should().Be("esq-filters",
 			because: "the catalog entry name must match the lookup key exactly");
-		entry.Description.Should().Contain("filter authoring",
-			because: "the catalog description should identify the subject of the guidance article");
-		entry.Article.Should().NotBeNull(
+		router.Article.Should().NotBeNull(
 			because: "the catalog entry must carry the guidance text article");
-		entry.Article.Uri.Should().Be("docs://mcp/guides/esq-filters",
+		router.Article.Uri.Should().Be("docs://mcp/guides/esq-filters",
 			because: "the article URI in the catalog must match the resource URI");
+		frontendFound.Should().BeTrue(
+			because: "serialized JavaScript and DataService construction needs one catalog owner");
+		frontend.Article.Uri.Should().Be("docs://mcp/guides/esq-filters/frontend",
+			because: "the frontend catalog entry should resolve to its hierarchical resource URI");
+		backendFound.Should().BeTrue(
+			because: "native C# construction needs one catalog owner");
+		backend.Article.Uri.Should().Be("docs://mcp/guides/esq-filters/backend",
+			because: "the backend catalog entry should resolve to its hierarchical resource URI");
+		parsingFound.Should().BeTrue(
+			because: "runtime C# filter interpretation needs one catalog owner");
+		parsing.Article.Uri.Should().Be("docs://mcp/guides/esq-filter-parsing",
+			because: "the parsing catalog entry should resolve to its independent resource URI");
 	}
 
 	[Test]
@@ -1766,6 +2116,40 @@ public sealed class McpGuidanceResourceTests {
 			because: "the guide should keep detailed business-rule semantics in the dedicated shared guidance instead of duplicating them here");
 		article.Text.Should().Contain("Mobile pages do not support validators at all",
 			because: "the guide should preserve the validator limitation while clarifying business-rule support");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The page-modification resource includes the run-process GATE row that mandates the route to when-to-use-requests and the request catalog.")]
+	public void PageModificationGuidanceResource_Should_Include_RunProcessGateRow() {
+		// Arrange
+		PageModificationGuidanceResource resource = new();
+
+		// Act
+		TextResourceContents article = resource.GetGuide().Should().BeOfType<TextResourceContents>().Subject;
+
+		// Assert
+		article.Text.Should().Contain("| `when-to-use-requests` |",
+			because: "the GATE table must route the run-process task to the selection guide");
+		article.Text.Should().Contain("runs a business process (`clicked` -> `crt.RunBusinessProcessRequest`)",
+			because: "the row must be keyed to the run-process requirement wording");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The mobile page resource includes the request-catalog pointer that names get-request-info as the single source of truth for the run-process parameter contract.")]
+	public void MobilePageGuidanceResource_Should_Include_RequestCatalogPointer() {
+		// Arrange
+		MobilePageGuidanceResource resource = new();
+
+		// Act
+		TextResourceContents article = resource.GetGuide().Should().BeOfType<TextResourceContents>().Subject;
+
+		// Assert
+		article.Text.Should().Contain("FULL parameter contract is the request catalog (single source of truth)",
+			because: "the catalog pointer must name the authoritative contract source");
+		article.Text.Should().Contain("get-request-info request-type=crt.RunBusinessProcessRequest",
+			because: "the pointer must name the exact catalog call for the run-process request");
 	}
 
 	[Test]
@@ -1946,8 +2330,8 @@ public sealed class McpGuidanceResourceTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The routing map points the run-a-process-button task at the run-process-button guide so an agent reaches the shipped contract from the Pages domain.")]
-	public void RoutingGuidanceResource_Should_Route_RunProcessButton_Task() {
+	[Description("The routing resource includes the request-wiring rows, so an agent is deterministically routed to get-request-info and the when-to-use-requests guide.")]
+	public void RoutingGuidanceResource_Should_Include_RequestWiring_Rows() {
 		// Arrange
 		RoutingGuidanceResource resource = new();
 
@@ -1955,9 +2339,81 @@ public sealed class McpGuidanceResourceTests {
 		TextResourceContents article = resource.GetGuide().Should().BeOfType<TextResourceContents>().Subject;
 
 		// Assert
-		article.Text.Should().Contain("name=run-process-button",
-			because: "the routing map must direct the agent to the run-process-button guide");
+		article.Text.Should().Contain("-> get-request-info + name=when-to-use-requests",
+			because: "the map must route button/menu action wiring to the request catalog and selection guide");
+		article.Text.Should().Contain("get-request-info (crt.RunBusinessProcessRequest)",
+			because: "the run-a-process-button task must route to get-process-signature + the request catalog");
 		article.Text.Should().Contain("runs a business process",
-			because: "the routing row must be keyed to the task wording so the agent recognizes it");
+			because: "the run-a-process-button routing row must be keyed to the task wording");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns virtual entity lifecycle guidance that requires the schema object before reads and Creatio 10.0 plus its feature flag before writes.")]
+	public void GetGuide_ShouldRequireExistingVirtualObject_WhenExecutorGuidanceIsRequested() {
+		// Arrange
+		VirtualEntitiesGuidanceResource resource = new();
+
+		// Act
+		ResourceContents result = resource.GetGuide();
+
+		// Assert
+		TextResourceContents article = result.Should().BeOfType<TextResourceContents>(
+			because: "virtual entity guidance should be returned as one plain-text MCP resource").Subject;
+		article.Uri.Should().Be("docs://mcp/guides/virtual-entities",
+			because: "the guide should expose a stable virtual-entities URI");
+		article.Text.Should().Contain("virtual entity schema MUST already exist",
+			because: "agents must create the object before writing its executor");
+		article.Text.Should().Contain("create virtual entity object",
+			because: "the mandatory lifecycle should begin with schema creation before executor implementation");
+		article.Text.Should().Contain("<EntitySchemaName>QueryExecutor",
+			because: "the guide should derive the exact executor binding from the verified schema name");
+		article.Text.Should().Contain("provider data -> filters -> sorting -> paging -> selected-column materialization",
+			because: "the guide should pin the correct query-processing order");
+		article.Text.Should().Contain("esq-filter-parsing",
+			because: "runtime filter details should remain owned by the dedicated parsing guide");
+		article.Text.Should().Contain("virtual writes require Creatio 10.0 or later",
+			because: "Entity-level virtual CRUD does not exist in the 8.3 release line");
+		article.Text.Should().Contain("Creatio 8.3.4 or earlier",
+			because: "the unsupported release boundary must remain explicit rather than implied by a minimum version");
+		article.Text.Should().Contain("EnableVirtualEntitySupport",
+			because: "Creatio 10.0 still requires its disabled-by-default virtual CRUD feature to be enabled");
+		article.Text.Should().Contain("Do not substitute `clear-redis-db`",
+			because: "feature activation must use targeted cache invalidation rather than flushing all Redis data");
+		article.Text.Should().Contain("clio set-feature EnableVirtualEntitySupport 1 -e <environment>",
+			because: "the guide must provide the executable CLI fallback for remote Creatio feature state");
+		article.Text.Should().Contain("`clio-run` dispatches MCP tools rather than CLI verbs",
+			because: "agents must not route the set-feature CLI verb through a nonexistent MCP contract");
+		article.Text.Should().Contain("maximum page size",
+			because: "virtual providers must reject unbounded full-source enumeration");
+		article.Text.Should().Contain("record/tenant scope",
+			because: "low-level providers must enforce authorization equivalent to the virtual entity contract");
+		article.Text.Should().Contain("Use two callers with different permissions/tenant scopes",
+			because: "the acceptance plan must prove restricted records cannot be read or changed");
+		article.Text.Should().Contain("OnSaving -> OnInserting -> OnInserted -> OnSaved",
+			because: "the guide should preserve the lab-verified virtual create lifecycle");
+		article.Text.Should().Contain("DataContext.Save()",
+			because: "the write acceptance should include the ordinary ATF.Repository DataService entry path");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("GuidanceCatalog and the routing map expose virtual-entities as the canonical virtual object and executor lifecycle guide.")]
+	public void TryGet_ShouldReturnVirtualEntitiesGuide_WhenVirtualEntityWorkIsRouted() {
+		// Arrange
+		RoutingGuidanceResource routingResource = new();
+
+		// Act
+		bool found = GuidanceCatalog.TryGet("virtual-entities", out GuidanceCatalogEntry entry);
+		TextResourceContents routing = routingResource.GetGuide().Should().BeOfType<TextResourceContents>(
+			because: "routing guidance should remain a plain-text resource").Subject;
+
+		// Assert
+		found.Should().BeTrue(
+			because: "get-guidance must resolve the virtual-entities name advertised by routing");
+		entry.Article.Uri.Should().Be("docs://mcp/guides/virtual-entities",
+			because: "the catalog entry should preserve the stable resource URI");
+		routing.Text.Should().Contain("name=virtual-entities",
+			because: "virtual entity object and executor work should route to the dedicated lifecycle guide");
 	}
 }

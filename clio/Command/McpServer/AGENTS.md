@@ -135,7 +135,8 @@ To force-refresh the local cache without waiting for the 5min TTL, use the
 - `--version 8.2.1` → refresh that GA file
 - `--all` → refresh every per-version file currently in the cache directory
 
-Exit code is 0 only when every requested refresh got a 2xx from the CDN.
+Exit code is 0 only when every requested refresh got a 2xx from the CDN, across all three
+flavors (web, mobile, requests).
 
 ### Long-form documentation (`references.docs[]`)
 
@@ -268,6 +269,7 @@ same async pipeline, same `CreateDetailResponse`, same response shape
 |---|---|---|---|---|
 | Web (default) | `{base}/{version}/ComponentRegistry.json` | `~/.clio/cache/component-registry/` | `CLIO_COMPONENT_REGISTRY_LOCAL_FILE` | none (exhaustion → `ComponentRegistryUnavailableException`) |
 | Mobile | `{base}/{version}/MobileComponentRegistry.json` | `~/.clio/cache/component-registry/mobile/` | `CLIO_MOBILE_COMPONENT_REGISTRY_LOCAL_FILE` | `Command/McpServer/Data/MobileComponentRegistry.json` (transitional, while producer rolls out) |
+| Requests (`get-request-info`) | `{base}/{version}/RequestRegistry.json` | `~/.clio/cache/component-registry/requests/` | `CLIO_REQUEST_REGISTRY_LOCAL_FILE` | none (exhaustion → `ComponentRegistryUnavailableException` naming the requests env var) |
 
 The mobile fallback is a deliberate, narrowly-scoped concession: the academy
 mirror does not yet serve `MobileComponentRegistry.json` (the producer-side
@@ -294,6 +296,75 @@ services.AddSingleton<IMobileComponentRegistryClient>(sp => new MobileComponentR
 `IComponentRegistryClient` — it exists so the DI container can distinguish the
 two singleton registrations at injection time. The implementation
 (`MobileComponentRegistryClient`) inherits verbatim from the web type.
+
+### Request registry data source (`get-request-info`)
+
+The Freedom UI request catalog (`crt.*Request` types wired through a view element's
+request bindings, e.g. a button's `clicked`; OOTB button-action requests initiative,
+ENG-93187) is the third `RegistryFlavor`
+(`RegistryFlavor.Requests`, see the flavor table above) served by the same
+transport chain: local-override env var → file cache → CDN → `latest` fallback →
+`ComponentRegistryUnavailableException`. Only the byte transport is shared —
+the envelope differs from components, so parsing lives in its own
+`Tools/RequestInfoCatalog.cs` (`{ "requests": [...], "references": { "baseParameters",
+"typeDefinitions" } }`; there is no legacy top-level-array generation and the
+`requests` array is mandatory).
+
+Consumer rules that differ from the component catalog — do not "unify" them away:
+
+- **`baseParameters` are NOT merged into `parameters`.** The component catalog
+  merges `baseInputs` into `inputs` because base inputs are authorable. The request
+  catalog's base fields (`$context`, `scopes`, `type`) are platform-injected at
+  dispatch time; merging them would teach an AI consumer to pass them through the
+  binding's `params` block. `RequestInfoTool.CreateDetailResponse` surfaces them as
+  a SEPARATE `baseParameters` response field instead.
+- **An empty `parameters` map is meaningful and stays on the wire.** It says "this
+  request accepts NO parameters" (e.g. `crt.ClosePageRequest`); absence of the field
+  would read as "unknown".
+- **The detail response always seeds the type-definition closure with
+  `RequestBindingConfig`** — the wiring contract of every request — so a
+  parameterless request still returns a self-contained wiring schema.
+- **Request docs live under the `request-docs/` namespace**
+  (`request-docs/<basename>.request.md`, flat URL next to the registry). The shared
+  `Tools/ComponentRegistryDocsPath.cs` validator accepts exactly the `docs/` and
+  `request-docs/` prefixes; the docs pipeline (`ComponentRegistryDocsClient` +
+  `ComponentDocumentationLoader`) is reused verbatim.
+- **The surface ships enabled on every install.** `RequestInfoTool` (`get-request-info`) is a
+  resident core tool in `McpCoreToolProfile.CoreToolTypes`; the `ListPrintablesTool` probe is
+  non-resident and dispatched through `clio-run`; the `WhenToUseRequestsGuidanceResource` guide is a
+  plain `GuidanceCatalog` entry, and the routing map plus the three always-on page guides
+  (`PageModificationGuidanceResource` with its run-process GATE row, `MobilePageGuidanceResource`
+  with its request-catalog pointer, `PageSchemaHandlersGuidanceResource` with its "Standard handler
+  parameter catalog" pointers) reference the request surface as static article content.
+  `ToolContractGetTool` carries the curated `BuildRequestInfo` contract that names `get-request-info`
+  as the authoritative contract. The `when-to-use-requests` guide owns the request-selection decision
+  rules and the catalog discipline; handler mechanics stay in `page-schema-handlers` (never duplicate).
+  There is deliberately NO CLI twin verb; `component-registry-refresh` covers the requests cache
+  flavor alongside web and mobile. Offline iteration goes through `CLIO_REQUEST_REGISTRY_LOCAL_FILE`.
+- **Snapshot guard is symmetric**: `RequestRegistrySnapshotTests` pins
+  `clio.tests/Command/McpServer/Fixtures/RequestRegistry.live-snapshot.json`
+  (the live academy CDN payload — the producer now publishes it; refresh whenever a new
+  one ships via `curl -s https://academy.creatio.com/api/mcp/latest/RequestRegistry.json > <that fixture>`)
+  and fails on any non-empty `UnmappedExtensions` bucket.
+- **Environment-dependent parameter values come from PROBE tools, never from the
+  catalog.** A registry parameter whose value lives in the target environment carries a
+  `valueSource` annotation (`{ "kind": "environment", "tool": "<probe>" }`) inside its
+  parameter blob — e.g. `crt.PrintablesRequest.templateId` -> `list-printables`,
+  `crt.RunBusinessProcessRequest.processName` -> `get-process-signature`. Probes are
+  dedicated read-only, per-call environment-scoped tools (the `get-process-signature`
+  pattern): one probe per RESOURCE CLASS (process signatures, printables, …), never one
+  per request and never a generic env-reader. New probes derive their response from
+  `Tools/EnvironmentProbeResponse.cs` (`success` / `resolutionFailed` hard-vs-transient
+  lever / `error` with candidates) and are deliberately NOT resident in `tools/list` —
+  the per-request docs and the `when-to-use-requests` guide route agents to them. The
+  agent-facing hard rule (carried by the guide and every probe description): fill such
+  values ONLY from the probe result; never invent them; on empty/ambiguous results ask
+  the user. NOTE the two probes differ on provenance, NOT on what they read (both are read-only
+  built-in-DataService reads): `list-printables` was born with ENG-93187 as an MCP-only probe (no
+  registered CLI verb, no `help`/`docs`, no purpose outside crt.PrintablesRequest wiring), while
+  `get-process-signature` is a pre-existing GA command the request catalog merely REUSES: a
+  registered, documented standalone CLI verb (`Program.cs` verb table + dispatch, aliases `gps`,
+  its own `help`/`docs`).
 
 ### Snapshot guard against silent data loss
 
