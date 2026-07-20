@@ -596,8 +596,9 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 
 	[Test]
 	[AllureTag(GuidanceGetTool.ToolName)]
-	[AllureName("get-guidance returns the canonical ESQ filters guidance article")]
-	public async Task GuidanceGet_Should_Return_Esq_Filters_Guide() {
+	[AllureName("get-guidance returns the canonical ESQ filter family router")]
+	[Description("Verifies the stable esq-filters name now routes callers to responsibility-specific frontend, backend, and parsing articles.")]
+	public async Task GuidanceGet_ShouldReturnEsqFilterRouter_WhenStableFamilyNameIsRequested() {
 		// Arrange
 		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
@@ -616,6 +617,119 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "successful guidance lookups should return the resolved article payload");
 		response.Article!.Uri.Should().Be("docs://mcp/guides/esq-filters",
 			because: "the canonical resource URI should still be visible in the tool response");
+		response.Article.Text.Should().Contain("esq-filters-frontend",
+			because: "the family router should expose the frontend construction owner");
+		response.Article.Text.Should().Contain("esq-filters-backend",
+			because: "the family router should expose the backend construction owner");
+		response.Article.Text.Should().Contain("esq-filter-parsing",
+			because: "the family router should expose the runtime parsing owner");
+		response.Article.Text.Should().Contain("inclusive Between ranges",
+			because: "get-guidance should report the current promoted backend validation status");
+		response.Article.Text.Should().Contain("lookup equality/membership",
+			because: "get-guidance should report promoted typed lookup coverage");
+		response.Article.Text.Should().Contain("temporal literals/macros/date parts",
+			because: "get-guidance should report promoted temporal coverage");
+		response.Article.Text.Should().Contain("Exists/NotExists/aggregate subqueries",
+			because: "get-guidance should report promoted subquery coverage");
+		response.Article.Text.Should().Contain("saved Segment membership",
+			because: "get-guidance should report promoted Segment coverage");
+	}
+
+	[Test]
+	[AllureTag(GuidanceGetTool.ToolName)]
+	[AllureName("get-guidance returns every responsibility-specific ESQ filter article")]
+	[Description("Verifies frontend construction, backend construction, and runtime parsing ESQ filter articles are independently retrievable by stable name.")]
+	public async Task GuidanceGet_ShouldReturnEsqFilterChildGuides_WhenStableChildNamesAreRequested() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		GuidanceGetResponse frontend = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> { ["name"] = "esq-filters-frontend" });
+		GuidanceGetResponse backend = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> { ["name"] = "esq-filters-backend" });
+		GuidanceGetResponse parsing = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> { ["name"] = "esq-filter-parsing" });
+
+		// Assert
+		frontend.Success.Should().BeTrue(
+			because: "serialized filter construction should have one retrievable frontend owner");
+		frontend.Article!.Uri.Should().Be("docs://mcp/guides/esq-filters/frontend",
+			because: "the frontend catalog name should preserve the hierarchical frontend URI");
+		backend.Success.Should().BeTrue(
+			because: "native C# filter construction should have one retrievable backend owner");
+		backend.Article!.Uri.Should().Be("docs://mcp/guides/esq-filters/backend",
+			because: "the backend catalog name should preserve the hierarchical backend URI");
+		backend.Article!.Text.Should().Contain("FilterComparisonType.NotEndWith",
+			because: "get-guidance should return the concrete backend scalar Compare recipes");
+		backend.Article!.Text.Should().Contain("disabledLeaf.IsEnabled = false",
+			because: "get-guidance should return the verified native disabled-leaf recipe");
+		backend.Article!.Text.Should().Contain("CreateIsNullFilter(\"UsrDescription\")",
+			because: "get-guidance should return the verified native null-filter recipe");
+		backend.Article!.Text.Should().Contain("object[] sequenceNumbers = { 10, 30 }",
+			because: "get-guidance should return the verified native membership recipe");
+		backend.Article!.Text.Should().Contain("FilterComparisonType.Between",
+			because: "get-guidance should return the verified native Between recipe");
+		backend.Article!.Text.Should().Contain("LookupDataValueType`, not `GuidDataValueType`",
+			because: "get-guidance should return the verified lookup type distinction");
+		backend.Article!.Text.Should().Contain("EntitySchemaQueryMacrosType.CurrentYear",
+			because: "get-guidance should return verified native temporal macro construction");
+		backend.Article!.Text.Should().Contain("createdOnDate.TrimDateTimeParameterToDate = true",
+			because: "get-guidance should return verified date-only construction");
+		backend.Article!.Text.Should().Contain("esq.CreateExistsFilter(ownerActivities)",
+			because: "get-guidance should return verified native Exists construction");
+		backend.Article!.Text.Should().Contain("out EntitySchemaQuery activitySubQuery",
+			because: "get-guidance should return verified aggregate child-filter construction");
+		backend.Article!.Text.Should().Contain("new SegmentFilterOptions",
+			because: "get-guidance should return verified native Segment construction");
+		backend.Article!.Text.Should().Contain("UseSegmentFiltering",
+			because: "get-guidance should retain the Segment feature gate");
+		parsing.Success.Should().BeTrue(
+			because: "runtime C# filter interpretation should have one retrievable parsing owner");
+		parsing.Article!.Uri.Should().Be("docs://mcp/guides/esq-filter-parsing",
+			because: "the parsing catalog name should preserve the independent parsing URI");
+		parsing.Article!.Text.Should().Contain("ReadScalarParameter",
+			because: "get-guidance should return the verified runtime scalar parameter parsing recipe");
+		parsing.Article!.Text.Should().Contain("ReadIntegerBetween",
+			because: "get-guidance should return the verified runtime Between parsing recipe");
+		parsing.Article!.Text.Should().Contain("ReadTypedParameter<bool, BooleanDataValueType>",
+			because: "get-guidance should return verified typed parameter parsing");
+		parsing.Article!.Text.Should().Contain("return group.IsNot ? !result : result",
+			because: "get-guidance should return the verified group-negation evaluation rule");
+		parsing.Article!.Text.Should().Contain("ReadNullComparison",
+			because: "get-guidance should return the verified null-filter parsing contract");
+		parsing.Article!.Text.Should().Contain("ReadIntegerMembership",
+			because: "get-guidance should return the verified membership parsing contract");
+		parsing.Article!.Text.Should().Contain("ReadTrimmedDate",
+			because: "get-guidance should return the verified trim-to-date parsing contract");
+		parsing.Article!.Text.Should().Contain("Function.GetArguments()",
+			because: "get-guidance should return recursive temporal function parsing rules");
+		parsing.Article!.Text.Should().Contain("Capture one provider-clock snapshot",
+			because: "get-guidance should return query-scoped temporal boundary caching guidance");
+		parsing.Article!.Text.Should().Contain("ReadActivityExistenceSubquery",
+			because: "get-guidance should return verified existence-subquery parsing guidance");
+		parsing.Article!.Text.Should().Contain("Do not call `child.Columns.Single()`",
+			because: "get-guidance should return verified aggregate-column parsing guidance");
+		parsing.Article!.Text.Should().Contain("Count(Id) without Distinct",
+			because: "get-guidance should preserve exact aggregate operand validation");
+		parsing.Article!.Text.Should().Contain("materialize an unbounded child source",
+			because: "get-guidance should preserve bounded fallback execution guidance");
+		parsing.Article!.Text.Should().Contain("ReadSegmentMembership",
+			because: "get-guidance should return verified expanded Segment parsing guidance");
+		parsing.Article!.Text.Should().Contain("ValidateCurrentMembershipFilters",
+			because: "get-guidance should preserve complete shape validation before external work");
+		parsing.Article!.Text.Should().Contain("RequireAuthorizedCurrentSegmentOncePerQuery",
+			because: "get-guidance should preserve request-scoped Segment authorization");
+		parsing.Article!.Text.Should().Contain("Never reuse a cross-caller",
+			because: "get-guidance should preserve safe query-scoped authorization caching");
+		parsing.Article!.Text.Should().Contain("SQL table identifiers cannot be parameters",
+			because: "get-guidance should preserve dynamic membership-table identifier safety");
 	}
 
 	[Test]
@@ -780,6 +894,43 @@ public sealed class GuidanceGetToolE2ETests : McpContractFixtureBase {
 			because: "the guidance tool should return the token minting instructions");
 		response.Article.Text.Should().Contain("mint a new token",
 			because: "the guidance tool should return the no-refresh-token expiry recovery instruction");
+	}
+
+	[Test]
+	[AllureTag(GuidanceGetTool.ToolName)]
+	[AllureName("get-guidance returns the virtual entity lifecycle guide")]
+	[Description("Verifies get-guidance returns virtual-entities with schema-before-executor and Creatio 10.0 virtual-write prerequisites.")]
+	public async Task GuidanceGet_ShouldReturnVirtualEntitiesGuide_WhenStableNameIsRequested() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		GuidanceGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> { ["name"] = "virtual-entities" });
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "virtual-entities should be registered in the guidance catalog");
+		response.Article.Should().NotBeNull(
+			because: "a successful lookup should return the resolved virtual entity article");
+		response.Article!.Uri.Should().Be("docs://mcp/guides/virtual-entities",
+			because: "the stable guidance name should preserve the virtual-entities resource URI");
+		response.Article.Text.Should().Contain("virtual entity schema MUST already exist",
+			because: "tool-based retrieval should preserve the schema-before-executor gate");
+		response.Article.Text.Should().Contain("virtual writes require Creatio 10.0 or later",
+			because: "tool-based retrieval must preserve the hard virtual-write version boundary");
+		response.Article.Text.Should().Contain("Creatio 8.3.4 or earlier",
+			because: "tool-based retrieval should state the unsupported release boundary explicitly");
+		response.Article.Text.Should().Contain("EnableVirtualEntitySupport",
+			because: "tool-based retrieval should require the virtual CRUD feature on supported versions");
+		response.Article.Text.Should().Contain("record/tenant scope",
+			because: "tool-based retrieval should preserve the provider authorization boundary");
+		response.Article.Text.Should().Contain("maximum page size",
+			because: "tool-based retrieval should preserve bounded provider execution");
+		response.Article.Text.Should().Contain("clio set-feature EnableVirtualEntitySupport 1 -e <environment>",
+			because: "tool-based retrieval should preserve the executable feature-enablement fallback");
 	}
 
 	private static async Task<GuidanceGetResponse> CallAsync(
