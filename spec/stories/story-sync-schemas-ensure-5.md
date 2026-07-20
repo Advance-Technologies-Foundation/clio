@@ -78,7 +78,25 @@ Test naming: `MethodName_ShouldBehavior_WhenCondition`; `[Property("Module","Mcp
 
 ## Dev Agent Record
 
-- Implementation started:
-- Implementation completed:
-- Tests passing:
-- Notes:
+- Implementation started: 2026-07-20
+- Implementation completed: 2026-07-20
+- Tests passing: Unit — `dotnet test clio.tests/clio.tests.csproj -f net10.0 --filter "Category=Unit&Module=McpServer" --no-build` → 2555 passed, 0 failed, 1 skipped. E2E — `dotnet build clio.mcp.e2e/clio.mcp.e2e.csproj` → 0 errors, 0 new warnings in touched files. E2E execution is the HARD, RECORDED manual/TeamCity (Team_Atf_ClioMcpE2eTests) merge gate: clio.mcp.e2e is NOT in CI and the stdio harness does not run locally.
+
+### New unit tests (clio.tests/Command/McpServer/SchemaSyncToolTests.cs)
+Added under a new `#region Ambiguous-failure re-run class (AC-03 - SM-01c/SM-02c counter-metric)` that also carries the manifest mapping every re-run matrix cell to its existing (Stories 1/2/3) covering test:
+- `SchemaSync_CreateLookup_ShouldClassifyOnceAndNotReadBackAfterWrite_WhenSchemaCreatedCleanly` — clean create: `Classify` received exactly once, `ReadColumns` never (no post-write verify read-back; zero added round-trip).
+- `SchemaSync_UpdateEntity_ShouldReadColumnsOnceAndNotReadBackAfterWrite_WhenReconcilingCleanly` — clean update: `ReadColumns` received exactly once, `Classify` never.
+
+The server-side read-count budget (AC-BUDGET: 1 create-only / 2 reconcile) was already covered at the service tier by `SchemaConvergenceServiceTests.Classify_ShouldReadSchemaExactlyOnce_WhenSchemaIsAbsent` and `Classify_ShouldReadSchemaTwice_WhenSchemaExistsInTargetPackage` (not duplicated).
+
+### New E2E tests — the manual merge gate (run these on a live stand / TeamCity)
+clio.mcp.e2e/SchemaSyncToolE2ETests.cs (inherit class-level `[Category("McpE2E.Sandbox")]`):
+- `SchemaSync_AbsentSchema_ShouldReportCreatedOutcome_WhenCreatedOnRealEnvironment`
+- `SchemaSync_ExistingSchema_ShouldReportReconciledOutcomeAndAddOnlyMissingColumn_WhenReconciledOnRealEnvironment`
+- `SchemaSync_IdenticalReplay_ShouldReportAlreadySatisfiedWithNoDuplicateMutation_WhenBatchReRun` (AC-03)
+- `SchemaSync_CrossPackageSchema_ShouldReportCollisionOutcome_WhenSchemaExistsInDifferentPackage`
+
+clio.mcp.e2e/ToolContractGetToolE2ETests.cs (inherit class-level `[Category("McpE2E.NoEnvironment")]`):
+- `ToolContractGet_Should_Advertise_Convergent_SchemaSync_Contract`
+
+- Notes: Deviation from DoD literal wording — the two E2E fixtures categorize at the CLASS level with the `McpE2E.*` scheme (which drives TeamCity `TestCategory!=` filtering); no per-method `[Category("E2E")]` was added because that tag is unknown to the harness. Followed the harness per AGENTS.md; flagged for architect adjudication. Cross-package collision E2E uses the OOTB `Contact` schema name (owned by a base package, never the sandbox package) to trigger a real cross-package collision without provisioning a second package; the owning-package name is asserted loosely (non-empty). No PR opened (out of scope), so "PR description references this story file" is N/A here.

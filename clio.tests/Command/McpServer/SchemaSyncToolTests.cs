@@ -2812,6 +2812,93 @@ public sealed class SchemaSyncToolTests {
 			because: "an explicit modify is the channel for non-type attribute changes and must be forwarded unconditionally");
 	}
 
+	// ------------------------------------------------------------------------------------------------
+	#region Ambiguous-failure re-run class (AC-03 - SM-01c/SM-02c counter-metric)
+	// ------------------------------------------------------------------------------------------------
+	// AC-03 (the thesis): re-submitting an identical batch after an ambiguous/lost-response failure must
+	// CONVERGE - an already-applied convergent operation replays as created/reconciled/already-satisfied
+	// with NO masked failure and NO duplicate or rejected mutation. The full re-run matrix for the
+	// convergent create/update paths IS the SM-01c/SM-02c counter-metric; keeping every cell green is the
+	// guard. Rather than physically relocate the (already-green) discriminating tests introduced in
+	// Stories 1/2/3, this region is the authoritative MANIFEST mapping each matrix cell to the test that
+	// covers it, plus the genuinely-missing read-budget cells added below.
+	//
+	//   create-lookup/entity | created             -> ExecuteCreateSchema_ShouldReturnCreatedOutcomeAndEnsureRegistration_WhenSchemaAbsent
+	//                        | reconciled (add)     -> ExecuteCreateSchema_ShouldAddOnlyMissingColumnsWithoutRecreate_WhenSchemaExistsWithSubset
+	//                        | reconciled (modify)  -> ExecuteCreateSchema_ShouldApplyModifyDelta_WhenClassifierSurfacesColumnsToModify
+	//                        | already-satisfied    -> ExecuteCreateSchema_ShouldEnsureLookupRegistrationOnAlreadyExistsPath_WhenRegistrationMissing
+	//                        | collision            -> ExecuteCreateSchema_ShouldFailWithCollisionAndNotCallCreate_WhenSchemaInDifferentPackage
+	//                        | collision (stop)     -> SchemaSync_ShouldStopOnFirstFailure_WhenCreateCollisionDetected
+	//   update-entity        | reconciled (add)     -> ExecuteUpdateEntity_ShouldAddColumn_WhenRequestedColumnAbsent
+	//                        | reconciled (modify)  -> ExecuteUpdateEntity_ShouldModifyColumn_WhenRequestedColumnPresentButDifferent
+	//                        | reconciled (remove)  -> ExecuteUpdateEntity_ShouldIssueRemove_WhenRequestedRemoveColumnPresent
+	//                        | already-satisfied    -> ExecuteUpdateEntity_ShouldReturnAlreadySatisfiedAndNotCallUpdate_WhenColumnsIdentical
+	//                        | no-op / remove-absent -> ExecuteUpdateEntity_ShouldTreatRemoveAsSuccess_WhenColumnAlreadyAbsent
+	//                        | idempotent type-eq   -> ExecuteUpdateEntity_ShouldReturnAlreadySatisfied_WhenRequestedTypeTokenMatchesFriendlyReadbackName
+	//                        | no delete-unlisted   -> ExecuteUpdateEntity_ShouldLeaveUnlistedColumnsOutOfDelta_WhenReconciling
+	//
+	// The SERVER-side read-count budget (AC-BUDGET: 1 create-only / 2 reconcile) is proven at the service
+	// tier in SchemaConvergenceServiceTests (Classify_ShouldReadSchemaExactlyOnce_WhenSchemaIsAbsent /
+	// Classify_ShouldReadSchemaTwice_WhenSchemaExistsInTargetPackage). The two tests below add the
+	// remaining TOOL-tier cell: the clean path adds ZERO extra MCP round-trips and performs NO post-write
+	// verify read-back (exactly one state read per operation, and none after the mutation).
+
+	[Test]
+	[Category("Unit")]
+	[Description("Reads server state exactly once (a single Classify) and performs no post-write verify read-back on the clean create path, so the convergent create adds zero extra MCP round-trips (AC-BUDGET, round-trip formulation per OI-01).")]
+	public async Task SchemaSync_CreateLookup_ShouldClassifyOnceAndNotReadBackAfterWrite_WhenSchemaCreatedCleanly() {
+		// Arrange
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		ILookupRegistrationService registrationService = Substitute.For<ILookupRegistrationService>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreateCommand);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(registrationService);
+		ISchemaConvergenceService convergence = Convergence(SchemaConvergenceOutcome.Create);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, convergence);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus", TitleLocalizations: Localizations("Todo Status"))]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Results[0].Success.Should().BeTrue(
+			because: "a clean create must succeed");
+		convergence.Received(1).Classify(Arg.Any<SchemaConvergenceTarget>());
+		convergence.DidNotReceive().ReadColumns(Arg.Any<string>(), Arg.Any<string>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Reads the current columns exactly once (a single ReadColumns) and performs no post-write verify read-back on the clean update-entity reconcile path, so it adds zero extra MCP round-trips (AC-BUDGET, round-trip formulation per OI-01).")]
+	public async Task SchemaSync_UpdateEntity_ShouldReadColumnsOnceAndNotReadBackAfterWrite_WhenReconcilingCleanly() {
+		// Arrange
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
+			.Returns(fakeUpdateCommand);
+		ISchemaConvergenceService convergence = Convergence();
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, convergence);
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("update-entity", "UsrTodoList",
+				Columns: [new CreateEntitySchemaColumnArgs("UsrExtra", "Text", Localizations("Extra"))])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Results[0].Success.Should().BeTrue(
+			because: "a clean update reconcile must succeed");
+		convergence.Received(1).ReadColumns("dev", "UsrTodoList");
+		convergence.DidNotReceive().Classify(Arg.Any<SchemaConvergenceTarget>());
+	}
+
+	#endregion
+
 	private static ISchemaConvergenceService Convergence(
 		SchemaConvergenceOutcome outcome = SchemaConvergenceOutcome.Create,
 		IReadOnlyList<CreateEntitySchemaColumnArgs>? columnsToAdd = null,
