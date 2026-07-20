@@ -51,6 +51,7 @@ public sealed class DataBindingsGuidanceResource {
 			       - Use a separate binding artifact only when the workflow explicitly needs one.
 			       - Seed rows do not implement defaults.
 			       - Generate fresh GUIDs for explicit rows at execution time.
+			       - Seed-data replay safety is keyed on `Name`: a row is replay-safe only when the target schema has a `Name` column AND the row carries a `Name`; rows without a `Name` (or schemas without a `Name` column) are non-convergent — a stable-`Id`, no-`Name` row PK-conflicts on replay. Re-running a `sync-schemas` batch whose seed rows carry a `Name` skips the already-present rows (no duplicates); do not add explicit `Id`s to no-`Name` rows expecting a re-run to be safe.
 
 			       Verification discipline
 			       - Read before write when the task depends on current app, page, schema, or binding context.

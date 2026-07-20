@@ -76,7 +76,19 @@ Test naming: `MethodName_ShouldBehavior_WhenCondition`; `[Category("Unit")]`; `[
 
 ## Dev Agent Record
 
-- Implementation started:
-- Implementation completed:
-- Tests passing:
+- Implementation started: 2026-07-20
+- Implementation completed: 2026-07-20
+- Tests passing: `dotnet test clio.tests/clio.tests.csproj -f net10.0 --filter "Category=Unit&Module=McpServer" --no-build` → 2514 passed, 0 failed, 1 skipped. `WorkspaceTemplateGuidanceDriftTests` → 6 passed, 0 failed (green; no rename → no drift, as predicted).
 - Notes:
+  - **All six targets updated:**
+    - `clio/Command/McpServer/Tools/ToolContractGetTool.cs` `BuildSchemaSync()` — enriched the contract `description` (convergent superset + re-run safety + verbatim seed `Name` contract), enriched the `results` output field (per-op `outcome` values `created`/`reconciled`/`already-satisfied`/`collision` + collision failure shape `success:false` + `error` + `collision-info` + modify-conflict-is-not-collision), and added a `ToolAntiPattern` for the hand-composed catch-up batch.
+    - `clio/Command/McpServer/Tools/SchemaSyncTool.cs` — tool `[Description]` states re-run safety without fighting the existing "stops on first failure" line.
+    - Four guidance resources, each with a scope-distinct statement (no verbatim duplication, per AGENTS.md): `AgentExecutionGuidanceResource.cs` (recovery mechanic — authoritative re-run-safety), `ExistingAppMaintenanceGuidanceResource.cs` (`outcome` interpretation), `AppModelingGuidanceResource.cs` (convergent-superset / anti-duplication angle), `DataBindingsGuidanceResource.cs` (verbatim seed `Name` contract).
+    - `clio/docs/commands/sync-schemas.md` — new "Convergent (ensure) Semantics" + "Seed Data Replay Contract" sections; `outcome` table; collision failure; Response sample + Error Handling updated.
+    - `docs/McpCapabilityMap.md` — "Why sync-schemas matters" block gained convergent/re-run-safe framing + `outcome`, collision, seed `Name` bullets.
+  - **SM-04c — premise deviation (recorded per architect expectation):** the story/ADR assume PR #910 left a hand-composed catch-up-batch instruction to *rewrite*. A grep found NONE in the four resources or `clio/tpl/**`. So SM-04c is satisfied by construction; this story **adds** the positive re-run-safety statement (an additive diff), it does not rewrite an existing one. Post-change grep for `hand-compose|catch-up|only the (failed|remaining)|reconstruct.*batch` across the resources/tool/docs returns only the new NEGATED guidance and the anti-pattern definition.
+  - **tpl/** check:** `clio/tpl/**` (`workspace` + `ui-project*` `AGENTS.md`/`CLAUDE.md`/`.mcp.json`) carry NO catch-up-batch language for the convergent ops — checked, no catch-up guidance in tpl/**. `WorkspaceTemplateGuidanceDriftTests` stays green.
+  - **No rename (OQ-03):** `create-lookup`/`update-entity` kept; semantics via the additive `outcome` discriminator only. Zero `McpToolCompatibilityCatalog` entries; zero `RoutingGuidanceResource.cs` change (no guide added/renamed).
+  - **Docs reviewed, no CLI-help change required** — MCP-only tool, no CLI verb (`Commands.md`, `clio/help/en/*.txt`, `WikiAnchors.txt` untouched).
+  - Build clean; no new `CLIO*` warnings (all edits are contract/description strings + docs; the two CS9124/CS9107 warnings are pre-existing in `PageUpdateTool.cs`, untouched here).
+  - The Story 5 E2E contract-text assertion (`ToolContractGetToolE2ETests`) targets the `BuildSchemaSync` description string stamped here (includes the verbatim seed `Name` contract).

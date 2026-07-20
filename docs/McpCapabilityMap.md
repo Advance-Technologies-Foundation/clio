@@ -407,6 +407,25 @@ Why `sync-schemas` matters:
 - it batches create/update/seed actions
 - it is a better fit for agents that want one atomic plan execution instead of many tiny tool calls
 
+`sync-schemas` is **convergent (re-run-safe)**. `create-lookup` and `update-entity` read current
+server state first and apply only the missing delta (create-if-absent, add-only-missing-columns,
+per-column add/modify/remove; unlisted columns untouched), so re-submitting the identical batch after
+an ambiguous failure is safe — an agent must NOT hand-compose a catch-up batch of only the remaining
+operations. Details an external AI relies on:
+
+- **`outcome` discriminator** on each per-operation result: `created` | `reconciled` |
+  `already-satisfied` | `collision` (additive; omitted for `seed-data`). `reconciled` and
+  `already-satisfied` are successes, not failures.
+- **Collision failure** is pre-emptive: a same-name schema in a DIFFERENT package (or a same-package
+  schema whose parent/kind is incompatible with the request) fails that op with `success: false`,
+  `outcome: "collision"`, and `collision-info` (owning package); the batch stops on first failure.
+  Exceptions: a `create-entity` with `extend-parent: true` treats a same-name/other-package schema as
+  its replacement target (`created`, not a collision), and a per-column type mismatch is a
+  modify-conflict, not a collision.
+- **Seed-data `Name` contract**: a row is replay-safe only when the target schema has a `Name` column
+  AND the row carries a `Name`; rows without a `Name` (or schemas without a `Name` column) are
+  non-convergent — a stable-`Id`, no-`Name` row PK-conflicts on replay.
+
 ### 4. User Task Engineering
 
 This is a focused but meaningful workspace-backed capability.

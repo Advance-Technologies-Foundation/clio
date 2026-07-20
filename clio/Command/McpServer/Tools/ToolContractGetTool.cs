@@ -3402,7 +3402,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildSchemaSync() {
 		return new ToolContractDefinition(
 			SchemaSyncTool.ToolName,
-			"Batches create-lookup, create-entity, update-entity, and inline seed operations in one call. Requests use operations[*].type; do not send operations[*].operation. Before setting is-virtual to true, call get-guidance with name virtual-entities.",
+			"Batches create-lookup, create-entity, update-entity, and inline seed operations in one call. create-lookup and update-entity are convergent supersets: each reads current server state first and applies only the missing delta (create-if-absent, add-only-missing-columns, per-column add-if-absent/modify-if-different/remove→ensure-absent; columns not named in the request are left untouched). Because of this, re-submitting the identical batch verbatim after an ambiguous failure is the safe recovery path — already-applied operations replay as already-satisfied/reconciled with no duplicate mutation. Do NOT hand-compose a catch-up batch of only the operations that failed or did not run. Seed-data replay safety: a row is replay-safe only when the target schema has a `Name` column AND the row carries a `Name`; rows without a `Name` (or schemas without a `Name` column) are non-convergent — a stable-`Id`, no-`Name` row PK-conflicts on replay. Requests use operations[*].type; do not send operations[*].operation. Before setting is-virtual to true, call get-guidance with name virtual-entities.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PackageNameFieldName, OperationsFieldName],
 				EnvironmentPackageFields(
@@ -3424,7 +3424,7 @@ internal static class ToolContractCatalog {
 					SuccessFalseSignal
 				],
 				Field(SuccessFieldName, BooleanType, "Whether every sync-schemas operation succeeded."),
-				Field("results", ArrayType, "Per-operation execution results keyed by canonical `type`.")
+				Field("results", ArrayType, "Per-operation results keyed by canonical `type`, each with `schema-name`, `success`, and an additive `outcome` discriminator (`created` | `reconciled` | `already-satisfied` | `collision`; omitted for seed-data and when null). A durable collision — a same-name schema in a DIFFERENT package (except a create-entity op with `extend-parent: true`, where a same-name schema in another package is the replacement target and is classified `created`, not a collision), or a same-package schema whose parent/kind is incompatible with the request — fails that op with `success: false`, `outcome: collision`, a user-friendly `error`, and `collision-info` (the owning package); the batch then stops on first failure. A per-column modify-conflict is NOT a collision: it fails with `success: false` + `error` and no `collision-info`.")
 			),
 			CommonErrorContract,
 			EnvironmentPackageAliases(),
@@ -3498,7 +3498,12 @@ internal static class ToolContractCatalog {
 					],
 					"Fallback when the caller must execute individual entity mutation tools.")
 			],
-			[]);
+			[],
+			[
+				new ToolAntiPattern(
+					"Hand-composing a catch-up batch of only the operations that failed or did not run after an ambiguous sync-schemas failure",
+					"create-lookup and update-entity are convergent, so re-submit the SAME batch verbatim: already-applied operations replay as already-satisfied/reconciled with no duplicate mutation. A hand-picked catch-up batch risks skipping a partially-applied operation or re-running a non-convergent (no-`Name`) seed row.")
+			]);
 	}
 
 	private static ToolContractDefinition BuildPageSync() {

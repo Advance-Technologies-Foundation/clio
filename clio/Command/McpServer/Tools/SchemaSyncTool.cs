@@ -50,6 +50,7 @@ public sealed class SchemaSyncTool(
 		"Before setting is-virtual to true, call get-guidance with name virtual-entities and follow its schema-before-executor, bounded-provider, authorization, and version-gated write rules. " +
 		"Reduces MCP round-trips and lock overhead compared to individual tool calls. " +
 		"Stops on first failure because subsequent operations may depend on earlier ones. " +
+		"create-lookup and update-entity are convergent (create-if-absent + reconcile only the missing delta), so after a failure, fix the cause and re-submit the whole batch verbatim — already-applied operations replay as already-satisfied/reconciled with no duplicate mutation; do NOT hand-compose a batch of only the remaining operations. " +
 		"For update-entity, column field names match the get-app-info read shape (read-shape aliases " +
 		"name/data-value-type/reference-schema/is-required/caption are accepted), so a column read from " +
 		"get-app-info can be sent back without field translation — add an 'action' verb for modify/remove, " +

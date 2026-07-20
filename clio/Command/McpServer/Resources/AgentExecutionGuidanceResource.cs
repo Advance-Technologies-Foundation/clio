@@ -67,6 +67,7 @@ public sealed class AgentExecutionGuidanceResource {
 			       - Use `update-entity-schema` semantics inside `sync-schemas` to extend an existing main entity. Use `create-entity-schema` only for additional business objects with distinct meaning.
 			       - Create lookup entities before entities that reference them.
 			       - Prefer batched lookup seeding inside `sync-schemas`. Use `create-data-binding-db` only when the run explicitly needs a separate binding artifact, custom filter, or cross-package reference.
+			       - After an ambiguous `sync-schemas` failure (the request may have reached the server but the response was lost), re-submit the SAME batch verbatim. Do NOT hand-compose a catch-up batch of only the operations that failed or did not run. `create-lookup` and `update-entity` are convergent, so already-applied operations replay as `already-satisfied`/`reconciled` with no duplicate mutation; a durable collision surfaces as `success: false` + `outcome: collision` + `collision-info`, so fix that real cause and re-run rather than reconstructing a partial batch.
 
 			       Default value rules
 			       - Seed rows create data only. A requirement like "defaults to New" still needs an explicit schema default or UI default in addition to the seed row.
