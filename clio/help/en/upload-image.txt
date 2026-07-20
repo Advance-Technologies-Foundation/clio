@@ -1,0 +1,55 @@
+COMMAND TYPE
+    Theming commands
+
+NAME
+    upload-image - upload a local image file to the environment's SysImage table
+
+DESCRIPTION
+    upload-image uploads a local image file into the target environment's
+    SysImage table through the platform image API (ImageAPIService/upload) on
+    an authenticated clio session, and prints the created record's imageId.
+
+    The SysImage binary column cannot be written through the OData JSON
+    surface, so this command is the supported programmatic write path for
+    images such as the Freedom UI shell background (referenced by the
+    CrtBackgroundConfig system setting).
+
+    The upload is additive only: every call creates a new SysImage record and
+    never overwrites existing data. After the upload the command reads the
+    image back through the platform image read endpoint and reports an error
+    rather than a false success when the binary did not persist.
+
+    Supported formats: png, jpg, jpeg, gif, bmp, webp, svg. The payload is
+    capped at 10 MB. The environment must have forms-auth credentials
+    (login/password) registered; OAuth-only environments are not supported.
+
+SYNOPSIS
+    clio upload-image <file> [options]
+
+OPTIONS
+    <file>                          Path to the local image file to upload (png, jpg, jpeg, gif, bmp, webp, or svg).
+
+    --uri               -u          Application uri
+
+    --Password          -p          User password
+
+    --Login             -l          User login (administrator permission required)
+
+    --Environment       -e          Environment name
+
+    --Maintainer        -m          Maintainer name
+
+EXAMPLE
+    clio upload-image C:\brand\background.svg -e myapp
+        upload the SVG and print the created SysImage record's imageId
+
+NOTES
+    - To apply an uploaded image as the Freedom UI shell background, register
+      it in the Appearance gallery (SysImageInTag) and point the
+      CrtBackgroundConfig system setting at its imageId.
+    - Product logos are not SysImage records; write them as Binary system
+      settings (LogoImage, MenuLogoImage, ConfigurationPageLogoImage,
+      CrtAppToolbarLogo) with 'clio set-syssetting'.
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

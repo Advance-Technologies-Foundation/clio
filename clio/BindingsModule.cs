@@ -17,6 +17,7 @@ using Clio.Command.CreatioInstallCommand;
 using Clio.Command.IdentityServiceDeployment;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Command.McpServer;
+using Clio.Command.Branding;
 using Clio.Command.McpServer.Resources;
 using Clio.Command.PackageCommand;
 using Clio.Command.ProcessModel;
@@ -250,6 +251,15 @@ public class BindingsModule {
 		// rather than a followed login-page redirect.
 		services.AddHttpClient(Clio.Common.BrowserSession.CreatioAuthClient.HttpClientName)
 			.ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(30))
+			.ConfigurePrimaryHttpMessageHandler(() => new System.Net.Http.HttpClientHandler {
+				UseCookies = false,
+				AllowAutoRedirect = false
+			});
+		// Dedicated client for the SysImage upload + verification read (upload-image). Same handler
+		// shape as the auth client (manual Cookie header, raw 3xx on expired session), but with a
+		// 100-second budget: a cold IIS site routinely exceeds the auth client's 30 seconds.
+		services.AddHttpClient(Clio.Command.Branding.SysImageUploader.HttpClientName)
+			.ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(100))
 			.ConfigurePrimaryHttpMessageHandler(() => new System.Net.Http.HttpClientHandler {
 				UseCookies = false,
 				AllowAutoRedirect = false
@@ -553,6 +563,7 @@ public class BindingsModule {
 		services.AddTransient<UpdateThemeTool>();
 		services.AddTransient<DeleteThemeTool>();
 		services.AddTransient<SetUserThemeTool>();
+		services.AddTransient<UploadImageTool>();
 		services.AddTransient<CheckThemingAccessTool>();
 		services.AddTransient<GetUserCultureTool>();
 		services.AddTransient<PackageHotfixTool>();
@@ -705,6 +716,8 @@ public class BindingsModule {
 		services.AddTransient<DeleteThemeCommand>();
 		services.AddTransient<IUserThemeApplier, UserThemeApplier>();
 		services.AddTransient<SetUserThemeCommand>();
+		services.AddTransient<ISysImageUploader, SysImageUploader>();
+		services.AddTransient<UploadImageCommand>();
 		services.AddTransient<CheckThemingAccessCommand>();
 		services.AddTransient<ICreatioRightsClient, CreatioRightsClient>();
 		services.AddTransient<ICreatioLicenseClient, CreatioLicenseClient>();

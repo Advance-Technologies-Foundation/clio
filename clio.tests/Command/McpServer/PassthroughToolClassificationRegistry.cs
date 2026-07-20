@@ -331,6 +331,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["restore-workspace"] = PassthroughClassification.NotApplicable,
 			["set-fsm-mode"] = PassthroughClassification.NotApplicable,
 			["set-user-theme"] = PassthroughClassification.NotApplicable, // BaseTool ExecuteResolved<SetUserThemeCommand> per-call env resolution (ENG-93302) — already passthrough-capable, like create-theme/list-themes
+			["upload-image"] = PassthroughClassification.NotApplicable, // BaseTool ExecuteResolved<UploadImageCommand> per-call env resolution (ENG-92981) — already passthrough-capable, like set-user-theme
 			["start-creatio"] = PassthroughClassification.NotApplicable,
 			["stop-all-creatio"] = PassthroughClassification.NotApplicable,
 			["stop-creatio"] = PassthroughClassification.NotApplicable,

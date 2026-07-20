@@ -12,6 +12,7 @@ using Clio.Command;
 using Clio.Command.ApplicationCommand;
 using Clio.Command.CreatioInstallCommand;
 using Clio.Command.IdentityServiceDeployment;
+using Clio.Command.Branding;
 using Clio.Command.OAuthAppConfiguration;
 using Clio.Command.McpServer;
 using Clio.Command.PackageCommand;
@@ -223,6 +224,7 @@ internal class Program {
 		typeof(UpdateThemeOptions),
 		typeof(DeleteThemeOptions),
 		typeof(SetUserThemeOptions),
+		typeof(UploadImageOptions),
 		typeof(LastCompilationLogOptions),
 		typeof(UploadLicenseCommandOptions),
 		typeof(RegisterOptions),
@@ -417,6 +419,7 @@ internal class Program {
 			UpdateThemeOptions opts => Resolve<UpdateThemeCommand>(opts).Execute(opts),
 			DeleteThemeOptions opts => Resolve<DeleteThemeCommand>(opts).Execute(opts),
 			SetUserThemeOptions opts => Resolve<SetUserThemeCommand>(opts).Execute(opts),
+			UploadImageOptions opts => Resolve<UploadImageCommand>(opts).Execute(opts),
 			UploadLicenseCommandOptions opts => Resolve<UploadLicenseCommand>(opts).Execute(opts),
 			RegAppOptions opts => Resolve<RegAppCommand>(opts).Execute(opts),
 			AppListOptions opts => Resolve<ShowAppListCommand>().Execute(opts),

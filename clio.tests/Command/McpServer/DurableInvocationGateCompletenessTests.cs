@@ -62,7 +62,10 @@ public sealed class DurableInvocationGateCompletenessTests {
 		"send-telemetry",
 		"start-creatio",
 		"unlock-for-hotfix",
-		"update-toolkit"
+		"update-toolkit",
+		// Reviewed 2026-07-20 (ENG-92981): additive-only SysImage upload — every call creates a new
+		// record and never overwrites existing data, so Destructive=false is correct.
+		"upload-image"
 	};
 
 	private static McpToolInvokerRegistry BuildRegistryOverFullCatalog() {
