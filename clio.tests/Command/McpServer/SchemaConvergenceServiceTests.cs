@@ -329,6 +329,55 @@ public sealed class SchemaConvergenceServiceTests {
 			because: "a schema with no columns must yield an empty reconcile baseline");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Skips a null-named column when reading the current column set so a malformed read model does not throw on the dictionary key, and still surfaces the well-formed columns.")]
+	public void ReadColumns_ShouldSkipNullNamedColumn_WhenReadModelContainsNullName() {
+		// Arrange
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		FakeProperties(resolver, Properties(Column(null!, "Text"), Column("UsrScore", "Integer")));
+		SchemaConvergenceService service = new(resolver);
+
+		// Act
+		IReadOnlyDictionary<string, EntitySchemaPropertyColumnInfo> columns = service.ReadColumns("dev", SchemaName);
+
+		// Assert
+		columns.Should().HaveCount(1,
+			because: "the null-named column must be skipped instead of throwing on the dictionary key");
+		columns.Should().ContainKey("UsrScore",
+			because: "the well-formed columns must still be surfaced after the null-named one is skipped");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Reconciles a caller target package with trailing whitespace against the same server package instead of raising a spurious cross-package collision when a different-package row is also present.")]
+	public void Classify_ShouldReconcile_WhenTargetPackageHasTrailingWhitespaceAndDifferentPackageRowExists() {
+		// Arrange
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		// A same-name row exists both in another package AND in the (real) target package; a caller package
+		// with trailing whitespace must still resolve to the target-package row, not fall through to the other.
+		FakeFind(resolver, [
+			new EntitySchemaSearchResult(SchemaName, "OtherPackage", "Customer", "BaseLookup"),
+			new EntitySchemaSearchResult(SchemaName, TargetPackage, "Customer", "BaseLookup")
+		]);
+		FakeProperties(resolver, Properties(Column("UsrExisting", "Text")));
+		SchemaConvergenceService service = new(resolver);
+		SchemaConvergenceTarget target = new(
+			"dev", TargetPackage + " ", SchemaName, "BaseLookup", IsLookup: true, ExtendParent: false,
+			[RequestedColumn("UsrExtra", "Text")]);
+
+		// Act
+		SchemaConvergencePlan plan = service.Classify(target);
+
+		// Assert
+		plan.Outcome.Should().Be(SchemaConvergenceOutcome.Reconcile,
+			because: "a trailing space on the requested package must be trimmed for comparison so the target-package row still wins over the different-package row");
+		plan.CollisionPackageName.Should().BeNull(
+			because: "trimming the caller package prevents a spurious cross-package collision");
+		plan.ColumnsToAdd.Should().ContainSingle(column => column.ResolveName() == "UsrExtra",
+			because: "only the missing column belongs to the reconcile add delta");
+	}
+
 	private static SchemaConvergenceTarget LookupTarget(params CreateEntitySchemaColumnArgs[] requestedColumns) {
 		return new SchemaConvergenceTarget(
 			"dev", TargetPackage, SchemaName, "BaseLookup", IsLookup: true, ExtendParent: false, requestedColumns);

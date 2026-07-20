@@ -104,7 +104,10 @@ public sealed class SchemaConvergenceService(IToolCommandResolver commandResolve
 			return new SchemaConvergencePlan(SchemaConvergenceOutcome.Create, [], [], null, null);
 		}
 
-		bool inTargetPackage = string.Equals(existing.PackageName, target.PackageName, StringComparison.OrdinalIgnoreCase);
+		// Compare the CALLER-SUPPLIED package trimmed so a stray leading/trailing space in the requested
+		// package does not spuriously mismatch the (untrimmed) server value and manufacture a cross-package
+		// collision. Only the comparison is normalized; the real server value is preserved for CollisionPackageName/error text.
+		bool inTargetPackage = string.Equals(existing.PackageName, target.PackageName?.Trim(), StringComparison.OrdinalIgnoreCase);
 		if (!inTargetPackage) {
 			// A REPLACEMENT schema (extend-parent) is by definition a same-name schema created in the
 			// target package that shadows a same-name base schema in a LOWER package. On the first run the
@@ -152,8 +155,12 @@ public sealed class SchemaConvergenceService(IToolCommandResolver commandResolve
 		// Prefer the row in the target package: if the caller's schema already exists in the target
 		// package, that IS the caller's schema (reconcile), even if a same-named schema also exists
 		// elsewhere. Only when no row lives in the target package is a match a cross-package collision.
+		// Trim the CALLER-SUPPLIED package for the comparison only (server rows keep their real value) so a
+		// requested package with stray whitespace still matches its target-package row instead of falling
+		// through to a different-package row.
+		string? targetPackage = target.PackageName?.Trim();
 		return results.FirstOrDefault(result =>
-				string.Equals(result.PackageName, target.PackageName, StringComparison.OrdinalIgnoreCase))
+				string.Equals(result.PackageName, targetPackage, StringComparison.OrdinalIgnoreCase))
 			?? results.FirstOrDefault();
 	}
 
@@ -161,7 +168,9 @@ public sealed class SchemaConvergenceService(IToolCommandResolver commandResolve
 		if (string.IsNullOrWhiteSpace(requestedParent) || string.IsNullOrWhiteSpace(existingParent)) {
 			return false;
 		}
-		return !string.Equals(requestedParent, existingParent, StringComparison.OrdinalIgnoreCase);
+		// Trim the CALLER-SUPPLIED parent for the comparison only so a requested parent with stray whitespace
+		// is not misclassified as an incompatible-parent collision against the (untrimmed) server value.
+		return !string.Equals(requestedParent.Trim(), existingParent, StringComparison.OrdinalIgnoreCase);
 	}
 
 	private (IReadOnlyList<CreateEntitySchemaColumnArgs> ColumnsToAdd,
@@ -208,6 +217,11 @@ public sealed class SchemaConvergenceService(IToolCommandResolver commandResolve
 		EntitySchemaPropertiesInfo properties = command.GetSchemaProperties(options);
 		Dictionary<string, EntitySchemaPropertyColumnInfo> columns = new(StringComparer.OrdinalIgnoreCase);
 		foreach (EntitySchemaPropertyColumnInfo column in properties.Columns ?? []) {
+			// A null/blank column name would throw on the dictionary key; skip it and keep reconciling the
+			// remaining columns rather than aborting the whole read.
+			if (string.IsNullOrWhiteSpace(column.Name)) {
+				continue;
+			}
 			columns[column.Name] = column;
 		}
 		return columns;

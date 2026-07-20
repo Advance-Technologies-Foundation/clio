@@ -76,6 +76,30 @@ public sealed class SchemaSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Property("Module", "McpServer")]
+	[Description("TC-U-31: guards that the sync-schemas tool description states whole-batch verbatim re-run safety, that already-applied ops replay as already-satisfied/reconciled, and that a hand-composed catch-up batch is forbidden, so the shipped re-run-safety contract cannot silently regress.")]
+	public void SchemaSyncTool_ShouldDocumentReRunSafetyAndForbidHandComposedCatchUp_WhenBatchIsReSubmitted() {
+		// Arrange
+		System.Reflection.MethodInfo method = typeof(SchemaSyncTool)
+			.GetMethod(nameof(SchemaSyncTool.SchemaSync))!;
+
+		// Act
+		string description = method
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
+			.Cast<System.ComponentModel.DescriptionAttribute>()
+			.Single().Description;
+
+		// Assert
+		description.Should().Contain("re-submit the whole batch verbatim",
+			because: "the tool contract must tell callers a whole-batch verbatim re-submit is the safe recovery path");
+		description.Should().Contain("replay as already-satisfied/reconciled",
+			because: "the tool contract must state that already-applied schema operations replay convergently with no duplicate mutation");
+		description.Should().Contain("do NOT hand-compose a batch of only the remaining operations",
+			because: "the tool contract must forbid a hand-composed catch-up batch of only the remaining operations");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Routes create-lookup operation through CreateEntitySchemaCommand with BaseLookup parent")]
 	public async Task SchemaSync_CreateLookup_Should_Route_Through_CreateEntitySchemaCommand() {
 		// Arrange

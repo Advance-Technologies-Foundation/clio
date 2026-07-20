@@ -219,6 +219,35 @@ public sealed class McpGuidanceResourceTests {
 
 	[Test]
 	[Category("Unit")]
+	[Property("Module", "McpServer")]
+	[Description("TC-U-30: guards that the four sync-schemas guidance resources keep the convergent re-submit-verbatim recovery language and never instruct a hand-composed catch-up batch, so the shipped no-catch-up guidance cannot silently regress.")]
+	public void SyncSchemasGuidanceResources_ShouldTeachConvergentReSubmit_AndForbidHandComposedCatchUp_WhenRecoveringFromFailure() {
+		// Arrange
+		string appModeling = ((TextResourceContents)new AppModelingGuidanceResource().GetGuide()).Text;
+		string existingApp = ((TextResourceContents)new ExistingAppMaintenanceGuidanceResource().GetGuide()).Text;
+		string agentExecution = ((TextResourceContents)new AgentExecutionGuidanceResource().GetGuide()).Text;
+		string dataBindings = ((TextResourceContents)new DataBindingsGuidanceResource().GetGuide()).Text;
+
+		// Act
+		string[] convergentRecoveryGuides = [appModeling, existingApp, agentExecution, dataBindings];
+
+		// Assert
+		appModeling.Should().Contain("re-submitting the whole batch verbatim is safe",
+			because: "the app-modeling guide must keep the convergent whole-batch re-submit recovery as the safe path");
+		existingApp.Should().Contain("re-submitting the whole batch verbatim is safe",
+			because: "the existing-app maintenance guide must keep the convergent whole-batch re-submit recovery as the safe path");
+		agentExecution.Should().Contain("re-submit the SAME batch verbatim",
+			because: "the agent-execution guide must instruct re-submitting the same batch verbatim after an ambiguous failure");
+		dataBindings.Should().Contain("skips the already-present rows",
+			because: "the data-bindings guide must state that re-running a Name-keyed seed batch is convergent and skips already-present rows");
+		foreach (string guide in convergentRecoveryGuides) {
+			guide.Should().NotContain("hand-compose",
+				because: "no sync-schemas guidance resource may instruct a hand-composed catch-up batch of only the remaining/failed operations");
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Returns the canonical handler guidance that keeps handler logic separate from validators and converters in clio MCP page editing, including the request-catalog pointers.")]
 	public void PageSchemaHandlersGuidanceResource_Should_Return_Canonical_Handler_Guide() {
 		// Arrange

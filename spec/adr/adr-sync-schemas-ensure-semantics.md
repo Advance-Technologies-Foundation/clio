@@ -149,9 +149,19 @@ through `IApplicationClient` server-side within the single batch call — no add
   target package) is surfaced as a **per-column modify-conflict** inside the reconcile step, not as
   a whole-schema collision. This keeps the gate grounded in what the global read actually exposes
   (package + parent) and avoids over-classifying reconcilable differences as collisions.
-  **Known limitation:** `FindEntitySchemaCommand.FindSchemas` filters `ManagerName ==
+  **Known limitation (manager scope):** `FindEntitySchemaCommand.FindSchemas` filters `ManagerName ==
   "EntitySchemaManager"`, so a same-named schema under a *different* manager (e.g. a source-code
-  schema) is invisible to this gate. (OQ-02 — delete-unlisted full reconcile — remains permanently
+  schema) is invisible to this gate.
+  **Known limitation (reference-schema on create-path reconcile):** `ComputeColumnDelta` compares
+  existing vs. requested columns by resolved `DataValueType` **ordinal** only (via
+  `AreColumnTypesEquivalent`), not by `ReferenceSchemaName`. So on the `create-lookup`/`create-entity`
+  reconcile path, an existing lookup column whose reference target differs from the request (e.g.
+  existing `UsrCustomer → Contact`, requested `→ Account`) is treated as `AlreadySatisfied` and is
+  NOT reconciled — and the `columns` create-shape cannot express a `modify`, so a replay cannot
+  correct it. To change an existing lookup column's reference target, use `update-entity` with an
+  explicit `modify` op (which is forwarded to the backend). Rationale: silently rewriting a live
+  lookup's reference target is semantically heavy / potentially destructive, so it is deliberately
+  not auto-reconciled. (OQ-02 — delete-unlisted full reconcile — remains permanently
   out of scope as too destructive for an "ensure" contract; noted, not implemented.)
 
 ## Correctness argument (why this is safe by construction)
