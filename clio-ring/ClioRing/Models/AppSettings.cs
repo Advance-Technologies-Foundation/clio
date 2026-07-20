@@ -26,6 +26,13 @@ public class AppSettings
 	public string? Channel { get; init; }
 
 	/// <summary>
+	/// Selected clio runtime: <c>release</c> uses the installed dotnet tool; <c>development</c> uses the
+	/// saved <see cref="DevClioPath"/> or <see cref="ClioIpc"/> target. When absent, legacy settings with
+	/// a development target remain on Development while clean settings select Release.
+	/// </summary>
+	public string? ClioRuntimeMode { get; init; }
+
+	/// <summary>
 	/// Experimental feature switches (default OFF). When an experiment is off the app behaves exactly
 	/// as today; the corresponding proof UI/behaviour is never wired.
 	/// </summary>
@@ -33,7 +40,7 @@ public class AppSettings
 
 	/// <summary>
 	/// Optional override for how the EXPERIMENTAL clio MCP child process is launched. Absent = a
-	/// machine-sensible default (the clio Release dll driven by <c>dotnet</c>).
+	/// saved development runtime. Release mode ignores this target without deleting it.
 	/// </summary>
 	public ClioIpcSettingsDto? ClioIpc { get; init; }
 

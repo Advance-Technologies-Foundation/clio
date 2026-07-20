@@ -221,7 +221,7 @@ public sealed class RelatedListGuidanceResource {
 		         registering the page (`related-page-binding`), passing `entityPageName`, or adding a section — see
 		         "Adding records to the detail, Mechanism A". Use inline add (Mechanism B) only when the plan calls for a
 		         simple line-item list, and then ensure the FK column is present in the grid collection.
-		       - Using a `...Id` path form for the FK column in `attributePath` — see `esq-filters` column-path
+		       - Using a `...Id` path form for the FK column in `attributePath` — see `esq-filters-frontend` column-path
 		         normalization; use the bare reference column name.
 		       """
 	};
