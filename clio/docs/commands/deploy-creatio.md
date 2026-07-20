@@ -131,6 +131,8 @@ Behavior:
 - Checks database size to find unused databases
 - Supports custom Redis database counts (not limited to default 16)
 - Works for both Kubernetes and local deployments
+- Retries a transient connect failure a few times (with a short backoff) before giving up, so a
+  momentary blip does not abort the deployment; each attempt keeps the fail-fast connect timeout
 
 Manual Override:
 - Specify a number (0-15 or higher) to use a specific database
@@ -150,7 +152,7 @@ If multiple enabled redis servers are configured and no default is set, deployme
 
 Error Handling:
 - If all databases are occupied, provides detailed error with suggestions
-- If Redis is unreachable, suggests checking Redis availability
+- If Redis stays unreachable across all retry attempts, suggests checking Redis availability
 - Provides actionable recovery steps in error messages
 
 --db-server-name NAME

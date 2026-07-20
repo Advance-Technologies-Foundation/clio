@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 using StackExchange.Redis;
 
 namespace Clio.Common.Database;
@@ -48,8 +49,13 @@ public interface IRedisDatabaseSelector
 	/// </summary>
 	/// <param name="hostname">Redis hostname.</param>
 	/// <param name="port">Redis port.</param>
+	/// <param name="retryTransientConnectBlips">
+	/// When <c>true</c>, a single transient connect blip is absorbed by a bounded retry (the
+	/// <c>deploy-creatio</c> port-forward tolerance). When <c>false</c> (default) the connect is
+	/// attempted once, so discovery/assertion callers are not multiplied by the retry budget.
+	/// </param>
 	/// <returns>Selection result with chosen db number or failure reason.</returns>
-	RedisDatabaseSelectionResult FindEmptyDatabase(string hostname, int port);
+	RedisDatabaseSelectionResult FindEmptyDatabase(string hostname, int port, bool retryTransientConnectBlips = false);
 
 	/// <summary>
 	/// Finds an empty Redis database for specific host and port using optional credentials.
@@ -58,8 +64,13 @@ public interface IRedisDatabaseSelector
 	/// <param name="port">Redis port.</param>
 	/// <param name="username">Redis ACL username.</param>
 	/// <param name="password">Redis password.</param>
+	/// <param name="retryTransientConnectBlips">
+	/// When <c>true</c>, a single transient connect blip is absorbed by a bounded retry (the
+	/// <c>deploy-creatio</c> port-forward tolerance). When <c>false</c> (default) the connect is
+	/// attempted once, so discovery/assertion callers are not multiplied by the retry budget.
+	/// </param>
 	/// <returns>Selection result with chosen db number or failure reason.</returns>
-	RedisDatabaseSelectionResult FindEmptyDatabase(string hostname, int port, string username, string password);
+	RedisDatabaseSelectionResult FindEmptyDatabase(string hostname, int port, string username, string password, bool retryTransientConnectBlips = false);
 }
 
 /// <summary>
@@ -78,6 +89,48 @@ public class RedisDatabaseSelector : IRedisDatabaseSelector
 
 	private static readonly int ConnectTimeoutMilliseconds = (int)ConnectTimeout.TotalMilliseconds;
 
+	/// <summary>
+	/// Number of connect attempts made against the target Redis before the selection is reported as
+	/// failed. The per-attempt wait stays bounded by <see cref="ConnectTimeout"/> (the ENG-90640
+	/// fail-fast contract), so this bounded retry absorbs a single transient connect blip — e.g. a
+	/// Rancher Desktop port-forward hiccup during <c>deploy-creatio</c> — without turning a genuinely
+	/// unreachable Redis into a multi-minute hang.
+	/// </summary>
+	internal const int MaxConnectAttempts = 3;
+
+	/// <summary>
+	/// Base backoff applied between transient-failure retries. The delay grows exponentially per
+	/// attempt (<see cref="GetBackoffDelay"/>) so a reachable Redis that momentarily blipped gets a
+	/// brief pause to recover before the next attempt.
+	/// </summary>
+	internal static readonly TimeSpan RetryBackoff = TimeSpan.FromMilliseconds(500);
+
+	private readonly Func<ConfigurationOptions, IConnectionMultiplexer> _connectionFactory;
+
+	private readonly Action<TimeSpan> _delay;
+
+	/// <summary>
+	/// Initializes a new instance of the <see cref="RedisDatabaseSelector"/> class using the real
+	/// StackExchange.Redis connect factory and <see cref="Thread.Sleep(TimeSpan)"/> backoff.
+	/// </summary>
+	public RedisDatabaseSelector()
+		: this(configurationOptions => ConnectionMultiplexer.Connect(configurationOptions), Thread.Sleep)
+	{
+	}
+
+	/// <summary>
+	/// Initializes a new instance of the <see cref="RedisDatabaseSelector"/> class with injectable
+	/// connect and backoff seams. Exposed internally so the bounded retry/backoff loop can be unit
+	/// tested without a live Redis or real thread sleeps.
+	/// </summary>
+	/// <param name="connectionFactory">Factory that opens a Redis connection for the supplied options.</param>
+	/// <param name="delay">Backoff delay action invoked between retry attempts.</param>
+	internal RedisDatabaseSelector(Func<ConfigurationOptions, IConnectionMultiplexer> connectionFactory, Action<TimeSpan> delay)
+	{
+		_connectionFactory = connectionFactory;
+		_delay = delay;
+	}
+
 	/// <inheritdoc />
 	public RedisDatabaseSelectionResult FindEmptyLocalDatabase()
 	{
@@ -91,62 +144,159 @@ public class RedisDatabaseSelector : IRedisDatabaseSelector
 	}
 
 	/// <inheritdoc />
-	public RedisDatabaseSelectionResult FindEmptyDatabase(string hostname, int port)
+	public RedisDatabaseSelectionResult FindEmptyDatabase(string hostname, int port, bool retryTransientConnectBlips = false)
 	{
-		return FindEmptyDatabase(hostname, port, null, null);
+		return FindEmptyDatabase(hostname, port, null, null, retryTransientConnectBlips);
 	}
 
 	/// <inheritdoc />
-	public RedisDatabaseSelectionResult FindEmptyDatabase(string hostname, int port, string username, string password)
+	public RedisDatabaseSelectionResult FindEmptyDatabase(string hostname, int port, string username, string password, bool retryTransientConnectBlips = false)
 	{
+		// FAILURE BOUNDARY: endpoint construction (EndPoints.Add) can throw for an empty host or an
+		// out-of-range port supplied by Redis configuration. Keep it inside the exception-to-result
+		// boundary so callers still receive a structured Success = false with an actionable message
+		// instead of an unhandled abort.
+		ConfigurationOptions configurationOptions;
 		try
 		{
-			ConfigurationOptions configurationOptions = BuildConfigurationOptions(hostname, port, username, password);
-
-			ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(configurationOptions);
-			IServer server = redis.GetServer(hostname, port);
-			int count = server.DatabaseCount;
-			for (int i = 1; i < count; i++)
+			configurationOptions = BuildConfigurationOptions(hostname, port, username, password);
+		}
+		catch (Exception ex) when (ex is ArgumentException or FormatException)
+		{
+			return new RedisDatabaseSelectionResult
 			{
-				long records = server.DatabaseSize(i);
-				if (records == 0)
+				Success = false,
+				DatabaseNumber = -1,
+				ErrorMessage = $"[Redis Configuration Error] Invalid Redis endpoint {hostname}:{port}. " +
+							   $"Error: {ex.Message}. " +
+							   "You can also manually specify a database number using the --redis-db option"
+			};
+		}
+
+		// BOUNDED RETRY contract: a single transient connect blip (e.g. a Rancher Desktop port-forward
+		// hiccup) must not abort the deployment when the reachable Redis responds fine immediately
+		// before and after. Each attempt keeps the ENG-90640 fail-fast per-attempt timeout, and only
+		// transient connect/timeout failures are retried — a definitive error (bad credentials, all
+		// databases in use) is surfaced without wasting further attempts. The retry is opt-in
+		// (deploy-creatio) so discovery/assertion callers stay single-attempt and are not multiplied
+		// by the retry budget across every configured Redis endpoint.
+		int maxAttempts = retryTransientConnectBlips ? MaxConnectAttempts : 1;
+		Exception lastError = null;
+		int attemptsMade = 0;
+		for (int attempt = 1; attempt <= maxAttempts; attempt++)
+		{
+			attemptsMade = attempt;
+			try
+			{
+				return SelectEmptyDatabase(configurationOptions, hostname, port);
+			}
+			catch (Exception ex) when (IsTransientConnectFailure(ex))
+			{
+				lastError = ex;
+				if (attempt < maxAttempts)
 				{
-					return new RedisDatabaseSelectionResult
-					{
-						Success = true,
-						DatabaseNumber = i
-					};
+					_delay(GetBackoffDelay(attempt));
 				}
 			}
-
-			string errorMessage = $"[Redis Configuration Error] Could not find an empty Redis database. " +
-								  $"All {count - 1} available databases (1-{count - 1}) at {hostname}:{port} are in use. " +
-								  "Please either: " +
-								  "1) Clear some Redis databases, " +
-								  "2) Increase the number of Redis databases, " +
-								  "3) Manually specify a database number using the --redis-db option";
-
-			return new RedisDatabaseSelectionResult
+			catch (Exception ex)
 			{
-				Success = false,
-				DatabaseNumber = -1,
-				ErrorMessage = errorMessage
-			};
+				lastError = ex;
+				break;
+			}
 		}
-		catch (Exception ex)
+
+		string errorMessage = $"[Redis Connection Error] Could not connect to Redis at {hostname}:{port} " +
+							  $"after {attemptsMade} attempt(s). " +
+							  $"Error: {lastError.Message}. " +
+							  "Make sure Redis is running and accessible. " +
+							  "You can also manually specify a database number using the --redis-db option";
+
+		return new RedisDatabaseSelectionResult
 		{
-			string errorMessage = $"[Redis Connection Error] Could not connect to Redis at {hostname}:{port}. " +
-								  $"Error: {ex.Message}. " +
-								  "Make sure Redis is running and accessible. " +
-								  "You can also manually specify a database number using the --redis-db option";
+			Success = false,
+			DatabaseNumber = -1,
+			ErrorMessage = errorMessage
+		};
+	}
 
-			return new RedisDatabaseSelectionResult
+	/// <summary>
+	/// Opens a single Redis connection and scans databases <c>1..DatabaseCount-1</c> for the first
+	/// empty one. A connect/probe failure throws (so the caller can retry); an exhausted-but-reachable
+	/// server returns a definitive non-retryable failure result.
+	/// </summary>
+	/// <param name="configurationOptions">Fail-fast configuration for the target endpoint.</param>
+	/// <param name="hostname">Redis hostname.</param>
+	/// <param name="port">Redis port.</param>
+	/// <returns>Selection result with the chosen db number, or an "all in use" failure.</returns>
+	private RedisDatabaseSelectionResult SelectEmptyDatabase(ConfigurationOptions configurationOptions, string hostname, int port)
+	{
+		using IConnectionMultiplexer redis = _connectionFactory(configurationOptions);
+		IServer server = redis.GetServer(hostname, port);
+		int count = server.DatabaseCount;
+		for (int i = 1; i < count; i++)
+		{
+			long records = server.DatabaseSize(i);
+			if (records == 0)
 			{
-				Success = false,
-				DatabaseNumber = -1,
-				ErrorMessage = errorMessage
-			};
+				return new RedisDatabaseSelectionResult
+				{
+					Success = true,
+					DatabaseNumber = i
+				};
+			}
 		}
+
+		string errorMessage = $"[Redis Configuration Error] Could not find an empty Redis database. " +
+							  $"All {count - 1} available databases (1-{count - 1}) at {hostname}:{port} are in use. " +
+							  "Please either: " +
+							  "1) Clear some Redis databases, " +
+							  "2) Increase the number of Redis databases, " +
+							  "3) Manually specify a database number using the --redis-db option";
+
+		return new RedisDatabaseSelectionResult
+		{
+			Success = false,
+			DatabaseNumber = -1,
+			ErrorMessage = errorMessage
+		};
+	}
+
+	/// <summary>
+	/// Classifies whether an exception represents a transient connect/timeout failure worth retrying.
+	/// A genuinely unreachable Redis still fails fast because each retry keeps the bounded
+	/// <see cref="ConnectTimeout"/> and the attempt count is capped by <see cref="MaxConnectAttempts"/>.
+	/// Uses an explicit allowlist of the <see cref="ConnectionFailureType"/> values that represent a
+	/// genuine transient network blip (a Rancher Desktop port-forward hiccup surfaces as
+	/// <see cref="ConnectionFailureType.UnableToConnect"/> with <see cref="ConfigurationOptions.AbortOnConnectFail"/>
+	/// enabled). Every other failure — authentication, protocol, internal, response-integrity,
+	/// connection-disposed, none, and any future enum value — is treated as a definitive fault so the
+	/// retry budget is not wasted and the reported cause is not misattributed to connectivity.
+	/// </summary>
+	/// <param name="ex">Exception thrown while connecting to or probing Redis.</param>
+	/// <returns><c>true</c> when the failure is a transient connect/timeout condition.</returns>
+	private static bool IsTransientConnectFailure(Exception ex)
+	{
+		return ex switch
+		{
+			RedisTimeoutException => true,
+			RedisConnectionException connectionException =>
+				connectionException.FailureType is ConnectionFailureType.UnableToConnect
+					or ConnectionFailureType.SocketFailure
+					or ConnectionFailureType.SocketClosed
+					or ConnectionFailureType.UnableToResolvePhysicalConnection,
+			var _ => false
+		};
+	}
+
+	/// <summary>
+	/// Computes the exponential backoff for the given retry attempt (attempt 1 waits
+	/// <see cref="RetryBackoff"/>, attempt 2 waits twice that, and so on).
+	/// </summary>
+	/// <param name="attempt">1-based attempt number that just failed.</param>
+	/// <returns>Backoff delay before the next attempt.</returns>
+	private static TimeSpan GetBackoffDelay(int attempt)
+	{
+		return TimeSpan.FromMilliseconds(RetryBackoff.TotalMilliseconds * Math.Pow(2, attempt - 1));
 	}
 
 	/// <summary>
