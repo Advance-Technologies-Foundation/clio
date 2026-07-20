@@ -2233,7 +2233,7 @@ stories:
     feature: "sync-schemas-ensure-semantics"
     repo: "clio"
     size: L
-    status: ready-for-dev
+    status: review
     jira: ENG-93807
     file: spec/stories/story-sync-schemas-ensure-1.md
     prd: spec/prd/prd-sync-schemas-ensure-semantics.md
@@ -2254,7 +2254,7 @@ stories:
     feature: "sync-schemas-ensure-semantics"
     repo: "clio"
     size: M
-    status: ready-for-dev
+    status: review
     jira: ENG-93807
     file: spec/stories/story-sync-schemas-ensure-2.md
     prd: spec/prd/prd-sync-schemas-ensure-semantics.md
@@ -2272,7 +2272,7 @@ stories:
     feature: "sync-schemas-ensure-semantics"
     repo: "clio"
     size: S
-    status: ready-for-dev
+    status: review
     jira: ENG-93807
     file: spec/stories/story-sync-schemas-ensure-3.md
     prd: spec/prd/prd-sync-schemas-ensure-semantics.md
@@ -2290,7 +2290,7 @@ stories:
     feature: "sync-schemas-ensure-semantics"
     repo: "clio"
     size: M
-    status: ready-for-dev
+    status: review
     jira: ENG-93807
     note: "No operation-type rename (OQ-03 -> keep create-lookup/update-entity); zero McpToolCompatibilityCatalog / WorkspaceTemplateGuidanceDriftTests churn. Checks clio/tpl/** for catch-up-batch language (SM-04c). MCP-only tool: no CLI-help change."
     file: spec/stories/story-sync-schemas-ensure-4.md
@@ -2309,7 +2309,7 @@ stories:
     feature: "sync-schemas-ensure-semantics"
     repo: "clio"
     size: M
-    status: ready-for-dev
+    status: review
     jira: ENG-93807
     note: "clio.mcp.e2e is NOT in CI — SchemaSyncToolE2ETests / ToolContractGetToolE2ETests run manually against a live stand; the manual E2E run is a HARD, RECORDED merge gate (PR must not merge without the recorded result) since AC-03/AC-09 are only E2E-verifiable. Read-budget AC uses the round-trip formulation (zero added MCP round-trips, no verify read-back; server-side reads not counted, up to 2 on the reconcile path) per ADR OQ-04/OI-01 — NOT the literal AC-09 one-state-read wording."
     file: spec/stories/story-sync-schemas-ensure-5.md
@@ -2329,7 +2329,7 @@ stories:
     feature: "sync-schemas-ensure-semantics"
     repo: "clio"
     size: L
-    status: ready-for-dev
+    status: review
     jira: ENG-93807
     note: "Gated on A-06 (PR #910 / ENG-93374 merged). Sized L (not M): must reconcile TWO overlapping rewrites of ExecuteCreateSchema/ExecuteUpdateEntity (this branch's convergence vs #910's per-op retry + resume-plan) and re-verify the preserved result shape — a substantial rebase, not a half-day merge. Sequence as the final integration: rebase onto #910, preserve resume-plan/partial-result shape, delete the now-redundant convergent-op #910 resume special-cases. TryGetCollisionInfo is deleted in Story 1 (its last caller), NOT here. Depends only on stories 1,2."
     file: spec/stories/story-sync-schemas-ensure-6.md
