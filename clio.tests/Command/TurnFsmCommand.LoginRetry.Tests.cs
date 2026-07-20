@@ -58,7 +58,8 @@ public class TurnFsmCommandLoginRetryTests {
 		});
 
 		EnvironmentSettings envSettings = new() { IsNetCore = true, Uri = "http://localhost:1919" };
-		RestartCommand restartCommand = Substitute.ForPartsOf<RestartCommand>(applicationClient, envSettings);
+		RestartCommand restartCommand = Substitute.ForPartsOf<RestartCommand>(
+			applicationClient, envSettings, Substitute.For<IServerReadinessWaiter>());
 		restartCommand.Execute(Arg.Any<RestartOptions>()).Returns(0);
 
 		TurnFsmCommand command = new(setFsmConfigCommand, loadToFs, loadToDb, applicationClient, envSettings, restartCommand, Substitute.For<Clio.Common.ILogger>());

@@ -1,17 +1,37 @@
-﻿using Clio.Common;
+﻿using System;
+using Clio.Common;
 using CommandLine;
 
 namespace Clio.Command;
 
 [Verb("restart-web-app", Aliases = ["restart"], HelpText = "Restart a web application")]
-public class RestartOptions : RemoteCommandOptions { }
+public class RestartOptions : RemoteCommandOptions {
+
+	[Option("wait-ready", Required = false, Default = false,
+		HelpText = "After requesting the restart, poll the application's health-check endpoint until it answers before returning")]
+	public bool WaitReady { get; set; }
+
+	[Option("ready-timeout", Required = false, Default = 600,
+		HelpText = "Max seconds to wait for readiness when --wait-ready is set (default: 600)")]
+	public int ReadyTimeout { get; set; }
+
+}
 
 public class RestartCommand : RemoteCommand<RestartOptions> {
 
+	#region Fields: Private
+
+	private readonly IServerReadinessWaiter _readinessWaiter;
+
+	#endregion
+
 	#region Constructors: Public
 
-	public RestartCommand(IApplicationClient applicationClient, EnvironmentSettings settings)
-		: base(applicationClient, settings) { }
+	public RestartCommand(IApplicationClient applicationClient, EnvironmentSettings settings,
+		IServerReadinessWaiter readinessWaiter)
+		: base(applicationClient, settings) {
+		_readinessWaiter = readinessWaiter;
+	}
 
 	#endregion
 
@@ -20,6 +40,30 @@ public class RestartCommand : RemoteCommand<RestartOptions> {
 	protected override string ServicePath =>
 		EnvironmentSettings.IsNetCore ? "/ServiceModel/AppInstallerService.svc/RestartApp"
 			: @"/ServiceModel/AppInstallerService.svc/UnloadAppDomain";
+
+	#endregion
+
+	#region Methods: Public
+
+	/// <summary>
+	/// Requests the restart and, when <see cref="RestartOptions.WaitReady"/> is set, polls the instance's
+	/// health-check endpoint until it responds or <see cref="RestartOptions.ReadyTimeout"/> elapses.
+	/// </summary>
+	/// <param name="options">Restart options, including the readiness-wait toggle and timeout.</param>
+	/// <returns>0 on success (and, when waiting, on confirmed readiness); 1 on failure or a readiness timeout.</returns>
+	public override int Execute(RestartOptions options) {
+		int result = base.Execute(options);
+		if (result != 0 || !options.WaitReady) {
+			return result;
+		}
+
+		bool ready = _readinessWaiter.WaitForReady(new ServerReadinessOptions {
+			Uri = EnvironmentSettings.Uri,
+			IsNetCore = EnvironmentSettings.IsNetCore,
+			Timeout = TimeSpan.FromSeconds(options.ReadyTimeout)
+		});
+		return ready ? 0 : 1;
+	}
 
 	#endregion
 

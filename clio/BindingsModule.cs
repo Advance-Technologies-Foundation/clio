@@ -598,6 +598,10 @@ public class BindingsModule {
 		// tenant serializes on the SAME lock regardless of which container (root or per-session
 		// ephemeral) the call flows through, while DIFFERENT tenants use distinct locks.
 		services.AddSingleton<ITenantExecutionLockProvider>(TenantExecutionLockProvider.Shared);
+		// Process-wide compile-creatio operation tracker (ENG-91315). A singleton (not the auto-scanned
+		// transient default) so compile-creatio's Begin/Finish calls and compile-status's later lookup
+		// share the SAME in-memory table regardless of which container resolves them.
+		services.AddSingleton<ICompileOperationRegistry, CompileOperationRegistry>();
 		services.AddTransient<IToolCommandResolver, ToolCommandResolver>();
 		services.AddTransient<IDataForgePlatformVersionGuard, DataForgePlatformVersionGuard>();
 		services.AddTransient<IDataForgeReadClient, DataForgeReadClient>();
@@ -1110,7 +1114,12 @@ public class BindingsModule {
 					// process-wide shared instance. Its impl ctor is private (locks must be shared across
 					// every container the host builds), so auto-registering the type would fail
 					// ValidateOnBuild.
-					|| implementedInterface == typeof(ITenantExecutionLockProvider)) {
+					|| implementedInterface == typeof(ITenantExecutionLockProvider)
+					// The compile-creatio operation registry (ENG-91315) is registered explicitly as a
+					// SINGLETON. Its ctor has no unresolvable args, so the auto-scan COULD register it —
+					// but only as a transient, which would give compile-creatio and compile-status each
+					// their own empty table and silently break status polling.
+					|| implementedInterface == typeof(ICompileOperationRegistry)) {
 					continue;
 				}
 				services.AddTransient(implementedInterface, type);

@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Threading.Tasks;
 using Clio.Command;
 using Clio.Command.McpServer.Prompts;
 using Clio.Command.McpServer.Tools;
@@ -33,20 +34,22 @@ public sealed class CompileCreatioToolTests
 	[Test]
 	[Category("Unit")]
 	[Description("Resolves CompileConfigurationCommand with All=true when package-name is omitted.")]
-	public void CompileCreatio_Should_Use_Full_Compilation_When_Package_Name_Is_Omitted()
+	public async Task CompileCreatio_Should_Use_Full_Compilation_When_Package_Name_Is_Omitted()
 	{
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.GetTenantKey(Arg.Any<EnvironmentOptions>()).Returns("sandbox-tenant");
 		FakeCompileConfigurationCommand resolvedCommand = new();
 		commandResolver.Resolve<CompileConfigurationCommand>(Arg.Any<CompileConfigurationOptions>())
 			.Returns(resolvedCommand);
-		CompileCreatioTool tool = new(ConsoleLogger.Instance, commandResolver);
+		ICompileOperationRegistry registry = new CompileOperationRegistry();
+		CompileCreatioTool tool = new(ConsoleLogger.Instance, commandResolver, registry);
 
 		try
 		{
 			// Act
-			CommandExecutionResult result = tool.CompileCreatio(new CompileCreatioArgs("sandbox", null));
+			CommandExecutionResult result = await tool.CompileCreatio(new CompileCreatioArgs("sandbox", null));
 
 			// Assert
 			result.ExitCode.Should().Be(0,
@@ -59,6 +62,11 @@ public sealed class CompileCreatioToolTests
 				because: "the resolved full compile command should receive the forwarded options");
 			resolvedCommand.CapturedOptions!.All.Should().BeTrue(
 				because: "the MCP tool should set All=true for the full compilation path");
+			CompileOperationRecord tracked = registry.GetLatest("sandbox-tenant");
+			tracked.Should().NotBeNull(because: "compile-creatio must record the operation so compile-status can find it");
+			tracked!.Status.Should().Be(CompileOperationStatus.Succeeded,
+				because: "a zero exit code finalizes the tracked operation as succeeded");
+			tracked.PackageName.Should().BeNull(because: "a full compilation tracks no single package name");
 		}
 		finally
 		{
@@ -69,20 +77,22 @@ public sealed class CompileCreatioToolTests
 	[Test]
 	[Category("Unit")]
 	[Description("Resolves CompilePackageCommand with the exact package-name when package-only compilation is requested.")]
-	public void CompileCreatio_Should_Use_Package_Compilation_When_Package_Name_Is_Provided()
+	public async Task CompileCreatio_Should_Use_Package_Compilation_When_Package_Name_Is_Provided()
 	{
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.GetTenantKey(Arg.Any<EnvironmentOptions>()).Returns("sandbox-tenant");
 		FakeCompilePackageCommand resolvedCommand = new();
 		commandResolver.Resolve<CompilePackageCommand>(Arg.Any<CompilePackageOptions>())
 			.Returns(resolvedCommand);
-		CompileCreatioTool tool = new(ConsoleLogger.Instance, commandResolver);
+		ICompileOperationRegistry registry = new CompileOperationRegistry();
+		CompileCreatioTool tool = new(ConsoleLogger.Instance, commandResolver, registry);
 
 		try
 		{
 			// Act
-			CommandExecutionResult result = tool.CompileCreatio(new CompileCreatioArgs("sandbox", "MyPackage"));
+			CommandExecutionResult result = await tool.CompileCreatio(new CompileCreatioArgs("sandbox", "MyPackage"));
 
 			// Assert
 			result.ExitCode.Should().Be(0,
@@ -95,6 +105,77 @@ public sealed class CompileCreatioToolTests
 				because: "the resolved package compile command should receive the forwarded options");
 			resolvedCommand.CapturedOptions!.PackageName.Should().Be("MyPackage",
 				because: "the MCP tool should preserve the exact requested package name");
+			registry.GetLatest("sandbox-tenant")!.PackageName.Should().Be("MyPackage",
+				because: "the tracked operation should record which package was compiled");
+		}
+		finally
+		{
+			ConsoleLogger.Instance.ClearMessages();
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Records a failed tracked operation when the resolved compile command reports a non-zero exit code.")]
+	public async Task CompileCreatio_Should_Record_Failed_Operation_When_Compile_Exits_NonZero()
+	{
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.GetTenantKey(Arg.Any<EnvironmentOptions>()).Returns("sandbox-tenant");
+		FakeCompileConfigurationCommand resolvedCommand = new() { ExitCodeToReturn = 1 };
+		commandResolver.Resolve<CompileConfigurationCommand>(Arg.Any<CompileConfigurationOptions>())
+			.Returns(resolvedCommand);
+		ICompileOperationRegistry registry = new CompileOperationRegistry();
+		CompileCreatioTool tool = new(ConsoleLogger.Instance, commandResolver, registry);
+
+		try
+		{
+			// Act
+			CommandExecutionResult result = await tool.CompileCreatio(new CompileCreatioArgs("sandbox", null));
+
+			// Assert
+			result.ExitCode.Should().Be(1, because: "the tool must surface the command's real exit code");
+			CompileOperationRecord tracked = registry.GetLatest("sandbox-tenant");
+			tracked.Should().NotBeNull();
+			tracked!.Status.Should().Be(CompileOperationStatus.Failed,
+				because: "a non-zero exit code finalizes the tracked operation as failed");
+			tracked.ExitCode.Should().Be(1);
+			tracked.FinishedUtc.Should().NotBeNull(because: "a finished operation must carry a finish timestamp");
+		}
+		finally
+		{
+			ConsoleLogger.Instance.ClearMessages();
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Records a failed tracked operation and returns a caller-actionable exit code when command resolution itself throws (e.g. an unregistered environment) — resolution runs outside the resolved command's own try/catch, so this must be handled explicitly.")]
+	public async Task CompileCreatio_Should_Record_Failed_Operation_When_Resolution_Throws()
+	{
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.GetTenantKey(Arg.Any<EnvironmentOptions>()).Returns("sandbox-tenant");
+		commandResolver.Resolve<CompileConfigurationCommand>(Arg.Any<CompileConfigurationOptions>())
+			.Returns(_ => throw new EnvironmentResolutionException("Environment 'sandbox' not found."));
+		ICompileOperationRegistry registry = new CompileOperationRegistry();
+		CompileCreatioTool tool = new(ConsoleLogger.Instance, commandResolver, registry);
+
+		try
+		{
+			// Act
+			CommandExecutionResult result = await tool.CompileCreatio(new CompileCreatioArgs("sandbox", null));
+
+			// Assert
+			result.ExitCode.Should().Be(1,
+				because: "an environment-resolution failure is an expected, caller-actionable error, not an unhandled exception");
+			CompileOperationRecord tracked = registry.GetLatest("sandbox-tenant");
+			tracked.Should().NotBeNull(
+				because: "even a resolution failure must finalize the tracked operation, or compile-status would report it as running forever");
+			tracked!.Status.Should().Be(CompileOperationStatus.Failed);
+			tracked.FinishedUtc.Should().NotBeNull();
 		}
 		finally
 		{
@@ -105,17 +186,17 @@ public sealed class CompileCreatioToolTests
 	[Test]
 	[Category("Unit")]
 	[Description("Rejects comma-separated package lists so the MCP contract remains limited to one package.")]
-	public void CompileCreatio_Should_Reject_Comma_Separated_Package_Names()
+	public async Task CompileCreatio_Should_Reject_Comma_Separated_Package_Names()
 	{
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		CompileCreatioTool tool = new(ConsoleLogger.Instance, commandResolver);
+		CompileCreatioTool tool = new(ConsoleLogger.Instance, commandResolver, new CompileOperationRegistry());
 
 		try
 		{
 			// Act
-			CommandExecutionResult result = tool.CompileCreatio(new CompileCreatioArgs("sandbox", "PkgA,PkgB"));
+			CommandExecutionResult result = await tool.CompileCreatio(new CompileCreatioArgs("sandbox", "PkgA,PkgB"));
 
 			// Assert
 			result.ExitCode.Should().Be(1,
@@ -131,6 +212,25 @@ public sealed class CompileCreatioToolTests
 		{
 			ConsoleLogger.Instance.ClearMessages();
 		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The in-progress notice names the environment, the operation-id, and the compile-status poll target so an agent can act on it without retrying.")]
+	public void BuildInProgressMessage_Should_Reference_Environment_OperationId_And_PollTarget()
+	{
+		// Arrange
+
+		// Act
+		string message = CompileCreatioTool.BuildInProgressMessage("sandbox", "op-123");
+
+		// Assert
+		message.Should().Contain("sandbox", because: "the agent must know which environment is still compiling");
+		message.Should().Contain("op-123", because: "the agent needs the operation-id to poll the right operation");
+		message.Should().Contain(CompileStatusTool.CompileStatusToolName,
+			because: "the notice must point the agent at compile-status rather than retrying compile-creatio");
+		message.Should().Contain("do NOT retry",
+			because: "retrying compile-creatio while the tracked operation is still running would start a duplicate compile");
 	}
 
 	[Test]
@@ -179,6 +279,8 @@ public sealed class CompileCreatioToolTests
 	{
 		public CompileConfigurationOptions? CapturedOptions { get; private set; }
 
+		public int ExitCodeToReturn { get; init; } = 0;
+
 		public FakeCompileConfigurationCommand()
 			: base(
 				Substitute.For<IApplicationClient>(),
@@ -192,7 +294,7 @@ public sealed class CompileCreatioToolTests
 		public override int Execute(CompileConfigurationOptions options)
 		{
 			CapturedOptions = options;
-			return 0;
+			return ExitCodeToReturn;
 		}
 	}
 

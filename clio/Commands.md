@@ -544,7 +544,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`last-compilation-log`](docs/commands/last-compilation-log.md) - Get last compilation log, `lcl`
 <a id="restart-web-app"></a>
 <a id="restart"></a>
-- [`restart-web-app`](docs/commands/restart-web-app.md) - Restart a web application, `restart`
+- [`restart-web-app`](docs/commands/restart-web-app.md) - Restart a web application, `restart` (supports `--wait-ready` readiness polling)
 <a id="set-fsm-config"></a>
 <a id="fsmc"></a>
 <a id="sfsmc"></a>
