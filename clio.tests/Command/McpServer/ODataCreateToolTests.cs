@@ -313,6 +313,33 @@ public sealed class ODataCreateToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("An unrecognized error body (not one of TryDetect's shapes) that reaches the id-missing fallback is redacted, so response host detail cannot leak through the create path's catch-all failure branch.")]
+	public void Create_Should_Redact_Unrecognized_Error_Body_In_Id_Missing_Fallback() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
+		// A ModelState validation body carries a member beyond Message/MessageDetail, so TryDetect does
+		// not recognize it; with no Id it falls through to the id-missing fallback branch.
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"Message\":\"The request is invalid.\",\"ModelState\":{\"row\":[\"failed calling http://secret-host:88/prod-app/0/odata/Account\"]}}");
+		ODataCreateTool tool = new(resolver);
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "Account", Rows = Arr("[{\"Name\":\"Office\"}]")
+		});
+
+		// Assert
+		response.Results.Single().Success.Should().BeFalse(because: "a body with no created-record Id is a per-row failure");
+		response.Results.Single().Error.Should().NotContain("secret-host", because: "the id-missing fallback embeds raw response text and must redact host detail to keep parity with the other error branches");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("A numeric primary key in the response body is accepted as a created record rather than reported as a missing Id.")]
 	public void Create_Should_Accept_Numeric_Id() {
 		// Arrange

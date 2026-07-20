@@ -1,3 +1,4 @@
+using System;
 using System.Text.Json;
 
 namespace Clio.Command.McpServer.Tools;
@@ -74,21 +75,37 @@ internal static class ODataResponseError {
 		if (root.TryGetProperty("Message", out JsonElement bareMessage)
 			&& bareMessage.ValueKind == JsonValueKind.String
 			&& !HasNonRoutingErrorMembers(root)) {
-			// MessageDetail ("No type was found that matches the controller named 'X'") is the routing
-			// discriminator, so the unregistered-entity hint is appended only when it is present; a bare
-			// Message body is surfaced verbatim to avoid misattributing an unrelated error's cause.
+			// Surface the most specific text: MessageDetail ("No type was found that matches the
+			// controller named 'X'") when present, else the bare Message.
 			string? detail = First(root, "MessageDetail");
-			if (!string.IsNullOrEmpty(detail)) {
-				message = $"{detail} {UnregisteredEntityHint}";
-			} else {
-				string? bare = First(root, "Message");
-				message = string.IsNullOrEmpty(bare) ? "Creatio returned an empty error response." : bare!;
+			string primary = !string.IsNullOrEmpty(detail) ? detail! : bareMessage.GetString() ?? string.Empty;
+			if (string.IsNullOrEmpty(primary)) {
+				message = "Creatio returned an empty error response.";
+				return true;
 			}
+			// The unregistered-entity hint (wait-and-retry, not compile/restart) is tied to a CONTENT
+			// signal, not the bare {Message[,MessageDetail]} shape: other ASP.NET Web API HttpError
+			// bodies can share that shape, and telling the agent to wait for an async rebuild on an
+			// unrelated, non-transient failure would delay correct diagnosis. Append it only for the
+			// genuine routing miss; otherwise surface the message alone (still success=false).
+			message = IsRoutingMiss(detail) || IsRoutingMiss(bareMessage.GetString())
+				? $"{primary} {UnregisteredEntityHint}"
+				: primary;
 			return true;
 		}
 
 		return false;
 	}
+
+	/// <summary>
+	/// True when the text is one of the ASP.NET Web API routing-miss messages that identify an
+	/// unregistered/uncompiled OData controller, as opposed to any other error that happens to share
+	/// the bare <c>{Message[,MessageDetail]}</c> shape.
+	/// </summary>
+	private static bool IsRoutingMiss(string? text) =>
+		!string.IsNullOrEmpty(text)
+		&& (text!.Contains("No type was found that matches the controller", StringComparison.OrdinalIgnoreCase)
+			|| text.Contains("No HTTP resource was found that matches the request URI", StringComparison.OrdinalIgnoreCase));
 
 	/// <summary>
 	/// Returns true when the object carries any member other than the routing-error keys

@@ -106,10 +106,13 @@ public sealed class ODataCreateTool(IToolCommandResolver commandResolver) {
 			if (string.IsNullOrEmpty(id)) {
 				// A successful OData create always echoes the new record with its Id; its absence
 				// means the body is not a created record (an unrecognized error or empty payload).
+				// Redact: an unrecognized error shape reaching this fallback embeds up to 500 raw
+				// response characters, which can carry the absolute request URI or other host detail —
+				// keep redaction parity with the TryDetect and exception paths in this method.
 				return new ODataRowResult {
 					Index = index,
 					Success = false,
-					Error = $"OData create did not return a record Id. Response: {Truncate(json)}"
+					Error = SensitiveErrorTextRedactor.Redact($"OData create did not return a record Id. Response: {Truncate(json)}")
 				};
 			}
 			return new ODataRowResult { Index = index, Success = true, Id = id };
